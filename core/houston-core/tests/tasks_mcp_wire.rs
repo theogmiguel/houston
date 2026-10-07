@@ -259,7 +259,6 @@ async fn agents_create_get_update_and_list_tasks_with_attribution() {
             "title": "First agent task",
             "description": "written by an agent",
             "priority": "urgent",
-            "status": "todo",
             "acceptance": ["one", "two"],
         }),
     )
@@ -815,7 +814,7 @@ async fn an_unready_unassigned_claim_keeps_workspace_assignment_without_a_run() 
         r.addr,
         &token,
         "task_create",
-        json!({ "title": "unready unassigned", "workspace": null }),
+        json!({ "title": "unready unassigned", "workspace": null, "status": "todo" }),
     )
     .await;
     let id = created["id"].as_i64().unwrap();
