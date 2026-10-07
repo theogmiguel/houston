@@ -763,10 +763,34 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
     )
     .await;
     let project_stale_initial = task(&mut ws, project_stale).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::TaskSave {
+            workspace: Some(workspace.clone()),
+            id: Some(project_stale),
+            expected_revision: Some(project_stale_initial.revision),
+            patch: proto::TaskPatch {
+                parent_id: Some(Some(delivery)),
+                ..Default::default()
+            },
+        },
+    )
+    .await;
+    let project_stale_parented = loop {
+        match common::next_control(&mut ws).await {
+            proto::ServerMsg::TaskChanged { id, .. } if id == project_stale => {
+                break task(&mut ws, project_stale).await
+            }
+            proto::ServerMsg::TaskRefused { message, .. } => {
+                panic!("Project stale task parent assignment refused: {message}")
+            }
+            _ => {}
+        }
+    };
     let project_stale_revision = match daemon
         .task_domain_save(
             project_stale,
-            project_stale_initial.revision,
+            project_stale_parented.revision,
             Some(proto::TaskDomainKind::Slice),
             Some(Some(project)),
             None,
@@ -837,12 +861,36 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
     )
     .await;
     let project_approval_task = task(&mut ws, project_approval).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::TaskSave {
+            workspace: Some(workspace.clone()),
+            id: Some(project_approval),
+            expected_revision: Some(project_approval_task.revision),
+            patch: proto::TaskPatch {
+                parent_id: Some(Some(delivery)),
+                ..Default::default()
+            },
+        },
+    )
+    .await;
+    let project_approval_parented = loop {
+        match common::next_control(&mut ws).await {
+            proto::ServerMsg::TaskChanged { id, .. } if id == project_approval => {
+                break task(&mut ws, project_approval).await
+            }
+            proto::ServerMsg::TaskRefused { message, .. } => {
+                panic!("Project approval task parent assignment refused: {message}")
+            }
+            _ => {}
+        }
+    };
     let project_approval_revision = match daemon
         .task_domain_save(
             project_approval,
-            project_approval_task.revision,
+            project_approval_parented.revision,
             Some(proto::TaskDomainKind::Slice),
-            Some(Some(project)),
+            None,
             None,
         )
         .unwrap()
