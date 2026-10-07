@@ -1091,7 +1091,7 @@ mod tests {
         assert_eq!(d.session, 7);
 
         let with_agent = HookDrop {
-        resume_evidence: None,
+            resume_evidence: None,
 
             agent: Some("cursor".to_string()),
             ..drop_for(7, "stop")

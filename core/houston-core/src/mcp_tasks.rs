@@ -450,7 +450,12 @@ impl ToolProvider for TasksTools {
 /// workspace's access decides reads and writes, and the two verbs that spawn a
 /// child follow `pane_spawn`'s rule — advertised only to a spawnable caller.
 fn advertised(daemon: &Daemon, scope: &McpScope) -> Vec<ToolSpec> {
-    if daemon.task_plan_session(scope.session_id).ok().flatten().is_some() {
+    if daemon
+        .task_plan_session(scope.session_id)
+        .ok()
+        .flatten()
+        .is_some()
+    {
         return vec![plan_submit_spec()];
     }
     if daemon.parent_of(scope.session_id).is_some() {
@@ -521,7 +526,9 @@ fn dispatch(
         "task_projects" => {
             require_domain_access(daemon, workspace, false)?;
             let msg = daemon.task_projects_list(workspace)?;
-            let proto::ServerMsg::TaskProjectsState { projects, .. } = succeed(msg)? else { unreachable!() };
+            let proto::ServerMsg::TaskProjectsState { projects, .. } = succeed(msg)? else {
+                unreachable!()
+            };
             Ok(task_output(json!({"projects": projects})))
         }
         "task_project_save" => {
@@ -531,10 +538,27 @@ fn dispatch(
             let name = required_string(args, "name")?;
             let url = nullable_string_patch(args, "external_url")?;
             let description = nullable_string_patch(args, "tracker_description")?;
-            let decisions = args.get("local_decisions").map(|v| serde_json::from_value::<Vec<String>>(v.clone()).map_err(|e| ToolError(format!("local_decisions must be an array of strings: {e}")))).transpose()?;
-            let msg = daemon.task_project_save(workspace, id, expected, &name, url, description, decisions)?;
+            let decisions = args
+                .get("local_decisions")
+                .map(|v| {
+                    serde_json::from_value::<Vec<String>>(v.clone()).map_err(|e| {
+                        ToolError(format!("local_decisions must be an array of strings: {e}"))
+                    })
+                })
+                .transpose()?;
+            let msg = daemon.task_project_save(
+                workspace,
+                id,
+                expected,
+                &name,
+                url,
+                description,
+                decisions,
+            )?;
             match succeed(msg)? {
-                proto::ServerMsg::TaskProjectChanged { id, revision, .. } => Ok(task_output(json!({"id":id,"revision":revision}))),
+                proto::ServerMsg::TaskProjectChanged { id, revision, .. } => {
+                    Ok(task_output(json!({"id":id,"revision":revision})))
+                }
                 other => unreachable!("task_project_save returned {other:?}"),
             }
         }
@@ -542,34 +566,71 @@ fn dispatch(
             require_domain_access(daemon, workspace, true)?;
             let id = required_i64(args, "id")?;
             let expected = required_revision(args)?;
-            let archived = optional_bool(args, "archived")?.ok_or_else(|| ToolError("archived is required".into()))?;
+            let archived = optional_bool(args, "archived")?
+                .ok_or_else(|| ToolError("archived is required".into()))?;
             match succeed(daemon.task_project_archive(id, expected, archived)?)? {
-                proto::ServerMsg::TaskProjectChanged { id, revision, .. } => Ok(task_output(json!({"id":id,"revision":revision,"archived":archived}))),
+                proto::ServerMsg::TaskProjectChanged { id, revision, .. } => Ok(task_output(
+                    json!({"id":id,"revision":revision,"archived":archived}),
+                )),
                 other => unreachable!("task_project_archive returned {other:?}"),
             }
         }
         "task_domain_get" => {
             require_domain_access(daemon, workspace, false)?;
             let id = task_ref(daemon, workspace, args, name)?;
-            let proto::ServerMsg::TaskDomainState { domain } = succeed(daemon.task_domain_state(id)?)? else { unreachable!() };
-            Ok(task_output(serde_json::to_value(domain).map_err(|e| ToolError(format!("serializing task domain: {e}")))?))
+            let proto::ServerMsg::TaskDomainState { domain } =
+                succeed(daemon.task_domain_state(id)?)?
+            else {
+                unreachable!()
+            };
+            Ok(task_output(serde_json::to_value(domain).map_err(|e| {
+                ToolError(format!("serializing task domain: {e}"))
+            })?))
         }
         "task_domain_update" => {
             require_domain_access(daemon, workspace, true)?;
             let id = task_ref(daemon, workspace, args, name)?;
             let expected = required_revision(args)?;
-            let kind = args.get("kind").map(|value| serde_json::from_value::<proto::TaskDomainKind>(value.clone()).map_err(|_| ToolError(format!("kind must be delivery or slice; got {value}")))).transpose()?;
-            let project_id = args.get("project_id").map(|v| if v.is_null() { Ok(None) } else { v.as_i64().map(Some).ok_or_else(|| ToolError("project_id must be an integer or null".into())) }).transpose()?;
-            let blocked_by = args.get("blocked_by").map(|v| serde_json::from_value::<Vec<i64>>(v.clone()).map_err(|e| ToolError(format!("blocked_by must be an array of task ids: {e}")))).transpose()?;
+            let kind = args
+                .get("kind")
+                .map(|value| {
+                    serde_json::from_value::<proto::TaskDomainKind>(value.clone()).map_err(|_| {
+                        ToolError(format!("kind must be delivery or slice; got {value}"))
+                    })
+                })
+                .transpose()?;
+            let project_id = args
+                .get("project_id")
+                .map(|v| {
+                    if v.is_null() {
+                        Ok(None)
+                    } else {
+                        v.as_i64().map(Some).ok_or_else(|| {
+                            ToolError("project_id must be an integer or null".into())
+                        })
+                    }
+                })
+                .transpose()?;
+            let blocked_by = args
+                .get("blocked_by")
+                .map(|v| {
+                    serde_json::from_value::<Vec<i64>>(v.clone()).map_err(|e| {
+                        ToolError(format!("blocked_by must be an array of task ids: {e}"))
+                    })
+                })
+                .transpose()?;
             let msg = daemon.task_domain_save(id, expected, kind, project_id, blocked_by)?;
             changed_output(daemon, msg, Some("domain updated"))
         }
         "task_plan_submit" => {
             require_domain_access(daemon, workspace, true)?;
-            let proposal = serde_json::from_value::<proto::TaskPlanProposal>(args.clone()).map_err(|e| ToolError(format!("task_plan_submit proposal is invalid: {e}")))?;
+            let proposal = serde_json::from_value::<proto::TaskPlanProposal>(args.clone())
+                .map_err(|e| ToolError(format!("task_plan_submit proposal is invalid: {e}")))?;
             let msg = daemon.task_plan_submit(session, proposal)?;
             match succeed(msg)? {
-                proto::ServerMsg::TaskPlanChanged { id, revision } => Ok(task_output(json!({"id":id,"plan_revision":revision}))),
+                proto::ServerMsg::TaskPlanChanged { id, revision } => {
+                    Ok(task_output(json!({"id":id,"plan_revision":revision})))
+                }
                 other => unreachable!("task_plan_submit returned {other:?}"),
             }
         }
@@ -843,8 +904,12 @@ fn with_status(output: ToolOutput, status: &str) -> ToolOutput {
 
 fn require_domain_access(daemon: &Daemon, workspace: &str, write: bool) -> Result<(), ToolError> {
     match daemon.tasks_access(workspace) {
-        proto::TasksAccess::Off => Err(ToolError(format!("task domain tools are off for workspace {workspace:?}"))),
-        proto::TasksAccess::Read if write => Err(ToolError(format!("task domain tools are read-only for workspace {workspace:?}"))),
+        proto::TasksAccess::Off => Err(ToolError(format!(
+            "task domain tools are off for workspace {workspace:?}"
+        ))),
+        proto::TasksAccess::Read if write => Err(ToolError(format!(
+            "task domain tools are read-only for workspace {workspace:?}"
+        ))),
         _ => Ok(()),
     }
 }
@@ -1042,7 +1107,10 @@ fn required_revision(args: &Value) -> Result<i64, ToolError> {
 fn optional_i64(args: &Value, key: &str) -> Result<Option<i64>, ToolError> {
     match args.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_i64().map(Some).ok_or_else(|| ToolError(format!("{key} must be an integer; got {value}"))),
+        Some(value) => value
+            .as_i64()
+            .map(Some)
+            .ok_or_else(|| ToolError(format!("{key} must be an integer; got {value}"))),
     }
 }
 
@@ -1051,7 +1119,9 @@ fn nullable_string_patch(args: &Value, key: &str) -> Result<Option<Option<String
         None => Ok(None),
         Some(Value::Null) => Ok(Some(None)),
         Some(Value::String(value)) => Ok(Some(Some(value.clone()))),
-        Some(value) => Err(ToolError(format!("{key} must be a string or null; got {value}"))),
+        Some(value) => Err(ToolError(format!(
+            "{key} must be a string or null; got {value}"
+        ))),
     }
 }
 

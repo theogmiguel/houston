@@ -18,14 +18,14 @@ pub use intake::{
     STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
-mod tasks;
 mod task_trackers;
+mod tasks;
+pub use task_trackers::TaskTrackerOutboxRow;
 pub use tasks::{
     SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskDomainRow, TaskHistoryRow,
     TaskProjectRow, TaskQuery, TaskRow, TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate,
     TaskWrite,
 };
-pub use task_trackers::TaskTrackerOutboxRow;
 
 // Seven days and 4096 receipts cover ordinary retries without unbounded local storage.
 pub const ORCHESTRATION_RECEIPT_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
@@ -1449,7 +1449,12 @@ impl Db {
             "resume_transcript_path TEXT",
         )?;
         add_column_if_missing(&conn, "sessions", "latest_prompt", "latest_prompt TEXT")?;
-        add_column_if_missing(&conn, "sessions", "last_agent_message", "last_agent_message TEXT")?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "last_agent_message",
+            "last_agent_message TEXT",
+        )?;
         add_column_if_missing(&conn, "sessions", "slept_at_ms", "slept_at_ms INTEGER")?;
         add_column_if_missing(&conn, "sessions", "context_json", "context_json TEXT")?;
         ensure_tag_ids_are_monotonic(&conn)?;
@@ -2029,13 +2034,15 @@ impl Db {
         drop(stmt);
         let mut used: std::collections::HashSet<String> = rows
             .iter()
-            .filter_map(|(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
-                if codename.is_empty() {
-                    (!title.is_empty()).then(|| title.clone())
-                } else {
-                    Some(codename.clone())
-                }
-            })
+            .filter_map(
+                |(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
+                    if codename.is_empty() {
+                        (!title.is_empty()).then(|| title.clone())
+                    } else {
+                        Some(codename.clone())
+                    }
+                },
+            )
             .collect();
         let mut out = Vec::with_capacity(rows.len());
         for (
@@ -2726,7 +2733,9 @@ impl Db {
         context: Option<proto::SessionContext>,
     ) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
-        let json = context.map(|value| serde_json::to_string(&value)).transpose()?;
+        let json = context
+            .map(|value| serde_json::to_string(&value))
+            .transpose()?;
         conn.execute(
             "UPDATE sessions SET context_json = ?2 WHERE id = ?1 AND state != 'closed'",
             rusqlite::params![id, json],

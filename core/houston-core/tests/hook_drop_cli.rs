@@ -346,7 +346,6 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
     let full = HookDrop {
         resume_evidence: None,
 
-
         v: hook_drop::DROP_V,
         event: "Stop".into(),
         session: 7,

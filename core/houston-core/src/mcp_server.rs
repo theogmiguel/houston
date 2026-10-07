@@ -335,7 +335,10 @@ impl ToolRegistry {
                 by_name.retain(|name, _| planning_tool_allowed(name, &all));
             }
             Err(error) => {
-                tracing::error!(session = scope.session_id, "checking task planning MCP capability failed: {error:#}");
+                tracing::error!(
+                    session = scope.session_id,
+                    "checking task planning MCP capability failed: {error:#}"
+                );
                 by_name.clear();
             }
             Ok(false) => {}
@@ -382,10 +385,7 @@ impl ToolRegistry {
     }
 
     fn is_task_planning_capability(&self, session_id: u32) -> anyhow::Result<bool> {
-        let Some(daemon) = self.daemon
-            .get()
-            .and_then(Weak::upgrade)
-        else {
+        let Some(daemon) = self.daemon.get().and_then(Weak::upgrade) else {
             return Ok(false);
         };
         daemon.has_task_planning_capability(session_id)
@@ -752,7 +752,11 @@ async fn gateway_tools_call(
                 .get("filter")
                 .and_then(Value::as_str)
                 .map(str::to_ascii_lowercase);
-            let listed = if host.tools().is_task_planning_capability(scope.session_id).unwrap_or(true) {
+            let listed = if host
+                .tools()
+                .is_task_planning_capability(scope.session_id)
+                .unwrap_or(true)
+            {
                 host.tools().list(scope)
             } else {
                 host.tools().all()
@@ -1254,25 +1258,29 @@ mod delivery_tests {
 
     #[test]
     fn planning_capability_denies_unadvertised_mutating_tools() {
-        let specs = vec![ToolSpec {
-            name: "repository_read".into(),
-            title: "Read repository".into(),
-            description: String::new(),
-            input_schema: json!({"type":"object"}),
-            annotations: Annotations::readonly(),
-        }, ToolSpec {
-            name: "pane_spawn".into(),
-            title: "Spawn pane".into(),
-            description: String::new(),
-            input_schema: json!({"type":"object"}),
-            annotations: Annotations::local_write(),
-        }, ToolSpec {
-            name: "task_execute".into(),
-            title: "Execute task".into(),
-            description: String::new(),
-            input_schema: json!({"type":"object"}),
-            annotations: Annotations::local_write(),
-        }];
+        let specs = vec![
+            ToolSpec {
+                name: "repository_read".into(),
+                title: "Read repository".into(),
+                description: String::new(),
+                input_schema: json!({"type":"object"}),
+                annotations: Annotations::readonly(),
+            },
+            ToolSpec {
+                name: "pane_spawn".into(),
+                title: "Spawn pane".into(),
+                description: String::new(),
+                input_schema: json!({"type":"object"}),
+                annotations: Annotations::local_write(),
+            },
+            ToolSpec {
+                name: "task_execute".into(),
+                title: "Execute task".into(),
+                description: String::new(),
+                input_schema: json!({"type":"object"}),
+                annotations: Annotations::local_write(),
+            },
+        ];
 
         assert!(planning_tool_allowed("repository_read", &specs));
         assert!(planning_tool_allowed("task_plan_submit", &specs));

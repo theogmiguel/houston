@@ -1215,27 +1215,33 @@ impl Daemon {
                 let mut base = std::collections::BTreeMap::new();
                 base.insert("title".into(), title_of(text, author));
                 base.insert("description".into(), description.clone());
-                self.db.task_external_link_upsert(&proto::TaskExternalLink {
-                    task_id: *id,
-                    provider: proto::TaskTrackerProvider::Slack,
-                    external_id: format!("{channel}:{ts}"),
-                    url: permalink.clone().unwrap_or_else(|| format!("https://app.slack.com/archives/{channel}/p{}", ts.replace('.', ""))),
-                    fetched_at_ms: Some(now),
-                    body_hash: Some(format!("{:x}", sha2::Sha256::digest(text.as_bytes()))),
-                    remote_rev: Some(ts.to_string()),
-                    synced_at_ms: Some(now),
-                    source: proto::TaskExternalLinkSource::Source,
-                    snapshot: proto::TaskTrackerSnapshot {
-                        local: base.clone(),
-                        remote: base.clone(),
-                        base,
-                        conflicts: vec![],
-                        revision: 1,
-                        project_external_id: None,
-                        project: None,
-                    },
-                    sync_state: proto::TaskTrackerSyncState::Current,
-                })?;
+                self.db
+                    .task_external_link_upsert(&proto::TaskExternalLink {
+                        task_id: *id,
+                        provider: proto::TaskTrackerProvider::Slack,
+                        external_id: format!("{channel}:{ts}"),
+                        url: permalink.clone().unwrap_or_else(|| {
+                            format!(
+                                "https://app.slack.com/archives/{channel}/p{}",
+                                ts.replace('.', "")
+                            )
+                        }),
+                        fetched_at_ms: Some(now),
+                        body_hash: Some(format!("{:x}", sha2::Sha256::digest(text.as_bytes()))),
+                        remote_rev: Some(ts.to_string()),
+                        synced_at_ms: Some(now),
+                        source: proto::TaskExternalLinkSource::Source,
+                        snapshot: proto::TaskTrackerSnapshot {
+                            local: base.clone(),
+                            remote: base.clone(),
+                            base,
+                            conflicts: vec![],
+                            revision: 1,
+                            project_external_id: None,
+                            project: None,
+                        },
+                        sync_state: proto::TaskTrackerSyncState::Current,
+                    })?;
                 self.broadcast_control(&created);
                 let row = self.db.intake(row.id)?.unwrap_or(row);
                 let outlook =

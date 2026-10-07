@@ -435,8 +435,10 @@ pub fn run_hook_client(args: &[String]) {
         tool_input_fingerprint: payload.tool_input_fingerprint,
         request_id: payload.request_id,
         resume_evidence: if matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
-            && matches!(event.as_str(), "SessionStart" | "UserPromptSubmit" | "Stop" | "notify")
-        {
+            && matches!(
+                event.as_str(),
+                "SessionStart" | "UserPromptSubmit" | "Stop" | "notify"
+            ) {
             let profile_dir = match provider {
                 proto::AgentKind::Claude => "CLAUDE_CONFIG_DIR",
                 proto::AgentKind::Codex => "CODEX_HOME",
@@ -447,7 +449,9 @@ pub fn run_hook_client(args: &[String]) {
                 profile_dir: std::env::var_os(profile_dir).and_then(|value| {
                     let value = match value.into_string() {
                         Ok(value) => value,
-                        Err(_) => return Some("<Houston omitted an unrepresentable profile path>".into()),
+                        Err(_) => {
+                            return Some("<Houston omitted an unrepresentable profile path>".into())
+                        }
                     };
                     if value.is_empty() {
                         None

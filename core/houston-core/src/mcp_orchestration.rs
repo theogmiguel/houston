@@ -975,8 +975,12 @@ mod tests {
         assert!(wait.description.contains(
             "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list"
         ));
-        assert!(wait.description.contains("preserve needed output and artifacts"));
-        assert!(wait.description.contains("promptly close that completed pane with pane_kill"));
+        assert!(wait
+            .description
+            .contains("preserve needed output and artifacts"));
+        assert!(wait
+            .description
+            .contains("promptly close that completed pane with pane_kill"));
         assert!(wait.input_schema["properties"]["timeout_ms"]
             .get("maximum")
             .is_none());
@@ -993,7 +997,9 @@ mod tests {
         }
         let kill = specs.iter().find(|spec| spec.name == "pane_kill").unwrap();
         assert!(kill.description.contains("completed result"));
-        assert!(kill.description.contains("do not accumulate completed panes"));
+        assert!(kill
+            .description
+            .contains("do not accumulate completed panes"));
         assert!(kill.description.contains("Do not kill a working child"));
     }
 
