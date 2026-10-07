@@ -29,6 +29,69 @@ async fn task_reply(ws: &mut common::WsStream) -> proto::ServerMsg {
     }
 }
 
+async fn task_changed(ws: &mut common::WsStream, id: i64) {
+    loop {
+        match common::next_control(ws).await {
+            proto::ServerMsg::TaskChanged { id: changed, .. } if changed == id => return,
+            proto::ServerMsg::TaskRefused { message, .. } => {
+                panic!("task {id} update refused: {message}")
+            }
+            _ => {}
+        }
+    }
+}
+
+async fn project_changed(ws: &mut common::WsStream, id: i64, revision: i64) {
+    loop {
+        match common::next_control(ws).await {
+            proto::ServerMsg::TaskProjectChanged {
+                id: changed,
+                revision: actual_revision,
+                ..
+            } if changed == id && actual_revision == revision => return,
+            proto::ServerMsg::TaskProjectChanged {
+                id: changed,
+                revision: actual_revision,
+                ..
+            } if changed == id => panic!(
+                "Project {id} update returned revision {actual_revision}, expected {revision}"
+            ),
+            proto::ServerMsg::TaskRefused { message, .. } => {
+                panic!("Project {id} update refused: {message}")
+            }
+            _ => {}
+        }
+    }
+}
+
+async fn project_state(ws: &mut common::WsStream, id: i64) -> proto::TaskProject {
+    loop {
+        match common::next_control(ws).await {
+            proto::ServerMsg::TaskProjectState { project } => match project {
+                Some(project) if project.id == id => return project,
+                Some(project) => panic!("expected Project {id}, got Project {}", project.id),
+                None => panic!("Project {id} was not found"),
+            },
+            proto::ServerMsg::TaskRefused { message, .. } => {
+                panic!("Project {id} query refused: {message}")
+            }
+            _ => {}
+        }
+    }
+}
+
+async fn domain_state(ws: &mut common::WsStream, id: i64) -> proto::TaskDomain {
+    loop {
+        match common::next_control(ws).await {
+            proto::ServerMsg::TaskDomainState { domain } if domain.task_id == id => return domain,
+            proto::ServerMsg::TaskRefused { message, .. } => {
+                panic!("task {id} domain query refused: {message}")
+            }
+            _ => {}
+        }
+    }
+}
+
 async fn create(
     ws: &mut common::WsStream,
     workspace: &str,
@@ -156,12 +219,7 @@ async fn project_metadata_and_blocked_by_cycles_are_visible_over_wire() {
         &proto::ClientMsg::TaskProjectGet { id: project_id },
     )
     .await;
-    let proto::ServerMsg::TaskProjectState {
-        project: Some(project),
-    } = task_reply(&mut ws).await
-    else {
-        panic!("expected the saved Project");
-    };
+    let project = project_state(&mut ws, project_id).await;
     assert_eq!(project.name, "Houston project");
     assert_eq!(
         project.tracker_description.as_deref(),
@@ -195,10 +253,7 @@ async fn project_metadata_and_blocked_by_cycles_are_visible_over_wire() {
         },
     )
     .await;
-    assert!(matches!(
-        task_reply(&mut ws).await,
-        proto::ServerMsg::TaskProjectChanged { revision: 2, .. }
-    ));
+    project_changed(&mut ws, project_id, 2).await;
     send(
         &mut ws,
         &proto::ClientMsg::TaskProjectsList {
@@ -206,8 +261,21 @@ async fn project_metadata_and_blocked_by_cycles_are_visible_over_wire() {
         },
     )
     .await;
-    let proto::ServerMsg::TaskProjectsState { projects, .. } = task_reply(&mut ws).await else {
-        panic!("expected Project list");
+    let projects = loop {
+        match common::next_control(&mut ws).await {
+            proto::ServerMsg::TaskProjectsState {
+                workspace: listed_workspace,
+                projects,
+            } if listed_workspace == workspace => break projects,
+            proto::ServerMsg::TaskProjectsState {
+                workspace: listed_workspace,
+                ..
+            } => panic!("expected Project list for {workspace}, got {listed_workspace}"),
+            proto::ServerMsg::TaskRefused { message, .. } => {
+                panic!("Project list refused: {message}")
+            }
+            _ => {}
+        }
     };
     assert_eq!(projects.len(), 2);
     assert!(projects
@@ -225,10 +293,7 @@ async fn project_metadata_and_blocked_by_cycles_are_visible_over_wire() {
         },
     )
     .await;
-    assert!(matches!(
-        task_reply(&mut ws).await,
-        proto::ServerMsg::TaskProjectChanged { revision: 3, .. }
-    ));
+    project_changed(&mut ws, project_id, 3).await;
 
     let delivery = create(&mut ws, &workspace, "Delivery", None).await;
     let slice = create(&mut ws, &workspace, "Slice", Some(delivery)).await;
@@ -243,7 +308,7 @@ async fn project_metadata_and_blocked_by_cycles_are_visible_over_wire() {
         },
     )
     .await;
-    let _ = task_reply(&mut ws).await;
+    task_changed(&mut ws, delivery).await;
     send(
         &mut ws,
         &proto::ClientMsg::TaskDomainSave {
@@ -255,11 +320,9 @@ async fn project_metadata_and_blocked_by_cycles_are_visible_over_wire() {
         },
     )
     .await;
-    let _ = task_reply(&mut ws).await;
+    task_changed(&mut ws, slice).await;
     send(&mut ws, &proto::ClientMsg::TaskDomainGet { id: slice }).await;
-    let proto::ServerMsg::TaskDomainState { domain } = task_reply(&mut ws).await else {
-        panic!("expected task domain state");
-    };
+    let domain = domain_state(&mut ws, slice).await;
     assert_eq!(domain.kind, proto::TaskDomainKind::Slice);
     assert_eq!(domain.delivery_id, Some(delivery));
     assert_eq!(domain.blocked_by, [delivery]);
@@ -275,10 +338,10 @@ async fn project_metadata_and_blocked_by_cycles_are_visible_over_wire() {
         },
     )
     .await;
-    assert!(matches!(
-        task_reply(&mut ws).await,
-        proto::ServerMsg::TaskRefused { .. }
-    ));
+    match task_reply(&mut ws).await {
+        proto::ServerMsg::TaskRefused { message, .. } => assert!(!message.is_empty()),
+        other => panic!("expected cycle refusal, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -318,7 +381,7 @@ async fn delivery_rollup_tracks_slice_status_and_ignores_non_slice_children() {
         },
     )
     .await;
-    let _ = task_reply(&mut ws).await;
+    task_changed(&mut ws, delivery).await;
     send(
         &mut ws,
         &proto::ClientMsg::TaskDomainSave {
@@ -330,11 +393,9 @@ async fn delivery_rollup_tracks_slice_status_and_ignores_non_slice_children() {
         },
     )
     .await;
-    let _ = task_reply(&mut ws).await;
+    task_changed(&mut ws, slice).await;
     send(&mut ws, &proto::ClientMsg::TaskDomainGet { id: delivery }).await;
-    let proto::ServerMsg::TaskDomainState { domain } = task_reply(&mut ws).await else {
-        panic!("expected Delivery domain");
-    };
+    let domain = domain_state(&mut ws, delivery).await;
     assert_eq!((domain.slice_total, domain.slice_done), (1, 0));
     send(
         &mut ws,
@@ -347,11 +408,9 @@ async fn delivery_rollup_tracks_slice_status_and_ignores_non_slice_children() {
         },
     )
     .await;
-    let _ = task_reply(&mut ws).await;
+    task_changed(&mut ws, slice).await;
     send(&mut ws, &proto::ClientMsg::TaskDomainGet { id: delivery }).await;
-    let proto::ServerMsg::TaskDomainState { domain } = task_reply(&mut ws).await else {
-        panic!("expected blocked Delivery readiness");
-    };
+    let domain = domain_state(&mut ws, delivery).await;
     assert!(domain
         .readiness
         .reasons
@@ -391,9 +450,7 @@ async fn existing_tasks_without_domain_metadata_use_readiness_without_project_re
     let mut ws = connect_and_hello(addr, TOKEN).await;
     let task = create(&mut ws, &workspace, "Existing task", None).await;
     send(&mut ws, &proto::ClientMsg::TaskDomainGet { id: task }).await;
-    let proto::ServerMsg::TaskDomainState { domain } = task_reply(&mut ws).await else {
-        panic!("expected task domain readiness");
-    };
+    let domain = domain_state(&mut ws, task).await;
     assert!(
         domain.readiness.ready,
         "existing task with acceptance should not require new Project metadata: {:?}",

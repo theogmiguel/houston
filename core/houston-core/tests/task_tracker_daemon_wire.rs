@@ -69,6 +69,28 @@ async fn send(ws: &mut common::WsStream, message: &proto::ClientMsg) {
         .unwrap();
 }
 
+async fn next_tracker_settings(ws: &mut common::WsStream) -> proto::ServerMsg {
+    loop {
+        let message = next_control(ws).await;
+        if matches!(message, proto::ServerMsg::TaskTrackerSettings { .. }) {
+            return message;
+        }
+    }
+}
+
+async fn next_tracker_sync(ws: &mut common::WsStream, workspace: &str) -> proto::ServerMsg {
+    loop {
+        let message = next_control(ws).await;
+        if matches!(
+            &message,
+            proto::ServerMsg::TaskTrackerSyncState { workspace: actual, .. }
+                if actual == workspace
+        ) {
+            return message;
+        }
+    }
+}
+
 async fn task_snapshot(ws: &mut common::WsStream, workspace: &str) -> Vec<proto::TaskSummary> {
     send(
         ws,
@@ -147,6 +169,10 @@ esac
     );
 
     let mut ws = connect_and_hello(addr, TOKEN).await;
+    assert!(matches!(
+        next_control(&mut ws).await,
+        proto::ServerMsg::HelloOk { .. }
+    ));
     send(
         &mut ws,
         &proto::ClientMsg::TaskTrackerSettingsSet {
@@ -155,7 +181,7 @@ esac
     )
     .await;
     assert!(matches!(
-        next_control(&mut ws).await,
+        next_tracker_settings(&mut ws).await,
         proto::ServerMsg::TaskTrackerSettings { refusal: None, .. }
     ));
 
@@ -168,7 +194,7 @@ esac
         )
         .await;
         assert!(matches!(
-            next_control(&mut ws).await,
+            next_tracker_sync(&mut ws, &workspace).await,
             proto::ServerMsg::TaskTrackerSyncState { error: None, .. }
         ));
     }
@@ -230,7 +256,7 @@ esac
         },
     )
     .await;
-    match next_control(&mut ws).await {
+    match next_tracker_sync(&mut ws, &workspace).await {
         proto::ServerMsg::TaskTrackerSyncState {
             error: Some(error), ..
         } => {
@@ -249,7 +275,7 @@ esac
     )
     .await;
     assert!(matches!(
-        next_control(&mut ws).await,
+        next_tracker_sync(&mut ws, &workspace).await,
         proto::ServerMsg::TaskTrackerSyncState { error: None, .. }
     ));
     assert_eq!(task_snapshot(&mut ws, &workspace).await.len(), 1);

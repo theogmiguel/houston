@@ -11977,6 +11977,7 @@ impl Daemon {
                 drop(lifecycle.take());
                 let daemon = Arc::clone(self);
                 let session_id = d.session;
+                // The hook drain holds its directory mutex while providers can wait during restore.
                 tokio::task::spawn_blocking(move || {
                     daemon.finish_pending_shell_children(session_id, reservation);
                 });

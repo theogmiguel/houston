@@ -162,6 +162,36 @@ fn remote_import_is_idempotent_and_live_local_edits_become_explicit_conflicts() 
         Some("Base description")
     );
     assert_eq!(link.snapshot.conflicts.len(), 3);
+    for (field, base, local, remote) in [
+        (
+            "title",
+            "Remote title",
+            "Local title",
+            "Concurrent remote title",
+        ),
+        (
+            "description",
+            "Base description",
+            "Base description",
+            "Remote-only description",
+        ),
+        ("status", "todo", "todo", "in_progress"),
+    ] {
+        let conflict = link
+            .snapshot
+            .conflicts
+            .iter()
+            .find(|conflict| conflict.field == field)
+            .unwrap_or_else(|| panic!("missing {field} conflict: {:?}", link.snapshot.conflicts));
+        assert_eq!(
+            (
+                conflict.base.as_str(),
+                conflict.local.as_str(),
+                conflict.remote.as_str()
+            ),
+            (base, local, remote)
+        );
+    }
     assert_eq!(link.sync_state, proto::TaskTrackerSyncState::Diverged);
     assert!(db.task_has_unresolved_tracker_conflicts(id).unwrap());
     assert_eq!(db.task_history(id, 10).unwrap().len(), 2);
@@ -181,7 +211,7 @@ fn remote_import_is_idempotent_and_live_local_edits_become_explicit_conflicts() 
             .snapshot
             .conflicts
             .len(),
-        1
+        3
     );
 }
 
@@ -880,6 +910,24 @@ fn slice_writeback_targets_parent_delivery_and_close_retries_revalidate_all_slic
         now_ms: 6,
     };
     assert!(db.update_task(&done).unwrap());
+    let sibling = db.task(sibling_id).unwrap().unwrap();
+    let sibling_done = TaskUpdate {
+        workspace: Some(workspace),
+        id: sibling_id,
+        expected_revision: sibling.revision,
+        title: &sibling.title,
+        description: &sibling.description,
+        status: proto::TaskStatus::Done,
+        priority: sibling.priority,
+        parent_id: Some(delivery_id),
+        ref_url: None,
+        acceptance: None,
+        actor: "test",
+        action: "status",
+        changes: "{\"status\":true}",
+        now_ms: 6,
+    };
+    assert!(db.update_task(&sibling_done).unwrap());
     let delivery = db.task(delivery_id).unwrap().unwrap();
     let rolled_up = TaskUpdate {
         workspace: Some(workspace),

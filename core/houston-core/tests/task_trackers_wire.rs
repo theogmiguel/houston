@@ -7,6 +7,13 @@ use futures_util::SinkExt;
 use houston_protocol as proto;
 use tokio_tungstenite::tungstenite::Message;
 
+async fn consume_hello(ws: &mut common::WsStream) {
+    match next_control(ws).await {
+        proto::ServerMsg::HelloOk { .. } => {}
+        other => panic!("expected HelloOk after handshake, received {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn workspace_settings_and_task_links_are_available_over_control_wire() {
     let (addr, _state, daemon) = start_daemon_with_handle().await;
@@ -15,6 +22,7 @@ async fn workspace_settings_and_task_links_are_available_over_control_wire() {
         .workspace_add(workspace.path().to_str().unwrap())
         .unwrap();
     let mut ws = connect_and_hello(addr, TOKEN).await;
+    consume_hello(&mut ws).await;
 
     ws.send(Message::text(
         serde_json::to_string(&proto::ClientMsg::TaskTrackerSettingsGet {
@@ -50,6 +58,7 @@ async fn workspace_settings_and_task_links_are_available_over_control_wire() {
 async fn malformed_tracker_credentials_are_never_echoed_in_control_errors() {
     let (addr, _state, _daemon) = start_daemon_with_handle().await;
     let mut ws = connect_and_hello(addr, TOKEN).await;
+    consume_hello(&mut ws).await;
     let secret = "notion-token-that-must-not-be-echoed";
     for payload in [
         serde_json::json!({"type":"task_tracker_credential_set", "workspace":"/tmp/project", "provider":"invalid", "token":secret}).to_string(),

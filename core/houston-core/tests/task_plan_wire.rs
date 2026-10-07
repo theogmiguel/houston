@@ -429,9 +429,14 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         serde_json::to_value(oversized).unwrap(),
     )
     .await;
-    assert_eq!(
-        refused["structuredContent"]["type"], "task_refused",
-        "{refused}"
+    assert_eq!(refused["isError"], true, "{refused}");
+    let refusal_text = refused["content"][0]["text"]
+        .as_str()
+        .expect("invalid proposal refusal should include MCP error text");
+    assert!(
+        refusal_text.contains("201 chars")
+            && refusal_text.contains("limit of 200 chars in one acceptance item"),
+        "{refusal_text}"
     );
     assert!(
         daemon.task_plan_session(plan_session).unwrap().is_some(),
