@@ -2598,6 +2598,18 @@ impl Db {
         Ok(())
     }
 
+    pub fn update_session_cwd(&self, id: u32, cwd: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let n = conn.execute(
+            "UPDATE sessions SET cwd = ?2 WHERE id = ?1 AND state != 'closed'",
+            rusqlite::params![id, cwd],
+        )?;
+        if n == 0 {
+            anyhow::bail!("no open session row with id {id} to record hook cwd {cwd:?}");
+        }
+        Ok(())
+    }
+
     pub fn update_session_state(
         &self,
         id: u32,

@@ -133,8 +133,11 @@ ended conversation. A reusable child remains available for follow-up prompts unt
 or retention expiry.
 
 After a daemon restart, open Claude and Codex children resume with their parent when
-valid conversation handles are available. The parent receives one restored notice naming
-which children resumed. Other children remain ended and are named in that notice.
+valid conversation handles are available. A Claude or Codex conversation detected inside
+a shell pane resumes inside that shell, which remains a shell pane. Houston restores its
+children only after the parent's exact conversation resumes; otherwise the children stay
+deferred until the parent can resume. The parent receives one restored notice naming which
+children resumed. Other children remain ended and are named in that notice.
 
 A live daemon handoff preserves parent links, delegation roles and scoped credentials.
 An open wait returns a retryable timeout marked `restarting`; call `pane_wait` again

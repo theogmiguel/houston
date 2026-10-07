@@ -1900,6 +1900,7 @@ struct CliTitleState {
 struct SpawnParams {
     id: u32,
     agent: proto::AgentKind,
+    detected_agent: Option<proto::AgentKind>,
     project_dir: PathBuf,
     cwd: PathBuf,
     custom_cmd: Option<Vec<String>>,
@@ -1915,6 +1916,7 @@ struct SpawnParams {
     swarm_agent: Option<u64>,
     spawned_by: Option<u32>,
     extra_args: Vec<String>,
+    shell_startup: Option<Vec<String>>,
     extra_env: Vec<(String, String)>,
     wrap: Option<Vec<String>>,
     acp: Option<String>,
@@ -2159,6 +2161,19 @@ fn resolve_session_shell(shell_override: Option<&str>) -> (String, Vec<String>) 
             .unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "bash".into())),
         Vec::new(),
     )
+}
+
+fn shell_hosted_resume_command(shell: &str, argv: &[String]) -> Result<String> {
+    let name = Path::new(shell)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if !matches!(name, "sh" | "bash" | "zsh" | "dash" | "ksh") {
+        bail!("shell-hosted conversation resume supports POSIX shells; detected shell {shell:?}");
+    }
+    let quote = |arg: &str| format!("'{}'", arg.replace('\'', "'\\''"));
+    let command = argv.iter().map(|arg| quote(arg)).collect::<Vec<_>>().join(" ");
+    Ok(format!("{command}; exec {} -i", quote(shell)))
 }
 
 #[cfg(windows)]
@@ -2989,9 +3004,13 @@ impl Daemon {
                         child.id
                     );
                 }
-                let mut nested = Vec::new();
-                self.restore_children(child.id, new_id, children, &mut nested, respawned);
-                self.record_restored_children(&restored, &nested);
+                if resumed {
+                    let mut nested = Vec::new();
+                    self.restore_children(child.id, new_id, children, &mut nested, respawned);
+                    self.record_restored_children(&restored, &nested);
+                } else {
+                    self.retain_unresumed_descendants(child.id, children);
+                }
             } else {
                 self.retain_unresumed_descendants(child.id, children);
             }
@@ -6626,14 +6645,23 @@ impl Daemon {
         if s.state.lock().expect("state lock").is_live() {
             self.mcp_creds.touch_session(id);
         }
+        let mut recorded_cwd = None;
         let mut hook_cwd = s.hook_cwd.lock().expect("hook_cwd lock");
         if let Some(cwd) = cwd {
-            if Path::new(cwd).is_absolute() {
+            if Path::new(cwd).is_absolute() && Path::new(cwd).is_dir() {
                 *hook_cwd = Some(cwd.to_string());
+                recorded_cwd = Some(cwd.to_string());
             } else {
                 tracing::warn!(
-                    "hook {event} for session {id}: ignoring cwd {cwd:?} — expected an absolute workspace path"
+                    "hook {event} for session {id}: ignoring cwd {cwd:?} — expected an existing absolute workspace path"
                 );
+            }
+        }
+        drop(hook_cwd);
+        drop(sessions);
+        if let Some(cwd) = recorded_cwd {
+            if let Err(e) = self.db.update_session_cwd(id, &cwd) {
+                tracing::warn!("recording hook cwd for session {id}: {e:#}");
             }
         }
         true
@@ -7126,6 +7154,7 @@ impl Daemon {
         let info = self.spawn_session(SpawnParams {
             id,
             agent: p.agent,
+            detected_agent: None,
             project_dir: p.project_dir,
             cwd,
             custom_cmd: p.cmd,
@@ -7140,6 +7169,7 @@ impl Daemon {
             swarm_agent: None,
             spawned_by: None,
             extra_args,
+            shell_startup: None,
             extra_env,
             wrap: None,
             acp: p.acp,
@@ -7388,17 +7418,31 @@ impl Daemon {
             .filter(|child| child.spawned_by.is_some())
             .cloned()
             .collect();
-        let parent = self.respawn_session_with(
+        let parent = match self.respawn_session_with(
             old_id,
             shell_integration,
             cwd_override,
             shell_override,
             force,
-            conversation,
-        )?;
+            conversation.clone(),
+        ) {
+            Ok(parent) => parent,
+            Err(error) => {
+                self.defer_children(old_id, &children, proto::RestoreReason::SpawnFailed);
+                return Err(error);
+            }
+        };
         let mut notices = Vec::new();
         let mut count = 0;
-        self.restore_children(old_id, parent.id, &children, &mut notices, &mut count);
+        let parent_conversation_resumed = conversation != RespawnConversation::Fresh
+            && (conversation != RespawnConversation::Restore || self.restore_resume())
+            && parent.resumable
+            && parent.resume_notice.is_none();
+        if parent_conversation_resumed {
+            self.restore_children(old_id, parent.id, &children, &mut notices, &mut count);
+        } else {
+            self.defer_children(old_id, &children, proto::RestoreReason::SpawnFailed);
+        }
         self.record_restored_children(&parent, &notices);
         Ok(parent)
     }
@@ -7494,6 +7538,7 @@ impl Daemon {
             profile_label,
             old_tags,
             was_dead,
+            resume_agent,
         ) = if let Some(old) = from_live.as_ref() {
             let state = *old.state.lock().expect("state lock");
             if state.is_live() {
@@ -7517,7 +7562,11 @@ impl Daemon {
             (
                 old.info.agent,
                 old.project_dir.lock().expect("project_dir lock").clone(),
-                old.info.cwd.clone(),
+                old.hook_cwd
+                    .lock()
+                    .expect("hook_cwd lock")
+                    .clone()
+                    .unwrap_or_else(|| old.info.cwd.clone()),
                 old.custom_cmd.clone(),
                 old.title.lock().expect("title lock").clone(),
                 *old.title_source.lock().expect("title source lock"),
@@ -7527,6 +7576,12 @@ impl Daemon {
                 old.info.profile_label.clone(),
                 old.tags.lock().expect("tags lock").clone(),
                 false,
+                old.detected
+                    .lock()
+                    .expect("detected lock")
+                    .filter(|kind| {
+                        matches!(kind, proto::AgentKind::Claude | proto::AgentKind::Codex)
+                    }),
             )
         } else if let Some(info) = self.dead.lock().expect("dead lock").get(&old_id).cloned() {
             let stored_title_source = self.db.session_title_source(old_id)?;
@@ -7556,6 +7611,9 @@ impl Daemon {
                 info.profile_label.clone(),
                 info.tags.clone(),
                 true,
+                info.detected_agent.filter(|kind| {
+                    matches!(kind, proto::AgentKind::Claude | proto::AgentKind::Codex)
+                }),
             )
         } else {
             bail!("unknown session id {old_id} (expected an active or restored session)");
@@ -7599,7 +7657,7 @@ impl Daemon {
                 } else {
                     self.resume_check(
                         old_id,
-                        agent,
+                        resume_agent.unwrap_or(agent),
                         h,
                         &recorded_cwd,
                         &cwd,
@@ -7634,9 +7692,29 @@ impl Daemon {
         } else {
             None
         };
+        let shell_startup = if agent == proto::AgentKind::Shell && !extra_args.is_empty() {
+            let provider = resume_agent.ok_or_else(|| {
+                anyhow!(
+                    "shell session {old_id} has resume arguments without a validated Claude/Codex provider"
+                )
+            })?;
+            let mut argv = vec![match provider {
+                proto::AgentKind::Claude => "claude".to_string(),
+                proto::AgentKind::Codex => "codex".to_string(),
+                _ => bail!("shell session {old_id} cannot resume provider {provider:?}"),
+            }];
+            argv.extend(extra_args.iter().cloned());
+            Some(argv)
+        } else {
+            None
+        };
+        let detected_agent = resume_agent.or_else(|| {
+            matches!(agent, proto::AgentKind::Claude | proto::AgentKind::Codex).then_some(agent)
+        });
         let spawned = self.spawn_session(SpawnParams {
             id,
             agent,
+            detected_agent,
             project_dir: PathBuf::from(&project_dir),
             cwd,
             custom_cmd,
@@ -7651,6 +7729,7 @@ impl Daemon {
             swarm_agent: None,
             spawned_by,
             extra_args,
+            shell_startup,
             extra_env,
             wrap: None,
             acp,
@@ -7891,7 +7970,18 @@ impl Daemon {
         let Some(conversation) = d.session_id.as_deref().filter(|c| !c.is_empty()) else {
             return;
         };
-        if crate::launch::resume_args(session.info.agent, conversation).is_err() {
+        let resumable_agent = if session.info.agent == proto::AgentKind::Shell {
+            session
+                .detected
+                .lock()
+                .expect("detected lock")
+                .filter(|kind| *kind == provider)
+        } else {
+            (session.info.agent == provider).then_some(provider)
+        };
+        if !matches!(resumable_agent, Some(proto::AgentKind::Claude | proto::AgentKind::Codex))
+            || crate::launch::resume_args(provider, conversation).is_err()
+        {
             return;
         }
         let (transcript, current) = self
@@ -8157,6 +8247,7 @@ impl Daemon {
         let SpawnParams {
             id,
             agent,
+            detected_agent,
             project_dir,
             cwd,
             custom_cmd,
@@ -8172,6 +8263,7 @@ impl Daemon {
             swarm_agent,
             spawned_by,
             extra_args,
+            shell_startup,
             extra_env,
             wrap,
             acp,
@@ -8248,6 +8340,10 @@ impl Daemon {
                     }
                 }
             }
+            if let Some(argv) = &shell_startup {
+                let command = shell_hosted_resume_command(&shell, argv)?;
+                c.args(["-i", "-c", &command]);
+            }
             c
         } else {
             let (program, base_args): (String, Vec<String>) = match (&agent, &custom_cmd) {
@@ -8320,10 +8416,14 @@ impl Daemon {
                 );
             }
         }
-        let resumed = match agent {
-            proto::AgentKind::Claude => extra_args.iter().any(|a| a == "--resume"),
-            proto::AgentKind::Codex => extra_args.first().is_some_and(|a| a == "resume"),
-            _ => false,
+        let resumed = if agent == proto::AgentKind::Shell {
+            shell_startup.is_some()
+        } else {
+            match agent {
+                proto::AgentKind::Claude => extra_args.iter().any(|a| a == "--resume"),
+                proto::AgentKind::Codex => extra_args.first().is_some_and(|a| a == "resume"),
+                _ => false,
+            }
         };
         let preassigned = (agent == proto::AgentKind::Claude
             && acp.is_none()
@@ -8331,8 +8431,10 @@ impl Daemon {
             && !hidden
             && !resumed)
             .then(|| uuid::Uuid::new_v4().to_string());
-        for a in &extra_args {
-            cmd.arg(a);
+        if agent != proto::AgentKind::Shell {
+            for a in &extra_args {
+                cmd.arg(a);
+            }
         }
         if let Some(conversation) = &preassigned {
             cmd.args(["--session-id", conversation]);
@@ -8500,7 +8602,7 @@ impl Daemon {
             state: proto::SessionState::Running,
             title: title.clone(),
             codename: codename.clone(),
-            detected_agent: None,
+            detected_agent,
             hidden,
             ssh_host: None,
             restore_deferred: None,
@@ -8533,7 +8635,7 @@ impl Daemon {
             state: Mutex::new(proto::SessionState::Running),
             title: Mutex::new(title),
             project_dir: Mutex::new(project_dir.display().to_string()),
-            detected: Mutex::new(None),
+            detected: Mutex::new(detected_agent),
             blocks: shellint_token
                 .as_ref()
                 .map(|token| Mutex::new(BlockTracker::new(token.clone()))),
@@ -10285,6 +10387,7 @@ impl Daemon {
         let spawned = self.spawn_session(SpawnParams {
             id: hidden_id,
             agent: proto::AgentKind::Custom,
+            detected_agent: None,
             project_dir: info.project_dir.clone().into(),
             cwd: cwd.clone(),
             custom_cmd: Some(argv),
@@ -10299,6 +10402,7 @@ impl Daemon {
             swarm_agent: None,
             spawned_by: None,
             extra_args: Vec::new(),
+            shell_startup: None,
             extra_env: Vec::new(),
             wrap: None,
             acp: None,
@@ -14761,6 +14865,7 @@ impl Daemon {
         let spawned = self.spawn_session(SpawnParams {
             id: sid,
             agent: kind,
+            detected_agent: None,
             project_dir,
             cwd,
             custom_cmd: None,
@@ -14775,6 +14880,7 @@ impl Daemon {
             swarm_agent: None,
             spawned_by: (!handoff).then_some(caller),
             extra_args,
+            shell_startup: None,
             extra_env,
             wrap: None,
             acp: None,

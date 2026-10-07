@@ -191,6 +191,26 @@ fn claude_pane(daemon: &Arc<Daemon>, dir: &Path, profile: Option<u32>) -> proto:
         .unwrap()
 }
 
+fn shell_pane(daemon: &Arc<Daemon>, dir: &Path) -> proto::SessionInfo {
+    daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Shell,
+            project_dir: dir.to_path_buf(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap()
+}
+
 fn restored_from(sessions: &[proto::SessionInfo], old: u32) -> &proto::SessionInfo {
     sessions
         .iter()
@@ -288,6 +308,49 @@ async fn hook(
 
 const START: &str = "claude-2.1.263-01-SessionStart.json";
 const PROMPT: &str = "claude-2.1.263-02-UserPromptSubmit.json";
+
+#[tokio::test]
+async fn shell_hosted_claude_hook_is_recorded_and_restart_resumes_inside_shell() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-parent");
+    let hook_cwd = dir.join("nested");
+    std::fs::create_dir_all(&hook_cwd).unwrap();
+    let hook_cwd = std::fs::canonicalize(hook_cwd).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "00000000-0000-4000-8000-000000000078";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        conversation,
+        &transcript,
+        &hook_cwd,
+    )
+    .await;
+    assert_eq!(
+        handle_in(&env, shell.id),
+        Some((conversation.into(), Some(transcript)))
+    );
+
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    assert_eq!(restored.agent, proto::AgentKind::Shell);
+    assert_eq!(restored.session_origin, Some(shell.id));
+    assert_eq!(restored.cwd, hook_cwd.display().to_string());
+    assert_eq!(restored.detected_agent, Some(proto::AgentKind::Claude));
+    assert_eq!(
+        resume_of(&argv_of(&env, restored.id).await).as_deref(),
+        Some(conversation),
+        "the restored shell must relaunch the exact Claude conversation"
+    );
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
 const STOP: &str = "claude-2.1.263-05-Stop.json";
 const CLEAR: &str = "claude-2.1.284-02-SessionStart-clear.json";
 const RESUMED: &str = "claude-2.1.284-01-SessionStart-resume.json";
