@@ -1135,6 +1135,7 @@ impl DelegationSettleSample {
 
 mod harness_review;
 mod slack;
+mod task_trackers;
 pub(crate) mod tasks;
 mod worktree_pass;
 

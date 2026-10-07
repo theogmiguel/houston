@@ -624,6 +624,8 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::SessionPolicyGet
             | proto::ClientMsg::UpdateGet
             | proto::ClientMsg::SlackGet
+            | proto::ClientMsg::TaskTrackerSettingsGet { .. }
+            | proto::ClientMsg::TaskTrackerLinksGet { .. }
             | proto::ClientMsg::KeymapGet
             | proto::ClientMsg::WaitForIdle { .. }
             | proto::ClientMsg::BrowserToolResult { .. }
@@ -1253,6 +1255,42 @@ async fn dispatch(
         proto::ClientMsg::TaskGet { id } => {
             let msg = daemon.task_get(id)?;
             let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerSettingsGet { workspace } => {
+            let msg = daemon.task_tracker_settings(&workspace)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerSettingsSet { settings } => {
+            let msg = daemon.task_tracker_settings_set(settings)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerCredentialSet { workspace, provider, token } => {
+            let msg = daemon.task_tracker_credential_set(&workspace, provider, &token)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerCredentialClear { workspace, provider } => {
+            let msg = daemon.task_tracker_credential_clear(&workspace, provider)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerLinksGet { task_id } => {
+            let msg = daemon.task_tracker_links(task_id)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerConflictResolve { task_id, provider, external_id, field, expected_revision, resolution } => {
+            let msg = daemon.task_tracker_conflict_resolve(task_id, provider, &external_id, &field, expected_revision, resolution)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerSyncNow { workspace } => {
+            let _ = send_msg(sink, &proto::ServerMsg::TaskTrackerSyncState {
+                workspace, last_sync_at_ms: None, error: Some("task tracker polling is not wired yet".into()),
+            }).await;
             Ok(())
         }
         proto::ClientMsg::TaskSave {

@@ -19,10 +19,12 @@ pub use intake::{
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
 mod tasks;
+mod task_trackers;
 pub use tasks::{
     SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow,
     TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate, TaskWrite,
 };
+pub use task_trackers::TaskTrackerOutboxRow;
 
 // Seven days and 4096 receipts cover ordinary retries without unbounded local storage.
 pub const ORCHESTRATION_RECEIPT_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
@@ -1602,6 +1604,7 @@ impl Db {
         )?;
         harness::migrate(&conn)?;
         tasks::migrate(&conn)?;
+        task_trackers::migrate(&conn)?;
         intake::migrate(&conn)?;
         add_column_if_missing(
             &conn,

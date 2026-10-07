@@ -1,5 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+pub mod task_trackers;
+pub use task_trackers::{
+    TaskExternalLink, TaskExternalLinkSource, TaskTrackerConflictResolution,
+    TaskTrackerFieldConflict, TaskTrackerProjectSnapshot, TaskTrackerProvider,
+    TaskTrackerSnapshot, TaskTrackerStatusMapping, TaskTrackerSyncState,
+    TaskTrackerWorkspaceSettings,
+};
+
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
 pub const PROTOCOL_VERSION: u32 = 127;
@@ -3604,6 +3612,20 @@ pub enum ClientMsg {
     TaskSnapshot {
         scope: String,
     },
+    TaskTrackerSettingsGet { workspace: String },
+    TaskTrackerSettingsSet { settings: TaskTrackerWorkspaceSettings },
+    TaskTrackerCredentialSet { workspace: String, provider: TaskTrackerProvider, token: String },
+    TaskTrackerCredentialClear { workspace: String, provider: TaskTrackerProvider },
+    TaskTrackerSyncNow { workspace: String },
+    TaskTrackerLinksGet { task_id: i64 },
+    TaskTrackerConflictResolve {
+        task_id: i64,
+        provider: TaskTrackerProvider,
+        external_id: String,
+        field: String,
+        expected_revision: i64,
+        resolution: TaskTrackerConflictResolution,
+    },
     /// One task with its acceptance items, comments, history and runs.
     TaskGet {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -4288,6 +4310,10 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         refusal: Option<String>,
     },
+    TaskTrackerSettings { settings: Vec<TaskTrackerWorkspaceSettings>, refusal: Option<String> },
+    TaskTrackerLinks { task_id: i64, links: Vec<TaskExternalLink> },
+    TaskTrackerSyncState { workspace: String, last_sync_at_ms: Option<i64>, error: Option<String> },
+    TaskTrackerConflictResolved { task_id: i64, link: TaskExternalLink },
     Keymap {
         overrides: KeymapOverrides,
     },
