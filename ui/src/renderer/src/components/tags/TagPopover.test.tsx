@@ -90,7 +90,7 @@ describe('TagPopover', () => {
     fireEvent.keyDown(screen.getByRole('dialog', { name: 'Tags' }), { key: 'Escape' })
     await waitFor(() => expect(screen.getByTestId('tag-popover').querySelector('[data-view]')?.getAttribute('data-view')).toBe('pick'))
     fireEvent.keyDown(screen.getByRole('dialog', { name: 'Tags' }), { key: 'Escape' })
-    expect(screen.queryByTestId('tag-popover')).toBeNull()
+    await waitFor(() => expect(screen.queryByTestId('tag-popover')).toBeNull())
     expect(document.activeElement).toBe(trigger)
   })
 })

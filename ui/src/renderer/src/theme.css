@@ -293,6 +293,7 @@
   --danger: var(--stop);
   --warning: var(--warn);
   --info: #7cb7ff;
+  --merged: #c4b4ff;
   --success: #4ade80;
   --claude: #d97757;
   --antigravity: #a78bfa;
@@ -363,6 +364,7 @@
   --custom-text-muted: #a8aab4;
   --custom-text-faint: #9698a2;
   --glass-bg: rgba(20,20,24,.90);
+  --glass: var(--glass-bg);
   --material-base-glass-worst: #1e4157;
   --material-shell-glass-worst: #10243f;
   --material-raised-glass-worst: #12161f;
@@ -392,6 +394,7 @@
   --accent-foreground: var(--text-primary);
   --selected-fill: #ffffff1a;
   --hover-fill: #ffffff0d;
+  --hover-strong: #ffffff14;
   --selection: var(--selected-fill);
   --elevated-surface: color-mix(in srgb, var(--card-bg) 80%, var(--text-primary) 10%);
   --overlay: #00000080;
@@ -791,6 +794,7 @@
   --danger: var(--stop);
   --warning: var(--warn);
   --info: #0891b2;
+  --merged: #7c3aed;
   --success: #16a34a;
   --claude: #d97757;
   --antigravity: #a78bfa;
@@ -861,6 +865,7 @@
   --custom-text-muted: #5d5f63;
   --custom-text-faint: #888a8e;
   --glass-bg: rgba(255,255,255,.90);
+  --glass: var(--glass-bg);
   --material-base-glass-worst: #b7dbee;
   --material-shell-glass-worst: #bedfef;
   --material-raised-glass-worst: #f9fdff;
@@ -890,6 +895,7 @@
   --accent-foreground: var(--text-primary);
   --selected-fill: #0000001a;
   --hover-fill: #0000000d;
+  --hover-strong: #00000014;
   --selection: var(--selected-fill);
   --elevated-surface: color-mix(in srgb, var(--card-bg) 80%, var(--text-primary) 10%);
   --overlay: #00000080;
@@ -1513,8 +1519,8 @@
   --shell-zoom: 1;
   --h-titlebar: 28px;
   --pane-gutter: 8px;
-  --h-top: 44px;
-  --h-railhead: 44px;
+  --h-top: 38px;
+  --h-railhead: 38px;
   --h-tree-group-header: 30px;
   --sz-brand-mark: 32px;
   --h-pane-head: 28px;

@@ -7,19 +7,69 @@ import { Tooltip } from '../Tooltip'
 import { WorkspaceTreeRow } from '../WorkspaceTreeRow'
 
 export function RailOptionsSurface({ children, style }: { children: ReactNode; style: React.CSSProperties }): React.JSX.Element {
-  return <div data-rail-options role="dialog" aria-label="Sidebar options" className="fixed z-[var(--z-popover)] w-[var(--w-rail-options)] rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--glass)] p-[var(--space-2)] shadow-[var(--shadow-popover)] backdrop-blur-xl" style={style}>{children}</div>
+  return <div data-rail-options role="dialog" aria-label="Sidebar options" className="fixed z-[var(--z-popover)] w-[var(--w-rail-options)] rounded-[var(--tr-radius-md)] border border-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] bg-[var(--glass)] p-1 shadow-[var(--shadow-popover)] backdrop-blur-[16px] [backdrop-filter:blur(16px)_saturate(1.08)] [font-size:var(--tr-text-base)]" style={style}>{children}</div>
+}
+
+export function RailOptionsView({ direction, children }: { direction: 'none' | 'forward' | 'back'; children: ReactNode }): React.JSX.Element {
+  const motion = direction === 'forward' ? 'motion-safe:animate-[rail-options-forward_150ms_ease-out_both]' : direction === 'back' ? 'motion-safe:animate-[rail-options-back_150ms_ease-out_both]' : ''
+  return <div className={motion}>{children}</div>
 }
 
 export function RailOptionsTitle({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="px-[var(--space-2)] pb-[var(--space-2)] [font-size:var(--tr-text-small-size)] leading-4 font-semibold text-[var(--text-primary)]">{children}</div>
+  return <div className="px-2 pt-1.5 pb-1 [font-size:var(--tr-text-xs)] font-medium text-[var(--text-muted)]">{children}</div>
 }
 
 export function RailOptionsSectionLabel({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="px-[var(--space-2)] pb-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-[var(--text-muted)]">{children}</div>
+  return <div className="px-2 pt-1.5 pb-1 [font-size:var(--tr-text-xs)] font-medium text-[var(--text-muted)]">{children}</div>
 }
 
 export function RailOptionsDivider(): React.JSX.Element {
-  return <div className="my-[var(--space-2)] border-t border-[var(--border)]" />
+  return <div className="mx-2 my-1 border-t border-[var(--divider)]" />
+}
+
+export function RailMenuRow({ children, selected = false, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { selected?: boolean }): React.JSX.Element {
+  return <button {...props} type="button" className={`flex min-h-7 w-full items-center gap-2 rounded-[var(--tr-radius-sm)] px-2 py-1 text-left [font-size:var(--tr-text-base)] text-[var(--text-primary)] hover:bg-hover-fill ${selected ? 'bg-hover-fill' : ''}`}>{children}</button>
+}
+
+export function RailMenuValue({ children }: { children: ReactNode }): React.JSX.Element {
+  return <span className="ml-auto text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">{children}</span>
+}
+
+export function RailMenuCheckSlot({ checked }: { checked: boolean }): React.JSX.Element {
+  return <span className="w-3.5 text-[var(--text-muted)]">{checked && <Icon glyph={IconCheck} role="small" />}</span>
+}
+
+export function RailCardModeSegment({ value, onChange }: { value: 'detailed' | 'compact'; onChange: (value: 'detailed' | 'compact') => void }): React.JSX.Element {
+  return <div className="mx-2 mb-1.5 flex gap-0.5 rounded-lg bg-hover-fill p-0.5">
+    {(['detailed', 'compact'] as const).map((mode) => <button key={mode} type="button" aria-pressed={value === mode} onClick={() => onChange(mode)} className="h-[22px] flex-1 rounded-md [font-size:var(--tr-text-xs)] text-[var(--text-muted)] aria-pressed:bg-[var(--card-hover)] aria-pressed:font-semibold aria-pressed:text-[var(--text-primary)]">{mode === 'compact' ? 'Condensed' : 'Detailed'}</button>)}
+  </div>
+}
+
+export function RailTagDisplaySegment({ value, onChange }: { value: 'icon' | 'dots' | 'chips'; onChange: (value: 'icon' | 'dots' | 'chips') => void }): React.JSX.Element {
+  return <div role="group" aria-label="Tags display" className="mx-2 my-1 flex gap-0.5 rounded-lg bg-hover-fill p-0.5">
+    {(['icon', 'dots', 'chips'] as const).map((mode) => <button key={mode} type="button" aria-pressed={value === mode} onClick={() => onChange(mode)} className="h-[22px] flex-1 rounded-md [font-size:var(--tr-text-xs)] text-[var(--text-muted)] aria-pressed:bg-[var(--card-hover)] aria-pressed:font-semibold aria-pressed:text-[var(--text-primary)]">{mode === 'icon' ? 'Icon' : mode === 'dots' ? 'Dots' : 'Chips'}</button>)}
+  </div>
+}
+
+export function RailTagFilterValue({ active, colors }: { active: boolean; colors: readonly string[] }): React.JSX.Element {
+  return <span className="ml-auto inline-flex items-center gap-1 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
+    {active ? <>
+      {colors.length ? colors.map((color, index) => <i key={index} className="size-1.5 rounded-full" style={{ background: color }} />) : 'All'}
+      <Icon glyph={IconChevronRight} role="small" />
+    </> : <span className="inline-flex h-4 items-center rounded-[var(--tr-radius-xs)] border border-[var(--border)] px-1 [font-size:var(--tr-text-xs)]">Off</span>}
+  </span>
+}
+
+export function RailGroupStatusDot({ label }: { label: string }): React.JSX.Element {
+  const tone = label === 'Needs you' ? 'bg-[var(--warn)]' : label === 'Working' ? 'bg-[var(--info)]' : label === 'Done' ? 'bg-[var(--ok)]' : 'bg-[var(--text-faint)]'
+  return <span aria-hidden className={`size-2 flex-none rounded-full ${tone}`} />
+}
+
+export function RailGroupSegment({ value, onChange }: { value: 'none' | 'status' | 'workspace' | 'pr'; onChange: (value: 'none' | 'status' | 'workspace' | 'pr') => void }): React.JSX.Element {
+  const options = value === 'pr' ? ['none', 'status', 'workspace', 'pr'] as const : ['none', 'status', 'workspace'] as const
+  return <div role="group" aria-label="Group by" className="mx-2 mb-1.5 flex gap-0.5 rounded-lg bg-hover-fill p-0.5">
+    {options.map((option) => <button key={option} type="button" aria-pressed={value === option} onClick={() => onChange(option)} className="h-[22px] min-w-0 flex-1 rounded-md px-0.5 text-[length:var(--tr-text-xs)] text-[var(--text-muted)] aria-pressed:bg-[var(--card-hover)] aria-pressed:font-semibold aria-pressed:text-[var(--text-primary)]">{option === 'none' ? 'None' : option === 'status' ? 'Status' : option === 'pr' ? 'PR' : 'Workspace'}</button>)}
+  </div>
 }
 
 export function RailSortOption({ selected, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { selected: boolean; children: ReactNode }): React.JSX.Element {
@@ -35,7 +85,7 @@ export function RailSortCheck(): React.JSX.Element {
 }
 
 export function RailChevron({ collapsed }: { collapsed: boolean }): React.JSX.Element {
-  return <Icon glyph={IconChevronRight} role="small" opacity="subtle" className={collapsed ? '' : 'rotate-90'} />
+  return <Icon glyph={IconChevronRight} role="small" opacity="subtle" className={`transition-transform duration-150 motion-reduce:transition-none ${collapsed ? '' : 'rotate-90'}`} />
 }
 
 export function RailOptionsGrid({ children, variant = 'properties' }: { children: ReactNode; variant?: 'properties' | 'always-shown' | 'filters' }): React.JSX.Element {
@@ -77,12 +127,12 @@ export function RailPinnedIndicator(): React.JSX.Element {
 }
 
 export function RailUpdateIconButton({ failed = false, ...props }: ComponentProps<typeof Button> & { failed?: boolean }): React.JSX.Element {
-  const { className = '', ...rest } = props
-  return <Button {...rest} className={`relative ml-auto size-[var(--sz-rail-update-button)] rounded-full bg-[var(--card-bg)] hover:bg-[var(--card-bg)] ${failed ? 'text-[var(--warn)]' : 'text-[var(--text-primary)]'} ${className}`} />
+  const { className = '', style, ...rest } = props
+  return <Button {...rest} style={{ ...style, width: 'var(--sz-rail-update-button)', height: 'var(--sz-rail-update-button)', background: 'var(--card-hover)' }} className={`relative ml-auto rounded-full ${failed ? 'text-[var(--warn)]' : 'text-[var(--text-primary)]'} ${className}`} />
 }
 
 export function RailUpdateDot(): React.JSX.Element {
-  return <span aria-hidden className="absolute right-[var(--space-1-5)] top-[var(--space-1-5)] size-[var(--space-1-5)] rounded-full bg-current" />
+  return <span aria-hidden className="absolute right-[var(--space-1-5)] top-[var(--space-1-5)] size-[var(--space-1-5)] rounded-full bg-current shadow-[0_0_0_2px_var(--card-hover)]" />
 }
 
 export function RailSrOnlyText({ children }: { children: ReactNode }): React.JSX.Element {
@@ -95,11 +145,11 @@ export function RailContextMenu({ visible = true, children, ...props }: Componen
 }
 
 export function RailGroupHeader({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="sticky top-0 z-[1] flex h-[var(--h-ctl)] w-full items-center rounded-[var(--tr-radius-sm)] px-[var(--space-1)] [font-size:var(--tr-text-small-size)] leading-4 text-[var(--text-secondary)] hover:bg-hover-fill">{children}</div>
+  return <div className="group sticky top-0 z-[1] mt-1 flex h-7 w-full items-center rounded-[var(--tr-radius-sm)] px-2 [font-size:var(--tr-text-small-size)] font-semibold leading-4 text-[var(--text-secondary)] hover:bg-hover-fill">{children}</div>
 }
 
 export function RailGroupToggle({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
-  return <button {...props} type="button" className="flex h-full min-w-0 flex-1 items-center gap-[var(--space-1-5)] rounded-[var(--tr-radius-input)] text-left">{children}</button>
+  return <button {...props} type="button" className="flex h-full min-w-0 flex-1 items-center gap-[var(--space-1-5)] rounded-[var(--tr-radius-input)] text-left font-semibold text-[var(--text-secondary)]">{children}</button>
 }
 
 export function RailGroupCount({ children }: { children: ReactNode }): React.JSX.Element {
@@ -107,7 +157,7 @@ export function RailGroupCount({ children }: { children: ReactNode }): React.JSX
 }
 
 export function RailTreeGroupHeader({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div data-testid="tree-group-header" className="flex h-[var(--h-rail-group-header)] flex-none items-center gap-[var(--space-1)] px-[var(--space-2)] pt-[var(--space-1)]">{children}</div>
+  return <div data-testid="tree-group-header" className="mt-2 flex h-8 flex-none items-center gap-1 px-[var(--space-2)]">{children}</div>
 }
 
 export function RailTreeTitle({ children }: { children: ReactNode }): React.JSX.Element {
@@ -119,5 +169,5 @@ export function RailFilterCountBadge({ children }: { children: ReactNode }): Rea
 }
 
 export function RailChromeSpecimen(): React.JSX.Element {
-  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsTitle>Sidebar options</RailOptionsTitle><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded>Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle></RailTreeGroupHeader></div>
+  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsView direction="none"><RailOptionsTitle>Sidebar options</RailOptionsTitle></RailOptionsView><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailGroupSegment value="workspace" onChange={() => {}} /><RailCardModeSegment value="detailed" onChange={() => {}} /><RailTagDisplaySegment value="dots" onChange={() => {}} /><RailMenuRow selected><RailMenuCheckSlot checked />Sort by<RailMenuValue>Manual</RailMenuValue></RailMenuRow><RailMenuRow>Tags<RailTagFilterValue active colors={['var(--ok)', 'var(--info)']} /></RailMenuRow><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded><RailGroupStatusDot label="Working" />Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle></RailTreeGroupHeader></div>
 }

@@ -107,7 +107,7 @@ describe('FilesSurface', () => {
     const row = await screen.findByRole('treeitem', { name: 'a.ts' })
     fireEvent.contextMenu(row)
     expect(row.classList.contains('menu-on')).toBe(true)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Delete/ }))
     expect(screen.getByRole('alertdialog', { name: 'Delete a.ts?' })).toBeTruthy()
     expect(screen.getByRole('alertdialog').textContent).toContain('The file will be removed from disk.')
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete' }))

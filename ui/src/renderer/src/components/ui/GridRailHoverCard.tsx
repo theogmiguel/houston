@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom'
 import { formatCheckout } from '../checkout/formatCheckout'
 import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
 import type { RailCard, CheckoutIdentity } from '../rail/railCardModel'
+import type { TagInfo } from '../../houston/generated/TagInfo'
 import { Icon } from './Icon'
-import { IconGitBranch, IconGitPullRequest } from '../icons'
+import { IconAgent, IconFolder, IconGitBranch, IconGitPullRequest, IconTag, IconTerminal, IconAlertTriangle } from '../icons'
 import { PrLink } from './PrLink'
+import './floatingSurface.css'
 
 export const RAIL_HOVER_OPEN_DELAY_MS = 150
 export const RAIL_HOVER_CLOSE_DELAY_MS = 0
@@ -29,26 +31,17 @@ function checkoutFor(identity: CheckoutIdentity): { checkout: SessionCheckout | 
   }
 }
 
-function statusTone(kind: RailCard['status']['kind']): string {
-  switch (kind) {
-    case 'needs-input': return 'text-[var(--warn)]'
-    case 'working': return 'text-[var(--info)]'
-    case 'starting': return 'text-[var(--accent)]'
-    case 'exited': return 'text-[var(--stop)]'
-    case 'done': return 'text-[var(--ok)]'
-    default: return 'text-[var(--text-muted)]'
-  }
-}
-
 export function GridRailHoverCard({
   card,
+  tags = [],
   position,
-  closeTimer,
-  scheduleClose,
+  visible = true,
   onOpenInspector
 }: {
   card: RailCard
+  tags?: readonly TagInfo[]
   position: { left: number; top: number }
+  visible?: boolean
   closeTimer: React.MutableRefObject<ReturnType<typeof window.setTimeout> | null>
   scheduleClose: () => void
   onOpenInspector?: (paneId: number, tab: 'changes' | 'pull-request') => void
@@ -57,29 +50,20 @@ export function GridRailHoverCard({
   const firstPane = card.agents[0]?.session.id
   return createPortal(
     <div
-      className="grid-hover-card fixed z-[var(--z-tooltip)] grid w-[300px] gap-[var(--space-2)] rounded-[var(--tr-radius-md)]
-        border border-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]
-        bg-[color-mix(in_srgb,var(--card-bg)_92%,transparent)] p-[var(--space-3)] text-[length:var(--tr-text-small-size)]
-        shadow-[var(--shadow-grid-rail-hover-card)]
-        backdrop-blur-[16px] [backdrop-filter:saturate(1.08)_blur(16px)]
-        transition-[opacity,transform,top] duration-150 ease-out"
+      className={`grid-hover-card floating-glass ${visible ? 'floating-pop-in' : ''} fixed z-[var(--z-tooltip)] grid w-[300px] gap-[var(--space-2)]
+        p-[var(--space-3)] text-[length:var(--tr-text-small-size)]
+        transition-[opacity,transform,top] duration-150 ease-out`}
       style={{ ...position, transformOrigin: 'left top' }}
       role="tooltip"
       data-testid="grid-hover-card"
-      onMouseEnter={() => {
-        if (closeTimer.current) clearTimeout(closeTimer.current)
-      }}
-      onMouseLeave={scheduleClose}
+      data-visible={visible}
     >
-      <div className="flex min-w-0 items-center justify-between gap-[var(--space-2)]">
-        <strong className="min-w-0 truncate font-medium leading-[15px] text-[var(--text-primary)]">{card.title}</strong>
-        <span className={`flex-none text-[length:var(--tr-text-label-size)] ${statusTone(card.status.kind)}`}>{card.status.label}</span>
-      </div>
-      {card.checkouts.length > 0 && <div
-        className="grid gap-[var(--space-1-5)] pl-[var(--space-0-5)] text-[var(--text-secondary)]"
-        data-testid="grid-hover-checkouts"
-      >
-        {card.checkouts.map((identity) => {
+      <strong className="min-w-0 truncate font-medium leading-[15px] text-[var(--text-primary)]">{card.title}</strong>
+      <div className="grid gap-[var(--space-1-5)] pl-[var(--space-0-5)] text-[var(--text-secondary)]">
+        <div className="flex items-center gap-2"><Icon glyph={IconFolder} role="small" className="text-[var(--text-muted)]" />{card.workspace.split('/').filter(Boolean).at(-1) ?? card.workspace}</div>
+        <div className="flex items-center gap-2"><Icon glyph={IconTerminal} role="small" className="text-[var(--text-muted)]" />{card.checkouts[0]?.kind === 'remote' ? card.checkouts[0].host : 'Local'}</div>
+        {card.checkouts.length > 0 && <div className="grid gap-[var(--space-1-5)]" data-testid="grid-hover-checkouts">
+        {card.checkouts.slice(0, 1).map((identity) => {
           const formatted = checkoutFor(identity)
           const label = formatCheckout(formatted.checkout, { remoteHost: formatted.remoteHost })
           return <div
@@ -87,10 +71,18 @@ export function GridRailHoverCard({
             className="flex min-w-0 items-center gap-[var(--space-2)]"
           >
             <Icon glyph={IconGitBranch} role="small" className="flex-none text-[var(--text-muted)]" />
-            <span className="truncate font-mono [font-size:var(--tr-text-label-size)]">{label.text}</span>
+            <span className="truncate font-mono [font-size:var(--tr-text-label-size)]">{card.agents.length && 'branch' in identity ? identity.branch ?? label.text : label.text}</span>
           </div>
         })}
-      </div>}
+        </div>}
+        {card.agents[0] && <div className="flex items-center gap-2">
+          <IconAgent agent={card.agents[0].session.agent} role="small" brand />
+          <span>{card.agents[0].model ?? card.agents[0].session.agent}</span>
+          {card.agents.length > 1 && <span className="text-[var(--text-muted)]">+{card.agents.length - 1} {card.agents.length === 2 ? 'agent' : 'agents'}</span>}
+        </div>}
+        {tags.length > 0 && <div className="flex flex-wrap items-center gap-2"><Icon glyph={IconTag} role="small" className="text-[var(--text-muted)]" />{tags.map((tag) => <span key={tag.id} className="inline-flex items-center gap-1"><i className="size-1.5 rounded-full" style={{ background: tag.color }} />{tag.name}</span>)}</div>}
+        {card.status.kind === 'needs-input' && <div className="flex items-center gap-2 text-[var(--warn)]"><Icon glyph={IconAlertTriangle} role="small" />Waiting for your answer</div>}
+      </div>
       {pr && (
         <PrLink
           href={pr.url}
@@ -105,14 +97,12 @@ export function GridRailHoverCard({
           <Icon glyph={IconGitPullRequest} role="small" />#{pr.number}
         </span>
         <span className="min-w-0 truncate text-[var(--text-primary)]">{pr.title}</span>
-        <span className="flex-none text-[var(--text-muted)]">{pr.checks}</span>
-        <span className="flex-none font-mono text-[var(--ok)]">+{pr.additions}</span>
-        <span className="flex-none font-mono text-[var(--stop)]">−{pr.deletions}</span>
+        {card.agents.length === 0 && <><span className="flex-none text-[var(--text-muted)]">{pr.checks}</span><span className="flex-none font-mono text-[var(--ok)]">+{pr.additions}</span><span className="flex-none font-mono text-[var(--stop)]">−{pr.deletions}</span></>}
         </PrLink>
       )}
-      <div className="text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
-        {card.agents.length} {card.agents.length === 1 ? 'pane' : 'panes'}
-      </div>
+      {card.agents.length === 0 && <div className="text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
+        0 panes
+      </div>}
     </div>,
     document.body
   )

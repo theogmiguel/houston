@@ -2530,16 +2530,12 @@ export function App(): React.JSX.Element {
   // In All view the focused pane supplies its checkout; within a workspace the
   // selected workspace stays authoritative when a stale pane has focus.
   const scmDir = reviewCheckoutDir(sideReview) ?? scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
-  const { openPanelSurface, openPullRequestFromScreen } = usePanelSurfaceNavigation({
+  const { openPanelSurface } = usePanelSurfaceNavigation({
     activeId,
     sessions,
     sideWorkspace,
-    prListDir,
     setScmOpen,
     setActiveSurface,
-    setRequestedPr,
-    setScmTab,
-    setRailView,
     setPanelMountEpoch,
   });
   useEffect(() => {
@@ -3918,13 +3914,15 @@ export function App(): React.JSX.Element {
                       workspace={pullRequestWorkspace(prListDir)}
                       currentUser={prScreen.viewerLogin}
                       items={prScreen.items}
+                      client={conn.kind === "ready" ? conn.client : null}
+                      directory={prListDir}
                       state={prScreen.state}
                       sort={prScreen.sort}
                       loading={prScreen.loading}
                       onStateChange={prScreen.setState}
                       onSortChange={prScreen.setSort}
                       onRefresh={prScreen.refresh}
-                      onOpenPullRequest={openPullRequestFromScreen}
+                      onOpenSurface={openPanelSurface}
                     />
                   ) : railView === "tasks" ? (
                     <Suspense fallback={<div className="flex-1" />}>

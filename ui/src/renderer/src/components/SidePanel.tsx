@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SessionInfo, PullRequestLink } from '../houston/client'
-import { clampScmWidth, defaultScmWidth, loadInspectorTabs, saveInspectorTabs, type SurfaceKind } from '../scmPanel'
+import { clampScmWidth, defaultScmWidth, loadInspectorTabs, saveInspectorTabs, scmWidthMax, type SurfaceKind } from '../scmPanel'
 import { selectOverviewChild, type SideOpen } from '../sidePanel'
 import { requestReveal } from '../editor/bufferStore'
 import { formatCheckout } from './checkout/formatCheckout'
@@ -11,7 +11,7 @@ import { useExitAnimation } from './ui/AnimOut'
 import { PanelTab } from './ui/PanelTab'
 import { LauncherRow } from './ui/LauncherRow'
 import { Icon } from './ui/Icon'
-import { IconGitPullRequest, IconGlobe, IconPlus } from './icons'
+import { IconGitPullRequest, IconGlobe, IconPlus, IconMaximize, IconMinimize } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { ShellElement } from './ui/ShellPrimitives'
 import './ui/panel.css'
@@ -157,7 +157,9 @@ function SidePanelHeader({
   props,
   links,
   openSurface,
-  icons
+  icons,
+  maximized,
+  onToggleMaximize
 }: {
   openTabs: SurfaceKind[]
   active: SurfaceKind | null
@@ -174,6 +176,8 @@ function SidePanelHeader({
   links: PullRequestLink[]
   openSurface: (surface: SurfaceKind) => void
   icons: Record<SurfaceKind, SurfaceMeta>
+  maximized: boolean
+  onToggleMaximize: () => void
 }): React.JSX.Element {
   return (
     <ShellElement as="div" shellRole="panel-header">
@@ -231,7 +235,7 @@ function SidePanelHeader({
           )
         })}
       </ShellElement>
-      <Tooltip label="Open a surface">
+      {openTabs.length > 0 && <Tooltip label="Open a surface">
         <ShellElement
           as="button"
           type="button"
@@ -242,14 +246,21 @@ function SidePanelHeader({
         >
           <Icon glyph={IconPlus} role="small" />
         </ShellElement>
-      </Tooltip>
+      </Tooltip>}
+      <ShellElement as="span" shellRole="panel-header-actions">
+        <Tooltip label={maximized ? 'Restore panel' : 'Maximize panel'}>
+          <ShellElement as="button" type="button" shellRole="panel-icon-button" aria-label={maximized ? 'Restore panel' : 'Maximize panel'} onClick={onToggleMaximize}>
+            <Icon glyph={maximized ? IconMinimize : IconMaximize} role="small" />
+          </ShellElement>
+        </Tooltip>
+      </ShellElement>
       {addOpen && (
         <ShellElement as="div" shellRole="panel-add-menu" role="menu" aria-label="Open a surface">
           {(['browser', 'files', 'diff', 'pull-request', 'linked-pull-requests'] as SurfaceKind[]).map(
             (surface) => {
               const meta = icons[surface]
               const disabledReason = surfaceDisabledReason(surface, props, links)
-              return (
+              const item = (
                 <ShellElement
                   as="button"
                   key={surface}
@@ -269,6 +280,7 @@ function SidePanelHeader({
                   <ShellElement as="kbd" shellRole="panel-add-key">{meta.shortcut}</ShellElement>
                 </ShellElement>
               )
+              return disabledReason ? <Tooltip key={surface} label={disabledReason}>{item}</Tooltip> : item
             }
           )}
         </ShellElement>
@@ -537,7 +549,7 @@ function SidePanelBody({
   )
 }
 
-function SidePanelFrame({ open, entering, mounted, props, openTabs, active, tabsRef, overflowing, dragTab, metaFor, selectSurface, closeSurface, reorderSurface, addOpen, setAddOpen, links, openSurface, icons, rendered, requested, hostWidth, finishExit, onKeyDown, isOrchestrator, filesRoot, browserId, browserWorkspace, onTitleChange, onFilesTabTitleChange, checkAgentTargets, requestedPrForTab, overviewTarget, setOverviewTarget, setEntering }: {
+function SidePanelFrame({ open, entering, mounted, props, openTabs, active, tabsRef, overflowing, dragTab, metaFor, selectSurface, closeSurface, reorderSurface, addOpen, setAddOpen, links, openSurface, icons, rendered, requested, hostWidth, finishExit, onKeyDown, isOrchestrator, filesRoot, browserId, browserWorkspace, onTitleChange, onFilesTabTitleChange, checkAgentTargets, requestedPrForTab, overviewTarget, setOverviewTarget, setEntering, maximized, onToggleMaximize }: {
   open: boolean
   entering: boolean
   mounted: boolean
@@ -572,6 +584,8 @@ function SidePanelFrame({ open, entering, mounted, props, openTabs, active, tabs
   overviewTarget: number | null
   setOverviewTarget: React.Dispatch<React.SetStateAction<number | null>>
   setEntering: React.Dispatch<React.SetStateAction<boolean>>
+  maximized: boolean
+  onToggleMaximize: () => void
 }): React.JSX.Element {
   return (
     <InspectorSurface
@@ -596,7 +610,7 @@ function SidePanelFrame({ open, entering, mounted, props, openTabs, active, tabs
       onKeyDown={onKeyDown}
     >
       <ScmResizeHandle requested={requested} rendered={rendered} hostWidth={hostWidth} onWidth={props.onWidth} onReset={props.onResetWidth} />
-      <SidePanelHeader openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} props={props} links={links} openSurface={openSurface} icons={icons} />
+      <SidePanelHeader openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} props={props} links={links} openSurface={openSurface} icons={icons} maximized={maximized} onToggleMaximize={onToggleMaximize} />
       <SidePanelBody openTabs={openTabs} active={active} props={props} links={links} icons={icons} openSurface={openSurface} isOrchestrator={isOrchestrator} filesRoot={filesRoot} setSurface={selectSurface} panelWidth={rendered} browserTabId={browserId} browserWorkspace={browserWorkspace} onBrowserTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} />
     </InspectorSurface>
   )
@@ -639,6 +653,17 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
   const isOrchestrator = hasChildren(focused, props.sessions)
   const requested = localStorage.getItem('tr-scm-width') === null ? defaultScmWidth(window.innerWidth) : props.width
   const rendered = clampScmWidth(requested, hostWidth)
+  const restoreWidth = useRef<number | null>(null)
+  const maximized = restoreWidth.current !== null && rendered >= scmWidthMax(hostWidth)
+  const onToggleMaximize = (): void => {
+    if (restoreWidth.current !== null) {
+      props.onWidth(restoreWidth.current)
+      restoreWidth.current = null
+    } else {
+      restoreWidth.current = requested
+      props.onWidth(scmWidthMax(hostWidth))
+    }
+  }
   const links = props.linkedPullRequests ?? []
   const checkAgentTargets = props.checkAgentTargets ?? gridCheckAgents(props.sessions, props.workspace)
   const requestedPrForTab = useMemo(
@@ -701,7 +726,10 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
     if (event.key === 'Escape' && !(event.target as HTMLElement).closest('[role="dialog"], .ctx-menu')) { event.stopPropagation(); props.onFocusGrid(); return }
     if (openTabs.length === 0 && 'bfdpl'.includes(event.key.toLowerCase()) && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) {
       const shortcut = Object.entries(SURFACE_META).find(([, item]) => item.shortcut.toLowerCase() === event.key.toLowerCase())
-      if (shortcut) { event.preventDefault(); openSurface(shortcut[0] as SurfaceKind) }
+      if (shortcut && !surfaceDisabledReason(shortcut[0] as SurfaceKind, props, links)) {
+        event.preventDefault()
+        openSurface(shortcut[0] as SurfaceKind)
+      }
     }
   }
   const onTitleChange = useCallback((title: string, favicon: string | null): void => { setBrowserTitle(title); setFaviconUrl(favicon) }, [])
@@ -721,7 +749,7 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
   }, [props.proactiveDiffEnabled, props.proactiveDiffRequest, props.onUserActionCounterChange])
 
   if (!mounted && !props.keepMounted && !openTabs.includes('browser')) return null
-  return <SidePanelFrame open={open} entering={entering} mounted={mounted} props={props} openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} links={links} openSurface={openSurface} icons={icons} rendered={rendered} requested={requested} hostWidth={hostWidth} finishExit={finishExit} onKeyDown={onKeyDown} isOrchestrator={isOrchestrator} filesRoot={filesRoot} browserId={browserId} browserWorkspace={browserWorkspace} onTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} setEntering={setEntering} />
+  return <SidePanelFrame open={open} entering={entering} mounted={mounted} props={props} openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} links={links} openSurface={openSurface} icons={icons} rendered={rendered} requested={requested} hostWidth={hostWidth} finishExit={finishExit} onKeyDown={onKeyDown} isOrchestrator={isOrchestrator} filesRoot={filesRoot} browserId={browserId} browserWorkspace={browserWorkspace} onTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} setEntering={setEntering} maximized={maximized} onToggleMaximize={onToggleMaximize} />
 }
 
 export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: sessionsProp, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: Omit<SourceControlPanelProps, 'onCreateCheckAgent' | 'requestedPr'> & {

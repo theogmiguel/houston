@@ -1188,7 +1188,7 @@ describe('compact side panel pull request', () => {
     expect(scroller.scrollTop).toBe(3)
   })
 
-  it('opens Checks from the summary strip and shares expansion with the Checks section', () => {
+  it('opens the Checks popover from the summary strip without moving the scroll', () => {
     const client = mount({ compact: true })
     emit(client, detailMsg({ detail: detail({ checks: [{ ...detail().checks[0], state: 'failing' }] }) }))
     const scroller = q<HTMLElement>('[data-testid="pr-scroll-area"]')!
@@ -1198,10 +1198,11 @@ describe('compact side panel pull request', () => {
     expect(checks).not.toBeNull()
     expect(q('[data-testid="pr-check-strip-summary"]')?.getAttribute('aria-expanded')).toBe('true')
     expect(scroller.scrollTop).toBe(180)
-    const rows = qa('[data-testid="pr-check-row"]')
-    expect(rows).toHaveLength(1)
-    click(checks?.querySelector('[aria-expanded="true"]') ?? null)
-    expect(qa('[data-testid="pr-check-row"] [aria-expanded="false"]')).toHaveLength(1)
+    expect(checks!.querySelectorAll('[data-testid="pr-check-row"]')).toHaveLength(1)
+    const toggle = (): Element | null => checks!.querySelector('[data-testid="pr-check-row"] [aria-expanded]')
+    const before = toggle()?.getAttribute('aria-expanded')
+    click(toggle())
+    expect(toggle()?.getAttribute('aria-expanded')).toBe(before === 'true' ? 'false' : 'true')
     expect(q('[role="dialog"][aria-label="Pull request checks"]')).toBeNull()
   })
 

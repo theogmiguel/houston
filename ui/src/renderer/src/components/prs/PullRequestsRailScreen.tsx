@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
-import type { PrListItem, PrListState, PrSort, PullRequestLink } from '../../houston/client'
+import type { HoustonClient, PrListItem, PrListState, PrSort, PullRequestLink } from '../../houston/client'
+import type { SurfaceKind } from '../../scmPanel'
 
 const PullRequestsScreen = lazy(() =>
   import('./PullRequestsScreen').then((module) => ({ default: module.PullRequestsScreen })),
@@ -10,13 +11,15 @@ interface PullRequestsRailScreenProps {
   workspace: string
   currentUser: string
   items: PrListItem[]
+  client: HoustonClient | null
+  directory: string | null
   state: PrListState
   sort: PrSort
   loading: boolean
   onStateChange: (state: PrListState) => void
   onSortChange: (sort: PrSort) => void
   onRefresh: () => void
-  onOpenPullRequest: (item: PrListItem) => void
+  onOpenSurface?: (surface: SurfaceKind) => void
 }
 
 export function PullRequestsRailScreen(props: PullRequestsRailScreenProps): React.JSX.Element {

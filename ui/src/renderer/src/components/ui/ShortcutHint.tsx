@@ -3,7 +3,7 @@ import { Text } from './Text'
 
 /** A key in a launcher shortcut hint; `compact` is the rail's search-field hint. */
 export function HintKey({ children, size = 'default' }: { children: ReactNode; size?: 'default' | 'compact' }): React.JSX.Element {
-  return <kbd className={size === 'compact' ? 'min-w-[var(--w-rail-keycap-min)] px-[var(--space-rail-keycap-x)] py-px rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--card-hover)] font-mono [font-size:var(--tr-text-rail-keycap-size)] leading-[var(--tr-text-rail-keycap-leading)] text-[var(--text-faint)]' : 'font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] bg-background border border-border rounded-[var(--tr-radius-input)] py-[var(--space-keycap-y)] px-[var(--space-keycap-x)]'}>{children}</kbd>
+  return <kbd className={size === 'compact' ? 'inline-flex h-[18px] min-w-[var(--w-rail-keycap-min)] items-center justify-center rounded-[var(--tr-radius-input)] bg-hover-fill px-[var(--space-rail-keycap-x)] font-sans [font-size:var(--tr-text-xs)] font-medium leading-none text-[var(--text-muted)]' : 'font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] bg-background border border-border rounded-[var(--tr-radius-input)] py-[var(--space-keycap-y)] px-[var(--space-keycap-x)]'}>{children}</kbd>
 }
 
 export function ShortcutHint({ shortcut, label, disabled = false }: { shortcut: string; label: string; disabled?: boolean }): React.JSX.Element {

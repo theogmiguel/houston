@@ -21,6 +21,7 @@ export function lineKind(line: string): DiffLineKind {
 
 export function diffBodyLines(patch: string): string[] {
   const lines = patch.split('\n')
+  if (lines.at(-1) === '') lines.pop()
   const firstHunk = lines.findIndex((line) => line.startsWith('@@'))
   return firstHunk < 0 ? lines : lines.slice(firstHunk)
 }

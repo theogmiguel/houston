@@ -11,11 +11,15 @@ const repo = '/repo'
 const sessionId = 1009
 const orchestratorId = 1008
 
-class InspectorClient {
+export class InspectorClient {
   private readonly subscribers = new Map<string, Set<(message: never) => void>>()
   private request = 0
 
-  constructor(private readonly failingChecks = false, private readonly diffFixture = false) {}
+  constructor(
+    private readonly failingChecks = false,
+    private readonly diffFixture = false,
+    private readonly prFixture?: { number: number; state: 'open' | 'merged' | 'closed'; isDraft?: boolean },
+  ) {}
 
   subscribe(kind: string, handler: (message: never) => void): () => void {
     const listeners = this.subscribers.get(kind) ?? new Set()
@@ -71,13 +75,19 @@ class InspectorClient {
     queueMicrotask(() => this.emit({ type: 'pr_status', dir, gh: 'ready', has_upstream: true, pr: { number: 95, url: 'https://github.com/owner/houston/pull/95', state: 'open', checks: this.failingChecks ? 'failing' : 'passing', review_decision: null }, hint: null }))
   }
 
-  prDetail(dir: string): number {
+  prDetail(dir: string, requestedNumber?: number): number {
     const request = ++this.request
+    const number = requestedNumber ?? this.prFixture?.number ?? 95
+    const state = this.prFixture?.state ?? 'open'
+    const isDraft = this.prFixture?.isDraft ?? false
+    const merged = number === 93
+    const title = merged ? 'fix(codex): Codex panes start again with Codex CLI 0.160' : 'fix(panes): terminals keep their content while the inspector opens'
+    const updatedAt = Math.floor(Date.now() / 1000) - (merged ? 13 : 12) * 60
     queueMicrotask(() => this.emit({
       type: 'pr_detail', dir, request, gh: 'ready', has_upstream: true, linked: true, hint: null, message: null,
-      link: { host: 'github.com', repository: 'owner/houston', number: 95, url: 'https://github.com/owner/houston/pull/95', state: 'open', source: 'detected', title: 'fix(panes): terminals keep their content while the inspector opens', is_draft: false, additions: 91, deletions: 12, changed_files: 4, checks: this.failingChecks ? 'failing' : 'passing', review_decision: null, linked_at: 1 },
+      link: { host: 'github.com', repository: 'owner/houston', number, url: `https://github.com/owner/houston/pull/${number}`, state, source: 'detected', title, is_draft: isDraft, additions: merged ? 156 : 91, deletions: merged ? 15 : 12, changed_files: 4, checks: this.failingChecks ? 'failing' : 'passing', review_decision: null, linked_at: 1 },
       detail: {
-        body: '## Problem\nOpening the inspector narrowed the grid, and every terminal repainted one frame late, so panes flashed blank. `fit()` resized the canvas, which clears its bitmap, but only scheduled the next paint with `requestRender()`.\n\n## Changes\n- `fix(panes)`: a fit that resizes the canvas paints in the same frame.\n- `feat(ui)`: the inspector slides in with `transform`; the grid changes width once.\n\n## Verification\n- Regression test `surface.fitPaint.test.ts` fails before the fix.\n- `bun run typecheck` and renderer tests pass.', author: 'maintainer', base_ref: 'main', head_ref: 'inspector-polish', head_sha: 'a1c3f09', commit_count: 5, created_at: 1, updated_at: Math.floor(Date.now() / 1000) - 12 * 60, mergeable: 'mergeable', merge_state: 'clean',
+        body: merged ? '## Problem\nSince v0.16.0, every native Codex launch fails when Codex CLI 0.160 is installed. The socket directory was writable by other users.\n\n## Changes\n- Create the socket directory with mode `0700` regardless of umask.\n- Drain stderr into a bounded 4 KiB tail.\n\n## Verification\n- Regression tests pass.\n- Full renderer gates pass.' : '## Problem\nOpening the inspector narrowed the grid, and every terminal repainted one frame late, so panes flashed blank. `fit()` resized the canvas, which clears its bitmap, but only scheduled the next paint with `requestRender()`.\n\n## Changes\n- `fix(panes)`: a fit that resizes the canvas paints in the same frame.\n- `feat(ui)`: the inspector slides in with `transform`; the grid changes width once.\n\n## Verification\n- Regression test `surface.fitPaint.test.ts` fails before the fix.\n- `bun run typecheck` and renderer tests pass.', author: 'maintainer', base_ref: 'main', head_ref: merged ? 'fix/codex-native-startup' : 'inspector-polish', head_sha: 'a1c3f09', commit_count: 5, created_at: updatedAt - 6000, updated_at: updatedAt, mergeable: 'mergeable', merge_state: 'clean',
         checks: this.failingChecks
           ? [
               { name: 'core-checks', state: 'failing', url: 'https://github.com/acme/houston/actions/runs/412001', duration_ms: 252000, run_id: 412001 },
@@ -91,8 +101,37 @@ class InspectorClient {
               { name: 'core-checks', state: 'passing', url: null, duration_ms: 843000 },
               { name: 'licence-inventory', state: 'passing', url: null, duration_ms: 22000 }
             ],
-        comments: [], reviews: [], comments_total: 0, reviews_total: 0, merge_disabled_reason: null, viewer: { can_write: true, can_triage: true, can_update: true, did_author: false, can_update_branch: true }, viewer_message: null, behind_by: null, labels: [{ name: 'bug', color: 'f04438' }, { name: 'renderer', color: '3b82f6' }], reviewers: [], reactions: [], threads: [], threads_truncated: false, threads_message: null, auto_merge_enabled: null, auto_merge_method: null, cross_repository: false
+        comments: [
+          { id: 'comment-1', author: 'reviewer', body: 'Nice catch on the cleared bitmap. Can the regression test assert the paint count instead of timing?', created_at: updatedAt - 8 * 60, reactions: [] },
+          { id: 'comment-2', author: 'maintainer', body: 'Done, the test now counts renderFrame calls inside the resize frame.', created_at: updatedAt - 2 * 60, reactions: [] },
+        ], reviews: [], comments_total: 2, reviews_total: 0, merge_disabled_reason: null, viewer: { can_write: true, can_triage: true, can_update: true, did_author: false, can_update_branch: true }, viewer_message: null, behind_by: null, labels: merged ? [] : [{ name: 'bug', color: 'f04438' }, { name: 'renderer', color: '3b82f6' }], reviewers: [], reactions: [], threads: [], threads_truncated: false, threads_message: null, auto_merge_enabled: null, auto_merge_method: null, cross_repository: false
       }
+    }))
+    return request
+  }
+
+  prDiff(dir: string, number: number): number {
+    const request = ++this.request
+    const paths = number === 93
+      ? ['core/houston-core/src/codex_pane.rs', 'core/houston-core/src/daemon.rs', 'ui/src/renderer/src/components/git/GridRailGitSubscription.tsx', 'ui/src/renderer/src/components/git/GridRailGitSubscription.test.ts']
+      : ['ui/src/renderer/src/ghostty/surface.ts', 'ui/src/renderer/src/components/ui/AnimOut.tsx', 'ui/src/renderer/src/components/ui/inspector.css', 'ui/src/renderer/src/ghostty/surface.fitPaint.test.ts']
+    const hunks = number === 93
+      ? [
+          '@@ -40 +40 @@ socket_directory\n-    create_dir(&socket_path)?;\n+    create_private_dir(&socket_path)?;\n',
+          '@@ -88 +88 @@ launch_codex\n-    return Err(startup_error);\n+    return Err(with_stderr_tail(startup_error));\n',
+          '@@ -124 +124 @@ poll_git\n-  if (session) refreshStatus(session);\n+  if (session.state === "running") refreshStatus(session);\n',
+          '@@ -55 +55 @@ refresh_status\n-  expect(result).toBeNull();\n+  expect(result).toEqual("running");\n',
+        ]
+      : [
+          '@@ -910,4 +910,5 @@ fit(): boolean\n     if (shouldRender) {\n-      this.requestRender()\n+      this.renderFrame()\n     }\n',
+          '@@ -25 +25 @@ animatePanel\n-  element.style.width = targetWidth;\n+  element.style.transform = "translateX(0)";\n',
+          '@@ -40 +40 @@ inspector\n-  transition: width .2s;\n+  transition: transform .24s;\n',
+          '@@ -60 +60 @@ fit paint\n-  expect(renderCount).toBe(0);\n+  expect(renderCount).toBe(1);\n',
+        ]
+    const patch = paths.map((path, index) => `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${hunks[index]}`).join('')
+    queueMicrotask(() => this.emit({
+      type: 'pr_diff', dir, number, request, truncated: false, message: null,
+      patch,
     }))
     return request
   }
@@ -214,6 +253,7 @@ export const InspectorChildrenPaper = (): React.JSX.Element => <Frame theme="pap
 
 export const SurfaceLauncher = (): React.JSX.Element => <Frame theme="paper" board="launcher" />
 export const SurfaceDiff = (): React.JSX.Element => <Frame theme="paper" board="diff" />
+export const SurfaceDiffGraphite = (): React.JSX.Element => <Frame theme="graphite" board="diff" />
 export const SurfaceDiff340 = (): React.JSX.Element => <Frame theme="paper" board="diff" width={340} />
 export const SurfaceDiff600 = (): React.JSX.Element => <Frame theme="paper" board="diff" width={600} />
 export const SurfaceDiff732 = (): React.JSX.Element => <Frame theme="paper" board="diff" width={732} />

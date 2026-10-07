@@ -14,7 +14,7 @@ function AgentStatusDot({ session, now }: { session: SessionInfo; now: number })
   ) : (
     <span aria-hidden className={`inline-block ${session.status === 'working' ? 'size-[9px]' : 'size-2'} flex-none rounded-full ${session.status === 'needs-input'
       ? 'bg-[var(--warn)]'
-      : session.status === 'working' ? 'animate-spin motion-reduce:animate-none border border-[var(--info)] border-r-transparent bg-transparent'
+      : session.status === 'working' ? 'animate-[spin_1s_linear_infinite] motion-reduce:animate-none border-[1.5px] border-[var(--accent)] border-r-transparent bg-transparent'
         : session.status === 'idle' ? 'bg-[var(--text-faint)] opacity-60' : 'bg-[var(--ok)]'}`} />
   )
 }
@@ -32,7 +32,7 @@ function ageLabel(session: SessionInfo, now: number): string {
 function AgentRow({ agent, now }: { agent: RailAgentRow; now: number }): React.JSX.Element {
   const shellLabel = agent.session.agent === 'shell' ? ' · shell' : ''
   return (
-    <div key={agent.session.id} className="flex h-[var(--h-agent-row)] min-w-0 items-center gap-[5px] rounded px-1 text-[length:var(--tr-text-xs)] leading-none">
+    <div key={agent.session.id} className="flex h-[var(--h-agent-row)] min-w-0 items-center gap-[5px] rounded px-1 text-[length:var(--tr-text-xs)] leading-none hover:bg-hover-fill">
       <AgentStatusDot session={agent.session} now={now} />
       <span className="flex flex-none text-[var(--text-muted)]"><IconAgent agent={agent.session.agent} role="small" brand /></span>
       <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
@@ -72,9 +72,9 @@ export function GridRailAgentRows({
         </div>
       )}
       {many ? (
-        <div className={`grid overflow-hidden transition-[grid-template-rows] duration-[180ms] ease-out motion-reduce:transition-none ${showFullList ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+        <div aria-hidden={!showFullList} className={`grid overflow-hidden transition-[grid-template-rows] duration-[180ms] ease-out motion-reduce:transition-none ${showFullList ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
           <div className="min-h-0 overflow-hidden">
-            {showFullList && agents.map((agent) => <AgentRow key={agent.session.id} agent={agent} now={now} />)}
+            {agents.map((agent) => <AgentRow key={agent.session.id} agent={agent} now={now} />)}
           </div>
         </div>
       ) : agents.map((agent) => <AgentRow key={agent.session.id} agent={agent} now={now} />)}

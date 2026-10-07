@@ -105,9 +105,11 @@ import {
   ContextMenu,
   ContextMenuItem,
   ContextMenuHeading,
+  ContextMenuGridLabel,
   ContextMenuItems,
   ContextMenuSeparator,
 } from "./ui/ContextMenu";
+import { GridRailContextActions } from "./ui/GridRailContextActions";
 import {
   WorkspaceTreeRow,
   WorkspaceTreeLabel,
@@ -117,6 +119,7 @@ import {
   EmptyListMessage,
 } from "./ui/WorkspaceTreeRow";
 import { TextInput } from "./ui/TextInput";
+import { Text } from "./ui/Text";
 import { ActivityDot } from "./ui/ActivityDot";
 import {
   canReorderRailGrid,
@@ -145,6 +148,7 @@ import {
   RailFilterCountBadge,
   RailGroupCount,
   RailGroupHeader,
+  RailGroupStatusDot,
   RailGroupToggle,
   RailPinnedIndicator,
   RailRowCount,
@@ -176,26 +180,26 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   server: IconServer,
 };
 
-const GridRailContextActions = lazy(() =>
-  import("./ui/GridRailContextActions").then((module) => ({ default: module.GridRailContextActions })),
-);
 const GridRailGitSubscription = lazy(() =>
   import("./git/GridRailGitSubscription").then((module) => ({ default: module.GridRailGitSubscription })),
 );
+const GridRailExtraActions = lazy(() => import("./ui/GridRailExtraActions").then((module) => ({ default: module.GridRailExtraActions })));
 const LazyGridRailRow = lazy(() => import("./ui/GridRailRow").then((module) => ({ default: module.GridRailRow })));
 const railOptionsMenu = preloadable(() => import("./rail/RailOptionsMenu").then((module) => module.RailOptionsMenu));
 export const preloadRailOptionsMenu = railOptionsMenu.preload;
 const RailOptionsMenu = railOptionsMenu.Slot;
 
-function RailOptionsMenuHost({ anchor, prefs, onChange, onClose, selectedTagIds }: {
+function RailOptionsMenuHost({ anchor, prefs, onChange, onClose, selectedTagIds, selectedTagColors, onClearTagFilter }: {
   anchor: HTMLElement | null;
   prefs: RailPrefs;
   onChange: (next: RailPrefs) => void;
   onClose: () => void;
   selectedTagIds: number[];
+  selectedTagColors: string[];
+  onClearTagFilter: () => void;
 }): React.JSX.Element | null {
   if (!anchor) return null;
-  return <RailOptionsMenu anchor={anchor} prefs={prefs} onChange={onChange} onClose={onClose} selectedTagIds={selectedTagIds} />;
+  return <RailOptionsMenu anchor={anchor} prefs={prefs} onChange={onChange} onClose={onClose} selectedTagIds={selectedTagIds} selectedTagColors={selectedTagColors} onClearTagFilter={onClearTagFilter} />;
 }
 
 function RailTreeContent({ groupBy, virtualItems, compact, dragging, renderWorkspaceContent }: {
@@ -722,8 +726,8 @@ function WorkspaceContextMenu({
 
 function GridContextMenu({
   gridMenu,
-  workspaces,
   onClose,
+  onOpenGrid,
   onStartRename,
   onRemoveGrid,
   onTogglePin,
@@ -731,8 +735,8 @@ function GridContextMenu({
   onError,
 }: {
   gridMenu: GridCtxMenu;
-  workspaces: Workspace[];
   onClose: () => void;
+  onOpenGrid?: (path: string, gridId: string) => void;
   onStartRename: (path: string, gridId: string) => void;
   onRemoveGrid?: (path: string, gridId: string) => void;
   onTogglePin: (gridId: string) => void;
@@ -740,12 +744,9 @@ function GridContextMenu({
   onError?: (message: string) => void;
 }): React.JSX.Element {
   const tagPopover = useTagPopover();
-  const [tagPickerOpen, setTagPickerOpen] = useState(false);
-  const workspaceName =
-    workspaces.find((w) => w.path === gridMenu.path)?.name ?? gridMenu.path;
   return (
     <RailContextMenu
-      visible={!tagPickerOpen}
+      variant="grid-card"
       style={{
         top: gridMenu.y,
         left: gridMenu.x,
@@ -755,12 +756,40 @@ function GridContextMenu({
       role="menu"
       onKeyDown={handleMenuKeyDown}
     >
-      {ctxHeader(gridMenu.name, workspaceName)}
+      <ContextMenuGridLabel>{gridMenu.name}</ContextMenuGridLabel>
       <ContextMenuItems>
+        <ContextMenuItem role="menuitem" onClick={() => {
+          onOpenGrid?.(gridMenu.path, gridMenu.gridId);
+          onClose();
+        }}>
+          <Icon glyph={IconGrid} role="ui" />
+          <span>Open</span>
+        </ContextMenuItem>
+        <ContextMenuItem role="menuitem" onClick={() => {
+          onStartRename(gridMenu.path, gridMenu.gridId);
+          onClose();
+        }}>
+          <Icon glyph={IconPencil} role="ui" />
+          <span>Rename</span>
+        </ContextMenuItem>
+        <ContextMenuItem role="menuitem" data-testid="menu-grid-pin" onClick={() => { onTogglePin(gridMenu.gridId); onClose() }}>
+          <Icon glyph={IconPin} role="ui" />
+          <span>{gridMenu.pinned ? "Unpin" : "Pin"}</span>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem role="menuitem" data-testid="menu-tags-entry" onClick={(event) => {
+          tagPopover.open({ anchor: event.currentTarget, gridId: gridMenu.gridId, view: 'pick', placement: 'right', onDismiss: onClose });
+        }}>
+          <Icon glyph={IconTag} role="ui" />
+          <span className="flex-1">Tags</span>
+          {gridMenu.tagIds.length > 0 && <Text size="small" tone="muted">{gridMenu.tagIds.length}</Text>}
+          <Icon glyph={IconChevronRight} role="small" />
+        </ContextMenuItem>
+        <GridRailContextActions branch={gridMenu.branch} onClose={onClose} onError={onError} />
+        <ContextMenuSeparator />
         <Suspense fallback={null}>
-          <GridRailContextActions
+          <GridRailExtraActions
             paneId={gridMenu.paneId}
-            branch={gridMenu.branch}
             checkoutPath={gridMenu.checkoutPath}
             worktreePath={gridMenu.worktreePath}
             pr={gridMenu.pr}
@@ -771,47 +800,13 @@ function GridContextMenu({
           />
         </Suspense>
         <ContextMenuSeparator />
-        <ContextMenuItem
-
-          role="menuitem"
-          onClick={() => {
-            onStartRename(gridMenu.path, gridMenu.gridId);
+        <ContextMenuItem danger role="menuitem" disabled={!gridMenu.canRemove} onClick={() => {
+            const { path, gridId } = gridMenu;
             onClose();
-          }}
-        >
-          <Icon glyph={IconPencil} role="ui" />
-          <span>Rename</span>
-        </ContextMenuItem>
-        <ContextMenuItem role="menuitem" data-testid="menu-grid-pin" onClick={() => { onTogglePin(gridMenu.gridId); onClose() }}>
-          <Icon glyph={IconPin} role="ui" />
-          <span>{gridMenu.pinned ? "Unpin grid" : "Pin grid"}</span>
-        </ContextMenuItem>
-        {gridMenu.canRemove && (
-          <ContextMenuItem danger
-
-            role="menuitem"
-            onClick={() => {
-              const { path, gridId } = gridMenu;
-              onClose();
-              onRemoveGrid?.(path, gridId);
-            }}
-          >
-            <Icon glyph={IconClose} role="ui" />
-            <span>Close Tab</span>
-          </ContextMenuItem>
-        )}
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          role="menuitem"
-          data-testid="menu-tags-entry"
-          onClick={(event) => {
-            setTagPickerOpen(true);
-            tagPopover.open({ anchor: event.currentTarget, gridId: gridMenu.gridId, view: 'pick', onDismiss: onClose });
-          }}
-        >
-          <Icon glyph={IconTag} role="ui" />
-          <span className="flex-1">Tags</span>
-          <Icon glyph={IconChevronRight} role="small" />
+            onRemoveGrid?.(path, gridId);
+        }}>
+          <Icon glyph={IconClose} role="ui" />
+          <span>Close grid</span>
         </ContextMenuItem>
       </ContextMenuItems>
     </RailContextMenu>
@@ -1289,6 +1284,7 @@ function ExpandedGridsRow({
           diffByDir={railDiffByDir}
           prByDir={railPrByDir}
           cardMode={railPrefs.cardMode}
+          tagDisplay={railPrefs.tagDisplay}
           agentActivity={railPrefs.agentActivity}
           properties={railPrefs.properties}
           jumpNumber={grids.indexOf(g) + 1}
@@ -1795,6 +1791,8 @@ function RailTree({
   railPrefs,
   pinnedGridIds,
   onRailPrefsChange,
+  onFilterTag,
+  onClearTagFilter,
   railOptionsAnchor,
   setRailOptionsAnchor,
   onAddGrid,
@@ -1851,6 +1849,8 @@ function RailTree({
   railPrefs: RailPrefs;
   pinnedGridIds: ReadonlySet<string>;
   onRailPrefsChange: (prefs: RailPrefs) => void;
+  onFilterTag: (tag: TagInfo) => void;
+  onClearTagFilter: () => void;
   railOptionsAnchor: HTMLElement | null;
   setRailOptionsAnchor: (anchor: HTMLElement | null) => void;
   agentCount: number;
@@ -1940,7 +1940,8 @@ function RailTree({
       : entry.card
     if (railPrefs.groupBy === 'status') {
       return card.status.kind === 'needs-input' ? 'Needs you' :
-        card.status.kind === 'working' || card.status.kind === 'starting' ? 'Working' : 'Idle'
+        card.status.kind === 'working' || card.status.kind === 'starting' ? 'Working' :
+          card.status.kind === 'done' ? 'Done' : 'Idle'
     }
     if (railPrefs.groupBy === 'pr') return entry.card.pr?.pr ? 'Pull requests' : 'No pull request';
     return entry.workspace.name;
@@ -1952,7 +1953,7 @@ function RailTree({
   }
   const groupEntries = [...unpinnedGroups.entries()].sort(([left], [right]) => {
     if (railPrefs.groupBy === 'status') {
-      return ['Needs you', 'Working', 'Idle'].indexOf(left) - ['Needs you', 'Working', 'Idle'].indexOf(right)
+      return ['Needs you', 'Working', 'Done', 'Idle'].indexOf(left) - ['Needs you', 'Working', 'Done', 'Idle'].indexOf(right)
     }
     if (railPrefs.groupBy === 'pr') {
       return ['Pull requests', 'No pull request'].indexOf(left) - ['Pull requests', 'No pull request'].indexOf(right)
@@ -2010,6 +2011,7 @@ function RailTree({
           diffByDir={railDiffByDir}
           prByDir={railPrByDir}
           cardMode={railPrefs.cardMode}
+          tagDisplay={railPrefs.tagDisplay}
           agentActivity={railPrefs.agentActivity}
           properties={railPrefs.properties}
           unread={unreadState.unread}
@@ -2023,6 +2025,7 @@ function RailTree({
             onSelectGrid?.(workspace.path, grid.id)
           }}
           onToggleUnread={() => onToggleGridUnread(grid.id, unreadState.signature, unreadState.unread)}
+          onFilterTag={onFilterTag}
           onRemove={onRemove}
           onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove))}
           onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
@@ -2070,7 +2073,9 @@ function RailTree({
           aria-expanded={!railPrefs.collapsedGroups.includes(label)}
           onClick={() => toggleGroup(label)}
         >
-          <Icon glyph={IconPin} role="small" tone="faint" className="flex-none" />
+          {label === 'Pinned' ? <Icon glyph={IconPin} role="small" tone="faint" className="flex-none" />
+            : railPrefs.groupBy === 'status' ? <RailGroupStatusDot label={label} />
+              : <Icon glyph={IconGitPullRequest} role="small" tone="faint" className="flex-none" />}
           <span className="truncate">{label}</span>
           {count > 0 && <RailGroupCount>{count}</RailGroupCount>}
         </RailGroupToggle>
@@ -2119,7 +2124,7 @@ function RailTree({
         <EmptyListMessage>
           {activeTagIds.length > 0
             ? `No tab carries ${activeTagIds.length === 1 ? 'that tag' : 'any of those tags'}. Clear the filter in Sidebar options.`
-            : 'No grids match these filters.'}
+            : workspaces.length === 0 ? 'No workspaces yet.' : 'No grids match these filters.'}
         </EmptyListMessage>
       ),
     })
@@ -2168,6 +2173,8 @@ function RailTree({
           onChange={onRailPrefsChange}
           onClose={() => setRailOptionsAnchor(null)}
           selectedTagIds={activeTagIds}
+          selectedTagColors={activeTagIds.flatMap((id) => tagById.get(id)?.color ?? [])}
+          onClearTagFilter={onClearTagFilter}
         />
       </RailTreeGroupHeader>
 
@@ -2383,7 +2390,13 @@ export function Sidebar({
   const [tagFilter, setTagFilter] = useState<number[]>(() =>
     loadTagFilter(),
   );
-  const [railPrefs, setRailPrefs] = useState<RailPrefs>(() => migrateRailPrefs());
+  // The tag filter only applies while cards show tags; a filter saved before that
+  // coupling existed turns the property on instead of being discarded.
+  const [railPrefs, setRailPrefs] = useState<RailPrefs>(() => {
+    const prefs = migrateRailPrefs();
+    if (prefs.properties.includes('tags') || loadTagFilter().length === 0) return prefs;
+    return { ...prefs, properties: [...prefs.properties, 'tags'], customisedProperties: true };
+  });
   const [gridDragId, setGridDragId] = useState<string | null>(null);
   const [gridDrop, setGridDrop] = useState<{ gridId: string; position: 'before' | 'after' } | null>(null);
   const [gridDragRefused, setGridDragRefused] = useState<string | null>(null);
@@ -2477,9 +2490,12 @@ export function Sidebar({
   const tags = useMemo(() => tagsProp ?? [], [tagsProp]);
   const tagById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags]);
   const activeTagIds = useMemo(
-    () => tagFilter.filter((id) => tagById.has(id)),
-    [tagFilter, tagById],
+    () => railPrefs.properties.includes('tags') ? tagFilter.filter((id) => tagById.has(id)) : [],
+    [tagFilter, tagById, railPrefs.properties],
   );
+  useEffect(() => {
+    if (!railPrefs.properties.includes('tags') && tagFilter.length) setTagFilter([]);
+  }, [railPrefs.properties, tagFilter]);
   const filteredWorkspaces = useMemo(
     () =>
       activeTagIds.length === 0
@@ -2714,8 +2730,8 @@ export function Sidebar({
     e.preventDefault();
     e.stopPropagation();
     setMenu(null);
-    const x = Math.min(e.clientX, window.innerWidth - 244);
-    const y = Math.min(e.clientY, window.innerHeight - 100);
+    const x = e.clientX;
+    const y = e.clientY;
     setGridMenu({
       x,
       y,
@@ -2787,12 +2803,12 @@ export function Sidebar({
   const gridMenuEl = gridMenu && (
     <GridContextMenu
       gridMenu={gridMenu}
-      workspaces={workspaces}
       onClose={() => setGridMenu(null)}
+      onOpenGrid={onSelectGrid}
       onStartRename={(path, gridId) => setGridRenaming({ path, gridId })}
       onRemoveGrid={onRemoveGrid}
       onTogglePin={toggleGridPin}
-      onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
+      onOpenInspector={onOpenInspector}
       onError={onOpenExternalError}
     />
   );
@@ -2881,6 +2897,11 @@ export function Sidebar({
             railPrefs={railPrefs}
             pinnedGridIds={pinnedGridIds}
             onRailPrefsChange={(next) => setRailPrefs(next)}
+            onFilterTag={(tag) => {
+              setTagFilter([tag.id]);
+              setRailPrefs((current) => ({ ...current, tags: [tag.id] }));
+            }}
+            onClearTagFilter={() => setTagFilter([])}
             railOptionsAnchor={railOptionsAnchor}
             setRailOptionsAnchor={setRailOptionsAnchor}
             agentCount={sessions.filter((session) => session.state === "running").length}

@@ -21,6 +21,7 @@ const lineClasses = variants('flex items-start pr-1 whitespace-pre', {
 }, { kind: 'ctx', drafted: 'false' })
 
 export interface ReviewDiffLineProps {
+  variant?: 'pr'
   kind: ReviewDiffLineKind
   drafted?: boolean
   oldLine: number | null
@@ -29,9 +30,9 @@ export interface ReviewDiffLineProps {
   action?: ReactNode
 }
 
-export function ReviewDiffLine({ kind, drafted = false, oldLine, newLine, text, action }: ReviewDiffLineProps): React.JSX.Element {
+export function ReviewDiffLine({ variant, kind, drafted = false, oldLine, newLine, text, action }: ReviewDiffLineProps): React.JSX.Element {
   return (
-    <div className={lineClasses({ kind, drafted: drafted ? 'true' : 'false' })} data-kind={kind}>
+    <div className={`${lineClasses({ kind, drafted: drafted ? 'true' : 'false' })}${variant === 'pr' ? ' pr-code-diff-line' : ''}`} data-kind={kind}>
       <Text size="xs" mono className="flex-none w-4 text-right select-none opacity-60" aria-hidden>{oldLine ?? ''}</Text>
       <Text size="xs" mono className="flex-none w-4 text-right select-none opacity-60" aria-hidden>{newLine ?? ''}</Text>
       <Text size="xs" mono className="flex-1 min-w-0">{text || ' '}</Text>

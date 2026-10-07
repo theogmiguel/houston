@@ -81,10 +81,12 @@ export function ChangesFileList({
   wrapDiff?: boolean
   splitDiff?: boolean
 }): React.JSX.Element {
+  const statusGroups = files ? groupRows(files) : []
+  const showCompactGroups = compact && statusGroups.length > 1
   const groups = files
-    ? compact
+    ? compact && !showCompactGroups
       ? [{ group: 'unstaged' as const, rows: files.map(toRow) }]
-      : groupRows(files)
+      : statusGroups
     : []
   if (files === null) {
     return (
@@ -130,12 +132,10 @@ export function ChangesFileList({
         const bulkPaths = groupBulkPaths(group.rows)
         return (
           <PrTab as="div" surface="changes-inline-group" enabled={compact} key={group.group}>
-            {!compact && <div className={changeGroupHeadingClass(group.group)}>
-              {compact && group.group === 'unstaged'
-                ? `UNCOMMITTED · ${group.rows.length} FILE${group.rows.length === 1 ? '' : 'S'}`
-                : GROUP_LABEL[group.group]}
-              {compact && group.group === 'unstaged' ? <span data-testid="changes-total"><span data-tone="added">+{group.rows.reduce((sum, row) => sum + (row.added ?? 0), 0)}</span><span data-tone="deleted">−{group.rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)}</span></span> : <span className={classes.groupCount}>{group.rows.length}</span>}
-              {!(compact && group.group === 'unstaged') && <Tooltip
+            {(!compact || showCompactGroups) && <div className={changeGroupHeadingClass(group.group)}>
+              {GROUP_LABEL[group.group]}
+              <span className={classes.groupCount}>{group.rows.length}</span>
+              {!compact && <Tooltip
                 label={bulkPaths.length === 0 ? groupBulkDisabledReason(group.group) : undefined}
                 className="inline-flex"
               >

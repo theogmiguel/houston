@@ -7,6 +7,7 @@ export type TagPopoverView = 'pick' | 'edit' | 'manage'
 export interface OpenTagPopoverOptions {
   anchor: HTMLElement
   gridId?: string
+  placement?: 'below' | 'right'
   view?: 'pick' | 'manage'
   selectedTagIds?: number[]
   onDismiss?: () => void
@@ -51,19 +52,27 @@ export function TagPopoverHost({
   children: ReactNode
 }): React.JSX.Element {
   const [request, setRequest] = useState<(OpenTagPopoverOptions & { nonce: number }) | null>(null)
+  const [closing, setClosing] = useState(false)
   const sequence = useRef(0)
   const open = useCallback(
-    (options: OpenTagPopoverOptions): void => setRequest({ ...options, nonce: ++sequence.current }),
+    (options: OpenTagPopoverOptions): void => { setClosing(false); setRequest({ ...options, nonce: ++sequence.current }) },
     [],
   )
   const close = useCallback(
-    (): void => setRequest((current) => {
-      current?.anchor.focus()
-      current?.onDismiss?.()
-      return null
-    }),
+    (): void => { setClosing(true) },
     [],
   )
+  useEffect(() => {
+    if (!closing || !request) return
+    const nonce = request.nonce
+    const timer = window.setTimeout(() => {
+      request.anchor.focus()
+      request.onDismiss?.()
+      setRequest((current) => current?.nonce === nonce ? null : current)
+      setClosing(false)
+    }, window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 100)
+    return () => window.clearTimeout(timer)
+  }, [closing, request])
   const value = useMemo(() => ({ open }), [open])
   useEffect(() => {
     const timer = window.setTimeout(() => void preloadTagPopoverSurface(), 0)
@@ -73,9 +82,8 @@ export function TagPopoverHost({
     <TagPopoverContext.Provider value={value}>
       {children}
       {request && (
-        <TagPopoverSurfaceSlot key={request.nonce} request={request} tags={tags} grids={grids} actions={actions} onClose={close} />
+        <TagPopoverSurfaceSlot key={request.nonce} request={request} tags={tags} grids={grids} actions={actions} onClose={close} closing={closing} />
       )}
     </TagPopoverContext.Provider>
   )
 }
-

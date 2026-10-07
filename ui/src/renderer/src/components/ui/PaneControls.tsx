@@ -10,7 +10,7 @@ export function PaneHeadActions({ children }: { children: ReactNode }): React.JS
 }
 
 const HEAD_BUTTON_BASE =
-  `${BTN_ICO_STRUCTURE} ${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none`
+  `${BTN_ICO_STRUCTURE} ${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background-color_0.15s,color_0.15s] active:scale-[0.97] focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none`
 /** Session headers shrink their buttons in narrow panes and dim them while a sibling pane holds focus. */
 const HEAD_BUTTON_LADDER =
   '[@container_(max-width:280px)]:w-[var(--h-pane-icon-button-compact)] [@container_(max-width:280px)]:h-[var(--h-pane-icon-button-compact)] [@container_(max-width:200px)]:w-[var(--h-pane-icon-button-narrow)] [@container_(max-width:200px)]:h-[var(--h-pane-icon-button-narrow)] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]'
@@ -21,9 +21,9 @@ const HEAD_BUTTON_TONE = {
   regular:
     'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)] hover:text-[var(--text-primary)]',
   accent:
-    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:text-[color-mix(in_srgb,var(--accent)_75%,var(--text-primary))]',
+    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[var(--hover-fill)] hover:text-[var(--text-primary)]',
   danger:
-    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] hover:text-[var(--danger)]',
+    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[var(--hover-fill)] hover:text-[var(--text-primary)]',
   info: 'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] hover:bg-[color-mix(in_srgb,var(--info)_16%,transparent)] hover:text-[var(--info)]'
 } as const
 

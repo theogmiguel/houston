@@ -141,10 +141,10 @@ const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shor
 import { UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
-import { FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
+import { FilesSurfaceDelete470, FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceImage470, FilesSurfaceImage732, FilesSurfaceMarkdown470, FilesSurfaceMarkdown732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
 import { EditorSurfaceMenuStory, LayoutDropSlotsStory, MarkdownPreviewStory, OpenInSubmenuStory, EditorPreviewStatesStory, DictationListeningStory, DictationTranscribingStory, WindowControlsStory } from './workbenchStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
-import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper, SurfaceBrowserEmpty, SurfaceBrowserEmpty340, SurfaceBrowserPage, SurfaceBrowserPage340, SurfaceDiff, SurfaceDiff340, SurfaceDiff600, SurfaceDiff732, SurfaceLauncher, SurfacePrFailing, SurfacePrFailing340, SurfacePrFailing600, SurfacePrFailing732, SurfacePrPassing, SurfaceWidth340, SurfaceWidth470, SurfaceWidth600, SurfaceWidth732 } from './inspectorStories'
+import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper, SurfaceBrowserEmpty, SurfaceBrowserEmpty340, SurfaceBrowserPage, SurfaceBrowserPage340, SurfaceDiff, SurfaceDiff340, SurfaceDiff600, SurfaceDiff732, SurfaceDiffGraphite, SurfaceLauncher, SurfacePrFailing, SurfacePrFailing340, SurfacePrFailing600, SurfacePrFailing732, SurfacePrPassing, SurfaceWidth340, SurfaceWidth470, SurfaceWidth600, SurfaceWidth732 } from './inspectorStories'
 import {
   LegacyBranchesStory,
   LegacyBranchesPopulatedStory,
@@ -168,6 +168,7 @@ import {
   LegacyUpdateStory
 } from './dialogStories'
 import { GridRailRow } from '../src/components/ui/GridRailRow'
+import { TagPopoverHost } from '../src/components/tags/TagPopover'
 import type { PrInfo } from '../src/houston/client'
 import { FirstRunHooksStepSpecimen } from '../src/components/ui/FirstRunHooksStep'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
@@ -177,7 +178,7 @@ import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEdit
 import { PaneCheckoutHeaderStory, PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
-import { PullRequestsScreenStory } from './prsStories'
+import { PullRequestDetailStory, PullRequestsScreenStory } from './prsStories'
 
 const noop = (): void => {}
 
@@ -200,9 +201,12 @@ function RailGridRowStory({ theme, width }: { theme: 'graphite' | 'paper'; width
     is_draft: false,
   }
   const store = React.useMemo(() => createSessionsStore(new Map(sessions.map((session) => [session.id, session]))), [])
+  const tags = [{ id: 1, name: 'Bug', color: '#f472b6' }, { id: 2, name: 'Teste', color: '#f59e0b' }]
   return <div style={{ width, height: '100%', padding: 18, background: 'var(--background)' }}>
     <SessionsStoreContext.Provider value={store}>
-      <GridRailRow name="Rail implementation" workspace="/work/houston" gridId="grid-rail" selected paneIds={[11, 12]} tags={[{ id: 1, name: 'Bug', color: '#f472b6' }, { id: 2, name: 'Teste', color: '#f59e0b' }]} fallbackSessions={sessions} branches={new Map([[11, 'ui/p4-rail'], [12, 'ui/p4-rail']])} diffByDir={new Map([['/work/houston', { added: 142, deleted: 39, ahead: 2, behind: 0, changedFiles: 5 }], ['/work/houston-wt', { added: 24, deleted: 8, ahead: 0, behind: 1, changedFiles: 2 }]])} prByDir={new Map([['/work/houston', { gh: 'ready', pr }]])} jumpNumber={1} onSelect={noop} onOpenInspector={noop} />
+      <TagPopoverHost tags={tags} grids={[{ id: 'grid-rail', title: 'Rail implementation', tags: [1, 2] }]} actions={{ onCreate: (name, color) => ({ id: 3, name, color }), onUpdate: noop, onDelete: noop, onApply: noop }}>
+        <GridRailRow name="Rail implementation" workspace="/work/houston" gridId="grid-rail" selected paneIds={[11, 12]} tags={tags} fallbackSessions={sessions} branches={new Map([[11, 'ui/p4-rail'], [12, 'ui/p4-rail']])} diffByDir={new Map([['/work/houston', { added: 142, deleted: 39, ahead: 2, behind: 0, changedFiles: 5 }], ['/work/houston-wt', { added: 24, deleted: 8, ahead: 0, behind: 1, changedFiles: 2 }]])} prByDir={new Map([['/work/houston', { gh: 'ready', pr }]])} jumpNumber={1} onSelect={noop} onOpenInspector={noop} />
+      </TagPopoverHost>
     </SessionsStoreContext.Provider>
   </div>
 }
@@ -355,6 +359,11 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'files/surface-quick-open': () => <FilesSurfaceQuickOpen />,
   'files/surface-disk-changed': () => <FilesSurfaceDiskChanged />,
   'files/surface-open-in': () => <FilesSurfaceOpenIn />,
+  'files/surface-markdown-470': () => <FilesSurfaceMarkdown470 />,
+  'files/surface-markdown-732': () => <FilesSurfaceMarkdown732 />,
+  'files/surface-image-470': () => <FilesSurfaceImage470 />,
+  'files/surface-image-732': () => <FilesSurfaceImage732 />,
+  'files/surface-delete-470': () => <FilesSurfaceDelete470 />,
   'connections/slack-connected': () => <SlackConnectionsStory state="connected" />,
   'connections/slack-reconnecting': () => <SlackConnectionsStory state="reconnecting" />,
   'connections/slack-off': () => <SlackConnectionsStory state="off" />,
@@ -386,6 +395,22 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'prs/screen-sort-menu': () => <PullRequestsScreenStory mode="sort" />,
   'prs/screen-filter-menu': () => <PullRequestsScreenStory mode="filters" />,
   'prs/screen-hover': () => <PullRequestsScreenStory mode="hover" />,
+  'prs/screen-selected': () => <PullRequestsScreenStory mode="selected" />,
+  'prs/screen-folded': () => <PullRequestsScreenStory mode="folded" />,
+  'prs/screen-timeline': () => <PullRequestsScreenStory mode="timeline" />,
+  'prs/screen-code': () => <PullRequestsScreenStory mode="code" />,
+  'prs/screen-draft': () => <PullRequestsScreenStory mode="draft" />,
+  'prs/screen-closed': () => <PullRequestsScreenStory mode="closed" />,
+  'prs/detail-timeline-470': () => <PullRequestDetailStory width={470} tab="timeline" />,
+  'prs/detail-timeline-732': () => <PullRequestDetailStory width={732} tab="timeline" />,
+  'prs/detail-code-470': () => <PullRequestDetailStory width={470} tab="code" />,
+  'prs/detail-code-732': () => <PullRequestDetailStory width={732} tab="code" />,
+  'prs/detail-draft-470': () => <PullRequestDetailStory width={470} state="draft" />,
+  'prs/detail-draft-732': () => <PullRequestDetailStory width={732} state="draft" />,
+  'prs/detail-merged-470': () => <PullRequestDetailStory width={470} state="merged" />,
+  'prs/detail-merged-732': () => <PullRequestDetailStory width={732} state="merged" />,
+  'prs/detail-closed-470': () => <PullRequestDetailStory width={470} state="closed" />,
+  'prs/detail-closed-732': () => <PullRequestDetailStory width={732} state="closed" />,
   'rail/grid-row-graphite-200': () => <RailGridRowStory theme="graphite" width={200} />,
   'rail/grid-row-graphite-240': () => <RailGridRowStory theme="graphite" width={240} />,
   'rail/grid-row-graphite-420': () => <RailGridRowStory theme="graphite" width={420} />,
@@ -512,6 +537,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'shell-a/changes-paper': () => <InspectorChangesPaper />,
   'surface/launcher': () => <SurfaceLauncher />,
   'surface/diff': () => <SurfaceDiff />,
+  'surface/diff-graphite': () => <SurfaceDiffGraphite />,
   'surface/diff-340': () => <SurfaceDiff340 />,
   'surface/diff-600': () => <SurfaceDiff600 />,
   'surface/diff-732': () => <SurfaceDiff732 />,

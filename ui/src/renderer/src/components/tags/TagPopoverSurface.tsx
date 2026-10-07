@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TagInfo } from '../../houston/generated/TagInfo'
 import { Icon } from '../ui/Icon'
-import { IconChevronLeft, IconCheck, IconPencil, IconPlus, IconGear, IconTrash } from '../icons'
+import { IconChevronLeft, IconCheck, IconClose, IconPencil, IconPlus, IconGear, IconTrash, IconAlertTriangle } from '../icons'
 import { TagChip } from '../ui/TagChip'
 import { TagSwatchDot } from '../ui/TagSwatch'
 import { Tooltip } from '../ui/Tooltip'
@@ -63,12 +63,14 @@ export function TagPopoverSurface({
   grids,
   actions,
   onClose,
+  closing,
 }: {
   request: OpenTagPopoverOptions & { nonce: number }
   tags: TagInfo[]
   grids: TagGrid[]
   actions: TagPopoverActions
   onClose: () => void
+  closing?: boolean
 }): React.JSX.Element {
   const [localTags, setLocalTags] = useState<TagInfo[]>([])
   const tags = [...localTags, ...externalTags.filter((tag) => !localTags.some((local) => local.id === tag.id))]
@@ -97,16 +99,20 @@ export function TagPopoverSurface({
     [undo, setUndo] = useState<{ tag: TagInfo; gridIds: string[] } | null>(null)
   const [dimensions, setDimensions] = useState({ width: 232, height: 0 }),
     [position, setPosition] = useState({ left: 0, top: 0, ox: 0, oy: 0 })
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const popRef = useRef<HTMLDivElement>(null),
     nameRef = useRef<HTMLInputElement>(null),
     viewRef = useRef<HTMLDivElement>(null)
+  const anchorRect = useRef(request.anchor.getBoundingClientRect())
   const reducedMotion =
     typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const push = (next: TagPopoverView): void => {
+    setDirection('forward')
     setStack((items) => [...items, view])
     setView(next)
   }
   const back = (): void => {
+    setDirection('back')
     if (view === 'edit') cancelEdit()
     else {
       setView(stack.at(-1) ?? 'pick')
@@ -122,6 +128,7 @@ export function TagPopoverSurface({
     setHexError('')
   }
   const cancelEdit = (): void => {
+    setDirection('back')
     setEditing(null)
     if (inline !== null) setInline(null)
     else {
@@ -200,18 +207,18 @@ export function TagPopoverSurface({
   }
 
   useEffect(() => {
-    const anchor = request.anchor
     const update = (): void => {
-      const rect = anchor.getBoundingClientRect(),
+      const rect = anchorRect.current,
         width = dimensions.width,
         height = dimensions.height || 260
-      let left = request.gridId ? rect.right + 4 : rect.right + 4
-      let top = rect.top - 4
-      if (left + width > window.innerWidth - 8) left = rect.left - width - 4
+      const below = request.placement === 'below' || (request.placement !== 'right' && Boolean(request.gridId && request.anchor.closest('[data-testid="grid-row"]')))
+      let left = below ? rect.left : rect.right + 4
+      let top = below ? rect.bottom + 4 : rect.top - 4
+      if (left + width > window.innerWidth - 8) left = below ? window.innerWidth - width - 8 : rect.left - width - 4
       if (top + height > window.innerHeight - 8) top = window.innerHeight - height - 8
       left = Math.max(8, left)
       top = Math.max(8, top)
-      setPosition({ left, top, ox: left < rect.left ? width : 0, oy: Math.max(0, rect.top - top + 12) })
+      setPosition({ left, top, ox: below ? Math.max(0, rect.left - left + 8) : left < rect.left ? width : 0, oy: below ? 0 : Math.max(0, rect.top - top + 12) })
     }
     update()
     window.addEventListener('resize', update)
@@ -220,7 +227,7 @@ export function TagPopoverSurface({
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
-  }, [dimensions, request.anchor, request.gridId])
+  }, [dimensions, request.anchor, request.gridId, request.placement])
   useEffect(() => {
     const node = viewRef.current
     if (!node || typeof ResizeObserver === 'undefined') return
@@ -329,7 +336,7 @@ export function TagPopoverSurface({
     ) : (
       <TagManageView
         tags={tags} grids={grids} stackLength={stack.length} highlight={highlight} undo={undo}
-        deleteId={deleteId} inline={inline} nameRef={nameRef} name={name} color={color}
+        deleteId={deleteId} inline={inline} nameRef={nameRef} name={name} color={color} custom={custom} recent={recent}
         reason={reason} hsv={hsv} hexDraft={hexDraft} hexError={hexError}
         onBack={back} onRestore={() => { if (undo) actions.onRestore?.(undo.tag, undo.gridIds); setUndo(null) }}
         onEdit={(tag) => { startEdit(tag); setInline(tag.id) }}
@@ -347,6 +354,10 @@ export function TagPopoverSurface({
           dragColor(event)
         }}
         onPointerMove={dragColor} onPointerUp={() => { started.current = null }}
+        onCustomChange={setCustom} onCustomToggle={() => {
+          setCustom((value) => !value)
+          if (!color) setColorValue(hsvToHex(hsv), true)
+        }}
         onCancelEdit={cancelEdit} onSave={save}
       />
     )
@@ -360,19 +371,22 @@ export function TagPopoverSurface({
       data-testid="tag-popover"
       onKeyDown={onKeyDown}
       onPointerMove={dragColor}
-      className={`${TAG_POPOVER_CLS.dialog} ${animation} ${reducedMotion ? '' : TAG_POPOVER_CLS.dialogAnimation}`}
+      className={`${TAG_POPOVER_CLS.dialog} ${animation} ${closing ? TAG_POPOVER_CLS.closing : ''} ${reducedMotion ? '' : TAG_POPOVER_CLS.dialogAnimation}`}
       style={{
         left: position.left,
         top: position.top,
         transformOrigin: `${position.ox}px ${position.oy}px`,
+        height: dimensions.height || undefined,
         transition: reducedMotion
           ? undefined
-          : 'width 150ms var(--motion-panel-ease),height 150ms var(--motion-panel-ease)',
+          : 'width 150ms var(--motion-panel-ease),height 150ms var(--motion-panel-ease),left 150ms var(--motion-panel-ease),top 150ms var(--motion-panel-ease)',
       }}
     >
       <div
         ref={viewRef}
+        key={view}
         data-view={view}
+        data-direction={direction}
         className={
           reducedMotion ? '' : TAG_POPOVER_CLS.viewAnimation
         }
@@ -430,13 +444,13 @@ function TagPickView({
         <Icon glyph={IconPlus} role="label" />
         New tag…
       </button>
-      <button type="button" onClick={onManage} className={TAG_POPOVER_CLS.menuAction}>
+      {tags.length > 0 && <button type="button" onClick={onManage} className={TAG_POPOVER_CLS.menuAction}>
         <Icon glyph={IconGear} role="label" />
         Manage tags…
-      </button>
+      </button>}
       {!gridId && selected.length > 0 && (
         <button type="button" onClick={onClear} className={TAG_POPOVER_CLS.menuAction}>
-          Clear filter
+          <Icon glyph={IconClose} role="label" />Clear filter
         </button>
       )}
     </>
@@ -463,8 +477,7 @@ function TagPickRow({ tag, grid, checked, full, highlighted, onToggle }: {
         role="menuitemcheckbox"
         aria-checked={checked}
         aria-disabled={full}
-        disabled={full}
-        onClick={() => onToggle(tag)}
+        onClick={() => { if (!full) onToggle(tag) }}
         className={`${TAG_POPOVER_CLS.pickRow} ${highlighted ? TAG_POPOVER_CLS.selected : ''}`}
       >
         <TagSwatchDot color={tag.color} size="menu" />
@@ -519,10 +532,10 @@ function TagEditView(props: TagEditViewProps): React.JSX.Element {
           <div className={TAG_POPOVER_CLS.swatchList}>
             {presets.map((preset) => (
               <Tooltip key={preset} label={preset}>
-                <button type="button" aria-label={`Color ${preset}`} aria-pressed={color === preset && !custom} onClick={() => { props.onCustomChange(false); props.onColorValue(preset) }} className={`${TAG_POPOVER_CLS.colorSwatch} ${color === preset && !custom ? TAG_POPOVER_CLS.colorSwatchSelected : ''}`} style={{ backgroundColor: preset }} />
+                <button type="button" aria-label={`Color ${preset}`} aria-pressed={color === preset && !custom} onClick={() => { props.onCustomChange(false); props.onColorValue(preset) }} className={`${TAG_POPOVER_CLS.colorSwatch} ${color === preset && !custom ? TAG_POPOVER_CLS.colorSwatchSelected : ''}`} style={{ backgroundColor: preset, '--tag-color': preset } as React.CSSProperties} />
               </Tooltip>
             ))}
-            <button type="button" aria-label="Custom color" aria-pressed={custom} onClick={props.onCustomToggle} className={TAG_POPOVER_CLS.customColor} style={{ background: custom ? (color ?? undefined) : undefined }}>⌁</button>
+            <Tooltip label="Custom color"><button type="button" aria-label="Custom color" aria-pressed={custom} onClick={props.onCustomToggle} className={`${TAG_POPOVER_CLS.customColor} ${custom ? TAG_POPOVER_CLS.colorSwatchSelected : ''}`} style={{ background: custom ? (color ?? undefined) : undefined, '--tag-color': color ?? 'var(--text-muted)' } as React.CSSProperties}>{!custom && <Icon glyph={IconPencil} role="small" />}</button></Tooltip>
           </div>
         </div>
         <div className={`${TAG_POPOVER_CLS.customColorWrap} ${custom ? TAG_POPOVER_CLS.customColorExpanded : TAG_POPOVER_CLS.customColorCollapsed}`}>
@@ -533,8 +546,8 @@ function TagEditView(props: TagEditViewProps): React.JSX.Element {
               <div className={TAG_POPOVER_CLS.colorValueRow}>
                 <span aria-hidden className={TAG_POPOVER_CLS.colorPreview} style={{ background: color ?? 'transparent' }} />
                 <input data-hex value={hexDraft} aria-label="Hex or rgb color" onChange={(event) => props.onHexChange(event.target.value)} className={TAG_POPOVER_CLS.hexInput} />
-                {hexError && <span role="alert" className={TAG_POPOVER_CLS.error}>{hexError}</span>}
               </div>
+              {hexError && <span role="alert" className={TAG_POPOVER_CLS.error}>{hexError}</span>}
             </div>
           </div>
         </div>
@@ -542,7 +555,7 @@ function TagEditView(props: TagEditViewProps): React.JSX.Element {
           <span className={TAG_POPOVER_CLS.quietText}>Preview</span>
           {color ? <TagChip tag={{ id: editing?.id ?? 0, name: name.trim() || 'tag', color }} /> : <span className={TAG_POPOVER_CLS.quietText}>Pick a color</span>}
         </div>
-        {color && hasLowContrast(color) && <p className={TAG_POPOVER_CLS.warning}>Low contrast on this theme</p>}
+        {color && hasLowContrast(color) && <p className={TAG_POPOVER_CLS.warning}><Icon glyph={IconAlertTriangle} role="small" />Low contrast on this theme</p>}
         <div className={TAG_POPOVER_CLS.actions}>
           <span className={TAG_POPOVER_CLS.reason}>{name.trim() ? reason : ''}</span>
           <Button variant="ghost" size="sm" onClick={props.onCancel}>Cancel</Button>
@@ -555,7 +568,8 @@ function TagEditView(props: TagEditViewProps): React.JSX.Element {
 
 function hasLowContrast(color: string): boolean {
   const foreground = luminance(color)
-  const background = luminance('#17171b')
+  const railColor = getComputedStyle(document.documentElement).getPropertyValue('--rail-bg').trim()
+  const background = luminance(parseTagColor(railColor) ?? '#17171b')
   return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05) < 1.8
 }
 
@@ -564,7 +578,7 @@ function SaturationValuePicker({ hsv, heightClass, shadow, onPointerDown, onPoin
   shadow?: boolean
 }): React.JSX.Element {
   return (
-    <div role="application" aria-label="Saturation and value" className={`${TAG_POPOVER_CLS.colorPicker} ${heightClass}`} style={{ background: `linear-gradient(to top, #000, transparent),linear-gradient(to right,#fff,transparent),hsl(${hsv.h} 100% 50%)` }} onPointerDown={(event) => onPointerDown(event.currentTarget, 'sv', event)} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
+    <div role="application" aria-label="Saturation and value" className={`${TAG_POPOVER_CLS.colorPicker} ${heightClass}`} style={{ background: `linear-gradient(to top, #000, transparent),linear-gradient(to right,#fff,hsl(${hsv.h} 100% 50%))` }} onPointerDown={(event) => onPointerDown(event.currentTarget, 'sv', event)} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
       <span aria-hidden className={tagPopoverPickerMarkerClass(shadow)} style={{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }} />
     </div>
   )
@@ -613,6 +627,8 @@ type TagManageViewProps = ColorPointerProps & {
   nameRef: React.RefObject<HTMLInputElement | null>
   name: string
   color: string | null
+  custom: boolean
+  recent: string[]
   reason: string | null
   hexDraft: string
   hexError: string
@@ -625,6 +641,8 @@ type TagManageViewProps = ColorPointerProps & {
   onNew: () => void
   onNameChange: (value: string) => void
   onColorValue: (value: string, fromPanel?: boolean) => void
+  onCustomChange: (value: boolean) => void
+  onCustomToggle: () => void
   onHexChange: (value: string) => void
   onCancelEdit: () => void
   onSave: () => void
@@ -658,14 +676,25 @@ function TagManageRow({ tag, usage, highlighted, deleting, inline, editProps }: 
 }
 
 function TagInlineEdit({ props }: { props: TagManageViewProps }): React.JSX.Element {
+  const presets = [...PRESETS, ...props.recent.filter((entry) => !PRESETS.includes(entry))]
   return (
     <div className={TAG_POPOVER_CLS.inlineBody}>
       <input ref={props.nameRef} value={props.name} maxLength={40} aria-label="Tag name" onChange={(event) => props.onNameChange(event.target.value)} className={TAG_POPOVER_CLS.inlineNameInput} />
-      <div className={TAG_POPOVER_CLS.swatchList}>{PRESETS.map((preset) => <button key={preset} type="button" aria-label={`Color ${preset}`} aria-pressed={props.color === preset} onClick={() => props.onColorValue(preset)} className={TAG_POPOVER_CLS.colorSwatch} style={{ background: preset }} />)}</div>
-      <SaturationValuePicker hsv={props.hsv} heightClass={TAG_POPOVER_CLS.colorPickerInlineHeight} onPointerDown={props.onPointerDown} onPointerMove={props.onPointerMove} onPointerUp={props.onPointerUp} />
-      <HuePicker hsv={props.hsv} compact marker={false} onPointerDown={props.onPointerDown} onPointerMove={props.onPointerMove} onPointerUp={props.onPointerUp} />
-      <input data-hex value={props.hexDraft} aria-label="Hex or rgb color" onChange={(event) => props.onHexChange(event.target.value)} className={TAG_POPOVER_CLS.inlineHexInput} />
-      {props.hexError && <span role="alert" className={TAG_POPOVER_CLS.error}>{props.hexError}</span>}
+      <div className={TAG_POPOVER_CLS.fieldLabel}>Color</div>
+      <div className={TAG_POPOVER_CLS.swatchList}>
+        {presets.map((preset) => <Tooltip key={preset} label={preset}><button type="button" aria-label={`Color ${preset}`} aria-pressed={props.color === preset && !props.custom} onClick={() => { props.onCustomChange(false); props.onColorValue(preset) }} className={`${TAG_POPOVER_CLS.colorSwatch} ${props.color === preset && !props.custom ? TAG_POPOVER_CLS.colorSwatchSelected : ''}`} style={{ background: preset, '--tag-color': preset } as React.CSSProperties} /></Tooltip>)}
+        <Tooltip label="Custom color"><button type="button" aria-label="Custom color" aria-pressed={props.custom} onClick={props.onCustomToggle} className={`${TAG_POPOVER_CLS.customColor} ${props.custom ? TAG_POPOVER_CLS.colorSwatchSelected : ''}`} style={{ background: props.custom ? props.color ?? undefined : undefined, '--tag-color': props.color ?? 'var(--text-muted)' } as React.CSSProperties}>{!props.custom && <Icon glyph={IconPencil} role="small" />}</button></Tooltip>
+      </div>
+      <div className={`${TAG_POPOVER_CLS.customColorWrap} ${props.custom ? TAG_POPOVER_CLS.customColorExpanded : TAG_POPOVER_CLS.customColorCollapsed}`}><div className={TAG_POPOVER_CLS.crop}>
+        <div className={TAG_POPOVER_CLS.colorEditor}>
+          <SaturationValuePicker hsv={props.hsv} heightClass={TAG_POPOVER_CLS.colorPickerHeight} onPointerDown={props.onPointerDown} onPointerMove={props.onPointerMove} onPointerUp={props.onPointerUp} />
+          <HuePicker hsv={props.hsv} onPointerDown={props.onPointerDown} onPointerMove={props.onPointerMove} onPointerUp={props.onPointerUp} />
+          <div className={TAG_POPOVER_CLS.colorValueRow}><span className={TAG_POPOVER_CLS.colorPreview} style={{ background: props.color ?? 'transparent' }} /><input data-hex value={props.hexDraft} aria-label="Hex or rgb color" onChange={(event) => props.onHexChange(event.target.value)} className={TAG_POPOVER_CLS.hexInput} /></div>
+          {props.hexError && <span role="alert" className={TAG_POPOVER_CLS.error}>{props.hexError}</span>}
+        </div>
+      </div></div>
+      <div className={TAG_POPOVER_CLS.previewRow}><span className={TAG_POPOVER_CLS.quietText}>Preview</span>{props.color ? <TagChip tag={{ id: props.inline ?? 0, name: props.name.trim() || 'tag', color: props.color }} /> : <span className={TAG_POPOVER_CLS.quietText}>Pick a color</span>}</div>
+      {props.color && hasLowContrast(props.color) && <span className={TAG_POPOVER_CLS.warning}><Icon glyph={IconAlertTriangle} role="small" />Low contrast on this theme</span>}
       <div className={TAG_POPOVER_CLS.inlineActions}><Button variant="ghost" size="sm" onClick={props.onCancelEdit}>Cancel</Button><Button variant="primary" size="sm" disabled={Boolean(props.reason)} onClick={props.onSave}>Save</Button></div>
     </div>
   )

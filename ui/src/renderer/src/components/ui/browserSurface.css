@@ -67,7 +67,7 @@
   border-radius: var(--tr-radius-input);
   background: color-mix(in srgb, var(--accent) 22%, var(--card-bg));
   color: var(--accent);
-  font-size: var(--tr-text-surface-micro);
+  font-size: var(--tr-text-xs);
   font-weight: 700;
   line-height: 1;
 }
@@ -148,7 +148,7 @@
   border-radius: var(--tr-radius-surface-full);
   background: var(--ok);
   color: var(--content-bg);
-  font-size: var(--tr-text-browser-count);
+  font-size: var(--tr-text-xs);
   font-weight: 700;
 }
 .browser-surface-menu {
@@ -270,26 +270,33 @@
   border-radius: var(--tr-radius-surface-circle);
   background: var(--ok);
 }
+/* The pulse crossfades two static rings so the infinite animation stays on the
+   compositor (opacity only) instead of repainting box-shadow every frame. */
+.browser-surface-live::before,
 .browser-surface-live::after {
-  position: absolute;
-  inset: -3px;
-  border-radius: inherit;
-  background: color-mix(in srgb, var(--ok) 22%, transparent);
   content: '';
-  animation: browser-surface-live 2s ease-in-out infinite;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  animation: 2s ease-in-out infinite;
 }
-@keyframes browser-surface-live {
-  0%,
-  100% {
-    opacity: 0.22;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.06;
-    transform: scale(1.5);
-  }
+.browser-surface-live::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
+  animation-name: browser-surface-live-near;
+}
+.browser-surface-live::after {
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--ok) 6%, transparent);
+  opacity: 0;
+  animation-name: browser-surface-live-far;
+}
+@keyframes browser-surface-live-near {
+  50% { opacity: 0; }
+}
+@keyframes browser-surface-live-far {
+  50% { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .browser-surface-live::before,
   .browser-surface-live::after {
     animation: none;
   }
@@ -345,9 +352,9 @@
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
+  flex-wrap: wrap;
   color: var(--text-muted);
   font-size: var(--tr-text-xs);
-  white-space: nowrap;
 }
 .browser-surface-card > svg {
   width: 14px;

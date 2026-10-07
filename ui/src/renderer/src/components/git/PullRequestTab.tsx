@@ -23,8 +23,9 @@ import { Segmented, type SegmentedOption } from '../ui/SegmentedControl'
 import { ScmNotice } from './ScmNotice'
 import { Disclosure } from '../ui/Disclosure'
 import { Icon } from '../ui/Icon'
-import { IconLoaderCircle, IconPencil, IconExternal, IconGitPullRequest, IconCheck, IconFile, IconClose, IconChevronDown } from '../icons'
+import { IconLoaderCircle, IconPencil, IconExternal, IconGitPullRequest, IconCheck, IconFile, IconClose, IconChevronDown, IconMessageSquare } from '../icons'
 import { Tooltip } from '../ui/Tooltip'
+import { useExitAnimation } from '../ui/AnimOut'
 import { prDecisionLabel } from './changes'
 import { PrBrowse } from './PrBrowse'
 import { PrComments, PrInspectorComments, PrThreads } from './PrDiscussion'
@@ -38,7 +39,7 @@ import { PrFooterBar } from './PrFooterBar'
 import { PrBranchSummary } from './PrSummary'
 import { PrWatchRow, PrWatchStack } from '../ui/PrWatch'
 import { PrChecksPanel } from '../prs/PrChecksPanel'
-import { type CheckAgentTarget } from '../prs/ChecksList'
+import { ChecksList, checkKey, type CheckAgentTarget } from '../prs/ChecksList'
 import { PrChecksList, usePrChecksState } from '../prs/usePrChecksState'
 import { CopyChip } from '../ui/CopyChip'
 import { usePrWatch } from './usePrWatch'
@@ -685,7 +686,26 @@ function PrDetailToolbar({
   preloadCode: (target: EventTarget) => void
   onChangePane: (pane: 'summary' | 'timeline' | 'files') => void
 }): React.JSX.Element {
+  const [popoverExpanded, setPopoverExpanded] = useState<string | null>(null)
+  const popoverMotion = useExitAnimation(compact && pane === 'summary' && checkState.popoverOpen, 150)
+  useEffect(() => {
+    if (!checkState.popoverOpen) return
+    const closeOnOutside = (event: PointerEvent): void => {
+      if (event.target instanceof Element && event.target.closest('[data-testid="pr-check-popover"], [data-testid="pr-check-strip-summary"]')) return
+      checkState.setPopoverOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') checkState.setPopoverOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [checkState.popoverOpen, checkState.setPopoverOpen])
   return (
+    <>
     <PrTab
       as={PullRequestRole}
       surface="pr-tab-toolbar"
@@ -697,13 +717,19 @@ function PrDetailToolbar({
       <Segmented<'summary' | 'timeline' | 'files'>
         aria-label="Pull request view"
         value={pane}
-        onChange={onChangePane}
+        onChange={(value) => {
+          checkState.setPopoverOpen(false)
+          onChangePane(value)
+        }}
         options={[
           { value: 'summary', label: 'Summary', testId: 'pr-pane-summary' },
           ...(compact ? [{ value: 'timeline' as const, label: 'Timeline', testId: 'pr-pane-timeline' }] : []),
           { value: 'files', label: compact ? 'Code' : 'Files', testId: compact ? 'pr-pane-code' : 'pr-pane-files' }
         ] satisfies SegmentedOption<'summary' | 'timeline' | 'files'>[]}
       />
+      {compact && pane === 'timeline' && (
+        <PrTab as="span" surface="pr-timeline-counts"><Icon glyph={IconMessageSquare} role="small" /> {detail.comments_total} <span>·</span> {detail.commit_count} commits</PrTab>
+      )}
       {compact && pane === 'summary' && (
         <>
           <Button
@@ -711,12 +737,9 @@ function PrDetailToolbar({
             size="sm"
             type="button"
             data-testid="pr-check-strip-summary"
-            aria-expanded={checkState.sectionOpen}
+            aria-expanded={checkState.popoverOpen}
             style={{ color: checkState.failedCount > 0 ? 'var(--stop)' : 'var(--text-secondary)' }}
-            onClick={() => {
-              checkState.setSectionOpen(true)
-              document.querySelector('[data-testid="pr-checks"]')?.scrollIntoView?.({ block: 'nearest' })
-            }}
+            onClick={() => checkState.setPopoverOpen((open) => !open)}
           >
             {checkState.failedCount > 0 ? (
               <>
@@ -731,43 +754,68 @@ function PrDetailToolbar({
           </Button>
         </>
       )}
+      {popoverMotion.mounted && (
+        <PrTab as="div" surface="pr-check-popover" state={popoverMotion.closing ? 'closing' : undefined} data-testid="pr-check-popover" data-failing={checkState.failedCount > 0} aria-label="Pull request checks" aria-hidden={popoverMotion.closing || undefined}>
+          <PrTab as="div" surface="pr-check-popover-title">{checkState.failedCount > 0 ? `${checkState.failedCount} check failed` : 'All checks have passed'}</PrTab>
+          <PrTab as="div" surface="pr-check-popover-subtitle">{checkState.passedCount} passed{checkState.failedCount > 0 ? ` · ${checkState.failedCount} failed` : ''}</PrTab>
+          <ChecksList
+            {...checkState.listProps}
+            expanded={popoverExpanded}
+            onToggle={(check) => {
+              const key = checkKey(check)
+              setPopoverExpanded((current) => current === key ? null : key)
+              if (checkState.listProps.expanded !== key) checkState.listProps.onToggle(check)
+            }}
+          />
+        </PrTab>
+      )}
       {!compact && (
         <Button variant="compact-action" type="button" data-testid="pr-browse-open" onClick={onBrowse}>
           Browse…
-        </Button>
-      )}
-      {pr.viewed !== null && (
-        <PullRequestRole data-testid="pr-browsed" as="span" role="viewed-label">
-          Viewing #{pr.viewed}, not this branch's pull request
-        </PullRequestRole>
-      )}
-      {pr.viewed !== null && (
-        <Button variant="legacy-secondary" type="button" data-testid="pr-back-to-branch" onClick={pr.showBranch}>
-          Back
         </Button>
       )}
       <PullRequestRole as="span" role="merge-status">
         {detail.mergeable === 'conflicting' ? 'conflicts' : ''}
       </PullRequestRole>
     </PrTab>
+    {pr.viewed !== null && (
+      <PrTab as="div" surface="pr-viewed-notice">
+        <PullRequestRole data-testid="pr-browsed" as="span" role="viewed-label">
+          Viewing #{pr.viewed}, not this branch's pull request
+        </PullRequestRole>
+        <Button variant="legacy-secondary" type="button" data-testid="pr-back-to-branch" onClick={pr.showBranch}>
+          Back
+        </Button>
+      </PrTab>
+    )}
+    </>
   )
 }
 
-function PrBranchHeader({ link, detail, actionBar }: {
+function PrBranchHeader({ link, detail, actionBar, condensed, foldRef, condensedRef }: {
   link: PullRequestLink
   detail: PrDetail
   actionBar: React.ReactNode
+  condensed: boolean
+  foldRef: React.RefObject<HTMLDivElement | null>
+  condensedRef: React.RefObject<HTMLDivElement | null>
 }): React.JSX.Element {
   const updatedMinutes = Math.max(0, Math.floor((Date.now() / 1000 - detail.updated_at) / 60))
-  return <>
+  const number = (testId?: string): React.JSX.Element => <PrTab as="a" surface="pr-crumb-number" state={link.is_draft && link.state === 'open' ? 'draft' : link.state} href={link.url} data-testid={testId}>#{link.number}<Icon glyph={IconExternal} role="small" /></PrTab>
+  return <PrTab as="div" surface="pr-scroll-header" data-testid="pr-scroll-header" data-condensed={condensed}>
     <PrTab as="div" surface="pr-branch-topline" data-testid="pr-header-top">
-      <PrTab as="div" surface="pr-branch-identity">
-        <PrTab as="span" surface="pr-crumb-repo">{link.repository}</PrTab>
-        <span data-testid="pr-state"><PrTab as="a" surface="pr-crumb-number" state={link.state} href={link.url} data-testid="pr-number">#{link.number}<Icon glyph={IconExternal} role="small" /></PrTab></span>
+      <PrTab as="div" surface="pr-crumb-cell">
+        <PrTab as="div" surface="pr-crumb-expanded" state={condensed ? 'hidden' : undefined}>
+          <PrTab as="span" surface="pr-crumb-repo">{link.repository}</PrTab><span data-testid="pr-state">{number('pr-number')}</span>
+        </PrTab>
+        <PrTab as="div" surface="pr-crumb-condensed" state={condensed ? undefined : 'hidden'}>
+          {number()}<span>{link.title ?? `Pull request #${link.number}`}</span>
+        </PrTab>
       </PrTab>
       {actionBar}
     </PrTab>
-    <PrTab as="div" surface="pr-branch-heading">
+    <PrTab as="div" surface="pr-header-fold" state={condensed ? 'shut' : undefined}>
+    <div><PrTab as="div" surface="pr-branch-heading" ref={foldRef}>
       <PullRequestRole data-testid="pr-title" as="h2" role="pull-request-title">{link.title ?? `Pull request #${link.number}`}</PullRequestRole>
       <PrTab as="div" surface="pr-branch-author">
         <PrTab as="span" surface="pr-branch-avatar" aria-hidden="true">{(detail.author ?? 'M').slice(0, 1).toUpperCase()}</PrTab>
@@ -779,46 +827,48 @@ function PrBranchHeader({ link, detail, actionBar }: {
         <PrTab as="span" surface="pr-branch-ref-pair"><span>{detail.base_ref ?? 'main'}</span><span aria-hidden="true">←</span><span>{detail.head_ref ?? 'branch'}</span></PrTab>
         <PrTab as="span" surface="pr-branch-stat"><Icon glyph={IconFile} role="small" /><span>{link.changed_files} files</span><PrTab as="span" surface="pr-branch-diff"><span>+{link.additions}</span><span>−{link.deletions}</span></PrTab></PrTab>
       </PrTab>
-      <span data-testid="pr-condensed-row" aria-hidden="true" className="hidden" />
+    </PrTab></div>
     </PrTab>
-  </>
+    <PrTab as="div" surface="pr-condensed-row" state={condensed ? 'open' : undefined}>
+      <div><PrTab as="div" surface="pr-condensed-inner" ref={condensedRef}>
+        <PrTab as="span" surface="pr-branch-avatar" aria-hidden="true">{(detail.author ?? 'M').slice(0, 1).toUpperCase()}</PrTab>
+        <span>{updatedMinutes}m ago</span><span aria-hidden="true">·</span>
+        <PrTab as="span" surface="pr-condensed-refs"><span>{detail.base_ref ?? 'main'}</span><span aria-hidden="true">←</span><span>{detail.head_ref ?? 'branch'}</span></PrTab>
+        <PrTab as="span" surface="pr-branch-stat"><Icon glyph={IconFile} role="small" /><span>{link.changed_files} files</span><PrTab as="span" surface="pr-branch-diff"><span>+{link.additions}</span><span>−{link.deletions}</span></PrTab></PrTab>
+      </PrTab></div>
+    </PrTab>
+  </PrTab>
 }
 
 function PrTimelineSummary({
   detail,
-  pr,
-  number,
-  busy,
-  onSendToOrchestrator
 }: {
   detail: PrDetail
-  pr: PrDetailController
-  number: number
-  busy: boolean
-  onSendToOrchestrator?: (text: string) => void
 }): React.JSX.Element {
+  const age = (timestamp: number): string => {
+    const minutes = Math.max(0, Math.floor(Date.now() / 1000 - timestamp) / 60)
+    if (minutes < 60) return `${Math.floor(minutes)}m ago`
+    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`
+    return `${Math.floor(minutes / 1440)}d ago`
+  }
+  const events = [
+    { key: 'opened', at: detail.created_at, icon: IconGitPullRequest, content: <><strong>{detail.author ?? 'Author'}</strong> opened this pull request</> },
+    ...(detail.commit_count > 0 ? [{ key: 'commits', at: detail.updated_at, icon: IconFile, content: <><strong>{detail.commit_count} commits</strong> on this branch <PrTab as="span" surface="pr-timeline-sha">{detail.head_sha.slice(0, 7)}</PrTab></> }] : []),
+    ...detail.comments.map((comment, index) => ({ key: comment.id ?? `comment-${index}`, at: comment.created_at, icon: IconMessageSquare, content: <><strong>{comment.author}</strong> commented</> })),
+    ...(detail.checks.length > 0 && detail.checks.every((check) => check.state === 'passing')
+      ? [{ key: 'checks', at: detail.updated_at, icon: IconCheck, content: <strong>All checks passed</strong> }]
+      : []),
+  ].sort((a, b) => a.at - b.at)
   return (
-    <PrSummary>
-      {detail.reviews_total > 0 && <PrReviews detail={detail} />}
-      {(detail.threads.length > 0 || detail.threads_message !== null || detail.threads_truncated) && (
-        <PrThreads
-          detail={detail}
-          busy={busy}
-          number={number}
-          onSendToOrchestrator={onSendToOrchestrator}
-          onReply={(threadId, body) => pr.threadReply(number, threadId, body)}
-          onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)}
-          onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)}
-        />
-      )}
-      <PrComments
-        detail={detail}
-        busy={busy}
-        onComment={(body) => pr.comment(number, body)}
-        onCommentEdit={(commentId, body) => pr.commentEdit(number, commentId, 'issue_comment', body)}
-        onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)}
-      />
-    </PrSummary>
+      <PrTab as="div" surface="pr-timeline" data-testid="pr-timeline-events">
+        {events.map((event) => (
+          <PrTab as="div" surface="pr-timeline-event" key={event.key}>
+            <PrTab as="span" surface="pr-timeline-mark" state={event.key === 'checks' ? 'passing' : undefined}><Icon glyph={event.icon} role="small" /></PrTab>
+            <span>{event.content}</span>
+            <PrTab as="time" surface="pr-timeline-age">{age(event.at)}</PrTab>
+          </PrTab>
+        ))}
+      </PrTab>
   )
 }
 
@@ -958,7 +1008,8 @@ function PrDetailBody({
   setOpenPicker,
   drafts,
   onAddDraft,
-  scrollRef
+  scrollRef,
+  onScroll
 }: {
   pane: 'summary' | 'timeline' | 'files'
   compact: boolean
@@ -980,11 +1031,13 @@ function PrDetailBody({
   drafts: PrReviewDraft[]
   onAddDraft: (draft: PrReviewDraft) => void
   scrollRef: React.RefObject<HTMLDivElement | null>
+  onScroll?: React.UIEventHandler<HTMLDivElement>
 }): React.JSX.Element {
   return (
     <PrTab as="div" surface="pr-scroll-area"
       ref={scrollRef}
       data-testid="pr-scroll-area"
+      onScroll={onScroll}
     >
       {compact && pane === 'summary' ? (
         <PrInspectorBoard
@@ -1004,8 +1057,9 @@ function PrDetailBody({
           setOpenPicker={setOpenPicker}
         />
       ) : pane === 'files' ? (
-        <PullRequestRole as="div" role="file-pane">
+        <PullRequestRole as="div" role="file-pane" className={compact ? '!p-0 !gap-0' : ''}>
           <PrFiles
+            key={number}
             diff={pr.diff}
             loading={pr.diffBusy}
             drafts={drafts}
@@ -1015,13 +1069,7 @@ function PrDetailBody({
           />
         </PullRequestRole>
       ) : compact && pane === 'timeline' ? (
-        <PrTimelineSummary
-          detail={detail}
-          pr={pr}
-          number={number}
-          busy={busy}
-          onSendToOrchestrator={onSendToOrchestrator}
-        />
+        <PrTimelineSummary detail={detail} />
       ) : (
         <PrDetailStandardSummary
           link={link}
@@ -1088,7 +1136,14 @@ function PrDetailView({
   const [reviewVerdict, setReviewVerdict] = useState<PrReviewVerdict>('comment')
   const [reviewBody, setReviewBody] = useState('')
   const [reviewDraftsOpen, setReviewDraftsOpen] = useState(false)
+  const [commentOpen, setCommentOpen] = useState(false)
+  const [commentDraft, setCommentDraft] = useState('')
+  const commentMotion = useExitAnimation(compact && commentOpen, 150)
   const [openPicker, setOpenPicker] = useState<'reviewers' | 'labels' | 'stack' | null>(null)
+  const [condensed, setCondensed] = useState(false)
+  const condensedState = useRef(false)
+  const foldRef = useRef<HTMLDivElement | null>(null)
+  const condensedRef = useRef<HTMLDivElement | null>(null)
   const checkState = usePrChecksState({ client, dir, number: link.number, url: link.url, branch: detail.head_ref ?? null, checks: detail.checks, agents: checkAgentTargets, onPasteToAgent, onCreateAgent: onCreateCheckAgent ? (provider, text) => Promise.resolve(onCreateCheckAgent(provider, text)).then((session) => session ?? null) : undefined, onOpenUrl: onOpenUrlInPane, onOpenPane })
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const preloadedCodePr = useRef<number | null>(null)
@@ -1106,8 +1161,26 @@ function PrDetailView({
     setReviewVerdict('comment')
     setReviewBody('')
     setReviewDraftsOpen(false)
+    setCommentOpen(false)
+    setCommentDraft('')
     setOpenPicker(null)
+    condensedState.current = false
+    setCondensed(false)
   }, [number])
+
+  const onDetailScroll = (event: React.UIEvent<HTMLDivElement>): void => {
+    if (!compact) return
+    const scroll = event.currentTarget
+    const foldHeight = foldRef.current?.scrollHeight ?? 0
+    if (!condensedState.current && scroll.scrollTop > foldHeight + 32) {
+      condensedState.current = true
+      setCondensed(true)
+      scroll.scrollTop -= Math.max(0, foldHeight - (condensedRef.current?.scrollHeight ?? 0))
+    } else if (condensedState.current && scroll.scrollTop < 4) {
+      condensedState.current = false
+      setCondensed(false)
+    }
+  }
 
   const preloadCode = (target: EventTarget): void => {
     if (!compact || !(target instanceof Element) || !target.closest('[data-testid="pr-pane-code"]') || preloadedCodePr.current === number) return
@@ -1176,7 +1249,7 @@ function PrDetailView({
 
   return (
     <PullRequestRole data-testid="pr-tab" as="div" role="tab-frame">
-      {compact && pane === 'summary' && <PrBranchHeader link={link} detail={detail} actionBar={actionBar} />}
+      {compact && <PrBranchHeader link={link} detail={detail} actionBar={actionBar} condensed={condensed} foldRef={foldRef} condensedRef={condensedRef} />}
       <PrDetailToolbar
         compact={compact}
         pane={pane}
@@ -1187,6 +1260,9 @@ function PrDetailView({
         preloadCode={preloadCode}
         onChangePane={(value) => {
           setPane(value)
+          condensedState.current = false
+          setCondensed(false)
+          if (scrollRef.current) scrollRef.current.scrollTop = 0
           if (value === 'files' && preloadedCodePr.current !== number) {
             preloadedCodePr.current = number
             pr.loadDiff(number)
@@ -1215,7 +1291,20 @@ function PrDetailView({
         drafts={drafts}
         onAddDraft={addDraft}
         scrollRef={scrollRef}
+        onScroll={onDetailScroll}
       />
+      {compact && <>
+        {commentMotion.mounted && <PrTab as="div" surface="pr-comment-composer" state={commentMotion.closing ? 'closing' : undefined} data-testid="pr-comment-popover" aria-hidden={commentMotion.closing || undefined}>
+          <TextArea surface="background" aria-label="New pull request comment" rows={3} value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder="Write a comment" autoFocus />
+          <PrTab as="div" surface="pr-comment-actions">
+            <Button variant="ghost" size="sm" type="button" onClick={() => setCommentOpen(false)}>Cancel</Button>
+            <Button variant="discussion-submit-action" size="sm" type="button" disabled={busy || commentDraft.trim().length === 0} onClick={() => { pr.comment(number, commentDraft); setCommentDraft(''); setCommentOpen(false) }}>Comment</Button>
+          </PrTab>
+        </PrTab>}
+        <PrTab as="div" surface="pr-comment-fab-host"><Tooltip label="Comment on pull request">
+          <PrTab as="button" surface="pr-comment-fab" type="button" aria-label="Comment on pull request" aria-expanded={commentOpen} onClick={() => setCommentOpen((open) => !open)}><Icon glyph={IconMessageSquare} role="small" /></PrTab>
+        </Tooltip></PrTab>
+      </>}
       {!compact && pane === 'files' && reviewBar}
       {!compact && pane === 'summary' && actionBar}
     </PullRequestRole>

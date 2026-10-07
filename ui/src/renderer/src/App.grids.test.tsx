@@ -173,7 +173,7 @@ describe('grids (step 05, driven from the rail)', () => {
     expect(labels.some((l) => l?.includes('Close Tab'))).toBe(false)
   })
 
-  it('a second tab unlocks Close Tab, and closing it drops back to one row', async () => {
+  it('a second tab unlocks Close grid, and closing it drops back to one row', async () => {
     await boot([1])
     await openWorkspaceMenu()
     await act(async () => {
@@ -183,8 +183,9 @@ describe('grids (step 05, driven from the rail)', () => {
     expect(gridRows()).toHaveLength(2)
 
     await rightClick(gridRows()[1])
-    const remove = menuItems().find((b) => b.textContent?.includes('Close Tab'))
+    const remove = menuItems().find((b) => b.textContent?.includes('Close grid'))
     expect(remove).toBeDefined()
+    expect(remove!.hasAttribute('disabled')).toBe(false)
     await act(async () => {
       remove!.click()
       await Promise.resolve()

@@ -4,7 +4,7 @@ import type { HoustonClient, PrListItem, PrListState, PrSort, ServerMsg } from '
 export function usePullRequestsScreen(client: HoustonClient | null, directory: string | null | undefined, active: boolean) {
   const [items, setItems] = useState<PrListItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [state, setState] = useState<PrListState>('open')
+  const [state, setState] = useState<PrListState>('all')
   const [sort, setSort] = useState<PrSort>('updated')
   const [viewerLogin, setViewerLogin] = useState('')
   const lastRequest = useRef<{ request: number; dir: string } | null>(null)

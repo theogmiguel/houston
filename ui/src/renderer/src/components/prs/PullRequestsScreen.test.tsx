@@ -59,4 +59,22 @@ describe('PullRequestsScreen', () => {
     fireEvent.click(screen.getAllByTestId('pr-row-42')[0])
     expect(onOpen).toHaveBeenCalledWith(item)
   })
+
+  it('keeps the list beside the detail and closes the detail from its tab', () => {
+    render(
+      <PullRequestsScreen
+        repoName="acme/repo"
+        workspace="/repo"
+        currentUser="theo"
+        items={[item]}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('pr-row-42'))
+    expect(screen.getByTestId('pr-row-42').className).toContain('prs-pr-row-selected')
+    expect(screen.getByTestId('pr-screen-detail')).toBeTruthy()
+    expect(screen.getByTestId('pull-requests-screen')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('pr-screen-detail').querySelector('.panel-tab-close')!)
+    expect(screen.queryByTestId('pr-screen-detail')).toBeNull()
+    expect(screen.getByTestId('pr-row-42')).toBeTruthy()
+  })
 })

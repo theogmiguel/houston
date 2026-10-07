@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { FilesSurfaceClass, filesSurfaceClass } from '../ui/FilesSurfaceElement'
 import type { DirEntry } from '../../env'
 import type { GitFileStatus } from '../../houston/client'
@@ -124,7 +124,7 @@ export function Explorer(props: ExplorerProps): React.JSX.Element {
             aria-label={`Search ${props.rootName} files`}
             onChange={(e) => props.setFilter(e.target.value)}
           />
-          <kbd>Ctrl P</kbd>
+          {!props.filter && <kbd>Ctrl P</kbd>}
         </label>
         <Tooltip label="New file">
           <button aria-label="New file" onClick={props.onNew}>
@@ -207,6 +207,7 @@ function ExplorerTreeRow({
   treeRows: ExplorerRow[]
   props: ExplorerProps
 }): React.JSX.Element {
+  const rowRef = useRef<HTMLDivElement>(null)
   const focusPosition = props.searchResults
     ? props.searchResults.findIndex((candidate) => candidate.path === row.path)
     : props.rows.findIndex((candidate) => candidate.path === row.path)
@@ -219,7 +220,9 @@ function ExplorerTreeRow({
   return (
     <div className={filesSurfaceClass(FilesSurfaceClass.rowWrap, nested && FilesSurfaceClass.nested)} key={row.path}>
       <div
+        ref={rowRef}
         role="treeitem"
+        data-path={row.path}
         aria-label={row.name}
         aria-expanded={row.dir ? row.expanded : undefined}
         aria-selected={row.path === props.activePath}
@@ -257,6 +260,7 @@ function ExplorerTreeRow({
         treeRows={treeRows}
         props={props}
         deleteHere={deleteHere}
+        rowRef={rowRef}
       />
     </div>
   )
@@ -268,16 +272,18 @@ function ExplorerTreeRowChildren({
   treeRows,
   props,
   deleteHere,
+  rowRef,
 }: {
   row: ExplorerRow
   index: number
   treeRows: ExplorerRow[]
   props: ExplorerProps
   deleteHere: boolean
+  rowRef: React.RefObject<HTMLDivElement | null>
 }): React.JSX.Element {
   return (
     <>
-      {deleteHere && <TreeDeleteConfirmation row={row} props={props} />}
+      {deleteHere && <TreeDeleteConfirmation row={row} props={props} rowRef={rowRef} />}
       {row.dir && (
         <div
           className={filesSurfaceClass(FilesSurfaceClass.treeKids, row.expanded && FilesSurfaceClass.open, props.deletingPath === row.path && FilesSurfaceClass.collapsing)}
@@ -403,18 +409,37 @@ function ExplorerEditInput({
   )
 }
 
-function TreeDeleteConfirmation({ row, props }: { row: ExplorerRow; props: ExplorerProps }): React.JSX.Element {
+function TreeDeleteConfirmation({ row, props, rowRef }: { row: ExplorerRow; props: ExplorerProps; rowRef: React.RefObject<HTMLDivElement | null> }): React.JSX.Element {
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+  useLayoutEffect(() => {
+    const update = (): void => {
+      const source = rowRef.current?.getBoundingClientRect()
+      const surface = rowRef.current?.closest('.files-surface')?.getBoundingClientRect()
+      if (!source || !surface) return
+      setPosition({
+        left: Math.max(surface.left + 8, Math.min(source.left + 24, surface.right - 264)),
+        top: Math.max(surface.top + 8, Math.min(source.bottom + 4, surface.bottom - 150)),
+      })
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [rowRef])
   return (
     <div
-      className={filesSurfaceClass(FilesSurfaceClass.treeDeleteConfirm, props.deletingPath === row.path && FilesSurfaceClass.collapsing)}
+      className={filesSurfaceClass(FilesSurfaceClass.treeDeleteConfirm, FilesSurfaceClass.floatingGlass, props.deletingPath === row.path && FilesSurfaceClass.collapsing)}
       role="alertdialog"
       aria-label={`Delete ${basename(row.path)}?`}
+      style={position ?? { visibility: 'hidden' }}
     >
       <strong>Delete {basename(row.path)}?</strong>
       <span>The {row.dir ? 'folder and everything in it' : 'file'} will be removed from disk.</span>
       <div className={filesSurfaceClass(FilesSurfaceClass.deleteActions)}>
         <button onClick={props.onCancelDelete}>Cancel</button>
-        <span>·</span>
         <button className={filesSurfaceClass(FilesSurfaceClass.danger)} autoFocus onClick={props.onConfirmDelete}>
           Delete
         </button>
@@ -437,8 +462,8 @@ function treeItemClass(row: ExplorerRow, props: ExplorerProps, statusClass: stri
     row.path === currentPath && FilesSurfaceClass.current,
     props.flashPaths.has(row.path) && FilesSurfaceClass.flash,
     props.ignoredPaths.has(row.path) && FilesSurfaceClass.ignored,
-    statusClass === 'M' ? FilesSurfaceClass.modified : statusClass === 'A' ? FilesSurfaceClass.added : statusClass === 'D' ? FilesSurfaceClass.deleted : false,
-    (props.contextPath === row.path || props.deletePath === row.path) && FilesSurfaceClass.menuOpen,
+    !row.dir && (statusClass === 'M' ? FilesSurfaceClass.modified : statusClass === 'A' ? FilesSurfaceClass.added : statusClass === 'D' ? FilesSurfaceClass.deleted : false),
+    props.contextPath === row.path && FilesSurfaceClass.menuOpen,
     props.deletingPath === row.path && FilesSurfaceClass.collapsing,
   )
 }

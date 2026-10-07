@@ -1,6 +1,7 @@
 export type RailGroupBy = 'none' | 'status' | 'pr' | 'workspace'
 export type RailSort = 'manual' | 'smart' | 'recent' | 'name'
 export type RailCardMode = 'detailed' | 'compact'
+export type RailTagDisplay = 'icon' | 'dots' | 'chips'
 export type AgentActivityMode = 'compact' | 'full'
 export type RailCardProperty =
   'status' | 'unread' | 'checkout' | 'pr' | 'ci' | 'diff' | 'tags' | 'task' | 'inline-agents' | 'context'
@@ -10,6 +11,7 @@ export type RailPrefs = {
   groupBy: RailGroupBy
   sort: RailSort
   cardMode: RailCardMode
+  tagDisplay: RailTagDisplay
   agentActivity: AgentActivityMode
   properties: RailCardProperty[]
   filters: RailFilters
@@ -39,6 +41,7 @@ export const DEFAULT_RAIL_PREFS: RailPrefs = {
   groupBy: 'workspace',
   sort: 'manual',
   cardMode: 'detailed',
+  tagDisplay: 'icon',
   agentActivity: 'compact',
   properties: [...DETAILED_DEFAULT],
   filters: { hideIdle: false, hideDefaultBranch: false, hideEmptyGrids: false },
@@ -88,6 +91,7 @@ export function normalizeRailPrefs(value: unknown): RailPrefs {
         ? source.sort
         : DEFAULT_RAIL_PREFS.sort,
     cardMode: source.cardMode === 'compact' ? 'compact' : 'detailed',
+    tagDisplay: source.tagDisplay === 'dots' || source.tagDisplay === 'chips' ? source.tagDisplay : 'icon',
     agentActivity: source.agentActivity === 'full' ? 'full' : 'compact',
     properties: [...new Set<RailCardProperty>(['status', 'unread', ...list])],
     filters: {

@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 
 export function NavigationRailFooter({ children, className = '', ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
-  return <div {...props} className={`railfoot py-[var(--space-1-5)] px-[var(--space-3)] flex-none flex items-center gap-[var(--space-1)] ${className}`}>{children}</div>
+  return <div {...props} className={`railfoot flex-none flex items-center gap-[var(--space-1)] px-[var(--space-2)] pt-[var(--space-1)] pb-[var(--space-1-5)] ${className}`}>{children}</div>
 }
 
 export function NavigationRailScroll({ children }: { children: ReactNode }): React.JSX.Element {

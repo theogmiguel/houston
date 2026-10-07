@@ -1,8 +1,9 @@
+import './floatingSurface.css'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode, Ref } from 'react'
 import { Text } from './Text'
 
 export function EditorContextMenu({ children, ref, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode; ref?: Ref<HTMLDivElement> }): React.JSX.Element {
-  return <div {...props} ref={ref} className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[var(--w-editor-context-menu)] flex flex-col p-1 bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] [transform-origin:var(--pop-origin-x,center)_var(--pop-origin-y,center)] ${props.className ?? ''}`}>{children}</div>
+  return <div {...props} ref={ref} className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[var(--w-editor-context-menu)] flex flex-col p-1 floating-glass floating-pop-in [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] [transform-origin:var(--pop-origin-x,center)_var(--pop-origin-y,center)] ${props.className ?? ''}`}>{children}</div>
 }
 
 export function EditorContextMenuItem({ children, shortcut, ref, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { children: ReactNode; shortcut?: string; ref?: Ref<HTMLButtonElement> }): React.JSX.Element {

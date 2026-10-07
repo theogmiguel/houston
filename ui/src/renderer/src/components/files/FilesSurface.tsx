@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FilesSurfaceClass, filesSurfaceClass } from '../ui/FilesSurfaceElement'
 import type { ComponentProps } from 'react'
 import type { DirEntry } from '../../env'
@@ -24,6 +24,8 @@ import { copyFilePath } from './fileActions'
 import { QuickOpen, useQuickOpenShortcut } from './QuickOpen'
 import { Explorer } from './FilesExplorer'
 import { FilesContextMenu, FilesExplorerPlacement, FilesPreview, FilesSubheader } from './FilesSurfaceParts'
+import { IconClock } from '../icons'
+import { Icon } from '../ui/Icon'
 import '../ui/filesSurface.css'
 
 export interface FilesSurfaceProps {
@@ -82,10 +84,6 @@ function pathFromContext(context: { path: string } | null): string | null {
   return context?.path ?? null
 }
 
-function shouldDismissContext(event: React.MouseEvent<HTMLElement>, context: { path: string } | null): boolean {
-  return Boolean(context && !(event.target instanceof Element && event.target.closest('.files-context')))
-}
-
 export function filesSurfaceLayout(width: number): 'wide' | 'sheet' {
   return width < 560 ? 'sheet' : 'wide'
 }
@@ -112,9 +110,9 @@ function FilesOpenFile({
       <FilesSubheader {...subheader} />
       {diskChanged && (
         <div className={filesSurfaceClass(FilesSurfaceClass.banner)} role="alert">
-          {basename(path)} changed on disk while you were editing.
-          <span className={filesSurfaceClass(FilesSurfaceClass.spacer)} />
-          <button onClick={onKeepMine}>Keep mine</button>
+          <Icon glyph={IconClock} role="small" />
+          <span className={filesSurfaceClass(FilesSurfaceClass.spacer)}>{basename(path)} changed on disk while you were editing.</span>
+          <button className={filesSurfaceClass(FilesSurfaceClass.bannerGhost)} onClick={onKeepMine}>Keep mine</button>
           <button onClick={onReload}>Reload</button>
         </div>
       )}
@@ -313,14 +311,21 @@ export function FilesSurface({
     observer.observe(trail)
     return () => observer.disconnect()
   }, [path, panelWidth])
-  useEffect(() => {
-    if (!context || !contextMenuRef.current || !surfaceRef.current) return
-    const panel = surfaceRef.current.getBoundingClientRect()
+  useLayoutEffect(() => {
+    if (!context || !contextMenuRef.current) return
     const menu = contextMenuRef.current.getBoundingClientRect()
-    const left = Math.min(context.x, panel.width - menu.width - 8)
-    const top = Math.min(context.y, panel.height - menu.height - 8)
+    const left = Math.min(context.x, window.innerWidth - menu.width - 8)
+    const top = Math.min(context.y, window.innerHeight - menu.height - 8)
     if (left !== context.x || top !== context.y)
       setContext((current) => (current ? { ...current, x: left, y: top } : current))
+  }, [context])
+  useEffect(() => {
+    if (!context) return
+    const dismiss = (event: PointerEvent): void => {
+      if (!contextMenuRef.current?.contains(event.target as Node)) setContext(null)
+    }
+    document.addEventListener('pointerdown', dismiss)
+    return () => document.removeEventListener('pointerdown', dismiss)
   }, [context])
 
   const openQuick = useCallback(() => setQuickOpen(true), [])
@@ -617,8 +622,7 @@ export function FilesSurface({
     contextPath: pathFromContext(context),
     onOpen: openFile,
     onContext: (p: string, dir: boolean, x: number, y: number) => {
-      const bounds = surfaceRef.current?.getBoundingClientRect()
-        setContext({ path: p, dir, x: x - (bounds?.left ?? 0), y: y - (bounds?.top ?? 0) })
+      setContext({ path: p, dir, x, y })
     },
     onKeyDown: onTreeKeyDown,
     focusIndex,
@@ -650,9 +654,6 @@ export function FilesSurface({
       data-panel-compact={panelDataFlag(panelWidth < 400)}
       data-panel-crumb-collapsed={panelDataFlag(panelWidth < 470)}
       style={{ '--files-explorer-width': `${width}px` } as React.CSSProperties}
-      onMouseDown={(event) => {
-        if (shouldDismissContext(event, context)) setContext(null)
-      }}
     >
       {!path ? (
         <div className={filesSurfaceClass(FilesSurfaceClass.main)}>

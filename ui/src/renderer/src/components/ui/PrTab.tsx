@@ -1,5 +1,11 @@
 import * as React from 'react'
 import type { JSX } from 'react'
+import './floatingSurface.css'
+import './prs.css'
+import { MATERIAL_CLS } from './material'
+
+export const PR_FLOATING_MENU = `${MATERIAL_CLS['overlay-glass']} floating-glass floating-pop-in`
+export const PR_FLOATING_CANDIDATES = 'floating-glass floating-pop-in'
 
 const SURFACE_CLASSES = {
   'pr-number': 'font-mono text-[var(--text-secondary)]',
@@ -12,7 +18,19 @@ const SURFACE_CLASSES = {
   'pr-branch-toolbar': 'pr-branch-toolbar',
   'pr-tab-toolbar': 'relative z-20 flex-none flex items-center gap-[var(--space-2)] px-[var(--space-2-5)] py-[var(--space-1-5)] border-b border-b-[var(--divider)]',
   'pr-check-failed-icon': 'pr-check-failed-icon',
+  'pr-check-state-icon': 'pr-check-state-icon',
+  'pr-comment-composer': 'pr-comment-composer',
+  'pr-comment-actions': 'pr-comment-actions',
+  'pr-comment-fab': 'pr-comment-fab',
   'pr-branch-topline': 'pr-branch-topline',
+  'pr-scroll-header': 'pr-scroll-header',
+  'pr-crumb-cell': 'pr-crumb-cell',
+  'pr-crumb-expanded': 'pr-crumb-expanded',
+  'pr-crumb-condensed': 'pr-crumb-condensed',
+  'pr-condensed-row': 'pr-condensed-row',
+  'pr-condensed-inner': 'pr-condensed-inner',
+  'pr-condensed-refs': 'pr-condensed-refs',
+  'pr-header-fold': 'pr-header-fold',
   'pr-branch-identity': 'pr-branch-identity',
   'pr-crumb-repo': 'pr-crumb-repo',
   'pr-crumb-number': 'pr-crumb-number',
@@ -51,6 +69,32 @@ const SURFACE_CLASSES = {
   'pr-inspector-reply': 'pr-inspector-reply',
   'pr-inspector-reply-actions': 'pr-inspector-reply-actions',
   'pr-inspector-thread-actions': 'pr-inspector-thread-actions',
+  'pr-timeline': 'pr-timeline',
+  'pr-timeline-event': 'pr-timeline-event',
+  'pr-timeline-mark': 'pr-timeline-mark',
+  'pr-timeline-age': 'pr-timeline-age',
+  'pr-timeline-counts': 'pr-timeline-counts',
+  'pr-code-toolbar': 'pr-code-toolbar',
+  'pr-code-commit-scope': 'pr-code-commit-scope',
+  'pr-code-count': 'pr-code-count',
+  'pr-code-actions': 'pr-code-actions',
+  'pr-code-layout': 'pr-code-layout',
+  'pr-code-action': 'pr-code-action',
+  'pr-code-file': 'pr-code-file',
+  'pr-code-file-heading': 'pr-code-file-heading',
+  'pr-code-file-status': 'pr-code-file-status',
+  'pr-code-file-body': 'pr-code-file-body',
+  'pr-code-line': 'pr-code-line',
+  'pr-code-viewed': 'pr-code-viewed',
+  'pr-code-viewed-box': 'pr-code-viewed-box',
+  'pr-code-tree': 'pr-code-tree floating-glass floating-pop-in',
+  'pr-code-tree-item': 'pr-code-tree-item',
+  'pr-check-popover': 'panel-pr-check-popover',
+  'pr-check-popover-title': 'pr-check-popover-title',
+  'pr-check-popover-subtitle': 'pr-check-popover-subtitle',
+  'pr-viewed-notice': 'pr-viewed-notice',
+  'pr-timeline-sha': 'pr-timeline-sha',
+  'pr-comment-fab-host': 'pr-comment-fab-host',
   'changes-inline-list': 'changes-inline-list',
   'changes-inline-empty': 'changes-inline-empty',
   'changes-inline-diff': 'changes-inline-diff',
@@ -74,12 +118,16 @@ type PrTabSurface = keyof typeof SURFACE_CLASSES
 type PrTabState = string
 const STATE_CLASSES: Record<string, string> = {
   hidden: 'is-hidden',
+  shut: 'is-shut',
   detached: 'is-detached',
   wrapped: 'is-wrapped',
+  added: 'is-added',
+  viewed: 'is-viewed',
   split: 'is-split',
   open: 'is-open',
   merged: 'is-merged',
   closed: 'is-closed',
+  closing: 'is-closing',
   resolved: 'is-resolved',
   'open-state': 'is-open',
   compact: 'pr-branch-toolbar'

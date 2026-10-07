@@ -1,7 +1,8 @@
 import { createElement, type ComponentPropsWithoutRef, type ElementType, type ReactNode } from 'react'
 
 export const FilesSurfaceClass = {
-  banner: 'files-banner', chip: 'files-chip', context: 'files-context', contextSeparator: 'files-context-separator',
+  floatingGlass: 'floating-glass',
+  banner: 'files-banner', bannerGhost: 'files-banner-ghost', chip: 'files-chip', context: 'files-context', contextSeparator: 'files-context-separator',
   crumbs: 'files-crumbs', crumbMore: 'files-crumb-more', crumbMenu: 'files-crumbmenu', deleteActions: 'files-delete-actions',
   dirty: 'files-dirty', divider: 'files-divider', explorer: 'files-explorer', explorerHead: 'files-explorer-head',
   explorerInner: 'files-explorer-inner', fileIcon: 'files-ficon', fileImage: 'files-image', fileImageBoard: 'files-image-board',
@@ -13,7 +14,9 @@ export const FilesSurfaceClass = {
   scrim: 'files-scrim', separator: 'files-sep', spacer: 'files-spacer', subheader: 'files-subheader', surface: 'files-surface',
   trail: 'files-trail', treeKids: 'files-kids', treeName: 'files-name', treeGit: 'files-git', treeGitDot: 'files-gdot',
   treeLoading: 'files-loading', treeDeleteConfirm: 'files-delete-confirm', editor: 'files-editor', refreshing: 'files-refreshing',
-  contextItem: 'files-context-item', openIn: 'files-openin', iconButton: 'files-icon-button', responsiveAction: 'files-responsive-action',
+  contextItem: 'files-context-item', openIn: 'files-openin', openInWrap: 'files-openin-wrap', openInMenu: 'files-openin-menu',
+  openInLabel: 'files-openin-label', openInOption: 'files-openin-option', openInSeparator: 'files-openin-separator',
+  iconButton: 'files-icon-button', responsiveAction: 'files-responsive-action',
   overflow: 'overflow', open: 'open', collapsing: 'collapsing', nested: 'nested', selected: 'sel', current: 'cur',
   flash: 'flash', ignored: 'ign', menuOpen: 'menu-on', modified: 'M', added: 'A', deleted: 'D', image: 'image',
   danger: 'danger', sheet: 'sheet', active: 'on', dock: 'dock', shut: 'shut', highlighted: 'hi', wrap: 'wrap',

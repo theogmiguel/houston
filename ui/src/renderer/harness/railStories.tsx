@@ -22,7 +22,7 @@ const TAGS = [
   { id: 5, name: 'api', color: '#f472b6' },
 ]
 
-function seedStorage(opts: { collapsed?: string[]; tagFilter?: number[]; cardMode?: 'detailed' | 'compact'; groupBy?: 'none' | 'status' | 'pr' | 'workspace'; pinnedGridIds?: string[]; showTags?: boolean }): void {
+function seedStorage(opts: { collapsed?: string[]; tagFilter?: number[]; cardMode?: 'detailed' | 'compact'; tagDisplay?: 'icon' | 'dots' | 'chips'; groupBy?: 'none' | 'status' | 'pr' | 'workspace'; pinnedGridIds?: string[]; showTags?: boolean }): void {
   try {
     localStorage.setItem('tr-ws-collapsed', JSON.stringify([
       ...(opts.collapsed ?? []),
@@ -35,6 +35,7 @@ function seedStorage(opts: { collapsed?: string[]; tagFilter?: number[]; cardMod
       groupBy: opts.groupBy ?? 'workspace',
       sort: 'manual',
       cardMode: opts.cardMode ?? 'detailed',
+      tagDisplay: opts.tagDisplay ?? 'icon',
       agentActivity: 'compact',
       properties: opts.cardMode === 'compact'
         ? ['status', 'unread']
@@ -62,8 +63,9 @@ interface RailProps {
   freezeMenuMotion?: boolean
   freezeCaret?: boolean
   cardMode?: 'detailed' | 'compact'
+  tagDisplay?: 'icon' | 'dots' | 'chips'
   sessions?: SessionInfo[]
-  gridsByWorkspace?: Record<string, { id: string; name: string; count?: number; state?: 'starting' | 'working' | 'needs-input' | 'idle' | 'unavailable' | 'stopped'; sessionIds?: number[]; tagIds?: number[] }[]>
+  gridsByWorkspace?: Record<string, { id: string; name: string; count?: number; state?: 'starting' | 'working' | 'needs-input' | 'idle' | 'unavailable' | 'stopped'; sessionIds?: number[]; tagIds?: number[]; paneTagIds?: number[] }[]>
   pinnedGridIds?: string[]
   selectedGridId?: string
   showTags?: boolean
@@ -104,6 +106,7 @@ function RailFixture({
   freezeMenuMotion = false,
   freezeCaret = false,
   cardMode = 'detailed',
+  tagDisplay = 'icon',
   sessions = [],
   gridsByWorkspace,
   pinnedGridIds = [],
@@ -112,7 +115,7 @@ function RailFixture({
 }: RailProps): React.JSX.Element {
   const ready = React.useRef(false)
   if (!ready.current) {
-    seedStorage({ collapsed, tagFilter, cardMode, pinnedGridIds, showTags })
+    seedStorage({ collapsed, tagFilter, cardMode, tagDisplay, pinnedGridIds, showTags })
     setSettingsOpen(settingsOpen)
     ready.current = true
   }
@@ -330,8 +333,8 @@ const cardSession = (values: Partial<SessionInfo> & Pick<SessionInfo, 'id' | 'ag
 const CARD_SESSIONS: SessionInfo[] = [
   cardSession({ id: 1, agent: 'shell', project_dir: path('dispatch'), title: 'zsh', status: 'idle', status_since_ms: CARD_NOW, activity: { prompt: 'zsh', last_message: null, model: null, tool: null } }),
   cardSession({ id: 2, agent: 'claude', project_dir: path('project_eagle'), title: 'Orchestrator', status: 'working', status_since_ms: CARD_NOW, live_children: 3, activity: { prompt: 'Orchestrator', last_message: 'aguardando 2 filhos', model: 'opus-5.5', tool: 'claude' } }),
-  cardSession({ id: 3, agent: 'claude', project_dir: path('project_eagle'), title: 'eagle-tiers-ui', status: 'working', status_since_ms: CARD_NOW - 22 * 60_000, checkout: { root: `${path('project_eagle')}/wt/eagle-tiers-ui`, kind: { worktree: { slug: 'eagle-tiers-ui' } }, branch: 'feature/tiers-ui', head: null }, activity: { prompt: 'eagle-tiers-ui', last_message: 'Edit TiersTable.vue', model: 'sonnet-5.5', tool: 'Edit' } }),
-  cardSession({ id: 4, agent: 'claude', project_dir: path('project_eagle'), title: 'dispatch-tiers', status: 'working', status_since_ms: CARD_NOW - 22 * 60_000, checkout: { root: `${path('project_eagle')}/wt/dispatch-tiers`, kind: { worktree: { slug: 'dispatch-tiers' } }, branch: 'feature/dispatch-tiers', head: null }, activity: { prompt: 'dispatch-tiers', last_message: 'Bash pytest -k tiers', model: 'sonnet-5.5', tool: 'Bash' } }),
+  cardSession({ id: 3, agent: 'claude', project_dir: path('project_eagle'), title: 'eagle-tiers-ui', status: 'working', status_since_ms: CARD_NOW - 2 * 60_000, checkout: { root: `${path('project_eagle')}/wt/eagle-tiers-ui`, kind: { worktree: { slug: 'eagle-tiers-ui' } }, branch: 'feature/tiers-ui', head: null }, activity: { prompt: 'eagle-tiers-ui', last_message: 'Edit TiersTable.vue', model: 'sonnet-5.5', tool: 'Edit' } }),
+  cardSession({ id: 4, agent: 'claude', project_dir: path('project_eagle'), title: 'dispatch-tiers', status: 'working', status_since_ms: CARD_NOW - 2 * 60_000, checkout: { root: `${path('project_eagle')}/wt/dispatch-tiers`, kind: { worktree: { slug: 'dispatch-tiers' } }, branch: 'feature/dispatch-tiers', head: null }, activity: { prompt: 'dispatch-tiers', last_message: 'Bash pytest -k tiers', model: 'sonnet-5.5', tool: 'Bash' } }),
   cardSession({ id: 5, agent: 'claude', project_dir: path('project_eagle'), title: 'eagle-tiers-backend', status: 'idle', status_since_ms: CARD_NOW - 16 * 60_000, checkout: { root: `${path('project_eagle')}/wt/eagle-tiers-backend`, kind: { worktree: { slug: 'eagle-tiers-backend' } }, branch: 'feature/eagle-tiers-backend', head: null }, activity: { prompt: 'eagle-tiers-backend', last_message: 'Done, migração e testes verdes', model: 'sonnet-5.5', tool: 'Bash' } }),
   cardSession({ id: 6, agent: 'claude', project_dir: path('Houston'), title: 'corrige o flicker da sidebar', status: 'working', status_since_ms: CARD_NOW, activity: { prompt: 'corrige o flicker da sidebar', last_message: 'Edit ghostty/surface.ts', model: 'opus-5.5', tool: 'Edit' } }),
   cardSession({ id: 7, agent: 'codex', project_dir: path('Houston'), title: 'inspector-polish', status: 'idle', status_since_ms: CARD_NOW - 6 * 60_000, checkout: { root: `${path('Houston')}/wt/inspector-polish`, kind: { worktree: { slug: 'inspector-polish' } }, branch: 'fix/inspector-polish', head: null }, activity: { prompt: 'inspector-polish', last_message: '4 commits, testes passando', model: 'gpt-6-luna', tool: 'codex' } }),
@@ -339,20 +342,21 @@ const CARD_SESSIONS: SessionInfo[] = [
   cardSession({ id: 9, agent: 'claude', project_dir: path('finex'), title: 'arredondamento', status: 'idle', status_since_ms: CARD_NOW - 60 * 60_000, checkout: { root: path('finex'), kind: 'primary', branch: 'fix/rounding', head: null }, activity: { prompt: 'arredondamento', last_message: 'Done, testes verdes', model: 'sonnet-5.5', tool: 'Bash' } }),
 ]
 const CARD_GRIDS: NonNullable<RailProps['gridsByWorkspace']> = {
-  [path('dispatch')]: [{ id: 'terminal', name: 'Terminal', count: 1, state: 'idle', sessionIds: [1] }],
-  [path('project_eagle')]: [{ id: 'mensageria', name: 'Mensageria access tiers', count: 4, state: 'working', sessionIds: [2, 3, 4, 5], tagIds: [3, 4, 5] }],
+  [path('dispatch')]: [{ id: 'terminal', name: 'Terminal', count: 1, state: 'idle', sessionIds: [1], paneTagIds: [] }],
+  [path('project_eagle')]: [{ id: 'mensageria', name: 'Mensageria access tiers', count: 4, state: 'working', sessionIds: [2, 3, 4, 5], tagIds: [3, 4, 5], paneTagIds: [] }],
   [path('Houston')]: [
-    { id: 'inspector-polish', name: 'Inspector polish', count: 2, state: 'working', sessionIds: [6, 7], tagIds: [1, 2] },
-    { id: 'pr-screen', name: 'Pull requests screen', count: 1, state: 'needs-input', sessionIds: [8], tagIds: [1] },
+    { id: 'inspector-polish', name: 'Inspector polish', count: 2, state: 'working', sessionIds: [6, 7], tagIds: [1, 2], paneTagIds: [] },
+    { id: 'pr-screen', name: 'Pull requests screen', count: 1, state: 'needs-input', sessionIds: [8], tagIds: [1], paneTagIds: [] },
   ],
-  [path('finex')]: [{ id: 'rounding', name: 'Reconciliação', count: 1, state: 'stopped', sessionIds: [9] }],
+  [path('finex')]: [{ id: 'rounding', name: 'Reconciliação', count: 1, state: 'stopped', sessionIds: [9], paneTagIds: [] }],
 }
 
-function RailCardModes({ openTagPopover = false, openOptions = false }: { openTagPopover?: boolean; openOptions?: boolean }): React.JSX.Element {
-  const [compact, setCompact] = React.useState(false)
+function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'icon', tagFilter = [] }: { openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
+  const [compact, setCompact] = React.useState(initialCompact)
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
       rememberRailGitFacts(new Map([
+        [path('dispatch'), { added: 162, deleted: 0, ahead: 0, behind: 0, changedFiles: 1 }],
         [path('project_eagle'), { added: 932, deleted: 120, ahead: 0, behind: 0, changedFiles: 21 }],
         [path('Houston'), { added: 214, deleted: 38, ahead: 0, behind: 0, changedFiles: 7 }],
         [`${path('Houston')}/wt/pr-list`, { added: 1204, deleted: 88, ahead: 0, behind: 0, changedFiles: 32 }],
@@ -364,13 +368,35 @@ function RailCardModes({ openTagPopover = false, openOptions = false }: { openTa
     return () => window.clearTimeout(timer)
   }, [])
   React.useEffect(() => {
-    if (!openTagPopover && !openOptions) return
+    if (!openTagPopover && !openOptions && !optionsPanel) return
     const timer = window.setTimeout(() => {
       const selector = openTagPopover ? '[data-testid="rail-tags"]' : '[data-testid="tree-filter-toggle"]'
       document.querySelector<HTMLElement>(selector)?.click()
     }, 60)
     return () => window.clearTimeout(timer)
-  }, [openTagPopover, openOptions])
+  }, [openTagPopover, openOptions, optionsPanel])
+  React.useEffect(() => {
+    if (!optionsPanel) return
+    const label = optionsPanel === 'sort' ? 'Sort by' : 'Card display'
+    const timer = window.setInterval(() => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>('[data-rail-options] button')].find((entry) => entry.textContent?.startsWith(label))
+      if (!button) return
+      window.clearInterval(timer)
+      button.click()
+    }, 50)
+    return () => window.clearInterval(timer)
+  }, [optionsPanel])
+  React.useEffect(() => {
+    if (!hoverCard && !expandAgents) return
+    const selector = hoverCard ? '[data-grid-id="inspector-polish"]' : '[data-grid-id="mensageria"] button[aria-expanded="false"]'
+    const timer = window.setInterval(() => {
+      const target = document.querySelector(selector)
+      if (!target) return
+      window.clearInterval(timer)
+      target.dispatchEvent(new MouseEvent(hoverCard ? 'mouseover' : 'click', { bubbles: true }))
+    }, 50)
+    return () => window.clearInterval(timer)
+  }, [hoverCard, expandAgents])
   return (
     <div className="flex h-full flex-col" data-rail-mode={compact ? 'compact' : 'detailed'}>
       <RailFixture
@@ -380,6 +406,8 @@ function RailCardModes({ openTagPopover = false, openOptions = false }: { openTa
         selected={path('Houston')}
         selectedGridId="inspector-polish"
         cardMode={compact ? 'compact' : 'detailed'}
+        tagDisplay={tagDisplay}
+        tagFilter={tagFilter}
         sessions={CARD_SESSIONS}
         gridsByWorkspace={CARD_GRIDS}
         pinnedGridIds={['terminal', 'mensageria']}
@@ -433,6 +461,14 @@ function WorkspacesEmptyStory({ variant }: { variant: 'plain' | 'pending' | 'ref
 export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
   'rail/card-modes': () => <RailCardModes />,
   'rail/card-modes-options': () => <RailCardModes openOptions />,
+  'rail/card-modes-options-sort': () => <RailCardModes optionsPanel="sort" />,
+  'rail/card-modes-options-display': () => <RailCardModes optionsPanel="display" />,
+  'rail/card-modes-tags-dots': () => <RailCardModes tagDisplay="dots" />,
+  'rail/card-modes-tags-chips': () => <RailCardModes tagDisplay="chips" />,
+  'rail/card-modes-tags-filtered': () => <RailCardModes tagDisplay="dots" tagFilter={[1, 2]} openOptions />,
+  'rail/card-modes-hover': () => <RailCardModes hoverCard />,
+  'rail/card-modes-expanded': () => <RailCardModes expandAgents />,
+  'rail/card-modes-condensed': () => <RailCardModes initialCompact />,
   'rail/card-modes-tag-popover': () => <RailCardModes openTagPopover />,
   'rail/states': () => <RailFixture />,
   'rail/states-paper': () => <RailFixture chromeTheme="paper" />,
@@ -453,6 +489,7 @@ export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
   'rail/settings-nomatch': () => <RailSettingsSearch query="zzzz" />,
   'rail/settings-hit': () => <RailSettingsSearch query="theme" />,
   'rail/empty': () => <RailFixture workspaces={[]} withGrids={false} />,
+  'rail/empty-workspace': () => <RailFixture workspaces={[ws('acme-core')]} pinned={[]} selected={path('acme-core')} withGrids={false} />,
   'rail/empty-filtered': () => <RailFixture tagFilter={[2]} workspaces={[ws('acme-core')]} withGrids={false} />,
   'rail/update-failed': () => <UpdateFailed />,
   'rail/update-running': () => <UpdateRunning />,

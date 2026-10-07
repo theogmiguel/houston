@@ -190,6 +190,14 @@ html[data-motion-paused] .loop-anim {
   }
 }
 
+@keyframes rail-options-forward {
+  from { opacity: 0; transform: translateX(8px); }
+}
+
+@keyframes rail-options-back {
+  from { opacity: 0; transform: translateX(-8px); }
+}
+
 /* Marks the row of a tag made from the rail, then clears itself so nothing has
    to remember to. */
 @keyframes tag-row-settle {

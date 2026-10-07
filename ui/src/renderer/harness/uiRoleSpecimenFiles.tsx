@@ -7,6 +7,11 @@ export function UiRoleSpecimenFiles(): React.JSX.Element {
       <FilesSurfaceElement as="div" role="row" />
       <FilesSurfaceElement as="span" role="fileIcon" />
       <FilesSurfaceElement as="div" role="quickOpenPanel">Quick open</FilesSurfaceElement>
+      <FilesSurfaceElement as="div" role="floatingGlass">Files menu material</FilesSurfaceElement>
+      <FilesSurfaceElement as="div" role="openInMenu">
+        <FilesSurfaceElement as="div" role="openInLabel">Open file in</FilesSurfaceElement>
+        <FilesSurfaceElement as="button" role="openInOption">VS Code</FilesSurfaceElement>
+      </FilesSurfaceElement>
     </div>
   )
 }

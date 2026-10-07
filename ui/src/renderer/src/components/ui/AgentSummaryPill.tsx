@@ -45,7 +45,7 @@ export function AgentSummaryPill({
               className="inline-flex items-center gap-[3px] rounded bg-[var(--rail-bg)] px-1 text-[var(--text-secondary)]"
             >
               <i
-                className={`size-2.5 rounded-full ${status === 'working' ? 'animate-spin border border-[var(--info)] border-r-transparent bg-transparent' : ''} ${
+                className={`size-[9px] rounded-full ${status === 'working' ? 'animate-[spin_1s_linear_infinite] motion-reduce:animate-none border-[1.5px] border-[var(--accent)] border-r-transparent bg-transparent' : ''} ${
                   status === 'working'
                     ? ''
                     : status === 'needs-input'
@@ -64,7 +64,7 @@ export function AgentSummaryPill({
       <Icon
         glyph={IconChevronRight}
         role="small"
-        className={`ml-auto flex-none transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
+        className={`ml-auto flex-none transition-transform duration-[180ms] motion-reduce:transition-none ${expanded ? 'rotate-90' : ''}`}
       />
     </button>
   )

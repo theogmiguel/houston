@@ -1,10 +1,24 @@
 import { useEffect, useState } from 'react'
 import { FilesSurface } from '../src/components/files/FilesSurface'
+import { QuickOpen } from '../src/components/files/QuickOpen'
 import { getBuffer, noteUpdate } from '../src/editor/bufferStore'
 import type { HoustonClient } from '../src/houston/client'
 
 const root = '/repo/Houston'
 const openPath = `${root}/ui/src/renderer/src/App.tsx`
+const markdownPath = `${root}/docs/user/files.md`
+const imagePath = `${root}/assets/logo.png`
+const markdownSource = [
+  '# Files',
+  'The Files surface browses the workspace of the focused pane and previews or edits a file without leaving the grid.',
+  '## Open a file',
+  '- Click a file in the tree, or press `Ctrl P` and type part of its name.',
+  '- Folders load when you expand them; search covers the whole workspace.',
+  '## Checklist',
+  '- [x] Tree and preview side by side',
+  '- [ ] Image and table previews',
+  '- [ ] Changes on disk refresh the tree',
+].join('\n')
 const source = [
   "import { useState } from 'react'",
   "import { SidePanelIntegration } from './components/SidePanel'",
@@ -41,15 +55,12 @@ const paths = [
   'docs/internals/glossary.md',
   'docs/internals/perf-trace.json',
   'docs/user/files.md',
+  'target/debug',
   'ui/src/renderer/src/components/ChildContextMenu.tsx',
   'ui/src/renderer/src/components/FilesPane.tsx',
   'ui/src/renderer/src/components/SidePanel.tsx',
   'ui/src/renderer/src/ghostty/surface.ts',
   'ui/src/renderer/src/App.tsx',
-  'ui/src/renderer/src/components/ui/AnimOut.tsx',
-  'ui/src/renderer/src/components/ui/inspector.css',
-  'ui/src/renderer/src/ghostty/surface.fitPaint.test.ts',
-  'ui/src/renderer/src/components/files/FilesSurface.tsx',
   'ui/package.json',
   'AGENTS.md',
   'Cargo.toml',
@@ -63,9 +74,8 @@ const modified = new Set([
   'ui/src/renderer/src/components/SidePanel.tsx',
   'ui/src/renderer/src/ghostty/surface.ts',
   'ui/src/renderer/src/App.tsx',
-  'ui/src/renderer/src/components/ui/inspector.css',
 ])
-const added = new Set(['core/houston-core/src/files.rs', 'ui/src/renderer/src/components/ChildContextMenu.tsx', 'ui/src/renderer/src/components/ui/AnimOut.tsx'])
+const added = new Set(['core/houston-core/src/files.rs', 'ui/src/renderer/src/components/ChildContextMenu.tsx'])
 
 function makeEntries(directory: string): Array<{ name: string; path: string; dir: boolean; ignored: boolean }> {
   const descendants = paths.filter((path) => path.startsWith(directory ? `${directory}/` : ''))
@@ -78,7 +88,9 @@ function makeEntries(directory: string): Array<{ name: string; path: string; dir
   return [...children].map(([name, dir]) => ({ name, path: directory ? `${directory}/${name}` : name, dir, ignored: name === 'target' }))
 }
 
-function setupBridge(diskChanged: boolean): void {
+let emitDiskChange: (() => void) | null = null
+
+function setupBridge(): void {
   const callbacks = new Map<number, (event: { payload: unknown }) => void>()
   let nextCallback = 0
   const invoke = async (command: string, args: Record<string, unknown> = {}): Promise<unknown> => {
@@ -87,12 +99,30 @@ function setupBridge(diskChanged: boolean): void {
       const relative = directory === root ? '' : directory.slice(root.length + 1)
       return makeEntries(relative).map((entry) => ({ ...entry, path: `${root}/${entry.path}` }))
     }
-    if (command === 'fs_read_file') return source
+    if (command === 'fs_read_file') return args.filePath === markdownPath ? markdownSource : source
+    if (command === 'fs_read_media') {
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 512
+      const context = canvas.getContext('2d')!
+      const gradient = context.createConicGradient(210 * Math.PI / 180, 256, 256)
+      gradient.addColorStop(0, '#7c3aed')
+      gradient.addColorStop(0.5, '#1d4ed8')
+      gradient.addColorStop(1, '#7c3aed')
+      context.fillStyle = gradient
+      context.beginPath()
+      context.roundRect(154, 154, 204, 204, 51)
+      context.fill()
+      const binary = atob(canvas.toDataURL('image/png').split(',')[1])
+      const encoded = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+      const bytes = new Uint8Array(Math.max(18842, encoded.byteLength))
+      bytes.set(encoded)
+      return bytes.buffer
+    }
     if (command === 'fs_stat') return { mtimeMs: 1 }
     if (command === 'shell_list_editors') return [{ id: 'code', label: 'VS Code' }, { id: 'zed', label: 'Zed' }]
     if (command === 'fs_search_paths') {
       const query = String(args.query ?? '').toLowerCase()
-      const items = paths.filter((path) => path.toLowerCase().includes(query)).map((path) => {
+      const items = paths.filter((path) => !path.startsWith('target/') && path.toLowerCase().includes(query)).map((path) => {
         const name = path.split('/').at(-1) ?? path
         const nameIndices = [...name.toLowerCase()].flatMap((char, index) => char === query[0] ? [index] : [])
         const pathIndices = [...path.toLowerCase()].flatMap((char, index) => char === query[0] ? [index] : [])
@@ -104,8 +134,8 @@ function setupBridge(diskChanged: boolean): void {
     if (command === 'plugin:event|listen') {
       const id = nextCallback++
       const callbackId = args.handler as number
-      if (args.event === 'fs://changed' && diskChanged)
-        window.setTimeout(() => callbacks.get(callbackId)?.({ payload: { root, paths: [openPath] } }), 3000)
+      if (args.event === 'fs://changed')
+        emitDiskChange = () => callbacks.get(callbackId)?.({ payload: { root, paths: [openPath] } })
       return id
     }
     return null
@@ -124,28 +154,44 @@ function setupBridge(diskChanged: boolean): void {
   })
 }
 
-function FilesSurfaceFrame({ width, state }: { width: number; state: 'tree' | 'file' | 'quick' | 'disk' | 'open-in' }): React.JSX.Element {
-  const [quickOpenRequest, setQuickOpenRequest] = useState<number | undefined>()
+function FilesSurfaceFrame({ width, state }: { width: number; state: 'tree' | 'file' | 'quick' | 'disk' | 'open-in' | 'markdown' | 'image' | 'delete' }): React.JSX.Element {
+  const selectedPath = state === 'markdown' ? markdownPath : state === 'image' ? imagePath : openPath
   useState(() => {
     document.documentElement.dataset.theme = 'paper'
     localStorage.setItem(`tr-files-tabs:${root}`, JSON.stringify({
-      tabs: state === 'tree' ? [] : [{ path: openPath, preview: false }],
-      activePath: state === 'tree' ? null : openPath,
+      tabs: state === 'tree' || state === 'delete' ? [] : [{ path: selectedPath, preview: false }],
+      activePath: state === 'tree' || state === 'delete' ? null : selectedPath,
     }))
-    setupBridge(state === 'disk')
+    setupBridge()
     return true
   })
   useEffect(() => {
-    if (state === 'quick') setQuickOpenRequest(1)
-    if (state === 'open-in') window.setTimeout(() => {
-      document.querySelector<HTMLButtonElement>('.files-openin')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-    }, 1800)
+    if (state === 'delete') {
+      const openPrompt = window.setInterval(() => {
+        const row = document.querySelector<HTMLElement>(`[data-path="${root}/docs"]`)
+        if (!row) return
+        window.clearInterval(openPrompt)
+        row.focus()
+        window.setTimeout(() => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })), 50)
+      }, 25)
+      return () => window.clearInterval(openPrompt)
+    }
+    if (state === 'open-in') {
+      const openMenu = window.setInterval(() => {
+        const button = document.querySelector<HTMLButtonElement>('.files-openin')
+        if (!button || !document.querySelector('.files-editor .cm-editor')) return
+        window.clearInterval(openMenu)
+        button.click()
+      }, 25)
+      return () => window.clearInterval(openMenu)
+    }
     if (state !== 'disk') return
     const dirtyBuffer = window.setInterval(() => {
       const buffer = getBuffer(root, openPath)
       if (!buffer) return
       window.clearInterval(dirtyBuffer)
       noteUpdate(root, openPath, buffer.state.update({ changes: { from: 0, insert: ' ' } }).state, true)
+      window.setTimeout(() => emitDiskChange?.(), 300)
     }, 100)
     return () => window.clearInterval(dirtyBuffer)
   }, [state])
@@ -154,10 +200,13 @@ function FilesSurfaceFrame({ width, state }: { width: number; state: 'tree' | 'f
       void (async () => {
         for (let attempt = 0; attempt < 40 && !document.querySelector('[role="treeitem"][aria-label="ui"]'); attempt++)
           await new Promise((resolve) => window.setTimeout(resolve, 50))
-        const branches: Array<[string, number]> = [['ui', 0], ['src', 0], ['renderer', 0], ['src', 1], ['components', 0]]
-        for (const [name, occurrence] of branches) {
-          const matches = [...document.querySelectorAll<HTMLElement>('[role="treeitem"]')].filter((item) => item.getAttribute('aria-label') === name)
-          const row = matches[occurrence]
+        const branches = ['ui', 'ui/src', 'ui/src/renderer', 'ui/src/renderer/src', 'ui/src/renderer/src/components']
+        for (const branch of branches) {
+          let row: HTMLElement | null = null
+          for (let attempt = 0; attempt < 40 && !row; attempt++) {
+            row = document.querySelector<HTMLElement>(`[role="treeitem"][data-path="${root}/${branch}"]`)
+            if (!row) await new Promise((resolve) => window.setTimeout(resolve, 50))
+          }
           if (!row || row.getAttribute('aria-expanded') === 'true') continue
           row.click()
           await new Promise((resolve) => window.setTimeout(resolve, 240))
@@ -214,10 +263,11 @@ function FilesSurfaceFrame({ width, state }: { width: number; state: 'tree' | 'f
       </main>
       <div style={{ position: 'absolute', top: 40, right: 0, bottom: 0, width, display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border)' }}>
         <div style={{ height: 30, flex: 'none', display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', borderBottom: '1px solid var(--divider)', fontSize: 11.5, color: 'var(--text-muted)' }}>
-          <span>◫ Diff</span><span>♧ #95</span><span>◎ New tab</span><strong style={{ padding: '4px 7px', borderRadius: 6, background: 'var(--hover-fill)', color: 'var(--text-primary)', fontWeight: 500 }}>▤ {state === 'file' ? 'App.tsx' : 'Files'}</strong><span>＋</span>
+          <span>◫ Diff</span><span>♧ #95</span><span>◎ New tab</span><strong style={{ padding: '4px 7px', borderRadius: 6, background: 'var(--hover-fill)', color: 'var(--text-primary)', fontWeight: 500 }}>▤ {state === 'tree' || state === 'delete' ? 'Files' : selectedPath.split('/').at(-1)}</strong><span>＋</span>
         </div>
-        <FilesSurface workspaceRoot={root} panelWidth={width} client={client} quickOpenRequest={quickOpenRequest} />
+        <FilesSurface workspaceRoot={root} panelWidth={width} client={client} />
       </div>
+      {state === 'quick' && <QuickOpen root={root} workspaceName="Houston" onClose={() => {}} onOpen={() => {}} />}
     </div>
   )
 }
@@ -233,3 +283,8 @@ export const FilesSurfaceFile732 = (): React.JSX.Element => <FilesSurfaceFrame w
 export const FilesSurfaceQuickOpen = (): React.JSX.Element => <FilesSurfaceFrame width={470} state="quick" />
 export const FilesSurfaceDiskChanged = (): React.JSX.Element => <FilesSurfaceFrame width={600} state="disk" />
 export const FilesSurfaceOpenIn = (): React.JSX.Element => <FilesSurfaceFrame width={732} state="open-in" />
+export const FilesSurfaceMarkdown470 = (): React.JSX.Element => <FilesSurfaceFrame width={470} state="markdown" />
+export const FilesSurfaceMarkdown732 = (): React.JSX.Element => <FilesSurfaceFrame width={732} state="markdown" />
+export const FilesSurfaceImage470 = (): React.JSX.Element => <FilesSurfaceFrame width={470} state="image" />
+export const FilesSurfaceImage732 = (): React.JSX.Element => <FilesSurfaceFrame width={732} state="image" />
+export const FilesSurfaceDelete470 = (): React.JSX.Element => <FilesSurfaceFrame width={470} state="delete" />

@@ -129,7 +129,7 @@ export function QuickOpen({
             ref={input}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search files by name or path"
+            placeholder="Search files…"
             aria-label="Search files"
           />
         </label>

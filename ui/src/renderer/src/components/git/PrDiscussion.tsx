@@ -269,11 +269,14 @@ export function PrInspectorComments({
   const [replyThread, setReplyThread] = useState<string | null>(null)
   const [reply, setReply] = useState('')
   const threads = detail.threads.filter((thread) => !thread.resolved)
-  const comments = threads.flatMap((thread) => thread.comments.map((comment) => ({ thread, comment })))
+  const comments = [
+    ...detail.comments.map((comment) => ({ thread: null as PrThread | null, comment })),
+    ...threads.flatMap((thread) => thread.comments.map((comment) => ({ thread, comment }))),
+  ]
   comments.sort((a, b) => newestFirst
     ? b.comment.created_at - a.comment.created_at
     : a.comment.created_at - b.comment.created_at)
-  const count = detail.comments_total + comments.length
+  const count = detail.comments_total + comments.length - detail.comments.length
   const resolveReason = detail.viewer?.can_write || detail.viewer?.did_author
     ? null
     : detail.viewer
@@ -300,8 +303,8 @@ export function PrInspectorComments({
         <PrTab as="div" surface="pr-inspector-comments">
         {comments.map(({ thread, comment }) => {
           const age = Math.max(0, Math.floor((Date.now() / 1000 - comment.created_at) / 60))
-          const location = `${thread.path ?? 'a file'}${thread.line != null ? `:${thread.line}` : ''}`
-          const replyOpen = replyThread === thread.id
+          const location = thread ? `${thread.path ?? 'a file'}${thread.line != null ? `:${thread.line}` : ''}` : 'conversation'
+          const replyOpen = thread !== null && replyThread === thread.id
           return <PrTab as="article" surface="pr-inspector-comment" key={comment.id} data-testid="pr-inspector-comment">
             <PrTab as="div" surface="pr-inspector-comment-head">
               <PrTab as="span" surface="pr-inspector-comment-avatar" aria-hidden="true">{comment.author.slice(0, 1).toUpperCase()}</PrTab>
@@ -310,10 +313,10 @@ export function PrInspectorComments({
             </PrTab>
             <PrTab as="p" surface="pr-inspector-comment-body">{comment.body}</PrTab>
             <PrTab as="div" surface="pr-inspector-comment-links">
-              <PrTab as="button" surface="pr-inspector-link" type="button" data-testid={`pr-thread-reply-open-${comment.id}`} onClick={() => { setReplyThread(replyOpen ? null : thread.id); setReply('') }}>Reply</PrTab>
+              {thread && <PrTab as="button" surface="pr-inspector-link" type="button" data-testid={`pr-thread-reply-open-${comment.id}`} onClick={() => { setReplyThread(replyOpen ? null : thread.id); setReply('') }}>Reply</PrTab>}
               {onSendToOrchestrator && <PrTab as="button" surface="pr-inspector-link" type="button" onClick={() => onSendToOrchestrator(`PR #${number} · ${location}\n${comment.author}: ${comment.body}`)}>Send to orchestrator</PrTab>}
             </PrTab>
-            {replyOpen && <PrTab as="div" surface="pr-inspector-reply">
+            {replyOpen && thread && <PrTab as="div" surface="pr-inspector-reply">
               <textarea data-testid={`pr-thread-reply-${thread.id}`} aria-label={`Reply to the thread on ${thread.path ?? 'a file'}`} rows={2} value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Reply to this discussion" />
               <PrTab as="div" surface="pr-inspector-reply-actions">
                 <Button variant="secondary" size="sm" data-testid={`pr-thread-reply-send-${thread.id}`} disabled={busy || reply.trim().length === 0} onClick={() => { onReply(thread.id, reply); setReply(''); setReplyThread(null) }}>Reply</Button>

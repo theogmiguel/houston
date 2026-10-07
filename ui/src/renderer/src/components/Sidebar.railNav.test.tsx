@@ -116,7 +116,7 @@ describe('the rail nav block', () => {
 
   it('shows the task turn count in accent ink and omits zero', () => {
     render({ taskTurnCount: 2 })
-    const count = rows().find((row) => row.getAttribute('data-view') === 'tasks')?.querySelector('span:last-child')
+    const count = rows().find((row) => row.getAttribute('data-view') === 'tasks')?.querySelector('.tabular-nums')
     expect(count?.textContent).toBe('2')
     expect(count?.className).toContain('text-[var(--accent)]')
     render({ taskTurnCount: 0 })
@@ -179,7 +179,7 @@ describe('sidebar options', () => {
     render()
     act(() => toggle().click())
     expect(document.querySelector('[aria-label="Sidebar options"]')).not.toBeNull()
-    const hideIdle = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="checkbox"]')).find((box) => box.closest('label')?.textContent?.includes('Hide idle grids'))!
+    const hideIdle = Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Sidebar options"] button')).find((row) => row.textContent?.includes('Hide idle grids'))!
     act(() => { hideIdle.click() })
     expect(q('[data-options-testid="rail-options-trigger"] span')?.textContent).toBe('1')
   })

@@ -1,4 +1,4 @@
-import { PrTab } from '../ui/PrTab'
+import { PrTab, PR_FLOATING_CANDIDATES } from '../ui/PrTab'
 import { Button } from '../ui/Button'
 import { MetadataRow } from '../ui/MetadataRow'
 import { Text } from '../ui/Text'
@@ -175,7 +175,7 @@ export function PrReviewerPicker({
       </MetadataRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (
-        <OptionCandidateList scrollable={false}
+        <OptionCandidateList scrollable={false} className={PR_FLOATING_CANDIDATES}
           data-testid="pr-reviewer-candidates"
         >
           {candidates.map((c) => {
@@ -299,7 +299,7 @@ export function PrLabelPicker({
       </LabelSummaryRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (
-        <OptionCandidateList data-testid="pr-label-candidates">
+        <OptionCandidateList data-testid="pr-label-candidates" className={PR_FLOATING_CANDIDATES}>
           {candidates.map((c) => (
             <Button variant="picker-candidate"
               key={c.name}

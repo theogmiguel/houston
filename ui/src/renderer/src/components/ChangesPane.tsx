@@ -552,10 +552,26 @@ function CompactDiffToolbar({ scope, setScope, stagedOnly, setStagedOnly, scopeM
   refresh: () => void
   strip: React.ReactNode
 }): React.JSX.Element {
+  const scopeMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!scopeMenuOpen) return
+    const closeOutside = (event: MouseEvent): void => {
+      if (!scopeMenuRef.current?.contains(event.target as Node)) setScopeMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setScopeMenuOpen(false)
+    }
+    document.addEventListener('mousedown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape, true)
+    return () => {
+      document.removeEventListener('mousedown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape, true)
+    }
+  }, [scopeMenuOpen, setScopeMenuOpen])
   const scopeLabel = scope === 'branch' ? 'Branch' : stagedOnly ? 'Staged' : 'Changes'
   const branchLabel = branch ?? checkoutLabel ?? 'inspector-polish'
   return <PrTab as="div" surface="changes-diff-toolbar" data-testid="changes-diff-toolbar">
-    <PrTab as="div" surface="changes-diff-scope-wrap">
+    <PrTab as="div" surface="changes-diff-scope-wrap" ref={scopeMenuRef}>
       <PrTab as="button" surface="changes-diff-scope" type="button" aria-label="Choose diff scope" aria-expanded={scopeMenuOpen} onClick={() => setScopeMenuOpen((open) => !open)}>
         {scopeLabel} <Icon glyph={IconChevronDown} role="small" />
       </PrTab>
@@ -611,7 +627,7 @@ export function ChangesPane({
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
   const [inlineDiffs, setInlineDiffs] = useState<Map<string, DiffState>>(() => new Map())
-  const [wrapDiff, setWrapDiff] = useState(true)
+  const [wrapDiff, setWrapDiff] = useState(false)
   const [splitDiff, setSplitDiff] = useState(false)
   const [treeVisible, setTreeVisible] = useState(true)
   const [selected, setSelected] = useState<string | null>(null)

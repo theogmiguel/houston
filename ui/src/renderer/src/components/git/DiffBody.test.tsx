@@ -34,4 +34,8 @@ describe('DiffBody', () => {
     expect(diffBodyLines(modeOnly)).toEqual(modeOnly.split('\n'))
     expect(diffBodyLines('+x')).toEqual(['+x'])
   })
+
+  it('omits the terminal newline without hiding blank lines inside a hunk', () => {
+    expect(diffBodyLines('@@ -1 +1 @@\n context\n\n+new\n')).toEqual(['@@ -1 +1 @@', ' context', '', '+new'])
+  })
 })

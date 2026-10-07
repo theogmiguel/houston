@@ -95,6 +95,8 @@ describe('grid rail row interactions', () => {
     expect(document.querySelector('[data-testid="grid-hover-card"]')).not.toBeNull()
     act(() => row.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
     act(() => vi.advanceTimersByTime(90))
+    expect(document.querySelector('[data-testid="grid-hover-card"]')).not.toBeNull()
+    act(() => vi.advanceTimersByTime(60))
     expect(document.querySelector('[data-testid="grid-hover-card"]')).toBeNull()
   })
 

@@ -2,8 +2,9 @@ import type { PrCheck } from '../../houston/client'
 import { Icon } from '../ui/Icon'
 import { PRS_CLASSES } from '../ui/PrsClasses'
 import { CheckStateDot } from '../ui/PullRequestState'
+import { PrTab } from '../ui/PrTab'
 import { PrLink } from '../ui/PrLink'
-import { IconChevronDown, IconCheck, IconSparkles } from '../icons'
+import { IconChevronDown, IconCheck, IconClose, IconSparkles } from '../icons'
 
 export interface CheckAgentTarget {
   session: number
@@ -213,7 +214,9 @@ function CheckRow({
         disabled={!failed}
         onClick={() => onToggle(check)}
       >
-        <CheckStateDot state={check.state} size="check" />
+        {check.state === 'passing' || check.state === 'failing'
+          ? <PrTab as="span" surface="pr-check-state-icon" state={check.state} aria-hidden="true"><Icon glyph={check.state === 'passing' ? IconCheck : IconClose} role="small" /></PrTab>
+          : <CheckStateDot state={check.state} size="check" />}
         <span className={PRS_CLASSES.PRS_CLASS_66}>{check.name}</span>
         <span className={PRS_CLASSES.PRS_CLASS_67}>
           {checkSummary(check, duration)}

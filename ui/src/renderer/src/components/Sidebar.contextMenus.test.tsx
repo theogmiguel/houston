@@ -178,7 +178,7 @@ describe('Sidebar context menus — reference anatomy', () => {
     expect(rows[0].querySelector('[data-testid="grid-close"]')).toBeNull()
   })
 
-  it('the grid menu header names the grid and its workspace', () => {
+  it('the grid menu header names the grid', () => {
     render({
       gridsByWorkspace: {
         '/tmp/one': [
@@ -191,8 +191,7 @@ describe('Sidebar context menus — reference anatomy', () => {
     const rows = [...container.querySelectorAll('[data-testid="grid-row"]')]
     rightClick(rows[0])
     const menu = document.querySelector('.ctxmenu')!
-    expect(menu.querySelector('strong')?.textContent).toBe('Grid 1')
-    expect(menu.querySelector('small')?.textContent).toBe('one')
+    expect(menu.querySelector('.grid-card-menu-label')?.textContent).toBe('Grid 1')
   })
 
 })

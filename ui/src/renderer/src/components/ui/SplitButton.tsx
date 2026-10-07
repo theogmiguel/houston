@@ -5,6 +5,7 @@ import { Icon } from './Icon'
 import { IconChevronDown } from '../icons'
 import { MATERIAL_CLS, materialAttrs } from './material'
 import { Tooltip } from './Tooltip'
+import './floatingSurface.css'
 
 export interface SplitButtonItem {
   label: string
@@ -21,6 +22,8 @@ export interface SplitButtonProps {
   testId?: string
   disabled?: boolean
   disabledReason?: string
+  menuSide?: 'above' | 'below'
+  glass?: boolean
 }
 
 export function SplitButton({
@@ -29,7 +32,9 @@ export function SplitButton({
   items,
   testId,
   disabled = false,
-  disabledReason
+  disabledReason,
+  menuSide = 'above',
+  glass = false
 }: SplitButtonProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -62,8 +67,8 @@ export function SplitButton({
       {open && (
         <div
           role="menu"
-          className={`absolute bottom-[calc(100%+var(--space-1))] right-0 z-[var(--z-sticky)] min-w-[180px] flex flex-col p-[var(--space-1)] rounded-[var(--tr-radius-sm)] ${MATERIAL_CLS.raised}`}
-          {...materialAttrs('raised')}
+          className={`absolute right-0 z-[var(--z-sticky)] min-w-[180px] flex flex-col p-[var(--space-1)] rounded-[var(--tr-radius-sm)] ${menuSide === 'below' ? 'top-[calc(100%+var(--space-1))]' : 'bottom-[calc(100%+var(--space-1))]'} ${glass ? 'floating-glass floating-pop-in' : MATERIAL_CLS.raised}`}
+          {...materialAttrs(glass ? 'overlay-glass' : 'raised')}
         >
           {items.map((item) => (
             <Tooltip key={item.label} label={item.disabled ? item.disabledReason : undefined} className="inline-flex w-full">

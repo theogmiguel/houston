@@ -1,6 +1,6 @@
 .side-panel-header {
-  height: 40px;
-  min-height: 40px;
+  height: 34px;
+  min-height: 34px;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -19,16 +19,22 @@
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
   mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
 }
+.side-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
 .panel-tab {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: var(--space-0-5);
-  height: 28px;
+  height: 24px;
   max-width: 144px;
   padding: 0 var(--space-2) 0 var(--space-1);
   border: 0;
-  border-radius: var(--tr-radius-md);
+  border-radius: var(--tr-radius-sm);
   background: transparent;
   color: var(--text-muted);
   font: inherit;
@@ -95,17 +101,20 @@
   background: var(--hover-fill);
   color: var(--text-primary);
 }
+.side-panel-icon-button:active {
+  transform: scale(0.97);
+}
 .side-panel-launcher {
   display: flex;
   flex: 1;
   align-items: center;
   justify-content: center;
-  padding: var(--space-5) var(--space-5) var(--space-panel-launcher-bottom);
+  padding: 24px 24px 58px;
   outline: none;
 }
 .side-panel-launcher-column {
   width: 100%;
-  max-width: 320px;
+  max-width: 300px;
 }
 .side-panel-launcher .panel-launcher-description {
   display: none;
@@ -114,8 +123,8 @@
   margin: 0 0 var(--space-3);
   text-align: center;
   color: var(--text-primary);
-  font-size: var(--tr-text-md);
-  font-weight: 600;
+  font-size: var(--tr-text-panel-launcher);
+  font-weight: 500;
 }
 .side-panel-launcher-rows {
   display: flex;
@@ -130,7 +139,7 @@
   gap: var(--space-3);
   padding: 0 var(--space-2-5);
   border: 0;
-  border-radius: var(--tr-radius-button);
+  border-radius: 8px;
   background: transparent;
   color: var(--text-primary);
   text-align: left;
@@ -182,12 +191,15 @@
   min-width: 18px;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border);
+  padding: 0 4px;
+  border: 0;
   border-radius: var(--tr-radius-xs);
+  background: var(--hover-fill);
   color: var(--text-muted);
   font: inherit;
-  font-family: var(--font-mono);
-  font-size: var(--tr-text-surface-compact);
+  font-family: var(--font-sans);
+  font-size: var(--tr-text-xs);
+  font-weight: 500;
 }
 .side-panel-body {
   position: relative;
@@ -283,7 +295,7 @@
   padding: var(--space-fullscreen-message);
   border: 1px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
   border-radius: var(--tr-radius-md);
-  background: var(--glass);
+  background: var(--glass-bg);
   backdrop-filter: blur(16px) saturate(1.08);
   -webkit-backdrop-filter: blur(16px) saturate(1.08);
   box-shadow: var(--shadow-panel-check-popover);
@@ -303,8 +315,10 @@
   padding: var(--space-1);
   border: 1px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
   border-radius: var(--tr-radius-md);
-  background: var(--glass);
+  background: var(--glass-bg);
   box-shadow: var(--shadow-1);
+  backdrop-filter: blur(16px) saturate(1.08);
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
 }
 .side-panel-add-item {
   display: flex;
@@ -332,8 +346,17 @@
 .side-panel-add-key {
   margin-left: auto;
   color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--tr-text-surface-compact);
+  font-family: var(--font-sans);
+  font-size: var(--tr-text-xs);
+  font-weight: 500;
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: var(--tr-radius-xs);
+  background: var(--hover-fill);
 }
 @keyframes panel-checks-pop-in {
   from {

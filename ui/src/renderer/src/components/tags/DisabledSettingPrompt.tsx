@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Icon } from '../ui/Icon'
-import { IconTag } from '../icons'
 import { Button } from '../ui/Button'
 import { TAG_POPOVER_CLS } from '../ui/TagPopoverChrome'
 
@@ -17,7 +15,7 @@ export function DisabledSettingPrompt({
   useEffect(() => {
     const place = (): void => {
       const rect = anchor.getBoundingClientRect(),
-        width = 288,
+        width = 256,
         height = 190
       setPosition({
         left: Math.max(8, Math.min(rect.right + 4, window.innerWidth - width - 8)),
@@ -59,9 +57,7 @@ export function DisabledSettingPrompt({
         <span className={TAG_POPOVER_CLS.promptPreviewLabel}>Cards will show</span>
         <span className={TAG_POPOVER_CLS.promptSwatches}>
           {['#a78bfa', '#7cb7ff', '#22d3ee'].map((color) => (
-            <span key={color} className={TAG_POPOVER_CLS.promptSwatch} style={{ color }}>
-              <Icon glyph={IconTag} role="small" />
-            </span>
+            <span key={color} className={TAG_POPOVER_CLS.promptSwatch} style={{ background: color }} />
           ))}
         </span>
       </div>

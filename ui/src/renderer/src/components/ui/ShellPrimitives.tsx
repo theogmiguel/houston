@@ -10,7 +10,7 @@ type ShellRole =
   | 'browser-section' | 'browser-live' | 'browser-cards' | 'browser-card' | 'browser-url' | 'browser-sub'
   | 'browser-pane-chip' | 'browser-hint' | 'browser-recent' | 'browser-recent-open' | 'browser-recent-favicon'
   | 'browser-remove' | 'browser-error' | 'browser-tab-favicon' | 'panel-pr-icon' | 'panel-header'
-  | 'panel-tabs' | 'panel-icon-button' | 'panel-add-menu' | 'panel-add-item' | 'panel-add-key'
+  | 'panel-tabs' | 'panel-header-actions' | 'panel-icon-button' | 'panel-add-menu' | 'panel-add-item' | 'panel-add-key'
   | 'panel-launcher' | 'panel-launcher-column' | 'panel-launcher-title' | 'panel-launcher-rows'
   | 'panel-surface' | 'panel-linked-list' | 'panel-linked-row' | 'panel-linked-copy' | 'panel-linked-title'
   | 'panel-linked-meta' | 'panel-empty' | 'panel-body' | 'panel-overview' | 'pane-branch-detail-separator'
@@ -54,6 +54,7 @@ const SHELL_CLASS: Record<ShellRole, string> = {
   'panel-pr-icon': 'panel-tab-pr-icon',
   'panel-header': 'side-panel-header',
   'panel-tabs': 'side-panel-tabs',
+  'panel-header-actions': 'side-panel-header-actions',
   'panel-icon-button': 'side-panel-icon-button',
   'panel-add-menu': 'side-panel-add-menu',
   'panel-add-item': 'side-panel-add-item',

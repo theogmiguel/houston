@@ -1,4 +1,4 @@
-import { PrTab } from '../ui/PrTab'
+import { PrTab, PR_FLOATING_MENU } from '../ui/PrTab'
 import { Button } from '../ui/Button'
 import { PullRequestActionsBar, PullRequestActionMenu } from '../ui/PullRequestActions'
 import { useState } from 'react'
@@ -8,9 +8,9 @@ import type {
   PrUpdateMethod,
   PullRequestLink
 } from '../../houston/client'
-import { MATERIAL_CLS, materialAttrs } from '../ui/material'
+import { materialAttrs } from '../ui/material'
 import { Icon } from '../ui/Icon'
-import { IconExternal } from '../icons'
+import { IconExternal, IconMoreHorizontal } from '../icons'
 import { Select, type SelectOption } from '../ui/Select'
 import { SplitButton } from '../ui/SplitButton'
 import { Tooltip } from '../ui/Tooltip'
@@ -130,7 +130,7 @@ function PrFooterMenuStateActions({ link, detail, pr, open, draft, busy, method,
   const autoMerge = detail.auto_merge_enabled === true
   const autoMergeAction = autoMerge ? 'disable_auto_merge' : 'enable_auto_merge'
   return <>
-    {open && draft && <PrActionButton label="Convert to draft" testId="pr-action-draft" disabledReason={reason('draft')} busy={busy} onClick={() => pr.action(link.number, 'draft')} />}
+    {open && !draft && <PrActionButton label="Convert to draft" testId="pr-action-draft" disabledReason={reason('draft')} busy={busy} onClick={() => pr.action(link.number, 'draft')} />}
     {open && <PrActionButton label="Close" testId="pr-action-close" disabledReason={reason('close')} busy={busy} onClick={() => pr.action(link.number, 'close')} />}
     {open && !draft && <>
       <Select aria-label="Update method" data-testid="pr-update-method" value={updateMethod} options={UPDATE_METHODS} onChange={(value) => setUpdateMethod(value as PrUpdateMethod)} />
@@ -171,8 +171,8 @@ function PrFooterMenu({
     <PullRequestActionMenu
       role="menu"
       data-testid="pr-actions-items"
-      className={MATERIAL_CLS.raised}
-      {...materialAttrs('raised')}
+      className={PR_FLOATING_MENU}
+      {...materialAttrs('overlay-glass')}
     >
       {compact && <Button variant="pull-request-action" type="button" data-testid="pr-open" disabled={!onOpenUrlInPane} onClick={() => onOpenUrlInPane?.(link.url)}>
         <Icon glyph={IconExternal} role="small" />Open on GitHub
@@ -217,10 +217,10 @@ type PrFooterLayoutProps = {
 
 function PrFooterCompactLayout({ link, detail, pr, linked, method, setMethod, onOpenUrlInPane, mergeReason, menuOpen, setMenuOpen, busy, reason, open, draft, merged, closed, primary }: PrFooterLayoutProps): React.JSX.Element {
   return <PrTab as={PullRequestActionsBar} surface="pr-header-actions" data-testid="pr-actions">
-    {primary?.testId === 'pr-merge' ? <SplitButton label={method === 'squash' ? 'Squash and merge' : method === 'merge' ? 'Merge' : 'Rebase and merge'} testId="pr-merge" disabled={primary.disabledReason !== null || busy || pr.mergeBusy} disabledReason={primary.disabledReason ?? undefined} onClick={primary.onClick} items={MERGE_METHODS.map((option) => ({ label: `Use ${option.label}`, disabled: primary.disabledReason !== null || busy || pr.mergeBusy, disabledReason: primary.disabledReason ?? undefined, onClick: () => setMethod(option.value as PrMergeMethod) }))} />
+    {primary?.testId === 'pr-merge' ? <SplitButton label={method === 'squash' ? 'Squash and merge' : method === 'merge' ? 'Merge' : 'Rebase and merge'} testId="pr-merge" disabled={primary.disabledReason !== null || busy || pr.mergeBusy} disabledReason={primary.disabledReason ?? undefined} menuSide="below" glass onClick={primary.onClick} items={MERGE_METHODS.map((option) => ({ label: `Use ${option.label}`, disabled: primary.disabledReason !== null || busy || pr.mergeBusy, disabledReason: primary.disabledReason ?? undefined, onClick: () => setMethod(option.value as PrMergeMethod) }))} />
       : primary ? <Tooltip label={primary.disabledReason ?? undefined} className="inline-flex"><Button type="button" variant="pull-request-primary-action" data-testid={primary.testId} disabled={primary.disabledReason !== null || busy} onClick={primary.onClick}>{primary.label}</Button></Tooltip>
-        : merged ? <PrTab as="span" surface="pr-merged-state" data-testid="pr-merged-state">Merged</PrTab> : closed ? <PrTab as="span" surface="pr-closed-state">Closed</PrTab> : null}
-    <Button variant="pull-request-nav-action" type="button" data-testid="pr-actions-menu" aria-label="More pull request actions" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}>⋯</Button>
+        : merged ? <PrTab as="span" surface="pr-merged-state" data-testid="pr-merged-state"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" /></svg>Merged</PrTab> : closed ? <PrTab as="span" surface="pr-closed-state">Closed</PrTab> : null}
+    <Button variant="pull-request-nav-action" type="button" data-testid="pr-actions-menu" aria-label="More pull request actions" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}><Icon glyph={IconMoreHorizontal} role="small" /></Button>
     <PrTab as="span" surface="pr-merge-caption" data-testid="pr-merge-caption">{mergeReason ?? 'Ready when checks and required reviews pass'}</PrTab>
     {menuOpen && <PrFooterMenu link={link} detail={detail} pr={pr} linked={linked} open={open} draft={draft} busy={busy} method={method} reason={reason} onOpenUrlInPane={onOpenUrlInPane} compact />}
   </PrTab>
@@ -229,7 +229,7 @@ function PrFooterCompactLayout({ link, detail, pr, linked, method, setMethod, on
 function PrFooterWideLayout({ link, detail, pr, linked, method, setMethod, onOpenUrlInPane, mergeReason, menuOpen, setMenuOpen, busy, reason, open, draft, merged, closed, primary }: PrFooterLayoutProps): React.JSX.Element {
   return <PullRequestActionsBar data-testid="pr-actions">
     <Button variant="pull-request-nav-action" type="button" data-testid="pr-open" disabled={!onOpenUrlInPane} onClick={() => onOpenUrlInPane?.(link.url)}><Icon glyph={IconExternal} role="small" />GitHub</Button>
-    <Button variant="pull-request-nav-action" type="button" data-testid="pr-actions-menu" aria-label="More pull request actions" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}>⋯</Button>
+    <Button variant="pull-request-nav-action" type="button" data-testid="pr-actions-menu" aria-label="More pull request actions" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}><Icon glyph={IconMoreHorizontal} role="small" /></Button>
     <span data-testid="pr-merge-caption">{mergeReason ?? 'Ready when checks and required reviews pass'}</span>
     <span className="flex-1" />
     {primary?.testId === 'pr-merge' ? <SplitButton label={method === 'squash' ? 'Squash and merge' : 'Merge'} testId="pr-merge" disabled={primary.disabledReason !== null || busy || pr.mergeBusy} disabledReason={primary.disabledReason ?? undefined} onClick={primary.onClick} items={MERGE_METHODS.map((option) => ({ label: `Use ${option.label}`, disabled: primary.disabledReason !== null || busy || pr.mergeBusy, disabledReason: primary.disabledReason ?? undefined, onClick: () => setMethod(option.value as PrMergeMethod) }))} />
