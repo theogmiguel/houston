@@ -17813,6 +17813,9 @@ impl Daemon {
     }
 
     fn reevaluate_completed_ancestors(self: &Arc<Self>, mut child: u32, now: u64) {
+        if !matches!(self.db.delegation_for_child(child), Ok(Some(_))) {
+            return;
+        }
         let _cleanup_guard = self
             .temporary_cleanup_lock
             .lock()
@@ -17830,19 +17833,6 @@ impl Daemon {
 
     fn advance_delegation(self: &Arc<Self>, child: u32, ev: crate::agent_events::AgentEvent) {
         use crate::agent_events::AgentEvent;
-        let cleanup_guard = self
-            .temporary_cleanup_lock
-            .lock()
-            .expect("temporary cleanup lock");
-        // Exit can win after apply_agent_event checks liveness. This lock also
-        // protects finish_session, so a delayed hook cannot reopen an ended pane.
-        if self
-            .get(child)
-            .ok()
-            .is_none_or(|session| !session.state.lock().expect("state lock").is_live())
-        {
-            return;
-        }
         let opens_round = ev == AgentEvent::PromptSubmitted;
         let event = match ev {
             AgentEvent::PromptSubmitted | AgentEvent::InputResolved => {
@@ -17856,6 +17846,23 @@ impl Daemon {
             | AgentEvent::TurnFailed
             | AgentEvent::SessionEnded => return,
         };
+        // Top-level hooks must not wait for child restoration's cleanup lock.
+        if matches!(self.db.delegation_for_child(child), Ok(None)) {
+            return;
+        }
+        let cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        // Exit can win after apply_agent_event checks liveness. This lock also
+        // protects finish_session, so a delayed hook cannot reopen an ended pane.
+        if self
+            .get(child)
+            .ok()
+            .is_none_or(|session| !session.state.lock().expect("state lock").is_live())
+        {
+            return;
+        }
         let row = match self.db.delegation_for_child(child) {
             Ok(Some(row)) => row,
             Ok(None) => return,
