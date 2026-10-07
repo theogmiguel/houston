@@ -13,13 +13,17 @@ export function EndedStatusDot(): React.JSX.Element {
   return <span className="agent-dot w-[var(--sz-status-dot)] h-[var(--sz-status-dot)] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" />
 }
 
-// Below this container width the split shows the strip instead of the column.
+// Below this container width the split shows the strip instead of the column;
+// `expanded` is the operator's explicit request for the column at any width.
 const SPLIT_AUTO_STRIP_HIDDEN = '[.children-split.auto>&]:hidden'
+const SPLIT_EXPANDED_STRIP_HIDDEN = '[.children-split.expanded>&]:hidden'
 const SPLIT_NARROW_STRIP_SHOWN = '[@container_(max-width:820px)]:[.children-split.auto>&]:flex'
 const SPLIT_NARROW_COLUMN_HIDDEN = '[@container_(max-width:820px)]:[.children-split.auto>&]:hidden'
 
-export function RosterSplit({ collapsed, children }: { collapsed: boolean; children: ReactNode }): React.JSX.Element {
-  return <div className={`children-split ${collapsed ? 'collapsed' : 'auto'} flex-1 min-h-0 flex`}>{children}</div>
+export type RosterMode = 'auto' | 'collapsed' | 'expanded'
+
+export function RosterSplit({ mode, children }: { mode: RosterMode; children: ReactNode }): React.JSX.Element {
+  return <div className={`children-split ${mode} flex-1 min-h-0 flex`}>{children}</div>
 }
 
 export function RosterColumn({ className = '', ...props }: HTMLAttributes<HTMLElement>): React.JSX.Element {
@@ -35,7 +39,7 @@ export function RosterStrip({ className = '', ...props }: HTMLAttributes<HTMLEle
   return (
     <aside
       {...props}
-      className={`children-strip w-[var(--w-roster-strip)] flex-none border-r border-r-[var(--divider)] bg-[var(--card-bg)] flex flex-col items-center gap-[var(--space-zero-half)] py-1.5 overflow-y-auto overflow-x-hidden ${SPLIT_AUTO_STRIP_HIDDEN} ${SPLIT_NARROW_STRIP_SHOWN} ${className}`}
+      className={`children-strip w-[var(--w-roster-strip)] flex-none border-r border-r-[var(--divider)] bg-[var(--card-bg)] flex flex-col items-center gap-[var(--space-zero-half)] py-1.5 overflow-y-auto overflow-x-hidden ${SPLIT_AUTO_STRIP_HIDDEN} ${SPLIT_EXPANDED_STRIP_HIDDEN} ${SPLIT_NARROW_STRIP_SHOWN} ${className}`}
     />
   )
 }

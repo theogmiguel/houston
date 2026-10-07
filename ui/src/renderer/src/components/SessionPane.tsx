@@ -99,7 +99,7 @@ import { PaneTaskChip } from './tasks/PaneTaskChip'
 import { PrWatchChip } from './ui/PrWatch'
 import { usePrWatch } from './git/usePrWatch'
 import { Button } from './ui/Button'
-import { RosterPeekbar, RosterSplit } from './ui/RosterSurface'
+import { RosterPeekbar, RosterSplit, type RosterMode } from './ui/RosterSurface'
 import { Count } from './ui/Count'
 import { ShellBranchCopyChip, ShellElement } from './ui/ShellPrimitives'
 import { formatCheckout } from './checkout/formatCheckout'
@@ -364,7 +364,7 @@ function SessionPaneImpl({
   const roster = withSessionFamily(rosterProp, family)
   const [peekId, setPeekId] = useState<number | null>(null)
   const [recent, setRecent] = useState<number[]>([])
-  const [collapsed, setCollapsed] = useState(false)
+  const [rosterMode, setRosterMode] = useState<RosterMode>('auto')
   const children = rosterChildren(roster?.sessions, info.id)
   const peek = visiblePeek(children, peekId, gridSessionIds)
   const selectChild = (id: number | null): void => {
@@ -470,7 +470,7 @@ function SessionPaneImpl({
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </PaneHeader>
       <ResumeNotice notice={info.resume_notice} />
-      <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />
+      <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />
       <AnimOut open={confirmRestart !== null} suppress="modal">
         {confirmRestart && (
           <RestartConfirm
@@ -738,17 +738,17 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
         </PaneHeadActions>)
 }
 
-function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveChild, collapsed, onCollapse, terminals }: Pick<Props, 'info' | 'roster' | 'client'> & {
+function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveChild, mode, onMode, terminals }: Pick<Props, 'info' | 'roster' | 'client'> & {
   children: SessionInfo[]
   peek: SessionInfo | undefined
   selectChild: (id: number | null) => void
   moveChild: (id: number) => void
-  collapsed: boolean
-  onCollapse: () => void
+  mode: RosterMode
+  onMode: (mode: RosterMode) => void
   terminals: React.ReactNode
 }): React.JSX.Element {
-  return (<><RosterSplit collapsed={collapsed}>
-        {children.length > 0 && <ChildrenRoster parent={info} children={children} roster={roster} client={client} selected={peek?.id ?? null} onSelect={selectChild} onMove={moveChild} collapsed={collapsed} onCollapse={onCollapse} />}
+  return (<><RosterSplit mode={mode}>
+        {children.length > 0 && <ChildrenRoster parent={info} children={children} roster={roster} client={client} selected={peek?.id ?? null} onSelect={selectChild} onMove={moveChild} collapsed={mode === 'collapsed'} onCollapse={() => onMode('collapsed')} onExpand={() => onMode('expanded')} />}
         <ChildrenColumn>
           {peek && <RosterPeekbar>
             <PeekBarButton onClick={() => selectChild(null)}>Orchestrator</PeekBarButton><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>

@@ -518,6 +518,7 @@ function RosterStory({ view, empty = false, result = false }: { view: 'children'
         onMove={noop}
         collapsed={false}
         onCollapse={noop}
+        onExpand={noop}
         defaultView={view}
       />
     </div>

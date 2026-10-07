@@ -37,7 +37,7 @@ export function UiRoleSpecimen(): React.JSX.Element {
         <PaneNotice>Started a fresh session</PaneNotice>
         <RenameActionButton aria-label="Rename"><Icon glyph={IconClose} role="ui" /></RenameActionButton>
         <RenameTitleInput aria-label="Edit title" value="Session title" readOnly />
-        <RosterSplit collapsed={false}><ChildrenColumn><div className="flex-1" /></ChildrenColumn></RosterSplit>
+        <RosterSplit mode="auto"><ChildrenColumn><div className="flex-1" /></ChildrenColumn></RosterSplit>
         <RosterPeekbar><PeekBarButton>Child session</PeekBarButton><PeekBarIconButton aria-label="Open child">+</PeekBarIconButton></RosterPeekbar>
         <SettledChildFooter>Session finished <SettledChildButton>Open</SettledChildButton></SettledChildFooter>
         <PaneContextMenu style={{ position: 'absolute', top: 'var(--space-7)', left: 'var(--space-3)' }}>

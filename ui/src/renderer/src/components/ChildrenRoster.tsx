@@ -99,7 +99,7 @@ function ChildDeliveryStatus({ info }: { info: SessionInfo }): React.JSX.Element
   return status == null ? null : <RosterDetail><StatusLabel status={status} /></RosterDetail>
 }
 
-export function ChildrenRoster({ parent: parentProp, children: childrenProp, roster: rosterProp, client, selected, onSelect, onMove, collapsed, onCollapse, defaultView = 'children' }: {
+export function ChildrenRoster({ parent: parentProp, children: childrenProp, roster: rosterProp, client, selected, onSelect, onMove, collapsed, onCollapse, onExpand, defaultView = 'children' }: {
   parent: SessionInfo
   children: SessionInfo[]
   roster?: PaneRoster
@@ -109,6 +109,7 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
   onMove: (id: number) => void
   collapsed: boolean
   onCollapse: () => void
+  onExpand: () => void
   /// Which segment starts selected; the harness stories open the queue with it.
   defaultView?: 'children' | 'queue'
 }): React.JSX.Element {
@@ -168,7 +169,7 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
     <RosterRule />
     {ordered.map((child) => <Tooltip key={child.id} label={glyphLabel(child)}><RosterGlyphButton aria-label={`Open ${child.delegation?.role ?? child.title}`} aria-pressed={selected === child.id} onClick={() => onSelect(child.id)} onContextMenu={(event) => openChildMenu(child, event)}>{glyph(child)}<RosterStatus state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</RosterStatus></RosterGlyphButton></Tooltip>)}
     {pending.length > 0 && <Tooltip label={`Undo closing ${pending.length} children`}><RosterIconButton aria-label="Undo closing settled children" onClick={undoClose}><Icon glyph={IconUndo} role="ui" /></RosterIconButton></Tooltip>}
-    <Tooltip label="Show children"><RosterIconButton pushEnd aria-label="Show children" onClick={onCollapse}><Icon glyph={IconChevronRight} role="ui" /></RosterIconButton></Tooltip>
+    <Tooltip label="Show children"><RosterIconButton pushEnd aria-label="Show children" onClick={onExpand}><Icon glyph={IconChevronRight} role="ui" /></RosterIconButton></Tooltip>
   </RosterStrip>
   return <>
     {!collapsed && <RosterColumn aria-label="Children roster">

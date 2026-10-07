@@ -13,7 +13,7 @@ let children: SessionInfo[]
 const closeSession = vi.fn()
 const delegationResultsList = vi.fn()
 const client = { closeSession, delegationResultsList, subscribe: () => () => {}, taskSnapshot: vi.fn(), taskQueueRun: vi.fn() } as unknown as HoustonClient
-const props = () => ({ parent: child(1), children, client, selected: null, onSelect: vi.fn(), onMove: vi.fn(), collapsed: false, onCollapse: vi.fn() })
+const props = () => ({ parent: child(1), children, client, selected: null, onSelect: vi.fn(), onMove: vi.fn(), collapsed: false, onCollapse: vi.fn(), onExpand: vi.fn() })
 const render = () => act(() => root.render(<ChildrenRoster {...props()} />))
 const click = (text: string) => act(() => [...host.querySelectorAll('button')].find((b) => b.textContent === text)!.click())
 beforeEach(() => { vi.useFakeTimers(); closeSession.mockClear(); delegationResultsList.mockClear(); host = document.createElement('div'); document.body.append(host); root = createRoot(host); children = [child(2, 'exited'), child(3, 'killed'), child(4)] })
@@ -110,6 +110,14 @@ describe('settled children', () => {
     act(() => root.render(null))
     act(() => vi.advanceTimersByTime(5000))
     expect(closeSession).not.toHaveBeenCalled()
+  })
+  it('Show children asks for the expanded column instead of toggling the collapse', () => {
+    const onCollapse = vi.fn()
+    const onExpand = vi.fn()
+    act(() => root.render(<ChildrenRoster {...props()} collapsed onCollapse={onCollapse} onExpand={onExpand} />))
+    act(() => host.querySelector<HTMLButtonElement>('[aria-label="Show children"]')!.click())
+    expect(onExpand).toHaveBeenCalledOnce()
+    expect(onCollapse).not.toHaveBeenCalled()
   })
   it('marks the selected child in the collapsed glyph strip', () => {
     act(() => root.render(<ChildrenRoster {...props()} collapsed selected={3} />))
