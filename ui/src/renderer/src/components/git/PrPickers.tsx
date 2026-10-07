@@ -1,3 +1,4 @@
+import { PrTab } from '../ui/PrTab'
 import { Button } from '../ui/Button'
 import { MetadataRow } from '../ui/MetadataRow'
 import { Text } from '../ui/Text'
@@ -12,7 +13,7 @@ import type {
   PrReviewerCandidate
 } from '../../houston/client'
 import { Icon } from '../ui/Icon'
-import { IconCheck, IconClose, IconLoaderCircle, IconPlus } from '../icons'
+import { IconCheck, IconClose, IconLoaderCircle, IconPlus, IconTag, IconUser, IconUsers } from '../icons'
 import { Tooltip } from '../ui/Tooltip'
 import { DiffLoadingMark } from '../ui'
 import {
@@ -91,7 +92,8 @@ export function PrReviewerPicker({
   onLoad,
   onApply,
   open: openProp,
-  onOpenChange
+  onOpenChange,
+  compact = false
 }: {
   detail: PrDetail
   busy: boolean
@@ -102,6 +104,7 @@ export function PrReviewerPicker({
   onApply: (added: PrReviewer[], removed: PrReviewer[]) => void
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  compact?: boolean
 }): React.JSX.Element {
   const [openState, setOpenState] = useState(false)
   const open = openProp ?? openState
@@ -147,13 +150,14 @@ export function PrReviewerPicker({
   return (
     <PickerSection data-testid="pr-reviewers">
       <MetadataRow>
-        <PickerFieldLabel>Reviewers</PickerFieldLabel>
+        <PickerFieldLabel>{compact && <Icon glyph={IconUsers} role="small" />}Reviewers</PickerFieldLabel>
         <ReviewerValue data-testid="pr-reviewers-value">
-          {detail.reviewers.length === 0 ? 'none requested' : requestedReviewers(detail.reviewers)}
+          {detail.reviewers.length === 0 ? (compact ? 'None' : 'none requested') : requestedReviewers(detail.reviewers)}
         </ReviewerValue>
         <Button variant="compact-action"
           type="button"
           data-testid="pr-reviewers-manage"
+          aria-label="Add reviewer"
           disabled={busy || loading}
           onClick={() => {
             if (!open) onLoad()
@@ -165,7 +169,7 @@ export function PrReviewerPicker({
               <Icon glyph={IconLoaderCircle} role="small" />
             </DiffLoadingMark>
           ) : (
-            'Manage'
+            compact ? <><Icon glyph={IconUser} role="small" /><Icon glyph={IconPlus} role="small" /></> : 'Manage'
           )}
         </Button>
       </MetadataRow>
@@ -233,7 +237,8 @@ export function PrLabelPicker({
   onLoad,
   onToggle,
   open: openProp,
-  onOpenChange
+  onOpenChange,
+  compact = false
 }: {
   detail: PrDetail
   busy: boolean
@@ -244,6 +249,7 @@ export function PrLabelPicker({
   onToggle: (name: string, applied: boolean) => void
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  compact?: boolean
 }): React.JSX.Element {
   const [openState, setOpenState] = useState(false)
   const open = openProp ?? openState
@@ -255,25 +261,27 @@ export function PrLabelPicker({
   return (
     <PickerSection data-testid="pr-labels">
       <LabelSummaryRow>
-        <PickerFieldLabel>Labels</PickerFieldLabel>
+        <PickerFieldLabel>{compact && <Icon glyph={IconTag} role="small" />}Labels</PickerFieldLabel>
         <LabelSummary data-testid="pr-labels-value">
           {detail.labels.length === 0 ? (
-            <Text size="small" tone="primary">none</Text>
+            <Text size="small" tone="primary">{compact ? 'None' : 'none'}</Text>
           ) : (
             detail.labels.map((l) => (
-              <PullRequestLabel
+              <PrTab as={PullRequestLabel} surface="pr-label-pill"
                 key={l.name}
                 selected
                 data-testid={`pr-label-${l.name}`}
               >
+                <PrTab as="span" surface="pr-label-dot" aria-hidden="true" style={{ backgroundColor: l.color ? `#${l.color.replace(/^#/, '')}` : 'var(--accent)' }} />
                 {l.name}
-              </PullRequestLabel>
+              </PrTab>
             ))
           )}
         </LabelSummary>
         <Button variant="compact-action"
           type="button"
           data-testid="pr-labels-manage"
+          aria-label="Add label"
           disabled={busy || loading}
           onClick={() => {
             if (!open) onLoad()
@@ -285,7 +293,7 @@ export function PrLabelPicker({
               <Icon glyph={IconLoaderCircle} role="small" />
             </DiffLoadingMark>
           ) : (
-            'Edit'
+            compact ? <Icon glyph={IconTag} role="small" /> : 'Edit'
           )}
         </Button>
       </LabelSummaryRow>

@@ -301,6 +301,7 @@ function render(client: FakeClient | null, opts: Record<string, unknown> = {}): 
         onShowChanges={opts.onShowChanges as (() => void) | undefined}
         onPrPresenceChange={opts.onPrPresenceChange as ((exists: boolean) => void) | undefined}
         onSendToOrchestrator={opts.onSendToOrchestrator as ((text: string) => void) | undefined}
+        requestedPr={opts.requestedPr as { number: number; nonce: number } | null | undefined}
       />
     )
   })
@@ -318,6 +319,7 @@ function mount(
     onShowChanges?: () => void
     onPrPresenceChange?: (exists: boolean) => void
     onSendToOrchestrator?: (text: string) => void
+    requestedPr?: { number: number; nonce: number } | null
   } = {}
 ): FakeClient {
   container = document.createElement('div')
@@ -385,7 +387,9 @@ describe('PullRequestTab — reading a pull request', () => {
     emit(client, detailMsg())
     expect(q('[data-testid="pr-title"]')!.textContent).toContain('a change')
     expect(q('[data-testid="pr-number"]')!.textContent).toBe('#61')
-    expect(q('[data-testid="pr-sub"]')!.textContent).toContain('feat/x → main · 2 commits')
+    expect(q('[data-testid="pr-sub"]')!.textContent).toContain('feat/x')
+    expect(q('[data-testid="pr-sub"]')!.textContent).toContain('→ main · 2 commits')
+    click(q('[data-testid="pr-checks"] button'))
     expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
     expect(qa('[data-testid="pr-check-row"]').some((row) => row.textContent?.includes('1m 12s'))).toBe(true)
     expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
@@ -1162,6 +1166,45 @@ describe('PullRequestTab — stacks', () => {
 
 
 describe('compact side panel pull request', () => {
+  it('opens a pull request selected from Linked pull requests', () => {
+    const client = mount({ compact: true, requestedPr: { number: 73, nonce: 1 } })
+    emit(client, detailMsg({ detail: detail() }))
+    expect(client.prDetailNumbers).toEqual([undefined, 73])
+  })
+
+  it('keeps the approved header layout stable while scrolling the summary', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail() }))
+    const scroller = q<HTMLElement>('[data-testid="pr-scroll-area"]')!
+    expect(q('.pr-inspector-fold-inner')).toBeNull()
+    expect(q('[data-testid="pr-header-top"]')).not.toBeNull()
+    scroller.scrollTop = 133
+    act(() => scroller.dispatchEvent(new Event('scroll')))
+    expect(q('[data-testid="pr-header-top"]')).not.toBeNull()
+    expect(scroller.scrollTop).toBe(133)
+    scroller.scrollTop = 3
+    act(() => scroller.dispatchEvent(new Event('scroll')))
+    expect(q('[data-testid="pr-header-top"]')).not.toBeNull()
+    expect(scroller.scrollTop).toBe(3)
+  })
+
+  it('opens Checks from the summary strip and shares expansion with the Checks section', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ checks: [{ ...detail().checks[0], state: 'failing' }] }) }))
+    const scroller = q<HTMLElement>('[data-testid="pr-scroll-area"]')!
+    scroller.scrollTop = 180
+    click(q('[data-testid="pr-check-strip-summary"]'))
+    const checks = q<HTMLElement>('[data-testid="pr-check-popover"]')
+    expect(checks).not.toBeNull()
+    expect(q('[data-testid="pr-check-strip-summary"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(scroller.scrollTop).toBe(180)
+    const rows = qa('[data-testid="pr-check-row"]')
+    expect(rows).toHaveLength(1)
+    click(checks?.querySelector('[aria-expanded="true"]') ?? null)
+    expect(qa('[data-testid="pr-check-row"] [aria-expanded="false"]')).toHaveLength(1)
+    expect(q('[role="dialog"][aria-label="Pull request checks"]')).toBeNull()
+  })
+
   it('matches the board and keeps full review controls inside collapsed Details', () => {
     const onOpenUrl = vi.fn()
     const client = mount({ compact: true, session: 1, onOpenUrlInPane: onOpenUrl })
@@ -1179,17 +1222,18 @@ describe('compact side panel pull request', () => {
         { ...thread(), id: 'closed-thread', resolved: true, comments: [{ ...thread().comments[0], id: 'closed-comment' }] }
       ]
     }) }))
+    click(q('[data-testid="pr-checks"] button'))
     expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
-    expect(q('[data-testid="pr-check-summary"]')?.textContent).toBe('Checks · 1 of 2 passed')
-    expect(q('[data-testid="pr-check-details"]')?.textContent).toBe('Details')
-    click(q('[data-testid="pr-check-details"]'))
-    expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/o/r/pull/61/checks')
+    expect(q('[data-testid="pr-check-summary"]')?.textContent).toBe('1 passed')
+    expect(q('[data-testid="pr-check-strip-summary"]')?.textContent).toContain('All checks passed')
+    click(q('[data-testid="pr-check-strip-summary"]'))
+    expect(q('[data-testid="pr-check-popover"]')).not.toBeNull()
+    expect(q('[data-testid="pr-checks"] [aria-expanded="true"]')).not.toBeNull()
     expect(q('[data-testid="pr-check-row"]')?.textContent).toContain('running 6m')
     expect(q('[data-testid="pr-header-top"]')!.compareDocumentPosition(q('[data-testid="pr-watch-row"]')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
     expect(q('[data-testid="pr-pane-files"]')).toBeNull()
     expect(q('[data-testid="pr-browse-open"]')).toBeNull()
-    expect(q('[data-testid="pr-details"] [data-testid="disclosure"]')?.getAttribute('data-state')).toBe('closed')
     expect(q('[data-testid="pr-inspector-review"] [data-testid="disclosure"]')).toBeNull()
     expect(qa('[data-testid="pr-inspector-comment"]')).toHaveLength(1)
     expect(q('[data-testid="pr-inspector-review"] [data-testid="pr-thread-resolve-thread-1"]')).toBeNull()
@@ -1237,7 +1281,8 @@ it('uses emphasis for the review counter and shows running checks in the inspect
   const client = mount({ compact: true })
   emit(client, detailMsg())
   expect(q('[data-review-count]')!.className).toContain('pr-inspector-review-count')
+  click(q('[data-testid="pr-checks"] button'))
   expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
-  expect(qa('[data-testid="pr-pane-summary"]')).toHaveLength(0)
+    expect(qa('[data-testid="pr-pane-summary"]')).toHaveLength(1)
   expect(qa('[data-testid="pr-pane-files"]')).toHaveLength(0)
 })

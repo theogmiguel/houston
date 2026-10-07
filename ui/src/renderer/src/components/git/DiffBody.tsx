@@ -68,7 +68,7 @@ export function DiffBody({ patch, truncated }: { patch: string; truncated: boole
             <DiffGutter>
               {kind === 'add' ? '+' : kind === 'del' ? '−' : ''}
             </DiffGutter>
-            <DiffLineText>{line || ' '}</DiffLineText>
+            <DiffLineText>{(kind === 'add' || kind === 'del' ? line.slice(1) : line) || ' '}</DiffLineText>
           </DiffLine>
         )
       })}

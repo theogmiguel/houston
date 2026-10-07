@@ -1,13 +1,16 @@
 import React from 'react'
 import type { GitFileStatus } from '../../houston/client'
-import { bulkLabelFor, discardKindFor, groupBulkDisabledReason, groupBulkPaths, groupRows, stageActionFor, GROUP_LABEL, type ChangeRow } from './changes'
+import { bulkLabelFor, discardKindFor, groupBulkDisabledReason, groupBulkPaths, groupRows, stageActionFor, toRow, GROUP_LABEL, type ChangeRow } from './changes'
 import { DiffEmptyState, DiffLoadingMark, GitStatusMark } from '../ui'
+import { PrTab } from '../ui/PrTab'
 import { Icon } from '../ui/Icon'
-import { IconArrowDown, IconArrowUp, IconFile, IconLoaderCircle, IconShieldAlert } from '../icons'
+import { IconArrowDown, IconArrowUp, IconChevronDown, IconFile, IconLoaderCircle, IconShieldAlert } from '../icons'
 import { materialAttrs } from '../ui/material'
 import { Tooltip } from '../ui/Tooltip'
 import { OpenInMenu } from '../OpenInMenu'
 import { changeFileClasses as classes, changeGroupHeadingClass, changeRowClass, changeMenuItemClass } from '../ui/inspectorChangeClasses'
+import { DiffBody } from './DiffBody'
+import type { DiffState } from './useGitStatusSubscription'
 const STATE_BODY = 'flex-1 min-h-0 flex flex-col items-center justify-center gap-2 p-6 text-center'
 const STATE_TITLE = 'text-[length:var(--tr-text-base)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)]'
 const STATE_HINT = 'text-[length:var(--tr-text-sm)] text-[var(--text-muted)] max-w-[46ch]'
@@ -43,7 +46,12 @@ export function ChangesFileList({
   stageAll,
   unstageAll,
   bulkForGroup,
-  setStatusError
+  setStatusError,
+  inlineDiffs,
+  expandedPaths,
+  togglePath,
+  wrapDiff,
+  splitDiff
 }: {
   compact?: boolean
   files: GitFileStatus[] | null
@@ -67,10 +75,15 @@ export function ChangesFileList({
   unstageAll: string[]
   bulkForGroup: (group: ChangeRow['group'], paths: string[]) => void
   setStatusError: (message: string) => void
+  inlineDiffs?: ReadonlyMap<string, DiffState>
+  expandedPaths?: ReadonlySet<string>
+  togglePath?: (row: ChangeRow) => void
+  wrapDiff?: boolean
+  splitDiff?: boolean
 }): React.JSX.Element {
   const groups = files
     ? compact
-      ? [{ group: 'unstaged' as const, rows: groupRows(files).flatMap((group) => group.rows) }]
+      ? [{ group: 'unstaged' as const, rows: files.map(toRow) }]
       : groupRows(files)
     : []
   if (files === null) {
@@ -116,8 +129,8 @@ export function ChangesFileList({
       {groups.map((group) => {
         const bulkPaths = groupBulkPaths(group.rows)
         return (
-          <div key={group.group}>
-            <div className={changeGroupHeadingClass(group.group)}>
+          <PrTab as="div" surface="changes-inline-group" enabled={compact} key={group.group}>
+            {!compact && <div className={changeGroupHeadingClass(group.group)}>
               {compact && group.group === 'unstaged'
                 ? `UNCOMMITTED · ${group.rows.length} FILE${group.rows.length === 1 ? '' : 'S'}`
                 : GROUP_LABEL[group.group]}
@@ -171,14 +184,17 @@ export function ChangesFileList({
                   </button>
                 </Tooltip>
               )}
-            </div>
+            </div>}
             {group.rows.map((row) => (
+              <PrTab as="div" surface="changes-inline-file" enabled={compact} key={row.key}>
               <FileRow
                 key={row.key}
                 row={row}
+                compact={compact}
+                expanded={expandedPaths?.has(row.path) ?? false}
                 selected={selected === row.path}
                 menuOpen={menuFor === row.key}
-                onSelect={() => select(row.path)}
+                onSelect={() => compact && togglePath ? togglePath(row) : select(row.path)}
                 onToggleMenu={() => setMenuFor((value) => (value === row.key ? null : row.key))}
                 onStageToggle={() => stageToggle(row)}
                 onDiscard={() => {
@@ -197,8 +213,16 @@ export function ChangesFileList({
                 onCloseMenu={() => setMenuFor(null)}
                 onOpenInEditorError={setStatusError}
               />
+              {compact && expandedPaths?.has(row.path) && (
+                <PrTab as="div" surface="changes-inline-diff" states={[wrapDiff ? 'wrapped' : '', splitDiff ? 'split' : ''].filter(Boolean)} data-testid="changes-inline-diff" data-path={row.path}>
+                  {inlineDiffs?.get(row.path)
+                    ? <DiffBody patch={inlineDiffs.get(row.path)!.patch} truncated={inlineDiffs.get(row.path)!.truncated} />
+                    : <PrTab as="div" surface="changes-inline-loading">Loading diff…</PrTab>}
+                </PrTab>
+              )}
+              </PrTab>
             ))}
-          </div>
+          </PrTab>
         )
       })}
     </div>
@@ -234,6 +258,8 @@ function StageToggleButton({
 
 function FileRow({
   row,
+  compact = false,
+  expanded = false,
   selected,
   menuOpen,
   onSelect,
@@ -246,6 +272,8 @@ function FileRow({
   onCloseMenu
 }: {
   row: ChangeRow
+  compact?: boolean
+  expanded?: boolean
   selected: boolean
   menuOpen: boolean
   onSelect: () => void
@@ -259,18 +287,6 @@ function FileRow({
 }): React.JSX.Element {
   const stage = stageActionFor(row)
   const discard = discardKindFor(row)
-  const counts =
-    row.added !== null || row.deleted !== null ? (
-      <span className={classes.counts}>
-        {row.added !== null && <span className={classes.added}>+{row.added}</span>}
-        {row.added !== null && row.deleted !== null ? ' ' : ''}
-        {row.deleted !== null && <span className={classes.deleted}>−{row.deleted}</span>}
-      </span>
-    ) : (
-      <span className={classes.emptyCounts}>
-        {row.blocked ? 'blocked' : row.state === 'untracked' ? 'new' : row.state === 'conflicted' ? 'both modified' : ''}
-      </span>
-    )
   return (
     <div
       className={changeRowClass(selected)}
@@ -279,7 +295,7 @@ function FileRow({
         onToggleMenu()
       }}
     >
-      <button
+      <PrTab as="button" surface="changes-inline-file-button" enabled={compact} baseClass={classes.field}
         type="button"
         role="option"
         aria-selected={selected}
@@ -287,21 +303,22 @@ function FileRow({
         data-path={row.path}
         data-tag={row.tag}
         aria-label={`${row.path} — ${row.tag}`}
+        aria-expanded={compact ? expanded : undefined}
         onClick={onSelect}
-        className={classes.field}
       >
+        {compact && <PrTab as={Icon} surface="changes-inline-chevron" state={expanded ? 'open' : null} glyph={IconChevronDown} role="small" />}
         <span className={classes.glyph}><Icon glyph={IconFile} role="label" /></span>
-        <GitStatusMark status={row.state} kind="file" aria-hidden>
+        <PrTab as={GitStatusMark} surface="changes-inline-status" enabled={compact} status={row.state} kind="file" aria-hidden data-status={row.state}>
           {row.blocked ? <Icon glyph={IconShieldAlert} role="label" /> : MARK_GLYPH[row.state]}
-        </GitStatusMark>
+        </PrTab>
         <span className={classes.label}>
           <span>{row.name}</span>
           <span className={classes.dir}>{row.dir}</span>
         </span>
-      </button>
+      </PrTab>
       <StageToggleButton stage={stage} onStageToggle={onStageToggle} />
-      {counts}
-      <GitStatusMark aria-hidden status={row.state} kind="compact">{MARK_GLYPH[row.state]}</GitStatusMark>
+      <FileCounts row={row} />
+      <GitStatusMark aria-hidden status={row.state} kind="compact" data-status={row.state}>{MARK_GLYPH[row.state]}</GitStatusMark>
       <button
         type="button"
         data-testid="changes-row-menu"
@@ -312,44 +329,40 @@ function FileRow({
       >
         <span aria-hidden>···</span>
       </button>
-      {menuOpen && (
-        <div
-          role="menu"
-          data-testid="changes-row-menu-items"
-          className={classes.rowMenu}
-          {...materialAttrs('raised')}
-        >
-          <MenuItem
-            label={stage === 'unstage' ? 'Unstage' : 'Stage'}
-            disabled={stage === null}
-            disabledReason="Blocked path — its contents were never shown here"
-            onClick={onStageToggle}
-          />
-          <MenuItem
-            label={row.group === 'untracked' ? 'Delete file' : 'Discard changes'}
-            danger
-            disabled={discard === null}
-            disabledReason="Blocked path — its contents were never shown here"
-            onClick={onDiscard}
-          />
-          <MenuItem
-            label="Open in editor"
-            disabled={!onOpenInEditor || row.blocked}
-            disabledReason="Blocked path"
-            onClick={() => onOpenInEditor?.()}
-          />
-          {absPath && !row.blocked && (
-            <OpenInMenu
-              path={absPath}
-              itemClass={classes.menuItem}
-              onDone={() => onCloseMenu?.()}
-              onError={(m) => onOpenInEditorError?.(m)}
-            />
-          )}
-        </div>
-      )}
+      {menuOpen && <FileRowMenu row={row} stage={stage} discard={discard} absPath={absPath} onStageToggle={onStageToggle} onDiscard={onDiscard} onOpenInEditor={onOpenInEditor} onOpenInEditorError={onOpenInEditorError} onCloseMenu={onCloseMenu} />}
     </div>
   )
+}
+
+function FileCounts({ row }: { row: ChangeRow }): React.JSX.Element {
+  if (row.added !== null || row.deleted !== null) {
+    return <span className={classes.counts}>
+      {row.added !== null && <span className={classes.added}>+{row.added}</span>}
+      {row.added !== null && row.deleted !== null ? ' ' : ''}
+      {row.deleted !== null && <span className={classes.deleted}>−{row.deleted}</span>}
+    </span>
+  }
+  const label = row.blocked ? 'blocked' : row.state === 'untracked' ? 'new' : row.state === 'conflicted' ? 'both modified' : ''
+  return <span className={classes.emptyCounts}>{label}</span>
+}
+
+function FileRowMenu({ row, stage, discard, absPath, onStageToggle, onDiscard, onOpenInEditor, onOpenInEditorError, onCloseMenu }: {
+  row: ChangeRow
+  stage: ReturnType<typeof stageActionFor>
+  discard: ReturnType<typeof discardKindFor>
+  absPath?: string
+  onStageToggle: () => void
+  onDiscard: () => void
+  onOpenInEditor?: () => void
+  onOpenInEditorError?: (message: string) => void
+  onCloseMenu?: () => void
+}): React.JSX.Element {
+  return <div role="menu" data-testid="changes-row-menu-items" className={classes.rowMenu} {...materialAttrs('raised')}>
+    <MenuItem label={stage === 'unstage' ? 'Unstage' : 'Stage'} disabled={stage === null} disabledReason="Blocked path — its contents were never shown here" onClick={onStageToggle} />
+    <MenuItem label={row.group === 'untracked' ? 'Delete file' : 'Discard changes'} danger disabled={discard === null} disabledReason="Blocked path — its contents were never shown here" onClick={onDiscard} />
+    <MenuItem label="Open in editor" disabled={!onOpenInEditor || row.blocked} disabledReason="Blocked path" onClick={() => onOpenInEditor?.()} />
+    {absPath && !row.blocked && <OpenInMenu path={absPath} itemClass={classes.menuItem} onDone={() => onCloseMenu?.()} onError={(m) => onOpenInEditorError?.(m)} />}
+  </div>
 }
 
 function MenuItem({
