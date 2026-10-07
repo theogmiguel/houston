@@ -20,6 +20,7 @@ import {
   type ScmTab
 } from '../scmPanel'
 import type { PrPresenceTone } from './git/PullRequestTab'
+import { bracketedPaste } from '../pane/bracketedPaste'
 import type { CheckAgentTarget } from './prs/ChecksList'
 
 const ChangesPane = lazy(() =>
@@ -249,7 +250,7 @@ export function SourceControlPanel({
       void saveReview(`${buildStructuredReviewPrompt(data)}\n\nOperator comments:\n${request.comments}`)
         .then((file) => {
           reviewPacketCallback.current?.(data)
-          if (!client.sendStdin(request.target, `\x1b[200~${structuredReviewPrompt(file)}\x1b[201~`)) throw new Error(`Cannot send review to session ${request.target}: expected an attached terminal transport`)
+          if (!client.sendStdin(request.target, bracketedPaste(structuredReviewPrompt(file)))) throw new Error(`Cannot send review to session ${request.target}: expected an attached terminal transport`)
         }).catch((error) => setReviewError(String(error)))
     })
     return off

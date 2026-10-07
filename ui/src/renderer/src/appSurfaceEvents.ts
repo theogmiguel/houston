@@ -1,6 +1,7 @@
 import { isLive } from "./houston/client";
 import type { HoustonClient, KeymapOverrides, SessionInfo, ServerMsg, Workspace } from "./houston/client";
 import { basename } from "./editor/bufferStore";
+import { bracketedPaste } from "./pane/bracketedPaste";
 import {
   openBrowserSurface,
   openDiffSurface,
@@ -89,7 +90,7 @@ export function pasteToAgent(
 ): void {
   const target = sessions.current.get(session);
   if (!client || !target || !isLive(target.state)) return;
-  if (!client.sendStdin(session, `\x1b[200~${text}\x1b[201~`)) {
+  if (!client.sendStdin(session, bracketedPaste(text))) {
     pushError(`connection lost — prompt was not pasted to session ${session}`);
   }
 }
