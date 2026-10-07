@@ -27,7 +27,7 @@ Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
   get: () => 300
 })
 
-const { TerminalPane } = await import('./TerminalPane')
+const { TerminalPane, TERMINAL_SYNC_FIT_EVENT } = await import('./TerminalPane')
 
 function makeSession(): SessionInfo {
   return {
@@ -121,5 +121,23 @@ describe('TerminalPane settled-size reporting', () => {
 
     expect(resizeSession).toHaveBeenCalledTimes(1)
     expect(resizeSession).toHaveBeenLastCalledWith(1, 200, 60)
+  })
+
+  it('fits synchronously when a side-panel layout change is committed', async () => {
+    render()
+    await act(async () => {
+      await flushGhosttyAttach()
+    })
+    ghosttyMock.fitSpy.mockClear()
+    resizeSession.mockClear()
+    ghosttyMock.cols = 72
+
+    act(() => {
+      window.dispatchEvent(new Event(TERMINAL_SYNC_FIT_EVENT))
+    })
+
+    expect(ghosttyMock.fitSpy).toHaveBeenCalledTimes(1)
+    expect(resizeSession).toHaveBeenCalledTimes(1)
+    expect(resizeSession).toHaveBeenCalledWith(1, 72, 24)
   })
 })

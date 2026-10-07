@@ -73,6 +73,7 @@ export interface TerminalTuning {
   readonly cursorBlink: boolean
   readonly scrollbackLines: number
 }
+export const TERMINAL_SYNC_FIT_EVENT = 'houston:terminal-sync-fit'
 export const TerminalTuningContext = createContext<TerminalTuning>({
   lineHeight: 1.35,
   cursorBlink: true,
@@ -536,6 +537,10 @@ export function TerminalPane({
     syncSizeRef.current = syncSize
     syncSize()
     ghostty.onResize(sendSize)
+    const fitAfterLayout = (): void => {
+      if (!hiddenRef.current) syncSizeRef.current()
+    }
+    window.addEventListener(TERMINAL_SYNC_FIT_EVENT, fitAfterLayout)
 
     const writeClipboardText = (text: string, onSuccess?: () => void): void => {
       void navigator.clipboard.writeText(text).then(onSuccess, (err: unknown) => {
@@ -1147,6 +1152,7 @@ export function TerminalPane({
       if (attachedRef.current && owner.owns()) clientRef.current.sessionVisibility(info.id, false)
       owner.release()
       observer.disconnect()
+      window.removeEventListener(TERMINAL_SYNC_FIT_EVENT, fitAfterLayout)
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
       if (resizeReassertTimerRef.current !== undefined) {
         clearTimeout(resizeReassertTimerRef.current)
