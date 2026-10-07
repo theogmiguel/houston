@@ -656,6 +656,7 @@ fn runs_on_connection_task(msg: &proto::ClientMsg) -> bool {
         msg,
         proto::ClientMsg::SessionCreate { .. }
             | proto::ClientMsg::SessionRespawn { .. }
+            | proto::ClientMsg::SessionWake { .. }
             | proto::ClientMsg::SessionAttach { .. }
             | proto::ClientMsg::SessionVisibility { .. }
     )
@@ -1656,6 +1657,34 @@ async fn dispatch(
             .map(|info| {
                 frames_wanted.insert(info.id);
             })
+        }
+        proto::ClientMsg::SessionWake { session } => {
+            let frames_wanted = frames_wanted.expect("an attach-family message runs on the connection task");
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || daemon.wake_session(session))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("Wake task panicked: {e}")))
+                .map(|info| { frames_wanted.insert(info.id); })
+        }
+        proto::ClientMsg::SessionSleep { session } => {
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || daemon.sleep_session(session))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("Sleep task panicked: {e}")))
+        }
+        proto::ClientMsg::SessionMemoryGet { session } => {
+            let daemon = Arc::clone(daemon);
+            let (bytes, unavailable_reason) = tokio::task::spawn_blocking(move || daemon.session_memory(session))
+                .await
+                .unwrap_or_else(|e| (None, Some(format!("memory measurement task failed: {e}"))));
+            let measured_at_ms = bytes.map(|_| crate::daemon::now_ms());
+            let _ = send_msg(sink, &proto::ServerMsg::SessionMemory {
+                session,
+                bytes,
+                measured_at_ms,
+                unavailable_reason,
+            }).await;
+            Ok(())
         }
         proto::ClientMsg::SessionCwd { session } => match daemon.session_cwd(session) {
             Ok(cwd) => {

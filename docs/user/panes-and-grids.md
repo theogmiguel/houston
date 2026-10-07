@@ -124,6 +124,19 @@ routines before stopping them.
 Closing a pane ends its session — the underlying PTY is torn down, not just hidden.
 There is no undo for a killed session; the pane is gone from the grid along with it.
 
+## Sleeping a pane
+
+Sleep is a reversible way to release an idle Claude or Codex CLI while keeping the pane,
+its slot, scrollback and exact conversation handle. Choose Sleep from the pane actions;
+the pane remains visible and does not wake when focused. Choose Wake to resume its exact
+conversation. If the provider no longer has that transcript, Wake explains why and leaves
+the pane resumable; Start fresh remains a separate action.
+
+Sleep is refused while the agent is working or waiting for input, while orchestration or
+external child work is active, and for child, routine, harness, shell and unsupported
+provider sessions. Non-Linux platforms report Sleep as unavailable until graceful
+process-tree shutdown is supported there.
+
 ## Idle and restore behavior
 
 Settings ▸ Workspaces ▸ Close idle background sessions can end sessions that have sat

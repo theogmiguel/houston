@@ -594,6 +594,10 @@ fn seed_session(db: &Db, id: u32, dir: &Path, agent: proto::AgentKind, spawned_b
         resume_notice: None,
         compactions: None,
         task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
     })
     .unwrap();
 }

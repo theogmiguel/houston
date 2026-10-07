@@ -205,6 +205,37 @@ fn has_running_procs(pid: u32) -> Option<bool> {
     Some(false)
 }
 
+#[cfg(target_os = "linux")]
+fn has_external_running_descendants(root: u32, allow_codex_app_server: bool) -> Option<bool> {
+    let mut pending = direct_child_pids(root)?;
+    let mut visited = 0usize;
+    while let Some(pid) = pending.pop() {
+        visited += 1;
+        if visited > MAX_DESCENDANTS_SCANNED {
+            return Some(true);
+        }
+        if let Some(children) = direct_child_pids(pid) {
+            pending.extend(children);
+        }
+        if is_zombie(pid) {
+            continue;
+        }
+        let app_server = allow_codex_app_server
+            && std::fs::read(format!("/proc/{pid}/cmdline"))
+                .ok()
+                .is_some_and(|args| {
+                    let mut argv = args.split(|b| *b == 0).filter(|part| !part.is_empty());
+                    let executable = argv.next().unwrap_or_default();
+                    executable.rsplit(|b| *b == b'/').next() == Some(b"codex".as_slice())
+                        && argv.next() == Some(b"app-server".as_slice())
+                });
+        if !app_server {
+            return Some(true);
+        }
+    }
+    Some(false)
+}
+
 #[cfg(test)]
 mod process_liveness_tests {
     #![allow(clippy::disallowed_methods)]
@@ -450,6 +481,11 @@ fn short_path_alias(p: &Path, max_len: usize) -> Option<PathBuf> {
 }
 
 const CLI_TITLE_MIN_GAP_MS: u64 = 1000;
+const SLEEP_CUE_MAX_CHARS: usize = 2000;
+
+fn bounded_hook_text(value: &str) -> String {
+    value.trim().chars().take(SLEEP_CUE_MAX_CHARS).collect()
+}
 
 #[derive(Clone)]
 pub enum Outbound {
@@ -490,6 +526,10 @@ pub struct Session {
     backend_exited: AtomicBool,
     hook_cwd: Mutex<Option<String>>,
     hook_last_message: Mutex<Option<String>>,
+    hook_latest_prompt: Mutex<Option<String>>,
+    hook_latest_agent_message: Mutex<Option<String>>,
+    sleep_notice: Mutex<Option<String>>,
+    slept_at_ms: Mutex<Option<u64>>,
     geometry: AtomicU32,
     backend: Backend,
     supervisor_wait: Mutex<SupervisorWaitState>,
@@ -1012,6 +1052,10 @@ impl Session {
         info.status_since_ms = *self.status_since_ms.lock().expect("status since lock");
         info.context = *self.context.lock().expect("context lock");
         info.tags = self.tags.lock().expect("tags lock").clone();
+        info.latest_prompt = self.hook_latest_prompt.lock().expect("latest prompt lock").clone();
+        info.last_agent_message = self.hook_latest_agent_message.lock().expect("latest agent message lock").clone();
+        info.sleep_notice = self.sleep_notice.lock().expect("sleep notice lock").clone();
+        info.slept_at_ms = *self.slept_at_ms.lock().expect("slept-at lock");
         info
     }
 
@@ -1231,6 +1275,7 @@ pub struct Daemon {
     dead: Mutex<HashMap<u32, proto::SessionInfo>>,
     respawned_as: Mutex<HashMap<u32, u32>>,
     workspace_membership: Mutex<()>,
+    session_lifecycle_lock: Mutex<()>,
     state_dir: PathBuf,
     db_path: PathBuf,
     scrollback_dir: PathBuf,
@@ -1313,6 +1358,7 @@ pub struct Daemon {
     resume_launches: Mutex<HashMap<u32, Instant>>,
     pending_shell_children: Mutex<HashMap<u32, PendingShellChildren>>,
     early_shell_resumes: Mutex<HashMap<u32, (proto::AgentKind, String)>>,
+    wake_launches: Mutex<HashMap<u32, Instant>>,
     routine_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
     routine_pane_cmd_override: Mutex<Option<Vec<String>>>,
     routine_pane_registration_hook_for_test: Mutex<Option<RoutinePaneRegistrationHook>>,
@@ -1946,6 +1992,8 @@ type ResumeHandle = (String, Option<String>);
 pub enum RespawnConversation {
     /// Resume it when its handle passes validation (a Restart).
     Resume,
+    /// Resume a deliberately sleeping session; unlike Restart, validation failure is fatal.
+    Wake,
     /// Resume it only while the `restore_resume` setting is on (boot restore).
     Restore,
     /// Start a fresh CLI and forget the conversation.
@@ -2641,6 +2689,7 @@ impl Daemon {
             dead: Mutex::new(dead),
             respawned_as: Mutex::new(HashMap::new()),
             workspace_membership: Mutex::new(()),
+            session_lifecycle_lock: Mutex::new(()),
             state_dir: state_dir.clone(),
             db_path: cfg.db_path.clone(),
             scrollback_dir,
@@ -2722,6 +2771,7 @@ impl Daemon {
             resume_launches: Mutex::new(HashMap::new()),
             pending_shell_children: Mutex::new(HashMap::new()),
             early_shell_resumes: Mutex::new(HashMap::new()),
+            wake_launches: Mutex::new(HashMap::new()),
             routine_settle: Mutex::new(HashMap::new()),
             routine_pane_cmd_override: Mutex::new(None),
             routine_pane_registration_hook_for_test: Mutex::new(None),
@@ -2810,8 +2860,14 @@ impl Daemon {
             if dead.is_empty() {
                 return;
             }
-            dead.values().cloned().collect()
+            dead.values()
+                .filter(|info| info.state != proto::SessionState::Sleeping)
+                .cloned()
+                .collect()
         };
+        if candidates.is_empty() {
+            return;
+        }
         let defer = |id: u32, reason: proto::RestoreReason| {
             if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&id) {
                 info.restore_deferred = Some(reason);
@@ -4037,6 +4093,10 @@ impl Daemon {
             resume_notice: None,
             compactions: None,
             task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
         };
         let vt = adopted_emulator(m);
         Arc::new(Session {
@@ -4072,6 +4132,10 @@ impl Daemon {
             backend_exited: AtomicBool::new(false),
             hook_cwd: Mutex::new(m.hook_cwd.clone()),
             hook_last_message: Mutex::new(None),
+            hook_latest_prompt: Mutex::new(None),
+            hook_latest_agent_message: Mutex::new(None),
+            sleep_notice: Mutex::new(None),
+            slept_at_ms: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(m.cols) << 16) | u32::from(m.rows)),
             backend,
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
@@ -6549,6 +6613,9 @@ impl Daemon {
             }
         };
         if changed {
+            if let Err(error) = self.db.update_session_context(id, Some(context)) {
+                tracing::warn!("persisting session {id} context cue: {error:#}");
+            }
             self.broadcast_control(&proto::ServerMsg::SessionContext {
                 session: id,
                 context: Some(context),
@@ -6571,6 +6638,9 @@ impl Daemon {
             }
         };
         if let Some(context) = next {
+            if let Err(error) = self.db.update_session_context(id, Some(context)) {
+                tracing::warn!("persisting session {id} context cue: {error:#}");
+            }
             self.broadcast_control(&proto::ServerMsg::SessionContext {
                 session: id,
                 context: Some(context),
@@ -6821,6 +6891,7 @@ impl Daemon {
         id: u32,
         ev: Option<crate::agent_events::AgentEvent>,
         last_message: Option<&str>,
+        prompt: Option<&str>,
     ) {
         let sessions = self.sessions.lock().expect("sessions lock");
         let Some(s) = sessions.get(&id) else {
@@ -6828,9 +6899,23 @@ impl Daemon {
         };
         if ev == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
             *s.hook_last_message.lock().expect("hook_last_message lock") = None;
+            if let Some(prompt) = prompt.filter(|_| !s.info.hidden) {
+                let prompt = bounded_hook_text(prompt);
+                *s.hook_latest_prompt.lock().expect("latest prompt lock") =
+                    (!prompt.is_empty()).then_some(prompt);
+            }
         }
         if let Some(msg) = last_message.map(str::trim).filter(|m| !m.is_empty()) {
-            *s.hook_last_message.lock().expect("hook_last_message lock") = Some(msg.to_string());
+            let message = bounded_hook_text(msg);
+            *s.hook_last_message.lock().expect("hook_last_message lock") =
+                Some(message.clone());
+            *s.hook_latest_agent_message.lock().expect("latest agent message lock") =
+                Some(message);
+        }
+        let prompt = s.hook_latest_prompt.lock().expect("latest prompt lock").clone();
+        let message = s.hook_latest_agent_message.lock().expect("latest agent message lock").clone();
+        if let Err(e) = self.db.update_session_sleep_cues(id, prompt.as_deref(), message.as_deref()) {
+            tracing::warn!("persisting session {id} sleep cues: {e:#}");
         }
     }
 
@@ -7493,6 +7578,7 @@ impl Daemon {
         force: bool,
         conversation: RespawnConversation,
     ) -> Result<proto::SessionInfo> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
         let children: Vec<_> = self
             .dead
             .lock()
@@ -7691,9 +7777,9 @@ impl Daemon {
                             old.info.agent
                         );
                     }
-                    self.kill(old_id)?;
+                    self.kill_unlocked(old_id)?;
                 } else if force {
-                    self.kill(old_id)?;
+                    self.kill_unlocked(old_id)?;
                 } else {
                     bail!(
                     "session {old_id} is still running (state {state:?}); kill it before respawning \
@@ -7796,11 +7882,25 @@ impl Daemon {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let recorded_cwd = cwd;
         let cwd = Self::respawn_cwd(cwd_override, &recorded_cwd, &project_dir);
+        let strict_resume = conversation == RespawnConversation::Wake;
+        if strict_resume && (handle.is_none() || acp.is_some()) {
+            bail!("Wake refused for session {old_id}: the exact provider conversation handle is unavailable. Choose fresh explicitly to start a new conversation.");
+        }
+        let retained_cues = from_live.as_ref().map(|session| {
+            (
+                session.hook_latest_prompt.lock().expect("latest prompt lock").clone(),
+                session.hook_latest_agent_message.lock().expect("latest agent message lock").clone(),
+                *session.slept_at_ms.lock().expect("slept-at lock"),
+                *session.context.lock().expect("context lock"),
+            )
+        }).or_else(|| self.dead.lock().expect("dead lock").get(&old_id).map(|info| {
+            (info.latest_prompt.clone(), info.last_agent_message.clone(), info.slept_at_ms, info.context)
+        })).unwrap_or((None, None, None, None));
         let (extra_args, resume_handle, resume_notice) = match conversation {
             RespawnConversation::Fresh => (Vec::new(), None, None),
             RespawnConversation::Fallback(notice) => (Vec::new(), handle, Some(notice)),
             RespawnConversation::Restore if !self.restore_resume() => (Vec::new(), handle, None),
-            RespawnConversation::Resume | RespawnConversation::Restore => match &handle {
+            RespawnConversation::Resume | RespawnConversation::Wake | RespawnConversation::Restore => match &handle {
                 Some(h) if acp.is_none() => match if profile_changed && missing_profile.is_none() {
                     Err(format!(
                         "agent profile {:?} configuration changed from {:?} to {:?}, so conversation {} is not resumed on another account",
@@ -7822,6 +7922,9 @@ impl Daemon {
                 } {
                     Ok(args) => (args, handle, None),
                     Err(reason) => {
+                        if strict_resume {
+                            bail!("Wake refused for session {old_id}: {reason}. Choose fresh explicitly to start a new conversation.");
+                        }
                         if spawned_by.is_some() {
                             bail!("continue refused: child {old_id} provider {agent:?}: {reason}");
                         }
@@ -7851,7 +7954,7 @@ impl Daemon {
         let resume_handle = resume_handle.filter(|_| {
             missing_profile.is_none() && !profile_changed && cwd == Path::new(&recorded_cwd)
         });
-        let scrollback_seed = if spawned_by.is_some() {
+        let scrollback_seed = if spawned_by.is_some() || strict_resume {
             from_live
                 .as_ref()
                 .map(|session| session.scrollback.lock().expect("scrollback lock").clone())
@@ -7878,7 +7981,10 @@ impl Daemon {
         let detected_agent = resume_agent.or_else(|| {
             matches!(agent, proto::AgentKind::Claude | proto::AgentKind::Codex).then_some(agent)
         });
-        let spawned = self.spawn_session(SpawnParams {
+        if strict_resume {
+            self.wake_launches.lock().expect("wake launches lock").insert(id, Instant::now());
+        }
+        let mut spawned = match self.spawn_session(SpawnParams {
             id,
             agent,
             detected_agent,
@@ -7906,7 +8012,29 @@ impl Daemon {
             resume_handle,
             resume_notice,
             scrollback_seed,
-        })?;
+        }) {
+            Ok(spawned) => spawned,
+            Err(error) => {
+                if strict_resume {
+                    self.wake_launches.lock().expect("wake launches lock").remove(&id);
+                }
+                return Err(error);
+            }
+        };
+        if strict_resume {
+            spawned.latest_prompt = retained_cues.0.clone();
+            spawned.last_agent_message = retained_cues.1.clone();
+            spawned.slept_at_ms = retained_cues.2;
+            spawned.context = retained_cues.3;
+            if let Some(session) = self.sessions.lock().expect("sessions lock").get(&spawned.id) {
+                *session.hook_latest_prompt.lock().expect("latest prompt lock") = retained_cues.0.clone();
+                *session.hook_latest_agent_message.lock().expect("latest agent message lock") = retained_cues.1.clone();
+                *session.slept_at_ms.lock().expect("slept-at lock") = retained_cues.2;
+                *session.context.lock().expect("context lock") = retained_cues.3;
+            }
+            self.db.update_session_sleep_cues(spawned.id, retained_cues.0.as_deref(), retained_cues.1.as_deref())?;
+            self.db.update_session_context(spawned.id, retained_cues.3)?;
+        }
 
         self.db
             .delegation_rebind(old_id, spawned.id, spawned_by, now_ms())?;
@@ -8074,6 +8202,21 @@ impl Daemon {
     /// A resumed CLI that exits non-zero within `RESUME_EARLY_EXIT` is relaunched fresh
     /// in its slot, once: the relaunch has no `--resume`, so it cannot loop.
     fn resume_exited(self: &Arc<Self>, id: u32, exit_code: Option<i32>) {
+        if let Some(launched) = self.wake_launches.lock().expect("wake launches lock").remove(&id) {
+            self.resume_launches.lock().expect("resume launches lock").remove(&id);
+            let elapsed = launched.elapsed();
+            if exit_code != Some(0) && elapsed < RESUME_EARLY_EXIT && !self.is_shutting_down() {
+                let reason = format!(
+                    "Wake failed because the resumed CLI exited with {} within {} seconds; the exact conversation remains asleep.",
+                    exit_code.map_or_else(|| "no exit code".to_string(), |code| format!("exit code {code}")),
+                    RESUME_EARLY_EXIT.as_secs(),
+                );
+                if let Err(error) = self.restore_wake_placeholder(id, &reason) {
+                    tracing::error!("restoring woken session {id} to Sleep after an early CLI exit: {error:#}");
+                }
+            }
+            return;
+        }
         let Some(launched) = self
             .resume_launches
             .lock()
@@ -8084,6 +8227,7 @@ impl Daemon {
         };
         let elapsed = launched.elapsed();
         if exit_code == Some(0) || elapsed >= RESUME_EARLY_EXIT || self.is_shutting_down() {
+            self.wake_launches.lock().expect("wake launches lock").remove(&id);
             return;
         }
         let killed = self
@@ -8111,6 +8255,28 @@ impl Daemon {
         ) {
             tracing::warn!("relaunching session {id} fresh after its resume failed: {e:#}");
         }
+    }
+
+    fn restore_wake_placeholder(self: &Arc<Self>, id: u32, notice: &str) -> Result<()> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        let session = self.get(id)?;
+        self.persist_scrollback_result(id)?;
+        *session.state.lock().expect("state lock") = proto::SessionState::Sleeping;
+        *session.sleep_notice.lock().expect("sleep notice lock") = Some(notice.to_string());
+        let slept_at = (*session.slept_at_ms.lock().expect("slept-at lock")).unwrap_or_else(now_ms);
+        *session.slept_at_ms.lock().expect("slept-at lock") = Some(slept_at);
+        self.db.mark_session_sleeping(id, slept_at)?;
+        let info = session.snapshot_info();
+        self.sessions.lock().expect("sessions lock").remove(&id);
+        self.dead.lock().expect("dead lock").insert(id, info.clone());
+        self.broadcast_control(&proto::ServerMsg::SessionState {
+            session: id,
+            state: proto::SessionState::Sleeping,
+            exit_code: None,
+        });
+        self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+        self.write_run_state();
+        Ok(())
     }
 
     /// Promotes the pane's current root conversation to its resume handle once that
@@ -8912,6 +9078,10 @@ impl Daemon {
             resume_notice,
             compactions: None,
             task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
         };
 
         self.session_checkout_metadata(&mut info);
@@ -8957,6 +9127,10 @@ impl Daemon {
             backend_exited: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
+            hook_latest_prompt: Mutex::new(None),
+            hook_latest_agent_message: Mutex::new(None),
+            sleep_notice: Mutex::new(None),
+            slept_at_ms: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(cols) << 16) | u32::from(rows)),
             backend: Backend::Pty {
                 #[cfg(unix)]
@@ -9311,6 +9485,10 @@ impl Daemon {
             resume_notice: None,
             compactions: None,
             task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -9344,6 +9522,10 @@ impl Daemon {
             backend_exited: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
+            hook_latest_prompt: Mutex::new(None),
+            hook_latest_agent_message: Mutex::new(None),
+            sleep_notice: Mutex::new(None),
+            slept_at_ms: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(params.cols) << 16) | u32::from(params.rows)),
             backend: Backend::Ssh(handle),
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
@@ -10007,6 +10189,7 @@ impl Daemon {
         id: u32,
         data: &[u8],
     ) -> std::result::Result<(), StdinWriteError> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
         if self.dead.lock().expect("dead lock").contains_key(&id) {
             return Err(StdinWriteError::nothing(anyhow!(
                 "session {id} is not running (restored after a daemon restart) — respawn it"
@@ -10076,6 +10259,11 @@ impl Daemon {
     }
 
     pub fn kill(&self, id: u32) -> Result<()> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.kill_unlocked(id)
+    }
+
+    fn kill_unlocked(&self, id: u32) -> Result<()> {
         let session = self.get(id)?;
         session
             .backend
@@ -10093,6 +10281,209 @@ impl Daemon {
             .update_session_state(id, proto::SessionState::Killed, None)?;
         self.reap_reevaluate();
         Ok(())
+    }
+
+    pub fn sleep_session(&self, id: u32) -> Result<()> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        #[cfg(not(target_os = "linux"))]
+        bail!("Sleep is unavailable on this platform because Linux process-tree identity and graceful shutdown are not implemented");
+        #[cfg(target_os = "linux")]
+        {
+            let session = self.get(id)?;
+            let provider = session.info.agent;
+            if !matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex) {
+                bail!("Sleep refused for session {id}: provider {provider:?} is unsupported; expected Claude or Codex");
+            }
+            if session.info.spawned_by.is_some() || session.info.swarm_agent.is_some() {
+                bail!("Sleep refused for session {id}: orchestration child sessions must be closed through their parent");
+            }
+            if session.info.hidden || session.info.acp.is_some() {
+                bail!("Sleep refused for session {id}: hidden, routine, and harness sessions are unsupported");
+            }
+            if session.custom_cmd.is_some()
+                || self.db.is_routine_run_session(id)?
+                || self.is_harness_review_pane(id)
+            {
+                bail!("Sleep refused for session {id}: custom-command, routine, and harness sessions are unsupported");
+            }
+            let handle = self.db.session_resume_handle(id)?
+                .ok_or_else(|| anyhow!("Sleep refused for session {id}: no validated conversation handle is available"))?;
+            let recorded_profile_dir = self.db.session_profile_config_dir(id)?;
+            let (profile_env, _, missing_profile) = self.respawn_profile(id, provider, session.info.profile_label.clone());
+            let current_profile_dir = Self::agent_profile_config_dir(provider, &profile_env);
+            if missing_profile.is_some() || recorded_profile_dir.as_deref() != current_profile_dir {
+                bail!("Sleep refused for session {id}: its conversation profile configuration changed or is no longer available");
+            }
+            let resume_agent = session.detected.lock().expect("detected lock")
+                .filter(|kind| matches!(kind, proto::AgentKind::Claude | proto::AgentKind::Codex))
+                .unwrap_or(provider);
+            let resume_cwd = session.hook_cwd.lock().expect("hook cwd lock")
+                .clone().unwrap_or_else(|| session.info.cwd.clone());
+            self.resume_check(
+                id,
+                resume_agent,
+                &handle,
+                &resume_cwd,
+                Path::new(&resume_cwd),
+                None,
+            ).map_err(|reason| anyhow!("Sleep refused for session {id}: {reason}"))?;
+            if !session.state.lock().expect("state lock").is_live() {
+                bail!("Sleep refused for session {id}: pane is not running");
+            }
+            if !matches!(*session.status.lock().expect("status lock"), Some(proto::AgentStatus::Idle)) {
+                bail!("Sleep refused for session {id}: agent status is not idle");
+            }
+            if self.child_counts_of(id).0 > 0
+                || self.background_holds.lock().expect("background holds lock").contains_key(&id)
+            {
+                bail!("Sleep refused for session {id}: live orchestration or background work is active");
+            }
+            let Some(pid) = session.pid else {
+                bail!("Sleep refused for session {id}: process identity is unavailable");
+            };
+            if has_external_running_descendants(pid, provider == proto::AgentKind::Codex)
+                .unwrap_or(true)
+            {
+                bail!("Sleep refused for session {id}: external child processes are still running");
+            }
+            let cue_snapshot = session.snapshot_info();
+            self.db.update_session_sleep_cues(
+                id,
+                cue_snapshot.latest_prompt.as_deref(),
+                cue_snapshot.last_agent_message.as_deref(),
+            )?;
+            self.persist_scrollback_result(id)?;
+            let creation = match &session.backend {
+                Backend::Pty { pid_creation, .. } => *pid_creation,
+                Backend::Ssh(_) | Backend::AdoptedPty(_) => {
+                    bail!("Sleep refused for session {id}: this pane has no supported CLI process identity")
+                }
+            };
+            self.resume_launches.lock().expect("resume launches lock").remove(&id);
+            if session.backend_exited.load(Ordering::Acquire) {
+                bail!("Sleep refused for session {id}: CLI exited while Sleep was being prepared");
+            }
+            let slept_at = now_ms();
+            self.db.mark_session_sleeping(id, slept_at)?;
+            if let Err(error) = crate::pid::signal_process_checked_identity(pid, crate::pid::Signal::Term, creation) {
+                let state = session.state.lock().expect("state lock");
+                let rollback = self.db.cancel_session_sleep(id, *state);
+                return match rollback {
+                    Ok(()) => Err(anyhow!("sending graceful termination to session {id}: {error}")),
+                    Err(rollback_error) => Err(anyhow!("sending graceful termination to session {id}: {error}; restoring the live database state also failed: {rollback_error}")),
+                };
+            }
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while !session.backend_exited.load(Ordering::Acquire) {
+                if Instant::now() >= deadline {
+                    let state = session.state.lock().expect("state lock");
+                    return match self.db.cancel_session_sleep(id, *state) {
+                        Ok(()) => Err(anyhow!("Sleep timed out after 15 seconds for session {id}; the PTY writer remains available and no force-kill was sent")),
+                        Err(error) => Err(anyhow!("Sleep timed out after 15 seconds for session {id}; the PTY writer remains available and no force-kill was sent, but restoring its database state failed: {error}")),
+                    };
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let mut info = session.snapshot_info();
+            info.state = proto::SessionState::Sleeping;
+            info.slept_at_ms = Some(slept_at);
+            *session.slept_at_ms.lock().expect("slept-at lock") = Some(slept_at);
+            self.sessions.lock().expect("sessions lock").remove(&id);
+            self.dead.lock().expect("dead lock").insert(id, info.clone());
+            self.broadcast_control(&proto::ServerMsg::SessionState {
+                session: id,
+                state: proto::SessionState::Sleeping,
+                exit_code: None,
+            });
+            self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+            self.write_run_state();
+            Ok(())
+        }
+    }
+
+    pub fn wake_session(self: &Arc<Self>, id: u32) -> Result<proto::SessionInfo> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        {
+            let mut dead = self.dead.lock().expect("dead lock");
+            let Some(info) = dead.get_mut(&id) else {
+                bail!("Wake refused for session {id}: pane is not sleeping");
+            };
+            if info.state != proto::SessionState::Sleeping {
+                bail!("Wake refused for session {id}: pane is not sleeping");
+            }
+            info.sleep_notice = None;
+        }
+        match self.respawn_session_with(id, true, None, None, false, RespawnConversation::Wake) {
+            Ok(info) => Ok(info),
+            Err(error) => {
+                let updated = {
+                    let mut dead = self.dead.lock().expect("dead lock");
+                    dead.get_mut(&id).map(|info| {
+                        info.sleep_notice = Some(error.to_string());
+                        info.clone()
+                    })
+                };
+                if let Some(info) = updated {
+                    self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+                }
+                Err(error)
+            }
+        }
+    }
+
+    pub fn session_memory(&self, id: u32) -> (Option<u64>, Option<String>) {
+        #[cfg(target_os = "linux")]
+        {
+            let Some(session) = self.sessions.lock().expect("sessions lock").get(&id).cloned() else {
+                return (None, Some("process is not running".into()));
+            };
+            if !matches!(session.info.agent, proto::AgentKind::Claude | proto::AgentKind::Codex) {
+                return (None, Some(format!("process-tree memory is unsupported for provider {:?}", session.info.agent)));
+            }
+            let Some(pid) = session.pid else {
+                return (None, Some("process identity is unavailable".into()));
+            };
+            let mut pending = vec![pid];
+            let mut seen = HashSet::new();
+            let mut total_kib = 0u64;
+            let mut unreadable = false;
+            while let Some(process) = pending.pop() {
+                if !seen.insert(process) {
+                    continue;
+                }
+                if seen.len() > MAX_DESCENDANTS_SCANNED {
+                    return (None, Some("process tree exceeded the measurement limit; no partial total was reported".into()));
+                }
+                match direct_child_pids(process) {
+                    Some(children) => pending.extend(children),
+                    None => unreadable = true,
+                }
+                let Ok(contents) = std::fs::read_to_string(format!("/proc/{process}/smaps_rollup")) else {
+                    unreadable = true;
+                    continue;
+                };
+                if let Some(kib) = contents.lines().find_map(|line| {
+                    let mut parts = line.split_whitespace();
+                    (parts.next() == Some("Pss:")).then(|| parts.next()?.parse::<u64>().ok()).flatten()
+                }) {
+                    total_kib = total_kib.saturating_add(kib);
+                } else {
+                    unreadable = true;
+                }
+            }
+            if unreadable {
+                return (None, Some("one or more process-tree PSS readings were unavailable; no partial total was reported".into()));
+            }
+            if total_kib == 0 {
+                return (None, Some("process memory could not be read from procfs".into()));
+            }
+            (Some(total_kib.saturating_mul(1024)), None)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = id;
+            (None, Some("process-tree PSS measurement is only supported on Linux".into()))
+        }
     }
 
     pub fn scrollback(&self, id: u32, replay_bytes: Option<u64>) -> Result<Replay> {
@@ -10165,6 +10556,11 @@ impl Daemon {
     }
 
     pub fn close(&self, id: u32) -> Result<()> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.close_unlocked(id)
+    }
+
+    fn close_unlocked(&self, id: u32) -> Result<()> {
         for row in self.db.delegations_for_parent(id)? {
             if row.child_session != id
                 && (self.get(row.child_session).is_ok()
@@ -10174,7 +10570,7 @@ impl Daemon {
                         .expect("dead lock")
                         .contains_key(&row.child_session))
             {
-                self.close(row.child_session)?;
+                self.close_unlocked(row.child_session)?;
             }
         }
         let session = self
@@ -11046,6 +11442,7 @@ impl Daemon {
         self: &Arc<Self>,
         d: &crate::hook_drop::HookDrop,
     ) -> crate::hook_drop::DropVerdict {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
         let provider = match d.agent.as_deref() {
             None => proto::AgentKind::Claude,
             Some(slug) => match crate::agent_hooks::provider_from_slug(slug) {
@@ -11180,6 +11577,7 @@ impl Daemon {
             d.session,
             crate::agent_events::AgentEvent::from_provider(provider, &d.event),
             d.last_message.as_deref(),
+            (!d.internal_prompt).then_some(d.prompt.as_deref()).flatten(),
         );
         if d.event == "Stop" && provider == proto::AgentKind::Claude {
             if let Some(count) = d.background_tasks {
@@ -16154,9 +16552,10 @@ impl Daemon {
     }
 
     pub fn session_kill_checked(self: &Arc<Self>, id: u32, confirm_children: bool) -> Result<()> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
         self.child_guard(id, confirm_children)?;
         let notice = self.operator_ended_notice_facts(id);
-        self.kill(id)?;
+        self.kill_unlocked(id)?;
         if let Some((parent, label)) = notice {
             self.write_operator_ended_notice(id, parent, label);
         }
@@ -16164,9 +16563,10 @@ impl Daemon {
     }
 
     pub fn session_close_checked(self: &Arc<Self>, id: u32, confirm_children: bool) -> Result<()> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
         self.child_guard(id, confirm_children)?;
         let notice = self.operator_ended_notice_facts(id);
-        self.close(id)?;
+        self.close_unlocked(id)?;
         if let Some((parent, label)) = notice {
             self.write_operator_ended_notice(id, parent, label);
         }

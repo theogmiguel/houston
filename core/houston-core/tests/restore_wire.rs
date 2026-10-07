@@ -49,6 +49,10 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             resume_notice: None,
             compactions: None,
             task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
         })
         .unwrap();
     }
@@ -97,6 +101,10 @@ fn seed_one(
         resume_notice: None,
         compactions: None,
         task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
     })
     .unwrap();
 }
@@ -212,6 +220,10 @@ fn invalid_cwd_is_deferred_not_respawned() {
         resume_notice: None,
         compactions: None,
         task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
     })
     .unwrap();
     drop(db);
@@ -387,6 +399,10 @@ fn no_flags_set_runs_normal_restore_policy() {
         resume_notice: None,
         compactions: None,
         task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
     })
     .unwrap();
     drop(db);

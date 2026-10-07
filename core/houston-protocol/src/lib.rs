@@ -1516,6 +1516,7 @@ pub struct SafeModeSummary {
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
     Running,
+    Sleeping,
     Exited,
     Killed,
     Interrupted,
@@ -2041,6 +2042,18 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub task: Option<SessionTask>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub sleep_notice: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub latest_prompt: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub last_agent_message: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub slept_at_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3029,6 +3042,9 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         fresh: Option<bool>,
     },
+    SessionSleep { session: u32 },
+    SessionWake { session: u32 },
+    SessionMemoryGet { session: u32 },
     SessionCwd {
         session: u32,
     },
@@ -4054,6 +4070,21 @@ pub enum ServerMsg {
         session: u32,
         state: SessionState,
         exit_code: Option<i32>,
+    },
+    SessionUpdated {
+        info: SessionInfo,
+    },
+    SessionMemory {
+        session: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        bytes: Option<u64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        measured_at_ms: Option<u64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        unavailable_reason: Option<String>,
     },
     SessionList {
         sessions: Vec<SessionInfo>,

@@ -673,6 +673,10 @@ fn seed_claude(env: &Env, id: u32, dir: &Path, cwd: &Path, handle: Option<(&str,
         resume_notice: None,
         compactions: None,
         task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
     })
     .unwrap();
     db.set_session_resume_handle(id, handle).unwrap();
@@ -1221,6 +1225,122 @@ async fn restart_over_the_wire_resumes_by_default() {
         Some(conversation),
         "the forced kill does not clear the handle it carries"
     );
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_survives_boot_and_wake_resumes_the_exact_conversation() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-wake");
+    let (pane, conversation, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    apply_drop(
+        &env,
+        &daemon,
+        HookDrop {
+            v: houston_core::hook_drop::DROP_V,
+            event: "UserPromptSubmit".into(),
+            session: pane.id,
+            agent: Some("claude".into()),
+            prompt: Some("Keep this bounded sleep cue".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    hook(
+        &env,
+        &daemon,
+        pane.id,
+        "Stop",
+        STOP,
+        &conversation,
+        &transcript(&env, &conversation, b"{}\n"),
+        &ws,
+    )
+    .await;
+
+    daemon.sleep_session(pane.id).unwrap();
+    let asleep = daemon.list().into_iter().find(|info| info.id == pane.id).unwrap();
+    assert_eq!(asleep.state, proto::SessionState::Sleeping);
+    assert_eq!(asleep.latest_prompt.as_deref(), Some("Keep this bounded sleep cue"));
+    assert_eq!(asleep.last_agent_message.as_deref(), Some("Agent launched in background. Waiting for completion."));
+    assert!(asleep.slept_at_ms.is_some());
+    assert_eq!(handle_in(&env, pane.id).map(|h| h.0), Some(conversation.clone()));
+
+    let restored = reboot(&env, &daemon);
+    let asleep_after_boot = restored.list().into_iter().find(|info| info.id == pane.id).unwrap();
+    assert_eq!(asleep_after_boot.state, proto::SessionState::Sleeping);
+    assert_eq!(asleep_after_boot.latest_prompt, asleep.latest_prompt);
+    assert_eq!(asleep_after_boot.last_agent_message, asleep.last_agent_message);
+    assert_eq!(asleep_after_boot.context, asleep.context);
+    assert!(asleep_after_boot.slept_at_ms.is_some());
+
+    let awake = restored.wake_session(pane.id).unwrap();
+    assert_eq!(resume_of(&argv_of(&env, awake.id).await).as_deref(), Some(conversation.as_str()));
+    assert!(restored.list().iter().all(|info| info.id != pane.id));
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_a_shell_that_has_detected_claude() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "shell-sleep-refusal");
+    let shell = shell_pane(&daemon, &ws);
+    let conversation = "00000000-0000-4000-8000-000000000078";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+    hook(&env, &daemon, shell.id, "UserPromptSubmit", PROMPT, conversation, &transcript, &ws).await;
+
+    let error = daemon.sleep_session(shell.id).unwrap_err().to_string();
+    assert!(error.contains("provider Shell is unsupported"), "{error}");
+    assert_eq!(daemon.list().into_iter().find(|info| info.id == shell.id).unwrap().state, proto::SessionState::Running);
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn wake_with_an_expired_transcript_keeps_the_placeholder_and_never_starts_fresh() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "expired-sleep");
+    let (pane, conversation, path) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    daemon.sleep_session(pane.id).unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    let error = daemon.wake_session(pane.id).unwrap_err().to_string();
+    assert!(error.contains("Wake refused"), "{error}");
+    assert!(error.contains("Choose fresh explicitly"), "{error}");
+    let retained = daemon.list().into_iter().find(|info| info.id == pane.id).unwrap();
+    assert_eq!(retained.state, proto::SessionState::Sleeping);
+    assert!(retained.sleep_notice.as_deref().is_some_and(|notice| notice.contains("Wake refused")));
+    assert_eq!(handle_in(&env, pane.id).map(|h| h.0), Some(conversation));
+    assert_eq!(daemon.list().len(), 1, "Wake validation must not spawn a fresh pane");
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn an_early_wake_exit_returns_to_sleep_without_a_fresh_fallback() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "wake-early-exit");
+    let (pane, conversation, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    daemon.sleep_session(pane.id).unwrap();
+    std::env::set_var("RESUME_FAKE_EXIT", "1");
+
+    let waking = daemon.wake_session(pane.id).unwrap();
+    assert_eq!(resume_of(&argv_of(&env, waking.id).await).as_deref(), Some(conversation.as_str()));
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(info) = daemon.list().into_iter().find(|info| info.id == waking.id) {
+            if info.state == proto::SessionState::Sleeping {
+                assert!(info.sleep_notice.as_deref().is_some_and(|notice| notice.contains("Wake failed")));
+                assert_eq!(handle_in(&env, waking.id).map(|handle| handle.0), Some(conversation));
+                assert_eq!(daemon.list().len(), 1, "an early Wake error must not launch a fresh session");
+                return;
+            }
+        }
+        assert!(tokio::time::Instant::now() < deadline, "failed Wake did not return to Sleep");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 #[tokio::test]
