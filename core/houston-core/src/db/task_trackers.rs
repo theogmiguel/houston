@@ -988,7 +988,7 @@ impl Db {
         item.local = live_value.to_string();
         let resolved = match resolution {
             proto::TaskTrackerConflictResolution::Local => live_value.to_string(),
-            proto::TaskTrackerConflictResolution::Remote => item.remote,
+            proto::TaskTrackerConflictResolution::Remote => item.remote.clone(),
             proto::TaskTrackerConflictResolution::Custom { value } => value.clone(),
         };
         if field == "status" && serde_json::from_str::<proto::TaskStatus>(&format!("\"{resolved}\"")).is_err() {

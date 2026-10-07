@@ -34,7 +34,7 @@ pub struct TrackerPollPage {
     pub not_modified: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TrackerWriteReceipt {
     pub external_id: Option<String>,
     pub url: Option<String>,
