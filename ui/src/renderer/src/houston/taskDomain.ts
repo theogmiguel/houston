@@ -1,5 +1,6 @@
 import type { ClientMsg, HoustonClient } from './client'
 import type { TaskExternalLink } from './generated/TaskExternalLink'
+import type { TaskTrackerProvider } from './generated/TaskTrackerProvider'
 
 export type { TaskDomain } from './generated/TaskDomain'
 export type { TaskProject } from './generated/TaskProject'
@@ -7,7 +8,11 @@ export type { TaskTrackerProvider } from './generated/TaskTrackerProvider'
 export type { TaskTrackerWorkspaceSettings } from './generated/TaskTrackerWorkspaceSettings'
 export type TaskTrackerLink = TaskExternalLink
 
-export function sendTaskWire(client: HoustonClient, message: ClientMsg): void {
+export function isTaskTrackerProvider(value: unknown): value is TaskTrackerProvider {
+  return value === 'github_issues' || value === 'notion' || value === 'slack'
+}
+
+export function sendTaskWire(client: Pick<HoustonClient, 'send'>, message: ClientMsg): void {
   client.send(message)
 }
 

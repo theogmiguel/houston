@@ -7,12 +7,13 @@ import { sendTaskWire, type TaskDomain, type TaskProject } from '../../houston/t
 import { BulletList, Button, Card, Field, Inline, Notice, SectionHead, Select, Text, TextInput } from '../ui'
 
 export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartRequested }: {
-  client: HoustonClient
+  client: Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'>
   detail: TaskDetailData
   onOpenSession: (id: number) => void
   onStartRequested?: (taskId: number, workspace: string) => void
 }): React.JSX.Element {
   const { task } = detail
+  const workspace = task.workspace
   const [domain, setDomain] = useState<TaskDomain | null>(null)
   const [projects, setProjects] = useState<TaskProject[]>([])
   const [workspaceTasks, setWorkspaceTasks] = useState<TaskSummary[]>([])
@@ -46,14 +47,14 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
       if (message.type === 'task_refused' && message.id === task.id) setError(message.message)
     })
     sendTaskWire(client, { type: 'task_domain_get', id: task.id })
-    if (task.workspace) {
-      sendTaskWire(client, { type: 'task_projects_list', workspace: task.workspace })
-      client.taskSnapshot(task.workspace)
+    if (workspace) {
+      sendTaskWire(client, { type: 'task_projects_list', workspace })
+      client.taskSnapshot(workspace)
     }
     return off
-  }, [client, task.id, task.workspace])
+  }, [client, task.id, workspace])
 
-  if (!task.workspace) return <Text tone="muted">Assign a workspace before editing project workflow.</Text>
+  if (!workspace) return <Text tone="muted">Assign a workspace before editing project workflow.</Text>
   if (!domain) return <Text role="status" aria-busy="true" tone="muted">Loading project workflow…</Text>
 
   const save = (patch: { kind?: 'delivery' | 'slice'; project_id?: number | null; blocked_by?: number[] }): void => sendTaskWire(client, {
@@ -61,11 +62,11 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
   })
   const manualStart = task.archived_at_ms == null && (task.status === 'backlog' || task.status === 'todo')
   const startAnyway = (): void => {
-    onStartRequested?.(task.id, task.workspace)
-    sendTaskWire(client, { type: 'task_start', id: task.id, workspace: task.workspace, agent, override_readiness: true })
+    onStartRequested?.(task.id, workspace)
+    sendTaskWire(client, { type: 'task_start', id: task.id, workspace, agent, override_readiness: true })
   }
   const plan = domain.plan
-  const deliveryOptions = workspaceTasks.filter((item) => item.id !== task.id && item.workspace === task.workspace && item.status !== 'done' && domains[item.id]?.kind === 'delivery' && domains[item.id]?.project_id === domain.project_id).map((item) => ({ value: String(item.id), label: `${item.key} — ${item.title}` }))
+  const deliveryOptions = workspaceTasks.filter((item) => item.id !== task.id && item.workspace === workspace && item.status !== 'done' && domains[item.id]?.kind === 'delivery' && domains[item.id]?.project_id === domain.project_id).map((item) => ({ value: String(item.id), label: `${item.key} — ${item.title}` }))
 
   return <Card padding="sm" className="grid gap-[var(--space-2)]" aria-label="Project workflow">
     <SectionHead title="Project workflow" />
@@ -73,15 +74,15 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
     <Inline wrap gap="small">
       <Select aria-label="Task kind" value={domain.kind} options={[{ value: 'delivery', label: 'Delivery' }, { value: 'slice', label: 'Slice task' }]} onChange={(value) => save({ kind: value as 'delivery' | 'slice' })} />
       <Select aria-label="Project" value={domain.project_id == null ? '' : String(domain.project_id)} options={[{ value: '', label: 'No project' }, ...projects.filter((project) => project.archived_at_ms == null).map((project) => ({ value: String(project.id), label: project.name }))]} onChange={(value) => save({ project_id: value ? Number(value) : null })} />
-      {domain.kind === 'slice' && <Select aria-label="Delivery" value={task.parent_id == null ? '' : String(task.parent_id)} options={[{ value: '', label: 'No delivery' }, ...deliveryOptions]} onChange={(value) => client.taskSave(task.workspace, task.id, task.revision, { parent_id: value ? Number(value) : null })} />}
+      {domain.kind === 'slice' && <Select aria-label="Delivery" value={task.parent_id == null ? '' : String(task.parent_id)} options={[{ value: '', label: 'No delivery' }, ...deliveryOptions]} onChange={(value) => client.taskSave(workspace, task.id, task.revision, { parent_id: value ? Number(value) : null })} />}
       <Select aria-label="Planning and implementation agent" value={agent} options={(['claude', 'codex', 'opencode', 'cursor', 'grok'] as AgentKind[]).map((value) => ({ value, label: value }))} onChange={(value) => setAgent(value as AgentKind)} />
     </Inline>
-    <Field label="Blocked by task IDs"><TextInput aria-label="Blocked by task IDs" value={blockers} onChange={(event) => setBlockers(event.target.value)} placeholder="Comma-separated task IDs" /><Button variant="secondary" onClick={() => {
+    <Field label="Blocked by task IDs"><div className="grid gap-[var(--space-2)]"><TextInput aria-label="Blocked by task IDs" value={blockers} onChange={(event) => setBlockers(event.target.value)} placeholder="Comma-separated task IDs" /><Button variant="secondary" onClick={() => {
       const ids = blockers.split(',').map((value) => value.trim()).filter(Boolean).map(Number)
       if (ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) { setError('Enter positive whole-number task IDs separated by commas.'); return }
       setError(null)
       save({ blocked_by: [...new Set(ids)] })
-    }}>Save blockers</Button></Field>
+    }}>Save blockers</Button></div></Field>
     <div aria-live="polite" className="grid gap-[var(--space-1)]">
       <Text weight="semibold" tone={domain.readiness.ready ? 'success' : 'warning'}>{domain.readiness.ready ? 'Ready to start' : 'Not ready'}</Text>
       {!domain.readiness.ready && <BulletList items={domain.readiness.reasons} />}

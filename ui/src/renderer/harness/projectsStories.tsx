@@ -72,7 +72,7 @@ function trackerSettings(): TaskTrackerWorkspaceSettings {
 
 function link(taskId: number, conflicted: boolean): TaskTrackerLink {
   return {
-    task_id: taskId, provider: 'notion', external_id: `NOT-${taskId}`,
+    task_id: taskId, provider: 'notion', external_id: `NOT-${taskId}`, fetched_at_ms: null, body_hash: null, remote_rev: null, synced_at_ms: null,
     url: `https://www.notion.so/acme/NOT-${taskId}`, source: 'source',
     snapshot: {
       base: { title: 'Expose recovery decisions' }, local: { title: 'Expose recovery decisions in Houston' },
@@ -84,12 +84,13 @@ function link(taskId: number, conflicted: boolean): TaskTrackerLink {
   }
 }
 
-function projectClient(includePlan: boolean, includeConflict: boolean): HoustonClient {
+function projectClient(includePlan: boolean, includeConflict: boolean): Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'> {
   const handlers = new Set<(message: ServerMsg) => void>()
   const emit = (message: ServerMsg): void => handlers.forEach((handler) => handler(message))
   return {
     subscribeAll: (handler: (message: ServerMsg) => void) => { handlers.add(handler); return () => handlers.delete(handler) },
     taskSnapshot: (scope: string) => emit({ type: 'task_snapshot', scope, tasks: TASKS, counts: { ready: 1, backlog: 1, todo: 1, in_progress: 1, in_review: 0, done: 1, canceled: 0 } }),
+    taskSave: () => {},
     send: (message: ClientMsg) => {
       if (message.type === 'task_projects_list') emit({ type: 'task_projects_state', workspace: WORKSPACE, projects: [PROJECT, { ...PROJECT, id: 10, name: 'Archived project', archived_at_ms: NOW - 1000 }] })
       if (message.type === 'task_domain_get' && message.id != null) {
@@ -100,7 +101,7 @@ function projectClient(includePlan: boolean, includeConflict: boolean): HoustonC
       if (message.type === 'task_tracker_links_get' && message.task_id != null) emit({ type: 'task_tracker_links', task_id: message.task_id, links: [link(message.task_id, includeConflict && message.task_id === 42)] })
       if (message.type === 'task_plan_start') emit({ type: 'task_plan_started', id: message.id, session_id: 948, revision: 3 })
     }
-  } as HoustonClient
+  }
 }
 
 function ProjectStory({ plan = false, conflict = false }: { plan?: boolean; conflict?: boolean }): React.JSX.Element {

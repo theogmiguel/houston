@@ -247,7 +247,7 @@ export { ShortcutBindingRow, ShortcutConflictActions, ShortcutToolbar, ShortcutR
 export { SettingsSectionBreak, ProtocolDescription, SettingsActionRow, SettingsProtocolSpecimen } from './SettingsProtocol'
 export { CenteredStatus, EmptyPanel, HookPath, HookNotice, SettingsStatusSpecimen } from './SettingsStatus'
 export { BackBar, ContentColumn, DetailState, EmptyPane, FeedbackBanner, IconAction, SupportingNote } from './navPrimitives'
-export { BulletList, CenteredEmptyNote, FieldGrid, InlineCluster, ReportFrame, SectionTitle, StatusChip } from './navText'
+export { BulletList as NavBulletList, CenteredEmptyNote, FieldGrid, InlineCluster, ReportFrame, SectionTitle, StatusChip } from './navText'
 export { ListRow, ListRowActions, ListRowDetail, ListRowFooter, ListRowTitle, RunHistory } from './navRow'
 export { ResponsiveListDetail } from './NavListDetail'
 export type { ResponsiveListDetailItem } from './NavListDetail'

@@ -102,7 +102,6 @@ import { ContextIndicator } from './ContextIndicator'
 import { PaneTaskChip } from './tasks/PaneTaskChip'
 import { PrWatchChip } from './ui/PrWatch'
 import { usePrWatch } from './git/usePrWatch'
-import { Button } from './ui/Button'
 import { RosterPeekbar, RosterSplit } from './ui/RosterSurface'
 import { Count } from './ui/Count'
 
@@ -408,7 +407,7 @@ function SessionPaneImpl({
 
   useEffect(() => client.subscribeAll((message) => {
     if (message.type === 'session_memory' && message.session === info.id) {
-      setMemoryResult({ bytes: message.bytes, measuredAt: message.measured_at_ms, reason: message.unavailable_reason })
+      setMemoryResult({ bytes: message.bytes ?? null, measuredAt: message.measured_at_ms ?? null, reason: message.unavailable_reason ?? null })
     }
     if (message.type === 'error' && (message.context?.includes(`session ${info.id}`) || message.message.includes(`session ${info.id}`))) {
       setLifecycleError(message.message)

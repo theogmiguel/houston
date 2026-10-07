@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { HoustonClient } from '../../houston/client'
-import { sendTaskWire, type TaskDomain, type TaskProject, type TaskTrackerLink, linkIsPullRequest } from '../../houston/taskDomain'
+import { isTaskTrackerProvider, sendTaskWire, type TaskDomain, type TaskProject, type TaskTrackerLink, type TaskTrackerProvider, linkIsPullRequest } from '../../houston/taskDomain'
 import { BulletList, Button, Card, Field, Inline, InlineLink, Notice, PageFrame, PageHeader, SectionHead, Select, Stack, Text, TextArea, TextInput } from '../ui'
 
 export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }: {
-  client: HoustonClient | null
+  client: Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'> | null
   workspace: string
   workspaces: { path: string; name: string }[]
   onOpenSession: (sessionId: number) => void
@@ -21,7 +21,7 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [syncState, setSyncState] = useState<{ at: number | null; error: string | null } | null>(null)
+  const [syncState, setSyncState] = useState<Partial<Record<TaskTrackerProvider, { at: number | null; error: string | null }>>>({})
 
   useEffect(() => setScope(workspace || ''), [workspace])
   useEffect(() => {
@@ -30,11 +30,13 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
     setDomains({})
     setLinks({})
     setLinksLoaded({})
+    setSyncState({})
     setSelectedProjectId(null)
     setSelectedTaskId(null)
     setError(null)
     if (!client || !scope) return
     const off = client.subscribeAll((msg) => {
+      const provider = 'provider' in msg ? msg.provider : null
       if (msg.type === 'task_projects_state' && msg.workspace === scope) {
         setBusy(false)
         setProjects(msg.projects)
@@ -57,6 +59,9 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
         setLinks((current) => ({ ...current, [msg.task_id]: msg.links }))
         setLinksLoaded((current) => ({ ...current, [msg.task_id]: true }))
       }
+      if (msg.type === 'task_tracker_sync_state' && msg.workspace === scope && isTaskTrackerProvider(provider)) {
+        setSyncState((current) => ({ ...current, [provider]: { at: msg.last_sync_at_ms, error: msg.error } }))
+      }
       if (msg.type === 'task_refused') {
         setBusy(false)
         setError(msg.message)
@@ -78,6 +83,10 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
   const projectLinks = assignedTasks.flatMap((task) => links[task.id] ?? [])
   const projectLinksLoaded = assignedTasks.every((task) => linksLoaded[task.id])
   const projectSyncLabel = !projectLinksLoaded ? 'Loading tracker links' : projectLinks.length === 0 ? 'No tracker links' : projectLinks.some((link) => link.sync_state.state === 'error') ? 'Tracker sync has errors' : projectLinks.some((link) => link.sync_state.state === 'diverged') ? 'Tracker data has unresolved divergence' : projectLinks.some((link) => link.sync_state.state === 'pending') ? 'Tracker sync is pending' : 'Linked tracker data is in sync'
+  const providerSyncStates = (Object.keys(syncState) as TaskTrackerProvider[]).flatMap((provider) => {
+    const state = syncState[provider]
+    return state ? [{ provider, ...state }] : []
+  })
 
   const saveProject = (draft: { name: string; external_url: string | null; tracker_description: string | null; local_decisions: string[] }): void => {
     if (!client || !scope || !draft.name.trim()) return
@@ -117,6 +126,7 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
         {!project ? <Text as="p" role="status" tone="muted">Choose a project or create one to organize this workspace’s tasks.</Text> : <>
           <ProjectEditor project={project} busy={busy} onSave={saveProject} onArchive={() => sendTaskWire(client, { type: 'task_project_archive', id: project.id, archived: true, expected_revision: project.revision })} />
           <Text role="status" size="small" tone="muted">{projectSyncLabel}</Text>
+          {providerSyncStates.map(({ provider, at, error: syncError }) => <Text key={provider} role="status" size="small" tone={syncError ? 'danger' : 'muted'}>{providerLabel(provider)} sync: {syncError ? `Error: ${syncError}` : at == null ? 'No completed sync' : `Last sync ${new Date(at).toLocaleString()}`}</Text>)}
           <section className="grid gap-[var(--space-2)]">
             <SectionHead title="Deliveries" count={deliveries.length} />
             <Card>{deliveries.length ? deliveries.map((task) => <TaskRow key={task.id} task={task} domains={domains} links={links[task.id] ?? []} selected={selectedTaskId === task.id} onClick={() => selectTask(client, task.id, setSelectedTaskId, sendTaskWire)} />) : <Card.Content><Text tone="muted">No deliveries assigned to this project.</Text></Card.Content>}</Card>
@@ -136,7 +146,11 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
   </PageFrame>
 }
 
-function selectTask(client: HoustonClient, id: number, setSelected: (id: number) => void, send: typeof sendTaskWire): void {
+function providerLabel(provider: TaskTrackerProvider): string {
+  return provider === 'github_issues' ? 'GitHub Issues' : provider === 'notion' ? 'Notion' : 'Slack'
+}
+
+function selectTask(client: Pick<HoustonClient, 'send'>, id: number, setSelected: (id: number) => void, send: typeof sendTaskWire): void {
   setSelected(id)
   send(client, { type: 'task_tracker_links_get', task_id: id })
 }
@@ -153,7 +167,7 @@ function ProjectEditor({ project, busy, onSave, onArchive }: { project: TaskProj
     {project.project_external_id && <Text size="small" tone="muted">Tracker project ID: {project.project_external_id}</Text>}
     {project.tracker_description && <Notice tone="info">Imported tracker context — unverified. {project.tracker_description}</Notice>}
     <Field label="Local corrections and decisions"><TextArea aria-label="Local corrections and decisions" rows={4} value={decisions} onChange={(event) => setDecisions(event.target.value)} placeholder="One decision per line" /></Field>
-    <Inline wrap gap="small"><Button variant="primary" disabled={busy || name.trim() === ''} onClick={() => onSave({ name, external_url: url || null, tracker_description: project.tracker_description, local_decisions: decisions.split('\n').map((line) => line.trim()).filter(Boolean) })}>Save project</Button><Button variant="ghost" onClick={onArchive}>Archive project</Button></Inline>
+    <Inline wrap gap="small"><Button variant="primary" disabled={busy || name.trim() === ''} onClick={() => onSave({ name, external_url: url || null, tracker_description: project.tracker_description ?? null, local_decisions: decisions.split('\n').map((line) => line.trim()).filter(Boolean) })}>Save project</Button><Button variant="ghost" onClick={onArchive}>Archive project</Button></Inline>
   </section>
 }
 
@@ -165,13 +179,17 @@ function TaskRow({ task, domains, links, selected, onClick }: { task: TaskSummar
   return <Card.Row density="compact" className="gap-[var(--space-2)]" heading={<Button data-testid={`project-task-${task.id}`} variant="text" size="sm" aria-current={selected ? 'page' : undefined} onClick={onClick}>{task.title}</Button>} meta={[task.key, task.status, progress, readiness ? readiness.ready ? 'Ready' : `${readiness.reasons.length} readiness issues` : 'Readiness loading', sync].filter(Boolean).join(' · ')} />
 }
 
-function TaskDomainEditor({ client, task, domain, projects, tasks, domains, links, onSave, onRefreshLinks, onOpenSession, onError }: { client: HoustonClient; task: TaskSummary; domain: TaskDomain; projects: TaskProject[]; tasks: TaskSummary[]; domains: Record<number, TaskDomain>; links: TaskTrackerLink[]; onSave: (patch: { kind?: 'delivery' | 'slice'; project_id?: number | null; blocked_by?: number[] }) => void; onRefreshLinks: () => void; onOpenSession: (sessionId: number) => void; onError: (error: string | null) => void }): React.JSX.Element {
+function TaskDomainEditor({ client, task, domain, projects, tasks, domains, links, onSave, onRefreshLinks, onOpenSession, onError }: { client: Pick<HoustonClient, 'send' | 'taskSave'>; task: TaskSummary; domain: TaskDomain; projects: TaskProject[]; tasks: TaskSummary[]; domains: Record<number, TaskDomain>; links: TaskTrackerLink[]; onSave: (patch: { kind?: 'delivery' | 'slice'; project_id?: number | null; blocked_by?: number[] }) => void; onRefreshLinks: () => void; onOpenSession: (sessionId: number) => void; onError: (error: string | null) => void }): React.JSX.Element {
   const blockersText = domain.blocked_by.join(', ')
   const [blockers, setBlockers] = useState(blockersText)
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({})
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
   const [agent, setAgent] = useState<AgentKind>('claude')
+  const taskWorkspace = task.workspace
   const manualStart = task.archived_at_ms == null && (task.status === 'backlog' || task.status === 'todo')
+  const changeDelivery = (value: string): void => {
+    if (taskWorkspace) client.taskSave(taskWorkspace, task.id, task.revision, { parent_id: value ? Number(value) : null })
+  }
   useEffect(() => setBlockers(blockersText), [task.id, task.revision, blockersText])
   const plan = domain.plan
   const projectOptions = [{ value: '', label: 'No project' }, ...projects.map((item) => ({ value: String(item.id), label: item.name }))]
@@ -182,14 +200,14 @@ function TaskDomainEditor({ client, task, domain, projects, tasks, domains, link
       <Select aria-label="Task kind" value={domain.kind} options={[{ value: 'delivery', label: 'Delivery' }, { value: 'slice', label: 'Slice task' }]} onChange={(value) => onSave({ kind: value as 'delivery' | 'slice' })} />
       <Select aria-label="Project" value={String(domain.project_id ?? '')} options={projectOptions} onChange={(value) => onSave({ project_id: value ? Number(value) : null })} />
       <Select aria-label="Agent" value={agent} options={(['claude', 'codex', 'opencode', 'cursor', 'grok'] as AgentKind[]).map((value) => ({ value, label: value }))} onChange={(value) => setAgent(value as AgentKind)} />
-      {domain.kind === 'slice' && <Select aria-label="Delivery" value={task.parent_id == null ? '' : String(task.parent_id)} options={[{ value: '', label: 'No delivery' }, ...deliveryOptions]} onChange={(value) => client.taskSave(task.workspace, task.id, task.revision, { parent_id: value ? Number(value) : null })} />}
+      {domain.kind === 'slice' && <Select aria-label="Delivery" value={task.parent_id == null ? '' : String(task.parent_id)} options={[{ value: '', label: 'No delivery' }, ...deliveryOptions]} onChange={changeDelivery} />}
     </Inline>
     <div className="grid gap-[var(--space-2)]">
-      <Field label="Blocked by task IDs"><TextInput aria-label="Blocked by task IDs" value={blockers} onChange={(event) => setBlockers(event.target.value)} placeholder="e.g. 12, 18" /><Button variant="secondary" onClick={() => {
+    <Field label="Blocked by task IDs"><div className="grid gap-[var(--space-2)]"><TextInput aria-label="Blocked by task IDs" value={blockers} onChange={(event) => setBlockers(event.target.value)} placeholder="e.g. 12, 18" /><Button variant="secondary" onClick={() => {
         const ids = blockers.split(',').map((value) => value.trim()).filter(Boolean).map(Number)
         if (ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) { onError('Enter task IDs as positive whole numbers separated by commas.'); return }
         onSave({ blocked_by: [...new Set(ids)] })
-      }}>Save blockers</Button></Field>
+      }}>Save blockers</Button></div></Field>
     </div>
     <div aria-live="polite" className="grid gap-[var(--space-1)]">
       <Text weight="semibold" tone={domain.readiness.ready ? 'success' : 'warning'}>{domain.readiness.ready ? 'Ready to start' : 'Not ready'}</Text>
@@ -233,7 +251,7 @@ function TrackerLinkRow({ link, customValue, onCustom, onResolve }: { link: Task
     {link.snapshot.conflicts.map((conflict) => <Card key={conflict.field} tone="inset" padding="sm" className="grid gap-[var(--space-1)]">
       <Text weight="semibold">{conflict.field} conflict</Text><Text>Houston: {conflict.local || '—'}</Text><Text>Tracker: {conflict.remote || '—'}</Text>
       <Inline wrap gap="small"><Button variant="secondary" onClick={() => onResolve(conflict.field, { kind: 'local' })}>Keep Houston value</Button><Button variant="secondary" onClick={() => onResolve(conflict.field, { kind: 'remote' })}>Use tracker value</Button></Inline>
-      <Field label="Custom resolution"><TextInput aria-label={`Custom ${conflict.field} value`} value={customValue} onChange={(event) => onCustom(event.target.value)} /><Button variant="secondary" disabled={!customValue.trim()} onClick={() => onResolve(conflict.field, { kind: 'custom', value: customValue })}>Use custom value</Button></Field>
+      <Field label="Custom resolution"><div className="grid gap-[var(--space-2)]"><TextInput aria-label={`Custom ${conflict.field} value`} value={customValue} onChange={(event) => onCustom(event.target.value)} /><Button variant="secondary" disabled={!customValue.trim()} onClick={() => onResolve(conflict.field, { kind: 'custom', value: customValue })}>Use custom value</Button></div></Field>
     </Card>)}
   </Card>
 }

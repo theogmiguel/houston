@@ -1,6 +1,7 @@
+// @vitest-environment jsdom
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { ClientMsg, HoustonClient } from '../../houston/client'
+import type { ClientMsg } from '../../houston/client'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import type { TaskTrackerProvider, TaskTrackerWorkspaceSettings } from '../../houston/taskDomain'
 import { TaskTrackerSettingsSection } from './TaskTrackerSettingsSection'
@@ -29,7 +30,7 @@ describe('workspace tracker settings', () => {
     const client = {
       subscribeAll: (listener: (message: ServerMsg) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
       send: (message: ClientMsg) => { sent.push(message); if (message.type === 'task_tracker_settings_get') emit(initial) }
-    } as HoustonClient
+    }
 
     render(<TaskTrackerSettingsSection client={client} workspace={WORKSPACE} workspaceName="No projects yet" />)
     const enabled = screen.getByRole('switch', { name: 'Enable tracker sync' })
@@ -42,18 +43,31 @@ describe('workspace tracker settings', () => {
 
     act(() => emit({ type: 'task_tracker_settings', settings: [settings('notion', null)], refusal: null }))
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Tracker provider' }))
-    fireEvent.click(screen.getByRole('option', { name: 'Notion' }))
+    fireEvent.mouseUp(screen.getByRole('option', { name: 'Notion' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Project title property ID' }), { target: { value: 'project_title_v2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(sent.at(-1)).toMatchObject({ type: 'task_tracker_settings_set', settings: { workspace: WORKSPACE, provider: 'notion', notion_project_title_property_id: 'project_title_v2' } })
-    const token = screen.getByRole('textbox', { name: 'Notion integration token' }) as HTMLInputElement
+    const token = screen.getByLabelText('Notion integration token') as HTMLInputElement
     fireEvent.change(token, { target: { value: 'secret-token' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save token' }))
     expect(sent.at(-1)).toMatchObject({ type: 'task_tracker_credential_set', workspace: WORKSPACE, provider: 'notion', token: 'secret-token' })
     expect(token.value).toBe('')
 
+    const githubSync = {
+      type: 'task_tracker_sync_state', workspace: WORKSPACE, provider: 'github_issues', last_sync_at_ms: 1, error: 'GitHub rate limit'
+    } satisfies Extract<ServerMsg, { type: 'task_tracker_sync_state' }> & { provider: TaskTrackerProvider }
+    const notionSync = {
+      type: 'task_tracker_sync_state', workspace: WORKSPACE, provider: 'notion', last_sync_at_ms: 2, error: null
+    } satisfies Extract<ServerMsg, { type: 'task_tracker_sync_state' }> & { provider: TaskTrackerProvider }
+    act(() => { emit(githubSync); emit(notionSync) })
+    expect(screen.getByText(/Last sync/)).toBeTruthy()
+
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Tracker provider' }))
-    fireEvent.click(screen.getByRole('option', { name: 'GitHub Issues' }))
-    expect((screen.getByRole('textbox', { name: 'Repository (owner/name)' }) as HTMLInputElement).value).toBe('acme/app')
+    fireEvent.mouseUp(screen.getByRole('option', { name: 'GitHub Issues' }))
+    expect(screen.getByText('GitHub rate limit')).toBeTruthy()
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Tracker provider' }))
+    fireEvent.mouseUp(screen.getByRole('option', { name: 'Notion' }))
+    expect(screen.queryByText('GitHub rate limit')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Project title property ID' })).toBeTruthy()
   })
 })

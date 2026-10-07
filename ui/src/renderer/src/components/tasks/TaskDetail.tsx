@@ -32,6 +32,7 @@ import {
   IconUser
 } from '../icons'
 import { Select, type SelectOption } from '../ui/Select'
+import { TextInput } from '../ui/TextInput'
 import { Tooltip } from '../ui/Tooltip'
 import {
   acceptanceText,
@@ -144,7 +145,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
     return off
   }, [props.client, task.id])
 
-  if (drawer) return <TaskDetailDrawer props={props} taskTitle={title} />
+  if (drawer) return <TaskDetailDrawer props={props} taskTitle={title} trackerLinks={trackerLinks} />
 
   return (
     <TaskPanel data-testid="task-detail">
@@ -274,7 +275,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
           heading="Acceptance"
           trailing={acceptanceText(detail.acceptance.filter((item) => item.checked_at_ms != null).length, detail.acceptance.length)}
         />
-        <TaskTrackerLinks client={props.client} taskId={task.id} sourceUrl={task.ref_url} links={trackerLinks} />
+        <TaskTrackerLinks client={props.client} taskId={task.id} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
         <AcceptanceList
           items={detail.acceptance}
           readOnly={readOnly}
@@ -289,7 +290,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
   )
 }
 
-function TaskTrackerLinks({ client, taskId, sourceUrl, links }: { client?: HoustonClient | null; taskId: number; sourceUrl: string | null; links: TaskTrackerLink[] }): React.JSX.Element | null {
+function TaskTrackerLinks({ client, taskId, sourceUrl, links }: { client?: Pick<HoustonClient, 'send'> | null; taskId: number; sourceUrl: string | null; links: TaskTrackerLink[] }): React.JSX.Element | null {
   if (!client && !sourceUrl) return null
   return <section className="grid gap-[var(--space-2)]" aria-label="Task tracker links">
     <TaskSectionLabel heading="Tracker links" />
@@ -299,14 +300,14 @@ function TaskTrackerLinks({ client, taskId, sourceUrl, links }: { client?: Houst
       <TaskBody>{link.sync_state.state === 'error' ? `Sync error: ${link.sync_state.message}` : link.sync_state.state === 'diverged' ? 'Tracker data diverged' : link.sync_state.state === 'pending' ? 'Sync pending' : 'In sync'}</TaskBody>
       {link.snapshot.project && <TaskBody>Imported project context — unverified. {link.snapshot.project.title}: {link.snapshot.project.description}</TaskBody>}
       {!link.snapshot.project && link.snapshot.project_external_id && <TaskBody>External project ID {link.snapshot.project_external_id} has not been matched to a local project.</TaskBody>}
-      {link.snapshot.conflicts.map((conflict) => <TrackerConflict key={conflict.field} client={client} taskId={taskId} link={link} field={conflict.field} base={conflict.base} local={conflict.local} remote={conflict.remote} />)}
+      {client && link.snapshot.conflicts.map((conflict) => <TrackerConflict key={conflict.field} client={client} taskId={taskId} link={link} field={conflict.field} base={conflict.base} local={conflict.local} remote={conflict.remote} />)}
       {link.sync_state.state === 'diverged' && link.snapshot.conflicts.length === 0 && <TaskBody>Tracker data diverged; no field conflict needs resolution.</TaskBody>}
       {link.sync_state.state === 'error' && <TaskBody>{link.sync_state.message}</TaskBody>}
     </Card>)}
   </section>
 }
 
-function TrackerConflict({ client, taskId, link, field, base, local, remote }: { client: HoustonClient; taskId: number; link: TaskTrackerLink; field: string; base: string; local: string; remote: string }): React.JSX.Element {
+function TrackerConflict({ client, taskId, link, field, base, local, remote }: { client: Pick<HoustonClient, 'send'>; taskId: number; link: TaskTrackerLink; field: string; base: string; local: string; remote: string }): React.JSX.Element {
   const [custom, setCustom] = useState('')
   const resolve = (resolution: { kind: 'local' | 'remote' } | { kind: 'custom'; value: string }): void => sendTaskWire(client, {
     type: 'task_tracker_conflict_resolve', task_id: taskId, provider: link.provider,
@@ -320,7 +321,7 @@ function TrackerConflict({ client, taskId, link, field, base, local, remote }: {
   </Card>
 }
 
-function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTitle: string }): React.JSX.Element {
+function TaskDetailDrawer({ props, taskTitle, trackerLinks }: { props: TaskDetailProps; taskTitle: string; trackerLinks: TaskTrackerLink[] }): React.JSX.Element {
   const { detail, now } = props
   const { task } = detail
   const latestRun = detail.runs[0] ?? null
@@ -366,7 +367,7 @@ function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTi
     {!latestRun && startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={false} onStart={props.onStart} />}
     {props.client && <TaskWorkflowPanel client={props.client} detail={detail} onOpenSession={props.onOpenSession} onStartRequested={props.onStartRequested} />}
     <div className="grid gap-[var(--space-2)]">
-        <TaskTrackerLinks client={props.client} taskId={task.id} sourceUrl={task.ref_url} links={trackerLinks} />
+        <TaskTrackerLinks client={props.client} taskId={task.id} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
       <TaskSectionLabel heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
       <TaskDrawerCard><AcceptanceList
         items={detail.acceptance}

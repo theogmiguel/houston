@@ -1,6 +1,7 @@
+// @vitest-environment jsdom
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { ClientMsg, HoustonClient } from '../../houston/client'
+import type { ClientMsg } from '../../houston/client'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import type { TaskDetailData } from '../../houston/useTasks'
 import type { TaskDomain } from '../../houston/taskDomain'
@@ -31,8 +32,9 @@ describe('task workflow panel', () => {
     const client = {
       subscribeAll: (handler: (message: ServerMsg) => void) => { handlers.add(handler); return () => handlers.delete(handler) },
       taskSnapshot: () => {},
+      taskSave: () => {},
       send: (message: ClientMsg) => sent.push(message)
-    } as HoustonClient
+    }
     const onOpenSession = vi.fn()
     const onStartRequested = vi.fn()
     render(<TaskWorkflowPanel client={client} detail={DETAIL} onOpenSession={onOpenSession} onStartRequested={onStartRequested} />)
@@ -58,8 +60,9 @@ describe('task workflow panel', () => {
     const client = {
       subscribeAll: (handler: (message: ServerMsg) => void) => { handlers.add(handler); return () => handlers.delete(handler) },
       taskSnapshot: () => {},
+      taskSave: () => {},
       send: (message: ClientMsg) => sent.push(message)
-    } as HoustonClient
+    }
     render(<TaskWorkflowPanel client={client} detail={DETAIL} onOpenSession={() => {}} />)
     const planDomain: TaskDomain = {
       ...DOMAIN,

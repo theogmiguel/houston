@@ -1504,7 +1504,7 @@ export class HoustonClient {
   }
 
   taskStart(id: number, agent: AgentKind, base: string | null = null, workspace: string | null = null): void {
-    this.send({ type: 'task_start', id, agent, base, workspace })
+    this.send({ type: 'task_start', id, agent, base, workspace, override_readiness: false })
   }
 
   taskRunControl(runId: number, action: TaskRunAction): void {

@@ -1,8 +1,10 @@
+// @vitest-environment jsdom
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { ClientMsg, HoustonClient } from '../../houston/client'
+import type { ClientMsg } from '../../houston/client'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import type { TaskProject } from '../../houston/taskDomain'
+import type { TaskTrackerProvider } from '../../houston/taskDomain'
 import { ProjectsSurface } from './ProjectsSurface'
 
 const WORKSPACE = '/work/app'
@@ -19,14 +21,24 @@ describe('ProjectsSurface', () => {
     const client = {
       subscribeAll: (listener: (message: ServerMsg) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
       taskSnapshot: (scope: string) => emit({ type: 'task_snapshot', scope, tasks: [], counts: { ready: 0, backlog: 0, todo: 0, in_progress: 0, in_review: 0, done: 0, canceled: 0 } }),
+      taskSave: () => {},
       send: (message: ClientMsg) => {
         sent.push(message)
         if (message.type === 'task_projects_list') emit({ type: 'task_projects_state', workspace: message.workspace, projects: [PROJECT] })
       }
-    } as HoustonClient
+    }
 
     render(<ProjectsSurface client={client} workspace={WORKSPACE} workspaces={[{ path: WORKSPACE, name: 'app' }]} onOpenSession={() => {}} />)
     expect(screen.getByRole('heading', { name: 'Current project' })).toBeTruthy()
+    const githubSync = {
+      type: 'task_tracker_sync_state', workspace: WORKSPACE, provider: 'github_issues', last_sync_at_ms: 1, error: 'GitHub rate limit'
+    } satisfies Extract<ServerMsg, { type: 'task_tracker_sync_state' }> & { provider: TaskTrackerProvider }
+    const notionSync = {
+      type: 'task_tracker_sync_state', workspace: WORKSPACE, provider: 'notion', last_sync_at_ms: 2, error: null
+    } satisfies Extract<ServerMsg, { type: 'task_tracker_sync_state' }> & { provider: TaskTrackerProvider }
+    act(() => { emit(githubSync); emit(notionSync) })
+    expect(screen.getByText('GitHub Issues sync: Error: GitHub rate limit')).toBeTruthy()
+    expect(screen.getByText(/Notion sync: Last sync/)).toBeTruthy()
 
     act(() => fireEvent.click(screen.getByRole('button', { name: 'New project' })))
     expect(sent.at(-1)).toMatchObject({

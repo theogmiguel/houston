@@ -1461,7 +1461,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             </InlineCluster>
             <CenteredEmptyNote>No report yet.</CenteredEmptyNote>
             <ReportFrame><Text as="h2" size="ui" weight="semibold" tone="primary" flush>Report</Text></ReportFrame>
-            <BulletList><li>One</li><li>Two</li></BulletList>
+            <BulletList items={['One', 'Two']} />
           </div>
         </SpecimenGroup>
 
