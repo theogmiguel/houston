@@ -114,6 +114,15 @@ async fn domain(ws: &mut WsStream, id: i64) -> proto::TaskDomain {
 }
 
 async fn request(addr: std::net::SocketAddr, token: &str, method: &str, params: Value) -> Value {
+    request_http(addr, token, method, params).await.1
+}
+
+async fn request_http(
+    addr: std::net::SocketAddr,
+    token: &str,
+    method: &str,
+    params: Value,
+) -> (u16, Value) {
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string();
     let head = format!(
@@ -128,6 +137,7 @@ async fn request(addr: std::net::SocketAddr, token: &str, method: &str, params: 
     stream.read_to_end(&mut response).await.unwrap();
     let response = String::from_utf8_lossy(&response);
     let (head, body) = response.split_once("\r\n\r\n").expect("HTTP response body");
+    let status = head.split_whitespace().nth(1).unwrap().parse().unwrap();
     let body = if head
         .to_ascii_lowercase()
         .contains("transfer-encoding: chunked")
@@ -146,13 +156,16 @@ async fn request(addr: std::net::SocketAddr, token: &str, method: &str, params: 
     } else {
         body.to_string()
     };
-    serde_json::from_str(&body).unwrap_or_else(|error| panic!("invalid MCP JSON ({error}): {body}"))
+    let value = serde_json::from_str(&body)
+        .unwrap_or_else(|error| panic!("invalid MCP JSON ({error}): {body}"));
+    (status, value)
 }
 
 async fn list_tools(addr: std::net::SocketAddr, token: &str) -> Vec<String> {
-    request(addr, token, "tools/list", json!({})).await["result"]["tools"]
+    let reply = request(addr, token, "tools/list", json!({})).await;
+    reply["result"]["tools"]
         .as_array()
-        .unwrap()
+        .unwrap_or_else(|| panic!("tools/list did not return a tool catalog: {reply}"))
         .iter()
         .map(|tool| tool["name"].as_str().unwrap().to_string())
         .collect()
@@ -462,29 +475,19 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         domain(&mut ws, target).await.planning_session_id.is_none(),
         "submission clears the visible planning pane"
     );
-    let after_submit_tools = list_tools(addr, &plan_token).await;
-    for mutating in [
-        "pane_spawn",
-        "task_update",
-        "task_domain_update",
-        "task_project_save",
-    ] {
-        assert!(
-            !after_submit_tools.iter().any(|tool| tool == mutating),
-            "settled plan capability exposed {mutating}: {after_submit_tools:?}"
-        );
-    }
-    let after_submit_mutation = call_tool(
+    let (status, after_submit_tools) =
+        request_http(addr, &plan_token, "tools/list", json!({})).await;
+    assert_eq!(status, 401, "{after_submit_tools}");
+    assert_eq!(after_submit_tools["error"], "invalid_mcp_credential");
+    let (status, after_submit_mutation) = request_http(
         addr,
         &plan_token,
-        "task_update",
-        json!({"id":target,"expected_revision":target_initial.revision,"status":"done"}),
+        "tools/call",
+        json!({"name":"task_update","arguments":{"id":target,"expected_revision":target_initial.revision,"status":"done"}}),
     )
     .await;
-    assert_eq!(
-        after_submit_mutation["isError"], true,
-        "a submitted planning pane stays read-only: {after_submit_mutation}"
-    );
+    assert_eq!(status, 401, "{after_submit_mutation}");
+    assert_eq!(after_submit_mutation["error"], "invalid_mcp_credential");
 
     let outsider = daemon
         .create_session(houston_core::daemon::CreateParams {
@@ -561,12 +564,20 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
             json!({"name":"Unexpected config change"}),
         ),
     ] {
-        let refused = call_tool(addr, &plan_token, name, arguments).await;
+        let (status, refused) = request_http(
+            addr,
+            &plan_token,
+            "tools/call",
+            json!({"name":name,"arguments":arguments}),
+        )
+        .await;
         assert_eq!(
-            refused["isError"], true,
-            "planning capability must refuse {name}: {refused}"
+            status, 401,
+            "planning credential must refuse {name}: {refused}"
         );
+        assert_eq!(refused["error"], "invalid_mcp_credential");
     }
+    assert_eq!(task(&mut ws, target).await.status, target_initial.status);
 
     let create_done = call_tool(
         addr,

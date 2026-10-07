@@ -197,6 +197,13 @@ esac
             next_tracker_sync(&mut ws, &workspace).await,
             proto::ServerMsg::TaskTrackerSyncState { error: None, .. }
         ));
+        // The poll broadcasts its completion, then the request handler returns the same state.
+        // Consume both before sending another request so the second response cannot be mistaken
+        // for completion of the next sync.
+        assert!(matches!(
+            next_tracker_sync(&mut ws, &workspace).await,
+            proto::ServerMsg::TaskTrackerSyncState { error: None, .. }
+        ));
     }
 
     let tasks = task_snapshot(&mut ws, &workspace).await;
