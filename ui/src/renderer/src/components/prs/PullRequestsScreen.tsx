@@ -172,6 +172,76 @@ function PrRow({
   )
 }
 
+function prStateIconClass(state: PrListItem['state']): string {
+  if (state === 'merged') return PRS_CLASSES.PRS_STATE_MERGED_ICON
+  if (state === 'closed') return PRS_CLASSES.PRS_STATE_CLOSED_ICON
+  return ''
+}
+
+function PrListLoading(): React.JSX.Element {
+  return (
+    <div role="status" aria-label="Loading pull requests" className={PRS_CLASSES.PRS_CLASS_51}>
+      {[0, 1, 2].map((row) => <div key={row} className={PRS_CLASSES.PRS_CLASS_52} />)}
+    </div>
+  )
+}
+
+function PrListEmpty({ searching }: { searching: boolean }): React.JSX.Element {
+  return (
+    <EmptyState
+      icon={searching ? IconSearch : IconGitPullRequest}
+      heading={searching ? 'No matching pull requests' : 'No pull requests found'}
+      description={searching ? 'Try another search or clear the filters.' : 'Pull requests for this repository will appear here.'}
+    />
+  )
+}
+
+function PrScreenDetail({ item, client, directory, requestNonce, onClose, onOpenSurface }: {
+  item: PrListItem
+  client: HoustonClient | null
+  directory: string | null
+  requestNonce: number
+  onClose: () => void
+  onOpenSurface: PullRequestsScreenProps['onOpenSurface']
+}): React.JSX.Element {
+  const [surfaceMenuOpen, setSurfaceMenuOpen] = useState(false)
+  return (
+    <aside className={PRS_CLASSES.PRS_DETAIL_COLUMN} data-testid="pr-screen-detail" aria-label={`Pull request #${item.number}`}>
+      <div className={PRS_CLASSES.PRS_DETAIL_TABBAR}>
+        <div role="tablist" aria-label="Pull request surface">
+          <PanelTab
+            label={`#${item.number}`}
+            icon={<span className={prStateIconClass(item.state)}>{item.state === 'merged' ? <MergedIcon /> : <Icon glyph={IconGitPullRequest} role="small" />}</span>}
+            active
+            onClose={onClose}
+          />
+        </div>
+        <button type="button" className={PRS_CLASSES.PRS_DETAIL_ADD} aria-label="Open a surface" aria-expanded={surfaceMenuOpen} onClick={() => setSurfaceMenuOpen((open) => !open)}>
+          <Icon glyph={IconPlus} role="small" />
+        </button>
+        {surfaceMenuOpen && <ShellElement as="div" shellRole="panel-add-menu" role="menu" aria-label="Open a surface">
+          {([
+            ['browser', 'Browser', 'B'],
+            ['files', 'Files', 'F'],
+            ['diff', 'Diff', 'D'],
+            ['pull-request', 'Pull request', 'P'],
+            ['linked-pull-requests', 'Linked pull requests', 'L'],
+          ] as const).map(([surface, label, shortcut]) => <ShellElement as="button" key={surface} type="button" role="menuitem" shellRole="panel-add-item" state={surface === 'linked-pull-requests' ? 'disabled' : undefined} aria-disabled={surface === 'linked-pull-requests' || undefined} onClick={() => { if (surface === 'linked-pull-requests') return; onOpenSurface?.(surface); setSurfaceMenuOpen(false) }}><Icon glyph={surface === 'pull-request' ? IconGitPullRequest : surface === 'diff' ? IconCode : surface === 'browser' ? IconGlobe : IconFolder} role="small" /><span>{label}</span><ShellElement as="kbd" shellRole="panel-add-key">{shortcut}</ShellElement></ShellElement>)}
+        </ShellElement>}
+      </div>
+      <div className={PRS_CLASSES.PRS_DETAIL_CONTENT}>
+        <PullRequestTab
+          key={`${directory}:${item.number}`}
+          client={client}
+          dir={directory}
+          compact
+          requestedPr={{ number: item.number, nonce: requestNonce }}
+        />
+      </div>
+    </aside>
+  )
+}
+
 export function PullRequestsScreen({
   repoName,
   workspace,
@@ -195,7 +265,6 @@ export function PullRequestsScreen({
   const [openMenu, setOpenMenu] = useState<'sort' | 'filters' | null>(null)
   const [selectedState, setSelectedState] = useState(state)
   const [selectedSort, setSelectedSort] = useState<ScreenSort>(sort)
-  const [surfaceMenuOpen, setSurfaceMenuOpen] = useState(false)
   const [folded, setFolded] = useState(false)
   const [selected, setSelected] = useState<number | null>(selectedNumber)
   const [requestNonce, setRequestNonce] = useState(0)
@@ -203,7 +272,6 @@ export function PullRequestsScreen({
   const [context, setContext] = useState<{ item: PrListItem; x: number; y: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const selectedItem = items.find((item) => item.number === selected) ?? null
-  const selectedIconClass = selectedItem?.state === 'merged' ? PRS_CLASSES.PRS_STATE_MERGED_ICON : selectedItem?.state === 'closed' ? PRS_CLASSES.PRS_STATE_CLOSED_ICON : ''
   const openItem = (item: PrListItem): void => {
     setSelected((current) => current === item.number ? null : item.number)
     setRequestNonce((nonce) => nonce + 1)
@@ -509,15 +577,9 @@ export function PullRequestsScreen({
           <div className={PRS_CLASSES.PRS_CLASS_49} />
           <div className={PRS_CLASSES.PRS_CLASS_50}>
             {loading && visible.length === 0 ? (
-              <div role="status" aria-label="Loading pull requests" className={PRS_CLASSES.PRS_CLASS_51}>
-                {[0, 1, 2].map((row) => <div key={row} className={PRS_CLASSES.PRS_CLASS_52} />)}
-              </div>
+              <PrListLoading />
             ) : visible.length === 0 ? (
-              <EmptyState
-                icon={query ? IconSearch : IconGitPullRequest}
-                heading={query ? 'No matching pull requests' : 'No pull requests found'}
-                description={query ? 'Try another search or clear the filters.' : 'Pull requests for this repository will appear here.'}
-              />
+              <PrListEmpty searching={query !== ''} />
             ) : (
               <>
                 {group('authored', 'Authored', IconPencil)}
@@ -530,39 +592,14 @@ export function PullRequestsScreen({
       </div>
       </div>
       {selectedItem && (
-        <aside className={PRS_CLASSES.PRS_DETAIL_COLUMN} data-testid="pr-screen-detail" aria-label={`Pull request #${selectedItem.number}`}>
-          <div className={PRS_CLASSES.PRS_DETAIL_TABBAR}>
-            <div role="tablist" aria-label="Pull request surface">
-              <PanelTab
-                label={`#${selectedItem.number}`}
-                icon={<span className={selectedIconClass}>{selectedItem.state === 'merged' ? <MergedIcon /> : <Icon glyph={IconGitPullRequest} role="small" />}</span>}
-                active
-                onClose={() => setSelected(null)}
-              />
-            </div>
-            <button type="button" className={PRS_CLASSES.PRS_DETAIL_ADD} aria-label="Open a surface" aria-expanded={surfaceMenuOpen} onClick={() => setSurfaceMenuOpen((open) => !open)}>
-              <Icon glyph={IconPlus} role="small" />
-            </button>
-            {surfaceMenuOpen && <ShellElement as="div" shellRole="panel-add-menu" role="menu" aria-label="Open a surface">
-              {([
-                ['browser', 'Browser', 'B'],
-                ['files', 'Files', 'F'],
-                ['diff', 'Diff', 'D'],
-                ['pull-request', 'Pull request', 'P'],
-                ['linked-pull-requests', 'Linked pull requests', 'L'],
-              ] as const).map(([surface, label, shortcut]) => <ShellElement as="button" key={surface} type="button" role="menuitem" shellRole="panel-add-item" state={surface === 'linked-pull-requests' ? 'disabled' : undefined} aria-disabled={surface === 'linked-pull-requests' || undefined} onClick={() => { if (surface === 'linked-pull-requests') return; onOpenSurface?.(surface); setSurfaceMenuOpen(false) }}><Icon glyph={surface === 'pull-request' ? IconGitPullRequest : surface === 'diff' ? IconCode : surface === 'browser' ? IconGlobe : IconFolder} role="small" /><span>{label}</span><ShellElement as="kbd" shellRole="panel-add-key">{shortcut}</ShellElement></ShellElement>)}
-            </ShellElement>}
-          </div>
-          <div className={PRS_CLASSES.PRS_DETAIL_CONTENT}>
-            <PullRequestTab
-              key={`${directory}:${selectedItem.number}`}
-              client={client}
-              dir={directory}
-              compact
-              requestedPr={{ number: selectedItem.number, nonce: requestNonce }}
-            />
-          </div>
-        </aside>
+        <PrScreenDetail
+          item={selectedItem}
+          client={client}
+          directory={directory}
+          requestNonce={requestNonce}
+          onClose={() => setSelected(null)}
+          onOpenSurface={onOpenSurface}
+        />
       )}
     </main>
   )

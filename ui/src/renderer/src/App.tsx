@@ -411,6 +411,12 @@ const PANE_GROW_TTL_MS = 1_000;
 // The daemon tags git_status failures so background polls stay out of notices.
 const GIT_STATUS_ERROR_CONTEXT = "git_status";
 
+// Background git_status polls fail for workspaces whose folder is gone; the
+// Changes panel shows that error where it was asked for, not as a notice.
+function pushGlobalError(msg: { message: string; context?: string | null }, push: (message: string) => void): void {
+  if (msg.context !== GIT_STATUS_ERROR_CONTEXT) push(msg.message);
+}
+
 const REVIEW_INTENT_TTL_MS = 10_000;
 
 type SessionStateMessage = Extract<ServerMsg, { type: "session_state" }>;
@@ -1597,10 +1603,7 @@ export function App(): React.JSX.Element {
                 break;
               }
             }
-            // Background git_status polls fail for workspaces whose folder is
-            // gone; the Changes panel shows that error where it was asked for.
-            if (msg.context === GIT_STATUS_ERROR_CONTEXT) break;
-            pushError(msg.message);
+            pushGlobalError(msg, pushError);
             break;
           }
         }

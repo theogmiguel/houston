@@ -669,6 +669,31 @@ function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approva
   />
 }
 
+function PrCheckStripSummary({ checkState, total }: { checkState: ReturnType<typeof usePrChecksState>; total: number }): React.JSX.Element {
+  return (
+    <Button
+      variant="link"
+      size="sm"
+      type="button"
+      data-testid="pr-check-strip-summary"
+      aria-expanded={checkState.popoverOpen}
+      style={{ color: checkState.failedCount > 0 ? 'var(--stop)' : 'var(--text-secondary)' }}
+      onClick={() => checkState.setPopoverOpen((open) => !open)}
+    >
+      {checkState.failedCount > 0 ? (
+        <>
+          <PrTab as="span" surface="pr-check-failed-icon"><Icon glyph={IconClose} role="small" /></PrTab>
+          {checkState.failedCount} of {total} failing
+        </>
+      ) : (
+        <>
+          <Icon glyph={IconCheck} role="small" />All checks passed
+        </>
+      )}
+    </Button>
+  )
+}
+
 function PrDetailToolbar({
   compact,
   pane,
@@ -732,30 +757,7 @@ function PrDetailToolbar({
       {compact && pane === 'timeline' && (
         <PrTab as="span" surface="pr-timeline-counts"><Icon glyph={IconMessageSquare} role="small" /> {detail.comments_total} <span>·</span> {detail.commit_count} commits</PrTab>
       )}
-      {compact && pane === 'summary' && (
-        <>
-          <Button
-            variant="link"
-            size="sm"
-            type="button"
-            data-testid="pr-check-strip-summary"
-            aria-expanded={checkState.popoverOpen}
-            style={{ color: checkState.failedCount > 0 ? 'var(--stop)' : 'var(--text-secondary)' }}
-            onClick={() => checkState.setPopoverOpen((open) => !open)}
-          >
-            {checkState.failedCount > 0 ? (
-              <>
-                <PrTab as="span" surface="pr-check-failed-icon"><Icon glyph={IconClose} role="small" /></PrTab>
-                {checkState.failedCount} of {detail.checks.length} failing
-              </>
-            ) : (
-              <>
-                <Icon glyph={IconCheck} role="small" />All checks passed
-              </>
-            )}
-          </Button>
-        </>
-      )}
+      {compact && pane === 'summary' && <PrCheckStripSummary checkState={checkState} total={detail.checks.length} />}
       {popoverMotion.mounted && (
         <PrTab as="div" surface="pr-check-popover" state={popoverMotion.closing ? 'closing' : undefined} data-testid="pr-check-popover" data-failing={checkState.failedCount > 0} aria-label="Pull request checks" aria-hidden={popoverMotion.closing || undefined}>
           <PrTab as="div" surface="pr-check-popover-title">{checkState.failedCount > 0 ? `${checkState.failedCount} check failed` : 'All checks have passed'}</PrTab>
