@@ -673,11 +673,16 @@ async fn handle_control(
     let msg: proto::ClientMsg = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {
-            send_error(
-                sink,
-                format!("unparseable control message: {e}"),
-                Some(text.chars().take(200).collect()),
-            )
+            let credential_message = text.contains("credential")
+                || serde_json::from_str::<serde_json::Value>(text).is_ok_and(|value| {
+                    value.as_object().is_some_and(|fields| fields.contains_key("token"))
+                });
+            let (message, context) = if credential_message {
+                ("unparseable credential message: check its type and required fields".into(), None)
+            } else {
+                (format!("unparseable control message: {e}"), Some(text.chars().take(200).collect()))
+            };
+            send_error(sink, message, context)
             .await;
             return;
         }
