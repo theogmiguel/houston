@@ -627,11 +627,12 @@ async fn git_status_for_a_missing_directory_remains_an_error() {
     .await;
     loop {
         match next_control(&mut ws).await {
-            proto::ServerMsg::Error { message, .. } => {
+            proto::ServerMsg::Error { message, context } => {
                 assert!(
                     message.contains("git target is not a directory"),
                     "unexpected error: {message}"
                 );
+                assert_eq!(context.as_deref(), Some("git_status"));
                 break;
             }
             proto::ServerMsg::GitStatus { .. } => {

@@ -154,7 +154,7 @@ failure not given a typed refusal comes back as `error`.
 
 | Message | Fields | Reply |
 |---|---|---|
-| `git_status` | `dir`, `base?` (branch name = branch-vs-base scope; unresolvable base is an `error`) | `git_status` (direct); a plain existing directory with no Git metadata replies `not_a_repo: true` with empty Git fields; a missing directory or any Git probe failure is an `error` |
+| `git_status` | `dir`, `base?` (branch name = branch-vs-base scope; unresolvable base is an `error`) | `git_status` (direct); a plain existing directory with no Git metadata replies `not_a_repo: true` with empty Git fields; a missing directory or any Git probe failure is an `error` with `context: "git_status"` |
 | `git_diff` | `dir`, `path?` (absent = full patch), `base?` | `git_diff` (direct) |
 | `git_branch` | `dir` | `git_branch` (direct); a non-repo yields all three fields null, a detached HEAD keeps `toplevel`/`common_dir` and yields `branch: null` |
 | `git_branch_commits` | `dir` | `git_branch_commits` (direct), newest first for `@{upstream}..HEAD`; capped at `GIT_BRANCH_COMMITS_CAP`, with `total` and `truncated`; a missing upstream or non-repo is an `error` |

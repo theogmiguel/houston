@@ -2945,6 +2945,8 @@ async fn dispatch(
     }
 }
 
+const GIT_STATUS_ERROR_CONTEXT: &str = "git_status";
+
 async fn send_git_status(
     sink: &mut (impl SinkExt<Message> + Unpin),
     dir: String,
@@ -2952,7 +2954,7 @@ async fn send_git_status(
 ) -> anyhow::Result<()> {
     let d = PathBuf::from(&dir);
     let b = base.clone();
-    let (files, sync, default_base, not_a_repo) = tokio::task::spawn_blocking(move || {
+    let probed = tokio::task::spawn_blocking(move || {
         // A missing directory stays an error; one that exists without git is
         // a workspace the panel reports as such, not a failed request.
         if d.is_dir() && !crate::git::probe_repo(&d)? {
@@ -2967,7 +2969,21 @@ async fn send_git_status(
         anyhow::Ok((files, sync, default_base, false))
     })
     .await
-    .unwrap_or_else(|e| Err(anyhow::anyhow!("git status task panicked: {e}")))?;
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("git status task panicked: {e}")));
+    // The rail and overview poll every workspace in the background, so the
+    // context lets clients keep these failures out of global notices.
+    let (files, sync, default_base, not_a_repo) = match probed {
+        Ok(status) => status,
+        Err(e) => {
+            send_error(
+                sink,
+                format!("{e:#}"),
+                Some(GIT_STATUS_ERROR_CONTEXT.into()),
+            )
+            .await;
+            return Ok(());
+        }
+    };
     let _ = send_msg(
         sink,
         &proto::ServerMsg::GitStatus {
