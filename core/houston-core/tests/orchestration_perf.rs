@@ -1206,8 +1206,7 @@ async fn claude_enabled_advertisement_stays_under_byte_budget() {
         vec!["sh".into(), "-c".into(), "exec cat".into()],
     );
     let advertisement = rig.rpc(parent, "tools/list", json!({})).await;
-    // Measured: 17,374 B of orchestration tools (825 B of them pane_pr_watch / pane_pr_unwatch)
-    // plus 6,627 B for the eleven task_* tools a top-level pane gets at the default Read and
-    // write Tasks access.
-    bytes("claude/enabled", &advertisement, Some(24_001));
+    // Measured: 27,876 B for orchestration and seventeen task_* tools at Read and write access.
+    // Keep less than 1% headroom for changes to the typed advertisement.
+    bytes("claude/enabled", &advertisement, Some(28_000));
 }
