@@ -15,6 +15,28 @@ const PROJECT: TaskProject = {
 
 describe('ProjectsSurface', () => {
   afterEach(cleanup)
+  it('uses the navigation page frame and shared empty states', () => {
+    const listeners = new Set<(message: ServerMsg) => void>()
+    const emit = (message: ServerMsg): void => listeners.forEach((listener) => listener(message))
+    const client = {
+      subscribeAll: (listener: (message: ServerMsg) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
+      taskSnapshot: (scope: string) => emit({ type: 'task_snapshot', scope, tasks: [], counts: { ready: 0, backlog: 0, todo: 0, in_progress: 0, in_review: 0, done: 0, canceled: 0 } }),
+      taskSave: () => {},
+      send: (message: ClientMsg) => {
+        if (message.type === 'task_projects_list') emit({ type: 'task_projects_state', workspace: message.workspace, projects: [] })
+      }
+    }
+
+    render(<ProjectsSurface client={client} workspace={WORKSPACE} workspaces={[{ path: WORKSPACE, name: 'app' }]} onOpenSession={() => {}} />)
+
+    expect(screen.getByTestId('nav-surface')).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'Projects' })).toBeTruthy()
+    expect(screen.getByTestId('projects-workspace')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'New project' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Select a project' })).toBeTruthy()
+  })
+
   it('creates a new project instead of saving over the selected project', () => {
     const listeners = new Set<(message: ServerMsg) => void>()
     const sent: ClientMsg[] = []

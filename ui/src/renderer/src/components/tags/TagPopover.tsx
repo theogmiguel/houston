@@ -6,6 +6,7 @@ import { preloadable } from '../../preloadable'
 export type TagPopoverView = 'pick' | 'edit' | 'manage'
 export interface OpenTagPopoverOptions {
   anchor: HTMLElement
+  anchorRect?: DOMRect
   gridId?: string
   placement?: 'below' | 'right'
   view?: 'pick' | 'manage'
@@ -55,7 +56,10 @@ export function TagPopoverHost({
   const [closing, setClosing] = useState(false)
   const sequence = useRef(0)
   const open = useCallback(
-    (options: OpenTagPopoverOptions): void => { setClosing(false); setRequest({ ...options, nonce: ++sequence.current }) },
+    (options: OpenTagPopoverOptions): void => {
+      setClosing(false)
+      setRequest({ ...options, anchorRect: options.anchor.getBoundingClientRect(), nonce: ++sequence.current })
+    },
     [],
   )
   const close = useCallback(

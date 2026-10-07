@@ -103,7 +103,7 @@ export function TagPopoverSurface({
   const popRef = useRef<HTMLDivElement>(null),
     nameRef = useRef<HTMLInputElement>(null),
     viewRef = useRef<HTMLDivElement>(null)
-  const anchorRect = useRef(request.anchor.getBoundingClientRect())
+  const anchorRect = useRef(request.anchorRect ?? request.anchor.getBoundingClientRect())
   const reducedMotion =
     typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const push = (next: TagPopoverView): void => {
@@ -520,9 +520,11 @@ function TagEditView(props: TagEditViewProps): React.JSX.Element {
   return (
     <>
       <header className={TAG_POPOVER_CLS.header}>
-        <button type="button" aria-label="Back" onClick={props.onCancel} className={TAG_POPOVER_CLS.backButton}>
-          <Icon glyph={IconChevronLeft} role="label" />
-        </button>
+        <Tooltip label="Back">
+          <button type="button" aria-label="Back" onClick={props.onCancel} className={TAG_POPOVER_CLS.backButton}>
+            <Icon glyph={IconChevronLeft} role="label" />
+          </button>
+        </Tooltip>
         <strong className={TAG_POPOVER_CLS.title}>{editing ? `Edit ${editing.name}` : 'New tag'}</strong>
       </header>
       <div className={TAG_POPOVER_CLS.body}>
@@ -531,7 +533,7 @@ function TagEditView(props: TagEditViewProps): React.JSX.Element {
           <div className={TAG_POPOVER_CLS.fieldLabel}>Color</div>
           <div className={TAG_POPOVER_CLS.swatchList}>
             {presets.map((preset) => (
-              <Tooltip key={preset} label={preset}>
+              <Tooltip key={preset} label={`Set tag color to ${preset}`}>
                 <button type="button" aria-label={`Color ${preset}`} aria-pressed={color === preset && !custom} onClick={() => { props.onCustomChange(false); props.onColorValue(preset) }} className={`${TAG_POPOVER_CLS.colorSwatch} ${color === preset && !custom ? TAG_POPOVER_CLS.colorSwatchSelected : ''}`} style={{ backgroundColor: preset, '--tag-color': preset } as React.CSSProperties} />
               </Tooltip>
             ))}
@@ -600,7 +602,7 @@ function TagManageView(props: TagManageViewProps): React.JSX.Element {
   return (
     <>
       <header className={TAG_POPOVER_CLS.header}>
-        {stackLength > 0 && <button type="button" aria-label="Back" onClick={props.onBack} className={TAG_POPOVER_CLS.backButton}><Icon glyph={IconChevronLeft} role="label" /></button>}
+        {stackLength > 0 && <Tooltip label="Back"><button type="button" aria-label="Back" onClick={props.onBack} className={TAG_POPOVER_CLS.backButton}><Icon glyph={IconChevronLeft} role="label" /></button></Tooltip>}
         <strong className={TAG_POPOVER_CLS.manageTitle}>Tags</strong>
         <span className={TAG_POPOVER_CLS.quietText}>{tags.length}</span>
       </header>
@@ -665,8 +667,8 @@ function TagManageRow({ tag, usage, highlighted, deleting, inline, editProps }: 
         <span className={TAG_POPOVER_CLS.manageName}>{tag.name}</span>
         <span className={TAG_POPOVER_CLS.usage}>{usage ? `${usage} grid${usage === 1 ? '' : 's'}` : 'unused'}</span>
         <span className={TAG_POPOVER_CLS.rowActions}>
-          <button type="button" aria-label={`Edit ${tag.name}`} onClick={(event) => { event.stopPropagation(); editProps.onEdit(tag) }} className={TAG_POPOVER_CLS.rowIconButton}><Icon glyph={IconPencil} role="small" /></button>
-          <button type="button" aria-label={`Delete ${tag.name}`} onClick={(event) => { event.stopPropagation(); editProps.onDelete(tag) }} className={TAG_POPOVER_CLS.rowDeleteButton}><Icon glyph={IconTrash} role="small" /></button>
+          <Tooltip label={`Edit ${tag.name}`}><button type="button" aria-label={`Edit ${tag.name}`} onClick={(event) => { event.stopPropagation(); editProps.onEdit(tag) }} className={TAG_POPOVER_CLS.rowIconButton}><Icon glyph={IconPencil} role="small" /></button></Tooltip>
+          <Tooltip label={`Delete ${tag.name}`}><button type="button" aria-label={`Delete ${tag.name}`} onClick={(event) => { event.stopPropagation(); editProps.onDelete(tag) }} className={TAG_POPOVER_CLS.rowDeleteButton}><Icon glyph={IconTrash} role="small" /></button></Tooltip>
         </span>
       </div>
       {deleting && <div data-testid="tag-delete-confirm" className={TAG_POPOVER_CLS.deleteConfirm}><span className="flex-1">Remove <b>{tag.name}</b> from {usage} {usage === 1 ? 'grid' : 'grids'}?</span><Button variant="ghost" size="sm" onClick={editProps.onCancelDelete}>Cancel</Button><Button variant="danger" size="sm" onClick={() => editProps.onConfirmDelete(tag)}>Delete</Button></div>}
@@ -682,7 +684,7 @@ function TagInlineEdit({ props }: { props: TagManageViewProps }): React.JSX.Elem
       <input ref={props.nameRef} value={props.name} maxLength={40} aria-label="Tag name" onChange={(event) => props.onNameChange(event.target.value)} className={TAG_POPOVER_CLS.inlineNameInput} />
       <div className={TAG_POPOVER_CLS.fieldLabel}>Color</div>
       <div className={TAG_POPOVER_CLS.swatchList}>
-        {presets.map((preset) => <Tooltip key={preset} label={preset}><button type="button" aria-label={`Color ${preset}`} aria-pressed={props.color === preset && !props.custom} onClick={() => { props.onCustomChange(false); props.onColorValue(preset) }} className={`${TAG_POPOVER_CLS.colorSwatch} ${props.color === preset && !props.custom ? TAG_POPOVER_CLS.colorSwatchSelected : ''}`} style={{ background: preset, '--tag-color': preset } as React.CSSProperties} /></Tooltip>)}
+        {presets.map((preset) => <Tooltip key={preset} label={`Set tag color to ${preset}`}><button type="button" aria-label={`Color ${preset}`} aria-pressed={props.color === preset && !props.custom} onClick={() => { props.onCustomChange(false); props.onColorValue(preset) }} className={`${TAG_POPOVER_CLS.colorSwatch} ${props.color === preset && !props.custom ? TAG_POPOVER_CLS.colorSwatchSelected : ''}`} style={{ background: preset, '--tag-color': preset } as React.CSSProperties} /></Tooltip>)}
         <Tooltip label="Custom color"><button type="button" aria-label="Custom color" aria-pressed={props.custom} onClick={props.onCustomToggle} className={`${TAG_POPOVER_CLS.customColor} ${props.custom ? TAG_POPOVER_CLS.colorSwatchSelected : ''}`} style={{ background: props.custom ? props.color ?? undefined : undefined, '--tag-color': props.color ?? 'var(--text-muted)' } as React.CSSProperties}>{!props.custom && <Icon glyph={IconPencil} role="small" />}</button></Tooltip>
       </div>
       <div className={`${TAG_POPOVER_CLS.customColorWrap} ${props.custom ? TAG_POPOVER_CLS.customColorExpanded : TAG_POPOVER_CLS.customColorCollapsed}`}><div className={TAG_POPOVER_CLS.crop}>

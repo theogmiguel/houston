@@ -133,7 +133,7 @@ import { RenameTitleStory } from './renameTitleStories'
 
 document.documentElement.setAttribute('data-motion-paused', '')
 import { TasksPageStory } from './tasksPageStory'
-import { ProjectsConflictStory, ProjectsPageStory, ProjectsPlanStory, TrackerSettingsStory } from './projectsStories'
+import { ProjectsConflictStory, ProjectsEmptyStory, ProjectsPageStory, ProjectsPlanStory, TrackerSettingsStory } from './projectsStories'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
 import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
@@ -517,6 +517,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'usage/empty': () => <UsagePageStory state="empty" />,
   'tasks/page': () => <TasksPageStory />,
   'projects/page': () => <ProjectsPageStory />,
+  'projects/empty': () => <ProjectsEmptyStory />,
   'projects/conflicts': () => <ProjectsConflictStory />,
   'projects/plan': () => <ProjectsPlanStory />,
   'settings/tasks-tracker': () => <TrackerSettingsStory />,

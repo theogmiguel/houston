@@ -52,7 +52,7 @@ export function GridRailTitleRow({
       {pr?.is_draft && <span className="flex-none rounded border border-[var(--border)] px-1 text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">draft</span>}
       {hasTags && tagDisplay === 'dots' && <TagCardAffordance tags={tags} mode="dots" onClick={(anchor) => openTagPopover({ anchor, gridId, view: 'pick' })} />}
       {hasTags && tagDisplay === 'icon' && tags.length > 0 && (
-        <Tooltip label={tagNames.join(' · ')}>
+        <Tooltip label={`Edit tags: ${tagNames.join(' · ')}`}>
           <button
             type="button"
             aria-label={`Edit tags: ${tagNames.join(', ')}`}
@@ -83,6 +83,7 @@ export function GridRailTitleRow({
         </Tooltip>
       )}
       {hasRemove && (
+        <Tooltip label={`Remove ${name}`}>
         <button
           type="button"
           data-testid="grid-close"
@@ -95,6 +96,7 @@ export function GridRailTitleRow({
         >
           <Icon glyph={IconClose} role="small" />
         </button>
+        </Tooltip>
       )}
     </div>
   )

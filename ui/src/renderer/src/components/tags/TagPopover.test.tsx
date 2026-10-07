@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { TagInfo } from '../../houston/generated/TagInfo'
 import { TagPopoverHost, parseTagColor, useTagPopover, preloadTagPopoverSurface } from './TagPopover'
@@ -38,6 +39,26 @@ function OpenButton(): React.JSX.Element {
     </button>
   )
 }
+function HandoffFixture(): React.JSX.Element {
+  const [visible, setVisible] = useState(true)
+  return (
+    <TagPopoverHost tags={tags} grids={grids} actions={{
+      onCreate: (name, color) => ({ id: 3, name, color }),
+      onUpdate: vi.fn(), onDelete: vi.fn(), onApply: vi.fn(),
+    }}>
+      {visible && <HandoffButton onHandoff={() => setVisible(false)} />}
+    </TagPopoverHost>
+  )
+}
+function HandoffButton({ onHandoff }: { onHandoff: () => void }): React.JSX.Element {
+  const { open } = useTagPopover()
+  return (
+    <button type="button" onClick={(event) => {
+      open({ anchor: event.currentTarget, gridId: 'grid-1' })
+      onHandoff()
+    }}>Open tags</button>
+  )
+}
 
 describe('TagPopover', () => {
   it('shows the pick view and applies a tag to the selected grid', () => {
@@ -47,6 +68,18 @@ describe('TagPopover', () => {
     expect(screen.getByRole('dialog', { name: 'Tags' })).toBeTruthy()
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /backend/ }))
     expect(onApply).toHaveBeenCalledWith('grid-1', [1, 2])
+  })
+
+  it('keeps the popover anchored to the originating row when that row is handed off', async () => {
+    render(<HandoffFixture />)
+    const trigger = screen.getByText('Open tags')
+    trigger.getBoundingClientRect = () => ({
+      x: 100, y: 50, left: 100, top: 50, right: 140, bottom: 70, width: 40, height: 20,
+      toJSON: () => ({}),
+    } as DOMRect)
+    fireEvent.click(trigger)
+    await waitFor(() => expect(screen.getByTestId('tag-popover').style.left).toBe('144px'))
+    expect(screen.getByTestId('tag-popover').style.top).toBe('46px')
   })
 
   it('creates a tag inline and applies it to the grid that opened the popover', () => {

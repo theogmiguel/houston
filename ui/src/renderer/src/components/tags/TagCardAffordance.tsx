@@ -30,7 +30,7 @@ export function TagCardAffordance({
     </span>
   )
   if (mode === 'dots') return (
-    <Tooltip label={tags.map((tag) => tag.name).join(' · ')}>
+    <Tooltip label={`Edit tags: ${tags.map((tag) => tag.name).join(' · ')}`}>
       <button type="button" aria-label={`Edit tags: ${tags.map((tag) => tag.name).join(', ')}`} data-testid="rail-tags" className={TAG_POPOVER_CLS.cardDots} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClick(event.currentTarget) }}>
         {tags.slice(0, 3).map((tag) => <span key={tag.id} className={TAG_POPOVER_CLS.cardDot} style={{ background: tag.color }} />)}
         {tags.length > 3 && <span className={TAG_POPOVER_CLS.cardMore}>+{tags.length - 3}</span>}
@@ -39,7 +39,7 @@ export function TagCardAffordance({
   )
   return (
     <Tooltip
-      label={disabled ? 'Tags are turned off' : tags.map((tag) => tag.name).join(' · ')}
+      label={disabled ? 'Tags are turned off' : `Edit tags: ${tags.map((tag) => tag.name).join(' · ')}`}
     >
       <button
         type="button"

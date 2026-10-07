@@ -4,7 +4,8 @@ import { STATUS_LABEL } from '../tasks/format'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { HoustonClient } from '../../houston/client'
 import { isTaskTrackerProvider, sendTaskWire, type TaskDomain, type TaskProject, type TaskTrackerLink, type TaskTrackerProvider, linkIsPullRequest } from '../../houston/taskDomain'
-import { BulletList, Button, Card, Field, Inline, InlineLink, Notice, PageFrame, PageHeader, SectionHead, Select, Stack, Text, TextArea, TextInput } from '../ui'
+import { IconFolder, IconPlus } from '../icons'
+import { BulletList, Button, Card, EmptyState, Field, Inline, InlineLink, Notice, NavSurfaceFrame, PageFrame, PageHeader, SectionHead, Select, Stack, Text, TextArea, TextInput } from '../ui'
 
 export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }: {
   client: Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'> | null
@@ -112,14 +113,53 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
     sendTaskWire(client, { type: 'task_domain_save', id: selectedTask.id, expected_revision: selectedTask.revision, ...patch })
   }
 
-  if (!scope) return <PageFrame width="wide"><PageHeader heading="Projects" description="Projects collect deliveries and slice tasks for a workspace." /><Text tone="muted">Select a workspace to see its projects.</Text></PageFrame>
-  if (!client) return <PageFrame width="wide"><PageHeader heading="Projects" description="Projects collect deliveries and slice tasks for a workspace." /><Notice tone="info">Connect to the Houston daemon to load projects.</Notice></PageFrame>
+  const header = <ProjectsHeader scope={scope} workspaces={workspaces} onScope={setScope} canCreate={!busy && !!client && !!scope} onCreate={createProject} />
+  const page = (children: React.ReactNode): React.JSX.Element => (
+    <NavSurfaceFrame>
+      <PageFrame width="wide" className="flex-1 min-w-0">
+        {header}
+        {children}
+      </PageFrame>
+    </NavSurfaceFrame>
+  )
 
-  return <PageFrame width="wide" data-testid="projects-surface">
-    <PageHeader heading="Projects" description="Track deliveries, slice tasks, readiness and tracker sync for this workspace." actions={<Inline wrap><Select aria-label="Workspace" data-testid="projects-workspace" value={scope} options={workspaces.map((item) => ({ value: item.path, label: item.name }))} onChange={setScope} /><Button variant="primary" disabled={busy} onClick={createProject}>New project</Button></Inline>} />
+  if (!scope) return page(<EmptyState icon={IconFolder} heading="Select a workspace" description="Choose a workspace to see its projects." />)
+  if (!client) return page(<Notice tone="info">Connect to the Houston daemon to load projects.</Notice>)
+
+  return <NavSurfaceFrame>
+    <PageFrame width="wide" className="flex-1 min-w-0" data-testid="projects-surface">
+    {header}
     {error && <Notice tone="danger">{error}</Notice>}
     {projects === null || tasks === null ? <Text role="status" aria-busy="true" tone="muted">Loading workspace projects…</Text> : <ProjectWorkspace client={client} projects={projects} tasks={tasks} project={project} selectedProjectId={selectedProjectId} onSelectProject={(id) => { setSelectedProjectId(id); setSelectedTaskId(null) }} onRestoreProject={(item) => sendTaskWire(client, { type: 'task_project_archive', id: item.id, archived: false, expected_revision: item.revision })} busy={busy} onSaveProject={saveProject} onArchiveProject={(item) => sendTaskWire(client, { type: 'task_project_archive', id: item.id, archived: true, expected_revision: item.revision })} projectSyncLabel={projectSyncLabel} providerSyncStates={providerSyncStates} deliveries={deliveries} slices={slices} unassignedTasks={unassignedTasks} domains={domains} links={links} selectedTaskId={selectedTaskId} onSelectTask={(id) => selectTask(client, id, setSelectedTaskId, sendTaskWire)} selectedTask={selectedTask} selectedDomain={selectedDomain} projectRevisionFloor={projectRevisionFloor} onSaveDomain={saveDomain} onRefreshLinks={(id) => sendTaskWire(client, { type: 'task_tracker_links_get', task_id: id })} onOpenSession={onOpenSession} onError={setError} />}
-  </PageFrame>
+    </PageFrame>
+  </NavSurfaceFrame>
+}
+
+function ProjectsHeader({ scope, workspaces, onScope, canCreate, onCreate }: {
+  scope: string
+  workspaces: { path: string; name: string }[]
+  onScope: (path: string) => void
+  canCreate: boolean
+  onCreate: () => void
+}): React.JSX.Element {
+  const placeholder = workspaces.length ? 'Choose a workspace' : 'No workspaces available'
+  return <PageHeader
+    heading="Projects"
+    description={scope ? 'Track deliveries, slice tasks, readiness and tracker sync for this workspace.' : 'Projects collect deliveries and slice tasks for a workspace.'}
+    actions={<Inline wrap>
+      <Select
+        aria-label="Workspace"
+        data-testid="projects-workspace"
+        value={scope}
+        options={[
+          ...(scope ? [] : [{ value: '', label: placeholder, disabled: true }]),
+          ...workspaces.map((item) => ({ value: item.path, label: item.name }))
+        ]}
+        onChange={onScope}
+      />
+      <Button variant="primary" icon={IconPlus} disabled={!canCreate} onClick={onCreate}>New project</Button>
+    </Inline>}
+  />
 }
 
 function ProjectWorkspace({ client, projects, tasks, project, selectedProjectId, onSelectProject, onRestoreProject, busy, onSaveProject, onArchiveProject, projectSyncLabel, providerSyncStates, deliveries, slices, unassignedTasks, domains, links, selectedTaskId, onSelectTask, selectedTask, selectedDomain, projectRevisionFloor, onSaveDomain, onRefreshLinks, onOpenSession, onError }: {
@@ -153,7 +193,7 @@ function ProjectWorkspace({ client, projects, tasks, project, selectedProjectId,
   return <div className="grid min-h-0 gap-[var(--space-4)] lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,2fr)]">
     <ProjectList projects={projects} selectedProjectId={selectedProjectId} onSelect={onSelectProject} onRestore={onRestoreProject} />
     <Stack as="section" gap={4} className="min-w-0">
-      {!project ? <Text as="p" role="status" tone="muted">Choose a project or create one to organize this workspace’s tasks.</Text> : <>
+      {!project ? <EmptyState icon={IconFolder} heading="Select a project" description="Choose a project to see its tasks and tracker sync." /> : <>
         <ProjectEditor project={project} busy={busy} onSave={onSaveProject} onArchive={() => onArchiveProject(project)} />
         <ProjectSyncStatus label={projectSyncLabel} states={providerSyncStates} />
         <ProjectTaskGroups groups={[{ title: 'Deliveries', empty: 'No deliveries assigned to this project.', tasks: deliveries }, { title: 'Slice tasks', empty: 'No slice tasks assigned to this project.', tasks: slices }, { title: 'Unassigned tasks', empty: 'No unassigned workflow tasks.', tasks: unassignedTasks }]} domains={domains} links={links} selectedTaskId={selectedTaskId} onSelectTask={onSelectTask} />
@@ -171,7 +211,10 @@ function ProjectList({ projects, selectedProjectId, onSelect, onRestore }: { pro
     <Card>
       {active.map((item) => <Card.Row key={item.id} density="compact" heading={<Button variant="text" size="sm" aria-current={item.id === selectedProjectId ? 'page' : undefined} onClick={() => onSelect(item.id)}>{item.name}</Button>} meta={`Project ${item.id}`} />)}
       {archived.map((item) => <Card.Row key={item.id} density="compact" heading={item.name} meta="Archived" action={<Button variant="ghost" onClick={() => onRestore(item)}>Restore</Button>} />)}
-      {active.length === 0 && <Card.Content><Text tone="muted">No active projects yet.</Text></Card.Content>}
+      {active.length === 0 && <Card.Content>{projects.length === 0
+        ? <EmptyState icon={IconFolder} heading="No projects yet" description="Create a project to organize this workspace’s deliveries and tasks." copy="compact" />
+        : <Text tone="muted">No active projects yet.</Text>}
+      </Card.Content>}
     </Card>
   </Stack>
 }

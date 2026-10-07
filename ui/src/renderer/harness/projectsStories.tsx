@@ -88,7 +88,7 @@ function link(taskId: number, conflicted: boolean): TaskTrackerLink {
   }
 }
 
-function projectClient(includePlan: boolean, includeConflict: boolean): Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'> {
+function projectClient(includePlan: boolean, includeConflict: boolean, empty = false): Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'> {
   const handlers = new Set<(message: ServerMsg) => void>()
   const emit = (message: ServerMsg): void => handlers.forEach((handler) => handler(message))
   return {
@@ -97,7 +97,7 @@ function projectClient(includePlan: boolean, includeConflict: boolean): Pick<Hou
     taskSave: () => {},
     send: (message: ClientMsg) => {
       if (message.type === 'task_project_get' && message.id === PROJECT.id) emit({ type: 'task_project_state', project: PROJECT })
-      if (message.type === 'task_projects_list') emit({ type: 'task_projects_state', workspace: WORKSPACE, projects: [PROJECT, { ...PROJECT, id: 10, name: 'Archived project', archived_at_ms: NOW - 1000 }] })
+      if (message.type === 'task_projects_list') emit({ type: 'task_projects_state', workspace: WORKSPACE, projects: empty ? [] : [PROJECT, { ...PROJECT, id: 10, name: 'Archived project', archived_at_ms: NOW - 1000 }] })
       if (message.type === 'task_domain_get' && message.id != null) {
         const row = message.id === 40 ? domain(40, 'delivery', 9) : message.id === 41 ? domain(41, 'slice', 9) : message.id === 42 ? domain(42, 'slice', 9, includePlan ? PLAN : null, includeConflict) : domain(44, 'delivery', null)
         emit({ type: 'task_domain_state', domain: row })
@@ -109,23 +109,25 @@ function projectClient(includePlan: boolean, includeConflict: boolean): Pick<Hou
   }
 }
 
-function ProjectStory({ plan = false, conflict = false }: { plan?: boolean; conflict?: boolean }): React.JSX.Element {
-  const client = React.useMemo(() => projectClient(plan, conflict), [plan, conflict])
+function ProjectStory({ plan = false, conflict = false, empty = false }: { plan?: boolean; conflict?: boolean; empty?: boolean }): React.JSX.Element {
+  const client = React.useMemo(() => projectClient(plan, conflict, empty), [plan, conflict, empty])
   const selectedTaskId = plan || conflict ? 42 : 41
   React.useEffect(() => {
+    if (empty) return
     const timer = window.setInterval(() => {
       const button = document.querySelector<HTMLButtonElement>(`[data-testid="project-task-${selectedTaskId}"]`)
       if (button) { window.clearInterval(timer); button.click() }
     }, 100)
     const stop = window.setTimeout(() => window.clearInterval(timer), 1000)
     return () => { window.clearInterval(timer); window.clearTimeout(stop) }
-  }, [selectedTaskId])
+  }, [empty, selectedTaskId])
   return <div className="h-full bg-[var(--content-bg)]"><ProjectsSurface client={client} workspace={WORKSPACE} workspaces={[{ path: WORKSPACE, name: 'houston' }]} onOpenSession={() => {}} /></div>
 }
 
 export function ProjectsPageStory(): React.JSX.Element { return <ProjectStory /> }
 export function ProjectsPlanStory(): React.JSX.Element { return <ProjectStory plan /> }
 export function ProjectsConflictStory(): React.JSX.Element { return <ProjectStory conflict /> }
+export function ProjectsEmptyStory(): React.JSX.Element { return <ProjectStory empty /> }
 export function TrackerSettingsStory(): React.JSX.Element {
   const client = React.useMemo(() => projectClient(false, false), [])
   return <div className="h-full overflow-auto p-[var(--space-4)]"><TaskTrackerSettingsSection client={client} workspace={WORKSPACE} workspaceName="houston" /></div>

@@ -172,7 +172,7 @@ export function RailOptionsMenu({
             {prefs.customisedProperties && <RailResetButton onClick={() => set({ properties: prefs.cardMode === 'detailed' ? ['status', 'unread', 'checkout', 'pr', 'diff', 'task', 'inline-agents'] : ['status', 'unread'], customisedProperties: false })}>Reset to defaults</RailResetButton>}
             <RailOptionsDivider />
             <RailMenuRow data-testid="rail-manage-tags" onClick={(event) => {
-              tagPopover.open({ anchor: anchor ?? event.currentTarget, view: 'manage', selectedTagIds })
+              tagPopover.open({ anchor: event.currentTarget, view: 'manage', selectedTagIds })
               setPosition(null)
               onClose()
             }}><Icon glyph={IconTag} role="small" tone="muted" />Manage tags<RailMenuValue><Icon glyph={IconChevronRight} role="small" /></RailMenuValue></RailMenuRow>
