@@ -515,6 +515,7 @@ function offeredUpdate(
 const RECONNECT_MS = 1000;
 const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
+const ProjectsSurface = lazy(() => import('./components/nav/ProjectsSurface').then((module) => ({ default: module.ProjectsSurface })))
 
 // Connections before its first `mcp_state` shows empty lists, not a missing view.
 function mcpSurfaceLists(mcp: McpStateView | null) {
@@ -3844,7 +3845,19 @@ export function App(): React.JSX.Element {
             {settings || railView !== null ? (
               <ContentRegion>
                 <SurfaceBoundary label={railView ?? "Settings"}>
-                  {railView === "tasks" ? (
+                  {railView === "projects" ? (
+                    <Suspense fallback={<div className="flex-1" />}>
+                      <ProjectsSurface
+                        client={conn.kind === "ready" ? conn.client : null}
+                        workspace={selectedWs}
+                        workspaces={workspaces.map((w) => ({ path: w.path, name: w.name }))}
+                        onOpenSession={(sessionId) => {
+                          setRailView(null);
+                          focusPane(sessionId);
+                        }}
+                      />
+                    </Suspense>
+                  ) : railView === "tasks" ? (
                     <Suspense fallback={<div className="flex-1" />}>
                       <TasksSurface
                         client={conn.kind === "ready" ? conn.client : null}

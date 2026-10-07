@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, SessionInfo } from '../houston/client'
+import type { ServerMsg } from '../houston/generated/ServerMsg'
 import { SessionPane } from './SessionPane'
 import type { HandoffSource } from './PaneHandoff'
 import { ghosttySurfaceMockModule } from '../test/ghosttySurfaceMock'
@@ -27,6 +28,7 @@ const openPath = vi.fn().mockResolvedValue({ ok: true })
 }
 
 const ROWS = [
+  'Measure process memory',
   'Split right',
   'Split down',
   'Swap with previous pane',
@@ -62,6 +64,7 @@ describe('pane ··· menu', () => {
   let onHandoff: ReturnType<typeof vi.fn>
   let onSwapAdjacent: ReturnType<typeof vi.fn>
   let onZoom: ReturnType<typeof vi.fn>
+  let deliver: (message: ServerMsg) => void = () => {}
 
   function render(info: SessionInfo = makeSession(), swap: 'wired' | null = 'wired'): void {
     act(() => {
@@ -129,8 +132,10 @@ describe('pane ··· menu', () => {
     fakeClient = {
       resizeSession: vi.fn(),
       attachSession: vi.fn(),
+      subscribeAll: vi.fn((handler: (message: ServerMsg) => void) => { deliver = handler; return () => {} }),
       sessionVisibility: vi.fn(),
       sendStdin: vi.fn().mockReturnValue(true),
+      send: vi.fn(),
       respawnSession: vi.fn(),
       closeSession: vi.fn(),
       sessionCwd: vi.fn().mockResolvedValue('/home/tester/project')
@@ -145,7 +150,7 @@ describe('pane ··· menu', () => {
     container.remove()
   })
 
-  it('renders exactly the thirteen rows, in order', () => {
+  it('renders exactly the fourteen rows, in order', () => {
     render()
     openPaneMenu()
     expect(rows().map((b) => b.textContent ?? '')).toEqual(
@@ -249,6 +254,58 @@ describe('pane ··· menu', () => {
       title: 'session-1',
       cwd: '/home/tester/project'
     })
+  })
+
+  it('keeps a sleeping pane visible and wakes only after an explicit action', () => {
+    const sleeping = makeSession({
+      agent: 'claude',
+      state: 'sleeping',
+      title: 'Sleeping conversation',
+      latest_prompt: 'Continue the recovery work',
+      last_agent_message: 'I saved the current state.',
+      slept_at_ms: Date.now() - 90_000,
+      sleep_notice: 'A child session was deferred.'
+    })
+
+    render(sleeping)
+    expect(container.textContent).toContain('Session sleeping')
+    expect(container.textContent).toContain('Last prompt')
+    expect(container.textContent).toContain('Last agent message')
+    expect(container.textContent).toContain('1m')
+    expect(container.textContent).toContain('Expiration: unknown')
+    expect(container.textContent).toContain('A child session was deferred.')
+    expect(fakeClient.send).not.toHaveBeenCalled()
+
+    click(container.querySelector<HTMLButtonElement>('[aria-label="Wake conversation"]')!)
+    expect(fakeClient.send).toHaveBeenCalledWith({ type: 'session_wake', session: 1 })
+
+    act(() => deliver({ type: 'error', message: 'Wake refused for session 1: no validated conversation handle', context: null }))
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('no validated conversation handle')
+
+    openPaneMenu()
+    click(row('Start fresh conversation'))
+    expect(fakeClient.respawnSession).toHaveBeenCalledWith(1, false, undefined, undefined, undefined, true)
+  })
+
+  it('measures process memory only after the user asks', () => {
+    render()
+    expect(fakeClient.send).not.toHaveBeenCalled()
+    openPaneMenu()
+    click(row('Measure process memory'))
+    expect(fakeClient.send).toHaveBeenCalledWith({ type: 'session_memory_get', session: 1 })
+    act(() => deliver({ type: 'session_memory', session: 1, bytes: 1_048_576, measured_at_ms: Date.now(), unavailable_reason: null }))
+    expect(container.textContent).toContain('Process memory (PSS): 1 MB')
+  })
+
+  it('offers Sleep only for an idle top-level Claude or Codex session', () => {
+    render(makeSession({ agent: 'claude', state: 'running', status: 'idle' }))
+    openPaneMenu()
+    click(row('Sleep session'))
+    expect(fakeClient.send).toHaveBeenCalledWith({ type: 'session_sleep', session: 1 })
+
+    render(makeSession({ agent: 'codex', state: 'running', status: 'working' }))
+    openPaneMenu()
+    expect(row('Sleep session').disabled).toBe(true)
   })
 
   it('closes the pane from the last row, and says so while the agent is live', () => {

@@ -87,7 +87,9 @@ describe('Tasks page queue', () => {
 
   it('maps each supported state to the matching action', () => {
     expect(queueActionOf(task({ id: 1, status: 'in_progress', open_run: run({ id: 1, state: 'waiting_for_input' }) }))).toBe('Answer')
-    expect(queueActionOf(task({ id: 2, status: 'in_review', ref_url: 'https://github.com/org/repo/pull/61' }))).toBe('Open PR')
+    expect(queueActionOf(task({ id: 2, status: 'in_review', ref_url: 'https://github.com/org/repo/pull/61' }))).toBe('Review changes')
+    expect(queueActionOf(task({ id: 8, status: 'in_review', open_run: run({ id: 8, state: 'completed', pr_url: 'https://github.com/org/repo/pull/61' }) }))).toBe('Open PR')
+    expect(queueActionOf(task({ id: 9, status: 'in_review', open_run: run({ id: 9, state: 'completed', pr_url: 'https://example.com/issues/pull/61' }) }))).toBe('Review changes')
     expect(queueActionOf(task({ id: 3, status: 'in_progress', open_run: run({ id: 3, state: 'running', session_id: 23 }) }))).toBe('Open pane')
     expect(queueActionOf(task({ id: 4, status: 'in_progress' }))).toBe('Start again')
     expect(queueActionOf(task({ id: 5, status: 'todo' }))).toBe('Start')

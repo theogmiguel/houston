@@ -134,6 +134,8 @@ export function TasksTab({
     if (tasks.detail) {
       return (
         <TaskDetail
+          client={client}
+          onStartRequested={onStartRequested}
           detail={tasks.detail}
           access={tasks.access}
           refusal={tasks.refusal}

@@ -11,6 +11,8 @@ import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
 import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskDetailData, TaskRefusal, TaskStartSettings } from '../../houston/useTasks'
+import type { HoustonClient } from '../../houston/client'
+import { isPullRequestUrl, linkIsPullRequest, sendTaskWire, type TaskTrackerLink } from '../../houston/taskDomain'
 import { Icon } from '../ui/Icon'
 import {
   IconAlertTriangle,
@@ -48,6 +50,7 @@ import {
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 import { TaskExecutionCard, TaskStartCard } from './TaskExecution'
 import { TaskMenu } from './TaskMenu'
+import { TaskWorkflowPanel } from './TaskWorkflowPanel'
 import {
   Button,
   Chip,
@@ -73,6 +76,9 @@ import {
   TaskDrawerHeader,
   TaskDrawerOrigin,
   TaskIconButton,
+  Card,
+  InlineLink,
+  Text,
   TaskMetaLine,
   TaskMono,
   TaskPanel,
@@ -106,6 +112,8 @@ export interface TaskDetailProps {
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
   presentation?: 'side' | 'drawer'
+  client?: HoustonClient | null
+  onStartRequested?: (taskId: number, workspace: string) => void
 }
 
 export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
@@ -120,6 +128,20 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
   const reviewer = taskReviewer(detail.runs)
   const review = taskReviewOutcome(detail.runs, detail.comments)
   const drawer = props.presentation === 'drawer'
+  const [trackerLinks, setTrackerLinks] = useState<TaskTrackerLink[]>([])
+
+  useEffect(() => {
+    setTrackerLinks([])
+    if (!props.client) return
+    const off = props.client.subscribeAll((message) => {
+      if (message.type === 'task_tracker_links' && message.task_id === task.id) setTrackerLinks(message.links)
+      if (message.type === 'task_tracker_conflict_resolved' && message.task_id === task.id) {
+        setTrackerLinks((current) => current.map((link) => link.provider === message.link.provider && link.external_id === message.link.external_id ? message.link : link))
+      }
+    })
+    sendTaskWire(props.client, { type: 'task_tracker_links_get', task_id: task.id })
+    return off
+  }, [props.client, task.id])
 
   if (drawer) return <TaskDetailDrawer props={props} taskTitle={title} />
 
@@ -231,6 +253,8 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
           }}
         />
 
+        {props.client && <TaskWorkflowPanel client={props.client} detail={detail} onOpenSession={props.onOpenSession} onStartRequested={props.onStartRequested} />}
+
         {latestRun ? (
           <TaskExecutionCard
             run={latestRun}
@@ -249,6 +273,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
           heading="Acceptance"
           trailing={acceptanceText(detail.acceptance.filter((item) => item.checked_at_ms != null).length, detail.acceptance.length)}
         />
+        <TaskTrackerLinks client={props.client} taskId={task.id} sourceUrl={task.ref_url} links={trackerLinks} />
         <AcceptanceList
           items={detail.acceptance}
           readOnly={readOnly}
@@ -261,6 +286,37 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
       </TaskRecordBody>
     </TaskPanel>
   )
+}
+
+function TaskTrackerLinks({ client, taskId, sourceUrl, links }: { client?: HoustonClient | null; taskId: number; sourceUrl: string | null; links: TaskTrackerLink[] }): React.JSX.Element | null {
+  if (!client && !sourceUrl) return null
+  return <section className="grid gap-[var(--space-2)]" aria-label="Task tracker links">
+    <TaskSectionLabel heading="Tracker links" />
+    {sourceUrl && !links.some((link) => link.url === sourceUrl) && <Card padding="sm"><InlineLink href={sourceUrl}>Task source</InlineLink></Card>}
+    {links.length === 0 && !sourceUrl ? <TaskBody>No tracker links.</TaskBody> : links.map((link) => <Card key={`${link.provider}:${link.external_id}`} padding="sm" className="grid gap-[var(--space-2)]">
+      <InlineLink href={link.url}>{linkIsPullRequest(link) ? 'Pull request' : 'Source'} · {link.external_id}</InlineLink>
+      <TaskBody>{link.sync_state.state === 'error' ? `Sync error: ${link.sync_state.message}` : link.sync_state.state === 'diverged' ? 'Tracker data diverged' : link.sync_state.state === 'pending' ? 'Sync pending' : 'In sync'}</TaskBody>
+      {link.snapshot.project && <TaskBody>Imported project context — unverified. {link.snapshot.project.title}: {link.snapshot.project.description}</TaskBody>}
+      {!link.snapshot.project && link.snapshot.project_external_id && <TaskBody>External project ID {link.snapshot.project_external_id} has not been matched to a local project.</TaskBody>}
+      {link.snapshot.conflicts.map((conflict) => <TrackerConflict key={conflict.field} client={client} taskId={taskId} link={link} field={conflict.field} base={conflict.base} local={conflict.local} remote={conflict.remote} />)}
+      {link.sync_state.state === 'diverged' && link.snapshot.conflicts.length === 0 && <TaskBody>Tracker data diverged; no field conflict needs resolution.</TaskBody>}
+      {link.sync_state.state === 'error' && <TaskBody>{link.sync_state.message}</TaskBody>}
+    </Card>)}
+  </section>
+}
+
+function TrackerConflict({ client, taskId, link, field, base, local, remote }: { client: HoustonClient; taskId: number; link: TaskTrackerLink; field: string; base: string; local: string; remote: string }): React.JSX.Element {
+  const [custom, setCustom] = useState('')
+  const resolve = (resolution: { kind: 'local' | 'remote' } | { kind: 'custom'; value: string }): void => sendTaskWire(client, {
+    type: 'task_tracker_conflict_resolve', task_id: taskId, provider: link.provider,
+    external_id: link.external_id, field, expected_revision: link.snapshot.revision, resolution
+  })
+  return <Card tone="inset" padding="sm" className="grid gap-[var(--space-1)]">
+    <Text weight="semibold">{field} differs between Houston and the tracker</Text>
+    <Text>Previous shared value: {base || '—'}</Text><Text>Houston value: {local || '—'}</Text><Text>Tracker value: {remote || '—'}</Text>
+    <div className="flex flex-wrap gap-[var(--space-2)]"><Button variant="secondary" onClick={() => resolve({ kind: 'local' })}>Keep Houston value</Button><Button variant="secondary" onClick={() => resolve({ kind: 'remote' })}>Use tracker value</Button></div>
+    <div className="flex gap-[var(--space-2)]"><TextInput aria-label={`Custom ${field} value`} value={custom} onChange={(event) => setCustom(event.target.value)} /><Button variant="secondary" disabled={!custom.trim()} onClick={() => resolve({ kind: 'custom', value: custom })}>Use custom value</Button></div>
+  </Card>
 }
 
 function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTitle: string }): React.JSX.Element {
@@ -304,10 +360,12 @@ function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTi
       onRunControl={props.onRunControl}
       presentation="drawer"
       branchReuse={latestRun.branch ?? null}
-      pullRequestUrl={task.ref_url ?? null}
+      pullRequestUrl={latestRun?.pr_url && isPullRequestUrl(latestRun.pr_url) ? latestRun.pr_url : null}
     />}
     {!latestRun && startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={false} onStart={props.onStart} />}
+    {props.client && <TaskWorkflowPanel client={props.client} detail={detail} onOpenSession={props.onOpenSession} onStartRequested={props.onStartRequested} />}
     <div className="grid gap-[var(--space-2)]">
+        <TaskTrackerLinks client={props.client} taskId={task.id} sourceUrl={task.ref_url} links={trackerLinks} />
       <TaskSectionLabel heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
       <TaskDrawerCard><AcceptanceList
         items={detail.acceptance}
