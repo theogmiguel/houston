@@ -515,8 +515,8 @@ export class HoustonClient {
     this.terminals.abandonAttach(session)
   }
 
-  attachSession(session: number, replayBytes?: number, snapshot?: boolean): void {
-    void this.terminals.attach(session, replayBytes, snapshot).catch(() => {
+  attachSession(session: number, replayBytes?: number, snapshot?: boolean, fromOffset?: number): void {
+    void this.terminals.attach(session, replayBytes, snapshot, fromOffset).catch(() => {
     })
   }
 

@@ -154,6 +154,8 @@ async fn collect_output(ws: &mut WsStream, session: u32, needle: &str, attach: b
             session,
             replay_bytes: None,
             snapshot: Some(false),
+            from_offset: None,
+            generation: None,
         })
         .unwrap();
         ws.send(Message::text(message)).await.unwrap();

@@ -155,6 +155,22 @@ impl Scrollback {
         }
     }
 
+    /// The bytes after `offset`, for a client that already holds everything before
+    /// it. `None` when the run changed or the ring no longer holds `offset`.
+    pub fn replay_from(&self, offset: u64, generation: u32) -> Option<Replay> {
+        let bytes_seen = self.bytes_seen();
+        if generation != self.generation || offset < self.start || offset > bytes_seen {
+            return None;
+        }
+        let (data, _) = self.slice(offset, bytes_seen);
+        Some(Replay {
+            data,
+            generation: self.generation,
+            replayed_bytes: bytes_seen - offset,
+            bytes_seen,
+        })
+    }
+
     pub fn slice(&self, start: u64, end: u64) -> (Vec<u8>, bool) {
         let end = end.min(self.bytes_seen());
         if end <= start {
@@ -706,6 +722,33 @@ mod tests {
         assert!(r.data.is_empty());
         assert_eq!(r.replayed_bytes, 0);
         assert_eq!(r.bytes_seen, 5);
+    }
+
+    #[test]
+    fn replay_from_returns_only_the_tail_and_refuses_trimmed_offsets() {
+        let mut sb = Scrollback::new();
+        sb.push(b"held\n");
+        let held = sb.bytes_seen();
+        sb.push(b"tail\n");
+        let r = sb
+            .replay_from(held, sb.generation())
+            .expect("offset is in the ring");
+        assert_eq!(r.data, b"tail\n");
+        assert_eq!(r.replayed_bytes, 5);
+        assert_eq!(r.bytes_seen, 10);
+        assert!(sb.replay_from(held, sb.generation() + 1).is_none());
+        assert!(sb
+            .replay_from(sb.bytes_seen() + 1, sb.generation())
+            .is_none());
+
+        let line = format!("{}\n", "t".repeat(1023));
+        for _ in 0..((SCROLLBACK_CAP + TRIM_SLACK) / 1024 + 64) {
+            sb.push(line.as_bytes());
+        }
+        assert!(
+            sb.replay_from(0, sb.generation()).is_none(),
+            "byte 0 was trimmed"
+        );
     }
 
     #[test]

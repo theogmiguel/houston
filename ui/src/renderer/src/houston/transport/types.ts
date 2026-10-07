@@ -3,7 +3,7 @@ import type { SessionInfo } from '../generated/SessionInfo'
 
 export interface TerminalTransport {
   create(params: CreateSessionParams): Promise<SessionInfo>
-  attach(session: number, replayBytes?: number, snapshot?: boolean): Promise<AttachResult>
+  attach(session: number, replayBytes?: number, snapshot?: boolean, fromOffset?: number): Promise<AttachResult>
   write(session: number, data: string): boolean
   resize(session: number, cols: number, rows: number): Promise<ResizeResult>
   abandonAttach(session: number): void

@@ -1681,6 +1681,8 @@ async fn dispatch(
             session,
             replay_bytes,
             snapshot,
+            from_offset,
+            generation,
         } => {
             let frames_wanted =
                 frames_wanted.expect("an attach-family message runs on the connection task");
@@ -1715,7 +1717,14 @@ async fn dispatch(
                 .await;
                 Ok(())
             } else {
-                match daemon.scrollback(session, replay_bytes) {
+                let replay = match (from_offset, generation) {
+                    (Some(offset), Some(generation)) => daemon
+                        .scrollback_from(session, offset, generation)
+                        .transpose()
+                        .unwrap_or_else(|| daemon.scrollback(session, replay_bytes)),
+                    _ => daemon.scrollback(session, replay_bytes),
+                };
+                match replay {
                     Ok(replay) => {
                         let attempt = frames_wanted.attach(session, Some(replay.bytes_seen));
                         let data = base64::engine::general_purpose::STANDARD.encode(replay.data);

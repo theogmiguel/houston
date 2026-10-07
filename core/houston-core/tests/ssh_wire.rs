@@ -232,6 +232,8 @@ async fn ssh_connect_tofu_accept_then_echo() {
             session: info.id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))
@@ -790,6 +792,8 @@ async fn k8_ssh_connect_starts_in_requested_remote_home_directory() {
             session: info.id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))

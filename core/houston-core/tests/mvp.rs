@@ -59,6 +59,8 @@ async fn scrollback_replays_to_a_second_client() {
         session: id,
         replay_bytes: None,
         snapshot: None,
+        from_offset: None,
+        generation: None,
     })
     .unwrap();
     ws2.send(Message::text(attach)).await.unwrap();

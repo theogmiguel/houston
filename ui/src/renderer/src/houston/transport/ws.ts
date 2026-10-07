@@ -51,6 +51,9 @@ export class WsTerminalTransport implements TerminalTransport {
     timer: ReturnType<typeof setTimeout>
   }[] = []
   private attachesSent = new Map<number, number>()
+  // The run each session's last replay or snapshot described; an offset attach names it
+  // so the daemon can refuse an offset from an earlier run.
+  private generations = new Map<number, number>()
 
   onFrame: TerminalTransport['onFrame'] = () => {}
   onReplay: TerminalTransport['onReplay'] = () => {}
@@ -81,7 +84,7 @@ export class WsTerminalTransport implements TerminalTransport {
     })
   }
 
-  attach(session: number, replayBytes?: number, snapshot?: boolean): Promise<AttachResult> {
+  attach(session: number, replayBytes?: number, snapshot?: boolean, fromOffset?: number): Promise<AttachResult> {
     const existing = this.attachWaiters.get(session)
     if (existing) return existing.promise
     let resolve!: (r: AttachResult) => void
@@ -101,7 +104,9 @@ export class WsTerminalTransport implements TerminalTransport {
     this.attachWaiters.set(session, { resolve, reject, promise, replayBytes, timer })
     if ((this.attachesSent.get(session) ?? 0) > 0) wsGapStats.reattaches++
     this.attachesSent.set(session, (this.attachesSent.get(session) ?? 0) + 1)
-    this.send({ type: 'session_attach', session, replay_bytes: replayBytes, snapshot })
+    const generation = this.generations.get(session)
+    const offset = fromOffset !== undefined && generation !== undefined ? { from_offset: fromOffset, generation } : {}
+    this.send({ type: 'session_attach', session, replay_bytes: replayBytes, snapshot, ...offset })
     return promise
   }
 
@@ -177,6 +182,7 @@ export class WsTerminalTransport implements TerminalTransport {
         )
         return
       }
+      this.generations.set(m.session, m.generation)
       const data = decodeBase64(m.data)
       this.onReplay(m.session, data, m.bytes_seen)
       const waiter = this.attachWaiters.get(m.session)
@@ -209,6 +215,7 @@ export class WsTerminalTransport implements TerminalTransport {
         )
         return
       }
+      this.generations.set(m.session, m.generation)
       const waiter = this.attachWaiters.get(m.session)
       if (waiter) {
         clearTimeout(waiter.timer)
@@ -286,5 +293,6 @@ export class WsTerminalTransport implements TerminalTransport {
     for (const e of this.createQueue) clearTimeout(e.timer)
     this.createQueue.length = 0
     this.attachesSent.clear()
+    this.generations.clear()
   }
 }

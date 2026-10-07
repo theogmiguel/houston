@@ -10984,6 +10984,16 @@ impl Daemon {
         Ok(replay)
     }
 
+    /// A replay of only the bytes after `offset`, or `None` when a full replay is needed.
+    pub fn scrollback_from(&self, id: u32, offset: u64, generation: u32) -> Result<Option<Replay>> {
+        if self.dead.lock().expect("dead lock").contains_key(&id) {
+            return Ok(None);
+        }
+        let session = self.get(id)?;
+        let ring = session.scrollback.lock().expect("scrollback lock");
+        Ok(ring.replay_from(offset, generation))
+    }
+
     pub fn attach_snapshot(&self, id: u32) -> Result<TakenSnapshot> {
         let session = self.get(id)?;
         let ring = session.scrollback.lock().expect("scrollback lock");

@@ -171,6 +171,25 @@ describe('WsTerminalTransport attach dedup (item 11, r4 -- WS side)', () => {
     expect(ws.sent).toEqual([{ type: 'session_attach', session: 7, replay_bytes: 500 }])
   })
 
+  it('an offset attach names the run of the last replay, and waits for one before it can', async () => {
+    const { transport, ws } = makeTransportWithSocket()
+
+    void transport.attach(7, 500, undefined, 40)
+    expect(ws.sent.at(-1)).toEqual({ type: 'session_attach', session: 7, replay_bytes: 500 })
+    transport.handleControlMessage({
+      type: 'scrollback',
+      session: 7,
+      data: '',
+      generation: 3,
+      replayed_bytes: 0,
+      bytes_seen: 40,
+      attempt: 1
+    })
+
+    void transport.attach(7, 500, undefined, 40)
+    expect(ws.sent.at(-1)).toEqual({ type: 'session_attach', session: 7, replay_bytes: 500, from_offset: 40, generation: 3 })
+  })
+
   it('a second attach() while the first is pending resolves together once the scrollback reply arrives', async () => {
     const { transport, ws } = makeTransportWithSocket()
 

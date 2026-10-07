@@ -111,6 +111,8 @@ async fn a_pane_a_ws_client_is_watching_is_answered_by_that_client_not_the_daemo
             session: id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))

@@ -3108,6 +3108,15 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         snapshot: Option<bool>,
+        /// The output offset the client already holds. With a matching `generation`
+        /// and an offset still inside the ring, the reply carries only the bytes
+        /// after it; otherwise it falls back to a `replay_bytes` replay.
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        from_offset: Option<u64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        generation: Option<u32>,
     },
     SessionRespawn {
         session: u32,
@@ -5997,7 +6006,11 @@ mod tests {
                 session,
                 replay_bytes,
                 snapshot,
+                from_offset,
+                generation,
             } => {
+                assert_eq!(from_offset, None);
+                assert_eq!(generation, None);
                 assert_eq!(session, 3);
                 assert_eq!(replay_bytes, None);
                 assert_eq!(snapshot, None, "a v93 client asks for no snapshot");

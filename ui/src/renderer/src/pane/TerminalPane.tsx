@@ -1303,9 +1303,12 @@ export function TerminalPane({
       if (!attachedRef.current) {
         syncSizeRef.current()
         seqRef.current.catchup = true
-        if (seqRef.current.synced) skipSnapshotOnceRef.current = true
+        const synced = seqRef.current.synced
+        if (synced) skipSnapshotOnceRef.current = true
         reportVisibility(true)
-        sendAttach(ATTACH_REPLAY_BYTES)
+        // A synced pane already holds every byte before its cursor; asking from there
+        // keeps a warm wake from re-sending megabytes the pane would discard.
+        sendAttach(ATTACH_REPLAY_BYTES, synced ? seqRef.current.cursor : undefined)
         attachedRef.current = true
       }
       if (hibernatedRef.current) {
@@ -1374,12 +1377,12 @@ export function TerminalPane({
     return ours === null || ours === c.snapshotFormatVersion
   }
 
-  const sendAttach = (replayBytes: number): void => {
+  const sendAttach = (replayBytes: number, fromOffset?: number): void => {
     clientRef.current.abandonAttach?.(info.id)
     const snapshot = wantsSnapshot()
     skipSnapshotOnceRef.current = false
     seqRef.current.awaitingSnapshot = snapshot
-    clientRef.current.attachSession(info.id, replayBytes, snapshot || undefined)
+    clientRef.current.attachSession(info.id, replayBytes, snapshot || undefined, snapshot ? undefined : fromOffset)
   }
 
   const resetAndReattach = (): void => {
