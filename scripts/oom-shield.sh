@@ -12,11 +12,11 @@ if ! command -v systemd-run >/dev/null 2>&1; then
   exit 1
 fi
 
-# MemoryMax=12G / MemoryHigh=10G sit ~3x / ~2.5x above the measured 4.1 GiB
-# cold-build peak: high enough not to trip a real build, low enough to be a
-# tripwire a runaway can actually hit. Left at their defaults deliberately.
-MEMORY_HIGH="${OOM_SHIELD_MEMORY_HIGH:-10G}"
-MEMORY_MAX="${OOM_SHIELD_MEMORY_MAX:-12G}"
+# MemoryMax=18G / MemoryHigh=16G sit above the measured 10.2 GiB peak of the
+# core `cargo test -j 3` link fan-out (a 12G cap OOM-killed it): high enough not
+# to trip a real build, low enough to be a tripwire a runaway can actually hit.
+MEMORY_HIGH="${OOM_SHIELD_MEMORY_HIGH:-16G}"
+MEMORY_MAX="${OOM_SHIELD_MEMORY_MAX:-18G}"
 MEMORY_SWAP_MAX="${OOM_SHIELD_MEMORY_SWAP_MAX:-}"
 
 LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/oom-shield.lock"

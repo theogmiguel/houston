@@ -136,11 +136,11 @@ whole terminal scope.
 ./scripts/oom-shield.sh <command> [args...]
 ```
 
-- **Caps**: `MemoryHigh=10G`, `MemoryMax=12G` (override via
-  `OOM_SHIELD_MEMORY_HIGH`/`OOM_SHIELD_MEMORY_MAX`). Receipted against a
-  measured cold-build peak of 4141.1 MiB on a 31 GiB/12-core machine —
-  `MemoryMax` is ~2.97× that peak, `MemoryHigh` ~2.47×. Swap is uncapped by
-  default (`OOM_SHIELD_MEMORY_SWAP_MAX` opts in).
+- **Caps**: `MemoryHigh=16G`, `MemoryMax=18G` (override via
+  `OOM_SHIELD_MEMORY_HIGH`/`OOM_SHIELD_MEMORY_MAX`). Receipted against the
+  measured 10.2 GiB peak of the core `cargo test -j 3` run on a 31 GiB/12-core
+  machine, which a 12G cap OOM-killed; a cold build peaks near 4.1 GiB. Swap is
+  uncapped by default (`OOM_SHIELD_MEMORY_SWAP_MAX` opts in).
 - Applies `nice -n 19` to the wrapped command unconditionally.
 - A second invocation *waits* on a global per-user `flock`, announcing
   itself, rather than running concurrently — the shield bounds one scope,
