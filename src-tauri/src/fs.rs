@@ -1,7 +1,11 @@
+use notify::Watcher as _;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use tauri::State;
+use std::sync::{mpsc, Mutex, OnceLock};
+use std::time::Duration;
+use tauri::{Emitter, State};
 
 use crate::fs_allowlist::{
     assert_entry_within_allowed_roots, assert_within_allowed_roots, register_allowed_root,
@@ -46,6 +50,453 @@ const IGNORED_ENTRY_NAMES: &[&str] = &[
 
 fn is_ignored_entry(name: &str) -> bool {
     IGNORED_ENTRY_NAMES.contains(&name)
+}
+
+// One palette can display four screens of results before the user must refine.
+const MAX_PATH_SEARCH_RESULTS: usize = 200;
+// Bounds retained path strings for large monorepos while covering ordinary workspaces.
+const MAX_INDEXED_PATHS: usize = 100_000;
+// Expanded folders in one tree fit within this watcher budget; overflow can refresh manually.
+const MAX_WATCHED_DIRS: usize = 256;
+// Coalesces filesystem bursts into one UI refresh while keeping edits responsive.
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(150);
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PathSearchItem {
+    pub path: String,
+    pub name: String,
+    pub is_dir: bool,
+    pub name_indices: Vec<usize>,
+    pub path_indices: Vec<usize>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PathSearchResult {
+    pub items: Vec<PathSearchItem>,
+    pub total: usize,
+    pub truncated: bool,
+}
+
+#[derive(Clone)]
+struct IndexedPath {
+    relative: String,
+    is_dir: bool,
+}
+
+#[derive(Default)]
+struct PathIndexCache {
+    generations: HashMap<PathBuf, u64>,
+    indexes: HashMap<PathBuf, (u64, Vec<IndexedPath>)>,
+}
+
+static PATH_INDEX: OnceLock<Mutex<PathIndexCache>> = OnceLock::new();
+static PATH_WATCHERS: OnceLock<Mutex<HashMap<PathBuf, RootWatcher>>> = OnceLock::new();
+
+fn path_index() -> &'static Mutex<PathIndexCache> {
+    PATH_INDEX.get_or_init(|| Mutex::new(PathIndexCache::default()))
+}
+
+fn path_watchers() -> &'static Mutex<HashMap<PathBuf, RootWatcher>> {
+    PATH_WATCHERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn fuzzy_indices(text: &str, query: &str) -> Option<Vec<usize>> {
+    let mut positions = Vec::new();
+    let mut query_chars = query.chars().flat_map(char::to_lowercase);
+    let mut wanted = query_chars.next()?;
+    let mut utf16_index = 0;
+    for (_, ch) in text.char_indices() {
+        if ch.to_lowercase().any(|lower| lower == wanted) {
+            positions.push(utf16_index);
+            match query_chars.next() {
+                Some(next) => wanted = next,
+                None => return Some(positions),
+            }
+        }
+        utf16_index += ch.len_utf16();
+    }
+    None
+}
+
+fn search_index(index: &[IndexedPath], query: &str, limit: usize) -> PathSearchResult {
+    let mut matches = index
+        .iter()
+        .filter_map(|entry| {
+            let name = Path::new(&entry.relative)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            let name_indices = fuzzy_indices(&name, query);
+            let path_indices = fuzzy_indices(&entry.relative, query);
+            if name_indices.is_none() && path_indices.is_none() {
+                return None;
+            }
+            Some((
+                usize::from(name_indices.is_none()),
+                entry.relative.chars().count(),
+                PathSearchItem {
+                    path: entry.relative.clone(),
+                    name,
+                    is_dir: entry.is_dir,
+                    name_indices: name_indices.unwrap_or_default(),
+                    path_indices: path_indices.unwrap_or_default(),
+                },
+            ))
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by(|a, b| (a.0, a.1, &a.2.path).cmp(&(b.0, b.1, &b.2.path)));
+    let total = matches.len();
+    let cap = limit.min(MAX_PATH_SEARCH_RESULTS);
+    let items = matches
+        .into_iter()
+        .take(cap)
+        .map(|(_, _, item)| item)
+        .collect::<Vec<_>>();
+    PathSearchResult {
+        truncated: total > items.len(),
+        items,
+        total,
+    }
+}
+
+fn collect_git_paths(root: &Path) -> Result<Option<(Vec<IndexedPath>, usize)>, String> {
+    let output = match houston_core::spawn::command("git")
+        .args(["ls-files", "-co", "--exclude-standard", "-z"])
+        .current_dir(root)
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "cannot run git ls-files in {}: {error}",
+                root.display()
+            ))
+        }
+    };
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let mut paths = Vec::new();
+    let mut count = 0;
+    for raw in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|part| !part.is_empty())
+    {
+        let relative = String::from_utf8_lossy(raw).replace('\\', "/");
+        let full_path = root.join(&relative);
+        let metadata = match std::fs::symlink_metadata(&full_path) {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+        if !metadata.is_dir() {
+            count += 1;
+            if paths.len() < MAX_INDEXED_PATHS {
+                paths.push(IndexedPath {
+                    relative,
+                    is_dir: false,
+                });
+            }
+        }
+    }
+    Ok(Some((paths, count)))
+}
+
+fn collect_walk_paths(root: &Path) -> Result<(Vec<IndexedPath>, usize), String> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut paths = Vec::new();
+    let mut count = 0;
+    while let Some(dir) = pending.pop() {
+        let entries =
+            std::fs::read_dir(&dir).map_err(|e| format!("cannot walk {}: {e}", dir.display()))?;
+        for entry in entries {
+            let entry =
+                entry.map_err(|e| format!("cannot read entry under {}: {e}", dir.display()))?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if is_ignored_entry(&name) {
+                continue;
+            }
+            let file_type = entry
+                .file_type()
+                .map_err(|e| format!("cannot inspect {}: {e}", entry.path().display()))?;
+            let entry_path = entry.path();
+            let relative = entry_path
+                .strip_prefix(root)
+                .unwrap_or(&entry_path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            } else {
+                count += 1;
+                if paths.len() < MAX_INDEXED_PATHS {
+                    paths.push(IndexedPath {
+                        relative,
+                        is_dir: false,
+                    });
+                }
+            }
+        }
+    }
+    Ok((paths, count))
+}
+
+fn build_path_index(root: &Path) -> Result<Vec<IndexedPath>, String> {
+    let (paths, count) = match collect_git_paths(root)? {
+        Some(paths) => paths,
+        None => collect_walk_paths(root)?,
+    };
+    validate_index_count(root, count)?;
+    Ok(paths)
+}
+
+fn validate_index_count(root: &Path, count: usize) -> Result<(), String> {
+    if count > MAX_INDEXED_PATHS {
+        return Err(format!(
+            "fs_search_paths: {} contains {count} paths, exceeding MAX_INDEXED_PATHS ({MAX_INDEXED_PATHS})",
+            root.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_watched_dir_count(count: usize) -> Result<(), String> {
+    if count > MAX_WATCHED_DIRS {
+        return Err(format!(
+            "fs_watch_dirs: got {count} directories, exceeding MAX_WATCHED_DIRS ({MAX_WATCHED_DIRS})"
+        ));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fs_search_paths(
+    root: String,
+    query: String,
+    limit: usize,
+    state: State<'_, AllowedRoots>,
+) -> Result<PathSearchResult, String> {
+    let roots = {
+        let guard = state
+            .0
+            .lock()
+            .map_err(|_| "allowed-roots lock poisoned".to_string())?;
+        guard.clone()
+    };
+    let real_root = assert_within_allowed_roots(&root, &roots).await?;
+    if !real_root.is_dir() {
+        return Err(format!(
+            "fs_search_paths: root {} is not a directory",
+            real_root.display()
+        ));
+    }
+    let index = loop {
+        let generation = {
+            let cache = path_index()
+                .lock()
+                .map_err(|_| "path index lock poisoned".to_string())?;
+            let generation = *cache.generations.get(&real_root).unwrap_or(&0);
+            if let Some((cached_generation, index)) = cache.indexes.get(&real_root) {
+                if *cached_generation == generation {
+                    break index.clone();
+                }
+            }
+            generation
+        };
+        let index_root = real_root.clone();
+        let index = tokio::task::spawn_blocking(move || build_path_index(&index_root))
+            .await
+            .map_err(|e| format!("fs_search_paths indexing task failed: {e}"))??;
+        let mut cache = path_index()
+            .lock()
+            .map_err(|_| "path index lock poisoned".to_string())?;
+        if *cache.generations.get(&real_root).unwrap_or(&0) == generation {
+            cache
+                .indexes
+                .insert(real_root.clone(), (generation, index.clone()));
+            break index;
+        }
+    };
+    Ok(search_index(&index, &query, limit))
+}
+
+struct RootWatcher {
+    watcher: notify::RecommendedWatcher,
+    paths: HashMap<PathBuf, usize>,
+    leases: Vec<Vec<PathBuf>>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct FsChangedPayload {
+    root: String,
+    paths: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn fs_watch_dirs(
+    root: String,
+    dirs: Vec<String>,
+    app: tauri::AppHandle,
+    state: State<'_, AllowedRoots>,
+) -> Result<(), String> {
+    let roots = {
+        let guard = state
+            .0
+            .lock()
+            .map_err(|_| "allowed-roots lock poisoned".to_string())?;
+        guard.clone()
+    };
+    let real_root = assert_within_allowed_roots(&root, &roots).await?;
+    if !real_root.is_dir() {
+        return Err(format!(
+            "fs_watch_dirs: root {} is not a directory",
+            real_root.display()
+        ));
+    }
+    let mut canonical_dirs = HashSet::new();
+    for dir in dirs {
+        let real_dir = assert_within_allowed_roots(&dir, &roots).await?;
+        if !real_dir.starts_with(&real_root) {
+            return Err(format!(
+                "fs_watch_dirs: {} is outside root {}",
+                real_dir.display(),
+                real_root.display()
+            ));
+        }
+        canonical_dirs.insert(real_dir);
+    }
+    validate_watched_dir_count(canonical_dirs.len())?;
+    let requested = canonical_dirs.into_iter().collect::<Vec<_>>();
+    let mut watchers = path_watchers()
+        .lock()
+        .map_err(|_| "path watcher lock poisoned".to_string())?;
+    if let Some(existing) = watchers.get_mut(&real_root) {
+        let watched_count = existing
+            .paths
+            .keys()
+            .chain(requested.iter())
+            .collect::<HashSet<_>>()
+            .len();
+        validate_watched_dir_count(watched_count)?;
+        for path in &requested {
+            let count = *existing.paths.get(path).unwrap_or(&0);
+            if count == 0 {
+                let mode = if path.is_dir() {
+                    notify::RecursiveMode::Recursive
+                } else {
+                    notify::RecursiveMode::NonRecursive
+                };
+                existing
+                    .watcher
+                    .watch(path, mode)
+                    .map_err(|e| format!("cannot watch {}: {e}", path.display()))?;
+            }
+            existing.paths.insert(path.clone(), count + 1);
+        }
+        existing.leases.push(requested);
+        return Ok(());
+    }
+    let root_for_events = real_root.clone();
+    let (sender, receiver) = mpsc::channel::<Vec<PathBuf>>();
+    let event_sender = sender.clone();
+    let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+        if let Ok(event) = result {
+            let _ = event_sender.send(event.paths);
+        }
+    })
+    .map_err(|e| format!("cannot create watcher for {}: {e}", real_root.display()))?;
+    let mut path_counts = HashMap::new();
+    for path in &requested {
+        let mode = if path.is_dir() {
+            notify::RecursiveMode::Recursive
+        } else {
+            notify::RecursiveMode::NonRecursive
+        };
+        watcher
+            .watch(path, mode)
+            .map_err(|e| format!("cannot watch {}: {e}", path.display()))?;
+        path_counts.insert(path.clone(), 1);
+    }
+    std::thread::spawn(move || {
+        while let Ok(first) = receiver.recv() {
+            let mut changed = first.into_iter().collect::<HashSet<_>>();
+            loop {
+                match receiver.recv_timeout(WATCH_DEBOUNCE) {
+                    Ok(paths) => changed.extend(paths),
+                    Err(mpsc::RecvTimeoutError::Timeout) => break,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                }
+            }
+            let mut paths = changed.into_iter().collect::<Vec<_>>();
+            paths.sort();
+            if let Ok(mut cache) = path_index().lock() {
+                *cache
+                    .generations
+                    .entry(root_for_events.clone())
+                    .or_insert(0) += 1;
+                cache.indexes.remove(&root_for_events);
+            }
+            let _ = app.emit(
+                "fs://changed",
+                FsChangedPayload {
+                    root: root_for_events.to_string_lossy().into_owned(),
+                    paths: paths
+                        .into_iter()
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .collect(),
+                },
+            );
+        }
+    });
+    watchers.insert(
+        real_root,
+        RootWatcher {
+            watcher,
+            paths: path_counts,
+            leases: vec![requested],
+        },
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fs_unwatch(root: String, state: State<'_, AllowedRoots>) -> Result<(), String> {
+    let roots = {
+        let guard = state
+            .0
+            .lock()
+            .map_err(|_| "allowed-roots lock poisoned".to_string())?;
+        guard.clone()
+    };
+    let real_root = assert_within_allowed_roots(&root, &roots).await?;
+    let mut watchers = path_watchers()
+        .lock()
+        .map_err(|_| "path watcher lock poisoned".to_string())?;
+    if let Some(watcher) = watchers.get_mut(&real_root) {
+        if let Some(lease) = watcher.leases.pop() {
+            for path in lease {
+                match watcher.paths.get(&path).copied() {
+                    Some(1) => {
+                        watcher.paths.remove(&path);
+                        let _ = watcher.watcher.unwatch(&path);
+                    }
+                    Some(count) => {
+                        watcher.paths.insert(path, count - 1);
+                    }
+                    None => {}
+                }
+            }
+        }
+        if watcher.leases.is_empty() {
+            watchers.remove(&real_root);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -1279,6 +1730,123 @@ mod tests {
     use super::*;
     use tauri::Manager;
     use tempfile::tempdir;
+
+    #[test]
+    fn path_search_ranks_name_matches_before_path_matches_then_shorter_paths() {
+        let result = search_index(
+            &[
+                IndexedPath {
+                    relative: "long/folder/readme.md".into(),
+                    is_dir: false,
+                },
+                IndexedPath {
+                    relative: "readme-folder/guide.md".into(),
+                    is_dir: false,
+                },
+                IndexedPath {
+                    relative: "src/rustacean.rs".into(),
+                    is_dir: false,
+                },
+                IndexedPath {
+                    relative: "readme.md".into(),
+                    is_dir: false,
+                },
+            ],
+            "readme",
+            10,
+        );
+        assert_eq!(
+            result
+                .items
+                .iter()
+                .map(|item| item.path.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "readme.md",
+                "long/folder/readme.md",
+                "readme-folder/guide.md"
+            ]
+        );
+        assert!(result.items.iter().all(|item| !item.is_dir));
+        assert_eq!(result.items[0].name_indices, vec![0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn path_search_respects_result_and_index_caps() {
+        let index = (0..MAX_PATH_SEARCH_RESULTS + 5)
+            .map(|n| IndexedPath {
+                relative: format!("file{n}.txt"),
+                is_dir: false,
+            })
+            .collect::<Vec<_>>();
+        let result = search_index(&index, "file", usize::MAX);
+        assert_eq!(result.items.len(), MAX_PATH_SEARCH_RESULTS);
+        assert_eq!(result.total, MAX_PATH_SEARCH_RESULTS + 5);
+        assert!(result.truncated);
+
+        let root = Path::new("/workspace/large");
+        let error = validate_index_count(root, MAX_INDEXED_PATHS + 1).unwrap_err();
+        assert!(error.contains("MAX_INDEXED_PATHS"));
+        assert!(error.contains(&(MAX_INDEXED_PATHS + 1).to_string()));
+        assert!(error.contains("/workspace/large"));
+
+        let watch_error = validate_watched_dir_count(MAX_WATCHED_DIRS + 1).unwrap_err();
+        assert!(watch_error.contains("MAX_WATCHED_DIRS"));
+        assert!(watch_error.contains(&(MAX_WATCHED_DIRS + 1).to_string()));
+    }
+
+    #[test]
+    fn git_search_excludes_ignored_untracked_files() {
+        let root = tempdir().unwrap();
+        let initialized = houston_core::spawn::command("git")
+            .args(["init", "-q"])
+            .current_dir(root.path())
+            .status();
+        if !initialized.map(|status| status.success()).unwrap_or(false) {
+            return;
+        }
+        std::fs::write(root.path().join(".gitignore"), "ignored.txt\n").unwrap();
+        std::fs::write(root.path().join("visible.txt"), "visible").unwrap();
+        std::fs::write(root.path().join("ignored.txt"), "ignored").unwrap();
+
+        let (paths, _) = collect_git_paths(root.path()).unwrap().unwrap();
+        let names = paths
+            .iter()
+            .map(|entry| entry.relative.as_str())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"visible.txt"));
+        assert!(!names.contains(&"ignored.txt"));
+    }
+
+    #[test]
+    fn non_git_search_walk_skips_ignored_entry_names() {
+        let root = tempdir().unwrap();
+        std::fs::create_dir(root.path().join("src")).unwrap();
+        std::fs::create_dir(root.path().join("node_modules")).unwrap();
+        std::fs::write(root.path().join("src/main.rs"), "main").unwrap();
+        std::fs::write(root.path().join("node_modules/hidden.js"), "hidden").unwrap();
+
+        let (paths, _) = collect_walk_paths(root.path()).unwrap();
+        assert!(paths.iter().any(|entry| entry.relative == "src/main.rs"));
+        assert!(!paths
+            .iter()
+            .any(|entry| entry.relative.contains("node_modules")));
+    }
+
+    #[tokio::test]
+    async fn path_search_refuses_a_root_outside_allowed_roots() {
+        let base = tempdir().unwrap();
+        let allowed = base.path().join("allowed");
+        let outside = base.path().join("outside");
+        tokio::fs::create_dir_all(&allowed).await.unwrap();
+        tokio::fs::create_dir_all(&outside).await.unwrap();
+        let roots = vec![tokio::fs::canonicalize(&allowed).await.unwrap()];
+
+        let error = assert_within_allowed_roots(outside.to_str().unwrap(), &roots)
+            .await
+            .unwrap_err();
+        assert!(error.contains("outside every open workspace root"));
+    }
 
     fn mock_app(roots: Vec<PathBuf>) -> tauri::App<tauri::test::MockRuntime> {
         tauri::test::mock_builder()
