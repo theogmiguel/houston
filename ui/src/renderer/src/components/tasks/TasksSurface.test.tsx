@@ -2,9 +2,9 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import type { Task } from '../../houston/generated/Task'
-import { TasksTab } from './TasksTab'
+import { TasksSurface } from '../nav/TasksSurface'
 import { TaskStartCard } from './TaskExecution'
 import { createSessionsStore, SessionsStoreContext } from '../../sessionsStore'
 import type { SessionInfo } from '../../houston/client'
@@ -30,7 +30,7 @@ function state() {
   return {
     snapshot: { scope: 'all', tasks: [
       { ...TASK, acceptance_checked: 0, acceptance_total: 0 },
-      { ...TASK, id: 8, number: 8, key: 'HOU-8', workspace: '/other', acceptance_checked: 0, acceptance_total: 0 }
+      { ...TASK, id: 8, number: 8, key: 'HOU-8', title: 'Other task', workspace: '/other', acceptance_checked: 0, acceptance_total: 0 }
     ], counts: {} },
     detail: null, watched: null, access: 'off', refusal: null,
     watchTask: vi.fn(), openTask: vi.fn(), saveTask: mocks.saveTask, createTask: vi.fn(),
@@ -38,7 +38,7 @@ function state() {
   }
 }
 
-describe('global Tasks viewer', () => {
+describe('Tasks surface and drawer', () => {
   let container: HTMLDivElement
   let root: Root
   beforeEach(() => {
@@ -60,48 +60,18 @@ describe('global Tasks viewer', () => {
     else element.click()
   })
 
-  it('defaults to All, shows workspace chips, and remembers the viewer scope', () => {
-    act(() => root.render(<TasksTab client={null} workspace="/project" workspaces={WORKSPACES} />))
-    expect(mocks.useTasks.mock.calls.at(-1)?.slice(1)).toEqual(['/project', 'all'])
-    // The scope toggle replaces the workspace breadcrumb in the single header bar.
-    expect(container.querySelectorAll('[data-testid="tasks-new"]')).toHaveLength(1)
-    expect(container.querySelector('[data-testid="tasks-list"] > div:first-child [role="radio"]')).not.toBeNull()
-    expect([...container.querySelectorAll('[data-testid="task-workspace-chip"]')].map((item) => item.textContent))
-      .toEqual(['other', 'No workspace'])
-    // The chip is an extra grid cell; without the sixth column the right slot wraps onto a second line.
-    expect([...container.querySelectorAll('[data-testid="task-workspace-chip"]')]
-      .every((chip) => chip.closest('[data-task]')?.className.includes('_auto_auto]'))).toBe(true)
-    act(() => [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
-      .find((button) => button.textContent === 'This workspace')!.click())
-    expect(mocks.useTasks.mock.calls.at(-1)?.slice(1)).toEqual(['/project', '/project'])
-    expect(container.querySelector('[data-testid="task-workspace-chip"]')).toBeNull()
-    expect(localStorage.getItem('houston.tasks.scope:/project')).toBe('workspace')
-    act(() => root.unmount())
-    root = createRoot(container)
-    act(() => root.render(<TasksTab client={null} workspace="/project" workspaces={WORKSPACES} />))
-    expect(container.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toBe('This workspace')
-  })
-
-  it.each([
-    ['C:\\Programação\\Houston', 'Houston'],
-    ['C:\\Programação\\Houston\\', 'Houston'],
-    ['\\\\server\\projects\\Houston', 'Houston'],
-    ['/projects/Houston/', 'Houston']
-  ])('shows the folder name for workspace %s', (workspace, name) => {
+  it('shows the selected workspace queue and opens task details in its drawer', () => {
     const snapshot = state()
-    snapshot.snapshot.tasks[1].workspace = workspace
+    const openTask = vi.fn()
+    snapshot.openTask = openTask
     mocks.useTasks.mockReturnValue(snapshot)
-    act(() => root.render(<TasksTab client={null} workspace={workspace} />))
-    expect(container.querySelector('[data-testid="task-workspace-chip"]')?.textContent).toBe(name)
-  })
-
-  it('keeps scope controls usable when localStorage refuses writes', () => {
-    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
-    act(() => root.render(<TasksTab client={null} workspace="/project" />))
-    act(() => [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
-      .find((button) => button.textContent === 'This workspace')!.click())
-    expect(mocks.useTasks.mock.calls.at(-1)?.[2]).toBe('/project')
-    setItem.mockRestore()
+    act(() => root.render(<TasksSurface client={null} workspace="/project" workspaces={WORKSPACES} sessions={new Map()} now={1}
+      onStartRequested={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()} onOpenExternal={vi.fn()} />))
+    expect(mocks.useTasks.mock.calls.at(-1)?.slice(1)).toEqual(['/project', '/project'])
+    const title = screen.getByRole('button', { name: 'Global task' })
+    act(() => title.click())
+    expect(openTask).toHaveBeenCalledWith(7)
+    expect(screen.getByRole('status').textContent).toBe('Loading task…')
   })
 
   it('requires a workspace for an unassigned Start and passes the chosen path', () => {
@@ -117,25 +87,71 @@ describe('global Tasks viewer', () => {
     expect(onStart).toHaveBeenCalledWith(7, 'claude', '/other')
   })
 
-  it('allows the user to assign and clear the workspace regardless of agent access', () => {
-    const onSave = vi.fn()
-    const renderDetail = (workspace: string | null): void => act(() => root.render(<TaskDetail
-      detail={{ task: { ...TASK, workspace }, acceptance: [], comments: [], history: [], runs: [] }}
+  it('renders a multiline task description and a routed URL link in the drawer', async () => {
+    const description = Array.from({ length: 10 }, (_, index) => `Paragraph ${index + 1} with details.`).join('\n\n') + '\n\n[Issue 96](https://example.com/issues/96)'
+    act(() => root.render(<TaskDetail
+      detail={{ task: { ...TASK, description }, acceptance: [], comments: [], history: [], runs: [] }}
       access="off" refusal={null} now={1} parentOptions={[]} sessions={new Map()} startSettings={null}
-      workspaceOptions={WORKSPACES.map((item) => ({ value: item.path, label: item.name }))}
-      onBack={vi.fn()} onReload={vi.fn()} onSave={onSave} onCheck={vi.fn()} onComment={vi.fn()}
+      onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={vi.fn()} onComment={vi.fn()}
       onArchive={vi.fn()} onStart={vi.fn()} onRunControl={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()}
     />))
-    renderDetail(null)
-    click('[data-testid="task-workspace"]')
-    act(() => [...container.querySelectorAll<HTMLElement>('[role="option"]')]
-      .find((option) => option.textContent === 'Project')!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })))
-    expect(onSave).toHaveBeenLastCalledWith(7, 1, { workspace: '/project' })
-    renderDetail('/project')
-    click('[data-testid="task-workspace"]')
-    act(() => [...container.querySelectorAll<HTMLElement>('[role="option"]')]
-      .find((option) => option.textContent === 'No workspace')!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })))
-    expect(onSave).toHaveBeenLastCalledWith(7, 1, { workspace: null })
+    const descriptionNode = container.querySelector('[data-testid="task-description"]')
+    expect(descriptionNode).not.toBeNull()
+    await waitFor(() => expect(descriptionNode?.querySelectorAll('p').length).toBeGreaterThanOrEqual(10))
+    expect(descriptionNode?.querySelector('a[href="https://example.com/issues/96"][data-tr-link="external"]')).not.toBeNull()
+    expect([...descriptionNode!.querySelectorAll('div')].some((node) => node.className.includes('line-clamp-[8]'))).toBe(true)
+  })
+
+  it('clamps long descriptions to eight lines and expands and collapses them', () => {
+    const description = Array.from({ length: 12 }, (_, index) => `Line ${index + 1}`).join('\n')
+    act(() => root.render(<TaskDetail
+      detail={{ task: { ...TASK, description }, acceptance: [], comments: [], history: [], runs: [] }}
+      access="off" refusal={null} now={1} parentOptions={[]} sessions={new Map()} startSettings={null}
+      onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={vi.fn()} onComment={vi.fn()}
+      onArchive={vi.fn()} onStart={vi.fn()} onRunControl={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()}
+    />))
+    const descriptionNode = container.querySelector('[data-testid="task-description"]')!
+    const clamp = [...descriptionNode.querySelectorAll<HTMLElement>('div')].find((node) => node.className.includes('line-clamp-[8]'))
+    expect(clamp).toBeDefined()
+    expect(container.querySelector('[data-testid="task-description"] .relative')?.getAttribute('style')).toContain('12.4em')
+    act(() => screen.getByRole('button', { name: 'Show more' }).click())
+    expect(container.querySelector('[data-testid="task-description"] .relative')?.getAttribute('style')).toContain('1fr')
+    act(() => screen.getByRole('button', { name: 'Show less' }).click())
+    expect(container.querySelector('[data-testid="task-description"] .relative')?.getAttribute('style')).toContain('12.4em')
+  })
+
+  it('saves description edits on blur without changing status or starting execution', () => {
+    const onSave = vi.fn()
+    const onStart = vi.fn()
+    act(() => root.render(<TaskDetail
+      detail={{ task: { ...TASK, description: 'Original description' }, acceptance: [], comments: [], history: [], runs: [] }}
+      access="off" refusal={null} now={1} parentOptions={[]} sessions={new Map()} startSettings={null}
+      onBack={vi.fn()} onReload={vi.fn()} onSave={onSave} onCheck={vi.fn()} onComment={vi.fn()}
+      onArchive={vi.fn()} onStart={onStart} onRunControl={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()}
+    />))
+    act(() => screen.getByRole('button', { name: 'Edit description' }).click())
+    const editor = screen.getByRole('textbox', { name: 'Task description' })
+    fireEvent.change(editor, { target: { value: 'Updated description' } })
+    act(() => editor.blur())
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave).toHaveBeenCalledWith(7, 1, { description: 'Updated description' })
+    expect(onStart).not.toHaveBeenCalled()
+    expect(container.querySelector('[aria-label="Task progress"]')?.textContent).toContain('Backlog')
+  })
+
+  it('shows activity comments and submits a new comment from the drawer', () => {
+    const onComment = vi.fn()
+    act(() => root.render(<TaskDetail
+      detail={{ task: TASK, acceptance: [], comments: [{ id: 12, author: 'you', body: 'Existing note', created_at_ms: 2 }], history: [], runs: [] }}
+      access="off" refusal={null} now={3} parentOptions={[]} sessions={new Map()} startSettings={null}
+      onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={vi.fn()} onComment={onComment}
+      onArchive={vi.fn()} onStart={vi.fn()} onRunControl={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()}
+    />))
+    expect(screen.getByText('Existing note')).toBeTruthy()
+    const composer = screen.getByRole('textbox', { name: 'Leave a comment' })
+    fireEvent.change(composer, { target: { value: 'New note' } })
+    fireEvent.keyDown(composer, { key: 'Enter' })
+    expect(onComment).toHaveBeenCalledWith(7, 'New note')
   })
   it('reviews the live session after leaf events while task cards follow the task run stream', () => {
     const session: SessionInfo = { id: 1, agent: 'claude', state: 'running', status: 'working', codename: 'worker', title: 'worker', project_dir: '/project', cwd: '/project', hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, task: { task_id: 7, key: 'HOU-7', title: 'Global task', status: 'in_progress', run_id: 3, run_state: 'running' } }
@@ -156,7 +172,7 @@ describe('global Tasks viewer', () => {
     expect(container.querySelector('[data-testid="tasks-now"] [data-run-state]')?.textContent).toBe('In progress')
     renderCards({ ...run, state: 'waiting_for_input' })
     expect(container.querySelector('[data-testid="tasks-now"] [data-run-state]')?.textContent).toBe('Needs you')
-    expect(container.querySelector('[data-testid="task-execution"] [data-run-state]')?.textContent).toBe('Needs you')
+    expect(container.querySelector('[data-testid="task-execution"]')?.textContent).toContain('Needs you')
   })
 
   it('renders the drawer detail with the mock actions and toggleable acceptance rows', () => {
@@ -168,7 +184,7 @@ describe('global Tasks viewer', () => {
     act(() => root.render(<TaskDetail
       detail={{ task: { ...TASK, workspace: '/project', origin: { kind: 'harness_finding', workspace: '/project', key: 'bun-test', review_id: 1 } }, acceptance: [{ id: 5, position: 0, text: 'Run bun run test', checked_at_ms: null, checked_by: null }], comments: [], history: [], runs: [run] }}
       access="off" refusal={null} now={15 * 60_000} parentOptions={[]} sessions={new Map([[1, session]])} startSettings={null}
-      onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={onCheck} onComment={vi.fn()} onArchive={vi.fn()} onStart={vi.fn()} onRunControl={onRunControl} onOpenSession={onOpenSession} onReview={vi.fn()} presentation="drawer"
+      onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={onCheck} onComment={vi.fn()} onArchive={vi.fn()} onStart={vi.fn()} onRunControl={onRunControl} onOpenSession={onOpenSession} onReview={vi.fn()}
     />))
     expect(screen.getByRole('heading', { name: 'Global task' })).toBeTruthy()
     expect(screen.getByText('HOU-7')).toBeTruthy()

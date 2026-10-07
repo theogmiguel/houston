@@ -22,7 +22,7 @@ const GRID_KEY = gridStorageKey(WS, DEFAULT_GRID_ID)
 
 beforeAll(async () => {
   await import('./components/ChangesPane')
-  await import('./components/tasks/TasksTab')
+  await import('./components/nav/TasksSurface')
 })
 
 beforeEach(() => {

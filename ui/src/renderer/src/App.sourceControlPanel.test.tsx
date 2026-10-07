@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
+import { waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_GRID_ID, gridStorageKey, loadLayout, type LayoutNode } from './layout/tree'
 import { setScmWidth } from './scmPanel'
@@ -162,7 +163,7 @@ describe('source control panel — shell integration', () => {
     const enginesBefore = engineCounts().constructed
 
     press('g')
-    expect(panel()).toBeNull()
+    await waitFor(() => expect(panel()).toBeNull())
     expect(slotFor(1)).toBe(terminalBefore)
     expect(engineCounts().constructed).toBe(enginesBefore)
     expect(localStorage.getItem('tr-scm-open')).toBe('0')
@@ -205,7 +206,7 @@ describe('source control panel — shell integration', () => {
 
     await boot([1, 2])
 
-    expect(panel()).toBeNull()
+    await waitFor(() => expect(panel()).toBeNull())
     press('g')
     expect(panel()).not.toBeNull()
     await settlePanel()
@@ -286,7 +287,7 @@ describe('source control panel — shell integration', () => {
     act(() => {
       toggle().dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(panel()).toBeNull()
+    await waitFor(() => expect(panel()).toBeNull())
     act(() => {
       toggle().dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -371,7 +372,7 @@ describe('source control panel — shell integration', () => {
     expect(grid.getAttribute('aria-hidden')).toBeNull()
     expect(engineCounts()).toEqual(before)
     press('g')
-    expect(panel()).toBeNull()
+    await waitFor(() => expect(panel()).toBeNull())
     expect(engineCounts()).toEqual(before)
   })
 

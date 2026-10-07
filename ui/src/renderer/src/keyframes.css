@@ -42,6 +42,16 @@ html[data-motion-paused] .loop-anim {
   }
 }
 
+@keyframes inspector-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes inspector-slide-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
 @keyframes menu-out {
   to {
     opacity: 0;

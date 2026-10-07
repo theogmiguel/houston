@@ -647,4 +647,48 @@ describe('surface fit scheduling', () => {
       expect(raf).toHaveBeenCalledTimes(2)
     } finally { vi.unstubAllGlobals() }
   })
+
+  it('renders a fitted surface resize before the next animation frame', () => {
+    let nextFrame: FrameRequestCallback | undefined
+    const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      nextFrame = callback
+      return 1
+    })
+    vi.stubGlobal('window', { devicePixelRatio: 1, requestAnimationFrame })
+    try {
+      const canvas = {
+        width: 100,
+        height: 80,
+        getBoundingClientRect: () => ({ width: 160, height: 100 })
+      }
+      const surface = Object.create(GhosttyTerminalSurface.prototype)
+      const renderFrame = vi.fn()
+      Object.assign(surface, {
+        disposed: false,
+        paused: false,
+        frame: 0,
+        mount: { clientWidth: 160, clientHeight: 100 },
+        canvas,
+        context: { setTransform: vi.fn() },
+        metrics: { width: 8, height: 16 },
+        synchronizedOutput: { defer: vi.fn(() => false) },
+        canvasConfigured: true,
+        fitted: true,
+        resizeNotified: true,
+        cols: 1,
+        rows: 1,
+        core: { resize: vi.fn() },
+        notifyResize: vi.fn(),
+        renderFrame
+      })
+
+      surface.fit()
+
+      expect(renderFrame).toHaveBeenCalledTimes(1)
+      expect(requestAnimationFrame).not.toHaveBeenCalled()
+      expect(nextFrame).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

@@ -136,7 +136,7 @@ const buttonClasses = variants(
       'legacy-focus-lever': 'h-[var(--h-pill)] px-2.5 inline-flex items-center gap-1.5 border border-[var(--border)] rounded-[var(--tr-radius-button)] bg-[var(--surface)] text-[var(--text-secondary)] font-[inherit] [font-size:var(--tr-text-xs)] cursor-pointer transition-[background,border-color] hover:bg-[var(--hover-fill)] hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:1px]',
       'legacy-roster-footer': `btn ${BTN_GHOST} min-h-[var(--h-ctl)]`,
       'accent-soft': 'rounded-[var(--tr-radius-sm)] border border-[var(--accent)] bg-[var(--accent-muted)] px-[var(--tr-space-profile-action-inline)] py-[var(--tr-space-profile-action-block)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--accent)] hover:brightness-110 disabled:opacity-40 disabled:cursor-default',
-      'roster-open': 'h-auto p-0 border-0 bg-transparent gap-[7px] flex-1 min-w-0 min-h-[19px] text-left text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] whitespace-nowrap cursor-default [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px] [&_strong]:font-semibold [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap'
+      'roster-open': 'h-auto p-0 border-0 bg-transparent grid-cols-[16px_16px_minmax(0,1fr)_auto] gap-x-[var(--space-1)] [&>*:nth-child(-n+2)]:justify-self-center flex-1 min-w-0 min-h-[19px] text-left text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] whitespace-nowrap cursor-default [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px] [&_strong]:font-semibold [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap'
     },
     size: sizeClasses
   },
@@ -161,7 +161,7 @@ const BARE_ICON_VARIANTS: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['
 // Prefix rewrites for variants whose recipe drops part of the shared `btn inline-flex …` head.
 const HEAD_REWRITE: Partial<Record<ButtonVariant, [RegExp, string]>> = {
   'legacy-roster-footer': [/^btn inline-flex items-center (?:justify-center )?disabled:cursor-not-allowed /, ''],
-  'roster-open': [/^btn inline-flex /, 'flex '],
+  'roster-open': [/^btn inline-flex /, 'grid '],
   'legacy-danger-solid': [/^btn inline-flex items-center disabled:cursor-not-allowed /, 'btn ']
 }
 

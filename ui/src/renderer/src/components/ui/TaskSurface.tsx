@@ -321,17 +321,6 @@ export function TaskRecordBody({ drawer = false, className, ...props }: DivProps
   return <div {...props} className={cx('flex-[1_0_auto] min-h-0', drawer ? 'px-[var(--space-3)] pt-[var(--space-2)] pb-[var(--space-3)]' : 'pb-[var(--space-2-5)]', className)} />
 }
 
-export function TaskTitleField(props: InputHTMLAttributes<HTMLInputElement>): React.JSX.Element {
-  return (
-    <div className="px-[var(--task-record-inset)] pt-[var(--space-3)] pb-[var(--task-inline-offset-y)]">
-      <input
-        {...props}
-        className="block w-full p-0 border-0 bg-transparent text-[var(--text-primary)] text-[length:var(--task-detail-title-size)] font-[var(--task-detail-title-weight)] tracking-[var(--task-detail-title-tracking)] leading-[var(--task-detail-title-leading)]"
-      />
-    </div>
-  )
-}
-
 export function TaskMetaLine({ children }: { children: ReactNode }): React.JSX.Element {
   return (
     <Text as="div" size="meta" tone="muted" className="flex flex-wrap items-center gap-[var(--space-2)] px-[var(--task-record-inset)] pb-[var(--space-2)]">
@@ -382,15 +371,6 @@ export function TaskBody({ column = false, className, ...props }: DivProps & { c
   )
 }
 
-export function TaskDescriptionField(props: TextareaHTMLAttributes<HTMLTextAreaElement>): React.JSX.Element {
-  return (
-    <textarea
-      {...props}
-      className="block w-[calc(100%-2*var(--task-record-inset))] mx-[var(--task-record-inset)] p-0 border-0 bg-transparent text-[var(--text-secondary)] text-[length:var(--tr-text-row)] leading-[var(--task-copy-leading)] resize-none"
-    />
-  )
-}
-
 // Acceptance checklist rows.
 const CHECK_ROW_CLS =
   'flex items-start gap-[var(--space-2)] w-full border-0 bg-transparent text-left'
@@ -434,14 +414,6 @@ function CheckContent({ checked, mark, text, by }: TaskCheckRowProps): React.JSX
 
 export function TaskCheckRow(props: TaskCheckRowProps): React.JSX.Element {
   return <Text as="div" size="row" leading="check" tone="secondary" className={cx(CHECK_ROW_CLS, props.dense ? 'py-[var(--task-check-compact-padding-y)]' : 'py-[var(--task-check-padding-y)]')}><CheckContent {...props} /></Text>
-}
-
-export function TaskCheckButton({ checked, mark, text, by, dense, ...buttonProps }: TaskCheckRowProps & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'children'>): React.JSX.Element {
-  return (
-    <button type="button" {...buttonProps} className={cx(CHECK_ROW_CLS, 'text-[length:var(--tr-text-row)] leading-[var(--task-check-leading)] text-[var(--text-secondary)]', dense ? 'py-[var(--task-check-compact-padding-y)]' : 'py-[var(--task-check-padding-y)]')}>
-      <CheckContent checked={checked} mark={mark} text={text} by={by} />
-    </button>
-  )
 }
 
 // Banners.

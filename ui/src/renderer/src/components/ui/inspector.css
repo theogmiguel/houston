@@ -1,4 +1,7 @@
 .pane-inspector{container-type:inline-size;position:relative;display:flex;flex:none;flex-direction:column;min-width:0;min-height:0;background:var(--rail-bg);border-left:1px solid var(--divider)}
+.pane-inspector[data-state="entering"]{animation:inspector-slide-in var(--motion-panel-t) var(--motion-panel-ease) both}
+.pane-inspector[data-state="closing"]{animation:inspector-slide-out var(--motion-panel-t) var(--motion-panel-ease) both}
+@media (prefers-reduced-motion: reduce){.pane-inspector[data-state="entering"],.pane-inspector[data-state="closing"]{animation:none;transform:none}}
 .inspector-tabs{display:flex;align-items:center;gap:var(--space-1);height:30px;min-height:30px;padding:0 var(--space-2);border-bottom:1px solid var(--divider)}
 .inspector-tab{display:inline-flex;align-items:center;gap:var(--space-1);height:22px;padding:0 var(--space-2);border:0;border-radius:var(--tr-radius-sm);background:transparent;color:var(--text-secondary);font:inherit;font-size:var(--tr-text-small-size);white-space:nowrap}
 .inspector-tab:hover{background:var(--hover-fill);color:var(--text-primary)}

@@ -219,6 +219,7 @@ import {
   type ScmTab,
 } from "./scmPanel";
 import { SidePanelIntegration } from "./components/SidePanel";
+import { useExitAnimation } from "./components/ui/AnimOut";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
 import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideTasks } from "./sidePanel";
 import { terminalSelection } from "./pane/terminalSelection";
@@ -916,6 +917,7 @@ export function App(): React.JSX.Element {
   // never cost a browser/editor/terminal leaf; a workspace that had the pane
   // comes back with the panel already open.
   const [scmOpen, setScmOpen] = useState<boolean>(() => loadScmOpen());
+  const { mounted: sidePanelPresent, finishExit: finishSidePanelExit } = useExitAnimation(scmOpen, 240);
   const [scmTab, setScmTab] = useState<ScmTab>("changes");
   const scmWidth = useScmWidth();
   const { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspace, pickerTarget, sideReview, setSideReview } = useSidePanelState(selectedWs, activeId, sessions, scmOpen, setScmOpen, (workspace) => revealWorkspace(workspace));
@@ -3577,7 +3579,7 @@ export function App(): React.JSX.Element {
           {}
           <GridRegion
             data-custom={customChrome.dataCustom}
-            withSide={scmOpen}
+            withSide={sidePanelPresent}
           >
             <NoticeStack
               anchor="workspace-top"
@@ -3808,10 +3810,11 @@ export function App(): React.JSX.Element {
                 onLaunch={launchSessions}
                 onClose={() => { setComposer(null); setLaunchPreview(null) }}
               />
-              {(scmOpen || loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")) && (
-                <SidePanelIntegration
+              <SidePanelIntegration
                   focused={activeSurface === "side"}
-                  closed={!scmOpen}
+                  open={scmOpen}
+                  keepMounted={loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")}
+                  onExitAnimationEnd={finishSidePanelExit}
                   onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
                   sendToTerminalLabel={pickerTargetLabel}
                   selectedWorkspace={sideWorkspace}
@@ -3838,7 +3841,6 @@ export function App(): React.JSX.Element {
                   review={scmProps.review}
                   hiddenByOverlay={gridHidden}
                 />
-              )}
             </SidePanelRow>
 
             {settings || railView !== null ? (

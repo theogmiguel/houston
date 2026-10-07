@@ -14,7 +14,7 @@ export function useSidePanelState(selectedWorkspace: string, activeId: number | 
   useEffect(() => {
     const open = (event: Event): void => {
       const request = (event as CustomEvent<SideOpen>).detail;
-      if (request.kind === 'tasks' || request.kind === 'browser') return;
+      if (request.kind === 'browser') return;
       setSideRequest(request);
       setScmOpen(true);
       setActiveSurface("side");

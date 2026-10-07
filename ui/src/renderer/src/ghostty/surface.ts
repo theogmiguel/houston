@@ -893,15 +893,28 @@ export class GhosttyTerminalSurface {
     const ratio = window.devicePixelRatio || 1
     const pixelWidth = Math.max(1, Math.round(width * ratio))
     const pixelHeight = Math.max(1, Math.round(height * ratio))
+    const resized = this.canvas.width !== pixelWidth || this.canvas.height !== pixelHeight
     let shouldRender = false
-    if (
-      this.canvas.width !== pixelWidth ||
-      this.canvas.height !== pixelHeight ||
-      !this.canvasConfigured
-    ) {
+    if (resized || !this.canvasConfigured) {
+      let preservedBitmap: HTMLCanvasElement | null = null
+      if (resized && this.fitted && this.synchronizedOutput.defer()) {
+        const copy = document.createElement('canvas')
+        copy.width = this.canvas.width
+        copy.height = this.canvas.height
+        const copyContext = copy.getContext('2d')
+        if (copyContext) {
+          copyContext.drawImage(this.canvas, 0, 0)
+          preservedBitmap = copy
+        }
+      }
       if (this.canvas.width !== pixelWidth) this.canvas.width = pixelWidth
       if (this.canvas.height !== pixelHeight) this.canvas.height = pixelHeight
       this.context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0)
+      if (preservedBitmap) {
+        this.context.setTransform(1, 0, 0, 1, 0, 0)
+        this.context.drawImage(preservedBitmap, 0, 0)
+        this.context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0)
+      }
       this.canvasConfigured = true
       this.forceFullRender = true
       this.scrollbarDirty = true
@@ -919,7 +932,7 @@ export class GhosttyTerminalSurface {
       shouldRender = true
     }
     if (shouldRender) {
-      if (!this.fitted) this.renderFrame()
+      if (!this.fitted || resized) this.renderFrame()
       else this.requestRender()
     }
     this.fitted = true

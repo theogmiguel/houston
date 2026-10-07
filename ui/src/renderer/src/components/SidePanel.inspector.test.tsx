@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SidePanel } from './SidePanel'
 import type { SourceControlPanelProps } from './SourceControlPanel'
@@ -9,7 +9,7 @@ vi.mock('./SourceControlPanel', () => ({ SourceControlPanel: () => <div data-tes
 vi.mock('./FilesPane', () => ({ FilesPane: ({ workspaceDir, openFile }: { workspaceDir: string; openFile: { path: string } | null }) => <div data-testid="inspector-files">Files root: {workspaceDir}; file: {openFile?.path ?? 'none'}</div> }))
 vi.mock('./OverviewTab', () => ({ OverviewTab: () => <div data-testid="overview-content" /> }))
 
-afterEach(() => { cleanup(); localStorage.clear() })
+afterEach(() => { cleanup(); localStorage.clear(); vi.useRealTimers() })
 
 function session(id: number, title: string, spawned_by: number | null = null): SessionInfo {
   return { id, title, agent: 'claude', detected_agent: null, state: 'running', project_dir: `/repo/${id}`, worktree: null, spawned_by } as unknown as SessionInfo
@@ -76,6 +76,34 @@ describe('pane inspector focus', () => {
     view.rerender(<SidePanel {...props(sessions, 2)} />)
     expect(screen.queryByTestId('overview-content')).toBeNull()
     expect(screen.getByRole('tab', { name: 'Changes' }).getAttribute('aria-selected')).toBe('true')
+  })
+})
+
+describe('inspector presence and slide state', () => {
+  it('enters when opened after being closed, but does not animate on an open remount', () => {
+    const base = props(new Map([[1, session(1, 'session')]]), 1)
+    const view = render(<SidePanel {...base} open={false} />)
+    view.rerender(<SidePanel {...base} open />)
+    expect(screen.getByTestId('side-panel').getAttribute('data-state')).toBe('entering')
+
+    view.unmount()
+    render(<SidePanel {...base} open />)
+    expect(screen.getByTestId('side-panel').getAttribute('data-state')).toBe('open')
+  })
+
+  it('keeps the panel mounted while closing until its exit animation ends', () => {
+    vi.useFakeTimers()
+    const base = props(new Map([[1, session(1, 'session')]]), 1)
+    const view = render(<SidePanel {...base} open />)
+    view.rerender(<SidePanel {...base} open={false} />)
+    const panel = screen.getByTestId('side-panel')
+    expect(panel.getAttribute('data-state')).toBe('closing')
+    expect(panel.isConnected).toBe(true)
+
+    act(() => { vi.advanceTimersByTime(239) })
+    expect(screen.getByTestId('side-panel').isConnected).toBe(true)
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.queryByTestId('side-panel')).toBeNull()
   })
 })
 

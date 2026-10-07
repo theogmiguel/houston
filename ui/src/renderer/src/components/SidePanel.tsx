@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SessionInfo } from '../houston/client'
 import type { ChangesSummary } from './ChangesPane'
 import { clampScmWidth, defaultScmWidth, type ScmTab } from '../scmPanel'
@@ -7,6 +7,9 @@ import { requestReveal } from '../editor/bufferStore'
 import { SourceControlPanel, ScmResizeHandle, type SourceControlPanelProps } from './SourceControlPanel'
 import { InspectorBody, InspectorCard, InspectorHeader, InspectorSurface } from './ui/InspectorHeader'
 import { IconAgent } from './icons'
+import { useExitAnimation } from './ui/AnimOut'
+
+const INSPECTOR_EXIT_MS = 240 // Matches the panel motion token.
 
 const FilesPane = lazy(() => import('./FilesPane').then((module) => ({ default: module.FilesPane })))
 const OverviewTab = lazy(() => import('./OverviewTab').then((module) => ({ default: module.OverviewTab })))
@@ -16,7 +19,10 @@ type SidePanelProps = SourceControlPanelProps & {
   workspace: string
   workspaces?: { path: string; name: string }[]
   focused?: boolean
-  closed?: boolean
+  open?: boolean
+  // Keeps the closed panel mounted (hidden) so an open browser tab keeps its page.
+  keepMounted?: boolean
+  onExitAnimationEnd?: () => void
   onSendToTerminal?: (text: string) => void
   sendToTerminalLabel?: string
   sessions: ReadonlyMap<number, SessionInfo>
@@ -75,7 +81,20 @@ function PaneInspectorHeader({ props, focused, tab, summary, onTab }: {
   return <InspectorHeader tabs={tabs} active={tab} onSelect={onTab} icon={focused ? <IconAgent brand agent={focused.detected_agent ?? focused.agent} /> : null} title={focused?.title ?? 'No focused pane'} checkout={checkout} ahead={summary?.ahead} branch={summary?.branch} />
 }
 
-export function SidePanel(props: SidePanelProps): React.JSX.Element {
+export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
+  const open = props.open ?? true
+  const { mounted, finishExit } = useExitAnimation(open, INSPECTOR_EXIT_MS)
+  // Only a closed → open transition animates in; a remount that starts open does not.
+  const wasOpen = useRef<boolean | null>(null)
+  const [entering, setEntering] = useState(false)
+  useLayoutEffect(() => {
+    const opened = open && wasOpen.current === false
+    wasOpen.current = open
+    setEntering(opened)
+    if (!opened) return
+    const t = setTimeout(() => setEntering(false), INSPECTOR_EXIT_MS)
+    return () => clearTimeout(t)
+  }, [open])
   const tabStorageKey = `tr-inspector-tab:${props.workspace}`
   const [activeTab, setActiveTab] = useState<InspectorTab>(() => {
     const stored = localStorage.getItem(tabStorageKey)
@@ -134,7 +153,12 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element {
     props.onFocusGrid()
   }
 
-  return <InspectorSurface aria-label="Pane inspector" data-testid="side-panel" data-dir={props.dir ?? undefined} hiddenByOverlay={props.hiddenByOverlay} style={{ width: rendered, maxWidth: '100%', display: props.closed ? 'none' : undefined }} inert={props.hiddenByOverlay} onFocusCapture={props.onFocusSide} onPointerDownCapture={props.onFocusSide} onKeyDown={onKeyDown}>
+  if (!mounted && !props.keepMounted) return null
+  return <InspectorSurface aria-label="Pane inspector" data-testid="side-panel" data-state={!open ? 'closing' : entering ? 'entering' : 'open'} data-dir={props.dir ?? undefined} hiddenByOverlay={props.hiddenByOverlay} style={{ width: rendered, maxWidth: '100%', display: mounted ? undefined : 'none' }} inert={props.hiddenByOverlay || !open} onAnimationEnd={(event) => {
+    if (event.target !== event.currentTarget) return
+    if (open) setEntering(false)
+    else { finishExit(); props.onExitAnimationEnd?.() }
+  }} onFocusCapture={props.onFocusSide} onPointerDownCapture={props.onFocusSide} onKeyDown={onKeyDown}>
     <ScmResizeHandle requested={requested} rendered={rendered} hostWidth={hostWidth} onWidth={props.onWidth} onReset={props.onResetWidth} />
     <PaneInspectorHeader props={props} focused={focused} tab={activeTab} summary={summary} onTab={selectTab} />
     <InspectorBody><InspectorContent props={props} tab={activeTab} focused={focused} isOrchestrator={isOrchestrator} filesRoot={filesRoot} openFile={openFile} setTab={setActiveTab} setSummary={setSummary} /></InspectorBody>
@@ -145,7 +169,9 @@ export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: se
   selectedWorkspace: string
   workspaces?: { path: string; name: string }[]
   focused?: boolean
-  closed?: boolean
+  open?: boolean
+  keepMounted?: boolean
+  onExitAnimationEnd?: () => void
   onSendToTerminal?: (text: string) => void
   sendToTerminalLabel?: string
   activeId: number | null

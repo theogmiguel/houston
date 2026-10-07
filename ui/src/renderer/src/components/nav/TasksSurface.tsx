@@ -156,7 +156,6 @@ export function TasksSurface({
             onRunControl={tasks.runControl}
             onOpenSession={onOpenSession}
             onReview={onReview}
-            presentation="drawer"
           />
         ) : <div role="status">Loading task…</div>}
       </Drawer>

@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { Button } from './Button'
+import { IconAgent } from '../icons'
 import { Text } from './Text'
 import { BTN_ICO } from './buttonChrome'
 
@@ -74,11 +75,11 @@ export function RosterGroupToggle({ children, ...props }: { children: ReactNode 
   )
 }
 
-export function RosterRow({ selected, settled, children }: { selected: boolean; settled: boolean; children: ReactNode }): React.JSX.Element {
+export function RosterRow({ selected, settled, onContextMenu, children }: { selected: boolean; settled: boolean; onContextMenu?: React.MouseEventHandler<HTMLDivElement>; children: ReactNode }): React.JSX.Element {
   const hook = `children-row ${settled ? 'settled' : ''} ${selected ? 'selected' : ''}`
   const fill = selected ? 'bg-[var(--selected-fill)] hover:bg-[var(--selected-fill)]' : 'hover:bg-[var(--hover-fill)]'
   return (
-    <div className={`${hook} relative flex flex-wrap items-center gap-[var(--space-zero-half)] mx-[var(--space-1-5)] px-2 py-1.5 rounded-[var(--tr-radius-sm)] ${fill} ${settled ? '[&_strong]:text-[var(--text-secondary)]' : ''}`}>
+    <div onContextMenu={onContextMenu} className={`${hook} relative flex flex-wrap items-center gap-[var(--space-zero-half)] mx-[var(--space-1-5)] px-2 py-1.5 rounded-[var(--tr-radius-sm)] ${fill} ${settled ? '[&_strong]:text-[var(--text-secondary)]' : ''}`}>
       {children}
     </div>
   )
@@ -263,7 +264,7 @@ export function RosterSurfaceSpecimen(): React.JSX.Element {
               <span>1</span>
             </RosterGroupHead>
             <RosterRow selected={false} settled={false}>
-              <Button variant="roster-open"><RosterStatus state={undefined}><EndedStatusDot /></RosterStatus><strong>backend</strong></Button>
+              <Button variant="roster-open"><RosterStatus state={undefined}><EndedStatusDot /></RosterStatus><IconAgent brand agent="codex" className="w-3.5 h-3.5 flex-none" /><strong>backend</strong></Button>
               <RosterSlot>
                 <RosterState>4m</RosterState>
                 <RosterActions>
@@ -273,7 +274,7 @@ export function RosterSurfaceSpecimen(): React.JSX.Element {
               <RosterDetail><span className="truncate">backend child</span></RosterDetail>
             </RosterRow>
             <RosterRow selected settled>
-              <Button variant="roster-open"><strong>docs</strong></Button>
+              <Button variant="roster-open"><EndedStatusDot /><IconAgent brand agent="claude" className="w-3.5 h-3.5 flex-none" /><strong>docs</strong></Button>
               <RosterCount>pane 7</RosterCount>
             </RosterRow>
           </RosterList>
