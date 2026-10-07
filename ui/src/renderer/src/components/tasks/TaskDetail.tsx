@@ -77,6 +77,7 @@ import {
   TaskDrawerOrigin,
   TaskIconButton,
   Card,
+  Inline,
   InlineLink,
   Text,
   TaskMetaLine,
@@ -314,7 +315,7 @@ function TrackerConflict({ client, taskId, link, field, base, local, remote }: {
   return <Card tone="inset" padding="sm" className="grid gap-[var(--space-1)]">
     <Text weight="semibold">{field} differs between Houston and the tracker</Text>
     <Text>Previous shared value: {base || '—'}</Text><Text>Houston value: {local || '—'}</Text><Text>Tracker value: {remote || '—'}</Text>
-    <div className="flex flex-wrap gap-[var(--space-2)]"><Button variant="secondary" onClick={() => resolve({ kind: 'local' })}>Keep Houston value</Button><Button variant="secondary" onClick={() => resolve({ kind: 'remote' })}>Use tracker value</Button></div>
+    <Inline wrap gap="small"><Button variant="secondary" onClick={() => resolve({ kind: 'local' })}>Keep Houston value</Button><Button variant="secondary" onClick={() => resolve({ kind: 'remote' })}>Use tracker value</Button></Inline>
     <div className="flex gap-[var(--space-2)]"><TextInput aria-label={`Custom ${field} value`} value={custom} onChange={(event) => setCustom(event.target.value)} /><Button variant="secondary" disabled={!custom.trim()} onClick={() => resolve({ kind: 'custom', value: custom })}>Use custom value</Button></div>
   </Card>
 }

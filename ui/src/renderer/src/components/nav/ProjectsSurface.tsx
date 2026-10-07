@@ -3,7 +3,7 @@ import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { HoustonClient } from '../../houston/client'
 import { sendTaskWire, type TaskDomain, type TaskProject, type TaskTrackerLink, linkIsPullRequest } from '../../houston/taskDomain'
-import { Button, Card, Field, InlineLink, Notice, PageFrame, PageHeader, SectionHead, Select, Text, TextArea, TextInput } from '../ui'
+import { BulletList, Button, Card, Field, Inline, InlineLink, Notice, PageFrame, PageHeader, SectionHead, Select, Stack, Text, TextArea, TextInput } from '../ui'
 
 export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }: {
   client: HoustonClient | null
@@ -104,7 +104,7 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
     <PageHeader heading="Projects" description="Track deliveries, slice tasks, readiness and tracker sync for this workspace." actions={<Select aria-label="Workspace" data-testid="projects-workspace" value={scope} options={workspaces.map((item) => ({ value: item.path, label: item.name }))} onChange={setScope} />} />
     {error && <Notice tone="danger">{error}</Notice>}
     {projects === null || tasks === null ? <Text role="status" aria-busy="true" tone="muted">Loading workspace projects…</Text> : <div className="grid min-h-0 gap-[var(--space-4)] lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,2fr)]">
-      <section className="grid content-start gap-[var(--space-2)]" aria-label="Projects">
+      <Stack as="section" gap={2} aria-label="Projects">
         <SectionHead title="Projects" count={projects.filter((item) => item.archived_at_ms == null).length} />
         <Card>
           {projects.filter((item) => item.archived_at_ms == null).map((item) => <Card.Row key={item.id} density="compact" heading={<Button variant="text" size="sm" aria-current={item.id === selectedProjectId ? 'page' : undefined} onClick={() => { setSelectedProjectId(item.id); setSelectedTaskId(null) }}>{item.name}</Button>} meta={`Project ${item.id}`} />)}
@@ -112,8 +112,8 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
           {projects.every((item) => item.archived_at_ms != null) && <Card.Content><Text tone="muted">No active projects yet.</Text></Card.Content>}
         </Card>
         <Button variant="secondary" onClick={createProject}>New project</Button>
-      </section>
-      <section className="grid content-start gap-[var(--space-4)] min-w-0">
+      </Stack>
+      <Stack as="section" gap={4} className="min-w-0">
         {!project ? <Text as="p" role="status" tone="muted">Choose a project or create one to organize this workspace’s tasks.</Text> : <>
           <ProjectEditor project={project} busy={busy} onSave={saveProject} onArchive={() => sendTaskWire(client, { type: 'task_project_archive', id: project.id, archived: true, expected_revision: project.revision })} />
           <Text role="status" size="small" tone="muted">{projectSyncLabel}</Text>
@@ -131,7 +131,7 @@ export function ProjectsSurface({ client, workspace, workspaces, onOpenSession }
           </section>
           {selectedTask && selectedDomain && <TaskDomainEditor client={client} task={selectedTask} domain={selectedDomain} projects={projects.filter((item) => item.archived_at_ms == null)} tasks={tasks} domains={domains} links={links[selectedTask.id] ?? []} onSave={saveDomain} onRefreshLinks={() => sendTaskWire(client, { type: 'task_tracker_links_get', task_id: selectedTask.id })} onOpenSession={onOpenSession} onError={setError} />}
         </>}
-      </section>
+      </Stack>
     </div>}
   </PageFrame>
 }
@@ -153,7 +153,7 @@ function ProjectEditor({ project, busy, onSave, onArchive }: { project: TaskProj
     {project.project_external_id && <Text size="small" tone="muted">Tracker project ID: {project.project_external_id}</Text>}
     {project.tracker_description && <Notice tone="info">Imported tracker context — unverified. {project.tracker_description}</Notice>}
     <Field label="Local corrections and decisions"><TextArea aria-label="Local corrections and decisions" rows={4} value={decisions} onChange={(event) => setDecisions(event.target.value)} placeholder="One decision per line" /></Field>
-    <div className="flex flex-wrap gap-[var(--space-2)]"><Button variant="primary" disabled={busy || name.trim() === ''} onClick={() => onSave({ name, external_url: url || null, tracker_description: project.tracker_description, local_decisions: decisions.split('\n').map((line) => line.trim()).filter(Boolean) })}>Save project</Button><Button variant="ghost" onClick={onArchive}>Archive project</Button></div>
+    <Inline wrap gap="small"><Button variant="primary" disabled={busy || name.trim() === ''} onClick={() => onSave({ name, external_url: url || null, tracker_description: project.tracker_description, local_decisions: decisions.split('\n').map((line) => line.trim()).filter(Boolean) })}>Save project</Button><Button variant="ghost" onClick={onArchive}>Archive project</Button></Inline>
   </section>
 }
 
@@ -176,14 +176,14 @@ function TaskDomainEditor({ client, task, domain, projects, tasks, domains, link
   const plan = domain.plan
   const projectOptions = [{ value: '', label: 'No project' }, ...projects.map((item) => ({ value: String(item.id), label: item.name }))]
   const deliveryOptions = tasks.filter((item) => item.id !== task.id && item.workspace === task.workspace && item.status !== 'done' && domains[item.id]?.kind === 'delivery' && domains[item.id]?.project_id === domain.project_id).map((item) => ({ value: String(item.id), label: `${item.key} — ${item.title}` }))
-  return <Card className="grid gap-[var(--space-3)] p-[var(--space-3)]" aria-label="Task workflow">
+  return <Card padding="md" className="grid gap-[var(--space-3)]" aria-label="Task workflow">
     <SectionHead title={`${task.key} workflow`} />
-    <div className="flex flex-wrap items-center gap-[var(--space-2)]">
+    <Inline wrap gap="small">
       <Select aria-label="Task kind" value={domain.kind} options={[{ value: 'delivery', label: 'Delivery' }, { value: 'slice', label: 'Slice task' }]} onChange={(value) => onSave({ kind: value as 'delivery' | 'slice' })} />
       <Select aria-label="Project" value={String(domain.project_id ?? '')} options={projectOptions} onChange={(value) => onSave({ project_id: value ? Number(value) : null })} />
       <Select aria-label="Agent" value={agent} options={(['claude', 'codex', 'opencode', 'cursor', 'grok'] as AgentKind[]).map((value) => ({ value, label: value }))} onChange={(value) => setAgent(value as AgentKind)} />
       {domain.kind === 'slice' && <Select aria-label="Delivery" value={task.parent_id == null ? '' : String(task.parent_id)} options={[{ value: '', label: 'No delivery' }, ...deliveryOptions]} onChange={(value) => client.taskSave(task.workspace, task.id, task.revision, { parent_id: value ? Number(value) : null })} />}
-    </div>
+    </Inline>
     <div className="grid gap-[var(--space-2)]">
       <Field label="Blocked by task IDs"><TextInput aria-label="Blocked by task IDs" value={blockers} onChange={(event) => setBlockers(event.target.value)} placeholder="e.g. 12, 18" /><Button variant="secondary" onClick={() => {
         const ids = blockers.split(',').map((value) => value.trim()).filter(Boolean).map(Number)
@@ -193,7 +193,7 @@ function TaskDomainEditor({ client, task, domain, projects, tasks, domains, link
     </div>
     <div aria-live="polite" className="grid gap-[var(--space-1)]">
       <Text weight="semibold" tone={domain.readiness.ready ? 'success' : 'warning'}>{domain.readiness.ready ? 'Ready to start' : 'Not ready'}</Text>
-      {!domain.readiness.ready && <ul className="list-disc pl-[var(--space-5)]">{domain.readiness.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+      {!domain.readiness.ready && <BulletList items={domain.readiness.reasons} />}
       <Text size="small" tone="muted">{domain.readiness.acceptance_verifiable} of {domain.readiness.acceptance_total} acceptance items are verifiable.</Text>
       {!domain.readiness.ready && manualStart && <Button variant="danger" onClick={() => sendTaskWire(client, { type: 'task_start', id: task.id, agent, workspace: task.workspace, override_readiness: true })}>Start anyway</Button>}
       {domain.readiness.ready && manualStart && <Button variant="primary" onClick={() => sendTaskWire(client, { type: 'task_start', id: task.id, agent, workspace: task.workspace, override_readiness: false })}>Start task</Button>}
@@ -202,7 +202,7 @@ function TaskDomainEditor({ client, task, domain, projects, tasks, domains, link
     <Button variant="secondary" disabled={domain.planning_session_id != null} onClick={() => sendTaskWire(client, { type: 'task_plan_start', id: task.id, expected_revision: task.revision, agent })}>{domain.planning_session_id == null ? 'Generate plan' : 'Planning in progress'}</Button>
     {plan && <section className="grid gap-[var(--space-2)]" aria-label="Plan proposal">
       <SectionHead title="Plan proposal" />
-      <Text as="p" className="whitespace-pre-wrap">{plan.proposal.description}</Text>
+      <Text as="p" preserveWhitespace>{plan.proposal.description}</Text>
       <PlanList heading="Acceptance" items={plan.proposal.acceptance} />
       <PlanList heading="Pointers" items={plan.proposal.pointers} />
       <PlanList heading="Out of scope" items={plan.proposal.out_of_scope} />
@@ -210,7 +210,7 @@ function TaskDomainEditor({ client, task, domain, projects, tasks, domains, link
       <Button variant="secondary" disabled={domain.readiness.unresolved_questions > 0 || domain.readiness.unresolved_tracker_conflicts > 0} onClick={() => sendTaskWire(client, { type: 'task_plan_approve', id: task.id, expected_revision: task.revision, plan_revision: plan.revision })}>{plan.approved_revision === task.revision ? 'Approved for this task revision' : 'Approve this plan revision'}</Button>
       {plan.approved_revision != null && plan.approved_revision !== task.revision && <Notice tone="warn">This approval is stale. Review and approve the current task revision.</Notice>}
     </section>}
-    <Card className="grid gap-[var(--space-2)] p-[var(--space-2-5)]" aria-label="Tracker links">
+    <Card padding="sm" className="grid gap-[var(--space-2)]" aria-label="Tracker links">
       <SectionHead title="Tracker links" />
       <Button variant="secondary" onClick={onRefreshLinks}>Refresh links</Button>
       {links.length === 0 ? <Text tone="muted">No tracker links were returned for this task.</Text> : links.map((link) => <TrackerLinkRow key={`${link.provider}:${link.external_id}`} link={link} customValue={customValues[`${link.provider}:${link.external_id}`] ?? ''} onCustom={(value) => setCustomValues((current) => ({ ...current, [`${link.provider}:${link.external_id}`]: value }))} onResolve={(field, resolution) => sendTaskWire(client, { type: 'task_tracker_conflict_resolve', task_id: task.id, provider: link.provider, external_id: link.external_id, field, expected_revision: link.snapshot.revision, resolution })} />)}
@@ -220,19 +220,19 @@ function TaskDomainEditor({ client, task, domain, projects, tasks, domains, link
 
 function PlanList({ heading, items }: { heading: string; items: string[] }): React.JSX.Element | null {
   if (!items.length) return null
-  return <div><Text weight="semibold">{heading}</Text><ul className="list-disc pl-[var(--space-5)]">{items.map((item) => <li key={item}>{item}</li>)}</ul></div>
+  return <div><Text weight="semibold">{heading}</Text><BulletList items={items} /></div>
 }
 
 function TrackerLinkRow({ link, customValue, onCustom, onResolve }: { link: TaskTrackerLink; customValue: string; onCustom: (value: string) => void; onResolve: (field: string, resolution: { kind: 'local' | 'remote' } | { kind: 'custom'; value: string }) => void }): React.JSX.Element {
   const state = link.sync_state.state === 'error' ? `Error: ${link.sync_state.message}` : link.sync_state.state === 'diverged' ? 'Diverged' : link.sync_state.state === 'pending' ? 'Sync pending' : 'In sync'
   const sourceLabel = linkIsPullRequest(link) ? 'Pull request' : 'Source link'
   return <Card padding="sm" className="grid gap-[var(--space-2)]">
-    <div className="flex flex-wrap items-center gap-[var(--space-2)]"><InlineLink href={link.url}>{sourceLabel} · {link.external_id}</InlineLink><Text size="small" tone={link.sync_state.state === 'error' ? 'danger' : 'muted'}>{state}</Text></div>
+    <Inline wrap gap="small"><InlineLink href={link.url}>{sourceLabel} · {link.external_id}</InlineLink><Text size="small" tone={link.sync_state.state === 'error' ? 'danger' : 'muted'}>{state}</Text></Inline>
     {link.snapshot.project && <Notice tone="info">Imported project context — unverified. {link.snapshot.project.title}: {link.snapshot.project.description} <InlineLink href={link.snapshot.project.url}>Open project</InlineLink></Notice>}
     {!link.snapshot.project && link.snapshot.project_external_id && <Text size="small" tone="muted">External project ID {link.snapshot.project_external_id} has not been matched to a local project.</Text>}
     {link.snapshot.conflicts.map((conflict) => <Card key={conflict.field} tone="inset" padding="sm" className="grid gap-[var(--space-1)]">
       <Text weight="semibold">{conflict.field} conflict</Text><Text>Houston: {conflict.local || '—'}</Text><Text>Tracker: {conflict.remote || '—'}</Text>
-      <div className="flex flex-wrap gap-[var(--space-2)]"><Button variant="secondary" onClick={() => onResolve(conflict.field, { kind: 'local' })}>Keep Houston value</Button><Button variant="secondary" onClick={() => onResolve(conflict.field, { kind: 'remote' })}>Use tracker value</Button></div>
+      <Inline wrap gap="small"><Button variant="secondary" onClick={() => onResolve(conflict.field, { kind: 'local' })}>Keep Houston value</Button><Button variant="secondary" onClick={() => onResolve(conflict.field, { kind: 'remote' })}>Use tracker value</Button></Inline>
       <Field label="Custom resolution"><TextInput aria-label={`Custom ${conflict.field} value`} value={customValue} onChange={(event) => onCustom(event.target.value)} /><Button variant="secondary" disabled={!customValue.trim()} onClick={() => onResolve(conflict.field, { kind: 'custom', value: customValue })}>Use custom value</Button></Field>
     </Card>)}
   </Card>

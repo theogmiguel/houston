@@ -53,7 +53,7 @@ import {
   type IconComponent
 } from './icons'
 import { usePaneFocusTier } from '../windowFocus'
-import { Button, Card, Notice, PaneHeader, Text } from './ui'
+import { Button, Card, Inline, Inset, Notice, PaneHeader, Text } from './ui'
 import {
   PaneBranchChip,
   PaneEngineGlyph,
@@ -494,8 +494,8 @@ function SessionPaneImpl({
       {(lifecycleInfo.sleep_notice || info.restore_deferred) && <PaneNotice data-testid="session-recovery-notice">
         {lifecycleInfo.sleep_notice ?? `Session restore deferred: ${restoreReasonLabel(info.restore_deferred)}`}
       </PaneNotice>}
-      {lifecycleError && <Notice tone="danger" className="mx-[var(--space-2)] flex-none">{lifecycleError}</Notice>}
-      {memoryResult && <div role="status"><Notice tone="info" className="mx-[var(--space-2)] flex-none">
+      {lifecycleError && <Notice tone="danger" inset="compact-inline" className="flex-none">{lifecycleError}</Notice>}
+      {memoryResult && <div role="status"><Notice tone="info" inset="compact-inline" className="flex-none">
         {memoryResult.bytes == null ? memoryResult.reason ?? 'Memory measurement is unavailable.' : `Process memory (PSS): ${formatMemory(memoryResult.bytes)}`}
         {memoryResult.measuredAt != null && <span> · measured {new Date(memoryResult.measuredAt).toLocaleTimeString()}</span>}
       </Notice></div>}
@@ -657,16 +657,16 @@ export const SessionPane = memo(SessionPaneImpl)
 
 function SleepingSessionPlaceholder({ info, onWake, onFresh }: { info: SessionInfo; onWake: () => void; onFresh: () => void }): React.JSX.Element {
   const sleptDuration = info.slept_at_ms == null ? null : Math.max(0, Date.now() - info.slept_at_ms)
-  return <section aria-label="Sleeping session" className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-[var(--space-5)]">
-    <Card padding="md" className="grid w-full max-w-[70ch] gap-[var(--space-2)] text-center">
+  return <section aria-label="Sleeping session" className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
+    <Inset space="screen" className="w-full"><Card padding="md" layout="sleeping-session">
       <Text as="h2" size="heading" weight="heading" tone="primary" flush>Session sleeping</Text>
       <Text tone="secondary" flush>Wake this conversation explicitly when you want to continue. Focusing this pane will not start it.</Text>
       <Text size="small" tone="muted" flush>Time asleep: {sleptDuration == null ? 'unavailable' : formatElapsed(sleptDuration)}. Expiration: unknown.</Text>
       {info.context && <Text size="small" tone="muted" flush>Context used: {info.context.used_percent ?? 'Unknown'}%</Text>}
-      {info.latest_prompt && <div className="grid gap-[var(--space-1)] text-left"><Text size="small" tone="muted">Last prompt</Text><Card padding="sm" className="max-h-[16rem] overflow-auto whitespace-pre-wrap text-left">{info.latest_prompt}</Card></div>}
-      {info.last_agent_message && <div className="grid gap-[var(--space-1)] text-left"><Text size="small" tone="muted">Last agent message</Text><Card padding="sm" className="max-h-[16rem] overflow-auto whitespace-pre-wrap text-left">{info.last_agent_message}</Card></div>}
-      <div className="flex flex-wrap justify-center gap-[var(--space-2)]"><Button variant="primary" onClick={onWake}>Wake session</Button><Button variant="secondary" onClick={onFresh}>Start fresh session</Button></div>
-    </Card>
+      {info.latest_prompt && <div className="grid gap-[var(--space-1)]"><Text size="small" tone="muted">Last prompt</Text><Card padding="sm" layout="scrolling-copy">{info.latest_prompt}</Card></div>}
+      {info.last_agent_message && <div className="grid gap-[var(--space-1)]"><Text size="small" tone="muted">Last agent message</Text><Card padding="sm" layout="scrolling-copy">{info.last_agent_message}</Card></div>}
+      <Inline wrap className="justify-center"><Button variant="primary" onClick={onWake}>Wake session</Button><Button variant="secondary" onClick={onFresh}>Start fresh session</Button></Inline>
+    </Card></Inset>
   </section>
 }
 

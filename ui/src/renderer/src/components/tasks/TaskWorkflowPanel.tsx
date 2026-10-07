@@ -4,7 +4,7 @@ import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { HoustonClient } from '../../houston/client'
 import type { TaskDetailData } from '../../houston/useTasks'
 import { sendTaskWire, type TaskDomain, type TaskProject } from '../../houston/taskDomain'
-import { Button, Card, Field, Notice, SectionHead, Select, Text, TextInput } from '../ui'
+import { BulletList, Button, Card, Field, Inline, Notice, SectionHead, Select, Text, TextInput } from '../ui'
 
 export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartRequested }: {
   client: HoustonClient
@@ -67,15 +67,15 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
   const plan = domain.plan
   const deliveryOptions = workspaceTasks.filter((item) => item.id !== task.id && item.workspace === task.workspace && item.status !== 'done' && domains[item.id]?.kind === 'delivery' && domains[item.id]?.project_id === domain.project_id).map((item) => ({ value: String(item.id), label: `${item.key} — ${item.title}` }))
 
-  return <Card className="grid gap-[var(--space-2)] p-[var(--space-2-5)]" aria-label="Project workflow">
+  return <Card padding="sm" className="grid gap-[var(--space-2)]" aria-label="Project workflow">
     <SectionHead title="Project workflow" />
     {error && <Notice tone="danger">{error}</Notice>}
-    <div className="flex flex-wrap gap-[var(--space-2)]">
+    <Inline wrap gap="small">
       <Select aria-label="Task kind" value={domain.kind} options={[{ value: 'delivery', label: 'Delivery' }, { value: 'slice', label: 'Slice task' }]} onChange={(value) => save({ kind: value as 'delivery' | 'slice' })} />
       <Select aria-label="Project" value={domain.project_id == null ? '' : String(domain.project_id)} options={[{ value: '', label: 'No project' }, ...projects.filter((project) => project.archived_at_ms == null).map((project) => ({ value: String(project.id), label: project.name }))]} onChange={(value) => save({ project_id: value ? Number(value) : null })} />
       {domain.kind === 'slice' && <Select aria-label="Delivery" value={task.parent_id == null ? '' : String(task.parent_id)} options={[{ value: '', label: 'No delivery' }, ...deliveryOptions]} onChange={(value) => client.taskSave(task.workspace, task.id, task.revision, { parent_id: value ? Number(value) : null })} />}
       <Select aria-label="Planning and implementation agent" value={agent} options={(['claude', 'codex', 'opencode', 'cursor', 'grok'] as AgentKind[]).map((value) => ({ value, label: value }))} onChange={(value) => setAgent(value as AgentKind)} />
-    </div>
+    </Inline>
     <Field label="Blocked by task IDs"><TextInput aria-label="Blocked by task IDs" value={blockers} onChange={(event) => setBlockers(event.target.value)} placeholder="Comma-separated task IDs" /><Button variant="secondary" onClick={() => {
       const ids = blockers.split(',').map((value) => value.trim()).filter(Boolean).map(Number)
       if (ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) { setError('Enter positive whole-number task IDs separated by commas.'); return }
@@ -84,15 +84,15 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
     }}>Save blockers</Button></Field>
     <div aria-live="polite" className="grid gap-[var(--space-1)]">
       <Text weight="semibold" tone={domain.readiness.ready ? 'success' : 'warning'}>{domain.readiness.ready ? 'Ready to start' : 'Not ready'}</Text>
-      {!domain.readiness.ready && <ul className="list-disc pl-[var(--space-5)]">{domain.readiness.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+      {!domain.readiness.ready && <BulletList items={domain.readiness.reasons} />}
       <Text size="small" tone="muted">{domain.readiness.acceptance_verifiable} of {domain.readiness.acceptance_total} acceptance items are verifiable.</Text>
       {!domain.readiness.ready && manualStart && <Button variant="danger" onClick={startAnyway}>Start anyway</Button>}
     </div>
     <Button variant="secondary" disabled={domain.planning_session_id != null} onClick={() => sendTaskWire(client, { type: 'task_plan_start', id: task.id, expected_revision: task.revision, agent })}>{domain.planning_session_id == null ? 'Generate plan' : 'Planning in progress'}</Button>
     {domain.planning_session_id != null && <Button variant="secondary" onClick={() => onOpenSession(domain.planning_session_id!)}>Open planning session</Button>}
-    {plan && <Card className="grid gap-[var(--space-2)] p-[var(--space-2)]" aria-label="Plan proposal">
+    {plan && <Card padding="sm" className="grid gap-[var(--space-2)]" aria-label="Plan proposal">
       <SectionHead title="Plan proposal" />
-      <Text as="p" className="whitespace-pre-wrap">{plan.proposal.description}</Text>
+      <Text as="p" preserveWhitespace>{plan.proposal.description}</Text>
       <ProposalList heading="Acceptance" items={plan.proposal.acceptance} />
       <ProposalList heading="Pointers" items={plan.proposal.pointers} />
       <ProposalList heading="Out of scope" items={plan.proposal.out_of_scope} />
@@ -104,5 +104,5 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
 }
 
 function ProposalList({ heading, items }: { heading: string; items: string[] }): React.JSX.Element | null {
-  return items.length ? <div><Text weight="semibold">{heading}</Text><ul className="list-disc pl-[var(--space-5)]">{items.map((item) => <li key={item}>{item}</li>)}</ul></div> : null
+  return items.length ? <div><Text weight="semibold">{heading}</Text><BulletList items={items} /></div> : null
 }

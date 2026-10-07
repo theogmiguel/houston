@@ -14,7 +14,7 @@ export function sendTaskWire(client: HoustonClient, message: ClientMsg): void {
 export function isPullRequestUrl(url: string): boolean {
   try {
     const parsed = new URL(url)
-    return parsed.protocol === 'https:' && /\/pull\/\d+(?:\/|$)/.test(parsed.pathname)
+    return parsed.protocol === 'https:' && parsed.hostname === 'github.com' && parsed.port === '' && parsed.username === '' && parsed.password === '' && /^\/[^/]+\/[^/]+\/pull\/[1-9]\d*(?:\/|$)/.test(parsed.pathname)
   } catch {
     return false
   }

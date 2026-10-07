@@ -4,7 +4,13 @@ import { isPullRequestUrl, linkIsPullRequest, type TaskTrackerLink } from './tas
 describe('task domain UI rules', () => {
   it('recognizes only validated HTTPS pull request URLs', () => {
     expect(isPullRequestUrl('https://github.com/acme/repo/pull/42')).toBe(true)
+    expect(isPullRequestUrl('https://github.com/acme/repo/pull/42/files')).toBe(true)
     expect(isPullRequestUrl('https://github.com/acme/repo/issues/42')).toBe(false)
+    expect(isPullRequestUrl('https://github.com/acme/repo/pull/0')).toBe(false)
+    expect(isPullRequestUrl('https://github.com.evil.test/acme/repo/pull/42')).toBe(false)
+    expect(isPullRequestUrl('https://github.enterprise.test/acme/repo/pull/42')).toBe(false)
+    expect(isPullRequestUrl('https://github.com/acme/nested/repo/pull/42')).toBe(false)
+    expect(isPullRequestUrl('https://user@github.com/acme/repo/pull/42')).toBe(false)
     expect(isPullRequestUrl('javascript:alert(1)')).toBe(false)
     expect(isPullRequestUrl('not a URL')).toBe(false)
   })
