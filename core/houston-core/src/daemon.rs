@@ -2524,6 +2524,16 @@ impl Daemon {
                     "marked {interrupted} session(s) from a previous run as interrupted"
                 );
             }
+            let stale_plan_sessions = db.task_planning_session_ids()?;
+            for session_id in &stale_plan_sessions {
+                if let Err(error) = db.update_session_state(*session_id, proto::SessionState::Killed, None) {
+                    tracing::warn!(session_id, "marking stale planning session cancelled: {error:#}");
+                }
+            }
+            let unsettled_plans = db.clear_task_planning_sessions()?;
+            if unsettled_plans > 0 {
+                tracing::info!("settled {unsettled_plans} task planning session(s) after daemon restart");
+            }
             dead = db
                 .list_interrupted()?
                 .into_iter()
@@ -5764,6 +5774,7 @@ impl Daemon {
             Vec::new(),
             None,
             None,
+            false,
         );
         let session = match spawned {
             Ok(info) => info,
@@ -7099,7 +7110,11 @@ impl Daemon {
     }
 
     pub fn create_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
-        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None)
+        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false)
+    }
+
+    pub(crate) fn create_plan_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
+        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, true)
     }
 
     /// `env` adds to the profile's environment, `spawn_args` follow the provider's
@@ -7112,6 +7127,7 @@ impl Daemon {
         spawn_args: Vec<String>,
         prompt_label: Option<String>,
         cwd: Option<PathBuf>,
+        plan_mode: bool,
     ) -> Result<proto::SessionInfo> {
         if self.refusing_mutations() {
             bail!("refused: daemon is shutting down");
@@ -7138,7 +7154,7 @@ impl Daemon {
         }
         // A bare session (shell or agent with nothing to pass) takes no launch arguments;
         // `launch_args` refuses kinds that are not agent CLIs.
-        let bare = prompt.trim().is_empty() && p.model.is_none() && !p.auto_approve;
+        let bare = prompt.trim().is_empty() && p.model.is_none() && !p.auto_approve && !plan_mode;
         let (mut extra_args, prompt_file) = if bare {
             (Vec::new(), None)
         } else {
@@ -7150,7 +7166,7 @@ impl Daemon {
             crate::launch::launch_args(
                 p.agent,
                 p.auto_approve,
-                false,
+                plan_mode,
                 p.model.as_deref(),
                 prompt,
                 prompts_dir.as_deref(),
@@ -9074,6 +9090,7 @@ impl Daemon {
         self.swarm_session_finished(id, final_state, exit_code);
         self.reap_reevaluate();
         self.task_run_session_ended(id);
+        self.task_planning_session_ended(id);
         final_state
     }
 
@@ -19058,7 +19075,6 @@ mod hook_state_registry_tests {
             role: proto::SwarmRole::Coordinator,
             agent: proto::AgentKind::Custom,
             auto_approve: false,
-            plan_mode: false,
             model: None,
             custom_prompt: None,
             cmd: Some(vec!["true".into()]),
@@ -19227,7 +19243,6 @@ mod swarm_send_inbox_tests {
                 role: proto::SwarmRole::Builder,
                 agent: proto::AgentKind::Custom,
                 auto_approve: false,
-                plan_mode: false,
                 model: None,
                 custom_prompt: None,
                 cmd: None,
@@ -19237,7 +19252,6 @@ mod swarm_send_inbox_tests {
                 role: proto::SwarmRole::Builder,
                 agent: proto::AgentKind::Custom,
                 auto_approve: false,
-                plan_mode: false,
                 model: None,
                 custom_prompt: None,
                 cmd: None,

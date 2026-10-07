@@ -21,8 +21,9 @@ pub use intake::{
 mod tasks;
 mod task_trackers;
 pub use tasks::{
-    SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow,
-    TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate, TaskWrite,
+    SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskDomainRow, TaskHistoryRow,
+    TaskProjectRow, TaskQuery, TaskRow, TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate,
+    TaskWrite,
 };
 pub use task_trackers::TaskTrackerOutboxRow;
 

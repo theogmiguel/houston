@@ -633,6 +633,9 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::DelegationResultsList { .. }
             | proto::ClientMsg::TaskSnapshot { .. }
             | proto::ClientMsg::TaskGet { .. }
+            | proto::ClientMsg::TaskProjectsList { .. }
+            | proto::ClientMsg::TaskProjectGet { .. }
+            | proto::ClientMsg::TaskDomainGet { .. }
             | proto::ClientMsg::TasksAccessGet { .. }
             | proto::ClientMsg::TaskStartSettingsGet { .. }
             | proto::ClientMsg::TaskReviewSettingsGet { .. }
@@ -1293,6 +1296,55 @@ async fn dispatch(
             }).await;
             Ok(())
         }
+        proto::ClientMsg::TaskProjectsList { workspace } => {
+            let _ = send_msg(sink, &daemon.task_projects_list(&workspace)?).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskProjectGet { id } => {
+            let _ = send_msg(sink, &daemon.task_project_get(id)?).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskProjectSave {
+            workspace,
+            id,
+            expected_revision,
+            name,
+            external_url,
+            tracker_description,
+            local_decisions,
+        } => match daemon.task_project_save(&workspace, id, expected_revision, &name, external_url, tracker_description, local_decisions)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => { let _ = send_msg(sink, &msg).await; Ok(()) }
+            msg => { daemon.broadcast_control(&msg); Ok(()) }
+        },
+        proto::ClientMsg::TaskProjectArchive { id, archived, expected_revision } => match daemon.task_project_archive(id, expected_revision, archived)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => { let _ = send_msg(sink, &msg).await; Ok(()) }
+            msg => { daemon.broadcast_control(&msg); Ok(()) }
+        },
+        proto::ClientMsg::TaskDomainGet { id } => {
+            let _ = send_msg(sink, &daemon.task_domain_state(id)?).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskDomainSave { id, expected_revision, kind, project_id, blocked_by } => {
+            match daemon.task_domain_save(id, expected_revision, kind, project_id, blocked_by)? {
+                msg @ proto::ServerMsg::TaskRefused { .. } => { let _ = send_msg(sink, &msg).await; Ok(()) }
+                msg => { daemon.broadcast_control(&msg); Ok(()) }
+            }
+        }
+        proto::ClientMsg::TaskPlanStart { id, expected_revision, agent } => {
+            match daemon.task_plan_start(id, expected_revision, agent)? {
+                msg @ proto::ServerMsg::TaskRefused { .. } => { let _ = send_msg(sink, &msg).await; }
+                msg => { let _ = send_msg(sink, &msg).await; }
+            }
+            Ok(())
+        }
+        proto::ClientMsg::TaskPlanAnswer { id, expected_revision, question, answer } => match daemon.task_plan_answer(id, expected_revision, &question, &answer)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => { let _ = send_msg(sink, &msg).await; Ok(()) }
+            msg => { daemon.broadcast_control(&msg); Ok(()) }
+        },
+        proto::ClientMsg::TaskPlanApprove { id, expected_revision, plan_revision } => match daemon.task_plan_approve(id, expected_revision, plan_revision)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => { let _ = send_msg(sink, &msg).await; Ok(()) }
+            msg => { daemon.broadcast_control(&msg); Ok(()) }
+        },
         proto::ClientMsg::TaskSave {
             workspace,
             id,
@@ -1406,8 +1458,9 @@ async fn dispatch(
             agent,
             base,
             workspace,
+            override_readiness,
         } => {
-            let started = daemon.task_start_in(id, agent, base, workspace)?;
+            let started = daemon.task_start_with_override(id, agent, base, workspace, override_readiness)?;
             match started {
                 msg @ proto::ServerMsg::TaskRefused { .. } => {
                     let _ = send_msg(sink, &msg).await;
