@@ -47,10 +47,42 @@ Tick an acceptance item to check it. Comments appear in the same chronological a
 as the recorded changes, with a composer below. The task menu in the detail header archives
 the task; an archived task shows the same menu with **Restore task**.
 
+## Projects and deliveries
+
+Choose **Projects** in the rail with a workspace selected. A project groups deliveries;
+each delivery groups slices, and each slice owns one execution branch and pull request.
+Keep the project's tracker description as an unverified snapshot and record local decisions
+and corrections separately. Both reach agents as labelled context.
+
+Delivery progress follows its slices. The delivery becomes Done only after every slice is
+Done; a reviewer pass or the first merged PR is insufficient. An explicit status edit stays
+authoritative over derived progress. Creating a project, importing a delivery or changing
+its grouping never starts an agent.
+
+Source links identify tracker items. Pull request links identify execution results; a
+Slack permalink or tracker URL is not presented as a pull request. Blockers identify work
+that must finish before a slice can enter automatic execution.
+
+## Planning a task
+
+Use **Plan** before starting work when the request needs clarification. Houston opens a
+planning agent in the provider's read-only mode with the task, project context and repository.
+The proposal contains a description, acceptance items, file pointers, exclusions and open
+questions. Planning does not edit code or start implementation.
+
+Answer the questions and approve the proposal to apply it to the task. Approval belongs to
+the revision the planner read: if the task changed, refresh and plan again rather than
+applying an obsolete proposal. Approval and execution are separate actions.
+
 ## Starting a task
 
-A task detail's **Start** button launches an agent for the task. Start requires a workspace;
-for an unassigned task, choose one beside the agent before starting. Houston creates a git
+A task detail's **Start** button launches an agent for the task. A ready slice has a
+workspace, at least one acceptance item, no unanswered planning question or unresolved
+tracker conflict, and no unfinished blocker. An unready task shows what is missing. An
+explicit **Start anyway** can bypass the content checks for a manual start; automatic
+execution and the queue never bypass them. A workspace is always required.
+
+For an unassigned task, choose a workspace before starting. Houston creates a git
 worktree on `houston/task/hou-<n>-<slug>` under the workspace’s `.houston/worktrees/` directory, starts the chosen
 agent there, exports `HOUSTON_TASK` with the task key and names the pane `HOU-<n> <title>`.
 The task moves to **In progress** and the detail shows the run: its attempt, provider,
@@ -62,7 +94,9 @@ brief is delivered. **Send** (the default) submits the brief as the pane's first
 **Prefill** types it into the input box without sending it, so you can review and press
 Enter yourself.
 
-The brief is assembled from the task's key, title, description and acceptance list, and its
+The brief includes the task's key, title, description, acceptance list, source links and
+project context. Imported project descriptions are labelled unverified; local decisions
+and corrections are kept separately. Its
 text is wrapped in explicit data markers so the agent treats it as untrusted data. The whole
 brief is capped; a task too large to fit is refused by name instead of truncated.
 
@@ -84,7 +118,8 @@ A top-level agent pane that may spawn children can work the backlog through MCP:
 `task_execute` starts one task assigned to its own workspace as its child (the same worktree and brief as Start) and
 `task_review` opens an independent reviewer for a run. The Children roster's queue runs the
 next tasks in that orchestrator’s workspace: it picks the top ready tasks — todo with no unfinished blocker, priority order,
-then oldest — and starts them as children of that pane. This is all or nothing: when the
+then oldest — and starts them as children of that pane. Content readiness checks also apply.
+This is all or nothing: when the
 pane has fewer free child slots than asked, nothing starts and the refusal names the cap,
 the free count and the requested count. Nothing is queued silently.
 
@@ -130,7 +165,8 @@ it may spawn children — or, when its provider cannot use MCP, through the `hs-
 Every tool that takes an `id` accepts either the task key (`HOU-42`, case-insensitive) or the numeric id, resolved globally. Reading another workspace’s task does not grant permission to change it.
 `task_claim` moves a backlog or todo task to **In progress**
 and records which pane took it; `task_handback` writes the agent's summary as a comment and
-moves the task to **In review**. Neither closes a task: **Done** stays the user's decision.
+moves the task to **In review**. Agent create and update operations cannot mark a task
+**Done**. Completion comes from a merged pull request or an explicit user decision.
 Task text an agent reads is labelled untrusted data, and each text field is capped so one
 task cannot fill the agent's context. Child panes of an agent have no task tools at all:
 their scope is the brief they were spawned with.
@@ -152,9 +188,9 @@ The task key defaults to `$HOUSTON_TASK` when a task started the pane; otherwise
 
 ## What leaves the machine
 
-Tasks live in Houston's local database as a global backlog. Houston sends no task text to any
-service. A task's title, description and acceptance only reach a hosted agent CLI if an
-agent you allowed reads it, and the brief a Start submits reaches the agent you started;
+Tasks live in Houston's local database as a global backlog. A task's title, description and
+acceptance reach a hosted agent CLI when an agent with access reads them or you start the
+task. Planning sends the task and project context to the planning CLI;
 a default or per-task reviewer sends the task text, the acceptance list and the
 implementation summary to the reviewer CLI as well. Access is per workspace and starts at
 **Read and write**. An agent's write is recorded with the pane's codename and role, so the
@@ -163,7 +199,31 @@ attribution survives the pane.
 Tasks filed from Slack mentions are described in [Slack requests](slack.md), including
 what that connection sends.
 
-The only network call Tasks makes on its own is the merge check: while a task is in review
-with a run branch, Houston runs the GitHub CLI (`gh pr view`) in that task's worktree every
-five minutes. The request goes to GitHub with your `gh` credentials; Houston itself sends
-nothing. With `gh` absent or signed out the task simply stays in review.
+While a task is in review with a run branch, Houston runs the GitHub CLI (`gh pr view`)
+in that task's worktree every five minutes. The request uses your `gh` credentials.
+With `gh` absent or signed out the task stays in review with a visible reason.
+
+Tracker connections are optional and configured per workspace. Their polling and
+write-back run only when enabled. Imported text is stored as a snapshot; a remote change
+appears as a divergence. If the same field changed locally and remotely, Houston keeps
+both values until you resolve the conflict. Disabling a connection stops synchronization
+and keeps the local tasks.
+
+### GitHub Issues
+
+The connection reads matching issues using your authenticated GitHub CLI. Creating a task
+for a connected workspace can send its title and description to GitHub as a new issue.
+Synchronization sends delivery status and links associated with its work. A delivery may
+have several slice pull requests: each PR references the issue, and the daemon closes the
+issue after all slices are Done. A single slice merge does not close an unfinished delivery.
+
+### Notion
+
+The connection reads only the configured task and project data sources, filtered to the
+configured assignee and active statuses. Store the internal integration token through the
+workspace settings; Houston keeps it in the OS keychain. Property mappings use property
+IDs. Write-back sends delivery status using existing options, pull request links and a
+handback summary as a comment. It does not synchronize comments in both directions.
+
+Bitbucket issue synchronization, two-way comment synchronization and acting as a
+delegable Linear or Jira agent are unsupported.

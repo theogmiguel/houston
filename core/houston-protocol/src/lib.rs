@@ -3,14 +3,13 @@ use serde::{Deserialize, Serialize};
 pub mod task_trackers;
 pub use task_trackers::{
     TaskExternalLink, TaskExternalLinkSource, TaskTrackerConflictResolution,
-    TaskTrackerFieldConflict, TaskTrackerProjectSnapshot, TaskTrackerProvider,
-    TaskTrackerSnapshot, TaskTrackerStatusMapping, TaskTrackerSyncState,
-    TaskTrackerWorkspaceSettings,
+    TaskTrackerFieldConflict, TaskTrackerProjectSnapshot, TaskTrackerProvider, TaskTrackerSnapshot,
+    TaskTrackerStatusMapping, TaskTrackerSyncState, TaskTrackerWorkspaceSettings,
 };
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 127;
+pub const PROTOCOL_VERSION: u32 = 128;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -616,6 +615,7 @@ pub struct TaskDomain {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub delivery_id: Option<i64>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "Array<number>"))]
     pub blocked_by: Vec<i64>,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub slice_total: u32,
@@ -3042,9 +3042,15 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         fresh: Option<bool>,
     },
-    SessionSleep { session: u32 },
-    SessionWake { session: u32 },
-    SessionMemoryGet { session: u32 },
+    SessionSleep {
+        session: u32,
+    },
+    SessionWake {
+        session: u32,
+    },
+    SessionMemoryGet {
+        session: u32,
+    },
     SessionCwd {
         session: u32,
     },
@@ -3734,17 +3740,35 @@ pub enum ClientMsg {
     TaskSnapshot {
         scope: String,
     },
-    TaskTrackerSettingsGet { workspace: String },
-    TaskTrackerSettingsSet { settings: TaskTrackerWorkspaceSettings },
-    TaskTrackerCredentialSet { workspace: String, provider: TaskTrackerProvider, token: String },
-    TaskTrackerCredentialClear { workspace: String, provider: TaskTrackerProvider },
-    TaskTrackerSyncNow { workspace: String },
-    TaskTrackerLinksGet { task_id: i64 },
+    TaskTrackerSettingsGet {
+        workspace: String,
+    },
+    TaskTrackerSettingsSet {
+        settings: TaskTrackerWorkspaceSettings,
+    },
+    TaskTrackerCredentialSet {
+        workspace: String,
+        provider: TaskTrackerProvider,
+        token: String,
+    },
+    TaskTrackerCredentialClear {
+        workspace: String,
+        provider: TaskTrackerProvider,
+    },
+    TaskTrackerSyncNow {
+        workspace: String,
+    },
+    TaskTrackerLinksGet {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        task_id: i64,
+    },
     TaskTrackerConflictResolve {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         task_id: i64,
         provider: TaskTrackerProvider,
         external_id: String,
         field: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
         resolution: TaskTrackerConflictResolution,
     },
@@ -3757,6 +3781,7 @@ pub enum ClientMsg {
         workspace: String,
     },
     TaskProjectGet {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
     },
     TaskProjectSave {
@@ -3768,10 +3793,18 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         expected_revision: Option<i64>,
         name: String,
-        #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "double_option",
+            skip_serializing_if = "Option::is_none"
+        )]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         external_url: Option<Option<String>>,
-        #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "double_option",
+            skip_serializing_if = "Option::is_none"
+        )]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         tracker_description: Option<Option<String>>,
         #[serde(default)]
@@ -3779,8 +3812,10 @@ pub enum ClientMsg {
         local_decisions: Option<Vec<String>>,
     },
     TaskProjectArchive {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
         archived: bool,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
     },
     TaskDomainGet {
@@ -3795,7 +3830,11 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         kind: Option<TaskDomainKind>,
-        #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "double_option",
+            skip_serializing_if = "Option::is_none"
+        )]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         project_id: Option<Option<i64>>,
         #[serde(default)]
@@ -4521,10 +4560,26 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         refusal: Option<String>,
     },
-    TaskTrackerSettings { settings: Vec<TaskTrackerWorkspaceSettings>, refusal: Option<String> },
-    TaskTrackerLinks { task_id: i64, links: Vec<TaskExternalLink> },
-    TaskTrackerSyncState { workspace: String, last_sync_at_ms: Option<i64>, error: Option<String> },
-    TaskTrackerConflictResolved { task_id: i64, link: TaskExternalLink },
+    TaskTrackerSettings {
+        settings: Vec<TaskTrackerWorkspaceSettings>,
+        refusal: Option<String>,
+    },
+    TaskTrackerLinks {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        task_id: i64,
+        links: Vec<TaskExternalLink>,
+    },
+    TaskTrackerSyncState {
+        workspace: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
+        last_sync_at_ms: Option<i64>,
+        error: Option<String>,
+    },
+    TaskTrackerConflictResolved {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        task_id: i64,
+        link: TaskExternalLink,
+    },
     Keymap {
         overrides: KeymapOverrides,
     },

@@ -34,6 +34,7 @@ pub struct TaskTrackerSnapshot {
     pub local: BTreeMap<String, String>,
     pub remote: BTreeMap<String, String>,
     pub conflicts: Vec<TaskTrackerFieldConflict>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub revision: i64,
     #[serde(default)]
     pub project_external_id: Option<String>,
@@ -74,13 +75,16 @@ pub enum TaskTrackerSyncState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskExternalLink {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub task_id: i64,
     pub provider: TaskTrackerProvider,
     pub external_id: String,
     pub url: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub fetched_at_ms: Option<i64>,
     pub body_hash: Option<String>,
     pub remote_rev: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub synced_at_ms: Option<i64>,
     pub source: TaskExternalLinkSource,
     pub snapshot: TaskTrackerSnapshot,
@@ -110,6 +114,7 @@ pub struct TaskTrackerWorkspaceSettings {
     pub notion_pr_url_property_id: Option<String>,
     pub notion_status_mapping: TaskTrackerStatusMapping,
     pub has_credential: bool,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub last_sync_at_ms: Option<i64>,
     pub last_error: Option<String>,
 }
