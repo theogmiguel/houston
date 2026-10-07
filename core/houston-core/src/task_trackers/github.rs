@@ -746,7 +746,7 @@ fn without_close_keywords(value: &str) -> String {
 #[cfg(test)]
 static TEST_GH_SHIM: std::sync::OnceLock<std::sync::Mutex<Option<std::path::PathBuf>>> =
     std::sync::OnceLock::new();
-#[cfg(test)]
+#[cfg(all(test, unix))]
 static TEST_GH_SHIM_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[cfg(test)]
