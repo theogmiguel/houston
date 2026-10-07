@@ -19,6 +19,8 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     tokio::spawn(daemon.clone().pr_watch_loop());
     // Idle until Settings ▸ Slack turns the intake on.
     tokio::spawn(daemon.clone().slack_loops());
+    // Idle until a workspace opts into a task tracker.
+    tokio::spawn(daemon.clone().task_tracker_loop());
 }
 
 /// Runs off the async runtime via `spawn_blocking` so the window can paint

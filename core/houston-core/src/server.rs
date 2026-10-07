@@ -1272,7 +1272,7 @@ async fn dispatch(
             Ok(())
         }
         proto::ClientMsg::TaskTrackerSettingsSet { settings } => {
-            let msg = daemon.task_tracker_settings_set(settings)?;
+            let msg = daemon.task_tracker_settings_set(settings).await?;
             let _ = send_msg(sink, &msg).await;
             Ok(())
         }
@@ -1291,15 +1291,14 @@ async fn dispatch(
             let _ = send_msg(sink, &msg).await;
             Ok(())
         }
-        proto::ClientMsg::TaskTrackerConflictResolve { task_id, provider, external_id, field, expected_revision, resolution } => {
-            let msg = daemon.task_tracker_conflict_resolve(task_id, provider, &external_id, &field, expected_revision, resolution)?;
+        proto::ClientMsg::TaskTrackerConflictResolve { task_id, expected_task_revision, expected_project_revision, provider, external_id, field, expected_revision, resolution } => {
+            let msg = daemon.task_tracker_conflict_resolve(task_id, expected_task_revision, expected_project_revision, provider, &external_id, &field, expected_revision, resolution)?;
             let _ = send_msg(sink, &msg).await;
             Ok(())
         }
         proto::ClientMsg::TaskTrackerSyncNow { workspace } => {
-            let _ = send_msg(sink, &proto::ServerMsg::TaskTrackerSyncState {
-                workspace, last_sync_at_ms: None, error: Some("task tracker polling is not wired yet".into()),
-            }).await;
+            let msg = daemon.task_tracker_sync_now(&workspace).await?;
+            let _ = send_msg(sink, &msg).await;
             Ok(())
         }
         proto::ClientMsg::TaskProjectsList { workspace } => {

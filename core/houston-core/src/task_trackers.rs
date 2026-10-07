@@ -5,6 +5,9 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::collections::BTreeMap;
 
+pub const NOTION_API_VERSION: &str = "2026-03-11";
+pub const SNAPSHOT_MAX_BYTES: usize = 65_536;
+
 pub mod github;
 pub mod notion;
 
@@ -38,16 +41,18 @@ pub struct TrackerWriteReceipt {
     pub remote_rev: Option<String>,
 }
 
-pub const NOTION_API_VERSION: &str = "2026-03-11";
-pub const SNAPSHOT_MAX_BYTES: usize = 65_536;
-
 pub fn project_external_key(provider: houston_protocol::TaskTrackerProvider, external_id: &str) -> String {
     let provider = match provider {
         houston_protocol::TaskTrackerProvider::GithubIssues => "github_issues",
         houston_protocol::TaskTrackerProvider::Notion => "notion",
         houston_protocol::TaskTrackerProvider::Slack => "slack",
     };
-    format!("{provider}:{external_id}")
+    let prefix = format!("{provider}:");
+    if external_id.starts_with(&prefix) {
+        external_id.to_string()
+    } else {
+        format!("{provider}:{external_id}")
+    }
 }
 
 pub fn github_milestone_project_key(repository: &str, milestone_number: u64) -> String {

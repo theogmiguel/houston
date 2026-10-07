@@ -3765,6 +3765,8 @@ pub enum ClientMsg {
     TaskTrackerConflictResolve {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         task_id: i64,
+        expected_task_revision: i64,
+        expected_project_revision: Option<i64>,
         provider: TaskTrackerProvider,
         external_id: String,
         field: String,
@@ -4571,6 +4573,7 @@ pub enum ServerMsg {
     },
     TaskTrackerSyncState {
         workspace: String,
+        provider: TaskTrackerProvider,
         #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
         last_sync_at_ms: Option<i64>,
         error: Option<String>,
