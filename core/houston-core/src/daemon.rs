@@ -5775,6 +5775,7 @@ impl Daemon {
             None,
             None,
             false,
+            None,
         );
         let session = match spawned {
             Ok(info) => info,
@@ -7110,11 +7111,16 @@ impl Daemon {
     }
 
     pub fn create_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
-        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false)
+        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false, None)
     }
 
-    pub(crate) fn create_plan_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
-        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, true)
+    pub(crate) fn create_task_plan_session(
+        self: &Arc<Self>,
+        p: CreateParams,
+        task_id: i64,
+        expected_revision: i64,
+    ) -> Result<proto::SessionInfo> {
+        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, true, Some((task_id, expected_revision)))
     }
 
     /// `env` adds to the profile's environment, `spawn_args` follow the provider's
@@ -7128,6 +7134,7 @@ impl Daemon {
         prompt_label: Option<String>,
         cwd: Option<PathBuf>,
         plan_mode: bool,
+        plan_binding: Option<(i64, i64)>,
     ) -> Result<proto::SessionInfo> {
         if self.refusing_mutations() {
             bail!("refused: daemon is shutting down");
@@ -7160,6 +7167,11 @@ impl Daemon {
         } else {
             let prompts_dir = if prompt.trim().is_empty() {
                 None
+            } else if plan_mode {
+                let dir = self.state_dir.join("task-prompts");
+                std::fs::create_dir_all(&dir)
+                    .with_context(|| format!("creating {}", dir.display()))?;
+                Some(dir)
             } else {
                 Some(init_prompts_dir(&p.project_dir)?)
             };
@@ -7208,7 +7220,12 @@ impl Daemon {
         } else {
             crate::launch::ApprovalMode::Default
         };
-        let info = self.spawn_session(SpawnParams {
+        if let Some((task_id, expected_revision)) = plan_binding {
+            if !self.db.begin_task_planning(task_id, expected_revision, id)? {
+                bail!("task changed before the planning session could be reserved");
+            }
+        }
+        let spawned = self.spawn_session(SpawnParams {
             id,
             agent: p.agent,
             detected_agent: None,
@@ -7236,7 +7253,16 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
-        })?;
+        });
+        let info = match spawned {
+            Ok(info) => info,
+            Err(error) => {
+                if plan_binding.is_some() {
+                    let _ = self.db.finish_task_planning_session(id);
+                }
+                return Err(error);
+            }
+        };
         self.record_approval_mode(info.id, approval);
         Ok(info)
     }

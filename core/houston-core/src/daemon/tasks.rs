@@ -922,32 +922,20 @@ impl Daemon {
         if let Err(error) = crate::launch::launch_args(agent, false, true, None, "", None, "task-plan") {
             return Ok(Self::task_invalid(Some(id), operation, format!("provider {agent:?} has no enforced read-only planning launch mode: {error:#}")));
         }
-        let info = match self.create_plan_session(super::CreateParams {
+        let info = match self.create_task_plan_session(super::CreateParams {
             agent, project_dir, cmd: None, cols: 120, rows: 32, cwd_from: None,
             shell_integration: false, auto_approve: false, acp: None,
-            profile: None, prompt: None, model: None, effort: None,
-        }) {
+            profile: None, prompt: Some(brief), model: None, effort: None,
+        }, id, expected_revision) {
             Ok(info) => info,
-            Err(error) => return Ok(Self::task_invalid(Some(id), operation, format!("provider {agent:?} planning launch failed: {error:#}"))),
-        };
-        if !self.db.begin_task_planning(id, expected_revision, info.id)? {
-            let _ = self.clone().session_kill_checked(info.id, false);
-            let actual = self.db.task(id)?.map(|row| row.revision);
-            return Ok(Self::task_refused(Some(id), proto::TaskErrorKind::Conflict, None, None, Some(expected_revision), actual, format!("{operation} refused: task changed while planning session launched")));
-        }
-        match self.paste_text(info.id, &brief, 0) {
-            Ok(true) => {}
-            Ok(false) => {
-                let _ = self.db.finish_task_planning_session(info.id);
-                let _ = self.clone().session_kill_checked(info.id, false);
-                return Ok(Self::task_invalid(Some(id), operation, "planning session is not accepting its initial prompt; retry after checking the pane".into()));
-            }
             Err(error) => {
-                let _ = self.db.finish_task_planning_session(info.id);
-                let _ = self.clone().session_kill_checked(info.id, false);
-                return Ok(Self::task_invalid(Some(id), operation, format!("planning prompt delivery failed: {error:#}")));
+                let actual = self.db.task(id)?.map(|row| row.revision);
+                if actual != Some(expected_revision) {
+                    return Ok(Self::task_refused(Some(id), proto::TaskErrorKind::Conflict, None, None, Some(expected_revision), actual, format!("{operation} refused: task changed before the planning session was reserved")));
+                }
+                return Ok(Self::task_invalid(Some(id), operation, format!("provider {agent:?} planning launch failed: {error:#}")));
             }
-        }
+        };
         Ok(proto::ServerMsg::TaskPlanStarted { id, session_id: info.id, revision: expected_revision })
     }
 
@@ -978,6 +966,9 @@ impl Daemon {
             return Ok(Self::task_conflict_refused(&self.db.task(id)?.context("planning task disappeared")?, "task_plan_submit", task_revision, self.db.task(id)?.map(|t| t.revision).unwrap_or(task_revision)));
         };
         self.broadcast_control(&proto::ServerMsg::TaskPlanChanged { id, revision: plan.revision });
+        if let Err(error) = self.clone().session_kill_checked(session_id, false) {
+            tracing::warn!(session_id, "stopping submitted read-only planning pane failed: {error:#}");
+        }
         Ok(proto::ServerMsg::TaskPlanChanged { id, revision: plan.revision })
     }
 
@@ -1009,6 +1000,10 @@ impl Daemon {
 
     pub fn task_plan_session(&self, session_id: u32) -> Result<Option<(i64, i64)>> {
         self.db.task_planning_session(session_id)
+    }
+
+    pub fn has_task_planning_capability(&self, session_id: u32) -> Result<bool> {
+        self.db.has_task_planning_capability(session_id)
     }
 
     pub(super) fn task_planning_session_ended(&self, session_id: u32) {
@@ -2773,6 +2768,8 @@ impl Daemon {
             spawn_args,
             Some(label),
             Some(created.path.clone()),
+            false,
+            None,
         );
         let info = match spawned {
             Ok(info) => info,

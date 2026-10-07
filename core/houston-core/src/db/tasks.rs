@@ -118,6 +118,14 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
             planning_task_revision INTEGER
         );",
     )?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS backlog_task_planning_capabilities (
+            session_id INTEGER PRIMARY KEY,
+            task_id INTEGER NOT NULL REFERENCES backlog_tasks(id) ON DELETE CASCADE,
+            task_revision INTEGER NOT NULL,
+            state TEXT NOT NULL CHECK(state IN ('active', 'submitted', 'cancelled', 'exited', 'restarted'))
+        );",
+    )?;
     super::add_column_if_missing(conn, "backlog_task_runs", "reason", "reason TEXT")?;
     super::add_column_if_missing(conn, "backlog_task_runs", "pr_url", "pr_url TEXT")?;
     super::add_column_if_missing(conn, "backlog_task_domain", "planning_session_id", "planning_session_id INTEGER")?;
@@ -1699,6 +1707,19 @@ impl Db {
             "SELECT revision FROM backlog_tasks WHERE id = ?1", [task_id], |r| r.get(0),
         ).optional()?;
         if current != Some(expected_revision) { return Ok(false); }
+        let session_was_used: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM backlog_task_planning_capabilities WHERE session_id = ?1)",
+            [session_id], |r| r.get(0),
+        )?;
+        if session_was_used { return Ok(false); }
+        tx.execute(
+            "UPDATE backlog_task_planning_capabilities SET state = 'cancelled' WHERE task_id = ?1 AND state = 'active'",
+            [task_id],
+        )?;
+        tx.execute(
+            "INSERT INTO backlog_task_planning_capabilities(session_id, task_id, task_revision, state) VALUES (?1, ?2, ?3, 'active')",
+            rusqlite::params![session_id, task_id, expected_revision],
+        )?;
         tx.execute(
             "INSERT INTO backlog_task_domain(task_id, kind, planning_session_id, planning_task_revision) \
              VALUES (?1, 'slice', ?2, ?3) ON CONFLICT(task_id) DO UPDATE SET \
@@ -1720,34 +1741,57 @@ impl Db {
     pub fn task_planning_session(&self, session_id: u32) -> Result<Option<(i64, i64)>> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn.query_row(
-            "SELECT task_id, planning_task_revision FROM backlog_task_domain \
-             WHERE planning_session_id = ?1 AND planning_task_revision IS NOT NULL",
+            "SELECT task_id, task_revision FROM backlog_task_planning_capabilities \
+             WHERE session_id = ?1 AND state = 'active'",
             [session_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         ).optional()?)
     }
 
-    pub fn finish_task_planning_session(&self, session_id: u32) -> Result<bool> {
+    pub fn has_task_planning_capability(&self, session_id: u32) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
-        Ok(conn.execute(
+        Ok(conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM backlog_task_planning_capabilities WHERE session_id = ?1)",
+            [session_id], |row| row.get(0),
+        )?)
+    }
+
+    pub fn finish_task_planning_session(&self, session_id: u32) -> Result<bool> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
             "UPDATE backlog_task_domain SET planning_session_id = NULL, planning_task_revision = NULL \
              WHERE planning_session_id = ?1",
             [session_id],
-        )? > 0)
+        )? > 0;
+        tx.execute(
+            "UPDATE backlog_task_planning_capabilities SET state = 'exited' WHERE session_id = ?1 AND state = 'active'",
+            [session_id],
+        )?;
+        tx.commit()?;
+        Ok(changed)
     }
 
     pub fn clear_task_planning_sessions(&self) -> Result<u32> {
-        let conn = self.conn.lock().expect("db lock");
-        Ok(conn.execute(
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute("UPDATE backlog_task_planning_capabilities SET state = 'restarted' WHERE state = 'active'", [])?;
+        tx.execute(
+            "DELETE FROM backlog_task_planning_capabilities WHERE session_id NOT IN (SELECT id FROM sessions)",
+            [],
+        )?;
+        let count = tx.execute(
             "UPDATE backlog_task_domain SET planning_session_id = NULL, planning_task_revision = NULL \
              WHERE planning_session_id IS NOT NULL",
             [],
-        )? as u32)
+        )? as u32;
+        tx.commit()?;
+        Ok(count)
     }
 
     pub fn task_planning_session_ids(&self) -> Result<Vec<u32>> {
         let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn.prepare("SELECT planning_session_id FROM backlog_task_domain WHERE planning_session_id IS NOT NULL")?;
+        let mut stmt = conn.prepare("SELECT c.session_id FROM backlog_task_planning_capabilities c JOIN sessions s ON s.id = c.session_id WHERE c.state = 'active'")?;
         Ok(stmt.query_map([], |r| r.get(0))?.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
@@ -1762,8 +1806,10 @@ impl Db {
         let tx = conn.transaction()?;
         let valid: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM backlog_task_domain d JOIN backlog_tasks t ON t.id = d.task_id \
+             JOIN backlog_task_planning_capabilities c ON c.task_id = d.task_id \
              WHERE d.task_id = ?1 AND d.planning_session_id = ?2 \
-             AND d.planning_task_revision = ?3 AND t.revision = ?3)",
+             AND d.planning_task_revision = ?3 AND t.revision = ?3 \
+             AND c.session_id = ?2 AND c.task_revision = ?3 AND c.state = 'active')",
             rusqlite::params![task_id, session_id, expected_task_revision], |r| r.get(0),
         )?;
         if !valid { return Ok(None); }
@@ -1785,6 +1831,7 @@ impl Db {
              WHERE task_id = ?1 AND planning_session_id = ?4",
             rusqlite::params![task_id, serde_json::to_string(&plan)?, revision, session_id],
         )?;
+        tx.execute("UPDATE backlog_task_planning_capabilities SET state = 'submitted' WHERE session_id = ?1 AND state = 'active'", [session_id])?;
         tx.commit()?;
         Ok(Some(plan))
     }
@@ -1976,5 +2023,31 @@ impl Db {
         )?;
         tx.commit()?;
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod planning_capability_tests {
+    use super::*;
+
+    #[test]
+    fn planning_capability_survives_session_settlement_without_remaining_active() {
+        let dir = tempfile::tempdir().expect("temporary database directory");
+        let db = Db::open(&dir.path().join("tasks.sqlite")).expect("task database");
+        db.conn.lock().expect("database lock").execute(
+            "INSERT INTO backlog_tasks(id, number, title, status, created_by, created_at, updated_at) \
+             VALUES (1, 1, 'Plan capability', 'backlog', 'test', 1, 1)",
+            [],
+        ).expect("task row");
+
+        assert!(db.begin_task_planning(1, 1, 77).expect("reserve planning pane"));
+        assert_eq!(db.task_planning_session(77).expect("active plan"), Some((1, 1)));
+        assert!(db.has_task_planning_capability(77).expect("persistent capability"));
+
+        assert!(db.finish_task_planning_session(77).expect("settle plan"));
+        assert_eq!(db.task_planning_session(77).expect("inactive plan"), None);
+        assert!(db.has_task_planning_capability(77).expect("retained capability"));
+
+        assert!(!db.begin_task_planning(1, 1, 77).expect("session ids cannot be rebound"));
     }
 }
