@@ -7749,6 +7749,7 @@ async fn run_stop_hook(
 }
 
 fn helper_drop(home: &std::path::Path) -> houston_core::hook_drop::HookDrop {
+
     let dir = houston_core::hook_drop::drop_dir(&home.join(".houston-door2test"));
     let mut names: Vec<String> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("reading the helper's drop dir {}: {e}", dir.display()))

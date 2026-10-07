@@ -117,6 +117,8 @@ impl Fixture {
 
     async fn hook(&self, pane: u32, agent: proto::AgentKind, event: &str, id: &str, path: &Path) {
         let drop = HookDrop {
+
+
             event: event.into(),
             session: pane,
             agent: Some(houston_core::agent_hooks::provider_slug(agent).into()),

@@ -1311,6 +1311,8 @@ pub struct Daemon {
     /// repeating them costs no write.
     transcript_links: Mutex<HashMap<u32, TranscriptLink>>,
     resume_launches: Mutex<HashMap<u32, Instant>>,
+    pending_shell_children: Mutex<HashMap<u32, PendingShellChildren>>,
+    early_shell_resumes: Mutex<HashMap<u32, (proto::AgentKind, String)>>,
     routine_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
     routine_pane_cmd_override: Mutex<Option<Vec<String>>>,
     routine_pane_registration_hook_for_test: Mutex<Option<RoutinePaneRegistrationHook>>,
@@ -1330,6 +1332,13 @@ pub struct Daemon {
     pub(crate) release_cache: tokio::sync::Mutex<crate::updates::ReleaseCache>,
     slack: slack::SlackRuntime,
     tx: broadcast::Sender<Outbound>,
+}
+
+struct PendingShellChildren {
+    old_parent: u32,
+    provider: proto::AgentKind,
+    conversation: String,
+    children: Vec<proto::SessionInfo>,
 }
 
 const SESSION_IDLE_REAP_ENABLED_KEY: &str = "session_idle_reap_enabled";
@@ -2177,6 +2186,26 @@ fn shell_hosted_resume_command(shell: &str, argv: &[String]) -> Result<String> {
     Ok(format!("{command}; exec {} -i", quote(shell)))
 }
 
+#[cfg(test)]
+mod shell_hosted_resume_tests {
+    use super::shell_hosted_resume_command;
+
+    #[test]
+    fn shell_resume_quotes_each_argument_and_refuses_named_non_posix_shells() {
+        let command = shell_hosted_resume_command(
+            "/bin/bash",
+            &["claude".into(), "--resume".into(), "id'; touch /tmp/no".into()],
+        )
+        .unwrap();
+        assert!(command.contains("'id'\\''; touch /tmp/no'"));
+        assert!(command.ends_with("; exec '/bin/bash' -i"));
+        assert!(shell_hosted_resume_command("/bin/fish", &["claude".into()])
+            .unwrap_err()
+            .to_string()
+            .contains("detected shell \"/bin/fish\""));
+    }
+}
+
 #[cfg(windows)]
 fn shell_spawn_error_is_retryable(err: &anyhow::Error) -> bool {
     use std::io::ErrorKind;
@@ -2681,6 +2710,8 @@ impl Daemon {
             routine_runs: Mutex::new(HashMap::new()),
             transcript_links: Mutex::new(HashMap::new()),
             resume_launches: Mutex::new(HashMap::new()),
+            pending_shell_children: Mutex::new(HashMap::new()),
+            early_shell_resumes: Mutex::new(HashMap::new()),
             routine_settle: Mutex::new(HashMap::new()),
             routine_pane_cmd_override: Mutex::new(None),
             routine_pane_registration_hook_for_test: Mutex::new(None),
@@ -2935,6 +2966,15 @@ impl Daemon {
                 );
             }
             self.defer_children(child.id, children, reason);
+        }
+    }
+
+    fn mark_pending_children(&self, parent: u32, children: &[proto::SessionInfo]) {
+        for child in children.iter().filter(|child| child.spawned_by == Some(parent)) {
+            if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&child.id) {
+                info.restore_deferred = Some(proto::RestoreReason::SpawnFailed);
+            }
+            self.mark_pending_children(child.id, children);
         }
     }
 
@@ -7419,7 +7459,7 @@ impl Daemon {
             .filter(|child| child.spawned_by.is_some())
             .cloned()
             .collect();
-        let parent = match self.respawn_session_with(
+        let mut parent = match self.respawn_session_with(
             old_id,
             shell_integration,
             cwd_override,
@@ -7439,7 +7479,66 @@ impl Daemon {
             && (conversation != RespawnConversation::Restore || self.restore_resume())
             && parent.resumable
             && parent.resume_notice.is_none();
-        if parent_conversation_resumed {
+        if parent_conversation_resumed
+            && parent.agent == proto::AgentKind::Shell
+            && !children.is_empty()
+        {
+            let provider = parent.detected_agent.unwrap_or(proto::AgentKind::Shell);
+            let handle = self.db.session_resume_handle(parent.id).ok().flatten();
+            if matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
+                && let Some((conversation, _)) = handle
+            {
+                parent.resume_notice = Some(format!(
+                    "Shell is interactive; child recovery is deferred until a root {provider:?} hook confirms conversation {conversation}."
+                ));
+                if let Err(e) = self.inbox_write(
+                    parent.id,
+                    &parent.project_dir,
+                    None,
+                    None,
+                    orchestrate::InboxKind::Restored,
+                    "Shell child recovery deferred",
+                    parent.resume_notice.as_deref().unwrap_or_default(),
+                    Vec::new(),
+                    None,
+                    None,
+                    false,
+                    true,
+                ) {
+                    tracing::warn!(
+                        "recording deferred shell child recovery for parent {}: {e}",
+                        parent.id
+                    );
+                }
+                let expected_conversation = conversation.clone();
+                self.mark_pending_children(old_id, &children);
+                self.pending_shell_children
+                    .lock()
+                    .expect("pending shell children lock")
+                    .insert(
+                        parent.id,
+                        PendingShellChildren {
+                            old_parent: old_id,
+                            provider,
+                            conversation,
+                            children,
+                        },
+                    );
+                let matched_early = self
+                    .early_shell_resumes
+                    .lock()
+                    .expect("early shell resumes lock")
+                    .remove(&parent.id)
+                    .is_some_and(|(seen_provider, seen_id)| {
+                        seen_provider == provider && seen_id == expected_conversation
+                    });
+                if matched_early {
+                    self.finish_pending_shell_children(parent.id);
+                }
+            } else {
+                self.defer_children(old_id, &children, proto::RestoreReason::SpawnFailed);
+            }
+        } else if parent_conversation_resumed {
             self.restore_children(old_id, parent.id, &children, &mut notices, &mut count);
         } else {
             self.defer_children(old_id, &children, proto::RestoreReason::SpawnFailed);
@@ -7574,7 +7673,7 @@ impl Daemon {
                 old.info.codename.clone(),
                 old.info.spawned_by,
                 old.info.acp.clone(),
-                old.info.profile_label.clone(),
+                self.db.session_profile_label(old_id)?,
                 old.tags.lock().expect("tags lock").clone(),
                 false,
                 old.detected
@@ -7634,9 +7733,22 @@ impl Daemon {
             }
         }
         let had_profile = profile_label.is_some();
+        let profile_agent = if agent == proto::AgentKind::Shell {
+            resume_agent.unwrap_or(agent)
+        } else {
+            agent
+        };
         let (extra_env, profile_label, missing_profile) =
-            self.respawn_profile(old_id, agent, profile_label);
-        let profile_dir = Self::agent_profile_config_dir(agent, &extra_env);
+            self.respawn_profile(old_id, profile_agent, profile_label);
+        let mut extra_env = extra_env;
+        if agent == proto::AgentKind::Shell
+            && profile_label.is_none()
+            && missing_profile.is_none()
+            && let (Some(provider), Some(directory)) = (resume_agent, recorded_profile_dir.as_ref())
+        {
+            extra_env.push((Self::agent_profile_env_var(provider), directory.clone()));
+        }
+        let profile_dir = Self::agent_profile_config_dir(profile_agent, &extra_env);
         let profile_changed = recorded_profile_dir.as_deref() != profile_dir
             || (had_profile && recorded_profile_dir.is_none());
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -7662,6 +7774,7 @@ impl Daemon {
                         h,
                         &recorded_cwd,
                         &cwd,
+                        profile_dir,
                         missing_profile.as_deref(),
                     )
                 } {
@@ -7678,6 +7791,17 @@ impl Daemon {
                         )
                     }
                 },
+                _ if agent == proto::AgentKind::Shell
+                    && matches!(conversation, RespawnConversation::Resume | RespawnConversation::Restore) =>
+                {
+                    (
+                        Vec::new(),
+                        None,
+                        Some(format!(
+                            "Started a fresh shell: session {old_id} has no validated root conversation handle; child restore is deferred."
+                        )),
+                    )
+                }
                 _ => (Vec::new(), None, None),
             },
         };
@@ -7805,6 +7929,7 @@ impl Daemon {
         handle: &ResumeHandle,
         recorded_cwd: &str,
         cwd: &Path,
+        profile_dir: Option<&str>,
         missing_profile: Option<&str>,
     ) -> std::result::Result<Vec<String>, String> {
         let (conversation, transcript) = handle;
@@ -7813,6 +7938,13 @@ impl Daemon {
             return Err(format!(
                 "agent profile {label:?} no longer exists, so conversation {conversation} cannot be found"
             ));
+        }
+        if let Some(directory) = profile_dir {
+            if !Path::new(directory).is_absolute() || !Path::new(directory).is_dir() {
+                return Err(format!(
+                    "effective {agent:?} profile directory {directory:?} is missing or invalid, so conversation {conversation} is not resumed on another account"
+                ));
+            }
         }
         if !Path::new(recorded_cwd).is_dir() {
             return Err(format!(
@@ -7965,8 +8097,39 @@ impl Daemon {
         if !turn
             || session.info.acp.is_some()
             || !crate::agent_events::names_root_conversation(provider, &d.event)
+            || d.agent_id.is_some()
+            || d.subagent_type.is_some()
         {
             return;
+        }
+        if let Some(evidence) = d.resume_evidence.as_ref() {
+            let Ok(slug) = Self::agent_profile_slug(provider) else {
+                return;
+            };
+            let profile_dir = evidence
+                .profile_dir
+                .as_deref()
+                .filter(|value| value.len() <= 4096);
+            if let Err(e) = self.db.set_session_profile_config_dir(id, profile_dir) {
+                tracing::warn!("recording effective profile for session {id}: {e:#}");
+            }
+            let label = profile_dir
+                .filter(|directory| {
+                    Path::new(directory).is_absolute() && Path::new(directory).is_dir()
+                })
+                .and_then(|directory| {
+                    self.db
+                        .list_agent_profiles(slug)
+                        .ok()?
+                        .into_iter()
+                        .find(|profile| {
+                            self.expand_profile_dir(slug, profile.config_dir.clone()) == directory
+                        })
+                        .map(|profile| profile.name)
+                });
+            if let Err(e) = self.db.set_session_profile_label(id, label.as_deref()) {
+                tracing::warn!("recording effective profile label for session {id}: {e:#}");
+            }
         }
         let Some(conversation) = d.session_id.as_deref().filter(|c| !c.is_empty()) else {
             return;
@@ -8024,6 +8187,87 @@ impl Daemon {
                 resumable: true,
             });
         }
+    }
+
+    fn confirm_shell_resume(
+        self: &Arc<Self>,
+        session_id: u32,
+        provider: proto::AgentKind,
+        d: &crate::hook_drop::HookDrop,
+    ) {
+        if d.event != "SessionStart" || d.agent_id.is_some() || d.subagent_type.is_some() {
+            return;
+        }
+        let Ok(session) = self.get(session_id) else {
+            return;
+        };
+        if session.info.agent != proto::AgentKind::Shell
+            || !session.info.resumable
+            || *session.detected.lock().expect("detected lock") != Some(provider)
+            || session.removed.load(Ordering::Acquire)
+            || !session.state.lock().expect("state lock").is_live()
+            || self.operator_ended.lock().expect("operator_ended lock").contains(&session_id)
+        {
+            return;
+        }
+        let provider_resume = match provider {
+            proto::AgentKind::Claude => d
+                .resume_evidence
+                .as_ref()
+                .and_then(|evidence| evidence.source.as_deref())
+                == Some("resume"),
+            proto::AgentKind::Codex => true,
+            _ => false,
+        };
+        let Some(conversation) = d.session_id.as_deref() else {
+            return;
+        };
+        if !provider_resume {
+            return;
+        }
+        let matched = {
+            let restores = self.pending_shell_children.lock().expect("pending shell children lock");
+            restores.get(&session_id).is_some_and(|pending| {
+                provider == pending.provider && conversation == pending.conversation
+            })
+        };
+        if !matched {
+            self.early_shell_resumes
+                .lock()
+                .expect("early shell resumes lock")
+                .insert(session_id, (provider, conversation.to_string()));
+            return;
+        }
+        self.early_shell_resumes
+            .lock()
+            .expect("early shell resumes lock")
+            .remove(&session_id);
+        self.finish_pending_shell_children(session_id);
+    }
+
+    fn finish_pending_shell_children(self: &Arc<Self>, session_id: u32) {
+        let pending = self
+            .pending_shell_children
+            .lock()
+            .expect("pending shell children lock")
+            .remove(&session_id);
+        let Some(pending) = pending else {
+            return;
+        };
+        let Ok(session) = self.get(session_id) else {
+            return;
+        };
+        let mut notices = Vec::new();
+        let mut count = 0;
+        self.restore_children(
+            pending.old_parent,
+            session_id,
+            &pending.children,
+            &mut notices,
+            &mut count,
+        );
+        let parent = session.info.clone();
+        self.record_restored_children(&parent, &notices);
     }
 
     /// An explicit kill or close ends the conversation: nothing resumes it later.
@@ -10881,6 +11125,7 @@ impl Daemon {
             self.mark_detected(d.session, &session, provider);
             self.note_transcript_link(d.session, provider, d);
             self.note_resume_turn(d.session, &session, provider, d);
+            self.confirm_shell_resume(d.session, provider, d);
             if crate::agent_events::compaction_event(provider) == Some(d.event.as_str())
                 && d.subagent_type.is_none()
                 && d.agent_id.is_none()
@@ -10938,7 +11183,10 @@ impl Daemon {
         provider: proto::AgentKind,
         d: &crate::hook_drop::HookDrop,
     ) {
-        if !crate::agent_events::names_root_conversation(provider, &d.event) {
+        if !crate::agent_events::names_root_conversation(provider, &d.event)
+            || d.agent_id.is_some()
+            || d.subagent_type.is_some()
+        {
             return;
         }
         // Antigravity's first conversationId is the root one (see

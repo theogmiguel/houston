@@ -58,6 +58,7 @@ fn fixture(provider: &str, name: &str) -> String {
 }
 
 async fn run_hook(event: &str, slug: &str, session: u32, stdin: String) -> HookDrop {
+
     let home = tempfile::tempdir().unwrap();
     let (event, slug, stdin) = (event.to_string(), slug.to_string(), stdin);
     let home_path = home.path().to_path_buf();

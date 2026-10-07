@@ -1533,6 +1533,8 @@ async fn h4_auto_review_marker_is_deduplicated_wait_only_and_cleared() {
         houston_core::orchestrate::StopHookReserveOutcome::Empty
     ));
     let resolution = HookDrop {
+
+
         event: "PostToolUse".into(),
         ..drop
     };
@@ -2215,6 +2217,8 @@ async fn h4_codex_missing_call_identity_cannot_be_cleared_by_an_unrelated_tool()
     write_drop(
         &directory,
         &HookDrop {
+
+
             event: "PostToolUse".into(),
             ..permission.clone()
         },
@@ -2238,6 +2242,8 @@ async fn h4_codex_missing_call_identity_cannot_be_cleared_by_an_unrelated_tool()
     write_drop(
         &directory,
         &HookDrop {
+
+
             event: "Interrupt".into(),
             ..permission
         },

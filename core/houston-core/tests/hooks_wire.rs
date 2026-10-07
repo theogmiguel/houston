@@ -24,6 +24,7 @@ fn drop_for(event: &str, session: u32) -> HookDrop {
 }
 
 fn drop_from(agent: &str, event: &str, session: u32) -> HookDrop {
+
     HookDrop {
         agent: Some(agent.to_string()),
         ..drop_for(event, session)
@@ -449,6 +450,8 @@ async fn claude_question_tool_blocks_until_the_matching_tool_finishes() {
     );
 
     let question = HookDrop {
+
+
         event: "PreToolUse".into(),
         tool_name: Some("AskUserQuestion".into()),
         tool_use_id: Some("toolu-question-1".into()),
@@ -461,6 +464,8 @@ async fn claude_question_tool_blocks_until_the_matching_tool_finishes() {
     );
 
     let unrelated = HookDrop {
+
+
         event: "PostToolUse".into(),
         tool_name: Some("Read".into()),
         tool_use_id: Some("toolu-read-1".into()),
@@ -473,6 +478,8 @@ async fn claude_question_tool_blocks_until_the_matching_tool_finishes() {
     );
 
     let answer = HookDrop {
+
+
         event: "PostToolUse".into(),
         tool_name: Some("AskUserQuestion".into()),
         tool_use_id: Some("toolu-question-1".into()),
@@ -499,6 +506,8 @@ async fn claude_mcp_elicitation_blocks_until_its_result() {
         proto::AgentStatus::Working
     );
     let first_elicitation = HookDrop {
+
+
         request_id: Some("elicitation-a".into()),
         ..drop_for("Elicitation", info.id)
     };
@@ -508,11 +517,15 @@ async fn claude_mcp_elicitation_blocks_until_its_result() {
         proto::AgentStatus::NeedsInput
     );
     let second_elicitation = HookDrop {
+
+
         request_id: Some("elicitation-b".into()),
         ..drop_for("Elicitation", info.id)
     };
     drop_and_await_apply(state.path(), &second_elicitation).await;
     let unrelated_denial = HookDrop {
+
+
         tool_use_id: Some("toolu-unrelated".into()),
         tool_name: Some("Bash".into()),
         ..drop_for("PermissionDenied", info.id)
@@ -524,6 +537,8 @@ async fn claude_mcp_elicitation_blocks_until_its_result() {
         "an unrelated permission result must not clear the elicitation"
     );
     let second_result = HookDrop {
+
+
         request_id: Some("elicitation-b".into()),
         ..drop_for("ElicitationResult", info.id)
     };
@@ -534,6 +549,8 @@ async fn claude_mcp_elicitation_blocks_until_its_result() {
         "an out-of-order result must leave the other elicitation open"
     );
     let first_result = HookDrop {
+
+
         request_id: Some("elicitation-a".into()),
         ..drop_for("ElicitationResult", info.id)
     };

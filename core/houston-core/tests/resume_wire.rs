@@ -29,6 +29,7 @@ out="$RESUME_ARGV_DIR/$HOUSTON_SESSION"
 : > "$out.tmp"
 for a in "$@"; do printf '%s\n' "$a" >> "$out.tmp"; done
 printf 'env:CLAUDE_CONFIG_DIR=%s\n' "$CLAUDE_CONFIG_DIR" >> "$out.tmp"
+printf 'env:CODEX_HOME=%s\n' "$CODEX_HOME" >> "$out.tmp"
 mv "$out.tmp" "$out"
 case " $* " in
   *" --resume "*) [ -n "$RESUME_FAKE_EXIT" ] && exit "$RESUME_FAKE_EXIT" ;;
@@ -76,6 +77,7 @@ async fn setup() -> Env {
         "HOUSTON_SAFE_MODE",
         "HOUSTON_DISABLE_AUTO_RESTORE",
         "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
     ] {
         std::env::remove_var(var);
     }
@@ -139,6 +141,13 @@ fn config_dir_of(argv: &[String]) -> String {
     argv.iter()
         .find_map(|a| a.strip_prefix("env:CLAUDE_CONFIG_DIR="))
         .expect("the fake CLI records its config dir")
+        .to_string()
+}
+
+fn codex_home_of(argv: &[String]) -> String {
+    argv.iter()
+        .find_map(|a| a.strip_prefix("env:CODEX_HOME="))
+        .expect("the fake CLI records its Codex home")
         .to_string()
 }
 
@@ -234,16 +243,29 @@ fn fixture(name: &str, conversation: &str, transcript: &str, cwd: &Path) -> Stri
 
 /// Runs the real hook helper on a Claude payload, as the CLI's hook would.
 async fn run_hook(event: &str, session: u32, stdin: String) -> HookDrop {
+    run_hook_as(event, session, stdin, None).await
+}
+
+async fn run_hook_as(event: &str, session: u32, stdin: String, agent: Option<&str>) -> HookDrop {
     let home = tempfile::tempdir().unwrap();
     let event = event.to_string();
     let home_path = home.path().to_path_buf();
+    let agent = agent.map(str::to_string);
     tokio::task::spawn_blocking(move || {
         let mut cmd = houston_core::spawn::command(env!("CARGO_BIN_EXE_houston-core"));
         cmd.arg("hook").arg(&event).arg("--houston-managed");
+        if let Some(agent) = &agent {
+            cmd.arg("--agent").arg(agent);
+        }
         cmd.env_clear();
         cmd.env("HOME", &home_path);
         cmd.env("HOUSTON_CHANNEL", "resumetest");
         cmd.env("TR_SESSION", session.to_string());
+        for name in ["CLAUDE_CONFIG_DIR", "CODEX_HOME"] {
+            if let Ok(value) = std::env::var(name) {
+                cmd.env(name, value);
+            }
+        }
         cmd.stdin(std::process::Stdio::piped());
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::piped());
@@ -306,6 +328,18 @@ async fn hook(
     apply_drop(env, daemon, drop).await;
 }
 
+async fn hook_as(
+    env: &Env,
+    daemon: &Arc<Daemon>,
+    session: u32,
+    agent: &str,
+    event: &str,
+    stdin: String,
+) {
+    let drop = run_hook_as(event, session, stdin, Some(agent)).await;
+    apply_drop(env, daemon, drop).await;
+}
+
 const START: &str = "claude-2.1.263-01-SessionStart.json";
 const PROMPT: &str = "claude-2.1.263-02-UserPromptSubmit.json";
 
@@ -350,6 +384,209 @@ async fn shell_hosted_claude_hook_is_recorded_and_restart_resumes_inside_shell()
     );
     daemon.close(shell.id).unwrap();
     restarted.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_hook_profile_is_captured_and_reused_when_daemon_profile_switches() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-profile");
+    let profile = env.state.path().join("claude-manual-account");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::env::set_var("CLAUDE_CONFIG_DIR", &profile);
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "00000000-0000-4000-8000-000000000079";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+    hook(&env, &daemon, shell.id, "UserPromptSubmit", PROMPT, conversation, &transcript, &dir).await;
+    assert_eq!(
+        Db::open(&env.db_path()).unwrap().session_profile_config_dir(shell.id).unwrap().as_deref(),
+        Some(profile.to_str().unwrap()),
+    );
+
+    std::env::remove_var("CLAUDE_CONFIG_DIR");
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    let argv = argv_of(&env, restored.id).await;
+    assert_eq!(resume_of(&argv).as_deref(), Some(conversation));
+    assert_eq!(config_dir_of(&argv), profile.display().to_string());
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn deleted_manual_shell_profile_is_reported_and_does_not_resume_elsewhere() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-profile-deleted");
+    let profile = env.state.path().join("claude-deleted-account");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::env::set_var("CLAUDE_CONFIG_DIR", &profile);
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "00000000-0000-4000-8000-000000000080";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+    hook(&env, &daemon, shell.id, "UserPromptSubmit", PROMPT, conversation, &transcript, &dir).await;
+    std::env::remove_var("CLAUDE_CONFIG_DIR");
+    std::fs::remove_dir_all(&profile).unwrap();
+
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    let argv = argv_of(&env, restored.id).await;
+    assert!(resume_of(&argv).is_none());
+    assert!(restored.resume_notice.as_deref().unwrap_or_default().contains("profile directory"));
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_hook_captures_and_reuses_codex_home_for_exact_thread_resume() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-codex-profile");
+    let profile = env.state.path().join("codex-manual-account");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::env::set_var("CODEX_HOME", &profile);
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "019a0000-0000-4000-8000-000000000082";
+    let transcript = transcript(&env, conversation, b"codex transcript fixture\n");
+    let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/hooks/codex/codex-0.153.4-03-Stop.json");
+    let mut payload: Value = serde_json::from_slice(&std::fs::read(fixture_path).unwrap()).unwrap();
+    payload["session_id"] = conversation.into();
+    payload["transcript_path"] = transcript.into();
+    payload["cwd"] = dir.display().to_string().into();
+    hook_as(&env, &daemon, shell.id, "codex", "Stop", payload.to_string()).await;
+    std::env::remove_var("CODEX_HOME");
+
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    let argv = argv_of(&env, restored.id).await;
+    assert_eq!(resume_of(&argv).as_deref(), Some(conversation));
+    assert_eq!(codex_home_of(&argv), profile.display().to_string());
+    assert_eq!(restored.agent, proto::AgentKind::Shell);
+    assert_eq!(restored.detected_agent, Some(proto::AgentKind::Codex));
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_children_stay_deferred_when_the_resumed_cli_exits_before_root_hook() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-child-recovery");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let child = daemon.orchestrate_spawn(
+        shell.id,
+        proto::AgentKind::Claude,
+        None,
+        None,
+        houston_core::orchestrate::Brief::from("child result stays held".to_string()),
+        Some(false),
+        None,
+        Some("recovery-child".to_string()),
+    ).unwrap();
+    let child_conversation = flag(&argv_of(&env, child.id).await, "--session-id").unwrap();
+    let child_transcript = transcript(&env, &child_conversation, b"child transcript\n");
+    hook(&env, &daemon, child.id, "UserPromptSubmit", PROMPT, &child_conversation, &child_transcript, &dir).await;
+    let nested = daemon.orchestrate_spawn(
+        child.id,
+        proto::AgentKind::Claude,
+        None,
+        None,
+        houston_core::orchestrate::Brief::from("nested result remains held".to_string()),
+        Some(false),
+        None,
+        Some("nested-recovery-child".to_string()),
+    ).unwrap();
+    let nested_conversation = flag(&argv_of(&env, nested.id).await, "--session-id").unwrap();
+    let nested_transcript = transcript(&env, &nested_conversation, b"nested transcript\n");
+    hook(&env, &daemon, nested.id, "UserPromptSubmit", PROMPT, &nested_conversation, &nested_transcript, &dir).await;
+    let root_conversation = "00000000-0000-4000-8000-000000000081";
+    let root_transcript = transcript(&env, root_conversation, b"root transcript\n");
+    hook(&env, &daemon, shell.id, "UserPromptSubmit", PROMPT, root_conversation, &root_transcript, &dir).await;
+
+    std::env::set_var("RESUME_FAKE_EXIT", "1");
+    let restarted = reboot(&env, &daemon);
+    let sessions = restarted.list();
+    let restored_parent = restored_from(&sessions, shell.id);
+    assert!(restarted
+        .inbox_rows_for_test(restored_parent.id)
+        .iter()
+        .any(|row| row.summary.contains("child recovery deferred") || row.body.contains("child recovery is deferred")));
+    assert!(sessions.iter().all(|session| {
+        session.session_origin != Some(child.id) && session.session_origin != Some(nested.id)
+    }));
+    assert_eq!(
+        sessions.iter().find(|session| session.id == nested.id).unwrap().restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed),
+    );
+    assert_eq!(resume_of(&argv_of(&env, restored_parent.id).await).as_deref(), Some(root_conversation));
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored_parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_without_a_root_handle_names_the_failure_and_defers_children() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-without-root-handle");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let child = daemon.orchestrate_spawn(
+        shell.id,
+        proto::AgentKind::Claude,
+        None,
+        None,
+        houston_core::orchestrate::Brief::from("remain held".to_string()),
+        Some(false),
+        None,
+        Some("no-root-child".to_string()),
+    ).unwrap();
+    let restarted = reboot(&env, &daemon);
+    let sessions = restarted.list();
+    let parent = restored_from(&sessions, shell.id);
+    assert!(parent.resume_notice.as_deref().unwrap_or_default().contains("no validated root conversation handle"));
+    assert!(sessions.iter().all(|session| session.session_origin != Some(child.id)));
+    daemon.close(shell.id).unwrap();
+    restarted.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_children_resume_only_after_the_matching_root_native_resume_hook() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-child-confirmed");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let child = daemon.orchestrate_spawn(
+        shell.id,
+        proto::AgentKind::Claude,
+        None,
+        None,
+        houston_core::orchestrate::Brief::from("restore after parent".to_string()),
+        Some(false),
+        None,
+        Some("confirmed-child".to_string()),
+    ).unwrap();
+    let child_conversation = flag(&argv_of(&env, child.id).await, "--session-id").unwrap();
+    let child_transcript = transcript(&env, &child_conversation, b"child transcript\n");
+    hook(&env, &daemon, child.id, "UserPromptSubmit", PROMPT, &child_conversation, &child_transcript, &dir).await;
+    let root_conversation = "00000000-0000-4000-8000-000000000083";
+    let root_transcript = transcript(&env, root_conversation, b"root transcript\n");
+    hook(&env, &daemon, shell.id, "UserPromptSubmit", PROMPT, root_conversation, &root_transcript, &dir).await;
+
+    let restarted = reboot(&env, &daemon);
+    let parent = restored_from(&restarted.list(), shell.id).clone();
+    assert!(restarted.list().iter().all(|session| session.session_origin != Some(child.id)));
+    hook(&env, &restarted, parent.id, "SessionStart", RESUMED, "00000000-0000-4000-8000-000000000099", &root_transcript, &dir).await;
+    assert!(restarted.list().iter().all(|session| session.session_origin != Some(child.id)));
+    hook(&env, &restarted, parent.id, "SessionStart", RESUMED, root_conversation, &root_transcript, &dir).await;
+    assert!(restored_from(&restarted.list(), child.id).resumable);
+    daemon.close(shell.id).unwrap();
+    restarted.close(parent.id).unwrap();
 }
 const STOP: &str = "claude-2.1.263-05-Stop.json";
 const CLEAR: &str = "claude-2.1.284-02-SessionStart-clear.json";

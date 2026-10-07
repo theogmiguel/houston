@@ -6,6 +6,12 @@ use std::path::{Path, PathBuf};
 
 pub const DROP_V: u32 = 1;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResumeHookEvidence {
+    pub source: Option<String>,
+    pub profile_dir: Option<String>,
+}
+
 // True millisecond resolution, deliberately not `daemon::now_ms` (a
 // multiple of 1000): on that coarser clock every event in one second would
 // share `ms`, making seq-only ordering — the async-Stop race below — the norm.
@@ -94,6 +100,8 @@ pub struct HookDrop {
     // digest so command contents never enter daemon state or hook drops.
     #[serde(default)]
     pub tool_input_fingerprint: Option<String>,
+    #[serde(default)]
+    pub resume_evidence: Option<ResumeHookEvidence>,
 }
 
 impl Default for HookDrop {
@@ -126,6 +134,7 @@ impl Default for HookDrop {
             subagent_type: None,
             tool_name: None,
             tool_input_fingerprint: None,
+            resume_evidence: None,
         }
     }
 }
@@ -1082,6 +1091,8 @@ mod tests {
         assert_eq!(d.session, 7);
 
         let with_agent = HookDrop {
+        resume_evidence: None,
+
             agent: Some("cursor".to_string()),
             ..drop_for(7, "stop")
         };

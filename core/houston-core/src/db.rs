@@ -2406,6 +2406,24 @@ impl Db {
         Ok(())
     }
 
+    pub fn set_session_profile_label(&self, id: u32, label: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE sessions SET profile_label = ?2 WHERE id = ?1",
+            rusqlite::params![id, label],
+        )?;
+        Ok(())
+    }
+
+    pub fn session_profile_label(&self, id: u32) -> Result<Option<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT profile_label FROM sessions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn session_profile_config_dir(&self, id: u32) -> Result<Option<String>> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn.query_row(

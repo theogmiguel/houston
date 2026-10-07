@@ -79,6 +79,7 @@ fn transcript(dir: &Path, name: &str, lines: &[&str]) -> PathBuf {
 }
 
 fn stop_with_transcript(session: u32, path: &Path) -> HookDrop {
+
     HookDrop {
         transcript_path: Some(path.display().to_string()),
         ..drop_for("Stop", session)
@@ -130,6 +131,8 @@ mod context_indicator {
             .to_string();
             let path = transcript(dir.path(), "codex.jsonl", &[&line]);
             let drop = HookDrop {
+
+
                 agent: Some("codex".into()),
                 ..stop_with_transcript(info.id, &path)
             };
@@ -141,6 +144,8 @@ mod context_indicator {
             assert_eq!(context.source, proto::ContextSource::Reported);
         }
         let prompt = HookDrop {
+
+
             agent: Some("codex".into()),
             ..drop_for("UserPromptSubmit", info.id)
         };
@@ -388,6 +393,8 @@ mod context_indicator {
             ],
         );
         let d = HookDrop {
+
+
             agent: Some("cursor".into()),
             transcript_path: Some(t.display().to_string()),
             ..drop_for("Stop", info.id)

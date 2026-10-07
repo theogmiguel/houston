@@ -344,6 +344,9 @@ fn a_hook_fired_with_a_stale_tr_swarm_scope_writes_its_drop_under_the_config_dir
 #[test]
 fn a_drop_file_round_trips_every_field_it_can_carry() {
     let full = HookDrop {
+        resume_evidence: None,
+
+
         v: hook_drop::DROP_V,
         event: "Stop".into(),
         session: 7,
