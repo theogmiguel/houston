@@ -666,7 +666,7 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
     );
     assert_eq!(approved_domain.readiness.unresolved_questions, 0);
     let approved_plan = approved_domain.plan.unwrap();
-    assert_eq!(approved_plan.approved_revision, Some(2));
+    assert_eq!(approved_plan.approved_revision, Some(approved.revision));
     assert_eq!(
         approved_plan.answers,
         [proto::TaskPlanAnswer {
