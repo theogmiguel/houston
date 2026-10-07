@@ -38,7 +38,8 @@ function makeSession(id: number, title: string): SessionInfo {
 
 function fakeClient(): HoustonClient {
   return {
-    resizeSession: vi.fn(),
+    subscribe: () => () => {},
+      resizeSession: vi.fn(),
     attachSession: vi.fn(),
     sessionVisibility: vi.fn(),
     sendStdin: vi.fn().mockReturnValue(true),

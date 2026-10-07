@@ -41,6 +41,7 @@ const HOST: HostInfo = {
   settled_retention_hours: 24,
   worktree_cleanup_enabled: false,
   worktree_cleanup_grace_hours: 24,
+  worktree_idle_removal_days: 30,
   command_history_ignore_glob_count: 0,
   session_db_bytes: 0
 }

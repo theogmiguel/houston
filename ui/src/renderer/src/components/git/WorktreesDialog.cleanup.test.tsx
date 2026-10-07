@@ -17,7 +17,7 @@ let host: HTMLDivElement | null = null
 
 function mount(
   view: WorktreeCleanupView,
-  overrides: { onCheck?: () => void; onCleanNow?: (paths: string[]) => void; onRemove?: (p: string, f: boolean) => void } = {}
+  overrides: { onCheck?: () => void; onCleanNow?: (paths: string[]) => void; onRemove?: (p: string, f: boolean) => void; onRemoveStale?: (path: string) => void } = {}
 ): void {
   host = document.createElement('div')
   document.body.appendChild(host)
@@ -39,6 +39,7 @@ function mount(
         onPrune={() => {}}
         onCheckCleanup={overrides.onCheck ?? (() => {})}
         onCleanNow={overrides.onCleanNow ?? (() => {})}
+        onRemoveStale={overrides.onRemoveStale ?? (() => {})}
         onAddWorkspace={() => {}}
         nowMs={NOW}
       />
@@ -53,10 +54,14 @@ afterEach(() => {
   host = null
 })
 
+// The daemon reports `status` alongside `keep`; derive it the same way so a fixture
+// with a keep reason is never also Ready.
 function entry(p: Partial<ManagedWorktreeInfo> = {}): ManagedWorktreeInfo {
-  return {
+  const base: ManagedWorktreeInfo = {
     path: '/repo/.houston/worktrees/demo',
     branch: 'houston/demo',
+    base_branch: 'main',
+    status: 'kept',
     pr: 36,
     keep: null,
     bytes: 23_000_000_000,
@@ -64,10 +69,21 @@ function entry(p: Partial<ManagedWorktreeInfo> = {}): ManagedWorktreeInfo {
     checked_at_ms: NOW - 2 * HOUR,
     ...p
   }
+  const ready = base.checked_at_ms !== null && base.keep === null
+  return { ...base, status: p.status ?? (ready ? 'ready' : 'kept') }
+}
+
+function staleEntry(path: string): ManagedWorktreeInfo {
+  return {
+    ...entry({ path, keep: null }),
+    base_branch: 'main',
+    status: 'stale',
+    keep: { kind: 'stale', idle_days: 20, removal_in_days: 10 }
+  } as unknown as ManagedWorktreeInfo
 }
 
 function rows(): HTMLElement[] {
-  return Array.from(document.querySelectorAll<HTMLElement>('[data-testid="worktree-cleanup-row"]'))
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-testid="table-row"]'))
 }
 
 function section(): string {
@@ -93,9 +109,9 @@ describe('WorktreesDialog cleanup section', () => {
     expect(first.textContent).toContain('/repo/.houston/worktrees/demo')
     expect(first.textContent).toContain('houston/demo')
     expect(first.textContent).toContain('#36')
-    expect(first.textContent).toContain('23.0 GB · measured 2 h ago')
+    expect(first.textContent).toContain('23.0 GB')
     expect(first.textContent).toContain('can be removed')
-    expect(second.textContent).toContain('not measured yet')
+    expect(second.textContent).toContain('Not measured')
   })
 
   it('every keep reason has its own line', () => {
@@ -105,6 +121,7 @@ describe('WorktreesDialog cleanup section', () => {
       [{ kind: 'dirty', files: 3 }, 'Kept: 3 uncommitted files'],
       [{ kind: 'ignored_files', files: 1 }, 'Kept: 1 ignored file removal would delete'],
       [{ kind: 'commits_outside_pr', count: 2, pr: 36 }, 'Kept: 2 commits not in PR #36'],
+      [{ kind: 'not_integrated', count: 2, base: 'ui/phase-4' }, 'Kept: 2 commits not in ui/phase-4'],
       [{ kind: 'pr_head_unavailable', pr: 36 }, 'Kept: the head of PR #36 could not be fetched'],
       [{ kind: 'in_use', session: 12 }, 'Kept: in use by pane 12'],
       [{ kind: 'grace', until_ms: NOW + 3 * HOUR }, 'Kept: merged, removable in 3 h'],
@@ -118,25 +135,8 @@ describe('WorktreesDialog cleanup section', () => {
       status: 'ready',
       entries: cases.map(([keep], i) => entry({ path: `/repo/.houston/worktrees/t${i}`, keep }))
     })
-    const lines = Array.from(document.querySelectorAll('[data-testid="worktree-cleanup-status"]')).map(
-      (el) => el.textContent
-    )
-    expect(lines).toEqual(cases.map(([, line]) => line))
-    expect(new Set(lines).size).toBe(cases.length)
-  })
-
-  it('header counts removable trees', () => {
-    mount({
-      status: 'ready',
-      entries: [
-        entry({ path: '/a', bytes: 1_500_000_000 }),
-        entry({ path: '/b', bytes: 2_000_000_000 }),
-        entry({ path: '/c', bytes: 9_000_000_000, keep: { kind: 'dirty', files: 1 } })
-      ]
-    })
-    expect(document.querySelector('[data-testid="worktree-cleanup-header"]')?.textContent).toBe(
-      '2 merged · 3.5 GB reclaimable'
-    )
+    const rendered = section()
+    for (const [, reason] of cases) expect(rendered).toContain(reason)
   })
 
   it('clean now confirms before sending, and sends only what it listed', () => {
@@ -147,11 +147,15 @@ describe('WorktreesDialog cleanup section', () => {
         entries: [
           entry({ path: '/repo/.houston/worktrees/a', bytes: 1_500_000_000 }),
           entry({ path: '/repo/.houston/worktrees/b', bytes: 2_000_000_000 }),
+          staleEntry('/repo/stale'),
           entry({ path: '/repo/.houston/worktrees/kept', keep: { kind: 'dirty', files: 1 } }),
           entry({ path: '/repo/.houston/worktrees/unchecked', checked_at_ms: null })
         ]
       },
-      { onCleanNow }
+      {
+        onCleanNow,
+        onRemoveStale: () => {}
+      }
     )
     click(document.querySelector('[data-testid="worktree-cleanup-run"]'))
     expect(onCleanNow).not.toHaveBeenCalled()
@@ -159,10 +163,12 @@ describe('WorktreesDialog cleanup section', () => {
     expect(body).toContain('/repo/.houston/worktrees/a')
     expect(body).toContain('/repo/.houston/worktrees/b')
     expect(body).toContain('3.5 GB')
+    const cleanConfirm = document.querySelector('[role="alertdialog"]')
+    expect(cleanConfirm?.textContent).not.toContain('/repo/stale')
     const confirm = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Remove')
     click(confirm)
     expect(onCleanNow).toHaveBeenCalledTimes(1)
-    expect(onCleanNow).toHaveBeenCalledWith(['/repo/.houston/worktrees/a', '/repo/.houston/worktrees/b'])
+    expect(onCleanNow).toHaveBeenCalledWith(['/repo/.houston/worktrees/b', '/repo/.houston/worktrees/a'])
   })
 
   it('check asks for a pass even when nothing is removable yet', () => {
@@ -176,7 +182,7 @@ describe('WorktreesDialog cleanup section', () => {
   it('no managed worktrees', () => {
     mount({ status: 'ready', entries: [] })
     expect(section()).toContain('No worktrees created by Houston here')
-    expect(document.querySelector('[data-testid="worktree-cleanup-run"]')).toBeNull()
+    expect((document.querySelector('[data-testid="worktree-cleanup-run"]') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('pending and refused', () => {
@@ -189,24 +195,21 @@ describe('WorktreesDialog cleanup section', () => {
     expect(section()).toContain('a worktree cleanup pass is already running for /repo')
   })
 
-  it('probably integrated offers remove', () => {
-    const onRemove = vi.fn()
+  it('stale removal asks first, Escape cancels, and confirmation removes the worktree', () => {
+    const onRemoveStale = vi.fn()
     mount(
-      {
-        status: 'ready',
-        entries: [
-          entry({ path: '/p', keep: { kind: 'probably_integrated' } }),
-          entry({ path: '/d', keep: { kind: 'dirty', files: 1 } }),
-          entry({ path: '/n', keep: { kind: 'no_pr' } })
-        ]
-      },
-      { onRemove }
+      { status: 'ready', entries: [staleEntry('/stale')] },
+      { onRemoveStale }
     )
-    const buttons = document.querySelectorAll('[data-testid="worktree-cleanup-remove"]')
-    expect(buttons.length).toBe(1)
-    expect(rows()[0].contains(buttons[0])).toBe(true)
-    click(buttons[0])
-    expect(onRemove).toHaveBeenCalledWith('/p', false)
+    click(document.querySelector('[data-testid="worktree-cleanup-remove"]'))
+    expect(document.body.textContent).toContain('no unpushed work is lost')
+    const dialog = document.querySelector('[role="alertdialog"]')!
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    act(() => dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(onRemoveStale).not.toHaveBeenCalled()
+    click(document.querySelector('[data-testid="worktree-cleanup-remove"]'))
+    click(Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Remove'))
+    expect(onRemoveStale).toHaveBeenCalledWith('/stale')
   })
 })
 

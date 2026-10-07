@@ -9603,6 +9603,94 @@ async fn k2_settled_reusable_child_frees_cap_and_retention_closes_only_expired_r
 }
 
 #[tokio::test]
+async fn settled_exited_children_without_retention_are_backfilled_before_restore() {
+    let _guard = serial().await;
+    let r = rig("retention-backfill").await;
+    let parent = r.pane();
+    let closed_parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_settled_retention_hours(2).unwrap();
+    let (_, spawned) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"codex", "prompt":"work", "reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .orchestrate_submit(child, "settled before retention".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), child, "Stop").await;
+    let (_, closed_spawned) = r
+        .post_spawn(
+            &r.token_for(closed_parent.id),
+            serde_json::json!({"kind":"codex", "prompt":"work", "reusable":true}),
+        )
+        .await;
+    let closed_child = closed_spawned["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .orchestrate_submit(closed_child, "parent closed".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), closed_child, "Stop").await;
+    let db_path = r._state.path().join("test.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute(
+        "UPDATE delegations SET retained_until = NULL WHERE child_session = ?1",
+        [child],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE sessions SET state = 'exited' WHERE id = ?1",
+        [child],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE delegations SET retained_until = NULL WHERE child_session = ?1",
+        [closed_child],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE sessions SET state = 'exited' WHERE id = ?1",
+        [closed_child],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE sessions SET state = 'closed' WHERE id = ?1",
+        [closed_parent.id],
+    )
+    .unwrap();
+    drop(conn);
+
+    let reopened = Daemon::new(DaemonConfig {
+        token: TOKEN.into(),
+        db_path,
+    })
+    .unwrap();
+    assert!(reopened.list().iter().any(|session| session.id == child));
+    assert!(reopened
+        .delegation_of(child)
+        .unwrap()
+        .retained_until
+        .is_some());
+    assert!(!reopened
+        .list()
+        .iter()
+        .any(|session| session.id == closed_child));
+    let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+    let closed_state: String = conn
+        .query_row(
+            "SELECT state FROM sessions WHERE id = ?1",
+            [closed_child],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(closed_state, "closed");
+    reopened.close(child).unwrap();
+    r.daemon.close(parent.id).unwrap();
+    r.daemon.close(closed_parent.id).unwrap();
+}
+
+#[tokio::test]
 async fn k2_workspace_routes_and_handoff_state_are_scoped_and_persisted() {
     let _guard = serial().await;
     let r = rig("routing-state").await;

@@ -40,6 +40,7 @@ import {
   IconFolder,
   IconMaximize,
   IconMinimize,
+  IconMoon,
   IconPlus,
   IconRespawn,
   IconSplitDown,
@@ -51,7 +52,7 @@ import {
   type IconComponent
 } from './icons'
 import { usePaneFocusTier } from '../windowFocus'
-import { PaneHeader } from './ui'
+import { Button, Card, Inline, Inset, Notice, PaneHeader, Text } from './ui'
 import {
   PaneEngineGlyph,
   PaneHeadActions,
@@ -60,7 +61,8 @@ import {
   PaneStateChip,
   PaneStatusDot,
   PaneSubtitle,
-  PaneHeadBadge
+  PaneHeadBadge,
+  PaneNotice
 } from './ui/PaneControls'
 import {
   ChildrenColumn,
@@ -98,12 +100,12 @@ import { ContextIndicator } from './ContextIndicator'
 import { PaneTaskChip } from './tasks/PaneTaskChip'
 import { PrWatchChip } from './ui/PrWatch'
 import { usePrWatch } from './git/usePrWatch'
-import { Button } from './ui/Button'
 import { RosterPeekbar, RosterSplit, type RosterMode } from './ui/RosterSurface'
 import { Count } from './ui/Count'
 import { ShellBranchCopyChip, ShellElement } from './ui/ShellPrimitives'
 import { formatCheckout } from './checkout/formatCheckout'
 import type { SessionCheckout } from '../houston/generated/SessionCheckout'
+import type { PaneContextMenu as PaneContextMenuController } from './paneContextMenu'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
@@ -323,6 +325,94 @@ function PaneWatchChip({ watches }: { watches: readonly { number: number }[] }):
   return watches[0] ? <PrWatchChip number={watches[0].number} /> : null
 }
 
+interface SessionMemoryResult {
+  bytes: number | null
+  measuredAt: number | null
+  reason: string | null
+}
+
+function isSessionLifecycleError(message: { context?: string | null; message: string }, sessionId: number): boolean {
+  const target = `session ${sessionId}`
+  return [String(message.context), message.message].some((text) => text.includes(target))
+}
+
+function useSessionLifecycle(client: HoustonClient, sessionId: number): {
+  memoryResult: SessionMemoryResult | null
+  setMemoryResult: React.Dispatch<React.SetStateAction<SessionMemoryResult | null>>
+  lifecycleError: string | null
+} {
+  const [memoryResult, setMemoryResult] = useState<SessionMemoryResult | null>(null)
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setMemoryResult(null)
+    setLifecycleError(null)
+  }, [sessionId])
+
+  useEffect(() => {
+    const offMemory = client.subscribe('session_memory', (message) => {
+      if (message.session === sessionId) {
+        setMemoryResult({ bytes: message.bytes ?? null, measuredAt: message.measured_at_ms ?? null, reason: message.unavailable_reason ?? null })
+      }
+    })
+    const offError = client.subscribe('error', (message) => {
+      if (isSessionLifecycleError(message, sessionId)) setLifecycleError(message.message)
+    })
+    return () => { offMemory(); offError() }
+  }, [client, sessionId])
+
+  return { memoryResult, setMemoryResult, lifecycleError }
+}
+
+function SessionLifecycleNotices({ info, lifecycleError, memoryResult }: {
+  info: SessionInfo
+  lifecycleError: string | null
+  memoryResult: SessionMemoryResult | null
+}): React.JSX.Element {
+  return <>
+    {(info.sleep_notice || info.restore_deferred) && <PaneNotice data-testid="session-recovery-notice">
+      {info.sleep_notice ?? `Session restore deferred: ${restoreReasonLabel(info.restore_deferred)}`}
+    </PaneNotice>}
+    {lifecycleError && <Notice tone="danger" inset="compact-inline" className="flex-none">{lifecycleError}</Notice>}
+    {memoryResult && <div role="status"><Notice tone="info" inset="compact-inline" className="flex-none">
+      {memoryResult.bytes == null ? memoryResult.reason ?? 'Memory measurement is unavailable.' : `Process memory (PSS): ${formatMemory(memoryResult.bytes)}`}
+      {memoryResult.measuredAt != null && <span> · measured {new Date(memoryResult.measuredAt).toLocaleTimeString()}</span>}
+    </Notice></div>}
+  </>
+}
+
+function SessionLifecycleMenuItems({
+  info,
+  live,
+  sleeping,
+  shellIntegration,
+  client,
+  menuItem,
+  setMemoryResult,
+}: {
+  info: SessionInfo
+  live: boolean
+  sleeping: boolean
+  shellIntegration: boolean
+  client: HoustonClient
+  menuItem: PaneContextMenuController['menuItem']
+  setMemoryResult: React.Dispatch<React.SetStateAction<SessionMemoryResult | null>>
+}): React.JSX.Element {
+  return <>
+    {info.spawned_by == null && (info.agent === 'claude' || info.agent === 'codex') && !info.task && !sleeping && live && (
+      <CtxRow glyph={IconMoon} label="Sleep session" disabled={info.status !== 'idle'} disabledReason="Sleep requires this agent to be idle" onClick={menuItem(() => client.send({ type: 'session_sleep', session: info.id }))} />
+    )}
+    {sleeping && <>
+      <CtxRow glyph={IconRespawn} label="Wake conversation" onClick={menuItem(() => client.send({ type: 'session_wake', session: info.id }))} />
+      <CtxRow glyph={IconRespawn} label="Start fresh conversation" onClick={menuItem(() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true))} />
+    </>}
+    {!sleeping && <CtxRow glyph={IconFolder} label="Measure process memory" onClick={menuItem(() => {
+      setMemoryResult(null)
+      client.send({ type: 'session_memory_get', session: info.id })
+    })} />}
+  </>
+}
+
 function SessionPaneImpl({
   client,
   info: infoProp,
@@ -393,6 +483,10 @@ function SessionPaneImpl({
   const [confirmRestart, setConfirmRestart] = useState<RestartMode | null>(null)
   const termActions = useRef<TermActions | null>(null)
   const [menuCwd, setMenuCwd] = useState<string | null>(null)
+  const { memoryResult, setMemoryResult, lifecycleError } = useSessionLifecycle(client, infoProp.id)
+
+  const lifecycleInfo = info
+  const sleeping = info.state === 'sleeping'
 
   const cwd = menuCwd ?? info.cwd
   useEffect(() => {
@@ -470,7 +564,8 @@ function SessionPaneImpl({
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </PaneHeader>
       <ResumeNotice notice={info.resume_notice} />
-      <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />
+      <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} memoryResult={memoryResult} />
+      {sleeping ? <SleepingSessionPlaceholder info={lifecycleInfo} onWake={() => client.send({ type: 'session_wake', session: info.id })} onFresh={() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)} /> : <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />}
       <AnimOut open={confirmRestart !== null} suppress="modal">
         {confirmRestart && (
           <RestartConfirm
@@ -492,6 +587,8 @@ function SessionPaneImpl({
           onMouseDown={(e) => e.stopPropagation()}
         >
           <PaneContextMenuHead heading={info.title} detail={collapseHome(cwd)} />
+          {lifecycleError && <Notice tone="danger">{lifecycleError}</Notice>}
+          <SessionLifecycleMenuItems info={info} live={live} sleeping={sleeping} shellIntegration={shellIntegration} client={client} menuItem={menuItem} setMemoryResult={setMemoryResult} />
           <PaneContextMenuSeparator />
           {children.length > 0 && <CtxRow glyph={IconFolder} label="Overview" onClick={menuItem(() => openSideOverview(info.id))} />}
           {info.spawned_by != null && onReturnChildToRoster && <CtxRow glyph={IconArrowUpRight} label="Return to roster" onClick={menuItem(() => onReturnChildToRoster(info.id))} />}
@@ -567,7 +664,7 @@ function SessionPaneImpl({
               }
             })}
           />
-          {restartEntries({
+          {!sleeping && restartEntries({
             info,
             live,
             client,
@@ -613,6 +710,53 @@ function SessionPaneImpl({
 }
 
 export const SessionPane = memo(SessionPaneImpl)
+
+function SleepingSessionPlaceholder({ info, onWake, onFresh }: { info: SessionInfo; onWake: () => void; onFresh: () => void }): React.JSX.Element {
+  const sleptDuration = info.slept_at_ms == null ? null : Math.max(0, Date.now() - info.slept_at_ms)
+  return <section aria-label="Sleeping session" className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
+    <Inset space="screen" className="w-full"><Card padding="md" layout="sleeping-session">
+      <Text as="h2" size="heading" weight="heading" tone="primary" flush>Session sleeping</Text>
+      <Text tone="secondary" flush>Wake this conversation explicitly when you want to continue. Focusing this pane will not start it.</Text>
+      <Text size="small" tone="muted" flush>Time asleep: {sleptDuration == null ? 'unavailable' : formatElapsed(sleptDuration)}. Expiration: unknown.</Text>
+      {info.context && <Text size="small" tone="muted" flush>Context used: {info.context.used_percent ?? 'Unknown'}%</Text>}
+      {info.latest_prompt && <div className="grid gap-[var(--space-1)]"><Text size="small" tone="muted">Last prompt</Text><Card padding="sm" layout="scrolling-copy">{info.latest_prompt}</Card></div>}
+      {info.last_agent_message && <div className="grid gap-[var(--space-1)]"><Text size="small" tone="muted">Last agent message</Text><Card padding="sm" layout="scrolling-copy">{info.last_agent_message}</Card></div>}
+      <Inline wrap className="justify-center"><Button variant="primary" onClick={onWake}>Wake session</Button><Button variant="secondary" onClick={onFresh}>Start fresh session</Button></Inline>
+    </Card></Inset>
+  </section>
+}
+
+function formatElapsed(milliseconds: number): string {
+  const seconds = Math.floor(milliseconds / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  if (days > 0) return `${days}d ${hours % 24}h`
+  if (hours > 0) return `${hours}h ${minutes % 60}m`
+  if (minutes > 0) return `${minutes}m`
+  return `${seconds}s`
+}
+
+function formatMemory(bytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++ }
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unit]}`
+}
+
+function restoreReasonLabel(reason: SessionInfo['restore_deferred']): string {
+  switch (reason) {
+    case 'budget': return 'the restore budget was reached'
+    case 'invalid-cwd': return 'the working directory is unavailable'
+    case 'previous-crash': return 'the previous daemon ended unexpectedly'
+    case 'safe-mode': return 'safe mode deferred automatic restore'
+    case 'circuit-breaker': return 'automatic restore was paused after repeated failures'
+    case 'spawn-failed': return 'the agent could not be started'
+    case 'ssh': return 'SSH sessions are not restored automatically'
+    default: return 'the reason is unavailable'
+  }
+}
 
 function RosterTerminals({ client, info, children, recent, gridSessionIds, peek, active, connected, theme, fontSize, fontFamily, shiftEnterNewline, openLinksInPane, onOpenUrlInPane, copyOnSelect, stripBoxGlyphs, registerOutput, onActivate, onZoom, onShellZoom, onOpenFile, onOpenDir, termActions }: Pick<Props, 'client' | 'info' | 'gridSessionIds' | 'active' | 'connected' | 'theme' | 'fontSize' | 'fontFamily' | 'shiftEnterNewline' | 'openLinksInPane' | 'onOpenUrlInPane' | 'copyOnSelect' | 'stripBoxGlyphs' | 'registerOutput' | 'onActivate' | 'onZoom' | 'onShellZoom' | 'onOpenFile' | 'onOpenDir'> & {
   children: SessionInfo[]
@@ -664,13 +808,14 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
           )}
           {!live && (
             <Tooltip
-              label={restartTooltip(info)}
+              label={info.state === 'sleeping' ? 'Wake conversation' : restartTooltip(info)}
             >
               <PaneHeadButton
-                aria-label={info.agent === 'ssh' ? 'Reconnect' : 'Restart'}
+                aria-label={info.state === 'sleeping' ? 'Wake conversation' : info.agent === 'ssh' ? 'Reconnect' : 'Restart'}
                 onClick={(e) => {
                   e.stopPropagation()
                   if (info.agent === 'ssh') onReconnectSsh(info.id)
+                  else if (info.state === 'sleeping') client.send({ type: 'session_wake', session: info.id })
                   else client.respawnSession(info.id, shellIntegration)
                 }}
               >

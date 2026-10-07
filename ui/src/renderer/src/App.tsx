@@ -529,6 +529,7 @@ function offeredUpdate(
 const RECONNECT_MS = 1000;
 const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
+const ProjectsSurface = lazy(() => import('./components/nav/ProjectsSurface').then((module) => ({ default: module.ProjectsSurface })))
 
 // Connections before its first `mcp_state` shows empty lists, not a missing view.
 function mcpSurfaceLists(mcp: McpStateView | null) {
@@ -616,6 +617,36 @@ function SessionEffects({
 const sidePanelIntegration = preloadable(() => import("./components/SidePanel").then((module) => module.SidePanelIntegration));
 export const preloadSidePanel = sidePanelIntegration.preload;
 const SidePanelIntegration = sidePanelIntegration.Slot;
+
+function ProjectsRailContent({
+  selected,
+  client,
+  workspace,
+  workspaces,
+  onOpenSession,
+  fallback,
+}: {
+  selected: boolean;
+  client: HoustonClient | null;
+  workspace: string;
+  workspaces: Workspace[];
+  onOpenSession: (sessionId: number) => void;
+  fallback: React.ReactNode;
+}): React.JSX.Element {
+  return selected ? (
+    <Suspense fallback={<div className="flex-1" />}>
+      <ProjectsSurface
+        client={client}
+        workspace={workspace}
+        workspaces={workspaces.map((w) => ({ path: w.path, name: w.name }))}
+        onOpenSession={(sessionId) => {
+          setRailView(null);
+          onOpenSession(sessionId);
+        }}
+      />
+    </Suspense>
+  ) : <>{fallback}</>;
+}
 
 export function App(): React.JSX.Element {
   useEffect(() => {
@@ -3908,7 +3939,14 @@ export function App(): React.JSX.Element {
             {settings || railView !== null ? (
               <ContentRegion>
                 <SurfaceBoundary label={railView ?? "Settings"}>
-                  {railView === "prs" ? (
+                  <ProjectsRailContent
+                    selected={railView === "projects"}
+                    client={readyClient(conn)}
+                    workspace={selectedWs}
+                    workspaces={workspaces}
+                    onOpenSession={focusPane}
+                    fallback={
+                    <>{railView === "prs" ? (
                     <PullRequestsRailScreen
                       repoName={pullRequestRepositoryName(workspaces, prListDir)}
                       workspace={pullRequestWorkspace(prListDir)}
@@ -4239,6 +4277,10 @@ export function App(): React.JSX.Element {
                         if (conn.kind === "ready")
                           conn.client.worktreeCleanupSet(enabled, graceHours);
                       }}
+                      onWorktreeIdleRemovalDaysSet={(days) => {
+                        if (conn.kind === "ready")
+                          conn.client.worktreeIdleRemovalDaysSet(days);
+                      }}
                       onMailboxRetentionSet={(hours) => {
                         if (conn.kind === "ready")
                           conn.client.mailboxRetentionSet(hours);
@@ -4296,6 +4338,8 @@ export function App(): React.JSX.Element {
                     />
                   </Suspense>
                   )}
+                    </>}
+                  />
                 </SurfaceBoundary>
               </ContentRegion>
             ) : firstRunOpen || workspacesEmptyOpen ? (

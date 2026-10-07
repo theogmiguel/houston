@@ -147,7 +147,8 @@ prompt/command tracking in plain-shell panes.
 
 Closing the window leaves the daemon and its sessions running. Settings ▸ Daemon ▸
 Background controls whether Houston stays in the tray or quits its client when the
-window closes. Reopen Houston to reconnect to the sessions.
+window closes. Reopen Houston to reconnect to the sessions. Tray counts include live
+sessions only; ended sessions do not appear in the tray menu.
 
 To end the sessions and exit, use **Quit and stop daemon** in the command palette,
 or **Stop daemon** in Settings ▸ Daemon. Confirming names the affected sessions and
@@ -157,6 +158,26 @@ routines before stopping them.
 
 Closing a pane ends its session — the underlying PTY is torn down, not just hidden.
 There is no undo for a killed session; the pane is gone from the grid along with it.
+
+## Sleeping a pane
+
+Sleep is a reversible way to release an idle Claude or Codex CLI while keeping the pane,
+its slot, scrollback and exact conversation handle. Choose Sleep from the pane actions;
+the pane remains visible and does not wake when focused. Choose Wake to resume its exact
+conversation. If the provider no longer has that transcript, Wake explains why and leaves
+the pane resumable; Start fresh remains a separate action.
+
+Sleep is refused while the agent is working or waiting for input, while terminal input
+is still being delivered, while orchestration or external child work is active, and for
+child, routine, harness, shell and unsupported provider sessions. Non-Linux platforms
+report Sleep as unavailable until graceful
+process-tree shutdown is supported there.
+
+Choose **Measure process memory** from an agent pane's actions to read its current process-tree
+PSS on Linux. An unavailable reading is shown as unknown rather than a partial total.
+The sleeping placeholder retains the last prompt, agent message and reported context size;
+the provider owns transcript retention, so the expiration time is shown as unknown.
+Sleeping panes remain asleep after a daemon restart or reboot.
 
 ## Idle and restore behavior
 
@@ -183,6 +204,8 @@ Start fresh, Kill and Close each forget it. If its transcript is gone, its folde
 its agent profile was deleted, another pane already has it open, or the resumed CLI exits
 with an error within 10 seconds, the pane starts fresh and says why. Changing the folder
 or changing its profile's configuration directory discards the old conversation handle.
-Losing the profile also discards it. Other agents, shells and
-routine runs start fresh. Sessions beyond the restore budget remain available for manual
-restart.
+Losing the profile also discards it. A shell pane with a validated Claude or Codex
+conversation can relaunch that conversation inside its shell; orchestration children stay
+deferred when the parent's conversation cannot resume. Other agents, shells without a
+validated conversation and routine runs start fresh. Sessions beyond the restore budget
+remain available for manual restart.

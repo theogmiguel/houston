@@ -1,0 +1,13 @@
+[
+  {
+    "number": 77,
+    "title": "Existing delivery task",
+    "body": "Description\n\n<!-- houston-delivery:T-88:outbox-88 -->",
+    "html_url": "https://github.com/octo-org/project/issues/77",
+    "updated_at": "2026-10-06T12:30:00Z",
+    "state": "open",
+    "labels": [],
+    "assignee": null,
+    "milestone": null
+  }
+]

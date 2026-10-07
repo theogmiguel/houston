@@ -1,3 +1,4 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { Button } from '../ui/Button'
 import { TextArea } from '../ui/TextArea'
 import { Text } from '../ui/Text'
@@ -65,14 +66,14 @@ export function PrReviewBar({
         </Tooltip>
         <span className="flex-1" />
         {drafts.length > 0 && (
-          <Button variant="legacy-secondary"
+          <LazyLegacyButton variant="legacy-secondary"
             type="button"
             data-testid="pr-review-drafts-toggle"
             aria-expanded={draftsOpen}
             onClick={() => onDraftsOpenChange(!draftsOpen)}
           >
             {drafts.length === 1 ? '1 inline comment' : `${drafts.length} inline comments`}
-          </Button>
+          </LazyLegacyButton>
         )}
       </ReviewToolbar>
       <TextArea surface="content"
@@ -94,14 +95,14 @@ export function PrReviewBar({
               <ReviewDraftBody>
                 {draftLabel(draft)} — {draft.body}
               </ReviewDraftBody>
-              <Button variant="legacy-secondary"
+              <LazyLegacyButton variant="legacy-secondary"
                 type="button"
                 data-testid="pr-review-draft-remove"
                 disabled={busy}
                 onClick={() => onRemoveDraft(draft)}
               >
                 Remove
-              </Button>
+              </LazyLegacyButton>
             </ReviewDraftRow>
           ))}
         </ReviewDraftList>

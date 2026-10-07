@@ -6,6 +6,9 @@ set -euo pipefail
 # Artifacts untouched for 3 days belong to a branch nobody is building; the next
 # build of that branch recompiles only what it needs.
 SWEEP_DAYS="${HOUSTON_SWEEP_DAYS:-3}"
+# 30 GB leaves room for a full core test build, which needs about 25 GB.
+SWEEP_MAXSIZE="${HOUSTON_SWEEP_MAXSIZE:-30GB}"
+LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/oom-shield.lock"
 
 common_dir="$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)"
 ROOT="$(dirname "$common_dir")"
@@ -22,8 +25,9 @@ fi
 
 # --hidden: the worktrees live under .houston/, which --recursive skips otherwise.
 sweep() {
-  "$cargo_bin" sweep --recursive --hidden "$@" --time "$SWEEP_DAYS" "$ROOT"
-  "$cargo_bin" sweep --recursive --hidden "$@" --installed "$ROOT"
+  flock "$LOCK_FILE" "$cargo_bin" sweep --recursive --hidden "$@" --time "$SWEEP_DAYS" "$ROOT"
+  flock "$LOCK_FILE" "$cargo_bin" sweep --recursive --hidden "$@" --installed "$ROOT"
+  flock "$LOCK_FILE" "$cargo_bin" sweep --recursive --hidden "$@" --maxsize "$SWEEP_MAXSIZE" "$ROOT"
 }
 
 install() {
@@ -42,15 +46,16 @@ Type=oneshot
 Nice=19
 IOSchedulingClass=idle
 Environment=PATH=$cargo_dir:/usr/local/bin:/usr/bin:/bin
-ExecStart=$cargo_bin sweep --recursive --hidden --time $SWEEP_DAYS $ROOT
-ExecStart=$cargo_bin sweep --recursive --hidden --installed $ROOT
+ExecStart=/usr/bin/flock %t/oom-shield.lock $cargo_bin sweep --recursive --hidden --time $SWEEP_DAYS $ROOT
+ExecStart=/usr/bin/flock %t/oom-shield.lock $cargo_bin sweep --recursive --hidden --installed $ROOT
+ExecStart=/usr/bin/flock %t/oom-shield.lock $cargo_bin sweep --recursive --hidden --maxsize $SWEEP_MAXSIZE $ROOT
 EOF
   cat >"$units/houston-sweep-targets.timer" <<EOF
 [Unit]
-Description=Daily sweep of stale Cargo artifacts in $ROOT
+Description=Hourly sweep of stale Cargo artifacts in $ROOT
 
 [Timer]
-OnCalendar=daily
+OnCalendar=hourly
 Persistent=true
 
 [Install]

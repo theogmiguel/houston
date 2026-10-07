@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Card, EmptyState, Field, PageFrame, PageHeader, PaneHeaderButton, PrWatchChip, PrWatchRow, PrWatchStack, SectionHead, Segmented, Select, StatusLabel } from './index'
 import { IconClose, IconSearch } from '../icons'
+
+afterEach(cleanup)
 
 // @ts-expect-error pane header icon buttons require an accessible name
 const unnamedPaneButton = <PaneHeaderButton icon={IconClose} />

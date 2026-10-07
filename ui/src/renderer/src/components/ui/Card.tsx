@@ -26,7 +26,7 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   shape?: 'button' | 'md' | 'card' | 'inset'
   padding?: 'none' | 'md' | 'sm' | 'invocation' | 'note' | 'roomy'
   className?: string
-  layout?: 'default' | 'center-stack'
+  layout?: 'default' | 'center-stack' | 'sleeping-session' | 'scrolling-copy'
 }
 
 export interface CardContentProps {
@@ -70,7 +70,13 @@ function CardRow({ heading, meta, status, action, rail, compact = false, classNa
 }
 
 function CardBase({ children, tone = 'default', shape = 'button', padding = 'none', disabled = false, clip = true, className = '', layout = 'default', ...props }: CardProps): React.JSX.Element {
-  return <div {...props} className={`${cardClasses({ tone, shape, padding, disabled: disabled ? 'true' : 'false', clip: clip ? 'true' : 'false' })} ${layout === 'center-stack' ? 'flex flex-col items-center gap-[var(--space-4)]' : ''} ${className}`}>{children}</div>
+  const layoutClass = {
+    default: '',
+    'center-stack': 'flex flex-col items-center gap-[var(--space-4)]',
+    'sleeping-session': 'mx-auto grid w-full max-w-[70ch] gap-[var(--space-2)] text-center',
+    'scrolling-copy': 'max-h-[16rem] overflow-auto whitespace-pre-wrap text-left'
+  }[layout]
+  return <div {...props} className={`${cardClasses({ tone, shape, padding, disabled: disabled ? 'true' : 'false', clip: clip ? 'true' : 'false' })} ${layoutClass} ${className}`}>{children}</div>
 }
 
 function CardContent({ children }: CardContentProps): React.JSX.Element {

@@ -295,10 +295,13 @@ Clean shutdown and crash use the same restore policy, budget and safe-mode switc
 Restoration supplies no prompt: the CLI waits for input rather than repeating work.
 Changing cwd, losing the agent profile or changing its configuration directory invalidates
 the carried handle, including when
-automatic conversation resume is disabled. Kill, Close and Start fresh clear it; late
+automatic conversation resume is disabled. Kill, Close and Start fresh clear it; Sleep
+retains it with the pane and persisted scrollback, and boot leaves that pane asleep. Late
 hooks from a killed or removed session cannot recreate it. Kill and Close persist their
 terminal state before returning, so an immediate crash cannot revive the pane. A failed resume starts fresh
 once with a visible reason, while transient failures retain the handle for manual retry.
+Wake is stricter: it must resume the exact stored conversation and never falls back to a
+fresh CLI. A failed Wake remains resumable with the stored handle.
 
 Routine and harness-review runs always start fresh, and orchestrated children cannot be
 respawned without their mission. Unsupported providers are refused by name in

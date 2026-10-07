@@ -1,7 +1,7 @@
+import { ReviewButton } from './ReviewButtonRoles'
 import type { ReactNode } from 'react'
 import { variants } from './variants'
 import { Text } from './Text'
-import { Button } from './Button'
 import { IconPlus } from '../icons'
 
 export type ReviewDiffLineKind = 'ctx' | 'add' | 'del' | 'hunk' | 'meta'
@@ -45,7 +45,7 @@ export function ReviewDiffLineSpecimen(): React.JSX.Element {
   return (
     <div className="flex flex-col font-mono text-[length:var(--tr-text-xs)] leading-[1.55]">
       <ReviewDiffLine kind="ctx" oldLine={1} newLine={1} text="const value = 1" />
-      <ReviewDiffLine kind="add" oldLine={null} newLine={2} text="const added = true" action={<Button variant="diff-line-action" icon={IconPlus} aria-label="Comment on line 2" />} />
+      <ReviewDiffLine kind="add" oldLine={null} newLine={2} text="const added = true" action={<ReviewButton variant="diff-line-action" icon={IconPlus} aria-label="Comment on line 2" />} />
       <ReviewDiffLine kind="del" oldLine={2} newLine={null} text="const removed = false" />
       <ReviewDiffLine kind="hunk" oldLine={3} newLine={3} text="@@ -1,2 +1,2 @@" />
       <ReviewDiffLine kind="meta" oldLine={null} newLine={null} text="\\ No newline at end of file" />

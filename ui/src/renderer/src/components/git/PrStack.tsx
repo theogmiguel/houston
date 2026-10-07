@@ -1,4 +1,4 @@
-import { Button } from '../ui/Button'
+import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { MetadataRow, MetadataValue } from '../ui/MetadataRow'
 import { StackOverview, StackSectionLabel, StackLayerList, StackLayerNotice, StackLayerRow } from '../ui/StackLayerList'
 import { Text } from '../ui/Text'
@@ -47,7 +47,7 @@ export function PrStackSection({
             #{stack.number} · {stack.layers.length === 1 ? '1 layer' : `${stack.layers.length} layers`}
           </MetadataValue>
         )}
-        <Button variant="compact-action"
+        <ReviewButton variant="compact-action"
           type="button"
           data-testid="pr-stack-load"
           disabled={busy || loading}
@@ -65,7 +65,7 @@ export function PrStackSection({
           ) : (
             'Check'
           )}
-        </Button>
+        </ReviewButton>
       </MetadataRow>
       {message !== null && <StackLayerNotice tone="danger" data-testid="pr-stack-message">{message}</StackLayerNotice>}
       {open && stack !== null && (

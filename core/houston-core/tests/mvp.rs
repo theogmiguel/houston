@@ -413,6 +413,10 @@ async fn interrupted_sessions_are_automatically_restored_and_restartable() {
             resume_notice: None,
             compactions: None,
             task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
         })
         .unwrap();
     }

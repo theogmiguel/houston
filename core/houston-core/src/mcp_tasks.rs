@@ -162,6 +162,46 @@ fn all_specs() -> Vec<ToolSpec> {
     );
     vec![
         readonly(
+            "task_projects",
+            "List workspace Projects",
+            "List Projects in this workspace, including archived records, tracker snapshots and local decisions.",
+            json!({"type":"object","properties":{},"additionalProperties":false}),
+        ),
+        readonly(
+            "task_domain_get",
+            "Read task readiness and domain",
+            "Read Delivery/Slice assignment, blockers, planning state and readiness reasons.",
+            id_schema(),
+        ),
+        local_write(
+            "task_project_save",
+            "Create or update a Project",
+            "Save a Project in this workspace. Imported tracker snapshots are unverified; local decisions remain separate.",
+            json!({"type":"object","properties":{
+                "id":{"type":"integer"},"expected_revision":{"type":"integer"},"name":{"type":"string"},
+                "external_url":{"type":["string","null"]},"tracker_description":{"type":["string","null"]},
+                "local_decisions":{"type":"array","items":{"type":"string"}}
+            },"required":["name"],"additionalProperties":false}),
+        ),
+        local_write(
+            "task_project_archive",
+            "Archive or restore a Project",
+            "Reversibly archive or restore a Project using the revision shown by task_projects.",
+            json!({"type":"object","properties":{
+                "id":{"type":"integer"},"expected_revision":{"type":"integer"},"archived":{"type":"boolean"}
+            },"required":["id","expected_revision","archived"],"additionalProperties":false}),
+        ),
+        local_write(
+            "task_domain_update",
+            "Assign task domain and blockers",
+            "Mark a task as Delivery or Slice, assign its workspace Project, and replace its blocked-by list. Cycles are refused.",
+            json!({"type":"object","properties":{
+                "id":id_property(),"expected_revision":{"type":"integer"},
+                "kind":{"type":"string","enum":["delivery","slice"]},"project_id":{"type":["integer","null"]},
+                "blocked_by":{"type":"array","items":{"type":"integer"}}
+            },"required":["id","expected_revision"],"additionalProperties":false}),
+        ),
+        readonly(
             "task_list",
             "List tasks",
             "List active tasks in every workspace, newest first. Ready means todo with no \
@@ -312,7 +352,23 @@ fn all_specs() -> Vec<ToolSpec> {
             }),
             annotations: Annotations::destructive(),
         },
+        plan_submit_spec(),
     ]
+}
+
+fn plan_submit_spec() -> ToolSpec {
+    local_write(
+        "task_plan_submit",
+        "Submit a task planning proposal",
+        "Submit a structured proposal for the task whose planning session is authenticated to this pane. Available only in that recorded planning session.",
+        json!({"type":"object","properties":{
+            "description":{"type":"string","maxLength":proto::TASK_DESCRIPTION_MAX},
+            "acceptance":{"type":"array","items":{"type":"string"},"maxItems":20},
+            "pointers":{"type":"array","items":{"type":"string"},"maxItems":40},
+            "out_of_scope":{"type":"array","items":{"type":"string"},"maxItems":40},
+            "questions":{"type":"array","items":{"type":"string"},"maxItems":40}
+        },"required":["description","acceptance","pointers","out_of_scope","questions"],"additionalProperties":false}),
+    )
 }
 
 /// The providers a task child or reviewer can be launched as; the same six
@@ -394,6 +450,14 @@ impl ToolProvider for TasksTools {
 /// workspace's access decides reads and writes, and the two verbs that spawn a
 /// child follow `pane_spawn`'s rule — advertised only to a spawnable caller.
 fn advertised(daemon: &Daemon, scope: &McpScope) -> Vec<ToolSpec> {
+    if daemon
+        .task_plan_session(scope.session_id)
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return vec![plan_submit_spec()];
+    }
     if daemon.parent_of(scope.session_id).is_some() {
         return Vec::new();
     }
@@ -459,6 +523,117 @@ fn dispatch(
         .task_actor(session)
         .map_err(|e| ToolError(format!("{e:#}")))?;
     match name {
+        "task_projects" => {
+            require_domain_access(daemon, workspace, false)?;
+            let msg = daemon.task_projects_list(workspace)?;
+            let proto::ServerMsg::TaskProjectsState { projects, .. } = succeed(msg)? else {
+                unreachable!()
+            };
+            Ok(task_output(json!({"projects": projects})))
+        }
+        "task_project_save" => {
+            require_domain_access(daemon, workspace, true)?;
+            let id = optional_i64(args, "id")?;
+            let expected = optional_i64(args, "expected_revision")?;
+            let name = required_string(args, "name")?;
+            let url = nullable_string_patch(args, "external_url")?;
+            let description = nullable_string_patch(args, "tracker_description")?;
+            let decisions = args
+                .get("local_decisions")
+                .map(|v| {
+                    serde_json::from_value::<Vec<String>>(v.clone()).map_err(|e| {
+                        ToolError(format!("local_decisions must be an array of strings: {e}"))
+                    })
+                })
+                .transpose()?;
+            let msg = daemon.task_project_save(
+                workspace,
+                id,
+                expected,
+                &name,
+                url,
+                description,
+                decisions,
+            )?;
+            match succeed(msg)? {
+                proto::ServerMsg::TaskProjectChanged { id, revision, .. } => {
+                    Ok(task_output(json!({"id":id,"revision":revision})))
+                }
+                other => unreachable!("task_project_save returned {other:?}"),
+            }
+        }
+        "task_project_archive" => {
+            require_domain_access(daemon, workspace, true)?;
+            let id = required_i64(args, "id")?;
+            let expected = required_revision(args)?;
+            let archived = optional_bool(args, "archived")?
+                .ok_or_else(|| ToolError("archived is required".into()))?;
+            match succeed(daemon.task_project_archive(id, expected, archived)?)? {
+                proto::ServerMsg::TaskProjectChanged { id, revision, .. } => Ok(task_output(
+                    json!({"id":id,"revision":revision,"archived":archived}),
+                )),
+                other => unreachable!("task_project_archive returned {other:?}"),
+            }
+        }
+        "task_domain_get" => {
+            require_domain_access(daemon, workspace, false)?;
+            let id = task_ref(daemon, workspace, args, name)?;
+            let proto::ServerMsg::TaskDomainState { domain } =
+                succeed(daemon.task_domain_state(id)?)?
+            else {
+                unreachable!()
+            };
+            Ok(task_output(serde_json::to_value(domain).map_err(|e| {
+                ToolError(format!("serializing task domain: {e}"))
+            })?))
+        }
+        "task_domain_update" => {
+            require_domain_access(daemon, workspace, true)?;
+            let id = task_ref(daemon, workspace, args, name)?;
+            let expected = required_revision(args)?;
+            let kind = args
+                .get("kind")
+                .map(|value| {
+                    serde_json::from_value::<proto::TaskDomainKind>(value.clone()).map_err(|_| {
+                        ToolError(format!("kind must be delivery or slice; got {value}"))
+                    })
+                })
+                .transpose()?;
+            let project_id = args
+                .get("project_id")
+                .map(|v| {
+                    if v.is_null() {
+                        Ok(None)
+                    } else {
+                        v.as_i64().map(Some).ok_or_else(|| {
+                            ToolError("project_id must be an integer or null".into())
+                        })
+                    }
+                })
+                .transpose()?;
+            let blocked_by = args
+                .get("blocked_by")
+                .map(|v| {
+                    serde_json::from_value::<Vec<i64>>(v.clone()).map_err(|e| {
+                        ToolError(format!("blocked_by must be an array of task ids: {e}"))
+                    })
+                })
+                .transpose()?;
+            let msg = daemon.task_domain_save(id, expected, kind, project_id, blocked_by)?;
+            changed_output(daemon, msg, Some("domain updated"))
+        }
+        "task_plan_submit" => {
+            require_domain_access(daemon, workspace, true)?;
+            let proposal = serde_json::from_value::<proto::TaskPlanProposal>(args.clone())
+                .map_err(|e| ToolError(format!("task_plan_submit proposal is invalid: {e}")))?;
+            let msg = daemon.task_plan_submit(session, proposal)?;
+            match succeed(msg)? {
+                proto::ServerMsg::TaskPlanChanged { id, revision } => {
+                    Ok(task_output(json!({"id":id,"plan_revision":revision})))
+                }
+                other => unreachable!("task_plan_submit returned {other:?}"),
+            }
+        }
         "task_list" => {
             let limit = optional_u32(args, "limit")?;
             if limit == Some(0) {
@@ -727,6 +902,18 @@ fn with_status(output: ToolOutput, status: &str) -> ToolOutput {
     task_output(value)
 }
 
+fn require_domain_access(daemon: &Daemon, workspace: &str, write: bool) -> Result<(), ToolError> {
+    match daemon.tasks_access(workspace) {
+        proto::TasksAccess::Off => Err(ToolError(format!(
+            "task domain tools are off for workspace {workspace:?}"
+        ))),
+        proto::TasksAccess::Read if write => Err(ToolError(format!(
+            "task domain tools are read-only for workspace {workspace:?}"
+        ))),
+        _ => Ok(()),
+    }
+}
+
 fn succeed(msg: proto::ServerMsg) -> Result<proto::ServerMsg, ToolError> {
     match msg {
         proto::ServerMsg::TaskRefused { message, .. } => Err(ToolError(message)),
@@ -915,6 +1102,27 @@ fn required_revision(args: &Value) -> Result<i64, ToolError> {
         )));
     }
     Ok(revision)
+}
+
+fn optional_i64(args: &Value, key: &str) -> Result<Option<i64>, ToolError> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_i64()
+            .map(Some)
+            .ok_or_else(|| ToolError(format!("{key} must be an integer; got {value}"))),
+    }
+}
+
+fn nullable_string_patch(args: &Value, key: &str) -> Result<Option<Option<String>>, ToolError> {
+    match args.get(key) {
+        None => Ok(None),
+        Some(Value::Null) => Ok(Some(None)),
+        Some(Value::String(value)) => Ok(Some(Some(value.clone()))),
+        Some(value) => Err(ToolError(format!(
+            "{key} must be a string or null; got {value}"
+        ))),
+    }
 }
 
 fn required_string(args: &Value, key: &str) -> Result<String, ToolError> {

@@ -65,6 +65,17 @@ describe('Tasks surface and drawer', () => {
     else element.click()
   })
 
+  it('keeps an existing task URL labelled as a source link rather than inferring a PR', () => {
+    act(() => root.render(<TaskDetail
+      detail={{ task: { ...TASK, ref_url: 'https://github.com/acme/app/issues/7' }, acceptance: [], comments: [], history: [], runs: [] }}
+      access="off" refusal={null} now={1} parentOptions={[]} sessions={new Map()} startSettings={null}
+      onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={vi.fn()} onComment={vi.fn()}
+      onArchive={vi.fn()} onStart={vi.fn()} onRunControl={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()}
+    />))
+    const source = screen.getByRole('link', { name: 'Task source' })
+    expect(source.getAttribute('href')).toBe('https://github.com/acme/app/issues/7')
+  })
+
   it('shows the selected workspace queue and opens task details in its drawer', () => {
     const snapshot = state()
     const openTask = vi.fn()

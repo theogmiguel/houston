@@ -165,6 +165,10 @@ async fn session_reparent_over_the_wire_refuses_a_swarm_tied_session() {
             resume_notice: None,
             compactions: None,
             task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
         })
         .unwrap();
         let roster = vec![proto::SwarmRosterEntry {

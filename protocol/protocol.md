@@ -1,4 +1,4 @@
-# Wire protocol v127
+# Wire protocol v129
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -31,7 +31,8 @@ and the socket closes.
 **Text frames** are JSON control messages, externally tagged by a `type` field
 in `snake_case` (`{"type":"session_resize","session":7,"cols":120,"rows":40}`).
 Unparseable text is answered with an `error` carrying the first 200 characters
-of the offending payload as `context`.
+of the offending payload as `context`. Credential payloads omit their content and
+parser details from the error.
 
 **Binary frames** carry PTY bytes and never pass through JSON or base64. All
 multi-byte integers are big-endian.
@@ -95,6 +96,9 @@ failure not given a typed refusal comes back as `error`.
 | `session_kill` | `session`, `confirm_children?` | `session_state` (bcast); refused `live_children_confirmation_required:` when the pane has live children and `confirm_children` is not set |
 | `session_close` | `session`, `confirm_children?` | `session_removed` (bcast); same children refusal |
 | `session_respawn` | `session`, `shell_integration?`, `cwd?` (must exist), `shell?` (absolute shell binary, shell panes only), `force?` (restart a still-live session: kill, reap, respawn — without it a live session is refused by name), `fresh?` (v119: start a fresh CLI and forget the conversation; absent, a Claude session with a valid resume handle is relaunched with `--resume <id>`, and one whose handle fails validation starts fresh with `resume_notice` set) | broadcasts; a failed spawn leaves the husk intact |
+| `session_sleep` | `session` | `session_state` and `session_updated` (bcast); Linux only, idle top-level Claude/Codex with a validated conversation and no external work or live children. Persists before graceful termination; a timeout leaves the live PTY usable |
+| `session_wake` | `session` | `session_created` for the exact resumed conversation and `session_removed` for its old placeholder; a validation failure keeps it sleeping with a visible notice. Focus never wakes it |
+| `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
 | `session_resize` | `session`, `cols`, `rows` | `session_resized` (direct) |
 | `session_list` | — | `session_list` (direct) |
 | `session_attach` | `session`, `replay_bytes?` (cap the tail; omitted = whole ring), `snapshot?` (v94: ask for emulator state instead of a byte replay) | `scrollback` **or** `attach_snapshot` (direct), numbered by `attempt`; this socket starts receiving that session's frames, and nothing below the reply's cutoff follows it. `snapshot: true` is answered with `attach_snapshot` when the daemon has an emulator and could encode one, and with `scrollback` otherwise — a client must handle either reply |
@@ -178,7 +182,10 @@ failure not given a typed refusal comes back as `error`.
 | `git_worktree_remove` | `dir`, `path`, `force` (a dirty worktree without it is refused) | `git_worktrees` carrying a `message` |
 | `git_worktree_prune` | `dir` | `git_worktrees` carrying a `message` (the summary, or "Nothing to prune.") |
 | `worktree_cleanup_status` | `dir` (a registered workspace) | `worktree_cleanup` (direct) from the last pass's cache; nothing is measured and `gh` is not called |
-| `worktree_cleanup_run` | `dir` (a registered workspace), `paths?: string[]` | `worktree_cleanup` (bcast) after one pass, whatever the setting. It removes only those `paths` that the pass still finds nothing keeping; with `paths` empty or absent it only checks and measures. A second run while one is going is refused: "a worktree cleanup pass is already running for <dir>" |
+| `worktree_cleanup_run` | `dir` (a registered workspace), `paths?: string[]` | `worktree_cleanup` (bcast) after one pass, whatever the setting. It removes only those `paths` that the pass still finds nothing keeping; stale entries are never removed by this message. With `paths` empty or absent it only checks and measures. A second run while one is going is refused: "a worktree cleanup pass is already running for <dir>" |
+| `worktree_idle_removal_days_get` | — | `worktree_idle_removal_days` (direct) |
+| `worktree_idle_removal_days_set` | `days` (`1..=365`) | `host_info` (bcast), with the 1..=365 day limit in the refusal |
+| `worktree_idle_remove` | `dir`, `path` (a currently stale managed worktree) | `worktree_cleanup` (bcast); removes the worktree and keeps its branch |
 | `git_checkpoint_create` | `dir`, `label` (suffixed `-2`… on collision) | fresh `git_checkpoints` |
 | `git_checkpoint_restore` | `dir`, `ref` | fresh `git_checkpoints` then `git_status`; the UI confirms first |
 | `git_checkpoint_delete` | `dir`, `ref` | fresh `git_checkpoints` |
@@ -292,6 +299,22 @@ every refusal names the setting.
 | Message | Fields | Reply |
 |---|---|---|
 | `task_snapshot` | `scope`: `all`, `unassigned` or a workspace path | `task_snapshot` (direct); global backlog filtered by the requested scope |
+| `task_projects_list` | `workspace` | `task_projects_state` (direct), including archived Projects |
+| `task_project_get` | `id` | `task_project_state` (direct) |
+| `task_project_save` | `workspace`, `id?`, `expected_revision?`, `name`, `external_url?`, `tracker_description?`, `local_decisions?` | `task_project_changed`; revisions guard edits. Nullable fields distinguish absent from explicit clearing |
+| `task_project_archive` | `id`, `archived`, `expected_revision` | `task_project_changed` |
+| `task_domain_get` | `id` | `task_domain_state`, with Delivery/Slice assignment, progress, blockers, Plan and readiness reasons |
+| `task_domain_save` | `id`, `expected_revision`, `kind?`, `project_id?`, `blocked_by?` | `task_changed`; refuses dependency cycles or incompatible Project/Delivery assignments |
+| `task_plan_start` | `id`, `expected_revision`, `agent` | `task_plan_started`; reserves a task-scoped read-only planning capability before launching the provider; creates no worktree |
+| `task_plan_answer` | `id`, `expected_revision`, `question`, `answer` | `task_plan_changed` |
+| `task_plan_approve` | `id`, `expected_revision`, `plan_revision` | `task_plan_changed` and `task_changed`; applies the proposal only after every question has an answer and the task, plan and captured Project revisions match |
+| `task_tracker_settings_get` | `workspace` | `task_tracker_settings` |
+| `task_tracker_settings_set` | `settings: TaskTrackerWorkspaceSettings` | `task_tracker_settings`, with current saved values or a refusal |
+| `task_tracker_credential_set` | `workspace`, `provider`, `token` | `task_tracker_settings`; Notion only, token stored in the OS keychain |
+| `task_tracker_credential_clear` | `workspace`, `provider` | `task_tracker_settings` |
+| `task_tracker_sync_now` | `workspace` | `task_tracker_sync_state` |
+| `task_tracker_links_get` | `task_id` | `task_tracker_links`; source links and pull requests remain distinct |
+| `task_tracker_conflict_resolve` | `task_id`, `expected_task_revision`, `expected_project_revision?`, `provider`, `external_id`, `field`, `expected_revision`, `resolution: local\|remote\|custom` | `task_tracker_conflict_resolved`; checks current task, Project (for project fields) and link snapshot revisions; stale choices are refused |
 | `task_get` | `id` | `task_detail` (direct); `task_refused` `not_found`\|`access_off` |
 | `task_save` | `workspace?` (null or absent creates unassigned), `id?` (absent creates), `expected_revision?` (required when `id` is present), `patch: TaskPatch` | `task_changed` (bcast) on success; `task_refused` (direct) `conflict`\|`limit`\|`not_found`\|`access_off`\|`read_only`\|`invalid`\|`cycle` |
 | `task_comment` | `id`, `body` (non-empty, ≤ `TASK_COMMENT_MAX`) | `task_changed` (bcast); `task_refused` `not_found`\|`limit`\|`access_off`\|`read_only`\|`invalid` |
@@ -299,13 +322,13 @@ every refusal names the setting.
 | `task_archive` | `id`, `archived`, `expected_revision` | `task_changed` (bcast); `task_refused` `conflict`\|`not_found`\|`read_only`\|`access_off` |
 | `tasks_access_get` | `workspace` | `tasks_access` (direct) |
 | `tasks_access_set` | `workspace`, `access: TasksAccess` | `tasks_access` (bcast); changing it re-reads every open agent tool list in that workspace |
-| `task_start` | `workspace?` (assigns an unassigned task; required when unassigned), `id`, `agent: AgentKind`, `base?` (a ref to branch off; ignored when the task's branch already exists) | `task_changed` (bcast) and `task_run_changed` (bcast); `task_refused` (direct) `busy` (a live run already holds the task: `limit` 1, `requested` 2, the message names the holder) \| `limit` (the brief passes `TASK_BRIEF_MAX_BYTES`) \| `invalid` (archived, closed, an unspawnable provider by name, or a worktree that cannot be opened) \| `access_off` \| `read_only` \| `not_found`. Opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK=<key>`, names the pane `<key> <title>` and submits or prefills the brief per the workspace's Start settings |
+| `task_start` | `workspace?` (assigns an unassigned task; required when unassigned), `id`, `agent: AgentKind`, `base?` (a ref to branch off; ignored when the task's branch already exists), `override_readiness?` (explicit manual Start only, default false) | `task_changed` (bcast) and `task_run_changed` (bcast); `task_refused` (direct) `busy` (a live run already holds the task: `limit` 1, `requested` 2, the message names the holder) \| `limit` (the brief passes `TASK_BRIEF_MAX_BYTES`) \| `invalid` (archived, closed, an unspawnable provider by name, or a worktree that cannot be opened) \| `access_off` \| `read_only` \| `not_found`. Opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK=<key>`, names the pane `<key> <title>` and submits or prefills the brief per the workspace's Start settings |
 | `task_run_control` | `run_id`, `action: TaskRunAction` (`stop` \| `resume` \| `retry`) | `task_changed` (bcast) and `task_run_changed` (bcast); `task_refused` `invalid` for an already-open run on `resume`/`retry` or a closed one on `stop`, plus the shared access and `not_found`. `stop` ends only that run's pane and marks the run `cancelled`; `resume` opens attempt N+1 on the same worktree and branch; `retry` opens attempt N+1 there with the newest failed review's findings appended to the brief as labelled data |
 | `task_start_settings_get` | `workspace` | `task_start_settings` (direct) |
 | `task_start_settings_set` | `workspace`, `agent: AgentKind`, `delivery: TaskPromptDelivery` | `task_start_settings` (bcast); `task_refused` `invalid` for an unspawnable provider, named. Per workspace, default claude and `send`, stored in the settings KV |
 | `task_review_settings_get` | `workspace` | `task_review_settings` (direct) |
 | `task_review_settings_set` | `workspace`, `reviewer?` (`null` or omitted = none), `rework_rounds` (`0..=TASKS_REWORK_ROUNDS_MAX`) | `task_review_settings` (bcast); `task_refused` `invalid` for an unspawnable reviewer, `limit` for a round count over the cap, both named. Per workspace, default none and 0 |
-| `task_queue_run` | `orchestrator_session`, `count` (`1..=TASK_LIST_MAX`), `agent?` (omitted uses the workspace's Start default) | `task_queue_result` (direct); `task_refused` (direct) `limit` when the orchestrator's free child slots are fewer than `count` (`limit` is the cap, `requested` the count, the message names both and says nothing was queued), `invalid` when count is out of range or orchestration is off, plus the shared access refusal. Starts the top `count` ready tasks (todo, no unfinished blocker, priority then number) as children of that session, all or nothing at the slot check |
+| `task_queue_run` | `orchestrator_session`, `count` (`1..=TASK_LIST_MAX`), `agent?` (omitted uses the workspace's Start default) | `task_queue_result` (direct); `task_refused` (direct) `limit` when the orchestrator's free child slots are fewer than `count` (`limit` is the cap, `requested` the count, the message names both and says nothing was queued), `invalid` when count is out of range or orchestration is off, plus the shared access refusal. Starts the top `count` ready tasks (todo, workspace, verifiable acceptance, no unanswered questions, unapproved Plan, unresolved conflicts or unfinished blockers; priority then number) as children of that session, all or nothing at the slot check |
 
 ### Skill sync and push
 
@@ -357,6 +380,8 @@ every refusal names the setting.
 |---|---|---|
 | `hello_ok` | `protocol`, `sessions: SessionInfo[]`, `workspaces: Workspace[]`, `tags: TagInfo[]` (v100: the tag registry, whole), `recovery?: RecoverySummary`, `safe_mode: SafeModeSummary`, `snapshot_attach` (v94: this daemon has a terminal emulator), `snapshot_format_version` (v94: the container version it writes) | direct, once, on a successful handshake |
 | `session_created` | `info: SessionInfo` | bcast — a session was spawned; precedes any frame, `agent_detected` or `session_state` for it |
+| `session_updated` | `info: SessionInfo` | bcast after retained Sleep cues or a refused Wake notice change |
+| `session_memory` | `session`, `bytes?`, `measured_at_ms`, `unavailable_reason?` | direct reply to `session_memory_get`; a partial process-tree measurement is unavailable |
 | `session_state` | `session`, `state: SessionState`, `exit_code?` | bcast on every lifecycle transition |
 | `session_list` | `sessions: SessionInfo[]` | direct reply to `session_list` |
 | `session_removed` | `session` | bcast — the session is gone from the roster |
@@ -404,7 +429,8 @@ every refusal names the setting.
 | `git_review_diffs` | `dir`, `branch?`, `upstream?`, `ahead`, `behind`, `head?`, `files: GitFileStatus[]`, `sections: GitReviewSection[]`, `blocked_paths`, `warnings`, `truncated`, `redacted` | direct reply to `git_review_diffs`; one entry per non-empty scope |
 | `git_branches` | `dir`, `branches: GitBranchInfo[]`, `remotes: GitBranchInfo[]`, `default_branch?`, `truncated` | direct reply to `git_branches` and every branch mutation |
 | `git_worktrees` | `dir`, `worktrees: GitWorktreeInfo[]`, `message?` | direct reply to `git_worktrees` and every worktree mutation; `message` is the mutation's note |
-| `worktree_cleanup` | `dir`, `entries: ManagedWorktreeInfo[]`, `removed: RemovedWorktree[]` | direct reply to `worktree_cleanup_status` (`removed` empty); bcast after every pass over `dir`, by `worktree_cleanup_run` or the 6-hourly loop (which runs only while `worktree_cleanup_enabled` is on) |
+| `worktree_cleanup` | `dir`, `entries: ManagedWorktreeInfo[]`, `removed: RemovedWorktree[]` | direct reply to `worktree_cleanup_status` (`removed` empty); bcast after every pass over `dir`, by cleanup, stale removal, or the 6-hourly loop (which runs only while `worktree_cleanup_enabled` is on) |
+| `worktree_idle_removal_days` | `days` | direct reply to `worktree_idle_removal_days_get` |
 | `git_checkpoints` | `dir`, `checkpoints: GitCheckpointInfo[]` | direct reply to `git_checkpoints` and every checkpoint mutation |
 | `git_checkpoint_diff` | `dir`, `ref`, `patch`, `truncated`, `redacted` | direct reply to `git_checkpoint_diff` |
 | `git_pull` | `dir`, `status: GitPullStatus` | direct reply to `git_pull` |
@@ -447,6 +473,16 @@ every refusal names the setting.
 | `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
 | `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, a finding decision or task link changed, or the seen cursor advanced; clients refresh Harness state and overview |
 | `task_snapshot` | `scope`, `tasks: TaskSummary[]` (newest number first, at most `TASKS_PER_WORKSPACE`; archived tasks stay in the list with `archived_at_ms` set), `counts: TaskCounts` (non-archived only) | direct reply to `task_snapshot` |
+| `task_projects_state` | `workspace`, `projects: TaskProject[]` | reply to `task_projects_list` |
+| `task_project_state` | `project?: TaskProject` | reply to `task_project_get` |
+| `task_project_changed` | `workspace`, `id`, `revision` | Project mutation; refresh the Project list and details |
+| `task_domain_state` | `domain: TaskDomain` | reply to `task_domain_get` |
+| `task_plan_started` | `id`, `session_id`, `revision` | a read-only planning pane was reserved and launched |
+| `task_plan_changed` | `id`, `revision` | proposal submission, answer or approval; refresh task/domain details |
+| `task_tracker_settings` | `settings: TaskTrackerWorkspaceSettings[]`, `refusal?` | current per-workspace connector settings; contains credential presence, never its value |
+| `task_tracker_links` | `task_id`, `links: TaskExternalLink[]` | bounded source snapshots, sync state and conflicts |
+| `task_tracker_sync_state` | `workspace`, `provider`, `last_sync_at_ms?`, `error?` | a sync completed or failed |
+| `task_tracker_conflict_resolved` | `task_id`, `link: TaskExternalLink` | a revision-checked explicit conflict choice was applied |
 | `task_detail` | `task: Task`, `acceptance: TaskAcceptanceItem[]` (by position), `comments: TaskComment[]` (newest first, at most `COMMENTS_PER_TASK`), `history: TaskHistoryEntry[]` (newest first, at most `TASK_HISTORY_PAGE`), `runs: TaskRun[]` (newest first, at most `RUNS_PER_TASK`) | direct reply to `task_get` |
 | `task_changed` | `workspace?` (null = unassigned), `id`, `revision` | bcast after any task write — a client refreshes its scoped snapshot and open detail |
 | `task_refused` | `id?`, `kind: TaskErrorKind`, `limit?`, `requested?`, `expected?`, `actual?`, `message` | direct reply only; nothing changed. `conflict` carries the task, the expected revision and the actual one; `limit` carries the limit and the actual value; `busy` carries the live-run limit and the requested count, and the message names the holding run and pane; `access_off` and `read_only` name Settings ▸ Tasks |
@@ -500,8 +536,8 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    detected_agent?, hidden, ssh_host?, restore_deferred?: RestoreReason, status?: AgentStatus,
                    status_since_ms?: number | null (runtime-only epoch time for the current agent
                    status; absent until a provider status is known and reset on status changes),
-                   context?: SessionContext (v111: runtime-only occupancy; absent or `unknown` hides
-                   the indicator; never persisted, so it resets on respawn),
+                   context?: SessionContext (absent or `unknown` hides the indicator; v128 retains
+                   the last hook-fed occupancy across Sleep and Wake),
                    swarm_agent?, spawned_by?, acp? (slug), live_children, children_waiting, profile_label?,
                    delegation?: DelegationInfo, inbox_unread (v96: undelivered, unresolved pane_inbox rows
                    addressed to this pane),
@@ -512,6 +548,8 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    resumable (v119: the session holds a resume handle, so a Restart without `fresh`
                    resumes its conversation), resume_notice? (v119: why this session started fresh
                    instead of resuming; held in memory for the session's life),
+                   sleep_notice?, latest_prompt?, last_agent_message?, slept_at_ms? (v128: bounded
+                   hook-fed cues and a sleep timestamp; transcript expiry remains unknown),
                    compactions? (v122: context compactions the agent's hooks reported for this pane;
                    absent when its provider reports none),
                    task? (v124: the SessionTask this pane is bound to — the newest run recorded
@@ -702,7 +740,7 @@ SlackLanguage      en | pt_br — what Houston writes in Slack and asks the agen
 SlackInfo          enabled, has_tokens, connection: SlackConnection, team?, bot_user_id?,
                    owner_user_id?, channels: SlackChannelMap[], language: SlackLanguage,
                    last_event_at_ms?, last_catchup_at_ms?, error?
-TaskCounts         ready (todo with no unfinished blocker; the queue's pool), backlog, todo,
+TaskCounts         ready (todo satisfying content, Plan and dependency readiness; the queue's pool), backlog, todo,
                    in_progress, in_review, done, canceled
 TaskQueueRefusal   id, key, message — one ready task a task_queue_run could not start
 TaskPatch          workspace? (absent unchanged, null clears, registered path binds), title?, description?, status?, priority?, acceptance? (each absent = unchanged;
@@ -754,14 +792,15 @@ ChatPermissionMode accept_edits | bypass_permissions
 HostInfo           channel, state_dir, pid, port, protocol_version, app_version, build_commit, uptime_ms,
                    live_sessions, restore_budget, restore_resume, restore_deferred, orchestration_depth_in_use,
                    orchestration_max_depth, mailbox_files_on_disk, mailbox_retention_hours, settled_retention_hours,
-                   worktree_cleanup_enabled, worktree_cleanup_grace_hours,
+                   worktree_cleanup_enabled, worktree_cleanup_grace_hours, worktree_idle_removal_days,
                    command_history_ignore_glob_count, session_db_bytes
 
-ManagedWorktreeInfo path, branch, pr?, keep: WorktreeKeep | null, bytes?, measured_at_ms?,
+ManagedWorktreeInfo path, branch, base_branch?, status: WorktreeStatus, pr?, keep: WorktreeKeep | null, bytes?, measured_at_ms?,
                    checked_at_ms? (null until a pass evaluated it; only then does keep: null mean
                    nothing keeps it)
 RemovedWorktree    path, branch, pr?, bytes?
-WorktreeKeep       branch_changed{current?} | dirty{files} | ignored_files{files} |
+WorktreeStatus     ready | stale | kept
+WorktreeKeep       stale{idle_days} | branch_changed{current?} | dirty{files} | ignored_files{files} |
                    commits_outside_pr{count, pr} | pr_head_unavailable{pr} | in_use{session} |
                    grace{until_ms} | not_merged{state} | no_pr | gh_unavailable{gh} |
                    probably_integrated | remove_failed{message}
@@ -1090,7 +1129,9 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 127 | **Checkout, activity and pull-request surfaces gain their wire data.** `SessionInfo.checkout?` (`SessionCheckout`, `CheckoutKind`) and `SessionInfo.activity?` (`SessionActivity`) have matching `session_checkout` and `session_activity` broadcasts. `PrInfo` and `PrListItem` gain title, branch, diffstat, creation, comment, review-request and mergeability details; `pr_list` gains `PrSort`; `pr_status_batch` requests one existing `pr_status` reply per directory. `PrCheck.run_id` and `pr_check_log` expose a tail capped at 40 lines and 16 KiB. Tag colors accept any six-digit hexadecimal `#rrggbb`, stored lowercase; `TAG_PALETTE` remains the preset list |
+| 129 | **Checkout, activity and pull-request surfaces gain their wire data.** `SessionInfo.checkout?` (`SessionCheckout`, `CheckoutKind`) and `SessionInfo.activity?` (`SessionActivity`) have matching `session_checkout` and `session_activity` broadcasts. `PrInfo` and `PrListItem` gain title, branch, diffstat, creation, comment, review-request and mergeability details; `pr_list` gains `PrSort`; `pr_status_batch` requests one existing `pr_status` reply per directory. `PrCheck.run_id` and `pr_check_log` expose a tail capped at 40 lines and 16 KiB. Tag colors accept any six-digit hexadecimal `#rrggbb`, stored lowercase; `TAG_PALETTE` remains the preset list |
+| 128 | Manual Sleep/Wake adds `SessionState.sleeping`, retained hook-fed cues and context, `session_sleep`, `session_wake`, `session_memory_get`, `session_updated` and `session_memory`. Sleeping panes do not auto-restore. Task Projects, Delivery/Slice metadata, blockers, readiness, revision-bound read-only Plan and per-workspace GitHub Issues/Notion connectors add the corresponding `task_project_*`, `task_domain_*`, `task_plan_*` and `task_tracker_*` messages and shared shapes above. Manual `task_start` gains `override_readiness`; automatic starts never bypass readiness. External snapshots preserve both conflicting values until an explicit resolution. |
+| 127 | Managed worktree entries carry their recorded `base_branch` and a `status` (`ready`, `stale`, `kept`). `WorktreeKeep.not_integrated { count, base }` means `git cherry` found `count` commits on a branch with no PR that have no patch-equivalent in `base` (the recorded base, or the default branch for rows recorded without one); with none, the worktree is integrated and removable after the grace. `WorktreeKeep.stale` carries `idle_days` and `removal_in_days`; a worktree becomes stale at half the idle removal threshold, which defaults to 30 days and is reported by `host_info.worktree_idle_removal_days`. When automatic removal is enabled, a qualifying worktree is removed at the threshold and its branch is kept. Manual stale removal also keeps the branch. |
 | 126 | **Usage buckets and durable activity gain detail.** Usage buckets gain category and speed costs plus workspace attribution; `usage_summary_get.workspace?`; `usage_activity_summary_get` → `usage_activity_summary` reads up to 365 local calendar days persisted in `usage_daily_rollup`. **Harness findings can be tracked through fix tasks and verification.** New `harness_fix_task`, `harness_overview_get` and `harness_seen` client messages; `harness_overview` direct reply; `HarnessFinding` gains its derived phase, linked task, latest verification and last-seen review; `HarnessState` reports provider coverage; task details and summaries gain `TaskOrigin`. Fix tasks and verification verdicts use dedicated tables, and the daemon stores a monotonic per-workspace seen-review cursor. A published `gone` verdict resolves the finding at publish time; `still_present` reopens it and `inconclusive` leaves it awaiting verification. **Pull-request watches** add `pr_watch_list` / `pr_watch_unwatch` and the `pr_watch_list` / `pr_watch_changed` replies with `PrWatchInfo` and `SessionPrWatches`; the watch remains local daemon state. The same batch adds `git_branch_commits` and optional `PrWatchInfo.last_checked_at_ms` without changing this protocol version |
 | 125 | **A Slack mention becomes a pending task; the owner's ✅ starts it.** New `slack_get`, `slack_connect`, `slack_disconnect` and `slack_configure` client messages and the `slack` reply, with `SlackInfo`, `SlackConnection`, `SlackChannelMap`, `SlackLanguage`, `TaskIntake` and `IntakeState`; `TaskSummary.intake?` and `TaskRun.pr_url?`. The daemon holds an opt-in Socket Mode connection, files mentions in mapped channels as tasks, starts them on the owner's reaction or direct-message button within `SLACK_RUNS_WORKING_MAX`, shows each request's state as a reaction, and posts the agent's questions (one button per option) and hand-back to the request's thread. Agents get `hs-task ask` / MCP `task_ask` (HTTP `/task/ask`, fields `context?`, `question`, `options`, `recommended`, `why?`). Existing messages are unchanged |
 | 124 | **Tasks become a global backlog with optional workspace binding.** `Task.workspace`, `TaskSummary.workspace` and `task_changed.workspace` become nullable; `TaskPatch.workspace` distinguishes absent, null and a registered path; snapshots use `scope` (`all`, `unassigned`, workspace path); `task_save.workspace` is optional; `task_start.workspace?` assigns an unassigned task. Agents read the global backlog and write only their own workspace or unassigned tasks; writes to another workspace are refused naming the task key, workspace and read-only rule. Per-workspace access still gates agents. Keys resolve globally; a single counter allocates immutable `HOU-<n>` keys. Migration preserves rows and revisions, renumbers collisions above the current maximum with `houston:renumbered` history and preserves counter high-water marks. Claim binds unassigned tasks with `houston:claim-assign`; execute and queue stay within the orchestrator workspace. Workspace removal unassigns tasks with `houston:workspace-removed` history and interrupts open runs. **Start launches an agent in a worktree and the task follows it.** New `task_start`, `task_run_control`, `task_start_settings_get` and `task_start_settings_set` client messages; `task_run_changed` and `task_start_settings` replies; `TaskSummary.open_run?`; `TaskRun.reason?`; `SessionInfo.task?` with the new `SessionTask`; `TaskRunAction` and `TaskPromptDelivery`; and `TaskErrorKind.busy`. Start opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK`, delivers a capped brief (send or prefill, per workspace, default claude/send) and records a `backlog_task_runs` row. Working panes move backlog/todo to in progress unless the user set the status after the run started; `task_handback` moves the run to handed_back and the task to in_review with the drift warning; a pane exit interrupts the run; a 5-minute `gh pr view` watch per in-review task marks the task done on a merged PR and otherwise leaves the reason on the run. `stop` ends the run's pane; `resume` opens attempt N+1 on the same worktree; `retry` opens it with the newest failed review's findings appended. The same batch adds `task_queue_run`, `task_review_settings_get`/`_set`, the `task_queue_result` and `task_review_settings` replies, `TaskQueueRefusal`, `TaskCounts.ready` and `TaskRunAction.retry`: an orchestrator pane's MCP `task_execute` starts a task as its child (delegation, task key as role, the run stores the delegation) and the child's `pane_submit` ends with a `task_result` JSON line that ticks acceptance by name, comments the summary and moves the task to in_review (missing or malformed leaves the run needs_review with the raw text); MCP `task_review` opens an independent read-only reviewer whose `task_review` verdict pass comments and leaves the task in review, fail comments the findings and marks the run needs_review, then auto-retries per the workspace's rounds (history `houston:auto-rework`, capped) and a restart flips a resumed task child's interrupted run back to running. Existing task messages change as described above |

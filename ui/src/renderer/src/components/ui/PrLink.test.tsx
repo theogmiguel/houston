@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PrLink } from './PrLink'
 
 describe('PrLink', () => {
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
 
   it('opens GitHub on Ctrl+click and uses plain click for the panel callback', () => {
     const onClick = vi.fn()

@@ -125,16 +125,23 @@ preparation fails, Houston rolls back the fresh checkout and branch. If Git chec
 after a hook has added commits, Houston preserves them and reports that rollback needs attention.
 
 Children are temporary by default. After a durable completed result, Houston ends the
-process and keeps the session and transcript under Settled. Done-and-idle reusable
-children also leave the live-child quota, but remain in Working until their process ends. Closing a settled child or its parent removes
-it; retention expires after 24 hours by default. Claude and Codex conversations can be
+process, but keeps the session and transcript under Settled until the parent closes the
+pane or retention expires. After receiving a completed result, preserve any needed output
+and artifacts, then promptly close the child with `pane_kill` or `hs-pane kill`; do not
+accumulate completed panes. Keep a reusable child only when you intentionally plan more
+assigned work. Do not close a child that is still working, or confirm closing live
+descendants unless their work is also complete and preserved. Closing a settled child or
+its parent removes it; retention expires after 24 hours by default. Claude and Codex conversations can be
 continued when a valid resume handle is available. Other providers cannot continue an
 ended conversation. A reusable child remains available for follow-up prompts until close
 or retention expiry.
 
 After a daemon restart, open Claude and Codex children resume with their parent when
-valid conversation handles are available. The parent receives one restored notice naming
-which children resumed. Other children remain ended and are named in that notice.
+valid conversation handles are available. A Claude or Codex conversation detected inside
+a shell pane resumes inside that shell, which remains a shell pane. Houston restores its
+children only after the parent's exact conversation resumes; otherwise the children stay
+deferred until the parent can resume. The parent receives one restored notice naming which
+children resumed. Other children remain ended and are named in that notice.
 
 A live daemon handoff preserves parent links, delegation roles and scoped credentials.
 An open wait returns a retryable timeout marked `restarting`; call `pane_wait` again

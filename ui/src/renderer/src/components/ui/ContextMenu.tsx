@@ -1,11 +1,16 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode, Ref } from 'react'
 import './floatingSurface.css'
+import { Text } from './Text'
+
+const EDITOR_MENU_CLASS = 'ctx-menu fixed z-[var(--z-overlay)] min-w-[var(--w-editor-context-menu)] flex flex-col p-1 floating-glass floating-pop-in [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] [transform-origin:var(--pop-origin-x,center)_var(--pop-origin-y,center)]'
+const EDITOR_ITEM_CLASS = 'btn ctx-item border-none flex w-full items-center justify-between gap-[var(--space-editor-menu-gap)] rounded-[var(--tr-radius-input)] bg-transparent py-[var(--space-editor-menu-y)] px-2.5 text-left text-[var(--text-secondary)] hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] disabled:hover:bg-transparent disabled:hover:text-[var(--text-secondary)]'
 
 const MENU_CLASS =
   'ctxmenu floating-glass floating-pop-in fixed z-[var(--z-context)] w-[var(--w-context-menu)] overflow-hidden flex flex-col [transform-origin:var(--pop-origin-x,center)_var(--pop-origin-y,center)] [&_.ctx-item]:grid [&_.ctx-item]:grid-cols-[var(--space-context-menu-icon-column)_minmax(0,1fr)_auto] [&_.ctx-item]:items-center [&_.ctx-item]:gap-[var(--space-1-5)] [&_.ctx-item]:w-full [&_.ctx-item]:h-[var(--h-context-menu-item)] [&_.ctx-item]:px-[var(--space-menu-item-x)] [&_.ctx-item]:py-0 [&_.ctx-item]:border-none [&_.ctx-item]:rounded-[var(--tr-radius-sm)] [&_.ctx-item]:bg-transparent [&_.ctx-item]:text-[var(--text-primary)] [&_.ctx-item]:[font-size:var(--tr-text-label-size)] [&_.ctx-item]:font-normal [&_.ctx-item]:text-left [&_.ctx-item:hover]:bg-[var(--card-hover)] [&_.ctx-item:hover]:text-[var(--text-primary)] [&_.ctx-item:focus-visible]:bg-[var(--card-hover)] [&_.ctx-item:focus-visible]:text-[var(--text-primary)] [&_.ctx-item:focus-visible]:outline-none [&_.ctx-item:disabled]:text-[var(--text-faint)] [&_.ctx-item:disabled]:cursor-default [&_.ctx-item:disabled]:opacity-[var(--opacity-context-menu-disabled)] [&_.ctx-item_kbd]:text-[var(--text-faint)] [&_.ctx-item_kbd]:font-mono [&_.ctx-item_kbd]:[font-size:var(--tr-text-label-size)] [&_.ctx-item_kbd]:font-medium [&_.ctx-item>svg:first-child]:justify-self-center [&_.ctx-sep]:h-px [&_.ctx-sep]:bg-[var(--border)] [&_.ctx-sep]:my-[var(--space-context-menu-separator-y)] [&_.ctx-sep]:mx-0 [&_.ctx-sep]:flex-none [&_.ctx-item.danger]:text-[color-mix(in_srgb,var(--danger)_80%,transparent)] [&_.ctx-item.danger:hover]:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] [&_.ctx-item.danger:hover]:text-[var(--danger)]'
 
-export function ContextMenu({ children, className = '', ref, variant, ...props }: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement>; variant?: 'grid-card' }): React.JSX.Element {
-  return <div {...props} ref={ref} className={`${MENU_CLASS} ${variant === 'grid-card' ? 'grid-card-menu' : ''} ${className}`}>{children}</div>
+export function ContextMenu({ children, className = '', ref, variant = 'default', ...props }: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement>; variant?: 'default' | 'editor' | 'grid-card' }): React.JSX.Element {
+  const base = variant === 'editor' ? EDITOR_MENU_CLASS : `${MENU_CLASS} ${variant === 'grid-card' ? 'grid-card-menu' : ''}`
+  return <div {...props} ref={ref} className={`${base} ${className}`}>{children}</div>
 }
 
 export function ContextMenuGridLabel({ children }: { children: ReactNode }): React.JSX.Element {
@@ -16,8 +21,9 @@ export function ContextMenuItems({ children }: { children: ReactNode }): React.J
   return <div className="flex flex-col gap-[var(--space-context-menu-gap)] p-[var(--space-context-menu-pad)]">{children}</div>
 }
 
-export function ContextMenuItem({ danger = false, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean }): React.JSX.Element {
-  return <button {...props} type="button" className={`btn ctx-item ${danger ? 'danger' : ''} ${props.className ?? ''}`}>{children}</button>
+export function ContextMenuItem({ danger = false, variant = 'default', shortcut, children, ref, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean; variant?: 'default' | 'editor'; shortcut?: string; ref?: Ref<HTMLButtonElement> }): React.JSX.Element {
+  if (variant === 'editor') return <button {...props} ref={ref} type={props.type} className={`${EDITOR_ITEM_CLASS} ${props.className ?? ''}`}>{shortcut ? <><Text as="span" size="small" weight="small">{children}</Text><Text as="span" size="small" weight="small" tone="faint">{shortcut}</Text></> : children}</button>
+  return <button {...props} ref={ref} type="button" className={`btn ctx-item ${danger ? 'danger' : ''} ${props.className ?? ''}`}>{children}</button>
 }
 
 export function ContextMenuHeading({ title, subtitle }: { title: string; subtitle: string }): React.JSX.Element {
@@ -29,7 +35,8 @@ export function ContextMenuHeading({ title, subtitle }: { title: string; subtitl
   )
 }
 
-export function ContextMenuSeparator(props: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
+export function ContextMenuSeparator({ variant = 'default', ...props }: HTMLAttributes<HTMLDivElement> & { variant?: 'default' | 'editor' }): React.JSX.Element {
+  if (variant === 'editor') return <div className="ctx-sep h-px flex-none bg-[var(--border)] my-1 mx-1.5" />
   return <div {...props} className={`ctx-sep ${props.className ?? ''}`} />
 }
 

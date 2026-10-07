@@ -75,9 +75,13 @@ five attempts, and the status line names it.
    as its link and sends the owner a direct message with the channel, the requester, the
    start of the request, whether it would start now or wait, and **Accept**, **Refuse** and
    **View message** buttons. Nothing is written in the thread. The task waits in **Backlog**
-   with a **Slack · awaiting ✅** chip.
-2. The owner starts it with **Accept**, by reacting with ✅ to the request, or with
-   **Start** in the Tasks tab. A ✅ or a click
+   with a **Slack · awaiting ✅** chip. Before starting, open the task in Houston, complete
+   any required Plan, add at least one verifiable acceptance criterion and make sure the
+   task is ready.
+2. The owner starts a ready task with **Accept**, by reacting with ✅ to the request, or
+   with **Start** in the Tasks tab. An attempt to accept an unready task does not start it:
+   the request stays pending, gets ⚠️ and the owner receives the missing readiness criteria.
+   Fix the task in Houston, then retry. A ✅ or a click
    from anyone else does nothing. **Refuse** asks for an optional reason: the reason is
    posted in the thread exactly as written, under "Not going ahead" and the owner's name,
    the task is canceled and the request gets 🚫; without a reason only the 🚫 appears, which

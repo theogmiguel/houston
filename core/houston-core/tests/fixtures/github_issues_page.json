@@ -1,0 +1,41 @@
+[
+  {
+    "number": 11,
+    "title": "Labeled issue",
+    "body": "Bounded fixture body",
+    "html_url": "https://github.com/octo-org/project/issues/11",
+    "updated_at": "2026-10-06T12:00:00Z",
+    "state": "open",
+    "labels": [{"name": "import"}],
+    "assignee": null,
+    "milestone": {
+      "number": 7,
+      "title": "Milestone seven",
+      "description": "Milestone description",
+      "html_url": "https://github.com/octo-org/project/milestone/7"
+    }
+  },
+  {
+    "number": 12,
+    "title": "Assigned issue",
+    "body": "Another bounded fixture body",
+    "html_url": "https://github.com/octo-org/project/issues/12",
+    "updated_at": "2026-10-06T12:10:00Z",
+    "state": "open",
+    "labels": [{"name": "triage"}],
+    "assignee": {"login": "theo"},
+    "milestone": null
+  },
+  {
+    "number": 13,
+    "title": "Pull request masquerading as an issue",
+    "body": "Must be excluded",
+    "html_url": "https://github.com/octo-org/project/pull/13",
+    "updated_at": "2026-10-06T12:20:00Z",
+    "state": "open",
+    "labels": [{"name": "import"}],
+    "assignee": {"login": "theo"},
+    "pull_request": {"url": "https://api.github.com/repos/octo-org/project/pulls/13"},
+    "milestone": null
+  }
+]

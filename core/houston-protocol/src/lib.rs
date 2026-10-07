@@ -1,8 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+pub mod task_trackers;
+pub use task_trackers::{
+    TaskExternalLink, TaskExternalLinkSource, TaskTrackerConflictResolution,
+    TaskTrackerFieldConflict, TaskTrackerProjectSnapshot, TaskTrackerProvider, TaskTrackerSnapshot,
+    TaskTrackerStatusMapping, TaskTrackerSyncState, TaskTrackerWorkspaceSettings,
+};
+
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 127;
+pub const PROTOCOL_VERSION: u32 = 129;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -516,6 +523,113 @@ pub enum TaskStatus {
     InReview,
     Done,
     Canceled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskDomainKind {
+    Delivery,
+    Slice,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskProject {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    pub workspace: String,
+    pub name: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub external_url: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub tracker_description: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub project_external_id: Option<String>,
+    pub local_decisions: Vec<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub revision: i64,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub archived_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskReadiness {
+    pub ready: bool,
+    pub reasons: Vec<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub acceptance_total: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub acceptance_verifiable: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub unresolved_questions: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub unresolved_tracker_conflicts: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "Array<number>"))]
+    pub unfinished_blockers: Vec<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskPlanAnswer {
+    pub question: String,
+    pub answer: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskPlanProposal {
+    pub description: String,
+    pub acceptance: Vec<String>,
+    pub pointers: Vec<String>,
+    pub out_of_scope: Vec<String>,
+    pub questions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskPlan {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub revision: i64,
+    pub proposal: TaskPlanProposal,
+    pub answers: Vec<TaskPlanAnswer>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub approved_revision: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskDomain {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub task_id: i64,
+    pub kind: TaskDomainKind,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub project_id: Option<i64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub delivery_id: Option<i64>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "Array<number>"))]
+    pub blocked_by: Vec<i64>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub slice_total: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub slice_done: u32,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub planning_session_id: Option<u32>,
+    pub readiness: TaskReadiness,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub plan: Option<TaskPlan>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub unresolved_tracker_conflicts: u32,
 }
 
 impl TaskStatus {
@@ -1402,6 +1516,7 @@ pub struct SafeModeSummary {
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
     Running,
+    Sleeping,
     Exited,
     Killed,
     Interrupted,
@@ -1933,6 +2048,18 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub task: Option<SessionTask>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub sleep_notice: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub latest_prompt: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub last_agent_message: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub slept_at_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2134,6 +2261,10 @@ pub struct GitWorktreeInfo {
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorktreeKeep {
+    Stale {
+        idle_days: u32,
+        removal_in_days: u32,
+    },
     /// The tree is no longer on the branch Houston recorded, so its PR says nothing
     /// about the recorded branch; `current` is `None` on a detached HEAD.
     BranchChanged {
@@ -2169,9 +2300,23 @@ pub enum WorktreeKeep {
         gh: GhState,
     },
     ProbablyIntegrated,
+    /// `count` commits on the branch have no patch-equivalent in `base`.
+    NotIntegrated {
+        count: u32,
+        base: String,
+    },
     RemoveFailed {
         message: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeStatus {
+    Ready,
+    Stale,
+    Kept,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2179,6 +2324,8 @@ pub enum WorktreeKeep {
 pub struct ManagedWorktreeInfo {
     pub path: String,
     pub branch: String,
+    pub base_branch: Option<String>,
+    pub status: WorktreeStatus,
     pub pr: Option<u32>,
     pub keep: Option<WorktreeKeep>,
     #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
@@ -2980,6 +3127,15 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         fresh: Option<bool>,
     },
+    SessionSleep {
+        session: u32,
+    },
+    SessionWake {
+        session: u32,
+    },
+    SessionMemoryGet {
+        session: u32,
+    },
     SessionCwd {
         session: u32,
     },
@@ -3354,6 +3510,14 @@ pub enum ClientMsg {
         #[serde(default)]
         paths: Vec<String>,
     },
+    WorktreeIdleRemovalDaysGet,
+    WorktreeIdleRemovalDaysSet {
+        days: u32,
+    },
+    WorktreeIdleRemove {
+        dir: String,
+        path: String,
+    },
     GitCheckpointCreate {
         dir: String,
         label: String,
@@ -3671,10 +3835,133 @@ pub enum ClientMsg {
     TaskSnapshot {
         scope: String,
     },
+    TaskTrackerSettingsGet {
+        workspace: String,
+    },
+    TaskTrackerSettingsSet {
+        settings: Box<TaskTrackerWorkspaceSettings>,
+    },
+    TaskTrackerCredentialSet {
+        workspace: String,
+        provider: TaskTrackerProvider,
+        token: String,
+    },
+    TaskTrackerCredentialClear {
+        workspace: String,
+        provider: TaskTrackerProvider,
+    },
+    TaskTrackerSyncNow {
+        workspace: String,
+    },
+    TaskTrackerLinksGet {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        task_id: i64,
+    },
+    TaskTrackerConflictResolve {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        task_id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expected_task_revision: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
+        expected_project_revision: Option<i64>,
+        provider: TaskTrackerProvider,
+        external_id: String,
+        field: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expected_revision: i64,
+        resolution: TaskTrackerConflictResolution,
+    },
     /// One task with its acceptance items, comments, history and runs.
     TaskGet {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
+    },
+    TaskProjectsList {
+        workspace: String,
+    },
+    TaskProjectGet {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+    },
+    TaskProjectSave {
+        workspace: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        id: Option<i64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        expected_revision: Option<i64>,
+        name: String,
+        #[serde(
+            default,
+            deserialize_with = "double_option",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        external_url: Option<Option<String>>,
+        #[serde(
+            default,
+            deserialize_with = "double_option",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        tracker_description: Option<Option<String>>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<string> | null"))]
+        local_decisions: Option<Vec<String>>,
+    },
+    TaskProjectArchive {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        archived: bool,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expected_revision: i64,
+    },
+    TaskDomainGet {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+    },
+    TaskDomainSave {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expected_revision: i64,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        kind: Option<TaskDomainKind>,
+        #[serde(
+            default,
+            deserialize_with = "double_option",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        project_id: Option<Option<i64>>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<number> | null"))]
+        blocked_by: Option<Vec<i64>>,
+    },
+    TaskPlanStart {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expected_revision: i64,
+        agent: AgentKind,
+    },
+    TaskPlanAnswer {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expected_revision: i64,
+        question: String,
+        answer: String,
+    },
+    TaskPlanApprove {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expected_revision: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        plan_revision: i64,
     },
     /// Creates (id absent) or updates (id present, `expected_revision`
     /// required) one task.
@@ -3724,6 +4011,8 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         base: Option<String>,
+        #[serde(default)]
+        override_readiness: bool,
     },
     /// Stops or resumes one run. `resume` opens attempt N+1 on the same
     /// worktree and branch.
@@ -3919,6 +4208,21 @@ pub enum ServerMsg {
         session: u32,
         state: SessionState,
         exit_code: Option<i32>,
+    },
+    SessionUpdated {
+        info: SessionInfo,
+    },
+    SessionMemory {
+        session: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        bytes: Option<u64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        measured_at_ms: Option<u64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        unavailable_reason: Option<String>,
     },
     SessionList {
         sessions: Vec<SessionInfo>,
@@ -4235,6 +4539,9 @@ pub enum ServerMsg {
         #[serde(default)]
         removed: Vec<RemovedWorktree>,
     },
+    WorktreeIdleRemovalDays {
+        days: u32,
+    },
     GitCheckpoints {
         dir: String,
         checkpoints: Vec<GitCheckpointInfo>,
@@ -4372,6 +4679,27 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         refusal: Option<String>,
     },
+    TaskTrackerSettings {
+        settings: Vec<TaskTrackerWorkspaceSettings>,
+        refusal: Option<String>,
+    },
+    TaskTrackerLinks {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        task_id: i64,
+        links: Vec<TaskExternalLink>,
+    },
+    TaskTrackerSyncState {
+        workspace: String,
+        provider: TaskTrackerProvider,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
+        last_sync_at_ms: Option<i64>,
+        error: Option<String>,
+    },
+    TaskTrackerConflictResolved {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        task_id: i64,
+        link: TaskExternalLink,
+    },
     Keymap {
         overrides: KeymapOverrides,
     },
@@ -4460,6 +4788,39 @@ pub enum ServerMsg {
         comments: Vec<TaskComment>,
         history: Vec<TaskHistoryEntry>,
         runs: Vec<TaskRun>,
+    },
+    TaskProjectState {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        project: Option<TaskProject>,
+    },
+    TaskProjectsState {
+        workspace: String,
+        projects: Vec<TaskProject>,
+    },
+    TaskProjectChanged {
+        workspace: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        revision: i64,
+    },
+    TaskDomainState {
+        domain: TaskDomain,
+    },
+    TaskPlanChanged {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        revision: i64,
+    },
+    TaskPlanStarted {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        session_id: u32,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        revision: i64,
     },
     /// One task changed; a client showing the workspace asks for
     /// `task_snapshot` or `task_get` again.
@@ -4575,6 +4936,7 @@ pub enum ServerMsg {
         settled_retention_hours: u32,
         worktree_cleanup_enabled: bool,
         worktree_cleanup_grace_hours: u32,
+        worktree_idle_removal_days: u32,
         command_history_ignore_glob_count: u32,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         session_db_bytes: u64,
@@ -4857,6 +5219,10 @@ pub const MAILBOX_RETENTION_HOURS_MAX: u32 = 720;
 pub const WORKTREE_CLEANUP_GRACE_HOURS_DEFAULT: u32 = 24;
 
 pub const WORKTREE_CLEANUP_GRACE_HOURS_MAX: u32 = 720;
+/// Long pauses should survive automatic cleanup; 30 days matches comparable tools' idle cleanup.
+pub const WORKTREE_IDLE_REMOVAL_DAYS_DEFAULT: u32 = 30;
+pub const WORKTREE_IDLE_REMOVAL_DAYS_MIN: u32 = 1;
+pub const WORKTREE_IDLE_REMOVAL_DAYS_MAX: u32 = 365;
 
 pub const ORCHESTRATION_CAP_MAX: u32 = 16;
 

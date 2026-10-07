@@ -9,8 +9,11 @@ import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskDetailData, TaskRefusal, TaskStartSettings } from '../../houston/useTasks'
+import type { HoustonClient } from '../../houston/client'
+import { isPullRequestUrl, linkIsPullRequest, sendTaskWire, type TaskProject, type TaskTrackerLink } from '../../houston/taskDomain'
 import { Icon } from '../ui/Icon'
 import { MarkdownPreview } from '../MarkdownPreview'
+import { ShellElement, ShellTaskDescriptionEditButton, ShellTaskDescriptionTextarea } from '../ui/ShellPrimitives'
 import {
   IconAlertTriangle,
   IconArchive,
@@ -26,9 +29,9 @@ import {
   IconUndo,
   IconUser
 } from '../icons'
-import type { SelectOption } from '../ui/Select'
+import { type SelectOption } from '../ui/Select'
+import { TextInput } from '../ui/TextInput'
 import { Tooltip } from '../ui/Tooltip'
-import { ShellElement, ShellTaskDescriptionEditButton, ShellTaskDescriptionTextarea } from '../ui/ShellPrimitives'
 import {
   actorLabel,
   formatAge,
@@ -38,6 +41,7 @@ import {
 } from './format'
 import { TaskExecutionCard, TaskStartCard } from './TaskExecution'
 import { TaskMenu } from './TaskMenu'
+import { TaskWorkflowPanel } from './TaskWorkflowPanel'
 import {
   Button,
   Chip,
@@ -60,6 +64,10 @@ import {
   TaskDrawerCard,
   TaskDrawerHeader,
   TaskDrawerOrigin,
+  Card,
+  Inline,
+  InlineLink,
+  Text,
   TaskSectionLabel,
   TaskSystemMark
 } from '../ui'
@@ -83,23 +91,93 @@ export interface TaskDetailProps {
   onRunControl: (runId: number, action: TaskRunAction) => void
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
+  client?: Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'> | null
+  onStartRequested?: (taskId: number, workspace: string) => void
 }
 
 export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
   const { detail } = props
   const { task } = detail
-  const [description, setDescription] = useServerDraft(task.description, task.revision)
-  return <TaskDetailDrawer props={props} description={description} setDescription={setDescription} />
+  const [trackerLinks, setTrackerLinks] = useState<TaskTrackerLink[]>([])
+  const [trackerProject, setTrackerProject] = useState<TaskProject | null>(null)
+  const trackerProjectId = useRef<number | null>(null)
+  const trackerProjectMinRevision = useRef(0)
+
+  useEffect(() => {
+    setTrackerLinks([])
+    setTrackerProject(null)
+    trackerProjectId.current = null
+    trackerProjectMinRevision.current = 0
+    const client = props.client
+    if (!client) return
+    const off = client.subscribeAll((message) => {
+      if (message.type === 'task_tracker_links' && message.task_id === task.id) setTrackerLinks(message.links)
+      if (message.type === 'task_domain_state' && message.domain.task_id === task.id) {
+        trackerProjectId.current = message.domain.project_id ?? null
+        trackerProjectMinRevision.current = 0
+        setTrackerProject(null)
+        if (message.domain.project_id != null) sendTaskWire(client, { type: 'task_project_get', id: message.domain.project_id })
+      }
+      if (message.type === 'task_project_state' && message.project?.id === trackerProjectId.current && message.project.revision >= trackerProjectMinRevision.current) setTrackerProject(message.project)
+      if (message.type === 'task_project_changed' && message.id === trackerProjectId.current && message.workspace === task.workspace) {
+        trackerProjectMinRevision.current = message.revision
+        setTrackerProject(null)
+        sendTaskWire(client, { type: 'task_project_get', id: message.id })
+      }
+      if (message.type === 'task_tracker_conflict_resolved' && message.task_id === task.id) {
+        setTrackerLinks((current) => current.map((link) => link.provider === message.link.provider && link.external_id === message.link.external_id ? message.link : link))
+      }
+    })
+    sendTaskWire(client, { type: 'task_tracker_links_get', task_id: task.id })
+    sendTaskWire(client, { type: 'task_domain_get', id: task.id })
+    return off
+  }, [props.client, task.id, task.workspace])
+
+  return <TaskDetailDrawer props={props} trackerLinks={trackerLinks} trackerProject={trackerProject} />
 }
 
-function TaskDetailDrawer({ props, description, setDescription }: { props: TaskDetailProps; description: string; setDescription: (value: string) => void }): React.JSX.Element {
-  const { detail, now } = props
+
+function TaskTrackerLinks({ client, taskId, taskRevision, projectRevision, sourceUrl, links }: { client?: Pick<HoustonClient, 'send'> | null; taskId: number; taskRevision: number; projectRevision: number | null; sourceUrl: string | null; links: TaskTrackerLink[] }): React.JSX.Element | null {
+  if (!client && !sourceUrl) return null
+  return <section className="grid gap-[var(--space-2)]" aria-label="Task tracker links">
+    <TaskSectionLabel heading="Tracker links" />
+    {sourceUrl && !links.some((link) => link.url === sourceUrl) && <Card padding="sm"><InlineLink href={sourceUrl}>Task source</InlineLink></Card>}
+    {links.length === 0 && !sourceUrl ? <TaskBody>No tracker links.</TaskBody> : links.map((link) => <Card key={`${link.provider}:${link.external_id}`} padding="sm" className="grid gap-[var(--space-2)]">
+      <InlineLink href={link.url}>{linkIsPullRequest(link) ? 'Pull request' : 'Source'} · {link.external_id}</InlineLink>
+      <TaskBody>{link.sync_state.state === 'error' ? `Sync error: ${link.sync_state.message}` : link.sync_state.state === 'diverged' ? 'Tracker data diverged' : link.sync_state.state === 'pending' ? 'Sync pending' : 'In sync'}</TaskBody>
+      {link.snapshot.project && <TaskBody>Imported project context — unverified. {link.snapshot.project.title}: {link.snapshot.project.description}</TaskBody>}
+      {!link.snapshot.project && link.snapshot.project_external_id && <TaskBody>External project ID {link.snapshot.project_external_id} has not been matched to a local project.</TaskBody>}
+      {client && link.snapshot.conflicts.map((conflict) => <TrackerConflict key={conflict.field} client={client} taskId={taskId} taskRevision={taskRevision} projectRevision={projectRevision} link={link} field={conflict.field} base={conflict.base} local={conflict.local} remote={conflict.remote} />)}
+      {link.sync_state.state === 'diverged' && link.snapshot.conflicts.length === 0 && <TaskBody>Tracker data diverged; no field conflict needs resolution.</TaskBody>}
+      {link.sync_state.state === 'error' && <TaskBody>{link.sync_state.message}</TaskBody>}
+    </Card>)}
+  </section>
+}
+
+function TrackerConflict({ client, taskId, taskRevision, projectRevision, link, field, base, local, remote }: { client: Pick<HoustonClient, 'send'>; taskId: number; taskRevision: number; projectRevision: number | null; link: TaskTrackerLink; field: string; base: string; local: string; remote: string }): React.JSX.Element {
+  const [custom, setCustom] = useState('')
+  const projectField = field.startsWith('project.')
+  const projectKnown = projectRevision != null
+  const resolve = (resolution: { kind: 'local' | 'remote' } | { kind: 'custom'; value: string }): void => sendTaskWire(client, {
+    type: 'task_tracker_conflict_resolve', task_id: taskId, provider: link.provider,
+    external_id: link.external_id, field, expected_revision: link.snapshot.revision,
+    expected_task_revision: taskRevision, expected_project_revision: projectField ? projectRevision : null, resolution
+  })
+  return <Card tone="inset" padding="sm" className="grid gap-[var(--space-1)]">
+    <Text weight="semibold">{field} differs between Houston and the tracker</Text>
+    <Text>Previous shared value: {base || '—'}</Text><Text>Houston value: {local || '—'}</Text><Text>Tracker value: {remote || '—'}</Text>
+    {projectField && !projectKnown && <Text size="small" tone="muted">Load the assigned Project before resolving this field.</Text>}
+    <Inline wrap gap="small"><Button variant="secondary" disabled={projectField && !projectKnown} onClick={() => resolve({ kind: 'local' })}>Keep Houston value</Button><Button variant="secondary" disabled={projectField && !projectKnown} onClick={() => resolve({ kind: 'remote' })}>Use tracker value</Button></Inline>
+    <div className="flex gap-[var(--space-2)]"><TextInput aria-label={`Custom ${field} value`} value={custom} onChange={(event) => setCustom(event.target.value)} /><Button variant="secondary" disabled={!custom.trim() || projectField && !projectKnown} onClick={() => resolve({ kind: 'custom', value: custom })}>Use custom value</Button></div>
+  </Card>
+}
+
+function TaskDetailDrawer({ props, trackerLinks, trackerProject }: { props: TaskDetailProps; trackerLinks: TaskTrackerLink[]; trackerProject: TaskProject | null }): React.JSX.Element {
+  const { detail } = props
   const { task } = detail
   const latestRun = detail.runs[0] ?? null
   const archived = task.archived_at_ms != null
-  const startable = !archived && (task.status === 'backlog' || task.status === 'todo')
-  const review = taskReviewOutcome(detail.runs, detail.comments)
-  const checked = detail.acceptance.filter((item) => item.checked_at_ms != null).length
+
   return <TaskDetailFrame>
     {props.refusal && props.refusal.id === task.id && <RefusalBanner refusal={props.refusal} onReload={props.onReload} taskId={task.id} />}
     <TaskDrawerHeader
@@ -121,6 +199,24 @@ function TaskDetailDrawer({ props, description, setDescription }: { props: TaskD
         />
       </>}
     />
+    <TaskDrawerContents props={props} trackerLinks={trackerLinks} trackerProject={trackerProject} />
+  </TaskDetailFrame>
+}
+
+function TaskDrawerContents({ props, trackerLinks, trackerProject }: {
+  props: TaskDetailProps
+  trackerLinks: TaskTrackerLink[]
+  trackerProject: TaskProject | null
+}): React.JSX.Element {
+  const { detail, now } = props
+  const { task } = detail
+  const latestRun = detail.runs[0] ?? null
+  const startable = task.archived_at_ms == null && (task.status === 'backlog' || task.status === 'todo')
+  const review = taskReviewOutcome(detail.runs, detail.comments)
+  const checked = detail.acceptance.filter((item) => item.checked_at_ms != null).length
+  const [description, setDescription] = useServerDraft(task.description, task.revision)
+
+  return <>
     {latestRun && <TaskExecutionCard
       run={latestRun}
       sessions={props.sessions}
@@ -132,11 +228,13 @@ function TaskDetailDrawer({ props, description, setDescription }: { props: TaskD
       onRunControl={props.onRunControl}
       presentation="drawer"
       branchReuse={latestRun.branch ?? null}
-      pullRequestUrl={task.ref_url ?? null}
+      pullRequestUrl={latestRun?.pr_url && isPullRequestUrl(latestRun.pr_url) ? latestRun.pr_url : null}
     />}
     {!latestRun && startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={false} onStart={props.onStart} />}
+    {props.client && <TaskWorkflowPanel client={props.client} detail={detail} onOpenSession={props.onOpenSession} onStartRequested={props.onStartRequested} />}
     <TaskDescriptionSection task={task} description={description} setDescription={setDescription} onSave={props.onSave} />
     <div className="grid gap-[var(--space-2)]">
+      <TaskTrackerLinks client={props.client} taskId={task.id} taskRevision={task.revision} projectRevision={trackerProject?.revision ?? null} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
       <TaskSectionLabel heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
       <TaskDrawerCard><AcceptanceList
         items={detail.acceptance}
@@ -154,7 +252,7 @@ function TaskDetailDrawer({ props, description, setDescription }: { props: TaskD
         </ShellElement>
       </TaskDrawerCard>
     </section>
-  </TaskDetailFrame>
+  </>
 }
 
 function TaskDescriptionSection({ task, description, setDescription, onSave }: {
@@ -233,6 +331,7 @@ function TaskDescriptionSection({ task, description, setDescription, onSave }: {
   )
 }
 
+
 function useServerDraft(server: string, revision: number): [string, (value: string) => void] {
   const [draft, setDraft] = useState(server)
   useEffect(() => {
@@ -240,6 +339,7 @@ function useServerDraft(server: string, revision: number): [string, (value: stri
   }, [server, revision])
   return [draft, setDraft]
 }
+
 
 function RefusalBanner({
   refusal,

@@ -92,6 +92,10 @@ fn stored_session(id: u32, ws: &Path, title: &str) -> proto::SessionInfo {
         resume_notice: None,
         compactions: None,
         task: None,
+        sleep_notice: None,
+        latest_prompt: None,
+        last_agent_message: None,
+        slept_at_ms: None,
     }
 }
 

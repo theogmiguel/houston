@@ -1,5 +1,5 @@
 import { PrTab, PR_FLOATING_CANDIDATES } from '../ui/PrTab'
-import { Button } from '../ui/Button'
+import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { MetadataRow } from '../ui/MetadataRow'
 import { Text } from '../ui/Text'
 import { PullRequestLabel } from '../ui/PullRequestLabel'
@@ -38,7 +38,7 @@ export function PrReactions({
     <ReactionList data-testid="pr-reactions">
       {reactions.map((r) => (
         <Tooltip key={r.content} label={`${r.count} reacted`}>
-          <Button variant="reaction" selected={r.reacted}
+          <ReviewButton variant="reaction" selected={r.reacted}
             type="button"
             data-testid={`pr-reaction-${r.content}`}
             aria-pressed={r.reacted}
@@ -47,23 +47,23 @@ export function PrReactions({
           >
             <span aria-hidden>{REACTION_GLYPH[r.content]}</span>
             <Text mono tabular>{r.count}</Text>
-          </Button>
+          </ReviewButton>
         </Tooltip>
       ))}
       <Tooltip label="Add a reaction">
-        <Button variant="compact-action"
+        <ReviewButton variant="compact-action"
           type="button"
           data-testid="pr-reaction-add"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
         >
           <Icon glyph={IconPlus} role="small" />
-        </Button>
+        </ReviewButton>
       </Tooltip>
       {open && (
         <ReactionOptionList data-testid="pr-reaction-picker">
           {REACTION_ORDER.map((content) => (
-            <Button variant="reaction-option"
+            <ReviewButton variant="reaction-option"
               key={content}
               type="button"
               aria-label={REACTION_LABEL[content]}
@@ -75,7 +75,7 @@ export function PrReactions({
               }}
             >
               <span aria-hidden>{REACTION_GLYPH[content]}</span>
-            </Button>
+            </ReviewButton>
           ))}
         </ReactionOptionList>
       )}
@@ -154,7 +154,7 @@ export function PrReviewerPicker({
         <ReviewerValue data-testid="pr-reviewers-value">
           {detail.reviewers.length === 0 ? (compact ? 'None' : 'none requested') : requestedReviewers(detail.reviewers)}
         </ReviewerValue>
-        <Button variant="compact-action"
+        <ReviewButton variant="compact-action"
           type="button"
           data-testid="pr-reviewers-manage"
           aria-label="Add reviewer"
@@ -171,7 +171,7 @@ export function PrReviewerPicker({
           ) : (
             compact ? <><Icon glyph={IconUser} role="small" /><Icon glyph={IconPlus} role="small" /></> : 'Manage'
           )}
-        </Button>
+        </ReviewButton>
       </MetadataRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (
@@ -182,7 +182,7 @@ export function PrReviewerPicker({
             const key = reviewerKey(c)
             const isSelected = selected.has(key)
             return (
-              <Button variant="picker-candidate"
+              <ReviewButton variant="picker-candidate"
                 key={key}
                 type="button"
                 aria-pressed={isSelected}
@@ -197,7 +197,7 @@ export function PrReviewerPicker({
                 {c.is_requested && (
                   <CandidateStatus>requested</CandidateStatus>
                 )}
-              </Button>
+              </ReviewButton>
             )
           })}
           {candidates.length === 0 && (
@@ -206,21 +206,21 @@ export function PrReviewerPicker({
             </CandidateEmptyMessage>
           )}
           <CandidateActions>
-            <Button variant="picker-apply-action"
+            <ReviewButton variant="primary-action"
               type="button"
               data-testid="pr-reviewers-apply"
               disabled={busy}
               onClick={apply}
             >
               Apply
-            </Button>
-            <Button variant="picker-cancel-action"
+            </ReviewButton>
+            <ReviewButton variant="secondary-action"
               type="button"
               data-testid="pr-reviewers-cancel"
               onClick={() => setOpen(false)}
             >
               Cancel
-            </Button>
+            </ReviewButton>
           </CandidateActions>
         </OptionCandidateList>
       )}
@@ -278,7 +278,7 @@ export function PrLabelPicker({
             ))
           )}
         </LabelSummary>
-        <Button variant="compact-action"
+        <ReviewButton variant="compact-action"
           type="button"
           data-testid="pr-labels-manage"
           aria-label="Add label"
@@ -295,13 +295,13 @@ export function PrLabelPicker({
           ) : (
             compact ? <Icon glyph={IconTag} role="small" /> : 'Edit'
           )}
-        </Button>
+        </ReviewButton>
       </LabelSummaryRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (
         <OptionCandidateList data-testid="pr-label-candidates" className={PR_FLOATING_CANDIDATES}>
           {candidates.map((c) => (
-            <Button variant="picker-candidate"
+            <ReviewButton variant="picker-candidate"
               key={c.name}
               type="button"
               role="option"
@@ -319,7 +319,7 @@ export function PrLabelPicker({
                   {c.description}
                 </CandidateDescription>
               )}
-            </Button>
+            </ReviewButton>
           ))}
           {candidates.length === 0 && (
             <CandidateEmptyMessage>
@@ -327,14 +327,14 @@ export function PrLabelPicker({
             </CandidateEmptyMessage>
           )}
           <CandidateActions align="end">
-            <Button variant="picker-done-action"
+            <ReviewButton variant="picker-done-action"
               type="button"
               data-testid="pr-labels-close"
               onClick={() => setOpen(false)}
             >
               <Icon glyph={IconClose} role="small" />
               Done
-            </Button>
+            </ReviewButton>
           </CandidateActions>
         </OptionCandidateList>
       )}

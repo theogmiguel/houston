@@ -44,7 +44,7 @@ function makeSession(id: number): SessionInfo {
   } as SessionInfo
 }
 
-const fakeClient = {} as unknown as HoustonClient
+const fakeClient = { subscribe: () => () => {} } as unknown as HoustonClient
 
 describe('LayoutView expand-in-place (PERF-AUDIT §2)', () => {
   let container: HTMLDivElement

@@ -1,3 +1,4 @@
+import { SettingsButton } from './ui/SettingsButtonRoles'
 import { useState } from 'react'
 import {
   IconPlus,
@@ -16,7 +17,7 @@ import type { McpTransport } from '../houston/generated/McpTransport'
 import { buildRows, cellFor, maskSecret, type MatrixRow } from '../houston/mcpRows'
 import { Icon } from './ui/Icon'
 import { Button, Caption, Card, ConnectionCell, Drawer, PageFrame, PageHeader, Table, Text, TextInput, FieldLabel, Chip, ChoiceGroup, ConfigurationDetail, ResultList, ResultRow, Footnote, type TableColumn } from './ui'
-import { CompactSwitch } from './ui/ConfigurationDetail'
+import { Switch } from './ui/Switch'
 import { ActionMenu } from './ui/ActionMenu'
 import { TASK_AGENTS } from './tasks/format'
 import { ConnectionsIntegrations } from './ConnectionsIntegrations'
@@ -217,23 +218,23 @@ function PairListEditor({
                 onChange(next)
               }}
             />
-            <Button
+            <SettingsButton
               variant="compact-icon-danger"
               aria-label={`remove ${legend.toLowerCase()} row ${i + 1}`}
               onClick={() => onChange(pairs.filter((_, j) => j !== i))}
             >
               <Icon glyph={IconTrash} role="small" />
-            </Button>
+            </SettingsButton>
           </div>
         ))}
-        <Button
+        <SettingsButton
           variant="compact-secondary"
           className="justify-self-start"
           onClick={() => onChange([...pairs, ['', '']])}
         >
           <Icon glyph={IconPlus} role="small" />
           Add
-        </Button>
+        </SettingsButton>
       </div>
     </div>
   )
@@ -263,23 +264,23 @@ function ArgListEditor({
                 onChange(next)
               }}
             />
-            <Button
+            <SettingsButton
               variant="compact-icon-danger"
               aria-label={`remove argument ${i + 1}`}
               onClick={() => onChange(args.filter((_, j) => j !== i))}
             >
               <Icon glyph={IconTrash} role="small" />
-            </Button>
+            </SettingsButton>
           </div>
         ))}
-        <Button
+        <SettingsButton
           variant="compact-secondary"
           className="justify-self-start"
           onClick={() => onChange([...args, ''])}
         >
           <Icon glyph={IconPlus} role="small" />
           Add argument
-        </Button>
+        </SettingsButton>
         </div>
       </div>
       <Text as="p" size="small" tone="faint">
@@ -512,7 +513,7 @@ function McpServerForm({
           </div>
 
           <label className="flex items-center gap-[var(--space-2)]">
-            <CompactSwitch
+            <Switch size="configuration"
               on={value.enabled}
               label={value.enabled ? 'Turn this server off' : 'Turn this server on'}
               onChange={(enabled) => setValue({ ...value, enabled })}
@@ -551,16 +552,16 @@ function McpServerForm({
           )}
 
           <div className="flex items-center gap-[var(--space-2)]">
-            <Button variant="compact-secondary" onClick={onCancel}>
+            <SettingsButton variant="compact-secondary" onClick={onCancel}>
               Cancel
-            </Button>
-            <Button
+            </SettingsButton>
+            <SettingsButton
               variant="compact-primary"
               disabled={!valid}
               onClick={() => onSubmit(serverFromForm(value))}
             >
               Save &amp; apply
-            </Button>
+            </SettingsButton>
           </div>
           <Footnote>
             Saving writes this server into your list, then applies it to the destinations above —

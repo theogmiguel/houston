@@ -426,7 +426,12 @@ async fn ready_tasks_order_by_priority_and_next_returns_the_first() {
             r.addr,
             &token,
             "task_create",
-            json!({ "title": title, "status": status, "priority": priority }),
+            json!({
+                "title": title,
+                "status": status,
+                "priority": priority,
+                "acceptance": ["The task can be claimed when ready"],
+            }),
         )
         .await;
     }
@@ -568,7 +573,11 @@ async fn hs_task_next_claim_and_handback_work_over_the_http_door() {
         r.addr,
         &token,
         "task_create",
-        json!({ "title": "CLI work", "status": "todo" }),
+        json!({
+            "title": "CLI work",
+            "status": "todo",
+            "acceptance": ["The CLI can claim and hand back this task"],
+        }),
     )
     .await;
     let id = r
@@ -641,7 +650,13 @@ async fn task_tools_read_globally_and_write_only_own_workspace() {
         .unwrap();
     let first = r.token_for(r.pane());
     for title in ["first one", "first two", "first three"] {
-        ok_call(r.addr, &first, "task_create", json!({ "title": title })).await;
+        ok_call(
+            r.addr,
+            &first,
+            "task_create",
+            json!({ "title": title, "acceptance": ["The task can be claimed"] }),
+        )
+        .await;
     }
     let pane = plain_pane(&r.daemon, &other_ws);
     let token = token(&r.daemon, pane, &other_ws);
@@ -649,14 +664,14 @@ async fn task_tools_read_globally_and_write_only_own_workspace() {
         r.addr,
         &token,
         "task_create",
-        json!({ "title": "second one" }),
+        json!({ "title": "second one", "acceptance": ["The task can be handed back"] }),
     )
     .await;
     let two = ok_call(
         r.addr,
         &token,
         "task_create",
-        json!({ "title": "second two" }),
+        json!({ "title": "second two", "acceptance": ["The task can be claimed"] }),
     )
     .await;
     assert_eq!(
@@ -771,7 +786,11 @@ async fn unassigned_tasks_are_visible_and_claim_assigns_the_callers_workspace() 
         r.addr,
         &token,
         "task_create",
-        json!({ "title": "unassigned", "workspace": null }),
+        json!({
+            "title": "unassigned",
+            "workspace": null,
+            "acceptance": ["The task can be claimed after workspace assignment"],
+        }),
     )
     .await;
     let id = created["id"].as_i64().unwrap();
@@ -783,4 +802,47 @@ async fn unassigned_tasks_are_visible_and_claim_assigns_the_callers_workspace() 
     assert!(history
         .iter()
         .any(|entry| entry.action == "houston:claim-assign"));
+}
+
+#[tokio::test]
+async fn an_unready_unassigned_claim_keeps_workspace_assignment_without_a_run() {
+    let r = rig().await;
+    let pane = r.pane();
+    let token = r.token_for(pane);
+    let session_count_before_claim = r.daemon.list().len();
+    let created = ok_call(
+        r.addr,
+        &token,
+        "task_create",
+        json!({ "title": "unready unassigned", "workspace": null, "status": "todo" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+
+    let message = refused(r.addr, &token, "task_claim", json!({ "id": id })).await;
+    assert!(
+        message.contains("task needs at least one verifiable acceptance item"),
+        "{message}"
+    );
+    assert_eq!(
+        r.daemon.list().len(),
+        session_count_before_claim,
+        "the readiness refusal starts no pane"
+    );
+
+    let (task, _, history) = task_detail(r.daemon.task_get(id).unwrap());
+    assert_eq!(task.workspace.as_deref(), Some(r.workspace().as_str()));
+    assert_eq!(task.status, proto::TaskStatus::Todo);
+    assert!(history
+        .iter()
+        .any(|entry| entry.action == "houston:claim-assign"));
+    let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+    let runs: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM backlog_task_runs WHERE task_id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(runs, 0, "the readiness refusal binds no run");
 }

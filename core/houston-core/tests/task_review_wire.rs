@@ -493,8 +493,26 @@ fn a_restored_task_child_flips_its_interrupted_run_back_to_running() {
         let db = Db::open(&db_path).unwrap();
         seed_session(&db, 1, project.path(), proto::AgentKind::Claude, None);
         seed_session(&db, 2, project.path(), proto::AgentKind::Codex, Some(1));
+        let parent_transcript = project.path().join("parent-conversation.jsonl");
+        std::fs::write(
+            &parent_transcript,
+            "{\"type\":\"user\",\"content\":\"parent conversation\"}\n",
+        )
+        .unwrap();
+        db.set_session_resume_handle(
+            1,
+            Some((
+                "00000000-0000-4000-8000-000000000010",
+                Some(parent_transcript.to_str().unwrap()),
+            )),
+        )
+        .unwrap();
         let transcript = project.path().join("conv-2.jsonl");
-        std::fs::write(&transcript, "conversation metadata\n").unwrap();
+        std::fs::write(
+            &transcript,
+            "{\"type\":\"user\",\"content\":\"child conversation\"}\n",
+        )
+        .unwrap();
         db.set_session_resume_handle(2, Some(("conv-2", Some(transcript.to_str().unwrap()))))
             .unwrap();
         let delegation = db
@@ -511,7 +529,7 @@ fn a_restored_task_child_flips_its_interrupted_run_back_to_running() {
                 ref_url: None,
                 created_by: "user",
                 now_ms: 1,
-                acceptance: &[],
+                acceptance: &["The restored task child retains its run binding".into()],
             })
             .unwrap();
         task_id = task.id;
@@ -546,19 +564,43 @@ fn a_restored_task_child_flips_its_interrupted_run_back_to_running() {
     assert_eq!(
         run.state,
         proto::TaskRunState::Running,
-        "a resumed task child's run flips back"
+        "the child run resumes after its parent restores the native conversation"
     );
     assert_ne!(
         run.session_id,
         Some(2),
         "the run follows the respawned session id"
     );
+    let sessions = _daemon.list();
+    let parent = sessions
+        .iter()
+        .find(|session| session.session_origin == Some(1))
+        .expect("the parent resumes the existing native conversation");
+    assert!(
+        parent.resumable,
+        "the parent retains its native resume handle"
+    );
+    assert_eq!(
+        db.session_resume_handle(parent.id).unwrap().unwrap().0,
+        "00000000-0000-4000-8000-000000000010",
+        "the restored parent carries its exact conversation id"
+    );
+    assert_eq!(
+        parent.resume_notice, None,
+        "the parent resumed without fallback"
+    );
+    let child = sessions
+        .iter()
+        .find(|session| session.id == run.session_id.unwrap())
+        .expect("the child run follows its restored session");
+    assert_eq!(child.state, proto::SessionState::Running);
+    assert_eq!(child.spawned_by, Some(parent.id));
     assert!(
         db.task_history(task_id, proto::TASK_HISTORY_PAGE)
             .unwrap()
             .iter()
             .any(|entry| entry.actor == "houston:resumed"),
-        "the restart resume is in history"
+        "the native child resume is in history"
     );
 }
 
@@ -596,6 +638,10 @@ fn seed_session(db: &Db, id: u32, dir: &Path, agent: proto::AgentKind, spawned_b
         resume_notice: None,
         compactions: None,
         task: None,
+        sleep_notice: None,
+        latest_prompt: None,
+        last_agent_message: None,
+        slept_at_ms: None,
     })
     .unwrap();
 }

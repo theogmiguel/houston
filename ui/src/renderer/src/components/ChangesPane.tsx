@@ -1,3 +1,4 @@
+import { GitPrOpenAction, LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
 import { DiffLoadingMark } from './ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -71,7 +72,6 @@ import {
   GitCommitStagedCount,
   GitCompactToolsAnchor,
   GitCompactToolsSurface,
-  GitPrOpenAction,
   GitPrSummaryLabel
 } from './ui'
 import { Segmented } from './ui/SegmentedControl'
@@ -204,7 +204,7 @@ function ChangesStrip({
         ]}
       />
       <Tooltip label="Review with agent" className="inline-flex">
-        <Button
+        <LazyLegacyButton
           variant="legacy-secondary"
           data-testid="changes-review"
           disabled={!client || reviewBusy}
@@ -218,7 +218,7 @@ function ChangesStrip({
             <Icon glyph={IconSparkles} role="small" />
           )}
           <span className="[@container_(max-width:420px)]:hidden">Review with agent</span>
-        </Button>
+        </LazyLegacyButton>
       </Tooltip>
       <PullQuickButton
         upstream={upstream}
@@ -296,7 +296,7 @@ function CommitBox({
         {compact && target && <span data-testid="changes-commit-target">to {target}</span>}
         <GitCommitButtonGroup>
           <Tooltip label={pushBlocked ?? undefined} className="inline-flex">
-            <Button
+            <LazyLegacyButton
               variant="legacy-secondary"
               data-testid="changes-push"
               disabled={pushBlocked !== null}
@@ -308,7 +308,7 @@ function CommitBox({
                 </DiffLoadingMark>
               )}
               {pushLabel(ahead)}
-            </Button>
+            </LazyLegacyButton>
           </Tooltip>
           {offerCreatePr && (
             <>
@@ -367,7 +367,6 @@ function PrLine({
         {decision ? ` · ${decision}` : ''}
       </GitPrSummaryLabel>
       <GitPrOpenAction
-        variant="legacy-secondary"
         data-testid="changes-pr-open"
         disabled={!onOpenUrlInPane}
         onClick={() => onOpenUrlInPane?.(pr.pr!.url)}
@@ -407,7 +406,7 @@ function initialChangesPaneState({ repoDir, notARepo, statusError, refresh }: {
     {repoDir} has no git repository yet. Once <Text as="code" mono>git init</Text>{' '}
     runs there — from a Shell pane — Changes will track it.
   </RepositoryPanelState>
-  if (statusError !== null) return <RepositoryPanelState testId="changes-error" title="Git status unavailable" icon={<Icon glyph={IconAlertTriangle} role="heading" />} action={<Button variant="legacy-secondary" onClick={refresh}>Retry</Button>}>
+  if (statusError !== null) return <RepositoryPanelState testId="changes-error" title="Git status unavailable" icon={<Icon glyph={IconAlertTriangle} role="heading" />} action={<LazyLegacyButton variant="legacy-secondary" onClick={refresh}>Retry</LazyLegacyButton>}>
     {statusError}
   </RepositoryPanelState>
   return null

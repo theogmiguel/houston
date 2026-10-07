@@ -129,40 +129,12 @@ for my $f (@ARGV) {
 PERL
 )"
 
-# Feature files not yet composed from components/ui roles, with their violation counts. A listed
-# file fails above its count, and a count that falls must be lowered or removed, so the list only
-# shrinks. A fixture scan (SCAN_ROOT) reads its entries from UI_BOUNDARY_PENDING instead.
-PENDING=(
-  "ui/src/renderer/src/components/git/WorktreeCleanupSection.tsx 33"
-  "ui/src/renderer/src/components/git/WorktreesDialog.tsx 57"
-)
-if [ -n "${SCAN_ROOT:-}" ]; then
-  PENDING=()
-  while IFS= read -r entry; do [ -n "$entry" ] && PENDING+=("$entry"); done <<< "${UI_BOUNDARY_PENDING:-}"
-fi
-declare -A pinned=() actual=()
-for entry in "${PENDING[@]}"; do pinned["${entry% *}"]="${entry##* }"; done
-
 fail=0
 while IFS=$'\t' read -r file line class; do
   [ -z "$file" ] && continue
-  if [ -n "${pinned[$file]:-}" ]; then
-    actual["$file"]=$(( ${actual[$file]:-0} + 1 ))
-    continue
-  fi
   echo "FAIL: ui-boundary $file:$line '$class'; expected layout-only utilities outside components/ui; use a primitive or variant in components/ui" >&2
   fail=1
 done <<< "$reports"
-
-for file in "${!pinned[@]}"; do
-  if [ "${actual[$file]:-0}" -gt "${pinned[$file]}" ]; then
-    echo "FAIL: ui-boundary PENDING allows ${pinned[$file]} violation(s) in $file, found ${actual[$file]}; expected at most ${pinned[$file]}; compose the new markup from components/ui" >&2
-    fail=1
-  elif [ "${actual[$file]:-0}" -lt "${pinned[$file]}" ]; then
-    echo "FAIL: ui-boundary PENDING allows ${pinned[$file]} violation(s) in $file, found ${actual[$file]:-0}; lower the entry to ${actual[$file]:-0}, or delete it at 0" >&2
-    fail=1
-  fi
-done
 
 mapfile -t stylesheets < <(find "$ui_src" -type f -name '*.css' \
   -not -path '*/components/ui/*' -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
@@ -192,5 +164,5 @@ for file in "${stylesheets[@]}"; do
   ''' "$file")
 done
 
-if [ "$fail" -eq 0 ]; then echo "ok: UI boundary passes (no feature visual classes or disallowed stylesheets; ${#PENDING[@]} pending file(s))"; fi
+if [ "$fail" -eq 0 ]; then echo "ok: UI boundary passes (no feature visual classes or disallowed stylesheets)"; fi
 exit "$fail"

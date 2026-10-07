@@ -1,3 +1,4 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { useState } from 'react'
 import type { GitCheckpointInfo } from '../../houston/generated/GitCheckpointInfo'
 import { GitDialogShell } from './GitDialogShell'
@@ -143,7 +144,7 @@ export function CheckpointsDialog({
                     </Text>
                   </GitCheckpointLabelColumn>
                   <Tooltip label="Inspect changes" className="inline-flex">
-                    <Button
+                    <LazyLegacyButton
                       type="button"
                       variant="legacy-ghost-icon"
                       data-testid="checkpoint-inspect"
@@ -152,10 +153,10 @@ export function CheckpointsDialog({
                       onClick={() => onInspect(c.ref)}
                     >
                       <Icon glyph={IconEye} role="label" />
-                    </Button>
+                    </LazyLegacyButton>
                   </Tooltip>
                   <Tooltip label="Restore this snapshot" className="inline-flex">
-                    <Button
+                    <LazyLegacyButton
                       type="button"
                       variant="legacy-ghost-icon"
                       data-testid="checkpoint-restore"
@@ -164,10 +165,10 @@ export function CheckpointsDialog({
                       onClick={() => setRestoring(c)}
                     >
                       <Icon glyph={IconUndo} role="label" />
-                    </Button>
+                    </LazyLegacyButton>
                   </Tooltip>
                   <Tooltip label="Delete" className="inline-flex">
-                    <Button
+                    <LazyLegacyButton
                       type="button"
                       variant="legacy-ghost-icon-danger"
                       data-testid="checkpoint-delete"
@@ -176,7 +177,7 @@ export function CheckpointsDialog({
                       onClick={() => setDeleting(c)}
                     >
                       <Icon glyph={IconTrash} role="label" />
-                    </Button>
+                    </LazyLegacyButton>
                   </Tooltip>
                 </GitCheckpointIconRow>
                 {inspect && inspect.ref === c.ref && (

@@ -281,6 +281,13 @@ pub struct ToolRegistry {
     daemon: std::sync::OnceLock<Weak<crate::daemon::Daemon>>,
 }
 
+fn planning_tool_allowed(tool: &str, specs: &[ToolSpec]) -> bool {
+    tool == "task_plan_submit"
+        || specs
+            .iter()
+            .any(|spec| spec.name == tool && spec.annotations.read_only)
+}
+
 impl ToolRegistry {
     pub fn with_builtins() -> Self {
         let builtins = Arc::new(BuiltinTools::default());
@@ -322,6 +329,20 @@ impl ToolRegistry {
             }
         }
         drop(providers);
+        match self.is_task_planning_capability(scope.session_id) {
+            Ok(true) => {
+                let all = self.all();
+                by_name.retain(|name, _| planning_tool_allowed(name, &all));
+            }
+            Err(error) => {
+                tracing::error!(
+                    session = scope.session_id,
+                    "checking task planning MCP capability failed: {error:#}"
+                );
+                by_name.clear();
+            }
+            Ok(false) => {}
+        }
         if let Some(role) = self.tool_role_for(scope) {
             by_name.retain(|name, _| role.advertises(name));
         }
@@ -329,6 +350,23 @@ impl ToolRegistry {
     }
 
     pub fn call_refusal(&self, scope: &McpScope, tool: &str) -> Option<ToolError> {
+        match self.is_task_planning_capability(scope.session_id) {
+            Ok(true) => {
+                if !planning_tool_allowed(tool, &self.all()) {
+                    return Some(ToolError(format!(
+                        "pane {} has a read-only task planning capability; only repository reads and `task_plan_submit` are allowed",
+                        scope.session_id,
+                    )));
+                }
+            }
+            Err(error) => {
+                return Some(ToolError(format!(
+                    "pane {} task planning capability could not be verified: {error:#}",
+                    scope.session_id,
+                )));
+            }
+            Ok(false) => {}
+        }
         let role = self.tool_role_for(scope)?;
         if !matches!(role, crate::orchestrate::ToolRole::Leaf) {
             return None;
@@ -344,6 +382,13 @@ impl ToolRegistry {
              `{tool}` is not available to it",
             scope.session_id,
         )))
+    }
+
+    fn is_task_planning_capability(&self, session_id: u32) -> anyhow::Result<bool> {
+        let Some(daemon) = self.daemon.get().and_then(Weak::upgrade) else {
+            return Ok(false);
+        };
+        daemon.has_task_planning_capability(session_id)
     }
 
     pub fn all(&self) -> Vec<ToolSpec> {
@@ -707,9 +752,16 @@ async fn gateway_tools_call(
                 .get("filter")
                 .and_then(Value::as_str)
                 .map(str::to_ascii_lowercase);
-            let tools: Vec<Value> = host
+            let listed = if host
                 .tools()
-                .all()
+                .is_task_planning_capability(scope.session_id)
+                .unwrap_or(true)
+            {
+                host.tools().list(scope)
+            } else {
+                host.tools().all()
+            };
+            let tools: Vec<Value> = listed
                 .iter()
                 .filter(|s| {
                     filter
@@ -1203,6 +1255,39 @@ fn summarize(value: &Value) -> String {
 mod delivery_tests {
     use super::*;
     use std::sync::Mutex;
+
+    #[test]
+    fn planning_capability_denies_unadvertised_mutating_tools() {
+        let specs = vec![
+            ToolSpec {
+                name: "repository_read".into(),
+                title: "Read repository".into(),
+                description: String::new(),
+                input_schema: json!({"type":"object"}),
+                annotations: Annotations::readonly(),
+            },
+            ToolSpec {
+                name: "pane_spawn".into(),
+                title: "Spawn pane".into(),
+                description: String::new(),
+                input_schema: json!({"type":"object"}),
+                annotations: Annotations::local_write(),
+            },
+            ToolSpec {
+                name: "task_execute".into(),
+                title: "Execute task".into(),
+                description: String::new(),
+                input_schema: json!({"type":"object"}),
+                annotations: Annotations::local_write(),
+            },
+        ];
+
+        assert!(planning_tool_allowed("repository_read", &specs));
+        assert!(planning_tool_allowed("task_plan_submit", &specs));
+        assert!(!planning_tool_allowed("pane_spawn", &specs));
+        assert!(!planning_tool_allowed("task_execute", &specs));
+        assert!(!planning_tool_allowed("not_advertised", &specs));
+    }
 
     #[derive(Default)]
     struct Provider {

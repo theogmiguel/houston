@@ -22,6 +22,7 @@ import {
   ActionEmptyState,
   ActivityDotSpecimen,
   Button,
+  BulletListSpecimen,
   AppTitlebarSpecimen,
   Card,
   Caption as UiCaption,
@@ -32,6 +33,7 @@ import {
   DefinitionTable,
   Disclosure,
   IntegrationCard,
+  Inset,
   KeyCapSpecimen,
   Chip,
   Count,
@@ -241,7 +243,7 @@ import {
   FeedbackBanner,
   DetailState,
   EmptyPane,
-  FieldSwitch,
+  Switch,
   IconAction,
   BackBar,
   SupportingNote,
@@ -305,9 +307,17 @@ import { PaneTitle } from '../src/components/ui/PaneTitle'
 import { PaneHeadActions, PaneHeadBadge, PaneHeadButton } from '../src/components/ui/PaneControls'
 import { BackdropLayerSpecimen, ContextMeterSpecimen, SaveStateMarkSpecimen, SplitButtonSpecimen, StatusNoteSpecimen } from '../src/components/ui'
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../src/components/ui/NavSurfaceFrame'
-import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelSwitch, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
+import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
 import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
 import logoUrl from '../src/assets/logo-chrome.svg'
+import { WorktreeCleanupSection } from '../src/components/git/WorktreeCleanupSection'
+import { BrowserButton } from '../src/components/ui/BrowserButtonRoles'
+import { DelegationButton } from '../src/components/ui/DelegationButtonRoles'
+import { LazyLegacyButton } from '../src/components/ui/LazyLegacyButtonRoles'
+import { OverviewButton } from '../src/components/ui/OverviewButtonRoles'
+import { ReviewButton } from '../src/components/ui/ReviewButtonRoles'
+import { SettingsButton } from '../src/components/ui/SettingsButtonRoles'
+import type { ManagedWorktreeInfo } from '../src/houston/generated/ManagedWorktreeInfo'
 
 const noop = (): void => {}
 
@@ -321,7 +331,7 @@ function SkillsChromeSpecimen(): React.JSX.Element {
         <PanelButton>Secondary action</PanelButton>
         <PanelButton tone="primary">Primary action</PanelButton>
         <PanelIconButton aria-label="Refresh"><IconClose /></PanelIconButton>
-        <PanelSwitch on={enabled} label="Automatic distribution" onChange={setEnabled} />
+        <Switch size="panel" on={enabled} label="Automatic distribution" onChange={setEnabled} />
         <PanelChoiceGroup>
           <PanelChoice pressed>Claude</PanelChoice>
           <PanelChoice pressed={false}>Codex</PanelChoice>
@@ -636,9 +646,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="field">Field</Button>
             <Button variant="surface-large">Large surface</Button>
             <Button variant="action-primary" size="lg">Large primary</Button>
-            <Button variant="outline">Outline</Button>
+            <BrowserButton variant="outline">Outline</BrowserButton>
             <Button variant="ghost">Ghost</Button>
-            <Button variant="label">Label action</Button>
+            <BrowserButton variant="label">Label action</BrowserButton>
             <Button variant="link">Link</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
@@ -646,44 +656,44 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="icon" icon={IconClose} aria-label="Close" />
             <Button variant="icon-selected" icon={IconPanelRight} aria-label="Panel open" />
             <Button variant="icon-structure" icon={IconRefresh} aria-label="Refresh" />
-            <Button variant="compact-primary-action">Compact primary</Button>
+            <OverviewButton>Compact primary</OverviewButton>
             <Button variant="text">Task row title</Button>
             <Button variant="badge">Orchestrator</Button>
             <Button variant="ghost-icon"><IconClose /></Button>
             <Button variant="confirm-primary">Confirm</Button>
             <Button variant="compact-outline">Try again</Button>
             <Button variant="danger-confirmation">Remove</Button>
-            <Button variant="compact-ghost">Replace…</Button>
-            <Button variant="compact-danger">Remove file</Button>
-            <Button variant="picker-candidate">Reviewer candidate</Button>
-            <Button variant="repository-list-row">Pull request row</Button>
-            <Button variant="compact-control">Search action</Button>
-            <Button variant="compact-action">Back</Button>
+            <SettingsButton variant="compact-ghost">Replace…</SettingsButton>
+            <SettingsButton variant="compact-danger">Remove file</SettingsButton>
+            <ReviewButton variant="picker-candidate">Reviewer candidate</ReviewButton>
+            <ReviewButton variant="repository-list-row">Pull request row</ReviewButton>
+            <ReviewButton variant="compact-control">Search action</ReviewButton>
+            <ReviewButton variant="compact-action">Back</ReviewButton>
             <Button variant="mini-primary-action">Save</Button>
-            <Button variant="compact-self-start-action">Show more</Button>
-            <Button variant="compact-trailing-action" aria-label="Edit">Edit</Button>
-            <Button variant="pull-request-action">Close</Button>
-            <Button variant="pull-request-danger-action">Revert</Button>
-            <Button variant="pull-request-primary-action">Merge</Button>
-            <Button variant="pull-request-nav-action">Open request</Button>
-            <Button variant="pull-request-external-action">Open on GitHub</Button>
-            <Button variant="reaction" aria-pressed={false}>❤ 3</Button>
-            <Button variant="reaction" selected aria-pressed={true}>❤ 4</Button>
-            <Button variant="reaction-option">Add reaction</Button>
+            <ReviewButton variant="compact-self-start-action">Show more</ReviewButton>
+            <ReviewButton variant="compact-trailing-action" aria-label="Edit">Edit</ReviewButton>
+            <ReviewButton variant="pull-request-action">Close</ReviewButton>
+            <ReviewButton variant="pull-request-danger-action">Revert</ReviewButton>
+            <ReviewButton variant="pull-request-primary-action">Merge</ReviewButton>
+            <ReviewButton variant="pull-request-nav-action">Open request</ReviewButton>
+            <ReviewButton variant="pull-request-external-action">Open on GitHub</ReviewButton>
+            <ReviewButton variant="reaction" aria-pressed={false}>❤ 3</ReviewButton>
+            <ReviewButton variant="reaction" selected aria-pressed={true}>❤ 4</ReviewButton>
+            <ReviewButton variant="reaction-option">Add reaction</ReviewButton>
             <Button variant="legacy-primary">Legacy primary</Button>
-            <Button variant="legacy-secondary">Legacy secondary</Button>
+            <LazyLegacyButton variant="legacy-secondary">Legacy secondary</LazyLegacyButton>
             <Button variant="legacy-ghost">Legacy ghost</Button>
             <Button variant="legacy-icon-warning" icon={IconAlertTriangle} aria-label="Warning" />
             <Button variant="legacy-titlebar-icon" icon={IconClose} aria-label="Titlebar action" />
             <Button variant="legacy-ghost-compact"><IconEye />Show visual fingerprint</Button>
-            <Button variant="legacy-ghost-disclosure"><IconEye />Advanced</Button>
-            <Button variant="legacy-bare-ghost">Legacy bare ghost</Button>
+            <LazyLegacyButton variant="legacy-ghost-disclosure"><IconEye />Advanced</LazyLegacyButton>
+            <LazyLegacyButton variant="legacy-bare-ghost">Legacy bare ghost</LazyLegacyButton>
             <Button variant="legacy-danger-solid" contentAlign="start">Stop daemon</Button>
-            <Button variant="compact-action">Compact ghost action</Button>
-            <Button variant="label-action">Label action</Button>
-            <Button variant="legacy-focus-lever"><IconEye />Focus parent</Button>
+            <ReviewButton variant="compact-action">Compact ghost action</ReviewButton>
+            <SettingsButton variant="label-action">Label action</SettingsButton>
+            <DelegationButton><IconEye />Focus parent</DelegationButton>
             <Button variant="legacy-roster-footer">Roster footer action</Button>
-            <Button variant="accent-soft">Accent soft</Button>
+            <SettingsButton variant="accent-soft">Accent soft</SettingsButton>
           </SpecimenRow>
           <SpecimenRow>
             <Button variant="primary" size="sm">Primary small</Button>
@@ -703,10 +713,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Number fields">
           <SpecimenRow><NumberFieldSpecimen /></SpecimenRow>
-        </SpecimenGroup>
-
-        <SpecimenGroup heading="Text">
-          <SpecimenRow><Text size="heading" weight="heading" tone="primary">Section heading</Text><Text size="body" tone="secondary">Supporting copy</Text><Text size="small" tone="muted">Quiet detail</Text><Text size="label" weight="label" tone="faint">LABEL</Text></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Settings detail">
@@ -794,10 +800,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow><ResizeHandleSpecimen /></SpecimenRow>
         </SpecimenGroup>
 
-        <SpecimenGroup heading="Text">
-          <SpecimenRow><Text size="empty-title" weight="display" tone="primary" leading="display">A workspace with no sessions</Text><Text as="p" flush size="ui" weight="ui" tone="muted" leading="empty">Open a terminal or browser in this workspace.</Text></SpecimenRow>
-        </SpecimenGroup>
-
         <SpecimenGroup heading="Roster surfaces">
           <RosterSurfaceSpecimen />
         </SpecimenGroup>
@@ -864,6 +866,16 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Text">
           <TextSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Renderer task content roles">
+          <div className="grid gap-[var(--space-2)]">
+            <Text as="p" preserveWhitespace tone="secondary">A text block preserves intentional line breaks while remaining readable.</Text>
+            <Inset space="screen"><Text size="small" tone="muted">Screen content keeps a consistent edge inset.</Text></Inset>
+            <BulletListSpecimen />
+            <Inline wrap><Button variant="secondary">A long secondary action</Button><Button variant="secondary">Another action</Button></Inline>
+            <Notice tone="info" inset="compact-inline">A notice inset inside a pane.</Notice>
+            <Card padding="md" layout="sleeping-session"><Text center>Centered recovery content</Text><Card padding="sm" layout="scrolling-copy">Previous output keeps line breaks and scrolls when it is long.</Card></Card>
+          </div>
         </SpecimenGroup>
         <SpecimenGroup heading="Callout">
           <CalloutSpecimen />
@@ -1163,14 +1175,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <TextInput variant="task-number" aria-label="Task number" type="number" value={2} readOnly />
         </SpecimenGroup>
 
-        <SpecimenGroup heading="Text">
-          <SpecimenRow>
-            <Text size="ui" weight="semibold" tight tone="primary">Source control heading</Text>
-            <Text size="small" tone="muted">Supporting detail</Text>
-            <Text size="small" mono tone="faint">origin/main</Text>
-          </SpecimenRow>
-        </SpecimenGroup>
-
         <SpecimenGroup heading="EmptyState">
           <SpecimenRow>
             <div style={{ flex: '1 1 360px', padding: 24, border: '1px solid var(--divider)' }}>
@@ -1287,6 +1291,18 @@ export function UiPrimitivesStory(): React.JSX.Element {
               { key: 'share', header: 'Share', numeric: true, tone: 'muted', width: '64px' },
               { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '64px' }
             ]}
+          />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Table — Muted row">
+          <Table
+            aria-label="Rows that need no action"
+            density="compact"
+            variant="framed"
+            rows={[{ name: 'Needs a decision', state: 'Ready' }, { name: 'Needs no action', state: 'Kept' }]}
+            getRowId={(row) => row.name}
+            rowTone={(row) => (row.state === 'Kept' ? 'muted' : 'default')}
+            columns={[{ key: 'name', header: 'Row' }, { key: 'state', header: 'State' }]}
           />
         </SpecimenGroup>
 
@@ -1439,8 +1455,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
               <FeedbackBanner tone="error" icon={<IconAlertTriangle />}>Error message</FeedbackBanner>
             </div>
             <div className="flex items-center gap-[var(--space-3)]">
-              <FieldSwitch on label="Enabled" onChange={noop} />
-              <FieldSwitch on={false} label="Disabled" onChange={noop} />
+              <Switch size="field" on label="Enabled" onChange={noop} />
+              <Switch size="field" on={false} label="Disabled" onChange={noop} />
               <IconAction aria-label="Open"><Icon glyph={IconFolder} role="small" /></IconAction>
               <IconAction aria-label="Delete" danger><Icon glyph={IconFolder} role="small" /></IconAction>
             </div>
@@ -1477,7 +1493,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             </InlineCluster>
             <CenteredEmptyNote>No report yet.</CenteredEmptyNote>
             <ReportFrame><Text as="h2" size="ui" weight="semibold" tone="primary" flush>Report</Text></ReportFrame>
-            <BulletList><li>One</li><li>Two</li></BulletList>
+            <BulletList items={['One', 'Two']} />
           </div>
         </SpecimenGroup>
 
@@ -1530,5 +1546,42 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
       </div>
     </Viewport>
+  )
+}
+
+export function StaleWorktreesStory(): React.JSX.Element {
+  const section = React.useRef<HTMLDivElement>(null)
+  const now = Date.now()
+  const entries: ManagedWorktreeInfo[] = [
+    { path: '/home/theo/.houston/worktrees/issue-80', branch: 'fix/issue-80-ui', base_branch: 'main', status: 'ready', pr: 80, keep: null, bytes: 8_400_000_000, measured_at_ms: now - 60_000, checked_at_ms: now },
+    { path: '/home/theo/.houston/worktrees/old-branch', branch: 'chore/old-branch', base_branch: 'main', status: 'kept', pr: null, keep: { kind: 'dirty', files: 1 }, bytes: 2_100_000_000, measured_at_ms: now - 3 * 60_000, checked_at_ms: now },
+    {
+      path: '/home/theo/.houston/worktrees/docs-refresh',
+      branch: 'docs/refresh',
+      base_branch: 'main',
+      status: 'stale',
+      keep: { kind: 'stale', idle_days: 20, removal_in_days: 10 },
+      bytes: 4_700_000_000,
+      measured_at_ms: now,
+      checked_at_ms: now,
+      pr: 72
+    } as unknown as ManagedWorktreeInfo
+  ]
+
+  React.useEffect(() => {
+    section.current?.querySelector<HTMLButtonElement>('[data-testid="worktree-cleanup-remove"]')?.click()
+  }, [])
+
+  return (
+    <div ref={section} style={{ maxWidth: 900, margin: '0 auto', padding: 24, background: 'var(--content-bg)', color: 'var(--text-primary)' }}>
+      <WorktreeCleanupSection
+        view={{ status: 'ready', entries }}
+        busy={false}
+        nowMs={now}
+        onCheck={() => {}}
+        onCleanNow={() => {}}
+        onRemoveStale={() => {}}
+      />
+    </div>
   )
 }

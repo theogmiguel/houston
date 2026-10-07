@@ -63,6 +63,7 @@ export function GitToolsDialogs({
           onPrune={tools.pruneWorktrees}
           onCheckCleanup={tools.checkCleanup}
           onCleanNow={tools.cleanNow}
+          onRemoveStale={tools.removeStale}
           onAddWorkspace={onAddWorkspace}
         />
       )}

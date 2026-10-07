@@ -1,7 +1,8 @@
+import { ReviewButton } from './ReviewButtonRoles'
+import { BrowserButton } from './BrowserButtonRoles'
 import type { FormHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
 import { TextInput } from './TextInput'
-import { Button } from './Button'
 
 function Region({ children, className, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode; className: string }): React.JSX.Element {
   return <div {...props} className={className}>{children}</div>
@@ -27,7 +28,7 @@ export function RepositorySearchForm({ children, ...props }: FormHTMLAttributes<
   return <form {...props} className={`flex items-center gap-[var(--space-2)] ${props.className ?? ''}`}>{children}</form>
 }
 
-export function RepositorySearchField(props: Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size'>): React.JSX.Element {
+export function RepositorySearchField(props: Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size' | 'height'>): React.JSX.Element {
   return <TextInput {...props} font="small" padding="compact" className={`h-[var(--h-ctl)] flex-1 min-w-0 focus-visible:outline-none focus-visible:border-[var(--border-focus)] ${props.className ?? ''}`} />
 }
 
@@ -80,5 +81,5 @@ export function RepositoryLoadMoreRegion({ children }: { children: ReactNode }):
 }
 
 export function RepositoryBrowserSpecimen(): React.JSX.Element {
-  return <RepositoryBrowserFrame><RepositoryFilterPanel><RepositoryFilterToolbar><Button variant="outline">Open</Button><RepositoryFilterSpacer><Button variant="outline">Mine</Button></RepositoryFilterSpacer></RepositoryFilterToolbar><RepositorySearchForm><RepositorySearchField aria-label="Search repositories" placeholder="Search" /><Button variant="compact-control">Search</Button></RepositorySearchForm></RepositoryFilterPanel><RepositoryResultList><Button variant="repository-list-row"><RepositoryRowHeading><RepositoryNumber>#42</RepositoryNumber><RepositoryTitle>Keep browser sessions grouped</RepositoryTitle><RepositoryStateLabel>Open</RepositoryStateLabel></RepositoryRowHeading><RepositoryRowMeta><RepositoryRefSummary>theo · feature → main</RepositoryRefSummary><span>passing</span></RepositoryRowMeta><RepositoryLabels><span>bug</span><span>review</span></RepositoryLabels></Button></RepositoryResultList><RepositoryLoadMoreRegion><Button variant="repository-load-more-action">Load more</Button></RepositoryLoadMoreRegion></RepositoryBrowserFrame>
+  return <RepositoryBrowserFrame><RepositoryFilterPanel><RepositoryFilterToolbar><BrowserButton variant="outline">Open</BrowserButton><RepositoryFilterSpacer><BrowserButton variant="outline">Mine</BrowserButton></RepositoryFilterSpacer></RepositoryFilterToolbar><RepositorySearchForm><RepositorySearchField aria-label="Search repositories" placeholder="Search" /><ReviewButton variant="compact-control">Search</ReviewButton></RepositorySearchForm></RepositoryFilterPanel><RepositoryResultList><ReviewButton variant="repository-list-row"><RepositoryRowHeading><RepositoryNumber>#42</RepositoryNumber><RepositoryTitle>Keep browser sessions grouped</RepositoryTitle><RepositoryStateLabel>Open</RepositoryStateLabel></RepositoryRowHeading><RepositoryRowMeta><RepositoryRefSummary>theo · feature → main</RepositoryRefSummary><span>passing</span></RepositoryRowMeta><RepositoryLabels><span>bug</span><span>review</span></RepositoryLabels></ReviewButton></RepositoryResultList><RepositoryLoadMoreRegion><ReviewButton variant="secondary-action">Load more</ReviewButton></RepositoryLoadMoreRegion></RepositoryBrowserFrame>
 }

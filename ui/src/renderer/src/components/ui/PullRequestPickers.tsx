@@ -1,6 +1,6 @@
+import { ReviewButton } from './ReviewButtonRoles'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
-import { Button } from './Button'
 import { MetadataRow, MetadataValue } from './MetadataRow'
 import { PullRequestLabel } from './PullRequestLabel'
 import { OptionCandidateList } from './OptionCandidateList'
@@ -62,5 +62,5 @@ export function LabelSummary({ labels, children, ...props }: HTMLAttributes<HTML
 }
 
 export function PickerRoleSpecimen(): React.JSX.Element {
-  return <PickerSection><MetadataRow><PickerFieldLabel>Reviewers</PickerFieldLabel><ReviewerValue>octocat</ReviewerValue></MetadataRow><PickerErrorMessage>One candidate could not be loaded.</PickerErrorMessage><OptionCandidateList><CandidateName>octocat</CandidateName><CandidateStatus>requested</CandidateStatus><CandidateEmptyMessage>No candidates</CandidateEmptyMessage><CandidateActions><Button variant="picker-apply-action">Apply</Button><Button variant="picker-cancel-action">Cancel</Button><Button variant="picker-done-action">Done</Button><PullRequestLabel>bug</PullRequestLabel></CandidateActions></OptionCandidateList></PickerSection>
+  return <PickerSection><MetadataRow><PickerFieldLabel>Reviewers</PickerFieldLabel><ReviewerValue>octocat</ReviewerValue></MetadataRow><PickerErrorMessage>One candidate could not be loaded.</PickerErrorMessage><OptionCandidateList><CandidateName>octocat</CandidateName><CandidateStatus>requested</CandidateStatus><CandidateEmptyMessage>No candidates</CandidateEmptyMessage><CandidateActions><ReviewButton variant="primary-action">Apply</ReviewButton><ReviewButton variant="secondary-action">Cancel</ReviewButton><ReviewButton variant="picker-done-action">Done</ReviewButton><PullRequestLabel>bug</PullRequestLabel></CandidateActions></OptionCandidateList></PickerSection>
 }

@@ -5,7 +5,8 @@ import type { RoutineOutcome } from '../../houston/generated/RoutineOutcome'
 import type { RoutineRunStatus } from '../../houston/generated/RoutineRunStatus'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
-import { IconAction, FieldSwitch } from '../ui/navPrimitives'
+import { IconAction } from '../ui/navPrimitives'
+import { Switch } from '../ui/Switch'
 import { Text } from '../ui/Text'
 import { StatusChip as ToneStatusChip } from '../ui/navText'
 import { ListRow, ListRowActions, ListRowDetail, ListRowFooter, ListRowTitle, RunHistory } from '../ui/navRow'
@@ -228,7 +229,7 @@ export function RoutineRow(props: {
         </Tooltip>
         <RoutineHeadChip running={running} outcome={routine.last_outcome} />
         <span className="flex-1" />
-        <FieldSwitch
+        <Switch size="field"
           on={routine.enabled}
           label={routine.enabled ? `Pause ${routine.name}` : `Resume ${routine.name}`}
           onChange={onToggleEnabled}

@@ -7,6 +7,7 @@ import type { TaskRunKind } from '../../houston/generated/TaskRunKind'
 import type { TaskRunState } from '../../houston/generated/TaskRunState'
 import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
+import { isPullRequestUrl } from '../../houston/taskDomain'
 import { TASK_TITLE_MAX } from '../../houston/generated/DEFAULTS'
 
 // The Tasks tab order, highest first: active work, then the queue, then the
@@ -121,7 +122,7 @@ export function queueGroupOf(task: TaskSummary): QueueGroupKey | null {
 
 export function queueActionOf(task: TaskSummary): QueueAction {
   if (task.open_run?.state === 'waiting_for_input') return 'Answer'
-  if (task.status === 'in_review') return task.ref_url ? 'Open PR' : 'Review changes'
+  if (task.status === 'in_review') return task.open_run?.pr_url && isPullRequestUrl(task.open_run.pr_url) ? 'Open PR' : 'Review changes'
   if (task.open_run?.session_id != null) return 'Open pane'
   if (task.status === 'in_progress' || task.status === 'canceled') return 'Start again'
   return 'Start'

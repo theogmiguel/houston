@@ -133,12 +133,13 @@ import { RenameTitleStory } from './renameTitleStories'
 
 document.documentElement.setAttribute('data-motion-paused', '')
 import { TasksPageStory } from './tasksPageStory'
+import { ProjectsConflictStory, ProjectsPageStory, ProjectsPlanStory, TrackerSettingsStory } from './projectsStories'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
 import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
 
 const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }, { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }]
-import { UiPrimitivesStory } from './uiStories'
+import { StaleWorktreesStory, UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
 import { FilesSurfaceDelete470, FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceImage470, FilesSurfaceImage732, FilesSurfaceMarkdown470, FilesSurfaceMarkdown732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
@@ -175,7 +176,7 @@ import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
-import { PaneCheckoutHeaderStory, PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
+import { PaneCheckoutHeaderStory, PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
 import { PullRequestDetailStory, PullRequestsScreenStory } from './prsStories'
@@ -340,6 +341,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'orchestration/question-states': () => <QuestionStatesStory />,
   'orchestration/delegation-panels': () => <DelegationPanelsStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
+  'git/worktree-stale': () => <StaleWorktreesStory />,
   'editor/markdown-preview': () => <MarkdownPreviewStory />,
   'editor/surface-menu': () => <EditorSurfaceMenuStory />,
   'editor/preview-states': () => <EditorPreviewStatesStory />,
@@ -514,12 +516,18 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'usage/stale': () => <UsagePageStory state="stale" />,
   'usage/empty': () => <UsagePageStory state="empty" />,
   'tasks/page': () => <TasksPageStory />,
+  'projects/page': () => <ProjectsPageStory />,
+  'projects/conflicts': () => <ProjectsConflictStory />,
+  'projects/plan': () => <ProjectsPlanStory />,
+  'settings/tasks-tracker': () => <TrackerSettingsStory />,
   'tasks/detail': () => <TasksDetailStory />,
   'tasks/start-card': () => <TasksStartStory />,
   'panes/lifecycle': () => <PaneLifecycleStory />,
   'panes/chrome-menu': () => <PaneMenuStory />,
   'surface/pane-header': () => <PaneCheckoutHeaderStory />,
   'panes/chrome-ended': () => <PaneEndedStory />,
+  'panes/sleeping': () => <PaneSleepingStory />,
+  'panes/recovery-deferred': () => <PaneRecoveryDeferredStory />,
   'panes/chrome-terminal': () => <PaneTerminalStatesStory />,
   'panes/chrome-misc': () => <PaneMiscStory />,
   'panes/title-controls': () => <RenameTitleStory />,

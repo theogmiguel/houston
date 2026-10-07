@@ -1,4 +1,4 @@
-import { Button } from '../ui/Button'
+import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { CheckStateText, CheckStateDot } from '../ui/PullRequestState'
 import { PullRequestLabel } from '../ui/PullRequestLabel'
 import { RepositoryBrowserFrame, RepositoryFilterPanel, RepositoryFilterToolbar, RepositoryFilterSpacer, RepositorySearchForm, RepositorySearchField, RepositoryResultList, RepositoryLoadingState, RepositoryErrorMessage, RepositoryEmptyMessage, RepositoryRowHeading, RepositoryNumber, RepositoryTitle, RepositoryStateLabel, RepositoryRowMeta, RepositoryRefSummary, RepositoryLabels, RepositoryLoadMoreRegion } from '../ui/RepositoryBrowser'
@@ -68,13 +68,13 @@ export function PrBrowse({
             />
           </RepositoryFilterSpacer>
           {onBack && (
-            <Button variant="compact-action"
+            <ReviewButton variant="compact-action"
               type="button"
               data-testid="pr-browse-back"
               onClick={onBack}
             >
               Back
-            </Button>
+            </ReviewButton>
           )}
         </RepositoryFilterToolbar>
         <RepositorySearchForm
@@ -90,13 +90,13 @@ export function PrBrowse({
             onChange={(e) => setQueryDraft(e.target.value)}
             placeholder="Search"
           />
-          <Button variant="compact-control"
+          <ReviewButton variant="compact-control"
             type="submit"
             aria-label="Search"
             data-testid="pr-browse-search"
           >
             <Icon glyph={IconSearch} role="small" />
-          </Button>
+          </ReviewButton>
         </RepositorySearchForm>
       </RepositoryFilterPanel>
       <RepositoryResultList>
@@ -118,7 +118,7 @@ export function PrBrowse({
           </RepositoryEmptyMessage>
         )}
         {list.items?.map((item) => (
-          <Button
+          <ReviewButton
             key={item.number}
             type="button"
             data-testid={`pr-browse-row-${item.number}`}
@@ -154,11 +154,11 @@ export function PrBrowse({
                 ))}
               </RepositoryLabels>
             )}
-          </Button>
+          </ReviewButton>
         ))}
         {list.truncated && (
           <RepositoryLoadMoreRegion>
-            <Button variant="repository-load-more-action"
+            <ReviewButton variant="secondary-action"
               type="button"
               data-testid="pr-browse-more"
               disabled={list.loadingMore}
@@ -171,7 +171,7 @@ export function PrBrowse({
               ) : (
                 'Load more'
               )}
-            </Button>
+            </ReviewButton>
           </RepositoryLoadMoreRegion>
         )}
       </RepositoryResultList>

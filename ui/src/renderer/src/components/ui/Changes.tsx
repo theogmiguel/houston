@@ -1,5 +1,4 @@
 import type { HTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
-import { Button, type ButtonProps } from './Button'
 import { MATERIAL_CLS, materialAttrs } from './material'
 import { OVERLAY_GLASS_OVERLAY_CLS } from './overlayChrome'
 import { Text } from './Text'
@@ -34,10 +33,6 @@ export function GitCommitStagedCount({ children, compact }: { children: ReactNod
 
 export function GitPrSummaryLabel({ children }: { children: ReactNode }): React.JSX.Element {
   return <Text size="xs" tone="muted" className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{children}</Text>
-}
-
-export function GitPrOpenAction(props: ButtonProps): React.JSX.Element {
-  return <Button {...props} className="ml-auto" />
 }
 
 export function GitChangesSurface({ children, compact, state, reviewing }: { children: ReactNode; compact: boolean; state: string; reviewing: boolean }): React.JSX.Element {

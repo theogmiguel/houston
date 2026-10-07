@@ -1,5 +1,5 @@
+import { ReviewButton } from './ReviewButtonRoles'
 import type { HTMLAttributes, ReactNode } from 'react'
-import { Button } from './Button'
 import { Text } from './Text'
 
 export function AgentOptionGrid({ children, label, className = '', ...props }: HTMLAttributes<HTMLFieldSetElement> & { children: ReactNode; label: string }): React.JSX.Element {
@@ -16,5 +16,5 @@ export function SelectionMark({ children }: { children: ReactNode }): React.JSX.
 }
 
 export function AgentOptionGridSpecimen(): React.JSX.Element {
-  return <AgentOptionGrid label="Engine"><Button variant="agent-option" selected>Selected provider</Button><Button variant="agent-option">Available provider</Button></AgentOptionGrid>
+  return <AgentOptionGrid label="Engine"><ReviewButton variant="agent-option" selected>Selected provider</ReviewButton><ReviewButton variant="agent-option">Available provider</ReviewButton></AgentOptionGrid>
 }

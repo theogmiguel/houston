@@ -9,6 +9,7 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol as proto;
 use serde_json::{json, Value};
+use sha2::Digest;
 use tokio::sync::{mpsc, Notify};
 
 use super::{now_unix_ms, Daemon};
@@ -1197,7 +1198,7 @@ impl Daemon {
         let patch = proto::TaskPatch {
             workspace: Some(Some(workspace.to_string())),
             title: Some(title_of(text, author)),
-            description: Some(description),
+            description: Some(description.clone()),
             ref_url: Some(permalink.clone()),
             ..Default::default()
         };
@@ -1211,6 +1212,36 @@ impl Daemon {
         match &created {
             proto::ServerMsg::TaskChanged { id, .. } => {
                 self.db.intake_set_task(row.id, *id, permalink.as_deref())?;
+                let mut base = std::collections::BTreeMap::new();
+                base.insert("title".into(), title_of(text, author));
+                base.insert("description".into(), description.clone());
+                self.db
+                    .task_external_link_upsert(&proto::TaskExternalLink {
+                        task_id: *id,
+                        provider: proto::TaskTrackerProvider::Slack,
+                        external_id: format!("{channel}:{ts}"),
+                        url: permalink.clone().unwrap_or_else(|| {
+                            format!(
+                                "https://app.slack.com/archives/{channel}/p{}",
+                                ts.replace('.', "")
+                            )
+                        }),
+                        fetched_at_ms: Some(now),
+                        body_hash: Some(format!("{:x}", sha2::Sha256::digest(text.as_bytes()))),
+                        remote_rev: Some(ts.to_string()),
+                        synced_at_ms: Some(now),
+                        source: proto::TaskExternalLinkSource::Source,
+                        snapshot: proto::TaskTrackerSnapshot {
+                            local: base.clone(),
+                            remote: base.clone(),
+                            base,
+                            conflicts: vec![],
+                            revision: 1,
+                            project_external_id: None,
+                            project: None,
+                        },
+                        sync_state: proto::TaskTrackerSyncState::Current,
+                    })?;
                 self.broadcast_control(&created);
                 let row = self.db.intake(row.id)?.unwrap_or(row);
                 let outlook =

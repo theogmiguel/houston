@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 import { DelimitedTable } from './DelimitedTable'
+
+afterEach(cleanup)
 
 describe('DelimitedTable', () => {
   it('renders quoted CSV cells and right-aligns numeric values', () => {

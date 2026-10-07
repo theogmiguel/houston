@@ -30,7 +30,7 @@ function destinationButton(container: HTMLElement, view: string): HTMLButtonElem
 }
 
 const surface = (c: HTMLElement): Element | null =>
-  c.querySelector('[data-testid="nav-surface"], [data-testid="pull-requests-screen"]')
+  c.querySelector('[data-testid="nav-surface"], [data-testid="pull-requests-screen"], [data-testid="projects-surface"]')
 
 describe('the rail nav rows drive the content area', () => {
   it.each(RAIL_VIEWS)('the %s page fills the content region, so its column centres', async (view) => {

@@ -15,6 +15,7 @@ import { Row, SubHead } from './shared'
 import { Text } from '../ui/Text'
 import { TextInput } from '../ui/TextInput'
 import { TaskAccessSummary, TaskInputError, TaskKeyPrefix, TaskReworkRoundsLayout, TaskReviewRefusal, TaskSettingDescription } from '../ui/TaskSettingDetails'
+import { TaskTrackerSettingsSection } from './TaskTrackerSettingsSection'
 
 const ACCESS_LABEL: Readonly<Record<TasksAccess, string>> = {
   off: 'Off',
@@ -136,6 +137,7 @@ export function TasksSection({
           {reviewRefusal.message}
         </TaskReviewRefusal>
       )}
+      <TaskTrackerSettingsSection client={client} workspace={workspace} workspaceName={workspaceName} />
     </>
   )
 }

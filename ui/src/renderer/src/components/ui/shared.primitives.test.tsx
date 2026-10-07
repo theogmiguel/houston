@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import React, { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Drawer, ListDetail, Notice, RoutineDetail, Table, type ListDetailItem } from './index'
+
+afterEach(cleanup)
 
 const rows = [
   { rank: 1, model: 'opus', cost: '$10.00' },

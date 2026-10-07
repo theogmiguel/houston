@@ -44,6 +44,8 @@ export function trayStatusFor(session: SessionInfo): TrayStatus {
       return 'done'
     case 'interrupted':
       return 'error'
+    case 'sleeping':
+      return 'idle'
   }
 }
 
@@ -99,7 +101,10 @@ export function buildTrayPayload(
 ): TraySyncPayload {
   return {
     connection,
-    sessions: orderForTray(sessions, activity).map((s) => traySessionPayload(s, workspaceName))
+    sessions: orderForTray(
+      sessions.filter((session) => session.state === 'running'),
+      activity
+    ).map((s) => traySessionPayload(s, workspaceName))
   }
 }
 

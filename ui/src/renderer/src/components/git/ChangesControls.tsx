@@ -1,7 +1,7 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { IconArrowDown } from '../icons'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
-import { Button } from '../ui/Button'
 import { ScmNotice } from './ScmNotice'
 
 // The three controls ChangesPane grew for the Git tools, kept out of the pane's
@@ -45,10 +45,10 @@ export function PullQuickButton({
   if (behind === 0 || upstream === null) return null
   return (
     <Tooltip label="Pull the upstream commits into this branch" className="inline-flex">
-      <Button variant="legacy-secondary" data-testid="changes-pull" disabled={busy} onClick={onPull}>
+      <LazyLegacyButton variant="legacy-secondary" data-testid="changes-pull" disabled={busy} onClick={onPull}>
         <Icon glyph={IconArrowDown} role="small" />
         Pull ↓{behind}
-      </Button>
+      </LazyLegacyButton>
     </Tooltip>
   )
 }

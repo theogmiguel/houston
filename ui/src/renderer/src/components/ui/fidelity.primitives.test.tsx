@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ActionMenu, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar } from './index'
+
+afterEach(cleanup)
 
 describe('fidelity primitives', () => {
   it('opens an accessible action menu and invokes the selected row action', () => {

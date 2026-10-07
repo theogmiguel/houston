@@ -32,7 +32,7 @@ Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
   get: () => mockHeight
 })
 
-let wiredHandler: ((msg: ServerMsg) => void) | null = null
+const wiredHandlers = new Set<(msg: ServerMsg) => void>()
 
 // Per-client `client.subscribe(kind, handler)` registrations, so a test can
 // feed one pane's own subscription (git status, pr status) without touching App.
@@ -47,10 +47,8 @@ function makeFakeClient(): HoustonClientType {
   kindHandlers = new Map()
   const base = {
     subscribeAll: ((handler: (msg: ServerMsg) => void) => {
-      wiredHandler = handler
-      return () => {
-        if (wiredHandler === handler) wiredHandler = null
-      }
+      wiredHandlers.add(handler)
+      return () => { wiredHandlers.delete(handler) }
     }) as (handler: (msg: ServerMsg) => void) => () => void,
     onFrame: (() => {}) as (session: number, offset: number, payload: Uint8Array) => void,
     onClose: (() => {}) as () => void,
@@ -117,7 +115,7 @@ const connectMock = vi.hoisted(() => vi.fn<() => Promise<HoustonClientType>>())
 connectMock.mockImplementation(async () => {
   const client = makeFakeClient()
   lastClient = client
-  wiredHandler = null
+  wiredHandlers.clear()
   return client
 })
 
@@ -183,7 +181,7 @@ export function resetHarness(): void {
   mockWidth = 400
   mockHeight = 300
   lastClient = null
-  wiredHandler = null
+  wiredHandlers.clear()
   rosterCwds = new Map()
   connectMock.mockClear()
   installHoustonBridge()
@@ -225,7 +223,7 @@ export function deliverHelloOk(
   act(() => {
     getLastClient()
     rosterCwds = new Map(msg.sessions.map((s) => [s.id, s.cwd]))
-    wiredHandler?.(msg)
+    wiredHandlers.forEach((handler) => handler(msg))
   })
 }
 
@@ -233,7 +231,7 @@ export function deliverControl(msg: ServerMsg): void {
   act(() => {
     getLastClient()
     if (msg.type === 'session_created') rosterCwds.set(msg.info.id, msg.info.cwd)
-    wiredHandler?.(msg)
+    wiredHandlers.forEach((handler) => handler(msg))
   })
 }
 
@@ -288,15 +286,15 @@ async function flushBootConnect(): Promise<void> {
   await connectMock.mock.results[0]?.value
   const MAX_TICKS = 200
   let ticks = 0
-  while ((!lastClient || wiredHandler === null) && ticks < MAX_TICKS) {
+  while ((!lastClient || wiredHandlers.size === 0) && ticks < MAX_TICKS) {
     await new Promise((resolve) => setTimeout(resolve, 0))
     ticks++
   }
-  if (!lastClient || wiredHandler === null) {
+  if (!lastClient || wiredHandlers.size === 0) {
     throw new Error(
       `flushBootConnect: App never wired a client after ${MAX_TICKS} macrotask ticks — ` +
         `lastClient=${lastClient ? 'present' : 'undefined'}, subscribeAll=${
-          wiredHandler === null ? 'never called' : 'registered'
+          wiredHandlers.size === 0 ? 'never called' : 'registered'
         }. Expected App.tsx's boot effect to call Client.connect() and its ` +
         `.then(client => wire(client, true)) to call client.subscribeAll(...) before any test ` +
         `delivers a ServerMsg; delivering one earlier is silently dropped.`
@@ -322,7 +320,14 @@ export async function renderReadyApp(
   })
   await act(async () => {
     await flushGhosttyAttach()
+    await import('../components/ui/GridRailRow')
   })
+  // The rail row is lazy; a test that ends while it is still loading lets it resolve
+  // after teardown, which vitest reports as an unhandled error.
+  await settleLazySurface(
+    () => container.querySelector('[data-testid="grid-state-dot"][data-state="loading"]') === null,
+    'the grid rail row'
+  )
   return {
     container,
     root,
