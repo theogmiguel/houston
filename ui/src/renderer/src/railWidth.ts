@@ -5,7 +5,7 @@ const KEY = "tr-rail-width";
 // The rail's shipped width (`w-60`), so a fresh install looks unchanged until dragged.
 export const RAIL_DEFAULT = 240;
 
-// The Orca card identity and workspace controls remain readable at 220px.
+// The grid card identity and workspace controls remain readable at 220px.
 export const RAIL_MIN = 220;
 
 // Above 500px the rail takes too much of the terminal grid on standard displays.
