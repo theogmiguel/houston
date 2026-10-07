@@ -25,6 +25,8 @@ static SHIM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 /// Records its argv (and the profile env) per pane, then waits like a CLI; with
 /// `RESUME_FAKE_EXIT` set, a `--resume` launch exits with that code instead.
 const FAKE_CLI: &str = r#"#!/bin/sh
+if [ "$RESUME_IGNORE_TERM" = "1" ]; then trap '' TERM; fi
+if [ "$RESUME_FAKE_DESCENDANT" = "1" ]; then sleep 60 & fi
 out="$RESUME_ARGV_DIR/$HOUSTON_SESSION"
 : > "$out.tmp"
 for a in "$@"; do printf '%s\n' "$a" >> "$out.tmp"; done
@@ -73,6 +75,8 @@ async fn setup() -> Env {
     std::env::set_var("SHELL", "/bin/sh");
     for var in [
         "RESUME_FAKE_EXIT",
+        "RESUME_IGNORE_TERM",
+        "RESUME_FAKE_DESCENDANT",
         "HOUSTON_RESTORE_BUDGET",
         "HOUSTON_SAFE_MODE",
         "HOUSTON_DISABLE_AUTO_RESTORE",
@@ -1294,6 +1298,173 @@ async fn sleep_refuses_a_shell_that_has_detected_claude() {
     let error = daemon.sleep_session(shell.id).unwrap_err().to_string();
     assert!(error.contains("provider Shell is unsupported"), "{error}");
     assert_eq!(daemon.list().into_iter().find(|info| info.id == shell.id).unwrap().state, proto::SessionState::Running);
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_timeout_keeps_pty_usable_without_blocking_other_sessions() {
+    let env = setup().await;
+    std::env::set_var("RESUME_IGNORE_TERM", "1");
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-timeout");
+    let (pane, conversation, transcript_path) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    let unrelated = shell_pane(&daemon, &ws);
+
+    let sleeping_daemon = daemon.clone();
+    let session_id = pane.id;
+    let started = std::time::Instant::now();
+    let sleep = tokio::task::spawn_blocking(move || sleeping_daemon.sleep_session(session_id));
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let pending_hook_path = houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()),
+        &HookDrop {
+            v: houston_core::hook_drop::DROP_V,
+            event: "UserPromptSubmit".into(),
+            session: pane.id,
+            agent: Some("claude".into()),
+            session_id: Some(conversation.clone()),
+            transcript_path: Some(transcript_path),
+            prompt: Some("This hook must wait for Sleep".into()),
+            ..Default::default()
+        },
+        houston_core::daemon::now_ms(),
+    )
+    .unwrap();
+    daemon.hook_drop_tick_for_test();
+    assert!(pending_hook_path.exists(), "hooks for a sleeping session must be retried");
+    let same_session_write = daemon.write_stdin(pane.id, b"wait for Sleep").unwrap_err().to_string();
+    assert!(same_session_write.contains("Sleep transition"), "{same_session_write}");
+    let kill = daemon.kill(pane.id).unwrap_err().to_string();
+    assert!(kill.contains("Sleep transition"), "{kill}");
+    let close = daemon.close(pane.id).unwrap_err().to_string();
+    assert!(close.contains("Sleep transition"), "{close}");
+    let wake = daemon.wake_session(pane.id).unwrap_err().to_string();
+    assert!(wake.contains("Sleep transition"), "{wake}");
+    let input_started = std::time::Instant::now();
+    daemon.write_stdin(unrelated.id, b"independent input\n").unwrap();
+    assert!(input_started.elapsed() < Duration::from_secs(1));
+
+    let error = sleep.await.unwrap().unwrap_err().to_string();
+    daemon.hook_drop_tick_for_test();
+    assert!(!pending_hook_path.exists(), "the retried hook should apply after Sleep releases");
+    assert!(error.contains("timed out after 15 seconds"), "{error}");
+    assert!(started.elapsed() >= Duration::from_secs(15));
+    assert_eq!(
+        daemon.list().into_iter().find(|session| session.id == pane.id).unwrap().state,
+        proto::SessionState::Running
+    );
+    assert_eq!(handle_in(&env, pane.id).map(|handle| handle.0), Some(conversation));
+    daemon.write_stdin(pane.id, b"usable after timeout\n").unwrap();
+    daemon.close(pane.id).unwrap();
+    daemon.close(unrelated.id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_an_external_running_descendant() {
+    let env = setup().await;
+    std::env::set_var("RESUME_FAKE_DESCENDANT", "1");
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-descendant-refusal");
+    let (pane, _, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+
+    let error = daemon.sleep_session(pane.id).unwrap_err().to_string();
+    assert!(error.contains("external child processes are still running"), "{error}");
+    assert_eq!(
+        daemon.list().into_iter().find(|session| session.id == pane.id).unwrap().state,
+        proto::SessionState::Running
+    );
+    daemon.close(pane.id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_missing_resume_handle_and_a_busy_agent() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-eligibility-refusal");
+    let pane = claude_pane(&daemon, &ws, None);
+    argv_of(&env, pane.id).await;
+
+    let missing = daemon.sleep_session(pane.id).unwrap_err().to_string();
+    assert!(missing.contains("no validated conversation handle"), "{missing}");
+    daemon.close(pane.id).unwrap();
+
+    let (pane, conversation, path) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    hook(
+        &env,
+        &daemon,
+        pane.id,
+        "UserPromptSubmit",
+        PROMPT,
+        &conversation,
+        &path,
+        &ws,
+    )
+    .await;
+    let busy = daemon.sleep_session(pane.id).unwrap_err().to_string();
+    assert!(busy.contains("agent status is not idle"), "{busy}");
+    daemon.close(pane.id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_a_routine_run_pane() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-routine-refusal");
+    let proto::ServerMsg::Routines { routines, .. } = daemon
+        .routine_create_for_test(
+            "sleep-refusal",
+            "do the thing",
+            proto::Cadence::Interval { seconds: 86_400 },
+            Some(ws.display().to_string()),
+            proto::AgentKind::Claude,
+            None,
+            None,
+        )
+        .unwrap()
+    else {
+        panic!("routine_create answers Routines");
+    };
+    daemon.set_routine_pane_cmd_for_test(vec![shim_dir().join("claude").display().to_string()]);
+    daemon.routine_run_now(routines[0].id).unwrap();
+    let proto::ServerMsg::RoutineRuns { runs } = daemon.routine_runs_list(Some(routines[0].id)) else {
+        panic!("routine_runs_list answers RoutineRuns");
+    };
+    let pane_id = runs[0].session_id.expect("routine run opened a pane");
+    argv_of(&env, pane_id).await;
+
+    let error = daemon.sleep_session(pane_id).unwrap_err().to_string();
+    assert!(error.contains("hidden, routine, and harness sessions are unsupported"), "{error}");
+    daemon.close(pane_id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_an_orchestration_child_session() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-child-refusal");
+    daemon.orchestration_set(true).unwrap();
+    let (parent, _, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    let child = daemon
+        .orchestrate_spawn(
+            parent.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            "sleep refusal child".to_string().into(),
+            Some(false),
+            None,
+            Some("sleep-refusal-child".into()),
+        )
+        .unwrap();
+    argv_of(&env, child.id).await;
+
+    let error = daemon.sleep_session(child.id).unwrap_err().to_string();
+    assert!(error.contains("orchestration child sessions must be closed through their parent"), "{error}");
+    daemon.close(parent.id).unwrap();
 }
 
 #[tokio::test]

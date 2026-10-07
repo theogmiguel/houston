@@ -1276,6 +1276,7 @@ pub struct Daemon {
     respawned_as: Mutex<HashMap<u32, u32>>,
     workspace_membership: Mutex<()>,
     session_lifecycle_lock: Mutex<()>,
+    sleeping_sessions: Mutex<HashSet<u32>>,
     state_dir: PathBuf,
     db_path: PathBuf,
     scrollback_dir: PathBuf,
@@ -1385,6 +1386,20 @@ struct PendingShellChildren {
     provider: proto::AgentKind,
     conversation: String,
     children: Vec<proto::SessionInfo>,
+}
+
+struct SleepReservation<'a> {
+    sessions: &'a Mutex<HashSet<u32>>,
+    id: u32,
+}
+
+impl Drop for SleepReservation<'_> {
+    fn drop(&mut self) {
+        self.sessions
+            .lock()
+            .expect("sleeping sessions lock")
+            .remove(&self.id);
+    }
 }
 
 const SESSION_IDLE_REAP_ENABLED_KEY: &str = "session_idle_reap_enabled";
@@ -2690,6 +2705,7 @@ impl Daemon {
             respawned_as: Mutex::new(HashMap::new()),
             workspace_membership: Mutex::new(()),
             session_lifecycle_lock: Mutex::new(()),
+            sleeping_sessions: Mutex::new(HashSet::new()),
             state_dir: state_dir.clone(),
             db_path: cfg.db_path.clone(),
             scrollback_dir,
@@ -7579,6 +7595,7 @@ impl Daemon {
         conversation: RespawnConversation,
     ) -> Result<proto::SessionInfo> {
         let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.ensure_not_sleeping(old_id)?;
         let children: Vec<_> = self
             .dead
             .lock()
@@ -8259,6 +8276,7 @@ impl Daemon {
 
     fn restore_wake_placeholder(self: &Arc<Self>, id: u32, notice: &str) -> Result<()> {
         let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.ensure_not_sleeping(id)?;
         let session = self.get(id)?;
         self.persist_scrollback_result(id)?;
         *session.state.lock().expect("state lock") = proto::SessionState::Sleeping;
@@ -10190,6 +10208,7 @@ impl Daemon {
         data: &[u8],
     ) -> std::result::Result<(), StdinWriteError> {
         let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.ensure_not_sleeping(id).map_err(StdinWriteError::nothing)?;
         if self.dead.lock().expect("dead lock").contains_key(&id) {
             return Err(StdinWriteError::nothing(anyhow!(
                 "session {id} is not running (restored after a daemon restart) — respawn it"
@@ -10260,10 +10279,12 @@ impl Daemon {
 
     pub fn kill(&self, id: u32) -> Result<()> {
         let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.ensure_not_sleeping(id)?;
         self.kill_unlocked(id)
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
+        self.ensure_not_sleeping(id)?;
         let session = self.get(id)?;
         session
             .backend
@@ -10284,11 +10305,11 @@ impl Daemon {
     }
 
     pub fn sleep_session(&self, id: u32) -> Result<()> {
-        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
         #[cfg(not(target_os = "linux"))]
         bail!("Sleep is unavailable on this platform because Linux process-tree identity and graceful shutdown are not implemented");
         #[cfg(target_os = "linux")]
         {
+            let _sleep = self.reserve_sleep(id)?;
             let session = self.get(id)?;
             let provider = session.info.agent;
             if !matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex) {
@@ -10348,11 +10369,6 @@ impl Daemon {
                 bail!("Sleep refused for session {id}: external child processes are still running");
             }
             let cue_snapshot = session.snapshot_info();
-            self.db.update_session_sleep_cues(
-                id,
-                cue_snapshot.latest_prompt.as_deref(),
-                cue_snapshot.last_agent_message.as_deref(),
-            )?;
             self.persist_scrollback_result(id)?;
             let creation = match &session.backend {
                 Backend::Pty { pid_creation, .. } => *pid_creation,
@@ -10361,22 +10377,31 @@ impl Daemon {
                 }
             };
             self.resume_launches.lock().expect("resume launches lock").remove(&id);
-            if session.backend_exited.load(Ordering::Acquire) {
-                bail!("Sleep refused for session {id}: CLI exited while Sleep was being prepared");
-            }
             let slept_at = now_ms();
-            self.db.mark_session_sleeping(id, slept_at)?;
-            if let Err(error) = crate::pid::signal_process_checked_identity(pid, crate::pid::Signal::Term, creation) {
-                let state = session.state.lock().expect("state lock");
-                let rollback = self.db.cancel_session_sleep(id, *state);
-                return match rollback {
-                    Ok(()) => Err(anyhow!("sending graceful termination to session {id}: {error}")),
-                    Err(rollback_error) => Err(anyhow!("sending graceful termination to session {id}: {error}; restoring the live database state also failed: {rollback_error}")),
-                };
+            {
+                let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+                if session.backend_exited.load(Ordering::Acquire) {
+                    bail!("Sleep refused for session {id}: CLI exited while Sleep was being prepared");
+                }
+                self.db.update_session_sleep_cues(
+                    id,
+                    cue_snapshot.latest_prompt.as_deref(),
+                    cue_snapshot.last_agent_message.as_deref(),
+                )?;
+                self.db.mark_session_sleeping(id, slept_at)?;
+                if let Err(error) = crate::pid::signal_process_checked_identity(pid, crate::pid::Signal::Term, creation) {
+                    let state = session.state.lock().expect("state lock");
+                    let rollback = self.db.cancel_session_sleep(id, *state);
+                    return match rollback {
+                        Ok(()) => Err(anyhow!("sending graceful termination to session {id}: {error}")),
+                        Err(rollback_error) => Err(anyhow!("sending graceful termination to session {id}: {error}; restoring the live database state also failed: {rollback_error}")),
+                    };
+                }
             }
             let deadline = Instant::now() + Duration::from_secs(15);
             while !session.backend_exited.load(Ordering::Acquire) {
                 if Instant::now() >= deadline {
+                    let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
                     let state = session.state.lock().expect("state lock");
                     return match self.db.cancel_session_sleep(id, *state) {
                         Ok(()) => Err(anyhow!("Sleep timed out after 15 seconds for session {id}; the PTY writer remains available and no force-kill was sent")),
@@ -10385,18 +10410,21 @@ impl Daemon {
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
-            let mut info = session.snapshot_info();
-            info.state = proto::SessionState::Sleeping;
-            info.slept_at_ms = Some(slept_at);
-            *session.slept_at_ms.lock().expect("slept-at lock") = Some(slept_at);
-            self.sessions.lock().expect("sessions lock").remove(&id);
-            self.dead.lock().expect("dead lock").insert(id, info.clone());
-            self.broadcast_control(&proto::ServerMsg::SessionState {
-                session: id,
-                state: proto::SessionState::Sleeping,
-                exit_code: None,
-            });
-            self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+            {
+                let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+                let mut info = session.snapshot_info();
+                info.state = proto::SessionState::Sleeping;
+                info.slept_at_ms = Some(slept_at);
+                *session.slept_at_ms.lock().expect("slept-at lock") = Some(slept_at);
+                self.sessions.lock().expect("sessions lock").remove(&id);
+                self.dead.lock().expect("dead lock").insert(id, info.clone());
+                self.broadcast_control(&proto::ServerMsg::SessionState {
+                    session: id,
+                    state: proto::SessionState::Sleeping,
+                    exit_code: None,
+                });
+                self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+            }
             self.write_run_state();
             Ok(())
         }
@@ -10404,6 +10432,7 @@ impl Daemon {
 
     pub fn wake_session(self: &Arc<Self>, id: u32) -> Result<proto::SessionInfo> {
         let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.ensure_not_sleeping(id)?;
         {
             let mut dead = self.dead.lock().expect("dead lock");
             let Some(info) = dead.get_mut(&id) else {
@@ -10558,10 +10587,12 @@ impl Daemon {
 
     pub fn close(&self, id: u32) -> Result<()> {
         let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.ensure_not_sleeping(id)?;
         self.close_unlocked(id)
     }
 
     fn close_unlocked(&self, id: u32) -> Result<()> {
+        self.ensure_not_sleeping(id)?;
         for row in self.db.delegations_for_parent(id)? {
             if row.child_session != id
                 && (self.get(row.child_session).is_ok()
@@ -11308,6 +11339,35 @@ impl Daemon {
             .cloned()
             .ok_or_else(|| anyhow!("unknown session id {id} (expected an active session)"))
     }
+
+    fn ensure_not_sleeping(&self, id: u32) -> Result<()> {
+        if self
+            .sleeping_sessions
+            .lock()
+            .expect("sleeping sessions lock")
+            .contains(&id)
+        {
+            bail!("session {id} is in a Sleep transition");
+        }
+        Ok(())
+    }
+
+    fn reserve_sleep(&self, id: u32) -> Result<SleepReservation<'_>> {
+        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.get(id)?;
+        if !self
+            .sleeping_sessions
+            .lock()
+            .expect("sleeping sessions lock")
+            .insert(id)
+        {
+            bail!("Sleep refused for session {id}: another Sleep transition is active");
+        }
+        Ok(SleepReservation {
+            sessions: &self.sleeping_sessions,
+            id,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -11443,7 +11503,19 @@ impl Daemon {
         self: &Arc<Self>,
         d: &crate::hook_drop::HookDrop,
     ) -> crate::hook_drop::DropVerdict {
-        let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        if self.ensure_not_sleeping(d.session).is_err() {
+            return crate::hook_drop::DropVerdict::Retry;
+        }
+        let _lifecycle = match self.session_lifecycle_lock.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return crate::hook_drop::DropVerdict::Retry;
+            }
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+        };
+        if self.ensure_not_sleeping(d.session).is_err() {
+            return crate::hook_drop::DropVerdict::Retry;
+        }
         let provider = match d.agent.as_deref() {
             None => proto::AgentKind::Claude,
             Some(slug) => match crate::agent_hooks::provider_from_slug(slug) {
@@ -16554,6 +16626,7 @@ impl Daemon {
 
     pub fn session_kill_checked(self: &Arc<Self>, id: u32, confirm_children: bool) -> Result<()> {
         let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.ensure_not_sleeping(id)?;
         self.child_guard(id, confirm_children)?;
         let notice = self.operator_ended_notice_facts(id);
         self.kill_unlocked(id)?;
@@ -16565,6 +16638,7 @@ impl Daemon {
 
     pub fn session_close_checked(self: &Arc<Self>, id: u32, confirm_children: bool) -> Result<()> {
         let _lifecycle = self.session_lifecycle_lock.lock().expect("session lifecycle lock");
+        self.ensure_not_sleeping(id)?;
         self.child_guard(id, confirm_children)?;
         let notice = self.operator_ended_notice_facts(id);
         self.close_unlocked(id)?;
