@@ -232,6 +232,46 @@ fn restored_from(sessions: &[proto::SessionInfo], old: u32) -> &proto::SessionIn
         .unwrap_or_else(|| panic!("session {old} was not restored: {sessions:?}"))
 }
 
+async fn wait_restored_child(daemon: &Arc<Daemon>, old: u32) -> proto::SessionInfo {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        if let Some(child) = daemon
+            .list()
+            .into_iter()
+            .find(|info| info.id != old && info.session_origin == Some(old) && info.state.is_live())
+        {
+            return child;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "child {old} did not restore"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn close_after_shell_restore(daemon: &Arc<Daemon>, parent: u32) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        match daemon.close(parent) {
+            Ok(()) => return,
+            Err(error) => {
+                assert!(
+                    error
+                        .to_string()
+                        .contains("restoring orchestration children"),
+                    "{error:#}"
+                );
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "parent {parent} recovery did not finish"
+                );
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
 fn fixture(name: &str, conversation: &str, transcript: &str, cwd: &Path) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/hooks/claude")
@@ -772,9 +812,9 @@ async fn shell_children_resume_only_after_the_matching_root_native_resume_hook()
         &dir,
     )
     .await;
-    assert!(restored_from(&restarted.list(), child.id).resumable);
+    assert!(wait_restored_child(&restarted, child.id).await.resumable);
     daemon.close(shell.id).unwrap();
-    restarted.close(parent.id).unwrap();
+    close_after_shell_restore(&restarted, parent.id).await;
 }
 
 #[tokio::test]
@@ -896,10 +936,10 @@ async fn delayed_shell_child_recovery_does_not_block_unrelated_pane_input() {
         );
     }
     applying.await.unwrap();
-    assert!(restored_from(&restarted.list(), child.id).resumable);
+    assert!(wait_restored_child(&restarted, child.id).await.resumable);
     daemon.close(shell.id).unwrap();
     restarted.close(unrelated.id).unwrap();
-    restarted.close(parent.id).unwrap();
+    close_after_shell_restore(&restarted, parent.id).await;
 }
 const STOP: &str = "claude-2.1.263-05-Stop.json";
 const CLEAR: &str = "claude-2.1.284-02-SessionStart-clear.json";

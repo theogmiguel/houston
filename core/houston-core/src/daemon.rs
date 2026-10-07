@@ -1340,7 +1340,7 @@ pub struct Daemon {
     workspace_membership: Mutex<()>,
     session_lifecycle_lock: Mutex<()>,
     sleeping_sessions: Mutex<HashSet<u32>>,
-    shell_restore_reservations: Mutex<HashSet<u32>>,
+    shell_restore_reservations: Arc<Mutex<HashSet<u32>>>,
     state_dir: PathBuf,
     db_path: PathBuf,
     scrollback_dir: PathBuf,
@@ -1459,12 +1459,12 @@ struct SleepReservation<'a> {
     id: u32,
 }
 
-struct ShellRestoreReservation<'a> {
-    sessions: &'a Mutex<HashSet<u32>>,
+struct ShellRestoreReservation {
+    sessions: Arc<Mutex<HashSet<u32>>>,
     id: u32,
 }
 
-impl Drop for ShellRestoreReservation<'_> {
+impl Drop for ShellRestoreReservation {
     fn drop(&mut self) {
         self.sessions
             .lock()
@@ -2778,7 +2778,7 @@ impl Daemon {
             workspace_membership: Mutex::new(()),
             session_lifecycle_lock: Mutex::new(()),
             sleeping_sessions: Mutex::new(HashSet::new()),
-            shell_restore_reservations: Mutex::new(HashSet::new()),
+            shell_restore_reservations: Arc::new(Mutex::new(HashSet::new())),
             state_dir: state_dir.clone(),
             db_path: cfg.db_path.clone(),
             scrollback_dir,
@@ -8621,7 +8621,7 @@ impl Daemon {
         session_id: u32,
         provider: proto::AgentKind,
         d: &crate::hook_drop::HookDrop,
-    ) -> Option<ShellRestoreReservation<'_>> {
+    ) -> Option<ShellRestoreReservation> {
         if d.event != "SessionStart" || d.agent_id.is_some() || d.subagent_type.is_some() {
             return None;
         }
@@ -8681,7 +8681,7 @@ impl Daemon {
     fn finish_pending_shell_children(
         self: &Arc<Self>,
         session_id: u32,
-        _reservation: ShellRestoreReservation<'_>,
+        _reservation: ShellRestoreReservation,
     ) {
         let pending = self
             .pending_shell_children
@@ -11660,7 +11660,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn reserve_shell_restore(&self, id: u32) -> Result<ShellRestoreReservation<'_>> {
+    fn reserve_shell_restore(&self, id: u32) -> Result<ShellRestoreReservation> {
         if !self
             .shell_restore_reservations
             .lock()
@@ -11670,7 +11670,7 @@ impl Daemon {
             bail!("session {id} is already restoring orchestration children");
         }
         Ok(ShellRestoreReservation {
-            sessions: &self.shell_restore_reservations,
+            sessions: Arc::clone(&self.shell_restore_reservations),
             id,
         })
     }
@@ -11975,7 +11975,11 @@ impl Daemon {
             let restore = self.confirm_shell_resume(d.session, provider, d);
             if let Some(reservation) = restore {
                 drop(lifecycle.take());
-                self.finish_pending_shell_children(d.session, reservation);
+                let daemon = Arc::clone(self);
+                let session_id = d.session;
+                tokio::task::spawn_blocking(move || {
+                    daemon.finish_pending_shell_children(session_id, reservation);
+                });
                 lifecycle = Some(match self.session_lifecycle_lock.try_lock() {
                     Ok(guard) => guard,
                     Err(std::sync::TryLockError::WouldBlock) => {
