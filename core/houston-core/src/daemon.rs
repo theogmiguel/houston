@@ -579,6 +579,7 @@ pub struct Session {
     context: Mutex<Option<proto::SessionContext>>,
     removed: AtomicBool,
     backend_exited: AtomicBool,
+    stdin_writes_in_flight: AtomicU32,
     hook_cwd: Mutex<Option<String>>,
     hook_last_message: Mutex<Option<String>>,
     hook_latest_prompt: Mutex<Option<String>>,
@@ -1451,6 +1452,14 @@ struct PendingShellChildren {
     provider: proto::AgentKind,
     conversation: String,
     children: Vec<proto::SessionInfo>,
+}
+
+struct StdinWriteAdmission(Arc<Session>);
+
+impl Drop for StdinWriteAdmission {
+    fn drop(&mut self) {
+        self.0.stdin_writes_in_flight.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -4254,6 +4263,7 @@ impl Daemon {
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
+            stdin_writes_in_flight: AtomicU32::new(0),
             hook_cwd: Mutex::new(m.hook_cwd.clone()),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -9354,6 +9364,7 @@ impl Daemon {
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
+            stdin_writes_in_flight: AtomicU32::new(0),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -9749,6 +9760,7 @@ impl Daemon {
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
+            stdin_writes_in_flight: AtomicU32::new(0),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -10418,24 +10430,31 @@ impl Daemon {
         id: u32,
         data: &[u8],
     ) -> std::result::Result<(), StdinWriteError> {
-        let _lifecycle = self
-            .session_lifecycle_lock
-            .lock()
-            .expect("session lifecycle lock");
-        self.ensure_not_sleeping(id)
-            .map_err(StdinWriteError::nothing)?;
-        if self.dead.lock().expect("dead lock").contains_key(&id) {
-            return Err(StdinWriteError::nothing(anyhow!(
-                "session {id} is not running (restored after a daemon restart) — respawn it"
-            )));
-        }
-        let session = self.get(id).map_err(StdinWriteError::nothing)?;
-        let state = *session.state.lock().expect("state lock");
-        if !state.is_live() {
-            return Err(StdinWriteError::nothing(anyhow!(
-                "session {id} is {state:?}; stdin requires a live session"
-            )));
-        }
+        let session = {
+            let _lifecycle = self
+                .session_lifecycle_lock
+                .lock()
+                .expect("session lifecycle lock");
+            self.ensure_not_sleeping(id)
+                .map_err(StdinWriteError::nothing)?;
+            if self.dead.lock().expect("dead lock").contains_key(&id) {
+                return Err(StdinWriteError::nothing(anyhow!(
+                    "session {id} is not running (restored after a daemon restart) — respawn it"
+                )));
+            }
+            let session = self.get(id).map_err(StdinWriteError::nothing)?;
+            let state = *session.state.lock().expect("state lock");
+            if !state.is_live() {
+                return Err(StdinWriteError::nothing(anyhow!(
+                    "session {id} is {state:?}; stdin requires a live session"
+                )));
+            }
+            session
+                .stdin_writes_in_flight
+                .fetch_add(1, Ordering::AcqRel);
+            session
+        };
+        let _admission = StdinWriteAdmission(Arc::clone(&session));
         if let Some(cap) = self
             .stdin_partial_after
             .lock()
@@ -10476,6 +10495,14 @@ impl Daemon {
             .lock()
             .expect("stdin partial lock")
             .insert(session, after_bytes);
+    }
+
+    #[doc(hidden)]
+    pub fn stdin_write_in_progress_for_test(&self, session: u32) -> bool {
+        match self.get(session) {
+            Ok(session) => session.stdin_writes_in_flight.load(Ordering::Acquire) != 0,
+            Err(_) => false,
+        }
     }
 
     pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(u16, u16)> {
@@ -11681,8 +11708,11 @@ impl Daemon {
             .session_lifecycle_lock
             .lock()
             .expect("session lifecycle lock");
-        self.get(id)?;
+        let session = self.get(id)?;
         self.ensure_not_shell_restoring(id)?;
+        if session.stdin_writes_in_flight.load(Ordering::Acquire) != 0 {
+            bail!("Sleep refused for session {id}: stdin delivery is still in progress");
+        }
         if !self
             .sleeping_sessions
             .lock()
@@ -21570,6 +21600,15 @@ mod idle_profile_tests {
             written_rx.try_recv().is_err(),
             "fixture must block in the PTY write"
         );
+        #[cfg(target_os = "linux")]
+        match daemon.reserve_sleep(child) {
+            Err(error) => assert!(error
+                .to_string()
+                .contains("stdin delivery is still in progress")),
+            Ok(_) => {
+                panic!("Sleep must refuse while an admitted stdin write is still in progress")
+            }
+        }
         let state_available = session.state.try_lock().is_ok();
         let (killed_tx, killed_rx) = std::sync::mpsc::channel();
         let killer = daemon.clone();

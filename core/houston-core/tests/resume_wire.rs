@@ -27,6 +27,7 @@ static SHIM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 const FAKE_CLI: &str = r#"#!/bin/sh
 if [ "$RESUME_IGNORE_TERM" = "1" ]; then trap '' TERM; fi
 if [ "$RESUME_FAKE_DESCENDANT" = "1" ]; then sleep 60 & fi
+if [ "$RESUME_BLOCK_STDIN" = "1" ]; then stty raw -echo; fi
 out="$RESUME_ARGV_DIR/$HOUSTON_SESSION"
 : > "$out.tmp"
 for a in "$@"; do printf '%s\n' "$a" >> "$out.tmp"; done
@@ -36,6 +37,9 @@ mv "$out.tmp" "$out"
 case " $* " in
   *" --resume "*) [ -n "$RESUME_FAKE_EXIT" ] && exit "$RESUME_FAKE_EXIT" ;;
 esac
+if [ "$RESUME_BLOCK_STDIN" = "1" ]; then
+  while [ ! -f "$RESUME_STDIN_RELEASE" ]; do sleep 0.05; done
+fi
 exec cat
 "#;
 
@@ -77,6 +81,8 @@ async fn setup() -> Env {
         "RESUME_FAKE_EXIT",
         "RESUME_IGNORE_TERM",
         "RESUME_FAKE_DESCENDANT",
+        "RESUME_BLOCK_STDIN",
+        "RESUME_STDIN_RELEASE",
         "HOUSTON_RESTORE_BUDGET",
         "HOUSTON_SAFE_MODE",
         "HOUSTON_DISABLE_AUTO_RESTORE",
@@ -1689,6 +1695,74 @@ async fn sleep_refuses_a_shell_that_has_detected_claude() {
             .state,
         proto::SessionState::Running
     );
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_pending_stdin_without_blocking_other_panes() {
+    let env = setup().await;
+    let release = env.state.path().join("release-stdin");
+    std::env::set_var("RESUME_BLOCK_STDIN", "1");
+    std::env::set_var("RESUME_STDIN_RELEASE", &release);
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-pending-stdin");
+    let (pane, _, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    std::env::remove_var("RESUME_BLOCK_STDIN");
+    std::env::remove_var("RESUME_STDIN_RELEASE");
+    let unrelated = shell_pane(&daemon, &ws);
+
+    let writer_daemon = daemon.clone();
+    let session_id = pane.id;
+    let writing =
+        std::thread::spawn(move || writer_daemon.write_stdin(session_id, &vec![b'x'; 1024 * 1024]));
+    let admission_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while !daemon.stdin_write_in_progress_for_test(pane.id) {
+        if tokio::time::Instant::now() >= admission_deadline {
+            std::fs::write(&release, b"release").unwrap();
+            writing.join().unwrap().unwrap();
+            panic!("stdin delivery was not admitted");
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
+    let sleeping_daemon = daemon.clone();
+    let (refusal_tx, refusal_rx) = std::sync::mpsc::channel();
+    let sleeping = std::thread::spawn(move || {
+        let _ = refusal_tx.send(sleeping_daemon.sleep_session(session_id));
+    });
+    let unrelated_daemon = daemon.clone();
+    let unrelated_id = unrelated.id;
+    let (input_tx, input_rx) = std::sync::mpsc::channel();
+    let independent_input = std::thread::spawn(move || {
+        let _ = input_tx.send(unrelated_daemon.write_stdin(unrelated_id, b"independent input\n"));
+    });
+    let refusal = refusal_rx.recv_timeout(Duration::from_secs(2));
+    let input = input_rx.recv_timeout(Duration::from_secs(2));
+    std::fs::write(&release, b"release").unwrap();
+    sleeping.join().unwrap();
+    independent_input.join().unwrap();
+    writing.join().unwrap().unwrap();
+    let error = refusal
+        .expect("Sleep must refuse pending stdin without waiting for the PTY writer")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("stdin delivery"), "{error}");
+    assert!(!daemon.stdin_write_in_progress_for_test(pane.id));
+    input
+        .expect("pending stdin must not block input to an unrelated pane")
+        .unwrap();
+    assert_eq!(
+        daemon
+            .list()
+            .into_iter()
+            .find(|info| info.id == pane.id)
+            .unwrap()
+            .state,
+        proto::SessionState::Running
+    );
+    daemon.sleep_session(pane.id).unwrap();
+    daemon.close(pane.id).unwrap();
+    daemon.close(unrelated.id).unwrap();
 }
 
 #[tokio::test]
