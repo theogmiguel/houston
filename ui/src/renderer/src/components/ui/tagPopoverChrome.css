@@ -5,7 +5,7 @@
 
 .tag-popover-dialog {
   font-size: var(--tr-text-base);
-  transition: width 150ms var(--motion-panel-ease), height 150ms var(--motion-panel-ease), left 150ms var(--motion-panel-ease), top 150ms var(--motion-panel-ease);
+  transition: width 150ms var(--motion-panel-ease), height 150ms var(--motion-panel-ease);
 }
 .tag-popover-dialog > [data-view] { position: absolute; left: 0; top: 0; width: 100%; padding: var(--space-1); }
 .tag-popover-opening { animation: floating-pop-in 150ms var(--motion-menu-ease); }

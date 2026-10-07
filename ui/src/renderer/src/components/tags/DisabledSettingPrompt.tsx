@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { Button } from '../ui/Button'
 import { TAG_POPOVER_CLS } from '../ui/TagPopoverChrome'
 
@@ -12,7 +12,7 @@ export function DisabledSettingPrompt({
   onClose: () => void
 }): React.JSX.Element {
   const [position, setPosition] = useState({ left: 0, top: 0 })
-  useEffect(() => {
+  useLayoutEffect(() => {
     const place = (): void => {
       const rect = anchor.getBoundingClientRect(),
         width = 256,

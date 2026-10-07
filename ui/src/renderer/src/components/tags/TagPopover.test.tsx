@@ -82,6 +82,33 @@ describe('TagPopover', () => {
     expect(screen.getByTestId('tag-popover').style.top).toBe('46px')
   })
 
+  it('mounts already at its anchor instead of moving there from the window corner', async () => {
+    render(<Fixture />)
+    const trigger = screen.getByText('Open tags')
+    trigger.getBoundingClientRect = () => ({
+      x: 100, y: 50, left: 100, top: 50, right: 140, bottom: 70, width: 40, height: 20,
+      toJSON: () => ({}),
+    } as DOMRect)
+    const styleHistory: string[] = []
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === 'attributes' && record.oldValue !== null) styleHistory.push(record.oldValue)
+        for (const node of record.addedNodes) {
+          if (node instanceof HTMLElement) {
+            const popover = node.matches('[data-testid="tag-popover"]') ? node : node.querySelector<HTMLElement>('[data-testid="tag-popover"]')
+            if (popover) styleHistory.push(popover.getAttribute('style') ?? '')
+          }
+        }
+      }
+    })
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'], attributeOldValue: true })
+    fireEvent.click(trigger)
+    await waitFor(() => expect(screen.getByTestId('tag-popover').style.left).toBe('144px'))
+    observer.disconnect()
+    expect(styleHistory.filter((style) => /left: 0px|top: 0px/.test(style))).toEqual([])
+    expect(screen.getByTestId('tag-popover').style.transition).not.toMatch(/left|top/)
+  })
+
   it('creates a tag inline and applies it to the grid that opened the popover', () => {
     const onCreate = vi.fn((name: string, color: string) => ({ id: 3, name, color }))
     const onApply = vi.fn()

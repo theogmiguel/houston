@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../ui/Icon'
 import { IconTag, IconCheck, IconGrid, IconChevronLeft, IconChevronRight, IconArrowDown } from '../icons'
@@ -57,7 +57,7 @@ export function RailOptionsMenu({
   const [direction, setDirection] = useState<'none' | 'forward' | 'back'>('none')
   const [tagAnchor, setTagAnchor] = useState<HTMLElement | null>(null)
   const tagPopover = useTagPopover()
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!anchor) {
       setPosition(null)
       setPanel('root')

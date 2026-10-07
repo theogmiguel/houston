@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { TagInfo } from '../../houston/generated/TagInfo'
 import { Icon } from '../ui/Icon'
 import { IconChevronLeft, IconCheck, IconClose, IconPencil, IconPlus, IconGear, IconTrash, IconAlertTriangle } from '../icons'
@@ -57,6 +57,22 @@ function luminance(hex: string): number {
   return values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722
 }
 
+type TagPopoverPlacementRequest = Pick<OpenTagPopoverOptions, 'anchor' | 'gridId' | 'placement'>
+type TagPopoverPosition = { left: number; top: number; ox: number; oy: number }
+
+function placeTagPopover(request: TagPopoverPlacementRequest, rect: DOMRect, dimensions: { width: number; height: number }): TagPopoverPosition {
+  const width = dimensions.width,
+    height = dimensions.height || 260
+  const below = request.placement === 'below' || (request.placement !== 'right' && Boolean(request.gridId && request.anchor.closest('[data-testid="grid-row"]')))
+  let left = below ? rect.left : rect.right + 4
+  let top = below ? rect.bottom + 4 : rect.top - 4
+  if (left + width > window.innerWidth - 8) left = below ? window.innerWidth - width - 8 : rect.left - width - 4
+  if (top + height > window.innerHeight - 8) top = window.innerHeight - height - 8
+  left = Math.max(8, left)
+  top = Math.max(8, top)
+  return { left, top, ox: below ? Math.max(0, rect.left - left + 8) : left < rect.left ? width : 0, oy: below ? 0 : Math.max(0, rect.top - top + 12) }
+}
+
 export function TagPopoverSurface({
   request,
   tags: externalTags,
@@ -97,13 +113,13 @@ export function TagPopoverSurface({
   const [highlight, setHighlight] = useState<number | null>(null),
     [deleteId, setDeleteId] = useState<number | null>(null),
     [undo, setUndo] = useState<{ tag: TagInfo; gridIds: string[] } | null>(null)
+  const anchorRect = useRef(request.anchorRect ?? request.anchor.getBoundingClientRect())
   const [dimensions, setDimensions] = useState({ width: 232, height: 0 }),
-    [position, setPosition] = useState({ left: 0, top: 0, ox: 0, oy: 0 })
+    [position, setPosition] = useState<TagPopoverPosition>(() => placeTagPopover(request, anchorRect.current, { width: 232, height: 0 }))
   const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const popRef = useRef<HTMLDivElement>(null),
     nameRef = useRef<HTMLInputElement>(null),
     viewRef = useRef<HTMLDivElement>(null)
-  const anchorRect = useRef(request.anchorRect ?? request.anchor.getBoundingClientRect())
   const reducedMotion =
     typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const push = (next: TagPopoverView): void => {
@@ -206,20 +222,9 @@ export function TagPopoverSurface({
     window.setTimeout(() => setUndo(null), 5000)
   }
 
-  useEffect(() => {
-    const update = (): void => {
-      const rect = anchorRect.current,
-        width = dimensions.width,
-        height = dimensions.height || 260
-      const below = request.placement === 'below' || (request.placement !== 'right' && Boolean(request.gridId && request.anchor.closest('[data-testid="grid-row"]')))
-      let left = below ? rect.left : rect.right + 4
-      let top = below ? rect.bottom + 4 : rect.top - 4
-      if (left + width > window.innerWidth - 8) left = below ? window.innerWidth - width - 8 : rect.left - width - 4
-      if (top + height > window.innerHeight - 8) top = window.innerHeight - height - 8
-      left = Math.max(8, left)
-      top = Math.max(8, top)
-      setPosition({ left, top, ox: below ? Math.max(0, rect.left - left + 8) : left < rect.left ? width : 0, oy: below ? 0 : Math.max(0, rect.top - top + 12) })
-    }
+  // Placed before paint: a first frame at the origin would animate in from the window corner.
+  useLayoutEffect(() => {
+    const update = (): void => setPosition(placeTagPopover(request, anchorRect.current, dimensions))
     update()
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
@@ -227,7 +232,7 @@ export function TagPopoverSurface({
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
-  }, [dimensions, request.anchor, request.gridId, request.placement])
+  }, [dimensions, request])
   useEffect(() => {
     const node = viewRef.current
     if (!node || typeof ResizeObserver === 'undefined') return
@@ -379,7 +384,7 @@ export function TagPopoverSurface({
         height: dimensions.height || undefined,
         transition: reducedMotion
           ? undefined
-          : 'width 150ms var(--motion-panel-ease),height 150ms var(--motion-panel-ease),left 150ms var(--motion-panel-ease),top 150ms var(--motion-panel-ease)',
+          : 'width 150ms var(--motion-panel-ease),height 150ms var(--motion-panel-ease)',
       }}
     >
       <div
