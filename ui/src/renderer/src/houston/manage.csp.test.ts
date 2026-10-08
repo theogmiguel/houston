@@ -33,4 +33,5 @@ it('allows management HTTP on a separate loopback port under the shipped CSP', a
     await browser?.close()
     await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()))
   }
-}, 30_000)
+// Launching Chrome beside the other test workers took 1.6s to 29.8s across recent CI runs.
+}, 90_000)
