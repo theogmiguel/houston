@@ -562,9 +562,11 @@ async fn git_status_preserves_failure_for_a_broken_gitfile() {
     loop {
         match next_control(&mut ws).await {
             proto::ServerMsg::Error { message, .. } => {
+                // Git words a gitfile whose target is missing differently per build.
                 assert!(
-                    message.contains("not a git repository"),
-                    "unexpected error: {message}"
+                    message.contains("not a git repository")
+                        || message.contains("gitfile does not point to a valid repository"),
+                    "unexpected error: {message}; expected Git's broken-gitfile refusal"
                 );
                 break;
             }
