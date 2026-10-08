@@ -30,11 +30,11 @@ function ageLabel(session: SessionInfo, now: number): string {
 }
 
 function AgentRow({ agent, now }: { agent: RailAgentRow; now: number }): React.JSX.Element {
-  const shellLabel = agent.session.agent === 'shell' ? ' · shell' : ''
+  const shellLabel = agent.session.agent === 'shell' ? ` · ${agent.agent}` : ''
   return (
     <div key={agent.session.id} className="flex h-[var(--h-agent-row)] min-w-0 items-center gap-[5px] rounded px-1 text-[length:var(--tr-text-xs)] leading-none hover:bg-hover-fill">
       <AgentStatusDot session={agent.session} now={now} />
-      <span className="flex flex-none text-[var(--text-muted)]"><IconAgent agent={agent.session.agent} role="small" brand /></span>
+      <span className="flex flex-none text-[var(--text-muted)]"><IconAgent agent={agent.agent} role="small" brand /></span>
       <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
         {agent.leading}{shellLabel}
       </span>

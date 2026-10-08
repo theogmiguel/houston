@@ -2100,6 +2100,7 @@ impl Db {
                     detected_agent: detected.and_then(|d| {
                         serde_json::from_str::<proto::AgentKind>(&format!("\"{d}\"")).ok()
                     }),
+                    running_agent: None,
                     hidden: false,
                     ssh_host,
                     restore_deferred: None,
@@ -5828,6 +5829,7 @@ mod tests {
             title: format!("Sess-{id}"),
             codename: format!("Sess-{id}"),
             detected_agent: None,
+            running_agent: None,
             hidden: false,
             ssh_host: None,
             restore_deferred: None,

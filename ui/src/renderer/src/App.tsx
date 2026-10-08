@@ -1364,6 +1364,15 @@ export function App(): React.JSX.Element {
               return next;
             });
             break;
+          case "agent_running":
+            setSessions((prev) => {
+              const s = prev.get(msg.session);
+              if (!s) return prev;
+              const next = new Map(prev);
+              next.set(msg.session, { ...s, running_agent: msg.agent ?? null });
+              return next;
+            });
+            break;
           case "agent_status":
             setSessions((prev) => {
               const s = prev.get(msg.session);

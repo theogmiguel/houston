@@ -1,4 +1,4 @@
-# Wire protocol v129
+# Wire protocol v130
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -416,6 +416,7 @@ every refusal names the setting.
 | `swarm_message` | `message: SwarmMessage` | bcast — the mailbox layer recorded a message, status, escalation or completion |
 | `swarm_agent` | `agent: SwarmAgentInfo` | bcast — an orchestrated agent's status or activity changed |
 | `agent_detected` | `session`, `agent: AgentKind` | bcast, only when the detected identity changes |
+| `agent_running` | `session`, `agent?: AgentKind` | v130: bcast, only on change. The agent CLI a shell pane is running now (`SessionInfo.running_agent`); set by that CLI's hook drop or banner while the shell has a command in flight, cleared when the shell reports the command finished (authenticated OSC 133 `D`) or the CLI's own session-end hook (Codex, Grok) arrives. Absent means the shell has its prompt. Without shell integration only the session-end hook clears it |
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Driven by hooks or ACP; process liveness only starts the bounded `spawning` grace and never guesses activity |
 | `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude or Codex transcript the hook names; unsupported providers stay absent and render no indicator |
 | `session_checkout` | `id`, `checkout?: SessionCheckout` | bcast when a session's checkout identity changes; primary, managed worktree and folder checkouts are explicit, with nullable branch/head for detached HEAD |

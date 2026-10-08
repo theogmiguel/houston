@@ -1,4 +1,5 @@
 import type { PrInfo, SessionInfo } from '../../houston/client'
+import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionActivity } from '../../houston/generated/SessionActivity'
 import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
 import { gridStatus, type GridStatusModel } from '../ui/railRows'
@@ -12,6 +13,8 @@ export type CheckoutIdentity =
 
 export type RailAgentRow = {
   session: SessionInfo
+  // A shell pane reports the agent CLI it is running; every other pane is its own kind.
+  agent: AgentKind
   depth: number
   checkout: CheckoutIdentity
   leading: string
@@ -99,6 +102,7 @@ export function buildRailCard(source: RailCardSource): RailCard {
     const leading = activity?.prompt?.trim() || session.title || session.agent
     return {
       session,
+      agent: session.agent === 'shell' ? (session.running_agent ?? 'shell') : session.agent,
       depth,
       checkout,
       leading,

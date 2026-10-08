@@ -616,6 +616,7 @@ fn seed_session(db: &Db, id: u32, dir: &Path, agent: proto::AgentKind, spawned_b
         title: format!("Husk-{id}"),
         codename: format!("Husk-{id}"),
         detected_agent: None,
+        running_agent: None,
         hidden: false,
         ssh_host: None,
         restore_deferred: None,

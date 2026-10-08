@@ -54,7 +54,7 @@ export function AgentSummaryPill({
                 }`}
               />
               <span className="inline-flex items-center pl-0.5">
-                {rows.slice(0, 2).map(({ session }, index) => <span key={session.id} className={`-ml-0.5 inline-flex size-3.5 items-center justify-center rounded-full border border-[var(--rail-bg)] bg-[var(--card-hover)] ${index === 0 ? 'ml-0' : ''}`}><IconAgent agent={session.agent} role="small" brand /></span>)}
+                {rows.slice(0, 2).map(({ session, agent }, index) => <span key={session.id} className={`-ml-0.5 inline-flex size-3.5 items-center justify-center rounded-full border border-[var(--rail-bg)] bg-[var(--card-hover)] ${index === 0 ? 'ml-0' : ''}`}><IconAgent agent={agent} role="small" brand /></span>)}
               </span>
               {rows.length > 2 && <span>+{rows.length - 2}</span>}
             </span>

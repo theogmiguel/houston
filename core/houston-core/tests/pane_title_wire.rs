@@ -70,6 +70,7 @@ fn stored_session(id: u32, ws: &Path, title: &str) -> proto::SessionInfo {
         title: title.to_string(),
         codename: title.to_string(),
         detected_agent: None,
+        running_agent: None,
         hidden: false,
         ssh_host: None,
         restore_deferred: None,

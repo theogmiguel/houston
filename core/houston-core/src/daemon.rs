@@ -557,6 +557,7 @@ pub struct Session {
     title: Mutex<String>,
     project_dir: Mutex<String>,
     detected: Mutex<Option<proto::AgentKind>>,
+    running: Mutex<Option<proto::AgentKind>>,
     blocks: Option<Mutex<BlockTracker>>,
     shell_token_redactor: Option<Mutex<shellint::TokenRedactor>>,
     raw_output_bytes: AtomicU64,
@@ -1105,6 +1106,7 @@ impl Session {
         info.title = self.title.lock().expect("title lock").clone();
         info.project_dir = self.project_dir.lock().expect("project_dir lock").clone();
         info.detected_agent = *self.detected.lock().expect("detected lock");
+        info.running_agent = *self.running.lock().expect("running lock");
         info.status = *self.status.lock().expect("status lock");
         info.status_since_ms = *self.status_since_ms.lock().expect("status since lock");
         info.context = *self.context.lock().expect("context lock");
@@ -4208,6 +4210,7 @@ impl Daemon {
                 m.codename.clone()
             },
             detected_agent: None,
+            running_agent: None,
             hidden: m.hidden,
             ssh_host: None,
             restore_deferred: None,
@@ -4244,6 +4247,7 @@ impl Daemon {
             title: Mutex::new(m.title.clone()),
             project_dir: Mutex::new(m.project_dir.clone()),
             detected: Mutex::new(None),
+            running: Mutex::new(None),
             blocks: None,
             shell_token_redactor: None,
             raw_output_bytes: AtomicU64::new(m.output_offset),
@@ -8944,6 +8948,12 @@ impl Daemon {
         }
         if let Some(kind) = crate::agents::scan(chunk) {
             self.mark_detected(id, session, kind);
+            self.mark_running(id, session, kind);
+        }
+        if let Some(tracker) = &session.blocks {
+            if !tracker.lock().expect("blocks lock").command_running() {
+                self.clear_running(id, session, None);
+            }
         }
         if let Some(agent_id) = session.info.swarm_agent {
             self.swarm_activity_tick(id, agent_id, chunk);
@@ -8986,6 +8996,56 @@ impl Daemon {
                 tracing::warn!("persisting detected agent of session {id}: {e}");
             }
             self.broadcast_control(&proto::ServerMsg::AgentDetected {
+                session: id,
+                agent: kind,
+            });
+        }
+    }
+
+    /// A shell pane with command markers only counts an agent as running while
+    /// a command is in flight, so a banner or a late hook drop after the CLI
+    /// exited cannot relabel the prompt.
+    fn mark_running(&self, id: u32, session: &Session, kind: proto::AgentKind) {
+        if session.info.agent != proto::AgentKind::Shell {
+            return;
+        }
+        if let Some(tracker) = &session.blocks {
+            if !tracker.lock().expect("blocks lock").command_running() {
+                return;
+            }
+        }
+        self.set_running(id, session, Some(kind));
+    }
+
+    /// `only` limits the clear to one CLI's own session-end hook.
+    fn clear_running(&self, id: u32, session: &Session, only: Option<proto::AgentKind>) {
+        if session.info.agent != proto::AgentKind::Shell {
+            return;
+        }
+        let cur = *session.running.lock().expect("running lock");
+        if cur.is_none() || only.is_some_and(|kind| cur != Some(kind)) {
+            return;
+        }
+        self.set_running(id, session, None);
+    }
+
+    fn set_running(&self, id: u32, session: &Session, kind: Option<proto::AgentKind>) {
+        let changed = {
+            let mut cur = session.running.lock().expect("running lock");
+            if *cur == kind {
+                false
+            } else {
+                *cur = kind;
+                true
+            }
+        };
+        let still_present = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .contains_key(&id);
+        if changed && still_present {
+            self.broadcast_control(&proto::ServerMsg::AgentRunning {
                 session: id,
                 agent: kind,
             });
@@ -9414,6 +9474,7 @@ impl Daemon {
             title: title.clone(),
             codename: codename.clone(),
             detected_agent,
+            running_agent: None,
             hidden,
             ssh_host: None,
             restore_deferred: None,
@@ -9451,6 +9512,7 @@ impl Daemon {
             title: Mutex::new(title),
             project_dir: Mutex::new(project_dir.display().to_string()),
             detected: Mutex::new(detected_agent),
+            running: Mutex::new(None),
             blocks: shellint_token
                 .as_ref()
                 .map(|token| Mutex::new(BlockTracker::new(token.clone()))),
@@ -9825,6 +9887,7 @@ impl Daemon {
             title: title.clone(),
             codename: title.clone(),
             detected_agent: None,
+            running_agent: None,
             hidden: false,
             ssh_host: Some(display),
             restore_deferred: None,
@@ -9860,6 +9923,7 @@ impl Daemon {
             title: Mutex::new(title),
             project_dir: Mutex::new(info.project_dir.clone()),
             detected: Mutex::new(None),
+            running: Mutex::new(None),
             blocks: None,
             shell_token_redactor: None,
             raw_output_bytes: AtomicU64::new(0),
@@ -12132,6 +12196,15 @@ impl Daemon {
             .cloned();
         if let Some(session) = session {
             self.mark_detected(d.session, &session, provider);
+            if matches!(d.event.as_str(), "SessionEnd")
+                && matches!(provider, proto::AgentKind::Codex | proto::AgentKind::Grok)
+                && d.agent_id.is_none()
+                && d.subagent_type.is_none()
+            {
+                self.clear_running(d.session, &session, Some(provider));
+            } else {
+                self.mark_running(d.session, &session, provider);
+            }
             self.note_transcript_link(d.session, provider, d);
             self.note_resume_turn(d.session, &session, provider, d);
             let restore = self.confirm_shell_resume(d.session, provider, d);
