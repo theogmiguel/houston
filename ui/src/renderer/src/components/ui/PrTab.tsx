@@ -106,6 +106,7 @@ const SURFACE_CLASSES = {
   'changes-diff-stat': 'changes-diff-stat',
   'changes-diff-actions': 'changes-diff-actions',
   'changes-diff-segment': 'changes-diff-segment',
+  'changes-diff-group': 'changes-diff-group',
   'changes-inline-group': 'changes-inline-group',
   'changes-inline-file': 'changes-inline-file',
   'changes-inline-loading': 'changes-inline-loading',

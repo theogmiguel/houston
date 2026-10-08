@@ -48,7 +48,8 @@ import {
   IconRefresh,
   IconSplitDown,
   IconSplitRight,
-  IconFolderOpen
+  IconFolderOpen,
+  IconWrapText
 } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { Icon } from './ui/Icon'
@@ -72,7 +73,9 @@ import {
   GitCommitStagedCount,
   GitCompactToolsAnchor,
   GitCompactToolsSurface,
-  GitPrSummaryLabel
+  GitPrSummaryLabel,
+  GitToolMenuItem,
+  GitToolMenuSeparator
 } from './ui'
 import { Segmented } from './ui/SegmentedControl'
 import { SplitButton } from './ui/SplitButton'
@@ -571,34 +574,45 @@ function CompactDiffToolbar({ scope, setScope, stagedOnly, setStagedOnly, scopeM
     }
   }, [scopeMenuOpen, setScopeMenuOpen])
   const scopeLabel = scope === 'branch' ? 'Branch' : stagedOnly ? 'Staged' : 'Changes'
-  const branchLabel = branch ?? checkoutLabel ?? 'inspector-polish'
+  const head = branch ?? checkoutLabel ?? null
+  // Refs only mean something for a branch diff, and only when the two sides differ.
+  const refs = scope === 'branch' && defaultBase && head && defaultBase !== head ? { base: defaultBase, head } : null
+  const pickScope = (next: 'working' | 'branch', staged: boolean): void => {
+    setScope(next)
+    setStagedOnly(staged)
+    setScopeMenuOpen(false)
+  }
+  const bulkItems = <>
+    <GitToolMenuItem data-testid="changes-overflow-stage-all" disabled={stageAll.length === 0} onClick={() => bulkForGroup('unstaged', stageAll)}>Stage all</GitToolMenuItem>
+    <GitToolMenuItem data-testid="changes-overflow-unstage-all" disabled={unstageAll.length === 0} onClick={() => bulkForGroup('staged', unstageAll)}>Unstage all</GitToolMenuItem>
+  </>
   return <PrTab as="div" surface="changes-diff-toolbar" data-testid="changes-diff-toolbar">
     <PrTab as="div" surface="changes-diff-scope-wrap" ref={scopeMenuRef}>
-      <PrTab as="button" surface="changes-diff-scope" type="button" aria-label="Choose diff scope" aria-expanded={scopeMenuOpen} onClick={() => setScopeMenuOpen((open) => !open)}>
+      <PrTab as="button" surface="changes-diff-scope" type="button" aria-label="Choose diff scope" aria-haspopup="menu" aria-expanded={scopeMenuOpen} onClick={() => setScopeMenuOpen((open) => !open)}>
         {scopeLabel} <Icon glyph={IconChevronDown} role="small" />
       </PrTab>
       {scopeMenuOpen && <PrTab as="div" surface="changes-diff-scope-menu" role="menu">
-        <button role="menuitem" onClick={() => { setScope('working'); setStagedOnly(false); setScopeMenuOpen(false) }}>Uncommitted changes</button>
-        <button role="menuitem" disabled={!defaultBase} onClick={() => { setScope('branch'); setStagedOnly(false); setScopeMenuOpen(false) }}>Branch changes</button>
-        <button role="menuitem" onClick={() => { setScope('working'); setStagedOnly(true); setScopeMenuOpen(false) }}>Staged changes</button>
-        <button role="menuitem" data-testid="changes-stage-all" disabled={stageAll.length === 0} onClick={() => bulkForGroup('unstaged', stageAll)}>Stage all</button>
-        <button role="menuitem" data-testid="changes-unstage-all" disabled={unstageAll.length === 0} onClick={() => bulkForGroup('staged', unstageAll)}>Unstage all</button>
-        <button role="menuitem" aria-label="Wrap lines" onClick={() => setWrapDiff((value) => !value)}>Toggle line wrapping</button>
-        <button role="menuitem" aria-label="File tree" onClick={() => setTreeVisible((value) => !value)}>Toggle file tree</button>
+        <button role="menuitemradio" aria-checked={scope === 'working' && !stagedOnly} onClick={() => pickScope('working', false)}>Uncommitted changes</button>
+        <button role="menuitemradio" aria-checked={scope === 'working' && stagedOnly} onClick={() => pickScope('working', true)}>Staged changes</button>
+        <button role="menuitemradio" aria-checked={scope === 'branch'} disabled={!defaultBase} onClick={() => pickScope('branch', false)}>Branch changes</button>
       </PrTab>}
     </PrTab>
-    <PrTab as="div" surface="changes-diff-refs"><span>{defaultBase ?? 'main'}</span><span aria-hidden>←</span><span>{branchLabel}</span></PrTab>
+    {refs && <PrTab as="div" surface="changes-diff-refs" data-testid="changes-diff-refs"><span>{refs.base}</span><span aria-hidden>←</span><span>{refs.head}</span></PrTab>}
     <PrTab as="span" surface="changes-diff-stat"><span data-tone="added">+{visibleAdded}</span><span data-tone="deleted">−{visibleDeleted}</span></PrTab>
     <PrTab as="div" surface="changes-diff-actions">
-      <Tooltip label="Refresh diff"><button type="button" aria-label="Refresh diff" onClick={refresh}><Icon glyph={IconRefresh} role="small" /></button></Tooltip>
-      <Tooltip label={expanded ? 'Collapse all' : 'Expand all'}><button type="button" aria-label={expanded ? 'Collapse all' : 'Expand all'} onClick={toggleAllDiffs}><Icon glyph={expanded ? IconCollapse : IconExpand} role="small" /></button></Tooltip>
+      <PrTab as="span" surface="changes-diff-group">
+        <Tooltip label="Refresh diff"><button type="button" aria-label="Refresh diff" onClick={refresh}><Icon glyph={IconRefresh} role="small" /></button></Tooltip>
+        <Tooltip label={expanded ? 'Collapse all' : 'Expand all'}><button type="button" aria-label={expanded ? 'Collapse all' : 'Expand all'} onClick={toggleAllDiffs}><Icon glyph={expanded ? IconCollapse : IconExpand} role="small" /></button></Tooltip>
+      </PrTab>
       <PrTab as="span" surface="changes-diff-segment" role="group" aria-label="Diff layout">
         <Tooltip label="Stacked diff"><button type="button" aria-label="Stacked diff" aria-pressed={!splitDiff} onClick={() => setSplitDiff(false)}><Icon glyph={IconSplitDown} role="small" /></button></Tooltip>
         <Tooltip label="Split diff"><button type="button" aria-label="Split diff" aria-pressed={splitDiff} onClick={() => setSplitDiff(true)}><Icon glyph={IconSplitRight} role="small" /></button></Tooltip>
       </PrTab>
-      <Tooltip label={wrapDiff ? 'Disable line wrapping' : 'Wrap lines'}><button type="button" aria-label="Wrap lines" aria-pressed={wrapDiff} onClick={() => setWrapDiff((value) => !value)}><span aria-hidden>↪</span></button></Tooltip>
-      <Tooltip label="File tree"><button type="button" aria-label="File tree" aria-pressed={treeVisible} onClick={() => setTreeVisible((value) => !value)}><Icon glyph={IconFolderOpen} role="small" /></button></Tooltip>
-      <ChangesToolbar compact strip={strip} />
+      <PrTab as="span" surface="changes-diff-group">
+        <Tooltip label={wrapDiff ? 'Disable line wrapping' : 'Wrap lines'}><button type="button" aria-label="Wrap lines" aria-pressed={wrapDiff} onClick={() => setWrapDiff((value) => !value)}><Icon glyph={IconWrapText} role="small" /></button></Tooltip>
+        <Tooltip label={treeVisible ? 'Hide file tree' : 'Show file tree'}><button type="button" aria-label="File tree" aria-pressed={treeVisible} onClick={() => setTreeVisible((value) => !value)}><Icon glyph={IconFolderOpen} role="small" /></button></Tooltip>
+      </PrTab>
+      <ChangesToolbar compact strip={strip} items={bulkItems} />
     </PrTab>
   </PrTab>
 }
@@ -1068,7 +1082,7 @@ export function ChangesPane({
   return shell(body)
 }
 
-function ChangesToolbar({ compact, strip }: { compact: boolean; strip: React.ReactNode }): React.JSX.Element {
+function ChangesToolbar({ compact, strip, items }: { compact: boolean; strip: React.ReactNode; items?: React.ReactNode }): React.JSX.Element {
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -1112,6 +1126,7 @@ function ChangesToolbar({ compact, strip }: { compact: boolean; strip: React.Rea
           style={{ position: 'fixed', ...anchor, ...popOriginStyle('right', 'top') }}
           onMouseDown={(event) => event.stopPropagation()}
         >
+          {items && <>{items}<GitToolMenuSeparator /></>}
           {strip}
         </GitCompactToolsSurface>,
         document.body
