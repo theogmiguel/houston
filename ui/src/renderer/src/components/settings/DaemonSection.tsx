@@ -166,7 +166,8 @@ export function DaemonSection(): React.JSX.Element {
         )
       ) : (
         <>
-          <Group plain>
+          <Group>
+            <div className="p-[var(--space-3)]">
             <Stack gap={4}>
               <ReadoutGrid data-testid="daemon-section-facts">
                 <Fact
@@ -202,6 +203,7 @@ export function DaemonSection(): React.JSX.Element {
               </ReadoutGrid>
               <Text data-testid="daemon-section-reap" weight="small" size="small" as="div" tone="muted">{reapCopy(status)}</Text>
             </Stack>
+            </div>
           </Group>
           {tray && (
             <Group heading="Background">

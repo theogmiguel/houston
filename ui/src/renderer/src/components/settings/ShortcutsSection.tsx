@@ -16,6 +16,7 @@ import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
 import { TextInput } from '../ui/TextInput'
 import { Row } from './shared'
+import { SettingsList } from '../ui/settingsPrimitives'
 import { KeyChip } from '../ui/KeyCap'
 import { ShortcutGroupLabel } from '../ui/ShortcutGroupLabel'
 import { Text } from '../ui/Text'
@@ -221,7 +222,7 @@ export function ShortcutsSection({
 
   return (
     <>
-      <div className="">
+      <SettingsList>
         <Row
           title="Enable shortcuts"
           desc="Turns off the shortcuts below and the editor pane's own keys. Esc stays live."
@@ -241,7 +242,7 @@ export function ShortcutsSection({
             onChange={setPassKeysToTerminal}
           />
         </Row>
-      </div>
+      </SettingsList>
       <ShortcutToolbar>
         <TextInput
           type="search"
@@ -266,7 +267,7 @@ export function ShortcutsSection({
         </Button>
         </ShortcutResetSlot>
       </ShortcutToolbar>
-      <div className="">
+      <SettingsList>
         {SHORTCUT_GROUPS.map(({ category, label }) => {
           const needle = query.trim().toLocaleLowerCase()
           const rows = KEYMAP.filter((s) => s.category === category && (!needle || `${s.description} ${s.keyLabel} ${s.id}`.toLocaleLowerCase().includes(needle)))
@@ -293,7 +294,7 @@ export function ShortcutsSection({
             </div>
           )
         })}
-      </div>
+      </SettingsList>
     </>
   )
 }

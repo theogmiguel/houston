@@ -596,8 +596,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow>
             <SettingsBreadcrumb open section="Terminal" />
             <SettingsScope workspace="houston" />
-            <SettingsScope workspace="houston" row />
-            <SettingsScope workspace={null} row scope="global" />
+            <SettingsScope workspace={null} scope="global" />
           </SpecimenRow>
         </SpecimenGroup>
         <SpecimenGroup heading="Settings details">
@@ -1307,6 +1306,16 @@ export function UiPrimitivesStory(): React.JSX.Element {
             rows={[{ name: 'Needs a decision', state: 'Ready' }, { name: 'Needs no action', state: 'Kept' }]}
             getRowId={(row) => row.name}
             rowTone={(row) => (row.state === 'Kept' ? 'muted' : 'default')}
+            columns={[{ key: 'name', header: 'Row' }, { key: 'state', header: 'State' }]}
+          />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Table — Card">
+          <Table
+            aria-label="Rows on a card surface"
+            variant="card"
+            rows={[{ name: 'Server', state: 'Synced' }, { name: 'Other server', state: 'Drifted' }]}
+            getRowId={(row) => row.name}
             columns={[{ key: 'name', header: 'Row' }, { key: 'state', header: 'State' }]}
           />
         </SpecimenGroup>

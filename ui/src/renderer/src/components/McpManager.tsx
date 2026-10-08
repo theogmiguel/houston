@@ -100,7 +100,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
       />
       <Table
         aria-label="MCP server connections"
-        variant="framed"
+        variant="card"
         layout="fixed"
         rows={displayRows}
         getRowId={(row) => row.id}

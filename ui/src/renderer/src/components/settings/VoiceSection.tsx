@@ -5,7 +5,7 @@ import { setSettingsSection } from '../../settingsNav'
 import { useVoicePageError } from '../../voice/store'
 import { Select } from '../ui/Select'
 import { Button, TextInput, InlineNotice, SettingsTextarea, Stack } from '../ui'
-import { Toggle } from '../ui/settingsPrimitives'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { VoiceLevelMeter, VoiceModelRoster } from './VoiceModelManager'
 import type { CloudStt } from '../../houston/generated/CloudStt'
 import type { VoiceDevice } from '../../houston/generated/VoiceDevice'
@@ -482,10 +482,11 @@ export function VoiceSection({
       )}
       <div>
         {voiceSettings === null ? (
-          <Row title="Loading…" desc="Asking the daemon for the Voice settings." />
+          <SettingsList><Row title="Loading…" desc="Asking the daemon for the Voice settings." /></SettingsList>
         ) : (
           <>
             <SubHead>Engine</SubHead>
+            <SettingsList>
             <VoiceEngineGroup
               voiceSettings={voiceSettings}
               voiceModels={voiceModels}
@@ -500,7 +501,9 @@ export function VoiceSection({
               onVoiceKeySet={onVoiceKeySet}
               onVoiceKeyClear={onVoiceKeyClear}
             />
+            </SettingsList>
             <SubHead>Capture</SubHead>
+            <SettingsList>
             <VoiceCaptureGroup
               voiceSettings={voiceSettings}
               voiceDevices={voiceDevices}
@@ -509,6 +512,7 @@ export function VoiceSection({
               onVoiceLevelMonitor={onVoiceLevelMonitor}
               onVoiceDevicesRefresh={onVoiceDevicesRefresh}
             />
+            </SettingsList>
           </>
         )}
       </div>

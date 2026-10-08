@@ -1,5 +1,5 @@
 import { Button, Chip, ChangeSummary, VersionBadge } from '../ui'
-import { Toggle } from '../ui/settingsPrimitives'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { ThirdPartyNotices } from './ThirdPartyNotices'
 import { Group, Row } from './shared'
 import type { HostInfo } from '../SettingsView'
@@ -324,7 +324,7 @@ export function AboutSection({
 
   return (
     <>
-      <div>
+      <SettingsList>
         <Row title="Houston" desc={houstonDesc}>
           <VersionBadge>v{__APP_VERSION__}</VersionBadge>
         </Row>
@@ -342,7 +342,7 @@ export function AboutSection({
           </Button>
         </Row>
         <ThirdPartyNotices />
-      </div>
+      </SettingsList>
 
       <Group heading="Updates">
         <UpdateOfferRow
