@@ -60,6 +60,8 @@ fn burst_title_writer(dir: &Path, name: &str) -> PathBuf {
 
 fn stored_session(id: u32, ws: &Path, title: &str) -> proto::SessionInfo {
     proto::SessionInfo {
+        checkout: None,
+        activity: None,
         id,
         agent: proto::AgentKind::Claude,
         project_dir: ws.display().to_string(),

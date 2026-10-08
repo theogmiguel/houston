@@ -1002,6 +1002,8 @@ async fn pane_with_a_turn(
 fn seed_claude(env: &Env, id: u32, dir: &Path, cwd: &Path, handle: Option<(&str, Option<&str>)>) {
     let db = Db::open(&env.db_path()).unwrap();
     db.insert_session(&proto::SessionInfo {
+        checkout: None,
+        activity: None,
         id,
         agent: proto::AgentKind::Claude,
         project_dir: dir.display().to_string(),

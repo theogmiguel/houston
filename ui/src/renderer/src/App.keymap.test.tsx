@@ -99,6 +99,16 @@ describe('App keymap remap seam (P4 #16)', () => {
     expect(setZoomFactor).toHaveBeenCalledTimes(1)
   })
 
+  it('routes prefix B to the persisted Browser panel surface', async () => {
+    harness = await renderReadyApp()
+    dispatchChord({ key: ' ', code: 'Space', ctrlKey: true })
+    dispatchChord({ key: 'b', code: 'KeyB' })
+    expect(JSON.parse(localStorage.getItem('tr-inspector-tabs:/tmp/project') ?? 'null')).toEqual({
+      openTabs: ['browser'],
+      active: 'browser'
+    })
+  })
+
   describe('Escape is exempt from the kill-switch (handoff dialog)', () => {
     it('closes the handoff dialog via a real Escape keydown while shortcuts_enabled is false', async () => {
       harness = await renderReadyApp()

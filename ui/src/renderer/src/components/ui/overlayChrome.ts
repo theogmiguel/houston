@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { MATERIAL_CLS, materialAttrs } from './material'
+import './floatingSurface.css'
 
 export const POP_ORIGIN_CLS = '[transform-origin:var(--pop-origin-x,center)_var(--pop-origin-y,center)]'
 
@@ -10,15 +11,15 @@ export function popOriginStyle(x: string, y: string): CSSProperties {
 const OVERLAY_STRUCTURE_CLS =
   'rounded-[var(--tr-radius-md)] [-webkit-app-region:no-drag] select-text ' +
   `${POP_ORIGIN_CLS} ` +
-  'motion-safe:[animation:menu-in_var(--motion-menu-t)_var(--motion-menu-ease)]'
+  'floating-pop-in'
 
-export const OVERLAY_RAISED_CLS = `${OVERLAY_STRUCTURE_CLS} ${MATERIAL_CLS.raised}`
+export const OVERLAY_RAISED_CLS = `${OVERLAY_STRUCTURE_CLS} ${MATERIAL_CLS.raised} floating-glass`
 
 export const OVERLAY_OVERLAY_CLS = `${OVERLAY_STRUCTURE_CLS} ${MATERIAL_CLS.overlay}`
 
-export const OVERLAY_GLASS_RAISED_CLS = `${OVERLAY_STRUCTURE_CLS} ${MATERIAL_CLS['raised-glass']}`
+export const OVERLAY_GLASS_RAISED_CLS = `${OVERLAY_STRUCTURE_CLS} ${MATERIAL_CLS['raised-glass']} floating-glass`
 
-export const OVERLAY_GLASS_OVERLAY_CLS = `${OVERLAY_STRUCTURE_CLS} ${MATERIAL_CLS['overlay-glass']}`
+export const OVERLAY_GLASS_OVERLAY_CLS = `${OVERLAY_STRUCTURE_CLS} ${MATERIAL_CLS['overlay-glass']} floating-glass`
 
 export const MODAL_SCRIM_CLS =
   'pop-backdrop fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-overlay backdrop-blur-sm pt-0 ' +

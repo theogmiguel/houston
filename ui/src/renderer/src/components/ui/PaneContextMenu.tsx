@@ -1,3 +1,4 @@
+import './floatingSurface.css'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
 import { POP_ORIGIN_CLS } from './overlayChrome'
@@ -6,7 +7,7 @@ export function PaneContextMenu({ className = '', ...rest }: HTMLAttributes<HTML
   return (
     <div
       {...rest}
-      className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[var(--w-pane-context-menu)] flex flex-col p-[var(--space-1)] bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS} ${className}`.trim()}
+      className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[var(--w-pane-context-menu)] flex flex-col p-[var(--space-1)] floating-glass floating-pop-in [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS} ${className}`.trim()}
     />
   )
 }

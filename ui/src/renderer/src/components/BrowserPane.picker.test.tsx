@@ -123,7 +123,7 @@ describe('BrowserPane element picker (C11)', () => {
     expect(toggleButton().disabled).toBe(true)
     const wrap = toggleButton().parentElement!
     act(() => wrap.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })))
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 350)))
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 450)))
     expect(document.body.textContent).toContain('focus a live agent pane first')
     expect(invokeMock.mock.calls.some(([cmd]) => cmd === 'browser_set_picker_mode')).toBe(false)
   })

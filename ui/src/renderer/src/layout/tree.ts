@@ -582,6 +582,7 @@ export function quadrant(rect: DOMRect, x: number, y: number): Side {
 export interface LayoutState {
   tree: LayoutNode | null
   cols: number
+  browserUrls?: string[]
 }
 
 function isNode(x: unknown): x is LayoutNode {
@@ -635,10 +636,16 @@ export function loadLayout(workspaceKey: string): LayoutState {
     const raw = JSON.parse(localStorage.getItem(KEY_PREFIX + workspaceKey) ?? 'null')
     if (raw && typeof raw === 'object') {
       const parsed = raw.tree && isNode(raw.tree) ? withPaneIds(raw.tree as LayoutNode) : null
-      // A legacy Changes leaf never reaches the grid: the panel owns it now.
-      const tree = parsed && containsPaneKind(parsed, 'git') ? removePaneKind(parsed, 'git') : parsed
+      const browserUrls = parsed ? urlsInPaneKind(parsed, 'browser') : []
+      // Side-panel surfaces cannot remain leaves in a saved grid.
+      const hasLegacySurface = parsed && (containsPaneKind(parsed, 'git') || containsPaneKind(parsed, 'browser'))
+      const tree = parsed && hasLegacySurface ? removePaneKinds(parsed, ['git', 'browser']) : parsed
       const cols =
         Number.isInteger(raw.cols) && raw.cols >= 1 && raw.cols <= 4 ? (raw.cols as number) : 2
+      if (browserUrls.length > 0) {
+        localStorage.setItem(KEY_PREFIX + workspaceKey, JSON.stringify({ ...raw, tree }))
+        return { tree, cols, browserUrls }
+      }
       return { tree, cols }
     }
   } catch {
@@ -646,8 +653,17 @@ export function loadLayout(workspaceKey: string): LayoutState {
   return { tree: null, cols: 2 }
 }
 
+function urlsInPaneKind(node: LayoutNode, kind: PaneNode['kind']): string[] {
+  if (node.kind === 'split' || node.kind === 'stack') return node.children.flatMap((child) => urlsInPaneKind(child, kind))
+  return node.kind === kind && node.kind === 'browser' ? [node.url] : []
+}
+
+function removePaneKinds(node: LayoutNode, kinds: PaneNode['kind'][]): LayoutNode | null {
+  return kinds.reduce<LayoutNode | null>((current, kind) => current ? removePaneKind(current, kind) : null, node)
+}
+
 export function saveLayout(workspaceKey: string, state: LayoutState): void {
-  localStorage.setItem(KEY_PREFIX + workspaceKey, JSON.stringify(state))
+  localStorage.setItem(KEY_PREFIX + workspaceKey, JSON.stringify({ tree: state.tree, cols: state.cols }))
 }
 
 // Writes back every saved grid without its legacy `git` leaf, and reports the

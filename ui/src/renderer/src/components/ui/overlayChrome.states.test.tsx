@@ -43,7 +43,7 @@ describe('overlayChrome — tier matrix', () => {
     }
   })
 
-  it('Every tier shares the same corner radius and menu-in motion — the structural half none of the four tiers disagree on', () => {
+  it('Every tier shares the same corner radius and pop-in motion — the structural half none of the four tiers disagree on', () => {
     for (const cls of [
       OVERLAY_RAISED_CLS,
       OVERLAY_OVERLAY_CLS,
@@ -51,7 +51,7 @@ describe('overlayChrome — tier matrix', () => {
       OVERLAY_GLASS_OVERLAY_CLS
     ]) {
       expect(cls).toMatch(/rounded-\[var\(--tr-radius-md\)\]/)
-      expect(cls).toMatch(/motion-safe:\[animation:menu-in_var\(--motion-menu-t\)_var\(--motion-menu-ease\)\]/)
+      expect(cls.split(' ')).toContain('floating-pop-in')
     }
   })
 

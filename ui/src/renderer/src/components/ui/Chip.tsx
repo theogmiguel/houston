@@ -91,6 +91,7 @@ export function Chip({
   const content = variant === 'count' ? <CountContent loading={loading} count={count} emptySetLabel={emptySetLabel} /> : label
 
   const Tag = isPressable ? 'button' : 'div'
+  const removeLabel = `Remove ${label ?? 'item'}`
   const tooltipLabel = disabled
     ? disabledReason
     : label && label.length > 24
@@ -112,10 +113,10 @@ export function Chip({
         {icon && <span aria-hidden className="flex-none">{icon}</span>}
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{content}</span>
         {variant === 'removable' && (
-          <Tooltip label={disabled ? disabledReason : undefined} className="inline-flex">
+          <Tooltip label={disabled ? disabledReason : removeLabel} className="inline-flex">
             <button
               type="button"
-              aria-label={`Remove ${label ?? 'item'}`}
+              aria-label={removeLabel}
               disabled={disabled}
               onClick={(e) => {
                 e.stopPropagation()

@@ -3,7 +3,7 @@ import { useNativeSuppression, useNativeOverlaySuppression, type NativeSuppressi
 
 const EXIT_MS = 120 // Matches the Fast token so the menu unmount follows its exit animation.
 
-export function useExitAnimation(open: boolean): { mounted: boolean; closing: boolean } {
+export function useExitAnimation(open: boolean, exitMs = EXIT_MS): { mounted: boolean; closing: boolean; finishExit: () => void } {
   const [mounted, setMounted] = useState(open)
   useEffect(() => {
     if (open) {
@@ -14,10 +14,10 @@ export function useExitAnimation(open: boolean): { mounted: boolean; closing: bo
       setMounted(false)
       return
     }
-    const t = setTimeout(() => setMounted(false), EXIT_MS)
+    const t = setTimeout(() => setMounted(false), exitMs)
     return () => clearTimeout(t)
-  }, [open])
-  return { mounted, closing: !open && mounted }
+  }, [open, exitMs])
+  return { mounted, closing: !open && mounted, finishExit: () => setMounted(false) }
 }
 
 export function AnimOut({

@@ -22,7 +22,7 @@ const GRID_KEY = gridStorageKey(WS, DEFAULT_GRID_ID)
 
 beforeAll(async () => {
   await import('./components/ChangesPane')
-  await import('./components/tasks/TasksTab')
+  await import('./components/nav/TasksSurface')
 })
 
 beforeEach(() => {
@@ -131,8 +131,8 @@ describe('Start places the pane the daemon creates', () => {
     deliverClientMsg('task_snapshot', snapshot)
     deliverClientMsg('task_snapshot', { ...snapshot, scope: WS })
     const taskTitle = (): HTMLButtonElement | null =>
-      Array.from(harness!.container.querySelectorAll<HTMLButtonElement>('button'))
-        .find((button) => button.textContent?.trim() === TASK.title) ?? null
+      Array.from(harness!.container.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]'))
+        .find((button) => button.firstElementChild?.textContent === TASK.title) ?? null
     await until(() => taskTitle() !== null, 'task row')
     act(() => taskTitle()!.click())
     deliverClientMsg('task_detail', {

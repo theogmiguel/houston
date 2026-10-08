@@ -163,6 +163,8 @@ startup readiness: a bounded observer reads the loaded root thread's native stat
 writes one SessionStart drop through the same guarded path. It never reads terminal
 content or changes the thread. See [agent lifecycle](agent-lifecycle.md). Three
 exceptions are named; anything beyond them must be named and recorded here, not blended in.
+Session activity previews are separate display metadata delivered from provider hooks;
+they are never inferred from terminal text.
 
 1. **OS process liveness** (`has_child_procs` / `has_running_procs` in `daemon.rs`) is a
    kernel fact read from procfs on demand — never on a timer, never from terminal content.
@@ -371,9 +373,9 @@ passing check.
 - **Never two cargo workloads at once.** `cargo` saturates every core; several concurrent
   builds push the user slice past `systemd-oomd`'s 50 % pressure threshold, and oomd kills
   the *whole* terminal scope — shell, editor, agents — silently. `oom-shield.sh` caps one
-  scope (`MemoryHigh=10G`, `MemoryMax=12G`, `nice -n 19`) and serializes invocations with a
-  per-user flock; it refuses to run unshielded. The caps are receipted against a measured
-  4141 MiB cold-build peak.
+  scope (`MemoryHigh=16G`, `MemoryMax=18G`, `nice -n 19`) and serializes invocations with a
+  per-user flock; it refuses to run unshielded. The caps are receipted against the measured
+  10.2 GiB peak of the core test suite.
 - **`perf_smoke` runs at normal priority on an idle machine.** Niceing starves its drain
   loop. The same tree measured 127.6 MiB/s idle and 1.4 MiB/s with a concurrent compile —
   a ~90× swing that looks exactly like a PTY regression.

@@ -130,6 +130,16 @@ vi.mock('../houston/client', async (importOriginal) => {
 const { App } = await import('../App')
 await import('../components/SettingsView')
 await import('../components/BrowserPane')
+await import('../components/browser/BrowserSurface')
+await import('../components/ChangesPane')
+await import('../components/files/QuickOpen')
+await import('../components/prs/PullRequestsScreen')
+await import('../components/files/FilesSurface')
+await (await import('../components/tags/TagPopover')).preloadTagPopoverSurface()
+await (await import('../components/Sidebar')).preloadRailOptionsMenu()
+await (await import('../App')).preloadSidePanel()
+await import('../components/ui/GridRailRow')
+await import('../components/rail/RailOptionsMenu')
 const { setSettingsNavForTests } = await import('../settingsNav')
 
 function installHoustonBridge(): void {

@@ -36,6 +36,18 @@ describe('private child terminal stack', () => {
     act(() => [...bar.querySelectorAll('button')].find(button => button.textContent === 'Close')!.click())
     expect(client.closeSession).toHaveBeenCalledWith(2)
   })
+  it('keeps the terminal area the same height when switching between orchestrator and child', () => {
+    sessions.set(3, { ...info(3, 1), state: 'exited', delegation: { settled_at: 1, retained_until: 2 } as SessionInfo['delegation'] })
+    render()
+    const area = host.querySelector('[data-peek-session="1"]')!.parentElement!
+    const siblings = (): string[] => [...area.parentElement!.children].map(el => el === area ? 'terminals' : el.textContent ?? '')
+    expect(siblings()).toEqual(['Orchestrator', 'terminals'])
+    select(2)
+    expect(siblings()).toHaveLength(2)
+    select(3)
+    expect(siblings()).toHaveLength(2)
+    expect(host.querySelector('[aria-label="Settled child"]')).not.toBeNull()
+  })
   it('keeps the orchestrator and three most recent child PTYs mounted', () => {
     render()
     for (const id of [2, 3, 4, 5]) select(id)

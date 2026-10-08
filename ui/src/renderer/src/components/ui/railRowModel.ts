@@ -1,22 +1,5 @@
 import type { SessionInfo, PrInfo } from '../../houston/client'
 
-export interface RailLine2Details {
-  branch: true
-  worktree: true
-  pullRequest: true
-  otherBranches: boolean
-  diff: boolean
-}
-export function line2DetailsForWidth(width: number): RailLine2Details {
-  return {
-    branch: true,
-    worktree: true,
-    pullRequest: true,
-    otherBranches: width >= 260,
-    diff: width >= 280,
-  }
-}
-
 export interface RailPaneRow {
   session: SessionInfo
   depth: number

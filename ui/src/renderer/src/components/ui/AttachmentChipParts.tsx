@@ -5,6 +5,7 @@ import { Icon } from './Icon'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from './overlayChrome'
 import { FOCUS_HALO } from './shadowChrome'
 import { Text, type TextTone } from './Text'
+import { Tooltip } from './Tooltip'
 
 const TYPE_STYLE: Record<string, { tone: TextTone; background: string }> = {
   md: { tone: 'info', background: 'bg-[color-mix(in_srgb,var(--info)_16%,transparent)]' },
@@ -73,7 +74,7 @@ export function AttachmentChipFrame({ pressable, hasRemove = false, className = 
 /** Round remove control inside a chip; the 28px hit target extends past the 16px visual. */
 export function AttachmentRemoveButton({ filename, onRemove }: { filename: string; onRemove: () => void }): React.JSX.Element {
   return (
-    <button
+    <Tooltip label={`Remove ${filename}`}><button
       type="button"
       aria-label={`Remove ${filename}`}
       onClick={(e) => {
@@ -84,7 +85,7 @@ export function AttachmentRemoveButton({ filename, onRemove }: { filename: strin
       className={`border-0 bg-transparent flex-none inline-flex items-center justify-center h-[var(--h-tag-chip)] w-[var(--h-tag-chip)] rounded-[var(--tr-radius-pill)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${HIT_TARGET_28}`}
     >
       <Icon glyph={IconClose} role="label" />
-    </button>
+    </button></Tooltip>
   )
 }
 

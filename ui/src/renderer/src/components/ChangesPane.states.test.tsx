@@ -59,9 +59,33 @@ describe('Changes pane — state matrix (§14)', () => {
       expect.stringContaining('text-[var(--ok)]'),
       expect.stringContaining('text-[var(--stop)]')
     ])
-    expect(q('.changes-group-head')?.textContent).toContain('UNCOMMITTED · 3 FILES')
-    expect(q('.changes-group-head')?.textContent).toContain('+67')
-    expect(q('.changes-group-head')?.textContent).toContain('−16')
+    expect(q('[data-testid="changes-diff-toolbar"] .changes-diff-stat [data-tone="added"]')?.textContent).toBe('+67')
+    expect(q('[data-testid="changes-diff-toolbar"] .changes-diff-stat [data-tone="deleted"]')?.textContent).toBe('−16')
+  })
+
+  it('names the compared refs only for a branch diff between two different refs', () => {
+    const h = mount({ compact: true })
+    h.status([file({ path: 'src/a.ts' })], { branch: 'feat/tags', default_base: 'main' })
+    expect(q('[data-testid="changes-diff-refs"]')).toBeNull()
+    click(q('[aria-label="Choose diff scope"]')!)
+    const scopes = qa<HTMLButtonElement>('[role="menuitemradio"]')
+    expect(scopes.map((item) => item.textContent)).toEqual(['Uncommitted changes', 'Staged changes', 'Branch changes'])
+    click(scopes[2])
+    expect(q('[data-testid="changes-diff-refs"]')?.textContent).toBe('main←feat/tags')
+    h.status([file({ path: 'src/a.ts' })], { branch: 'main', default_base: 'main', base: 'main' })
+    expect(q('[data-testid="changes-diff-refs"]')).toBeNull()
+  })
+
+  it('keeps bulk staging in the overflow menu and draws wrap with a glyph', () => {
+    const h = mount({ compact: true })
+    h.status([file({ path: 'src/a.ts', staged: false })])
+    expect(q('[data-testid="changes-overflow-stage-all"]')).toBeNull()
+    expect(q('[aria-label="Wrap lines"] svg')).not.toBeNull()
+    click(q('[aria-label="Git actions and diff scope"]')!)
+    const stageAll = document.querySelector<HTMLButtonElement>('[data-testid="changes-overflow-stage-all"]')!
+    expect(stageAll.disabled).toBe(false)
+    click(stageAll)
+    expect(h.client.gitStageCalls).toEqual([{ dir: '/repo', paths: ['src/a.ts'] }])
   })
 
   it('shows the checkout target beside the embedded commit actions', () => {
@@ -75,7 +99,7 @@ describe('Changes pane — state matrix (§14)', () => {
     h.status([file({ path: 'src/a.ts', staged: true }), file({ path: 'src/b.ts', staged: true })])
     expect(q('[data-testid="changes-commit"]')?.textContent).toContain('Commit 2 files')
     h.prStatus()
-    expect(q('[data-testid="changes-pr-line"]')?.hasAttribute('hidden')).toBe(true)
+    expect(q('[data-testid="changes-pr-line"]')).toBeNull()
   })
 
   it('error: a generic status failure names the message and offers a working Retry', () => {

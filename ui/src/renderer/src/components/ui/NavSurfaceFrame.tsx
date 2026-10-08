@@ -14,7 +14,7 @@ export function NavSurfaceFrame({ row = false, children, ...props }: NavSurfaceF
       data-testid="nav-surface"
       {...props}
       {...materialAttrs('base')}
-      className={`${row ? 'flex ' : ''}flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
+      className={`${row ? 'flex ' : ''}flex-1 min-w-0 h-full min-h-0 overflow-y-auto [scrollbar-gutter:stable_both-edges] rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
       {children}
     </div>

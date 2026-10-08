@@ -14,7 +14,6 @@ export function useSidePanelState(selectedWorkspace: string, activeId: number | 
   useEffect(() => {
     const open = (event: Event): void => {
       const request = (event as CustomEvent<SideOpen>).detail;
-      if (request.kind === 'tasks' || request.kind === 'browser') return;
       setSideRequest(request);
       setScmOpen(true);
       setActiveSurface("side");
@@ -29,5 +28,12 @@ export function useSidePanelState(selectedWorkspace: string, activeId: number | 
 }
 
 export function focusSideBrowserUrl(surface: 'grid' | 'side', _event: KeyboardEvent): boolean {
-  return surface === 'side' && Boolean(document.querySelector('.side-browser.flex'))
+  if (surface !== 'side') return false
+  const address = document.querySelector<HTMLInputElement>(
+    '.browser-surface[data-active="true"] input[aria-label="Address"]'
+  )
+  if (!address) return false
+  _event.preventDefault()
+  address.focus()
+  return true
 }

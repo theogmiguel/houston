@@ -1,10 +1,11 @@
-import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
+import { useContext, type ButtonHTMLAttributes, type ReactNode, type Ref } from 'react'
 import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER, BTN_ICO, BTN_PRIMARY } from './buttonChrome'
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
 import { FOCUS_HALO } from './shadowChrome'
 import './button.css'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
+import { Tooltip, TooltipContext } from './Tooltip'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'ghost' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'legacy-primary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'roster-open' | 'mini-primary-action' | 'action-primary' | 'surface' | 'surface-large' | 'subtle-icon' | 'compact-icon' | 'compact-icon-secondary' | 'disclosure-icon' | 'small-icon' | 'status-chip'
 export type ButtonSize = 'md' | 'sm' | 'lg'
@@ -128,7 +129,7 @@ const buttonClasses = variants(
       'legacy-titlebar-icon': `btn ${BTN_ICO} [-webkit-app-region:no-drag]`,
       'legacy-ghost-compact': `btn ${BTN_GHOST} px-2 py-1 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] inline-flex items-center gap-1`,
       'legacy-roster-footer': `btn ${BTN_GHOST} min-h-[var(--h-ctl)]`,
-      'roster-open': 'h-auto p-0 border-0 bg-transparent gap-[7px] flex-1 min-w-0 min-h-[19px] text-left text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] whitespace-nowrap cursor-default [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px] [&_strong]:font-semibold [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap'
+      'roster-open': 'h-auto p-0 border-0 bg-transparent grid-cols-[16px_16px_minmax(0,1fr)_auto] gap-x-[var(--space-1)] [&>*:nth-child(-n+2)]:justify-self-center flex-1 min-w-0 min-h-[19px] text-left text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] whitespace-nowrap cursor-default [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px] [&_strong]:font-semibold [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap'
     },
     size: sizeClasses
   },
@@ -149,11 +150,15 @@ function buttonChrome(variant: CoreButtonVariant): string {
 }
 
 const BARE_ICON_VARIANTS: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip'])
+const TOOLTIP_ICON_VARIANTS: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>([
+  'icon', 'icon-selected', 'icon-structure', 'subtle-icon', 'compact-icon', 'compact-icon-secondary',
+  'small-icon', 'ghost-icon', 'ghost-icon-danger', 'legacy-icon', 'legacy-icon-warning', 'legacy-titlebar-icon'
+])
 
 // Prefix rewrites for variants whose recipe drops part of the shared `btn inline-flex …` head.
 const HEAD_REWRITE: Partial<Record<CoreButtonVariant, [RegExp, string]>> = {
   'legacy-roster-footer': [/^btn inline-flex items-center (?:justify-center )?disabled:cursor-not-allowed /, ''],
-  'roster-open': [/^btn inline-flex /, 'flex '],
+  'roster-open': [/^btn inline-flex /, 'grid '],
   'legacy-danger-solid': [/^btn inline-flex items-center disabled:cursor-not-allowed /, 'btn ']
 }
 
@@ -200,5 +205,8 @@ export function Button(props: ButtonProps): React.JSX.Element {
     ...buttonProps
   } = props
   const classes = `${structureClasses(variant, size, contentAlign)} ${variant === 'roster-open' ? 'children-open' : ''} ${buttonChrome(variant)} ${stateClasses(variant, selected, armed, status)} ${noDrag ? '[-webkit-app-region:no-drag]' : ''} ${className}`
-  return <ButtonFrame {...buttonProps} size={size} armed={armed} selected={selected} status={status} contentAlign={contentAlign} icon={icon} iconEnd={iconEnd} noDrag={noDrag} children={children} type={type} ref={ref} className={classes} />
+  const button = <ButtonFrame {...buttonProps} size={size} armed={armed} selected={selected} status={status} contentAlign={contentAlign} icon={icon} iconEnd={iconEnd} noDrag={noDrag} children={children} type={type} ref={ref} className={classes} />
+  const label = buttonProps['aria-label']
+  const parentTooltip = useContext(TooltipContext)
+  return TOOLTIP_ICON_VARIANTS.has(variant) && label && !parentTooltip ? <Tooltip label={label}>{button}</Tooltip> : button
 }

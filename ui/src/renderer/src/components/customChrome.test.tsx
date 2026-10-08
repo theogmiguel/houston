@@ -198,7 +198,9 @@ describe('every chrome theme cuts its own custom ground', () => {
     ['nav/SkillsSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
     ['nav/HooksSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
     ['nav/RoutinesSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
-    ['nav/TasksSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx']
+    ['nav/TasksSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
+    ['nav/HarnessSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
+    ['prs/PullRequestsScreen.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx']
   ]
 
   /** The role's own source, after checking the screen renders it. */

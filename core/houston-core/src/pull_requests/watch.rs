@@ -383,6 +383,7 @@ mod tests {
         state.failed_checks.insert("build".into());
         let mut detail = detail("def");
         detail.checks.push(proto::PrCheck {
+            run_id: None,
             name: "build".into(),
             state: proto::PrCheckState::Failing,
             url: None,
@@ -413,6 +414,7 @@ mod tests {
         let link = link(proto::PullRequestState::Open);
         let mut checks = detail("abc");
         checks.checks.push(proto::PrCheck {
+            run_id: None,
             name: "build".into(),
             state: proto::PrCheckState::Passing,
             url: None,

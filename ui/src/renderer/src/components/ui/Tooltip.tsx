@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { createContext, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import './floatingSurface.css'
 
 // Hover is delayed, keyboard focus is not: a tabbed-to control already committed
 // intent, a hovered one has not.
-export const HOVER_DELAY_MS = 300
+export const HOVER_DELAY_MS = 400
 
 const OFFSET_PX = 6
 
-const VIEWPORT_MARGIN_PX = 8
+const VIEWPORT_MARGIN_PX = 4
+
+export const TooltipContext = createContext<string | null>(null)
 
 interface Props {
   label?: string | null
@@ -23,7 +26,7 @@ interface Placement {
   left: number
 }
 
-export function Tooltip({ label, side = 'bottom', className, inline = false, openOnClick = false, children }: Props): React.JSX.Element {
+export function Tooltip({ label, side = 'top', className, inline = false, openOnClick = false, children }: Props): React.JSX.Element {
   const id = useId()
   const wrapRef = useRef<HTMLSpanElement | null>(null)
   const bubbleRef = useRef<HTMLDivElement | null>(null)
@@ -85,7 +88,7 @@ export function Tooltip({ label, side = 'bottom', className, inline = false, ope
     const a = anchor.getBoundingClientRect()
     const b = bubble.getBoundingClientRect()
     const below = a.bottom + OFFSET_PX
-    const above = a.top - b.height - OFFSET_PX
+    const above = a.top - 30
     const fitsBelow = below + b.height <= window.innerHeight - VIEWPORT_MARGIN_PX
     const fitsAbove = above >= VIEWPORT_MARGIN_PX
     const top = side === 'top' ? (fitsAbove ? above : below) : fitsBelow ? below : above
@@ -119,7 +122,7 @@ export function Tooltip({ label, side = 'bottom', className, inline = false, ope
   }, [open, hide])
 
   return (
-    <span
+    <TooltipContext.Provider value={label ?? null}><span
       ref={wrapRef}
       className={className ?? (inline ? 'inline-flex' : 'contents')}
       onPointerEnter={showAfterDelay}
@@ -145,12 +148,12 @@ export function Tooltip({ label, side = 'bottom', className, inline = false, ope
               left: place?.left ?? 0,
               visibility: place ? 'visible' : 'hidden'
             }}
-            className="fixed z-[var(--z-tooltip)] pointer-events-none max-w-[280px] rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.35] py-[4px] px-[7px] shadow-[var(--shadow-md)] whitespace-pre-line motion-safe:animate-[menu-in_120ms_ease-out]"
+            className="floating-glass floating-pop-in fixed z-[var(--z-tooltip)] pointer-events-none max-w-[280px] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.35] py-[4px] px-[7px] whitespace-pre-line"
           >
             {label}
           </div>,
           document.body
         )}
-    </span>
+    </span></TooltipContext.Provider>
   )
 }

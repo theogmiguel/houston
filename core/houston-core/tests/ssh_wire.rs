@@ -232,6 +232,8 @@ async fn ssh_connect_tofu_accept_then_echo() {
             session: info.id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))
@@ -438,6 +440,8 @@ async fn ssh_husks_are_deferred_never_auto_reconnected() {
     {
         let db = houston_core::db::Db::open(&state.path().join("test.db")).unwrap();
         db.insert_session(&proto::SessionInfo {
+            checkout: None,
+            activity: None,
             id: 1,
             agent: proto::AgentKind::Ssh,
             project_dir: "tester@example.com".into(),
@@ -788,6 +792,8 @@ async fn k8_ssh_connect_starts_in_requested_remote_home_directory() {
             session: info.id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))

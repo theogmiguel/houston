@@ -39,7 +39,6 @@ function mount(overrides: Partial<Parameters<typeof AddPanePopover>[0]> = {}): H
         keymapOverrides={KEYMAP}
         onClose={noop}
         onNewTerminal={noop}
-        onNewBrowser={noop}
         onSpawnAgent={noop}
         onNewGrid={noop}
         agentProfiles={null}
@@ -51,12 +50,11 @@ function mount(overrides: Partial<Parameters<typeof AddPanePopover>[0]> = {}): H
 }
 
 describe('AddPanePopover (step 13, reference shape)', () => {
-  it('lists Terminal then Browser but no Files or New session rows: those open from the side panel and the workspace row', () => {
+  it('lists Terminal without grid-level Browser, Files or New session rows', () => {
     const el = mount()
     const rows = Array.from(el.querySelectorAll('button'))
     expect(rows[0]?.textContent).toContain('Terminal')
-    expect(rows[1]?.textContent).toContain('Browser')
-    expect(rows[1]?.textContent).toContain('b')
+    expect(el.querySelector('[data-testid="add-pane-browser"]')).toBeNull()
     expect(el.textContent).toContain('t')
     expect(el.querySelector('[data-pane-kind]')).toBeNull()
     expect(el.querySelector('[data-testid="add-pane-new-session"]')).toBeNull()
@@ -126,7 +124,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
   it('keeps every tooltip-wrapped row full width', () => {
     const el = mount({ hasWorkspace: false, onSplitDown: undefined })
     const rows = Array.from(el.querySelectorAll('button'))
-    const labels = ['Browser', 'claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'Split down', 'New tab']
+    const labels = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'Split down', 'New tab']
 
     for (const label of labels) {
       const row = rows.find((button) => button.textContent?.includes(label))
@@ -145,22 +143,6 @@ describe('AddPanePopover (step 13, reference shape)', () => {
     act(() => terminalBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onNewTerminal).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('closes and opens a browser pane on a Browser click', () => {
-    const onClose = vi.fn()
-    const onNewBrowser = vi.fn()
-    const el = mount({ onClose, onNewBrowser })
-    const browserBtn = el.querySelector('[data-testid="add-pane-browser"]') as HTMLButtonElement
-    act(() => browserBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(onNewBrowser).toHaveBeenCalledTimes(1)
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('disables Browser when no workspace is open', () => {
-    const el = mount({ hasWorkspace: false })
-    const browserBtn = el.querySelector('[data-testid="add-pane-browser"]') as HTMLButtonElement
-    expect(browserBtn.disabled).toBe(true)
   })
 
   it('closes and dispatches the chosen agent on a CLI row click', () => {

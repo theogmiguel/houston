@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
+
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { MANAGE_TAGS_EVENT, Sidebar } from './Sidebar'
 import { resetRailWidthForTests } from '../railWidth'
 import type { TagInfo } from '../houston/generated/TagInfo'
 import type { SessionInfo, Workspace } from '../houston/client'
+import { preloadTagPopoverSurface } from './tags/TagPopover'
+
+beforeAll(() => preloadTagPopoverSurface())
 
 function ws(path: string, name = path): Workspace {
   return { path, name } as Workspace
@@ -55,7 +59,7 @@ function props(
   } as React.ComponentProps<typeof Sidebar>
 }
 
-describe('the tag quick editor hands over to the manager', () => {
+describe('tags are created and managed in one anchored popover', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -79,111 +83,47 @@ describe('the tag quick editor hands over to the manager', () => {
     act(() => root.render(<Sidebar {...props(o)} />))
   }
 
-  const editor = (): HTMLElement | null => document.querySelector('[data-testid="tag-editor"]')
-  const manager = (): HTMLElement | null => document.querySelector('[data-testid="tag-manager"]')
+  const popover = (): HTMLElement | null => document.querySelector('[data-testid="tag-popover"]')
+  const view = (): string | undefined =>
+    popover()?.querySelector<HTMLElement>('[data-view]')?.dataset.view
 
-  // Both surfaces are code-split: poll for the chunk rather than guess a tick —
-  // under a loaded full-suite run it can take far longer than it does alone.
-  const settle = async (selector: string): Promise<void> => {
-    for (let i = 0; i < 2000; i++) {
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 5))
-      })
-      if (document.querySelector(selector) !== null) return
-    }
-    throw new Error(`${selector} never rendered within 10s of its trigger`)
-  }
-
-  const openEditor = async (): Promise<void> => {
+  const openGridTags = (): void => {
     const row = container.querySelector('[data-testid="grid-row"]') as HTMLElement
     act(() => {
       row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }))
     })
-    const item = document.querySelector('[data-testid="menu-new-tag"]') as HTMLButtonElement
-    act(() => item.click())
-    await settle('[data-testid="tag-editor"]')
+    act(() => (document.querySelector('[data-testid="menu-tags-entry"]') as HTMLButtonElement).click())
   }
 
-  const openManager = async (): Promise<void> => {
-    const row = container.querySelector('[data-testid="grid-row"]') as HTMLElement
+  const buttonNamed = (name: string): HTMLButtonElement =>
+    [...popover()!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === name)!
+
+  it('New tag from the card menu edits in the same popover and creates the tag', () => {
+    render()
+    openGridTags()
+    expect(view()).toBe('pick')
+
+    act(() => buttonNamed('New tag…').click())
+    expect(view()).toBe('edit')
+    const name = popover()!.querySelector<HTMLInputElement>('input[aria-label="Tag name"]')!
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
     act(() => {
-      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }))
+      setter.call(name, 'release')
+      name.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    act(() => (document.querySelector('[data-testid="menu-manage-tags"]') as HTMLButtonElement).click())
-    await settle('[data-testid="tag-manager"]')
-  }
+    act(() => popover()!.querySelector<HTMLButtonElement>('button[aria-label^="Color "]')!.click())
+    act(() => buttonNamed('Create').click())
 
-  const clickAway = (): void => {
+    expect(created.map(([tagName]) => tagName)).toEqual(['release'])
+    expect(document.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
+  })
+
+  it('the Manage tags command opens the manage view anchored to the rail options', () => {
+    render()
     act(() => {
-      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      window.dispatchEvent(new Event(MANAGE_TAGS_EVENT))
     })
-  }
-
-  it('a click outside the editor closes it and creates nothing', async () => {
-    render()
-    await openEditor()
-    expect(editor()).not.toBeNull()
-
-    clickAway()
-
-    expect(editor()).toBeNull()
-    expect(manager()).toBeNull()
-    expect(created).toEqual([])
-  }, 15000)
-
-  it('a click inside the editor leaves it open', async () => {
-    render()
-    await openEditor()
-
-    act(() => {
-      editor()!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
-    })
-
-    expect(editor()).not.toBeNull()
-  }, 15000)
-
-  it('creating a tag closes the editor and lands in the manager with the new row marked', async () => {
-    render()
-    await openEditor()
-
-    const input = editor()!.querySelector('input') as HTMLInputElement
-    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
-    act(() => {
-      setValue.call(input, 'renewals')
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    const swatch = editor()!.querySelector('[data-testid="tag-swatch"]') as HTMLButtonElement
-    act(() => swatch.click())
-    act(() => (editor()!.querySelector('[data-testid="tag-editor-save"]') as HTMLButtonElement).click())
-
-    expect(editor()).toBeNull()
-    expect(created).toEqual([['renewals', swatch.getAttribute('data-color')]])
-
-    // The daemon echoes the new tag back; the manager is already open for it.
-    render({ tags: [...TAGS, { id: 2, name: 'renewals', color: '#22d3ee' }] })
-    await settle('[data-testid="tag-manager"]')
-    expect(manager()).not.toBeNull()
-    const marked = document.querySelectorAll('[data-tag-new="true"]')
-    expect(marked).toHaveLength(1)
-    expect(marked[0].textContent).toContain('renewals')
-  }, 15000)
-
-  it('opened from the menu, the manager marks nothing as new', async () => {
-    render()
-    await openManager()
-
-    expect(manager()).not.toBeNull()
-    expect(document.querySelectorAll('[data-tag-new="true"]')).toHaveLength(0)
-  }, 15000)
-
-  it('a click on the manager\u2019s scrim closes it', async () => {
-    render()
-    await openManager()
-    expect(manager()).not.toBeNull()
-
-    const scrim = manager()!.parentElement as HTMLElement
-    act(() => scrim.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
-
-    expect(manager()).toBeNull()
-  }, 15000)
+    expect(view()).toBe('manage')
+    expect(popover()?.textContent).toContain('code review')
+  })
 })

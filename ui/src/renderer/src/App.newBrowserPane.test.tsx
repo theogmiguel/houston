@@ -17,6 +17,7 @@ beforeEach(() => {
 
 function pressB(): void {
   act(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', ctrlKey: true, bubbles: true, cancelable: true }))
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true, cancelable: true }))
   })
 }
@@ -42,33 +43,31 @@ describe('the browser pane shortcut', () => {
     harness = null
   })
 
-  it('opens a browser pane in the workspace grid', async () => {
+  it('opens the Browser surface in the side panel', async () => {
     harness = await renderReadyApp()
     expect(browserLeaves(savedTree())).toHaveLength(0)
 
     pressB()
 
-    const leaves = browserLeaves(savedTree())
-    expect(leaves).toHaveLength(1)
-    expect(leaves[0].url).toBe('')
-    expect(typeof leaves[0].id).toBe('string')
-    expect(localStorage.getItem('tr-side:/tmp/project')).toBeNull()
-    const addressBar = (): HTMLInputElement | undefined =>
-      Array.from(harness!.container.querySelectorAll('input')).find(
-        (i) => i.placeholder === 'enter a url to open a new tab'
-      )
-    await settleLazySurface(() => addressBar() !== undefined, 'BrowserPane')
-    expect(addressBar()).toBeDefined()
+    expect(browserLeaves(savedTree())).toHaveLength(0)
+    await settleLazySurface(
+      () => harness!.container.querySelector('.browser-surface[data-active="true"] input[aria-label="Address"]') !== null,
+      'BrowserSurface'
+    )
+    expect(harness!.container.querySelector('[data-testid="side-panel"]')).not.toBeNull()
   })
 
-  it('gives browser panes unique ids', async () => {
+  it('opens the existing Browser surface when the shortcut is used again', async () => {
     harness = await renderReadyApp()
     pressB()
     pressB()
 
-    const ids = browserLeaves(savedTree()).map((l) => l.id)
-    expect(ids).toHaveLength(2)
-    expect(new Set(ids).size).toBe(2)
+    expect(browserLeaves(savedTree())).toHaveLength(0)
+    await settleLazySurface(
+      () => harness!.container.querySelector('.browser-surface') !== null,
+      'BrowserSurface'
+    )
+    expect(harness.container.querySelectorAll('.browser-surface')).toHaveLength(1)
   })
 
   it('stays inert on step 1’s screen, which can sit over a live workspace', async () => {
@@ -84,42 +83,11 @@ describe('the browser pane shortcut', () => {
     expect(browserLeaves(savedTree())).toHaveLength(0)
   })
 
-  it('opens another browser pane after the first one is focused', async () => {
+  it('does not create browser grid leaves when Browser is already open', async () => {
     harness = await renderReadyApp()
     pressB()
     pressB()
-    expect(browserLeaves(savedTree())).toHaveLength(2)
-  })
-
-  it('a clicked browser pane takes the focus ring, and gives it back', async () => {
-    harness = await renderReadyApp()
-    pressB()
-
-    await settleLazySurface(() => harness!.container.querySelector('.pane.browser') !== null, 'BrowserPane')
-    const terminal = (): HTMLElement => {
-      const el = harness!.container.querySelector('.pane:not(.browser)')
-      if (!(el instanceof HTMLElement)) throw new Error('no terminal pane rendered')
-      return el
-    }
-    const browser = (): HTMLElement => {
-      const el = harness!.container.querySelector('.pane.browser')
-      if (!(el instanceof HTMLElement)) throw new Error('no browser pane rendered')
-      return el
-    }
-    const click = (el: HTMLElement): void => {
-      act(() => {
-        el.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
-        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-      })
-    }
-
-    click(browser())
-    expect(browser().classList.contains('focus')).toBe(true)
-    expect(terminal().classList.contains('focus')).toBe(false)
-
-    click(terminal())
-    expect(terminal().classList.contains('focus')).toBe(true)
-    expect(browser().classList.contains('focus')).toBe(false)
+    expect(browserLeaves(savedTree())).toHaveLength(0)
   })
 
   it('stays inert while a pane is selected, so the key belongs to the agent', async () => {

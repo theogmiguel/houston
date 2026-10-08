@@ -20,6 +20,8 @@ import {
   type ScmTab
 } from '../scmPanel'
 import type { PrPresenceTone } from './git/PullRequestTab'
+import { bracketedPaste } from '../pane/bracketedPaste'
+import type { CheckAgentTarget } from './prs/ChecksList'
 
 const ChangesPane = lazy(() =>
   import('./ChangesPane').then((m) => ({ default: m.ChangesPane }))
@@ -52,6 +54,11 @@ export interface SourceControlPanelProps {
   // The grid hides rather than unmounts under an overlay; the panel keeps its
   // place (and its commit draft) the same way, but stops taking input.
   hiddenByOverlay?: boolean
+  checkAgentTargets?: CheckAgentTarget[]
+  onPasteToAgent?: (session: number, text: string) => void
+  onCreateCheckAgent?: (provider: string, text: string) => void
+  onOpenPane?: (session: number) => void
+  requestedPr?: { number: number; nonce: number } | null
 }
 
 function repoName(dir: string): string {
@@ -220,7 +227,12 @@ export function SourceControlPanel({
   onSendToTerminal,
   onReviewPacket,
   review = null,
-  hiddenByOverlay = false
+  hiddenByOverlay = false,
+  checkAgentTargets,
+  onPasteToAgent,
+  onCreateCheckAgent,
+  onOpenPane,
+  requestedPr
 }: SourceControlPanelProps): React.JSX.Element {
   const [comments, setComments] = useState('')
   const [reviewError, setReviewError] = useState<string | null>(null)
@@ -238,7 +250,7 @@ export function SourceControlPanel({
       void saveReview(`${buildStructuredReviewPrompt(data)}\n\nOperator comments:\n${request.comments}`)
         .then((file) => {
           reviewPacketCallback.current?.(data)
-          if (!client.sendStdin(request.target, `\x1b[200~${structuredReviewPrompt(file)}\x1b[201~`)) throw new Error(`Cannot send review to session ${request.target}: expected an attached terminal transport`)
+          if (!client.sendStdin(request.target, bracketedPaste(structuredReviewPrompt(file)))) throw new Error(`Cannot send review to session ${request.target}: expected an attached terminal transport`)
         }).catch((error) => setReviewError(String(error)))
     })
     return off
@@ -355,6 +367,11 @@ export function SourceControlPanel({
                 active={tab === 'pull-request'}
                 refreshSignal={prRefresh}
                 onPrPresenceChange={onPrPresenceChange}
+                checkAgentTargets={checkAgentTargets}
+                onPasteToAgent={onPasteToAgent}
+                onCreateCheckAgent={onCreateCheckAgent}
+                onOpenPane={onOpenPane}
+                requestedPr={requestedPr}
               />
             </Suspense>
           </SourceControlTabSurface>

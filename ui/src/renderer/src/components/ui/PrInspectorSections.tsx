@@ -1,30 +1,8 @@
 import { useState } from 'react'
-import type { PrCheck, PrDetail, PrThread } from '../../houston/client'
+import type { PrDetail, PrThread } from '../../houston/client'
 import { Button } from './Button'
-import { Icon } from './Icon'
-import { IconCheck, IconLoaderCircle } from '../icons'
-
-const SPIN_CLASS = 'loop-anim motion-safe:animate-[git-spin_0.9s_linear_infinite]'
-
-function checkAge(check: PrCheck): string {
-  if (check.duration_ms == null) return ({ queued: 'queued', running: 'running', passing: 'passing', failing: 'failing', skipped: 'skipped', unknown: 'unknown' } as const)[check.state]
-  const seconds = Math.round(check.duration_ms / 1000)
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  const rest = seconds % 60
-  return rest === 0 ? `${minutes}m` : `${minutes}m ${rest}s`
-}
-
-function CheckRow({ check }: { check: PrCheck }): React.JSX.Element {
-  const running = check.state === 'running'
-  return <div data-testid="pr-check-row" className="pr-inspector-check-row">
-    <span className={`pr-inspector-check-icon ${running ? 'is-running' : 'is-passing'}`} data-testid="pr-check-icon">
-      {check.state === 'passing' ? <Icon glyph={IconCheck} role="small" /> : running ? <span className={SPIN_CLASS}><Icon glyph={IconLoaderCircle} role="small" /></span> : <span className="pr-inspector-check-dot" />}
-    </span>
-    <span className={`pr-inspector-check-name ${running ? 'is-running' : ''}`}>{check.name}</span>
-    <span className={`pr-inspector-check-time ${running ? 'is-running' : ''}`}>{running ? `running ${checkAge(check)}` : checkAge(check)}</span>
-  </div>
-}
+import { PrChecksPanel } from '../prs/PrChecksPanel'
+import type { PrChecksState } from '../prs/usePrChecksState'
 
 function ReviewComment({ thread, comment, number, busy, onReply, onSendToOrchestrator }: {
   thread: PrThread
@@ -59,8 +37,7 @@ function ReviewComment({ thread, comment, number, busy, onReply, onSendToOrchest
   </article>
 }
 
-export function PrInspectorSections({ checks, detail, approvalsRequired, approvalsReceived, number, busy, onReply, onSendToOrchestrator, onOpenChecks }: {
-  checks: PrCheck[]
+export function PrInspectorSections({ detail, approvalsRequired, approvalsReceived, number, busy, onReply, onSendToOrchestrator, checkState }: {
   detail: PrDetail
   approvalsRequired: number
   approvalsReceived: number
@@ -68,17 +45,12 @@ export function PrInspectorSections({ checks, detail, approvalsRequired, approva
   busy: boolean
   onReply: (threadId: string, body: string) => void
   onSendToOrchestrator?: (text: string) => void
-  onOpenChecks?: () => void
+  checkState: PrChecksState
 }): React.JSX.Element {
-  const passed = checks.filter((check) => check.state === 'passing').length
   const openThreads = detail.threads.filter((thread) => !thread.resolved)
   return <>
     <section className="pr-inspector-checks" data-testid="pr-checks">
-      <div className="pr-inspector-check-caption">
-        <span data-testid="pr-check-summary">Checks · {passed} of {checks.length} passed</span>
-        {onOpenChecks && <Button type="button" variant="link" size="sm" data-testid="pr-check-details" onClick={onOpenChecks}>Details</Button>}
-      </div>
-      {checks.map((check, index) => <CheckRow key={`${check.name}-${index}`} check={check} />)}
+      <PrChecksPanel state={checkState} />
     </section>
     <section className="pr-inspector-review" data-testid="pr-inspector-review">
       <div className="pr-inspector-section-caption" data-testid="pr-review-requirement">

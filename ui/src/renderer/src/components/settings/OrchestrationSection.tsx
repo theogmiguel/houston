@@ -265,13 +265,15 @@ export function OrchestrationSection({
           selected in the sidebar.
         </ProtocolDescription>
       </SettingsSectionBreak>
-      <div data-testid="settings-acp-roster" className="">
+      <div data-testid="settings-acp-roster">
+        <SettingsList>
         <AcpRoster
           orchestrationState={orchestrationState}
           historyWorkspace={historyWorkspace}
           historyWorkspaceName={historyWorkspaceName}
           onOpenAcpPane={onOpenAcpPane}
         />
+        </SettingsList>
       </div>
     </>
   )

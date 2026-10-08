@@ -55,6 +55,24 @@ describe('task workflow panel', () => {
     expect(onOpenSession).toHaveBeenCalledWith(91)
   })
 
+  it('names the current parent in the Delivery select even when it is not a delivery of this project', () => {
+    const handlers = new Set<(message: ServerMsg) => void>()
+    const client = {
+      subscribeAll: (handler: (message: ServerMsg) => void) => { handlers.add(handler); return () => handlers.delete(handler) },
+      taskSnapshot: () => {},
+      taskSave: () => {},
+      send: () => {}
+    }
+    const detail: TaskDetailData = { ...DETAIL, task: { ...DETAIL.task, parent_id: 7 } }
+    render(<TaskWorkflowPanel client={client} detail={detail} onOpenSession={() => {}} />)
+    const parent = { ...DETAIL.task, id: 7, number: 7, key: 'HOU-7', title: 'Parent work', parent_id: null, acceptance_checked: 0, acceptance_total: 0 }
+    act(() => handlers.forEach((handler) => {
+      handler({ type: 'task_domain_state', domain: DOMAIN })
+      handler({ type: 'task_snapshot', scope: '/work/app', tasks: [parent], counts: { ready: 0, backlog: 0, todo: 1, in_progress: 0, in_review: 0, done: 0, canceled: 0 } })
+    }))
+    expect(screen.getByRole('combobox', { name: 'Delivery' }).textContent).toBe('HOU-7 — Parent work')
+  })
+
   it('binds plan approval to the task revision and marks older approvals stale', () => {
     const handlers = new Set<(message: ServerMsg) => void>()
     const sent: ClientMsg[] = []
@@ -81,5 +99,20 @@ describe('task workflow panel', () => {
     expect(screen.getByText('This approval is stale. Review and approve the current task revision.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Approve this plan revision' }))
     expect(sent.at(-1)).toMatchObject({ type: 'task_plan_approve', id: 42, expected_revision: 8, plan_revision: 2 })
+  })
+
+  it('leaves a daemon refusal to the task banner instead of repeating it inside the panel', () => {
+    const handlers = new Set<(message: ServerMsg) => void>()
+    const client = {
+      subscribeAll: (handler: (message: ServerMsg) => void) => { handlers.add(handler); return () => handlers.delete(handler) },
+      taskSnapshot: () => {},
+      taskSave: () => {},
+      send: () => {}
+    }
+    render(<TaskWorkflowPanel client={client} detail={DETAIL} onOpenSession={vi.fn()} />)
+    const emit = (message: ServerMsg): void => handlers.forEach((handler) => handler(message))
+    act(() => emit({ type: 'task_domain_state', domain: DOMAIN }))
+    act(() => emit({ type: 'task_refused', id: 42, kind: 'invalid', message: 'a Slice must reference its parent Delivery through parent_id' }))
+    expect(screen.queryByText(/must reference its parent Delivery/)).toBeNull()
   })
 })

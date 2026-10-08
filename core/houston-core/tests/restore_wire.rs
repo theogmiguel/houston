@@ -19,6 +19,8 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
     let db = Db::open(&state_dir.join("test.db")).unwrap();
     for (i, dir) in dirs.iter().enumerate() {
         db.insert_session(&proto::SessionInfo {
+            checkout: None,
+            activity: None,
             id: (i + 1) as u32,
             agent: proto::AgentKind::Shell,
             project_dir: dir.display().to_string(),
@@ -71,6 +73,8 @@ fn seed_one(
 ) {
     let db = Db::open(&state_dir.join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        checkout: None,
+        activity: None,
         id,
         agent,
         project_dir: dir.display().to_string(),
@@ -190,6 +194,8 @@ fn invalid_cwd_is_deferred_not_respawned() {
     drop(gone);
     let db = Db::open(&state.path().join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        checkout: None,
+        activity: None,
         id: 1,
         agent: proto::AgentKind::Shell,
         project_dir: gone_path.display().to_string(),
@@ -369,6 +375,8 @@ fn no_flags_set_runs_normal_restore_policy() {
 
     let db = Db::open(&state.path().join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        checkout: None,
+        activity: None,
         id: 1,
         agent: proto::AgentKind::Shell,
         project_dir: gone_path.display().to_string(),

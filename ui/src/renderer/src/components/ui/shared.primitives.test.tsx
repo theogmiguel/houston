@@ -67,6 +67,16 @@ describe('shared table, list-detail, drawer and notice primitives', () => {
     expect(screen.queryByTestId('list-detail-detail')).toBeNull()
   })
 
+  it('heads each run of items sharing a section with one counted heading and renders a list foot', () => {
+    const items: ListDetailItem[] = [
+      { id: 'a', title: 'A', section: 'Your turn' }, { id: 'b', title: 'B', section: 'Your turn' }, { id: 'c', title: 'C', section: 'Up next' }
+    ]
+    render(<ListDetail items={items} selectedId={null} onSelect={() => {}} backLabel="Back" listFoot={<button type="button">Done and archived</button>} renderDetail={() => null} />)
+    const headings = screen.getAllByTestId('list-detail-section').map((heading) => heading.textContent)
+    expect(headings).toEqual(['Your turn2', 'Up next1'])
+    expect(screen.getByRole('button', { name: 'Done and archived' })).toBeTruthy()
+  })
+
   it('controls list selection and moves it with the arrow keys', () => {
     function ControlledList(): React.JSX.Element {
       const [selectedId, setSelectedId] = useState<string | null>('one')

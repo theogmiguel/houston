@@ -23,17 +23,35 @@ function navRow(container: HTMLElement, view: string): HTMLButtonElement {
   return el
 }
 
+function destinationButton(container: HTMLElement, view: string): HTMLButtonElement {
+  if (view === 'prs') return container.querySelector('[data-testid="rail-footer-pull-requests"]') as HTMLButtonElement
+  if (view === 'usage') return container.querySelector('.railfoot button[aria-label="Usage"]') as HTMLButtonElement
+  return navRow(container, view)
+}
+
 const surface = (c: HTMLElement): Element | null =>
-  c.querySelector('[data-testid="nav-surface"], [data-testid="projects-surface"]')
+  c.querySelector('[data-testid="nav-surface"], [data-testid="pull-requests-screen"]')
 
 describe('the rail nav rows drive the content area', () => {
   it.each(RAIL_VIEWS)('the %s page fills the content region, so its column centres', async (view) => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
-    act(() => navRow(container, view).click())
+    act(() => destinationButton(container, view).click())
     await waitFor(() => expect(surface(container)).not.toBeNull())
     expect(surface(container)!.className).toMatch(/(^|\s)(flex-1|w-full)(\s|$)/)
+  })
+
+  it('choosing a grid in the rail leaves the open page for that grid', async () => {
+    harness = await renderReadyApp()
+    const { container } = harness
+    const { act } = await import('react')
+    act(() => navRow(container, 'tasks').click())
+    await waitFor(() => expect(surface(container)).not.toBeNull())
+    const row = container.querySelector('[data-testid="grid-row"]') as HTMLElement
+    act(() => row.click())
+    await waitFor(() => expect(surface(container)).toBeNull())
+    expect(navRow(container, 'tasks').getAttribute('aria-current')).toBeNull()
   })
 
   it('Ctrl+, closes Settings even while its search input is focused', async () => {
@@ -76,13 +94,13 @@ describe('the rail nav rows drive the content area', () => {
     expect(surface(container)).toBeNull()
 
     for (const view of RAIL_VIEWS) {
-      act(() => navRow(container, view).click())
+      act(() => destinationButton(container, view).click())
       await waitFor(() => {
         const el = surface(container)
         expect(el, `${view} opened no surface`).not.toBeNull()
         expect(el?.textContent?.trim().length ?? 0, `${view} surface is blank`).toBeGreaterThan(0)
       })
-      expect(navRow(container, view).getAttribute('aria-current')).toBe('page')
+      expect(destinationButton(container, view).getAttribute('aria-current')).toBe('page')
     }
   })
 
@@ -110,7 +128,7 @@ describe('the rail nav rows drive the content area', () => {
 
     act(() => (container.querySelector('.railfoot button[aria-label="Settings"]') as HTMLButtonElement).click())
     expect(container.querySelectorAll('[data-testid="rail-nav-row"]').length).toBe(
-      RAIL_VIEWS.length
+      RAIL_VIEWS.length - 2
     )
     act(() => navRow(container, 'mcp').click())
     expect(container.querySelector('[aria-label="Settings sections"]')).toBeNull()
@@ -148,7 +166,7 @@ describe('the rail nav rows drive the content area', () => {
     const { setRailViewHidden } = await import('./railView')
 
     expect(container.querySelectorAll('[data-testid="rail-nav-row"]').length).toBe(
-      RAIL_VIEWS.length
+      RAIL_VIEWS.length - 2
     )
     act(() => setRailViewHidden('routines', true))
     expect(container.querySelector('[data-testid="rail-nav-row"][data-view="routines"]')).toBeNull()

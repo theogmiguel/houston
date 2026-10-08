@@ -1,3 +1,5 @@
+import { PrTab } from '../ui/PrTab'
+import { Button } from '../ui/Button'
 import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { TextArea } from '../ui/TextArea'
 import { DiscussionEntry, DiscussionBody, DiscussionMeta, DiscussionActionsRow, DiscussionComposer, DiscussionCommentRow, DiscussionThreadHeader, DiscussionCommentMetaRow, DiscussionThreadList, DiscussionErrorMessage, DiscussionComposerPanel, DiscussionAuthor, DiscussionPath, DiscussionResolveAction } from '../ui/DiscussionEntry'
@@ -6,7 +8,7 @@ import type { PrComment, PrDetail, PrReaction, PrThread } from '../../houston/cl
 import { Disclosure } from '../ui/Disclosure'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
-import { IconCheck, IconRefresh } from '../icons'
+import { IconCheck, IconChevronDown, IconRefresh } from '../icons'
 import { PrReactions } from './PrPickers'
 import { ScmNotice } from './ScmNotice'
 
@@ -240,6 +242,98 @@ export function PrThreads({
       </DiscussionThreadList>
     </Disclosure>
   )
+}
+
+export function PrInspectorComments({
+  detail,
+  approvalsRequired,
+  approvalsReceived,
+  number,
+  busy,
+  onReply,
+  onResolve,
+  onSendToOrchestrator,
+  issueComments
+}: {
+  detail: PrDetail
+  approvalsRequired: number
+  approvalsReceived: number
+  number: number
+  busy: boolean
+  onReply: (threadId: string, body: string) => void
+  onResolve: (threadId: string, resolved: boolean) => void
+  onSendToOrchestrator?: (text: string) => void
+  issueComments: React.ReactNode
+}): React.JSX.Element {
+  const [open, setOpen] = useState(true)
+  const [newestFirst, setNewestFirst] = useState(true)
+  const [replyThread, setReplyThread] = useState<string | null>(null)
+  const [reply, setReply] = useState('')
+  const threads = detail.threads.filter((thread) => !thread.resolved)
+  const comments = [
+    ...detail.comments.map((comment) => ({ thread: null as PrThread | null, comment })),
+    ...threads.flatMap((thread) => thread.comments.map((comment) => ({ thread, comment }))),
+  ]
+  comments.sort((a, b) => newestFirst
+    ? b.comment.created_at - a.comment.created_at
+    : a.comment.created_at - b.comment.created_at)
+  const count = detail.comments_total + comments.length - detail.comments.length
+  const resolveReason = detail.viewer?.can_write || detail.viewer?.did_author
+    ? null
+    : detail.viewer
+      ? 'resolving needs write access or authorship'
+      : 'permissions could not be read — refresh'
+
+  return <PrTab as="section" surface="pr-inspector-comments-section" data-testid="pr-inspector-comments-section">
+    <PrTab as="div" surface="pr-inspector-comments-sticky">
+      <PrTab as="button" surface="pr-inspector-comments-toggle" type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <Icon glyph={IconChevronDown} role="small" className={open ? '' : '-rotate-90'} />Comments ({count})
+      </PrTab>
+      <PrTab as={Button} surface="pr-inspector-comments-sort" type="button" variant="ghost" size="sm" onClick={() => setNewestFirst((value) => !value)}>
+        {newestFirst ? 'Newest first' : 'Oldest first'}
+      </PrTab>
+    </PrTab>
+    {open && <PrTab as="div" surface="pr-inspector-comments-body">
+      {detail.threads_truncated && <ScmNotice tone="info" testId="pr-threads-capped">GitHub had more discussions than this read carried.</ScmNotice>}
+      {detail.threads_message !== null && <ScmNotice tone="danger" testId="pr-threads-message">{detail.threads_message}</ScmNotice>}
+      <PrTab as="div" surface="pr-inspector-review" data-testid="pr-inspector-review">
+        <PrTab as="div" surface="pr-inspector-section-caption" data-testid="pr-review-requirement">
+          <span>Review · {approvalsRequired} approval{approvalsRequired === 1 ? '' : 's'} required</span>
+          <PrTab as="span" surface="pr-inspector-review-count" data-review-count>{Math.min(approvalsReceived, approvalsRequired)} / {approvalsRequired}</PrTab>
+        </PrTab>
+        <PrTab as="div" surface="pr-inspector-comments">
+        {comments.map(({ thread, comment }) => {
+          const age = Math.max(0, Math.floor((Date.now() / 1000 - comment.created_at) / 60))
+          const location = thread ? `${thread.path ?? 'a file'}${thread.line != null ? `:${thread.line}` : ''}` : 'conversation'
+          const replyOpen = thread !== null && replyThread === thread.id
+          return <PrTab as="article" surface="pr-inspector-comment" key={comment.id} data-testid="pr-inspector-comment">
+            <PrTab as="div" surface="pr-inspector-comment-head">
+              <PrTab as="span" surface="pr-inspector-comment-avatar" aria-hidden="true">{comment.author.slice(0, 1).toUpperCase()}</PrTab>
+              <strong>{comment.author}</strong><span aria-hidden="true">·</span>
+              <PrTab as="time" surface="pr-inspector-comment-age">{age}m ago</PrTab>
+            </PrTab>
+            <PrTab as="p" surface="pr-inspector-comment-body">{comment.body}</PrTab>
+            <PrTab as="div" surface="pr-inspector-comment-links">
+              {thread && <PrTab as="button" surface="pr-inspector-link" type="button" data-testid={`pr-thread-reply-open-${comment.id}`} onClick={() => { setReplyThread(replyOpen ? null : thread.id); setReply('') }}>Reply</PrTab>}
+              {onSendToOrchestrator && <PrTab as="button" surface="pr-inspector-link" type="button" onClick={() => onSendToOrchestrator(`PR #${number} · ${location}\n${comment.author}: ${comment.body}`)}>Send to orchestrator</PrTab>}
+            </PrTab>
+            {replyOpen && thread && <PrTab as="div" surface="pr-inspector-reply">
+              <textarea data-testid={`pr-thread-reply-${thread.id}`} aria-label={`Reply to the thread on ${thread.path ?? 'a file'}`} rows={2} value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Reply to this discussion" />
+              <PrTab as="div" surface="pr-inspector-reply-actions">
+                <Button variant="secondary" size="sm" data-testid={`pr-thread-reply-send-${thread.id}`} disabled={busy || reply.trim().length === 0} onClick={() => { onReply(thread.id, reply); setReply(''); setReplyThread(null) }}>Reply</Button>
+                <Button variant="ghost" size="sm" onClick={() => setReplyThread(null)}>Cancel</Button>
+              </PrTab>
+            </PrTab>}
+          </PrTab>
+        })}
+        </PrTab>
+      </PrTab>
+      {threads.length > 0 && <PrTab as="div" surface="pr-inspector-thread-actions">
+        {threads.map((thread) => <Button key={thread.id} type="button" variant="ghost" size="sm" data-testid={`pr-thread-resolve-${thread.id}`} disabled={busy || resolveReason !== null} onClick={() => onResolve(thread.id, true)}>Resolve thread on {thread.path ?? 'a file'}</Button>)}
+      </PrTab>}
+      {issueComments}
+    </PrTab>}
+  </PrTab>
 }
 
 export function PrComments({

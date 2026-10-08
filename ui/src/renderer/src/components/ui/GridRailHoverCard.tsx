@@ -1,94 +1,146 @@
+import { useRef } from 'react'
 import { createPortal } from 'react-dom'
-import type { SessionInfo } from '../../houston/client'
+import { formatCheckout } from '../checkout/formatCheckout'
+import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
+import type { RailCard, CheckoutIdentity } from '../rail/railCardModel'
 import type { TagInfo } from '../../houston/generated/TagInfo'
-import { TagChip } from '../tags'
 import { Icon } from './Icon'
-import { IconAgent, IconGitBranch, IconFolder } from '../icons'
-import { formatRailDuration, gridStatus } from './railRows'
-import type { RailHoverCheckout, RailPaneRow } from './railRowModel'
+import { IconAgent, IconFolder, IconGitBranch, IconGitPullRequest, IconTag, IconTerminal, IconAlertTriangle } from '../icons'
+import { PrLink } from './PrLink'
+import './floatingSurface.css'
 
-function statusTone(kind: ReturnType<typeof gridStatus>['kind']): string {
-  switch (kind) {
-    case 'needs-input': return 'text-[var(--warn)]'
-    case 'working': return 'text-[var(--info)]'
-    case 'starting': return 'text-[var(--accent)]'
-    case 'exited': return 'text-[var(--stop)]'
-    case 'done': return 'text-[var(--ok)]'
-    default: return 'text-[var(--text-faint)]'
+export const RAIL_HOVER_OPEN_DELAY_MS = 150
+export const RAIL_HOVER_CLOSE_DELAY_MS = 0
+export const RAIL_HOVER_WARM_WINDOW_MS = 400
+
+export function useGridRailHoverWarmWindow(): { isWarm: () => boolean; markWarm: () => void } {
+  const warmUntil = useRef(0)
+  return {
+    isWarm: () => Date.now() < warmUntil.current,
+    markWarm: () => { warmUntil.current = Date.now() + RAIL_HOVER_WARM_WINDOW_MS }
   }
 }
 
-function agentTone(session: SessionInfo): string {
-  if (session.state !== 'running') return 'text-[var(--text-faint)] opacity-50'
-  switch (session.agent) {
-    case 'claude': return 'text-[var(--claude)]'
-    case 'antigravity': return 'text-[var(--antigravity)]'
-    case 'codex': return 'text-[var(--codex)]'
-    case 'opencode': return 'text-[var(--opencode)]'
-    case 'cursor': return 'text-[var(--cursor)]'
-    case 'grok': return 'text-[var(--grok)]'
-    default: return 'text-[var(--text-primary)]'
+function checkoutFor(identity: CheckoutIdentity): { checkout: SessionCheckout | null; remoteHost?: string } {
+  if (identity.kind === 'remote') return { checkout: null, remoteHost: identity.host }
+  const kind = identity.kind === 'worktree'
+    ? { worktree: { slug: identity.slug } }
+    : identity.kind === 'primary' ? 'primary' : 'folder'
+  return {
+    checkout: { root: identity.root, kind, branch: 'branch' in identity ? identity.branch : null, head: null }
   }
-}
-
-function checkoutStats(stats: RailHoverCheckout['diff']): string {
-  if (!stats) return 'checkout data unavailable'
-  const parts = [stats.ahead ? `↑${stats.ahead}` : '', stats.behind ? `↓${stats.behind}` : '', stats.changedFiles ? `${stats.changedFiles} file${stats.changedFiles === 1 ? '' : 's'}` : '']
-  return parts.filter(Boolean).join(' ') || 'clean'
 }
 
 export function GridRailHoverCard({
-  name, position, closeTimer, scheduleClose, paneRows, tags, checkouts, onOpenInspector,
+  card,
+  tags = [],
+  position,
+  visible = true,
+  onOpenInspector
 }: {
-  name: string
+  card: RailCard
+  tags?: readonly TagInfo[]
   position: { left: number; top: number }
-  closeTimer: React.MutableRefObject<ReturnType<typeof setTimeout> | null>
+  visible?: boolean
+  closeTimer: React.MutableRefObject<ReturnType<typeof window.setTimeout> | null>
   scheduleClose: () => void
-  paneRows: RailPaneRow[]
-  tags: readonly TagInfo[]
-  checkouts: RailHoverCheckout[]
-  onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
+  onOpenInspector?: (paneId: number, tab: 'changes' | 'pull-request') => void
 }): React.JSX.Element {
-  const prs = checkouts.filter((checkout) => checkout.pr?.pr)
-  return createPortal(<div className="grid-hover-card fixed z-[var(--z-tooltip)] grid w-[360px] gap-[var(--space-2)] rounded-[var(--tr-radius-md)] border border-[var(--border-hover)] bg-[var(--raised)] p-[var(--space-3)] text-[length:var(--tr-text-small-size)] shadow-[var(--shadow-2)]" style={position} role="tooltip" data-testid="grid-hover-card" onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current) }} onMouseLeave={scheduleClose}>
-    <strong className="truncate text-[var(--text-primary)]">{name}</strong>
-    {tags.length > 0 && <div data-testid="grid-hover-tags" className="flex flex-wrap items-center gap-[var(--space-1)] [--tag-chip-max:140px]">{tags.map((tag) => <TagChip key={tag.id} tag={tag} />)}</div>}
-    <div className="grid grid-cols-[14px_minmax(0,1fr)_auto_auto_auto] items-center gap-x-[var(--space-2)] gap-y-[var(--space-1)]">
-      {paneRows.map(({ session, depth }) => <PaneHoverRow key={session.id} session={session} depth={depth} />)}
-    </div>
-    {checkouts.length > 0 && <>
-      <hr className="m-0 w-full border-0 border-t border-[var(--divider)]" />
-      <div className="grid gap-[var(--space-1)]" data-testid="grid-hover-checkouts">
-        {checkouts.map((checkout) => <div key={checkout.path} className="grid min-w-0 grid-cols-[12px_minmax(0,1fr)_auto_auto] items-center gap-x-[var(--space-2)] font-mono [font-size:var(--tr-text-label-size)]">
-          {checkout.session.worktree ? <Icon glyph={IconFolder} role="small" className="text-[var(--ok)]" /> : <Icon glyph={IconGitBranch} role="small" className="text-[var(--text-muted)]" />}
-          <span className="truncate text-[var(--text-secondary)]">{checkout.branch ?? 'Branch unavailable'}</span>
-          <span className="col-start-3 col-end-5 truncate text-[var(--text-muted)]">{checkoutStats(checkout.diff)}</span>
-          <span className="col-start-2 col-end-5 truncate text-[var(--text-faint)]">{checkout.session.worktree?.path ?? 'main checkout'}</span>
-        </div>)}
+  const pr = card.pr?.pr
+  const firstPane = card.agents[0]?.session.id
+  return createPortal(
+    <div
+      className={`grid-hover-card floating-glass ${visible ? 'floating-pop-in' : ''} fixed z-[var(--z-tooltip)] grid w-[300px] gap-[var(--space-2)]
+        p-[var(--space-3)] text-[length:var(--tr-text-small-size)]
+        transition-[opacity,transform,top] duration-150 ease-out`}
+      style={{ ...position, transformOrigin: 'left top' }}
+      role="tooltip"
+      data-testid="grid-hover-card"
+      data-visible={visible}
+    >
+      <strong className="min-w-0 truncate font-medium leading-[15px] text-[var(--text-primary)]">{card.title}</strong>
+      <div className="grid gap-[var(--space-1-5)] pl-[var(--space-0-5)] text-[var(--text-secondary)]">
+        <div className="flex items-center gap-2"><Icon glyph={IconFolder} role="small" className="text-[var(--text-muted)]" />{card.workspace.split('/').filter(Boolean).at(-1) ?? card.workspace}</div>
+        <div className="flex items-center gap-2"><Icon glyph={IconTerminal} role="small" className="text-[var(--text-muted)]" />{card.checkouts[0]?.kind === 'remote' ? card.checkouts[0].host : 'Local'}</div>
+        {card.checkouts.length > 0 && <div className="grid gap-[var(--space-1-5)]" data-testid="grid-hover-checkouts">
+        {card.checkouts.slice(0, 1).map((identity) => {
+          const formatted = checkoutFor(identity)
+          const label = formatCheckout(formatted.checkout, { remoteHost: formatted.remoteHost })
+          return <div
+            key={`${identity.kind}:${'root' in identity ? identity.root : identity.host}`}
+            className="flex min-w-0 items-center gap-[var(--space-2)]"
+          >
+            <Icon glyph={IconGitBranch} role="small" className="flex-none text-[var(--text-muted)]" />
+            <span className="truncate font-mono [font-size:var(--tr-text-label-size)]">{card.agents.length && 'branch' in identity ? identity.branch ?? label.text : label.text}</span>
+          </div>
+        })}
+        </div>}
+        {card.agents[0] && <div className="flex items-center gap-2">
+          <IconAgent agent={card.agents[0].session.agent} role="small" brand />
+          <span>{card.agents[0].model ?? card.agents[0].session.agent}</span>
+          {card.agents.length > 1 && <span className="text-[var(--text-muted)]">+{card.agents.length - 1} {card.agents.length === 2 ? 'agent' : 'agents'}</span>}
+        </div>}
+        {tags.length > 0 && <div className="flex flex-wrap items-center gap-2"><Icon glyph={IconTag} role="small" className="text-[var(--text-muted)]" />{tags.map((tag) => <span key={tag.id} className="inline-flex items-center gap-1"><i className="size-1.5 rounded-full" style={{ background: tag.color }} />{tag.name}</span>)}</div>}
+        {card.status.kind === 'needs-input' && <div className="flex items-center gap-2 text-[var(--warn)]"><Icon glyph={IconAlertTriangle} role="small" />Waiting for your answer</div>}
       </div>
-    </>}
-    {prs.map((checkout) => {
-      const pr = checkout.pr!.pr!
-      return <div key={checkout.path} className="grid gap-[var(--space-1)]">
-        <hr className="m-0 w-full border-0 border-t border-[var(--divider)]" />
-        <button type="button" className="flex min-w-0 items-center gap-[var(--space-2)] text-left" onClick={() => onOpenInspector(checkout.session.id, 'pull-request')}>
-          <span className={pr.state === 'MERGED' ? 'text-[var(--merged)]' : pr.state === 'CLOSED' ? 'text-[var(--stop)]' : 'text-[var(--ok)]'}>#{pr.number}</span><span className="truncate text-[var(--text-primary)]">{pr.state.toLowerCase()}</span><span className="truncate text-[var(--text-muted)]">{pr.checks.toLowerCase()}</span>
-        </button>
-      </div>
-    })}
-    <span className="text-[var(--text-faint)] [font-size:var(--tr-text-label-size)]">Right-click for branch, PR and worktree actions</span>
-  </div>, document.body)
+      {pr && (
+        <PrLink
+          href={pr.url}
+          onClick={() => {
+            if (firstPane != null) onOpenInspector?.(firstPane, 'pull-request')
+          }}
+          className="w-full min-w-0 justify-start gap-[var(--space-1-5)] border-t border-[var(--divider)]
+            pt-[var(--space-2)] text-left text-[length:var(--tr-text-label-size)]"
+          aria-label={`Open pull request ${pr.number}`}
+        >
+        <span className="inline-flex items-center gap-[var(--space-1)] font-mono text-[var(--text-muted)]">
+          <Icon glyph={IconGitPullRequest} role="small" />#{pr.number}
+        </span>
+        <span className="min-w-0 truncate text-[var(--text-primary)]">{pr.title}</span>
+        {card.agents.length === 0 && <><span className="flex-none text-[var(--text-muted)]">{pr.checks}</span><span className="flex-none font-mono text-[var(--ok)]">+{pr.additions}</span><span className="flex-none font-mono text-[var(--stop)]">−{pr.deletions}</span></>}
+        </PrLink>
+      )}
+      {card.agents.length === 0 && <div className="text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
+        0 panes
+      </div>}
+    </div>,
+    document.body
+  )
 }
 
-function PaneHoverRow({ session, depth }: { session: SessionInfo; depth: number }): React.JSX.Element {
-  const model = gridStatus([session])
-  const age = formatRailDuration(model.since)
-  const context = session.context?.used_percent
-  return <>
-    <IconAgent agent={session.agent} className={`h-[14px] w-[14px] ${agentTone(session)}`} />
-    <span className="min-w-0 truncate text-[var(--text-primary)]">{depth > 0 && <span className="font-mono text-[var(--text-faint)]">└ </span>}{session.title || session.codename || session.agent}</span>
-    <span className={`${statusTone(model.kind)} whitespace-nowrap`}>{model.label}{age ? ` ${age}` : ''}</span>
-    <span className={context != null && context >= 85 ? 'text-[var(--warn)]' : 'text-[var(--text-muted)]'}>{context != null ? `ctx ${context}%` : ''}</span>
-    <span className="truncate text-[var(--info)]">{session.task?.key ?? ''}</span>
-  </>
+export function GridRailHoverCardSpecimen(): React.JSX.Element {
+  const closeTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const card: RailCard = {
+    gridId: 'specimen',
+    workspace: '/workspace',
+    title: 'Surfaces redesign',
+    pinned: false,
+    status: { kind: 'working', label: 'Working', since: null },
+    checkouts: [{
+      kind: 'worktree',
+      root: '/workspace/.worktrees/surfaces',
+      slug: 'surfaces',
+      branch: 'feat/surfaces',
+      detached: false,
+    }],
+    pr: {
+      gh: 'available',
+      pr: {
+        number: 42,
+        url: 'https://github.com/example/houston/pull/42',
+        state: 'OPEN',
+        checks: 'passing',
+        review_decision: null,
+        title: 'Redesign surfaces',
+        head_ref: 'feat/surfaces',
+        additions: 214,
+        deletions: 38,
+        is_draft: false,
+      },
+    },
+    diff: { added: 214, deleted: 38 },
+    agents: [],
+    lastActivityMs: 0
+  }
+  return <GridRailHoverCard card={card} position={{ left: 12, top: 12 }} closeTimer={closeTimer} scheduleClose={() => {}} />
 }

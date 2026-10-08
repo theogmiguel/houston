@@ -10,6 +10,7 @@ pub mod blocks;
 pub mod boot;
 pub mod browser_relay;
 pub mod browser_servers;
+pub mod checkout_watch;
 pub mod checkpoints;
 pub mod claude_hooks;
 pub mod cli_probe;
@@ -60,6 +61,7 @@ pub mod sanitize;
 pub mod scope;
 pub mod scrollback;
 pub mod server;
+pub mod session_activity;
 #[cfg(target_os = "linux")]
 pub mod session_isolation;
 pub mod shellint;

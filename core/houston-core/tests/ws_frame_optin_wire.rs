@@ -153,6 +153,8 @@ async fn attaching_alone_is_enough_to_receive_frames() {
                 session,
                 replay_bytes: None,
                 snapshot: None,
+                from_offset: None,
+                generation: None,
             })
             .unwrap(),
         ))

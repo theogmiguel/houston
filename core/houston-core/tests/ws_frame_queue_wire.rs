@@ -161,6 +161,8 @@ fn attach_msg(session: u32, replay_bytes: Option<u64>) -> Message {
             session,
             replay_bytes,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     )

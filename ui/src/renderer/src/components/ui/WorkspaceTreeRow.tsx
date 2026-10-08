@@ -33,8 +33,8 @@ export function WorkspaceTreeRow({ children, kind, selected = false, dragging = 
   return <div {...props} style={style} className={`${classes} ${cursor} ${selectionColor ? 'ring-1 ring-inset ring-[var(--workspace-selection-outline-color)]' : ''} ${dragged ? 'opacity-[var(--opacity-workspace-row-dragged)]' : ''} ${className}`}>{selectionColor && <span aria-hidden className="absolute left-0 top-[var(--space-1-5)] bottom-[var(--space-1-5)] w-[var(--sz-workspace-selection-rail)] rounded-r-[var(--tr-radius-workspace-selection-rail)]" style={{ background: selectionColor }} />}{children}</div>
 }
 
-export function WorkspaceTreeLabel({ children, size = 'ui' }: { children: ReactNode; size?: 'ui' | 'md' }): React.JSX.Element {
-  return <Text size={size} className="min-w-0 truncate">{children}</Text>
+export function WorkspaceTreeLabel({ children, size = 'ui', heading = false }: { children: ReactNode; size?: 'ui' | 'md'; heading?: boolean }): React.JSX.Element {
+  return <Text size={size} weight={heading ? 'semibold' : undefined} tone={heading ? 'secondary' : undefined} className="min-w-0 truncate">{children}</Text>
 }
 
 export function WorkspaceTreeActions({ children }: { children: ReactNode }): React.JSX.Element {

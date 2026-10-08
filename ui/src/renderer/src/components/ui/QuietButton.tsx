@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { Tooltip } from './Tooltip'
 import { Text } from './Text'
 
 const VARIANT = {
@@ -18,7 +19,9 @@ export type QuietButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'cl
 
 /** A borderless button for tertiary actions that sit inside a message: skip, reload, dismiss. */
 export function QuietButton({ variant, className = '', type = 'button', children, ...rest }: QuietButtonProps): React.JSX.Element {
-  return <button {...rest} type={type} className={`${VARIANT[variant]} ${className}`}>{variant === 'text' ? <Text size="small" weight="small" tone="quiet-button" className="contents">{children}</Text> : children}</button>
+  const button = <button {...rest} type={type} className={`${VARIANT[variant]} ${className}`}>{variant === 'text' ? <Text size="small" weight="small" tone="quiet-button" className="contents">{children}</Text> : children}</button>
+  const label = rest['aria-label']
+  return variant === 'dismiss' && label ? <Tooltip label={label}>{button}</Tooltip> : button
 }
 
 export function QuietButtonSpecimen(): React.JSX.Element {

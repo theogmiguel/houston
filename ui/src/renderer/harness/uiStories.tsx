@@ -6,8 +6,11 @@ import { GitStatusMark } from '../src/components/ui/GitStatusMark'
 import { GitPresenceDot, SourceControlCard, SourceControlHeaderBar, SourceControlMetaRow, SourceControlSectionHeading } from '../src/components/ui/SourceControl'
 import { RepositoryNotice } from '../src/components/ui/ScmNotice'
 import { BrowserSurfaceSpecimen } from './browserSpecimens'
+import { BrowserSurface as BrowserTabSurface } from '../src/components/browser/BrowserSurface'
 import {
   BarSparkline,
+  CheckboxSpecimen,
+  AgentSummaryPillSpecimen,
   AttachmentChipFilename,
   AttachmentChipFrame,
   AttachmentPreviewCard,
@@ -129,10 +132,15 @@ import {
   QuietButtonSpecimen,
   ReviewDiffLineSpecimen,
   MetadataRowSpecimen,
+  PanelTabSpecimen,
+  LauncherRowSpecimen,
   DiscussionEntrySpecimen,
   PullRequestStateSpecimen,
   PullRequestRoleSpecimen,
   PullRequestLabelSpecimen,
+  PrLinkSpecimen,
+  CopyChipSpecimen,
+  GridRailHoverCardSpecimen,
   StackLayerListSpecimen,
   AgentOptionGridSpecimen,
   FilePanelMessageSpecimen,
@@ -170,7 +178,6 @@ import {
   ToolbarActionsSpecimen,
   WindowControlDockSpecimen,
   EmptyGridHintSpecimen,
-  TreeGroupHeaderSpecimen,
   WorkspaceGroupLabelSpecimen,
   HookStatus,
   Text,
@@ -282,9 +289,15 @@ import { WindowControlDisc } from '../src/components/ui/WindowControl'
 import { AnimOut } from '../src/components/ui/AnimOut'
 import { DictationAction, DictationSurface, DictationText, MicrophoneStatus } from '../src/components/ui/DictationIndicator'
 import { UiRoleSpecimen } from './uiRoleSpecimen'
+import { UiRoleSpecimenFiles } from './uiRoleSpecimenFiles'
+import { UiRoleSpecimenPrs } from './uiRoleSpecimenPrs'
+import { UiRoleSpecimenRail } from './uiRoleSpecimenRail'
+import { UiRoleSpecimenSurfaces } from './uiRoleSpecimenSurfaces'
+import { UiRoleSpecimenTags } from './uiRoleSpecimenTags'
 import { SurfaceCrash } from '../src/components/ui/SurfaceCrash'
 import { TILE_AGENT_CLS, TILE_IDLE, URL_INPUT_CLS } from '../src/components/ui'
 import { FileExplorerSpecimen } from '../src/components/ui/FileExplorer'
+import { DelimitedTableSpecimen } from '../src/components/ui/DelimitedTable'
 import { InspectorBody, InspectorCard, InspectorSurface } from '../src/components/ui/InspectorHeader'
 import { BlockBar, BlockBarList, BlockRow, BlockRowActions, BlockRowDetail, BlockRowMeta, BlockRowTile, BlockRowTitle, CodePane } from '../src/components/ui/Block'
 import { ConfirmDialog } from '../src/components/ui/ConfirmDialog'
@@ -391,6 +404,11 @@ const routineItems = [
   { id: 'nightly', title: 'Nightly dependency check', sub: 'Waiting for a slot' },
   { id: 'weekly', title: 'Weekly changelog draft', sub: 'Idle · Fri 17:00' },
   { id: 'flaky', title: 'Flaky test sweep', sub: 'Paused' }
+]
+const sectionedItems = [
+  { id: 'hou-45', title: 'Rename Harness review to Harness', sub: 'Needs input · HOU-45', section: 'Your turn' },
+  { id: 'hou-39', title: 'Pane header shows the branch', sub: 'Ready · HOU-39', section: 'Your turn' },
+  { id: 'hou-50', title: 'Usage page in the rail', sub: 'Working · HOU-50', section: 'Agents working' }
 ]
 const options = [
   { value: 'graphite', label: 'Graphite' },
@@ -534,6 +552,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Pull request state">
           <PullRequestStateSpecimen />
         </SpecimenGroup>
+        <SpecimenGroup heading="PR links and copy chips">
+          <PrLinkSpecimen />
+          <CopyChipSpecimen />
+        </SpecimenGroup>
         <SpecimenGroup heading="Pull request detail roles">
           <PullRequestRoleSpecimen />
         </SpecimenGroup>
@@ -574,8 +596,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow>
             <SettingsBreadcrumb open section="Terminal" />
             <SettingsScope workspace="houston" />
-            <SettingsScope workspace="houston" row />
-            <SettingsScope workspace={null} row scope="global" />
+            <SettingsScope workspace={null} scope="global" />
           </SpecimenRow>
         </SpecimenGroup>
         <SpecimenGroup heading="Settings details">
@@ -717,6 +738,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <FileExplorerSpecimen />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Delimited table">
+          <DelimitedTableSpecimen />
+        </SpecimenGroup>
+
         <SpecimenGroup heading="Inspector surface roles">
           <InspectorSurface style={{ width: 320, height: 180 }}>
             <InspectorBody><InspectorCard><div style={{ padding: 'var(--space-3)' }}>Workspace changes</div></InspectorCard></InspectorBody>
@@ -755,7 +780,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <NavigationRailSpecimen />
           <NavigationRailScroll><WorkspaceList><WorkspaceTreeRowSpecimen /></WorkspaceList></NavigationRailScroll>
           <NavigationRailFooter><Button variant="subtle-icon" aria-label="Settings"><Icon glyph={IconSearch} role="ui" /></Button></NavigationRailFooter>
-          <TreeGroupHeaderSpecimen />
           <WorkspaceGroupLabelSpecimen />
           <SettingsNavigation><SettingsRailRow kind="section" icon={IconSearch} label="Appearance" sectionId="appearance" selected onClick={noop} /></SettingsNavigation>
           <WorkspaceGroupDivider><div style={{ borderTop: '1px solid var(--border)' }} /></WorkspaceGroupDivider>
@@ -1218,6 +1242,15 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Pane, tag, terminal, and keymap roles">
           <UiRoleSpecimen />
         </SpecimenGroup>
+        <SpecimenGroup heading="Rail, tag popover, and pull request roles">
+          <UiRoleSpecimenRail />
+          <UiRoleSpecimenTags />
+          <UiRoleSpecimenPrs />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Side panel, browser, files, and diff roles">
+          <UiRoleSpecimenSurfaces />
+          <UiRoleSpecimenFiles />
+        </SpecimenGroup>
         <SpecimenGroup heading="Surface crash">
           <div style={{ height: 120 }}><SurfaceCrash message="Editor crashed: specimen failure" guarantee="Your other panes are unaffected." onRetry={noop} /></div>
         </SpecimenGroup>
@@ -1244,6 +1277,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </SpecimenRow>
           <Segmented aria-label="Error choice" options={[]} error={{ message: 'Could not load options.', onRetry: noop }} />
           <SegmentedControl aria-label="Base segmented control" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} value="one" onChange={noop} />
+          <SegmentedControl size="xs" aria-label="Extra small segmented control" options={[{ value: 'one', label: 'Detailed' }, { value: 'two', label: 'Compact' }]} value="one" onChange={noop} />
+          <CheckboxSpecimen />
+          <AgentSummaryPillSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Table — Usage breakdown">
@@ -1274,6 +1310,16 @@ export function UiPrimitivesStory(): React.JSX.Element {
           />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Table — Card">
+          <Table
+            aria-label="Rows on a card surface"
+            variant="card"
+            rows={[{ name: 'Server', state: 'Synced' }, { name: 'Other server', state: 'Drifted' }]}
+            getRowId={(row) => row.name}
+            columns={[{ key: 'name', header: 'Row' }, { key: 'state', header: 'State' }]}
+          />
+        </SpecimenGroup>
+
         <SpecimenGroup heading="Usage chart, calendar and shares">
           <UsageSectionHeading fullWidth aside="Premium $121.40">Cost by speed</UsageSectionHeading>
           <UsageProviderRow mark="✳" label="Claude Code" sessions={172} amount="$2,071.40" note="83.3% of cost · 4.1B tokens" color="var(--claude)" />
@@ -1286,6 +1332,19 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <UsageCalendar days={[]} metric="cost" selectedDay={null} onSelect={noop} />
           <UsageShareBar heading="Cost by type" segments={[{ id: 'input', label: 'Input', value: 58 }, { id: 'cache-read', label: 'Cache read', value: 24 }, { id: 'output', label: 'Output', value: 18 }]} />
           <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: noop }, { label: 'Delete', onSelect: noop, tone: 'danger' }]} />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="ListDetail — sections and list foot">
+          <PageFrame width="wide" className="p-0">
+            <ListDetail
+              items={sectionedItems}
+              selectedId="hou-45"
+              onSelect={noop}
+              backLabel="Tasks"
+              listFoot={<Button variant="ghost" size="sm">Done and archived</Button>}
+              renderDetail={(item) => item && <Caption>{item.title}</Caption>}
+            />
+          </PageFrame>
         </SpecimenGroup>
 
         <SpecimenGroup heading="ListDetail — Routines">
@@ -1493,6 +1552,23 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Browser surface">
           <BrowserSurfaceSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Browser side-panel tab">
+          <div className="h-[460px] overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)]" data-testid="browser-side-tab-specimen">
+            <BrowserTabSurface workspace="/specimen" tabId="browser-specimen" active onTitleChange={() => {}} />
+          </div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Right-panel navigation">
+          <div className="flex flex-col gap-3" data-testid="panel-navigation-specimen">
+            <PanelTabSpecimen />
+            <LauncherRowSpecimen />
+          </div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Grid rail hover card">
+          <GridRailHoverCardSpecimen />
         </SpecimenGroup>
 
       </div>

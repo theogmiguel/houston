@@ -7,4 +7,4 @@ import type { PullRequestState } from "./PullRequestState";
  * One row of a pull-request listing, which is a read of the repository's pull
  * requests rather than of the one on screen.
  */
-export type PrListItem = { number: number, title: string, url: string, state: PullRequestState, is_draft: boolean, author?: string | null, head_ref: string, base_ref: string, updated_at: number, additions: number, deletions: number, review_decision?: string | null, checks?: PrChecks | null, labels: Array<PrLabel>, };
+export type PrListItem = { number: number, title: string, url: string, state: PullRequestState, is_draft: boolean, author?: string | null, head_ref: string, base_ref: string, updated_at: number, created_at: number, additions: number, deletions: number, review_decision?: string | null, checks?: PrChecks | null, labels: Array<PrLabel>, comments: number, review_requested: boolean, mergeable?: string | null, };

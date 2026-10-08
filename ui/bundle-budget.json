@@ -108,9 +108,19 @@
     "SettingsButton, BrowserButton, LazyLegacyButton, OverviewButton,",
     "DelegationButton), taking Button.tsx from 18.6 KB to 10.0 KB of boot",
     "source. Consolidating Switch, TextArea and ContextMenu into one role each",
-    "put their lazy-only sizes on the boot path, about 5.5 KB of that back."
+    "put their lazy-only sizes on the boot path, about 5.5 KB of that back.",
+    "",
+    "The side panel (SidePanel and the source-control panel it hosts), the tag",
+    "popover surface and the rail options menu sit behind `preloadable()`: a",
+    "`lazy()` whose module is fetched on idle after first paint, so the first",
+    "open renders without a suspended frame. They are named below.",
+    "",
+    "Re-cut against 928,607 bytes (one boot chunk) at the same ~3%: the rail's",
+    "grid cards, workspace rows and tag chips, the pane header's surface",
+    "launcher and the panel surface router are boot-path code, each rendered at",
+    "first paint or on the first panel toggle."
   ],
-  "maxBootBytes": 891823,
+  "maxBootBytes": 956465,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
@@ -145,6 +155,10 @@
     "src/renderer/src/backdrop/capabilities.ts",
     "src/renderer/src/backdrop/CustomBackdrop.tsx",
     "src/renderer/src/backdrop/source.ts",
-    "src/renderer/src/backdrop/index.ts"
+    "src/renderer/src/backdrop/index.ts",
+    "src/renderer/src/components/SidePanel.tsx",
+    "src/renderer/src/components/SourceControlPanel.tsx",
+    "src/renderer/src/components/tags/TagPopoverSurface.tsx",
+    "src/renderer/src/components/rail/RailOptionsMenu.tsx"
   ]
 }

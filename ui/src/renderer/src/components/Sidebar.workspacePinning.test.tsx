@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
+
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Sidebar, preloadRailOptionsMenu } from './Sidebar'
 import type { SessionInfo, Workspace } from '../houston/client'
+import { GRID_PINNED_MIGRATION_KEY } from '../railPrefs'
+import { preloadTagPopoverSurface } from './tags/TagPopover'
+
+beforeAll(() => Promise.all([preloadTagPopoverSurface(), preloadRailOptionsMenu()]))
 
 function ws(path: string, name = path): Workspace {
   return { path, name } as Workspace
@@ -139,6 +144,8 @@ describe('Sidebar — workspace pinning', () => {
     })
 
     it('renders on a collapsed-grids row and an expanded-grids row alike', () => {
+      // Grids unpinned after the one-time migration keep their pinned workspace in the tree.
+      localStorage.setItem(GRID_PINNED_MIGRATION_KEY, '1')
       render({
         workspaces: [ws('/a', 'alpha'), ws('/b', 'bravo')],
         selected: '/a',
@@ -166,19 +173,19 @@ describe('Sidebar — workspace pinning', () => {
       expect(dividers()).toHaveLength(0)
     })
 
-    it('names both runs and rules the boundary between them', () => {
+    it('workspace pins with no grids do not create the pinned grid section', () => {
       render({ workspaces: FOUR, selected: '/p1', pinnedWorkspaces: new Set(['/p1', '/p2']) })
-      expect(groupLabels()).toEqual(['Pinned', 'Folders'])
-      expect(dividers()).toHaveLength(1)
+      expect(groupLabels()).toEqual([])
+      expect(dividers()).toHaveLength(0)
     })
 
-    it('shows only "Pinned" — no empty "Folders" run, and no rule with nothing past it', () => {
+    it('workspace pins without grids do not create an empty pinned section', () => {
       render({
         workspaces: FOUR,
         selected: '/p1',
         pinnedWorkspaces: new Set(FOUR.map((w) => w.path))
       })
-      expect(groupLabels()).toEqual(['Pinned'])
+      expect(groupLabels()).toEqual([])
       expect(dividers()).toHaveLength(0)
     })
   })
@@ -255,8 +262,10 @@ describe('Sidebar — workspace pinning', () => {
         act(() => {
           ;(container.querySelector('[data-testid="tree-filter-toggle"]') as HTMLElement).click()
         })
-        const option = document.querySelector<HTMLElement>('[data-testid="tag-filter-option"]')!
-        act(() => option.click())
+        act(() => document.querySelector<HTMLButtonElement>('[data-testid="rail-tags-filter"]')!.click())
+        const showTags = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.trim() === 'Show tags')
+        if (showTags) act(() => showTags.click())
+        act(() => document.querySelector<HTMLButtonElement>('[data-testid="tag-pick-row"]')!.click())
       }
 
       const tagged = (id: number, path: string, tags: number[]): SessionInfo =>

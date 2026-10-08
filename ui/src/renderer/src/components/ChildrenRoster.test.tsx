@@ -11,14 +11,35 @@ let root: Root
 let host: HTMLDivElement
 let children: SessionInfo[]
 const closeSession = vi.fn()
-const client = { closeSession, subscribe: () => () => {}, taskSnapshot: vi.fn(), taskQueueRun: vi.fn() } as unknown as HoustonClient
-const props = () => ({ parent: child(1), children, client, selected: null, onSelect: vi.fn(), onMove: vi.fn(), collapsed: false, onCollapse: vi.fn() })
+const delegationResultsList = vi.fn()
+const client = { closeSession, delegationResultsList, subscribe: () => () => {}, taskSnapshot: vi.fn(), taskQueueRun: vi.fn() } as unknown as HoustonClient
+const props = () => ({ parent: child(1), children, client, selected: null, onSelect: vi.fn(), onMove: vi.fn(), collapsed: false, onCollapse: vi.fn(), onExpand: vi.fn() })
 const render = () => act(() => root.render(<ChildrenRoster {...props()} />))
 const click = (text: string) => act(() => [...host.querySelectorAll('button')].find((b) => b.textContent === text)!.click())
-beforeEach(() => { vi.useFakeTimers(); closeSession.mockClear(); host = document.createElement('div'); document.body.append(host); root = createRoot(host); children = [child(2, 'exited'), child(3, 'killed'), child(4)] })
+beforeEach(() => { vi.useFakeTimers(); closeSession.mockClear(); delegationResultsList.mockClear(); host = document.createElement('div'); document.body.append(host); root = createRoot(host); children = [child(2, 'exited'), child(3, 'killed'), child(4)] })
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers() })
 
 describe('settled children', () => {
+  it('uses the same fixed status, glyph, and label grid for orchestrator, working, and settled rows', () => {
+    render()
+    const targets = [...host.querySelectorAll<HTMLElement>('.children-row .children-open')]
+    expect(targets).toHaveLength(4)
+    for (const target of targets) {
+      expect(target.classList.contains('grid')).toBe(true)
+      expect(target.classList.contains('grid-cols-[16px_16px_minmax(0,1fr)_auto]')).toBe(true)
+      expect(target.children[1]?.querySelector('svg') ?? (target.children[1]?.matches('svg') ? target.children[1] : null)).not.toBeNull()
+      expect(target.children[2]?.tagName.toLowerCase()).toBe('strong')
+    }
+  })
+  it('opens the child menu from a glyph context click without opening the parent menu', () => {
+    const parentMenu = vi.fn()
+    act(() => root.render(<div onContextMenu={parentMenu}><ChildrenRoster {...props()} /></div>))
+    const glyph = host.querySelector<HTMLButtonElement>('[aria-label="Open worker 4"]')!
+    act(() => glyph.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 50 })))
+    expect(host.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe('worker 4 actions')
+    expect(parentMenu).not.toHaveBeenCalled()
+    expect(delegationResultsList).toHaveBeenCalledWith(1)
+  })
   it.each(['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const)('tints %s provider glyphs in children and orchestrator rows', (agent) => {
     children = [{ ...child(2), agent }]
     act(() => root.render(<ChildrenRoster {...props()} parent={{ ...child(1), agent }} />))
@@ -89,6 +110,14 @@ describe('settled children', () => {
     act(() => root.render(null))
     act(() => vi.advanceTimersByTime(5000))
     expect(closeSession).not.toHaveBeenCalled()
+  })
+  it('Show children asks for the expanded column instead of toggling the collapse', () => {
+    const onCollapse = vi.fn()
+    const onExpand = vi.fn()
+    act(() => root.render(<ChildrenRoster {...props()} collapsed onCollapse={onCollapse} onExpand={onExpand} />))
+    act(() => host.querySelector<HTMLButtonElement>('[aria-label="Show children"]')!.click())
+    expect(onExpand).toHaveBeenCalledOnce()
+    expect(onCollapse).not.toHaveBeenCalled()
   })
   it('marks the selected child in the collapsed glyph strip', () => {
     act(() => root.render(<ChildrenRoster {...props()} collapsed selected={3} />))

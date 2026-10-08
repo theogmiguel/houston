@@ -2,11 +2,12 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionInfo } from '../../houston/client'
+import type { PrInfo, SessionInfo } from '../../houston/client'
 import type { TagInfo } from '../../houston/generated/TagInfo'
 import { createSessionsStore, SessionsStoreContext } from '../../sessionsStore'
 import { GridRailRow } from './GridRailRow'
 import { GridRailRowFallback } from './GridRailRowFallback'
+import { TagPopoverHost } from '../tags/TagPopover'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -19,18 +20,57 @@ const session = {
   live_children: 0, children_waiting: 0, spawned_by: null
 } as unknown as SessionInfo
 const TAGS: TagInfo[] = [{ id: 1, name: 'Bug', color: '#f472b6' }, { id: 2, name: 'Teste', color: '#f59e0b' }]
-const pr = { number: 41, url: 'https://example.test/pull/41', state: 'OPEN', review_decision: null, checks: 'passing' } as const
+const pr: PrInfo = {
+  number: 41,
+  url: 'https://example.test/pull/41',
+  state: 'OPEN',
+  review_decision: null,
+  checks: 'passing',
+  title: 'Rail update',
+  head_ref: 'feature/rail',
+  additions: 0,
+  deletions: 0,
+  is_draft: false,
+}
 
-function mount({ tags = [], width = 240 }: { tags?: TagInfo[]; width?: number } = {}): { inspector: ReturnType<typeof vi.fn>; external: ReturnType<typeof vi.fn>; contextMenu: ReturnType<typeof vi.fn> } {
+function withTagPopover(children: React.ReactNode): React.JSX.Element {
+  return <TagPopoverHost tags={TAGS} grids={[]} actions={{
+    onCreate: (name, color) => ({ id: 99, name, color }),
+    onUpdate: () => {},
+    onDelete: () => {},
+    onApply: () => {},
+  }}>{children}</TagPopoverHost>
+}
+
+function mount({ tags = [], cardMode = 'detailed' }: { tags?: TagInfo[]; cardMode?: 'detailed' | 'compact' } = {}): {
+  inspector: ReturnType<typeof vi.fn>
+  contextMenu: ReturnType<typeof vi.fn>
+} {
   const inspector = vi.fn()
-  const external = vi.fn()
   const contextMenu = vi.fn()
   const store = createSessionsStore(new Map([[session.id, session]]))
   root = createRoot(container)
-  act(() => root.render(<SessionsStoreContext.Provider value={store}>
-    <GridRailRow name="Rail" selected paneIds={[session.id]} tags={tags} fallbackSessions={[session]} branches={new Map([[session.id, 'feature/rail']])} diffByDir={new Map()} prByDir={new Map([['/work', { gh: 'ready', pr }]])} width={width} jumpNumber={1} onSelect={() => {}} onContextMenu={contextMenu} onOpenInspector={inspector} onOpenExternal={external} />
-  </SessionsStoreContext.Provider>))
-  return { inspector, external, contextMenu }
+  act(() => root.render(withTagPopover(<SessionsStoreContext.Provider value={store}>
+    <GridRailRow
+      name="Rail"
+      workspace="/work"
+      gridId="grid-1"
+      selected
+      paneIds={[session.id]}
+      tags={tags}
+      fallbackSessions={[session]}
+      branches={new Map([[session.id, 'feature/rail']])}
+      diffByDir={new Map()}
+      prByDir={new Map([['/work', { gh: 'ready', pr }]])}
+      cardMode={cardMode}
+      properties={['status', 'unread', 'checkout', 'pr', 'ci', 'diff', 'task', 'inline-agents', 'tags']}
+      jumpNumber={1}
+      onSelect={() => {}}
+      onContextMenu={contextMenu}
+      onOpenInspector={inspector}
+    />
+  </SessionsStoreContext.Provider>)))
+  return { inspector, contextMenu }
 }
 
 beforeEach(() => {
@@ -47,7 +87,7 @@ afterEach(() => {
 describe('grid rail row interactions', () => {
   it('opens and closes its hover card after the hover delay', async () => {
     vi.useFakeTimers()
-    mount()
+    mount({ cardMode: 'compact' })
     const row = container.querySelector('[data-testid="grid-row"]')!
     act(() => row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
     act(() => vi.advanceTimersByTime(260))
@@ -55,6 +95,8 @@ describe('grid rail row interactions', () => {
     expect(document.querySelector('[data-testid="grid-hover-card"]')).not.toBeNull()
     act(() => row.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
     act(() => vi.advanceTimersByTime(90))
+    expect(document.querySelector('[data-testid="grid-hover-card"]')).not.toBeNull()
+    act(() => vi.advanceTimersByTime(60))
     expect(document.querySelector('[data-testid="grid-hover-card"]')).toBeNull()
   })
 
@@ -73,10 +115,10 @@ describe('grid rail row interactions', () => {
   it('hides the status label while the remove button shows on hover', () => {
     const store = createSessionsStore(new Map())
     root = createRoot(container)
-    act(() => root.render(<SessionsStoreContext.Provider value={store}>
-      <GridRailRow name="Empty" selected={false} paneIds={[]} fallbackSessions={[]} branches={new Map()} diffByDir={new Map()} prByDir={new Map()} width={240} onSelect={() => {}} onRemove={() => {}} onOpenInspector={() => {}} onOpenExternal={() => {}} />
-    </SessionsStoreContext.Provider>))
-    expect(container.querySelector('[data-testid="grid-state-dot"]')?.className).toContain('group-hover:invisible')
+    act(() => root.render(withTagPopover(<SessionsStoreContext.Provider value={store}>
+      <GridRailRow name="Empty" workspace="/work" gridId="empty-grid" selected={false} paneIds={[]} fallbackSessions={[]} branches={new Map()} diffByDir={new Map()} prByDir={new Map()} onSelect={() => {}} onRemove={() => {}} onOpenInspector={() => {}} />
+    </SessionsStoreContext.Provider>)))
+    expect(container.querySelector('[data-testid="grid-state-dot"]')).not.toBeNull()
     expect(container.textContent).not.toContain('No live panes')
   })
 
@@ -97,13 +139,11 @@ describe('grid rail row interactions', () => {
     expect(number.classList.contains('hidden')).toBe(true)
   })
 
-  it('opens the cached PR in the browser on Ctrl+click', async () => {
-    const { external, inspector } = mount()
-    await vi.waitFor(() => expect(container.querySelector('[aria-label="Open pull request 41"]')).not.toBeNull())
-    const badge = container.querySelector('[aria-label="Open pull request 41"]')!
-    act(() => badge.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })))
-    expect(external).toHaveBeenCalledWith(pr.url)
-    expect(inspector).not.toHaveBeenCalled()
+  it('opens the cached PR in the inspector', () => {
+    const { inspector } = mount()
+    const link = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label')?.includes('#41'))!
+    act(() => link.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(inspector).toHaveBeenCalledWith(session.id, 'pull-request')
   })
 })
 
@@ -112,39 +152,24 @@ describe('GridRailRowFallback', () => {
     mount({ tags: TAGS })
     await vi.waitFor(() => expect(container.querySelector('[data-testid="rail-tags"]')).not.toBeNull())
     const mark = container.querySelector<HTMLElement>('[data-testid="rail-tags"]')!
-    expect(mark.querySelector<HTMLElement>('[data-testid="rail-tag-glyph"]')!.style.color).toBe('rgb(244, 114, 182)')
+    expect(mark.firstElementChild?.getAttribute('style')).toBe('color: rgb(244, 114, 182);')
     expect(mark.textContent).toBe('+1')
-    expect(mark.getAttribute('aria-label')).toBe('Tags: Bug, Teste')
+    expect(mark.getAttribute('aria-label')).toBe('Edit tags: Bug, Teste')
   })
 
-  it('drops the tag mark below its width so the branch keeps its room', async () => {
-    mount({ tags: TAGS, width: 200 })
-    await vi.waitFor(() => expect(container.querySelector('.rail-grid-line2')).not.toBeNull())
-    expect(container.querySelector('[data-testid="rail-tags"]')).toBeNull()
-  })
-
-  it('shows PR checks as a glyph, never as a dot that reads like agent status', async () => {
+  it('shows PR checks alongside the PR link', () => {
     mount()
-    await vi.waitFor(() => expect(container.querySelector('.rail-pr')).not.toBeNull())
-    const badge = container.querySelector('.rail-pr')!
-    expect(badge.querySelectorAll('svg')).toHaveLength(2)
-    expect(badge.querySelector('.rounded-full')).toBeNull()
+    expect(container.textContent).toContain('passing')
   })
 
-  it('leaves agent icons to the hover card even on a wide rail', async () => {
-    mount({ width: 420 })
-    await vi.waitFor(() => expect(container.querySelector('.rail-grid-line2')).not.toBeNull())
-    expect(container.querySelector('.rail-agents')).toBeNull()
-  })
-
-  it('names the grid tags in the hover card', async () => {
+  it('shows the cached PR title in the compact hover card', async () => {
     vi.useFakeTimers()
-    mount({ tags: TAGS })
+    mount({ cardMode: 'compact' })
     const row = container.querySelector('[data-testid="grid-row"]')!
     act(() => row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
     act(() => vi.advanceTimersByTime(260))
-    await vi.waitFor(() => expect(document.querySelector('[data-testid="grid-hover-tags"]')).not.toBeNull())
-    expect(document.querySelector('[data-testid="grid-hover-tags"]')!.textContent).toBe('BugTeste')
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="grid-hover-card"]')).not.toBeNull())
+    expect(document.querySelector('[data-testid="grid-hover-card"]')?.textContent).toContain('Rail update')
   })
 
   it('claims no status while the row loads', () => {

@@ -166,7 +166,7 @@ export function DaemonSection(): React.JSX.Element {
         )
       ) : (
         <>
-          <Group plain>
+          <Group padded>
             <Stack gap={4}>
               <ReadoutGrid data-testid="daemon-section-facts">
                 <Fact

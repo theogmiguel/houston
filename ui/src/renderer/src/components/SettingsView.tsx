@@ -354,7 +354,6 @@ function SectionDispatch({
           <TasksSection
             client={daemonClient ?? null}
             workspace={historyWorkspace}
-            workspaceName={historyWorkspaceName}
           />
         )}
 

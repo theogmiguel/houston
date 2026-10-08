@@ -1,20 +1,22 @@
 # Files, editor and browser panes
 
-Besides terminal sessions, a workspace can hold three other kinds of pane: Files,
-editor, and browser.
+Besides terminal sessions, a grid can hold Files and editor panes. Browser, Files, Diff,
+Pull request and Linked pull requests are also available as side-panel surfaces.
 
 ## Side panel
 
-Press `g` to toggle the side panel. Each workspace keeps its own Source control and
-Files tabs, plus closable orchestration overviews and browser tabs. Source control retains its Changes
-and Pull request views. The pull request summary shows checks, reviews and the merge
-gate. Open pull request details to browse files, leave a review, edit metadata or choose
-additional actions. Drag the panel divider to resize it; double-click resets its width.
-The panel can expand over the grid; Escape restores its previous width.
+Open the side panel and choose **Browser**, **Files**, **Diff**, **Pull request** or
+**Linked pull requests** from the surface launcher. It can also hold closable orchestration
+overviews. Use the launcher keys `B`, `F`, `D`, `P` and `L` while the empty launcher is
+focused, or press the prefix key followed by the matching letter from a terminal. Tabs
+remain available per workspace. Drag the panel divider to resize it; double-click resets
+its width. The panel can expand over the grid; Escape restores its previous width.
 
 Ctrl-click a file path in a terminal to open it in Files at the linked line and column.
 Files uses that session's workspace, including when the session belongs to a different
 checkout. Choose **Open in editor pane** to move the file into the grid.
+Use `Ctrl+P` (`Mod+P`) outside a terminal to open Quick Open. In a focused terminal, press
+the prefix key and then `F` to open the Files surface; Quick Open is available there as well.
 
 When the Files area is at least 720 pixels wide, the tree and editor sit side by side.
 Drag their divider to resize the tree, or double-click it to reset. Tree width and
@@ -52,26 +54,24 @@ to the window also checks for external changes.
 An editor pane holds a single file. It shares the same underlying buffer as a Files
 pane's editor half, so a file open in both places never drifts out of sync.
 
-## Browser pane
+## Browser surface
 
-A browser tab is a real browser surface in the side panel or the grid, and an agent can drive
-it: click, type, hover, press a key, or select an option, the same way it can type into
-a terminal pane.
+A browser tab is a real browser surface in the side panel, and an agent can drive it:
+click, type, hover, press a key, or select an option, the same way it can type into a
+terminal pane. Browser panes saved in a grid move into the side panel when the layout is
+loaded.
 
-Press `b` to open a browser tab in the side panel. Move to grid and Move to side panel
-change its placement in either direction. Switching tabs or closing the side panel hides
-its browser surfaces without closing them; closing a browser tab releases its webview.
-Up to eight native webviews can be open at once. A refusal names the limit, current count
-and requested browser; close a browser tab before retrying.
+The Browser surface starts with a new tab and lists recently used pages and, on Linux,
+loopback servers started by live sessions in that workspace. Select a server to open its
+root page. Detection reads local process and socket state; it does not send this information
+over the network. Other platforms do not show the local-server list. Switching tabs or
+closing the side panel hides browser surfaces without closing them; closing a browser tab
+releases its webview. Up to eight native webviews can be open at once. A refusal names the
+limit, current count and requested browser; close a browser tab before retrying.
 
 When an agent asks to open its first page, Houston opens a browser tab in the side panel.
 Navigation to an existing hidden browser reveals that exact tab before loading the page.
 Agent browser requests reveal a hidden browser automatically before operating on it.
-
-When a browser pane is blank, it lists recent pages and, on Linux, loopback servers started
-by live sessions in that workspace. Select a server to open its root page. Detection reads
-local process and socket state; it does not send this information over the network. Other
-platforms do not show the local-server list.
 
 If a page cannot be reached, the browser shows the failed host and a retry action in the
 page area. For a refused loopback connection, it names the port and suggests starting the

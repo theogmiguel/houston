@@ -128,6 +128,8 @@ export function queueActionOf(task: TaskSummary): QueueAction {
   return 'Start'
 }
 
+export const FINISHED_GROUP_LABEL = 'Done and Archived'
+
 export function queueGroups(tasks: readonly TaskSummary[]): QueueGroup[] {
   const definitions: readonly [QueueGroupKey, string][] = [
     ['your-turn', 'Your turn'],
@@ -142,7 +144,7 @@ export function queueGroups(tasks: readonly TaskSummary[]): QueueGroup[] {
   })).filter((group) => group.tasks.length > 0)
   const done = tasks.filter((task) => queueGroupOf(task) === 'done').sort(compareTasks)
   const archived = tasks.filter((task) => queueGroupOf(task) === 'archived').sort(compareTasks)
-  if (done.length + archived.length > 0) groups.push({ key: 'done', label: 'Done and Archived', tasks: [...done, ...archived] })
+  if (done.length + archived.length > 0) groups.push({ key: 'done', label: FINISHED_GROUP_LABEL, tasks: [...done, ...archived] })
   return groups
 }
 

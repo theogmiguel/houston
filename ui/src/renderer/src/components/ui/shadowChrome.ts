@@ -23,3 +23,5 @@ export const GLOW_WARNING = '0_0_8px_color-mix(in_srgb,var(--warning)_60%,transp
 export const GLOW_ACCENT = '0_0_8px_color-mix(in_srgb,var(--accent)_70%,transparent)'
 
 export const SCRIM_SPOTLIGHT = '0_0_0_9999px_color-mix(in_srgb,var(--content-bg)_62%,transparent)'
+// Separates a small badge from the hovered card behind it.
+export const RING_CARD_HOVER_GAP = '0_0_0_2px_var(--card-hover)'

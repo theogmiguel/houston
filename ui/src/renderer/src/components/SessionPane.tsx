@@ -38,7 +38,6 @@ import {
   IconEllipsis,
   IconEraser,
   IconFolder,
-  IconGitBranch,
   IconMaximize,
   IconMinimize,
   IconMoon,
@@ -55,7 +54,6 @@ import {
 import { usePaneFocusTier } from '../windowFocus'
 import { Button, Card, Inline, Inset, Notice, PaneHeader, Text } from './ui'
 import {
-  PaneBranchChip,
   PaneEngineGlyph,
   PaneHeadActions,
   PaneHeadButton,
@@ -102,8 +100,11 @@ import { ContextIndicator } from './ContextIndicator'
 import { PaneTaskChip } from './tasks/PaneTaskChip'
 import { PrWatchChip } from './ui/PrWatch'
 import { usePrWatch } from './git/usePrWatch'
-import { RosterPeekbar, RosterSplit } from './ui/RosterSurface'
+import { RosterPeekbar, RosterSplit, type RosterMode } from './ui/RosterSurface'
 import { Count } from './ui/Count'
+import { ShellBranchCopyChip, ShellElement } from './ui/ShellPrimitives'
+import { formatCheckout } from './checkout/formatCheckout'
+import type { SessionCheckout } from '../houston/generated/SessionCheckout'
 import type { PaneContextMenu as PaneContextMenuController } from './paneContextMenu'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
@@ -239,29 +240,32 @@ export function OrchestratorBadge({
   )
 }
 
-// The branch a pane's cwd is on, once git has answered for it. No answer means
-// no chip, never a placeholder; the tooltip gives the full name on hover and on
-// keyboard focus, plus a quiet note naming the panes that share the checkout.
 export function BranchChip({
-  branch,
-  note
+  checkout,
+  remoteHost
 }: {
-  branch?: string | null
-  note?: string | null
+  checkout?: SessionCheckout | null
+  remoteHost?: string | null
 }): React.JSX.Element | null {
-  if (branch == null || branch === '') return null
-  const label = note ? `${branch}\n${note}` : branch
+  const formatted = formatCheckout(checkout, { remoteHost: remoteHost ?? undefined })
+  if (formatted.kind === 'unknown') return null
+  const detail = formatted.kind === 'remote' ? remoteHost : formatted.branch
+  const revealWorktree = (event: React.MouseEvent<HTMLSpanElement>): void => {
+    if (!event.ctrlKey || formatted.kind !== 'worktree' || !checkout) return
+    event.preventDefault()
+    event.stopPropagation()
+    void showItemInFolder(checkout.root)
+  }
   return (
-    <Tooltip label={label}>
-      <PaneBranchChip
-        type="button"
-        data-testid="branch-chip"
-        aria-label={`Branch ${branch}`}
-        className="[@container_(max-width:400px)]:hidden"
-      >
-        <Icon glyph={IconGitBranch} role="small" />
-        <span className="truncate">{branch}</span>
-      </PaneBranchChip>
+    <Tooltip label={formatted.kind === 'worktree' && checkout ? `${formatted.text}\n${checkout.root}` : formatted.text}>
+      <span data-testid="branch-chip" className="[@container_(max-width:400px)]:hidden" onClickCapture={revealWorktree}>
+        <ShellBranchCopyChip value={formatted.branch ?? checkout?.head ?? formatted.badge}>
+          <span className="inline-flex min-w-0 items-center gap-[var(--space-1)] truncate">
+            <span>{formatted.kind === 'remote' ? 'remote' : formatted.badge}</span>
+            {detail && <><span> </span><ShellElement as="span" shellRole="pane-branch-detail-separator">·</ShellElement><span> </span><span className="truncate">{detail}</span></>}
+          </span>
+        </ShellBranchCopyChip>
+      </span>
     </Tooltip>
   )
 }
@@ -293,9 +297,7 @@ interface Props {
   copyOnSelect: boolean
   stripBoxGlyphs: boolean
   showProject: boolean
-  /** The branch this pane's cwd is on, once git has answered; absent hides the chip. */
   branch?: string | null
-  /** A quiet note for the chip's tooltip: who else shares the checkout or repository. */
   branchNote?: string | null
   registerOutput: RegisterOutput
   shellIntegration: boolean
@@ -425,8 +427,6 @@ function SessionPaneImpl({
   copyOnSelect,
   stripBoxGlyphs,
   showProject,
-  branch,
-  branchNote,
   registerOutput,
   shellIntegration,
   onReconnectSsh,
@@ -454,7 +454,7 @@ function SessionPaneImpl({
   const roster = withSessionFamily(rosterProp, family)
   const [peekId, setPeekId] = useState<number | null>(null)
   const [recent, setRecent] = useState<number[]>([])
-  const [collapsed, setCollapsed] = useState(false)
+  const [rosterMode, setRosterMode] = useState<RosterMode>('auto')
   const children = rosterChildren(roster?.sessions, info.id)
   const peek = visiblePeek(children, peekId, gridSessionIds)
   const selectChild = (id: number | null): void => {
@@ -550,7 +550,7 @@ function SessionPaneImpl({
           />
           <PaneTaskChip task={info.task} />
           <PaneWatchChip watches={prWatches} />
-          <BranchChip branch={branch} note={branchNote} />
+          <BranchChip checkout={(info as SessionInfo & { checkout?: SessionCheckout | null }).checkout} remoteHost={info.ssh_host} />
           <PaneHeaderTags tagIds={info.tags} />
           {info.acp != null && <AcpBadge slug={info.acp} />}
           {info.profile_label != null && <ProfileBadge label={info.profile_label} />}
@@ -565,7 +565,7 @@ function SessionPaneImpl({
       </PaneHeader>
       <ResumeNotice notice={info.resume_notice} />
       <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} memoryResult={memoryResult} />
-      {sleeping ? <SleepingSessionPlaceholder info={lifecycleInfo} onWake={() => client.send({ type: 'session_wake', session: info.id })} onFresh={() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)} /> : <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />}
+      {sleeping ? <SleepingSessionPlaceholder info={lifecycleInfo} onWake={() => client.send({ type: 'session_wake', session: info.id })} onFresh={() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)} /> : <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />}
       <AnimOut open={confirmRestart !== null} suppress="modal">
         {confirmRestart && (
           <RestartConfirm
@@ -883,27 +883,31 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
         </PaneHeadActions>)
 }
 
-function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveChild, collapsed, onCollapse, terminals }: Pick<Props, 'info' | 'roster' | 'client'> & {
+function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveChild, mode, onMode, terminals }: Pick<Props, 'info' | 'roster' | 'client'> & {
   children: SessionInfo[]
   peek: SessionInfo | undefined
   selectChild: (id: number | null) => void
   moveChild: (id: number) => void
-  collapsed: boolean
-  onCollapse: () => void
+  mode: RosterMode
+  onMode: (mode: RosterMode) => void
   terminals: React.ReactNode
 }): React.JSX.Element {
-  return (<><RosterSplit collapsed={collapsed}>
-        {children.length > 0 && <ChildrenRoster parent={info} children={children} roster={roster} client={client} selected={peek?.id ?? null} onSelect={selectChild} onMove={moveChild} collapsed={collapsed} onCollapse={onCollapse} />}
+  return (<><RosterSplit mode={mode}>
+        {children.length > 0 && <ChildrenRoster parent={info} children={children} roster={roster} client={client} selected={peek?.id ?? null} onSelect={selectChild} onMove={moveChild} collapsed={mode === 'collapsed'} onCollapse={() => onMode('collapsed')} onExpand={() => onMode('expanded')} />}
         <ChildrenColumn>
-          {peek && <RosterPeekbar>
-            <PeekBarButton onClick={() => selectChild(null)}>Orchestrator</PeekBarButton><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
-            <span className="flex-1" /><PeekBarButton shrink onClick={() => moveChild(peek.id)}>Move to grid</PeekBarButton>
-            <Tooltip label="Return to orchestrator"><PeekBarIconButton aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></PeekBarIconButton></Tooltip>
+          {/* The bar stays while the pane has children: shown only while peeking, it
+              would resize every kept-mounted terminal and make each CLI repaint on switch. */}
+          {children.length > 0 && <RosterPeekbar>
+            {peek ? <>
+              <PeekBarButton onClick={() => selectChild(null)}>Orchestrator</PeekBarButton><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
+              <span className="flex-1" /><PeekBarButton shrink onClick={() => moveChild(peek.id)}>Move to grid</PeekBarButton>
+              <Tooltip label="Return to orchestrator"><PeekBarIconButton aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></PeekBarIconButton></Tooltip>
+            </> : <strong className="truncate min-w-0">Orchestrator</strong>}
           </RosterPeekbar>}
           <div className="relative flex-1 min-h-0 min-w-0">
             {terminals}
+            {peek && !isLive(peek.state) && <SettledChildBar info={peek} client={client} onMove={moveChild} />}
           </div>
-          {peek && !isLive(peek.state) && <SettledChildBar info={peek} client={client} onMove={moveChild} />}
         </ChildrenColumn>
       </RosterSplit>
       <DictationIndicator session={info.id} /></>)

@@ -1,142 +1,249 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionInfo } from '../../houston/client'
+import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
 import type { TagInfo } from '../../houston/generated/TagInfo'
-import { Icon } from './Icon'
-import { IconClose, IconGrid } from '../icons'
-import { formatRailDuration, gridStatus } from './railRows'
-import type { GridStatusModel } from './railRows'
-
-const GridRailRowDetails = lazy(() => import('./GridRailRowDetails').then((module) => ({ default: module.GridRailRowDetails })))
-
-import { shallowArrayEqual, useSessionsSelector } from '../../sessionsStore'
+import { useSessionsSelector, shallowArrayEqual } from '../../sessionsStore'
+import { formatCheckout } from '../checkout/formatCheckout'
+import { buildRailCard, type CheckoutIdentity } from '../rail/railCardModel'
+import type { AgentActivityMode, RailCardMode, RailCardProperty, RailTagDisplay } from '../../railPrefs'
 import type { RailDiffTotals } from '../git/useRailGitFacts'
 import type { RailPrState } from '../git/railPrCache'
+import { useTagPopover } from '../tags/TagPopover'
+import { GridRailRowView } from './rail/GridRailRowView'
+
+let railHoverWarmUntil = 0
 
 export interface GridRailRowProps {
   name: string
+  workspace: string
+  gridId: string
   selected: boolean
+  pinned?: boolean
   paneIds: number[]
   tags?: readonly TagInfo[]
   fallbackSessions: readonly SessionInfo[]
   branches: ReadonlyMap<number, string>
   diffByDir: ReadonlyMap<string, RailDiffTotals>
   prByDir: ReadonlyMap<string, RailPrState>
-  width: number
+  cardMode?: RailCardMode
+  tagDisplay?: RailTagDisplay
+  agentActivity?: AgentActivityMode
+  properties?: readonly RailCardProperty[]
+  unread?: boolean
+  dragPosition?: 'before' | 'after' | null
+  dragging?: boolean
+  dragRefusal?: boolean
+  onGridPointerDown?: (event: React.PointerEvent, workspace: string, gridId: string) => void
+  onToggleUnread?: () => void
+  onFilterTag?: (tag: TagInfo) => void
   jumpNumber?: number
   onRemove?: () => void
   onSelect: () => void
   onContextMenu?: (event: React.MouseEvent) => void
   onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
-  onOpenExternal: (url: string) => void
 }
 
-function statusTone(kind: ReturnType<typeof gridStatus>['kind']): string {
-  switch (kind) {
-    case 'needs-input': return 'text-[var(--warn)]'
-    case 'working': return 'text-[var(--info)]'
-    case 'starting': return 'text-[var(--accent)]'
-    case 'exited': return 'text-[var(--stop)]'
-    case 'done': return 'text-[var(--ok)]'
-    default: return 'text-[var(--text-faint)]'
-  }
-}
-
-function duration(since: number | null): string | null {
-  return formatRailDuration(since)
-}
-
-function statusLabelFor(model: GridStatusModel, age: string | null): string {
-  if (model.kind === 'idle') return age ?? model.label
-  const timed = ['working', 'needs-input', 'starting'].includes(model.kind)
-  return `${model.label}${age && timed ? ` ${age}` : ''}`
+function checkoutFor(identity: CheckoutIdentity): { checkout: SessionCheckout | null; remoteHost?: string } {
+  if (identity.kind === 'remote') return { checkout: null, remoteHost: identity.host }
+  const kind = identity.kind === 'worktree'
+    ? { worktree: { slug: identity.slug } }
+    : identity.kind === 'primary' ? 'primary' : 'folder'
+  return { checkout: { root: identity.root, kind, branch: 'branch' in identity ? identity.branch : null, head: null } }
 }
 
 export function GridRailRow({
-  name, selected, paneIds, tags = [], fallbackSessions, branches, diffByDir, prByDir, width, jumpNumber,
-  onSelect, onContextMenu, onOpenInspector, onOpenExternal, onRemove,
+  name,
+  workspace,
+  gridId,
+  selected,
+  pinned = false,
+  paneIds,
+  tags = [],
+  fallbackSessions,
+  branches,
+  diffByDir,
+  prByDir,
+  cardMode = 'detailed',
+  tagDisplay = 'icon',
+  agentActivity = 'compact',
+  properties = ['status', 'unread', 'checkout', 'pr', 'diff', 'task', 'inline-agents'],
+  jumpNumber,
+  unread,
+  dragPosition = null,
+  dragging = false,
+  dragRefusal = false,
+  onGridPointerDown,
+  onToggleUnread,
+  onFilterTag,
+  onSelect,
+  onContextMenu,
+  onOpenInspector,
+  onRemove,
 }: GridRailRowProps): React.JSX.Element {
-  const [card, setCard] = useState<{ left: number; top: number } | null>(null)
+  const [hoverPosition, setHoverPosition] = useState<{ left: number; top: number } | null>(null)
+  const [hoverVisible, setHoverVisible] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [altHeld, setAltHeld] = useState(false)
-  const [, tick] = useState(0)
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const rowRef = useRef<HTMLDivElement>(null)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverMounted = useRef(false)
+  const { open: openTagPopover } = useTagPopover()
   const sessions = useSessionsSelector(
     (store) => paneIds.flatMap((id) => store.get(id) ?? []),
     shallowArrayEqual,
     fallbackSessions.filter((session) => paneIds.includes(session.id)),
   )
-  const panes = sessions
-  const aggregate = gridStatus(panes)
-  const age = duration(aggregate.since)
-  const statusLabel = statusLabelFor(aggregate, age)
-
-  const openCard = (): void => {
-    if (openTimer.current) clearTimeout(openTimer.current)
+  const card = useMemo(
+    () => buildRailCard({
+      gridId,
+      workspace,
+      title: name,
+      pinned,
+      paneIds,
+      sessions,
+      branches,
+      diffByDir,
+      prByDir,
+    }),
+    [gridId, workspace, name, pinned, paneIds, sessions, branches, diffByDir, prByDir],
+  )
+  const primary = card.agents[0]
+  const identity = card.checkouts[0]
+  const formattedCheckout = identity
+    ? formatCheckout(checkoutFor(identity).checkout, {
+      remoteHost: identity.kind === 'remote' ? identity.host : undefined,
+    })
+    : null
+  const identityBranch = identity && identity.kind !== 'remote' && identity.kind !== 'folder' ? identity.branch : null
+  const checkoutLabel = formattedCheckout && identityBranch
+    ? { ...formattedCheckout, text: identityBranch }
+    : formattedCheckout
+  const many = card.agents.length > 1
+  const hasUnread = unread ?? card.agents.some((agent) => agent.unread)
+  const startHover = (): void => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
     if (closeTimer.current) clearTimeout(closeTimer.current)
-    const rect = rowRef.current?.getBoundingClientRect()
-    if (!rect) return
-    openTimer.current = setTimeout(() => {
-      const left = Math.min(rect.right + 12, window.innerWidth - 372)
-      const top = Math.max(8, Math.min(rect.top, window.innerHeight - 260))
-      setCard({ left, top })
-    }, 260)
+    hoverTimer.current = setTimeout(() => {
+      hoverTimer.current = null
+      const rect = rowRef.current?.getBoundingClientRect()
+      if (rect) {
+        hoverMounted.current = true
+        setHoverPosition({
+          left: rect.right + 6,
+          top: Math.min(rect.top, window.innerHeight - 200),
+        })
+        setHoverVisible(true)
+      }
+    }, Date.now() < railHoverWarmUntil ? 0 : 150)
   }
-  const scheduleClose = (): void => {
-    if (openTimer.current) clearTimeout(openTimer.current)
-    closeTimer.current = setTimeout(() => setCard(null), 90)
+  const closeHover = (): void => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    if (hoverVisible) railHoverWarmUntil = Date.now() + 400
+    setHoverVisible(false)
+    closeTimer.current = setTimeout(() => { hoverMounted.current = false; setHoverPosition(null) }, 150)
   }
-  useEffect(() => () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    if (openTimer.current) clearTimeout(openTimer.current)
+  useEffect(() => {
+    const hideOnScroll = (): void => {
+      if (!hoverTimer.current && !hoverMounted.current) return
+      if (hoverTimer.current) clearTimeout(hoverTimer.current)
+      hoverTimer.current = null
+      if (closeTimer.current) clearTimeout(closeTimer.current)
+      setHoverVisible(false)
+      closeTimer.current = setTimeout(() => { hoverMounted.current = false; setHoverPosition(null) }, 150)
+    }
+    document.addEventListener('scroll', hideOnScroll, true)
+    return () => {
+      document.removeEventListener('scroll', hideOnScroll, true)
+      if (hoverTimer.current) clearTimeout(hoverTimer.current)
+      if (closeTimer.current) clearTimeout(closeTimer.current)
+    }
   }, [])
   useEffect(() => {
-    const down = (event: KeyboardEvent): void => { if (event.key === 'Alt') setAltHeld(true) }
-    const up = (event: KeyboardEvent): void => { if (event.key === 'Alt') setAltHeld(false) }
+    const down = (event: KeyboardEvent): void => {
+      if (event.key === 'Alt') setAltHeld(true)
+    }
+    const up = (event: KeyboardEvent): void => {
+      if (event.key === 'Alt') setAltHeld(false)
+    }
     const blur = (): void => setAltHeld(false)
-    const timer = window.setInterval(() => tick((value) => value + 1), 60_000)
+    const ageTimer = window.setInterval(() => setNow(Date.now()), 30_000)
+    const jump = (event: KeyboardEvent): void => {
+      if (
+        !event.altKey ||
+        jumpNumber == null ||
+        event.key !== String(jumpNumber) ||
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement
+      ) return
+      event.preventDefault()
+      onSelect()
+    }
     window.addEventListener('keydown', down)
+    window.addEventListener('keydown', jump)
     window.addEventListener('keyup', up)
     window.addEventListener('blur', blur)
     return () => {
-      window.clearInterval(timer)
       window.removeEventListener('keydown', down)
+      window.removeEventListener('keydown', jump)
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', blur)
+      window.clearInterval(ageTimer)
     }
-  }, [])
+  }, [jumpNumber, onSelect])
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const rows = [...(rowRef.current?.parentElement?.querySelectorAll<HTMLElement>('[data-testid="grid-row"]') ?? [])]
+      const index = rows.indexOf(rowRef.current!)
+      rows[index + (event.key === 'ArrowDown' ? 1 : -1)]?.focus()
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onSelect()
+    }
+  }
 
-  return <>
-    <div
-      ref={rowRef}
-      role="button"
-      tabIndex={0}
-      data-testid="grid-row"
-      data-selected={selected ? 'true' : undefined}
-      aria-current={selected ? 'true' : undefined}
-      aria-label={`${name}, ${statusLabel}`}
-      className={`rail-grid-row group relative flex min-h-[var(--h-row)] min-w-0 flex-col gap-[1px] rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] pl-[var(--space-6)] [font-weight:var(--tr-text-ui-weight)] hover:bg-hover-fill hover:text-[var(--text-primary)] ${selected ? 'bg-selected-fill text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)]'}`}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return
-        event.preventDefault()
-        onSelect()
-      }}
+  return (
+    <GridRailRowView
+      name={name}
+      workspace={workspace}
+      gridId={gridId}
+      selected={selected}
+      pinned={pinned}
+      tags={tags}
+      cardMode={cardMode}
+      tagDisplay={tagDisplay}
+      agentActivity={agentActivity}
+      properties={properties}
+      dragPosition={dragPosition}
+      dragging={dragging}
+      dragRefusal={dragRefusal}
+      onGridPointerDown={onGridPointerDown}
+      onToggleUnread={onToggleUnread}
+      onFilterTag={onFilterTag}
+      jumpNumber={jumpNumber}
+      onRemove={onRemove}
+      onSelect={onSelect}
       onContextMenu={onContextMenu}
-      onMouseEnter={openCard}
-      onMouseLeave={scheduleClose}
-    >
-      <span className="flex h-[var(--h-ctl-mini)] min-w-0 items-center gap-[var(--space-2)]">
-        <Icon glyph={IconGrid} role="small" className="flex-none text-[var(--text-faint)]" />
-        <span data-testid="grid-name" className="min-w-0 flex-1 truncate">{name}</span>
-        <span role="img" data-testid="grid-state-dot" data-state={aggregate.kind === 'exited' ? 'stopped' : aggregate.kind === 'starting' ? 'starting' : aggregate.kind} className={`inline-flex flex-none items-center gap-[var(--space-1)] whitespace-nowrap [font-size:var(--tr-text-label-size)] [font-variant-numeric:tabular-nums] ${onRemove ? 'group-hover:invisible' : ''} ${statusTone(aggregate.kind)}`} aria-label={aggregate.kind === 'unavailable' ? 'status unavailable' : statusLabel}>
-          {aggregate.kind !== 'idle' && <span aria-hidden className="inline-block h-[6px] w-[6px] rounded-full bg-current" />}
-          {statusLabel}
-        </span>
-        {jumpNumber != null && <span aria-hidden data-testid="rail-jump-number" className={`rail-jump absolute left-[var(--space-1)] top-1/2 -translate-y-1/2 font-mono text-[var(--accent)] ${altHeld ? '' : 'hidden'}`}>{jumpNumber}</span>}
-        {onRemove && <button type="button" data-testid="grid-close" aria-label={`Remove ${name}`} className="absolute right-[var(--space-1)] top-1/2 hidden h-[var(--h-ctl-mini)] w-[var(--h-ctl-mini)] -translate-y-1/2 items-center justify-center rounded-[var(--tr-radius-sm)] bg-transparent text-[var(--text-muted)] hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] group-hover:flex" onClick={(event) => { event.stopPropagation(); onRemove() }}><Icon glyph={IconClose} role="small" /></button>}
-      </span>
-      <Suspense fallback={null}><GridRailRowDetails name={name} sessions={panes} paneIds={paneIds} tags={tags} branches={branches} diffByDir={diffByDir} prByDir={prByDir} width={width} card={card} closeTimer={closeTimer} scheduleClose={scheduleClose} onOpenInspector={onOpenInspector} onOpenExternal={onOpenExternal} /></Suspense>
-    </div>
-  </>
+      onOpenInspector={onOpenInspector}
+      card={card}
+      primary={primary}
+      checkoutLabel={checkoutLabel}
+      many={many}
+      hasUnread={hasUnread}
+      altHeld={altHeld}
+      hoverPosition={hoverPosition}
+      hoverVisible={hoverVisible}
+      expanded={expanded}
+      now={now}
+      rowRef={rowRef}
+      closeTimer={closeTimer}
+      openTagPopover={openTagPopover}
+      startHover={startHover}
+      closeHover={closeHover}
+      onToggleExpanded={() => setExpanded((value) => !value)}
+      onKeyDown={onKeyDown}
+    />
+  )
 }

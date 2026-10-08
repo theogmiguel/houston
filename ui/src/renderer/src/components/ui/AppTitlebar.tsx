@@ -1,5 +1,16 @@
 import type { MouseEventHandler, ReactNode } from 'react'
+import logoUrl from '../../assets/logo-chrome.svg'
 import { MATERIAL_CLS, materialAttrs } from './material'
+
+export function TitlebarBrand({ children }: { children?: ReactNode }): React.JSX.Element {
+  return (
+    <div className="flex min-w-0 items-center gap-2 font-semibold text-[var(--text-primary)]">
+      <img src={logoUrl} alt="" aria-hidden="true" className="h-[var(--sz-titlebar-mark)] w-[var(--sz-titlebar-mark)] flex-none" />
+      <span>Houston</span>
+      {children && <span className="ml-auto flex items-center">{children}</span>}
+    </div>
+  )
+}
 
 export function AppTitlebar({ children, custom, dataCustom, onMouseDown, onDoubleClick }: {
   children: ReactNode

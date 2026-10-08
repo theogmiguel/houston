@@ -78,7 +78,7 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
     act(() => pending.forEach((cb) => cb(0)))
   }
 
-  it('starts at the shipped width and clamps a drag at the floor', async () => {
+  it('starts at the shipped width and clamps a drag at the 220px floor', async () => {
     harness = await renderReadyApp()
     expect(railWidthVar(harness)).toBe('240px')
 
@@ -86,7 +86,7 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
     move(180)
     flush()
 
-    expect(railWidthVar(harness)).toBe('200px')
+    expect(railWidthVar(harness)).toBe('220px')
     up(180)
   })
 
@@ -97,7 +97,7 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
     move(900)
     flush()
 
-    expect(railWidthVar(harness)).toBe('420px')
+    expect(railWidthVar(harness)).toBe('500px')
     up(900)
   })
 

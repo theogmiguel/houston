@@ -59,6 +59,8 @@ async fn scrollback_replays_to_a_second_client() {
         session: id,
         replay_bytes: None,
         snapshot: None,
+        from_offset: None,
+        generation: None,
     })
     .unwrap();
     ws2.send(Message::text(attach)).await.unwrap();
@@ -381,6 +383,8 @@ async fn interrupted_sessions_are_automatically_restored_and_restartable() {
     {
         let db = Db::open(&db_path).unwrap();
         db.insert_session(&houston_protocol::SessionInfo {
+            checkout: None,
+            activity: None,
             id: 1,
             agent: proto::AgentKind::Shell,
             project_dir: tmp.path().display().to_string(),

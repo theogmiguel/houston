@@ -271,7 +271,12 @@ export function Select({
             if (e.button !== 0) return
             e.preventDefault()
             if (open) close(true)
-            else openMenu()
+            else {
+              // preventDefault also cancels the native focus move; without focus, Escape
+              // and arrow keys would reach whatever held focus before the menu opened.
+              e.currentTarget.focus({ preventScroll: true })
+              openMenu()
+            }
           }}
           className={`${triggerChrome} ${TRIGGER_LAYOUT_CLS} ${TRIGGER_WIDTH[width]} ${className}`}
         >

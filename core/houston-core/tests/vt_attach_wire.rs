@@ -14,6 +14,8 @@ fn attach_msg(session: u32, snapshot: bool) -> Message {
             session,
             replay_bytes: None,
             snapshot: snapshot.then_some(true),
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     )

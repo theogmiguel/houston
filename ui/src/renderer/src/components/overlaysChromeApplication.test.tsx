@@ -149,7 +149,6 @@ describe('overlays-03: glass where the site earns it, per the ladder table', () 
           keymapOverrides={{ bindings: {}, shortcuts_enabled: true } as ClientKeymapOverrides}
           onClose={() => {}}
           onNewTerminal={() => {}}
-          onNewBrowser={() => {}}
           onSpawnAgent={() => {}}
           onNewGrid={() => {}}
           agentProfiles={null}

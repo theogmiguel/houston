@@ -79,6 +79,7 @@ export function OpenInMenu({
 
   const rowRef = useRef<HTMLButtonElement>(null)
   const rect = open ? (rowRef.current?.getBoundingClientRect() ?? null) : null
+  const submenuOnLeft = rect ? rect.right + 4 + 178 > window.innerWidth - 8 : false
 
   return (
     <div
@@ -107,9 +108,9 @@ export function OpenInMenu({
           style={
             rect
               ? {
-                  top: Math.max(8, Math.min(rect.top, window.innerHeight - 180)),
-                  left: rect.left > 190 ? rect.left - 178 : rect.right + 4,
-                  ...popOriginStyle(rect.left > 190 ? 'right' : 'left', 'top')
+                  top: Math.max(8, Math.min(rect.top, window.innerHeight - Math.min(180, (editors?.length ?? 4) * 28 + 8) - 8)),
+                  left: submenuOnLeft ? Math.max(8, rect.left - 178 - 4) : rect.right + 4,
+                  ...popOriginStyle(submenuOnLeft ? 'right' : 'left', 'top')
                 }
               : undefined
           }

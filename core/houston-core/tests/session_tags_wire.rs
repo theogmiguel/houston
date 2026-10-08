@@ -72,11 +72,11 @@ async fn registry_flows_whole_and_refusals_name_the_limit() {
         "the refusal must carry the offending value: {err}"
     );
 
-    send(&mut ws, &tag_create("other", "#123456")).await;
+    send(&mut ws, &tag_create("other", "#12345")).await;
     let err = next_error(&mut ws).await;
     assert!(
-        err.contains("#123456") && err.contains("TAG_PALETTE"),
-        "the refusal must name the color and the palette: {err}"
+        err.contains("#12345") && err.contains("#rrggbb"),
+        "the refusal must name the color and the expected shape: {err}"
     );
 
     let long = "x".repeat(proto::MAX_TAG_NAME_LEN + 1);

@@ -1,17 +1,18 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
+import { useContext, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
 import type { AgentStatus } from '../../houston/client'
 import { Text } from './Text'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
 import { RING_ACCENT_ICON } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
+import { Tooltip, TooltipContext } from './Tooltip'
 
 export function PaneHeadActions({ children }: { children: ReactNode }): React.JSX.Element {
   return <span className="head-actions ml-auto flex items-center gap-px flex-none">{children}</span>
 }
 
 const HEAD_BUTTON_STYLE =
-  `rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none`
+  `rounded-[var(--tr-radius-sm)] [transition:background-color_0.15s,color_0.15s] active:scale-[0.97] focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none`
 const HEAD_BUTTON_SIZE = {
   default: CONTROL_SIZE_SQUARE_CLS.mini,
   small: CONTROL_SIZE_SQUARE_CLS.small,
@@ -28,9 +29,9 @@ const HEAD_BUTTON_TONE = {
   regular:
     'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)] hover:text-[var(--text-primary)]',
   accent:
-    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:text-[color-mix(in_srgb,var(--accent)_75%,var(--text-primary))]',
+    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[var(--hover-fill)] hover:text-[var(--text-primary)]',
   danger:
-    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] hover:text-[var(--danger)]',
+    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[var(--hover-fill)] hover:text-[var(--text-primary)]',
   info: 'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] hover:bg-[color-mix(in_srgb,var(--info)_16%,transparent)] hover:text-[var(--info)]'
 } as const
 
@@ -58,7 +59,10 @@ export function PaneHeadButton({
 }: { tone?: PaneHeadButtonTone; ladder?: boolean; size?: keyof typeof HEAD_BUTTON_SIZE } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
   const target = size === 'tabClose' || size === 'tabOverflow' ? HIT_TARGET_28 : ''
   const buttonClass = size === 'tabClose' ? 'btn' : ''
-  return <button {...rest} className={`${buttonClass} ${BTN_ICO_STRUCTURE} ${HEAD_BUTTON_SIZE[size]} ${target} ${HEAD_BUTTON_STYLE} ${ladder ? HEAD_BUTTON_LADDER : ''} ${HEAD_BUTTON_TONE[tone]} ${className}`.trim()} />
+  const button = <button {...rest} className={`${buttonClass} ${BTN_ICO_STRUCTURE} ${HEAD_BUTTON_SIZE[size]} ${target} ${HEAD_BUTTON_STYLE} ${ladder ? HEAD_BUTTON_LADDER : ''} ${HEAD_BUTTON_TONE[tone]} ${className}`.trim()} />
+  const parentTooltip = useContext(TooltipContext)
+  const label = rest['aria-label']
+  return label && !parentTooltip ? <Tooltip label={label}>{button}</Tooltip> : button
 }
 
 /** A label-sized note in a session header, such as the protocol mode or account profile. */

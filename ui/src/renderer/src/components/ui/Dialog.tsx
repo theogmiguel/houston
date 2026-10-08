@@ -15,6 +15,7 @@ const panelClasses = variants(
       update: 'flex max-h-[92vh] w-[460px] max-w-[92vw] flex-col rounded-[var(--tr-radius-md)]',
       browser: 'w-[428px] max-w-[calc(100vw_-_32px)] flex flex-col gap-3',
       handoff: 'w-[720px] max-w-[92vw] rounded-[var(--tr-radius-md)]',
+      listDetail: 'w-[880px] max-w-[92vw] max-h-[86vh] rounded-[var(--tr-radius-md)] overflow-hidden flex flex-col',
       ssh: 'w-[min(var(--w-dialog-ssh-panel),calc(100vw_-_32px))] rounded-[var(--tr-radius-ssh-panel)] p-6 flex flex-col gap-4 max-h-[calc(100vh_-_32px)] overflow-y-auto',
       paneHandoff: 'w-[min(1180px,94vw)] h-[min(940px,92vh)] max-w-[94vw] rounded-[var(--tr-radius-md)] overflow-hidden flex flex-col',
       git: 'w-[560px] max-w-[calc(100vw_-_2rem)] max-h-[calc(100vh_-_4rem)] rounded-[var(--tr-radius-card)] overflow-hidden flex flex-col'
@@ -34,7 +35,7 @@ const panelExit = '[.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-
 const panelMotion = `${panelEnter} ${panelExit}`
 
 export interface DialogPanelProps extends HTMLAttributes<HTMLDivElement> {
-  size?: 'compact' | 'medium' | 'wide' | 'hostKey' | 'update' | 'browser' | 'handoff' | 'ssh' | 'paneHandoff' | 'git'
+  size?: 'compact' | 'medium' | 'wide' | 'listDetail' | 'hostKey' | 'update' | 'browser' | 'handoff' | 'ssh' | 'paneHandoff' | 'git'
   surface?: 'raised' | 'card' | 'git' | 'browser' | 'glass'
   animated?: boolean
   className?: string

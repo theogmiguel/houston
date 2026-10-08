@@ -75,20 +75,20 @@ describe('Sidebar — density floor on small rail actions', () => {
     expect(chevron?.className).toContain('h-[var(--sz-disclosure-icon)]')
   })
 
-  it("the group header's Filter action keeps its 18px box and hit-tests to the floor", () => {
+  it("the group header's Sidebar options action keeps its compact hit target", () => {
     act(() => {
       root.render(<Sidebar {...baseProps({ workspaces: [ws('/a', 'alpha')], selected: '/a' })} />)
     })
-    const filter = container.querySelector('button[aria-label="Filter by tag"]')
+    const filter = container.querySelector('button[aria-label="Sidebar options"]')
     expect(filter?.className).toContain('w-[var(--sz-rail-compact-action)] h-[var(--sz-rail-compact-action)]')
     expect(filter?.className).not.toContain(HIT_TARGET_28)
   })
 
-  it('the group-header actions share one box — filter and the create +', () => {
+  it('the group-header actions share one compact box — options and the create +', () => {
     act(() => {
       root.render(<Sidebar {...baseProps({ workspaces: [ws('/a', 'alpha')], selected: '/a' })} />)
     })
-    for (const label of ['Filter by tag', 'Add workspace']) {
+    for (const label of ['Sidebar options', 'Add workspace']) {
       const el = container.querySelector(`button[aria-label="${label}"]`)
       expect(el, `${label} is missing from the header`).not.toBeNull()
       expect(el?.className, `${label} is not on the 24px box`).toContain('w-[var(--sz-rail-compact-action)] h-[var(--sz-rail-compact-action)]')

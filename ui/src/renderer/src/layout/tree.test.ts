@@ -430,11 +430,11 @@ describe('browser panes in the grid (M8)', () => {
     expect(insertPaneAt(null, browser('b1', ''), null)).toEqual(browser('b1', ''))
   })
 
-  it('a fresh pane carries an empty url, which survives the tree unchanged', () => {
+  it('migrates a fresh browser leaf out of the saved grid', () => {
     const tree = insertPaneAt(null, browser('b1', ''), null)
     const key = `test-browser-fresh-${Date.now()}`
     saveLayout(key, { tree, cols: 2 })
-    expect(loadLayout(key).tree).toEqual(browser('b1', ''))
+    expect(loadLayout(key)).toEqual({ tree: null, cols: 2, browserUrls: [''] })
     localStorage.removeItem(`tr-layout:${key}`)
   })
 
@@ -447,12 +447,13 @@ describe('browser panes in the grid (M8)', () => {
     expect(removeLeaf(browser('b1', ''), 'b1')).toBeNull()
   })
 
-  it('round-trips a navigated pane through saveLayout/loadLayout', () => {
+  it('migrates a navigated browser leaf through saveLayout/loadLayout', () => {
     const key = `test-browser-roundtrip-${Date.now()}`
     const tree = insertPaneAt(row(leaf(1)), browser('b1', 'https://example.test/'), 1)
     saveLayout(key, { tree, cols: 2 })
     const loaded = loadLayout(key)
-    expect(loaded.tree).toEqual(tree)
+    expect(loaded.tree).toEqual(leaf(1))
+    expect(loaded.browserUrls).toEqual(['https://example.test/'])
     localStorage.removeItem(`tr-layout:${key}`)
   })
 
@@ -658,6 +659,29 @@ describe('the legacy git leaf migrates out of saved grids', () => {
     expect(containsPaneKind(loaded.tree, 'git')).toBe(false)
   })
 
+  it('loadLayout moves browser URLs out of a realistic saved grid once and collapses the split', () => {
+    const key = 'tr-layout:/ws/browser-migration::g-default'
+    localStorage.setItem(key, JSON.stringify({
+      cols: 2,
+      tree: {
+        kind: 'split', dir: 'row', weights: [65, 35], children: [
+          { kind: 'split', dir: 'col', weights: [70, 30], children: [
+            { kind: 'leaf', session: 12, id: 'p12' },
+            { kind: 'browser', id: 'b17', url: 'http://localhost:5173' }
+          ] },
+          { kind: 'editor', id: 'e4', path: '/project/src/App.tsx' }
+        ]
+      }
+    }))
+
+    const loaded = loadLayout('/ws/browser-migration::g-default')
+    expect(loaded.browserUrls).toEqual(['http://localhost:5173'])
+    expect(preorderLeaves(loaded.tree)).toEqual([12, 'e4'])
+    expect(containsPaneKind(loaded.tree, 'browser')).toBe(false)
+    expect(loadLayout('/ws/browser-migration::g-default').browserUrls).toBeUndefined()
+    expect(JSON.parse(localStorage.getItem(key)!).tree).toEqual(loaded.tree)
+  })
+
   it('migrateSavedGitLeaves rewrites every grid, reports each workspace once, and is idempotent', () => {
     localStorage.clear()
     localStorage.setItem(
@@ -684,7 +708,7 @@ describe('the legacy git leaf migrates out of saved grids', () => {
 })
 
 describe('an old persisted tree must not crash the app (step 04 hazard 1)', () => {
-  it('loads a pre-step-04 tree — no git/skills nodes ever existed, only leaf/browser/editor', () => {
+  it('loads a pre-step-04 tree and migrates its browser while keeping the editor', () => {
     localStorage.setItem(
       'tr-layout:/ws/pre-step04',
       JSON.stringify({
@@ -704,9 +728,9 @@ describe('an old persisted tree must not crash the app (step 04 hazard 1)', () =
     const loaded = loadLayout('/ws/pre-step04')
     expect(preorderSessions(loaded.tree)).toEqual([3])
     expect(preorderNonSessionPanes(loaded.tree)).toEqual([
-      { kind: 'browser', id: 'b-old', url: 'https://example.test' },
       { kind: 'editor', id: 'e-old', path: '/proj/README.md' }
     ])
+    expect(loaded.browserUrls).toEqual(['https://example.test'])
     const ids = sessionPaneIds(loaded.tree)
     expect(ids.get(3)).toMatch(/^p\d+-\d+$/)
   })

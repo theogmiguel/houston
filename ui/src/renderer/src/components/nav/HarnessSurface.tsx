@@ -7,7 +7,7 @@ import type { Routine } from '../../houston/generated/Routine'
 import type { HarnessAttention } from '../../houston/generated/HarnessAttention'
 import type { HarnessReport, HarnessReportError, HarnessState } from '../../houston/useHarness'
 import { Select } from '../ui/Select'
-import { BarSparkline, Button, Caption, Card, Field, Notice, PageFrame, PageHeader, Segmented, TextInput } from '../ui'
+import { BarSparkline, Button, Caption, Card, Field, NavSurfaceFrame, Notice, PageFrame, PageHeader, Segmented, TextInput } from '../ui'
 import { BulletList, FieldGrid, SectionTitle } from '../ui/navText'
 import { engineLabel } from '../engineLabel'
 import { HarnessFindings } from './HarnessFindings'
@@ -64,10 +64,12 @@ export function HarnessSurface(props: HarnessSurfaceProps): React.JSX.Element {
   }, [state, onRunNow])
 
   return (
-    <PageFrame width="wide" data-testid="nav-surface">
-      <HarnessHeader {...props} routine={props.workspace ? (state?.routine ?? null) : null} />
-      <HarnessWorkspaceContent props={props} pendingRun={pendingRun} />
-    </PageFrame>
+    <NavSurfaceFrame>
+      <PageFrame width="wide" className="flex-1 min-w-0">
+        <HarnessHeader {...props} routine={props.workspace ? (state?.routine ?? null) : null} />
+        <HarnessWorkspaceContent props={props} pendingRun={pendingRun} />
+      </PageFrame>
+    </NavSurfaceFrame>
   )
 }
 

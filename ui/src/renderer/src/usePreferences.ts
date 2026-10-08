@@ -20,6 +20,48 @@ export const FONT_DEFAULT = 14
 export type DesktopNotificationMode = 'off' | 'notifications' | 'sound' | 'notifications-sound'
 export const DESKTOP_NOTIFICATION_MODE_KEY = 'tr-desktop-notifications'
 export const IN_APP_NOTIFICATIONS_KEY = 'tr-in-app-notifications'
+export const OPEN_DIFF_ON_AGENT_STOP_KEY = 'tr-open-diff-on-agent-stop'
+const OPEN_DIFF_ON_AGENT_STOP_EVENT = 'houston:open-diff-on-agent-stop-change'
+
+export function useOpenDiffOnAgentStopPreference(): [boolean, (enabled: boolean) => void] {
+  const [enabled, setEnabled] = useState(loadOpenDiffOnAgentStop)
+
+  useEffect(() => {
+    const sync = (): void => setEnabled(loadOpenDiffOnAgentStop())
+    window.addEventListener(OPEN_DIFF_ON_AGENT_STOP_EVENT, sync)
+    return () => window.removeEventListener(OPEN_DIFF_ON_AGENT_STOP_EVENT, sync)
+  }, [])
+
+  const update = useCallback((next: boolean): void => {
+    localStorage.setItem(OPEN_DIFF_ON_AGENT_STOP_KEY, next ? '1' : '0')
+    setEnabled(next)
+    window.dispatchEvent(new Event(OPEN_DIFF_ON_AGENT_STOP_EVENT))
+  }, [])
+
+  return [enabled, update]
+}
+
+export function useModifierHeld(): void {
+  useEffect(() => {
+    const update = (event: KeyboardEvent): void => {
+      document.documentElement.classList.toggle('ctrl-held', event.ctrlKey)
+    }
+    const clear = (): void => document.documentElement.classList.remove('ctrl-held')
+    window.addEventListener('keydown', update)
+    window.addEventListener('keyup', update)
+    window.addEventListener('blur', clear)
+    return () => {
+      window.removeEventListener('keydown', update)
+      window.removeEventListener('keyup', update)
+      window.removeEventListener('blur', clear)
+      clear()
+    }
+  }, [])
+}
+
+function loadOpenDiffOnAgentStop(): boolean {
+  return localStorage.getItem(OPEN_DIFF_ON_AGENT_STOP_KEY) === '1'
+}
 
 export const FONT_MIN = 8
 export const FONT_MAX = 24
@@ -156,6 +198,8 @@ export function usePreferences(): {
   setDesktopNotificationMode: React.Dispatch<React.SetStateAction<DesktopNotificationMode>>
   inAppNotifications: boolean
   setInAppNotifications: React.Dispatch<React.SetStateAction<boolean>>
+  openDiffOnAgentStop: boolean
+  setOpenDiffOnAgentStop: (enabled: boolean) => void
   changeFont: (dir: 1 | -1 | 0) => void
   changeZoom: (dir: 1 | -1 | 0) => void
 } {
@@ -203,6 +247,7 @@ export function usePreferences(): {
   const [inAppNotifications, setInAppNotifications] = useState(
     () => localStorage.getItem(IN_APP_NOTIFICATIONS_KEY) === '1'
   )
+  const [openDiffOnAgentStop, setOpenDiffOnAgentStop] = useOpenDiffOnAgentStopPreference()
 
   useEffect(() => applyTheme(theme), [theme])
   useEffect(() => saveTerminalPaletteChoice(themeChoice), [themeChoice])
@@ -318,6 +363,8 @@ export function usePreferences(): {
     setDesktopNotificationMode,
     inAppNotifications,
     setInAppNotifications,
+    openDiffOnAgentStop,
+    setOpenDiffOnAgentStop,
     changeFont,
     changeZoom
   }

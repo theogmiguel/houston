@@ -758,6 +758,7 @@ mod tests {
     fn a_check_in_an_unknown_state_blocks_and_is_named() {
         let mut d = detail(PrMergeable::Mergeable, PrMergeState::Clean);
         d.checks = vec![PrCheck {
+            run_id: None,
             name: "unnamed check".into(),
             state: PrCheckState::Unknown,
             url: None,
@@ -773,12 +774,14 @@ mod tests {
         let mut d = detail(PrMergeable::Mergeable, PrMergeState::Clean);
         d.checks = vec![
             PrCheck {
+                run_id: None,
                 name: "core-checks".into(),
                 state: PrCheckState::Failing,
                 url: None,
                 duration_ms: None,
             },
             PrCheck {
+                run_id: None,
                 name: "renderer-checks".into(),
                 state: PrCheckState::Running,
                 url: None,
@@ -856,6 +859,7 @@ mod tests {
         d.checks = ["a", "b", "c", "d", "e"]
             .iter()
             .map(|n| PrCheck {
+                run_id: None,
                 name: (*n).into(),
                 state: PrCheckState::Failing,
                 url: None,

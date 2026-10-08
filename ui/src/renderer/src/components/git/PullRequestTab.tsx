@@ -1,3 +1,4 @@
+import { PrTab } from '../ui/PrTab'
 import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { Button } from '../ui/Button'
@@ -6,7 +7,7 @@ import { TextArea } from '../ui/TextArea'
 import { MetadataRow } from '../ui/MetadataRow'
 import { Card } from '../ui/Card'
 import { SectionHead } from '../ui/SectionHead'
-import { PullRequestState, PullRequestDescription, PullRequestReviewBody, CheckStateDot, CheckSummary } from '../ui/PullRequestState'
+import { PullRequestState, PullRequestDescription, PullRequestReviewBody } from '../ui/PullRequestState'
 import { materialAttrs } from '../ui/material'
 import { useEffect, useRef, useState } from 'react'
 import type {
@@ -20,24 +21,30 @@ import type {
   PrReviewVerdict,
   PullRequestLink
 } from '../../houston/client'
-import { Segmented } from '../ui/SegmentedControl'
+import { Segmented, type SegmentedOption } from '../ui/SegmentedControl'
 import { ScmNotice } from './ScmNotice'
 import { Disclosure } from '../ui/Disclosure'
 import { Icon } from '../ui/Icon'
-import { IconLoaderCircle, IconPencil, IconExternal, IconGitPullRequest } from '../icons'
+import { IconPencil, IconExternal, IconGitPullRequest, IconCheck, IconFile, IconClose, IconChevronDown, IconMessageSquare } from '../icons'
 import { Tooltip } from '../ui/Tooltip'
+import { useExitAnimation } from '../ui/AnimOut'
 import { prDecisionLabel } from './changes'
 import { PrBrowse } from './PrBrowse'
-import { PrComments, PrThreads } from './PrDiscussion'
+import { PrComments, PrInspectorComments, PrThreads } from './PrDiscussion'
 import { PrFiles } from './PrFiles'
 import { PrEmptyStates } from './PrEmptyStates'
+import { PrDetailSkeleton } from '../ui/PrDetailSkeleton'
 import { PrLabelPicker, PrReactions, PrReviewerPicker } from './PrPickers'
 import { PrReviewBar } from './PrReviewBar'
 import { PrSummary } from './PrSummary'
 import { PrStackSection } from './PrStack'
 import { PrFooterBar } from './PrFooterBar'
+import { PrBranchSummary } from './PrSummary'
 import { PrWatchRow, PrWatchStack } from '../ui/PrWatch'
-import { PrInspectorSections } from '../ui/PrInspectorSections'
+import { PrChecksPanel } from '../prs/PrChecksPanel'
+import { ChecksList, checkKey, type CheckAgentTarget } from '../prs/ChecksList'
+import { PrChecksList, usePrChecksState } from '../prs/usePrChecksState'
+import { CopyChip } from '../ui/CopyChip'
 import { usePrWatch } from './usePrWatch'
 import {
   usePrDetail,
@@ -52,12 +59,19 @@ export interface PullRequestTabProps {
   session?: number | null
   onOpenUrlInPane?: (url: string) => void
   onSendToOrchestrator?: (text: string) => void
+  /** Grid-local agents supplied by the surface host for check-log handoff. */
+  checkAgentTargets?: CheckAgentTarget[]
+  /** Paste check context into the selected agent's prompt without submitting it. */
+  onPasteToAgent?: (session: number, text: string) => void
+  onCreateCheckAgent?: ((provider: string, text: string) => void) | ((provider: string, text: string) => Promise<number | null>)
   onShowChanges?: () => void
   active?: boolean
   onPrPresenceChange?: (exists: boolean, tone?: PrPresenceTone) => void
   /** A changing counter from the panel header's Refresh; re-reads the detail. */
   compact?: boolean
   refreshSignal?: number
+  requestedPr?: { number: number; nonce: number } | null
+  onOpenPane?: (session: number) => void
 }
 
 export type PrPresenceTone = 'ok' | 'warn' | 'stop'
@@ -72,15 +86,6 @@ const CHECK_LABEL: Record<PrCheckState, string> = {
   failing: 'failed',
   skipped: 'skipped',
   unknown: 'unknown'
-}
-
-const CHECK_PRIORITY: Record<PrCheckState, number> = {
-  failing: 0,
-  running: 1,
-  queued: 2,
-  unknown: 3,
-  passing: 4,
-  skipped: 5
 }
 
 const REVIEW_LABEL: Record<string, string> = {
@@ -148,6 +153,18 @@ function PrIdle(): React.JSX.Element {
       description="Select a workspace to see its pull request."
     />
   )
+}
+
+function PrWatchContent({
+  rows,
+  showRows = true,
+  children,
+}: {
+  rows: React.ReactNode
+  showRows?: boolean
+  children: React.ReactNode
+}): React.JSX.Element {
+  return <PrWatchStack>{showRows && rows}{children}</PrWatchStack>
 }
 
 function PrBlocked({
@@ -390,7 +407,7 @@ function PrHeaderMetadata({ link, detail, onOpenUrlInPane }: {
     </div>
     <PullRequestRole data-testid="pr-title" as="div" role="pull-request-title">{link.title ?? `Pull request #${link.number}`}</PullRequestRole>
     <PullRequestRole data-testid="pr-sub" as="div" role="branch-summary">
-      {branchPair ? `${branchPair} · ` : ''}{detail.commit_count === 1 ? '1 commit' : `${detail.commit_count} commits`}
+      {head && <PrTab as={CopyChip} surface="pr-head-ref" value={head}>{head}</PrTab>}{branchPair ? ` → ${base} · ` : ''}{detail.commit_count === 1 ? '1 commit' : `${detail.commit_count} commits`}
       {' · '}<span data-testid="pr-additions">+{link.additions}</span>{' '}<span data-testid="pr-deletions">−{link.deletions}</span>
       {detail.behind_by !== null && detail.behind_by !== undefined ? (detail.behind_by === 0 ? ' · up to date' : ` · ${detail.behind_by} behind`) : ''}
       {detail.auto_merge_enabled === true ? ` · auto-merge ${detail.auto_merge_method ?? 'merge'}` : ''}
@@ -449,20 +466,6 @@ function PrHeader({ link, detail, busy, editBusy, onEdit, onReact, onOpenUrlInPa
   </PullRequestRole>
 }
 
-function PrCheckRow({ check }: { check: PrCheck }): React.JSX.Element {
-  return (
-    <PullRequestRole
-      data-testid="pr-check-row" as="div" role="check-row"
-    >
-      <CheckStateDot state={check.state} size="check" />
-      <PullRequestRole as="span" role="check-name">{check.name}</PullRequestRole>
-      <PullRequestRole as="span" role="check-meta">
-        {checkMeta(check)}
-      </PullRequestRole>
-    </PullRequestRole>
-  )
-}
-
 function PrEditDetails({ link, detail, busy, editBusy, onEdit }: {
   link: PullRequestLink
   detail: PrDetail
@@ -490,46 +493,6 @@ function PrEditDetails({ link, detail, busy, editBusy, onEdit }: {
       </PullRequestRole>
     </PullRequestRole>}
   </PullRequestRole>
-}
-
-function checkSummary(checks: PrCheck[]): { text: string; failed: number; running: number } {
-  const running = checks.filter((check) => check.state === 'running' || check.state === 'queued' || check.state === 'unknown').length
-  const passed = checks.filter((check) => check.state === 'passing').length
-  const failed = checks.filter((check) => check.state === 'failing').length
-  const parts = [
-    failed > 0 ? `${failed} failed` : '',
-    running > 0 ? `${running} running` : '',
-    passed > 0 ? `${passed} passed` : ''
-  ].filter(Boolean)
-  return { text: parts.length > 0 ? parts.join(', ') : 'No checks reported', failed, running }
-}
-
-function PrChecks({ checks }: { checks: PrCheck[] }): React.JSX.Element {
-  const summary = checkSummary(checks)
-  const passed = checks.filter((check) => check.state === 'passing').length
-  const ordered = [...checks].sort((left, right) => CHECK_PRIORITY[left.state] - CHECK_PRIORITY[right.state])
-  return (
-    <div data-testid="pr-checks">
-      <Disclosure
-        defaultOpen
-        scrollBody={false}
-        variant="flush"
-        summary={
-          <PullRequestRole as="span" role="check-details">
-            <CheckSummary failed={summary.failed} running={summary.running} count={checks.length} size="check" />
-            <span data-testid="pr-check-summary">CHECKS · {passed} OF {checks.length} PASSED</span>
-          <PullRequestRole as="span" role="right-meta-label">Details</PullRequestRole>
-          </PullRequestRole>
-        }
-      >
-        {checks.length === 0 ? (
-          <PullRequestRole as="div" role="viewed-label">No checks reported.</PullRequestRole>
-        ) : (
-          ordered.map((check, index) => <PrCheckRow key={`${check.name}-${index}`} check={check} />)
-        )}
-      </Disclosure>
-    </div>
-  )
 }
 
 function PrMeta({
@@ -635,7 +598,301 @@ export function pendingMergeReason(detail: PrDetail): string | null {
   return reason
 }
 
-function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approvalsRequired, approvalsReceived, onOpenUrlInPane, onSendToOrchestrator, reviewBar, watchRows, openPicker, setOpenPicker }: {
+function CompactPrChecks({ state }: { state: ReturnType<typeof usePrChecksState> }): React.JSX.Element {
+  const { failedCount, passedCount, sectionOpen, setSectionOpen, listProps } = state
+  const checks = listProps.checks
+  return <PrTab as="section" surface="pr-compact-checks" data-testid="pr-checks">
+    <PrTab as="div" surface="pr-compact-checks-heading">
+      <button type="button" aria-expanded={sectionOpen} onClick={() => setSectionOpen((open) => !open)}>
+        <Icon glyph={IconChevronDown} role="small" className={sectionOpen ? '' : '-rotate-90'} />Checks
+      </button>
+      <span data-testid="pr-check-summary">{failedCount > 0 ? `${failedCount} of ${checks.length} failing` : `${passedCount} passed`}</span>
+    </PrTab>
+    {sectionOpen && <div data-testid="pr-check-popover" aria-label="Pull request checks"><PrChecksList state={state} /></div>}
+  </PrTab>
+}
+
+function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approvalsRequired, approvalsReceived, onSendToOrchestrator, checkState, reviewBar, watchRows, openPicker, setOpenPicker }: {
+  link: PullRequestLink
+  detail: PrDetail
+  pr: PrDetailController
+  number: number
+  busy: boolean
+  mergeReason: string | null
+  approvalsRequired: number
+  approvalsReceived: number
+  onSendToOrchestrator?: (text: string) => void
+  checkState: ReturnType<typeof usePrChecksState>
+  reviewBar: React.ReactNode
+  watchRows: React.ReactNode
+  openPicker: 'reviewers' | 'labels' | 'stack' | null
+  setOpenPicker: (value: 'reviewers' | 'labels' | 'stack' | null) => void
+}): React.JSX.Element {
+  return <PrBranchSummary
+    detail={detail}
+    people={<PrTab as="section" surface="pr-branch-people">
+      <PrReviewerPicker compact detail={detail} busy={busy} candidates={pr.reviewers} loading={pr.reviewersBusy} message={pr.reviewersMessage} onLoad={() => pr.loadReviewers(number)} onApply={(added, removed) => pr.reviewerApply(number, added, removed)} open={openPicker === 'reviewers'} onOpenChange={(open) => setOpenPicker(open ? 'reviewers' : null)} />
+      <PrLabelPicker compact detail={detail} busy={busy} candidates={pr.labels} loading={pr.labelsBusy} message={pr.labelsMessage} onLoad={() => pr.loadLabels(number)} onToggle={(name, applied) => pr.labelSet(number, [name], applied)} open={openPicker === 'labels'} onOpenChange={(open) => setOpenPicker(open ? 'labels' : null)} />
+    </PrTab>}
+    checks={<CompactPrChecks state={checkState} />}
+    descriptionAction={<PrEditDetails link={link} detail={detail} busy={busy} editBusy={pr.write.busy === `edit:${number}`} onEdit={(title, body) => pr.edit(number, title, body)} />}
+    footer={<>
+      {watchRows}
+      <PrInspectorComments
+        detail={detail}
+        approvalsRequired={approvalsRequired}
+        approvalsReceived={approvalsReceived}
+        number={number}
+        busy={busy}
+        onReply={(threadId, body) => pr.threadReply(number, threadId, body)}
+        onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)}
+        onSendToOrchestrator={onSendToOrchestrator}
+        issueComments={null}
+      />
+      <div data-testid="pr-details">
+        <PrTab as={Disclosure} surface="pr-compact-details" summary="Details" scrollBody={false} variant="flush">
+          <PullRequestRole as="div" role="detail-content">
+            <PrEditDetails link={link} detail={detail} busy={busy} editBusy={pr.write.busy === `edit:${number}`} onEdit={(title, body) => pr.edit(number, title, body)} />
+            <PrMeta link={link} detail={detail} mergeReason={mergeReason} />
+            {detail.reviews_total > 0 && <PrReviews detail={detail} />}
+            {(detail.threads.length > 0 || detail.threads_message !== null || detail.threads_truncated) && <PrThreads detail={detail} busy={busy} number={number} onSendToOrchestrator={onSendToOrchestrator} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />}
+            <PrComments detail={detail} busy={busy} onComment={(body) => pr.comment(number, body)} onCommentEdit={(commentId, body) => pr.commentEdit(number, commentId, 'issue_comment', body)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />
+            {reviewBar}
+            <div><SectionHead density="row" tone="muted" title="People & labels" />
+              <PrReviewerPicker detail={detail} busy={busy} candidates={pr.reviewers} loading={pr.reviewersBusy} message={pr.reviewersMessage} onLoad={() => pr.loadReviewers(number)} onApply={(added, removed) => pr.reviewerApply(number, added, removed)} open={openPicker === 'reviewers'} onOpenChange={(open) => setOpenPicker(open ? 'reviewers' : null)} />
+              <PrLabelPicker detail={detail} busy={busy} candidates={pr.labels} loading={pr.labelsBusy} message={pr.labelsMessage} onLoad={() => pr.loadLabels(number)} onToggle={(name, applied) => pr.labelSet(number, [name], applied)} open={openPicker === 'labels'} onOpenChange={(open) => setOpenPicker(open ? 'labels' : null)} />
+              <PrStackSection number={number} busy={busy} stack={pr.stack} checked={pr.stackChecked} loading={pr.stackBusy} message={pr.stackMessage} onLoad={() => pr.loadStack(number)} open={openPicker === 'stack'} onOpenChange={(open) => setOpenPicker(open ? 'stack' : null)} />
+            </div>
+          </PullRequestRole>
+        </PrTab>
+      </div>
+    </>}
+  />
+}
+
+function PrCheckStripSummary({ checkState, total }: { checkState: ReturnType<typeof usePrChecksState>; total: number }): React.JSX.Element {
+  return (
+    <Button
+      variant="link"
+      size="sm"
+      type="button"
+      data-testid="pr-check-strip-summary"
+      aria-expanded={checkState.popoverOpen}
+      style={{ color: checkState.failedCount > 0 ? 'var(--stop)' : 'var(--text-secondary)' }}
+      onClick={() => checkState.setPopoverOpen((open) => !open)}
+    >
+      {checkState.failedCount > 0 ? (
+        <>
+          <PrTab as="span" surface="pr-check-failed-icon"><Icon glyph={IconClose} role="small" /></PrTab>
+          {checkState.failedCount} of {total} failing
+        </>
+      ) : (
+        <>
+          <Icon glyph={IconCheck} role="small" />All checks passed
+        </>
+      )}
+    </Button>
+  )
+}
+
+function PrDetailToolbar({
+  compact,
+  pane,
+  detail,
+  checkState,
+  onBrowse,
+  pr,
+  preloadCode,
+  onChangePane
+}: {
+  compact: boolean
+  pane: 'summary' | 'timeline' | 'files'
+  detail: PrDetail
+  checkState: ReturnType<typeof usePrChecksState>
+  onBrowse: () => void
+  pr: PrDetailController
+  preloadCode: (target: EventTarget) => void
+  onChangePane: (pane: 'summary' | 'timeline' | 'files') => void
+}): React.JSX.Element {
+  const [popoverExpanded, setPopoverExpanded] = useState<string | null>(null)
+  const popoverMotion = useExitAnimation(compact && pane === 'summary' && checkState.popoverOpen, 150)
+  useEffect(() => {
+    if (!checkState.popoverOpen) return
+    const closeOnOutside = (event: PointerEvent): void => {
+      if (event.target instanceof Element && event.target.closest('[data-testid="pr-check-popover"], [data-testid="pr-check-strip-summary"]')) return
+      checkState.setPopoverOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') checkState.setPopoverOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [checkState.popoverOpen, checkState.setPopoverOpen])
+  return (
+    <>
+    <PrTab
+      as={PullRequestRole}
+      surface="pr-tab-toolbar"
+      state={compact ? 'compact' : null}
+      role="tab-toolbar"
+      onMouseOver={(event) => preloadCode(event.target)}
+      onFocusCapture={(event) => preloadCode(event.target)}
+    >
+      <Segmented<'summary' | 'timeline' | 'files'>
+        aria-label="Pull request view"
+        value={pane}
+        onChange={(value) => {
+          checkState.setPopoverOpen(false)
+          onChangePane(value)
+        }}
+        options={[
+          { value: 'summary', label: 'Summary', testId: 'pr-pane-summary' },
+          ...(compact ? [{ value: 'timeline' as const, label: 'Timeline', testId: 'pr-pane-timeline' }] : []),
+          { value: 'files', label: compact ? 'Code' : 'Files', testId: compact ? 'pr-pane-code' : 'pr-pane-files' }
+        ] satisfies SegmentedOption<'summary' | 'timeline' | 'files'>[]}
+      />
+      {compact && pane === 'timeline' && (
+        <PrTab as="span" surface="pr-timeline-counts"><Icon glyph={IconMessageSquare} role="small" /> {detail.comments_total} <span>·</span> {detail.commit_count} commits</PrTab>
+      )}
+      {compact && pane === 'summary' && <PrCheckStripSummary checkState={checkState} total={detail.checks.length} />}
+      {popoverMotion.mounted && (
+        <PrTab as="div" surface="pr-check-popover" state={popoverMotion.closing ? 'closing' : undefined} data-testid="pr-check-popover" data-failing={checkState.failedCount > 0} aria-label="Pull request checks" aria-hidden={popoverMotion.closing || undefined}>
+          <PrTab as="div" surface="pr-check-popover-title">{checkState.failedCount > 0 ? `${checkState.failedCount} check failed` : 'All checks have passed'}</PrTab>
+          <PrTab as="div" surface="pr-check-popover-subtitle">{checkState.passedCount} passed{checkState.failedCount > 0 ? ` · ${checkState.failedCount} failed` : ''}</PrTab>
+          <ChecksList
+            {...checkState.listProps}
+            expanded={popoverExpanded}
+            onToggle={(check) => {
+              const key = checkKey(check)
+              setPopoverExpanded((current) => current === key ? null : key)
+              if (checkState.listProps.expanded !== key) checkState.listProps.onToggle(check)
+            }}
+          />
+        </PrTab>
+      )}
+      {!compact && (
+        <ReviewButton variant="compact-action" type="button" data-testid="pr-browse-open" onClick={onBrowse}>
+          Browse…
+        </ReviewButton>
+      )}
+      <PullRequestRole as="span" role="merge-status">
+        {detail.mergeable === 'conflicting' ? 'conflicts' : ''}
+      </PullRequestRole>
+    </PrTab>
+    {pr.viewed !== null && (
+      <PrTab as="div" surface="pr-viewed-notice">
+        <PullRequestRole data-testid="pr-browsed" as="span" role="viewed-label">
+          Viewing #{pr.viewed}, not this branch's pull request
+        </PullRequestRole>
+        <LazyLegacyButton variant="legacy-secondary" type="button" data-testid="pr-back-to-branch" onClick={pr.showBranch}>
+          Back
+        </LazyLegacyButton>
+      </PrTab>
+    )}
+    </>
+  )
+}
+
+function PrBranchHeader({ link, detail, actionBar, condensed, foldRef, condensedRef }: {
+  link: PullRequestLink
+  detail: PrDetail
+  actionBar: React.ReactNode
+  condensed: boolean
+  foldRef: React.RefObject<HTMLDivElement | null>
+  condensedRef: React.RefObject<HTMLDivElement | null>
+}): React.JSX.Element {
+  const updatedMinutes = Math.max(0, Math.floor((Date.now() / 1000 - detail.updated_at) / 60))
+  const number = (testId?: string): React.JSX.Element => <PrTab as="a" surface="pr-crumb-number" state={link.is_draft && link.state === 'open' ? 'draft' : link.state} href={link.url} data-testid={testId}>#{link.number}<Icon glyph={IconExternal} role="small" /></PrTab>
+  return <PrTab as="div" surface="pr-scroll-header" data-testid="pr-scroll-header" data-condensed={condensed}>
+    <PrTab as="div" surface="pr-branch-topline" data-testid="pr-header-top">
+      <PrTab as="div" surface="pr-crumb-cell">
+        <PrTab as="div" surface="pr-crumb-expanded" state={condensed ? 'hidden' : undefined}>
+          <PrTab as="span" surface="pr-crumb-repo">{link.repository}</PrTab><span data-testid="pr-state">{number('pr-number')}</span>
+        </PrTab>
+        <PrTab as="div" surface="pr-crumb-condensed" state={condensed ? undefined : 'hidden'}>
+          {number()}<span>{link.title ?? `Pull request #${link.number}`}</span>
+        </PrTab>
+      </PrTab>
+      {actionBar}
+    </PrTab>
+    <PrTab as="div" surface="pr-header-fold" state={condensed ? 'shut' : undefined}>
+    <div><PrTab as="div" surface="pr-branch-heading" ref={foldRef}>
+      <PullRequestRole data-testid="pr-title" as="h2" role="pull-request-title">{link.title ?? `Pull request #${link.number}`}</PullRequestRole>
+      <PrTab as="div" surface="pr-branch-author">
+        <PrTab as="span" surface="pr-branch-avatar" aria-hidden="true">{(detail.author ?? 'M').slice(0, 1).toUpperCase()}</PrTab>
+        <span>{detail.author ?? 'maintainer'}</span><span aria-hidden="true">·</span>
+        <span>updated {updatedMinutes}m ago</span>
+        <PrTab as={CopyChip} surface="pr-branch-checkout" value={`gh pr checkout ${link.number}`}>gh pr checkout {link.number}</PrTab>
+      </PrTab>
+      <PrTab as="div" surface="pr-branch-refs" data-testid="pr-sub">
+        <PrTab as="span" surface="pr-branch-ref-pair"><span>{detail.base_ref ?? 'main'}</span><span aria-hidden="true">←</span><span>{detail.head_ref ?? 'branch'}</span></PrTab>
+        <PrTab as="span" surface="pr-branch-stat"><Icon glyph={IconFile} role="small" /><span>{link.changed_files} files</span><PrTab as="span" surface="pr-branch-diff"><span>+{link.additions}</span><span>−{link.deletions}</span></PrTab></PrTab>
+      </PrTab>
+    </PrTab></div>
+    </PrTab>
+    <PrTab as="div" surface="pr-condensed-row" state={condensed ? 'open' : undefined}>
+      <div><PrTab as="div" surface="pr-condensed-inner" ref={condensedRef}>
+        <PrTab as="span" surface="pr-branch-avatar" aria-hidden="true">{(detail.author ?? 'M').slice(0, 1).toUpperCase()}</PrTab>
+        <span>{updatedMinutes}m ago</span><span aria-hidden="true">·</span>
+        <PrTab as="span" surface="pr-condensed-refs"><span>{detail.base_ref ?? 'main'}</span><span aria-hidden="true">←</span><span>{detail.head_ref ?? 'branch'}</span></PrTab>
+        <PrTab as="span" surface="pr-branch-stat"><Icon glyph={IconFile} role="small" /><span>{link.changed_files} files</span><PrTab as="span" surface="pr-branch-diff"><span>+{link.additions}</span><span>−{link.deletions}</span></PrTab></PrTab>
+      </PrTab></div>
+    </PrTab>
+  </PrTab>
+}
+
+function PrTimelineSummary({
+  detail,
+}: {
+  detail: PrDetail
+}): React.JSX.Element {
+  const age = (timestamp: number): string => {
+    const minutes = Math.max(0, Math.floor(Date.now() / 1000 - timestamp) / 60)
+    if (minutes < 60) return `${Math.floor(minutes)}m ago`
+    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`
+    return `${Math.floor(minutes / 1440)}d ago`
+  }
+  const events = [
+    { key: 'opened', at: detail.created_at, icon: IconGitPullRequest, content: <><strong>{detail.author ?? 'Author'}</strong> opened this pull request</> },
+    ...(detail.commit_count > 0 ? [{ key: 'commits', at: detail.updated_at, icon: IconFile, content: <><strong>{detail.commit_count} commits</strong> on this branch <PrTab as="span" surface="pr-timeline-sha">{detail.head_sha.slice(0, 7)}</PrTab></> }] : []),
+    ...detail.comments.map((comment, index) => ({ key: comment.id ?? `comment-${index}`, at: comment.created_at, icon: IconMessageSquare, content: <><strong>{comment.author}</strong> commented</> })),
+    ...(detail.checks.length > 0 && detail.checks.every((check) => check.state === 'passing')
+      ? [{ key: 'checks', at: detail.updated_at, icon: IconCheck, content: <strong>All checks passed</strong> }]
+      : []),
+  ].sort((a, b) => a.at - b.at)
+  return (
+      <PrTab as="div" surface="pr-timeline" data-testid="pr-timeline-events">
+        {events.map((event) => (
+          <PrTab as="div" surface="pr-timeline-event" key={event.key}>
+            <PrTab as="span" surface="pr-timeline-mark" state={event.key === 'checks' ? 'passing' : undefined}><Icon glyph={event.icon} role="small" /></PrTab>
+            <span>{event.content}</span>
+            <PrTab as="time" surface="pr-timeline-age">{age(event.at)}</PrTab>
+          </PrTab>
+        ))}
+      </PrTab>
+  )
+}
+
+function PrDetailStandardSummary({
+  link,
+  detail,
+  pr,
+  number,
+  busy,
+  mergeReason,
+  approvalsRequired,
+  approvalsReceived,
+  onOpenUrlInPane,
+  onSendToOrchestrator,
+  checkState,
+  openPicker,
+  setOpenPicker,
+  reviewBar
+}: {
   link: PullRequestLink
   detail: PrDetail
   pr: PrDetailController
@@ -646,38 +903,204 @@ function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approva
   approvalsReceived: number
   onOpenUrlInPane?: (url: string) => void
   onSendToOrchestrator?: (text: string) => void
+  checkState: ReturnType<typeof usePrChecksState>
+  openPicker: 'reviewers' | 'labels' | 'stack' | null
+  setOpenPicker: (value: 'reviewers' | 'labels' | 'stack' | null) => void
+  reviewBar: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <PrSummary>
+      <Card tone="material-inset" shape="inset" {...materialAttrs('inset')}>
+        <PrHeader
+          link={link}
+          detail={detail}
+          busy={busy}
+          editBusy={pr.write.busy === `edit:${number}`}
+          onEdit={(title, body) => pr.edit(number, title, body)}
+          onReact={(content, reacted) => pr.react(number, null, content, reacted)}
+          onOpenUrlInPane={onOpenUrlInPane}
+        />
+      </Card>
+      <Card tone="material-inset" shape="inset" {...materialAttrs('inset')}>
+        <PrChecksPanel state={checkState} />
+        <PrMeta link={link} detail={detail} mergeReason={mergeReason} />
+      </Card>
+      <Card tone="material-inset" shape="inset" {...materialAttrs('inset')}>
+        <SectionHead density="row" tone="muted" title="People & labels" />
+        <PrReviewerPicker
+          detail={detail}
+          busy={busy}
+          candidates={pr.reviewers}
+          loading={pr.reviewersBusy}
+          message={pr.reviewersMessage}
+          onLoad={() => pr.loadReviewers(number)}
+          onApply={(added, removed) => pr.reviewerApply(number, added, removed)}
+          open={openPicker === 'reviewers'}
+          onOpenChange={(open) => setOpenPicker(open ? 'reviewers' : null)}
+        />
+        <PrLabelPicker
+          detail={detail}
+          busy={busy}
+          candidates={pr.labels}
+          loading={pr.labelsBusy}
+          message={pr.labelsMessage}
+          onLoad={() => pr.loadLabels(number)}
+          onToggle={(name, applied) => pr.labelSet(number, [name], applied)}
+          open={openPicker === 'labels'}
+          onOpenChange={(open) => setOpenPicker(open ? 'labels' : null)}
+        />
+        <PrStackSection
+          number={number}
+          busy={busy}
+          stack={pr.stack}
+          checked={pr.stackChecked}
+          loading={pr.stackBusy}
+          message={pr.stackMessage}
+          onLoad={() => pr.loadStack(number)}
+          open={openPicker === 'stack'}
+          onOpenChange={(open) => setOpenPicker(open ? 'stack' : null)}
+        />
+      </Card>
+      <Card tone="material-inset" shape="inset" {...materialAttrs('inset')}>
+        {link.review_decision === 'REVIEW_REQUIRED' && approvalsRequired > 0 && (
+          <PullRequestRole data-testid="pr-review-requirement" as="div" role="approval-requirement">
+            <span>Review · {approvalsRequired} approval{approvalsRequired === 1 ? '' : 's'} required</span>
+            <span data-review-count>{Math.min(approvalsReceived, approvalsRequired)} / {approvalsRequired}</span>
+          </PullRequestRole>
+        )}
+        {detail.reviews_total > 0 && <PrReviews detail={detail} />}
+        {(detail.threads.length > 0 || detail.threads_message !== null || detail.threads_truncated) && (
+          <PrThreads
+            detail={detail}
+            busy={busy}
+            number={number}
+            onSendToOrchestrator={onSendToOrchestrator}
+            onReply={(threadId, body) => pr.threadReply(number, threadId, body)}
+            onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)}
+            onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)}
+          />
+        )}
+        <PrComments
+          detail={detail}
+          busy={busy}
+          onComment={(body) => pr.comment(number, body)}
+          onCommentEdit={(commentId, body) => pr.commentEdit(number, commentId, 'issue_comment', body)}
+          onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)}
+        />
+        {reviewBar}
+      </Card>
+    </PrSummary>
+  )
+}
+
+function PrDetailBody({
+  pane,
+  compact,
+  link,
+  detail,
+  pr,
+  number,
+  busy,
+  mergeReason,
+  approvalsRequired,
+  approvalsReceived,
+  onOpenUrlInPane,
+  onSendToOrchestrator,
+  checkState,
+  reviewBar,
+  watchRows,
+  openPicker,
+  setOpenPicker,
+  drafts,
+  onAddDraft,
+  scrollRef,
+  onScroll
+}: {
+  pane: 'summary' | 'timeline' | 'files'
+  compact: boolean
+  link: PullRequestLink
+  detail: PrDetail
+  pr: PrDetailController
+  number: number
+  busy: boolean
+  mergeReason: string | null
+  approvalsRequired: number
+  approvalsReceived: number
+  onOpenUrlInPane?: (url: string) => void
+  onSendToOrchestrator?: (text: string) => void
+  checkState: ReturnType<typeof usePrChecksState>
   reviewBar: React.ReactNode
   watchRows: React.ReactNode
   openPicker: 'reviewers' | 'labels' | 'stack' | null
   setOpenPicker: (value: 'reviewers' | 'labels' | 'stack' | null) => void
+  drafts: PrReviewDraft[]
+  onAddDraft: (draft: PrReviewDraft) => void
+  scrollRef: React.RefObject<HTMLDivElement | null>
+  onScroll?: React.UIEventHandler<HTMLDivElement>
 }): React.JSX.Element {
-  return <PrSummary>
-    <PullRequestRole as="div" role="inspector-header"><PrHeader link={link} detail={detail} busy={busy} editBusy={false} onEdit={() => {}} onReact={() => {}} onOpenUrlInPane={onOpenUrlInPane} compact /></PullRequestRole>
-    {watchRows}
-    <PrInspectorSections checks={detail.checks} detail={detail} approvalsRequired={approvalsRequired} approvalsReceived={approvalsReceived} number={number} busy={busy} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onSendToOrchestrator={onSendToOrchestrator} onOpenChecks={onOpenUrlInPane ? () => onOpenUrlInPane(`${link.url}/checks`) : undefined} />
-    <Card tone="material-inset" shape="inset" data-testid="pr-details"  {...materialAttrs('inset')}>
-      <Disclosure summary="Details" scrollBody={false}
-      variant="flush">
-        <PullRequestRole as="div" role="detail-content">
-          <PrEditDetails link={link} detail={detail} busy={busy} editBusy={pr.write.busy === `edit:${number}`} onEdit={(title, body) => pr.edit(number, title, body)} />
-          <PrMeta link={link} detail={detail} mergeReason={mergeReason} />
-          {detail.reviews_total > 0 && <PrReviews detail={detail} />}
-          {(detail.threads.length > 0 || detail.threads_message !== null || detail.threads_truncated) && <PrThreads detail={detail} busy={busy} number={number} onSendToOrchestrator={onSendToOrchestrator} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />}
-          <PrComments detail={detail} busy={busy} onComment={(body) => pr.comment(number, body)} onCommentEdit={(commentId, body) => pr.commentEdit(number, commentId, 'issue_comment', body)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />
-          {reviewBar}
-          <div><SectionHead density="row" tone="muted" title="People & labels" />
-            <PrReviewerPicker detail={detail} busy={busy} candidates={pr.reviewers} loading={pr.reviewersBusy} message={pr.reviewersMessage} onLoad={() => pr.loadReviewers(number)} onApply={(added, removed) => pr.reviewerApply(number, added, removed)} open={openPicker === 'reviewers'} onOpenChange={(open) => setOpenPicker(open ? 'reviewers' : null)} />
-            <PrLabelPicker detail={detail} busy={busy} candidates={pr.labels} loading={pr.labelsBusy} message={pr.labelsMessage} onLoad={() => pr.loadLabels(number)} onToggle={(name, applied) => pr.labelSet(number, [name], applied)} open={openPicker === 'labels'} onOpenChange={(open) => setOpenPicker(open ? 'labels' : null)} />
-            <PrStackSection number={number} busy={busy} stack={pr.stack} checked={pr.stackChecked} loading={pr.stackBusy} message={pr.stackMessage} onLoad={() => pr.loadStack(number)} open={openPicker === 'stack'} onOpenChange={(open) => setOpenPicker(open ? 'stack' : null)} />
-          </div>
+  return (
+    <PrTab as="div" surface="pr-scroll-area"
+      ref={scrollRef}
+      data-testid="pr-scroll-area"
+      onScroll={onScroll}
+    >
+      {compact && pane === 'summary' ? (
+        <PrInspectorBoard
+          link={link}
+          detail={detail}
+          pr={pr}
+          number={number}
+          busy={busy}
+          mergeReason={mergeReason}
+          approvalsRequired={approvalsRequired}
+          approvalsReceived={approvalsReceived}
+          onSendToOrchestrator={onSendToOrchestrator}
+          checkState={checkState}
+          reviewBar={reviewBar}
+          watchRows={watchRows}
+          openPicker={openPicker}
+          setOpenPicker={setOpenPicker}
+        />
+      ) : pane === 'files' ? (
+        <PullRequestRole as="div" role="file-pane" className={compact ? '!p-0 !gap-0' : ''}>
+          <PrFiles
+            key={number}
+            diff={pr.diff}
+            loading={pr.diffBusy}
+            drafts={drafts}
+            writeBusy={busy}
+            onAddDraft={onAddDraft}
+            onReload={() => pr.loadDiff(number)}
+          />
         </PullRequestRole>
-      </Disclosure>
-    </Card>
-  </PrSummary>
+      ) : compact && pane === 'timeline' ? (
+        <PrTimelineSummary detail={detail} />
+      ) : (
+        <PrDetailStandardSummary
+          link={link}
+          detail={detail}
+          pr={pr}
+          number={number}
+          busy={busy}
+          mergeReason={mergeReason}
+          approvalsRequired={approvalsRequired}
+          approvalsReceived={approvalsReceived}
+          onOpenUrlInPane={onOpenUrlInPane}
+          onSendToOrchestrator={onSendToOrchestrator}
+          checkState={checkState}
+          openPicker={openPicker}
+          setOpenPicker={setOpenPicker}
+          reviewBar={reviewBar}
+        />
+      )}
+    </PrTab>
+  )
 }
 
 function PrDetailView({
   view,
+  client,
+  dir,
   link,
   detail,
   pr,
@@ -685,11 +1108,17 @@ function PrDetailView({
   setMethod,
   onOpenUrlInPane,
   onSendToOrchestrator,
+  checkAgentTargets,
+  onPasteToAgent,
+  onCreateCheckAgent,
+  onOpenPane,
   onBrowse,
   linkMessage,
   compact,
   watchRows
 }: {
+  client: HoustonClient | null
+  dir: string | null
   compact: boolean
   view: PrDetailView
   link: PullRequestLink
@@ -699,16 +1128,30 @@ function PrDetailView({
   setMethod: (method: PrMergeMethod) => void
   onOpenUrlInPane?: (url: string) => void
   onSendToOrchestrator?: (text: string) => void
+  checkAgentTargets?: CheckAgentTarget[]
+  onPasteToAgent?: (session: number, text: string) => void
+  onCreateCheckAgent?: ((provider: string, text: string) => void) | ((provider: string, text: string) => Promise<number | null>)
+  onOpenPane?: (session: number) => void
   onBrowse: () => void
   linkMessage: React.ReactNode
   watchRows: React.ReactNode
 }): React.JSX.Element {
-  const [pane, setPane] = useState<'summary' | 'files'>('summary')
+  const [pane, setPane] = useState<'summary' | 'timeline' | 'files'>('summary')
   const [drafts, setDrafts] = useState<PrReviewDraft[]>([])
   const [reviewVerdict, setReviewVerdict] = useState<PrReviewVerdict>('comment')
   const [reviewBody, setReviewBody] = useState('')
   const [reviewDraftsOpen, setReviewDraftsOpen] = useState(false)
+  const [commentOpen, setCommentOpen] = useState(false)
+  const [commentDraft, setCommentDraft] = useState('')
+  const commentMotion = useExitAnimation(compact && commentOpen, 150)
   const [openPicker, setOpenPicker] = useState<'reviewers' | 'labels' | 'stack' | null>(null)
+  const [condensed, setCondensed] = useState(false)
+  const condensedState = useRef(false)
+  const foldRef = useRef<HTMLDivElement | null>(null)
+  const condensedRef = useRef<HTMLDivElement | null>(null)
+  const checkState = usePrChecksState({ client, dir, number: link.number, url: link.url, branch: detail.head_ref ?? null, checks: detail.checks, agents: checkAgentTargets, onPasteToAgent, onCreateAgent: onCreateCheckAgent ? (provider, text) => Promise.resolve(onCreateCheckAgent(provider, text)).then((session) => session ?? null) : undefined, onOpenUrl: onOpenUrlInPane, onOpenPane })
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const preloadedCodePr = useRef<number | null>(null)
   const mergeReason = pendingMergeReason(detail)
   const busy = pr.write.busy !== null
   const number = link.number
@@ -723,8 +1166,32 @@ function PrDetailView({
     setReviewVerdict('comment')
     setReviewBody('')
     setReviewDraftsOpen(false)
+    setCommentOpen(false)
+    setCommentDraft('')
     setOpenPicker(null)
+    condensedState.current = false
+    setCondensed(false)
   }, [number])
+
+  const onDetailScroll = (event: React.UIEvent<HTMLDivElement>): void => {
+    if (!compact) return
+    const scroll = event.currentTarget
+    const foldHeight = foldRef.current?.scrollHeight ?? 0
+    if (!condensedState.current && scroll.scrollTop > foldHeight + 32) {
+      condensedState.current = true
+      setCondensed(true)
+      scroll.scrollTop -= Math.max(0, foldHeight - (condensedRef.current?.scrollHeight ?? 0))
+    } else if (condensedState.current && scroll.scrollTop < 4) {
+      condensedState.current = false
+      setCondensed(false)
+    }
+  }
+
+  const preloadCode = (target: EventTarget): void => {
+    if (!compact || !(target instanceof Element) || !target.closest('[data-testid="pr-pane-code"]') || preloadedCodePr.current === number) return
+    preloadedCodePr.current = number
+    pr.loadDiff(number)
+  }
 
   const paneRef = useRef(pane)
   paneRef.current = pane
@@ -780,174 +1247,191 @@ function PrDetailView({
       setMethod={setMethod}
       onOpenUrlInPane={onOpenUrlInPane}
       mergeReason={mergeReason}
+      compact={compact}
     />
   )
 
 
   return (
     <PullRequestRole data-testid="pr-tab" as="div" role="tab-frame">
-      {!compact && <PullRequestRole as="div" role="tab-toolbar">
-        <Segmented
-          aria-label="Pull request view"
-          value={pane}
-          onChange={(value) => {
-            setPane(value)
-            if (value === 'files') pr.loadDiff(number)
-          }}
-          options={[
-            { value: 'summary', label: 'Summary', testId: 'pr-pane-summary' },
-            { value: 'files', label: 'Files', testId: 'pr-pane-files' }
-          ]}
-        />
-        <ReviewButton variant="compact-action"
-          type="button"
-          data-testid="pr-browse-open"
-          onClick={onBrowse}
-        >
-          Browse…
-        </ReviewButton>
-        {pr.viewed !== null && (
-          <PullRequestRole data-testid="pr-browsed" as="span" role="viewed-label">
-            Viewing #{pr.viewed}, not this branch's pull request
-          </PullRequestRole>
-        )}
-        {pr.viewed !== null && (
-          <LazyLegacyButton variant="legacy-secondary"
-            type="button"
-            data-testid="pr-back-to-branch"
-            onClick={pr.showBranch}
-          >
-            Back
-          </LazyLegacyButton>
-        )}
-        <PullRequestRole as="span" role="merge-status">
-          {detail.mergeable === 'conflicting' ? 'conflicts' : ''}
-        </PullRequestRole>
-      </PullRequestRole>}
+      {compact && <PrBranchHeader link={link} detail={detail} actionBar={actionBar} condensed={condensed} foldRef={foldRef} condensedRef={condensedRef} />}
+      <PrDetailToolbar
+        compact={compact}
+        pane={pane}
+        detail={detail}
+        checkState={checkState}
+        onBrowse={onBrowse}
+        pr={pr}
+        preloadCode={preloadCode}
+        onChangePane={(value) => {
+          setPane(value)
+          condensedState.current = false
+          setCondensed(false)
+          if (scrollRef.current) scrollRef.current.scrollTop = 0
+          if (value === 'files' && preloadedCodePr.current !== number) {
+            preloadedCodePr.current = number
+            pr.loadDiff(number)
+          }
+        }}
+      />
       <PrNotices pr={pr} linkMessage={linkMessage} />
-      <PullRequestRole data-testid="pr-scroll-area" as="div" role="scroll-area">
-        {compact ? <PrInspectorBoard
-          link={link}
-          detail={detail}
-          pr={pr}
-          number={number}
-          busy={busy}
-          mergeReason={mergeReason}
-          approvalsRequired={approvalsRequired}
-          approvalsReceived={approvalsReceived}
-          onOpenUrlInPane={onOpenUrlInPane}
-          onSendToOrchestrator={onSendToOrchestrator}
-          reviewBar={reviewBar}
-          watchRows={watchRows}
-          openPicker={openPicker}
-          setOpenPicker={setOpenPicker}
-        /> : pane === 'files' ? (
-          <PullRequestRole as="div" role="file-pane">
-            <PrFiles
-              diff={pr.diff}
-              loading={pr.diffBusy}
-              drafts={drafts}
-              writeBusy={busy}
-              onAddDraft={addDraft}
-              onReload={() => pr.loadDiff(number)}
-            />
-          </PullRequestRole>
-        ) : (
-          <PrSummary>
-            <Card tone="material-inset" shape="inset"  {...materialAttrs('inset')}>
-              <PrHeader
-                link={link}
-                detail={detail}
-                busy={busy}
-                editBusy={pr.write.busy === `edit:${number}`}
-                onEdit={(title, body) => pr.edit(number, title, body)}
-                onReact={(content, reacted) => pr.react(number, null, content, reacted)}
-                onOpenUrlInPane={onOpenUrlInPane}
-              />
-            </Card>
-            <Card tone="material-inset" shape="inset"  {...materialAttrs('inset')}>
-              <SectionHead density="row" tone="muted" title="Status" />
-              <PrChecks checks={detail.checks} />
-              <PrMeta link={link} detail={detail} mergeReason={mergeReason} />
-            </Card>
-            <Card tone="material-inset" shape="inset"  {...materialAttrs('inset')}>
-              <SectionHead density="row" tone="muted" title="People & labels" />
-              <PrReviewerPicker
-                detail={detail}
-                busy={busy}
-                candidates={pr.reviewers}
-                loading={pr.reviewersBusy}
-                message={pr.reviewersMessage}
-                onLoad={() => pr.loadReviewers(number)}
-                onApply={(added, removed) => pr.reviewerApply(number, added, removed)}
-                open={openPicker === 'reviewers'}
-                onOpenChange={(open) => setOpenPicker(open ? 'reviewers' : null)}
-              />
-              <PrLabelPicker
-                detail={detail}
-                busy={busy}
-                candidates={pr.labels}
-                loading={pr.labelsBusy}
-                message={pr.labelsMessage}
-                onLoad={() => pr.loadLabels(number)}
-                onToggle={(name, applied) => pr.labelSet(number, [name], applied)}
-                open={openPicker === 'labels'}
-                onOpenChange={(open) => setOpenPicker(open ? 'labels' : null)}
-              />
-              <PrStackSection
-                number={number}
-                busy={busy}
-                stack={pr.stack}
-                checked={pr.stackChecked}
-                loading={pr.stackBusy}
-                message={pr.stackMessage}
-                onLoad={() => pr.loadStack(number)}
-                open={openPicker === 'stack'}
-                onOpenChange={(open) => setOpenPicker(open ? 'stack' : null)}
-              />
-            </Card>
-            <Card tone="material-inset" shape="inset"  {...materialAttrs('inset')}>
-              {link.review_decision === 'REVIEW_REQUIRED' && approvalsRequired > 0 && (
-                <PullRequestRole data-testid="pr-review-requirement" as="div" role="approval-requirement">
-                  <span>Review · {approvalsRequired} approval{approvalsRequired === 1 ? '' : 's'} required</span>
-                  <span data-review-count>{Math.min(approvalsReceived, approvalsRequired)} / {approvalsRequired}</span>
-                </PullRequestRole>
-              )}
-              {detail.reviews_total > 0 && <PrReviews detail={detail} />}
-              {(detail.threads.length > 0 ||
-                detail.threads_message !== null ||
-                detail.threads_truncated) && (
-                <PrThreads
-                  detail={detail}
-                  busy={busy}
-                  number={number}
-                  onSendToOrchestrator={onSendToOrchestrator}
-                  onReply={(threadId, body) => pr.threadReply(number, threadId, body)}
-                  onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)}
-                  onReact={(subjectId, content, reacted) =>
-                    pr.react(number, subjectId, content, reacted)
-                  }
-                />
-              )}
-              <PrComments
-                detail={detail}
-                busy={busy}
-                onComment={(body) => pr.comment(number, body)}
-                onCommentEdit={(commentId, body) =>
-                  pr.commentEdit(number, commentId, 'issue_comment', body)
-                }
-                onReact={(subjectId, content, reacted) =>
-                  pr.react(number, subjectId, content, reacted)
-                }
-              />
-              {reviewBar}
-            </Card>
-          </PrSummary>
-        )}
-      </PullRequestRole>
+      <PrDetailBody
+        pane={pane}
+        compact={compact}
+        link={link}
+        detail={detail}
+        pr={pr}
+        number={number}
+        busy={busy}
+        mergeReason={mergeReason}
+        approvalsRequired={approvalsRequired}
+        approvalsReceived={approvalsReceived}
+        onOpenUrlInPane={onOpenUrlInPane}
+        onSendToOrchestrator={onSendToOrchestrator}
+        checkState={checkState}
+        reviewBar={reviewBar}
+        watchRows={watchRows}
+        openPicker={openPicker}
+        setOpenPicker={setOpenPicker}
+        drafts={drafts}
+        onAddDraft={addDraft}
+        scrollRef={scrollRef}
+        onScroll={onDetailScroll}
+      />
+      {compact && <>
+        {commentMotion.mounted && <PrTab as="div" surface="pr-comment-composer" state={commentMotion.closing ? 'closing' : undefined} data-testid="pr-comment-popover" aria-hidden={commentMotion.closing || undefined}>
+          <TextArea surface="background" aria-label="New pull request comment" rows={3} value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder="Write a comment" autoFocus />
+          <PrTab as="div" surface="pr-comment-actions">
+            <Button variant="ghost" size="sm" type="button" onClick={() => setCommentOpen(false)}>Cancel</Button>
+            <ReviewButton variant="primary-action" size="sm" type="button" disabled={busy || commentDraft.trim().length === 0} onClick={() => { pr.comment(number, commentDraft); setCommentDraft(''); setCommentOpen(false) }}>Comment</ReviewButton>
+          </PrTab>
+        </PrTab>}
+        <PrTab as="div" surface="pr-comment-fab-host"><Tooltip label="Comment on pull request">
+          <PrTab as="button" surface="pr-comment-fab" type="button" aria-label="Comment on pull request" aria-expanded={commentOpen} onClick={() => setCommentOpen((open) => !open)}><Icon glyph={IconMessageSquare} role="small" /></PrTab>
+        </Tooltip></PrTab>
+      </>}
       {!compact && pane === 'files' && reviewBar}
-      {((compact && pane === 'summary') || (!compact && pane === 'summary')) && actionBar}
+      {!compact && pane === 'summary' && actionBar}
     </PullRequestRole>
+  )
+}
+
+function PullRequestTabContent({
+  client,
+  dir,
+  active,
+  browsing,
+  setBrowsing,
+  list,
+  pr,
+  view,
+  linkMessageText,
+  method,
+  setMethod,
+  compact,
+  watchRows,
+  onOpenUrlInPane,
+  onSendToOrchestrator,
+  checkAgentTargets,
+  onPasteToAgent,
+  onCreateCheckAgent,
+  onOpenPane,
+  onShowChanges,
+}: {
+  client: HoustonClient | null
+  dir: string | null
+  active: boolean
+  browsing: boolean
+  setBrowsing: React.Dispatch<React.SetStateAction<boolean>>
+  list: ReturnType<typeof usePrList>
+  pr: PrDetailController
+  view: PrDetailView | null
+  linkMessageText: string | null
+  method: PrMergeMethod
+  setMethod: React.Dispatch<React.SetStateAction<PrMergeMethod>>
+  compact: boolean
+  watchRows: React.ReactNode[]
+  onOpenUrlInPane?: (url: string) => void
+  onSendToOrchestrator?: (text: string) => void
+  checkAgentTargets?: CheckAgentTarget[]
+  onPasteToAgent?: (session: number, text: string) => void
+  onCreateCheckAgent?: PullRequestTabProps['onCreateCheckAgent']
+  onOpenPane?: (session: number) => void
+  onShowChanges?: () => void
+}): React.JSX.Element {
+  if (!dir || !client) return <PrIdle />
+  if (!active) return <PullRequestRole data-testid="pr-idle" as="div" role="fill" />
+
+  if (browsing) {
+    return (
+      <PrWatchContent rows={watchRows}>
+        <PrBrowse
+          list={list}
+          active
+          onBack={() => setBrowsing(false)}
+          onSelect={(number) => {
+            setBrowsing(false)
+            pr.show(number)
+          }}
+        />
+      </PrWatchContent>
+    )
+  }
+
+  if (view === null) {
+    return (
+      <PrWatchContent rows={watchRows}>
+        <PrDetailSkeleton />
+      </PrWatchContent>
+    )
+  }
+
+  const linkMessage = linkMessageText !== null ? (
+    <ScmNotice tone="danger" testId="pr-link-message">
+      {linkMessageText}
+    </ScmNotice>
+  ) : null
+
+  if (view.gh !== 'ready') return <PrWatchContent rows={watchRows}><PrBlocked gh={view.gh} hint={view.hint} onRetry={pr.refresh} /></PrWatchContent>
+  if (view.message !== null || view.link === null) {
+    return (
+      <PrWatchContent rows={watchRows}>
+        <PrEmpty
+          view={view}
+          pr={pr}
+          onShowChanges={onShowChanges}
+          onBrowse={() => setBrowsing(true)}
+          linkMessage={linkMessage}
+        />
+      </PrWatchContent>
+    )
+  }
+  if (view.detail === null) {
+    return <PrWatchContent rows={watchRows}><PrReadError view={view} link={view.link} pr={pr} linkMessage={linkMessage} /></PrWatchContent>
+  }
+  return (
+    <PrWatchContent rows={watchRows} showRows={!compact}>
+      <PrDetailView
+        compact={compact}
+        client={client}
+        dir={dir}
+        view={view}
+        link={view.link}
+        detail={view.detail}
+        pr={pr}
+        method={method}
+        setMethod={setMethod}
+        onOpenUrlInPane={onOpenUrlInPane}
+        onSendToOrchestrator={onSendToOrchestrator}
+        checkAgentTargets={checkAgentTargets}
+        onPasteToAgent={onPasteToAgent}
+        onCreateCheckAgent={onCreateCheckAgent}
+        onOpenPane={onOpenPane}
+        onBrowse={() => setBrowsing(true)}
+        linkMessage={linkMessage}
+        watchRows={compact ? watchRows : null}
+      />
+    </PrWatchContent>
   )
 }
 
@@ -957,13 +1441,18 @@ export function PullRequestTab({
   session = null,
   onOpenUrlInPane,
   onSendToOrchestrator,
+  checkAgentTargets,
+  onPasteToAgent,
+  onCreateCheckAgent,
+  onOpenPane,
   onShowChanges,
   active = true,
   onPrPresenceChange,
   refreshSignal = 0,
-  compact = false
+  compact = false,
+  requestedPr = null
 }: PullRequestTabProps): React.JSX.Element {
-  const pr = usePrDetail(client, dir, active, refreshSignal)
+  const pr = usePrDetail(client, dir, active, refreshSignal, requestedPr?.number ?? null, requestedPr?.nonce ?? null)
   const watches = usePrWatch(client, session)
   const watchRows = watches.map((watch) => (
     <PrWatchRow
@@ -976,12 +1465,6 @@ export function PullRequestTab({
       }}
     />
   ))
-  const withWatchRows = (content: React.ReactNode, showWatchRows = true): React.JSX.Element => (
-    <PrWatchStack>
-      {showWatchRows && watchRows}
-      {content}
-    </PrWatchStack>
-  )
   const [browsing, setBrowsing] = useState(false)
   const list = usePrList(client, dir, active && browsing)
   const [method, setMethod] = useState<PrMergeMethod>('squash')
@@ -996,73 +1479,28 @@ export function PullRequestTab({
     setBrowsing(false)
   }, [dir])
 
-  if (!dir || !client) return <PrIdle />
-  if (!active) return <PullRequestRole data-testid="pr-idle" as="div" role="fill" />
-
-  if (browsing) {
-    return (
-      withWatchRows(
-        <PrBrowse
-          list={list}
-          active
-          onBack={() => setBrowsing(false)}
-          onSelect={(number) => {
-            setBrowsing(false)
-            pr.show(number)
-          }}
-        />
-      )
-    )
-  }
-
-  if (pr.view === null) {
-    return withWatchRows(
-      <PullRequestRole data-testid="pr-loading" as="div" role="empty-panel">
-        <PullRequestRole as="span" role="loading-indicator">
-          <Icon glyph={IconLoaderCircle} role="subhead" />
-        </PullRequestRole>
-      </PullRequestRole>
-    )
-  }
-
-  const view = pr.view
-  const linkMessage =
-    pr.linkMessage !== null ? (
-      <ScmNotice tone="danger" testId="pr-link-message">
-        {pr.linkMessage}
-      </ScmNotice>
-    ) : null
-
-  if (view.gh !== 'ready') return withWatchRows(<PrBlocked gh={view.gh} hint={view.hint} onRetry={pr.refresh} />)
-  if (view.message !== null || view.link === null) {
-    return withWatchRows(
-      <PrEmpty
-        view={view}
-        pr={pr}
-        onShowChanges={onShowChanges}
-        onBrowse={() => setBrowsing(true)}
-        linkMessage={linkMessage}
-      />
-    )
-  }
-  if (view.detail === null) {
-    return withWatchRows(<PrReadError view={view} link={view.link} pr={pr} linkMessage={linkMessage} />)
-  }
-  return withWatchRows(
-    <PrDetailView
-      compact={compact}
-      view={view}
-      link={view.link}
-      detail={view.detail}
+  return (
+    <PullRequestTabContent
+      client={client}
+      dir={dir}
+      active={active}
+      browsing={browsing}
+      setBrowsing={setBrowsing}
+      list={list}
       pr={pr}
+      view={pr.view}
+      linkMessageText={pr.linkMessage}
       method={method}
       setMethod={setMethod}
+      compact={compact}
+      watchRows={watchRows}
       onOpenUrlInPane={onOpenUrlInPane}
       onSendToOrchestrator={onSendToOrchestrator}
-      onBrowse={() => setBrowsing(true)}
-      linkMessage={linkMessage}
-      watchRows={compact ? watchRows : null}
-    />,
-    !compact
+      checkAgentTargets={checkAgentTargets}
+      onPasteToAgent={onPasteToAgent}
+      onCreateCheckAgent={onCreateCheckAgent}
+      onOpenPane={onOpenPane}
+      onShowChanges={onShowChanges}
+    />
   )
 }

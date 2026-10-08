@@ -8,8 +8,13 @@ import {
   gridPrev,
   movePaneNext,
   movePanePrev,
-  newBrowserPane,
   newTerminal,
+  openBrowserSurface,
+  openFilesSurface,
+  openDiffSurface,
+  openPullRequestSurface,
+  openLinkedPullRequestsSurface,
+  openPullRequestsScreen,
   openFileShortcut,
   paletteLayer,
   prefixShortcut,
@@ -67,7 +72,9 @@ const GROUPS: { label: string; rows: { entries: ShortcutEntry[]; what: string }[
   {
     label: 'App',
     rows: [
-      { entries: [newTerminal, openFileShortcut, newBrowserPane], what: 'terminal / file / browser' },
+      { entries: [newTerminal, openFileShortcut], what: 'terminal / file' },
+      { entries: [openBrowserSurface, openFilesSurface, openDiffSurface, openPullRequestSurface, openLinkedPullRequestsSurface], what: 'panel surfaces' },
+      { entries: [openPullRequestsScreen], what: 'Pull Requests screen' },
       { entries: [toggleGit], what: 'source control' },
       { entries: [shortcutSheetShortcut], what: 'all shortcuts' },
       { entries: [prefixShortcut], what: 'send the chord itself' }

@@ -193,11 +193,11 @@ export function AddPaneProfiles(): React.JSX.Element {
   }, [])
   return (
     <div ref={ref} style={{ height: '100%' }}>
-      <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={noop} onNewTerminal={noop} onNewBrowser={noop} onSpawnAgent={noop} onSplitDown={noop} onNewGrid={noop} agentProfiles={PROFILES} />
+      <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={noop} onNewTerminal={noop} onSpawnAgent={noop} onSplitDown={noop} onNewGrid={noop} agentProfiles={PROFILES} />
     </div>
   )
 }
 
 export function AddPaneDisabled(): React.JSX.Element {
-  return <AddPanePopover right={24} y={24} hasWorkspace={false} keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={noop} onNewTerminal={noop} onNewBrowser={noop} onSpawnAgent={noop} onNewGrid={noop} agentProfiles={null} />
+  return <AddPanePopover right={24} y={24} hasWorkspace={false} keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={noop} onNewTerminal={noop} onSpawnAgent={noop} onNewGrid={noop} agentProfiles={null} />
 }

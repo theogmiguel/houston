@@ -19,8 +19,8 @@ describe('SELECT_CLS — state matrix', () => {
     container.remove()
   })
 
-  it('Filled — lands on the INPUT radius tier (--tr-radius-input, 4px), not a button radius', () => {
-    expect(SELECT_CLS).toMatch(/rounded-\[var\(--tr-radius-input\)\]/)
+  it('Filled — lands on the field radius tier (--tr-radius-sm, 6px) that text fields share, not a button radius', () => {
+    expect(SELECT_CLS).toMatch(/rounded-\[var\(--tr-radius-sm\)\]/)
     expect(SELECT_CLS).not.toMatch(/rounded-md\b/)
     expect(SELECT_CLS).not.toMatch(/rounded-\[6px\]|rounded-\[8px\]/)
   })

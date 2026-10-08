@@ -13,9 +13,9 @@ const SEEDED = {
     dir: 'row',
     weights: [60, 25, 15],
     children: [
-      { kind: 'leaf', session: 1 },
-      { kind: 'browser', id: 'b1', url: 'https://one.test/' },
-      { kind: 'browser', id: 'b2', url: 'https://two.test/' }
+        { kind: 'leaf', session: 1, id: 'p1' },
+        { kind: 'editor', id: 'e1', path: '/tmp/one.ts' },
+        { kind: 'editor', id: 'e2', path: '/tmp/two.ts' }
     ]
   }
 }
@@ -63,19 +63,19 @@ describe('keyboard pane verbs', () => {
   it('] and [ walk focus forward and back through the panes', async () => {
     harness = await renderReadyApp()
     press(']')
-    expect(focusedPaneKey(harness)).toBe('b1')
+    expect(focusedPaneKey(harness)).toBe('e1')
     press(']')
-    expect(focusedPaneKey(harness)).toBe('b2')
+    expect(focusedPaneKey(harness)).toBe('e2')
     press('[')
-    expect(focusedPaneKey(harness)).toBe('b1')
+    expect(focusedPaneKey(harness)).toBe('e1')
   })
 
   it('} carries the focused pane one step along, wrapping', async () => {
     harness = await renderReadyApp()
-    expect(order()).toEqual([1, 'b1', 'b2'])
+    expect(order()).toEqual([1, 'e1', 'e2'])
     press(']')
     press('}')
-    expect(order()).toEqual([1, 'b2', 'b1'])
+    expect(order()).toEqual([1, 'e2', 'e1'])
   })
 
   it('= evens every split without moving a pane', async () => {
@@ -83,7 +83,7 @@ describe('keyboard pane verbs', () => {
     expect(savedTree().weights).toEqual([60, 25, 15])
     press('=')
     expect(savedTree().weights).toEqual([100 / 3, 100 / 3, 100 / 3])
-    expect(order()).toEqual([1, 'b1', 'b2'])
+    expect(order()).toEqual([1, 'e1', 'e2'])
   })
 
   it('y tidies the grid into rows', async () => {
@@ -91,6 +91,6 @@ describe('keyboard pane verbs', () => {
     press('y')
     const tree = savedTree()
     expect(tree.dir).toBe('col')
-    expect(order()).toEqual([1, 'b1', 'b2'])
+    expect(order()).toEqual([1, 'e1', 'e2'])
   })
 })

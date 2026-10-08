@@ -35,6 +35,18 @@ describe('respawn failures are visible via the shared control-error banner (find
     )
   })
 
+  it('a git_status failure from a background poll stays out of the banner', async () => {
+    harness = await renderReadyApp()
+    const { container } = harness
+
+    deliverControl({ type: 'error', message: 'git target is not a directory: /workspaces/gone', context: 'git_status' })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).not.toContain('git target is not a directory')
+  })
+
   it('the banner is dismissible and does not resurrect on its own', async () => {
     harness = await renderReadyApp()
     const { container } = harness

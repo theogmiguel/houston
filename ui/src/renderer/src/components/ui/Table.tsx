@@ -29,7 +29,7 @@ export interface TableProps<T, K extends keyof T = keyof T> {
   onRowClick?: (row: T) => void
   empty?: { heading: string; description: string; icon?: IconComponent }
   error?: TableError
-  variant?: 'plain' | 'framed'
+  variant?: 'plain' | 'framed' | 'card'
   className?: string
   density?: 'default' | 'compact'
   layout?: 'auto' | 'fixed'
@@ -43,6 +43,11 @@ const VARIANT_CLS = {
   plain: { frame: '', edge: 'first:pl-0 last:pr-0', header: '' },
   framed: {
     frame: 'rounded-[var(--tr-radius-button)] border border-[var(--divider)]',
+    edge: 'first:pl-[var(--space-2-5)] last:pr-[var(--space-2-5)]',
+    header: 'pt-[var(--space-2)] pb-[var(--space-2)]'
+  },
+  card: {
+    frame: 'rounded-[var(--tr-radius-button)] border border-[var(--divider)] bg-[var(--card-bg)]',
     edge: 'first:pl-[var(--space-2-5)] last:pr-[var(--space-2-5)]',
     header: 'pt-[var(--space-2)] pb-[var(--space-2)]'
   }
@@ -88,7 +93,7 @@ export function Table<T, K extends keyof T = keyof T>({
   }
 
   const emptyState = <EmptyState icon={empty.icon ?? IconDatabase} heading={empty.heading} description={empty.description} />
-  if (rows.length === 0 && variant !== 'framed') {
+  if (rows.length === 0 && variant === 'plain') {
     return <div className={`py-[var(--space-5)] ${className}`}>{emptyState}</div>
   }
 

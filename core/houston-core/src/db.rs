@@ -2084,6 +2084,8 @@ impl Db {
             }
             match serde_json::from_str::<proto::AgentKind>(&format!("\"{agent}\"")) {
                 Ok(kind) => out.push(proto::SessionInfo {
+                    checkout: None,
+                    activity: None,
                     id,
                     agent: kind,
                     project_dir,
@@ -5816,6 +5818,8 @@ mod tests {
 
     fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
         proto::SessionInfo {
+            checkout: None,
+            activity: None,
             id,
             agent: proto::AgentKind::Shell,
             project_dir: "/tmp/p".into(),

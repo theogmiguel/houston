@@ -140,13 +140,44 @@ export const openFileShortcut: ShortcutEntry = {
   match: (e) => e.key === 'o'
 }
 
-export const newBrowserPane: ShortcutEntry = {
-  id: 'new-browser-pane',
-  keyLabel: 'b',
-  description: 'new browser pane',
-  category: 'global',
-  layer: 'both',
-  match: (e) => e.key === 'b'
+export const openBrowserSurface: ShortcutEntry = {
+  id: 'open-browser-surface', keyLabel: 'B', description: 'open the Browser panel tab',
+  category: 'global', layer: 'prefix', match: (e) => NO_MODS(e) && e.key.toLowerCase() === 'b'
+}
+
+export const openFilesSurface: ShortcutEntry = {
+  id: 'open-files-surface', keyLabel: 'F', description: 'open the Files panel tab',
+  category: 'global', layer: 'prefix', match: (e) => NO_MODS(e) && e.key.toLowerCase() === 'f'
+}
+
+export const openDiffSurface: ShortcutEntry = {
+  id: 'open-diff-surface', keyLabel: 'D', description: 'open the Diff panel tab',
+  category: 'global', layer: 'prefix', match: (e) => NO_MODS(e) && e.key.toLowerCase() === 'd'
+}
+
+export const openPullRequestSurface: ShortcutEntry = {
+  id: 'open-pull-request-surface', keyLabel: 'P', description: 'open the Pull request panel tab',
+  category: 'global', layer: 'prefix', match: (e) => NO_MODS(e) && e.key.toLowerCase() === 'p'
+}
+
+export const openLinkedPullRequestsSurface: ShortcutEntry = {
+  id: 'open-linked-pull-requests-surface', keyLabel: 'L', description: 'open Linked pull requests',
+  category: 'global', layer: 'prefix', match: (e) => NO_MODS(e) && e.key.toLowerCase() === 'l'
+}
+
+export const openPullRequestsScreen: ShortcutEntry = {
+  id: 'open-pull-requests-screen', keyLabel: 'R', description: 'open the Pull Requests screen',
+  category: 'global', layer: 'prefix', match: (e) => NO_MODS(e) && e.key.toLowerCase() === 'r'
+}
+
+export const reorderCardPrev: ShortcutEntry = {
+  id: 'reorder-card-prev', keyLabel: 'Mod+Shift+↑', description: 'move the selected card up',
+  category: 'global', match: (e) => (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.code === 'ArrowUp' || e.key === 'ArrowUp')
+}
+
+export const reorderCardNext: ShortcutEntry = {
+  id: 'reorder-card-next', keyLabel: 'Mod+Shift+↓', description: 'move the selected card down',
+  category: 'global', match: (e) => (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.code === 'ArrowDown' || e.key === 'ArrowDown')
 }
 
 export const expandPane: ShortcutEntry = {
@@ -388,7 +419,14 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
   selectPane,
   newTerminal,
   openFileShortcut,
-  newBrowserPane,
+  openBrowserSurface,
+  openFilesSurface,
+  openDiffSurface,
+  openPullRequestSurface,
+  openLinkedPullRequestsSurface,
+  openPullRequestsScreen,
+  reorderCardPrev,
+  reorderCardNext,
   expandPane,
   splitRight,
   splitDown,

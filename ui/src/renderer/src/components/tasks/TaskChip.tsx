@@ -5,9 +5,7 @@ import { Tooltip } from '../ui/Tooltip'
 import { runStateLabel } from './format'
 import { TaskStatusGlyph } from './glyphs'
 
-// The task a pane is bound to: status glyph and key, title and run state on the
-// tooltip; a click opens the Tasks tab on it. `compact` (roster rows) shows the
-// key only.
+// The task a pane is bound to: status glyph and key, title and run state on the tooltip.
 export function TaskChip({ task, compact = false }: { task: SessionTask; compact?: boolean }): React.JSX.Element {
   const label = `${task.title}\n${runStateLabel(task.run_state)}`
   if (compact) {
@@ -20,11 +18,17 @@ export function TaskChip({ task, compact = false }: { task: SessionTask; compact
     )
   }
   return (
-    <Tooltip label={label}>
+    <Tooltip label={`Open ${task.key} · Ctrl+click to copy key`}>
       <TaskKeyChip
         data-testid="task-chip"
-        aria-label={`Task ${task.key}: ${task.title} — ${runStateLabel(task.run_state)}`}
-        onClick={() => openSideTasks(false, task.task_id)}
+        aria-label={`Open ${task.key} · Ctrl+click to copy key`}
+        onClick={(event) => {
+          if (event.ctrlKey) {
+            void navigator.clipboard?.writeText(task.key).catch(() => {})
+            return
+          }
+          openSideTasks(false, task.task_id)
+        }}
       >
         <TaskStatusGlyph status={task.status} />
         {task.key}

@@ -142,6 +142,28 @@ describe('TerminalPane hibernation (02-grid row 17)', () => {
     }
   })
 
+  it('a synced pane wakes by asking only for the bytes after its cursor', async () => {
+    await render(false)
+    const encoder = new TextEncoder()
+    act(() => sinks.get(7)!.replay(encoder.encode('held\r\n'), 6))
+    try {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+      act(() => document.dispatchEvent(new Event('visibilitychange')))
+      act(() => vi.advanceTimersByTime(250))
+      writes.clear()
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+      act(() => document.dispatchEvent(new Event('visibilitychange')))
+      expect(vi.mocked(fakeClient.attachSession).mock.calls.at(-1)?.[3]).toBe(6)
+      act(() => sinks.get(7)!.replay(encoder.encode('tail\r\n'), 12))
+      await act(async () => {
+        await flushGhosttyAttach()
+      })
+      expect(writes.join('')).toBe('tail\r\n')
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    }
+  })
+
   it('a pane that mounts warm neither subscribes nor replays', async () => {
     await render(true)
     expect(fakeClient.sessionVisibility).not.toHaveBeenCalled()

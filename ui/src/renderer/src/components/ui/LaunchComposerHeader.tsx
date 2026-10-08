@@ -20,7 +20,7 @@ export function LaunchComposerHeader({ workspaceName, workspacePath, gridName, t
           </span>
         </Tooltip>
       </div>
-      <button
+      <Tooltip label="Close"><button
         type="button"
         aria-label="Close"
         data-testid="new-session-close"
@@ -28,7 +28,7 @@ export function LaunchComposerHeader({ workspaceName, workspacePath, gridName, t
         className={`inline-flex ${CONTROL_SIZE_SQUARE_CLS.small} flex-none items-center justify-center rounded-[var(--tr-radius-sm)] border-none bg-transparent text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]`}
       >
         <Icon glyph={IconClose} role="small" />
-      </button>
+      </button></Tooltip>
     </div>
   )
 }

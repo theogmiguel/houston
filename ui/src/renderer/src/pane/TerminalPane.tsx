@@ -73,6 +73,7 @@ export interface TerminalTuning {
   readonly cursorBlink: boolean
   readonly scrollbackLines: number
 }
+export const TERMINAL_SYNC_FIT_EVENT = 'houston:terminal-sync-fit'
 export const TerminalTuningContext = createContext<TerminalTuning>({
   lineHeight: 1.35,
   cursorBlink: true,
@@ -225,6 +226,8 @@ export function TerminalPane({
   const expandedId = useContext(ExpandedContext)
   const gridHidden = useContext(GridHiddenContext)
   const hiddenByExpand = gridHidden || (expandedId != null && expandedId !== info.id)
+  const hiddenRef = useRef(hiddenByExpand)
+  hiddenRef.current = hiddenByExpand
   const warm = useContext(WarmContext)
   const keymapOverrides = useContext(KeymapOverridesContext)
   const keymapOverridesRef = useRef(keymapOverrides)
@@ -534,6 +537,10 @@ export function TerminalPane({
     syncSizeRef.current = syncSize
     syncSize()
     ghostty.onResize(sendSize)
+    const fitAfterLayout = (): void => {
+      if (!hiddenRef.current) syncSizeRef.current()
+    }
+    window.addEventListener(TERMINAL_SYNC_FIT_EVENT, fitAfterLayout)
 
     const writeClipboardText = (text: string, onSuccess?: () => void): void => {
       void navigator.clipboard.writeText(text).then(onSuccess, (err: unknown) => {
@@ -1129,6 +1136,10 @@ export function TerminalPane({
 
     let resizeFrame: number | undefined
     const observer = new ResizeObserver(() => {
+      // A hidden pane keeps its box under `visibility:hidden`; resizing its PTY
+      // makes the CLI repaint into a hibernated pane, which then misses bytes and
+      // re-syncs from scratch. The reveal path re-measures before it re-attaches.
+      if (hiddenRef.current) return
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
       resizeFrame = requestAnimationFrame(() => {
         resizeFrame = undefined
@@ -1141,6 +1152,7 @@ export function TerminalPane({
       if (attachedRef.current && owner.owns()) clientRef.current.sessionVisibility(info.id, false)
       owner.release()
       observer.disconnect()
+      window.removeEventListener(TERMINAL_SYNC_FIT_EVENT, fitAfterLayout)
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
       if (resizeReassertTimerRef.current !== undefined) {
         clearTimeout(resizeReassertTimerRef.current)
@@ -1297,9 +1309,12 @@ export function TerminalPane({
       if (!attachedRef.current) {
         syncSizeRef.current()
         seqRef.current.catchup = true
-        if (seqRef.current.synced) skipSnapshotOnceRef.current = true
+        const synced = seqRef.current.synced
+        if (synced) skipSnapshotOnceRef.current = true
         reportVisibility(true)
-        sendAttach(ATTACH_REPLAY_BYTES)
+        // A synced pane already holds every byte before its cursor; asking from there
+        // keeps a warm wake from re-sending megabytes the pane would discard.
+        sendAttach(ATTACH_REPLAY_BYTES, synced ? seqRef.current.cursor : undefined)
         attachedRef.current = true
       }
       if (hibernatedRef.current) {
@@ -1368,12 +1383,12 @@ export function TerminalPane({
     return ours === null || ours === c.snapshotFormatVersion
   }
 
-  const sendAttach = (replayBytes: number): void => {
+  const sendAttach = (replayBytes: number, fromOffset?: number): void => {
     clientRef.current.abandonAttach?.(info.id)
     const snapshot = wantsSnapshot()
     skipSnapshotOnceRef.current = false
     seqRef.current.awaitingSnapshot = snapshot
-    clientRef.current.attachSession(info.id, replayBytes, snapshot || undefined)
+    clientRef.current.attachSession(info.id, replayBytes, snapshot || undefined, snapshot ? undefined : fromOffset)
   }
 
   const resetAndReattach = (): void => {

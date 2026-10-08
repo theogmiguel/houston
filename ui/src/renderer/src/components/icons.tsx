@@ -612,6 +612,15 @@ export function IconFolder(p: IconProps): React.JSX.Element {
   )
 }
 
+export function IconFolderPlus(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M12 10v6m-3-3h6" />
+      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z" />
+    </Svg>
+  )
+}
+
 export function IconSave(p: IconProps): React.JSX.Element {
   return (
     <Svg {...p}>
@@ -1420,5 +1429,197 @@ export function IconPriorityBars({ level, ...p }: IconProps & { level: 1 | 2 | 3
         />
       ))}
     </TaskGlyph>
+  )
+}
+
+export function IconSliders(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M4 21v-7" />
+      <path d="M4 10V3" />
+      <path d="M12 21v-9" />
+      <path d="M12 8V3" />
+      <path d="M20 21v-5" />
+      <path d="M20 12V3" />
+      <path d="M2 14h4" />
+      <path d="M10 8h4" />
+      <path d="M18 16h4" />
+    </Svg>
+  )
+}
+
+export function IconFileArchive(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M13.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v11.5" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="M8 12v-1" />
+      <path d="M8 18v-2" />
+      <path d="M8 7V6" />
+      <circle cx="8" cy="20" r="2" />
+    </Svg>
+  )
+}
+
+
+export function IconFileAxis3d(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="m8 18 4-4" />
+      <path d="M8 10v8h8" />
+    </Svg>
+  )
+}
+
+
+export function IconFileBox(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M14 2v5a1 1 0 001 1h5" />
+      <path d="M14.692 22H18a2 2 0 002-2V8a2.4 2.4 0 00-.706-1.706l-3.588-3.588A2.4 2.4 0 0014 2H6a2 2 0 00-2 2v3.804" />
+      <path d="M2.264 13.752 7 16.5l4.737-2.748" />
+      <path d="M2.995 13.014A2 2 0 002 14.744v3.516a2 2 0 00.996 1.73l3 1.74a2 2 0 002.008 0l3-1.74A2 2 0 0012 18.26v-3.517a2 2 0 00-.995-1.73l-3-1.742a2 2 0 00-1.892-.064z" />
+      <path d="M7 16.5V22" />
+    </Svg>
+  )
+}
+
+
+export function IconFileBraces(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1" />
+      <path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1" />
+    </Svg>
+  )
+}
+
+
+export function IconFileChartColumn(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="M8 18v-1" />
+      <path d="M12 18v-6" />
+      <path d="M16 18v-3" />
+    </Svg>
+  )
+}
+
+
+export function IconFileDiff(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+      <path d="M9 10h6" />
+      <path d="M12 13V7" />
+      <path d="M9 17h6" />
+    </Svg>
+  )
+}
+
+
+export function IconFileKey(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="M4 12v6" />
+      <path d="M4 14h2" />
+      <path d="M9.65 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v4" />
+      <circle cx="4" cy="20" r="2" />
+    </Svg>
+  )
+}
+
+
+export function IconFileMusic(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M11.65 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v10.35" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="M8 20v-7l3 1.474" />
+      <circle cx="6" cy="20" r="2" />
+    </Svg>
+  )
+}
+
+
+export function IconFileSliders(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="M8 12h8" />
+      <path d="M10 11v2" />
+      <path d="M8 17h8" />
+      <path d="M14 16v2" />
+    </Svg>
+  )
+}
+
+
+export function IconFileSpreadsheet(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="M8 13h2" />
+      <path d="M14 13h2" />
+      <path d="M8 17h2" />
+      <path d="M14 17h2" />
+    </Svg>
+  )
+}
+
+
+export function IconFileTerminal(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="m8 16 2-2-2-2" />
+      <path d="M12 18h4" />
+    </Svg>
+  )
+}
+
+
+export function IconFileType(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="M11 18h2" />
+      <path d="M12 12v6" />
+      <path d="M9 13v-.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5v.5" />
+    </Svg>
+  )
+}
+
+
+export function IconFileVideoCamera(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M4 12V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="m10 17.843 3.033-1.755a.64.64 0 0 1 .967.56v4.704a.65.65 0 0 1-.967.56L10 20.157" />
+      <rect width="7" height="6" x="3" y="16" rx="1" />
+    </Svg>
+  )
+}
+
+export function IconWrapText(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="m16 16-3 3 3 3" />
+      <path d="M3 12h14.5a1 1 0 0 1 0 7H13" />
+      <path d="M3 19h6" />
+      <path d="M3 5h18" />
+    </Svg>
   )
 }

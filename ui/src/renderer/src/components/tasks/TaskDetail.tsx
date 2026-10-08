@@ -5,22 +5,20 @@ import type { TaskAcceptanceItem } from '../../houston/generated/TaskAcceptanceI
 import type { TaskComment } from '../../houston/generated/TaskComment'
 import type { TaskHistoryEntry } from '../../houston/generated/TaskHistoryEntry'
 import type { TaskPatch } from '../../houston/generated/TaskPatch'
-import type { TaskPriority } from '../../houston/generated/TaskPriority'
 import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
-import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskDetailData, TaskRefusal, TaskStartSettings } from '../../houston/useTasks'
 import type { HoustonClient } from '../../houston/client'
 import { isPullRequestUrl, linkIsPullRequest, sendTaskWire, type TaskProject, type TaskTrackerLink } from '../../houston/taskDomain'
 import { Icon } from '../ui/Icon'
+import { MarkdownPreview } from '../MarkdownPreview'
+import { ShellElement, ShellTaskDescriptionEditButton, ShellTaskDescriptionTextarea } from '../ui/ShellPrimitives'
 import {
   IconAlertTriangle,
   IconArchive,
   IconCheck,
-  IconChevronLeft,
   IconClose,
-  IconCopy,
   IconCornerDownRight,
   IconEllipsis,
   IconGitFork,
@@ -31,24 +29,16 @@ import {
   IconUndo,
   IconUser
 } from '../icons'
-import { Select, type SelectOption } from '../ui/Select'
+import { type SelectOption } from '../ui/Select'
 import { TextInput } from '../ui/TextInput'
 import { Tooltip } from '../ui/Tooltip'
 import {
-  acceptanceText,
   actorLabel,
   formatAge,
-  formatAgo,
   historyLine,
-  PRIORITY_LABEL,
   READ_ONLY_REASON,
-  STATUS_LABEL,
-  STATUS_ORDER,
-  taskAgentLabel,
-  taskReviewer,
   taskReviewOutcome
 } from './format'
-import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 import { TaskExecutionCard, TaskStartCard } from './TaskExecution'
 import { TaskMenu } from './TaskMenu'
 import { TaskWorkflowPanel } from './TaskWorkflowPanel'
@@ -61,37 +51,25 @@ import {
   TaskActivityIcon,
   TaskActivityRow,
   TaskActivityTime,
-  TaskAgentIcon,
   TaskBanner,
   TaskBannerDetail,
   TaskBannerMessage,
   TaskBody,
   TaskButton,
-  TaskCheckButton,
   TaskCommentBox,
   TaskCommentField,
-  TaskDescriptionField,
   TaskDetailFrame,
+  TaskDescriptionPreview,
   TaskDot,
   TaskDrawerCard,
   TaskDrawerHeader,
   TaskDrawerOrigin,
-  TaskIconButton,
   Card,
   Inline,
   InlineLink,
   Text,
-  TaskMetaLine,
-  TaskMono,
-  TaskPanel,
-  TaskProp,
-  TaskPropKey,
-  TaskPropRow,
-  TaskRecordBody,
   TaskSectionLabel,
-  TaskSystemMark,
-  TaskTitleField,
-  TaskToolbar
+  TaskSystemMark
 } from '../ui'
 
 export interface TaskDetailProps {
@@ -103,7 +81,9 @@ export interface TaskDetailProps {
   workspaceOptions?: SelectOption[]
   sessions: ReadonlyMap<number, SessionInfo>
   startSettings: TaskStartSettings | null
-  onBack: () => void
+  /** Absent when the detail sits inline beside its list, which owns navigation back. */
+  onBack?: () => void
+  primaryAction?: ReactNode
   onReload: (id: number) => void
   onSave: (id: number, expectedRevision: number, patch: TaskPatch) => void
   onCheck: (id: number, item: number, checked: boolean) => void
@@ -113,19 +93,13 @@ export interface TaskDetailProps {
   onRunControl: (runId: number, action: TaskRunAction) => void
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
-  presentation?: 'side' | 'drawer'
   client?: Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'> | null
   onStartRequested?: (taskId: number, workspace: string) => void
 }
 
 export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
-  const { detail, refusal } = props
+  const { detail } = props
   const { task } = detail
-  const readOnly = false
-  const [title, setTitle] = useServerDraft(task.title, task.revision)
-  const [description, setDescription] = useServerDraft(task.description, task.revision)
-  const archived = task.archived_at_ms != null
-  const drawer = props.presentation === 'drawer'
   const [trackerLinks, setTrackerLinks] = useState<TaskTrackerLink[]>([])
   const [trackerProject, setTrackerProject] = useState<TaskProject | null>(null)
   const trackerProjectId = useRef<number | null>(null)
@@ -161,168 +135,9 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
     return off
   }, [props.client, task.id, task.workspace])
 
-  if (drawer) return <TaskDetailDrawer props={props} taskTitle={title} trackerLinks={trackerLinks} trackerProject={trackerProject} />
-
-  return (
-    <TaskPanel data-testid="task-detail">
-      <TaskToolbar>
-        <TaskButton tone="ghost" density="toolbar" onClick={props.onBack}>
-          <Icon glyph={IconChevronLeft} role="small" />
-          Tasks
-        </TaskButton>
-        <TaskMono faint label>{task.key}</TaskMono>
-        <span className="flex-1" />
-        <CopyKeyButton taskKey={task.key} />
-        <TaskMenu
-          label="Task actions"
-          icon={IconEllipsis}
-          testId="task-detail-menu"
-          sections={[
-            {
-              items: [
-                {
-                  id: 'task-archive',
-                  label: archived ? 'Restore task' : 'Archive task',
-                  disabled: readOnly,
-                  disabledReason: readOnly ? READ_ONLY_REASON : undefined,
-                  onSelect: () => props.onArchive(task.id, !archived, task.revision)
-                }
-              ]
-            }
-          ]}
-        />
-      </TaskToolbar>
-      {refusal && refusal.id === task.id && <RefusalBanner refusal={refusal} onReload={props.onReload} taskId={task.id} />}
-      <TaskDetailRecord props={props} titleValue={title} setTitle={setTitle} description={description} setDescription={setDescription} trackerLinks={trackerLinks} trackerProject={trackerProject} />
-    </TaskPanel>
-  )
+  return <TaskDetailDrawer props={props} trackerLinks={trackerLinks} trackerProject={trackerProject} />
 }
 
-function TaskDetailRecord({ props, titleValue: title, setTitle, description, setDescription, trackerLinks, trackerProject }: {
-  props: TaskDetailProps
-  titleValue: string
-  setTitle: (value: string) => void
-  description: string
-  setDescription: (value: string) => void
-  trackerLinks: TaskTrackerLink[]
-  trackerProject: TaskProject | null
-}): React.JSX.Element {
-  const { detail, now } = props
-  const { task } = detail
-  const readOnly = false
-  const archived = task.archived_at_ms != null
-  const latestRun = detail.runs[0] ?? null
-  const startable = !archived && (task.status === 'backlog' || task.status === 'todo')
-  const reviewer = taskReviewer(detail.runs)
-  const review = taskReviewOutcome(detail.runs, detail.comments)
-  return <TaskRecordBody>
-    <TaskTitleField
-      aria-label="Task title"
-      value={title}
-      disabled={readOnly}
-      onChange={(event) => setTitle(event.target.value)}
-      onBlur={() => commitTitle({ title, task, onSave: props.onSave, setTitle })}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') event.currentTarget.blur()
-        if (event.key === 'Escape') setTitle(task.title)
-      }}
-    />
-    <TaskMetaLine>
-      <span>created by {task.created_by === 'user' ? 'you' : task.created_by}</span>
-      <span>·</span>
-      <span>{formatAgo(task.created_at_ms, now)}</span>
-      <span>·</span>
-      <TaskMono>revision {task.revision}</TaskMono>
-      {archived && (
-        <>
-          <span>·</span>
-          <span>archived {formatAgo(task.archived_at_ms ?? task.updated_at_ms, now)}</span>
-        </>
-      )}
-    </TaskMetaLine>
-    <TaskPropRow>
-      <Select aria-label="Workspace" data-testid="task-workspace" value={task.workspace ?? ''} options={[{ value: '', label: 'No workspace' }, ...(props.workspaceOptions ?? [])]} disabled={readOnly} prefix={<span>Workspace</span>} variant="property-chip" onChange={(value) => props.onSave(task.id, task.revision, { workspace: value || null })} />
-      <Select
-        aria-label="Status"
-        data-testid="task-status"
-        value={task.status}
-        options={STATUS_OPTIONS}
-        disabled={readOnly}
-        prefix={<TaskStatusGlyph status={task.status} />}
-        variant="property-chip"
-        onChange={(value) => props.onSave(task.id, task.revision, { status: value as TaskStatus })}
-      />
-      <Select
-        aria-label="Priority"
-        data-testid="task-priority"
-        value={task.priority}
-        options={PRIORITY_OPTIONS}
-        disabled={readOnly}
-        prefix={<TaskPriorityGlyph priority={task.priority} />}
-        variant="property-chip"
-        onChange={(value) => props.onSave(task.id, task.revision, { priority: value as TaskPriority })}
-      />
-      <Select
-        aria-label="Parent"
-        data-testid="task-parent"
-        value={task.parent_id == null ? '' : String(task.parent_id)}
-        options={[{ value: '', label: 'None' }, ...props.parentOptions]}
-        disabled={readOnly}
-        prefix={<span>Parent</span>}
-        variant="property-chip"
-        onChange={(value) => props.onSave(task.id, task.revision, { parent_id: value === '' ? null : Number(value) })}
-      />
-      {reviewer !== null && (
-        <TaskProp data-testid="task-reviewer-prop">
-          <TaskPropKey>Reviewer</TaskPropKey>
-          <TaskAgentIcon agent={reviewer} />
-          {taskAgentLabel(reviewer)}
-        </TaskProp>
-      )}
-    </TaskPropRow>
-    <TaskSectionLabel heading="Description" />
-    <TaskDescriptionField
-      aria-label="Task description"
-      rows={Math.max(2, description.split('\n').length)}
-      placeholder="No description."
-      value={description}
-      disabled={readOnly}
-      onChange={(event) => setDescription(event.target.value)}
-      onBlur={() => {
-        if (description !== task.description) props.onSave(task.id, task.revision, { description })
-      }}
-    />
-    {props.client && <TaskWorkflowPanel client={props.client} detail={detail} onOpenSession={props.onOpenSession} onStartRequested={props.onStartRequested} />}
-    {latestRun ? (
-      <TaskExecutionCard
-        run={latestRun}
-        sessions={props.sessions}
-        now={now}
-        readOnly={readOnly}
-        review={review}
-        onOpenSession={props.onOpenSession}
-        onReview={props.onReview}
-        onRunControl={props.onRunControl}
-      />
-    ) : (
-      startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={readOnly} onStart={props.onStart} />
-    )}
-    <TaskSectionLabel
-      heading="Acceptance"
-      trailing={acceptanceText(detail.acceptance.filter((item) => item.checked_at_ms != null).length, detail.acceptance.length)}
-    />
-    <TaskTrackerLinks client={props.client} taskId={task.id} taskRevision={task.revision} projectRevision={trackerProject?.revision ?? null} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
-    <AcceptanceList
-      items={detail.acceptance}
-      readOnly={readOnly}
-      presentation="side"
-      onCheck={(item, checked) => props.onCheck(task.id, item, checked)}
-    />
-    <TaskSectionLabel heading="Activity" />
-    <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
-    <CommentComposer readOnly={readOnly} onSubmit={(body) => props.onComment(task.id, body)} />
-  </TaskRecordBody>
-}
 
 function TaskTrackerLinks({ client, taskId, taskRevision, projectRevision, sourceUrl, links }: { client?: Pick<HoustonClient, 'send'> | null; taskId: number; taskRevision: number; projectRevision: number | null; sourceUrl: string | null; links: TaskTrackerLink[] }): React.JSX.Element | null {
   if (!client && !sourceUrl) return null
@@ -359,7 +174,7 @@ function TrackerConflict({ client, taskId, taskRevision, projectRevision, link, 
   </Card>
 }
 
-function TaskDetailDrawer({ props, taskTitle, trackerLinks, trackerProject }: { props: TaskDetailProps; taskTitle: string; trackerLinks: TaskTrackerLink[]; trackerProject: TaskProject | null }): React.JSX.Element {
+function TaskDetailDrawer({ props, trackerLinks, trackerProject }: { props: TaskDetailProps; trackerLinks: TaskTrackerLink[]; trackerProject: TaskProject | null }): React.JSX.Element {
   const { detail } = props
   const { task } = detail
   const latestRun = detail.runs[0] ?? null
@@ -370,10 +185,11 @@ function TaskDetailDrawer({ props, taskTitle, trackerLinks, trackerProject }: { 
     <TaskDrawerHeader
       taskKey={task.key}
       workspace={task.workspace?.split(/[\\/]/).filter(Boolean).at(-1) ?? 'No workspace'}
-      heading={taskTitle}
+      heading={task.title}
       status={task.status}
       actions={<>
-        <Button variant="icon" icon={IconClose} aria-label="Close task details" onClick={props.onBack} />
+        {props.primaryAction}
+        {props.onBack && <Button variant="icon" icon={IconClose} aria-label="Close task details" onClick={props.onBack} />}
         <TaskMenu
           label="Task actions"
           icon={IconEllipsis}
@@ -401,6 +217,7 @@ function TaskDrawerContents({ props, trackerLinks, trackerProject }: {
   const startable = task.archived_at_ms == null && (task.status === 'backlog' || task.status === 'todo')
   const review = taskReviewOutcome(detail.runs, detail.comments)
   const checked = detail.acceptance.filter((item) => item.checked_at_ms != null).length
+  const [description, setDescription] = useServerDraft(task.description, task.revision)
 
   return <>
     {latestRun && <TaskExecutionCard
@@ -418,33 +235,105 @@ function TaskDrawerContents({ props, trackerLinks, trackerProject }: {
     />}
     {!latestRun && startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={false} onStart={props.onStart} />}
     {props.client && <TaskWorkflowPanel client={props.client} detail={detail} onOpenSession={props.onOpenSession} onStartRequested={props.onStartRequested} />}
+    <TaskDescriptionSection task={task} description={description} setDescription={setDescription} onSave={props.onSave} />
     <div className="grid gap-[var(--space-2)]">
       <TaskTrackerLinks client={props.client} taskId={task.id} taskRevision={task.revision} projectRevision={trackerProject?.revision ?? null} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
       <TaskSectionLabel heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
       <TaskDrawerCard><AcceptanceList
         items={detail.acceptance}
         readOnly={false}
-        presentation="drawer"
         onCheck={(item, isChecked) => props.onCheck(task.id, item, isChecked)}
       /></TaskDrawerCard>
       {task.origin?.kind === 'harness_finding' && <TaskDrawerOrigin><Chip variant="compound" label={`From Harness finding · ${task.origin.key}`} /></TaskDrawerOrigin>}
     </div>
+    <section className="grid gap-[var(--space-2)]">
+      <TaskSectionLabel heading="Activity" />
+      <TaskDrawerCard>
+        <ShellElement as="div" shellRole="task-activity-content">
+          <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
+          <CommentComposer readOnly={false} onSubmit={(body) => props.onComment(task.id, body)} />
+        </ShellElement>
+      </TaskDrawerCard>
+    </section>
   </>
 }
 
-function commitTitle({ title, task, onSave, setTitle }: {
-  title: string
-  task: TaskDetailData['task']
+function TaskDescriptionSection({ task, description, setDescription, onSave }: {
+  task: TaskDetailProps['detail']['task']
+  description: string
+  setDescription: (value: string) => void
   onSave: TaskDetailProps['onSave']
-  setTitle: (value: string) => void
-}): void {
-  const next = title.trim()
-  if (next === '' ) {
-    setTitle(task.title)
-    return
+}): React.JSX.Element {
+  const [editingDescription, setEditingDescription] = useState(false)
+  const [expandedDescription, setExpandedDescription] = useState(false)
+  const descriptionField = useRef<HTMLTextAreaElement>(null)
+  const cancelDescriptionSave = useRef(false)
+  const canExpandDescription = description.split('\n').length > 8
+
+  useEffect(() => {
+    setEditingDescription(false)
+    setExpandedDescription(false)
+  }, [task.id])
+
+  useEffect(() => {
+    if (!editingDescription || !descriptionField.current) return
+    descriptionField.current.focus()
+    descriptionField.current.style.height = 'auto'
+    descriptionField.current.style.height = `${descriptionField.current.scrollHeight}px`
+  }, [description, editingDescription])
+
+  const saveDescription = (): void => {
+    setEditingDescription(false)
+    if (cancelDescriptionSave.current) {
+      cancelDescriptionSave.current = false
+      return
+    }
+    if (description !== task.description) onSave(task.id, task.revision, { description })
   }
-  if (next !== task.title) onSave(task.id, task.revision, { title: next })
+
+  return (
+      <section className="grid gap-[var(--space-1)]" data-testid="task-description">
+        <ShellElement as="div" shellRole="task-description-heading">
+          <div className="flex-1"><TaskSectionLabel heading="Description" /></div>
+          <Tooltip label="Edit description">
+            <ShellTaskDescriptionEditButton onClick={() => setEditingDescription(true)} />
+          </Tooltip>
+        </ShellElement>
+        <TaskDrawerCard>
+          {editingDescription ? <ShellTaskDescriptionTextarea
+            ref={descriptionField}
+            aria-label="Task description"
+            data-testid="task-description-editor"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            onBlur={saveDescription}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                cancelDescriptionSave.current = true
+                setDescription(task.description)
+                setEditingDescription(false)
+                event.currentTarget.blur()
+              } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault()
+                event.currentTarget.blur()
+              }
+            }}
+          /> : description.trim() === '' ? <ShellElement as="div" shellRole="task-description-empty">
+            <ShellElement as="span" shellRole="task-description-empty-label">No description</ShellElement>
+            <Button variant="ghost" size="sm" onClick={() => setEditingDescription(true)}>Add description</Button>
+          </ShellElement> : <TaskDescriptionPreview
+            expanded={expandedDescription}
+            canExpand={canExpandDescription}
+            onToggle={() => setExpandedDescription((value) => !value)}
+            onDoubleClick={() => setEditingDescription(true)}
+          >
+            <MarkdownPreview source={description} variant="chat" />
+          </TaskDescriptionPreview>}
+        </TaskDrawerCard>
+      </section>
+  )
 }
+
 
 function useServerDraft(server: string, revision: number): [string, (value: string) => void] {
   const [draft, setDraft] = useState(server)
@@ -454,18 +343,6 @@ function useServerDraft(server: string, revision: number): [string, (value: stri
   return [draft, setDraft]
 }
 
-function CopyKeyButton({ taskKey }: { taskKey: string }): React.JSX.Element {
-  return (
-    <Tooltip label="Copy task key" className="inline-flex">
-      <TaskIconButton
-        glyph={IconCopy}
-        aria-label="Copy task key"
-        data-testid="task-copy-key"
-        onClick={() => void navigator.clipboard?.writeText(taskKey).catch(() => {})}
-      />
-    </Tooltip>
-  )
-}
 
 function RefusalBanner({
   refusal,
@@ -501,38 +378,26 @@ function RefusalBanner({
 function AcceptanceList({
   items,
   readOnly,
-  presentation,
   onCheck
 }: {
   items: TaskAcceptanceItem[]
   readOnly: boolean
-  presentation: 'side' | 'drawer'
   onCheck: (itemId: number, checked: boolean) => void
 }): React.JSX.Element {
   if (items.length === 0) return <TaskBody>No acceptance items.</TaskBody>
   const rows = items.map((item) => (
         <Tooltip key={item.id} label={readOnly ? READ_ONLY_REASON : undefined} className="flex">
-          {presentation === 'drawer' ? <TaskAcceptanceRow
+          <TaskAcceptanceRow
             testId={`task-acceptance-${item.id}`}
             checked={item.checked_at_ms != null}
             text={item.text}
             by={item.checked_by ? actorLabel(item.checked_by) : null}
             disabled={readOnly}
             onToggle={() => onCheck(item.id, item.checked_at_ms == null)}
-          /> : <TaskCheckButton
-            role="checkbox"
-            aria-checked={item.checked_at_ms != null}
-            disabled={readOnly}
-            data-testid={`task-acceptance-${item.id}`}
-            checked={item.checked_at_ms != null}
-            mark={<Icon glyph={IconCheck} role="small" />}
-            text={item.text}
-            by={item.checked_by ? actorLabel(item.checked_by) : null}
-            onClick={() => onCheck(item.id, item.checked_at_ms == null)}
-          />}
+          />
         </Tooltip>
   ))
-  return presentation === 'drawer' ? <div>{rows}</div> : <TaskBody column>{rows}</TaskBody>
+  return <div>{rows}</div>
 }
 
 interface ActivityEntry {
@@ -668,12 +533,3 @@ function CommentComposer({
     </TaskCommentBox>
   )
 }
-
-const STATUS_OPTIONS: SelectOption[] = STATUS_ORDER.map((status) => ({
-  value: status,
-  label: STATUS_LABEL[status]
-}))
-
-const PRIORITY_OPTIONS: SelectOption[] = (['urgent', 'high', 'medium', 'low', 'none'] as TaskPriority[]).map(
-  (priority) => ({ value: priority, label: PRIORITY_LABEL[priority] })
-)

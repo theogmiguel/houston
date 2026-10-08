@@ -42,6 +42,16 @@ html[data-motion-paused] .loop-anim {
   }
 }
 
+@keyframes inspector-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes inspector-slide-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
 @keyframes menu-out {
   to {
     opacity: 0;
@@ -178,6 +188,14 @@ html[data-motion-paused] .loop-anim {
     opacity: 0;
     transform: translateX(14px);
   }
+}
+
+@keyframes rail-options-forward {
+  from { opacity: 0; transform: translateX(8px); }
+}
+
+@keyframes rail-options-back {
+  from { opacity: 0; transform: translateX(-8px); }
 }
 
 /* Marks the row of a tag made from the rail, then clears itself so nothing has

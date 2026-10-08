@@ -1,3 +1,4 @@
+import { PrTab, PR_FLOATING_CANDIDATES } from '../ui/PrTab'
 import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { MetadataRow } from '../ui/MetadataRow'
 import { Text } from '../ui/Text'
@@ -12,7 +13,7 @@ import type {
   PrReviewerCandidate
 } from '../../houston/client'
 import { Icon } from '../ui/Icon'
-import { IconCheck, IconClose, IconLoaderCircle, IconPlus } from '../icons'
+import { IconCheck, IconClose, IconLoaderCircle, IconPlus, IconTag, IconUser, IconUsers } from '../icons'
 import { Tooltip } from '../ui/Tooltip'
 import { DiffLoadingMark } from '../ui'
 import {
@@ -62,8 +63,8 @@ export function PrReactions({
       {open && (
         <ReactionOptionList data-testid="pr-reaction-picker">
           {REACTION_ORDER.map((content) => (
+            <Tooltip key={content} label={REACTION_LABEL[content]}>
             <ReviewButton variant="reaction-option"
-              key={content}
               type="button"
               aria-label={REACTION_LABEL[content]}
               data-testid={`pr-reaction-pick-${content}`}
@@ -75,6 +76,7 @@ export function PrReactions({
             >
               <span aria-hidden>{REACTION_GLYPH[content]}</span>
             </ReviewButton>
+            </Tooltip>
           ))}
         </ReactionOptionList>
       )}
@@ -91,7 +93,8 @@ export function PrReviewerPicker({
   onLoad,
   onApply,
   open: openProp,
-  onOpenChange
+  onOpenChange,
+  compact = false
 }: {
   detail: PrDetail
   busy: boolean
@@ -102,6 +105,7 @@ export function PrReviewerPicker({
   onApply: (added: PrReviewer[], removed: PrReviewer[]) => void
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  compact?: boolean
 }): React.JSX.Element {
   const [openState, setOpenState] = useState(false)
   const open = openProp ?? openState
@@ -147,13 +151,15 @@ export function PrReviewerPicker({
   return (
     <PickerSection data-testid="pr-reviewers">
       <MetadataRow>
-        <PickerFieldLabel>Reviewers</PickerFieldLabel>
+        <PickerFieldLabel>{compact && <Icon glyph={IconUsers} role="small" />}Reviewers</PickerFieldLabel>
         <ReviewerValue data-testid="pr-reviewers-value">
-          {detail.reviewers.length === 0 ? 'none requested' : requestedReviewers(detail.reviewers)}
+          {detail.reviewers.length === 0 ? (compact ? 'None' : 'none requested') : requestedReviewers(detail.reviewers)}
         </ReviewerValue>
+        <Tooltip label={compact ? 'Add reviewer' : 'Manage reviewers'}>
         <ReviewButton variant="compact-action"
           type="button"
           data-testid="pr-reviewers-manage"
+          aria-label="Add reviewer"
           disabled={busy || loading}
           onClick={() => {
             if (!open) onLoad()
@@ -165,13 +171,14 @@ export function PrReviewerPicker({
               <Icon glyph={IconLoaderCircle} role="small" />
             </DiffLoadingMark>
           ) : (
-            'Manage'
+            compact ? <><Icon glyph={IconUser} role="small" /><Icon glyph={IconPlus} role="small" /></> : 'Manage'
           )}
         </ReviewButton>
+        </Tooltip>
       </MetadataRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (
-        <OptionCandidateList scrollable={false}
+        <OptionCandidateList scrollable={false} className={PR_FLOATING_CANDIDATES}
           data-testid="pr-reviewer-candidates"
         >
           {candidates.map((c) => {
@@ -233,7 +240,8 @@ export function PrLabelPicker({
   onLoad,
   onToggle,
   open: openProp,
-  onOpenChange
+  onOpenChange,
+  compact = false
 }: {
   detail: PrDetail
   busy: boolean
@@ -244,6 +252,7 @@ export function PrLabelPicker({
   onToggle: (name: string, applied: boolean) => void
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  compact?: boolean
 }): React.JSX.Element {
   const [openState, setOpenState] = useState(false)
   const open = openProp ?? openState
@@ -255,25 +264,28 @@ export function PrLabelPicker({
   return (
     <PickerSection data-testid="pr-labels">
       <LabelSummaryRow>
-        <PickerFieldLabel>Labels</PickerFieldLabel>
+        <PickerFieldLabel>{compact && <Icon glyph={IconTag} role="small" />}Labels</PickerFieldLabel>
         <LabelSummary data-testid="pr-labels-value">
           {detail.labels.length === 0 ? (
-            <Text size="small" tone="primary">none</Text>
+            <Text size="small" tone="primary">{compact ? 'None' : 'none'}</Text>
           ) : (
             detail.labels.map((l) => (
-              <PullRequestLabel
+              <PrTab as={PullRequestLabel} surface="pr-label-pill"
                 key={l.name}
                 selected
                 data-testid={`pr-label-${l.name}`}
               >
+                <PrTab as="span" surface="pr-label-dot" aria-hidden="true" style={{ backgroundColor: l.color ? `#${l.color.replace(/^#/, '')}` : 'var(--accent)' }} />
                 {l.name}
-              </PullRequestLabel>
+              </PrTab>
             ))
           )}
         </LabelSummary>
+        <Tooltip label={compact ? 'Add label' : 'Manage labels'}>
         <ReviewButton variant="compact-action"
           type="button"
           data-testid="pr-labels-manage"
+          aria-label="Add label"
           disabled={busy || loading}
           onClick={() => {
             if (!open) onLoad()
@@ -285,13 +297,14 @@ export function PrLabelPicker({
               <Icon glyph={IconLoaderCircle} role="small" />
             </DiffLoadingMark>
           ) : (
-            'Edit'
+            compact ? <Icon glyph={IconTag} role="small" /> : 'Edit'
           )}
         </ReviewButton>
+        </Tooltip>
       </LabelSummaryRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (
-        <OptionCandidateList data-testid="pr-label-candidates">
+        <OptionCandidateList data-testid="pr-label-candidates" className={PR_FLOATING_CANDIDATES}>
           {candidates.map((c) => (
             <ReviewButton variant="picker-candidate"
               key={c.name}

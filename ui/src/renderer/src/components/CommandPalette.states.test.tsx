@@ -10,7 +10,6 @@ import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
   return {
     newTerminal: vi.fn(),
-    insertPane: vi.fn(),
     splitPane: vi.fn(),
     newGrid: vi.fn(),
     closePane: vi.fn(),
@@ -226,20 +225,13 @@ describe('CommandPalette — state matrix', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('Disabled — a disabled row renders its reason in words, is skipped by keyboard traversal, and does nothing on click', () => {
+  it('Removed browser pane command does not appear in search results', () => {
     act(() => {
       root.render(<CommandPalette {...baseProps({ hasWorkspace: false })} />)
     })
     typeInto(search(), 'New Browser pane')
-    const row = rowById('panes.new-browser')
-    expect(row).not.toBeNull()
-    expect(row?.getAttribute('aria-disabled')).toBe('true')
-    expect(row?.textContent).toMatch(/workspace/i)
-    expect(row?.getAttribute('aria-selected')).toBe('false')
-    act(() => {
-      row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(onClose).not.toHaveBeenCalled()
+    expect(rowById('panes.new-browser')).toBeNull()
+    expect(container.querySelector('[data-testid="command-palette-empty-set"]')).not.toBeNull()
   })
 
   it('Escape closes the palette and returns focus to the element that had it before opening', () => {

@@ -43,6 +43,7 @@ export function TaskComposer({
   const [priority, setPriority] = useState<TaskPriority>('none')
   const [parent, setParent] = useState('')
   const [acceptance, setAcceptance] = useState<string[]>([])
+  const [addedItem, setAddedItem] = useState<number | null>(null)
 
   const submit = (): void => {
     const trimmed = title.trim()
@@ -115,6 +116,7 @@ export function TaskComposer({
             <div key={index} className="flex items-center gap-[var(--space-2)]">
               <TaskFieldInput
                 className="flex-1"
+                autoFocus={index === addedItem}
                 aria-label={`Acceptance item ${index + 1}`}
                 value={item}
                 onChange={(event) =>
@@ -131,7 +133,10 @@ export function TaskComposer({
           <TaskButton
             tone="ghost"
             data-testid="task-composer-add-item"
-            onClick={() => setAcceptance((current) => [...current, ''])}
+            onClick={() => {
+              setAddedItem(acceptance.length)
+              setAcceptance((current) => [...current, ''])
+            }}
           >
             <Icon glyph={IconPlus} role="small" />
             Add item

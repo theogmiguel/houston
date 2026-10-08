@@ -241,6 +241,8 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
             session: session_id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))
@@ -611,6 +613,8 @@ async fn a_second_consecutive_handoff_carries_the_session_again() {
                 session: session_id,
                 replay_bytes: None,
                 snapshot: None,
+                from_offset: None,
+                generation: None,
             })
             .unwrap(),
         ))
@@ -668,6 +672,8 @@ async fn a_real_exit_code_reaches_the_new_generation_through_the_supervisor() {
             session: session_id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))
@@ -725,6 +731,8 @@ async fn a_signalled_session_finishes_through_the_supervisor_with_no_exit_code()
             session: session_id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))
@@ -865,6 +873,8 @@ async fn snapshot_state(ws: &mut common::WsStream, session_id: u32) -> Vec<u8> {
             session: session_id,
             replay_bytes: None,
             snapshot: Some(true),
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))
@@ -957,6 +967,8 @@ async fn an_escape_sequence_split_across_the_handoff_continues_on_the_new_genera
             session: session_id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))
@@ -1047,6 +1059,8 @@ async fn handoff_spawns_the_candidate_binary_the_caller_named() {
             session: session_id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))
@@ -1202,6 +1216,8 @@ async fn failed_candidate_exec_keeps_the_original_generation_and_session() {
             session: session_id,
             replay_bytes: None,
             snapshot: None,
+            from_offset: None,
+            generation: None,
         })
         .unwrap(),
     ))

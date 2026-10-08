@@ -31,6 +31,7 @@ import {
   RosterStrip
 } from './ui'
 import { StatusLabel } from './ui/StatusLabel'
+import { ChildContextMenu } from './ChildContextMenu'
 
 // The queue view and the task chip carry the backlog helpers; both load on
 // demand so the Tasks modules stay off the boot path.
@@ -98,7 +99,7 @@ function ChildDeliveryStatus({ info }: { info: SessionInfo }): React.JSX.Element
   return status == null ? null : <RosterDetail><StatusLabel status={status} /></RosterDetail>
 }
 
-export function ChildrenRoster({ parent: parentProp, children: childrenProp, roster: rosterProp, client, selected, onSelect, onMove, collapsed, onCollapse, defaultView = 'children' }: {
+export function ChildrenRoster({ parent: parentProp, children: childrenProp, roster: rosterProp, client, selected, onSelect, onMove, collapsed, onCollapse, onExpand, defaultView = 'children' }: {
   parent: SessionInfo
   children: SessionInfo[]
   roster?: PaneRoster
@@ -108,6 +109,7 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
   onMove: (id: number) => void
   collapsed: boolean
   onCollapse: () => void
+  onExpand: () => void
   /// Which segment starts selected; the harness stories open the queue with it.
   defaultView?: 'children' | 'queue'
 }): React.JSX.Element {
@@ -122,6 +124,7 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
   const roster = rosterProp ? { ...rosterProp, sessions: family } : undefined
   const [filter, setFilter] = useState(false)
   const [pending, setPending] = useState<number[]>([])
+  const [contextMenu, setContextMenu] = useState<{ child: SessionInfo; x: number; y: number } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const latest = useRef(children)
   latest.current = children
@@ -155,12 +158,18 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
   const cap = roster?.maxLiveChildren ?? null
   const dot = (child: SessionInfo): React.JSX.Element => <ChildStatusDot info={child} />
   const glyph = (child: SessionInfo): React.JSX.Element => <IconAgent brand agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" />
+  const openChildMenu = (child: SessionInfo, event: React.MouseEvent): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    setContextMenu({ child, x: event.clientX, y: event.clientY })
+  }
+  const dismissChildMenu = (): void => setContextMenu(null)
   const strip = <RosterStrip aria-label="Children strip">
     <Tooltip label="Orchestrator"><RosterGlyphButton aria-label="Orchestrator" aria-pressed={selected == null} onClick={() => onSelect(null)}>{glyph(parent)}{dot(parent)}</RosterGlyphButton></Tooltip>
     <RosterRule />
-    {ordered.map((child) => <Tooltip key={child.id} label={glyphLabel(child)}><RosterGlyphButton aria-label={`Open ${child.delegation?.role ?? child.title}`} aria-pressed={selected === child.id} onClick={() => onSelect(child.id)}>{glyph(child)}<RosterStatus state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</RosterStatus></RosterGlyphButton></Tooltip>)}
+    {ordered.map((child) => <Tooltip key={child.id} label={glyphLabel(child)}><RosterGlyphButton aria-label={`Open ${child.delegation?.role ?? child.title}`} aria-pressed={selected === child.id} onClick={() => onSelect(child.id)} onContextMenu={(event) => openChildMenu(child, event)}>{glyph(child)}<RosterStatus state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</RosterStatus></RosterGlyphButton></Tooltip>)}
     {pending.length > 0 && <Tooltip label={`Undo closing ${pending.length} children`}><RosterIconButton aria-label="Undo closing settled children" onClick={undoClose}><Icon glyph={IconUndo} role="ui" /></RosterIconButton></Tooltip>}
-    <Tooltip label="Show children"><RosterIconButton pushEnd aria-label="Show children" onClick={onCollapse}><Icon glyph={IconChevronRight} role="ui" /></RosterIconButton></Tooltip>
+    <Tooltip label="Show children"><RosterIconButton pushEnd aria-label="Show children" onClick={onExpand}><Icon glyph={IconChevronRight} role="ui" /></RosterIconButton></Tooltip>
   </RosterStrip>
   return <>
     {!collapsed && <RosterColumn aria-label="Children roster">
@@ -197,7 +206,7 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
           const items = ordered.filter((child) => childGroup(child) === group && (!filter || group === 'Needs you'))
           return items.length > 0 && <div key={group}>
             <RosterGroupHead><span>{group}</span>{group === 'Needs you' && <RosterGroupToggle aria-pressed={filter} onClick={() => setFilter(!filter)}><Icon glyph={IconSearch} role="small" />Show only</RosterGroupToggle>}<span>{items.length}</span></RosterGroupHead>
-            {items.map((child) => <RosterRow key={child.id} settled={group === 'Settled'} selected={selected === child.id}>
+            {items.map((child) => <RosterRow key={child.id} settled={group === 'Settled'} selected={selected === child.id} onContextMenu={(event) => openChildMenu(child, event)}>
               <HeaderDelegationBadge rosterRow kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}><RosterStatus state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</RosterStatus>{glyph(child)}<Text as="strong" size="rosterName" weight="semibold">{child.delegation?.role ?? child.title}</Text>{child.task != null && <Suspense fallback={null}><TaskChip task={child.task} compact /></Suspense>}</HeaderDelegationBadge>
               <RosterSlot><RosterState><Suspense fallback={delegationAge(child.delegation?.started_at ?? Date.now(), child.delegation?.settled_at ?? Date.now())}><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={ageTicks(child)} /></Suspense></RosterState>
                 <RosterActions>
@@ -220,5 +229,6 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
       </RosterFooter>
     </RosterColumn>}
     {strip}
+    {contextMenu && <ChildContextMenu child={contextMenu.child} needsInput={childGroup(contextMenu.child) === 'Needs you'} parentId={parent.id} client={client} x={contextMenu.x} y={contextMenu.y} onClose={dismissChildMenu} onOpen={() => onSelect(contextMenu.child.id)} onMove={() => onMove(contextMenu.child.id)} />}
   </>
 }
