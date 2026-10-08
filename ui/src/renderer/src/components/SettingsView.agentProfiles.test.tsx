@@ -221,7 +221,7 @@ describe('Settings › Accounts — CLAUDE_CONFIG_DIR/CODEX_HOME isolation (row 
     })
     openAgentProfiles(container)
     const trigger = selectTrigger(container, 'agent-profile-active-claude')
-    expect(trigger.className).toContain('var(--tr-radius-input)')
+    expect(trigger.className).toContain('var(--tr-radius-sm)')
     expect(trigger.className).toContain('var(--tr-text-ui-size)')
     expect(trigger.className).not.toContain('rounded-md')
     expect(trigger.className).not.toContain('text-[11.5px]')

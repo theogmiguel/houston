@@ -65,7 +65,7 @@ describe('ComposerControls — state matrix', () => {
     act(() => overflowBtn.click())
     const selects = container.querySelectorAll('[data-testid="composer-chip-overflow-select"]')
     expect(selects).toHaveLength(1)
-    expect((selects[0] as HTMLElement).className).toContain('rounded-[var(--tr-radius-input)]')
+    expect((selects[0] as HTMLElement).className).toContain('rounded-[var(--tr-radius-sm)]')
   })
 
   it('Active — clicking a chip opens its options menu (Raised-tier chrome), and choosing an option calls onChange and closes it', () => {

@@ -111,6 +111,23 @@ describe('Select', () => {
     expect(selectValue(container, 's')).toBe('Nerd Font (recommended)')
   })
 
+  it('a mouse-opened menu takes keyboard focus so Escape closes the menu, not the page behind it', () => {
+    render()
+    const outer = document.createElement('button')
+    document.body.appendChild(outer)
+    outer.focus()
+    const pageEscape = vi.fn()
+    window.addEventListener('keydown', pageEscape)
+    openSelect(container, 's')
+    expect(document.activeElement).toBe(selectTrigger(container, 's'))
+    act(() => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    window.removeEventListener('keydown', pageEscape)
+    outer.remove()
+    expect(pageEscape).not.toHaveBeenCalled()
+  })
+
   it('type-ahead moves the highlight while open — the native behaviour, reimplemented', () => {
     render()
     openSelect(container, 's')
