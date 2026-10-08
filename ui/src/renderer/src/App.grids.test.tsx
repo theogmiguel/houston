@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_GRID_ID, gridStorageKey, preorderSessions } from './layout/tree'
 import {
   type AppHarness,
+  currentClient,
   deliverHelloOk,
   makeSession,
   makeWorkspace,
@@ -165,12 +166,30 @@ describe('grids (step 05, driven from the rail)', () => {
     expect(allSessions.sort()).toEqual([1, 2])
   })
 
-  it('a single-grid workspace is offered NO way to remove its only grid', async () => {
-    await boot([1])
+  it('closing the only grid asks first, then ends its panes and leaves the workspace empty', async () => {
+    await boot([1, 2])
+    const close = vi.fn()
+    currentClient().closeSession = close
     await rightClick(gridRows()[0])
-    const labels = menuItems().map((b) => b.textContent)
-    expect(labels.some((l) => l?.includes('Rename'))).toBe(true)
-    expect(labels.some((l) => l?.includes('Close Tab'))).toBe(false)
+    const remove = menuItems().find((b) => b.textContent?.includes('Close grid'))
+    expect(remove).toBeDefined()
+    expect(remove!.hasAttribute('disabled')).toBe(false)
+    await act(async () => {
+      remove!.click()
+      await Promise.resolve()
+    })
+    expect(close).not.toHaveBeenCalled()
+
+    const confirm = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Close grid')
+    expect(confirm).toBeDefined()
+    await act(async () => {
+      confirm!.click()
+      await Promise.resolve()
+    })
+    expect(close.mock.calls.map(([id]) => id).sort()).toEqual([1, 2])
+    const grids = JSON.parse(localStorage.getItem(`tr-grids:${WS}`) ?? '[]') as { id: string }[]
+    expect(grids).toHaveLength(1)
+    expect(grids[0].id).not.toBe(DEFAULT_GRID_ID)
   })
 
   it('a second tab unlocks Close grid, and closing it drops back to one row', async () => {

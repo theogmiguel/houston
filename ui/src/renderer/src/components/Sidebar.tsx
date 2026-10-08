@@ -67,6 +67,7 @@ import {
   type IconProps,
 } from "./icons";
 import { Tooltip } from "./ui/Tooltip";
+import { useLastGridConfirm } from "./rail/LastGridConfirm";
 import { NavigationRailHeader } from "./ui/NavigationRail";
 import logoUrl from "../assets/logo-chrome.svg";
 import { showItemInFolder } from "../houston/bridge";
@@ -1257,7 +1258,7 @@ function ExpandedGridsRow({
             </WorkspaceTreeRow>
           );
         }
-        const onRemove = onRemoveGrid && grids.length > 1 ? () => onRemoveGrid(w.path, g.id) : undefined;
+        const onRemove = onRemoveGrid ? () => onRemoveGrid(w.path, g.id) : undefined;
         return (
           <Fragment key={g.id}>
             {gridIndex === 0 && pinnedGridIds.has(gridStorageKey(w.path, g.id)) && <WorkspaceGroupLabel>Pinned</WorkspaceGroupLabel>}
@@ -1271,7 +1272,7 @@ function ExpandedGridsRow({
                   selected={gridOn}
                   jumpNumber={grids.indexOf(g) + 1}
                   onSelect={() => onSelectGrid?.(w.path, g.id)}
-                  onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid) && grids.length > 1)}
+                  onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid))}
                   onRemove={onRemove}
                 />
               }
@@ -1296,7 +1297,7 @@ function ExpandedGridsRow({
           jumpNumber={grids.indexOf(g) + 1}
           onSelect={() => onSelectGrid?.(w.path, g.id)}
           onRemove={onRemove}
-          onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid) && grids.length > 1)}
+          onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid))}
           onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
               />
             </Suspense>
@@ -1979,7 +1980,7 @@ function RailTree({
   });
   const renderFlatCard = ({ workspace, grid, paneIds, card }: typeof flatCards[number]): React.JSX.Element => {
     const selectedCard = selected === workspace.path && selectedGridId === grid.id;
-    const onRemove = onRemoveGrid && (gridsByWorkspace[workspace.path]?.length ?? 0) > 1
+    const onRemove = onRemoveGrid
       ? () => onRemoveGrid(workspace.path, grid.id)
       : undefined
     const key = gridStorageKey(workspace.path, grid.id);
@@ -2824,13 +2825,15 @@ export function Sidebar({
     />
   );
 
+  const { removeGrid, closingLastEl } = useLastGridConfirm(gridsByWorkspace, onRemoveGrid);
+
   const gridMenuEl = gridMenu && (
     <GridContextMenu
       gridMenu={gridMenu}
       onClose={() => setGridMenu(null)}
       onOpenGrid={onSelectGrid}
       onStartRename={(path, gridId) => setGridRenaming({ path, gridId })}
-      onRemoveGrid={onRemoveGrid}
+      onRemoveGrid={removeGrid}
       onTogglePin={toggleGridPin}
       onOpenInspector={onOpenInspector}
       onError={onOpenExternalError}
@@ -2959,7 +2962,7 @@ export function Sidebar({
             selectedGridId={selectedGridId}
             gridRenaming={gridRenaming}
             onRenameGrid={onRenameGrid}
-            onRemoveGrid={onRemoveGrid}
+            onRemoveGrid={removeGrid}
             onSelectGrid={onSelectGrid}
             openGridMenu={openGridMenu}
             setGridRenaming={setGridRenaming}
@@ -3020,6 +3023,7 @@ export function Sidebar({
 
       {portalOrNull(menuEl)}
       {portalOrNull(gridMenuEl)}
+      {portalOrNull(closingLastEl)}
       {portalOrNull(navMenuEl)}
     </RailSurface>
     </TagPopoverHost>

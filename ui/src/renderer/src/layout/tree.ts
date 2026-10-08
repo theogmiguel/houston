@@ -855,11 +855,12 @@ export function dropTagFromGrids(path: string, tagId: number): GridMeta[] | null
   return next
 }
 
+// Removing the last grid replaces it with a fresh empty one, so a workspace always has a grid.
 export function removeGrid(path: string, gridId: string): GridMeta[] {
   const grids = loadGrids(path)
-  if (grids.length <= 1) return grids
-  const next = grids.filter((g) => g.id !== gridId)
-  if (next.length === grids.length) return grids
+  if (!grids.some((g) => g.id === gridId)) return grids
+  const rest = grids.filter((g) => g.id !== gridId)
+  const next = rest.length > 0 ? rest : [{ id: newGridId(), name: DEFAULT_GRID_NAME, named: false, tags: [] }]
   saveGrids(path, next)
   localStorage.removeItem(KEY_PREFIX + gridStorageKey(path, gridId))
   return next

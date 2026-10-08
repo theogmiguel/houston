@@ -313,6 +313,11 @@ export type Conn =
     }
   | { kind: "failed"; error: string };
 
+// Closing a workspace's last grid ends its panes rather than leaving them running unseen.
+function closeGridSessions(client: HoustonClient | null, sessions: number[]): void {
+  for (const id of sessions) client?.closeSession(id);
+}
+
 function readyClient(conn: Conn): HoustonClient | null {
   return conn.kind === "ready" ? conn.client : null;
 }
@@ -2171,8 +2176,11 @@ export function App(): React.JSX.Element {
   }, [conn, gridsByWs, layouts, sessions]);
   const handleRemoveGrid = useCallback((path: string, gridId: string): void => {
     const before = gridsByWsRef.current.get(path) ?? loadGrids(path);
+    const key = gridStorageKey(path, gridId);
+    const closing = preorderSessions((layoutsRef.current.get(key) ?? loadLayout(key)).tree);
+    if (!before.some((g) => g.id === gridId)) return;
     const next = removeGrid(path, gridId);
-    if (next.length === before.length) return;
+    if (before.length === 1) closeGridSessions(readyClient(conn), closing);
     setGridsByWs((prev) => new Map(prev).set(path, next));
     setLayouts((prev) => {
       const key = gridStorageKey(path, gridId);
@@ -2185,7 +2193,7 @@ export function App(): React.JSX.Element {
       if (prev.get(path) !== gridId) return prev;
       return new Map(prev).set(path, next[0].id);
     });
-  }, []);
+  }, [conn]);
 
   const handleStackWith = useCallback(
     (dragged: PaneKey, target: PaneKey): void => {

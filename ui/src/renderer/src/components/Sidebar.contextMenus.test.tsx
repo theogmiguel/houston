@@ -168,7 +168,7 @@ describe('Sidebar context menus — reference anatomy', () => {
     expect(onRemoveGrid).toHaveBeenCalledWith('/tmp/one', 'g1')
   })
 
-  it('a grid row on a 1-grid workspace has no hover × (removing the last grid is refused)', () => {
+  it('closing the only grid of a workspace asks for confirmation before removing it', () => {
     const onRemoveGrid = vi.fn()
     render({
       gridsByWorkspace: { '/tmp/one': [{ id: 'g1', name: 'Grid 1' }] },
@@ -176,7 +176,13 @@ describe('Sidebar context menus — reference anatomy', () => {
     })
     const rows = [...container.querySelectorAll('[data-testid="grid-row"]')]
     expect(rows).toHaveLength(1)
-    expect(rows[0].querySelector('[data-testid="grid-close"]')).toBeNull()
+    const close = rows[0].querySelector<HTMLElement>('[data-testid="grid-close"]')
+    expect(close).not.toBeNull()
+    act(() => close!.click())
+    expect(onRemoveGrid).not.toHaveBeenCalled()
+    const confirm = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Close grid')
+    act(() => confirm!.click())
+    expect(onRemoveGrid).toHaveBeenCalledWith('/tmp/one', 'g1')
   })
 
   it('the grid menu header names the grid', () => {
