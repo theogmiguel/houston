@@ -91,13 +91,15 @@ describe('Sidebar rail head — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('Filled — carries no brand mark or name, only the hide control when wired', () => {
+  it('Filled — the brand mark and name sit at the leading edge, before the hide control', () => {
     render({ onHideRail: noop })
-    const head = container.querySelector('aside > div')
-    expect(head).not.toBeNull()
-    expect(head?.querySelector('[data-testid="brand-mark"]')).toBeNull()
-    expect(head?.querySelector('img')).toBeNull()
-    expect(head?.textContent).not.toContain('Houston')
+    const head = container.querySelector('aside > div') as HTMLElement
+    const brand = head.querySelector('[data-testid="brand-mark"]')
+    const hide = head.querySelector('button[aria-label="Hide sidebar"]')
+    expect(brand).not.toBeNull()
+    expect(head.textContent).toContain('Houston')
+    expect(hide).not.toBeNull()
+    expect(brand!.compareDocumentPosition(hide!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('Hover — the hide button is the head\'s one affordance: a 28px chrome button with the hover wash, offered only when the app wires onHideRail', () => {
@@ -137,17 +139,17 @@ describe('Sidebar rail head — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('the hide control is packed left, not centered', () => {
+  it('the hide control sits at the trailing edge, not centered', () => {
     render({ onHideRail: noop })
     const head = container.querySelector('aside > div') as HTMLElement
     expect(head.className).not.toContain('justify-center')
     expect(head.querySelector('button[aria-label="Hide sidebar"]')).not.toBeNull()
   })
 
-  it('the rail head no longer carries the hide control — it moved to the railfoot', () => {
+  it('without onHideRail the head still shows the brand but no hide control', () => {
     render()
     const head = container.querySelector('aside > div') as HTMLElement
-    expect(head.textContent).not.toContain('v')
+    expect(head.textContent).toContain('Houston')
     expect(head.querySelector('button[aria-label="Hide sidebar"]')).toBeNull()
   })
 

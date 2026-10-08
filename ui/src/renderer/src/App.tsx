@@ -330,7 +330,7 @@ import { Icon } from "./components/ui/Icon";
 import {
   Button,
   AppTitlebar,
-  TitlebarBrand,
+  TitlebarLead,
   ContentRegion,
   ContentsSwitch,
   EmptyGridHint,
@@ -3548,7 +3548,7 @@ export function App(): React.JSX.Element {
             onDoubleClick={handleTitlebarDoubleClick}
           >
             <div className="flex items-center gap-1.5 min-w-0 pl-2.5">
-              <TitlebarBrand>
+              <TitlebarLead>
                 {sidebarRail && (
                   <Tooltip label="Show sidebar (Ctrl+B)">
                     <Button
@@ -3562,7 +3562,7 @@ export function App(): React.JSX.Element {
                     </Button>
                   </Tooltip>
                 )}
-              </TitlebarBrand>
+              </TitlebarLead>
               <SettingsBreadcrumb open={settings} section={settingsSectionLabel()} />
             </div>
             <ToolbarActions>

@@ -18,6 +18,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
     onToggleChromeTheme: noop,
     sessions: [] as SessionInfo[],
     selected: '/tmp/one',
+    selectedGridId: 'g1',
     customColors: {},
     colorIndexByPath: {},
     renaming: null,
