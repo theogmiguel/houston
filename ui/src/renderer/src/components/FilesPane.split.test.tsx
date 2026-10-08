@@ -33,6 +33,16 @@ describe('Files panel split', () => {
     expect(screen.queryByRole('tablist')).toBeNull()
     expect(await screen.findByTestId('test-editor')).toBeTruthy()
   })
+  it('keeps its layout when the width wobbles by a scrollbar around the threshold', () => {
+    mount(); resize(720)
+    expect(screen.getByTestId('files-pane').dataset.split).toBe('true')
+    resize(705)
+    expect(screen.getByTestId('files-pane').dataset.split).toBe('true')
+    resize(690)
+    expect(screen.getByTestId('files-pane').dataset.split).toBe('false')
+    resize(712)
+    expect(screen.getByTestId('files-pane').dataset.split).toBe('false')
+  })
   it('clamps, persists, restores and resets the sash width', () => {
     const view = mount(); resize(760)
     const sash = screen.getByRole('separator', { name: 'Resize file tree' })
