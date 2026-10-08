@@ -228,11 +228,8 @@ export function loadPinnedGridIds(storage: Pick<Storage, 'getItem'> = localStora
 
 type GridKnowledge = readonly { path: string; gridIds: readonly string[] }[]
 
-/**
- * Resolves a stored grid reference to a workspace-scoped key. Bare `g-default` exists in every
- * workspace, so it cannot be attributed and yields null; other bare ids map to the one workspace
- * holding them, or null when no loaded workspace does.
- */
+// A stored grid reference as a workspace-scoped key. Bare `g-default` exists in every workspace,
+// so it yields null; other bare ids map to the loaded workspace holding them, else null.
 function scopedGridKey(entry: string, workspaces: GridKnowledge): string | null {
   if (entry.includes('::')) return entry
   if (entry === DEFAULT_GRID_ID) return null
