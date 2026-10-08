@@ -167,7 +167,7 @@ function PrFooterMenuStateActions({ link, detail, pr, open, draft, busy, method,
     {open && !draft && <PrMenuItem label="Convert to draft" testId="pr-action-draft" disabledReason={reason('draft')} busy={busy} onSelect={() => pr.action(link.number, 'draft')} />}
     {open && <PrMenuItem label="Close" testId="pr-action-close" disabledReason={reason('close')} busy={busy} onSelect={() => pr.action(link.number, 'close')} />}
     {open && !draft && <>
-      <div className="px-[var(--space-menu-item-x)] py-[var(--space-1)]">
+      <div data-pr-menu-field>
         <Select aria-label="Update method" data-testid="pr-update-method" value={updateMethod} options={UPDATE_METHODS} onChange={(value) => setUpdateMethod(value as PrUpdateMethod)} />
       </div>
       <PrMenuItem label="Update branch" testId="pr-action-update-branch" disabledReason={reason('update_branch')} busy={busy} onSelect={() => pr.action(link.number, 'update_branch', { updateMethod })} />
@@ -208,7 +208,7 @@ function PrFooterMenu({
     <ContextMenu
       role="menu"
       data-testid="pr-actions-items"
-      className="!absolute bottom-[calc(100%-var(--space-1))] right-[var(--space-2-5)] z-[var(--z-sticky)]"
+      data-pr-actions-menu
     >
       <ContextMenuItems>
         {compact && <PrMenuItem label="Open on GitHub" testId="pr-open" icon={IconExternal} disabledReason={onOpenUrlInPane ? null : 'No pane available to open the page'} onSelect={() => onOpenUrlInPane?.(link.url)} />}
