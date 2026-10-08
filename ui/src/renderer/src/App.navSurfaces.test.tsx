@@ -30,7 +30,7 @@ function destinationButton(container: HTMLElement, view: string): HTMLButtonElem
 }
 
 const surface = (c: HTMLElement): Element | null =>
-  c.querySelector('[data-testid="nav-surface"], [data-testid="pull-requests-screen"], [data-testid="projects-surface"]')
+  c.querySelector('[data-testid="nav-surface"], [data-testid="pull-requests-screen"]')
 
 describe('the rail nav rows drive the content area', () => {
   it.each(RAIL_VIEWS)('the %s page fills the content region, so its column centres', async (view) => {
@@ -40,6 +40,18 @@ describe('the rail nav rows drive the content area', () => {
     act(() => destinationButton(container, view).click())
     await waitFor(() => expect(surface(container)).not.toBeNull())
     expect(surface(container)!.className).toMatch(/(^|\s)(flex-1|w-full)(\s|$)/)
+  })
+
+  it('choosing a grid in the rail leaves the open page for that grid', async () => {
+    harness = await renderReadyApp()
+    const { container } = harness
+    const { act } = await import('react')
+    act(() => navRow(container, 'tasks').click())
+    await waitFor(() => expect(surface(container)).not.toBeNull())
+    const row = container.querySelector('[data-testid="grid-row"]') as HTMLElement
+    act(() => row.click())
+    await waitFor(() => expect(surface(container)).toBeNull())
+    expect(navRow(container, 'tasks').getAttribute('aria-current')).toBeNull()
   })
 
   it('Ctrl+, closes Settings even while its search input is focused', async () => {

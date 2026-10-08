@@ -76,7 +76,7 @@ describe('Tasks surface and drawer', () => {
     expect(source.getAttribute('href')).toBe('https://github.com/acme/app/issues/7')
   })
 
-  it('shows the selected workspace queue and opens task details in its drawer', () => {
+  it('lists the selected workspace queue beside the detail of the selected task', () => {
     const snapshot = state()
     const openTask = vi.fn()
     snapshot.openTask = openTask
@@ -84,10 +84,57 @@ describe('Tasks surface and drawer', () => {
     act(() => root.render(<TasksSurface client={null} workspace="/project" workspaces={WORKSPACES} sessions={new Map()} now={1}
       onStartRequested={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()} onOpenExternal={vi.fn()} />))
     expect(mocks.useTasks.mock.calls.at(-1)?.slice(1)).toEqual(['/project', '/project'])
-    const title = screen.getByRole('button', { name: 'Global task' })
-    act(() => title.click())
-    expect(openTask).toHaveBeenCalledWith(7)
+    expect(container.querySelector('[data-testid="list-detail"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="task-detail-drawer"], [role="dialog"]')).toBeNull()
+    const items = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]')]
+    expect(items.map((item) => item.firstElementChild?.textContent)).toEqual(['Other task', 'Global task'])
+    expect(openTask).toHaveBeenLastCalledWith(8)
+    act(() => items[1].click())
+    expect(openTask).toHaveBeenLastCalledWith(7)
     expect(screen.getByRole('status').textContent).toBe('Loading task…')
+  })
+
+  it('says a task stopped just now rather than "now ago"', () => {
+    const snapshot = state()
+    snapshot.snapshot.tasks = [{ ...TASK, status: 'in_progress', updated_at_ms: 1, acceptance_checked: 0, acceptance_total: 1 }]
+    mocks.useTasks.mockReturnValue(snapshot)
+    act(() => root.render(<TasksSurface client={null} workspace="/project" workspaces={WORKSPACES} sessions={new Map()} now={1}
+      onStartRequested={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()} onOpenExternal={vi.fn()} />))
+    const meta = container.querySelector('[data-testid="list-detail-item"]')!.textContent
+    expect(meta).toContain('stopped just now')
+    expect(meta).not.toContain('now ago')
+  })
+
+  it('expands finished tasks below the Done and archived toggle', () => {
+    const snapshot = state()
+    snapshot.snapshot.tasks = [
+      { ...TASK, acceptance_checked: 0, acceptance_total: 0 },
+      { ...TASK, id: 9, number: 9, key: 'HOU-9', title: 'Shipped task', status: 'done', acceptance_checked: 0, acceptance_total: 0 }
+    ]
+    mocks.useTasks.mockReturnValue(snapshot)
+    act(() => root.render(<TasksSurface client={null} workspace="/project" workspaces={WORKSPACES} sessions={new Map()} now={1}
+      onStartRequested={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()} onOpenExternal={vi.fn()} />))
+    click('[data-testid="tasks-show-finished"]')
+    const toggle = container.querySelector('[data-testid="tasks-show-finished"]')!
+    const shipped = [...container.querySelectorAll('[data-testid="list-detail-item"]')].find((item) => item.textContent?.includes('Shipped task'))!
+    expect(toggle.compareDocumentPosition(shipped) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('opens a task once the daemon confirms its creation', () => {
+    const snapshot = state()
+    const openTask = vi.fn()
+    const createTask = vi.fn()
+    snapshot.openTask = openTask
+    snapshot.createTask = createTask
+    mocks.useTasks.mockReturnValue(snapshot)
+    act(() => root.render(<TasksSurface client={null} workspace="/project" workspaces={WORKSPACES} sessions={new Map()} now={1}
+      onStartRequested={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()} onOpenExternal={vi.fn()} />))
+    act(() => screen.getByRole('button', { name: 'New task' }).click())
+    fireEvent.change(screen.getByRole('textbox', { name: 'Task title' }), { target: { value: 'Cap retries' } })
+    act(() => screen.getByRole('button', { name: 'Create task' }).click())
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ title: 'Cap retries' }), expect.any(Function))
+    act(() => createTask.mock.calls[0][1](42))
+    expect(openTask).toHaveBeenLastCalledWith(42)
   })
 
   it('requires a workspace for an unassigned Start and passes the chosen path', () => {

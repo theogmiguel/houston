@@ -44,7 +44,6 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
       }
       if (message.type === 'task_plan_started' && message.id === task.id) onOpenSessionRef.current(message.session_id)
       if (message.type === 'task_plan_changed' && message.id === task.id) sendTaskWire(client, { type: 'task_domain_get', id: task.id })
-      if (message.type === 'task_refused' && message.id === task.id) setError(message.message)
     })
     sendTaskWire(client, { type: 'task_domain_get', id: task.id })
     if (workspace) {
@@ -66,7 +65,8 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
     sendTaskWire(client, { type: 'task_start', id: task.id, workspace, agent, override_readiness: true })
   }
   const plan = domain.plan
-  const deliveryOptions = workspaceTasks.filter((item) => item.id !== task.id && item.workspace === workspace && item.status !== 'done' && domains[item.id]?.kind === 'delivery' && domains[item.id]?.project_id === domain.project_id).map((item) => ({ value: String(item.id), label: `${item.key} — ${item.title}` }))
+  // The current parent stays listed even when it is no longer an open delivery of this project.
+  const deliveryOptions = workspaceTasks.filter((item) => item.id !== task.id && item.workspace === workspace && (item.id === task.parent_id || (item.status !== 'done' && domains[item.id]?.kind === 'delivery' && domains[item.id]?.project_id === domain.project_id))).map((item) => ({ value: String(item.id), label: `${item.key} — ${item.title}` }))
 
   return <Card padding="sm" className="grid gap-[var(--space-2)]" aria-label="Project workflow">
     <SectionHead title="Project workflow" />

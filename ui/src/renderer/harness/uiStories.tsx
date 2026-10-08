@@ -405,6 +405,11 @@ const routineItems = [
   { id: 'weekly', title: 'Weekly changelog draft', sub: 'Idle · Fri 17:00' },
   { id: 'flaky', title: 'Flaky test sweep', sub: 'Paused' }
 ]
+const sectionedItems = [
+  { id: 'hou-45', title: 'Rename Harness review to Harness', sub: 'Needs input · HOU-45', section: 'Your turn' },
+  { id: 'hou-39', title: 'Pane header shows the branch', sub: 'Ready · HOU-39', section: 'Your turn' },
+  { id: 'hou-50', title: 'Usage page in the rail', sub: 'Working · HOU-50', section: 'Agents working' }
+]
 const options = [
   { value: 'graphite', label: 'Graphite' },
   { value: 'paper', label: 'Paper' },
@@ -1318,6 +1323,19 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <UsageCalendar days={[]} metric="cost" selectedDay={null} onSelect={noop} />
           <UsageShareBar heading="Cost by type" segments={[{ id: 'input', label: 'Input', value: 58 }, { id: 'cache-read', label: 'Cache read', value: 24 }, { id: 'output', label: 'Output', value: 18 }]} />
           <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: noop }, { label: 'Delete', onSelect: noop, tone: 'danger' }]} />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="ListDetail — sections and list foot">
+          <PageFrame width="wide" className="p-0">
+            <ListDetail
+              items={sectionedItems}
+              selectedId="hou-45"
+              onSelect={noop}
+              backLabel="Tasks"
+              listFoot={<Button variant="ghost" size="sm">Done and archived</Button>}
+              renderDetail={(item) => item && <Caption>{item.title}</Caption>}
+            />
+          </PageFrame>
         </SpecimenGroup>
 
         <SpecimenGroup heading="ListDetail — Routines">

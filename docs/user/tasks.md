@@ -15,11 +15,13 @@ fold or unfold it. **Archived** tasks sit in a final collapsed group.
 Choose **Tasks** in the rail to see the queue. **Your turn** contains runs waiting for input
 and tasks handed back for review; **Agents working** contains live runs; **Stopped** contains
 interrupted or stopped work; **Up next** contains ready tasks. Done and archived tasks stay
-folded below the queue. The count beside Tasks is the number in **Your turn**. A ready task
-shows its pull request number, and a waiting run shows the agent's question when Houston has
-received one. Select a task to open its detail in a drawer over the queue. The drawer keeps
-acceptance items toggleable; its **…** menu includes **Open session** and task actions. The
-Tasks side panel remains available as a shortcut.
+folded below the list; **Done and archived** shows them. The count beside Tasks is the
+number in **Your turn**. A ready task shows its pull request number, and a waiting run shows
+the agent's question when Houston has received one. Select a task to open its detail beside
+the list. The detail header offers the queue's next step, such as **Answer** or **Review
+changes**, keeps acceptance items toggleable, and its **…** menu includes **Open session**
+and task actions. Search by title or key, or filter the list to one project or to tasks
+without a project. The Tasks side panel remains available as a shortcut.
 
 ## Creating and editing
 
@@ -49,8 +51,11 @@ the task; an archived task shows the same menu with **Restore task**.
 
 ## Projects and deliveries
 
-Choose **Projects** in the rail with a workspace selected. A project groups deliveries;
-each delivery groups slices, and each slice owns one execution branch and pull request.
+Choose **By project** on the Tasks page to list each project's deliveries, each followed by
+its slices, then tasks without a project. **Projects** in the page header creates, edits,
+archives and restores projects and shows tracker sync for the workspace. A project groups
+deliveries; each delivery groups slices, and each slice owns one execution branch and pull
+request.
 Keep the project's tracker description as an unverified snapshot and record local decisions
 and corrections separately. Both reach agents as labelled context.
 

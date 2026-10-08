@@ -81,7 +81,9 @@ export interface TaskDetailProps {
   workspaceOptions?: SelectOption[]
   sessions: ReadonlyMap<number, SessionInfo>
   startSettings: TaskStartSettings | null
-  onBack: () => void
+  /** Absent when the detail sits inline beside its list, which owns navigation back. */
+  onBack?: () => void
+  primaryAction?: ReactNode
   onReload: (id: number) => void
   onSave: (id: number, expectedRevision: number, patch: TaskPatch) => void
   onCheck: (id: number, item: number, checked: boolean) => void
@@ -186,7 +188,8 @@ function TaskDetailDrawer({ props, trackerLinks, trackerProject }: { props: Task
       heading={task.title}
       status={task.status}
       actions={<>
-        <Button variant="icon" icon={IconClose} aria-label="Close task details" onClick={props.onBack} />
+        {props.primaryAction}
+        {props.onBack && <Button variant="icon" icon={IconClose} aria-label="Close task details" onClick={props.onBack} />}
         <TaskMenu
           label="Task actions"
           icon={IconEllipsis}

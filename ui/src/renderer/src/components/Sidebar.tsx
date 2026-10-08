@@ -59,7 +59,6 @@ import {
   IconUser,
   IconTarget,
   IconTasks,
-  IconFolderOpen,
   IconChartArea,
   IconTerminal,
   IconZap,
@@ -1483,7 +1482,6 @@ function RailHead({
 
 const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Element>> =
   Object.freeze({
-    projects: IconFolderOpen,
     tasks: IconTasks,
     skills: IconZap,
     routines: IconClock,

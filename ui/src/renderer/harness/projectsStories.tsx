@@ -3,7 +3,6 @@ import type { ClientMsg, HoustonClient } from '../src/houston/client'
 import type { ServerMsg } from '../src/houston/generated/ServerMsg'
 import type { TaskSummary } from '../src/houston/generated/TaskSummary'
 import type { TaskDomain, TaskProject, TaskTrackerLink, TaskTrackerWorkspaceSettings } from '../src/houston/taskDomain'
-import { ProjectsSurface } from '../src/components/nav/ProjectsSurface'
 import { TaskTrackerSettingsSection } from '../src/components/settings/TaskTrackerSettingsSection'
 
 const WORKSPACE = '/home/dev/code/houston'
@@ -109,25 +108,6 @@ function projectClient(includePlan: boolean, includeConflict: boolean, empty = f
   }
 }
 
-function ProjectStory({ plan = false, conflict = false, empty = false }: { plan?: boolean; conflict?: boolean; empty?: boolean }): React.JSX.Element {
-  const client = React.useMemo(() => projectClient(plan, conflict, empty), [plan, conflict, empty])
-  const selectedTaskId = plan || conflict ? 42 : 41
-  React.useEffect(() => {
-    if (empty) return
-    const timer = window.setInterval(() => {
-      const button = document.querySelector<HTMLButtonElement>(`[data-testid="project-task-${selectedTaskId}"]`)
-      if (button) { window.clearInterval(timer); button.click() }
-    }, 100)
-    const stop = window.setTimeout(() => window.clearInterval(timer), 1000)
-    return () => { window.clearInterval(timer); window.clearTimeout(stop) }
-  }, [empty, selectedTaskId])
-  return <div className="h-full bg-[var(--content-bg)]"><ProjectsSurface client={client} workspace={WORKSPACE} workspaces={[{ path: WORKSPACE, name: 'houston' }]} onOpenSession={() => {}} /></div>
-}
-
-export function ProjectsPageStory(): React.JSX.Element { return <ProjectStory /> }
-export function ProjectsPlanStory(): React.JSX.Element { return <ProjectStory plan /> }
-export function ProjectsConflictStory(): React.JSX.Element { return <ProjectStory conflict /> }
-export function ProjectsEmptyStory(): React.JSX.Element { return <ProjectStory empty /> }
 export function TrackerSettingsStory(): React.JSX.Element {
   const client = React.useMemo(() => projectClient(false, false), [])
   return <div className="h-full overflow-auto p-[var(--space-4)]"><TaskTrackerSettingsSection client={client} workspace={WORKSPACE} workspaceName="houston" /></div>
