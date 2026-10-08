@@ -67,6 +67,7 @@ import {
   type IconProps,
 } from "./icons";
 import { Tooltip } from "./ui/Tooltip";
+import { NavigationRailHeader } from "./ui/NavigationRail";
 import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { Icon } from "./ui/Icon";
@@ -1456,11 +1457,7 @@ function RailHead({
   onHideRail?: () => void;
 }): React.JSX.Element {
   return (
-    <div
-      onMouseDown={onHeadMouseDown}
-      onDoubleClick={onHeadDoubleClick}
-      className="h-[var(--h-railhead)] flex-none flex items-center px-[var(--space-3)] [-webkit-app-region:drag] select-none"
-    >
+    <NavigationRailHeader onMouseDown={onHeadMouseDown} onDoubleClick={onHeadDoubleClick}>
       {onHideRail && (
         <Tooltip label="Hide sidebar (Ctrl+B)">
           <Button
@@ -1473,7 +1470,7 @@ function RailHead({
           </Button>
         </Tooltip>
       )}
-    </div>
+    </NavigationRailHeader>
   );
 }
 

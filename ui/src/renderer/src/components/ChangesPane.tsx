@@ -197,13 +197,13 @@ function ChangesStrip({
           disabled={disabledReason !== undefined}
           onClick={() => setScope(value)}
         >
-          <span className={scope === value ? 'flex' : 'flex invisible'}><Icon glyph={IconCheck} role="small" /></span>{label}
+          <span className="flex" style={{ visibility: scope === value ? 'visible' : 'hidden' }}><Icon glyph={IconCheck} role="small" /></span>{label}
         </GitToolMenuItem>
       </Tooltip>
     )
     return (
       <>
-        <div role="group" aria-label="Diff scope" className="flex flex-col">
+        <div role="group" aria-label="Diff scope" className="grid">
           {compareItem('working', labels.working, 'changes-scope-working')}
           {compareItem('branch', labels.branch, 'changes-scope-branch', defaultBase ? undefined : 'This repository has no base branch to compare against')}
         </div>

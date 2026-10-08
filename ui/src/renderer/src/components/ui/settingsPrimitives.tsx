@@ -116,16 +116,19 @@ export function SubHead({ children, actions }: { children: React.ReactNode; acti
 export function Group({
   heading,
   plain = false,
+  padded = false,
   children
 }: {
   heading?: string
   plain?: boolean
+  /** Insets free-form content (not rows) inside the group's card. */
+  padded?: boolean
   children: React.ReactNode
 }): React.JSX.Element {
   return (
     <section data-testid="settings-group" className="mb-0 [&+&]:pt-[var(--space-5)]">
       {heading && <SubHead>{heading}</SubHead>}
-      {plain ? children : <SettingsList>{children}</SettingsList>}
+      {plain ? children : <SettingsList>{padded ? <div className="p-[var(--space-3)]">{children}</div> : children}</SettingsList>}
     </section>
   )
 }

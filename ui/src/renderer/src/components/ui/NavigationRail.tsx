@@ -19,8 +19,9 @@ export function NavigationRail({ children }: { children: ReactNode }): React.JSX
   return <div className="flex-none flex flex-col gap-[var(--space-0-5)] px-[var(--space-2)] pb-[var(--space-1)]">{children}</div>
 }
 
-export function NavigationRailHeader({ logo, children, action, ...props }: HTMLAttributes<HTMLDivElement> & { logo: string; children: ReactNode; action?: ReactNode }): React.JSX.Element {
-  return <div {...props} className="h-[var(--h-railhead)] flex-none flex items-center gap-[var(--space-3)] px-[var(--space-3)] [-webkit-app-region:drag] select-none"><img data-testid="brand-mark" className="w-[var(--sz-brand-mark)] h-[var(--sz-brand-mark)] flex-none [-webkit-app-region:no-drag]" src={logo} alt="" /><span className="min-w-0 font-semibold [font-size:var(--tr-text-ui-size)] tracking-[var(--tr-text-brand-tracking)] whitespace-nowrap overflow-hidden text-ellipsis [-webkit-app-region:no-drag]">{children}</span>{action && <div className="ml-auto [-webkit-app-region:no-drag]">{action}</div>}</div>
+/** Without a `logo`, `children` render bare at the leading edge (e.g. a lone sidebar toggle). */
+export function NavigationRailHeader({ logo, children, action, ...props }: HTMLAttributes<HTMLDivElement> & { logo?: string; children?: ReactNode; action?: ReactNode }): React.JSX.Element {
+  return <div {...props} className="h-[var(--h-railhead)] flex-none flex items-center gap-[var(--space-3)] px-[var(--space-3)] [-webkit-app-region:drag] select-none">{logo ? <><img data-testid="brand-mark" className="w-[var(--sz-brand-mark)] h-[var(--sz-brand-mark)] flex-none [-webkit-app-region:no-drag]" src={logo} alt="" /><span className="min-w-0 font-semibold [font-size:var(--tr-text-ui-size)] tracking-[var(--tr-text-brand-tracking)] whitespace-nowrap overflow-hidden text-ellipsis [-webkit-app-region:no-drag]">{children}</span></> : children}{action && <div className="ml-auto [-webkit-app-region:no-drag]">{action}</div>}</div>
 }
 
 export function NavigationRailSection({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {

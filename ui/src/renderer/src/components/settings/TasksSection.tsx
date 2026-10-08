@@ -42,6 +42,22 @@ function useWorkspaceList(client: HoustonClient | null): Workspace[] {
   return workspaces
 }
 
+/// The picked workspace, else the one open in the grid, else the first known one.
+function usePickedWorkspace(client: HoustonClient | null, activeWorkspace: string | null): {
+  workspace: string | null
+  workspaceName: string | null
+  options: SelectOption[]
+  setPicked: (path: string) => void
+} {
+  const workspaces = useWorkspaceList(client)
+  const [picked, setPicked] = useState<string | null>(null)
+  const options = useMemo<SelectOption[]>(() => workspaces.map((w) => ({ value: w.path, label: w.name })), [workspaces])
+  const known = (path: string | null): path is string => path !== null && workspaces.some((w) => w.path === path)
+  const workspace = known(picked) ? picked : known(activeWorkspace) ? activeWorkspace : (workspaces[0]?.path ?? null)
+  const workspaceName = workspaces.find((w) => w.path === workspace)?.name ?? null
+  return { workspace, workspaceName, options, setPicked }
+}
+
 /// Settings ▸ Tasks: agent access, the workspace's Start defaults, and review.
 /// Every section edits the workspace chosen in the picker, which starts on the
 /// workspace open in the grid and falls back to the first known one.
@@ -52,12 +68,7 @@ export function TasksSection({
   client: HoustonClient | null
   workspace: string | null
 }): React.JSX.Element {
-  const workspaces = useWorkspaceList(client)
-  const [picked, setPicked] = useState<string | null>(null)
-  const options = useMemo<SelectOption[]>(() => workspaces.map((w) => ({ value: w.path, label: w.name })), [workspaces])
-  const known = (path: string | null): path is string => path !== null && workspaces.some((w) => w.path === path)
-  const workspace = known(picked) ? picked : known(activeWorkspace) ? activeWorkspace : (workspaces[0]?.path ?? null)
-  const workspaceName = workspaces.find((w) => w.path === workspace)?.name ?? null
+  const { workspace, workspaceName, options, setPicked } = usePickedWorkspace(client, activeWorkspace)
   const { access, setAccess } = useTasksAccess(client, workspace)
   const { settings, setStartSettings } = useTaskStartSettings(client, workspace)
   const { settings: review, refusal: reviewRefusal, setReviewSettings } = useTaskReviewSettings(client, workspace)
