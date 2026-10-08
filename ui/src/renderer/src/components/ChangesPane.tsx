@@ -49,7 +49,10 @@ import {
   IconSplitDown,
   IconSplitRight,
   IconFolderOpen,
-  IconWrapText
+  IconWrapText,
+  IconCheck,
+  IconPlus,
+  IconMinus
 } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { Icon } from './ui/Icon'
@@ -185,6 +188,52 @@ function ChangesStrip({
   compact: boolean
 }): React.JSX.Element {
   const labels = scopeLabels(defaultBase)
+  if (compact) {
+    const compareItem = (value: 'working' | 'branch', label: string, testId: string, disabledReason?: string): React.JSX.Element => (
+      <Tooltip label={disabledReason} className="w-full">
+        <GitToolMenuItem
+          data-testid={testId}
+          aria-current={scope === value ? 'true' : undefined}
+          disabled={disabledReason !== undefined}
+          onClick={() => setScope(value)}
+        >
+          <span className={scope === value ? 'flex' : 'flex invisible'}><Icon glyph={IconCheck} role="small" /></span>{label}
+        </GitToolMenuItem>
+      </Tooltip>
+    )
+    return (
+      <>
+        <div role="group" aria-label="Diff scope" className="flex flex-col">
+          {compareItem('working', labels.working, 'changes-scope-working')}
+          {compareItem('branch', labels.branch, 'changes-scope-branch', defaultBase ? undefined : 'This repository has no base branch to compare against')}
+        </div>
+        <GitToolMenuSeparator />
+        <GitToolMenuItem data-testid="changes-review" disabled={!client || reviewBusy} onClick={openReview}>
+          {reviewBusy ? (
+            <DiffLoadingMark>
+              <Icon glyph={IconLoaderCircle} role="small" />
+            </DiffLoadingMark>
+          ) : (
+            <Icon glyph={IconSparkles} role="small" />
+          )}
+          Review with agent
+        </GitToolMenuItem>
+        <GitToolMenuSeparator />
+        <GitToolsBar
+          clientReady={client !== null}
+          dir={repoDir}
+          tools={tools}
+          busy={toolsBusy}
+          error={toolsError}
+          behind={behind}
+          upstream={upstream}
+          fallbackBase={defaultBase}
+          onAddWorkspace={onAddWorkspace}
+          compact
+        />
+      </>
+    )
+  }
   return (
     <GitChangesToolbarSurface>
       <Segmented
@@ -583,8 +632,8 @@ function CompactDiffToolbar({ scope, setScope, stagedOnly, setStagedOnly, scopeM
     setScopeMenuOpen(false)
   }
   const bulkItems = <>
-    <GitToolMenuItem data-testid="changes-overflow-stage-all" disabled={stageAll.length === 0} onClick={() => bulkForGroup('unstaged', stageAll)}>Stage all</GitToolMenuItem>
-    <GitToolMenuItem data-testid="changes-overflow-unstage-all" disabled={unstageAll.length === 0} onClick={() => bulkForGroup('staged', unstageAll)}>Unstage all</GitToolMenuItem>
+    <GitToolMenuItem data-testid="changes-overflow-stage-all" disabled={stageAll.length === 0} onClick={() => bulkForGroup('unstaged', stageAll)}><Icon glyph={IconPlus} role="small" />Stage all</GitToolMenuItem>
+    <GitToolMenuItem data-testid="changes-overflow-unstage-all" disabled={unstageAll.length === 0} onClick={() => bulkForGroup('staged', unstageAll)}><Icon glyph={IconMinus} role="small" />Unstage all</GitToolMenuItem>
   </>
   return <PrTab as="div" surface="changes-diff-toolbar" data-testid="changes-diff-toolbar">
     <PrTab as="div" surface="changes-diff-scope-wrap" ref={scopeMenuRef}>
