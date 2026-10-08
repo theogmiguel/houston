@@ -1192,6 +1192,17 @@
   --terminal-skeleton-bg: color-mix(in srgb, var(--tool-code-bg) calc(var(--custom-pane-alpha) * 100%), transparent);
 }
 
+/* Content surfaces over a custom background are one panel plate: the solid grounds inside
+   them clear and cards become a faint lift, so the plate alone sets their contrast. */
+[data-custom='on'] [data-material='base'],
+[data-custom='on'][data-material='base'],
+[data-custom='on'] .pane-inspector {
+  --content-bg: transparent;
+  --rail-bg: transparent;
+  --material-shell-bg: transparent;
+  --card-bg: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
 [data-custom='on'] [data-material='base'],
 [data-custom='on'] [data-material='shell'],
 [data-custom='on'][data-material='base'],

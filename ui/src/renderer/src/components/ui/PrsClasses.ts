@@ -25,7 +25,6 @@ export const PRS_CLASSES = {
   PRS_CLASS_20: 'tabular-nums opacity-60',
   PRS_CLASS_21: 'h-px min-w-2 flex-1 bg-[var(--divider)]',
   PRS_CLASS_22: 'flex flex-col gap-0.5',
-  PRS_CLASS_23: 'flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-[var(--tr-radius-card)] border border-[var(--border)] bg-[var(--content-bg)]',
   PRS_LIST_COLUMN: 'flex min-h-0 min-w-0 flex-1 flex-col',
   PRS_DETAIL_COLUMN: 'prs-detail-column pane-inspector',
   PRS_DETAIL_TABBAR: 'side-panel-header',

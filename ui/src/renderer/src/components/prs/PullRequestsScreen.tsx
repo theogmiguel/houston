@@ -23,6 +23,7 @@ import {
 } from '../icons'
 import { PrLink } from '../ui/PrLink'
 import { EmptyState } from '../ui/EmptyState'
+import { NavSurfaceFrame } from '../ui/NavSurfaceFrame'
 import { filterPullRequests, groupPullRequests, type PullRequestSort } from './prListModel'
 import { PullRequestTab } from '../git/PullRequestTab'
 import { PanelTab } from '../ui/PanelTab'
@@ -361,10 +362,7 @@ export function PullRequestsScreen({
   }
 
   return (
-    <main
-      className={PRS_CLASSES.PRS_CLASS_23}
-      data-testid="pull-requests-screen"
-    >
+    <NavSurfaceFrame row data-testid="pull-requests-screen">
       <div className={PRS_CLASSES.PRS_LIST_COLUMN}>
       <header className={PRS_CLASSES.PRS_CLASS_24}>
         <div className={PRS_CLASSES.PRS_CLASS_25}>
@@ -610,6 +608,6 @@ export function PullRequestsScreen({
           onOpenSurface={onOpenSurface}
         />
       )}
-    </main>
+    </NavSurfaceFrame>
   )
 }

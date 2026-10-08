@@ -1,4 +1,4 @@
-.pane-inspector{container-type:inline-size;position:relative;display:flex;flex:none;flex-direction:column;min-width:0;min-height:0;background:var(--rail-bg);border-left:1px solid var(--divider)}
+.pane-inspector{container-type:inline-size;position:relative;display:flex;flex:none;flex-direction:column;min-width:0;min-height:0;background:var(--rail-bg)}
 .pane-inspector[data-state="entering"]{animation:inspector-slide-in var(--motion-panel-t) var(--motion-panel-ease) both}
 .pane-inspector[data-state="closing"]{animation:inspector-slide-out var(--motion-panel-t) var(--motion-panel-ease) both}
 @media (prefers-reduced-motion: reduce){.pane-inspector[data-state="entering"],.pane-inspector[data-state="closing"]{animation:none;transform:none}}
@@ -111,6 +111,9 @@
 .inspector-card .scbar>span:nth-child(2){flex:1 1 auto;min-width:0}
 .grid-region.with-side .side-panel-row{background:var(--rail-bg)}
 .grid-region.with-side .grid-slot{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--content-bg);border-top-right-radius:var(--tr-radius-card)}
+/* Over a custom background the panel docks flush right in the shell's glass, like the rail on the left, so nothing opaque sits behind the panes' scrim. Its own subtree clears --material-shell-bg, hence the scrim directly. */
+.grid-region.with-side[data-custom='on'] .side-panel-row,.grid-region.with-side[data-custom='on'] .grid-slot{background:transparent}
+.grid-region[data-custom='on'] .pane-inspector{background:var(--custom-chrome-scrim)}
 .inspector-card .files-panel{border:0;border-radius:0;background:transparent}
 .inspector-card .files-panel .files-tree-column{width:100%;border:0;max-height:40%;display:flex}
 .inspector-card .files-panel .files-columns{flex-direction:column}
@@ -368,3 +371,7 @@
   .pr-branch-toolbar{gap:var(--space-1);padding-left:var(--space-4);padding-right:var(--space-4)}
   .pr-branch-toolbar [data-testid="pr-check-strip-summary"]{font-size:var(--tr-text-xs)}
 }
+/* The grid's corners against the docked panel round like its corners against the rail. */
+.pane-inspector::before,.pane-inspector::after{content:'';position:absolute;right:100%;width:var(--r-content);height:var(--r-content);background:inherit;pointer-events:none;z-index:var(--z-base)}
+.pane-inspector::before{top:0;-webkit-mask:radial-gradient(circle at 0% 100%,transparent calc(var(--r-content) - .5px),#000 var(--r-content));mask:radial-gradient(circle at 0% 100%,transparent calc(var(--r-content) - .5px),#000 var(--r-content))}
+.pane-inspector::after{bottom:0;-webkit-mask:radial-gradient(circle at 0% 0%,transparent calc(var(--r-content) - .5px),#000 var(--r-content));mask:radial-gradient(circle at 0% 0%,transparent calc(var(--r-content) - .5px),#000 var(--r-content))}
