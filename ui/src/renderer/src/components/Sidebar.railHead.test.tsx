@@ -91,12 +91,13 @@ describe('Sidebar rail head — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('Filled — renders the logo and the brand name', () => {
-    render()
+  it('Filled — carries no brand mark or name, only the hide control when wired', () => {
+    render({ onHideRail: noop })
     const head = container.querySelector('aside > div')
     expect(head).not.toBeNull()
-    expect(head?.querySelector('[data-testid="brand-mark"]')).not.toBeNull()
-    expect(head?.textContent).toContain('Houston')
+    expect(head?.querySelector('[data-testid="brand-mark"]')).toBeNull()
+    expect(head?.querySelector('img')).toBeNull()
+    expect(head?.textContent).not.toContain('Houston')
   })
 
   it('Hover — the hide button is the head\'s one affordance: a 28px chrome button with the hover wash, offered only when the app wires onHideRail', () => {
@@ -104,7 +105,6 @@ describe('Sidebar rail head — state matrix', () => {
     const btn = container.querySelector('aside > div button[aria-label="Hide sidebar"]') as HTMLElement | null
     expect(btn).not.toBeNull()
     expect(btn?.className).toContain('hover:bg-[var(--card-hover)]')
-    expect(btn?.parentElement?.parentElement?.className).toContain('ml-auto')
     render({ onHideRail: undefined })
     expect(container.querySelector('aside > div button[aria-label="Hide sidebar"]')).toBeNull()
   })
@@ -137,24 +137,11 @@ describe('Sidebar rail head — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('Overflow — the brand name carries truncation classes, so a narrower rail (if the rail ever becomes resizable) clips it with an ellipsis', () => {
-    render()
-    const brand = Array.from(container.querySelectorAll('aside > div span')).find(
-      (el) => el.textContent === 'Houston'
-    )
-    expect(brand).toBeDefined()
-    expect(brand?.className).toContain('overflow-hidden')
-    expect(brand?.className).toContain('text-ellipsis')
-    expect(brand?.className).toContain('whitespace-nowrap')
-  })
-
-  it('the mark and label are packed left, not centered', () => {
-    render()
+  it('the hide control is packed left, not centered', () => {
+    render({ onHideRail: noop })
     const head = container.querySelector('aside > div') as HTMLElement
     expect(head.className).not.toContain('justify-center')
-    expect(head.children).toHaveLength(2)
-    expect(head.children[0].getAttribute('data-testid')).toBe('brand-mark')
-    expect(head.children[1].textContent).toBe('Houston')
+    expect(head.querySelector('button[aria-label="Hide sidebar"]')).not.toBeNull()
   })
 
   it('the rail head no longer carries the hide control — it moved to the railfoot', () => {

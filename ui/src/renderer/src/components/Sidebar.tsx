@@ -67,7 +67,6 @@ import {
   type IconProps,
 } from "./icons";
 import { Tooltip } from "./ui/Tooltip";
-import logoUrl from "../assets/logo-chrome.svg";
 import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { Icon } from "./ui/Icon";
@@ -86,7 +85,6 @@ import { HorizontalRule, WorkspaceGroupDivider, WorkspaceGroupLabel } from "./ui
 import { NavigationRailFooter, NavigationRailScroll, WorkspaceList, SettingsNavigation } from "./ui/NavigationRailFooter";
 import {
   NavigationRail,
-  NavigationRailHeader,
   NavigationRailSection,
   NavigationRailItem,
   NavigationRailSearch,
@@ -1458,11 +1456,12 @@ function RailHead({
   onHideRail?: () => void;
 }): React.JSX.Element {
   return (
-    <NavigationRailHeader
-      logo={logoUrl}
+    <div
       onMouseDown={onHeadMouseDown}
       onDoubleClick={onHeadDoubleClick}
-      action={onHideRail && (
+      className="h-[var(--h-railhead)] flex-none flex items-center px-[var(--space-3)] [-webkit-app-region:drag] select-none"
+    >
+      {onHideRail && (
         <Tooltip label="Hide sidebar (Ctrl+B)">
           <Button
             variant="subtle-icon"
@@ -1474,9 +1473,7 @@ function RailHead({
           </Button>
         </Tooltip>
       )}
-    >
-      Houston
-    </NavigationRailHeader>
+    </div>
   );
 }
 
