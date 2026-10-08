@@ -582,6 +582,17 @@ describe('PullRequestTab — linking', () => {
     expect(client.prUnlinkCalls).toEqual([{ dir: '/repo', request: 2 }])
   })
 
+  it('renders the actions menu as uniform menu rows with Unlink marked dangerous', () => {
+    const client = mount()
+    emit(client, detailMsg({ linked: true, link: link({ source: 'manual' }) }))
+    openActions()
+    const rows = qa('[data-testid="pr-actions-items"] [role="menuitem"]')
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+    expect(q('[data-testid="pr-copy-url"]')?.getAttribute('role')).toBe('menuitem')
+    expect(q('[data-testid="pr-unlink"]')?.classList.contains('danger')).toBe(true)
+    expect(q('[data-testid="pr-actions-items"] [data-testid="pr-copy-url"]')).not.toBeNull()
+  })
+
   it('links a positive number and refuses 0 without sending', () => {
     const client = mount()
     emit(client, detailMsg({ link: null, detail: null }))

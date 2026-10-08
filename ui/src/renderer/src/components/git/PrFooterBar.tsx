@@ -1,6 +1,7 @@
-import { PrTab, PR_FLOATING_MENU } from '../ui/PrTab'
+import { PrTab } from '../ui/PrTab'
 import { ReviewButton } from '../ui/ReviewButtonRoles'
-import { PullRequestActionsBar, PullRequestActionMenu } from '../ui/PullRequestActions'
+import { PullRequestActionsBar } from '../ui/PullRequestActions'
+import { ContextMenu, ContextMenuItem, ContextMenuItems, ContextMenuSeparator } from '../ui/ContextMenu'
 import { useState } from 'react'
 import type {
   PrDetail,
@@ -8,9 +9,8 @@ import type {
   PrUpdateMethod,
   PullRequestLink
 } from '../../houston/client'
-import { materialAttrs } from '../ui/material'
 import { Icon } from '../ui/Icon'
-import { IconExternal, IconMoreHorizontal } from '../icons'
+import { IconClose, IconCopy, IconExternal, IconGitPullRequest, IconMoreHorizontal } from '../icons'
 import { Select, type SelectOption } from '../ui/Select'
 import { SplitButton } from '../ui/SplitButton'
 import { Tooltip } from '../ui/Tooltip'
@@ -99,10 +99,38 @@ function PrMergeWhenGreen({
   )
 }
 
-function PrFooterMenuLinkAction({ link, pr, linked }: { link: PullRequestLink; pr: PrDetailController; linked: boolean }): React.JSX.Element {
-  return linked
-    ? <PrActionButton label="Unlink" testId="pr-unlink" disabledReason={null} busy={pr.linkBusy} onClick={pr.unlink} />
-    : <PrActionButton label={`Link #${link.number}`} testId="pr-link-detected" disabledReason={null} busy={pr.linkBusy} onClick={() => pr.link(link.number)} />
+/** One row of the pull-request actions menu, with the reason it cannot be pressed. */
+function PrMenuItem({
+  label,
+  testId,
+  icon,
+  disabledReason = null,
+  busy = false,
+  danger = false,
+  onSelect
+}: {
+  label: string
+  testId: string
+  icon?: typeof IconCopy
+  disabledReason?: string | null
+  busy?: boolean
+  danger?: boolean
+  onSelect: () => void
+}): React.JSX.Element {
+  return (
+    <Tooltip label={disabledReason ?? undefined} className="flex w-full">
+      <ContextMenuItem
+        role="menuitem"
+        danger={danger}
+        data-testid={testId}
+        disabled={disabledReason !== null || busy}
+        onClick={onSelect}
+      >
+        {icon ? <Icon glyph={icon} role="small" /> : <span aria-hidden />}
+        <span className="truncate">{label}</span>
+      </ContextMenuItem>
+    </Tooltip>
+  )
 }
 
 function PrFooterMenuStackAction({ link, pr, detail, busy, method }: { link: PullRequestLink; pr: PrDetailController; detail: PrDetail; busy: boolean; method: PrMergeMethod }): React.JSX.Element | null {
@@ -110,12 +138,14 @@ function PrFooterMenuStackAction({ link, pr, detail, busy, method }: { link: Pul
   if (stack === null) return null
   const refusal = stackMergeRefusal(stack, link.number)
   const canMerge = detail.viewer?.can_write === true
-  const disabledReason = !canMerge ? 'you do not have write access to this repository' : refusal ?? undefined
-  return <Tooltip label={disabledReason} className="inline-flex">
-    <ReviewButton variant="pull-request-action" type="button" data-testid="pr-stack-merge" disabled={busy || !canMerge || refusal !== null} onClick={() => pr.mergeStack(link.number, stack.number, stackMergeHeads(stack, link.number), method)}>
-      Merge stack to #{link.number}
-    </ReviewButton>
-  </Tooltip>
+  const disabledReason = !canMerge ? 'you do not have write access to this repository' : refusal ?? null
+  return <PrMenuItem
+    label={`Merge stack to #${link.number}`}
+    testId="pr-stack-merge"
+    disabledReason={disabledReason}
+    busy={busy}
+    onSelect={() => pr.mergeStack(link.number, stack.number, stackMergeHeads(stack, link.number), method)}
+  />
 }
 
 function PrFooterMenuStateActions({ link, detail, pr, open, draft, busy, method, reason, compact, updateMethod, setUpdateMethod }: {
@@ -134,14 +164,16 @@ function PrFooterMenuStateActions({ link, detail, pr, open, draft, busy, method,
   const autoMerge = detail.auto_merge_enabled === true
   const autoMergeAction = autoMerge ? 'disable_auto_merge' : 'enable_auto_merge'
   return <>
-    {open && !draft && <PrActionButton label="Convert to draft" testId="pr-action-draft" disabledReason={reason('draft')} busy={busy} onClick={() => pr.action(link.number, 'draft')} />}
-    {open && <PrActionButton label="Close" testId="pr-action-close" disabledReason={reason('close')} busy={busy} onClick={() => pr.action(link.number, 'close')} />}
+    {open && !draft && <PrMenuItem label="Convert to draft" testId="pr-action-draft" disabledReason={reason('draft')} busy={busy} onSelect={() => pr.action(link.number, 'draft')} />}
+    {open && <PrMenuItem label="Close" testId="pr-action-close" disabledReason={reason('close')} busy={busy} onSelect={() => pr.action(link.number, 'close')} />}
     {open && !draft && <>
-      <Select aria-label="Update method" data-testid="pr-update-method" value={updateMethod} options={UPDATE_METHODS} onChange={(value) => setUpdateMethod(value as PrUpdateMethod)} />
-      <PrActionButton label="Update branch" testId="pr-action-update-branch" disabledReason={reason('update_branch')} busy={busy} onClick={() => pr.action(link.number, 'update_branch', { updateMethod })} />
+      <div className="px-[var(--space-menu-item-x)] py-[var(--space-1)]">
+        <Select aria-label="Update method" data-testid="pr-update-method" value={updateMethod} options={UPDATE_METHODS} onChange={(value) => setUpdateMethod(value as PrUpdateMethod)} />
+      </div>
+      <PrMenuItem label="Update branch" testId="pr-action-update-branch" disabledReason={reason('update_branch')} busy={busy} onSelect={() => pr.action(link.number, 'update_branch', { updateMethod })} />
     </>}
-    {open && detail.cross_repository && <PrActionButton label="Approve workflows" testId="pr-action-approve-workflows" disabledReason={reason('approve_workflows')} busy={busy} onClick={() => pr.action(link.number, 'approve_workflows')} />}
-    {open && !draft && <PrActionButton label={autoMerge ? 'Disable auto-merge' : compact ? 'Merge when green' : 'Enable auto-merge'} testId="pr-action-auto-merge" disabledReason={reason(autoMergeAction)} busy={busy} onClick={() => pr.action(link.number, autoMergeAction, { mergeMethod: method })} />}
+    {open && detail.cross_repository && <PrMenuItem label="Approve workflows" testId="pr-action-approve-workflows" disabledReason={reason('approve_workflows')} busy={busy} onSelect={() => pr.action(link.number, 'approve_workflows')} />}
+    {open && !draft && <PrMenuItem label={autoMerge ? 'Disable auto-merge' : compact ? 'Merge when green' : 'Enable auto-merge'} testId="pr-action-auto-merge" disabledReason={reason(autoMergeAction)} busy={busy} onSelect={() => pr.action(link.number, autoMergeAction, { mergeMethod: method })} />}
   </>
 }
 
@@ -171,29 +203,27 @@ function PrFooterMenu({
   compact: boolean
 }): React.JSX.Element {
   const [updateMethod, setUpdateMethod] = useState<PrUpdateMethod>('merge')
+  const hasStateActions = open || pr.stack !== null
   return (
-    <PullRequestActionMenu
+    <ContextMenu
       role="menu"
       data-testid="pr-actions-items"
-      className={PR_FLOATING_MENU}
-      {...materialAttrs('overlay-glass')}
+      className="!absolute bottom-[calc(100%-var(--space-1))] right-[var(--space-2-5)] z-[var(--z-sticky)]"
     >
-      {compact && <ReviewButton variant="pull-request-action" type="button" data-testid="pr-open" disabled={!onOpenUrlInPane} onClick={() => onOpenUrlInPane?.(link.url)}>
-        <Icon glyph={IconExternal} role="small" />Open on GitHub
-      </ReviewButton>}
-      <PrFooterMenuLinkAction link={link} pr={pr} linked={linked} />
-      <PrFooterMenuStackAction link={link} pr={pr} detail={detail} busy={busy} method={method} />
-      <PrActionButton
-        label="Copy URL"
-        testId="pr-copy-url"
-        disabledReason={null}
-        busy={false}
-        onClick={() => {
-          void navigator.clipboard?.writeText(link.url)
-        }}
-      />
-      <PrFooterMenuStateActions link={link} detail={detail} pr={pr} open={open} draft={draft} busy={busy} method={method} reason={reason} compact={compact} updateMethod={updateMethod} setUpdateMethod={setUpdateMethod} />
-    </PullRequestActionMenu>
+      <ContextMenuItems>
+        {compact && <PrMenuItem label="Open on GitHub" testId="pr-open" icon={IconExternal} disabledReason={onOpenUrlInPane ? null : 'No pane available to open the page'} onSelect={() => onOpenUrlInPane?.(link.url)} />}
+        <PrMenuItem label="Copy URL" testId="pr-copy-url" icon={IconCopy} onSelect={() => { void navigator.clipboard?.writeText(link.url) }} />
+        {hasStateActions && <>
+          <ContextMenuSeparator />
+          <PrFooterMenuStackAction link={link} pr={pr} detail={detail} busy={busy} method={method} />
+          <PrFooterMenuStateActions link={link} detail={detail} pr={pr} open={open} draft={draft} busy={busy} method={method} reason={reason} compact={compact} updateMethod={updateMethod} setUpdateMethod={setUpdateMethod} />
+        </>}
+        <ContextMenuSeparator />
+        {linked
+          ? <PrMenuItem label="Unlink" testId="pr-unlink" icon={IconClose} danger busy={pr.linkBusy} onSelect={pr.unlink} />
+          : <PrMenuItem label={`Link #${link.number}`} testId="pr-link-detected" icon={IconGitPullRequest} busy={pr.linkBusy} onSelect={() => pr.link(link.number)} />}
+      </ContextMenuItems>
+    </ContextMenu>
   )
 }
 

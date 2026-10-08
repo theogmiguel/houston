@@ -676,6 +676,7 @@ function PrCheckStripSummary({ checkState, total }: { checkState: ReturnType<typ
       variant="link"
       size="sm"
       type="button"
+      className="ml-auto"
       data-testid="pr-check-strip-summary"
       aria-expanded={checkState.popoverOpen}
       style={{ color: checkState.failedCount > 0 ? 'var(--stop)' : 'var(--text-secondary)' }}

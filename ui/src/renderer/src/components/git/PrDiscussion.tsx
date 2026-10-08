@@ -8,7 +8,7 @@ import type { PrComment, PrDetail, PrReaction, PrThread } from '../../houston/cl
 import { Disclosure } from '../ui/Disclosure'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
-import { IconCheck, IconRefresh } from '../icons'
+import { IconCheck, IconChevronDown, IconRefresh } from '../icons'
 import { PrReactions } from './PrPickers'
 import { ScmNotice } from './ScmNotice'
 
@@ -287,7 +287,7 @@ export function PrInspectorComments({
   return <PrTab as="section" surface="pr-inspector-comments-section" data-testid="pr-inspector-comments-section">
     <PrTab as="div" surface="pr-inspector-comments-sticky">
       <PrTab as="button" surface="pr-inspector-comments-toggle" type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-        Comments ({count}) <span aria-hidden="true">›</span>
+        <Icon glyph={IconChevronDown} role="small" className={open ? '' : '-rotate-90'} />Comments ({count})
       </PrTab>
       <PrTab as={Button} surface="pr-inspector-comments-sort" type="button" variant="ghost" size="sm" onClick={() => setNewestFirst((value) => !value)}>
         {newestFirst ? 'Newest first' : 'Oldest first'}
