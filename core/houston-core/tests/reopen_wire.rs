@@ -261,6 +261,7 @@ async fn respawn_refuses_a_swarm_tied_session() {
             title: "Husk".into(),
             codename: "Husk".into(),
             detected_agent: None,
+            running_agent: None,
             hidden: false,
             ssh_host: None,
             restore_deferred: None,

@@ -6,6 +6,7 @@ import {
   isRailGridUnread,
   loadRailPrefs,
   migratePinnedWorkspaces,
+  migrateRailGridKeys,
   migrateRailPrefs,
   moveSelectedRailGrid,
   normalizeRailPrefs,
@@ -62,11 +63,54 @@ describe('rail preferences', () => {
     expect(setRailCardMode(normalizeRailPrefs(null), 'compact').properties).toEqual(COMPACT_DEFAULT)
   })
 
-  it('migrates each pinned workspace to all of its grids exactly once', () => {
+  it('migrates each pinned workspace to all of its grids exactly once, scoped by workspace', () => {
     const store = storage({ 'tr-ws-pinned': '["/repo"]' })
     const grids = [{ path: '/repo', gridIds: ['a', 'b'] }]
-    expect(migratePinnedWorkspaces(grids, new Set(['/repo']), store)).toEqual(['a', 'b'])
-    expect(migratePinnedWorkspaces([{ path: '/repo', gridIds: ['c'] }], new Set(['/repo']), store)).toEqual(['a', 'b'])
+    expect(migratePinnedWorkspaces(grids, new Set(['/repo']), store)).toEqual(['/repo::a', '/repo::b'])
+    expect(migratePinnedWorkspaces([{ path: '/repo', gridIds: ['c'] }], new Set(['/repo']), store)).toEqual(['/repo::a', '/repo::b'])
+  })
+
+  it('pinning one workspace never pins the default grid of another', () => {
+    const store = storage()
+    const grids = [
+      { path: '/one', gridIds: ['g-default'] },
+      { path: '/two', gridIds: ['g-default'] },
+    ]
+    expect(migratePinnedWorkspaces(grids, new Set(['/one']), store)).toEqual(['/one::g-default'])
+  })
+
+  it('converts bare pins written by the first flat-rail release', () => {
+    const store = storage({
+      'tr-grid-pinned': '["g-default","g17-1","/two::g-default"]',
+      'tr-grid-pinned-migrated': '1',
+    })
+    const grids = [
+      { path: '/one', gridIds: ['g-default', 'g17-1'] },
+      { path: '/two', gridIds: ['g-default'] },
+      { path: '/three', gridIds: ['g-default'] },
+    ]
+    const once = migratePinnedWorkspaces(grids, new Set(['/one']), store)
+    expect(once).toEqual(['/one::g-default', '/one::g17-1', '/two::g-default'])
+    expect(migratePinnedWorkspaces(grids, new Set(['/one', '/three']), store)).toEqual(once)
+  })
+
+  it('rewrites bare grid order and unread keys to workspace-scoped keys, idempotently', () => {
+    const grids = [
+      { path: '/one', gridIds: ['g-default', 'g17-1'] },
+      { path: '/two', gridIds: ['g-default'] },
+    ]
+    const prefs = {
+      ...normalizeRailPrefs(null),
+      gridOrder: ['g17-1', 'g-default', '/two::g-default'],
+      gridUnreadOverrides: {
+        'g17-1': { signature: 's', unread: true },
+        'g-default': { signature: 's', unread: true },
+      },
+    }
+    const migrated = migrateRailGridKeys(prefs, grids)
+    expect(migrated.gridOrder).toEqual(['/one::g17-1', '/two::g-default'])
+    expect(Object.keys(migrated.gridUnreadOverrides)).toEqual(['/one::g17-1'])
+    expect(migrateRailGridKeys(migrated, grids)).toBe(migrated)
   })
 
   it('persists manual grid order and unread overrides while ignoring invalid entries', () => {

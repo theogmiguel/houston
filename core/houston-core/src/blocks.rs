@@ -122,6 +122,10 @@ impl BlockTracker {
         }
     }
 
+    pub fn command_running(&self) -> bool {
+        self.current.is_some()
+    }
+
     pub fn blocks(&self) -> Vec<CommandBlock> {
         self.ring.iter().cloned().collect()
     }

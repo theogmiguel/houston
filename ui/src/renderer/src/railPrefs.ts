@@ -1,3 +1,5 @@
+import { DEFAULT_GRID_ID, gridStorageKey } from './layout/tree'
+
 export type RailGroupBy = 'none' | 'status' | 'pr' | 'workspace'
 export type RailSort = 'manual' | 'smart' | 'recent' | 'name'
 export type RailCardMode = 'detailed' | 'compact'
@@ -24,7 +26,10 @@ export type RailPrefs = {
 
 export const RAIL_PREFS_KEY = 'tr-rail-prefs'
 export const GRID_PINNED_KEY = 'tr-grid-pinned'
-export const GRID_PINNED_MIGRATION_KEY = 'tr-grid-pinned-migrated'
+/** Set once pins were converted to workspace-scoped keys (`path::gridId`); grid ids repeat across workspaces. */
+export const GRID_PINNED_MIGRATION_KEY = 'tr-grid-pinned-v2'
+/** Set by the first release of the flat rail, which stored bare grid ids. */
+export const GRID_PINNED_LEGACY_MIGRATION_KEY = 'tr-grid-pinned-migrated'
 export const DETAILED_DEFAULT: RailCardProperty[] = [
   'status',
   'unread',
@@ -221,21 +226,60 @@ export function loadPinnedGridIds(storage: Pick<Storage, 'getItem'> = localStora
   }
 }
 
+type GridKnowledge = readonly { path: string; gridIds: readonly string[] }[]
+
+// A stored grid reference as a workspace-scoped key. Bare `g-default` exists in every workspace,
+// so it yields null; other bare ids map to the loaded workspace holding them, else null.
+function scopedGridKey(entry: string, workspaces: GridKnowledge): string | null {
+  if (entry.includes('::')) return entry
+  if (entry === DEFAULT_GRID_ID) return null
+  const owner = workspaces.find((workspace) => workspace.gridIds.includes(entry))
+  return owner ? gridStorageKey(owner.path, entry) : null
+}
+
+/** Rewrites bare grid ids in the manual order and unread overrides to workspace-scoped keys. Idempotent. */
+export function migrateRailGridKeys(prefs: RailPrefs, workspaces: GridKnowledge): RailPrefs {
+  const gridOrder = [
+    ...new Set(prefs.gridOrder.flatMap((entry) => {
+      const key = scopedGridKey(entry, workspaces)
+      return key ? [key] : []
+    })),
+  ]
+  const gridUnreadOverrides: RailPrefs['gridUnreadOverrides'] = {}
+  for (const [entry, override] of Object.entries(prefs.gridUnreadOverrides)) {
+    const key = scopedGridKey(entry, workspaces)
+    if (key) gridUnreadOverrides[key] = override
+  }
+  const unchanged =
+    gridOrder.length === prefs.gridOrder.length &&
+    gridOrder.every((entry, index) => entry === prefs.gridOrder[index]) &&
+    Object.keys(gridUnreadOverrides).length === Object.keys(prefs.gridUnreadOverrides).length &&
+    Object.keys(gridUnreadOverrides).every((key) => key in prefs.gridUnreadOverrides)
+  return unchanged ? prefs : { ...prefs, gridOrder, gridUnreadOverrides }
+}
+
 export function migratePinnedWorkspaces(
-  workspaces: readonly { path: string; gridIds: readonly string[] }[],
+  workspaces: GridKnowledge,
   pinnedWorkspacePaths: ReadonlySet<string>,
   storage: Pick<Storage, 'getItem' | 'setItem'> = localStorage,
 ): string[] {
   const existing = loadPinnedGridIds(storage)
   if (storage.getItem(GRID_PINNED_MIGRATION_KEY) === '1') return existing
-  const migrated = [
-    ...new Set([
-      ...existing,
-      ...workspaces
+  const converted = existing.flatMap((entry) => {
+    if (entry !== DEFAULT_GRID_ID) {
+      const key = scopedGridKey(entry, workspaces)
+      return key ? [key] : []
+    }
+    // Bare g-default was written for every workspace by the first migration, so only pinned workspaces keep it.
+    return workspaces.filter((workspace) => pinnedWorkspacePaths.has(workspace.path) && workspace.gridIds.includes(entry))
+      .map((workspace) => gridStorageKey(workspace.path, entry))
+  })
+  const fromWorkspacePins = storage.getItem(GRID_PINNED_LEGACY_MIGRATION_KEY) === '1'
+    ? []
+    : workspaces
         .filter((workspace) => pinnedWorkspacePaths.has(workspace.path))
-        .flatMap((workspace) => workspace.gridIds),
-    ]),
-  ]
+        .flatMap((workspace) => workspace.gridIds.map((id) => gridStorageKey(workspace.path, id)))
+  const migrated = [...new Set([...converted, ...fromWorkspacePins])]
   try {
     storage.setItem(GRID_PINNED_KEY, JSON.stringify(migrated))
     storage.setItem(GRID_PINNED_MIGRATION_KEY, '1')

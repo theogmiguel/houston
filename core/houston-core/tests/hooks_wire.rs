@@ -1000,3 +1000,60 @@ async fn post_status(addr: std::net::SocketAddr, path: &str) -> u16 {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
 }
+
+async fn expect_running(
+    rx: &mut houston_core::frame_queue::Observer,
+    session: u32,
+) -> Option<proto::AgentKind> {
+    loop {
+        match next_broadcast_control(rx).await {
+            proto::ServerMsg::AgentRunning { session: s, agent } if s == session => {
+                return agent;
+            }
+            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_shell_reports_the_agent_cli_it_runs_until_that_cli_ends() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let dir = tempfile::tempdir().unwrap();
+    let info = daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Shell,
+            project_dir: dir.path().to_path_buf(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let mut rx = daemon.observe();
+
+    drop_and_await_apply(state.path(), &drop_from("codex", "SessionStart", info.id)).await;
+    assert_eq!(
+        expect_running(&mut rx, info.id).await,
+        Some(proto::AgentKind::Codex)
+    );
+    let listed = daemon
+        .list()
+        .into_iter()
+        .find(|s| s.id == info.id)
+        .expect("the shell is listed");
+    assert_eq!(listed.agent, proto::AgentKind::Shell);
+    assert_eq!(listed.running_agent, Some(proto::AgentKind::Codex));
+
+    drop_and_await_apply(state.path(), &drop_from("codex", "SessionEnd", info.id)).await;
+    assert_eq!(expect_running(&mut rx, info.id).await, None);
+
+    daemon.kill(info.id).ok();
+}

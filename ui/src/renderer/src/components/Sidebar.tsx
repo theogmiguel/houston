@@ -67,7 +67,9 @@ import {
   type IconProps,
 } from "./icons";
 import { Tooltip } from "./ui/Tooltip";
+import { useLastGridConfirm } from "./rail/LastGridConfirm";
 import { NavigationRailHeader } from "./ui/NavigationRail";
+import logoUrl from "../assets/logo-chrome.svg";
 import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { Icon } from "./ui/Icon";
@@ -127,6 +129,7 @@ import {
   isRailGridUnread,
   loadPinnedGridIds,
   migratePinnedWorkspaces,
+  migrateRailGridKeys,
   migrateRailPrefs,
   moveSelectedRailGrid,
   railUnreadSignature,
@@ -135,6 +138,7 @@ import {
   toggleRailGridRead,
   type RailPrefs,
 } from "../railPrefs";
+import { gridStorageKey, isAutoNameable } from "../layout/tree";
 import { TagPopoverHost, useTagPopover, type TagGrid } from "./tags/TagPopover";
 
 /** Window event that opens tag management anchored to the rail Options button. */
@@ -738,7 +742,7 @@ function GridContextMenu({
   onOpenGrid?: (path: string, gridId: string) => void;
   onStartRename: (path: string, gridId: string) => void;
   onRemoveGrid?: (path: string, gridId: string) => void;
-  onTogglePin: (gridId: string) => void;
+  onTogglePin: (path: string, gridId: string) => void;
   onOpenInspector?: (paneId: number, tab: "pull-request") => void;
   onError?: (message: string) => void;
 }): React.JSX.Element {
@@ -771,13 +775,13 @@ function GridContextMenu({
           <Icon glyph={IconPencil} role="ui" />
           <span>Rename</span>
         </ContextMenuItem>
-        <ContextMenuItem role="menuitem" data-testid="menu-grid-pin" onClick={() => { onTogglePin(gridMenu.gridId); onClose() }}>
+        <ContextMenuItem role="menuitem" data-testid="menu-grid-pin" onClick={() => { onTogglePin(gridMenu.path, gridMenu.gridId); onClose() }}>
           <Icon glyph={IconPin} role="ui" />
           <span>{gridMenu.pinned ? "Unpin" : "Pin"}</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem role="menuitem" data-testid="menu-tags-entry" onClick={(event) => {
-          tagPopover.open({ anchor: event.currentTarget, gridId: gridMenu.gridId, view: 'pick', placement: 'right', onDismiss: onClose });
+          tagPopover.open({ anchor: event.currentTarget, gridId: gridStorageKey(gridMenu.path, gridMenu.gridId), view: 'pick', placement: 'right', onDismiss: onClose });
         }}>
           <Icon glyph={IconTag} role="ui" />
           <span className="flex-1">Tags</span>
@@ -810,6 +814,10 @@ function GridContextMenu({
       </ContextMenuItems>
     </RailContextMenu>
   );
+}
+
+function allGridKeys(gridsByWorkspace: Record<string, { id: string }[]>): string[] {
+  return Object.entries(gridsByWorkspace).flatMap(([path, grids]) => grids.map((grid) => gridStorageKey(path, grid.id)));
 }
 
 type GridItem = {
@@ -1213,7 +1221,7 @@ function ExpandedGridsRow({
       </Tooltip>
       )}
       {[...grids]
-        .sort((left, right) => Number(pinnedGridIds.has(right.id)) - Number(pinnedGridIds.has(left.id)))
+        .sort((left, right) => Number(pinnedGridIds.has(gridStorageKey(w.path, right.id))) - Number(pinnedGridIds.has(gridStorageKey(w.path, left.id))))
         .map((g, gridIndex, orderedGrids) => {
         if (hiddenByTagFilter(g, activeTagIds)) return null;
         const gridOn =
@@ -1250,11 +1258,11 @@ function ExpandedGridsRow({
             </WorkspaceTreeRow>
           );
         }
-        const onRemove = onRemoveGrid && grids.length > 1 ? () => onRemoveGrid(w.path, g.id) : undefined;
+        const onRemove = onRemoveGrid ? () => onRemoveGrid(w.path, g.id) : undefined;
         return (
           <Fragment key={g.id}>
-            {gridIndex === 0 && pinnedGridIds.has(g.id) && <WorkspaceGroupLabel>Pinned</WorkspaceGroupLabel>}
-            {gridIndex > 0 && !pinnedGridIds.has(g.id) && pinnedGridIds.has(orderedGrids[gridIndex - 1]?.id ?? '') && (
+            {gridIndex === 0 && pinnedGridIds.has(gridStorageKey(w.path, g.id)) && <WorkspaceGroupLabel>Pinned</WorkspaceGroupLabel>}
+            {gridIndex > 0 && !pinnedGridIds.has(gridStorageKey(w.path, g.id)) && pinnedGridIds.has(gridStorageKey(w.path, orderedGrids[gridIndex - 1]?.id ?? '')) && (
               <WorkspaceGroupDivider><HorizontalRule /></WorkspaceGroupDivider>
             )}
             <Suspense
@@ -1264,7 +1272,7 @@ function ExpandedGridsRow({
                   selected={gridOn}
                   jumpNumber={grids.indexOf(g) + 1}
                   onSelect={() => onSelectGrid?.(w.path, g.id)}
-                  onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid) && grids.length > 1)}
+                  onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid))}
                   onRemove={onRemove}
                 />
               }
@@ -1275,7 +1283,7 @@ function ExpandedGridsRow({
           workspace={w.path}
           gridId={g.id}
           selected={gridOn}
-          pinned={pinnedGridIds.has(g.id)}
+          pinned={pinnedGridIds.has(gridStorageKey(w.path, g.id))}
           paneIds={g.sessionIds ?? []}
           fallbackSessions={sessions}
           tags={(g.tagIds ?? []).flatMap((id) => tagById.get(id) ?? [])}
@@ -1289,7 +1297,7 @@ function ExpandedGridsRow({
           jumpNumber={grids.indexOf(g) + 1}
           onSelect={() => onSelectGrid?.(w.path, g.id)}
           onRemove={onRemove}
-          onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid) && grids.length > 1)}
+          onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid))}
           onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
               />
             </Suspense>
@@ -1457,8 +1465,11 @@ function RailHead({
   onHideRail?: () => void;
 }): React.JSX.Element {
   return (
-    <NavigationRailHeader onMouseDown={onHeadMouseDown} onDoubleClick={onHeadDoubleClick}>
-      {onHideRail && (
+    <NavigationRailHeader
+      logo={logoUrl}
+      onMouseDown={onHeadMouseDown}
+      onDoubleClick={onHeadDoubleClick}
+      action={onHideRail && (
         <Tooltip label="Hide sidebar (Ctrl+B)">
           <Button
             variant="subtle-icon"
@@ -1470,6 +1481,8 @@ function RailHead({
           </Button>
         </Tooltip>
       )}
+    >
+      Houston
     </NavigationRailHeader>
   );
 }
@@ -1868,8 +1881,15 @@ function RailTree({
     window.addEventListener(MANAGE_TAGS_EVENT, openManage);
     return () => window.removeEventListener(MANAGE_TAGS_EVENT, openManage);
   }, [tagPopover, activeTagIds]);
+  // A workspace that never ran a session owns one empty, auto-named grid; listing it reads as the app creating grids.
+  const isPlaceholderGrid = (path: string, grid: GridItem): boolean =>
+    (gridsByWorkspace[path]?.length ?? 0) === 1 &&
+    (grid.sessionIds?.length ?? 0) === 0 &&
+    isAutoNameable({ id: grid.id, name: grid.name }) &&
+    !(selected === path && selectedGridId === grid.id);
   const flatCards = useMemo(
     () => filteredWorkspaces.flatMap((workspace) => (gridsByWorkspace[workspace.path] ?? [])
+      .filter((grid) => !isPlaceholderGrid(workspace.path, grid))
       .filter((grid) => !hiddenByTagFilter(grid, activeTagIds))
       .map((grid) => {
         const paneIds = grid.sessionIds ?? []
@@ -1877,7 +1897,7 @@ function RailTree({
           gridId: grid.id,
           workspace: workspace.path,
           title: grid.name,
-          pinned: pinnedGridIds.has(grid.id),
+          pinned: pinnedGridIds.has(gridStorageKey(workspace.path, grid.id)),
           paneIds,
           sessions,
           branches: checkoutBranches,
@@ -1901,8 +1921,11 @@ function RailTree({
       railDiffByDir,
       railPrByDir,
       railPrefs.filters,
+      selected,
+      selectedGridId,
     ],
   )
+  const cardKey = (entry: { workspace: Workspace; grid: GridItem }): string => gridStorageKey(entry.workspace.path, entry.grid.id);
   const [settledSmartCards, setSettledSmartCards] = useState(flatCards);
   useEffect(() => {
     const timer = window.setTimeout(() => setSettledSmartCards(flatCards), railPrefs.sort === 'smart' ? 3000 : 0);
@@ -1912,25 +1935,25 @@ function RailTree({
     card.status.kind === 'needs-input' ? 0 :
       card.status.kind === 'working' ? 1 :
         card.agents.some((agent) => agent.unread) ? 2 : 3
-  const settledStatusById = new Map(settledSmartCards.map((entry) => [entry.grid.id, entry.card]));
+  const settledStatusById = new Map(settledSmartCards.map((entry) => [cardKey(entry), entry.card]));
   const sortCards = (cards: typeof flatCards): typeof flatCards => {
     if (railPrefs.sort === 'name') return [...cards].sort((a, b) => a.grid.name.localeCompare(b.grid.name));
     if (railPrefs.sort === 'recent') return [...cards].sort((a, b) => b.card.lastActivityMs - a.card.lastActivityMs);
     if (railPrefs.sort === 'smart') return [...cards].sort((a, b) => {
-      const left = settledStatusById.get(a.grid.id) ?? a.card;
-      const right = settledStatusById.get(b.grid.id) ?? b.card;
+      const left = settledStatusById.get(cardKey(a)) ?? a.card;
+      const right = settledStatusById.get(cardKey(b)) ?? b.card;
       return smartRank(left) - smartRank(right) || right.lastActivityMs - left.lastActivityMs;
     });
     const order = new Map(railPrefs.gridOrder.map((id, index) => [id, index]));
     return [...cards].sort((left, right) =>
-      (order.get(left.grid.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.grid.id) ?? Number.MAX_SAFE_INTEGER),
+      (order.get(cardKey(left)) ?? Number.MAX_SAFE_INTEGER) - (order.get(cardKey(right)) ?? Number.MAX_SAFE_INTEGER),
     )
   };
   const pinnedCards = sortCards(flatCards.filter(({ card }) => card.pinned));
   const unpinnedCards = sortCards(flatCards.filter(({ card }) => !card.pinned));
   const groupingKey = (entry: typeof flatCards[number]): string => {
     const card = railPrefs.sort === 'smart'
-      ? settledStatusById.get(entry.grid.id) ?? entry.card
+      ? settledStatusById.get(cardKey(entry)) ?? entry.card
       : entry.card
     if (railPrefs.groupBy === 'status') {
       return card.status.kind === 'needs-input' ? 'Needs you' :
@@ -1957,14 +1980,15 @@ function RailTree({
   });
   const renderFlatCard = ({ workspace, grid, paneIds, card }: typeof flatCards[number]): React.JSX.Element => {
     const selectedCard = selected === workspace.path && selectedGridId === grid.id;
-    const onRemove = onRemoveGrid && (gridsByWorkspace[workspace.path]?.length ?? 0) > 1
+    const onRemove = onRemoveGrid
       ? () => onRemoveGrid(workspace.path, grid.id)
       : undefined
-    const jumpNumber = flatCards.findIndex((entry) => entry.grid.id === grid.id) + 1;
-    const unreadState = isGridUnread(grid.id, card.agents);
+    const key = gridStorageKey(workspace.path, grid.id);
+    const jumpNumber = flatCards.findIndex((entry) => cardKey(entry) === key) + 1;
+    const unreadState = isGridUnread(key, card.agents);
     if (gridRenaming?.path === workspace.path && gridRenaming.gridId === grid.id && onRenameGrid) {
       return (
-        <WorkspaceTreeRow key={grid.id} kind="child" data-testid="grid-row-renaming">
+        <WorkspaceTreeRow key={key} kind="child" data-testid="grid-row-renaming">
           <Icon glyph={IconGrid} role="ui" opacity="muted" />
           <RenameInput
             initial={grid.name}
@@ -1980,7 +2004,7 @@ function RailTree({
     }
     return (
       <Suspense
-        key={grid.id}
+        key={key}
         fallback={
           <GridRailRowFallback
             name={grid.name}
@@ -1997,7 +2021,7 @@ function RailTree({
           workspace={workspace.path}
           gridId={grid.id}
           selected={selectedCard}
-          pinned={pinnedGridIds.has(grid.id)}
+          pinned={pinnedGridIds.has(key)}
           paneIds={paneIds}
           tags={(grid.tagIds ?? []).flatMap((id) => tagById.get(id) ?? [])}
           fallbackSessions={sessions}
@@ -2009,16 +2033,16 @@ function RailTree({
           agentActivity={railPrefs.agentActivity}
           properties={railPrefs.properties}
           unread={unreadState.unread}
-          dragging={gridDragId === grid.id}
-          dragPosition={gridDrop?.gridId === grid.id ? gridDrop.position : null}
-          dragRefusal={gridDragRefused === grid.id}
+          dragging={gridDragId === key}
+          dragPosition={gridDrop?.gridId === key ? gridDrop.position : null}
+          dragRefusal={gridDragRefused === key}
           onGridPointerDown={onGridPointerDown}
           jumpNumber={jumpNumber}
           onSelect={() => {
             if (suppressGridClickRef.current) return
             onSelectGrid?.(workspace.path, grid.id)
           }}
-          onToggleUnread={() => onToggleGridUnread(grid.id, unreadState.signature, unreadState.unread)}
+          onToggleUnread={() => onToggleGridUnread(key, unreadState.signature, unreadState.unread)}
           onFilterTag={onFilterTag}
           onRemove={onRemove}
           onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove))}
@@ -2043,7 +2067,7 @@ function RailTree({
           index={index}
           color={colorOf(workspace.path)}
           count={count}
-          hasGrids={(gridsByWorkspace[workspace.path]?.length ?? 0) > 0}
+          hasGrids={(gridsByWorkspace[workspace.path] ?? []).some((grid) => !isPlaceholderGrid(workspace.path, grid))}
           collapsed={collapsed}
           selected={selected === workspace.path}
           pinned={pinnedWorkspaces.has(workspace.path)}
@@ -2084,7 +2108,7 @@ function RailTree({
     })
     if (!railPrefs.collapsedGroups.includes('Pinned')) {
       pinnedCards.forEach((entry) => virtualItems.push({
-        key: `card:${entry.grid.id}`,
+        key: `card:${cardKey(entry)}`,
         kind: 'card',
         content: renderFlatCard(entry),
       }))
@@ -2093,7 +2117,7 @@ function RailTree({
   const workspaceGroups = railPrefs.groupBy === 'workspace'
     ? filteredWorkspaces
       // A workspace whose grids are all pinned is represented by the Pinned group alone.
-      .filter((workspace) => !(gridsByWorkspace[workspace.path] ?? []).length || (gridsByWorkspace[workspace.path] ?? []).some((grid) => !pinnedGridIds.has(grid.id)))
+      .filter((workspace) => !(gridsByWorkspace[workspace.path] ?? []).length || (gridsByWorkspace[workspace.path] ?? []).some((grid) => !pinnedGridIds.has(gridStorageKey(workspace.path, grid.id))))
       .map((workspace) => [workspace.name, unpinnedCards.filter((entry) => entry.workspace.path === workspace.path), workspace] as const)
     : groupEntries.map(([label, cards]) => [label, cards, undefined] as const)
   for (const [label, cards, workspace] of workspaceGroups) {
@@ -2104,7 +2128,7 @@ function RailTree({
     })
     if (workspace ? isWsOpen(workspace.path) : !railPrefs.collapsedGroups.includes(label)) {
       cards.forEach((entry) => virtualItems.push({
-        key: `card:${entry.grid.id}`,
+        key: `card:${cardKey(entry)}`,
         kind: 'card',
         content: renderFlatCard(entry),
       }))
@@ -2433,10 +2457,10 @@ export function Sidebar({
     const reorderSelected = (event: Event): void => {
       const direction = (event as CustomEvent<{ direction?: number }>).detail?.direction;
       if (railPrefs.sort !== 'manual' || (direction !== -1 && direction !== 1) || !selectedGridId) return;
-      const ids = (gridsByWorkspace[selected] ?? []).map((grid) => grid.id);
-      const currentOrder = [...new Set([...railPrefs.gridOrder, ...Object.values(gridsByWorkspace).flat().map((grid) => grid.id)])];
+      const ids = (gridsByWorkspace[selected] ?? []).map((grid) => gridStorageKey(selected, grid.id));
+      const currentOrder = [...new Set([...railPrefs.gridOrder, ...allGridKeys(gridsByWorkspace)])];
       const current = currentOrder;
-      const next = moveSelectedRailGrid(current, ids, selectedGridId, direction);
+      const next = moveSelectedRailGrid(current, ids, gridStorageKey(selected, selectedGridId), direction);
       if (next.some((id, index) => id !== current[index])) setRailPrefs((prefs) => ({ ...prefs, gridOrder: next }));
     };
     window.addEventListener('houston:rail-reorder-selected-card', reorderSelected);
@@ -2446,12 +2470,12 @@ export function Sidebar({
   useEffect(() => saveRailPrefs(railPrefs), [railPrefs]);
   useEffect(() => {
     const signatures = new Map<string, string>();
-    for (const grid of Object.values(gridsByWorkspace).flat()) {
+    for (const [path, grids] of Object.entries(gridsByWorkspace)) for (const grid of grids) {
       const gridSessions = (grid.sessionIds ?? []).flatMap((id) => {
         const session = sessions.find((candidate) => candidate.id === id);
         return session ? [session] : [];
       });
-      if (gridSessions.length) signatures.set(grid.id, railUnreadSignature(gridSessions.map((session) => ({
+      if (gridSessions.length) signatures.set(gridStorageKey(path, grid.id), railUnreadSignature(gridSessions.map((session) => ({
         id: session.id,
         inboxUnread: session.inbox_unread,
         childrenWaiting: session.children_waiting,
@@ -2473,11 +2497,10 @@ export function Sidebar({
   }, [pinnedGridIds]);
   useEffect(() => {
     if (localStorage.getItem(GRID_PINNED_MIGRATION_KEY) === '1') return;
-    if (Object.keys(gridsByWorkspace).length === 0 && pinnedWorkspaces.size > 0) return;
-    setPinnedGridIds(new Set(migratePinnedWorkspaces(
-      workspaces.map((workspace) => ({ path: workspace.path, gridIds: (gridsByWorkspace[workspace.path] ?? []).map((grid) => grid.id) })),
-      pinnedWorkspaces,
-    )));
+    if (Object.keys(gridsByWorkspace).length === 0 && (pinnedWorkspaces.size > 0 || workspaces.length > 0)) return;
+    const known = workspaces.map((workspace) => ({ path: workspace.path, gridIds: (gridsByWorkspace[workspace.path] ?? []).map((grid) => grid.id) }));
+    setPinnedGridIds(new Set(migratePinnedWorkspaces(known, pinnedWorkspaces)));
+    setRailPrefs((current) => migrateRailGridKeys(current, known));
   }, [workspaces, gridsByWorkspace, pinnedWorkspaces]);
 
   const [treeFilter, setTreeFilter] = useState<string | null>(null);
@@ -2609,33 +2632,35 @@ export function Sidebar({
       if (!active) {
         if (Math.hypot(pointer.clientX - startX, pointer.clientY - startY) < 5) return;
         active = true;
-        setGridDragId(gridId);
+        setGridDragId(gridStorageKey(workspace, gridId));
       }
       const row = document.elementFromPoint(pointer.clientX, pointer.clientY)?.closest('[data-rail-grid-id]') as HTMLElement | null;
       if (!row) { target = null; setGridDrop(null); setGridDragRefused(null); return; }
       const targetId = row.dataset.railGridId;
       const targetWorkspace = row.dataset.railWorkspace;
-      if (!targetId || !targetWorkspace || targetId === gridId) { target = null; setGridDrop(null); setGridDragRefused(null); return; }
+      const sourceKey = gridStorageKey(workspace, gridId);
+      const targetKey = targetId && targetWorkspace ? gridStorageKey(targetWorkspace, targetId) : '';
+      if (!targetId || !targetWorkspace || targetKey === sourceKey) { target = null; setGridDrop(null); setGridDragRefused(null); return; }
       if (!canReorderRailGrid(railPrefs.sort, workspace, targetWorkspace)) {
         target = null
         setGridDrop(null)
-        setGridDragRefused(targetId)
+        setGridDragRefused(targetKey)
         return
       }
       const rect = row.getBoundingClientRect();
       const position = pointer.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-      target = { gridId: targetId, position, workspace: targetWorkspace };
-      setGridDrop({ gridId: targetId, position });
+      target = { gridId: targetKey, position, workspace: targetWorkspace };
+      setGridDrop({ gridId: targetKey, position });
       setGridDragRefused(null);
     };
     const cleanup = (commit: boolean): void => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', cancel);
-      if (commit && active && target?.workspace === workspace && target.gridId !== gridId) {
-        const allIds = Object.values(gridsByWorkspace).flat().map((grid) => grid.id);
-        const order = [...new Set([...railPrefs.gridOrder, ...allIds])];
-        const next = reorderRailGrid(order, gridId, target.gridId, target.position === 'before');
+      const sourceKey = gridStorageKey(workspace, gridId);
+      if (commit && active && target?.workspace === workspace && target.gridId !== sourceKey) {
+        const order = [...new Set([...railPrefs.gridOrder, ...allGridKeys(gridsByWorkspace)])];
+        const next = reorderRailGrid(order, sourceKey, target.gridId, target.position === 'before');
         setRailPrefs((current) => ({ ...current, gridOrder: next }));
         suppressGridClickRef.current = true;
         window.setTimeout(() => { suppressGridClickRef.current = false; }, 0);
@@ -2735,16 +2760,17 @@ export function Sidebar({
       gridId: grid.id,
       name: grid.name,
       canRemove,
-      pinned: pinnedGridIds.has(grid.id),
+      pinned: pinnedGridIds.has(gridStorageKey(path, grid.id)),
       tagIds: grid.tagIds ?? [],
       ...railGridContextFacts(grid, path, sessions, checkoutBranches, railPrByDir),
     });
   };
 
-  const toggleGridPin = (gridId: string): void => setPinnedGridIds((current) => {
+  const toggleGridPin = (path: string, gridId: string): void => setPinnedGridIds((current) => {
+    const key = gridStorageKey(path, gridId)
     const next = new Set(current)
-    if (next.has(gridId)) next.delete(gridId)
-    else next.add(gridId)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
     return next
   });
 
@@ -2757,11 +2783,16 @@ export function Sidebar({
     Number(railPrefs.filters.hideEmptyGrids)
 
   const tagPopoverGrids = useMemo<TagGrid[]>(
-    () => Object.values(gridsByWorkspace).flatMap((grids) => grids.map((grid) => ({
-      id: grid.id,
+    () => Object.entries(gridsByWorkspace).flatMap(([path, grids]) => grids.map((grid) => ({
+      id: gridStorageKey(path, grid.id),
       title: grid.name,
       tags: grid.tagIds ?? [],
     }))),
+    [gridsByWorkspace],
+  )
+  const tagGridTargets = useMemo(
+    () => new Map(Object.entries(gridsByWorkspace).flatMap(([path, grids]) =>
+      grids.map((grid) => [gridStorageKey(path, grid.id), { path, gridId: grid.id }] as const))),
     [gridsByWorkspace],
   )
   useEffect(() => {
@@ -2775,12 +2806,12 @@ export function Sidebar({
       }
       for (const gridId of restore.gridIds) {
         const grid = tagPopoverGrids.find((entry) => entry.id === gridId);
-        const path = Object.entries(gridsByWorkspace).find(([, entries]) => entries.some((entry) => entry.id === gridId))?.[0];
-        if (grid && path) onSetGridTags?.(path, gridId, [...grid.tags.filter((id) => id !== restore.tag.id), restored.id]);
+        const target = tagGridTargets.get(gridId);
+        if (grid && target) onSetGridTags?.(target.path, target.gridId, [...grid.tags.filter((id) => id !== restore.tag.id), restored.id]);
       }
     }
     pendingTagRestores.current = remaining;
-  }, [tags, tagPopoverGrids, gridsByWorkspace, onSetGridTags]);
+  }, [tags, tagPopoverGrids, tagGridTargets, onSetGridTags]);
 
   const menuEl = menu && (
     <WorkspaceContextMenu
@@ -2794,13 +2825,15 @@ export function Sidebar({
     />
   );
 
+  const { removeGrid, closingLastEl } = useLastGridConfirm(gridsByWorkspace, onRemoveGrid);
+
   const gridMenuEl = gridMenu && (
     <GridContextMenu
       gridMenu={gridMenu}
       onClose={() => setGridMenu(null)}
       onOpenGrid={onSelectGrid}
       onStartRename={(path, gridId) => setGridRenaming({ path, gridId })}
-      onRemoveGrid={onRemoveGrid}
+      onRemoveGrid={removeGrid}
       onTogglePin={toggleGridPin}
       onOpenInspector={onOpenInspector}
       onError={onOpenExternalError}
@@ -2836,8 +2869,8 @@ export function Sidebar({
           onTagCreate?.(tag.name, tag.color);
         },
         onApply: (gridId, tagIds) => {
-          const workspacePath = Object.entries(gridsByWorkspace).find(([, grids]) => grids.some((grid) => grid.id === gridId))?.[0];
-          if (workspacePath) onSetGridTags?.(workspacePath, gridId, tagIds);
+          const target = tagGridTargets.get(gridId);
+          if (target) onSetGridTags?.(target.path, target.gridId, tagIds);
         },
         onFilter: (tagIds) => {
           setTagFilter(tagIds);
@@ -2929,7 +2962,7 @@ export function Sidebar({
             selectedGridId={selectedGridId}
             gridRenaming={gridRenaming}
             onRenameGrid={onRenameGrid}
-            onRemoveGrid={onRemoveGrid}
+            onRemoveGrid={removeGrid}
             onSelectGrid={onSelectGrid}
             openGridMenu={openGridMenu}
             setGridRenaming={setGridRenaming}
@@ -2990,6 +3023,7 @@ export function Sidebar({
 
       {portalOrNull(menuEl)}
       {portalOrNull(gridMenuEl)}
+      {portalOrNull(closingLastEl)}
       {portalOrNull(navMenuEl)}
     </RailSurface>
     </TagPopoverHost>

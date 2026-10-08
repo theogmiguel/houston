@@ -2,6 +2,9 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
 // Below 720px, a 200px tree leaves less than ~500px for roughly 60 monospace columns.
 export const FILES_SPLIT_MIN_WIDTH = 720
+// Leaving the split needs this much less width, so a scrollbar (up to ~17px) that appears when
+// the layout changes cannot flip it straight back and make the panel shake.
+const FILES_SPLIT_HYSTERESIS = 24
 // Keep room for tree labels without taking most of the editor's width.
 export const FILES_TREE_MIN = 200
 // Cap the tree before long labels consume the editor column.
@@ -31,7 +34,9 @@ export function useFilesSplit(workspace: string, panel: boolean) {
   const [saved, setSaved] = useState(() => loadSplit(workspace))
   const defaultWidth = containerWidth < FILES_COMPACT_WIDTH ? FILES_TREE_COMPACT : FILES_TREE_DEFAULT
   const width = saved.width ?? defaultWidth
-  const split = panel && containerWidth >= FILES_SPLIT_MIN_WIDTH
+  const wasSplit = useRef(false)
+  const split = panel && containerWidth >= FILES_SPLIT_MIN_WIDTH - (wasSplit.current ? FILES_SPLIT_HYSTERESIS : 0)
+  wasSplit.current = split
 
   useLayoutEffect(() => setSaved(loadSplit(workspace)), [workspace])
 

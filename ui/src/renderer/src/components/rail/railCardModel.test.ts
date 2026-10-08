@@ -53,6 +53,14 @@ describe('buildRailCard', () => {
     expect(card.lastActivityMs).toBe(20)
   })
 
+  it('shows the agent a shell pane is running and falls back to shell without one', () => {
+    const running = session({ id: 1, agent: 'shell', running_agent: 'codex' })
+    const idle = session({ id: 2, agent: 'shell', running_agent: null })
+    const claude = session({ id: 3, agent: 'claude', running_agent: 'codex' })
+    const card = buildRailCard({ gridId: 'g', workspace: '/repo', title: 'G', paneIds: [1, 2, 3], sessions: [running, idle, claude] })
+    expect(card.agents.map((row) => row.agent)).toEqual(['codex', 'shell', 'claude'])
+  })
+
   it('returns empty checkouts and idle status for an empty grid', () => {
     const card = buildRailCard({ gridId: 'empty', workspace: '/repo', title: 'Empty', paneIds: [], sessions: [] })
     expect(card.checkouts).toEqual([])

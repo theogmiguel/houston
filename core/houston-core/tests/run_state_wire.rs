@@ -50,6 +50,7 @@ fn seed_husk(state_dir: &std::path::Path, dir: &std::path::Path) {
         title: "Husk-1".into(),
         codename: "Husk-1".into(),
         detected_agent: None,
+        running_agent: None,
         hidden: false,
         ssh_host: None,
         restore_deferred: None,

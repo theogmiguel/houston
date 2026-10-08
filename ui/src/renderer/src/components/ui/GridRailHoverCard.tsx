@@ -76,8 +76,8 @@ export function GridRailHoverCard({
         })}
         </div>}
         {card.agents[0] && <div className="flex items-center gap-2">
-          <IconAgent agent={card.agents[0].session.agent} role="small" brand />
-          <span>{card.agents[0].model ?? card.agents[0].session.agent}</span>
+          <IconAgent agent={card.agents[0].agent} role="small" brand />
+          <span>{card.agents[0].model ?? card.agents[0].agent}</span>
           {card.agents.length > 1 && <span className="text-[var(--text-muted)]">+{card.agents.length - 1} {card.agents.length === 2 ? 'agent' : 'agents'}</span>}
         </div>}
         {tags.length > 0 && <div className="flex flex-wrap items-center gap-2"><Icon glyph={IconTag} role="small" className="text-[var(--text-muted)]" />{tags.map((tag) => <span key={tag.id} className="inline-flex items-center gap-1"><i className="size-1.5 rounded-full" style={{ background: tag.color }} />{tag.name}</span>)}</div>}

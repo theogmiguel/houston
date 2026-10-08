@@ -804,7 +804,7 @@ describe('grids (step 05 hazard 1: the storage re-key must not lose a layout)', 
     expect(grids.map((g) => g.name)).toEqual(['Grid 1', 'Second'])
   })
 
-  it('addGrid/renameGrid/removeGrid — never drops the last grid', () => {
+  it('addGrid/renameGrid/removeGrid — the last grid is replaced by a fresh empty one', () => {
     const [g1] = loadGrids('/ws/crud')
     const afterAdd = addGrid('/ws/crud', 'Second grid')
     expect(afterAdd).toHaveLength(2)
@@ -817,8 +817,13 @@ describe('grids (step 05 hazard 1: the storage re-key must not lose a layout)', 
     expect(afterRemove).toEqual([g1])
     expect(localStorage.getItem(gridStorageKey('/ws/crud', g2.id))).toBeNull()
 
+    saveLayout(gridStorageKey('/ws/crud', g1.id), { tree: { kind: 'leaf', session: 3, id: 'p3' }, cols: 2 })
     const stillOne = removeGrid('/ws/crud', g1.id)
-    expect(stillOne).toEqual([g1])
+    expect(stillOne).toHaveLength(1)
+    expect(stillOne[0].id).not.toBe(g1.id)
+    expect(isAutoNameable(stillOne[0])).toBe(true)
+    expect(loadLayout(gridStorageKey('/ws/crud', stillOne[0].id)).tree).toBeNull()
+    expect(localStorage.getItem(`tr-layout:${gridStorageKey('/ws/crud', g1.id)}`)).toBeNull()
   })
 })
 

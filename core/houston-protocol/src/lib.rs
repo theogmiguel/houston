@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 129;
+pub const PROTOCOL_VERSION: u32 = 130;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1987,6 +1987,11 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub detected_agent: Option<AgentKind>,
+    /// The agent CLI a shell pane is running right now; `None` once the shell
+    /// has its prompt back. Memory-only, never set on a non-shell pane.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub running_agent: Option<AgentKind>,
     #[serde(default)]
     pub hidden: bool,
     #[serde(default)]
@@ -4574,6 +4579,11 @@ pub enum ServerMsg {
     AgentDetected {
         session: u32,
         agent: AgentKind,
+    },
+    AgentRunning {
+        session: u32,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        agent: Option<AgentKind>,
     },
     AgentStatus {
         session: u32,

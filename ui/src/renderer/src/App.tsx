@@ -313,6 +313,11 @@ export type Conn =
     }
   | { kind: "failed"; error: string };
 
+// Closing a workspace's last grid ends its panes rather than leaving them running unseen.
+function closeGridSessions(client: HoustonClient | null, sessions: number[]): void {
+  for (const id of sessions) client?.closeSession(id);
+}
+
 function readyClient(conn: Conn): HoustonClient | null {
   return conn.kind === "ready" ? conn.client : null;
 }
@@ -330,7 +335,7 @@ import { Icon } from "./components/ui/Icon";
 import {
   Button,
   AppTitlebar,
-  TitlebarBrand,
+  TitlebarLead,
   ContentRegion,
   ContentsSwitch,
   EmptyGridHint,
@@ -433,7 +438,8 @@ type RosterPatchMsg = Extract<
       | "compactions_changed"
       | "delegation_changed"
       | "session_tags_set"
-      | "session_resumable";
+      | "session_resumable"
+      | "agent_running";
   }
 >;
 
@@ -445,6 +451,7 @@ const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
   "delegation_changed",
   "session_tags_set",
   "session_resumable",
+  "agent_running",
 ]);
 
 function isRosterPatch(msg: ServerMsg): msg is RosterPatchMsg {
@@ -473,7 +480,9 @@ function patchRosterFields(
               ? { tags: msg.tags }
               : msg.type === "session_resumable"
                 ? { resumable: msg.resumable }
-                : { delegation: msg.delegation };
+                : msg.type === "agent_running"
+                  ? { running_agent: msg.agent ?? null }
+                  : { delegation: msg.delegation };
   return new Map(prev).set(msg.session, { ...cur, ...patch });
 }
 
@@ -2167,8 +2176,11 @@ export function App(): React.JSX.Element {
   }, [conn, gridsByWs, layouts, sessions]);
   const handleRemoveGrid = useCallback((path: string, gridId: string): void => {
     const before = gridsByWsRef.current.get(path) ?? loadGrids(path);
+    const key = gridStorageKey(path, gridId);
+    const closing = preorderSessions((layoutsRef.current.get(key) ?? loadLayout(key)).tree);
+    if (!before.some((g) => g.id === gridId)) return;
     const next = removeGrid(path, gridId);
-    if (next.length === before.length) return;
+    if (before.length === 1) closeGridSessions(readyClient(conn), closing);
     setGridsByWs((prev) => new Map(prev).set(path, next));
     setLayouts((prev) => {
       const key = gridStorageKey(path, gridId);
@@ -2181,7 +2193,7 @@ export function App(): React.JSX.Element {
       if (prev.get(path) !== gridId) return prev;
       return new Map(prev).set(path, next[0].id);
     });
-  }, []);
+  }, [conn]);
 
   const handleStackWith = useCallback(
     (dragged: PaneKey, target: PaneKey): void => {
@@ -3548,7 +3560,7 @@ export function App(): React.JSX.Element {
             onDoubleClick={handleTitlebarDoubleClick}
           >
             <div className="flex items-center gap-1.5 min-w-0 pl-2.5">
-              <TitlebarBrand>
+              <TitlebarLead>
                 {sidebarRail && (
                   <Tooltip label="Show sidebar (Ctrl+B)">
                     <Button
@@ -3562,7 +3574,7 @@ export function App(): React.JSX.Element {
                     </Button>
                   </Tooltip>
                 )}
-              </TitlebarBrand>
+              </TitlebarLead>
               <SettingsBreadcrumb open={settings} section={settingsSectionLabel()} />
             </div>
             <ToolbarActions>

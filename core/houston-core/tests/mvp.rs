@@ -393,6 +393,7 @@ async fn interrupted_sessions_are_automatically_restored_and_restartable() {
             title: "Kai".into(),
             codename: "Kai".into(),
             detected_agent: None,
+            running_agent: None,
             hidden: false,
             ssh_host: None,
             restore_deferred: None,
