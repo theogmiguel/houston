@@ -433,7 +433,8 @@ type RosterPatchMsg = Extract<
       | "compactions_changed"
       | "delegation_changed"
       | "session_tags_set"
-      | "session_resumable";
+      | "session_resumable"
+      | "agent_running";
   }
 >;
 
@@ -445,6 +446,7 @@ const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
   "delegation_changed",
   "session_tags_set",
   "session_resumable",
+  "agent_running",
 ]);
 
 function isRosterPatch(msg: ServerMsg): msg is RosterPatchMsg {
@@ -473,7 +475,9 @@ function patchRosterFields(
               ? { tags: msg.tags }
               : msg.type === "session_resumable"
                 ? { resumable: msg.resumable }
-                : { delegation: msg.delegation };
+                : msg.type === "agent_running"
+                  ? { running_agent: msg.agent ?? null }
+                  : { delegation: msg.delegation };
   return new Map(prev).set(msg.session, { ...cur, ...patch });
 }
 
@@ -1361,15 +1365,6 @@ export function App(): React.JSX.Element {
               const next = new Map(prev);
               const s = next.get(msg.session);
               if (s) next.set(msg.session, { ...s, detected_agent: msg.agent });
-              return next;
-            });
-            break;
-          case "agent_running":
-            setSessions((prev) => {
-              const s = prev.get(msg.session);
-              if (!s) return prev;
-              const next = new Map(prev);
-              next.set(msg.session, { ...s, running_agent: msg.agent ?? null });
               return next;
             });
             break;
