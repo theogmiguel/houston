@@ -63,20 +63,19 @@ export function TaskTrackerSettingsSection({ client, workspace, workspaceName }:
 
   if (!workspace) return <>
     <SubHead>Tracker sync</SubHead>
-    <SettingsList><Row title="Workspace tracker settings" desc="Select one workspace to view and edit its GitHub or Notion configuration."><SettingsScope workspace={workspaceName} row /></Row></SettingsList>
+    <SettingsList><Row title="Workspace tracker settings" desc="Select one workspace to view and edit its GitHub or Notion configuration."><SettingsScope workspace={workspaceName} /></Row></SettingsList>
   </>
   if (!client) return <>
     <SubHead>Tracker sync</SubHead>
-    <SettingsList><Row title="Workspace tracker settings" desc="Connect to the Houston daemon to load this workspace’s settings."><SettingsScope workspace={workspaceName} row /></Row></SettingsList>
+    <SettingsList><Row title="Workspace tracker settings" desc="Connect to the Houston daemon to load this workspace’s settings."><SettingsScope workspace={workspaceName} /></Row></SettingsList>
   </>
 
-  return <TrackerSettingsForm client={client} workspace={workspace} workspaceName={workspaceName} settingsLoaded={settingsLoaded} error={error} provider={provider} setProvider={setProvider} value={draft ?? setting} setting={setting} update={(patch) => setDraft((current) => ({ ...(current ?? setting!), ...patch, workspace }))} syncState={syncState[provider]} token={token} setToken={setToken} />
+  return <TrackerSettingsForm client={client} workspace={workspace} settingsLoaded={settingsLoaded} error={error} provider={provider} setProvider={setProvider} value={draft ?? setting} setting={setting} update={(patch) => setDraft((current) => ({ ...(current ?? setting!), ...patch, workspace }))} syncState={syncState[provider]} token={token} setToken={setToken} />
 }
 
-function TrackerSettingsForm({ client, workspace, workspaceName, settingsLoaded, error, provider, setProvider, value, setting, update, syncState, token, setToken }: {
+function TrackerSettingsForm({ client, workspace, settingsLoaded, error, provider, setProvider, value, setting, update, syncState, token, setToken }: {
   client: Pick<HoustonClient, 'send'>
   workspace: string
-  workspaceName: string | null
   settingsLoaded: boolean
   error: string | null
   provider: TaskTrackerProvider
@@ -100,8 +99,7 @@ function TrackerSettingsForm({ client, workspace, workspaceName, settingsLoaded,
   const syncError = syncState ? syncState.error : value?.last_error ?? null
 
   return <>
-    <SubHead>Tracker sync · {workspaceName ?? workspace}</SubHead>
-    <SettingsScope workspace={workspaceName} />
+    <SubHead>Tracker sync</SubHead>
     {error && <Notice tone="danger">{error}</Notice>}
     {!settingsLoaded ? <p role="status" aria-busy="true">Loading workspace tracker settings…</p> : <SettingsList>
       <Row title="Tracker provider" desc="Choose which workspace tracker configuration to edit.">

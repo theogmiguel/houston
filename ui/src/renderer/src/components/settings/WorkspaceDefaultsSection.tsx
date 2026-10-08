@@ -15,7 +15,7 @@ import { NumberSetting, Row, SubHead } from './shared'
 
 
 function globalDescription(description: string): React.JSX.Element {
-  return <><SettingsScope workspace={null} row scope="global" />{description}</>
+  return <><SettingsScope workspace={null} scope="global" />{description}</>
 }
 
 export interface WorkspaceDefaultsSectionProps {

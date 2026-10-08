@@ -19,16 +19,14 @@ describe('SettingsScope', () => {
     host.remove()
   })
 
-  it('names the workspace scope for the page and for each scoped row', () => {
-    act(() => root.render(<><SettingsScope workspace="Houston" /><SettingsScope workspace="Houston" row /><SettingsScope workspace={null} row scope="global" /></>))
-    expect(host.textContent).toContain('Applying settings for Houston')
+  it('names the scope of each scoped row', () => {
+    act(() => root.render(<><SettingsScope workspace="Houston" /><SettingsScope workspace={null} scope="global" /></>))
     expect(host.textContent).toContain('This workspace')
     expect(host.textContent).toContain('All workspaces')
   })
 
-  it('explains why workspace rows cannot be edited without a workspace', () => {
-    act(() => root.render(<><SettingsScope workspace={null} /><SettingsScope workspace={null} row /></>))
-    expect(host.textContent).toContain('Select a workspace')
+  it('explains that a workspace row cannot be edited without a workspace', () => {
+    act(() => root.render(<SettingsScope workspace={null} />))
     expect(host.textContent).toContain('Choose a workspace to edit this setting.')
   })
 })

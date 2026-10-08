@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { HoustonClient } from '../../houston/client'
 import type { AgentKind } from '../../houston/generated/AgentKind'
+import type { Workspace } from '../../houston/generated/Workspace'
 import type { TaskPromptDelivery } from '../../houston/generated/TaskPromptDelivery'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import { TASKS_REWORK_ROUNDS_MAX } from '../../houston/generated/DEFAULTS'
@@ -29,25 +30,55 @@ const ACCESS_OPTIONS: { value: TasksAccess; label: string }[] = [
   { value: 'write', label: 'Read and write' }
 ]
 
+/// The daemon's known workspaces, from a `workspace_list` request.
+function useWorkspaceList(client: HoustonClient | null): Workspace[] {
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  useEffect(() => {
+    if (!client) return
+    const off = client.subscribe('workspace_list', (message) => setWorkspaces(message.workspaces))
+    client.send({ type: 'workspace_list' })
+    return off
+  }, [client])
+  return workspaces
+}
+
 /// Settings ▸ Tasks: agent access, the workspace's Start defaults, and review.
+/// Every section edits the workspace chosen in the picker, which starts on the
+/// workspace open in the grid and falls back to the first known one.
 export function TasksSection({
   client,
-  workspace,
-  workspaceName
+  workspace: activeWorkspace
 }: {
   client: HoustonClient | null
   workspace: string | null
-  workspaceName: string | null
 }): React.JSX.Element {
+  const workspaces = useWorkspaceList(client)
+  const [picked, setPicked] = useState<string | null>(null)
+  const options = useMemo<SelectOption[]>(() => workspaces.map((w) => ({ value: w.path, label: w.name })), [workspaces])
+  const known = (path: string | null): path is string => path !== null && workspaces.some((w) => w.path === path)
+  const workspace = known(picked) ? picked : known(activeWorkspace) ? activeWorkspace : (workspaces[0]?.path ?? null)
+  const workspaceName = workspaces.find((w) => w.path === workspace)?.name ?? null
   const { access, setAccess } = useTasksAccess(client, workspace)
   const { settings, setStartSettings } = useTaskStartSettings(client, workspace)
   const { settings: review, refusal: reviewRefusal, setReviewSettings } = useTaskReviewSettings(client, workspace)
-  const noWorkspaceReason = 'Select a single workspace in the sidebar to manage its task settings'
+  const noWorkspaceReason = 'Add a workspace to manage its task settings'
 
   return (
     <>
-      <SettingsScope workspace={workspaceName} />
-      <SubHead>Agent access · {workspaceName ?? 'no workspace selected'}</SubHead>
+      <SettingsList>
+        <Row title="Workspace" desc="Agent access, Start defaults, review and tracker sync below apply to this workspace.">
+          <Select
+            aria-label="Workspace"
+            data-testid="settings-tasks-workspace"
+            value={workspace ?? ''}
+            options={options}
+            disabled={options.length === 0}
+            width="task-setting"
+            onChange={setPicked}
+          />
+        </Row>
+      </SettingsList>
+      <SubHead>Agent access</SubHead>
       <SettingsList>
         <AgentAccessRow
           access={access}
@@ -68,7 +99,7 @@ export function TasksSection({
       </SettingsList>
       <SubHead>Starting a task</SubHead>
       <SettingsList>
-        <Row title="Default agent" desc={<><span>Used by Start. Pick another one from the Start menu.</span><SettingsScope workspace={workspaceName} row /></>}>
+        <Row title="Default agent" desc={<><span>Used by Start. Pick another one from the Start menu.</span><SettingsScope workspace={workspaceName} /></>}>
           <Select
             aria-label="Default agent"
             data-testid="settings-tasks-agent"
@@ -82,7 +113,7 @@ export function TasksSection({
         </Row>
         <Row
           title="Prompt delivery"
-          desc={<><span>Send the brief when you press Start, or only place it in the input box.</span><SettingsScope workspace={workspaceName} row /></>}
+          desc={<><span>Send the brief when you press Start, or only place it in the input box.</span><SettingsScope workspace={workspaceName} /></>}
         >
           <Segmented
             aria-label="Prompt delivery"
@@ -102,7 +133,7 @@ export function TasksSection({
       <SettingsList>
         <Row
           title="Independent reviewer"
-          desc={<><span>Runs read-only in the same worktree when a task is handed back. Reports evidence; it does not mark a task done.</span><SettingsScope workspace={workspaceName} row /></>}
+          desc={<><span>Runs read-only in the same worktree when a task is handed back. Reports evidence; it does not mark a task done.</span><SettingsScope workspace={workspaceName} /></>}
         >
           <Select
             aria-label="Independent reviewer"
@@ -123,7 +154,7 @@ export function TasksSection({
         </Row>
         <Row
           title="Automatic rework rounds"
-          desc={<><span>How many times a failed review restarts the implementer on its own. 0 asks you first.</span><SettingsScope workspace={workspaceName} row /></>}
+          desc={<><span>How many times a failed review restarts the implementer on its own. 0 asks you first.</span><SettingsScope workspace={workspaceName} /></>}
         >
           <ReworkRoundsInput
             value={review?.reworkRounds ?? null}
@@ -165,7 +196,7 @@ function AgentAccessRow({
             <TaskAccessSummary testId="settings-tasks-current">
               {access === null ? 'loading…' : ACCESS_LABEL[access]}
             </TaskAccessSummary>
-            <SettingsScope workspace={workspace} row />
+            <SettingsScope workspace={workspace} />
           </TaskSettingDescription>
         }
       >
