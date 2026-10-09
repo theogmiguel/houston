@@ -11,7 +11,7 @@ function state(overrides: Partial<AgentHookState> = {}): AgentHookState {
   return {
     provider: 'claude',
     path: '~/.claude/settings.json',
-    scope: 'workspace',
+    scope: 'global',
     enabled: false,
     installed: false,
     error: null,
@@ -78,7 +78,7 @@ describe('HooksSurface — the Agents detail screen', () => {
     act(() => cli?.click())
     expect(container.querySelector('[data-testid="nav-footnote"]')).toBeNull()
     const text = container.textContent ?? ''
-    expect(text).toContain('Your own hooks are untouched')
-    expect(text).toContain('removes exactly what Houston added')
+    expect(text).toContain('Your own hooks are preserved')
+    expect(text).toContain('turning this off removes Houston’s entries')
   })
 })

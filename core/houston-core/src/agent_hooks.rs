@@ -59,7 +59,7 @@ pub fn config_path(provider: proto::AgentKind, home: &ConfigHome) -> Result<Path
         proto::AgentKind::Antigravity => home.home.join(".gemini").join("config").join("hooks.json"),
         other => bail!(
             "{other:?} has no hook installer here (expected codex, opencode, cursor, grok or antigravity; \
-             Claude Code installs per workspace via claude_hooks.rs)"
+             Claude Code installs globally via claude_hooks.rs)"
         ),
     })
 }

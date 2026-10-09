@@ -2971,6 +2971,13 @@ impl Db {
         Ok(())
     }
 
+    pub fn workspace_hook_paths(&self) -> Result<Vec<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare("SELECT path FROM workspace_hooks")?;
+        let rows = statement.query_map([], |row| row.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub fn workspace_hooks_ownership(&self, path: &str) -> Result<Option<(bool, bool)>> {
         let conn = self.conn.lock().expect("db lock");
         let row = conn

@@ -1131,10 +1131,9 @@ What changes per provider, beyond the shared inbox:
   "blocked asking" moment `NeedsInput` means — so `Notification` stays the one block
   signal. Grok's field casing is unconfirmed (one docs fetch said camelCase, the code
   assumed Claude's snake_case), so `parse_hook_payload` tries snake_case first, then the
-  camelCase twin, for Grok alone. Grok also reads a workspace's `.claude/settings.json`
-  hooks, so a Grok pane in a workspace where Houston installed Claude hooks fires the same
-  moment twice; the Claude-path helper now exits without writing a drop when `--agent` is
-  absent and `GROK_SESSION_ID` is set, so only the Grok-side drop lands.
+  camelCase twin, for Grok alone. Grok also reads Claude-format workspace hooks. A remaining
+  Claude-path entry could deliver the same event twice; the helper exits without writing a
+  drop when `--agent` is absent and `GROK_SESSION_ID` is set, so only the Grok-side drop lands.
 - **OpenCode.** No native hook contract at all — its plugin bus fires JS callbacks, not a
   shell command with its own stdin — so `houston-notify.js` is the hook contract: it builds
   the JSON `parse_hook_payload` expects itself and pipes it into the same

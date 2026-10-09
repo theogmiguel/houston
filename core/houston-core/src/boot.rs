@@ -25,13 +25,12 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
 }
 
 /// Runs off the async runtime via `spawn_blocking` so the window can paint
-/// before every known workspace's hook files are refreshed.
+/// before the agent hook configs are refreshed.
 pub fn spawn_startup_refresh(daemon: &Arc<Daemon>) {
     let bound_port = daemon.bound_port();
     let daemon = daemon.clone();
     tokio::task::spawn_blocking(move || {
         daemon.sweep_legacy_hooks();
-        daemon.install_all_workspace_hooks();
         daemon.install_consented_agent_hooks();
     });
     crate::mcp_register::spawn_at_boot();

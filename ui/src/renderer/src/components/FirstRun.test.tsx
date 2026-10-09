@@ -128,7 +128,7 @@ describe('FirstRun', () => {
   it('installs a selected CLI through the existing hook message', () => {
     const onAgentHooksSet = vi.fn()
     const claude: AgentHookState = {
-      provider: 'claude', path: '~/.claude/settings.json', scope: 'workspace', enabled: false,
+      provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: false,
       installed: true, error: null, present: true, version: '2.3.1', trust: null
     }
     const codex: AgentHookState = {
@@ -143,7 +143,7 @@ describe('FirstRun', () => {
   it('installs every silent present CLI from the primary action and gives absent CLIs no action', () => {
     const onAgentHooksSet = vi.fn()
     const base: AgentHookState = {
-      provider: 'claude', path: '~/.claude/settings.json', scope: 'workspace', enabled: false,
+      provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: false,
       installed: false, error: null, present: true, version: '1.0.0', trust: null
     }
     render(props({
@@ -175,7 +175,7 @@ describe('FirstRun', () => {
 
   it('shows the provider error and explains why the bulk action is disabled', () => {
     const claude: AgentHookState = {
-      provider: 'claude', path: '~/.claude/settings.json', scope: 'workspace', enabled: false,
+      provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: false,
       installed: true, error: 'Unsupported settings format', present: true, version: '2.3.1', trust: null
     }
     render(props({ hasWorkspace: true, orchestrationConsented: true, agentHooks: [claude] }))
