@@ -1,5 +1,5 @@
 import { PaneFrame } from './ui/PaneFrame'
-import { useSession, useSessionFamily, useSessionsSelector } from '../sessionsStore'
+import { shallowArrayEqual, useSession, useSessionFamily, useSessionsSelector } from '../sessionsStore'
 import { hasWorkingDescendant } from './ui/railRows'
 import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useCallback, useEffect, useContext, useRef, useState } from 'react'
@@ -47,6 +47,7 @@ import {
   IconSplitDown,
   IconSplitRight,
   IconStopCircle,
+  IconGitBranch,
   IconSwap,
   IconTextLarger,
   IconTextSmaller,
@@ -241,12 +242,31 @@ export function OrchestratorBadge({
   )
 }
 
+type CheckoutOf = SessionInfo & { checkout?: SessionCheckout | null }
+
+const noWorktreeChildren: SessionInfo[] = []
+
+// Live children working in a worktree other than this pane's own checkout.
+function useWorktreeChildren(info: SessionInfo): SessionInfo[] {
+  const root = (info as CheckoutOf).checkout?.root
+  return useSessionsSelector(
+    useCallback((sessions) => [...sessions.values()].filter((child) => {
+      const checkout = (child as CheckoutOf).checkout
+      return child.spawned_by === info.id && isLive(child.state) && checkout?.root !== root && formatCheckout(checkout).kind === 'worktree'
+    }), [info.id, root]),
+    shallowArrayEqual,
+    noWorktreeChildren
+  )
+}
+
 export function BranchChip({
   checkout,
-  remoteHost
+  remoteHost,
+  worktreeChildren = noWorktreeChildren
 }: {
   checkout?: SessionCheckout | null
   remoteHost?: string | null
+  worktreeChildren?: readonly SessionInfo[]
 }): React.JSX.Element | null {
   const formatted = formatCheckout(checkout, { remoteHost: remoteHost ?? undefined })
   if (formatted.kind === 'unknown') return null
@@ -258,12 +278,22 @@ export function BranchChip({
     void showItemInFolder(checkout.root)
   }
   return (
-    <Tooltip label={formatted.kind === 'worktree' && checkout ? `${formatted.text}\n${checkout.root}` : formatted.text}>
+    <Tooltip label={[
+      formatted.kind === 'worktree' && checkout ? `${formatted.text}\n${checkout.root}` : formatted.text,
+      ...(worktreeChildren.length > 0 ? ["Children's worktrees:"] : []),
+      ...worktreeChildren.map((child) => `${child.codename} · ${child.delegation?.role ?? child.title}: ${formatCheckout((child as CheckoutOf).checkout).branch ?? '(detached)'}`)
+    ].join('\n')}>
       <span data-testid="branch-chip" className="[@container_(max-width:400px)]:hidden" onClickCapture={revealWorktree}>
         <ShellBranchCopyChip value={formatted.branch ?? checkout?.head ?? formatted.badge}>
           <span className="inline-flex min-w-0 items-center gap-[var(--space-1)] truncate">
             <span>{formatted.kind === 'remote' ? 'remote' : formatted.badge}</span>
             {detail && <><span> </span><ShellElement as="span" shellRole="pane-branch-detail-separator">·</ShellElement><span> </span><span className="truncate">{detail}</span></>}
+            {worktreeChildren.length > 0 && (
+              <ShellElement as="span" shellRole="pane-branch-children" aria-label={`${worktreeChildren.length} children in worktrees`}>
+                <Icon glyph={IconGitBranch} role="label" />
+                <span data-testid="branch-chip-children">{worktreeChildren.length}</span>
+              </ShellElement>
+            )}
           </span>
         </ShellBranchCopyChip>
       </span>
@@ -451,6 +481,7 @@ function SessionPaneImpl({
 }: Props): React.JSX.Element {
   const info = useSession(infoProp.id, infoProp) ?? infoProp
   const prWatches = usePrWatch(client, info.id)
+  const worktreeChildren = useWorktreeChildren(info)
   const family = useSessionFamily(info.id, rosterSessions(rosterProp))
   const roster = withSessionFamily(rosterProp, family)
   const [peekId, setPeekId] = useState<number | null>(null)
@@ -551,7 +582,7 @@ function SessionPaneImpl({
           />
           <PaneTaskChip task={info.task} />
           <PaneWatchChip watches={prWatches} />
-          <BranchChip checkout={(info as SessionInfo & { checkout?: SessionCheckout | null }).checkout} remoteHost={info.ssh_host} />
+          <BranchChip checkout={(info as CheckoutOf).checkout} remoteHost={info.ssh_host} worktreeChildren={worktreeChildren} />
           <PaneHeaderTags tagIds={info.tags} />
           {info.acp != null && <AcpBadge slug={info.acp} />}
           {info.profile_label != null && <ProfileBadge label={info.profile_label} />}
