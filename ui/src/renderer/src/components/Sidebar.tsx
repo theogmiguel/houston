@@ -69,7 +69,7 @@ import {
 import { Tooltip } from "./ui/Tooltip";
 import { useLastGridConfirm } from "./rail/LastGridConfirm";
 import { NavigationRailHeader } from "./ui/NavigationRail";
-import logoUrl from "../assets/logo-chrome.svg";
+import logoUrl from "../assets/brand-mark";
 import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { Icon } from "./ui/Icon";

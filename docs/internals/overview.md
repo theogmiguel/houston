@@ -253,11 +253,12 @@ That quit is the tray's **only** way out, and it stops the daemon. A tray quit t
 the agents running would rebuild the state the tray exists to make visible; leaving them
 running is what closing the window already does.
 
-The icon itself is a **tile** — the dock icon's composition on a 16-unit grid
-(`ui/resources/icon-tray.svg`), rendered to idle/active/attention at eight cuts by
-`ui/scripts/render-icons.mjs` and embedded with `include_bytes!`. It carries its own
-ground and rim, so one PNG set reads on a dark panel and a light one alike and nothing
-probes the desktop's colour scheme. Which cut is uploaded comes from the DESKTOP, not the
+The tray uses the mascot head, rendered to idle/active/attention at eight cuts by
+`ui/scripts/render-icons.mjs` and embedded with `include_bytes!`. Cuts below 32 px
+use `ui/resources/mark-vector.svg`; larger cuts use Lanczos exports of
+`ui/resources/branding/houston-icon-small.png`. Idle uses 0.55 opacity; attention
+adds an amber badge with a transparent gap around it.
+Which cut is uploaded comes from the DESKTOP, not the
 monitor: GNOME's AppIndicator draws 16 logical pixels and Plasma 22, so `base_icon_size`
 reads `XDG_CURRENT_DESKTOP` once at install, multiplies by the primary monitor's scale
 factor and snaps to the nearest bundled size.
@@ -331,7 +332,7 @@ src-tauri/                the app (its own cargo package, not a workspace member
   src/watchdog/           renderer paint-freeze watchdog (pure state machine + probes)
   src/tray/               the tray: menu model, D-Bus availability probe, hide-to-tray setting
   icons/tray/             idle/active/attention at 16/20/22/24/32/40/44/48 px, rendered
-                          from ui/resources/icon-tray.svg by ui/scripts/render-icons.mjs
+                          from the vector/raster mascot head by ui/scripts/render-icons.mjs
   icons/{32x32,128x128,128x128@2x,icon}.png, icon.ico
                           the bundle icons tauri.conf.json's bundle.icon names,
                           rendered by ui/scripts/render-icons.mjs (bun run icons)
@@ -341,7 +342,8 @@ src-tauri/                the app (its own cargo package, not a workspace member
                           bundle, so an installed copy needs no app-binary hook fallback
 ui/                       React 19 + Tailwind 4 + Vite; bun, never npm
   resources/icons/hicolor/ the desktop-entry icon tree (16 to 512 px), rendered by
-                          render-icons.mjs, read by scripts/install-desktop.sh
+                          render-icons.mjs, read by scripts/install-desktop.sh; the night tile
+                          uses the vector cut through 32 px and promo art above it
   src/renderer/src/
     ghostty/              the terminal engine: vendored libghostty-vt WASM → Canvas 2D
     layout/tree.ts        grids, split tree, localStorage persistence

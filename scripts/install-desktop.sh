@@ -7,7 +7,7 @@ set -euo pipefail
 # end fails loudly and names the file if that coupling regresses.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SVG="$ROOT/ui/resources/icon.svg"
+ICON_SOURCE="$ROOT/ui/resources/branding/houston-promo-background.png"
 APPS="$HOME/.local/share/applications"
 ICONS="$HOME/.local/share/icons/hicolor"
 LIBDIR="$HOME/.local/lib/houston"
@@ -19,7 +19,7 @@ CORE_SRC="$ROOT/src-tauri/target/release/$CORE_NAME"
 SUPERVISOR_NAME="houston-supervisor"
 SUPERVISOR_SRC="$ROOT/src-tauri/target/release/$SUPERVISOR_NAME"
 
-[ -f "$SVG" ] || { echo "icon source missing at $SVG" >&2; exit 1; }
+[ -f "$ICON_SOURCE" ] || { echo "icon source missing at $ICON_SOURCE" >&2; exit 1; }
 [ -x "$APP_SRC" ] || { echo "app binary missing at $APP_SRC — run: ./scripts/build-app.sh" >&2; exit 1; }
 
 "$ROOT/scripts/check-renderer-fresh.sh" >/dev/null || {

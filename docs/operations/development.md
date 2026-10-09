@@ -600,15 +600,23 @@ Local install, separate from packaging:
 ./scripts/install-desktop.sh
 ```
 
-Refuses on a missing icon SVG or `convert` (ImageMagick), a missing app
+Refuses on a missing promo-art PNG, a missing app
 binary, renderer or binary staleness (re-running `check-renderer-fresh.sh`
 and `check-binary-fresh.sh`), and — after writing `launch.sh`, `start.sh`, and
 the `.desktop` file — a repo-path leak: it greps all three for the repo's own
 absolute path and refuses to finish if found, so the installed app can never
 execute a path inside the repo. Installs:
-`~/.local/lib/houston/{houston, tr-helper, start.sh, launch.sh}`,
+`~/.local/lib/houston/{houston, tr-helper, houston-core, houston-supervisor, start.sh, launch.sh}`,
 `~/.local/share/applications/houston.desktop`, and icon PNGs under
 `~/.local/share/icons/hicolor/**/apps/houston.png`.
+
+Regenerate desktop, bundle, tray and rail-brand PNGs with `cd ui && bun run icons`.
+The generator requires Python 3 with Pillow and Playwright Chromium; set
+`HOUSTON_ICON_BROWSER=chrome` to use an installed Chrome instead. It resizes the
+1254 px promo art to the mock's 512 px crop with Lanczos, then renders the rounded
+night tile at each requested size. At 32 px and below it renders `icon-small.svg`,
+with the same tile gradient, rim and vector head. The rail uses 32/64/96 px Lanczos
+head exports selected by `srcSet` for 1x/2x/3x displays.
 
 ### Windows
 

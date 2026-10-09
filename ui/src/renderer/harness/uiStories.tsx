@@ -309,7 +309,7 @@ import { BackdropLayerSpecimen, ContextMeterSpecimen, SaveStateMarkSpecimen, Spl
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../src/components/ui/NavSurfaceFrame'
 import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
 import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
-import logoUrl from '../src/assets/logo-chrome.svg'
+import logoUrl from '../src/assets/brand-mark'
 import { WorktreeCleanupSection } from '../src/components/git/WorktreeCleanupSection'
 import { BrowserButton } from '../src/components/ui/BrowserButtonRoles'
 import { DelegationButton } from '../src/components/ui/DelegationButtonRoles'
