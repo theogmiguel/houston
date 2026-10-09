@@ -448,28 +448,21 @@ fn claude_stop_failure_drop_preserves_binary_schema() {
 }
 
 #[test]
-fn missing_pane_identity_warns_across_hook_processes_once_per_channel() {
+fn missing_pane_identity_is_silent_and_leaves_no_trace() {
+    // Global provider hooks also fire in sessions Houston did not launch.
     let f = Fixture::new();
-    for index in 0..3 {
-        let mut cmd = Command::new(bin());
-        cmd.args(["hook", "UserPromptSubmit"]);
-        cmd.env_clear();
-        cmd.env("HOME", &f.home);
-        cmd.env("HOUSTON_CHANNEL", CHANNEL);
-        let (code, stdout, stderr) = run_with_stdin(cmd, "{}");
-        assert_eq!(code, 0);
-        assert!(stdout.is_empty());
-        if index == 0 {
-            assert!(
-                stderr.contains("TR_SESSION is missing or invalid"),
-                "{stderr}"
-            );
-            assert!(stderr.contains("status event lost"), "{stderr}");
-        } else {
-            assert!(stderr.is_empty(), "{stderr}");
-        }
-    }
+    let before = std::fs::read_dir(&f.home).unwrap().count();
+    let mut cmd = Command::new(bin());
+    cmd.args(["hook", "UserPromptSubmit"]);
+    cmd.env_clear();
+    cmd.env("HOME", &f.home);
+    cmd.env("HOUSTON_CHANNEL", CHANNEL);
+    let (code, stdout, stderr) = run_with_stdin(cmd, "{}");
+    assert_eq!(code, 0);
+    assert!(stdout.is_empty(), "{stdout}");
+    assert!(stderr.is_empty(), "{stderr}");
     assert!(drops(&f.drop_dir()).is_empty());
+    assert_eq!(std::fs::read_dir(&f.home).unwrap().count(), before);
 }
 
 #[test]

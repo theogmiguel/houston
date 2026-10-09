@@ -6,9 +6,10 @@ An agent CLI starts as a pane's child process; Claude Code can hand its session 
 background daemon. Houston supplies Claude's pane identity, channel, orchestration environment,
 helper PATH and explicit profile directory through both the process environment and
 `--settings`. This also covers Claude resumed inside a shell pane, so hook subprocesses retain
-the pane context across that hand-off. The launch settings do not rewrite user files.
-Missing or invalid hook pane identity emits a diagnostic at most once per minute per channel
-when the diagnostic directory is writable.
+the pane context across that hand-off. The settings travel as a per-pane owner-only file,
+because their environment carries the pane bearer token, and they do not rewrite user files.
+A hook without a pane identity exits silently and writes nothing: global provider hooks also
+fire in sessions Houston did not launch.
 
 What makes it an *agent* is
 that its own lifecycle events reach the daemon — through hooks it installed, or through a
