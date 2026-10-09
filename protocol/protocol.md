@@ -559,13 +559,17 @@ DelegationInfo     started_at (epoch ms), settled_at? (epoch ms), retained_until
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
                    last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
                    still owes its parent, the correction link, what its CLI cannot report, and
-                   why door 3 is holding the rows; `reusable` is the persisted lifecycle choice).
+                   why delivery is held, including a staged result awaiting turn completion;
+                   `reusable` is the persisted lifecycle choice).
                    The record a pane is the CHILD of; `None`
                    for an operator-spawned pane. Deliberately NOT the record's `brief` (8 000 chars, on
                    every roster broadcast) — that stays MCP-only, on `pane_get`'s `DelegationView`
 DelegationState    snake: spawning | working | needs_input | done | failed | cancelled | unknown
                    (the last four terminal; `unknown` is a daemon restart mid-flight, not a failure)
 TurnEndSource      kebab: stop-hook | acp-turn | quiet-settle
+                   Effective completion source: stop-hook requires a lifecycle hook received
+                   since spawn; without that evidence, quiet-settle applies even to hook-capable
+                   providers. ACP keeps acp-turn.
 InboxRow           v96: id, to_session, original_to?, workspace, from_session?, request_id?,
                    kind: InboxKind, urgent, summary, body, artifacts, superseded, provisional, corrects?,
                    reason?, created_at, ready_at?, resolved_at?, delivered_at?, delivered_via?:

@@ -582,6 +582,7 @@ pub struct Session {
     removed: AtomicBool,
     backend_exited: AtomicBool,
     stdin_writes_in_flight: AtomicU32,
+    lifecycle_hook_seen: AtomicBool,
     hook_cwd: Mutex<Option<String>>,
     hook_last_message: Mutex<Option<String>>,
     hook_latest_prompt: Mutex<Option<String>>,
@@ -1132,6 +1133,14 @@ impl Session {
             .lock()
             .expect("detected lock")
             .unwrap_or(self.info.agent)
+    }
+
+    fn turn_end_source(&self) -> orchestrate::TurnEndSource {
+        orchestrate::turn_end_source(
+            self.status_kind(),
+            self.acp.is_some(),
+            self.lifecycle_hook_seen.load(Ordering::Acquire),
+        )
     }
 
     fn watched(&self) -> bool {
@@ -4281,6 +4290,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            lifecycle_hook_seen: AtomicBool::new(false),
             hook_cwd: Mutex::new(m.hook_cwd.clone()),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -4617,7 +4627,7 @@ impl Daemon {
         let pending = self.pending_handback(parent, child);
         let owed = self.inbox_owed(parent, child);
         let capability = self.capability_note_of(child);
-        let hold = self.background_hold_reason(child).or_else(|| {
+        let hold = self.staged_result_hold_reason(child).or_else(|| {
             (owed.owed > 0)
                 .then(|| self.paste_hold_reason(parent))
                 .flatten()
@@ -6122,9 +6132,7 @@ impl Daemon {
         for (_, run) in runs {
             let session = run.session_id.expect("filtered to pane runs");
             let Ok(s) = self.get(session) else { continue };
-            if orchestrate::turn_end_source(s.info.agent, s.acp.is_some())
-                != orchestrate::TurnEndSource::QuietSettle
-            {
+            if s.turn_end_source() != orchestrate::TurnEndSource::QuietSettle {
                 continue;
             }
             let busy = match s.pid {
@@ -6982,7 +6990,7 @@ impl Daemon {
         cwd: Option<&str>,
         ambiguous_idle_notification: bool,
     ) -> crate::hook_drop::DropVerdict {
-        if !self.note_hook_seen(id, event, cwd) {
+        if !self.note_hook_seen(id, provider, event, cwd) {
             return crate::hook_drop::DropVerdict::NoSession;
         }
         match crate::agent_events::AgentEvent::from_provider(provider, event) {
@@ -6993,13 +7001,22 @@ impl Daemon {
         crate::hook_drop::DropVerdict::Applied
     }
 
-    fn note_hook_seen(&self, id: u32, event: &str, cwd: Option<&str>) -> bool {
+    fn note_hook_seen(
+        &self,
+        id: u32,
+        provider: proto::AgentKind,
+        event: &str,
+        cwd: Option<&str>,
+    ) -> bool {
         let sessions = self.sessions.lock().expect("sessions lock");
         let Some(s) = sessions.get(&id) else {
             return false;
         };
         if s.state.lock().expect("state lock").is_live() {
             self.mcp_creds.touch_session(id);
+            if crate::agent_events::AgentEvent::from_provider(provider, event).is_some() {
+                s.lifecycle_hook_seen.store(true, Ordering::Release);
+            }
         }
         let mut recorded_cwd = None;
         let mut hook_cwd = s.hook_cwd.lock().expect("hook_cwd lock");
@@ -7042,6 +7059,10 @@ impl Daemon {
                     "ignoring {event:?} for session {id}: the pane is no longer running"
                 );
                 return;
+            }
+            // Provider tool hooks can map to lifecycle effects outside the status table.
+            if event != "ACP" {
+                session.lifecycle_hook_seen.store(true, Ordering::Release);
             }
             let mut current = session.status.lock().expect("status lock");
             if !ev.applies(*current, ambiguous_idle_notification) {
@@ -7346,7 +7367,7 @@ impl Daemon {
                     let pending = self.pending_handback(row.parent_session, info.id);
                     let owed = self.inbox_owed(row.parent_session, info.id);
                     let capability = self.capability_note_of(info.id);
-                    let hold = self.background_hold_reason(info.id).or_else(|| {
+                    let hold = self.staged_result_hold_reason(info.id).or_else(|| {
                         (owed.owed > 0)
                             .then(|| self.paste_hold_reason(row.parent_session))
                             .flatten()
@@ -9673,6 +9694,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            lifecycle_hook_seen: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -10077,6 +10099,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            lifecycle_hook_seen: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -12394,7 +12417,7 @@ impl Daemon {
             }
         }
         if d.internal_prompt {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return crate::hook_drop::DropVerdict::NoSession;
             }
             if let Some(ev) = crate::agent_events::AgentEvent::from_provider(provider, &d.event) {
@@ -12476,7 +12499,7 @@ impl Daemon {
                     repeated
                 };
                 if repeated {
-                    if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                    if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                         return Some(crate::hook_drop::DropVerdict::NoSession);
                     }
                     tracing::debug!(
@@ -12509,7 +12532,7 @@ impl Daemon {
         };
         if provider == proto::AgentKind::Opencode {
             if let Some(kind) = opencode_input_kind {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 let opens = matches!(
@@ -12574,7 +12597,7 @@ impl Daemon {
                     .get(&d.session)
                     .is_some_and(|episodes| episodes.open_count() > 0)
             {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -12601,7 +12624,7 @@ impl Daemon {
         }
 
         if correlates && matches!(d.event.as_str(), "SubagentStart" | "SubagentStop") {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             self.feed_subagent_evidence(d, now);
@@ -12609,7 +12632,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "PreToolUse" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let blocks = match provider {
@@ -12653,7 +12676,7 @@ impl Daemon {
         }
 
         if correlates && matches!(d.event.as_str(), "PostToolUse" | "PostToolUseFailure") {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let resumed = self.resolve_permission_episodes(
@@ -12747,7 +12770,7 @@ impl Daemon {
                 }
             };
             if let Some(why) = held {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -12767,7 +12790,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "PermissionRequest" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
@@ -12812,7 +12835,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "PermissionDenied" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let resumed = self.resolve_permission_episodes(
@@ -12837,7 +12860,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "Elicitation" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
@@ -12860,7 +12883,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "ElicitationResult" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let resumed = self.resolve_permission_episodes(
@@ -12891,7 +12914,7 @@ impl Daemon {
                         "session {}: notification {kind:?} is not a block",
                         d.session
                     );
-                    if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                    if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                         return Some(crate::hook_drop::DropVerdict::NoSession);
                     }
                     return Some(crate::hook_drop::DropVerdict::Applied);
@@ -12904,7 +12927,7 @@ impl Daemon {
             };
             if attached {
                 drop(episodes);
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 return Some(crate::hook_drop::DropVerdict::Applied);
@@ -12972,7 +12995,12 @@ impl Daemon {
                 .clone();
             drop(roots);
             if root != id {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(
+                    d.session,
+                    proto::AgentKind::Antigravity,
+                    &d.event,
+                    d.cwd.as_deref(),
+                ) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -12986,7 +13014,12 @@ impl Daemon {
         }
 
         if d.event == "Stop" && d.stop_continued {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(
+                d.session,
+                proto::AgentKind::Antigravity,
+                &d.event,
+                d.cwd.as_deref(),
+            ) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             tracing::debug!(
@@ -12997,7 +13030,12 @@ impl Daemon {
         }
 
         if d.event == "Stop" && d.fully_idle == Some(false) {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(
+                d.session,
+                proto::AgentKind::Antigravity,
+                &d.event,
+                d.cwd.as_deref(),
+            ) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             tracing::debug!(
@@ -13014,7 +13052,12 @@ impl Daemon {
                 .as_deref()
                 .is_some_and(|t| Self::ANTIGRAVITY_BLOCKING_TOOLS.contains(&t));
             if !blocks {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(
+                    d.session,
+                    proto::AgentKind::Antigravity,
+                    &d.event,
+                    d.cwd.as_deref(),
+                ) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -13045,7 +13088,12 @@ impl Daemon {
                     tool_input_fingerprint: d.tool_input_fingerprint.clone(),
                 },
             );
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(
+                d.session,
+                proto::AgentKind::Antigravity,
+                &d.event,
+                d.cwd.as_deref(),
+            ) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             if resumed {
@@ -16662,7 +16710,7 @@ impl Daemon {
                     let pending = self.pending_handback(parent, info.id);
                     let owed = self.inbox_owed(parent, info.id);
                     let capability = self.capability_note_of(info.id);
-                    let hold = self.background_hold_reason(info.id).or_else(|| {
+                    let hold = self.staged_result_hold_reason(info.id).or_else(|| {
                         (owed.owed > 0)
                             .then(|| self.paste_hold_reason(parent))
                             .flatten()
@@ -17288,7 +17336,7 @@ impl Daemon {
         Ok(orchestrate::PaneDetail {
             live_children,
             depth: self.spawn_depth_of(target),
-            turn_end_source: orchestrate::turn_end_source(s.status_kind(), s.acp.is_some()).label(),
+            turn_end_source: s.turn_end_source().label(),
             delegation: self.delegation_of(target).map(|row| {
                 let pending = self.pending_handback(row.parent_session, target);
                 let age = self
@@ -17299,12 +17347,7 @@ impl Daemon {
                 let mut view = orchestrate::DelegationView::from_row(row, pending);
                 view.result_staged = age.is_some();
                 view.result_staged_age_ms = age;
-                view.hold_reason = self
-                    .background_holds
-                    .lock()
-                    .expect("background holds lock")
-                    .get(&target)
-                    .map(|(count, _)| format!("background job running ({count})"));
+                view.hold_reason = self.staged_result_hold_reason(target);
                 view
             }),
             info,
@@ -18877,9 +18920,63 @@ impl Daemon {
         Ok(())
     }
 
+    fn staged_result_hold_reason(&self, child: u32) -> Option<String> {
+        if let Some(reason) = self.background_hold_reason(child) {
+            return Some(reason);
+        }
+        let row = self.delegation_of(child)?;
+        self.db
+            .inbox_pending_result(row.parent_session, child, row.round)
+            .ok()
+            .flatten()?;
+        let session = self.get(child).ok()?;
+        let provider = format!("{:?}", session.status_kind()).to_lowercase();
+        Some(match session.turn_end_source() {
+            orchestrate::TurnEndSource::StopHook => {
+                format!("result staged: waiting for turn end from {provider} hooks")
+            }
+            orchestrate::TurnEndSource::AcpTurn => {
+                "result staged: waiting for turn end from ACP".to_string()
+            }
+            orchestrate::TurnEndSource::QuietSettle => {
+                let evidence = if orchestrate::signals_turn_end(session.status_kind()) {
+                    format!("; no lifecycle event received from {provider} hooks since spawn")
+                } else {
+                    format!("; {provider} has no turn-end hook")
+                };
+                format!("result staged: waiting for quiet settle ({} ms of a still screen with no running descendants){evidence}", orchestrate::DELEGATION_SETTLE_QUIET_MS)
+            }
+        })
+    }
+
+    pub(crate) fn orchestration_wait_timeout_next_action(
+        &self,
+        caller: u32,
+        child: Option<u32>,
+    ) -> String {
+        let children = child.map(|id| vec![id]).unwrap_or_else(|| {
+            self.delegations_of_parent(caller)
+                .into_iter()
+                .map(|row| row.child_session)
+                .collect()
+        });
+        let holds: Vec<_> = children
+            .into_iter()
+            .filter_map(|id| {
+                self.staged_result_hold_reason(id)
+                    .map(|reason| format!("pane {id}: {reason}"))
+            })
+            .collect();
+        if holds.is_empty() {
+            "Call pane_wait again.".to_string()
+        } else {
+            format!("{}. Call pane_wait again.", holds.join("; "))
+        }
+    }
+
     fn turn_end_source_of(&self, child: u32) -> orchestrate::TurnEndSource {
         match self.get(child) {
-            Ok(s) => orchestrate::turn_end_source(s.status_kind(), s.acp.is_some()),
+            Ok(s) => s.turn_end_source(),
             Err(_) => orchestrate::TurnEndSource::QuietSettle,
         }
     }
@@ -19259,7 +19356,7 @@ impl Daemon {
         now: u64,
     ) {
         let child = row.child_session;
-        let source = orchestrate::turn_end_source(s.status_kind(), s.acp.is_some());
+        let source = s.turn_end_source();
         if source != orchestrate::TurnEndSource::QuietSettle {
             return;
         }

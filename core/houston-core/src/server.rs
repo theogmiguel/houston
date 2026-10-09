@@ -4543,7 +4543,6 @@ async fn orch_wait(
     };
     use crate::orchestrate::InboxWaitOutcome;
     let message = outcome.message();
-    let next_action = "Call pane_wait again.";
     match outcome {
         InboxWaitOutcome::Delivered {
             rows,
@@ -4600,22 +4599,26 @@ async fn orch_wait(
             waited_ms,
             status,
             status_source,
-        } => (
-            StatusCode::REQUEST_TIMEOUT,
-            axum::Json(json!({
-                "rows": [],
-                "timed_out": true,
-                "waited_ms": waited_ms,
-                "wait_cap_ms": cap,
-                "requested_timeout_ms": timeout_ms,
-                "provider": provider,
-                "cap_note": cap_note,
-                "status": status,
-                "status_source": status_source,
-                "next_action": next_action,
-            })),
-        )
-            .into_response(),
+        } => {
+            let next_action = daemon
+                .orchestration_wait_timeout_next_action(scope.session_id, body.session);
+            (
+                StatusCode::REQUEST_TIMEOUT,
+                axum::Json(json!({
+                    "rows": [],
+                    "timed_out": true,
+                    "waited_ms": waited_ms,
+                    "wait_cap_ms": cap,
+                    "requested_timeout_ms": timeout_ms,
+                    "provider": provider,
+                    "cap_note": cap_note,
+                    "status": status,
+                    "status_source": status_source,
+                    "next_action": next_action,
+                })),
+            )
+                .into_response()
+        },
         InboxWaitOutcome::Restarting { waited_ms } => (
             StatusCode::REQUEST_TIMEOUT,
             axum::Json(json!({

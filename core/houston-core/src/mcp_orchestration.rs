@@ -531,7 +531,8 @@ impl ToolProvider for OrchestrationTools {
                             status,
                             status_source,
                         } => {
-                            let next_action = "Call pane_wait again.";
+                            let next_action =
+                                daemon.orchestration_wait_timeout_next_action(caller, session);
                             let text = cap_note.as_ref().map_or_else(
                                 || format!("timeout; {next_action}"),
                                 |note| format!("timeout; {next_action} {note}"),

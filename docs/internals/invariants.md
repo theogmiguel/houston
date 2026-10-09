@@ -210,8 +210,9 @@ they are never inferred from terminal text.
    `AgentEvent::TurnEnded`, which `Custom` never fires. Bounded four ways: it runs **only**
    for a child whose
    `TurnEndSource` is `QuietSettle` — which is also what keeps it from delivering a second
-   time for the six providers whose hook already did (every other delegation is released
-   by its CLI's hook or its ACP stream and never reaches here); never while
+   time for providers whose hooks report. Hook capability alone is not evidence: until
+   a lifecycle hook has arrived since spawn, even a hook-capable child uses quiet settle.
+   ACP streams keep their reported turn ends; never while
    `has_running_procs` says a descendant is alive; the no-handback notice **once per
    silence**, never once per poll, latched on the same sample that measures the quiet so
    the child's next byte clears both together; and what it produces is a delegation flush
