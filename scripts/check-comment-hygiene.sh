@@ -16,7 +16,7 @@ else
     'core/*.rs' 'src-tauri/*.rs' 'ui/src/*.ts' 'ui/src/*.tsx' 'ui/src/*.css' \
     'ui/src/*.html' 'scripts/*.sh' 'scripts/*.ps1' \
     '.github/*.yml' \
-    | grep -vE '/generated/|/node_modules/|/ghostty/vendor/')
+    | grep -vE '/generated/|/node_modules/|/ghostty/vendor/|^src-tauri/patches/')
 fi
 
 [ "${#files[@]}" -gt 0 ] || exit 0
