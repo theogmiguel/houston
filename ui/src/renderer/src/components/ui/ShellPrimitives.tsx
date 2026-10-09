@@ -13,7 +13,7 @@ type ShellRole =
   | 'panel-tabs' | 'panel-header-actions' | 'panel-icon-button' | 'panel-add-menu' | 'panel-add-item' | 'panel-add-key'
   | 'panel-launcher' | 'panel-launcher-column' | 'panel-launcher-title' | 'panel-launcher-rows'
   | 'panel-surface' | 'panel-linked-list' | 'panel-linked-row' | 'panel-linked-copy' | 'panel-linked-title'
-  | 'panel-linked-meta' | 'panel-empty' | 'panel-body' | 'panel-overview' | 'pane-branch-detail-separator'
+  | 'panel-linked-meta' | 'panel-empty' | 'panel-body' | 'panel-overview' | 'pane-branch-detail-separator' | 'pane-branch-children'
   | 'task-activity-content' | 'task-description-heading' | 'task-description-edit-button'
   | 'task-description-editor' | 'task-description-empty' | 'task-description-empty-label'
   | 'appearance-hidden-empty'
@@ -73,6 +73,7 @@ const SHELL_CLASS: Record<ShellRole, string> = {
   'panel-body': 'side-panel-body',
   'panel-overview': 'side-panel-overview',
   'pane-branch-detail-separator': 'text-[var(--text-faint)]',
+  'pane-branch-children': 'inline-flex flex-none items-center gap-[2px] border-l border-[var(--border)] pl-[var(--space-1)] text-[var(--ok)]',
   'task-activity-content': 'grid gap-[var(--space-2)] p-[var(--space-3)]',
   'task-description-heading': 'group flex items-center',
   'task-description-edit-button': 'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',

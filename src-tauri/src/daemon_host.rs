@@ -837,6 +837,8 @@ pub fn spawn_detached(
             .try_clone()
             .map_err(|e| format!("cloning log fd: {e}"))?;
         let mut cmd = houston_core::spawn::command(&supervisor);
+        #[cfg(test)]
+        crate::test_home::isolate(&mut cmd, state_dir.parent().expect("test state under HOME"));
         render_overrides.remove_from_child(&mut cmd);
         cmd.arg("--channel-dir")
             .arg(state_dir)
@@ -890,6 +892,8 @@ pub fn spawn_detached(
         use std::os::windows::process::CommandExt;
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         let mut cmd = houston_core::spawn::command(&core);
+        #[cfg(test)]
+        crate::test_home::isolate(&mut cmd, state_dir.parent().expect("test state under HOME"));
         render_overrides.remove_from_child(&mut cmd);
         cmd.args(channel_flag)
             .env(houston_core::paths::CHANNEL_ENV, channel_env)
@@ -1368,8 +1372,8 @@ mod tests {
             return;
         };
         let channel = format!("detachtest-{}", std::process::id());
-        let home = houston_core::home_dir::home_dir().expect("home dir");
-        let state_dir = paths::dir_for(&home, Some(&channel));
+        let home = tempfile::tempdir().expect("throwaway home");
+        let state_dir = paths::dir_for(home.path(), Some(&channel));
         let mut guard = ThrowawayChannel {
             dir: state_dir.clone(),
             connection: None,
@@ -2617,8 +2621,8 @@ mod tests {
             return;
         };
         let channel = format!("starthandoff-{}", std::process::id());
-        let home = houston_core::home_dir::home_dir().expect("home dir");
-        let state_dir = paths::dir_for(&home, Some(&channel));
+        let home = tempfile::tempdir().expect("throwaway home");
+        let state_dir = paths::dir_for(home.path(), Some(&channel));
         let mut guard = ThrowawayChannel {
             dir: state_dir.clone(),
             connection: None,
@@ -2680,8 +2684,8 @@ mod tests {
             return;
         };
         let channel = format!("startfallback-{}", std::process::id());
-        let home = houston_core::home_dir::home_dir().expect("home dir");
-        let state_dir = paths::dir_for(&home, Some(&channel));
+        let home = tempfile::tempdir().expect("throwaway home");
+        let state_dir = paths::dir_for(home.path(), Some(&channel));
         let mut guard = ThrowawayChannel {
             dir: state_dir.clone(),
             connection: None,
@@ -2729,8 +2733,8 @@ mod tests {
             return;
         };
         let channel = format!("startrefusal-{}", std::process::id());
-        let home = houston_core::home_dir::home_dir().expect("home dir");
-        let state_dir = paths::dir_for(&home, Some(&channel));
+        let home = tempfile::tempdir().expect("throwaway home");
+        let state_dir = paths::dir_for(home.path(), Some(&channel));
         let mut guard = ThrowawayChannel {
             dir: state_dir.clone(),
             connection: None,

@@ -197,7 +197,10 @@ pub(crate) fn guard_launcher_exec(exe: &Path, argv_tail: &str) -> String {
 }
 
 fn hook_command(exe: &str, event: &str, sentinel: &str) -> String {
-    guard_launcher_exec(Path::new(exe), &format!("hook {event} {sentinel}"))
+    format!(
+        "if [ -z \"${{TR_SESSION:-}}\" ]; then exit 0; fi; {}",
+        guard_launcher_exec(Path::new(exe), &format!("hook {event} {sentinel}"))
+    )
 }
 
 fn tr_hook_group(exe: &str, event: &str, sentinel: &str) -> serde_json::Value {
@@ -240,7 +243,52 @@ fn group_is_ours(group: &serde_json::Value, sentinel: &str) -> bool {
         .unwrap_or(false)
 }
 
+// A user can add a command to a managed group; remove only our marked commands.
+fn strip_managed_hooks(groups: &mut Vec<serde_json::Value>, sentinel: &str) {
+    groups.retain_mut(|group| {
+        if !group_is_ours(group, sentinel) {
+            return true;
+        }
+        let hooks = group["hooks"].as_array_mut().expect("matched hook array");
+        hooks.retain(|hook| {
+            !hook
+                .get("command")
+                .and_then(|v| v.as_str())
+                .is_some_and(|command| command_has_sentinel(command, sentinel))
+        });
+        !hooks.is_empty()
+    });
+}
+
+pub fn global_settings_path(home: &crate::agent_hooks::ConfigHome) -> PathBuf {
+    std::env::var_os("CLAUDE_CONFIG_DIR")
+        .filter(|value| !value.to_string_lossy().trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.home.join(".claude"))
+        .join("settings.json")
+}
+
+pub fn is_installed(path: &Path, sentinel: &str) -> bool {
+    read_json(path)
+        .ok()
+        .flatten()
+        .and_then(|root| root.get("hooks").cloned())
+        .and_then(|hooks| hooks.as_object().cloned())
+        .is_some_and(|hooks| {
+            hooks
+                .values()
+                .filter_map(|v| v.as_array())
+                .flatten()
+                .any(|group| group_is_ours(group, sentinel))
+        })
+}
+
 pub fn install(settings_path: &Path, exe: &str, sentinel: &str) -> Result<HooksInstall> {
+    if cfg!(windows) {
+        anyhow::bail!(
+            "Claude lifecycle hooks require POSIX sh; installation is unsupported on Windows"
+        );
+    }
     let exe = crate::exe_path::strip_deleted_exe_suffix(Path::new(exe));
     let exe = exe.to_string_lossy();
     let exe = exe.as_ref();
@@ -265,7 +313,7 @@ pub fn install(settings_path: &Path, exe: &str, sentinel: &str) -> Result<HooksI
         let arr = arr
             .as_array_mut()
             .ok_or_else(|| anyhow!("{}: hooks.{event} is not an array", settings_path.display()))?;
-        arr.retain(|g| !group_is_ours(g, sentinel));
+        strip_managed_hooks(arr, sentinel);
         arr.push(tr_hook_group(exe, event, sentinel));
     }
     write_json(settings_path, &root)?;
@@ -284,6 +332,7 @@ pub fn remove(
     let Some(mut root) = read_json(settings_path)? else {
         return Ok(());
     };
+    let original = root.clone();
     let Some(obj) = root.as_object_mut() else {
         return Ok(());
     };
@@ -291,9 +340,11 @@ pub fn remove(
         let events: Vec<String> = hooks.keys().cloned().collect();
         for event in events {
             if let Some(arr) = hooks.get_mut(&event).and_then(|v| v.as_array_mut()) {
-                arr.retain(|g| !group_is_ours(g, sentinel));
-                if arr.is_empty() {
-                    hooks.remove(&event);
+                if arr.iter().any(|group| group_is_ours(group, sentinel)) {
+                    strip_managed_hooks(arr, sentinel);
+                    if arr.is_empty() {
+                        hooks.remove(&event);
+                    }
                 }
             }
         }
@@ -311,6 +362,9 @@ pub fn remove(
             std::fs::remove_file(settings_path)
                 .with_context(|| format!("removing {}", settings_path.display()))?;
         }
+        return Ok(());
+    }
+    if root == original {
         return Ok(());
     }
     write_json(settings_path, &root)
@@ -333,7 +387,7 @@ fn another_channels_launcher(argv0: Option<&Path>, config_dir: Option<&Path>) ->
     }
     Some(format!(
         "launcher {} belongs to another channel than this pane's {} — its own channel's \
-         launcher in this workspace's hooks file covers the event; standing down",
+         launcher in this config's hooks file covers the event; standing down",
         launcher_state_dir.display(),
         config_dir.display()
     ))
@@ -351,7 +405,7 @@ pub fn run_hook_client(args: &[String]) {
     if agent.is_none() && std::env::var("GROK_SESSION_ID").is_ok() {
         eprintln!(
             "hook {event}: GROK_SESSION_ID is set on the Claude path — Grok fired this \
-             workspace's Claude hooks too; the Grok-side drop already covers it"
+             global Claude hooks too; the Grok-side drop already covers it"
         );
         return;
     }
@@ -938,6 +992,16 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_installation_is_explicitly_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let error = install(&path, "helper", "--houston-managed").unwrap_err();
+        assert!(error.to_string().contains("unsupported on Windows"));
+        assert!(!path.exists());
+    }
+
     const EXE: &str = "/opt/houston/houston-core";
     fn rel() -> String {
         sentinel_for(None)
@@ -974,6 +1038,7 @@ mod tests {
         assert_eq!(read_stdin_payload(&mut piped, false), r#"{"cwd":"/tmp"}"#);
     }
 
+    #[cfg(unix)]
     #[test]
     fn install_creates_all_events_and_removal_deletes_a_tr_created_file() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1045,6 +1110,7 @@ mod tests {
             .is_none());
     }
 
+    #[cfg(unix)]
     #[test]
     fn install_is_idempotent() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1064,6 +1130,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn install_strips_the_linux_deleted_exe_suffix() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1083,6 +1150,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_users_own_hooks_survive_install_and_removal() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1154,6 +1222,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn two_channels_coexist_and_do_not_evict_each_other() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1269,6 +1338,7 @@ mod tests {
         let sh = |command: &str| {
             std::process::Command::new("/bin/sh")
                 .args(["-c", command])
+                .env("TR_SESSION", "1")
                 .output()
                 .unwrap()
         };

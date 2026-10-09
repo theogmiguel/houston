@@ -4686,41 +4686,12 @@ impl Daemon {
         ))
     }
 
-    pub fn install_workspace_hooks(&self, path: &str) {
-        if !Path::new(path).is_dir() || !self.hook_consent(proto::AgentKind::Claude) {
-            return;
-        }
-        let Some((exe, sentinel)) = self.hook_install_context() else {
-            return;
-        };
-        self.install_workspace_hooks_with(path, &exe, &sentinel);
-    }
-
-    fn install_workspace_hooks_with(&self, path: &str, exe: &str, sentinel: &str) {
-        let dir = Path::new(path);
-        if !dir.is_dir() {
-            return;
-        }
-        if !self.hook_consent(proto::AgentKind::Claude) {
-            return;
-        }
-        let settings = crate::claude_hooks::settings_path(dir);
-        match crate::claude_hooks::install(&settings, exe, sentinel) {
-            Ok(install) => {
-                if let Err(e) = self.db.record_workspace_hooks(
-                    path,
-                    install.created_file,
-                    install.created_hooks,
-                ) {
-                    tracing::warn!("recording hook ownership for {path}: {e}");
-                }
-            }
-            Err(e) => tracing::warn!("installing Claude hooks in {path}: {e}"),
-        }
+    pub fn install_workspace_hooks(&self, _path: &str) {
+        self.install_all_workspace_hooks();
     }
 
     pub fn uninstall_workspace_hooks(&self, path: &str) {
-        let ownership = match self.db.workspace_hooks_ownership(path) {
+        let _ownership = match self.db.workspace_hooks_ownership(path) {
             Ok(Some(o)) => o,
             Ok(None) => return,
             Err(e) => {
@@ -4730,9 +4701,9 @@ impl Daemon {
         };
         let settings = crate::claude_hooks::settings_path(Path::new(path));
         let sentinel = crate::claude_hooks::sentinel_for(self.channel.as_deref());
-        if let Err(e) = crate::claude_hooks::remove(&settings, ownership.0, ownership.1, &sentinel)
-        {
+        if let Err(e) = crate::claude_hooks::remove(&settings, false, false, &sentinel) {
             tracing::warn!("removing Claude hooks in {path}: {e}");
+            return;
         }
         if let Err(e) = self.db.delete_workspace_hooks(path) {
             tracing::warn!("clearing hook ownership for {path}: {e}");
@@ -5126,6 +5097,9 @@ impl Daemon {
     ) -> Result<proto::ServerMsg> {
         let slug = Self::agent_profile_slug(agent)?;
         self.db.upsert_agent_profile(id, slug, name, config_dir)?;
+        if agent == proto::AgentKind::Claude && self.hook_consent(agent) {
+            self.install_all_workspace_hooks();
+        }
         Ok(self.agent_profile_state())
     }
 
@@ -5135,6 +5109,9 @@ impl Daemon {
             .agent_profile_agent(id)?
             .ok_or_else(|| anyhow!("no agent profile with id {id}"))?;
         self.db.delete_agent_profile(id, &slug)?;
+        if slug == "claude" && self.hook_consent(proto::AgentKind::Claude) {
+            self.install_all_workspace_hooks();
+        }
         Ok(self.agent_profile_state())
     }
 
@@ -6511,16 +6488,95 @@ impl Daemon {
         crate::claude_hooks::sentinel_for(self.channel.as_deref())
     }
 
-    fn claude_hooks_installed(&self) -> bool {
-        match self.db.list_workspaces() {
-            Ok(ws) => ws
-                .iter()
-                .any(|w| matches!(self.db.workspace_hooks_ownership(&w.path), Ok(Some(_)))),
-            Err(e) => {
-                tracing::warn!("listing workspaces for hook state: {e}");
+    fn claude_hook_paths(&self) -> Result<(Vec<std::path::PathBuf>, Option<String>)> {
+        let home = self.hook_config_home()?;
+        let mut paths = vec![crate::claude_hooks::global_settings_path(&home)];
+        for profile in self.db.list_agent_profiles("claude")? {
+            let dir = crate::agent_accounts::expand_tilde(&profile.config_dir, &home.home);
+            paths.push(dir.join("settings.json"));
+        }
+        let mut errors = Vec::new();
+        paths.retain(|path| {
+            if path.is_absolute() {
+                true
+            } else {
+                errors.push(format!(
+                    "skipping Claude hooks at {path:?}: expected an absolute config directory after ~/$HOME expansion"
+                ));
                 false
             }
+        });
+        paths.sort();
+        paths.dedup();
+        Ok((paths, (!errors.is_empty()).then(|| errors.join("; "))))
+    }
+
+    fn apply_claude_hooks(&self, enabled: bool) -> Result<()> {
+        let sentinel = self.hook_sentinel();
+        let context = if enabled {
+            Some(
+                self.hook_install_context()
+                    .ok_or_else(|| anyhow!("Claude hook launcher unavailable"))?,
+            )
+        } else {
+            None
+        };
+        let (paths, error) = self.claude_hook_paths()?;
+        if let Some(error) = error {
+            tracing::warn!("{error}");
         }
+        let key = "agent_hooks.claude.paths";
+        let mut tracked: Vec<std::path::PathBuf> = self
+            .db
+            .get_setting(key)?
+            .map(|raw| serde_json::from_str(&raw))
+            .transpose()?
+            .unwrap_or_default();
+        // Old relative records cannot identify the original install directory safely.
+        tracked.retain(|path| {
+            if path.is_absolute() {
+                true
+            } else {
+                tracing::warn!(
+                    "skipping Claude hook cleanup at {path:?}: expected an absolute settings path"
+                );
+                false
+            }
+        });
+        for path in &paths {
+            if let Some((exe, _)) = &context {
+                crate::claude_hooks::install(path, exe, &sentinel)?;
+                if !tracked.contains(path) {
+                    tracked.push(path.clone());
+                    self.db
+                        .set_setting(key, &serde_json::to_string(&tracked)?)?;
+                }
+            } else {
+                crate::claude_hooks::remove(path, false, false, &sentinel)?;
+            }
+        }
+        // Remember old config paths so profile edits and env changes remain reversible.
+        for path in &tracked {
+            if !enabled || !paths.contains(path) {
+                crate::claude_hooks::remove(path, false, false, &sentinel)?;
+            }
+        }
+        if enabled {
+            self.db.set_setting(key, &serde_json::to_string(&paths)?)?;
+        } else {
+            self.db.delete_setting(key)?;
+        }
+        // Keep ownership records on failure so a later install can retry migration.
+        for path in self.db.workspace_hook_paths()? {
+            let settings = crate::claude_hooks::settings_path(Path::new(&path));
+            if settings.is_absolute() {
+                crate::claude_hooks::remove(&settings, false, false, &sentinel)?;
+            } else {
+                tracing::warn!("skipping Claude workspace hook cleanup at {path:?}: expected an absolute workspace path");
+            }
+            self.db.delete_workspace_hooks(&path)?;
+        }
+        Ok(())
     }
 
     pub fn agent_hooks_state(&self) -> Vec<proto::AgentHookState> {
@@ -6547,13 +6603,30 @@ impl Daemon {
         let sentinel = self.hook_sentinel();
         let mut rows = Vec::with_capacity(1 + crate::agent_hooks::PROVIDERS.len());
         let claude_cli = self.cli_presence(proto::AgentKind::Claude);
+        let (claude_path, installed, mut error) = match &home {
+            Ok(home) => {
+                let path = crate::claude_hooks::global_settings_path(home);
+                let installed = crate::claude_hooks::is_installed(&path, &sentinel);
+                (path.display().to_string(), installed, None)
+            }
+            Err(error) => (String::new(), false, Some(format!("{error:#}"))),
+        };
+        if error.is_none() {
+            error = match self.claude_hook_paths() {
+                Ok((_, error)) => error,
+                Err(error) => Some(format!("{error:#}")),
+            };
+        }
+        if let Some((proto::AgentKind::Claude, message)) = &failed {
+            error = Some(message.clone());
+        }
         rows.push(proto::AgentHookState {
             provider: proto::AgentKind::Claude,
-            path: ".claude/settings.local.json".to_string(),
-            scope: proto::AgentHookScope::Workspace,
+            path: claude_path,
+            scope: proto::AgentHookScope::Global,
             enabled: self.hook_consent(proto::AgentKind::Claude),
-            installed: self.claude_hooks_installed(),
-            error: None,
+            installed,
+            error,
             present: claude_cli.present,
             version: claude_cli.version,
             trust: None,
@@ -6626,15 +6699,7 @@ impl Daemon {
 
     fn apply_hook_consent(&self, provider: proto::AgentKind, enabled: bool) -> Result<()> {
         if provider == proto::AgentKind::Claude {
-            if enabled {
-                self.set_hook_consent(provider, true)?;
-                self.install_all_workspace_hooks();
-            } else {
-                for w in self.db.list_workspaces()? {
-                    self.uninstall_workspace_hooks(&w.path);
-                }
-            }
-            return Ok(());
+            return self.apply_claude_hooks(enabled);
         }
         let home = self.hook_config_home()?;
         let sentinel = self.hook_sentinel();
@@ -6648,6 +6713,7 @@ impl Daemon {
     }
 
     pub fn install_consented_agent_hooks(&self) {
+        self.install_all_workspace_hooks();
         let Ok(home) = self.hook_config_home() else {
             return;
         };
@@ -6668,19 +6734,8 @@ impl Daemon {
     }
 
     pub fn install_all_workspace_hooks(&self) {
-        if !self.hook_consent(proto::AgentKind::Claude) {
-            return;
-        }
-        let Some((exe, sentinel)) = self.hook_install_context() else {
-            return;
-        };
-        match self.db.list_workspaces() {
-            Ok(ws) => {
-                for w in ws {
-                    self.install_workspace_hooks_with(&w.path, &exe, &sentinel);
-                }
-            }
-            Err(e) => tracing::warn!("agent-status hooks: listing workspaces: {e}"),
+        if let Err(error) = self.apply_claude_hooks(self.hook_consent(proto::AgentKind::Claude)) {
+            tracing::warn!("refreshing global Claude hooks: {error:#}");
         }
     }
 
@@ -21098,6 +21153,9 @@ mod agent_profile_env_tests {
             db_path: state.path().join("t.db"),
         })
         .unwrap();
+        daemon
+            .set_hook_consent(proto::AgentKind::Claude, false)
+            .unwrap();
         (daemon, state)
     }
 

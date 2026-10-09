@@ -69,7 +69,18 @@ Claude Code and Codex status hooks are on by default. An explicit off setting st
 across restarts. Turning the switch on writes into that CLI's own config, and turning
 it off removes exactly what Houston added:
 
-- **Claude Code** — adds managed lifecycle hook entries to each workspace Houston opens.
+- **Claude Code** — adds managed lifecycle hook entries to `~/.claude/settings.json`,
+  or `settings.json` in `CLAUDE_CONFIG_DIR` and Houston account profile directories.
+  Hook installation requires an absolute config directory. Houston expands `~` and
+  `$HOME` in account profile paths; directories that remain relative are skipped and
+  reported in Agent status. Use an absolute profile path for status reporting.
+  Claude started from any directory inside a Houston pane reports status. The commands
+  exit silently when `TR_SESSION` is empty, so they do nothing outside Houston.
+  Your other settings and hooks are preserved. Houston removes its old workspace entries
+  from `.claude/settings.local.json` during migration to avoid duplicate events.
+  Turn Claude off in Settings → Agent status → Claude to remove its global entries;
+  the setting stays off across restarts. Claude status hook installation is unsupported
+  on Windows because these commands require POSIX `sh`.
 - **Codex** — writes `~/.codex/hooks.json`, one entry per lifecycle event. An existing
   `notify` line in your `config.toml` is parked (commented out) rather than overwritten,
   and restored when you turn the hook off. Houston also writes a reversible managed

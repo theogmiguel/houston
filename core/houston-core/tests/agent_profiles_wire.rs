@@ -4,6 +4,20 @@ use houston_protocol as proto;
 
 use common::start_daemon_with_handle;
 
+fn isolated(name: &str) -> bool {
+    if std::env::var_os("HOUSTON_PROFILE_FIXTURE").is_some() {
+        return false;
+    }
+    let home = tempfile::tempdir().unwrap();
+    let result = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
+        .env("HOUSTON_PROFILE_FIXTURE", "1")
+        .args(["--exact", name, "--nocapture"])
+        .status()
+        .unwrap();
+    assert!(result.success(), "isolated profile fixture {name} failed");
+    true
+}
+
 #[tokio::test]
 async fn a_fresh_channel_has_no_profiles_and_no_active_override() {
     let (_addr, _state, daemon) = start_daemon_with_handle().await;
@@ -23,9 +37,18 @@ async fn a_fresh_channel_has_no_profiles_and_no_active_override() {
 
 #[tokio::test]
 async fn creating_a_profile_does_not_activate_it() {
+    if isolated("creating_a_profile_does_not_activate_it") {
+        return;
+    }
     let (_addr, _state, daemon) = start_daemon_with_handle().await;
+    let directory = _state.path().join("claude-profile");
     let proto::ServerMsg::AgentProfileState { profiles, active } = daemon
-        .agent_profile_upsert(None, proto::AgentKind::Claude, "work", "/tmp/claude-work")
+        .agent_profile_upsert(
+            None,
+            proto::AgentKind::Claude,
+            "work",
+            directory.to_str().unwrap(),
+        )
         .expect("upsert")
     else {
         panic!("agent_profile_upsert must answer with AgentProfileState");
@@ -33,7 +56,7 @@ async fn creating_a_profile_does_not_activate_it() {
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].agent, proto::AgentKind::Claude);
     assert_eq!(profiles[0].name, "work");
-    assert_eq!(profiles[0].config_dir, "/tmp/claude-work");
+    assert_eq!(profiles[0].config_dir, directory.to_str().unwrap());
     assert!(
         active.is_empty(),
         "creating a profile is not the same as making it active: {active:?}"
@@ -78,9 +101,18 @@ async fn setting_active_and_reading_it_back_round_trips() {
 
 #[tokio::test]
 async fn deleting_the_active_profile_clears_the_override_too() {
+    if isolated("deleting_the_active_profile_clears_the_override_too") {
+        return;
+    }
     let (_addr, _state, daemon) = start_daemon_with_handle().await;
+    let directory = _state.path().join("claude-profile");
     let created = daemon
-        .agent_profile_upsert(None, proto::AgentKind::Claude, "work", "/tmp/claude-work")
+        .agent_profile_upsert(
+            None,
+            proto::AgentKind::Claude,
+            "work",
+            directory.to_str().unwrap(),
+        )
         .expect("upsert");
     let proto::ServerMsg::AgentProfileState { profiles, .. } = created else {
         unreachable!()

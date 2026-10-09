@@ -305,6 +305,104 @@ async fn pane_spawn_with_a_worktree_starts_the_child_inside_a_recorded_tree() {
 }
 
 #[tokio::test]
+async fn handoff_with_a_worktree_starts_an_independent_pane_in_a_recorded_checkout() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("handoff-tree", true).await;
+    let caller = r.pane();
+    let token = r.token_for(caller.id);
+    let mut ws = connect_and_hello(r.addr, TOKEN).await;
+    assert!(matches!(
+        next_control(&mut ws).await,
+        proto::ServerMsg::HelloOk { .. }
+    ));
+    for (slug, branch) in [("default", None), ("explicit", Some("feat/handoff"))] {
+        let mut ask = serde_json::json!({
+            "kind": "grok", "prompt": "continue editing this branch",
+            "handoff": true, "worktree": slug,
+            "state_doc": {"text": "HANDOFF-BRANCH-STATE"},
+        });
+        if let Some(branch) = branch {
+            ask["branch"] = serde_json::json!(branch);
+        }
+        let handed = if branch.is_some() {
+            let (status, body) =
+                http_json(r.addr, "POST", "/orchestrate/spawn", &token, Some(ask)).await;
+            assert_eq!(status, 200, "{body}");
+            assert_eq!(body["handoff"], true, "{body}");
+            body["session_id"].as_u64().unwrap() as u32
+        } else {
+            spawned_session(&r.spawn(&token, ask).await)
+        };
+        let tree = r.worktrees_dir().join(slug).canonicalize().unwrap();
+        let root = tree.display().to_string();
+        let branch = branch
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("houston/{slug}"));
+        let out = await_output(&r.daemon, handed, "FIXTURE-READY").await;
+        assert!(out.contains(&format!("CWD:{root}")), "{out}");
+        assert!(out.contains("HANDOFF-BRANCH-STATE"), "{out}");
+        assert_eq!(git(&tree, &["branch", "--show-current"]).trim(), branch);
+        let created = loop {
+            if let proto::ServerMsg::SessionCreated { info } = next_control(&mut ws).await {
+                if info.id == handed {
+                    break info;
+                }
+            }
+        };
+        assert_eq!(created.spawned_by, None);
+        assert_eq!(created.project_dir, r.ws_dir.display().to_string());
+        assert_eq!(created.cwd, root);
+        assert_eq!(created.checkout_root.as_deref(), Some(root.as_str()));
+        let checkout = created.checkout.unwrap();
+        assert_eq!(checkout.root, root);
+        assert_eq!(checkout.branch.as_deref(), Some(branch.as_str()));
+        assert_eq!(
+            checkout.kind,
+            proto::CheckoutKind::Worktree { slug: slug.into() }
+        );
+        let metadata = created.worktree.unwrap();
+        assert_eq!(metadata.path, root);
+        assert_eq!(metadata.branch, branch);
+        let listed = r
+            .daemon
+            .list()
+            .into_iter()
+            .find(|s| s.id == handed)
+            .unwrap();
+        assert_eq!(listed.spawned_by, None);
+        assert_eq!(listed.checkout_root.as_deref(), Some(root.as_str()));
+        assert_eq!(listed.worktree.unwrap().branch, branch);
+        assert!(r.rows().contains(&Row {
+            path: root,
+            branch,
+            provenance: "pane_spawn".into(),
+            created_by_session: Some(caller.id),
+        }));
+    }
+    assert_eq!(r.rows().len(), 2);
+    let delegations: u32 = rusqlite::Connection::open(r.db_path())
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM delegations", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(delegations, 0, "handoffs create no delegation rows");
+    assert!(r
+        .daemon
+        .list()
+        .iter()
+        .all(|pane| pane.spawned_by != Some(caller.id)));
+    r.daemon.session_close_checked(caller.id, false).unwrap();
+    assert_eq!(
+        r.daemon.list().len(),
+        2,
+        "closing the caller preserves both handoffs"
+    );
+    for pane in r.daemon.list() {
+        assert_eq!(pane.state, proto::SessionState::Running);
+        r.daemon.kill(pane.id).unwrap();
+    }
+}
+
+#[tokio::test]
 async fn pane_spawn_uses_the_branch_it_was_given() {
     let _guard = SERIAL.lock().await;
     let r = rig("spawn-branch", true).await;

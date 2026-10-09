@@ -164,12 +164,12 @@ last open episode closes.
 
 ## Hook installation
 
-Claude Code installs **per workspace**, into `<workspace>/.claude/settings.local.json`
-(`claude_hooks.rs`). The other five providers write **per-user global** configs
-(`agent_hooks.rs`):
+All six providers install **per-user global** configs. Claude uses `claude_hooks.rs`;
+the other providers use `agent_hooks.rs`:
 
 | Provider | Config |
 |---|---|
+| Claude | `~/.claude/settings.json`, overridden by `CLAUDE_CONFIG_DIR`; registered Houston account profiles also receive `settings.json` entries |
 | Codex | `~/.codex/hooks.json`, plus `~/.codex/config.toml` (parks a leftover `notify` line from before this file existed; never rewritten otherwise) |
 | Cursor | `~/.cursor/hooks.json` |
 | OpenCode | `<config dir>/opencode/plugins/houston-notify.js` |
@@ -179,16 +179,22 @@ Claude Code installs **per workspace**, into `<workspace>/.claude/settings.local
 Every install is reversible through a managed-marker scheme: a trailing sentinel token
 `--houston-managed[=<channel>]` inside the command string, matched **per whitespace
 token, never as a substring** — `release`'s sentinel is a prefix of `dev`'s, and substring
-matching would let one channel evict the other's group. Ownership facts (did Houston create the
-file, did Houston create the top-level `hooks` object) are recorded in the `workspace_hooks`
-table so uninstall removes exactly Houston's residue and nothing else.
+matching would let one channel evict the other's group. Claude removes individual marked
+commands, preserving user commands even within a managed group. The `workspace_hooks`
+records identify previously written workspace settings for migration. Installation removes
+this channel's marked commands from those files and clears each ownership record only after
+successful removal. The workspace file and unrelated content remain intact. Consent off
+removes marked commands from the user config and registered account profile configs and
+persists across boot refreshes. Previously written user and profile config paths are
+recorded in daemon settings so profile edits, deletions and config-directory changes
+remove obsolete marked entries too. Houston never rewrites `~/.claude.json`.
 
 The registered command never names the binary. It names a channel-stable launcher at
 `<state dir>/bin/claude-hook`, which the daemon repoints at its own current binary on every
-boot — an app upgrade moves the real binary, and workspace hook entries are not rewritten
-per launch. `hook_command()` builds
-`if [ -x '<launcher>' ]; then exec '<launcher>' hook <event> <sentinel>; fi`; the other
-providers get the same shape with `--agent <provider>` added and the same guard — except
+boot — an app upgrade moves the real binary. Claude's `hook_command()` builds
+`if [ -z "${TR_SESSION:-}" ]; then exit 0; fi; if [ -x '<launcher>' ]; then exec '<launcher>' hook <event> <sentinel>; fi`.
+The first guard makes the global entry a silent no-op outside Houston before the helper runs.
+The other providers guard executable availability with `--agent <provider>` added — except
 Codex's Windows arm, which builds its own argv directly and has no shell to guard through.
 
 One managed group per channel also means one event runs both channels' helpers, and each
@@ -196,21 +202,21 @@ helper resolves its drop root from the pane's own `HOUSTON_CHANNEL`, not from wh
 installed — so both would drop into the one daemon that owns the pane and every hook would
 arrive twice (a `UserPromptSubmit` that opens a request nobody made, a `Stop` that ends a
 turn twice). The helper therefore reads `argv[0]`, the launcher path the hooks file named,
-and when that launcher sits under another channel's state dir it exits 0 in silence: the
+and when that launcher sits under another channel's state dir it exits 0 without writing a drop: the
 pane's own channel's launcher in the same file covers the event. A helper run without a
 launcher (a test, a shell) is never stood down.
 
-The guard is there because a workspace carries one managed group **per channel**, and a
+The executable guard is there because the config carries one managed group **per channel**. A
 channel's group outlives that channel's binary: the dev launcher points into the repo's
 `target/debug`, which every `cargo build` unlinks and re-creates, and a frozen install can
 be removed outright. In that window the launcher is a dangling symlink, the shell answers
 `not found`, and Claude shows `UserPromptSubmit hook error` in every pane — including the
 panes of the other, perfectly healthy channel. Nothing is owed in that window (the hook
 client is a pure file writer; an event nobody is running to receive has nowhere to go), so
-exiting 0 in silence is the honest answer. It is written for POSIX `sh` on both platforms,
-which the single-quoted, forward-slashed command spelling already assumed. Note also that
-`;` is a token separator in `claude_hooks::tokens`, or the trailing `; fi` would ride into
-the sentinel and no channel would recognise its own group.
+exiting 0 in silence is the honest answer. Claude installation explicitly refuses Windows:
+its commands require POSIX `sh`, and Houston has no equivalent Windows Claude hook command.
+The `;` character is a token separator in `claude_hooks::tokens`, or the trailing `; fi`
+would ride into the sentinel and no channel would recognise its own group.
 
 `tr_hook_group()` wraps the command as `{"type":"command","command":…,"async":…,"timeout":5}`
 — `async` is false for `UserPromptSubmit`, `Stop` and `StopFailure`, true for everything
