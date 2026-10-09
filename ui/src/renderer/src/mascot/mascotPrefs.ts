@@ -51,9 +51,14 @@ export function setMascotPrefs(next: Partial<MascotPrefs>): void {
 }
 export function setMascotPrefsForTests(next: MascotPrefs): void { prefs = next; listeners.forEach((cb) => cb()) }
 export const useMascotPrefs = (): MascotPrefs => useSyncExternalStore(subscribe, getMascotPrefs, () => DEFAULT_PREFS)
-export type MascotAction = 'pet' | 'hi' | 'disco' | 'game' | 'intro'
+export type MascotAction = 'pet' | 'hi' | 'disco' | 'game' | 'intro' | 'dock'
 let pendingAction: MascotAction | undefined
 export function consumeMascotAction(): MascotAction | undefined { const action=pendingAction;pendingAction=undefined;return action }
 export function requestMascotAction(action: MascotAction): void {
   if (prefs.enabled) {pendingAction=action;window.dispatchEvent(new CustomEvent('houston-mascot-action', { detail: action }))}
+}
+
+export function mascotIntroSeen(): boolean {
+  try { return JSON.parse(localStorage.getItem('tr-mascot-ledger') ?? 'null')?.introSeen === true }
+  catch { return false }
 }

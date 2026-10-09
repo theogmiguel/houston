@@ -1,3 +1,4 @@
+import { RAIL_POSITION, getMascotPosition, setMascotPosition } from '../mascot/mascotPosition'
 import { DEFAULT_PREFS, setMascotPrefsForTests } from '../mascot/mascotPrefs'
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
@@ -10,7 +11,7 @@ import {
 } from './commandRegistry'
 import type { Workspace } from '../houston/generated/Workspace'
 import { SETTINGS_SECTIONS } from '../settingsSections'
-import { isSettingsOpen, setSettingsNavForTests } from '../settingsNav'
+import { isSettingsOpen, settingsSectionLabel, setSettingsNavForTests } from '../settingsNav'
 import { consumeSettingsRowJump } from '../settingsRowJump'
 import { gridNext, gridPrev, wsLast, wsNext, wsPrev } from '../keymap'
 
@@ -216,6 +217,26 @@ describe('commandRegistry — buildCommands', () => {
     const commands = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] })
     const appearance = commands.find((c) => c.id === 'go-to.settings.appearance')
     expect(appearance?.enabled).toBe(true)
+  })
+
+  it('opens Mascot from its section command and mascot row commands', () => {
+    setSettingsNavForTests({ open: false, section: 'appearance' })
+    const commands = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] })
+    const section = commands.find(command => command.id === 'go-to.settings.mascot')
+    expect(section?.enabled).toBe(true)
+    section?.run()
+    expect(isSettingsOpen()).toBe(true)
+    expect(settingsSectionLabel()).toBe('Mascot')
+
+    setSettingsNavForTests({ open: false, section: 'appearance' })
+    const row = commands.find(command => command.id === 'go-to.settings-row.mascot.Meet the mascot again')
+    expect(row?.title).toBe('Mascot › Meet the mascot again')
+    row?.run()
+    expect(isSettingsOpen()).toBe(true)
+    expect(settingsSectionLabel()).toBe('Mascot')
+    expect(consumeSettingsRowJump('mascot')).toBe('Meet the mascot again')
+    expect(commands.some(command => command.id === 'go-to.settings-row.appearance.Mascot')).toBe(false)
+    setSettingsNavForTests({ open: false, section: 'appearance' })
   })
 
   it('D2: a "Section › Row" entry opens Settings on that section and stages a row jump', () => {
@@ -495,4 +516,23 @@ it('offers mascot commands only while the companion is enabled', () => {
   expect(buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: WORKSPACES }).some(c => c.group === 'Mascot')).toBe(false)
   setMascotPrefsForTests({ ...DEFAULT_PREFS })
   expect(buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: WORKSPACES }).filter(c => c.group === 'Mascot').map(c => c.title)).toEqual(['Pet Houston', 'Say hi', 'Disco mode', 'Play Ring Invaders', 'Replay mascot intro'])
+})
+
+it('offers Return mascot to rail only while floating and enabled, and reverses the position', () => {
+  const actions = makeActions({ mascotAction: vi.fn() })
+  const input = { actions, hasWorkspace: true, workspaces: WORKSPACES }
+  try {
+    setMascotPrefsForTests({ ...DEFAULT_PREFS })
+    setMascotPosition(RAIL_POSITION)
+    expect(buildCommands(input).some(c => c.id === 'mascot.dock')).toBe(false)
+    setMascotPosition({ kind: 'floating', x: .5, y: .5 })
+    const command = buildCommands(input).find(c => c.id === 'mascot.dock')!
+    expect(command.title).toBe('Return mascot to rail')
+    command.run()
+    expect(getMascotPosition()).toEqual(RAIL_POSITION)
+    expect(actions.mascotAction).toHaveBeenCalledWith('dock')
+    setMascotPosition({ kind: 'floating', x: .5, y: .5 })
+    setMascotPrefsForTests({ ...DEFAULT_PREFS, enabled: false })
+    expect(buildCommands(input).some(c => c.id === 'mascot.dock')).toBe(false)
+  } finally { setMascotPosition(RAIL_POSITION); setMascotPrefsForTests({ ...DEFAULT_PREFS }) }
 })

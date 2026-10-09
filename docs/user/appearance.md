@@ -1,7 +1,8 @@
-# Appearance and terminal settings
+# Appearance, mascot and terminal settings
 
-Two settings sections cover how Houston looks: **Settings ▸ Appearance** for the app
-chrome and window, and **Settings ▸ Terminal** for how panes render and behave.
+Three settings sections cover presentation: **Settings ▸ Appearance** for the app
+chrome and window, **Settings → Mascot** for the companion, and **Settings ▸ Terminal**
+for how panes render and behave.
 
 ## Settings ▸ Appearance
 
@@ -41,6 +42,42 @@ the sidebar.
 **App zoom** — scales the whole app: 90%, 100%, 110%, or 125%. Ctrl+/Ctrl− do the same
 thing from the keyboard.
 
+## Settings → Mascot
+
+Settings → Mascot controls Houston's companion in the rail or floating
+inside the Houston window. It is on by default and keeps you company; it never
+reports agent status or reads terminal text or hooks. Turn Mascot off to remove its artwork and interactions.
+
+Choose Brand art or Pixel, Classic, Aurora, Sunset or Mono colours, and a wardrobe
+hat. Colours also apply to the rail brand mark and every in-app mascot; the desktop
+and tray icons keep their original colours. The companion moves into empty states,
+About and other mascot surfaces, returning to its previous position when they close.
+Only one companion appears at a time. Celebrate holidays uses the local calendar; holiday
+outfits take precedence.
+The install anniversary uses the first day this renderer sees the companion.
+Sounds and Break reminders start off. Nap when I'm away starts on: after two minutes
+without input Houston plays, and after five minutes it sleeps. Break reminders suggest
+a stretch after ninety minutes of continuous input, during a quiet moment.
+
+Click to say hello, rub the mascot to pet it, or double-click to flip. Drag Houston
+anywhere inside the window and release it to leave it floating. Its usual
+moods, outfits, speech and idle activities continue there. During a drag, the rail
+shows a docking target; drop Houston onto that slot to return it with a boing.
+Position in Settings → Mascot shows Rail or Floating and offers Return
+to rail. While floating, the command palette also offers Return mascot to rail.
+Position is remembered relative to the window and kept on screen when the window
+resizes. Drops over a native browser pane move to the nearest available position
+outside it; if none fits, Houston returns to the rail. A floating companion remains
+visible when the rail is collapsed. It cannot leave the Houston window.
+
+Ten clicks within four seconds open Ring Invaders. The command palette
+also offers Pet Houston, Say hi, Disco mode, Play Ring Invaders and Replay mascot intro.
+Meet the mascot again replays the introduction. Motion pauses when hidden or unfocused
+unless Animate when Houston is in the background is enabled. Reduced motion keeps
+static poses and disables particles, the drag lift animation and all mascot flights.
+All companion preferences and greeting history stay in renderer-local storage;
+nothing is transmitted.
+
 ## Settings ▸ Terminal
 
 **Type**
@@ -64,24 +101,3 @@ thing from the keyboard.
 | Copy the text, not the box | Strips TUI box-drawing borders when copying | on |
 | Panes per stack | How many tabs one grid cell may hold; lowering it closes nothing already open | 4 (range 2–8) |
 | Idle quiet window | How long a session must be silent before Houston calls it idle | 400ms (range 100–30,000ms) |
-
-## Mascot
-
-Settings → Appearance → Mascot controls Houston's companion above the rail footer.
-It is on by default and keeps you company; it never reports agent status or reads
-terminal text or hooks. Turn Mascot off to remove its artwork and interactions.
-
-Choose Brand art or Pixel, Classic, Aurora, Sunset or Mono colours, and a wardrobe
-hat. Celebrate holidays uses the local calendar; holiday outfits take precedence.
-The install anniversary uses the first day this renderer sees the companion.
-Sounds and Break reminders start off. Nap when I'm away starts on: after two minutes
-without input Houston plays, and after five minutes it sleeps. Break reminders suggest
-a stretch after ninety minutes of continuous input, during a quiet moment.
-
-Click to say hello, rub the mascot to pet it, drag and release it, or double-click
-to flip. Ten clicks within four seconds open Ring Invaders. The command palette
-also offers Pet Houston, Say hi, Disco mode, Play Ring Invaders and Replay mascot intro.
-Meet the mascot again replays the introduction. Motion pauses when hidden or unfocused
-unless Animate when Houston is in the background is enabled. Reduced motion keeps
-static poses and disables particles and the introduction flight. All companion
-preferences and greeting history stay in renderer-local storage; nothing is transmitted.

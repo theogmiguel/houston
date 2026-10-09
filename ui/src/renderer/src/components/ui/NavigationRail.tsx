@@ -1,3 +1,5 @@
+import { useMascotPrefs } from '../../mascot/mascotPrefs'
+import { MASCOT_FILTERS } from '../../mascot/mascotColors'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 import type { IconComponent } from '../icons'
 import { IconSearch } from '../icons'
@@ -21,7 +23,8 @@ export function NavigationRail({ children }: { children: ReactNode }): React.JSX
 
 /** Without a `logo`, `children` render bare at the leading edge (e.g. a lone sidebar toggle). */
 export function NavigationRailHeader({ logo, children, action, ...props }: HTMLAttributes<HTMLDivElement> & { logo?: { src: string; srcSet: string }; children?: ReactNode; action?: ReactNode }): React.JSX.Element {
-  return <div {...props} className="h-[var(--h-railhead)] flex-none flex items-center gap-[var(--space-3)] px-[var(--space-3)] [-webkit-app-region:drag] select-none">{logo ? <><img data-testid="brand-mark" className="w-[var(--sz-brand-mark)] h-[var(--sz-brand-mark)] flex-none [-webkit-app-region:no-drag]" src={logo.src} srcSet={logo.srcSet} alt="" /><span className="min-w-0 font-semibold [font-size:var(--tr-text-ui-size)] tracking-[var(--tr-text-brand-tracking)] whitespace-nowrap overflow-hidden text-ellipsis [-webkit-app-region:no-drag]">{children}</span></> : children}{action && <div className="ml-auto [-webkit-app-region:no-drag]">{action}</div>}</div>
+  const prefs = useMascotPrefs()
+  return <div {...props} className="h-[var(--h-railhead)] flex-none flex items-center gap-[var(--space-3)] px-[var(--space-3)] [-webkit-app-region:drag] select-none">{logo ? <><img style={{ filter: MASCOT_FILTERS[prefs.colors] }} data-testid="brand-mark" className="w-[var(--sz-brand-mark)] h-[var(--sz-brand-mark)] flex-none [-webkit-app-region:no-drag]" src={logo.src} srcSet={logo.srcSet} alt="" /><span className="min-w-0 font-semibold [font-size:var(--tr-text-ui-size)] tracking-[var(--tr-text-brand-tracking)] whitespace-nowrap overflow-hidden text-ellipsis [-webkit-app-region:no-drag]">{children}</span></> : children}{action && <div className="ml-auto [-webkit-app-region:no-drag]">{action}</div>}</div>
 }
 
 export function NavigationRailSection({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {

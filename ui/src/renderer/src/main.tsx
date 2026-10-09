@@ -1,3 +1,4 @@
+import { MascotAppRoot } from './mascot/MascotAppRoot'
 import { MascotSurfaceMount } from './mascot/MascotMount'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
@@ -99,7 +100,7 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     ) : (
       <RootBoundary>
         <BootstrapGate>
-          <App />
+          <MascotAppRoot><App /></MascotAppRoot>
         </BootstrapGate>
       </RootBoundary>
     )}

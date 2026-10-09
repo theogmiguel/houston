@@ -1,7 +1,10 @@
 import { useNativeOverlaySuppression } from '../../layout/nativeSuppression'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { draw } from './mascotPixel'
+import { getMascotPrefs } from '../../mascot/mascotPrefs'
+import { registerMascotSlot } from '../../mascot/mascotSlots'
+import { recolorMascotPixels } from '../../mascot/mascotColors'
 import { useMascotMotion } from './useMascotMotion'
 import './Mascot.css'
 interface Bug { x: number; y: number; alive: boolean; row: number }
@@ -10,6 +13,7 @@ export default function MascotGame({ onClose, onResult, background = false }: { 
  const callbacks=useRef({onClose,onResult});callbacks.current={onClose,onResult}
  const canvas=useRef<HTMLCanvasElement>(null), root=useRef<HTMLDivElement>(null)
  useNativeOverlaySuppression('modal',true,root)
+ useLayoutEffect(() => { if (root.current) return registerMascotSlot(root.current, 3, true) }, [])
  const resume=useRef<(()=>void)|null>(null)
  const motion=useMascotMotion(background), paused=useRef(motion.paused)
  paused.current=motion.paused
@@ -18,6 +22,18 @@ export default function MascotGame({ onClose, onResult, background = false }: { 
   const previous=document.activeElement as HTMLElement | null; root.current?.focus()
   const g=canvas.current!.getContext('2d')!
   const sprite=document.createElement('canvas');sprite.width=48;sprite.height=44;draw(sprite.getContext('2d')!,'idle',3)
+  let spriteColors: string | undefined
+  function repaintSpriteColors(): void {
+    const mascotColors = getMascotPrefs().colors
+    if (spriteColors !== mascotColors) {
+      const ctx = sprite.getContext('2d')!
+      draw(ctx, 'idle', 3)
+      const image = ctx.getImageData(0, 0, 48, 44)
+      recolorMascotPixels(image.data, mascotColors)
+      ctx.putImageData(image, 0, 0)
+      spriteColors = mascotColors
+    }
+  }
   let gameState: GameState
   let raf=0
   function reset(): void { const bugs: Bug[]=[];for(let r=0;r<4;r++)for(let c=0;c<9;c++)bugs.push({x:40+c*26,y:22+r*18,alive:true,row:r}); gameState={px:160,shots:[],bugs,dir:1,step:0,stepEvery:32,frame:0,keys:{},over:null,score:0} }
@@ -56,6 +72,7 @@ function gameTick() {
   const colors = ['#f43f5e', '#f59e0b', '#22c55e', '#3fe0ff'];
   gameState.bugs.forEach(b => { if (b.alive) drawBug(Math.round(b.x), Math.round(b.y), colors[b.row], Math.floor(gameState.frame / 20)); });
   gameState.shots.forEach(s => { g.strokeStyle = '#3fe0ff'; g.beginPath(); g.ellipse(s.x, s.y, 4, 1.6, -0.2, 0, Math.PI * 2); g.stroke(); });
+  repaintSpriteColors();
   g.imageSmoothingEnabled = false; g.drawImage(sprite, Math.round(gameState.px - 12), 174, 24, 22);
   g.fillStyle = '#8d93c9'; g.font = '8px monospace'; g.fillText(`SCORE ${gameState.score}`, 6, 10);
   if (gameState.over) {

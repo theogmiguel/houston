@@ -24,27 +24,42 @@ export function MascotRig({ mood = 'idle', outfit = {}, size = 64, background = 
   const items = [outfit.body, outfit.head, outfit.face, outfit.hand]
   return <div className={`mascot-rig mascot-motion loop-anim a-${mood}`} data-reduced={reduced} data-paused={paused} data-background={background} style={{ '--size': `${size}px` } as CSSProperties} role="img" aria-label="Houston mascot">
     <div className="l body">
-      <div className="l arm-l"><div className="l"><img src={armL} alt="" /></div></div>
-      <div className="l torso"><img src={torso} alt="" /><img className="core" src={core} alt="" /><div className="core-glow" /></div>
+      <div className="l arm-l"><div className="l"><img draggable={false} src={armL} alt="" /></div></div>
+      <div className="l torso"><img draggable={false} src={torso} alt="" /><img draggable={false} className="core" src={core} alt="" /><div className="core-glow" /></div>
       <svg className="mascot-acc acc-body" viewBox="0 0 100 100" aria-hidden="true" dangerouslySetInnerHTML={{ __html: accessoryHtml(items, 'body') }} />
-      <div className="l head"><div className="l"><img src={head} alt="" /><div className="ring-sweep"><i /></div><div className="l eyes-look" style={{transform: mood === "read" ? "translate(0, 2.6%)" : mood === "stars" ? "translate(1%, -3%)" : undefined}}><img className="eyes" src={eyes} alt="" /></div><svg className="mascot-acc acc-head" viewBox="0 0 100 100" aria-hidden="true" dangerouslySetInnerHTML={{ __html: accessoryHtml(items, 'head') }} /></div></div>
-      <div className="l arm-r"><div className="l"><img src={armR} alt="" /><svg className="mascot-acc acc-hand" viewBox="0 0 100 100" aria-hidden="true" dangerouslySetInnerHTML={{ __html: accessoryHtml(items, 'hand') }} /></div></div>
+      <div className="l head"><div className="l"><img draggable={false} src={head} alt="" /><div className="ring-sweep"><i /></div><div className="l eyes-look" style={{transform: mood === "read" ? "translate(0, 2.6%)" : mood === "stars" ? "translate(1%, -3%)" : undefined}}><img draggable={false} className="eyes" src={eyes} alt="" /></div><svg className="mascot-acc acc-head" viewBox="0 0 100 100" aria-hidden="true" dangerouslySetInnerHTML={{ __html: accessoryHtml(items, 'head') }} /></div></div>
+      <div className="l arm-r"><div className="l"><img draggable={false} src={armR} alt="" /><svg className="mascot-acc acc-hand" viewBox="0 0 100 100" aria-hidden="true" dangerouslySetInnerHTML={{ __html: accessoryHtml(items, 'hand') }} /></div></div>
     </div>
     <span className="zz">z</span><span className="zz">z</span>
     {mood === 'party' && [[-120,-60,'#3fe0ff',8,18],[120,-80,'#a78bfa',78,10],[-90,-130,'#e0fdff',22,4],[100,-140,'#3fe0ff',66,2],[0,-170,'#c4b5fd',45,0]].map(([dx,dy,c,x,y], k) => <i key={k} className="spark" style={{ '--dx': `${dx}%`, '--dy': `${dy}%`, left: `${x}%`, top: `${y}%`, background: c } as CSSProperties} />)}
   </div>
 }
-export function MascotPixel({ mood, outfit, reduced, paused }: { mood: Mood; outfit: Outfit; reduced: boolean; paused: boolean }): React.JSX.Element {
+export function MascotPixel({ mood, outfit, reduced, paused, size = 64 }: { mood: Mood; outfit: Outfit; reduced: boolean; paused: boolean; size?: number }): React.JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const ctx = canvas.current?.getContext('2d'); if (!ctx) return
     draw(ctx, mood === 'sleep' ? 'unavailable' : 'idle', 3)
     if (paused || reduced) return
+    const slot = canvas.current?.closest('[data-mascot-slot]')
     let raf = 0, frame = 0, last = 0
-    const tick = (t: number): void => { if (t - last >= 100) { last = t; draw(ctx, mood === 'sleep' ? 'unavailable' : 'idle', ++frame) } raf = requestAnimationFrame(tick) }
-    raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf)
+    const visible = (): boolean => !document.hidden && slot?.getAttribute('aria-hidden') !== 'true'
+    const tick = (t: number): void => {
+      raf = 0
+      if (!visible()) return
+      if (t - last >= 100) { last = t; draw(ctx, mood === 'sleep' ? 'unavailable' : 'idle', ++frame) }
+      raf = requestAnimationFrame(tick)
+    }
+    const update = (): void => {
+      cancelAnimationFrame(raf); raf = 0
+      if (visible()) raf = requestAnimationFrame(tick)
+    }
+    const observer = new MutationObserver(update)
+    if (slot) observer.observe(slot, { attributes: true, attributeFilter: ['aria-hidden'] })
+    document.addEventListener('visibilitychange', update)
+    update()
+    return () => { cancelAnimationFrame(raf); observer.disconnect(); document.removeEventListener('visibilitychange', update) }
   }, [mood, reduced, paused])
-  return <span className="mascot-pxwrap"><canvas ref={canvas} width={48} height={44} /><svg className="mascot-acc" viewBox="3.2 4.8 95.7 87.7" aria-hidden="true" dangerouslySetInnerHTML={{ __html: accessoryHtml([outfit.body, outfit.head, outfit.face, outfit.hand]) }} /></span>
+  return <span className="mascot-pxwrap" style={{ width: `${size}px`, height: `${size * 44 / 48}px` }}><canvas ref={canvas} width={48} height={44} /><svg className="mascot-acc" viewBox="3.2 4.8 95.7 87.7" aria-hidden="true" dangerouslySetInnerHTML={{ __html: accessoryHtml([outfit.body, outfit.head, outfit.face, outfit.hand]) }} /></span>
 }
 export function MascotRigSpecimen(): React.JSX.Element {
   return <div className="flex flex-wrap gap-[var(--space-5)]">{(['idle','wave','party','sleep','hula','read','stars','happy','call','hurt'] as Mood[]).map((mood) => <MascotRig key={mood} mood={mood} size={112} outfit={{ body: mood === 'read' ? 'book' : undefined }} />)}</div>

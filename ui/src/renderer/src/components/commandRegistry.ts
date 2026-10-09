@@ -1,4 +1,5 @@
-import { getMascotPrefs, type MascotAction } from '../mascot/mascotPrefs'
+import { mascotCommands } from '../mascot/mascotCommands'
+import type { MascotAction } from '../mascot/mascotPrefs'
 import { setSettingsOpen, setSettingsSection } from '../settingsNav'
 import { SETTINGS_SECTIONS, type SettingsSectionId } from '../settingsSections'
 import { SETTINGS_ROW_REGISTRY } from '../settingsRowRegistry'
@@ -571,7 +572,7 @@ export interface GridTarget {
 export function buildCommands(input: BuildCommandsInput): Command[] {
   const { actions, hasWorkspace, workspaces, grids, sessions = [], activeSessionId } = input
   return [
-    ...(getMascotPrefs().enabled ? ([['pet','Pet Houston'],['hi','Say hi'],['disco','Disco mode'],['game','Play Ring Invaders'],['intro','Replay mascot intro']] as [MascotAction,string][]).map(([action,title]) => ({ id: `mascot.${action}`, title, group: 'Mascot' as const, enabled: true, run: () => actions.mascotAction?.(action) })) : []),
+    ...mascotCommands(actions),
     ...sessions.filter((session) => session.state === 'running' && !session.hidden).map((session) => ({
       id: `session.focus.${session.id}`,
       title: session.title || session.codename || `Pane ${session.id}`,

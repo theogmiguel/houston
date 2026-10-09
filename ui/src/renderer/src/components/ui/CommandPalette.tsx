@@ -1,3 +1,5 @@
+import { useMascotPlacement } from '../../mascot/mascotPosition'
+import { useMascotPrefs } from '../../mascot/mascotPrefs'
 import { MascotSurfaceMount } from '../../mascot/MascotMount'
 import { lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -48,6 +50,8 @@ export function CommandPalette({
   sessions = [],
   activeSessionId = null
 }: CommandPaletteProps): React.JSX.Element {
+  const { position: mascotPosition } = useMascotPlacement()
+  const mascotPrefs = useMascotPrefs()
   const keymapOverrides = useContext(KeymapOverridesContext)
   const [recentIds, setRecentIds] = useState(() => readPaletteRecents(window.localStorage))
   const [query, setQuery] = useState('')
@@ -60,7 +64,7 @@ export function CommandPalette({
   const commands = useMemo(
     () => buildCommands({ actions, hasWorkspace, workspaces, sessions, activeSessionId }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [hasWorkspace, workspaces, sessions, activeSessionId]
+    [hasWorkspace, workspaces, sessions, activeSessionId, mascotPosition, mascotPrefs]
   )
   const filtered = query.trim() ? filterCommands(commands, query) : commands
   const groups = query.trim() ? null : groupPaletteCommands(filtered, recentIds)

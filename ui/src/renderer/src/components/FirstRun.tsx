@@ -1,5 +1,5 @@
-import { useMascotPrefs } from '../mascot/mascotPrefs'
-import { setSettingsOpen } from '../settingsNav'
+import { mascotIntroSeen, useMascotPrefs } from '../mascot/mascotPrefs'
+import { setSettingsOpen, setSettingsSection } from '../settingsNav'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { EmptyState } from './ui/ActionEmptyState'
 import { GlyphTile, OnboardingFooter, OnboardingStage, QuietButton, Text } from './ui'
@@ -59,7 +59,7 @@ export function FirstRun({
   onDone
 }: FirstRunProps): React.JSX.Element | null {
   const mascotPrefs = useMascotPrefs()
-  const [mascotDone, setMascotDone] = useState(false)
+  const [mascotDone, setMascotDone] = useState(mascotIntroSeen)
   const planRef = useRef<FirstRunStepId[] | null>(null)
   if (stateKnown && planRef.current === null) {
     planRef.current = unmetSteps({ hasWorkspace, orchestrationConsented, hooksInstalled })
@@ -97,7 +97,7 @@ export function FirstRun({
     </OnboardingFooter>
   )
 
-  if (current === 'workspace' && mascotPrefs.enabled && !mascotDone) return <Suspense fallback={null}><MascotIntro inline onDone={() => setMascotDone(true)} onAddWorkspace={workspaces.onAdd} onOpenSettings={() => setSettingsOpen(true)} /></Suspense>
+  if (current === 'workspace' && mascotPrefs.enabled && !mascotDone) return <Suspense fallback={null}><MascotIntro inline onDone={() => setMascotDone(true)} onAddWorkspace={workspaces.onAdd} onOpenSettings={() => { setSettingsSection('mascot'); setSettingsOpen(true) }} /></Suspense>
   if (current === 'workspace') return <WorkspacesEmpty {...workspaces} footer={footer} />
 
   if (current === 'hooks') {

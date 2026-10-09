@@ -1,3 +1,5 @@
+import { MascotDockSlot } from '../src/components/ui/MascotDockSlot'
+import { MascotArtSpecimen } from '../src/components/ui/MascotArt'
 import { MascotRigSpecimen } from '../src/components/ui/MascotRig'
 import React, { useState } from 'react'
 import { DiffEmptyState } from '../src/components/ui/Diff'
@@ -534,7 +536,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Caption>Motion preference: {window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full'}</Caption>
         </header>
 
-        <SpecimenGroup heading="Mascot companion"><MascotRigSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Mascot companion"><MascotRigSpecimen /><MascotArtSpecimen /><MascotDockSlot dragging /></SpecimenGroup>
         <SpecimenGroup heading="Popover motion">
           <MotionThemeSpecimens theme="graphite" reducedMotion={false} />
           <MotionThemeSpecimens theme="graphite" reducedMotion />

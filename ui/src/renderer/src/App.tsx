@@ -1,3 +1,4 @@
+import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
@@ -872,6 +873,7 @@ export function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conn.kind, workspaces.length]);
   const closeFirstRun = useCallback(() => setFirstRunOpen(false), []);
+  useReportMascotLifecycle(workspaces.length, firstRunOpen, workspacesEmptyOpen);
   const firstRunOrchestrationConsented =
     orchestration !== null && orchestration.enabled;
   const firstRunHooksInstalled =

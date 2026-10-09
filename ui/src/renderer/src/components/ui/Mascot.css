@@ -4,7 +4,7 @@
 .mascot-buddy .sprite { display: grid; place-items: end center; width: 100%; height: 100%; }
 .mascot-buddy .sprite > * { grid-area: 1 / 1; }
 .mascot-buddy .mascot-rig { --size: 64px; }
-.mascot-buddy canvas { display: none; width: var(--mascot-pixel-width); height: var(--mascot-pixel-height); image-rendering: pixelated; margin-bottom: var(--space-1); }
+.mascot-buddy canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 .mascot-buddy[data-skin="pixel"] canvas { display: block; }
 .mascot-buddy[data-skin="pixel"] .mascot-rig { display: none; }
 .mascot-buddy .bubble { position: absolute; left: 80%; bottom: 72%; white-space: nowrap; font: 600 var(--mascot-small-size) var(--font-sans); background: var(--text-primary); color: var(--background); padding: var(--mascot-padding-4); border-radius: var(--mascot-border-radius-2); opacity: 0; transform: translateY(4px); transition: opacity .25s, transform .25s; pointer-events: none; z-index: var(--z-base); }
@@ -15,8 +15,8 @@
 
 .mascot-acc .steam { transform-box: fill-box; animation: mascot-steam 2.4s ease-in-out infinite; }
 
-.mascot-pxwrap { position: relative; display: none; width: var(--mascot-pixel-width); height: var(--mascot-pixel-height); margin-bottom: var(--space-1); }
-.mascot-pxwrap canvas { display: block !important; margin: var(--mascot-margin-6); }
+.mascot-pxwrap { position: relative; display: block; }
+.mascot-pxwrap canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 .mascot-buddy[data-skin="pixel"] .mascot-pxwrap { display: block; }
 .mascot-fx { position: absolute; inset: -30px -22px -4px -22px; pointer-events: none; overflow: visible; z-index: var(--z-base); }
 .mascot-fx i { position: absolute; left: var(--x); top: var(--y, 0); width: var(--s, 4px); height: var(--s, 4px); background: var(--c, #fff); border-radius: var(--r, var(--mascot-particle-radius)); opacity: 0; animation-name: var(--a); animation-duration: var(--d, 3s); animation-timing-function: linear; animation-delay: var(--w, 0s); animation-iteration-count: var(--n, infinite); }
@@ -55,10 +55,7 @@
 [data-theme="graphite"] .mascot-buddy .eyes { filter: drop-shadow(0 0 2px #7ff3ff); }
 .mascot-buddy.glowup .eyes { animation: mascot-glowup 1.4s ease-out 1; }
 
-.mascot-buddy[data-outfit="sunset"] .mascot-rig, .mascot-buddy[data-outfit="sunset"] canvas { filter: hue-rotate(140deg) saturate(1.15); }
-.mascot-buddy[data-outfit="aurora"] .mascot-rig, .mascot-buddy[data-outfit="aurora"] canvas { filter: hue-rotate(-70deg) saturate(1.1); }
-.mascot-buddy[data-outfit="mono"] .mascot-rig, .mascot-buddy[data-outfit="mono"] canvas { filter: grayscale(1) brightness(1.15); }
-.mascot-disco .mascot-buddy .mascot-rig, .mascot-disco .mascot-buddy canvas { animation: mascot-disco 1.1s linear infinite; }
+.mascot-disco .mascot-buddy .mascot-art { animation: mascot-disco 1.1s linear infinite; }
 .mascot-disco-footer { animation: mascot-disco 1.1s linear infinite; background: radial-gradient(circle at 25% 55%, #ff3df233, transparent 55%), radial-gradient(circle at 75% 30%, #3fe0ff33, transparent 55%); }
 
 
@@ -198,3 +195,22 @@ html[data-motion-paused] .mascot-motion[data-background="true"], html[data-motio
 .mascot-motion.mascot-motion[data-reduced="true"] *, .mascot-motion.mascot-motion[data-reduced="true"] { animation: none; transition: none !important; }
 .mascot-motion[data-reduced="true"] .mascot-fx { display: none; }
 @media (prefers-reduced-motion: reduce) { .mascot-motion.mascot-motion.mascot-motion *, .mascot-motion.mascot-motion.mascot-motion { animation: none; transition: none !important; } .mascot-fx { display: none; } }
+
+.mascot-art { width: var(--size); height: var(--size); display: grid; place-items: center; }
+.mascot-surface { width: fit-content; }
+.mascot-flight { z-index: var(--z-modal); transform-origin: center; }
+[data-mascot-slot][aria-hidden="true"] .loop-anim, [data-mascot-slot][aria-hidden="true"] .loop-anim * { animation-play-state: paused !important; }
+
+.mascot-dock { position: relative; display: flow-root; flex: none; height: calc(var(--mascot-rail-size) + 10px); padding: 0 var(--space-2); }
+.mascot-dock[data-mascot-drop-target="true"]::after { content: ""; position: absolute; left: var(--space-2); top: var(--space-2); width: var(--mascot-rail-size); height: var(--mascot-rail-size); border: 1px dashed var(--border-hover); border-radius: var(--mascot-border-radius-1); background: var(--hover-fill); pointer-events: none; }
+.mascot-host { position: fixed; left: 0; top: 0; width: var(--mascot-rail-size); height: var(--mascot-rail-size); z-index: var(--z-sticky); pointer-events: none; }
+.mascot-host .mascot-slot { padding: 0; }
+.mascot-host .mascot-buddy { margin: 0; pointer-events: auto; touch-action: none; cursor: grab; }
+.mascot-host[data-dragging="true"] .mascot-buddy { cursor: grabbing; }
+.mascot-host .sprite { transition: transform .15s ease-out; }
+.mascot-host[data-dragging="true"] .sprite { transform: scale(1.06); }
+.mascot-host[data-dragging="true"] .mascot-buddy[data-reduced="true"] .sprite { transform: none; }
+.mascot-host[data-floating="true"] .bubble, .mascot-host[data-dragging="true"] .bubble { max-width: min(320px, calc(100vw - 24px)); white-space: normal; }
+.mascot-host .bubble[data-side="left"] { border-radius: 8px 8px 2px 8px; }
+
+.mascot-dock-anchor { display: block; width: var(--mascot-rail-size); height: var(--mascot-rail-size); margin: var(--mascot-margin-5); }

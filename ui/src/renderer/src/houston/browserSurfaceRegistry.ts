@@ -15,6 +15,7 @@ interface RegisteredSurface {
   reasons: Set<string>
 }
 
+const rectListeners = new Set<() => void>()
 const surfaces = new Map<string, RegisteredSurface>()
 let installed = false
 
@@ -54,6 +55,7 @@ export function registerBrowserSurface(
   ensureInstalled()
   const surface = { setVisible, isDetached, rect, reasons: new Set<string>() }
   surfaces.set(id, surface)
+  notifyBrowserSurfaceRects()
   if (isDetached()) return
   for (const reason of suppressedReasons()) {
     apply(surface, reason, false)
@@ -63,9 +65,26 @@ export function registerBrowserSurface(
 
 export function unregisterBrowserSurface(id: string): void {
   surfaces.delete(id)
+  notifyBrowserSurfaceRects()
 }
 
 export function __resetBrowserSurfaceRegistryForTests(): void {
   surfaces.clear()
+  rectListeners.clear()
   installed = false
+}
+
+export function nativeBrowserSurfaceRects(): { x: number; y: number; width: number; height: number }[] {
+  return [...surfaces.values()].flatMap(surface => {
+    try {
+      const rect = surface.isDetached() ? null : surface.rect()
+      return rect && rect.width > 0 && rect.height > 0 &&
+        [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) ? [rect] : []
+    } catch { return [] }
+  })
+}
+export function notifyBrowserSurfaceRects(): void { rectListeners.forEach(listener => listener()) }
+export function subscribeBrowserSurfaceRects(listener: () => void): () => void {
+  rectListeners.add(listener)
+  return () => { rectListeners.delete(listener) }
 }

@@ -395,8 +395,9 @@ ring at ≥ 3:1 against two surfaces.
 
 ## Mascot arbitration
 
-The optional companion loads outside the terminal render path. A pure director orders
-user interactions, lifecycle moments, scheduled greetings and ambient play. Scheduled
+The optional companion is configured in Settings → Mascot and loads outside the
+terminal render path. A pure director orders user interactions, lifecycle moments,
+scheduled greetings and ambient play. Scheduled
 speech requires focus and five seconds without typing; it is limited to three remarks
 per hour and at least ten minutes between remarks. User actions are exempt. The local
 ledger prevents repeated holiday greetings across reloads. Sleeping defers a scheduled
@@ -404,3 +405,29 @@ greeting to wake; disco and Ring Invaders suspend scheduled and ambient moments.
 Calendar rules use local civil dates and Gregorian Easter, with explicit overlap order.
 Preferences, first-seen install date and the bounded greeting ledger use `tr-mascot*`
 localStorage keys. Turning the feature off unmounts its listeners and lazy visuals.
+
+Renderer mascot slots arbitrate one visible companion across the rail, introduction
+and surrounding surfaces. Transitions use a temporary artwork copy above the app
+while both slots are hidden, with the introduction's transform/opacity flight. A
+bounded timer completes each handoff independently of Web Animations callbacks;
+user actions run immediately. Reduced motion switches slots without a flight.
+
+The companion host lives outside App and the Sidebar, retaining its director mount
+when floating and the rail collapses. A reporting hook keeps workspace/onboarding
+lifecycle current independently of Sidebar. The rail provides a docking rectangle; the
+host is a small fixed layer above the grid and rail, below overlay chrome. Only its
+button receives pointer input. Pointer movement updates a transform; drops persist
+normalized window coordinates under `tr-mascot-position`, independently of the
+ledger. Invalid coordinates fall back to Rail. Resize and browser geometry changes
+clamp the entire art rectangle with a 12 px window margin.
+
+Floating placement reads attached native webview rectangles from the existing
+browser surface registry. An intersecting drop is projected onto the closest valid
+position outside every rectangle, minimizing squared displacement and respecting
+window bounds. Candidate positions use browser edges and window limits; touching an
+edge is allowed. If no full art rectangle fits, return to Rail, hidden if the rail
+is collapsed. During a drag, the existing suppression mechanism temporarily freezes
+native browser surfaces so they cannot interrupt pointer capture; release restores
+them after choosing a safe position. Speech flips and clamps to the window. Surface
+flights use the host's current rectangle and return to its current rail or floating
+position. Reduced motion disables the lift animation while preserving direct moves.

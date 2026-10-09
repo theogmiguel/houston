@@ -1,9 +1,13 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NavigationRailCompanion, MascotDiscoScope } from '../components/ui/NavigationRailCompanion'
 import { MascotMeet } from '../components/ui/MascotIntro'
 import { useMascotMotion } from '../components/ui/useMascotMotion'
 import { consumeMascotAction, getMascotPrefs, useMascotPrefs, setMascotPrefs, type MascotAction } from './mascotPrefs'
 import { mascotDirector, readLedger, persistLedger, PLAY_AFTER_MS, type DirectorInput, type Mood } from './mascotDirector'
+import { MascotDockContext } from './mascotRailContext'
+import { useMascotDrag } from './useMascotDrag'
+import { placeMascotBubble } from './mascotBubble'
+import { returnMascotToRail, useMascotPlacement } from './mascotPosition'
 import { LINES } from './lines'
 const Intro = lazy(() => import('../components/ui/MascotIntro'))
 const Game = lazy(() => import('../components/ui/MascotGame'))
@@ -14,6 +18,8 @@ function initial(): DirectorInput {
   return { now, prefs: getMascotPrefs(), focus: document.hasFocus(), lastInputAt: now, lastTypingAt: now, theme: document.documentElement.dataset.theme ?? 'graphite', sleeping: false, playing: null, disco: false, gameOpen: false, active: null, queue: [], ledger: readLedger(now), continuousInputAt: now, lastPlayAt: now }
 }
 export default function MascotCompanion({ existingUser, firstRun }: { existingUser: boolean; firstRun: boolean }): React.JSX.Element {
+  const dock = useContext(MascotDockContext)
+  const placement = useMascotPlacement()
   const prefs = useMascotPrefs(), motion = useMascotMotion(prefs.background)
   const motionRef = useRef(motion)
   motionRef.current = motion
@@ -66,6 +72,7 @@ export default function MascotCompanion({ existingUser, firstRun }: { existingUs
   function animate(kind: string): void { if (!motionRef.current.reduced) { setBump(undefined); later(() => setBump(kind), 0); later(() => setBump(undefined), 1500) } }
   const petCooldown = useRef(0)
   function act(action: MascotAction): void {
+    if (action === 'dock') { returnMascotToRail(); return }
     if (state.current.sleeping && (action === 'hi' || action === 'pet')) { state.current.lastInputAt=Date.now();tick();return }
     if (action === 'intro') { setMeet(false); setIntro(true); state.current.gameOpen = true; return }
     if (action === 'game') { setGame(true); state.current.gameOpen = true; moment('party','Ring Invaders! Save the grid!'); return }
@@ -101,7 +108,7 @@ export default function MascotCompanion({ existingUser, firstRun }: { existingUs
       state.current.theme = theme; moment('idle',theme === 'paper' ? 'Bright in here!' : 'Ahh, much better.',2000)
       if (theme !== 'paper') animate('glowup'); else if (getMascotPrefs().style === 'pixel') animate('hop')
     })
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    observer?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     const look = (e: PointerEvent): void => {
       if (state.current.sleeping || state.current.playing || state.current.active || motionRef.current.reduced || getMascotPrefs().style === 'pixel') return
       const el=button.current?.querySelector<HTMLElement>('.eyes-look'), b=button.current?.getBoundingClientRect()
@@ -114,7 +121,7 @@ export default function MascotCompanion({ existingUser, firstRun }: { existingUs
     window.addEventListener('keydown',key); window.addEventListener('houston-mascot-action',action); window.addEventListener('houston-mascot-landed',landed)
     const queuedAction=consumeMascotAction();if(queuedAction)act(queuedAction)
     const interval = setInterval(tick,1000)
-    return () => { pending.current = false; lastMoment.current=undefined; clearInterval(interval); observer.disconnect(); window.removeEventListener('pointermove',look); window.removeEventListener('keydown',input,true); window.removeEventListener('pointerdown',input,true); window.removeEventListener('keydown',key); window.removeEventListener('houston-mascot-action',action); window.removeEventListener('houston-mascot-landed',landed); timers.current.forEach(clearTimeout); timers.current.clear(); void audio.current?.close() }
+    return () => { pending.current = false; lastMoment.current=undefined; clearInterval(interval); observer?.disconnect(); window.removeEventListener('pointermove',look); window.removeEventListener('keydown',input,true); window.removeEventListener('pointerdown',input,true); window.removeEventListener('keydown',key); window.removeEventListener('houston-mascot-action',action); window.removeEventListener('houston-mascot-landed',landed); timers.current.forEach(clearTimeout); timers.current.clear(); void audio.current?.close() }
   }, [])
   useEffect(() => {
     if (existingUser && !firstRun && !state.current.ledger.introSeen && !pending.current) {
@@ -122,39 +129,44 @@ export default function MascotCompanion({ existingUser, firstRun }: { existingUs
     }
   }, [existingUser, firstRun])
   useEffect(() => {
-    const footer = button.current?.closest('aside')?.querySelector('.railfoot')
+    const footer = (dock?.closest('aside') ?? button.current?.closest('aside'))?.querySelector('.railfoot')
     footer?.classList.toggle('mascot-disco-footer', disco && !motionRef.current.reduced)
     footer?.classList.toggle('loop-anim',disco && !motionRef.current.reduced)
     return () => footer?.classList.remove('mascot-disco-footer','loop-anim')
-  }, [disco, motion.reduced])
+  }, [disco, motion.reduced, dock])
   function seen(): void { state.current.ledger.introSeen = true; persistLedger(state.current.ledger); setMeet(false) }
-  const press = useRef<{ x: number; y: number; dx: number; dy: number; moved: boolean } | null>(null)
   const rub = useRef({ x: null as number | null, dir: 0, times: [] as number[] })
   const clicks = useRef<number[]>([]), clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const suppressed = useRef(false)
-  function release(): void {
-    const p = press.current; press.current = null
-    if (!p?.moved) return
-    suppressed.current = true; later(() => { suppressed.current = false },50)
+  function dockBoing(dx: number, dy: number): void {
     const sp = button.current?.querySelector<HTMLElement>('.sprite'); if (!sp) return
-    const from = sp.style.transform; sp.style.transform = ''
-    const cl = (v: number): number => Math.max(-38,Math.min(38,v * .42))
-    if (!motionRef.current.reduced) sp.animate([{transform:from},{transform:`translate(${-cl(p.dx)*.35}px, ${-cl(p.dy)*.35}px) rotate(${-p.dx*.06}deg) scale(.94, 1.06)`},{transform:`translate(${cl(p.dx)*.14}px, ${cl(p.dy)*.14}px) rotate(${p.dx*.03}deg)`},{transform:`translate(${-cl(p.dx)*.05}px, 0)`},{transform:'none'}],{duration:700,easing:'ease-out'})
+    const cl = (v: number): number => Math.max(-38, Math.min(38, v * .42))
+    if (!motionRef.current.reduced) sp.animate?.([{transform:'scale(1.06)'},{transform:`translate(${-cl(dx)*.35}px, ${-cl(dy)*.35}px) rotate(${-dx*.06}deg) scale(.94, 1.06)`},{transform:`translate(${cl(dx)*.14}px, ${cl(dy)*.14}px) rotate(${dx*.03}deg)`},{transform:`translate(${-cl(dx)*.05}px, 0)`},{transform:'none'}],{duration:700,easing:'ease-out'})
     moment('idle',pick(['Boing!','Whoa!','Again!']),1300); chirp('boing')
   }
+  const drag = useMascotDrag(button, dockBoing, () => { suppressed.current = true; cancel(clickTimer.current); later(() => { suppressed.current = false }, 50) })
+  useLayoutEffect(() => {
+    const bubble = button.current?.querySelector<HTMLElement>('.bubble')
+    const place = (): void => placeMascotBubble(button.current)
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(place)
+    if (bubble) observer?.observe(bubble)
+    window.addEventListener('resize', place)
+    place()
+    return () => { observer?.disconnect(); window.removeEventListener('resize', place) }
+  }, [line, placement.position, placement.dragging])
+
   return <>
     <MascotDiscoScope active={disco}>
       <NavigationRailCompanion ref={button} prefs={prefs} outfit={view.outfit} mood={view.moment?.mood ?? view.base} line={line} effect={effect} bump={bump} {...motion}
         onClick={() => { if (suppressed.current) return; const now = Date.now(); clicks.current = clicks.current.filter((t) => now-t < 4000); clicks.current.push(now); cancel(clickTimer.current); if (clicks.current.length >= 10) { clicks.current=[]; act('game') } else clickTimer.current=later(() => act('hi'),240) }}
         onDoubleClick={() => { cancel(clickTimer.current); if(state.current.sleeping){state.current.lastInputAt=Date.now();tick();return} animate('flip'); moment('idle','Wheee!',1200); chirp('flip') }}
-        onPointerDown={(e) => { if (e.button !== 0) return; press.current={x:e.clientX,y:e.clientY,dx:0,dy:0,moved:false}; e.currentTarget.setPointerCapture(e.pointerId) }}
+        onPointerDown={drag.down}
         onPointerMove={(e) => {
-          const p=press.current
-          if (p) { p.dx=e.clientX-p.x; p.dy=e.clientY-p.y; if (!p.moved && Math.hypot(p.dx,p.dy)<5) return; p.moved=true; const sp=button.current?.querySelector<HTMLElement>('.sprite'); const cl=(v:number):number=>Math.max(-38,Math.min(38,v*.42)); const d=Math.min(Math.hypot(p.dx,p.dy),90)/900; if(sp && !motionRef.current.reduced) sp.style.transform=`translate(${cl(p.dx)}px, ${cl(p.dy)}px) rotate(${Math.max(-18,Math.min(18,p.dx*.2))}deg) scale(${1+d}, ${1-d})`; return }
+          if (drag.move(e)) return
           const r=rub.current, dx=r.x===null?0:e.clientX-r.x, dir=Math.sign(dx), now=Date.now(); if(Math.abs(dx)>2 && dir!==r.dir) { r.times.push(now); r.dir=dir } r.x=e.clientX; r.times=r.times.filter(t=>now-t<1200); if(r.times.length>=5) { r.times=[];act('pet') }
-        }} onPointerLeave={() => {rub.current.times=[];rub.current.x=null}} onPointerUp={release} onPointerCancel={release} />
+        }} onPointerLeave={() => {rub.current.times=[];rub.current.x=null}} onPointerUp={drag.up} onPointerCancel={drag.cancel} onLostPointerCapture={drag.cancel} />
     </MascotDiscoScope>
-    {meet && <MascotMeet anchor={button} onKeep={() => { seen(); moment('party','Yay! Click me anytime.') }} onOff={() => { seen(); moment('wave','Bye! Find me in Settings.',1900); later(() => setMascotPrefs({enabled:false}),2000) }} />}
+    {meet && <MascotMeet anchor={button} onKeep={() => { seen(); moment('party','Yay! Click me anytime.') }} onOff={() => { seen(); moment('wave','Bye! Find me in Settings › Mascot.',1900); later(() => setMascotPrefs({enabled:false}),2000) }} />}
     <Suspense fallback={null}>{intro && <Intro onDone={() => {setIntro(false); state.current.gameOpen=false; seen(); moment('party',"I'll hang out down here. Click me anytime!",3600)}} />}{game && <Game background={prefs.background} onClose={() => {setGame(false); state.current.gameOpen=false}} onResult={(win) => { moment('party',win ? 'You saved the grid!' : 'The bugs got through. Again?',3000); if(win) { fx('confetti');chirp('disco') } }} />}</Suspense>
   </>
 }
