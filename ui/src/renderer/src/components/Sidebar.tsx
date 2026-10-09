@@ -420,6 +420,7 @@ export function workspaceColor(index: number): string {
 
 interface Props {
   mascotFirstRun?: boolean;
+  mascotWorkspacesEmpty?: boolean;
   workspaces: Workspace[];
   sessions: SessionInfo[];
   selected: string;
@@ -2343,6 +2344,7 @@ function RailTree({
 
 export function Sidebar({
   mascotFirstRun = false,
+  mascotWorkspacesEmpty,
   workspaces,
   sessions,
   selected,
@@ -2977,7 +2979,7 @@ export function Sidebar({
         )}
       </NavigationRailScroll>
 
-      <MascotMount existingUser={workspaces.length > 0} firstRun={mascotFirstRun} />
+      <MascotMount existingUser={workspaces.length > 0} firstRun={mascotFirstRun} workspacesEmpty={mascotWorkspacesEmpty} />
       <NavigationRailFooter>
         {}
         <Tooltip label="Settings">

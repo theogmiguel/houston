@@ -3461,7 +3461,8 @@ export function App(): React.JSX.Element {
           />
           {!sidebarRail && (
             <Sidebar
-              mascotFirstRun={firstRunOpen || workspacesEmptyOpen}
+              mascotFirstRun={firstRunOpen}
+              mascotWorkspacesEmpty={workspacesEmptyOpen}
               gridArea="rail"
               currentRailView={railView ?? undefined}
               onHeadMouseDown={handleTitlebarMouseDown}
