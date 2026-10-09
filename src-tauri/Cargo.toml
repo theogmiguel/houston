@@ -121,6 +121,9 @@ tauri = { version = "2", features = ["test"] }
 tokio-tungstenite = "0.26"
 futures-util = "0.3"
 
+[patch.crates-io]
+tray-icon = { path = "patches/tray-icon" }
+
 [[bin]]
 name = "houston-tauri"
 path = "src/main.rs"
