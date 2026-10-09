@@ -9209,10 +9209,6 @@ impl Daemon {
                     }
                 }
             }
-            if let Some(argv) = &shell_startup {
-                let command = shell_hosted_resume_command(&shell, argv)?;
-                c.args(["-i", "-c", &command]);
-            }
             c
         } else {
             let (program, base_args): (String, Vec<String>) = match (&agent, &custom_cmd) {
@@ -9369,6 +9365,27 @@ impl Daemon {
             cmd.env(crate::paths::CHANNEL_ENV, channel);
         }
         cmd.env("TR_SESSION", id.to_string());
+        let shell_claude_resume = shell_startup
+            .as_ref()
+            .is_some_and(|argv| argv.first().is_some_and(|program| program == "claude"));
+        if (agent == proto::AgentKind::Claude && acp.is_none()) || shell_claude_resume {
+            cmd.env(
+                crate::paths::CHANNEL_ENV,
+                self.channel.as_deref().unwrap_or("release"),
+            );
+            if !shell_claude_resume {
+                cmd.args(crate::launch::claude_pane_env_args(&cmd)?);
+            }
+        }
+        if let Some(argv) = &shell_startup {
+            let mut argv = argv.clone();
+            if shell_claude_resume {
+                argv.extend(crate::launch::claude_pane_env_args(&cmd)?);
+            }
+            let shell = cmd.get_argv()[0].to_string_lossy();
+            let command = shell_hosted_resume_command(&shell, &argv)?;
+            cmd.args(["-i", "-c", &command]);
+        }
         #[cfg(target_os = "linux")]
         let codex_runtime_dir = if agent == proto::AgentKind::Codex
             && acp.is_none()

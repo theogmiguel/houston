@@ -366,6 +366,7 @@ pub fn run_hook_client(args: &[String]) {
         .ok()
         .and_then(|s| s.parse::<u32>().ok())
     else {
+        missing_session_diagnostic(event);
         return;
     };
     let ms = crate::hook_drop::now_ms();
@@ -498,6 +499,47 @@ pub fn run_hook_client(args: &[String]) {
     {
         tool_boundary_context();
     }
+}
+
+fn missing_session_diagnostic(event: &str) {
+    let Ok(root) = crate::paths::config_dir() else {
+        eprintln!("hook {event}: TR_SESSION is missing or invalid (expected a u32 pane ID); cannot resolve the diagnostic directory; status event lost");
+        return;
+    };
+    if missing_session_warning_due(&root, crate::hook_drop::now_ms()).unwrap_or(true) {
+        eprintln!("hook {event}: TR_SESSION is missing or invalid (expected a u32 pane ID); status event lost; Houston Claude launches must carry pane env through --settings (diagnostic limited to once per minute per channel)");
+    }
+}
+
+fn missing_session_warning_due(root: &Path, now: u64) -> std::io::Result<bool> {
+    use std::io::{Seek, Write};
+    // Hook clients are separate processes; a locked timestamp bounds their shared warning rate.
+    const WARNING_INTERVAL_MS: u64 = 60_000;
+    std::fs::create_dir_all(root)?;
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root.join("hook-missing-session.warning"))?;
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(std::fs::TryLockError::WouldBlock) => return Ok(false),
+        Err(std::fs::TryLockError::Error(error)) => return Err(error),
+    }
+    let mut previous = String::new();
+    (&mut file).take(32).read_to_string(&mut previous)?;
+    if previous
+        .parse::<u64>()
+        .ok()
+        .is_some_and(|then| now >= then && now - then < WARNING_INTERVAL_MS)
+    {
+        return Ok(false);
+    }
+    file.rewind()?;
+    file.set_len(0)?;
+    write!(file, "{now}")?;
+    Ok(true)
 }
 
 pub(crate) const TOOL_BOUNDARY_CONTEXT_ENV: &str = "HOUSTON_TOOL_BOUNDARY_CONTEXT";
@@ -911,6 +953,15 @@ mod tests {
             .is_some(),
             "and the dev launcher is not the release pane's"
         );
+    }
+
+    #[test]
+    fn missing_session_warning_is_shared_and_expires() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(missing_session_warning_due(dir.path(), 100_000).unwrap());
+        assert!(!missing_session_warning_due(dir.path(), 159_999).unwrap());
+        assert!(missing_session_warning_due(dir.path(), 160_000).unwrap());
+        assert!(missing_session_warning_due(dir.path(), 99_000).unwrap());
     }
 
     #[test]

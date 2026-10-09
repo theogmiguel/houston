@@ -9,6 +9,71 @@ pub const PROMPT_FILE_THRESHOLD: usize = 12_000;
 
 pub type LaunchArgs = (Vec<String>, Option<(PathBuf, String)>);
 
+pub(crate) fn claude_pane_env_args(command: &portable_pty::CommandBuilder) -> Result<[String; 2]> {
+    // Claude's background host preserves argv but inherits its daemon's environment.
+    let env: serde_json::Map<String, serde_json::Value> = command
+        .iter_extra_env_as_str()
+        .filter(|(key, _)| {
+            key.starts_with("HOUSTON_")
+                || key.starts_with("TR_")
+                || matches!(*key, "PATH" | "CLAUDE_CONFIG_DIR")
+        })
+        .map(|(key, value)| {
+            (
+                key.to_string(),
+                serde_json::Value::String(value.to_string()),
+            )
+        })
+        .collect();
+    let supplied = command
+        .get_argv()
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, arg)| {
+            if arg == "--settings" {
+                command
+                    .get_argv()
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+            } else {
+                arg.to_str()
+                    .and_then(|value| value.strip_prefix("--settings="))
+            }
+        });
+    let mut settings = if let Some(supplied) = supplied {
+        let text = if supplied.trim_start().starts_with('{') {
+            supplied.to_string()
+        } else {
+            let path = Path::new(supplied);
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                PathBuf::from(command.get_cwd().cloned().unwrap_or_default()).join(path)
+            };
+            std::fs::read_to_string(&path).map_err(|error| {
+                anyhow::anyhow!(
+                    "Claude --settings path {} must be a readable JSON object: {error}",
+                    path.display()
+                )
+            })?
+        };
+        serde_json::from_str::<serde_json::Value>(&text)?
+    } else {
+        serde_json::json!({})
+    };
+    let object = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("Claude --settings must be a JSON object"))?;
+    let settings_env = object
+        .entry("env")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("Claude --settings env must be a JSON object"))?;
+    settings_env.extend(env);
+    Ok(["--settings".into(), settings.to_string()])
+}
+
 pub fn handback_permission_args(agent: proto::AgentKind) -> Vec<String> {
     match agent {
         // One token: the flag is variadic, so a separate value could swallow a later positional.
@@ -408,6 +473,57 @@ impl ApprovalMode {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn claude_pane_env_preserves_relative_settings_files() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("settings.json"),
+            r#"{"model":"sonnet","env":{"USER_SETTING":"retained"}}"#,
+        )
+        .unwrap();
+        let mut command = portable_pty::CommandBuilder::new("claude");
+        command.env_clear();
+        command.cwd(directory.path());
+        command.arg("--settings=settings.json");
+        command.env("TR_SESSION", "7");
+        let args = super::claude_pane_env_args(&command).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&args[1]).unwrap();
+        assert_eq!(settings["model"], "sonnet");
+        assert_eq!(settings["env"]["USER_SETTING"], "retained");
+        assert_eq!(settings["env"]["TR_SESSION"], "7");
+    }
+    #[test]
+    fn claude_settings_carry_only_the_pane_launch_environment() {
+        let mut command = portable_pty::CommandBuilder::new("claude");
+        command.env_clear();
+        for (key, value) in [
+            ("TR_SESSION", "7"),
+            ("HOUSTON_SESSION", "7"),
+            ("HOUSTON_CHANNEL", "dev"),
+            ("HOUSTON_MCP_TOKEN", "pane-token"),
+            ("PATH", "/tmp/bin"),
+            ("CLAUDE_CONFIG_DIR", "/tmp/profile with spaces"),
+            ("ANTHROPIC_API_KEY", "excluded"),
+        ] {
+            command.env(key, value);
+        }
+        command.args(["--settings", r#"{"env":{"USER_SETTING":"retained","TR_SESSION":"stale"},"hooks":{"SessionStart":[]}}"#]);
+        let args = super::claude_pane_env_args(&command).unwrap();
+        assert_eq!(args[0], "--settings");
+        let settings: serde_json::Value = serde_json::from_str(&args[1]).unwrap();
+        assert_eq!(settings["env"]["TR_SESSION"], "7");
+        assert_eq!(settings["env"]["HOUSTON_SESSION"], "7");
+        assert_eq!(settings["env"]["HOUSTON_CHANNEL"], "dev");
+        assert_eq!(settings["env"]["HOUSTON_MCP_TOKEN"], "pane-token");
+        assert_eq!(settings["env"]["PATH"], "/tmp/bin");
+        assert_eq!(
+            settings["env"]["CLAUDE_CONFIG_DIR"],
+            "/tmp/profile with spaces"
+        );
+        assert!(settings["env"].get("ANTHROPIC_API_KEY").is_none());
+        assert_eq!(settings["env"]["USER_SETTING"], "retained");
+        assert_eq!(settings["hooks"]["SessionStart"], serde_json::json!([]));
+    }
     #[test]
     fn child_handback_permission_is_limited_to_the_exact_houston_tool() {
         use houston_protocol::AgentKind::*;

@@ -2,7 +2,15 @@
 
 > For maintainers. Start at [overview.md](overview.md) for the process model.
 
-An agent CLI running in a pane is an ordinary child process. What makes it an *agent* is
+An agent CLI starts as a pane's child process; Claude Code can hand its session to its own
+background daemon. Houston supplies Claude's pane identity, channel, orchestration environment,
+helper PATH and explicit profile directory through both the process environment and
+`--settings`. This also covers Claude resumed inside a shell pane, so hook subprocesses retain
+the pane context across that hand-off. The launch settings do not rewrite user files.
+Missing or invalid hook pane identity emits a diagnostic at most once per minute per channel
+when the diagnostic directory is writable.
+
+What makes it an *agent* is
 that its own lifecycle events reach the daemon — through hooks it installed, or through a
 documented JSON-RPC stream. Everything on this page hangs off that: status is
 hooks-driven, and PTY content is not a status machine.
