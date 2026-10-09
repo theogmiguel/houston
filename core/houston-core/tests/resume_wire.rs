@@ -454,10 +454,10 @@ async fn shell_hosted_claude_hook_is_recorded_and_restart_resumes_inside_shell()
         Some(conversation),
         "the restored shell must relaunch the exact Claude conversation"
     );
-    let settings: Value = serde_json::from_str(&flag(&argv, "--settings").expect(
+    let settings_file = flag(&argv, "--settings").expect(
         "shell recovery must carry pane identity in Claude arguments, even if its daemon drops env",
-    ))
-    .unwrap();
+    );
+    let settings: Value = serde_json::from_slice(&std::fs::read(&settings_file).unwrap()).unwrap();
     assert_eq!(settings["env"]["TR_SESSION"], restored.id.to_string());
     assert_eq!(settings["env"]["HOUSTON_SESSION"], restored.id.to_string());
     let home = tempfile::tempdir().unwrap();
