@@ -9,7 +9,13 @@ pub const PROMPT_FILE_THRESHOLD: usize = 12_000;
 
 pub type LaunchArgs = (Vec<String>, Option<(PathBuf, String)>);
 
-pub(crate) fn claude_pane_env_args(command: &portable_pty::CommandBuilder) -> Result<[String; 2]> {
+/// Writes the pane's merged Claude settings to `settings_file` and returns the `--settings`
+/// arguments naming it. The env carries the pane bearer token, so it travels in an
+/// owner-only file rather than argv, which other local users can read.
+pub(crate) fn claude_pane_env_args(
+    command: &portable_pty::CommandBuilder,
+    settings_file: &Path,
+) -> Result<[String; 2]> {
     // Claude's background host preserves argv but inherits its daemon's environment.
     let env: serde_json::Map<String, serde_json::Value> = command
         .iter_extra_env_as_str()
@@ -71,7 +77,39 @@ pub(crate) fn claude_pane_env_args(command: &portable_pty::CommandBuilder) -> Re
         .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("Claude --settings env must be a JSON object"))?;
     settings_env.extend(env);
-    Ok(["--settings".into(), settings.to_string()])
+    write_owner_only(settings_file, settings.to_string().as_bytes())?;
+    Ok(["--settings".into(), settings_file.display().to_string()])
+}
+
+fn write_owner_only(path: &Path, contents: &[u8]) -> Result<()> {
+    let dir = path.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "pane settings path {} has no parent directory",
+            path.display()
+        )
+    })?;
+    std::fs::create_dir_all(dir).map_err(|e| anyhow::anyhow!("creating {}: {e}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| anyhow::anyhow!("chmod 0700 {}: {e}", dir.display()))?;
+        // Replace rather than truncate, so a file left with wider permissions never keeps them.
+        let _ = std::fs::remove_file(path);
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|e| anyhow::anyhow!("creating {}: {e}", path.display()))?;
+        file.write_all(contents)
+            .map_err(|e| anyhow::anyhow!("writing {}: {e}", path.display()))?;
+    }
+    #[cfg(not(unix))]
+    std::fs::write(path, contents)
+        .map_err(|e| anyhow::anyhow!("writing {}: {e}", path.display()))?;
+    Ok(())
 }
 
 pub fn handback_permission_args(agent: proto::AgentKind) -> Vec<String> {
@@ -486,8 +524,11 @@ mod tests {
         command.cwd(directory.path());
         command.arg("--settings=settings.json");
         command.env("TR_SESSION", "7");
-        let args = super::claude_pane_env_args(&command).unwrap();
-        let settings: serde_json::Value = serde_json::from_str(&args[1]).unwrap();
+        let settings_file = directory.path().join("state/hooks/pane-settings/7.json");
+        let args = super::claude_pane_env_args(&command, &settings_file).unwrap();
+        assert_eq!(args[1], settings_file.display().to_string());
+        let settings: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&settings_file).unwrap()).unwrap();
         assert_eq!(settings["model"], "sonnet");
         assert_eq!(settings["env"]["USER_SETTING"], "retained");
         assert_eq!(settings["env"]["TR_SESSION"], "7");
@@ -508,9 +549,28 @@ mod tests {
             command.env(key, value);
         }
         command.args(["--settings", r#"{"env":{"USER_SETTING":"retained","TR_SESSION":"stale"},"hooks":{"SessionStart":[]}}"#]);
-        let args = super::claude_pane_env_args(&command).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let settings_file = directory.path().join("pane-settings/7.json");
+        // A file left by an earlier launch with wider permissions must not keep them.
+        std::fs::create_dir_all(settings_file.parent().unwrap()).unwrap();
+        std::fs::write(&settings_file, "stale").unwrap();
+        let args = super::claude_pane_env_args(&command, &settings_file).unwrap();
         assert_eq!(args[0], "--settings");
-        let settings: serde_json::Value = serde_json::from_str(&args[1]).unwrap();
+        assert!(
+            !args.iter().any(|arg| arg.contains("pane-token")),
+            "the pane bearer token must not reach argv: {args:?}"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |path: &std::path::Path| {
+                std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+            };
+            assert_eq!(mode(&settings_file), 0o600);
+            assert_eq!(mode(settings_file.parent().unwrap()), 0o700);
+        }
+        let settings: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&args[1]).unwrap()).unwrap();
         assert_eq!(settings["env"]["TR_SESSION"], "7");
         assert_eq!(settings["env"]["HOUSTON_SESSION"], "7");
         assert_eq!(settings["env"]["HOUSTON_CHANNEL"], "dev");

@@ -3318,6 +3318,14 @@ impl Daemon {
             .join(id.to_string())
     }
 
+    fn claude_settings_path(&self, id: u32) -> PathBuf {
+        self.scrollback_dir
+            .parent()
+            .expect("state directory")
+            .join("hooks/pane-settings")
+            .join(format!("{id}.json"))
+    }
+
     fn scrollback_path(&self, id: u32) -> PathBuf {
         self.scrollback_dir.join(format!("{id}.bin"))
     }
@@ -4374,6 +4382,15 @@ impl Daemon {
                 tracing::warn!(
                     "removing child context signal for pane {id} at {}: {e}",
                     signal.display()
+                );
+            }
+        }
+        let settings = self.claude_settings_path(id);
+        if let Err(e) = std::fs::remove_file(&settings) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(
+                    "removing Claude settings for pane {id} at {}: {e}",
+                    settings.display()
                 );
             }
         }
@@ -9374,13 +9391,19 @@ impl Daemon {
                 self.channel.as_deref().unwrap_or("release"),
             );
             if !shell_claude_resume {
-                cmd.args(crate::launch::claude_pane_env_args(&cmd)?);
+                cmd.args(crate::launch::claude_pane_env_args(
+                    &cmd,
+                    &self.claude_settings_path(id),
+                )?);
             }
         }
         if let Some(argv) = &shell_startup {
             let mut argv = argv.clone();
             if shell_claude_resume {
-                argv.extend(crate::launch::claude_pane_env_args(&cmd)?);
+                argv.extend(crate::launch::claude_pane_env_args(
+                    &cmd,
+                    &self.claude_settings_path(id),
+                )?);
             }
             let shell = cmd.get_argv()[0].to_string_lossy();
             let command = shell_hosted_resume_command(&shell, &argv)?;
