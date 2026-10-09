@@ -113,7 +113,9 @@ Codex Auto PermissionRequest is approval-flow evidence, not human-wait evidence.
 unresolved episode after five minutes raises a deduplicated `stalled?` marker with its
 episode, elapsed time and `approval_outcome_unobserved`. The threshold is a conservative
 heuristic: hermetic fake-agent timing is only a latency lower bound, and does not measure
-real reviewers. Slow review, long tools and missing hooks can produce false positives.
+real reviewers. On Linux, an episode whose session still has a running external process
+is treated as approved and raises no marker, because hooks report the outcome only when
+the tool completes. Slow review and missing hooks can still produce false positives.
 The marker leaves the agent Working, produces no desktop notification and reaches parents
 only through an explicit wait. Matching PostToolUse, Stop, Interrupt or a new root user
 prompt clears it. Without a call id, matching requires turn, tool and canonical input

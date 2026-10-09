@@ -13063,6 +13063,24 @@ impl Daemon {
         }
     }
 
+    /// A Codex auto-review episode whose command is already executing was approved: the
+    /// running process tree is the outcome evidence the hooks only report on completion.
+    fn approved_command_running(&self, session: u32) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.get(session)
+                .ok()
+                .and_then(|s| s.pid)
+                .and_then(|pid| has_external_running_descendants(pid, true))
+                .unwrap_or(false)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = session;
+            false
+        }
+    }
+
     fn resolve_permission_episodes(&self, session: u32, end: &orchestrate::EpisodeEnd) -> bool {
         let mut episodes = self.permission_episodes.lock().expect("episodes lock");
         let Some(eps) = episodes.get_mut(&session) else {
@@ -13132,10 +13150,19 @@ impl Daemon {
                 true,
             );
         }
+        let with_episodes: Vec<u32> = {
+            let mut episodes = self.permission_episodes.lock().expect("episodes lock");
+            episodes.retain(|id, _| live.contains(id));
+            episodes.keys().copied().collect()
+        };
+        let approved: HashSet<u32> = with_episodes
+            .into_iter()
+            .filter(|child| self.approved_command_running(*child))
+            .collect();
         let mut episodes = self.permission_episodes.lock().expect("episodes lock");
-        episodes.retain(|id, _| live.contains(id));
         let stalls: Vec<_> = episodes
             .iter_mut()
+            .filter(|(child, _)| !approved.contains(child))
             .flat_map(|(child, episodes)| {
                 episodes
                     .take_auto_review_stalls(now)
