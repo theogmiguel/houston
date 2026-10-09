@@ -6488,16 +6488,27 @@ impl Daemon {
         crate::claude_hooks::sentinel_for(self.channel.as_deref())
     }
 
-    fn claude_hook_paths(&self) -> Result<Vec<std::path::PathBuf>> {
+    fn claude_hook_paths(&self) -> Result<(Vec<std::path::PathBuf>, Option<String>)> {
         let home = self.hook_config_home()?;
         let mut paths = vec![crate::claude_hooks::global_settings_path(&home)];
         for profile in self.db.list_agent_profiles("claude")? {
             let dir = crate::agent_accounts::expand_tilde(&profile.config_dir, &home.home);
             paths.push(dir.join("settings.json"));
         }
+        let mut errors = Vec::new();
+        paths.retain(|path| {
+            if path.is_absolute() {
+                true
+            } else {
+                errors.push(format!(
+                    "skipping Claude hooks at {path:?}: expected an absolute config directory after ~/$HOME expansion"
+                ));
+                false
+            }
+        });
         paths.sort();
         paths.dedup();
-        Ok(paths)
+        Ok((paths, (!errors.is_empty()).then(|| errors.join("; "))))
     }
 
     fn apply_claude_hooks(&self, enabled: bool) -> Result<()> {
@@ -6510,7 +6521,10 @@ impl Daemon {
         } else {
             None
         };
-        let paths = self.claude_hook_paths()?;
+        let (paths, error) = self.claude_hook_paths()?;
+        if let Some(error) = error {
+            tracing::warn!("{error}");
+        }
         let key = "agent_hooks.claude.paths";
         let mut tracked: Vec<std::path::PathBuf> = self
             .db
@@ -6518,6 +6532,17 @@ impl Daemon {
             .map(|raw| serde_json::from_str(&raw))
             .transpose()?
             .unwrap_or_default();
+        // Old relative records cannot identify the original install directory safely.
+        tracked.retain(|path| {
+            if path.is_absolute() {
+                true
+            } else {
+                tracing::warn!(
+                    "skipping Claude hook cleanup at {path:?}: expected an absolute settings path"
+                );
+                false
+            }
+        });
         for path in &paths {
             if let Some((exe, _)) = &context {
                 crate::claude_hooks::install(path, exe, &sentinel)?;
@@ -6544,7 +6569,11 @@ impl Daemon {
         // Keep ownership records on failure so a later install can retry migration.
         for path in self.db.workspace_hook_paths()? {
             let settings = crate::claude_hooks::settings_path(Path::new(&path));
-            crate::claude_hooks::remove(&settings, false, false, &sentinel)?;
+            if settings.is_absolute() {
+                crate::claude_hooks::remove(&settings, false, false, &sentinel)?;
+            } else {
+                tracing::warn!("skipping Claude workspace hook cleanup at {path:?}: expected an absolute workspace path");
+            }
             self.db.delete_workspace_hooks(&path)?;
         }
         Ok(())
@@ -6582,6 +6611,12 @@ impl Daemon {
             }
             Err(error) => (String::new(), false, Some(format!("{error:#}"))),
         };
+        if error.is_none() {
+            error = match self.claude_hook_paths() {
+                Ok((_, error)) => error,
+                Err(error) => Some(format!("{error:#}")),
+            };
+        }
         if let Some((proto::AgentKind::Claude, message)) = &failed {
             error = Some(message.clone());
         }

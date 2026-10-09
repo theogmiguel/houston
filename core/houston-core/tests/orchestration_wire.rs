@@ -4487,7 +4487,12 @@ async fn an_unknown_profile_label_is_refused_by_name_not_reported_as_a_fault() {
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
     r.daemon
-        .agent_profile_upsert(None, proto::AgentKind::Claude, "work", "work-dir")
+        .agent_profile_upsert(
+            None,
+            proto::AgentKind::Claude,
+            "work",
+            r._state.path().join("work-profile").to_str().unwrap(),
+        )
         .unwrap();
 
     let (status, body) = r

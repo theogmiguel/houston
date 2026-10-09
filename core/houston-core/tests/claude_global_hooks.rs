@@ -19,6 +19,7 @@ fn isolated(name: &str) -> bool {
     let home = tempfile::tempdir().unwrap();
     let result = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
         .env("HOUSTON_CLAUDE_GLOBAL_FIXTURE", "1")
+        .current_dir(home.path())
         .args(["--exact", name, "--nocapture"])
         .status()
         .unwrap();
@@ -230,6 +231,55 @@ fn config_override_and_account_profiles_get_hooks_and_consent_cleanup() {
         profile.join("settings.json"),
     ] {
         assert!(commands(&read(&path)).is_empty());
+    }
+}
+
+#[test]
+fn relative_profile_paths_never_install_or_remove_hooks_under_daemon_cwd() {
+    if isolated("relative_profile_paths_never_install_or_remove_hooks_under_daemon_cwd") {
+        return;
+    }
+    let state = tempfile::tempdir().unwrap();
+    let d = daemon(state.path());
+    d.agent_profile_upsert(None, proto::AgentKind::Claude, "Relative", "work-dir")
+        .unwrap();
+    assert!(!Path::new("work-dir/settings.json").exists());
+    let row = d
+        .agent_hooks_state()
+        .into_iter()
+        .find(|r| r.provider == proto::AgentKind::Claude)
+        .unwrap();
+    let error = row.error.unwrap();
+    assert!(
+        error.contains("work-dir") && error.contains("absolute"),
+        "{error}"
+    );
+    assert!(settings().exists());
+
+    let relative = Path::new("old-profile/settings.json");
+    claude_hooks::install(relative, "/tmp/old-helper", "--houston-managed").unwrap();
+    let workspace = Path::new("old-workspace");
+    let workspace_settings = claude_hooks::settings_path(workspace);
+    claude_hooks::install(&workspace_settings, "/tmp/old-helper", "--houston-managed").unwrap();
+    let original = std::fs::read(relative).unwrap();
+    let original_workspace = std::fs::read(&workspace_settings).unwrap();
+    let db = houston_core::db::Db::open(&state.path().join("test.db")).unwrap();
+    for enabled in [true, false] {
+        db.set_setting(
+            "agent_hooks.claude.paths",
+            r#"["old-profile/settings.json"]"#,
+        )
+        .unwrap();
+        db.record_workspace_hooks("old-workspace", false, false)
+            .unwrap();
+        d.agent_hooks_set(proto::AgentKind::Claude, enabled);
+        assert!(!Path::new("work-dir/settings.json").exists());
+        assert_eq!(std::fs::read(relative).unwrap(), original);
+        assert_eq!(
+            std::fs::read(&workspace_settings).unwrap(),
+            original_workspace
+        );
+        assert_eq!(d.hook_consent(proto::AgentKind::Claude), enabled);
     }
 }
 

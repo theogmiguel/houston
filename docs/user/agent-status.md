@@ -71,6 +71,9 @@ it off removes exactly what Houston added:
 
 - **Claude Code** — adds managed lifecycle hook entries to `~/.claude/settings.json`,
   or `settings.json` in `CLAUDE_CONFIG_DIR` and Houston account profile directories.
+  Hook installation requires an absolute config directory. Houston expands `~` and
+  `$HOME` in account profile paths; directories that remain relative are skipped and
+  reported in Agent status. Use an absolute profile path for status reporting.
   Claude started from any directory inside a Houston pane reports status. The commands
   exit silently when `TR_SESSION` is empty, so they do nothing outside Houston.
   Your other settings and hooks are preserved. Houston removes its old workspace entries
