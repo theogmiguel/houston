@@ -67,14 +67,16 @@ export function childGroup(info: SessionInfo): 'Needs you' | 'Working' | 'Settle
 
 export function childStateWord(info: SessionInfo): string {
   if (childGroup(info) === 'Needs you') return 'needs input'
-  if (isLive(info.state) && info.delegation?.state === 'unknown') return info.status ?? 'working'
-  return info.delegation ? stateWord(info.delegation) : childGroup(info) === 'Settled' ? 'done' : info.status ?? 'working'
+  if (isLive(info.state) && info.delegation?.state === 'unknown') return info.status ?? 'unavailable'
+  return info.delegation ? stateWord(info.delegation) : childGroup(info) === 'Settled' ? 'done' : info.status ?? 'unavailable'
 }
 
 const ageTicks = (info: SessionInfo): boolean => isLive(info.state) && info.delegation?.settled_at == null
 
 // A missing provider signal is named, so an absent badge is not read as proof of work.
-export const glyphLabel = (info: SessionInfo) => [info.delegation?.role ?? info.title, childGroup(info), info.delegation?.capability_note].filter(Boolean).join(' · ')
+export const glyphLabel = (info: SessionInfo) => [info.delegation?.role ?? info.title, statusUnavailable(info) ? `Status unavailable: no lifecycle events from ${info.detected_agent ?? info.agent}. Check Settings → Agent status` : childGroup(info), info.delegation?.capability_note].filter(Boolean).join(' · ')
+
+const statusUnavailable = (info: SessionInfo): boolean => isLive(info.state) && childGroup(info) !== 'Needs you' && (info.status ?? 'unavailable') === 'unavailable'
 
 export function delegationAge(start: number, now: number): string {
   const seconds = Math.max(0, Math.floor((now - start) / 1000))
@@ -91,7 +93,7 @@ export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Eleme
     const status = state === 'done' ? 'Done' : state === 'failed' ? 'Failed' : 'Stalled'
     return <Tooltip label={status}><StatusLabel status={status} variant="dot" /></Tooltip>
   }
-  return <StatusDot live status={childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
+  return <StatusDot live status={childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'unavailable'} />
 }
 
 function ChildDeliveryStatus({ info }: { info: SessionInfo }): React.JSX.Element | null {

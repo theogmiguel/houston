@@ -12,11 +12,23 @@ function AgentStatusDot({ session, now }: { session: SessionInfo; now: number })
       <span aria-label={`No recent update from ${session.agent}`} className="inline-block size-2 flex-none rounded-full border border-[var(--info)] bg-transparent" />
     </Tooltip>
   ) : (
-    <span aria-hidden className={`inline-block ${session.status === 'working' ? 'size-[9px]' : 'size-2'} flex-none rounded-full ${session.status === 'needs-input'
-      ? 'bg-[var(--warn)]'
-      : session.status === 'working' ? 'animate-[spin_1s_linear_infinite] motion-reduce:animate-none border-[1.5px] border-[var(--accent)] border-r-transparent bg-transparent'
-        : session.status === 'idle' ? 'bg-[var(--text-faint)] opacity-60' : 'bg-[var(--ok)]'}`} />
+    <span aria-hidden data-testid="agent-row-dot" className={`inline-block ${session.status === 'working' ? 'size-[9px]' : 'size-2'} flex-none rounded-full ${agentRowDotClass(session.status)}`} />
   )
+}
+
+function agentRowDotClass(status: SessionInfo['status']): string {
+  switch (status) {
+    case 'needs-input':
+      return 'bg-[var(--warn)]'
+    case 'working':
+      return 'animate-[spin_1s_linear_infinite] motion-reduce:animate-none border-[1.5px] border-[var(--accent)] border-r-transparent bg-transparent'
+    case 'spawning':
+      return 'bg-[var(--accent)]'
+    case 'idle':
+      return 'bg-[var(--text-faint)] opacity-60'
+    default:
+      return 'border-[1.5px] border-[var(--text-secondary)] bg-transparent'
+  }
 }
 
 function ageLabel(session: SessionInfo, now: number): string {
