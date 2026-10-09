@@ -168,6 +168,13 @@ closing the new one. Only a pane without a parent can hand off, and `reusable` a
 `output_format` are refused with `handoff`. Orchestration must be enabled in
 Settings → Orchestration.
 
+When you ask for single-branch work that the orchestrator will edit itself, it continues
+in a new pane inside that branch's worktree using `pane_spawn{handoff: true, worktree: SLUG}`
+(`hs-pane spawn --handoff --worktree SLUG`), passing context via `state_doc`
+(`--state-doc` or `--state-doc-path`). It must not edit a child's worktree from the primary
+checkout; the new pane reports the checkout where it works. Delegated multi-branch work
+continues to use child panes with `worktree`.
+
 Each compaction of an agent's context lowers what it remembers of earlier decisions.
 Houston counts the compactions that Claude, Codex, Grok, Cursor and OpenCode report
 through their hooks, and the orchestrator overview shows the current count. Antigravity
