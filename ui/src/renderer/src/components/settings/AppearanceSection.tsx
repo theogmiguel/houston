@@ -1,4 +1,3 @@
-import { MascotSettings } from './MascotSettings'
 import {
   CHROME_THEME_LABELS,
   CHROME_THEMES,
@@ -143,7 +142,6 @@ export function AppearanceSection({
         <SidebarRowToggles />
       </Group>
 
-      <MascotSettings />
       <PanelsSettings />
 
       <Group heading="Interface">
