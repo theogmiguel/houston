@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PrInfo, SessionInfo } from '../../houston/client'
-import { formatRailDuration, gridStatus } from './railRows'
+import { formatRailDuration, gridStatus, hasWorkingDescendant, liftDelegatedWork } from './railRows'
 import { orderGridPanes, railHoverCardModel } from './railRowModel'
 
 function pane(overrides: Partial<SessionInfo> & { id: number }): SessionInfo {
@@ -34,6 +34,26 @@ describe('rail row models', () => {
 
   it('promotes panes waiting on children to the needs-input aggregate', () => {
     expect(gridStatus([pane({ id: 4, status: 'working', children_waiting: 1, status_since_ms: 9_000 })])).toEqual({ kind: 'needs-input', label: 'Input', since: null })
+  })
+
+  it('reports an idle orchestrator as working while a live descendant works', () => {
+    const sessions = [
+      pane({ id: 1, status: 'idle' }),
+      pane({ id: 2, status: 'idle', spawned_by: 1 }),
+      pane({ id: 3, status: 'working', spawned_by: 2 }),
+    ]
+    expect(hasWorkingDescendant(1, sessions)).toBe(true)
+    expect(liftDelegatedWork(sessions[0], sessions).status).toBe('working')
+    expect(gridStatus([liftDelegatedWork(sessions[0], sessions)]).kind).toBe('working')
+  })
+
+  it('keeps the orchestrator status when its descendants are idle, exited or waiting on it', () => {
+    const idle = [pane({ id: 1, status: 'idle' }), pane({ id: 2, status: 'idle', spawned_by: 1 })]
+    expect(liftDelegatedWork(idle[0], idle)).toBe(idle[0])
+    const exited = [pane({ id: 1, status: 'idle' }), pane({ id: 2, status: 'working', state: 'exited', spawned_by: 1 })]
+    expect(liftDelegatedWork(exited[0], exited)).toBe(exited[0])
+    const asking = [pane({ id: 1, status: 'needs-input' }), pane({ id: 2, status: 'working', spawned_by: 1 })]
+    expect(liftDelegatedWork(asking[0], asking)).toBe(asking[0])
   })
 
   it('orders child panes below their parent and preserves unrelated pane order', () => {

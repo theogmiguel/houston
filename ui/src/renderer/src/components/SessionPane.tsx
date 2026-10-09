@@ -1,7 +1,8 @@
 import { PaneFrame } from './ui/PaneFrame'
-import { useSession, useSessionFamily } from '../sessionsStore'
+import { useSession, useSessionFamily, useSessionsSelector } from '../sessionsStore'
+import { hasWorkingDescendant } from './ui/railRows'
 import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
-import { memo, useEffect, useContext, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useContext, useRef, useState } from 'react'
 import { ChildrenRoster, ChildStatusDot, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { WarmContext } from '../layout/warmContext'
@@ -782,8 +783,10 @@ function RosterTerminals({ client, info, children, recent, gridSessionIds, peek,
 }
 
 function SessionHeaderStatusDot({ info, live }: { info: SessionInfo; live: boolean }): React.JSX.Element {
+  const delegating = useSessionsSelector(useCallback((sessions) => hasWorkingDescendant(info.id, sessions.values()), [info.id]), Object.is, false)
   if (info.spawned_by != null) return <ChildStatusDot info={info} />
-  return <StatusDot status={info.children_waiting > 0 ? 'needs-input' : info.status} live={live || info.children_waiting > 0} />
+  const status = info.children_waiting > 0 ? 'needs-input' : info.status === 'idle' && delegating ? 'working' : info.status
+  return <StatusDot status={status} live={live || info.children_waiting > 0} />
 }
 
 function SessionInboxButton({ info }: { info: SessionInfo }): React.JSX.Element | null {

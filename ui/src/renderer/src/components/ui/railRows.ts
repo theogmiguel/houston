@@ -18,6 +18,34 @@ const STATUS_RANK: Record<RailStatusKind, number> = {
   idle: 1,
 }
 
+/** True while any running pane spawned, directly or transitively, by `id` is working or starting. */
+export function hasWorkingDescendant(id: number, sessions: Iterable<SessionInfo>): boolean {
+  const children = new Map<number, SessionInfo[]>()
+  for (const session of sessions) {
+    if (session.spawned_by == null) continue
+    const group = children.get(session.spawned_by) ?? []
+    group.push(session)
+    children.set(session.spawned_by, group)
+  }
+  const seen = new Set([id])
+  const queue = [id]
+  while (queue.length > 0) {
+    for (const child of children.get(queue.pop()!) ?? []) {
+      if (seen.has(child.id) || child.state !== 'running') continue
+      if (child.status === 'working' || child.status === 'spawning') return true
+      seen.add(child.id)
+      queue.push(child.id)
+    }
+  }
+  return false
+}
+
+/** An idle orchestrator reads as working until its delegated work finishes; its own status stays on the roster. */
+export function liftDelegatedWork(session: SessionInfo, sessions: Iterable<SessionInfo>): SessionInfo {
+  if (session.state !== 'running' || session.status !== 'idle' || !hasWorkingDescendant(session.id, sessions)) return session
+  return { ...session, status: 'working' }
+}
+
 export function gridStatus(sessions: readonly SessionInfo[]): GridStatusModel {
   if (sessions.length === 0) return { kind: 'idle', label: 'No panes', since: null }
   const statuses = sessions.map((session): GridStatusModel => {

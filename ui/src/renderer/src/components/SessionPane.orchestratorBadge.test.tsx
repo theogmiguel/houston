@@ -247,3 +247,45 @@ it('updates an open delegation card from the live store with unchanged roster pr
   expect(badge.getAttribute('aria-label')).toContain('1 waiting on you')
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain('needs input')
 })
+
+it('shows an idle orchestrator as working in its header while a child works, and keeps its roster row idle', () => {
+  const parent: SessionInfo = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', status: 'idle', title: 'parent', codename: 'parent', hidden: false, spawned_by: null, live_children: 1, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false }
+  const child: SessionInfo = { ...parent, id: 2, spawned_by: 1, status: 'working', codename: 'worker', title: 'worker', live_children: 0 }
+  const sessions = new Map([[1, parent], [2, child]])
+  const store = createSessionsStore(sessions)
+  root = createRoot(container!)
+  act(() => root!.render(
+    <SessionsStoreContext.Provider value={store}>
+      <SessionPane
+        client={{ subscribe: () => () => {}, taskSnapshot: () => {}, taskQueueRun: () => {} } as unknown as HoustonClient}
+        info={parent}
+        roster={{ sessions, maxLiveChildren: null }}
+        theme="black"
+        active
+        connected
+        fontSize={13}
+        copyOnSelect={false}
+        stripBoxGlyphs={false}
+        showProject={false}
+        registerOutput={() => noop}
+        shellIntegration={false}
+        onReconnectSsh={noop}
+        onActivate={noop}
+        onExpand={noop}
+        onZoom={noop}
+        onShellZoom={noop}
+        onSplit={noop}
+        onHeaderPointerDown={noop}
+        onHandoff={noop}
+        onOpenFile={noop}
+        onOpenDir={noop}
+      />
+    </SessionsStoreContext.Provider>
+  ))
+  const headerDot = container!.querySelector('[data-testid="head-identity"] .agent-dot')
+  expect(headerDot?.getAttribute('aria-label')).toBe('working')
+  const rosterLabels = [...container!.querySelectorAll('[aria-label="Children roster"] .agent-dot')].map((dot) => dot.getAttribute('aria-label'))
+  expect(rosterLabels).toContain('ready')
+  act(() => store.set((previous) => new Map(previous).set(2, { ...child, status: 'idle' })))
+  expect(container!.querySelector('[data-testid="head-identity"] .agent-dot')?.getAttribute('aria-label')).toBe('ready')
+})
