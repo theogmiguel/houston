@@ -5173,8 +5173,11 @@ async fn delegation_info_carries_owed_provisional_and_hold_reason() {
     assert_eq!(owed.last_result_corrected_by, None);
     assert_eq!(
         owed.hold_reason.as_deref(),
-        Some("this pane is of unknown status, not idle"),
-        "door 3 cannot paste into a pane with no idle signal, and the card says so in the daemon's words"
+        Some(
+            "result staged: waiting for quiet settle (15000 ms of a still screen with no running \
+             descendants); no lifecycle event received from cursor hooks since spawn"
+        ),
+        "a child whose hooks never reported settles on a quiet screen, and the card says so in the daemon's words"
     );
 
     let (status, body) = r
