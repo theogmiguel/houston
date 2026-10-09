@@ -1801,3 +1801,43 @@
   --animate-t-scrim: var(--motion-scrim-t);
   --animate-ease-scrim: var(--motion-scrim-ease);
 }
+
+:root {
+  --mascot-small-size: 11px;
+  --mascot-speech-size: 14px;
+  --mascot-speech-radius: 14px 14px 14px 4px;
+  --mascot-speech-padding: 10px 14px;
+  --mascot-speech-shadow: 0 10px 28px #0007;
+  --mascot-meet-shadow: 0 14px 34px #0009;
+  --mascot-border-radius-1: 10px;
+  --mascot-border-radius-2: 8px 8px 8px 2px;
+  --mascot-border-radius-3: 50%;
+  --mascot-padding-4: 4px 8px;
+  --mascot-margin-5: 8px 0 2px;
+  --mascot-margin-6: 0 !important;
+}
+:root {
+  --mascot-intro-gap: 18px;
+  --mascot-caret-margin: 2px;
+  --mascot-control-size: 12.5px;
+  --mascot-control-padding: 7px 12px;
+  --mascot-control-radius: 7px;
+  --mascot-meet-padding: 13px 14px;
+  --mascot-game-inset: 48px 8px 8px 244px;
+  --mascot-game-radius: 9px;
+  --mascot-game-bar-gap: 14px;
+  --mascot-game-button-padding: 4px 10px;
+}
+
+:root { --mascot-particle-radius: 50%; }
+
+:root {
+  --mascot-rail-size: 64px;
+  --mascot-pixel-width: 48px;
+  --mascot-pixel-height: 44px;
+  --mascot-speech-min-height: 42px;
+  --mascot-cta-height: 32px;
+  --mascot-dot-size: 6px;
+  --mascot-pointer-size: 10px;
+  --mascot-caret-width: 2px;
+}

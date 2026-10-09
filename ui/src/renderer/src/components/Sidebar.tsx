@@ -1,3 +1,4 @@
+import { MascotMount } from '../mascot/MascotMount'
 import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore';
 import type { TagInfo } from "../houston/generated/TagInfo";
 import {
@@ -418,6 +419,7 @@ export function workspaceColor(index: number): string {
 }
 
 interface Props {
+  mascotFirstRun?: boolean;
   workspaces: Workspace[];
   sessions: SessionInfo[];
   selected: string;
@@ -2340,6 +2342,7 @@ function RailTree({
 }
 
 export function Sidebar({
+  mascotFirstRun = false,
   workspaces,
   sessions,
   selected,
@@ -2974,6 +2977,7 @@ export function Sidebar({
         )}
       </NavigationRailScroll>
 
+      <MascotMount existingUser={workspaces.length > 0} firstRun={mascotFirstRun} />
       <NavigationRailFooter>
         {}
         <Tooltip label="Settings">

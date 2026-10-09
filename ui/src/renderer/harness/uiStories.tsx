@@ -1,3 +1,4 @@
+import { MascotRigSpecimen } from '../src/components/ui/MascotRig'
 import React, { useState } from 'react'
 import { DiffEmptyState } from '../src/components/ui/Diff'
 import { GitBranchBadge, GitBranchDeleteMenu, GitBranchRow } from '../src/components/ui/Branch'
@@ -533,6 +534,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Caption>Motion preference: {window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full'}</Caption>
         </header>
 
+        <SpecimenGroup heading="Mascot companion"><MascotRigSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Popover motion">
           <MotionThemeSpecimens theme="graphite" reducedMotion={false} />
           <MotionThemeSpecimens theme="graphite" reducedMotion />

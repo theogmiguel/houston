@@ -1,0 +1,200 @@
+.mascot-buddy { justify-self: start; position: relative; z-index: var(--z-leaf); width: var(--mascot-rail-size); height: var(--mascot-rail-size); margin: var(--mascot-margin-5); border: 0; padding: 0; background: none; color: inherit; cursor: pointer; border-radius: var(--mascot-border-radius-1); }
+
+.mascot-buddy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mascot-buddy .sprite { display: grid; place-items: end center; width: 100%; height: 100%; }
+.mascot-buddy .sprite > * { grid-area: 1 / 1; }
+.mascot-buddy .mascot-rig { --size: 64px; }
+.mascot-buddy canvas { display: none; width: var(--mascot-pixel-width); height: var(--mascot-pixel-height); image-rendering: pixelated; margin-bottom: var(--space-1); }
+.mascot-buddy[data-skin="pixel"] canvas { display: block; }
+.mascot-buddy[data-skin="pixel"] .mascot-rig { display: none; }
+.mascot-buddy .bubble { position: absolute; left: 80%; bottom: 72%; white-space: nowrap; font: 600 var(--mascot-small-size) var(--font-sans); background: var(--text-primary); color: var(--background); padding: var(--mascot-padding-4); border-radius: var(--mascot-border-radius-2); opacity: 0; transform: translateY(4px); transition: opacity .25s, transform .25s; pointer-events: none; z-index: var(--z-base); }
+.mascot-buddy.talk .bubble { opacity: 1; transform: none; }
+.mascot-rig .eyes-look { transition: transform .25s ease-out; }
+.mascot-acc { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.mascot-acc .prop { transform-box: fill-box; transform-origin: center; animation: mascot-prop .22s linear infinite; }
+
+.mascot-acc .steam { transform-box: fill-box; animation: mascot-steam 2.4s ease-in-out infinite; }
+
+.mascot-pxwrap { position: relative; display: none; width: var(--mascot-pixel-width); height: var(--mascot-pixel-height); margin-bottom: var(--space-1); }
+.mascot-pxwrap canvas { display: block !important; margin: var(--mascot-margin-6); }
+.mascot-buddy[data-skin="pixel"] .mascot-pxwrap { display: block; }
+.mascot-fx { position: absolute; inset: -30px -22px -4px -22px; pointer-events: none; overflow: visible; z-index: var(--z-base); }
+.mascot-fx i { position: absolute; left: var(--x); top: var(--y, 0); width: var(--s, 4px); height: var(--s, 4px); background: var(--c, #fff); border-radius: var(--r, var(--mascot-particle-radius)); opacity: 0; animation-name: var(--a); animation-duration: var(--d, 3s); animation-timing-function: linear; animation-delay: var(--w, 0s); animation-iteration-count: var(--n, infinite); }
+.mascot-fx i.heart { border-radius: 0; clip-path: polygon(50% 100%, 0 42%, 0 18%, 14% 0, 36% 0, 50% 16%, 64% 0, 86% 0, 100% 18%, 100% 42%); }
+.mascot-fx i.star { border-radius: 0; clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%); }
+.mascot-fx i.bat { border-radius: 0; clip-path: polygon(0 20%, 30% 45%, 50% 25%, 70% 45%, 100% 20%, 80% 75%, 50% 60%, 20% 75%); }
+.mascot-fx i.flag { border-radius: 0; clip-path: polygon(0 0, 100% 0, 50% 100%); opacity: 1; animation: mascot-sway 2.2s ease-in-out var(--w) infinite alternate; }
+
+
+
+
+
+
+.mascot-fx i.ring { background: none; border: 2px solid var(--c); }
+
+
+.mascot-rig.a-hula .body { animation: mascot-hula .7s ease-in-out infinite alternate; }
+.mascot-rig.a-hula .ring-sweep { opacity: 1; }
+.mascot-rig.a-hula .ring-sweep > i { animation: mascot-r-orbit .7s linear infinite; }
+
+.mascot-rig.a-read .body, .mascot-rig.a-stars .body, .mascot-rig.a-happy .body { animation: mascot-r-float 4.8s ease-in-out infinite; }
+.mascot-rig.a-read .head { transform: rotate(-3deg) translateY(1.6%); }
+.mascot-rig.a-stars .head { transform: rotate(-5deg) translateY(-1%); }
+.mascot-rig.a-happy .eyes { transform: translateY(-.6%) scaleY(.66); }
+.mascot-rig.a-happy .core-glow { opacity: .95; }
+.mascot-rig.a-scan .eyes-look { animation: mascot-scan 3.2s ease-in-out infinite; }
+
+.mascot-rig.a-call .arm-r { transform: translate(9%, -4%) rotate(-128deg); z-index: var(--z-base); }
+.mascot-rig.a-call .arm-r > .l { animation: mascot-r-hand 1.2s ease-in-out infinite; }
+.mascot-rig.a-call .head { transform: rotate(5deg); }
+.mascot-rig.a-call .body { animation: mascot-r-float 4.8s ease-in-out infinite; }
+.mascot-rig.a-hurt .head { transform: rotate(-6deg) translateY(1%); }
+.mascot-rig.a-hurt .eyes { transform: translateY(1%) scaleY(.5); }
+.mascot-buddy.flip .sprite { animation: mascot-flip .85s cubic-bezier(.3,0,.3,1) 1; }
+
+[data-theme="graphite"] .mascot-buddy .eyes { filter: drop-shadow(0 0 2px #7ff3ff); }
+.mascot-buddy.glowup .eyes { animation: mascot-glowup 1.4s ease-out 1; }
+
+.mascot-buddy[data-outfit="sunset"] .mascot-rig, .mascot-buddy[data-outfit="sunset"] canvas { filter: hue-rotate(140deg) saturate(1.15); }
+.mascot-buddy[data-outfit="aurora"] .mascot-rig, .mascot-buddy[data-outfit="aurora"] canvas { filter: hue-rotate(-70deg) saturate(1.1); }
+.mascot-buddy[data-outfit="mono"] .mascot-rig, .mascot-buddy[data-outfit="mono"] canvas { filter: grayscale(1) brightness(1.15); }
+.mascot-disco .mascot-buddy .mascot-rig, .mascot-disco .mascot-buddy canvas { animation: mascot-disco 1.1s linear infinite; }
+.mascot-disco-footer { animation: mascot-disco 1.1s linear infinite; background: radial-gradient(circle at 25% 55%, #ff3df233, transparent 55%), radial-gradient(circle at 75% 30%, #3fe0ff33, transparent 55%); }
+
+
+.mascot-rig { width: var(--size); height: var(--size); position: relative; }
+.mascot-rig .l, .mascot-rig .l > img, .mascot-rig .l > .l { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mascot-rig img { display: block; user-select: none; -webkit-user-drag: none; }
+.mascot-rig .head { transform-origin: 51.4% 52%; }
+.mascot-rig .eyes { transform-origin: 50.8% 40%; }
+.mascot-rig .arm-l, .mascot-rig .arm-l > .l { transform-origin: 32.6% 64%; }
+.mascot-rig .arm-r, .mascot-rig .arm-r > .l { transform-origin: 67.8% 64%; }
+.mascot-rig .torso { transform-origin: 50.2% 76.6%; }
+.mascot-rig .body { transform-origin: 50.2% 88%; }
+.mascot-rig .core-glow { position: absolute; left: 36.2%; top: 62.2%; width: 28%; height: 28%; border-radius: var(--mascot-border-radius-3);
+  background: radial-gradient(closest-side, rgba(120,240,255,.75), rgba(63,224,255,.25) 55%, transparent); mix-blend-mode: screen; opacity: .45; }
+.mascot-rig .ring-sweep { position: absolute; inset: 0; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; mix-blend-mode: screen; opacity: 0; }
+.mascot-rig .ring-sweep > i { position: absolute; left: -48.6%; top: -58.9%; width: 200%; height: 200%; transform-origin: 50% 50%;
+  background: conic-gradient(from 0deg, transparent 0 300deg, rgba(160,240,255,.25) 330deg, rgba(255,255,255,.95) 356deg, transparent 360deg); }
+.mascot-rig .zz { position: absolute; right: 12%; top: 10%; font: 700 calc(var(--size) * .12)/1 var(--font-sans); color: #a9b8ff; opacity: 0; }
+.mascot-rig .spark { position: absolute; width: 10%; height: 10%; clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%); opacity: 0; }
+
+.mascot-rig.a-idle .body, .mascot-rig.a-work .body, .mascot-rig.a-needs .body, .mascot-rig.a-sleep .body, .mascot-rig.a-wave .body { animation: mascot-r-float 4.8s ease-in-out infinite; }
+.mascot-rig.a-idle .head { animation: mascot-r-head 4.8s ease-in-out infinite; }
+.mascot-rig.a-idle .torso, .mascot-rig.a-needs .torso, .mascot-rig.a-wave .torso { animation: mascot-r-lag 4.8s ease-in-out -0.25s infinite; }
+.mascot-rig.a-idle .arm-l, .mascot-rig.a-needs .arm-l, .mascot-rig.a-wave .arm-l { animation: mascot-r-arm-l 4.8s ease-in-out -0.5s infinite; }
+.mascot-rig.a-idle .arm-r { animation: mascot-r-arm-r 4.8s ease-in-out -0.5s infinite; }
+.mascot-rig.a-idle .eyes, .mascot-rig.a-work .eyes, .mascot-rig.a-needs .eyes { animation: mascot-r-blink 5.3s linear infinite; }
+.mascot-rig.a-idle .core-glow { animation: mascot-r-core 4.8s ease-in-out infinite; }
+
+
+
+
+
+
+
+.mascot-rig.a-work .ring-sweep, .mascot-rig.a-party .ring-sweep { opacity: 1; }
+.mascot-rig.a-work .ring-sweep > i { animation: mascot-r-orbit 1.8s linear infinite; }
+.mascot-rig.a-work .core-glow { animation: mascot-r-pulse .9s ease-in-out infinite; }
+.mascot-rig.a-work .head { animation: mascot-r-nod 1.8s ease-in-out infinite; }
+.mascot-rig.a-work .arm-l { animation: mascot-r-tap-l .45s ease-in-out infinite alternate; }
+.mascot-rig.a-work .arm-r { animation: mascot-r-tap-r .45s ease-in-out -.225s infinite alternate; }
+.mascot-rig.a-work .torso { animation: mascot-r-lag 4.8s ease-in-out -0.25s infinite; }
+
+
+
+
+
+.mascot-rig.a-needs .arm-r { transform: translate(9%, -4%) rotate(-128deg); animation: mascot-r-raise .55s cubic-bezier(.3,1.5,.5,1) both; z-index: var(--z-base); }
+.mascot-rig.a-needs .arm-r > .l { animation: mascot-r-hand 1.2s ease-in-out .55s infinite; }
+.mascot-rig.a-needs .head { transform: rotate(5deg); animation: mascot-r-tilt .55s ease-out both; }
+
+
+
+
+.mascot-rig.a-wave .arm-r { animation: mascot-r-wave-arm 3.4s cubic-bezier(.4,0,.3,1) infinite; z-index: var(--z-base); }
+.mascot-rig.a-wave .arm-r > .l { animation: mascot-r-wave-hand 3.4s ease-in-out infinite; }
+.mascot-rig.a-wave .head { animation: mascot-r-wave-head 3.4s ease-in-out infinite; }
+.mascot-rig.a-wave .eyes { animation: mascot-r-squint 3.4s ease-in-out infinite; }
+
+
+
+
+.mascot-rig.a-party .body { animation: mascot-r-hop 2.2s cubic-bezier(.3,0,.3,1) infinite; }
+.mascot-rig.a-party .arm-l { animation: mascot-r-cheer-l 2.2s ease-in-out infinite; z-index: var(--z-base); }
+.mascot-rig.a-party .arm-r { animation: mascot-r-cheer-r 2.2s ease-in-out infinite; z-index: var(--z-base); }
+.mascot-rig.a-party .eyes { animation: mascot-r-squint-party 2.2s ease-in-out infinite; }
+.mascot-rig.a-party .ring-sweep > i { animation: mascot-r-orbit .7s linear infinite; }
+.mascot-rig.a-party .core-glow { animation: mascot-r-pulse .55s ease-in-out infinite; }
+.mascot-rig.a-party .spark { animation: mascot-r-spark 2.2s ease-out infinite; }
+
+
+
+
+
+.mascot-rig.a-stretch .body { animation: mascot-r-float 4.8s ease-in-out infinite; }
+.mascot-rig.a-stretch .arm-l { animation: mascot-r-cheer-l 1.6s ease-in-out 1; z-index: var(--z-base); }
+.mascot-rig.a-stretch .arm-r { animation: mascot-r-cheer-r 1.6s ease-in-out 1; z-index: var(--z-base); }
+.mascot-rig.a-stretch .eyes { animation: mascot-r-squint-party 1.6s ease-in-out 1; }
+.mascot-rig.a-sleep .head { transform: translateY(2.4%) rotate(-7deg); }
+.mascot-rig.a-sleep .eyes { transform: translateY(1.2%) scaleY(.12); }
+.mascot-rig.a-sleep .core { opacity: .35; }
+.mascot-rig.a-sleep .core-glow { opacity: .1; }
+.mascot-rig.a-sleep .arm-l { transform: translate(1.5%, 2.5%) rotate(-10deg); }
+.mascot-rig.a-sleep .arm-r { transform: translate(-1.5%, 2.5%) rotate(10deg); }
+.mascot-rig.a-sleep .body { animation-duration: 10s; }
+.mascot-rig.a-sleep .zz { animation: mascot-r-z 4.5s ease-out infinite; }
+.mascot-rig.a-sleep .zz:nth-of-type(2) { animation-delay: 1.5s; right: 6%; }
+
+.mascot-rig .ring-sweep { mask-image: url("./mascotAssets/ring_mask.png"); -webkit-mask-image: url("./mascotAssets/ring_mask.png"); }
+
+.mascot-slot { flex: none; padding: 0 var(--space-2); position: relative; }
+.mascot-rig.loop-anim *, .mascot-buddy.loop-anim * { animation-play-state: inherit; }
+[data-motion-paused] .mascot-motion:not([data-background="true"]) *, .mascot-motion[data-paused="true"] * { animation-play-state: paused !important; }
+
+.mascot-welcome { position: absolute; inset: var(--space-2); display: grid; place-items: center; text-align: center; z-index: var(--z-overlay); cursor: default; border-radius: var(--mascot-game-radius); }
+[data-theme="paper"] .mascot-welcome::before { background: radial-gradient(70% 70% at 50% 42%, #dfe4ff, var(--background) 72%); }
+.mascot-intro { display: grid; justify-items: center; gap: var(--mascot-intro-gap); }
+.mascot-intro-stage { position: relative; display: grid; place-items: center; }
+.mascot-speech { position: absolute; left: 86%; top: 2%; width: max-content; max-width: 270px; text-align: left; background: var(--text-primary); color: var(--background); font: 600 var(--mascot-speech-size)/1.45 var(--font-sans); padding: var(--mascot-speech-padding); border-radius: var(--mascot-speech-radius); box-shadow: var(--mascot-speech-shadow); min-height: var(--mascot-speech-min-height); }
+.mascot-caret { display: inline-block; width: var(--mascot-caret-width); height: 1em; margin-left: var(--mascot-caret-margin); vertical-align: -2px; background: currentColor; animation: mascot-caret 1s steps(1) infinite; }
+.mascot-dots { display: flex; gap: var(--space-1-5); }
+.mascot-dots i { width: var(--mascot-dot-size); height: var(--mascot-dot-size); border-radius: var(--tr-radius-pill); background: var(--border-hover); }
+.mascot-dots i.on { background: #3fe0ff; }
+.mascot-cta { display: flex; gap: var(--space-2); justify-content: center; min-height: var(--mascot-cta-height); }
+.mascot-cta[data-awaiting="true"] { visibility: hidden; }
+.mascot-cta button, .mascot-meet button { font: 600 var(--mascot-control-size) var(--font-sans); padding: var(--mascot-control-padding); border-radius: var(--mascot-control-radius); border: 1px solid var(--border); background: transparent; color: var(--text-primary); cursor: pointer; }
+.mascot-cta button.primary, .mascot-meet button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mascot-skipintro { position: absolute; right: 16px; bottom: 14px; font: 500 var(--tr-text-small-size) var(--font-sans); color: var(--text-muted); background: none; border: 0; cursor: pointer; min-height: var(--h-ctl); }
+.mascot-continue { font: 500 var(--mascot-small-size) var(--font-mono); color: var(--text-muted); letter-spacing: .04em; }
+.mascot-welcome.leaving .mascot-speech, .mascot-welcome.leaving .mascot-dots, .mascot-welcome.leaving .mascot-cta, .mascot-welcome.leaving .mascot-skipintro, .mascot-welcome.leaving .mascot-continue { opacity: 0; transition: opacity .2s; }
+.mascot-meet { position: fixed; z-index: var(--z-popover); width: 260px; display: grid; gap: var(--space-2); padding: var(--mascot-meet-padding); background: var(--card-hover); border: 1px solid var(--border-hover); border-radius: var(--tr-radius-card); box-shadow: var(--mascot-meet-shadow); text-align: left; }
+.mascot-meet::before { content: ""; position: absolute; left: -6px; bottom: 26px; width: var(--mascot-pointer-size); height: var(--mascot-pointer-size); background: var(--card-hover); border-left: 1px solid var(--border-hover); border-bottom: 1px solid var(--border-hover); transform: rotate(45deg); }
+.mascot-meet b { font-size: var(--mascot-speech-size); }
+.mascot-meet p { font-size: var(--mascot-control-size); color: var(--text-secondary); margin: 0; }
+.mascot-meet small { font-size: var(--mascot-small-size); color: var(--text-muted); }
+.mascot-meet .acts { display: flex; gap: var(--space-1-5); }
+.mascot-game { position: fixed; inset: var(--mascot-game-inset); z-index: var(--z-modal); border-radius: var(--mascot-game-radius); background: #05060f; display: grid; place-items: center; align-content: center; gap: var(--space-2-5); border: 1px solid #1f2340; }
+.mascot-game canvas { width: min(100%, 640px); aspect-ratio: 16 / 10; image-rendering: pixelated; display: block; }
+.mascot-game .gbar { display: flex; gap: var(--mascot-game-bar-gap); align-items: center; font: var(--mascot-small-size) var(--font-mono); color: #8d93c9; }
+.mascot-game button { font: 600 var(--mascot-small-size) var(--font-sans); background: #1a1f45; color: #e6e8ff; border: 1px solid #2f3670; border-radius: var(--tr-radius-sm); padding: var(--mascot-game-button-padding); cursor: pointer; min-height: var(--h-ctl); }
+@media (max-width: 860px) { .mascot-speech { position: static; margin-top: var(--space-2); } }
+.mascot-buddy.arrive .sprite { animation: mascot-arrive .95s cubic-bezier(.3,.8,.4,1) both; }
+.mascot-buddy.hop .sprite { animation: mascot-hop .9s cubic-bezier(.3,0,.3,1) 1; }
+
+body:has([data-testid="mascot-intro"]) [data-testid="mascot-companion"] { visibility: hidden; }
+
+html[data-motion-paused] .mascot-motion[data-background="true"], html[data-motion-paused] .mascot-motion[data-background="true"] .loop-anim { animation-play-state: running; }
+
+.mascot-welcome::before { content: ""; position: absolute; inset: 0; border-radius: var(--mascot-game-radius); z-index: -1; background: radial-gradient(70% 70% at 50% 42%, #161c40, var(--background) 72%); transition: opacity .7s .15s; }
+.mascot-welcome.leaving::before { opacity: 0; }
+.mascot-meet { line-height: 1.55; }
+
+.mascot-welcome:focus { outline: none; }
+
+.mascot-reconnect { position: fixed; top: calc(var(--h-top) + var(--space-6) + var(--space-5)); left: 50%; transform: translateX(-50%); z-index: var(--z-toast); pointer-events: none; }
+
+/* Match mood selector specificity so the static pose wins without a shorthand override. */
+.mascot-motion.mascot-motion[data-reduced="true"] *, .mascot-motion.mascot-motion[data-reduced="true"] { animation: none; transition: none !important; }
+.mascot-motion[data-reduced="true"] .mascot-fx { display: none; }
+@media (prefers-reduced-motion: reduce) { .mascot-motion.mascot-motion.mascot-motion *, .mascot-motion.mascot-motion.mascot-motion { animation: none; transition: none !important; } .mascot-fx { display: none; } }

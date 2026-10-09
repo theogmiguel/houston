@@ -1,3 +1,4 @@
+import { MascotSurfaceMount } from '../../mascot/MascotMount'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { HoustonClient, PrListItem, PrListState } from '../../houston/client'
 import type { PrSort } from '../../houston/generated/PrSort'
@@ -190,11 +191,13 @@ function PrListLoading(): React.JSX.Element {
 
 function PrListEmpty({ searching }: { searching: boolean }): React.JSX.Element {
   return (
+    <>
+    <MascotSurfaceMount mood={searching ? "scan" : "read"} />
     <EmptyState
       icon={searching ? IconSearch : IconGitPullRequest}
       heading={searching ? 'No matching pull requests' : 'No pull requests found'}
       description={searching ? 'Try another search or clear the filters.' : 'Pull requests for this repository will appear here.'}
-    />
+    /></>
   )
 }
 

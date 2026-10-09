@@ -1,0 +1,22 @@
+export const ACC = {
+  santa: '<path d="M34 17 Q47 -8 73 3 Q64 8 67 16 Z" fill="#d93434"/><rect x="32" y="13" width="38" height="6.5" rx="3.2" fill="#f4f4f6"/><circle cx="74" cy="4" r="4.2" fill="#f4f4f6"/>',
+  party: '<path d="M41 15 L53 -11 L64 14 Z" fill="#8b5cf6"/><path d="M45.5 6 L60 7.5 M48.5 -1 L57 0" stroke="#3fe0ff" stroke-width="2.6"/><circle cx="53" cy="-12" r="3.6" fill="#f59e0b"/>',
+  witch: '<ellipse cx="51" cy="14" rx="22" ry="4.2" fill="#2a1f3d"/><path d="M39.5 14 L55 -15 Q58.5 -17 60 -12 L63 14 Z" fill="#2a1f3d"/><rect x="40" y="9" width="22.5" height="3.6" fill="#f59e0b"/>',
+  nightcap: '<path d="M33 17 Q45 -5 66 7 Q77 14 81 27 Q72 18 67 16 Z" fill="#4c5bd4"/><rect x="32" y="13" width="36" height="6" rx="3" fill="#c7d2fe"/><circle cx="81" cy="28" r="3.8" fill="#f4f4f6"/>',
+  straw: '<ellipse cx="51" cy="14" rx="27" ry="5.2" fill="#d9a441"/><path d="M37.5 14 Q38.5 -1 51 -1 Q63.5 -1 64.5 14 Z" fill="#e8b84f"/><path d="M38 10.5 Q51 14 64 10.5" stroke="#c0392b" stroke-width="2.4" fill="none"/><rect x="55" y="3" width="5.5" height="4.5" fill="#b8862b" transform="rotate(12 58 5)"/>',
+  bunny: '<g transform="rotate(-14 42 6)"><ellipse cx="42" cy="2" rx="5.2" ry="13" fill="#f4f4f6"/><ellipse cx="42" cy="3" rx="2.4" ry="9" fill="#f9a8d4"/></g><g transform="rotate(14 60 6)"><ellipse cx="60" cy="2" rx="5.2" ry="13" fill="#f4f4f6"/><ellipse cx="60" cy="3" rx="2.4" ry="9" fill="#f9a8d4"/></g>',
+  propeller: '<path d="M37 17 Q38 2 51 2 Q64 2 65 17 Z" fill="#ef4444"/><path d="M51 2 L51 16" stroke="#facc15" stroke-width="3"/><rect x="49.6" y="-3" width="2.8" height="5.5" fill="#334155"/><ellipse class="prop" cx="51" cy="-4" rx="12" ry="2.3" fill="#3b82f6"/>',
+  beanie: '<path d="M35 17 Q36 1 51 1 Q66 1 67 17 Z" fill="#14b8a6"/><rect x="34" y="13" width="34" height="6.5" rx="3.2" fill="#0f766e"/><circle cx="51" cy="0" r="3.8" fill="#99f6e4"/>',
+  cap: '<path d="M36.5 16 Q37.5 2.5 51 2.5 Q63.5 2.5 65.5 14 Z" fill="#5c8fff"/><path d="M58 14 Q73 11.5 79 16 Q68 18.5 58 17.2 Z" fill="#3d6fe0"/><circle cx="51" cy="3" r="1.6" fill="#3d6fe0"/>',
+  crown: '<path d="M38 15 L38 2 L44.5 8.5 L51 -1 L57.5 8.5 L64 2 L64 15 Z" fill="#facc15" stroke="#ca8a04" stroke-width="1"/><circle cx="51" cy="10" r="1.8" fill="#ef4444"/>',
+  mask: '<path d="M29 38 Q39 30 50.5 37.5 Q62 30 73 38 Q73 47.5 62.5 47.5 Q55 47.5 51 42.5 Q47 47.5 39.5 47.5 Q29 47.5 29 38 Z" fill="#a855f7" stroke="#facc15" stroke-width="1.3"/><ellipse cx="40" cy="40" rx="5.4" ry="3.4" fill="#070a22"/><ellipse cx="62" cy="40" rx="5.4" ry="3.4" fill="#070a22"/><path d="M71 37 Q79 26 77 17 M73 39 Q84 32 85 23" stroke="#22c55e" stroke-width="2.6" fill="none" stroke-linecap="round"/>',
+  bandage: '<g transform="rotate(-28 62 20)"><rect x="54" y="17.5" width="17" height="5.5" rx="2.7" fill="#f5d0a9"/><rect x="60" y="17.5" width="5" height="5.5" fill="#e9b98a"/></g>',
+  mug: '<rect x="73" y="67" width="10.5" height="11" rx="2" fill="#f4f4f6"/><rect x="73" y="67" width="10.5" height="3" fill="#8b5cf6"/><path d="M83.5 70 Q89 72 83.5 76" stroke="#f4f4f6" stroke-width="1.9" fill="none"/><path class="steam" d="M76 64 Q74 61 76 58 M80 64 Q78 61 80 58" stroke="#c7d2fe" stroke-width="1.3" fill="none" stroke-linecap="round"/>',
+  egg: '<ellipse cx="79" cy="71" rx="5.2" ry="6.8" fill="#fde68a"/><path d="M74 70.5 L76.5 68.3 L79 70.8 L81.5 68.3 L84 70.5" stroke="#ec4899" stroke-width="1.4" fill="none"/><circle cx="79" cy="75" r="1.2" fill="#22c55e"/>',
+  heart: '<path d="M79 77 C70 70 72.5 63 79 67.5 C85.5 63 88 70 79 77 Z" fill="#f43f5e"/>',
+  book: '<path d="M35 63 L50 66.5 L65 63 L65 78 L50 81.5 L35 78 Z" fill="#7c3aed"/><path d="M50 66.5 L50 81.5" stroke="#c4b5fd" stroke-width="1"/><path d="M38 67 L47 69 M38 70.5 L47 72.5 M53 69 L62 67 M53 72.5 L62 70.5" stroke="#ddd6fe" stroke-width=".8"/>',
+  pumpkin: '<ellipse cx="82" cy="88" rx="8.5" ry="6.8" fill="#f97316"/><path d="M78 82.5 Q82 80 86 82.5" stroke="#ea580c" stroke-width="1" fill="none"/><path d="M82 81.5 l1 -3.2" stroke="#16a34a" stroke-width="2.2" stroke-linecap="round"/><path d="M77.5 87 l2 -2 l2 2 M82.5 87 l2 -2 l2 2 M78 91 Q82 93 86 91" stroke="#1a1205" stroke-width="1.3" fill="none"/>',
+} as const;
+export const SLOT = { santa: 'head', party: 'head', witch: 'head', nightcap: 'head', straw: 'head', bunny: 'head', propeller: 'head', beanie: 'head', cap: 'head', crown: 'head', mask: 'head', bandage: 'head', mug: 'hand', egg: 'hand', heart: 'hand', book: 'body', pumpkin: 'body' } as const;
+
+export type Accessory = keyof typeof ACC

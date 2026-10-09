@@ -209,3 +209,48 @@ html[data-motion-paused] .loop-anim {
     outline-color: transparent;
   }
 }
+
+@keyframes mascot-prop { 50% { transform: scaleX(.12); } }
+@keyframes mascot-steam { 0% { opacity: 0; transform: translateY(2px); } 40% { opacity: .9; } 100% { opacity: 0; transform: translateY(-5px); } }
+@keyframes mascot-fall { 0% { opacity: 0; transform: translateY(-6px) rotate(0); } 10% { opacity: 1; } 100% { opacity: 0; transform: translateY(100px) rotate(280deg); } }
+@keyframes mascot-rise { 0% { opacity: 0; transform: translateY(36px) scale(.5); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(-34px) scale(1.15); } }
+@keyframes mascot-twinkle { 0%, 100% { opacity: 0; transform: scale(.3); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes mascot-burst { 0% { opacity: 0; transform: scale(.1); } 25% { opacity: 1; } 100% { opacity: 0; transform: scale(1.7); } }
+@keyframes mascot-flit { 0% { opacity: 0; transform: translate(0, 0); } 20% { opacity: 1; } 50% { transform: translate(20px, -12px); } 100% { opacity: 0; transform: translate(40px, 4px); } }
+@keyframes mascot-sway { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
+@keyframes mascot-hula { from { transform: rotate(-5deg) translateX(-2%); } to { transform: rotate(5deg) translateX(2%); } }
+@keyframes mascot-scan { 0%, 100% { transform: translateX(-2.6%); } 50% { transform: translateX(2.6%); } }
+@keyframes mascot-flip { 0% { transform: none; } 25% { transform: translateY(-24px); } 75% { transform: translateY(-24px) rotate(360deg); } 100% { transform: rotate(360deg); } }
+@keyframes mascot-glowup { 30% { filter: brightness(2.2) drop-shadow(0 0 6px #7ff3ff); } }
+@keyframes mascot-disco { to { filter: hue-rotate(360deg); } }
+@keyframes mascot-r-float { 50% { transform: translateY(-2.4%); } }
+@keyframes mascot-r-head { 50% { transform: rotate(-1.2deg); } }
+@keyframes mascot-r-lag { 50% { transform: translateY(-1.2%); } }
+@keyframes mascot-r-arm-l { 50% { transform: translateY(-1.6%) rotate(4deg); } }
+@keyframes mascot-r-arm-r { 50% { transform: translateY(-1.6%) rotate(-4deg); } }
+@keyframes mascot-r-blink { 0%, 91%, 97%, 100% { transform: none; } 93.5%, 94.5% { transform: scaleY(.12); } }
+@keyframes mascot-r-core { 50% { opacity: .75; transform: scale(1.08); } }
+@keyframes mascot-r-orbit { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@keyframes mascot-r-pulse { 0%, 100% { opacity: .5; transform: scale(.95); } 50% { opacity: 1; transform: scale(1.22); } }
+@keyframes mascot-r-nod { 0%, 100% { transform: none; } 50% { transform: translateY(.6%) rotate(.8deg); } }
+@keyframes mascot-r-tap-l { from { transform: rotate(-3deg); } to { transform: translateY(-2%) rotate(8deg); } }
+@keyframes mascot-r-tap-r { from { transform: rotate(3deg); } to { transform: translateY(-2%) rotate(-8deg); } }
+@keyframes mascot-r-raise { from { transform: none; } }
+@keyframes mascot-r-tilt { from { transform: none; } }
+@keyframes mascot-r-hand { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-9deg); } }
+@keyframes mascot-r-ping { 0% { box-shadow: 0 0 0 0 rgba(245,158,11,.55); } 100% { box-shadow: 0 0 0 calc(var(--size, 64px) * .08) rgba(245,158,11,0); } }
+@keyframes mascot-r-wave-arm { 0%, 88%, 100% { transform: none; } 14%, 74% { transform: translate(17%, -3%) rotate(-150deg); } }
+@keyframes mascot-r-wave-hand { 0%, 16%, 74%, 100% { transform: none; } 24%, 44%, 64% { transform: rotate(-22deg); } 34%, 54% { transform: rotate(14deg); } }
+@keyframes mascot-r-wave-head { 0%, 88%, 100% { transform: none; } 16%, 72% { transform: rotate(4deg); } }
+@keyframes mascot-r-squint { 0%, 10%, 80%, 100% { transform: none; } 18%, 72% { transform: translateY(-.6%) scaleY(.72); } }
+@keyframes mascot-r-hop { 0%, 100% { transform: none; } 10% { transform: scale(1.05, .93); } 22% { transform: translateY(-10%) scale(.97, 1.04); }
+  36% { transform: translateY(-11%); } 50% { transform: scale(1.06, .92); } 60% { transform: scale(.98, 1.02); } 70% { transform: none; } }
+@keyframes mascot-r-cheer-l { 0%, 8%, 70%, 100% { transform: none; } 22%, 44% { transform: translate(-15%, -3%) rotate(145deg); } }
+@keyframes mascot-r-cheer-r { 0%, 8%, 70%, 100% { transform: none; } 22%, 44% { transform: translate(15%, -3%) rotate(-145deg); } }
+@keyframes mascot-r-squint-party { 0%, 8%, 70%, 100% { transform: none; } 20%, 56% { transform: translateY(-.6%) scaleY(.7); } }
+@keyframes mascot-r-spark { 0%, 24% { opacity: 0; transform: scale(.2) rotate(0); } 32% { opacity: 1; transform: scale(1.1) rotate(25deg); }
+  60%, 100% { opacity: 0; transform: translate(var(--dx, 0%), var(--dy, 0%)) scale(.4) rotate(70deg); } }
+@keyframes mascot-r-z { 0% { opacity: 0; transform: translate(0, 40%); } 20% { opacity: .9; } 100% { opacity: 0; transform: translate(60%, -160%) rotate(12deg); } }
+@keyframes mascot-caret { 50% { opacity: 0; } }
+@keyframes mascot-arrive { 0% { transform: translateY(-170px) scale(.55); opacity: 0; } 55% { transform: translateY(8px) scale(1.06, .92); opacity: 1; } 75% { transform: translateY(-5px); } 100% { transform: none; } }
+@keyframes mascot-hop { 0%, 100% { transform: none; } 15% { transform: scale(1.08, .9); } 40% { transform: translateY(-26px) scale(.96, 1.04); } 65% { transform: scale(1.06, .92); } 80% { transform: none; } }

@@ -1,3 +1,4 @@
+import { MascotSurfaceMount } from './mascot/MascotMount'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { ROOT_CRASH_GUARANTEE, ROOT_CRASH_TITLE } from './components/crashCopy'
@@ -36,6 +37,7 @@ class RootBoundary extends React.Component<
     if (!this.state.error) return this.props.children
     return (
       <FullScreenMessage tone="muted">
+        <MascotSurfaceMount mood="hurt" hat="bandage" />
         <p>
           {ROOT_CRASH_TITLE}: {this.state.error.message}
           <br />

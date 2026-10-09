@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FirstRun, type FirstRunProps } from './FirstRun'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
+import { DEFAULT_PREFS, setMascotPrefsForTests } from '../mascot/mascotPrefs'
 
 const keymapOverrides = { shortcuts_enabled: true, bindings: {} } as unknown as KeymapOverrides
 
@@ -35,6 +36,7 @@ describe('FirstRun', () => {
   let root: Root
 
   beforeEach(() => {
+    setMascotPrefsForTests({ ...DEFAULT_PREFS, enabled: false })
     host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
@@ -43,6 +45,7 @@ describe('FirstRun', () => {
   afterEach(() => {
     act(() => root.unmount())
     host.remove()
+    setMascotPrefsForTests({ ...DEFAULT_PREFS })
   })
 
   const render = (p: FirstRunProps): void => {
@@ -54,6 +57,22 @@ describe('FirstRun', () => {
 
   it('opens on the workspace screen and numbers all three', () => {
     render(props())
+    expect(host.querySelector('[data-testid="workspaces-empty"]')).not.toBeNull()
+    expect(step()).toBe('Step 1 of 3')
+    expect(host.querySelector('[data-testid="first-run-skip"]')).toBeNull()
+  })
+
+  it('shows the mascot hero when enabled and restores the workspace actions after Skip intro', async () => {
+    setMascotPrefsForTests({ ...DEFAULT_PREFS })
+    await act(async () => {
+      root.render(<FirstRun {...props()} />)
+      await import('./ui/MascotIntro')
+    })
+    expect(host.querySelector('[data-testid="mascot-intro"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="workspaces-empty"]')).toBeNull()
+    expect(host.querySelector('[data-testid="first-run-step"]')).toBeNull()
+    act(() => host.querySelector<HTMLButtonElement>('.mascot-skipintro')!.click())
+    expect(host.querySelector('[data-testid="mascot-intro"]')).toBeNull()
     expect(host.querySelector('[data-testid="workspaces-empty"]')).not.toBeNull()
     expect(step()).toBe('Step 1 of 3')
     expect(host.querySelector('[data-testid="first-run-skip"]')).toBeNull()

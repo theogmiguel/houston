@@ -1,3 +1,4 @@
+import { MascotStory } from './mascotStories'
 import React from 'react'
 import {
   BrowserActModalStory,
@@ -267,6 +268,7 @@ function RailWorkspacesMulti(): React.JSX.Element {
 }
 
 export const STORIES: Record<string, () => React.JSX.Element> = {
+  mascot: () => <MascotStory />,
   'browser/pane': () => <BrowserPanePage />,
   'browser/pane-focused': () => <BrowserPaneFocused />,
   'browser/pane-fresh': () => <BrowserPaneFresh />,

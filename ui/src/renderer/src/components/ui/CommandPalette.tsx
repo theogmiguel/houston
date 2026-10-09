@@ -1,3 +1,4 @@
+import { MascotSurfaceMount } from '../../mascot/MascotMount'
 import { lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   APPEARANCE_PICKER_COMMAND_ID,
@@ -220,6 +221,7 @@ export function CommandPalette({
             >
               {filtered.length === 0 ? (
                 <div data-testid="command-palette-empty-set" className="grid justify-items-center gap-2 py-8 text-center [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
+                  <MascotSurfaceMount mood="scan" />
                   <span>No commands match &quot;{query}&quot;</span>
                   <button type="button" onClick={() => setQuery('')} className="text-[var(--accent)]">Clear search</button>
                 </div>

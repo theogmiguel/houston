@@ -1,3 +1,4 @@
+import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
 import type { OrchestrationNotificationContext } from './orchestrationNotifications';
@@ -3354,6 +3355,7 @@ export function App(): React.JSX.Element {
   };
 
   const paletteActions: PaletteActions = {
+    mascotAction: (action) => { setSidebarRail(false); requestMascotAction(action) },
     workspaceActions,
     openManageTags: () => window.dispatchEvent(new Event(MANAGE_TAGS_EVENT)),
     runWorkspaceAction: workspaceActionState.run,
@@ -3459,6 +3461,7 @@ export function App(): React.JSX.Element {
           />
           {!sidebarRail && (
             <Sidebar
+              mascotFirstRun={firstRunOpen || workspacesEmptyOpen}
               gridArea="rail"
               currentRailView={railView ?? undefined}
               onHeadMouseDown={handleTitlebarMouseDown}

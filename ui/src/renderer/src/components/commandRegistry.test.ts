@@ -1,3 +1,4 @@
+import { DEFAULT_PREFS, setMascotPrefsForTests } from '../mascot/mascotPrefs'
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -487,4 +488,11 @@ describe('paletteNavActions — when each move is offered', () => {
     const nav = paletteNavActions({ ...moves, workspaceCount: 2, lastWorkspace: '/w/a', selectedWs: '/w/a', gridsFor: () => [{}] })
     expect(nav.stepGrid).toBeUndefined()
   })
+})
+
+it('offers mascot commands only while the companion is enabled', () => {
+  setMascotPrefsForTests({ ...DEFAULT_PREFS, enabled: false })
+  expect(buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: WORKSPACES }).some(c => c.group === 'Mascot')).toBe(false)
+  setMascotPrefsForTests({ ...DEFAULT_PREFS })
+  expect(buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: WORKSPACES }).filter(c => c.group === 'Mascot').map(c => c.title)).toEqual(['Pet Houston', 'Say hi', 'Disco mode', 'Play Ring Invaders', 'Replay mascot intro'])
 })
