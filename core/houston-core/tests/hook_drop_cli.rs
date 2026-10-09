@@ -493,7 +493,10 @@ if '--host' not in args:
 assert 'TR_SESSION' not in os.environ and 'HOUSTON_SESSION' not in os.environ
 env = dict(os.environ)
 if '--settings' in args:
-    env.update(json.loads(args[args.index('--settings') + 1])['env'])
+    settings = args[args.index('--settings') + 1]
+    if not settings.startswith('{'):
+        settings = pathlib.Path(settings).read_text()
+    env.update(json.loads(settings)['env'])
 (root / 'restored-env').write_text(json.dumps(env))
 result = subprocess.run([str(root / 'hook-bin'), 'hook', 'UserPromptSubmit'],
     env=env, input='{"session_id":"10300000-0000-4000-8000-000000000001","prompt":"work"}', text=True,
