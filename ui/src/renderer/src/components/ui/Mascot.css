@@ -211,6 +211,6 @@ html[data-motion-paused] .mascot-motion[data-background="true"], html[data-motio
 .mascot-host[data-dragging="true"] .sprite { transform: scale(1.06); }
 .mascot-host[data-dragging="true"] .mascot-buddy[data-reduced="true"] .sprite { transform: none; }
 .mascot-host[data-floating="true"] .bubble, .mascot-host[data-dragging="true"] .bubble { max-width: min(320px, calc(100vw - 24px)); white-space: normal; }
-.mascot-host .bubble[data-side="left"] { border-radius: 8px 8px 2px 8px; }
+.mascot-host .bubble[data-side="left"] { border-radius: var(--mascot-border-radius-4); }
 
 .mascot-dock-anchor { display: block; width: var(--mascot-rail-size); height: var(--mascot-rail-size); margin: var(--mascot-margin-5); }

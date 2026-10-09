@@ -6,6 +6,7 @@ import { getMascotPlacement, mascotPositionPoint, nearestMascotPoint, floatingPo
 import { nativeBrowserSurfaceRects, subscribeBrowserSurfaceRects } from '../houston/browserSurfaceRegistry'
 import { useMascotLifecycle } from './mascotLifecycle'
 import { placeMascotBubble } from './mascotBubble'
+import { MascotHost } from '../components/ui/MascotDockSlot'
 
 export const mascotWindow = (): Box => ({ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight })
 export default function MascotFloatingHost({ rail }: { rail: MascotRail | null }): React.JSX.Element | null {
@@ -46,7 +47,7 @@ export default function MascotFloatingHost({ rail }: { rail: MascotRail | null }
   }, [rail, placement.position, placement.dragging, visible])
   if (!visible) return null
   const metadata = lifecycle ?? rail ?? lastRail.current
-  return createPortal(<div ref={root} className="mascot-host" data-floating={placement.position.kind === 'floating'} data-dragging={placement.dragging}>
+  return createPortal(<MascotHost ref={root} floating={placement.position.kind === 'floating'} dragging={placement.dragging}>
     <MascotDockContext.Provider value={rail?.node ?? null}><MascotCompanion existingUser={metadata?.existingUser ?? false} firstRun={metadata?.firstRun ?? false} /></MascotDockContext.Provider>
-  </div>, document.body)
+  </MascotHost>, document.body)
 }
