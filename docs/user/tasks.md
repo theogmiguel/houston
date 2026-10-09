@@ -187,7 +187,12 @@ their scope is the brief they were spawned with.
     hs-task comment [HOU-n] TEXT
     hs-task check [HOU-n] ITEM          (ITEM is the 1-based acceptance position)
     hs-task handback [HOU-n] --summary T
-    hs-task ask QUESTION                (a Slack-filed task: asks in its thread)
+    hs-task handback [HOU-n] --subject T --changes T --step T [--step …] [--caveats T]
+               --live-note T --dropped-note T [--size small|medium|large]
+               [--note T …] [--warning T …] [--blocker T …] [--refused]
+               (a Slack-filed task)
+    hs-task ask --question Q --option A --option B [--option …] --recommended N
+               [--why T] [--context T]         (a Slack-filed task: asks in its thread)
 
 The task key defaults to `$HOUSTON_TASK` when a task started the pane; otherwise pass
 `HOU-n`. Priorities are `1` urgent through `4` low.
