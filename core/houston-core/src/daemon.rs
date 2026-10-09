@@ -582,6 +582,7 @@ pub struct Session {
     removed: AtomicBool,
     backend_exited: AtomicBool,
     stdin_writes_in_flight: AtomicU32,
+    lifecycle_hook_seen: AtomicBool,
     hook_cwd: Mutex<Option<String>>,
     hook_last_message: Mutex<Option<String>>,
     hook_latest_prompt: Mutex<Option<String>>,
@@ -1132,6 +1133,14 @@ impl Session {
             .lock()
             .expect("detected lock")
             .unwrap_or(self.info.agent)
+    }
+
+    fn turn_end_source(&self) -> orchestrate::TurnEndSource {
+        orchestrate::turn_end_source(
+            self.status_kind(),
+            self.acp.is_some(),
+            self.lifecycle_hook_seen.load(Ordering::Acquire),
+        )
     }
 
     fn watched(&self) -> bool {
@@ -3318,6 +3327,14 @@ impl Daemon {
             .join(id.to_string())
     }
 
+    fn claude_settings_path(&self, id: u32) -> PathBuf {
+        self.scrollback_dir
+            .parent()
+            .expect("state directory")
+            .join("hooks/pane-settings")
+            .join(format!("{id}.json"))
+    }
+
     fn scrollback_path(&self, id: u32) -> PathBuf {
         self.scrollback_dir.join(format!("{id}.bin"))
     }
@@ -4273,6 +4290,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            lifecycle_hook_seen: AtomicBool::new(false),
             hook_cwd: Mutex::new(m.hook_cwd.clone()),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -4374,6 +4392,15 @@ impl Daemon {
                 tracing::warn!(
                     "removing child context signal for pane {id} at {}: {e}",
                     signal.display()
+                );
+            }
+        }
+        let settings = self.claude_settings_path(id);
+        if let Err(e) = std::fs::remove_file(&settings) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(
+                    "removing Claude settings for pane {id} at {}: {e}",
+                    settings.display()
                 );
             }
         }
@@ -4600,7 +4627,7 @@ impl Daemon {
         let pending = self.pending_handback(parent, child);
         let owed = self.inbox_owed(parent, child);
         let capability = self.capability_note_of(child);
-        let hold = self.background_hold_reason(child).or_else(|| {
+        let hold = self.staged_result_hold_reason(child).or_else(|| {
             (owed.owed > 0)
                 .then(|| self.paste_hold_reason(parent))
                 .flatten()
@@ -6105,9 +6132,7 @@ impl Daemon {
         for (_, run) in runs {
             let session = run.session_id.expect("filtered to pane runs");
             let Ok(s) = self.get(session) else { continue };
-            if orchestrate::turn_end_source(s.info.agent, s.acp.is_some())
-                != orchestrate::TurnEndSource::QuietSettle
-            {
+            if s.turn_end_source() != orchestrate::TurnEndSource::QuietSettle {
                 continue;
             }
             let busy = match s.pid {
@@ -6460,7 +6485,7 @@ impl Daemon {
     }
 
     pub fn hook_consent(&self, provider: proto::AgentKind) -> bool {
-        let default = provider == proto::AgentKind::Claude;
+        let default = matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex);
         match self.db.get_setting(&Self::hook_consent_key(provider)) {
             Ok(Some(v)) => v == "on",
             Ok(None) => default,
@@ -6551,8 +6576,8 @@ impl Daemon {
             }
             let cli = self.cli_presence(provider);
             let trust = match (&home, provider) {
-                (Ok(home), proto::AgentKind::Codex) => {
-                    Some(match crate::agent_hooks::codex_trust_status(home) {
+                (Ok(home), proto::AgentKind::Codex) => Some(
+                    match crate::agent_hooks::codex_trust_status_for(home, &sentinel) {
                         crate::agent_hooks::CodexHookTrust::NoConfig => proto::HookTrust::NoConfig,
                         crate::agent_hooks::CodexHookTrust::NotConfirmed => {
                             proto::HookTrust::NotConfirmed
@@ -6560,8 +6585,8 @@ impl Daemon {
                         crate::agent_hooks::CodexHookTrust::SomeTrusted => {
                             proto::HookTrust::SomeTrusted
                         }
-                    })
-                }
+                    },
+                ),
                 _ => None,
             };
             rows.push(proto::AgentHookState {
@@ -6696,6 +6721,79 @@ impl Daemon {
             }
         }
         changed
+    }
+
+    fn codex_status_unavailable_cause(
+        &self,
+        profile_dir: Option<&str>,
+        cwd: &Path,
+    ) -> Option<(&'static str, &'static str)> {
+        if !self.hook_consent(proto::AgentKind::Codex) {
+            return Some(("hooks_off", "Codex status hooks are off"));
+        }
+        let inherited = std::env::var("CODEX_HOME")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let config_dir = match profile_dir.or(inherited.as_deref()) {
+            Some(directory) => {
+                let directory = Path::new(directory);
+                if directory.is_absolute() {
+                    directory.to_path_buf()
+                } else {
+                    cwd.join(directory)
+                }
+            }
+            None => {
+                let Ok(home) = self.hook_config_home() else {
+                    return Some((
+                        "hooks_not_installed",
+                        "Codex status hooks are not installed: config home is unavailable",
+                    ));
+                };
+                home.home.join(".codex")
+            }
+        };
+        let hooks = config_dir.join("hooks.json");
+        let sentinel = self.hook_sentinel();
+        if !crate::agent_hooks::codex_hooks_installed_at(&hooks, &sentinel) {
+            return Some((
+                "hooks_not_installed",
+                "Codex status hooks are not installed in the active Codex config",
+            ));
+        }
+        if crate::agent_hooks::codex_trust_status_at(&hooks, &sentinel)
+            != crate::agent_hooks::CodexHookTrust::SomeTrusted
+        {
+            return Some((
+                "hooks_trust_unconfirmed",
+                "Codex status hook trust is unconfirmed in the active Codex config",
+            ));
+        }
+        None
+    }
+
+    fn codex_status_unavailable_message(cause: &str) -> String {
+        format!("{cause}; status is unavailable. Repair the hook setup in Settings → Agent status → Codex, then reopen the pane.")
+    }
+
+    fn note_codex_status_unavailable(self: &Arc<Self>, id: u32, code: &str, cause: &str) {
+        let recipient = self.parent_of(id).unwrap_or(id);
+        if let Err(error) = self.inbox_write(
+            recipient,
+            &self.current_workspace(id).unwrap_or_default(),
+            Some(id),
+            self.delegation_round_of(id),
+            orchestrate::InboxKind::OperatorNote,
+            &format!("Pane {id} Codex status is unavailable"),
+            &Self::codex_status_unavailable_message(cause),
+            Vec::new(),
+            Some(code),
+            None,
+            false,
+            true,
+        ) {
+            tracing::warn!("recording unavailable Codex status for pane {id}: {error}");
+        }
     }
 
     fn expire_spawn_grace(&self, id: u32) {
@@ -6892,7 +6990,7 @@ impl Daemon {
         cwd: Option<&str>,
         ambiguous_idle_notification: bool,
     ) -> crate::hook_drop::DropVerdict {
-        if !self.note_hook_seen(id, event, cwd) {
+        if !self.note_hook_seen(id, provider, event, cwd) {
             return crate::hook_drop::DropVerdict::NoSession;
         }
         match crate::agent_events::AgentEvent::from_provider(provider, event) {
@@ -6903,13 +7001,22 @@ impl Daemon {
         crate::hook_drop::DropVerdict::Applied
     }
 
-    fn note_hook_seen(&self, id: u32, event: &str, cwd: Option<&str>) -> bool {
+    fn note_hook_seen(
+        &self,
+        id: u32,
+        provider: proto::AgentKind,
+        event: &str,
+        cwd: Option<&str>,
+    ) -> bool {
         let sessions = self.sessions.lock().expect("sessions lock");
         let Some(s) = sessions.get(&id) else {
             return false;
         };
         if s.state.lock().expect("state lock").is_live() {
             self.mcp_creds.touch_session(id);
+            if crate::agent_events::AgentEvent::from_provider(provider, event).is_some() {
+                s.lifecycle_hook_seen.store(true, Ordering::Release);
+            }
         }
         let mut recorded_cwd = None;
         let mut hook_cwd = s.hook_cwd.lock().expect("hook_cwd lock");
@@ -6952,6 +7059,10 @@ impl Daemon {
                     "ignoring {event:?} for session {id}: the pane is no longer running"
                 );
                 return;
+            }
+            // Provider tool hooks can map to lifecycle effects outside the status table.
+            if event != "ACP" {
+                session.lifecycle_hook_seen.store(true, Ordering::Release);
             }
             let mut current = session.status.lock().expect("status lock");
             if !ev.applies(*current, ambiguous_idle_notification) {
@@ -7256,7 +7367,7 @@ impl Daemon {
                     let pending = self.pending_handback(row.parent_session, info.id);
                     let owed = self.inbox_owed(row.parent_session, info.id);
                     let capability = self.capability_note_of(info.id);
-                    let hold = self.background_hold_reason(info.id).or_else(|| {
+                    let hold = self.staged_result_hold_reason(info.id).or_else(|| {
                         (owed.owed > 0)
                             .then(|| self.paste_hold_reason(row.parent_session))
                             .flatten()
@@ -9209,10 +9320,6 @@ impl Daemon {
                     }
                 }
             }
-            if let Some(argv) = &shell_startup {
-                let command = shell_hosted_resume_command(&shell, argv)?;
-                c.args(["-i", "-c", &command]);
-            }
             c
         } else {
             let (program, base_args): (String, Vec<String>) = match (&agent, &custom_cmd) {
@@ -9369,6 +9476,33 @@ impl Daemon {
             cmd.env(crate::paths::CHANNEL_ENV, channel);
         }
         cmd.env("TR_SESSION", id.to_string());
+        let shell_claude_resume = shell_startup
+            .as_ref()
+            .is_some_and(|argv| argv.first().is_some_and(|program| program == "claude"));
+        if (agent == proto::AgentKind::Claude && acp.is_none()) || shell_claude_resume {
+            cmd.env(
+                crate::paths::CHANNEL_ENV,
+                self.channel.as_deref().unwrap_or("release"),
+            );
+            if !shell_claude_resume {
+                cmd.args(crate::launch::claude_pane_env_args(
+                    &cmd,
+                    &self.claude_settings_path(id),
+                )?);
+            }
+        }
+        if let Some(argv) = &shell_startup {
+            let mut argv = argv.clone();
+            if shell_claude_resume {
+                argv.extend(crate::launch::claude_pane_env_args(
+                    &cmd,
+                    &self.claude_settings_path(id),
+                )?);
+            }
+            let shell = cmd.get_argv()[0].to_string_lossy();
+            let command = shell_hosted_resume_command(&shell, &argv)?;
+            cmd.args(["-i", "-c", &command]);
+        }
         #[cfg(target_os = "linux")]
         let codex_runtime_dir = if agent == proto::AgentKind::Codex
             && acp.is_none()
@@ -9461,7 +9595,20 @@ impl Daemon {
             .context(orchestrate::MutationMayHaveActed)?;
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
-        let initial_status = (!hidden && reports_status).then_some(proto::AgentStatus::Spawning);
+        let unavailable_cause = (!hidden && agent == proto::AgentKind::Codex && acp.is_none())
+            .then(|| {
+                self.codex_status_unavailable_cause(
+                    Self::agent_profile_config_dir(agent, &extra_env),
+                    &cwd,
+                )
+            })
+            .flatten();
+        let initial_status =
+            (!hidden && reports_status).then_some(if unavailable_cause.is_some() {
+                proto::AgentStatus::Unavailable
+            } else {
+                proto::AgentStatus::Spawning
+            });
         let status_since_ms = initial_status.map(|_| now_ms());
         let mut info = proto::SessionInfo {
             checkout: None,
@@ -9547,6 +9694,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            lifecycle_hook_seen: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -9647,6 +9795,9 @@ impl Daemon {
             })
             .expect("spawn pty wait thread");
 
+        if let Some((code, cause)) = unavailable_cause {
+            self.note_codex_status_unavailable(id, code, cause);
+        }
         if initial_status == Some(proto::AgentStatus::Spawning) {
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 let daemon = Arc::clone(self);
@@ -9948,6 +10099,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            lifecycle_hook_seen: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -12265,7 +12417,7 @@ impl Daemon {
             }
         }
         if d.internal_prompt {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return crate::hook_drop::DropVerdict::NoSession;
             }
             if let Some(ev) = crate::agent_events::AgentEvent::from_provider(provider, &d.event) {
@@ -12347,7 +12499,7 @@ impl Daemon {
                     repeated
                 };
                 if repeated {
-                    if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                    if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                         return Some(crate::hook_drop::DropVerdict::NoSession);
                     }
                     tracing::debug!(
@@ -12380,7 +12532,7 @@ impl Daemon {
         };
         if provider == proto::AgentKind::Opencode {
             if let Some(kind) = opencode_input_kind {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 let opens = matches!(
@@ -12445,7 +12597,7 @@ impl Daemon {
                     .get(&d.session)
                     .is_some_and(|episodes| episodes.open_count() > 0)
             {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -12472,7 +12624,7 @@ impl Daemon {
         }
 
         if correlates && matches!(d.event.as_str(), "SubagentStart" | "SubagentStop") {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             self.feed_subagent_evidence(d, now);
@@ -12480,7 +12632,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "PreToolUse" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let blocks = match provider {
@@ -12524,7 +12676,7 @@ impl Daemon {
         }
 
         if correlates && matches!(d.event.as_str(), "PostToolUse" | "PostToolUseFailure") {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let resumed = self.resolve_permission_episodes(
@@ -12618,7 +12770,7 @@ impl Daemon {
                 }
             };
             if let Some(why) = held {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -12638,7 +12790,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "PermissionRequest" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
@@ -12683,7 +12835,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "PermissionDenied" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let resumed = self.resolve_permission_episodes(
@@ -12708,7 +12860,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "Elicitation" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
@@ -12731,7 +12883,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "ElicitationResult" {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let resumed = self.resolve_permission_episodes(
@@ -12762,7 +12914,7 @@ impl Daemon {
                         "session {}: notification {kind:?} is not a block",
                         d.session
                     );
-                    if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                    if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                         return Some(crate::hook_drop::DropVerdict::NoSession);
                     }
                     return Some(crate::hook_drop::DropVerdict::Applied);
@@ -12775,7 +12927,7 @@ impl Daemon {
             };
             if attached {
                 drop(episodes);
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 return Some(crate::hook_drop::DropVerdict::Applied);
@@ -12843,7 +12995,12 @@ impl Daemon {
                 .clone();
             drop(roots);
             if root != id {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(
+                    d.session,
+                    proto::AgentKind::Antigravity,
+                    &d.event,
+                    d.cwd.as_deref(),
+                ) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -12857,7 +13014,12 @@ impl Daemon {
         }
 
         if d.event == "Stop" && d.stop_continued {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(
+                d.session,
+                proto::AgentKind::Antigravity,
+                &d.event,
+                d.cwd.as_deref(),
+            ) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             tracing::debug!(
@@ -12868,7 +13030,12 @@ impl Daemon {
         }
 
         if d.event == "Stop" && d.fully_idle == Some(false) {
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(
+                d.session,
+                proto::AgentKind::Antigravity,
+                &d.event,
+                d.cwd.as_deref(),
+            ) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             tracing::debug!(
@@ -12885,7 +13052,12 @@ impl Daemon {
                 .as_deref()
                 .is_some_and(|t| Self::ANTIGRAVITY_BLOCKING_TOOLS.contains(&t));
             if !blocks {
-                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(
+                    d.session,
+                    proto::AgentKind::Antigravity,
+                    &d.event,
+                    d.cwd.as_deref(),
+                ) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -12916,7 +13088,12 @@ impl Daemon {
                     tool_input_fingerprint: d.tool_input_fingerprint.clone(),
                 },
             );
-            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(
+                d.session,
+                proto::AgentKind::Antigravity,
+                &d.event,
+                d.cwd.as_deref(),
+            ) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             if resumed {
@@ -13023,6 +13200,24 @@ impl Daemon {
         }
     }
 
+    /// A Codex auto-review episode whose command is already executing was approved: the
+    /// running process tree is the outcome evidence the hooks only report on completion.
+    fn approved_command_running(&self, session: u32) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.get(session)
+                .ok()
+                .and_then(|s| s.pid)
+                .and_then(|pid| has_external_running_descendants(pid, true))
+                .unwrap_or(false)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = session;
+            false
+        }
+    }
+
     fn resolve_permission_episodes(&self, session: u32, end: &orchestrate::EpisodeEnd) -> bool {
         let mut episodes = self.permission_episodes.lock().expect("episodes lock");
         let Some(eps) = episodes.get_mut(&session) else {
@@ -13092,10 +13287,19 @@ impl Daemon {
                 true,
             );
         }
+        let with_episodes: Vec<u32> = {
+            let mut episodes = self.permission_episodes.lock().expect("episodes lock");
+            episodes.retain(|id, _| live.contains(id));
+            episodes.keys().copied().collect()
+        };
+        let approved: HashSet<u32> = with_episodes
+            .into_iter()
+            .filter(|child| self.approved_command_running(*child))
+            .collect();
         let mut episodes = self.permission_episodes.lock().expect("episodes lock");
-        episodes.retain(|id, _| live.contains(id));
         let stalls: Vec<_> = episodes
             .iter_mut()
+            .filter(|(child, _)| !approved.contains(child))
             .flat_map(|(child, episodes)| {
                 episodes
                     .take_auto_review_stalls(now)
@@ -16326,6 +16530,19 @@ impl Daemon {
                 message,
             })
             .collect();
+        if info.agent == proto::AgentKind::Codex
+            && info.status == Some(proto::AgentStatus::Unavailable)
+        {
+            let profile_dir = self.db.session_profile_config_dir(info.id).ok().flatten();
+            if let Some((code, cause)) =
+                self.codex_status_unavailable_cause(profile_dir.as_deref(), Path::new(&info.cwd))
+            {
+                warnings.push(proto::PaneSpawnWarning {
+                    code: code.into(),
+                    message: Self::codex_status_unavailable_message(cause),
+                });
+            }
+        }
         if info.agent == proto::AgentKind::Cursor {
             warnings.push(proto::PaneSpawnWarning {
                 code: "needs_input_unreported".into(),
@@ -16493,7 +16710,7 @@ impl Daemon {
                     let pending = self.pending_handback(parent, info.id);
                     let owed = self.inbox_owed(parent, info.id);
                     let capability = self.capability_note_of(info.id);
-                    let hold = self.background_hold_reason(info.id).or_else(|| {
+                    let hold = self.staged_result_hold_reason(info.id).or_else(|| {
                         (owed.owed > 0)
                             .then(|| self.paste_hold_reason(parent))
                             .flatten()
@@ -17119,7 +17336,7 @@ impl Daemon {
         Ok(orchestrate::PaneDetail {
             live_children,
             depth: self.spawn_depth_of(target),
-            turn_end_source: orchestrate::turn_end_source(s.status_kind(), s.acp.is_some()).label(),
+            turn_end_source: s.turn_end_source().label(),
             delegation: self.delegation_of(target).map(|row| {
                 let pending = self.pending_handback(row.parent_session, target);
                 let age = self
@@ -17130,12 +17347,7 @@ impl Daemon {
                 let mut view = orchestrate::DelegationView::from_row(row, pending);
                 view.result_staged = age.is_some();
                 view.result_staged_age_ms = age;
-                view.hold_reason = self
-                    .background_holds
-                    .lock()
-                    .expect("background holds lock")
-                    .get(&target)
-                    .map(|(count, _)| format!("background job running ({count})"));
+                view.hold_reason = self.staged_result_hold_reason(target);
                 view
             }),
             info,
@@ -18708,9 +18920,63 @@ impl Daemon {
         Ok(())
     }
 
+    fn staged_result_hold_reason(&self, child: u32) -> Option<String> {
+        if let Some(reason) = self.background_hold_reason(child) {
+            return Some(reason);
+        }
+        let row = self.delegation_of(child)?;
+        self.db
+            .inbox_pending_result(row.parent_session, child, row.round)
+            .ok()
+            .flatten()?;
+        let session = self.get(child).ok()?;
+        let provider = format!("{:?}", session.status_kind()).to_lowercase();
+        Some(match session.turn_end_source() {
+            orchestrate::TurnEndSource::StopHook => {
+                format!("result staged: waiting for turn end from {provider} hooks")
+            }
+            orchestrate::TurnEndSource::AcpTurn => {
+                "result staged: waiting for turn end from ACP".to_string()
+            }
+            orchestrate::TurnEndSource::QuietSettle => {
+                let evidence = if orchestrate::signals_turn_end(session.status_kind()) {
+                    format!("; no lifecycle event received from {provider} hooks since spawn")
+                } else {
+                    format!("; {provider} has no turn-end hook")
+                };
+                format!("result staged: waiting for quiet settle ({} ms of a still screen with no running descendants){evidence}", orchestrate::DELEGATION_SETTLE_QUIET_MS)
+            }
+        })
+    }
+
+    pub(crate) fn orchestration_wait_timeout_next_action(
+        &self,
+        caller: u32,
+        child: Option<u32>,
+    ) -> String {
+        let children = child.map(|id| vec![id]).unwrap_or_else(|| {
+            self.delegations_of_parent(caller)
+                .into_iter()
+                .map(|row| row.child_session)
+                .collect()
+        });
+        let holds: Vec<_> = children
+            .into_iter()
+            .filter_map(|id| {
+                self.staged_result_hold_reason(id)
+                    .map(|reason| format!("pane {id}: {reason}"))
+            })
+            .collect();
+        if holds.is_empty() {
+            "Call pane_wait again.".to_string()
+        } else {
+            format!("{}. Call pane_wait again.", holds.join("; "))
+        }
+    }
+
     fn turn_end_source_of(&self, child: u32) -> orchestrate::TurnEndSource {
         match self.get(child) {
-            Ok(s) => orchestrate::turn_end_source(s.status_kind(), s.acp.is_some()),
+            Ok(s) => s.turn_end_source(),
             Err(_) => orchestrate::TurnEndSource::QuietSettle,
         }
     }
@@ -19090,7 +19356,7 @@ impl Daemon {
         now: u64,
     ) {
         let child = row.child_session;
-        let source = orchestrate::turn_end_source(s.status_kind(), s.acp.is_some());
+        let source = s.turn_end_source();
         if source != orchestrate::TurnEndSource::QuietSettle {
             return;
         }

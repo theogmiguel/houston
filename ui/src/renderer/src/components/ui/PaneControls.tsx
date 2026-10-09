@@ -83,7 +83,8 @@ function statusDotClass(status: AgentStatus): string {
     case 'needs-input':
       return 'bg-[var(--warn)]'
     case 'unavailable':
-      return 'bg-transparent ring-1 ring-inset ring-[var(--text-faint)]'
+      // A border, not a ring: hosts such as the roster strip give .agent-dot a box-shadow halo, which would replace a ring.
+      return 'bg-[var(--card-bg)] border-[1.5px] border-[var(--text-secondary)]'
   }
 }
 

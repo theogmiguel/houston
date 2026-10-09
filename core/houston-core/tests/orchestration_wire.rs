@@ -290,6 +290,7 @@ fn shim_dir() -> PathBuf {
         let home = dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
         std::env::set_var("HOME", &home);
+        std::env::remove_var("CODEX_HOME");
         dir
     })
     .clone()
@@ -350,6 +351,7 @@ struct Rig {
 async fn rig(name: &str) -> Rig {
     shim_dir();
     let (addr, state, daemon) = start_daemon_with_handle().await;
+    daemon.install_consented_agent_hooks();
     let ws_dir = state.path().join(name);
     std::fs::create_dir_all(&ws_dir).unwrap();
     daemon.workspace_add(&ws_dir.display().to_string()).unwrap();
@@ -5019,7 +5021,7 @@ async fn a_delegations_state_and_its_parents_waiting_count_reach_the_renderer() 
         .expect("a spawned child carries its delegation on the roster");
     assert_eq!(carried.parent, pane.id);
     assert_eq!(carried.state, proto::DelegationState::Spawning);
-    assert_eq!(carried.turn_end_source, proto::TurnEndSource::StopHook);
+    assert_eq!(carried.turn_end_source, proto::TurnEndSource::QuietSettle);
 
     let json = serde_json::to_string(&kid_info).expect("SessionInfo serializes");
     assert!(
@@ -5171,8 +5173,11 @@ async fn delegation_info_carries_owed_provisional_and_hold_reason() {
     assert_eq!(owed.last_result_corrected_by, None);
     assert_eq!(
         owed.hold_reason.as_deref(),
-        Some("this pane is of unknown status, not idle"),
-        "door 3 cannot paste into a pane with no idle signal, and the card says so in the daemon's words"
+        Some(
+            "result staged: waiting for quiet settle (15000 ms of a still screen with no running \
+             descendants); no lifecycle event received from cursor hooks since spawn"
+        ),
+        "a child whose hooks never reported settles on a quiet screen, and the card says so in the daemon's words"
     );
 
     let (status, body) = r
@@ -5296,8 +5301,8 @@ async fn pane_get_answers_the_whole_question_about_one_child() {
     assert_eq!(got["depth"], 1);
     assert_eq!(got["live_children"], 0);
     assert_eq!(
-        got["turn_end_source"], "stop-hook",
-        "antigravity reports a real turn end now, and the caller is told so before it waits"
+        got["turn_end_source"], "quiet-settle",
+        "hook capability alone does not establish a reported turn end"
     );
     assert_eq!(got["delegation"]["role"], "counter");
     assert_eq!(
@@ -11736,4 +11741,268 @@ async fn keyed_prompt_defaults_and_operator_draft_retry_share_normalized_intent(
     let retry = mcp_call(r.addr, &token, "pane_prompt", request).await;
     assert_eq!(retry["isError"], false, "{retry}");
     await_child_echo(&r.daemon, child, "AFTER-DRAFT-CLEARS").await;
+}
+
+#[tokio::test]
+async fn issue104_a_hook_capable_child_without_hooks_flushes_before_exit() {
+    let _guard = serial().await;
+    let r = rig("missing-turn-end-hooks").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    for provider in ["codex", "claude"] {
+        let (status, spawned) = r
+            .post_spawn(
+                &token,
+                serde_json::json!({"kind":provider,"prompt":"work","reusable":true}),
+            )
+            .await;
+        assert_eq!(status, 200, "{spawned}");
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+        let submitted = mcp_call(
+            r.addr,
+            &r.token_for(child),
+            "pane_submit",
+            serde_json::json!({"body":format!("{provider} answer"),"request_id":1}),
+        )
+        .await;
+        assert_eq!(submitted["isError"], false, "{submitted}");
+        r.daemon.expire_spawn_grace_for_test(child);
+        let kind = if provider == "codex" {
+            proto::AgentKind::Codex
+        } else {
+            proto::AgentKind::Claude
+        };
+        r.daemon
+            .handle_hook_from(child, kind, "UnsupportedLifecycle", None);
+        let detail = r.daemon.orchestrate_get(parent.id, child).unwrap();
+        assert_eq!(detail.turn_end_source, "quiet-settle");
+        let hold = detail.delegation.unwrap().hold_reason.unwrap();
+        assert!(
+            hold.contains("since spawn") && hold.contains(provider),
+            "{hold}"
+        );
+        let timeout = mcp_call(
+            r.addr,
+            &token,
+            "pane_wait",
+            serde_json::json!({"session":child,"kind":"result","timeout_ms":1}),
+        )
+        .await;
+        assert!(
+            timeout["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains(&hold),
+            "{timeout}"
+        );
+        let (status, timeout) = http_json(
+            r.addr,
+            "POST",
+            "/orchestrate/wait",
+            &token,
+            Some(serde_json::json!({"session":child,"kind":"result","timeout_ms":1})),
+        )
+        .await;
+        assert_eq!(status, 408, "{timeout}");
+        assert!(
+            timeout["next_action"].as_str().unwrap().contains(&hold),
+            "{timeout}"
+        );
+        let t0 = 1_000_000;
+        r.daemon.delegation_watch_tick_at(t0);
+        assert!(r
+            .daemon
+            .inbox_rows_for_test(parent.id)
+            .iter()
+            .find(|row| row.from_session == Some(child))
+            .unwrap()
+            .ready_at
+            .is_none());
+        r.daemon.delegation_watch_tick_at(
+            t0 + houston_core::orchestrate::DELEGATION_SETTLE_QUIET_MS + 1_000,
+        );
+        assert!(
+            r.daemon
+                .inbox_rows_for_test(parent.id)
+                .iter()
+                .find(|row| row.from_session == Some(child))
+                .unwrap()
+                .ready_at
+                .is_some(),
+            "{provider}: staged result must flush without an exit or hook"
+        );
+        let result = mcp_call(
+            r.addr,
+            &token,
+            "pane_wait",
+            serde_json::json!({"session":child,"kind":"result","timeout_ms":1000}),
+        )
+        .await;
+        assert_eq!(result["isError"], false, "{result}");
+        assert!(
+            result["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("{provider} answer")),
+            "{result}"
+        );
+        assert_eq!(
+            result["structuredContent"]["rows"][0]["reason"], "quiet_settle",
+            "{result}"
+        );
+        assert_eq!(
+            r.daemon
+                .orchestrate_get(parent.id, child)
+                .unwrap()
+                .info
+                .state,
+            proto::SessionState::Running
+        );
+    }
+}
+
+#[tokio::test]
+async fn issue104_reporting_hooks_keep_precise_turn_end_and_show_the_hold() {
+    let _guard = serial().await;
+    let r = rig("reporting-turn-end-hooks").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("codex".into()),
+            event: "Stop".into(),
+            stop_continued: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    r.daemon
+        .orchestrate_submit(child, "precise answer".to_string().into())
+        .unwrap();
+    let detail = r.daemon.orchestrate_get(parent.id, child).unwrap();
+    assert_eq!(detail.turn_end_source, "stop-hook");
+    let hold = detail.delegation.unwrap().hold_reason.unwrap();
+    assert!(
+        hold.contains("waiting for turn end from codex hooks"),
+        "{hold}"
+    );
+    let t0 = 0;
+    r.daemon.delegation_watch_tick_at(t0);
+    r.daemon.delegation_watch_tick_at(
+        t0 + houston_core::orchestrate::DELEGATION_SETTLE_QUIET_MS + 1_000,
+    );
+    assert!(r.daemon.inbox_rows_for_test(parent.id)[0]
+        .ready_at
+        .is_none());
+    let timeout = mcp_call(
+        r.addr,
+        &token,
+        "pane_wait",
+        serde_json::json!({"timeout_ms":1}),
+    )
+    .await;
+    assert!(
+        timeout["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains(&hold),
+        "{timeout}"
+    );
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("codex".into()),
+            event: "Stop".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(r.daemon.inbox_rows_for_test(parent.id)[0]
+        .ready_at
+        .is_some());
+    assert!(r
+        .daemon
+        .orchestrate_get(parent.id, child)
+        .unwrap()
+        .delegation
+        .unwrap()
+        .hold_reason
+        .is_none());
+}
+
+#[tokio::test]
+async fn issue104_tool_lifecycle_effects_are_hook_evidence() {
+    let _guard = serial().await;
+    let r = rig("tool-hook-evidence").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("codex".into()),
+            event: "PreToolUse".into(),
+            tool_name: Some("exec_command".into()),
+            tool_use_id: Some("tool-evidence".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(
+        r.daemon
+            .orchestrate_get(parent.id, child)
+            .unwrap()
+            .turn_end_source,
+        "stop-hook"
+    );
+    r.daemon
+        .orchestrate_submit(child, "tool answer".to_string().into())
+        .unwrap();
+    let t0 = 1_000_000;
+    r.daemon.delegation_watch_tick_at(t0);
+    r.daemon.delegation_watch_tick_at(
+        t0 + houston_core::orchestrate::DELEGATION_SETTLE_QUIET_MS + 1_000,
+    );
+    assert!(r.daemon.inbox_rows_for_test(parent.id)[0]
+        .ready_at
+        .is_none());
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("codex".into()),
+            event: "Stop".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(r.daemon.inbox_rows_for_test(parent.id)[0]
+        .ready_at
+        .is_some());
 }

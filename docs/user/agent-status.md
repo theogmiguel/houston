@@ -19,9 +19,10 @@ A pane can show:
 - **Needs input** — the agent asked a question or is waiting on a permission decision. It
   stays in this state until you address it; providers that report the answer move back to
   Working immediately.
-- **Status unavailable** — the CLI did not report lifecycle within the startup window.
-  Inspect the pane for startup or trust requests and check its hook setup. A parent
-  receives a startup notice; missing reports do not prove that human input is needed.
+- **Status unavailable** — the CLI did not report lifecycle within the startup window,
+  or Codex hooks are off, missing or have unconfirmed trust at launch. Check the operator
+  note and hook setup. A parent receives a startup notice; missing reports do not prove
+  that human input is needed.
 
 A CLI with no hook support shows none of this: its pane runs, but never reports Working,
 Idle or Needs input. Claude Code reports tool questions, permission prompts and MCP
@@ -41,8 +42,8 @@ tooltip lists the contributing pane states, so the indicator does not rely on co
 
 On Linux with user systemd, Codex 0.160.0 and later use a private app-server for each
 pane while keeping the normal Codex terminal. Houston confirms startup readiness from the provider's
-thread status, so a restored pane can become Idle before its first turn. Hook review
-still belongs to Codex: a pane waiting for review stays unconfirmed.
+thread status, so a restored pane can become Idle before its first turn. Houston trusts
+its own installed status hooks; other hooks still use Codex's review process.
 
 Older Codex versions, hosts without user systemd, other platforms and custom launches
 use lifecycle hooks only.
@@ -64,16 +65,22 @@ This screen lists every CLI Houston knows how to wire, and what each row means:
   mismatched, or something Houston did not expect — "the file may have been edited
   outside Houston."
 
-Turning the switch on writes into that CLI's own config, and turning it off removes
-exactly what Houston added:
+Claude Code and Codex status hooks are on by default. An explicit off setting stays off
+across restarts. Turning the switch on writes into that CLI's own config, and turning
+it off removes exactly what Houston added:
 
 - **Claude Code** — adds managed lifecycle hook entries to each workspace Houston opens.
 - **Codex** — writes `~/.codex/hooks.json`, one entry per lifecycle event. An existing
   `notify` line in your `config.toml` is parked (commented out) rather than overwritten,
-  and restored when you turn the hook off. Codex also requires you to accept the hook
-  once in its own review screen before it actually runs — open any Codex pane to confirm
-  it. Reopening a pane or reinstalling unchanged hooks preserves that decision.
-  Changed hook definitions require another review in Codex.
+  and restored when you turn the hook off. Houston also writes a reversible managed
+  block of `[hooks.state]` entries in `~/.codex/config.toml`, trusting only its own
+  installed commands so Codex runs them without a `/hooks` review prompt. Other hooks
+  and trust entries stay unchanged. Houston checks the saved trust against its installed
+  definitions and removes its hooks if trust setup fails.
+  Launches using another Codex config directory check that directory's hooks and trust.
+  A new pane with hooks off, missing hooks or unconfirmed trust immediately shows
+  **Unavailable**, with an operator note naming the cause. Repair the setup in
+  Settings → Agent status → Codex and reopen the pane.
 - **OpenCode** — drops a small plugin file Houston owns; if one is already there and
   Houston did not write it, install refuses rather than overwriting it.
 - **Cursor** — adds one entry to each of your `sessionStart`, `beforeSubmitPrompt` and

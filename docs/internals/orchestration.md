@@ -113,7 +113,9 @@ Codex Auto PermissionRequest is approval-flow evidence, not human-wait evidence.
 unresolved episode after five minutes raises a deduplicated `stalled?` marker with its
 episode, elapsed time and `approval_outcome_unobserved`. The threshold is a conservative
 heuristic: hermetic fake-agent timing is only a latency lower bound, and does not measure
-real reviewers. Slow review, long tools and missing hooks can produce false positives.
+real reviewers. On Linux, an episode whose session still has a running external process
+is treated as approved and raises no marker, because hooks report the outcome only when
+the tool completes. Slow review and missing hooks can still produce false positives.
 The marker leaves the agent Working, produces no desktop notification and reaches parents
 only through an explicit wait. Matching PostToolUse, Stop, Interrupt or a new root user
 prompt clears it. Without a call id, matching requires turn, tool and canonical input
@@ -1097,20 +1099,21 @@ What changes per provider, beyond the shared inbox:
   `HooksFull`. In the 0.155.1 event shape, `PermissionRequest` has no `tool_use_id`;
   the helper carries its `turn_id` and a SHA-256 digest of `tool_input.command`, and
   `PostToolUse` clears only the matching episode without storing the raw command.
-  **Trust** is Codex's own, not Houston's to grant: an untrusted hook is
-  silently skipped, so a Codex pane's startup remains unconfirmed until the operator trusts Houston's hooks in Codex's own review
-  screen. Houston never passes `--dangerously-bypass-hook-trust` — a spawn into a repo
-  carrying its own `.codex/hooks.json` would run that hook untrusted too. A missing drop
-  does not prove distrust (a slow helper, a broken file, a hook that errored all look the
-same), so `pane_list` and the Agent setup screen say "Codex hooks installed, not
-confirmed for this pane" and name the likely causes, trust first; the setup screen's own
-check reads `[hooks.state]` to say whether the trust entry exists — the Codex row reports
-`no_config` / `not_confirmed` / `some_trusted`, and when nothing has ever been trusted it
-says "Hooks installed, not confirmed: Codex runs a hook only after you accept it once in
-its own review screen — open any Codex pane". Writing `trusted_hash`
-ourselves is deferred: the algorithm is source, not contract.
-  Reinstall preserves existing group positions and skips unchanged file writes because
-  Codex trust includes hook ordinals. Changed definitions still require Codex review.
+  Codex status hooks default to on unless the user explicitly disables them. Houston
+  grants trust only to its own installed hook definitions, using a reversible marked
+  block in `~/.codex/config.toml`. Codex keys each state entry by source path, event,
+  group ordinal and handler ordinal; its trusted hash covers the normalized handler
+  and matcher. Houston checks every installed definition against its saved hash and
+  enabled state. A failed trust write removes Houston's hooks and restores parked
+  `notify` configuration; unrelated hook and trust entries are preserved.
+  Houston never passes `--dangerously-bypass-hook-trust`: project hooks retain Codex's
+  own review boundary. Reinstall preserves group positions and unchanged file contents,
+  and refreshes Houston's marked trust block when its definitions change. The trust
+  algorithm follows Codex source rather than a stable public contract.
+  A Codex launch with hooks off, absent or unconfirmed starts with `unavailable` status
+  and an operator note naming the cause and repair path. Spawn warnings carry the same
+  cause through their existing code and message fields. Late provider lifecycle
+  evidence can recover the status; missing reports alone never prove distrust.
   Codex 0.160.0 queues SessionStart until turn creation. On Linux with user systemd, normal Codex
   launches use a pane-owned app-server and the native TUI's `--remote` transport.
   A startup-only observer confirms the loaded root's Idle status with documented

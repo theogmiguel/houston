@@ -320,6 +320,14 @@ impl Agent {
                     self.call("pane_submit", json!({"body":body,"summary":summary,"request_id":step["request_id"].as_u64().unwrap_or(1)}))?;
                     self.lifecycle("stop")?;
                 }
+                "run_command" => {
+                    // An approved tool command still executing: a live child of the agent process.
+                    let secs = step["secs"].as_u64().unwrap_or(60);
+                    houston_core::spawn::command("sleep")
+                        .arg(secs.to_string())
+                        .spawn()
+                        .context("run_command spawn")?;
+                }
                 "spawn" => {
                     let result = self.call("pane_spawn", step["args"].clone())?;
                     self.children

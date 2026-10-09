@@ -171,6 +171,22 @@ describe('glyph labels', () => {
     expect(glyphLabel(cursor)).toBe('scout · Working · cursor: needs-input not reported by this provider')
     expect(glyphLabel(child(4))).toBe('worker 4 · Working')
   })
+  it('name a missing status signal and where to fix it', () => {
+    const codex = { ...child(6), agent: 'codex', status: 'unavailable' } as SessionInfo
+    expect(glyphLabel(codex)).toBe('worker 6 · Status unavailable: no lifecycle events from codex. Check Settings → Agent status')
+  })
+})
+
+describe('missing status signal', () => {
+  it('shows a live child with no reported status as unavailable, never as working', () => {
+    children = [{ ...child(7), agent: 'codex', status: null } as unknown as SessionInfo]
+    act(() => root.render(<ChildrenRoster {...props()} collapsed />))
+    const glyph = host.querySelector<HTMLElement>('[aria-label="Open worker 7"]')!
+    const dot = glyph.querySelector('.agent-dot')!
+    expect(dot.getAttribute('aria-label')).toBe('status unavailable')
+    expect(dot.className).not.toContain('--info')
+    expect(childStateWord(children[0])).toBe('unavailable')
+  })
 })
 
 it('regroups a child after a pure status update while its input props remain unchanged', () => {

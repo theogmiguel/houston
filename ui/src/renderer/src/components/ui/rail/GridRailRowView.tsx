@@ -119,9 +119,9 @@ export function GridRailRowView({
         onMouseEnter={startHover}
         onMouseLeave={closeHover}
       >
-        <GridRailUnreadToggle card={card} now={now} cardMode={cardMode} hasUnread={hasUnread} showUnread={properties.includes('unread')} onToggleUnread={onToggleUnread} />
+        <GridRailUnreadToggle card={card} now={now} cardMode={cardMode} hasUnread={hasUnread} onToggleUnread={onToggleUnread} />
         <div className={`flex min-w-0 flex-1 flex-col ${cardMode === 'compact' && !hasChipRow ? 'justify-center' : 'gap-[5px]'}`}>
-          <GridRailTitleRow name={name} pinned={pinned} tags={tags} hasTags={properties.includes('tags')} tagDisplay={tagDisplay} pr={pr} hasPr={properties.includes('pr')} hasCheckout={properties.includes('checkout')} cardMode={cardMode} checkoutLabel={checkoutLabel} many={many} agentCount={card.agents.length} primary={primary} hasRemove={Boolean(onRemove)} gridId={gridId} onRemove={onRemove} onOpenInspector={onOpenInspector} openTagPopover={openTagPopover} />
+          <GridRailTitleRow name={name} unread={properties.includes('unread') && hasUnread} pinned={pinned} tags={tags} hasTags={properties.includes('tags')} tagDisplay={tagDisplay} pr={pr} hasPr={properties.includes('pr')} hasCheckout={properties.includes('checkout')} cardMode={cardMode} checkoutLabel={checkoutLabel} many={many} agentCount={card.agents.length} primary={primary} hasRemove={Boolean(onRemove)} gridId={gridId} onRemove={onRemove} onOpenInspector={onOpenInspector} openTagPopover={openTagPopover} />
           <GridRailCheckout cardMode={cardMode} hasCheckout={properties.includes('checkout')} label={checkoutLabel} pr={pr} hasPr={properties.includes('pr')} hasDiff={properties.includes('diff')} diff={card.diff} primary={primary} onOpenInspector={onOpenInspector} />
           {hasChipRow && <div className="flex min-h-4 items-center text-[length:var(--tr-text-xs)]"><TagCardAffordance tags={tags} mode="chips" onClick={openTags} onFilter={onFilterTag} /></div>}
           <GridRailAgentRows agents={card.agents} cardMode={cardMode} agentActivity={agentActivity} properties={properties} expanded={expanded} onToggleExpanded={onToggleExpanded} now={now} />
@@ -133,19 +133,17 @@ export function GridRailRowView({
   )
 }
 
-function GridRailUnreadToggle({ card, now, cardMode, hasUnread, showUnread, onToggleUnread }: {
+function GridRailUnreadToggle({ card, now, cardMode, hasUnread, onToggleUnread }: {
   card: RailCard
   now: number
   cardMode: RailCardMode
   hasUnread: boolean
-  showUnread: boolean
   onToggleUnread?: () => void
 }): React.JSX.Element {
   const label = hasUnread ? 'Mark as read' : 'Mark as unread'
   return <Tooltip label={label}>
     <button type="button" aria-label={label} data-testid="grid-unread-toggle" className={`relative flex w-4 flex-none justify-center ${cardMode === 'compact' ? 'items-start pt-1' : 'h-5 items-start pt-[5px]'}`} onClick={(event) => { event.stopPropagation(); onToggleUnread?.() }}>
       <StatusDot card={card} now={now} />
-      {showUnread && hasUnread && <span aria-hidden className="absolute left-1 top-4 size-1.5 rounded-full bg-[var(--warn)]" />}
     </button>
   </Tooltip>
 }
