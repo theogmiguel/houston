@@ -1102,9 +1102,13 @@ accepts `state_doc` only with `handoff: true`: text, `{text}`, or `{path}` insid
 target workspace, bounded by `STATE_DOC_MAX_BYTES` (65536 bytes).
 
 `pane_spawn` HTTP and MCP results include `warnings: PaneSpawnWarning[]`, whose
-entries contain `code` and `message`. Codes are `shared_checkout` and `worktree_trust`.
+entries contain `code` and `message`. Codes include `shared_checkout`, `worktree_trust`
+and provider-specific guidance. Codex setup failures use `hooks_off`,
+`hooks_not_installed` or `hooks_trust_unconfirmed`; the message names the cause and
+Settings → Agent status → Codex repair path. The same cause is recorded in an
+`operator_note` inbox row's `reason` and `body`, with `from_session` identifying the pane.
 The legacy nullable `warning` string remains available. Spawn warnings return to the
-caller and do not create operator-addressed inbox rows.
+caller; shared-checkout and worktree-trust warnings do not create inbox rows.
 
 `POST /inbox/tool-boundary`, authenticated with a pane token, returns `{text: string | null}`
 for Claude and Codex PostToolUse context. These supplementary hints do not acknowledge,

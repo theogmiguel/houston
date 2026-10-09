@@ -226,15 +226,15 @@ cannot multiplex, but Houston no longer writes one: install parks an active `not
 (or, if it carries Houston's own sentinel from before `hooks.json` existed, removes it
 outright) and uninstall wakes a parked one again.
 
-Trust is Codex's own, not Houston's to grant: an unreviewed hook in `hooks.json` is
-silently skipped until the operator trusts it in Codex's own review screen, and Houston
-never passes `--dangerously-bypass-hook-trust` to get around that — a spawn into a repo
-carrying its own `.codex/hooks.json` would run that hook untrusted too. `agent_hooks::codex_trust_status`
-reads `~/.codex/config.toml`'s `[hooks.state]` table read-only to say whether the review
-screen has ever been used; a Codex pane with no status yet and Houston's hooks installed
-reads as "Codex hooks installed, not confirmed for this pane" rather than a bare
-`Spawning`, since a missing `SessionStart` drop looks the same whether trust is pending,
-the helper is slow, or the file is broken.
+Houston installs Codex hooks with scoped trust in a reversible `[hooks.state]` block.
+The trust check verifies every Houston definition's key, hash and enabled state;
+unrelated trust entries do not confirm Houston's hooks. Install failures remove Houston's
+hook entries and restore parked `notify` configuration. Project hooks retain Codex's
+review boundary: Houston never passes `--dangerously-bypass-hook-trust`.
+A Codex pane launched with hooks off, absent or unconfirmed immediately reports
+`Unavailable`, with an operator note naming the cause and settings path. A trusted
+installation starts as `Spawning`; a missing lifecycle drop alone does not prove distrust.
+See [orchestration](orchestration.md) for the trust identity and installation constraints.
 
 Codex defers `SessionStart` until the first user turn. On Linux with user systemd and
 Codex 0.160.0 or later, a pane owns its app-server and connects its real TUI over a private Unix socket.

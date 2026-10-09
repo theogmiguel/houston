@@ -6477,7 +6477,7 @@ impl Daemon {
     }
 
     pub fn hook_consent(&self, provider: proto::AgentKind) -> bool {
-        let default = provider == proto::AgentKind::Claude;
+        let default = matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex);
         match self.db.get_setting(&Self::hook_consent_key(provider)) {
             Ok(Some(v)) => v == "on",
             Ok(None) => default,
@@ -6568,8 +6568,8 @@ impl Daemon {
             }
             let cli = self.cli_presence(provider);
             let trust = match (&home, provider) {
-                (Ok(home), proto::AgentKind::Codex) => {
-                    Some(match crate::agent_hooks::codex_trust_status(home) {
+                (Ok(home), proto::AgentKind::Codex) => Some(
+                    match crate::agent_hooks::codex_trust_status_for(home, &sentinel) {
                         crate::agent_hooks::CodexHookTrust::NoConfig => proto::HookTrust::NoConfig,
                         crate::agent_hooks::CodexHookTrust::NotConfirmed => {
                             proto::HookTrust::NotConfirmed
@@ -6577,8 +6577,8 @@ impl Daemon {
                         crate::agent_hooks::CodexHookTrust::SomeTrusted => {
                             proto::HookTrust::SomeTrusted
                         }
-                    })
-                }
+                    },
+                ),
                 _ => None,
             };
             rows.push(proto::AgentHookState {
@@ -6713,6 +6713,79 @@ impl Daemon {
             }
         }
         changed
+    }
+
+    fn codex_status_unavailable_cause(
+        &self,
+        profile_dir: Option<&str>,
+        cwd: &Path,
+    ) -> Option<(&'static str, &'static str)> {
+        if !self.hook_consent(proto::AgentKind::Codex) {
+            return Some(("hooks_off", "Codex status hooks are off"));
+        }
+        let inherited = std::env::var("CODEX_HOME")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let config_dir = match profile_dir.or(inherited.as_deref()) {
+            Some(directory) => {
+                let directory = Path::new(directory);
+                if directory.is_absolute() {
+                    directory.to_path_buf()
+                } else {
+                    cwd.join(directory)
+                }
+            }
+            None => {
+                let Ok(home) = self.hook_config_home() else {
+                    return Some((
+                        "hooks_not_installed",
+                        "Codex status hooks are not installed: config home is unavailable",
+                    ));
+                };
+                home.home.join(".codex")
+            }
+        };
+        let hooks = config_dir.join("hooks.json");
+        let sentinel = self.hook_sentinel();
+        if !crate::agent_hooks::codex_hooks_installed_at(&hooks, &sentinel) {
+            return Some((
+                "hooks_not_installed",
+                "Codex status hooks are not installed in the active Codex config",
+            ));
+        }
+        if crate::agent_hooks::codex_trust_status_at(&hooks, &sentinel)
+            != crate::agent_hooks::CodexHookTrust::SomeTrusted
+        {
+            return Some((
+                "hooks_trust_unconfirmed",
+                "Codex status hook trust is unconfirmed in the active Codex config",
+            ));
+        }
+        None
+    }
+
+    fn codex_status_unavailable_message(cause: &str) -> String {
+        format!("{cause}; status is unavailable. Repair the hook setup in Settings → Agent status → Codex, then reopen the pane.")
+    }
+
+    fn note_codex_status_unavailable(self: &Arc<Self>, id: u32, code: &str, cause: &str) {
+        let recipient = self.parent_of(id).unwrap_or(id);
+        if let Err(error) = self.inbox_write(
+            recipient,
+            &self.current_workspace(id).unwrap_or_default(),
+            Some(id),
+            self.delegation_round_of(id),
+            orchestrate::InboxKind::OperatorNote,
+            &format!("Pane {id} Codex status is unavailable"),
+            &Self::codex_status_unavailable_message(cause),
+            Vec::new(),
+            Some(code),
+            None,
+            false,
+            true,
+        ) {
+            tracing::warn!("recording unavailable Codex status for pane {id}: {error}");
+        }
     }
 
     fn expire_spawn_grace(&self, id: u32) {
@@ -9501,7 +9574,20 @@ impl Daemon {
             .context(orchestrate::MutationMayHaveActed)?;
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
-        let initial_status = (!hidden && reports_status).then_some(proto::AgentStatus::Spawning);
+        let unavailable_cause = (!hidden && agent == proto::AgentKind::Codex && acp.is_none())
+            .then(|| {
+                self.codex_status_unavailable_cause(
+                    Self::agent_profile_config_dir(agent, &extra_env),
+                    &cwd,
+                )
+            })
+            .flatten();
+        let initial_status =
+            (!hidden && reports_status).then_some(if unavailable_cause.is_some() {
+                proto::AgentStatus::Unavailable
+            } else {
+                proto::AgentStatus::Spawning
+            });
         let status_since_ms = initial_status.map(|_| now_ms());
         let mut info = proto::SessionInfo {
             checkout: None,
@@ -9687,6 +9773,9 @@ impl Daemon {
             })
             .expect("spawn pty wait thread");
 
+        if let Some((code, cause)) = unavailable_cause {
+            self.note_codex_status_unavailable(id, code, cause);
+        }
         if initial_status == Some(proto::AgentStatus::Spawning) {
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 let daemon = Arc::clone(self);
@@ -16393,6 +16482,19 @@ impl Daemon {
                 message,
             })
             .collect();
+        if info.agent == proto::AgentKind::Codex
+            && info.status == Some(proto::AgentStatus::Unavailable)
+        {
+            let profile_dir = self.db.session_profile_config_dir(info.id).ok().flatten();
+            if let Some((code, cause)) =
+                self.codex_status_unavailable_cause(profile_dir.as_deref(), Path::new(&info.cwd))
+            {
+                warnings.push(proto::PaneSpawnWarning {
+                    code: code.into(),
+                    message: Self::codex_status_unavailable_message(cause),
+                });
+            }
+        }
         if info.agent == proto::AgentKind::Cursor {
             warnings.push(proto::PaneSpawnWarning {
                 code: "needs_input_unreported".into(),

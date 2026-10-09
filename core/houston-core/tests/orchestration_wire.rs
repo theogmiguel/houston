@@ -290,6 +290,7 @@ fn shim_dir() -> PathBuf {
         let home = dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
         std::env::set_var("HOME", &home);
+        std::env::remove_var("CODEX_HOME");
         dir
     })
     .clone()
@@ -350,6 +351,7 @@ struct Rig {
 async fn rig(name: &str) -> Rig {
     shim_dir();
     let (addr, state, daemon) = start_daemon_with_handle().await;
+    daemon.install_consented_agent_hooks();
     let ws_dir = state.path().join(name);
     std::fs::create_dir_all(&ws_dir).unwrap();
     daemon.workspace_add(&ws_dir.display().to_string()).unwrap();
