@@ -37,6 +37,7 @@ fn shim_dir() -> &'static Path {
         let home = dir.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
         std::env::set_var("HOME", home);
+        std::env::remove_var("CODEX_HOME");
         dir
     })
     .path()
@@ -78,6 +79,7 @@ impl Rig {
         })
         .unwrap();
         daemon.reap_set_exit_hook_for_test(Box::new(|| {}));
+        daemon.install_consented_agent_hooks();
         daemon.workspace_add(workspace.to_str().unwrap()).unwrap();
         daemon.orchestration_set(true).unwrap();
         daemon.set_orchestration_caps(LIVE_CAP, 3).unwrap();
