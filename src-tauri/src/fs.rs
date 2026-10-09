@@ -61,6 +61,13 @@ const MAX_WATCHED_DIRS: usize = 256;
 // Coalesces filesystem bursts into one UI refresh while keeping edits responsive.
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(150);
 
+// inotify also reports opens and reads; reading a file is not a change, and forwarding
+// it lets the reload that a change triggers retrigger itself.
+fn changed_paths(result: notify::Result<notify::Event>) -> Option<Vec<PathBuf>> {
+    let event = result.ok()?;
+    (!event.kind.is_access()).then_some(event.paths)
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PathSearchItem {
@@ -405,8 +412,8 @@ pub async fn fs_watch_dirs(
     let (sender, receiver) = mpsc::channel::<Vec<PathBuf>>();
     let event_sender = sender.clone();
     let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-        if let Ok(event) = result {
-            let _ = event_sender.send(event.paths);
+        if let Some(paths) = changed_paths(result) {
+            let _ = event_sender.send(paths);
         }
     })
     .map_err(|e| format!("cannot create watcher for {}: {e}", real_root.display()))?;
@@ -1671,6 +1678,36 @@ async fn set_file_mode_0600(_file: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reading_a_watched_file_reports_no_change_but_writing_does() {
+        use notify::Watcher as _;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Cargo.lock");
+        std::fs::write(&file, "before").unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut watcher = notify::recommended_watcher(move |result| {
+            if let Some(paths) = super::changed_paths(result) {
+                let _ = sender.send(paths);
+            }
+        })
+        .unwrap();
+        watcher
+            .watch(dir.path(), notify::RecursiveMode::Recursive)
+            .unwrap();
+        let settle = std::time::Duration::from_millis(300);
+        while receiver.recv_timeout(settle).is_ok() {}
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "before");
+        let read = receiver.recv_timeout(settle);
+        assert!(read.is_err(), "a read was reported as a change: {read:?}");
+        std::fs::write(&file, "after").unwrap();
+        let written = receiver.recv_timeout(std::time::Duration::from_secs(5));
+        assert!(
+            written.as_ref().is_ok_and(|paths| paths.contains(&file)),
+            "a write to {} was not reported: {written:?}",
+            file.display()
+        );
+    }
+
     #[test]
     fn checked_save_rejects_stale_content_and_preserves_permissions() {
         use sha2::{Digest, Sha256};
