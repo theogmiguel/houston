@@ -392,3 +392,15 @@ because `@theme`/`@layer` resolution only exists post-build. It re-derives the t
 and token mapping from source, asserts every `--color-*` token re-resolves per
 `[data-theme]` scope, and gates contrast: ink-on-ground at ≥ 4.5:1 per theme and the focus
 ring at ≥ 3:1 against two surfaces.
+
+## Mascot arbitration
+
+The optional companion loads outside the terminal render path. A pure director orders
+user interactions, lifecycle moments, scheduled greetings and ambient play. Scheduled
+speech requires focus and five seconds without typing; it is limited to three remarks
+per hour and at least ten minutes between remarks. User actions are exempt. The local
+ledger prevents repeated holiday greetings across reloads. Sleeping defers a scheduled
+greeting to wake; disco and Ring Invaders suspend scheduled and ambient moments.
+Calendar rules use local civil dates and Gregorian Easter, with explicit overlap order.
+Preferences, first-seen install date and the bounded greeting ledger use `tr-mascot*`
+localStorage keys. Turning the feature off unmounts its listeners and lazy visuals.

@@ -64,3 +64,24 @@ thing from the keyboard.
 | Copy the text, not the box | Strips TUI box-drawing borders when copying | on |
 | Panes per stack | How many tabs one grid cell may hold; lowering it closes nothing already open | 4 (range 2–8) |
 | Idle quiet window | How long a session must be silent before Houston calls it idle | 400ms (range 100–30,000ms) |
+
+## Mascot
+
+Settings → Appearance → Mascot controls Houston's companion above the rail footer.
+It is on by default and keeps you company; it never reports agent status or reads
+terminal text or hooks. Turn Mascot off to remove its artwork and interactions.
+
+Choose Brand art or Pixel, Classic, Aurora, Sunset or Mono colours, and a wardrobe
+hat. Celebrate holidays uses the local calendar; holiday outfits take precedence.
+The install anniversary uses the first day this renderer sees the companion.
+Sounds and Break reminders start off. Nap when I'm away starts on: after two minutes
+without input Houston plays, and after five minutes it sleeps. Break reminders suggest
+a stretch after ninety minutes of continuous input, during a quiet moment.
+
+Click to say hello, rub the mascot to pet it, drag and release it, or double-click
+to flip. Ten clicks within four seconds open Ring Invaders. The command palette
+also offers Pet Houston, Say hi, Disco mode, Play Ring Invaders and Replay mascot intro.
+Meet the mascot again replays the introduction. Motion pauses when hidden or unfocused
+unless Animate when Houston is in the background is enabled. Reduced motion keeps
+static poses and disables particles and the introduction flight. All companion
+preferences and greeting history stay in renderer-local storage; nothing is transmitted.

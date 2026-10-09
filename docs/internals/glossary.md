@@ -165,3 +165,9 @@ named.
 | **discriminator** | The specific re-run that distinguishes a known flaky shape from a real failure. |
 | **typeable** | A pane whose engine is live, which holds focus, and whose daemon link is up — the first instant a keystroke reaches the PTY. `TerminalPane` publishes it as `data-typeable`; `--bench=M10` stamps it as `focused-pane-typeable`. Not "painted": keys work well before the scrollback replay draws. |
 | **cold boot / warm restore** | The two boot conditions `scripts/boot-baseline.sh` measures. Cold: a channel with no sessions, so nothing to restore and no pane to type into. Warm: a channel whose boot restore brings sessions back — the boot a returning user gets. |
+
+## Mascot / companion
+
+Houston's optional renderer-local character. It provides company and reacts to user
+input, app surfaces and the local calendar. It never represents agent lifecycle status
+or reads terminal output. Its name is Houston; a companion is not an agent or session.
