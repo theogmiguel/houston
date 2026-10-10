@@ -82,6 +82,7 @@ struct Recorded {
     refuse_blocks: bool,
     /// Refuse every post to the owner's direct messages.
     refuse_dm: bool,
+    socket_connections: usize,
 }
 
 #[derive(Clone)]
@@ -89,6 +90,7 @@ struct Fake {
     rec: Arc<Mutex<Recorded>>,
     push: broadcast::Sender<String>,
     addr: std::net::SocketAddr,
+    silence: Arc<tokio::sync::Notify>,
 }
 
 impl Fake {
@@ -100,6 +102,7 @@ impl Fake {
             rec: Arc::default(),
             push,
             addr,
+            silence: Arc::default(),
         };
         let app = Router::new()
             .route("/api/{method}", any(api))
@@ -300,6 +303,7 @@ async fn socket(State(fake): State<Fake>, ws: WebSocketUpgrade) -> axum::respons
 
 async fn serve_socket(fake: Fake, mut socket: WebSocket) {
     let mut rx = fake.push.subscribe();
+    fake.rec.lock().unwrap().socket_connections += 1;
     if socket
         .send(WsMessage::Text(
             json!({"type": "hello", "num_connections": 1})
@@ -313,6 +317,11 @@ async fn serve_socket(fake: Fake, mut socket: WebSocket) {
     }
     loop {
         tokio::select! {
+            _ = fake.silence.notified() => {
+                // Hold the TCP connection open without reading pings or sending frames.
+                tokio::time::sleep(Duration::from_secs(120)).await;
+                return;
+            }
             msg = socket.recv() => match msg {
                 Some(Ok(WsMessage::Text(t))) => {
                     if let Ok(v) = serde_json::from_str::<Value>(&t) {
@@ -1489,6 +1498,41 @@ async fn accepted_requests_past_the_working_cap_wait_in_a_queue() {
         .unwrap();
     let runs = r.await_runs(3).await;
     assert_eq!(runs.len(), 3, "a freed slot starts the queued request");
+    r.finish();
+}
+
+#[tokio::test]
+async fn a_silent_socket_reconnects_and_receives_new_requests() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-silent-reconnect").await;
+    assert_eq!(r.fake.rec.lock().unwrap().socket_connections, 1);
+    r.fake.silence.notify_one();
+    tokio::time::timeout(Duration::from_secs(110), async {
+        loop {
+            if r.fake.rec.lock().unwrap().socket_connections >= 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        r.await_connected().await;
+    })
+    .await
+    .expect("a silent Socket Mode connection must be replaced");
+    r.fake.send_event(
+        "after-silence",
+        mention("1800000010.000100", REQUESTER, "request after reconnect"),
+    );
+    let tasks = r.await_tasks(1).await;
+    assert_eq!(tasks[0].1, format!("slack:{REQUESTER}"));
+    r.fake.await_reactions("1800000010.000100", &["eyes"]).await;
+    assert!(r
+        .fake
+        .rec
+        .lock()
+        .unwrap()
+        .acks
+        .iter()
+        .any(|id| id == "after-silence"));
     r.finish();
 }
 
