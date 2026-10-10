@@ -3184,10 +3184,7 @@ impl Daemon {
                 }
                 continue;
             }
-            let result = if !matches!(
-                child.agent,
-                proto::AgentKind::Claude | proto::AgentKind::Codex
-            ) {
+            let result = if !crate::launch::resumes_conversations(child.agent) {
                 Err(anyhow!("provider without resume"))
             } else {
                 match self.db.session_resume_handle(child.id) {
@@ -8121,8 +8118,8 @@ impl Daemon {
         {
             let provider = parent.detected_agent.unwrap_or(proto::AgentKind::Shell);
             let handle = self.db.session_resume_handle(parent.id).ok().flatten();
-            if let Some((conversation, _)) = handle
-                .filter(|_| matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex))
+            if let Some((conversation, _)) =
+                handle.filter(|_| crate::launch::resumes_conversations(provider))
             {
                 parent.resume_notice = Some(format!(
                     "Shell is interactive; child recovery is deferred until a root {provider:?} hook confirms conversation {conversation}."
@@ -8314,9 +8311,10 @@ impl Daemon {
                 self.db.session_profile_label(old_id)?,
                 old.tags.lock().expect("tags lock").clone(),
                 false,
-                old.detected.lock().expect("detected lock").filter(|kind| {
-                    matches!(kind, proto::AgentKind::Claude | proto::AgentKind::Codex)
-                }),
+                old.detected
+                    .lock()
+                    .expect("detected lock")
+                    .filter(|kind| crate::launch::resumes_conversations(*kind)),
             )
         } else if let Some(info) = self.dead.lock().expect("dead lock").get(&old_id).cloned() {
             let stored_title_source = self.db.session_title_source(old_id)?;
@@ -8346,9 +8344,8 @@ impl Daemon {
                 info.profile_label.clone(),
                 info.tags.clone(),
                 true,
-                info.detected_agent.filter(|kind| {
-                    matches!(kind, proto::AgentKind::Claude | proto::AgentKind::Codex)
-                }),
+                info.detected_agent
+                    .filter(|kind| crate::launch::resumes_conversations(*kind)),
             )
         } else {
             bail!("unknown session id {old_id} (expected an active or restored session)");
@@ -8360,8 +8357,8 @@ impl Daemon {
         }
 
         if let Some(parent) = spawned_by {
-            if !matches!(agent, proto::AgentKind::Claude | proto::AgentKind::Codex) {
-                bail!("continue refused: child {old_id} of parent {parent}, provider {agent:?}, cannot resume its mission; expected Claude or Codex");
+            if !crate::launch::resumes_conversations(agent) {
+                bail!("continue refused: child {old_id} of parent {parent}, provider {agent:?}, cannot resume its mission; expected Claude, Codex or ZCode");
             }
             if handle.is_none() {
                 bail!("continue refused: child {old_id} of parent {parent}, provider {agent:?}, has no resume handle for its mission");
@@ -8495,12 +8492,13 @@ impl Daemon {
         let shell_startup = if agent == proto::AgentKind::Shell && !extra_args.is_empty() {
             let provider = resume_agent.ok_or_else(|| {
                 anyhow!(
-                    "shell session {old_id} has resume arguments without a validated Claude/Codex provider"
+                    "shell session {old_id} has resume arguments without a validated Claude, Codex or ZCode provider"
                 )
             })?;
             let mut argv = vec![match provider {
                 proto::AgentKind::Claude => "claude".to_string(),
                 proto::AgentKind::Codex => "codex".to_string(),
+                proto::AgentKind::Zcode => "zcode".to_string(),
                 _ => bail!("shell session {old_id} cannot resume provider {provider:?}"),
             }];
             argv.extend(extra_args.iter().cloned());
@@ -8508,9 +8506,8 @@ impl Daemon {
         } else {
             None
         };
-        let detected_agent = resume_agent.or_else(|| {
-            matches!(agent, proto::AgentKind::Claude | proto::AgentKind::Codex).then_some(agent)
-        });
+        let detected_agent =
+            resume_agent.or_else(|| crate::launch::resumes_conversations(agent).then_some(agent));
         if strict_resume {
             self.wake_launches
                 .lock()
@@ -8885,10 +8882,11 @@ impl Daemon {
         {
             return;
         }
-        if let Some(evidence) = d.resume_evidence.as_ref() {
-            let Ok(slug) = Self::agent_profile_slug(provider) else {
-                return;
-            };
+        // ZCode's evidence carries no profile; it has no profiles to attribute.
+        if let (Some(evidence), Ok(slug)) = (
+            d.resume_evidence.as_ref(),
+            Self::agent_profile_slug(provider),
+        ) {
             let profile_dir = evidence
                 .profile_dir
                 .as_deref()
@@ -8926,10 +8924,8 @@ impl Daemon {
         } else {
             (session.info.agent == provider).then_some(provider)
         };
-        if !matches!(
-            resumable_agent,
-            Some(proto::AgentKind::Claude | proto::AgentKind::Codex)
-        ) || crate::launch::resume_args(provider, conversation).is_err()
+        if !resumable_agent.is_some_and(crate::launch::resumes_conversations)
+            || crate::launch::resume_args(provider, conversation).is_err()
         {
             return;
         }
@@ -9000,7 +8996,7 @@ impl Daemon {
             return None;
         }
         let provider_resume = match provider {
-            proto::AgentKind::Claude => {
+            proto::AgentKind::Claude | proto::AgentKind::Zcode => {
                 d.resume_evidence
                     .as_ref()
                     .and_then(|evidence| evidence.source.as_deref())
@@ -12293,7 +12289,8 @@ impl Daemon {
             workspace_id: project_dir.to_string_lossy().into_owned(),
         });
         let mut launch = crate::mcp_launch::launch_for(agent, &endpoint, &token);
-        if agent == proto::AgentKind::Zcode {
+        // A shell pane can host ZCode too; the URL resolves its plugin to this pane's token.
+        if matches!(agent, proto::AgentKind::Zcode | proto::AgentKind::Shell) {
             launch.env.push((
                 crate::zcode_config::url_env(self.channel.as_deref()),
                 endpoint,

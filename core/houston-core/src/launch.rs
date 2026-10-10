@@ -493,6 +493,14 @@ pub fn resume_args(agent: proto::AgentKind, id: &str) -> Result<Vec<String>> {
     }
 }
 
+/// Providers whose conversation Houston records from hooks and resumes by exact id.
+pub fn resumes_conversations(agent: proto::AgentKind) -> bool {
+    matches!(
+        agent,
+        proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Zcode
+    )
+}
+
 /// Whether resuming is checked against a transcript file. ZCode keeps its sessions
 /// in its own database, so a missing one surfaces as ZCode's error in the pane.
 pub fn resume_needs_transcript(agent: proto::AgentKind) -> bool {

@@ -46,7 +46,7 @@ exec cat
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["claude", "codex"] {
+        for name in ["claude", "codex", "zcode"] {
             let path = dir.join(name);
             std::fs::write(&path, FAKE_CLI).unwrap();
             use std::os::unix::fs::PermissionsExt;
@@ -409,6 +409,20 @@ async fn hook_as(
 ) {
     let drop = run_hook_as(event, session, stdin, Some(agent)).await;
     apply_drop(env, daemon, drop).await;
+}
+
+/// A ZCode payload for `session` (its hook stdin carries no transcript Houston keeps).
+fn zcode_fixture(name: &str, conversation: &str, cwd: &Path) -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/hooks/zcode")
+        .join(name);
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+    let mut v: Value = serde_json::from_str(&raw).unwrap();
+    v["session_id"] = conversation.into();
+    v["sessionId"] = conversation.into();
+    v["cwd"] = cwd.display().to_string().into();
+    v.to_string()
 }
 
 const START: &str = "claude-2.1.263-01-SessionStart.json";
@@ -875,6 +889,104 @@ async fn shell_children_resume_only_after_the_matching_root_native_resume_hook()
         root_conversation,
         &root_transcript,
         &dir,
+    )
+    .await;
+    assert!(wait_restored_child(&restarted, child.id).await.resumable);
+    daemon.close(shell.id).unwrap();
+    close_after_shell_restore(&restarted, parent.id).await;
+}
+
+/// ZCode run by hand inside a shell pane orchestrates a child; after a restart the
+/// shell relaunches `zcode --resume <id>` and restores the child only once the root's
+/// own resumed SessionStart names that conversation.
+#[tokio::test]
+async fn shell_hosted_zcode_resumes_by_id_and_restores_its_children_after_its_resume_hook() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-zcode-parent");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let child = daemon
+        .orchestrate_spawn(
+            shell.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            houston_core::orchestrate::Brief::from("restore after a ZCode parent".to_string()),
+            Some(false),
+            None,
+            Some("zcode-child".to_string()),
+        )
+        .unwrap();
+    let child_conversation = flag(&argv_of(&env, child.id).await, "--session-id").unwrap();
+    let child_transcript = transcript(&env, &child_conversation, b"child transcript\n");
+    hook(
+        &env,
+        &daemon,
+        child.id,
+        "UserPromptSubmit",
+        PROMPT,
+        &child_conversation,
+        &child_transcript,
+        &dir,
+    )
+    .await;
+    let root = "sess_01J9ZCSHELL00000000000000";
+    hook_as(
+        &env,
+        &daemon,
+        shell.id,
+        "zcode",
+        "UserPromptSubmit",
+        zcode_fixture("zcode-3.14.3-src-02-UserPromptSubmit.json", root, &dir),
+    )
+    .await;
+    assert_eq!(
+        handle_in(&env, shell.id),
+        Some((root.to_string(), None)),
+        "the shell records ZCode's conversation from its hook"
+    );
+
+    let restarted = reboot(&env, &daemon);
+    let parent = restored_from(&restarted.list(), shell.id).clone();
+    assert_eq!(parent.agent, proto::AgentKind::Shell);
+    assert_eq!(parent.detected_agent, Some(proto::AgentKind::Zcode));
+    let argv = argv_of(&env, parent.id).await;
+    assert_eq!(flag(&argv, "--resume").as_deref(), Some(root), "{argv:?}");
+    let deferred = |daemon: &Arc<Daemon>| {
+        daemon
+            .list()
+            .into_iter()
+            .find(|session| session.id == child.id)
+            .unwrap()
+            .restore_deferred
+    };
+    assert_eq!(
+        deferred(&restarted),
+        Some(proto::RestoreReason::SpawnFailed)
+    );
+    hook_as(
+        &env,
+        &restarted,
+        parent.id,
+        "zcode",
+        "SessionStart",
+        zcode_fixture("zcode-3.14.3-src-01-SessionStart.json", root, &dir),
+    )
+    .await;
+    assert_eq!(
+        deferred(&restarted),
+        Some(proto::RestoreReason::SpawnFailed),
+        "a fresh start is not the resumed conversation"
+    );
+    hook_as(
+        &env,
+        &restarted,
+        parent.id,
+        "zcode",
+        "SessionStart",
+        zcode_fixture("zcode-3.14.3-src-09-SessionStart-resume.json", root, &dir),
     )
     .await;
     assert!(wait_restored_child(&restarted, child.id).await.resumable);

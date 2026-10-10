@@ -489,19 +489,22 @@ pub fn run_hook_client(args: &[String]) {
         tool_input_fingerprint: payload.tool_input_fingerprint,
         interrupted: payload.interrupted,
         request_id: payload.request_id,
-        resume_evidence: if matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
-            && matches!(
-                event.as_str(),
-                "SessionStart" | "UserPromptSubmit" | "Stop" | "notify"
-            ) {
+        resume_evidence: if matches!(
+            provider,
+            proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Zcode
+        ) && matches!(
+            event.as_str(),
+            "SessionStart" | "UserPromptSubmit" | "Stop" | "notify"
+        ) {
+            // ZCode has no profile directory; its evidence is the start source alone.
             let profile_dir = match provider {
-                proto::AgentKind::Claude => "CLAUDE_CONFIG_DIR",
-                proto::AgentKind::Codex => "CODEX_HOME",
-                _ => unreachable!(),
+                proto::AgentKind::Claude => Some("CLAUDE_CONFIG_DIR"),
+                proto::AgentKind::Codex => Some("CODEX_HOME"),
+                _ => None,
             };
             Some(crate::hook_drop::ResumeHookEvidence {
                 source: payload.source.clone(),
-                profile_dir: std::env::var_os(profile_dir).and_then(|value| {
+                profile_dir: profile_dir.and_then(std::env::var_os).and_then(|value| {
                     let value = match value.into_string() {
                         Ok(value) => value,
                         Err(_) => {
