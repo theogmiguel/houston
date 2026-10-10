@@ -189,10 +189,17 @@ their scope is the brief they were spawned with.
     hs-task handback [HOU-n] --summary T
     hs-task handback [HOU-n] --subject T --changes T --step T [--step …] [--caveats T]
                --live-note T --dropped-note T [--size small|medium|large]
-               [--note T …] [--warning T …] [--blocker T …] [--refused]
+               [--note T …] [--warning T …] [--blocker T …]
                (a Slack-filed task)
+    hs-task handback [HOU-n] --refused --subject T --changes T
+               (a Slack-filed task: refused at triage)
     hs-task ask --question Q --option A --option B [--option …] --recommended N
                [--why T] [--context T]         (a Slack-filed task: asks in its thread)
+
+For Slack tasks, `ask` takes two to four options; `--recommended N` is their 1-based
+position. A refusal with `--refused` needs a subject and reason in `--changes`; it does
+not require steps or the live and dropped notes. See [Slack requests](slack.md) for field
+limits and what reaches the requester and owner.
 
 The task key defaults to `$HOUSTON_TASK` when a task started the pane; otherwise pass
 `HOU-n`. Priorities are `1` urgent through `4` low.
