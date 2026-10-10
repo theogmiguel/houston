@@ -835,6 +835,26 @@ mod tests {
     }
 
     #[test]
+    fn a_resize_keeps_rows_printed_without_prompt_marks() {
+        let mut vt = emulator(60, 8);
+        let lines: Vec<String> = (0..20).map(|n| format!("tui row {n:02}")).collect();
+        vt.feed(lines.join("\r\n").as_bytes());
+
+        for (cols, rows) in [(34, 6), (60, 8)] {
+            vt.resize(cols, rows);
+            let all = vt.screen_text(usize::MAX);
+            assert!(
+                all.ends_with(&lines[14..]),
+                "the screen at {cols}x{rows} lost the program's last rows: {all:?}"
+            );
+            assert!(
+                all.contains(&lines[0]),
+                "history at {cols}x{rows} lost the program's first row: {all:?}"
+            );
+        }
+    }
+
+    #[test]
     fn resize_moves_the_grid_the_screen_is_read_from() {
         let mut vt = emulator(80, 24);
         vt.feed(b"\x1b[2J\x1b[1;1H");
