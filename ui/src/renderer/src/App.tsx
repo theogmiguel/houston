@@ -114,7 +114,7 @@ import {
 import { MANAGE_TAGS_EVENT, Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
-import { canUseSkillInFocusedPane } from "./houston/skillSurface";
+import { canUseSkillInFocusedPane, skillInvocationFor } from "./houston/skillSurface";
 import { McpSurface } from "./components/nav/McpSurface";
 import { setSettingsSection, settingsSectionLabel, shouldIgnoreInputKey, useSettingsSection } from "./settingsNav";
 import { RoutinesSurface } from "./components/nav/RoutinesSurface";
@@ -2362,7 +2362,9 @@ export function App(): React.JSX.Element {
         return;
       }
       setActiveId(target);
-      if (!cur.client.sendStdin(target, invoke)) {
+      const pane = sessionsRef.current.get(target);
+      const agent = pane?.running_agent ?? pane?.detected_agent ?? pane?.agent;
+      if (!cur.client.sendStdin(target, skillInvocationFor(agent, invoke))) {
         pushError("connection lost — skill invocation was not delivered");
       }
     },

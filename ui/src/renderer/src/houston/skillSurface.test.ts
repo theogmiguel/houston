@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Skill } from '../env'
 import type { SkillToolState } from './generated/SkillToolState'
-import { canUseSkillInFocusedPane, skillCliRelations, skillRelationLines, skillScopeLabel, skillUsageLine } from './skillSurface'
+import { canUseSkillInFocusedPane, skillCliRelations, skillInvocationFor, skillRelationLines, skillScopeLabel, skillUsageLine } from './skillSurface'
 import type { SessionInfo } from './generated/SessionInfo'
 
 const skill: Skill = {
@@ -94,5 +94,14 @@ describe('skillRelationLines', () => {
       'OpenCode, Cursor, Grok · reads Claude Code’s copy',
       'Antigravity · not managed here'
     ])
+  })
+})
+
+describe('skillInvocationFor', () => {
+  it('runs a skill in ZCode through /skill and leaves other agents on /<name>', () => {
+    expect(skillInvocationFor('zcode', '/ui-tokens')).toBe('/skill ui-tokens')
+    expect(skillInvocationFor('zcode', '/git:commit')).toBe('/skill git:commit')
+    expect(skillInvocationFor('claude', '/ui-tokens')).toBe('/ui-tokens')
+    expect(skillInvocationFor(null, '/ui-tokens')).toBe('/ui-tokens')
   })
 })

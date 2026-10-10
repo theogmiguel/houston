@@ -5,7 +5,7 @@ export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly s
   mascot: ['Mascot', 'Position', 'Style', 'Colors', 'Hat', 'Celebrate holidays', 'Sounds', 'Break reminders', "Nap when I'm away", 'Meet the mascot again', 'Animate when Houston is in the background'],
   terminal: ['Palette', 'Font size', 'Font family', 'Line height', 'Cursor blink', 'Scrollback', 'Shell integration', 'Shift+Enter inserts a newline', 'Clipboard access', 'Copy on select', 'Copy the text, not the box', 'Panes per stack', 'Idle quiet window'],
   shortcuts: ['Enable shortcuts', 'Pass through to terminal'],
-  agents: ['Claude Code', 'Codex', 'OpenCode', 'Cursor', 'Grok', 'Active profile', 'Saved profiles', 'Add profile'],
+  agents: ['Claude Code', 'Codex', 'OpenCode', 'Cursor', 'Grok', 'ZCode', 'Active profile', 'Saved profiles', 'Add profile'],
   workspaces: ['Restore budget', 'Resume conversations when restoring panes', 'Remove worktrees automatically', 'Grace after merge', 'Remove idle worktrees after', 'Close idle background sessions', 'Idle for', 'Open links in a browser pane'],
   orchestration: ['Max child panes per agent', 'Max nesting depth', 'Enable orchestration', 'Mailbox retention'],
   tasks: ['Agent access', 'Task key prefix'],

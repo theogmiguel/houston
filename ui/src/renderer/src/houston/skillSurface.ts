@@ -20,12 +20,18 @@ const SKILL_CLI_LABEL: Record<AgentKind, string> = {
   cursor: 'Cursor',
   grok: 'Grok',
   antigravity: 'Antigravity',
+  zcode: 'ZCode',
   shell: 'Shell',
   custom: 'Custom',
   droid: 'Droid',
   copilot: 'Copilot',
   aider: 'Aider',
   ssh: 'SSH'
+}
+
+/** The text that runs a skill in a pane: ZCode loads skills through `/skill <name>`; its `/<name>` is a custom command. */
+export function skillInvocationFor(agent: AgentKind | null | undefined, invoke: string): string {
+  return agent === 'zcode' ? `/skill ${invoke.replace(/^\//, '')}` : invoke
 }
 
 export function skillScopeLabel(workspaceSelected: boolean): string {

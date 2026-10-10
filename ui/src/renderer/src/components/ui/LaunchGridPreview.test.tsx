@@ -62,4 +62,14 @@ describe('LaunchGridPreview', () => {
     const { container } = render(<div className="relative"><LaunchGridPreview tree={tree} slots={slots} target="this-grid" sessions={sessions} /></div>)
     expect(container.querySelector('[data-testid="launch-grid-preview"]')?.className.split(' ')).toContain('bg-[var(--gutter-bg)]')
   })
+
+  it('names a ZCode pane by its provider', () => {
+    const withZcode = new Map<number, SessionInfo>([
+      [1, { id: 1, agent: 'claude' } as SessionInfo],
+      [2, { id: 2, agent: 'zcode' } as SessionInfo]
+    ])
+    const { container } = render(<div className="relative"><LaunchGridPreview tree={tree} slots={slots} target="this-grid" sessions={withZcode} /></div>)
+    const existing = Array.from(container.querySelectorAll<HTMLElement>('[data-layout-slot]:not([data-new])'))
+    expect(existing.map((pane) => pane.textContent)).toEqual(['Session · Claude Code', 'Session · ZCode'])
+  })
 })

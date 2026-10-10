@@ -41,7 +41,7 @@ export function useCheckAgentCreation({
   return useCallback((provider, text) => {
     const agents: Record<string, AgentKind> = {
       Claude: 'claude', Codex: 'codex', Antigravity: 'antigravity',
-      OpenCode: 'opencode', Cursor: 'cursor', Grok: 'grok'
+      OpenCode: 'opencode', Cursor: 'cursor', Grok: 'grok', ZCode: 'zcode'
     }
     const agent = agents[provider]
     const workspace = selectedWorkspace === 'all' ? panelWorkspace : selectedWorkspace
