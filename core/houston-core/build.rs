@@ -62,12 +62,15 @@ fn build_ghostty_vt() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let lock_path = manifest.join("ghostty-vt.lock");
     let shim = manifest.join("ghostty-vt").join("houston_snapshot.zig");
-    let patch = manifest
-        .join("ghostty-patches")
-        .join("0001-houston-snapshot-exports.patch");
+    let patch_dir = manifest.join("ghostty-patches");
+    let patches = patch_files(&patch_dir);
+    let patch_set = patch_set_id(&patches);
     println!("cargo:rerun-if-changed={}", lock_path.display());
     println!("cargo:rerun-if-changed={}", shim.display());
-    println!("cargo:rerun-if-changed={}", patch.display());
+    println!("cargo:rerun-if-changed={}", patch_dir.display());
+    for patch in &patches {
+        println!("cargo:rerun-if-changed={}", patch.display());
+    }
     println!("cargo:rerun-if-env-changed=HOUSTON_GHOSTTY_VT_SRC");
     println!("cargo:rerun-if-env-changed=HOUSTON_ZIG");
 
@@ -86,9 +89,20 @@ fn build_ghostty_vt() {
 
     let src = match std::env::var("HOUSTON_GHOSTTY_VT_SRC") {
         Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => fetch_source(&cache, &lock, &lock_path, revision),
+        _ => {
+            let src = fetch_source(&cache, &lock, &lock_path, revision);
+            if patched_with_other_set(&src, &patch_set) {
+                // Patches only apply to pristine source; re-extract from the
+                // checksummed tarball rather than unpatching in place.
+                fs::remove_dir_all(&src)
+                    .unwrap_or_else(|e| panic!("removing stale {}: {e}", src.display()));
+                fetch_source(&cache, &lock, &lock_path, revision)
+            } else {
+                src
+            }
+        }
     };
-    apply_shim(&src, &shim, &patch);
+    apply_shim(&src, &shim, &patches, &patch_set);
 
     let zig = zig_binary(&cache, &lock, &lock_path);
     let prefix = cache.join(format!("build-{revision}"));
@@ -186,7 +200,7 @@ fn fetch_source(
 /// `patch -F 0`, not `git apply`: the extracted tree usually sits under
 /// `core/target/` inside Houston's own work tree, where `git apply` resolves
 /// paths against the wrong root — and `-F 0` makes an upstream move fail loudly.
-fn apply_shim(src: &Path, shim: &Path, patch: &Path) {
+fn apply_shim(src: &Path, shim: &Path, patches: &[PathBuf], patch_set: &str) {
     let dest = src
         .join("src")
         .join("terminal")
@@ -197,20 +211,29 @@ fn apply_shim(src: &Path, shim: &Path, patch: &Path) {
 
     let stamp = src.join(".houston-patched");
     if stamp.exists() {
+        assert!(
+            !patched_with_other_set(src, patch_set),
+            "{} was patched with a different ghostty-patches/ set (stamp {}, expected {patch_set}); \
+             point HOUSTON_GHOSTTY_VT_SRC at a fresh extraction",
+            src.display(),
+            stamp.display()
+        );
         return;
     }
-    run(
-        Command::new("patch")
-            .arg("-p1")
-            .arg("-F")
-            .arg("0")
-            .arg("--no-backup-if-mismatch")
-            .arg("-d")
-            .arg(src)
-            .arg("-i")
-            .arg(patch),
-        "patch (houston snapshot exports)",
-    );
+    for patch in patches {
+        run(
+            Command::new("patch")
+                .arg("-p1")
+                .arg("-F")
+                .arg("0")
+                .arg("--no-backup-if-mismatch")
+                .arg("-d")
+                .arg(src)
+                .arg("-i")
+                .arg(patch),
+            &format!("patch ({})", patch.display()),
+        );
+    }
     assert!(
         fs::read_to_string(src.join("src").join("lib_vt.zig"))
             .map(|s| s.contains("houston_vt_snapshot_encode"))
@@ -219,7 +242,41 @@ fn apply_shim(src: &Path, shim: &Path, patch: &Path) {
          houston_vt_snapshot_encode",
         src.join("src").join("lib_vt.zig").display()
     );
-    fs::write(&stamp, "1").unwrap_or_else(|e| panic!("writing {}: {e}", stamp.display()));
+    fs::write(&stamp, patch_set).unwrap_or_else(|e| panic!("writing {}: {e}", stamp.display()));
+}
+
+fn patch_files(dir: &Path) -> Vec<PathBuf> {
+    let mut patches: Vec<PathBuf> = fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))
+        .map(|entry| entry.expect("ghostty-patches entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "patch"))
+        .collect();
+    patches.sort();
+    assert!(
+        !patches.is_empty(),
+        "{} has no *.patch files; expected at least the snapshot exports patch",
+        dir.display()
+    );
+    patches
+}
+
+/// Same digest as scripts/build-ghostty-vt-wasm.sh computes, so the two builds
+/// share one extracted tree: sha256 over "<file name> <sha256>\n" per patch.
+fn patch_set_id(patches: &[PathBuf]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    for patch in patches {
+        let name = patch
+            .file_name()
+            .expect("patch file name")
+            .to_string_lossy();
+        hasher.update(format!("{name} {}\n", sha256_file(patch)));
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+fn patched_with_other_set(src: &Path, patch_set: &str) -> bool {
+    fs::read_to_string(src.join(".houston-patched")).is_ok_and(|stamp| stamp.trim() != patch_set)
 }
 
 /// The pinned Zig, fetched into the build cache. Never taken from `PATH`

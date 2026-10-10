@@ -35,6 +35,19 @@ zig_sha256="$(lock_get "zig_sha256_${slug}")"
 mkdir -p "$cache"
 
 src="${HOUSTON_GHOSTTY_VT_SRC:-$cache/src-$revision}"
+patches=("$repo_root"/core/houston-core/ghostty-patches/*.patch)
+# Same digest as core/houston-core/build.rs, so both builds share one tree.
+patch_set="$(for p in "${patches[@]}"; do
+  printf '%s %s\n' "$(basename "$p")" "$(sha256sum "$p" | cut -d' ' -f1)"
+done | sha256sum | cut -d' ' -f1)"
+if [[ -e "$src/.houston-patched" && "$(cat "$src/.houston-patched")" != "$patch_set" ]]; then
+  if [[ -n "${HOUSTON_GHOSTTY_VT_SRC:-}" ]]; then
+    echo "build-ghostty-vt-wasm: $src was patched with a different ghostty-patches/ set; point HOUSTON_GHOSTTY_VT_SRC at a fresh extraction" >&2
+    exit 1
+  fi
+  # Patches only apply to pristine source; re-extract rather than unpatch.
+  rm -rf "$src"
+fi
 if [[ ! -e "$src/.houston-extracted" && -z "${HOUSTON_GHOSTTY_VT_SRC:-}" ]]; then
   tarball="$cache/ghostty-$revision.tar.gz"
   [[ -f "$tarball" ]] || curl -sSL --fail -o "$tarball" "$source_url"
@@ -53,9 +66,10 @@ fi
 cp "$repo_root/core/houston-core/ghostty-vt/houston_snapshot.zig" \
    "$src/src/terminal/c/houston_snapshot.zig"
 if [[ ! -e "$src/.houston-patched" ]]; then
-  patch -p1 -F 0 --no-backup-if-mismatch -d "$src" \
-    -i "$repo_root/core/houston-core/ghostty-patches/0001-houston-snapshot-exports.patch"
-  touch "$src/.houston-patched"
+  for p in "${patches[@]}"; do
+    patch -p1 -F 0 --no-backup-if-mismatch -d "$src" -i "$p"
+  done
+  printf '%s' "$patch_set" > "$src/.houston-patched"
 fi
 
 zig="${HOUSTON_ZIG:-$cache/zig-$slug-$zig_version/zig}"

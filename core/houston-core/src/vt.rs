@@ -662,6 +662,19 @@ mod tests {
     }
 
     #[test]
+    fn a_repainted_continuation_row_is_not_joined_to_the_row_above_on_widen() {
+        let mut vt = emulator(20, 4);
+        vt.feed(&[b'a'; 30]);
+        vt.feed(b"\x1b[2;1H\x1b[2Knew");
+        vt.resize(40, 4);
+        let all = vt.screen_text(usize::MAX);
+        assert!(
+            all.contains(&"a".repeat(20)) && all.contains(&"new".to_string()),
+            "the erased row must stay its own line after the widen: {all:?}"
+        );
+    }
+
+    #[test]
     fn resize_moves_the_grid_the_screen_is_read_from() {
         let mut vt = emulator(80, 24);
         vt.feed(b"\x1b[2J\x1b[1;1H");

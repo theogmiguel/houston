@@ -107,3 +107,15 @@ describe("output from a program without OSC 133 marks (a TUI such as Claude Code
     expect(logicalLines(core)).toContain(TUI_LINES[0]);
   });
 });
+
+describe("a TUI repainting a soft-wrapped row", () => {
+  it("does not join the erased row to the row above when the pane widens", async () => {
+    const core = await makeCore(20, 4);
+    core.write("a".repeat(30));
+    core.write("\x1b[2;1H\x1b[2Knew");
+    core.resize(40, 4, 8, 17);
+
+    expect(logicalLines(core)).toContain("a".repeat(20));
+    expect(logicalLines(core)).toContain("new");
+  });
+});
