@@ -1,3 +1,4 @@
+import { MascotSurfaceMount } from '../mascot/MascotMount'
 import { useEffect, useState } from 'react'
 import { ConnectionBanner } from './ui/ConnectionBanner'
 
@@ -12,10 +13,12 @@ function ReconnectAge({ since }: { since: number }): React.JSX.Element {
 
 export function ReconnectBanner({ since, error, onRetry }: { since: number; error: string | null; onRetry: () => void }): React.JSX.Element {
   return (
+    <>
+    <MascotSurfaceMount mood="call" placement="reconnect" />
     <ConnectionBanner
       message={<>daemon connection lost — reconnecting… <ReconnectAge since={since} />{error ? ` (${error})` : ''}</>}
       actionLabel="Retry now"
       onAction={onRetry}
-    />
+    /></>
   )
 }

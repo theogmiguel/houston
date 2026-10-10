@@ -1,3 +1,5 @@
+import { mascotCommands } from '../mascot/mascotCommands'
+import type { MascotAction } from '../mascot/mascotPrefs'
 import { setSettingsOpen, setSettingsSection } from '../settingsNav'
 import { SETTINGS_SECTIONS, type SettingsSectionId } from '../settingsSections'
 import { SETTINGS_ROW_REGISTRY } from '../settingsRowRegistry'
@@ -40,6 +42,7 @@ export type CommandGroup =
   | 'Tasks'
   | 'Run'
   | 'Window'
+  | 'Mascot'
 
 export interface Command {
   id: string
@@ -55,6 +58,7 @@ export interface Command {
 }
 
 export interface PaletteActions {
+  mascotAction?: (action: MascotAction) => void
   workspaceActions?: readonly WorkspaceAction[]
   runWorkspaceAction?: (action: WorkspaceAction) => void
   newTerminal: () => void
@@ -568,6 +572,7 @@ export interface GridTarget {
 export function buildCommands(input: BuildCommandsInput): Command[] {
   const { actions, hasWorkspace, workspaces, grids, sessions = [], activeSessionId } = input
   return [
+    ...mascotCommands(actions),
     ...sessions.filter((session) => session.state === 'running' && !session.hidden).map((session) => ({
       id: `session.focus.${session.id}`,
       title: session.title || session.codename || `Pane ${session.id}`,

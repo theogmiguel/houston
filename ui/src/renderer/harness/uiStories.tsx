@@ -1,3 +1,6 @@
+import { MascotDockSlot } from '../src/components/ui/MascotDockSlot'
+import { MascotArtSpecimen } from '../src/components/ui/MascotArt'
+import { MascotRigSpecimen } from '../src/components/ui/MascotRig'
 import React, { useState } from 'react'
 import { DiffEmptyState } from '../src/components/ui/Diff'
 import { GitBranchBadge, GitBranchDeleteMenu, GitBranchRow } from '../src/components/ui/Branch'
@@ -309,7 +312,7 @@ import { BackdropLayerSpecimen, ContextMeterSpecimen, SaveStateMarkSpecimen, Spl
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../src/components/ui/NavSurfaceFrame'
 import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
 import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
-import logoUrl from '../src/assets/logo-chrome.svg'
+import logoUrl from '../src/assets/brand-mark'
 import { WorktreeCleanupSection } from '../src/components/git/WorktreeCleanupSection'
 import { BrowserButton } from '../src/components/ui/BrowserButtonRoles'
 import { DelegationButton } from '../src/components/ui/DelegationButtonRoles'
@@ -533,6 +536,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Caption>Motion preference: {window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full'}</Caption>
         </header>
 
+        <SpecimenGroup heading="Mascot companion"><MascotRigSpecimen /><MascotArtSpecimen /><MascotDockSlot dragging /></SpecimenGroup>
         <SpecimenGroup heading="Popover motion">
           <MotionThemeSpecimens theme="graphite" reducedMotion={false} />
           <MotionThemeSpecimens theme="graphite" reducedMotion />

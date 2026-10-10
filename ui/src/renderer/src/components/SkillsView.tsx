@@ -1,3 +1,4 @@
+import { MascotSurfaceMount } from '../mascot/MascotMount'
 import { useEffect, useMemo, useState } from 'react'
 import type { Skill } from '../env'
 import { addAllowedRoot, deleteSkill, listSkills, readFile, writeSkill } from '../houston/bridge'
@@ -894,7 +895,7 @@ function SkillsLibraryBody({
       <PanelEmpty
         testId="skills-empty"
         title="No skills yet"
-        icon={<Icon glyph={IconZap} role="display" />}
+        icon={<MascotSurfaceMount mood="wave" fallback={<Icon glyph={IconZap} role="display" />} />}
         action={
           <div className="flex items-center gap-[var(--space-2)]">
             <PanelButton onClick={onInstall}>Install from link</PanelButton>
@@ -911,7 +912,7 @@ function SkillsLibraryBody({
       <PanelEmpty
         testId="skills-no-matches"
         title="No matches"
-        icon={<Icon glyph={IconZap} role="display" />}
+        icon={<MascotSurfaceMount mood="scan" fallback={<Icon glyph={IconZap} role="display" />} />}
         action={<PanelButton onClick={onClearSearch}>Clear search</PanelButton>}
       >
         No skill matches &quot;{search}&quot;.
@@ -1119,7 +1120,7 @@ export function SkillsView({
           <PanelEmpty
             testId="skills-empty"
             title="No skills yet"
-            icon={<Icon glyph={IconZap} role="display" />}
+            icon={<MascotSurfaceMount mood="wave" fallback={<Icon glyph={IconZap} role="display" />} />}
             action={
               <div className="flex items-center gap-[var(--space-1-5)]">
                 <Button variant="secondary" onClick={() => setInstallOpen(true)}>Install from link</Button>
@@ -1133,7 +1134,7 @@ export function SkillsView({
           <PanelEmpty
             testId="skills-no-matches"
             title="No matches"
-            icon={<Icon glyph={IconZap} role="display" />}
+            icon={<MascotSurfaceMount mood="scan" fallback={<Icon glyph={IconZap} role="display" />} />}
             action={<PanelButton onClick={() => setSearch('')}>Clear search</PanelButton>}
           >
             No skill matches &quot;{search}&quot;.

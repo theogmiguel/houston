@@ -1,3 +1,4 @@
+import { MascotSurfaceMount } from '../../mascot/MascotMount'
 import { BTN_GHOST } from './buttonChrome'
 import { Text } from './Text'
 
@@ -13,6 +14,7 @@ export function SurfaceCrash({
 }): React.JSX.Element {
   return (
     <div className="h-full w-full flex flex-col items-center justify-center gap-2.5 p-4 text-center">
+      <MascotSurfaceMount mood="hurt" hat="bandage" />
       <Text as="p" size="ui" weight="ui" tone="danger" flush>{message}</Text>
       <Text as="p" size="ui" tone="muted" flush>{guarantee}</Text>
       <button className={`btn ${BTN_GHOST}`} onClick={onRetry}>

@@ -110,6 +110,20 @@ describe('settingsRowRegistry — every registered title actually renders', () =
     setRailViewForTests({ hidden: [] })
   })
 
+  it('renders mascot rows in Mascot and removes them from Appearance', () => {
+    act(() => setSettingsNavForTests({ section: 'mascot' }))
+    act(() => root.render(<SettingsView {...baseSettingsViewProps()} />))
+    const rowNames = (): (string | null)[] => Array.from(
+      host.querySelectorAll('[data-settings-row-name]')
+    ).map(row => row.getAttribute('data-settings-row-name'))
+    const mascotRows = SETTINGS_ROW_REGISTRY.mascot!
+    expect(rowNames().slice(0, mascotRows.length)).toEqual(mascotRows)
+
+    act(() => setSettingsNavForTests({ section: 'appearance' }))
+    expect(rowNames()).toContain('App zoom')
+    for (const title of mascotRows) expect(rowNames()).not.toContain(title)
+  })
+
   it.each(Object.entries(SETTINGS_ROW_REGISTRY) as [SettingsSectionId, readonly string[]][])(
     '%s: every registered row title renders',
     async (section, titles) => {
