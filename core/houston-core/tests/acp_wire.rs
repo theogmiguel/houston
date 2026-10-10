@@ -65,7 +65,7 @@ echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionUpdate":"agen
 # The agent asks the client to decide -> NeedsInput.
 echo '{"jsonrpc":"2.0","id":7,"method":"session/request_permission","params":{}}'
 # A generic terminal report cannot override this ACP permission request.
-printf '\033]7501;state=working\007'
+printf '\033]7501;state=working\007\n'
 # Wait for a line on stdin, then end the turn -> Idle.
 read _line
 echo '{"jsonrpc":"2.0","id":1,"result":{"stopReason":"end_turn"}}'
