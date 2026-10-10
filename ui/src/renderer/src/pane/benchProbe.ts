@@ -26,3 +26,17 @@ export function registerBenchProbe(session: number, probe: BenchPaneProbe): () =
     if (probes.get(session) === probe) probes.delete(session)
   }
 }
+
+export type HiddenPanePolicy = 'attached' | 'hibernate' | 'hibernate-snapshot'
+
+/** A pane hidden behind an expanded pane stays `attached` (parses, skips paint) or
+ * hibernates; on reveal `hibernate` replays missed bytes, `hibernate-snapshot` imports
+ * the daemon's screen. The bench picks one via `__TR_HIDDEN_PANE_POLICY__`. */
+export function hiddenPanePolicy(): HiddenPanePolicy {
+  const raw = (globalThis as { __TR_HIDDEN_PANE_POLICY__?: unknown }).__TR_HIDDEN_PANE_POLICY__
+  return raw === 'hibernate' || raw === 'hibernate-snapshot' ? raw : 'attached'
+}
+
+export function hibernatesWhileHidden(hiddenByExpand: boolean): boolean {
+  return hiddenByExpand && hiddenPanePolicy() !== 'attached'
+}

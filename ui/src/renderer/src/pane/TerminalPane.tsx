@@ -60,7 +60,7 @@ import {
 } from './tuiDragCopy'
 import { shellQuote } from './shellQuote'
 import { PaneWriteQueue } from './writeQueue'
-import { registerBenchProbe } from './benchProbe'
+import { hibernatesWhileHidden, hiddenPanePolicy, registerBenchProbe } from './benchProbe'
 import { useNotices } from '../notices'
 import { NoticeStack } from '../components/NoticeStack'
 import { findUrls, rangesOverlap, joinWrappedLine, mapJoinedOffset } from './webLinks'
@@ -230,6 +230,9 @@ export function TerminalPane({
   const hiddenRef = useRef(hiddenByExpand)
   hiddenRef.current = hiddenByExpand
   const warm = useContext(WarmContext)
+  const hibernateHidden = hibernatesWhileHidden(hiddenByExpand)
+  const hibernateHiddenRef = useRef(hibernateHidden)
+  hibernateHiddenRef.current = hibernateHidden
   const keymapOverrides = useContext(KeymapOverridesContext)
   const keymapOverridesRef = useRef(keymapOverrides)
   keymapOverridesRef.current = keymapOverrides
@@ -1151,7 +1154,7 @@ export function TerminalPane({
       },
       clipboardCopied: () => pushToast('Copied', undefined, 'success', 'auto-copy')
     })
-    if (!warmRef.current && !documentHiddenRef.current) {
+    if (!warmRef.current && !documentHiddenRef.current && !hibernateHiddenRef.current) {
       reportVisibility(true)
       sendAttach(activeAtMountRef.current ? ATTACH_REPLAY_BYTES : ATTACH_REPLAY_BYTES_BACKGROUND)
       attachedRef.current = true
@@ -1325,7 +1328,7 @@ export function TerminalPane({
   }, [])
 
   useEffect(() => {
-    if (!warm && !documentHidden) {
+    if (!warm && !documentHidden && !hibernateHidden) {
       if (hibernateTimerRef.current !== undefined) {
         clearTimeout(hibernateTimerRef.current)
         hibernateTimerRef.current = undefined
@@ -1333,12 +1336,13 @@ export function TerminalPane({
       if (!attachedRef.current) {
         syncSizeRef.current()
         seqRef.current.catchup = true
-        const synced = seqRef.current.synced
-        if (synced) skipSnapshotOnceRef.current = true
-        reportVisibility(true)
         // A synced pane already holds every byte before its cursor; asking from there
         // keeps a warm wake from re-sending megabytes the pane would discard.
-        sendAttach(ATTACH_REPLAY_BYTES, synced ? seqRef.current.cursor : undefined)
+        const replayFromCursor =
+          seqRef.current.synced && hiddenPanePolicy() !== 'hibernate-snapshot'
+        if (replayFromCursor) skipSnapshotOnceRef.current = true
+        reportVisibility(true)
+        sendAttach(ATTACH_REPLAY_BYTES, replayFromCursor ? seqRef.current.cursor : undefined)
         attachedRef.current = true
       }
       if (hibernatedRef.current) {
@@ -1352,7 +1356,8 @@ export function TerminalPane({
     if (hibernateTimerRef.current !== undefined) return
     hibernateTimerRef.current = setTimeout(() => {
       hibernateTimerRef.current = undefined
-      if ((!warmRef.current && !documentHiddenRef.current) || !attachedRef.current) return
+      const sleeping = warmRef.current || documentHiddenRef.current || hibernateHiddenRef.current
+      if (!sleeping || !attachedRef.current) return
       reportVisibility(false)
       attachedRef.current = false
     }, HIBERNATE_DEBOUNCE_MS)
@@ -1363,7 +1368,7 @@ export function TerminalPane({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [warm, documentHidden])
+  }, [warm, documentHidden, hibernateHidden])
 
   useEffect(() => {
     const wasHidden = prevHiddenRef.current
