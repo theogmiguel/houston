@@ -318,8 +318,8 @@ function WorkspaceRailGroupRow({
         {!hasGrids && <span aria-hidden="true" className="flex-none"><RailChevron collapsed /></span>}
         <Icon glyph={IconFolder} role="ui" opacity="muted" />
         <WorkspaceTreeLabel heading>{workspace.name}</WorkspaceTreeLabel>
-        <EnvironmentBadge path={workspace.path} />
         {count > 0 && <RailRowCount count={count} />}
+        <EnvironmentBadge path={workspace.path} />
         {pinned && <PinIndicator />}
         <WorkspaceTreeActions>
           {onNewSession && (

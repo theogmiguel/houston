@@ -73,4 +73,15 @@ describe('Sidebar environment badge', () => {
       expect(row(WINDOWS).querySelector('[aria-label^="WSL:"]')).toBeNull()
     }
   })
+
+  it('places the penguin after the pane count', () => {
+    const gridsByWorkspace = { [LINUX]: [{ id: 'l1', name: 'main' }, { id: 'l2', name: 'side' }] }
+    act(() => root.render(<Sidebar {...props({ gridsByWorkspace })} />))
+
+    const count = row(LINUX).querySelector('[data-count]')
+    const tux = row(LINUX).querySelector('[aria-label="WSL: Ubuntu"]')
+    expect(count?.getAttribute('data-count')).toBe('2')
+    expect(tux).not.toBeNull()
+    expect(count!.compareDocumentPosition(tux!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 })
