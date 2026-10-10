@@ -555,6 +555,7 @@ export class GhosttyTerminalSurface {
   private scrollbarPointerOffset = 0
   private disposed = false
   private resizeNotifyTimer: number | null = null
+  private pendingGrid: { cols: number; rows: number } | null = null
   private originY = CONTENT_PADDING
   private mountHeight = 0
   private selectionEnd: { x: number; y: number } | null = null
@@ -874,11 +875,14 @@ export class GhosttyTerminalSurface {
     if (this.disposed || this.fitFrame !== 0) return
     this.fitFrame = window.requestAnimationFrame(() => {
       this.fitFrame = 0
-      this.fit()
+      this.fit(true)
     })
   }
 
-  fit(): boolean {
+  // `deferGrid` holds a new grid until the PTY learns it, in the same tick: a reflow
+  // the program has not been told about makes it draw for the old width into the new
+  // one. An explicit fit applies at once, since its caller sends the size right after.
+  fit(deferGrid = false): boolean {
     if (this.disposed) return false
     const box = measureMountBox(this.mount, this.canvas)
     const width = box.width
@@ -922,14 +926,18 @@ export class GhosttyTerminalSurface {
     }
     const grid = terminalGridSize(width, height, this.metrics, CONTENT_PADDING)
     this.mountHeight = height
-    if (grid.cols !== this.cols || grid.rows !== this.rows || !this.resizeNotified) {
-      this.cols = grid.cols
-      this.rows = grid.rows
-      this.core.resize(grid.cols, grid.rows, this.metrics.width, this.metrics.height)
+    const target = this.pendingGrid ?? { cols: this.cols, rows: this.rows }
+    if (deferGrid && this.resizeNotified) {
+      if (grid.cols !== target.cols || grid.rows !== target.rows) {
+        this.pendingGrid = grid
+        this.notifyResize()
+      }
+    } else if (grid.cols !== this.cols || grid.rows !== this.rows || !this.resizeNotified) {
+      this.applyGrid(grid)
       this.notifyResize()
-      this.forceFullRender = true
-      this.scrollbarDirty = true
       shouldRender = true
+    } else if (this.pendingGrid !== null) {
+      this.pendingGrid = null
     }
     if (shouldRender) {
       if (!this.fitted || resized) this.renderFrame()
@@ -944,8 +952,23 @@ export class GhosttyTerminalSurface {
     if (this.resizeNotifyTimer !== null) window.clearTimeout(this.resizeNotifyTimer)
     this.resizeNotifyTimer = window.setTimeout(() => {
       this.resizeNotifyTimer = null
-      if (!this.disposed) this.options.onResize(this.cols, this.rows)
+      if (this.disposed) return
+      if (this.pendingGrid !== null) {
+        this.applyGrid(this.pendingGrid)
+        this.requestRender()
+      }
+      this.options.onResize(this.cols, this.rows)
     }, RESIZE_NOTIFY_DEBOUNCE_MS)
+  }
+
+  private applyGrid(grid: { cols: number; rows: number }): void {
+    this.pendingGrid = null
+    if (grid.cols === this.cols && grid.rows === this.rows && this.resizeNotified) return
+    this.cols = grid.cols
+    this.rows = grid.rows
+    this.core.resize(grid.cols, grid.rows, this.metrics.width, this.metrics.height)
+    this.forceFullRender = true
+    this.scrollbarDirty = true
   }
 
   focus(): void {
@@ -1143,7 +1166,8 @@ export class GhosttyTerminalSurface {
     if (this.resizeNotifyTimer !== null) {
       window.clearTimeout(this.resizeNotifyTimer)
       this.resizeNotifyTimer = null
-      this.options.onResize(this.cols, this.rows)
+      const grid = this.pendingGrid ?? { cols: this.cols, rows: this.rows }
+      this.options.onResize(grid.cols, grid.rows)
     }
     if (this.frame !== 0) window.cancelAnimationFrame(this.frame)
     if (this.cursorTimer !== null) window.clearTimeout(this.cursorTimer)
