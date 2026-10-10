@@ -1233,7 +1233,7 @@ impl Daemon {
             ));
         };
         if !Self::task_agent_spawnable(agent) {
-            return Ok(Self::task_invalid(Some(id), operation, format!("provider {agent:?} cannot start planning; expected claude, codex, antigravity, opencode, cursor or grok")));
+            return Ok(Self::task_invalid(Some(id), operation, format!("provider {agent:?} cannot start planning; expected claude, codex, antigravity, opencode, cursor, grok or zcode")));
         }
         let project_dir = PathBuf::from(workspace);
         if !project_dir.is_dir() {
@@ -2664,15 +2664,10 @@ impl Daemon {
 
     // ---- Start, runs and the PR watch ----
 
-    /// Why `agent` cannot run a task: ZCode's own reason, else the accepted list.
-    fn task_agent_refusal(agent: proto::AgentKind, none_allowed: bool) -> String {
-        if agent == proto::AgentKind::Zcode {
-            return "its first prompt is pasted into its TUI after start, which an unattended \
-                    run cannot confirm"
-                .to_string();
-        }
+    /// Why `agent` cannot run a task: the providers that can.
+    fn task_agent_refusal(none_allowed: bool) -> String {
         format!(
-            "expected claude, codex, antigravity, opencode, cursor or grok{}",
+            "expected claude, codex, antigravity, opencode, cursor, grok or zcode{}",
             if none_allowed { ", or none" } else { "" }
         )
     }
@@ -2687,6 +2682,7 @@ impl Daemon {
                 | proto::AgentKind::Opencode
                 | proto::AgentKind::Cursor
                 | proto::AgentKind::Grok
+                | proto::AgentKind::Zcode
         )
     }
 
@@ -2752,7 +2748,7 @@ impl Daemon {
                 None,
                 None,
                 format!(
-                    "task_start_settings_set refused: provider {agent:?} cannot be started by Houston: {}", Self::task_agent_refusal(agent, false)
+                    "task_start_settings_set refused: provider {agent:?} cannot be started by Houston: {}", Self::task_agent_refusal(false)
                 ),
             ));
         }
@@ -2842,7 +2838,7 @@ impl Daemon {
                     None,
                     None,
                     format!(
-                        "task_review_settings_set refused: reviewer provider {reviewer:?} cannot be started by Houston: {}", Self::task_agent_refusal(reviewer, true)
+                        "task_review_settings_set refused: reviewer provider {reviewer:?} cannot be started by Houston: {}", Self::task_agent_refusal(true)
                     ),
                 ));
             }
@@ -3271,7 +3267,7 @@ impl Daemon {
             None => {
                 let reason = format!(
                     "provider {agent:?} has no unattended launch mode, so a task cannot start \
-                     with it (expected claude, codex, antigravity, opencode, cursor or grok)"
+                     with it (expected claude, codex, antigravity, opencode, cursor, grok or zcode)"
                 );
                 self.db.task_run_set_state(
                     run.id,
@@ -3503,7 +3499,7 @@ impl Daemon {
                 operation,
                 format!(
                     "provider {agent:?} cannot be started by Houston: {}",
-                    Self::task_agent_refusal(agent, false)
+                    Self::task_agent_refusal(false)
                 ),
             ));
         }
@@ -4079,7 +4075,7 @@ impl Daemon {
                 operation,
                 format!(
                     "provider {agent:?} cannot be started by Houston: {}",
-                    Self::task_agent_refusal(agent, false)
+                    Self::task_agent_refusal(false)
                 ),
             ));
         }
@@ -4090,7 +4086,7 @@ impl Daemon {
                     operation,
                     format!(
                         "reviewer provider {reviewer:?} cannot be started by Houston: {}",
-                        Self::task_agent_refusal(reviewer, false)
+                        Self::task_agent_refusal(false)
                     ),
                 ));
             }
@@ -4388,7 +4384,7 @@ impl Daemon {
                 operation,
                 format!(
                     "reviewer provider {agent:?} cannot be started by Houston: {}",
-                    Self::task_agent_refusal(agent, false)
+                    Self::task_agent_refusal(false)
                 ),
             ));
         }
@@ -4679,7 +4675,7 @@ impl Daemon {
                 operation,
                 format!(
                     "provider {agent:?} cannot be started by Houston: {}",
-                    Self::task_agent_refusal(agent, false)
+                    Self::task_agent_refusal(false)
                 ),
             ));
         }
