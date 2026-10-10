@@ -118,9 +118,14 @@
     "Re-cut against 928,607 bytes (one boot chunk) at the same ~3%: the rail's",
     "grid cards, workspace rows and tag chips, the pane header's surface",
     "launcher and the panel surface router are boot-path code, each rendered at",
-    "first paint or on the first panel toggle."
+    "first paint or on the first panel toggle.",
+    "",
+    "Re-cut against 956,998 bytes (one boot chunk) at the same ~3%: the Factory",
+    "rail row, its route and props in App, and the queue grouping that puts an",
+    "agent's open question in Your turn are boot-path code; the Factory page",
+    "itself, its model and the settings group sit behind lazy surfaces."
   ],
-  "maxBootBytes": 956465,
+  "maxBootBytes": 985708,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
