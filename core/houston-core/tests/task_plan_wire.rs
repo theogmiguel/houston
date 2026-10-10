@@ -267,8 +267,8 @@ fn proposal(question: &str) -> proto::TaskPlanProposal {
     proto::TaskPlanProposal {
         description: "Add bounded task planning and approval".into(),
         acceptance: vec![
-            "A submitted proposal is visible on its task".into(),
-            "Approval replaces only the task acceptance list".into(),
+            "A submitted proposal is visible on its task `true`".into(),
+            "Approval replaces only the task acceptance list `true`".into(),
         ],
         pointers: vec!["core/houston-core/src/daemon/tasks.rs".into()],
         out_of_scope: vec!["Provider credentials".into()],
@@ -298,14 +298,14 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         &mut ws,
         &workspace,
         "Target task",
-        &["Output has an integration check"],
+        &["Output has an integration check `true`"],
     )
     .await;
     let unrelated = create_task(
         &mut ws,
         &workspace,
         "Unrelated task",
-        &["Unrelated output exists"],
+        &["Unrelated output exists `true`"],
     )
     .await;
     let project = match daemon
@@ -329,7 +329,7 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         &mut ws,
         &workspace,
         "Parent Delivery",
-        &["Both Slices ship"],
+        &["Both Slices ship `true`"],
     )
     .await;
     let delivery_task = task(&mut ws, delivery).await;
@@ -675,7 +675,13 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         }]
     );
 
-    let stale = create_task(&mut ws, &workspace, "Stale plan", &["A result exists"]).await;
+    let stale = create_task(
+        &mut ws,
+        &workspace,
+        "Stale plan",
+        &["A result exists `true`"],
+    )
+    .await;
     let stale_initial = task(&mut ws, stale).await;
     send(
         &mut ws,
@@ -759,7 +765,7 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         &mut ws,
         &workspace,
         "Project stale plan",
-        &["The Project decision is respected"],
+        &["The Project decision is respected `true`"],
     )
     .await;
     let project_stale_initial = task(&mut ws, project_stale).await;
@@ -857,7 +863,7 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         &mut ws,
         &workspace,
         "Project approval plan",
-        &["Approval uses current Project decisions"],
+        &["Approval uses current Project decisions `true`"],
     )
     .await;
     let project_approval_task = task(&mut ws, project_approval).await;
@@ -949,7 +955,13 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         "stale approval refusal names Project context: {refused_approval:?}"
     );
 
-    let retry_task = create_task(&mut ws, &workspace, "Retry after cancel", &["Retry works"]).await;
+    let retry_task = create_task(
+        &mut ws,
+        &workspace,
+        "Retry after cancel",
+        &["Retry works `true`"],
+    )
+    .await;
     let retry_initial = task(&mut ws, retry_task).await;
     send(
         &mut ws,
@@ -1079,7 +1091,7 @@ async fn next_and_queue_skip_higher_priority_unready_task_for_ready_work() {
             "title":"Medium priority ready",
             "status":"todo",
             "priority":"medium",
-            "acceptance":["The ready task has a verifiable outcome"]
+            "acceptance":["The ready task has a verifiable outcome `true`"]
         }),
     )
     .await;
@@ -1184,7 +1196,7 @@ async fn reopening_daemon_settles_active_planning_state_and_preserves_retry() {
             None,
             proto::TaskPatch {
                 title: Some("Reboot planning".into()),
-                acceptance: Some(vec!["Retry remains possible".into()]),
+                acceptance: Some(vec!["Retry remains possible `true`".into()]),
                 ..Default::default()
             },
         )

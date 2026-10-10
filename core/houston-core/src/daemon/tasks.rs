@@ -779,6 +779,10 @@ impl Daemon {
             .iter()
             .filter(|a| !a.text.trim().is_empty() && !a.text.trim().eq_ignore_ascii_case("tbd"))
             .count() as u32;
+        let executable = acceptance
+            .iter()
+            .filter(|a| super::task_proof::acceptance_command(&a.text).is_some())
+            .count() as u32;
         let mut plan: Option<proto::TaskPlan> = meta
             .as_ref()
             .and_then(|m| m.plan_json.as_deref())
@@ -864,8 +868,13 @@ impl Daemon {
                 ));
             }
         }
-        if verifiable == 0 {
-            reasons.push("task needs at least one verifiable acceptance item".into());
+        if executable == 0 {
+            reasons.push(
+                "task needs at least one executable acceptance item: a command in backticks, \
+                 such as `cargo test`, that the agent runs and reports in its handback (text \
+                 items stay as human criteria)"
+                    .into(),
+            );
         }
         if unresolved_questions > 0 {
             reasons.push(format!(
@@ -930,6 +939,7 @@ impl Daemon {
                 reasons,
                 acceptance_total: acceptance.len() as u32,
                 acceptance_verifiable: verifiable,
+                acceptance_executable: executable,
                 unresolved_questions,
                 unresolved_tracker_conflicts,
                 unfinished_blockers: unfinished,

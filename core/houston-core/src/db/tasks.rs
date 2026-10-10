@@ -505,7 +505,10 @@ const TASK_SUMMARY_SELECT: &str = "SELECT t.id, t.workspace, t.number, t.title, 
 /// task cannot hide executable work farther down the queue.
 const READY_CLAUSE: &str = "t.status = 'todo' AND t.workspace IS NOT NULL
     AND EXISTS (SELECT 1 FROM backlog_task_acceptance a WHERE a.task_id = t.id
-        AND trim(a.text) != '' AND lower(trim(a.text)) != 'tbd')
+        AND instr(a.text, '`') > 0
+        AND instr(substr(a.text, instr(a.text, '`') + 1), '`') > 1
+        AND trim(substr(a.text, instr(a.text, '`') + 1,
+            instr(substr(a.text, instr(a.text, '`') + 1), '`') - 1)) != '')
     AND NOT EXISTS (
         SELECT 1 FROM backlog_task_blocks b
         JOIN backlog_tasks dep ON dep.id = b.blocked_by_id

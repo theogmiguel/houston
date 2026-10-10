@@ -53,7 +53,7 @@ function domain(id: number, kind: 'delivery' | 'slice', projectId: number | null
     blocked_by: id === 42 ? [44] : [], plan,
     readiness: {
       ready: reasons.length === 0, reasons,
-      acceptance_total: 2, acceptance_verifiable: id === 42 ? 0 : 1, unresolved_questions: plan ? 1 : 0,
+      acceptance_total: 2, acceptance_verifiable: id === 42 ? 0 : 1, acceptance_executable: id === 42 ? 0 : 1, unresolved_questions: plan ? 1 : 0,
       unresolved_tracker_conflicts: conflicted ? 1 : 0, unfinished_blockers: id === 42 ? [44] : []
     }, unresolved_tracker_conflicts: conflicted ? 1 : 0
   }
