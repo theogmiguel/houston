@@ -26,14 +26,16 @@ A pane can show:
 
 A CLI without hooks can still report status using the Program Status Protocol below.
 Without either reporting path, its pane runs without lifecycle updates. Claude Code
-reports tool questions, permission prompts and MCP elicitations. Codex reports approvals, interruptions and `request_user_input` questions.
+reports tool questions, permission prompts and MCP elicitations. Codex reports approvals,
+interruptions and `request_user_input` questions.
 OpenCode reports permissions, structured questions, busy/retry, completion and errors.
 Starting a supported CLI from a shell pane gives it that provider’s reported status
 and orchestration capabilities once its first hook arrives.
 
 Quiet or prolonged approval review can show **Stalled** with a muted gray dot. This is a
 heuristic about ongoing work; its tooltip names the observed reason. Amber remains
-reserved for requests for your input. A live child can show Done or Failed while its process remains open;
+reserved for requests for your input. A live child can show Done or Failed while its
+process remains open;
 its result may still be pending delivery to its parent.
 
 The pane and grid indicators use the same language: blue pulse for starting or working,
@@ -73,8 +75,9 @@ Lifecycle hooks take precedence from the first hook until the pane respawns. ACP
 sessions always use ACP status. No switch or CLI configuration change is required for
 this fallback. Houston reads explicit state fields, never visible terminal text; it
 keeps at most 64 records per pane and drops report message text. Consuming reports sends
-no data outside the local PTY connection. A terminal multiplexer may suppress the
-support probe or reports; in that case the program cannot negotiate this fallback.
+no report content to an external service. The support-probe reply returns through
+the session's existing terminal connection, including SSH for remote sessions. A terminal
+multiplexer may suppress the probe or reports; then the program cannot negotiate this fallback.
 
 ## Settings ▸ Agents
 

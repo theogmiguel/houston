@@ -179,7 +179,8 @@ The daemon answers OSC 7501 support probes only where its native callback consum
 reports, including detached panes. The renderer does not answer these probes. Windows
 has no native daemon emulator and does not advertise this protocol. Ordinary terminal
 queries retain their existing renderer/daemon ownership. No configuration is written
-and no network request is made to consume program reports.
+and no external service receives report content. Support replies use the session's
+existing terminal connection, including SSH for remote sessions.
 
 Three inference exceptions are named below; further exceptions must be recorded here.
 Session activity previews are separate display metadata delivered from provider hooks;
