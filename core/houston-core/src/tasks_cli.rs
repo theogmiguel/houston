@@ -22,7 +22,12 @@ hs-task — a Houston pane's view of its workspace's task backlog
   hs-task handback [HOU-n] --refused --subject T --changes T
              (a Slack-filed task: refused at triage)
   hs-task ask --question Q --option A --option B [--option …] --recommended N
-             [--why T] [--context T]           (a Slack-filed task: asks in its thread)
+             [--why T] [--context T]   (asks in Houston, or in a Slack-filed task's thread)
+
+PROOF, on any handback: [--pr N|URL] [--sha COMMIT]
+             [--verify CMD [--output T] --passed|--failed …] [--capture PATH]
+             [--permanent T …]   (one --verify per command run; expected for every
+             acceptance item with a command in backticks)
 
 The task key defaults to $HOUSTON_TASK when set; otherwise pass HOU-n.
 Statuses: backlog, todo, in_progress, in_review, done, canceled.

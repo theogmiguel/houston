@@ -473,10 +473,12 @@ fn advertised(daemon: &Daemon, scope: &McpScope) -> Vec<ToolSpec> {
     if !daemon.spawnable_by(scope.session_id) {
         specs.retain(|spec| spec.name != "task_execute" && spec.name != "task_review");
     }
-    // The Slack verbs cost every other pane advertisement bytes, so only a
-    // pane running a Slack-filed task sees them.
-    if !daemon.slack_task_session(scope.session_id) {
+    // task_ask costs every other pane advertisement bytes, so only a pane
+    // holding a task run sees it; the Slack fields only a Slack-filed one.
+    if !daemon.task_run_session(scope.session_id) {
         specs.retain(|spec| spec.name != "task_ask");
+    }
+    if !daemon.slack_task_session(scope.session_id) {
         for spec in specs.iter_mut().filter(|s| s.name == "task_handback") {
             spec.description = HANDBACK_DESCRIPTION.to_string();
             spec.input_schema = handback_schema(false);
@@ -851,7 +853,7 @@ fn dispatch(
         "task_ask" => {
             let form: crate::slack::form::QuestionForm = serde_json::from_value(args.clone())
                 .map_err(|e| anyhow::anyhow!("task_ask arguments do not parse: {e}"))?;
-            let text = daemon.slack_task_ask(session, form)?;
+            let text = daemon.task_ask(session, form)?;
             Ok(task_output(json!({ "posted": true, "next": text })))
         }
         "task_execute" => {

@@ -239,7 +239,7 @@ impl Daemon {
         }
     }
 
-    fn task_refused(
+    pub(super) fn task_refused(
         id: Option<i64>,
         kind: proto::TaskErrorKind,
         limit: Option<u32>,
@@ -271,7 +271,11 @@ impl Daemon {
         )
     }
 
-    fn task_invalid(id: Option<i64>, operation: &str, message: String) -> proto::ServerMsg {
+    pub(super) fn task_invalid(
+        id: Option<i64>,
+        operation: &str,
+        message: String,
+    ) -> proto::ServerMsg {
         Self::task_refused(
             id,
             proto::TaskErrorKind::Invalid,
@@ -433,6 +437,9 @@ impl Daemon {
             intake: None,
             open_run: None,
             origin: None,
+            open_question: None,
+            pr_number: None,
+            pr_url: None,
         }
     }
 
@@ -537,6 +544,8 @@ impl Daemon {
             });
         let origins = self.db.harness_task_origins()?;
         let intakes = self.task_intakes()?;
+        let mut questions = self.task_open_questions_by_task()?;
+        let prs = self.db.task_latest_prs()?;
         Ok(rows
             .into_iter()
             .map(|row| {
@@ -544,6 +553,15 @@ impl Daemon {
                 wire.open_run = open.get(&wire.id).map(Self::task_run_ref_to_wire);
                 wire.origin = origins.get(&wire.id).cloned();
                 wire.intake = intakes.get(&wire.id).cloned();
+                // A question outlives its run only as history: once the run
+                // ends, no pane is left to type the answer into.
+                wire.open_question = questions
+                    .remove(&wire.id)
+                    .filter(|q| open.get(&wire.id).is_some_and(|run| run.id == q.run_id));
+                if let Some((number, url)) = prs.get(&wire.id) {
+                    wire.pr_number = *number;
+                    wire.pr_url = url.clone();
+                }
                 wire
             })
             .collect())

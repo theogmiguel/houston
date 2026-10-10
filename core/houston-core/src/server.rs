@@ -5196,8 +5196,8 @@ async fn task_handback(
     .await
 }
 
-/// Posts a Slack-filed task's question to its thread and returns at once; the
-/// answer reaches the pane later as a prompt, never as this call's result.
+/// Posts a task's question (to its Slack thread, or to Houston for any other
+/// task) and returns at once; the answer reaches the pane later as a prompt.
 async fn task_ask(
     State(daemon): State<Arc<Daemon>>,
     headers: HeaderMap,
@@ -5207,7 +5207,7 @@ async fn task_ask(
         Ok(s) => s,
         Err(r) => return *r,
     };
-    match tokio::task::spawn_blocking(move || daemon.slack_task_ask(scope.session_id, body)).await {
+    match tokio::task::spawn_blocking(move || daemon.task_ask(scope.session_id, body)).await {
         Ok(Ok(text)) => (StatusCode::OK, axum::Json(json!({"text": text}))).into_response(),
         Ok(Err(e)) => orch_error(StatusCode::CONFLICT, e),
         Err(e) => orch_err_response(anyhow::anyhow!("task ask worker failed: {e}")),

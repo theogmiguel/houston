@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
+mod factory;
 mod harness;
 mod intake;
 pub use harness::{
@@ -1617,6 +1618,7 @@ impl Db {
         tasks::migrate(&conn)?;
         task_trackers::migrate(&conn)?;
         intake::migrate(&conn)?;
+        factory::migrate(&conn)?;
         add_column_if_missing(
             &conn,
             "routines",
