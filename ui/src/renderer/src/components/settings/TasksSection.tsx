@@ -6,6 +6,7 @@ import type { TaskPromptDelivery } from '../../houston/generated/TaskPromptDeliv
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import { TASKS_REWORK_ROUNDS_MAX } from '../../houston/generated/DEFAULTS'
 import { useTaskReviewSettings, useTaskStartSettings, useTasksAccess } from '../../houston/useTasks'
+import { FACTORY_LIMIT_MAX, FACTORY_LIMIT_MIN, useFactorySettings } from '../../houston/useFactorySettings'
 import { IconAgent } from '../icons'
 import { Segmented } from '../ui/SegmentedControl'
 import { Select, type SelectOption } from '../ui/Select'
@@ -72,6 +73,7 @@ export function TasksSection({
   const { access, setAccess } = useTasksAccess(client, workspace)
   const { settings, setStartSettings } = useTaskStartSettings(client, workspace)
   const { settings: review, refusal: reviewRefusal, setReviewSettings } = useTaskReviewSettings(client, workspace)
+  const factory = useFactorySettings(client)
   const noWorkspaceReason = 'Add a workspace to manage its task settings'
 
   return (
@@ -179,6 +181,44 @@ export function TasksSection({
           {reviewRefusal.message}
         </TaskReviewRefusal>
       )}
+      <SubHead>Factory</SubHead>
+      <SettingsList>
+        <Row
+          title="Live task runs"
+          desc={<TaskSettingDescription>
+            How many task runs the factory keeps live across all workspaces. Applies to every workspace.
+            <TaskAccessSummary testId="settings-factory-live-runs-current">
+              {factory.settings === null ? 'loading…' : `${factory.settings.liveRunsMax} · ${factory.settings.liveRuns} live now`}
+            </TaskAccessSummary>
+          </TaskSettingDescription>}
+        >
+          <FactoryLimitInput
+            label="Live task runs"
+            testId="settings-factory-live-runs"
+            value={factory.settings?.liveRunsMax ?? null}
+            onCommit={(value) => factory.setLimits(value, factory.settings?.needsYouMax ?? FACTORY_DEFAULT_LIMIT)}
+          />
+        </Row>
+        <Row
+          title="Needs-you items before automatic starts pause"
+          desc={<TaskSettingDescription>
+            Automatic starts stop while this many questions, waiting runs and reviews wait for you. Applies to every workspace.
+            <TaskAccessSummary testId="settings-factory-needs-you-current">
+              {factory.settings === null ? 'loading…' : `${factory.settings.needsYouMax} · ${factory.settings.needsYou} waiting now`}
+            </TaskAccessSummary>
+          </TaskSettingDescription>}
+        >
+          <FactoryLimitInput
+            label="Needs-you items before automatic starts pause"
+            testId="settings-factory-needs-you"
+            value={factory.settings?.needsYouMax ?? null}
+            onCommit={(value) => factory.setLimits(factory.settings?.liveRunsMax ?? FACTORY_DEFAULT_LIMIT, value)}
+          />
+        </Row>
+      </SettingsList>
+      {factory.refusal !== null && (
+        <TaskReviewRefusal testId="settings-factory-refusal">{factory.refusal}</TaskReviewRefusal>
+      )}
       <TaskTrackerSettingsSection client={client} workspace={workspace} workspaceName={workspaceName} />
     </>
   )
@@ -285,6 +325,65 @@ function ReworkRoundsInput({
       {error !== null && (
         <div data-testid="settings-tasks-rework-rejected"><TaskInputError>{error}</TaskInputError></div>
       )}
+    </TaskReworkRoundsLayout>
+  )
+}
+
+// The daemon's default for both limits; shown until its value arrives.
+const FACTORY_DEFAULT_LIMIT = 3
+
+/// A factory limit: whole numbers in 1..=16 reach the daemon; anything else is
+/// refused here naming the range, the requested value and the value kept.
+function FactoryLimitInput({ label, testId, value, onCommit }: {
+  label: string
+  testId: string
+  value: number | null
+  onCommit: (value: number) => void
+}): React.JSX.Element {
+  const current = value ?? FACTORY_DEFAULT_LIMIT
+  const [draft, setDraft] = useState(String(current))
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    setDraft(String(current))
+    setError(null)
+  }, [current])
+  const commit = (): void => {
+    const parsed = Number(draft.trim())
+    if (draft.trim() === '' || !Number.isInteger(parsed) || parsed < FACTORY_LIMIT_MIN || parsed > FACTORY_LIMIT_MAX) {
+      setError(`${label} must be a whole number between ${FACTORY_LIMIT_MIN} and ${FACTORY_LIMIT_MAX} — got “${draft}”; the setting kept ${current}`)
+      setDraft(String(current))
+      return
+    }
+    setError(null)
+    if (parsed !== current) onCommit(parsed)
+  }
+  return (
+    <TaskReworkRoundsLayout>
+      <div className="flex items-center gap-[var(--space-2)]">
+        <TextInput
+          variant="task-number"
+          type="number"
+          aria-label={label}
+          data-testid={testId}
+          min={FACTORY_LIMIT_MIN}
+          max={FACTORY_LIMIT_MAX}
+          step={1}
+          value={draft}
+          disabled={value === null}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            setError(null)
+          }}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur()
+          }}
+        />
+        <Text size="caption" tone="faint">
+          {FACTORY_LIMIT_MIN}–{FACTORY_LIMIT_MAX}
+        </Text>
+      </div>
+      {error !== null && <div data-testid={`${testId}-rejected`}><TaskInputError>{error}</TaskInputError></div>}
     </TaskReworkRoundsLayout>
   )
 }

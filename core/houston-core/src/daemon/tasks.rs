@@ -3626,6 +3626,9 @@ impl Daemon {
                 operation,
             ));
         }
+        if let Some(refusal) = self.factory_start_refusal(Some(id), operation, false)? {
+            return Ok(refusal);
+        }
         let project_dir = PathBuf::from(row.workspace.as_deref().unwrap_or(""));
         if !project_dir.is_dir() {
             return Ok(Self::task_invalid(
@@ -3702,10 +3705,16 @@ impl Daemon {
                 if let Some(refusal) = self.task_readiness_refusal(row.id, operation)? {
                     return Ok(refusal);
                 }
+                if let Some(refusal) = self.factory_start_refusal(Some(row.id), operation, false)? {
+                    return Ok(refusal);
+                }
                 self.resume_task_run(&row, &run, operation)
             }
             proto::TaskRunAction::Retry => {
                 if let Some(refusal) = self.task_readiness_refusal(row.id, operation)? {
+                    return Ok(refusal);
+                }
+                if let Some(refusal) = self.factory_start_refusal(Some(row.id), operation, false)? {
                     return Ok(refusal);
                 }
                 self.retry_task_run(&row, &run, None, operation)
@@ -3732,6 +3741,9 @@ impl Daemon {
             return Ok(Self::task_not_found(run.task_id, operation));
         };
         if let Some(refusal) = self.task_readiness_refusal(row.id, operation)? {
+            return Ok(refusal);
+        }
+        if let Some(refusal) = self.factory_start_refusal(Some(row.id), operation, true)? {
             return Ok(refusal);
         }
         self.retry_task_run(&row, &run, Some(adjustment), operation)
@@ -4153,6 +4165,9 @@ impl Daemon {
                 true,
                 operation,
             ));
+        }
+        if let Some(refusal) = self.factory_start_refusal(Some(id), operation, true)? {
+            return Ok(refusal);
         }
         if let Some(refusal) = self.task_readiness_refusal(id, operation)? {
             return Ok(refusal);
@@ -4812,6 +4827,26 @@ impl Daemon {
                      queued - free a slot or ask for fewer tasks"
                 ),
             ));
+        }
+        let live = self.db.factory_live_runs()?;
+        let live_max = self.factory_live_runs_max();
+        if live + count > live_max {
+            return Ok(Self::task_refused(
+                None,
+                proto::TaskErrorKind::Limit,
+                Some(live_max),
+                Some(u64::from(live + count)),
+                None,
+                None,
+                format!(
+                    "{operation} refused: starting {count} task(s) with {live} task runs live \
+                     would pass the limit of {live_max} (Settings ▸ Tasks ▸ Factory, live runs); \
+                     nothing was queued"
+                ),
+            ));
+        }
+        if let Some(refusal) = self.factory_start_refusal(None, operation, true)? {
+            return Ok(refusal);
         }
         let rows = self.db.ready_tasks(&workspace, count)?;
         let reviewer = self.tasks_default_reviewer(&workspace);

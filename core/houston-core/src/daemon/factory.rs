@@ -1,4 +1,6 @@
-//! Agent questions about tasks that were not filed from Slack.
+//! The factory caps — how many task runs may be live across every workspace,
+//! and how many items may wait on the user before automatic starts pause —
+//! and agent questions about tasks that were not filed from Slack.
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
@@ -7,7 +9,141 @@ use houston_protocol as proto;
 use super::{now_unix_ms, Daemon};
 use crate::slack::form::QuestionForm;
 
+/// Setting keys; absent means the protocol default.
+const LIVE_RUNS_MAX_SETTING: &str = "factory_live_runs_max";
+const NEEDS_YOU_MAX_SETTING: &str = "factory_needs_you_max";
+
 impl Daemon {
+    fn factory_cap(&self, key: &str, default: u32) -> u32 {
+        self.db
+            .get_setting(key)
+            .ok()
+            .flatten()
+            .and_then(|raw| raw.parse::<u32>().ok())
+            .filter(|n| (1..=proto::FACTORY_CAP_MAX).contains(n))
+            .unwrap_or(default)
+    }
+
+    pub fn factory_live_runs_max(&self) -> u32 {
+        self.factory_cap(LIVE_RUNS_MAX_SETTING, proto::FACTORY_LIVE_RUNS_DEFAULT)
+    }
+
+    pub fn factory_needs_you_max(&self) -> u32 {
+        self.factory_cap(NEEDS_YOU_MAX_SETTING, proto::FACTORY_NEEDS_YOU_DEFAULT)
+    }
+
+    pub fn factory_settings_state(&self) -> Result<proto::ServerMsg> {
+        Ok(proto::ServerMsg::FactorySettings {
+            live_runs_max: self.factory_live_runs_max(),
+            needs_you_max: self.factory_needs_you_max(),
+            live_runs: self.db.factory_live_runs()?,
+            needs_you: self.db.factory_needs_you(None)?,
+        })
+    }
+
+    pub fn factory_settings_set(
+        &self,
+        live_runs_max: u32,
+        needs_you_max: u32,
+    ) -> Result<proto::ServerMsg> {
+        for (name, value) in [
+            ("live_runs_max", live_runs_max),
+            ("needs_you_max", needs_you_max),
+        ] {
+            if !(1..=proto::FACTORY_CAP_MAX).contains(&value) {
+                return Ok(Self::task_refused(
+                    None,
+                    proto::TaskErrorKind::Limit,
+                    Some(proto::FACTORY_CAP_MAX),
+                    Some(u64::from(value)),
+                    None,
+                    None,
+                    format!(
+                        "factory_settings_set refused: {name} is {value} (expected 1 to {})",
+                        proto::FACTORY_CAP_MAX
+                    ),
+                ));
+            }
+        }
+        self.db
+            .set_setting(LIVE_RUNS_MAX_SETTING, &live_runs_max.to_string())?;
+        self.db
+            .set_setting(NEEDS_YOU_MAX_SETTING, &needs_you_max.to_string())?;
+        let state = self.factory_settings_state()?;
+        self.broadcast_control(&state);
+        Ok(state)
+    }
+
+    /// Why a start must wait, or `None`. Every start counts against the live-run
+    /// cap; an `automatic` one (Slack queue, rework) also waits while the
+    /// needs-you count is at its cap, pacing work to the user's review rate.
+    pub(crate) fn factory_start_blocked(
+        &self,
+        automatic: bool,
+        task: Option<i64>,
+    ) -> Result<Option<String>> {
+        Ok(self
+            .factory_cap_reached(automatic, task)?
+            .map(|(reason, _, _)| reason))
+    }
+
+    /// The full cap a start would pass: its reason, limit and count.
+    fn factory_cap_reached(
+        &self,
+        automatic: bool,
+        task: Option<i64>,
+    ) -> Result<Option<(String, u32, u32)>> {
+        let live = self.db.factory_live_runs()?;
+        let live_max = self.factory_live_runs_max();
+        if live >= live_max {
+            return Ok(Some((
+                format!(
+                    "{live} task runs are live, at the limit of {live_max} (Settings ▸ Tasks ▸ \
+                     Factory, live runs)"
+                ),
+                live_max,
+                live,
+            )));
+        }
+        if automatic {
+            let waiting = self.db.factory_needs_you(task)?;
+            let waiting_max = self.factory_needs_you_max();
+            if waiting >= waiting_max {
+                return Ok(Some((
+                    format!(
+                        "{waiting} tasks need you, at the limit of {waiting_max} before automatic \
+                         starts pause (Settings ▸ Tasks ▸ Factory, needs you)"
+                    ),
+                    waiting_max,
+                    waiting,
+                )));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The refusal a start receives while a factory cap is full: the limit,
+    /// the live count and the one start requested.
+    pub(crate) fn factory_start_refusal(
+        &self,
+        id: Option<i64>,
+        operation: &str,
+        automatic: bool,
+    ) -> Result<Option<proto::ServerMsg>> {
+        let Some((reason, limit, count)) = self.factory_cap_reached(automatic, id)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self::task_refused(
+            id,
+            proto::TaskErrorKind::Limit,
+            Some(limit),
+            Some(u64::from(count) + 1),
+            None,
+            None,
+            format!("{operation} refused: {reason}"),
+        )))
+    }
+
     /// `hs-task ask` / `task_ask` for any task run: a Slack-filed task asks in
     /// its thread; any other task's question is shown in the app, and the
     /// answer arrives as the pane's next prompt.

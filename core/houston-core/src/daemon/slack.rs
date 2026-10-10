@@ -1358,7 +1358,9 @@ impl Daemon {
         }
         tracing::info!("slack: the owner accepted request {}", row.id);
         let working = self.slack_working_runs()?;
-        if working >= proto::SLACK_RUNS_WORKING_MAX {
+        if working >= proto::SLACK_RUNS_WORKING_MAX
+            || self.factory_start_blocked(true, row.task_id)?.is_some()
+        {
             let now = now_unix_ms();
             self.db.intake_set_state(row.id, INTAKE_QUEUED, now)?;
             let position = self
@@ -2314,7 +2316,9 @@ impl Daemon {
         self.slack_close_finished()?;
         self.slack_follow_runs().await?;
         for row in self.db.intake_queue()? {
-            if self.slack_working_runs()? >= proto::SLACK_RUNS_WORKING_MAX {
+            if self.slack_working_runs()? >= proto::SLACK_RUNS_WORKING_MAX
+                || self.factory_start_blocked(true, row.task_id)?.is_some()
+            {
                 break;
             }
             self.slack_start(&row).await?;
