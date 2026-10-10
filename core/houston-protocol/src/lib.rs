@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 130;
+pub const PROTOCOL_VERSION: u32 = 131;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -566,6 +566,10 @@ pub struct TaskReadiness {
     pub acceptance_total: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub acceptance_verifiable: u32,
+    /// Items that carry a command in backticks; readiness needs at least one.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub acceptance_executable: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub unresolved_questions: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -869,6 +873,71 @@ pub struct TaskSummary {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub origin: Option<TaskOrigin>,
+    /// The agent's newest unanswered question, for a task not filed from
+    /// Slack (a Slack-filed task asks in its thread).
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub open_question: Option<TaskQuestion>,
+    /// The newest pull request any run of the task recorded.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub pr_number: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub pr_url: Option<String>,
+}
+
+/// A question an agent asked about its task through `task_ask`, answered in
+/// the app; the answer is typed into the agent's pane once it is idle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskQuestion {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub task_id: i64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub run_id: i64,
+    pub session_id: u32,
+    pub question: String,
+    pub options: Vec<String>,
+    /// 1-based position of the recommended option.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub recommended: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub why: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub context: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at_ms: i64,
+}
+
+/// One verification command a handback reports: what ran, its trimmed output
+/// and whether it passed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskVerification {
+    pub command: String,
+    #[serde(default)]
+    pub output: String,
+    pub passed: bool,
+}
+
+/// The evidence a handback recorded on its run beyond the summary.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskRunEvidence {
+    pub verification: Vec<TaskVerification>,
+    /// A screenshot or recording the agent saved, as an absolute path.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub capture_path: Option<String>,
+    /// What stays after merge beyond code: migrations, configuration, data.
+    #[serde(default)]
+    pub permanent: Vec<String>,
 }
 
 /// One task with its full text. Every mutation bumps `revision`, so a client
@@ -996,6 +1065,17 @@ pub struct TaskRun {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub pr_url: Option<String>,
+    /// The pull request the handback named.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub pr_number: Option<u32>,
+    /// The commit the handback reported as pushed.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub pushed_sha: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub evidence: Option<TaskRunEvidence>,
 }
 
 /// The task a session is bound to, as a pane chip shows it: the newest run
@@ -3977,6 +4057,29 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         plan_revision: i64,
     },
+    /// Discards the current planning proposal with a reason, recorded as a
+    /// comment; the task keeps its definition.
+    TaskPlanReject {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expected_revision: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        plan_revision: i64,
+        reason: String,
+    },
+    /// Answers an agent's `task_ask` question.
+    TaskQuestionAnswer {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        question_id: i64,
+        answer: String,
+    },
+    /// The factory caps and their current counts.
+    FactorySettingsGet,
+    FactorySettingsSet {
+        live_runs_max: u32,
+        needs_you_max: u32,
+    },
     /// Creates (id absent) or updates (id present, `expected_revision`
     /// required) one task.
     TaskSave {
@@ -4833,6 +4936,14 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         revision: i64,
     },
+    /// The factory caps with the counts they compare against: live
+    /// implementation runs, and tasks waiting on the user.
+    FactorySettings {
+        live_runs_max: u32,
+        needs_you_max: u32,
+        live_runs: u32,
+        needs_you: u32,
+    },
     TaskPlanStarted {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
@@ -5226,6 +5337,22 @@ pub const TASK_PR_WATCH_INTERVAL_MS: u64 = 300_000;
 /// Automatic rework rounds a failed review may take, per workspace; a runaway
 /// reviewer-and-implementer pair must cost a bounded number of agent runs.
 pub const TASKS_REWORK_ROUNDS_MAX: u32 = 5;
+/// Live implementation runs across every workspace by default; the review
+/// rate of one person, 3 to 5 sessions, sets it.
+pub const FACTORY_LIVE_RUNS_DEFAULT: u32 = 3;
+/// Tasks waiting on the user before automatic starts pause, by default.
+pub const FACTORY_NEEDS_YOU_DEFAULT: u32 = 3;
+/// Upper bound of both factory caps; the same ceiling as the child caps.
+pub const FACTORY_CAP_MAX: u32 = 16;
+/// An answer typed into an agent's pane.
+pub const TASK_ANSWER_MAX_BYTES: usize = 4_096;
+/// One verification output kept on a run; the tail is kept, where a failure
+/// usually is.
+pub const TASK_VERIFICATION_OUTPUT_MAX_BYTES: usize = 4_096;
+/// Verification commands, and permanent entries, one handback may record.
+pub const TASK_VERIFICATIONS_MAX: usize = 16;
+/// One verification command or permanent entry.
+pub const TASK_PROOF_TEXT_MAX_BYTES: usize = 1_024;
 
 pub const RESTORE_BUDGET_DEFAULT: u32 = 24;
 
