@@ -6,8 +6,39 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
+/// The settings files ZCode builds read: the community `zcode-app-cli` package reads
+/// `setting.json` (and copies `config.json` into it once, on its first start); the
+/// upstream CLI reads `config.json`.
+pub const SETTINGS_FILES: [&str; 2] = ["setting.json", "config.json"];
+
+/// The file shown for ZCode: the first settings file present, else `config.json`.
 pub fn config_path(home: &Path) -> PathBuf {
-    home.join(".zcode").join("cli").join("config.json")
+    let dir = home.join(".zcode").join("cli");
+    SETTINGS_FILES
+        .iter()
+        .map(|name| dir.join(name))
+        .find(|path| path.exists())
+        .unwrap_or_else(|| dir.join("config.json"))
+}
+
+/// Every settings file present beside `path`, or `path` alone when none is: Houston
+/// cannot tell which build is installed, so it keeps each existing file in step.
+fn managed_files(path: &Path) -> Vec<PathBuf> {
+    let found: Vec<PathBuf> = path
+        .parent()
+        .map(|dir| {
+            SETTINGS_FILES
+                .iter()
+                .map(|name| dir.join(name))
+                .filter(|p| p.exists())
+                .collect()
+        })
+        .unwrap_or_default();
+    if found.is_empty() {
+        vec![path.to_path_buf()]
+    } else {
+        found
+    }
 }
 
 /// The plugin directory below a channel's state dir that carries Houston's MCP server.
@@ -335,7 +366,10 @@ pub fn install(
         plugin_dir,
         keep_disabled,
     };
-    install_with(path, &install, LOCK_WAIT, || {})
+    for file in managed_files(path) {
+        install_with(&file, &install, LOCK_WAIT, || {})?;
+    }
+    Ok(())
 }
 
 struct Install<'a> {
@@ -443,7 +477,11 @@ fn apply_install(root: &mut Value, path: &Path, install: &Install<'_>) -> Result
 }
 
 pub fn uninstall(path: &Path, sentinel: &str) -> Result<bool> {
-    uninstall_with(path, sentinel, LOCK_WAIT)
+    let mut changed = false;
+    for file in managed_files(path) {
+        changed |= uninstall_with(&file, sentinel, LOCK_WAIT)?;
+    }
+    Ok(changed)
 }
 
 fn uninstall_with(path: &Path, sentinel: &str, wait: std::time::Duration) -> Result<bool> {
@@ -521,6 +559,12 @@ fn apply_uninstall(root: &mut Value, sentinel: &str) -> bool {
 
 /// Installed means ZCode will run the entries: they are present and `hooks.enabled` is on.
 pub fn is_installed(path: &Path, sentinel: &str) -> bool {
+    managed_files(path)
+        .iter()
+        .all(|file| is_installed_in(file, sentinel))
+}
+
+fn is_installed_in(path: &Path, sentinel: &str) -> bool {
     let Ok(Some(root)) = read_root(path) else {
         return false;
     };
@@ -843,7 +887,10 @@ mod tests {
     }
 
     fn dev_commands() -> Vec<(&'static str, String)> {
-        vec![("Stop", format!("/home/dev/.houston-dev/bin/claude-hook Stop {DEV}"))]
+        vec![(
+            "Stop",
+            format!("/home/dev/.houston-dev/bin/claude-hook Stop {DEV}"),
+        )]
     }
 
     fn dev_install<'a>(commands: &'a [(&'static str, String)]) -> Install<'a> {
@@ -877,7 +924,10 @@ mod tests {
                 .flat_map(|g| g["hooks"].as_array().into_iter().flatten())
                 .any(|h| h["command"] == json!("notify-send done"))
         };
-        assert!(user_kept(&read(&path)), "a reinstall keeps the user's command");
+        assert!(
+            user_kept(&read(&path)),
+            "a reinstall keeps the user's command"
+        );
 
         assert!(agent_hooks::uninstall(Zcode, &h, DEV).expect("uninstall"));
         let after = read(&path);
@@ -904,7 +954,11 @@ mod tests {
         })
         .expect("the install retries on the new content");
         let root = read(&path);
-        assert_eq!(root["theme"], json!("dark"), "the concurrent edit is kept: {root}");
+        assert_eq!(
+            root["theme"],
+            json!("dark"),
+            "the concurrent edit is kept: {root}"
+        );
         assert_eq!(houston_groups(&root, DEV), 1, "{root}");
     }
 
@@ -956,5 +1010,43 @@ mod tests {
             .expect("the edit goes in once the lock is free");
         release.join().expect("join");
         assert_eq!(houston_groups(&read(&path), DEV), 1);
+    }
+    #[test]
+    fn the_community_builds_setting_json_gets_the_entries_beside_config_json() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let h = home(&dir);
+        let cli = dir.path().join(".zcode").join("cli");
+        std::fs::create_dir_all(&cli).expect("mkdir");
+        std::fs::write(
+            cli.join("setting.json"),
+            r#"{"permission":{"mode":"build"}}"#,
+        )
+        .expect("the community launcher created setting.json");
+        let shown = agent_hooks::config_path(Zcode, &h).expect("path");
+        assert_eq!(shown, cli.join("setting.json"));
+        agent_hooks::install(Zcode, &h, &launcher(".houston-dev"), DEV).expect("install");
+        let setting = read(&cli.join("setting.json"));
+        assert!(houston_groups(&setting, DEV) > 0, "{setting}");
+        assert_eq!(setting["permission"]["mode"], json!("build"));
+        assert!(
+            !cli.join("config.json").exists(),
+            "a file the installed build does not read is not created"
+        );
+        assert!(agent_hooks::is_installed(Zcode, &h, DEV));
+
+        std::fs::write(cli.join("config.json"), "{}").expect("an upstream build's file too");
+        assert!(
+            !agent_hooks::is_installed(Zcode, &h, DEV),
+            "every present file must carry the entries"
+        );
+        agent_hooks::install(Zcode, &h, &launcher(".houston-dev"), DEV).expect("install");
+        assert!(houston_groups(&read(&cli.join("config.json")), DEV) > 0);
+        assert!(agent_hooks::is_installed(Zcode, &h, DEV));
+        assert!(agent_hooks::uninstall(Zcode, &h, DEV).expect("uninstall"));
+        assert_eq!(read(&cli.join("config.json")), json!({}));
+        assert_eq!(
+            read(&cli.join("setting.json")),
+            json!({"permission": {"mode": "build"}})
+        );
     }
 }
