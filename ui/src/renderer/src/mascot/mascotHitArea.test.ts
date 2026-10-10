@@ -1,11 +1,16 @@
 // @vitest-environment node
 import { chromium } from 'playwright'
 import { fileURLToPath } from 'node:url'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createServer } from 'vite'
 import { expect, it } from 'vitest'
 
 it('keeps animated artwork from intercepting rail buttons while preserving mascot dragging', async () => {
+  const cacheDir = mkdtempSync(join(tmpdir(), 'houston-mascot-vite-'))
   const server = await createServer({
+    cacheDir,
     configFile: fileURLToPath(new URL('../../../../vite.config.ts', import.meta.url)),
     logLevel: 'silent',
     server: { host: '127.0.0.1', port: 0, watch: null }
@@ -16,6 +21,7 @@ it('keeps animated artwork from intercepting rail buttons while preserving masco
     const address = server.httpServer!.address() as { port: number }
     browser = await chromium.launch({ channel: 'chrome' })
     const page = await browser.newPage({ viewport: { width: 400, height: 240 } })
+    page.on('pageerror', error => console.error(error))
     await page.goto(`http://127.0.0.1:${address.port}/harness/index.html?story=mascot&mode=live&theme=graphite`)
     await page.getByTestId('mascot-companion').waitFor()
     await page.evaluate(() => {
@@ -63,5 +69,6 @@ it('keeps animated artwork from intercepting rail buttons while preserving masco
   } finally {
     await browser?.close()
     await server.close()
+    rmSync(cacheDir, { recursive: true, force: true })
   }
 }, 90_000)
