@@ -7,7 +7,7 @@ import type { Routine } from '../../houston/generated/Routine'
 import { formatCadence } from './routineFormat'
 
 /** The providers Houston can launch a review run with. */
-export const HARNESS_ENGINES: AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok']
+export const HARNESS_ENGINES: AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode']
 
 export type HarnessSchedule = 'off' | 'weekly' | 'daily' | 'custom'
 
