@@ -62,12 +62,14 @@ fn build_ghostty_vt() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let lock_path = manifest.join("ghostty-vt.lock");
     let shim = manifest.join("ghostty-vt").join("houston_snapshot.zig");
-    let patch = manifest
-        .join("ghostty-patches")
-        .join("0001-houston-snapshot-exports.patch");
+    let patch_dir = manifest.join("ghostty-patches");
+    let patches = patch_files(&patch_dir);
     println!("cargo:rerun-if-changed={}", lock_path.display());
     println!("cargo:rerun-if-changed={}", shim.display());
-    println!("cargo:rerun-if-changed={}", patch.display());
+    println!("cargo:rerun-if-changed={}", patch_dir.display());
+    for patch in &patches {
+        println!("cargo:rerun-if-changed={}", patch.display());
+    }
     println!("cargo:rerun-if-env-changed=HOUSTON_GHOSTTY_VT_SRC");
     println!("cargo:rerun-if-env-changed=HOUSTON_ZIG");
 
@@ -84,8 +86,13 @@ fn build_ghostty_vt() {
     let cache = cache_dir(&out_dir);
     fs::create_dir_all(&cache).unwrap_or_else(|e| panic!("creating {}: {e}", cache.display()));
 
-    let patch_text =
-        fs::read(&patch).unwrap_or_else(|e| panic!("reading {}: {e}", patch.display()));
+    // The stamp is the series' text in order, the same bytes the WASM script writes.
+    let patch_text: Vec<u8> = patches
+        .iter()
+        .flat_map(|patch| {
+            fs::read(patch).unwrap_or_else(|e| panic!("reading {}: {e}", patch.display()))
+        })
+        .collect();
     let src = match std::env::var("HOUSTON_GHOSTTY_VT_SRC") {
         Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
         _ => {
@@ -93,7 +100,7 @@ fn build_ghostty_vt() {
             fetch_source(&cache, &lock, &lock_path, revision)
         }
     };
-    apply_shim(&src, &shim, &patch, &patch_text);
+    apply_shim(&src, &shim, &patches, &patch_text);
 
     let zig = zig_binary(&cache, &lock, &lock_path);
     let prefix = cache.join(format!("build-{revision}"));
@@ -191,7 +198,7 @@ fn fetch_source(
 /// `patch -F 0`, not `git apply`: the extracted tree usually sits under
 /// `core/target/` inside Houston's own work tree, where `git apply` resolves
 /// paths against the wrong root — and `-F 0` makes an upstream move fail loudly.
-fn apply_shim(src: &Path, shim: &Path, patch: &Path, patch_text: &[u8]) {
+fn apply_shim(src: &Path, shim: &Path, patches: &[PathBuf], patch_text: &[u8]) {
     let dest = src
         .join("src")
         .join("terminal")
@@ -204,25 +211,26 @@ fn apply_shim(src: &Path, shim: &Path, patch: &Path, patch_text: &[u8]) {
     match fs::read(&stamp) {
         Ok(applied) if applied == patch_text => return,
         Ok(_) => panic!(
-            "{} was patched with a different {}; point HOUSTON_GHOSTTY_VT_SRC at a freshly \
-             extracted tree of the pinned revision",
-            src.display(),
-            patch.display()
+            "{} was patched with a different ghostty-patches/ series; point \
+             HOUSTON_GHOSTTY_VT_SRC at a freshly extracted tree of the pinned revision",
+            src.display()
         ),
         Err(_) => {}
     }
-    run(
-        Command::new("patch")
-            .arg("-p1")
-            .arg("-F")
-            .arg("0")
-            .arg("--no-backup-if-mismatch")
-            .arg("-d")
-            .arg(src)
-            .arg("-i")
-            .arg(patch),
-        "patch (houston snapshot exports)",
-    );
+    for patch in patches {
+        run(
+            Command::new("patch")
+                .arg("-p1")
+                .arg("-F")
+                .arg("0")
+                .arg("--no-backup-if-mismatch")
+                .arg("-d")
+                .arg(src)
+                .arg("-i")
+                .arg(patch),
+            &format!("patch ({})", patch.display()),
+        );
+    }
     assert!(
         fs::read_to_string(src.join("src").join("lib_vt.zig"))
             .map(|s| s.contains("houston_vt_snapshot_encode"))
@@ -234,7 +242,22 @@ fn apply_shim(src: &Path, shim: &Path, patch: &Path, patch_text: &[u8]) {
     fs::write(&stamp, patch_text).unwrap_or_else(|e| panic!("writing {}: {e}", stamp.display()));
 }
 
-/// The patch stamp holds the patch it applied. A tree patched by an older patch
+fn patch_files(dir: &Path) -> Vec<PathBuf> {
+    let mut patches: Vec<PathBuf> = fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))
+        .map(|entry| entry.expect("ghostty-patches entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "patch"))
+        .collect();
+    patches.sort();
+    assert!(
+        !patches.is_empty(),
+        "{} has no *.patch files; expected at least the snapshot exports patch",
+        dir.display()
+    );
+    patches
+}
+
+/// The patch stamp holds the series it applied. A tree patched by an older series
 /// cannot take the new one on top, so its extraction stamp goes and the source is
 /// extracted afresh.
 fn forget_stale_patch(dir: &Path, patch_text: &[u8]) {

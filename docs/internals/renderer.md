@@ -107,6 +107,22 @@ narrow during a split would keep a narrow pane's history after it widens.
 Output in unfocused panes repaints on one shared tick (`BACKGROUND_OUTPUT_PAINT_MS`, about
 15 Hz). The focused pane, input, scrolling, selection and resizes repaint on the next frame.
 
+Both engines are built from the pinned source with `core/houston-core/ghostty-patches/`
+applied in order; `build.rs` and `scripts/build-ghostty-vt-wasm.sh` stamp the extracted tree
+with the series' text and re-extract it when the series changes. Besides the snapshot
+exports, one patch changes behaviour: a full erase-line (`ESC [ 2 K`) ends the soft-wrap
+link into the erased row. Agent CLIs repaint by erasing and rewriting rows, and without the
+patch a reflow joins a row in history with the new content side by side.
+
+Each engine is constructed with `OSC 133;A;redraw=1` to turn on `shell_redraws_prompt`,
+followed at once by `OSC 133;C`. The flag survives the close; left open, every row a program
+without OSC 133 integration prints is a prompt row, and each resize erases it from the screen
+and history. The renderer and `vt.rs` must send identical bytes so a snapshot paints the same.
+
+A size change the `ResizeObserver` reports is held until the PTY is told (`surface.ts`): the
+grid reflows and the PTY resize goes out in the same tick. Reflowing first would let the
+program draw for the old width into the new grid for the debounce and the round trip.
+
 Terminal palettes are applied **to the engine, not to CSS**: `theme.ts` holds
 `TERMINAL_PALETTES`, and `ghosttyThemeFromCss` converts a palette's hex values to the
 engine's RGB theme. `[data-theme]` scopes app chrome only; it never reaches the terminal
