@@ -491,8 +491,10 @@ impl WslManager {
             }
         };
         let envs = inner.envs.lock().expect("wsl envs lock");
+        // An enabled utility distro stays listed so it can still be disabled.
         let distros = found
             .into_iter()
+            .filter(|distro| !distros::is_utility(&distro.name) || config.is_enabled(&distro.name))
             .map(|distro| {
                 let entry = config.entry(&distro.name);
                 let enabled = entry.is_some_and(|e| e.enabled);
@@ -522,6 +524,12 @@ impl WslManager {
     pub async fn enable(&self, name: String) -> Result<Enabled, String> {
         let inner = &self.inner;
         inner.gate()?;
+        if distros::is_utility(&name) {
+            return Err(format!(
+                "{name} is a container engine's utility distro; Houston does not run in {}",
+                distros::UTILITY.join(", ")
+            ));
+        }
         let _ops = inner.ops.lock().await;
         let mut config = config::load(&inner.opts.state_dir)?;
         if let Some(env) = inner.envs.lock().expect("wsl envs lock").get(&name) {
@@ -890,28 +898,58 @@ mod tests {
         assert!(listed.available);
         assert_eq!(
             listed.distros,
-            [
-                WslDistro {
-                    name: "Ubuntu".into(),
-                    state: "Running".into(),
-                    version: 2,
-                    default: true,
-                    enabled: true,
-                    slot: Some(1),
-                    status: "starting",
-                },
-                WslDistro {
-                    name: "docker-desktop".into(),
-                    state: "Stopped".into(),
-                    version: 2,
-                    default: false,
-                    enabled: false,
-                    slot: Some(2),
-                    status: "disabled",
-                },
-            ]
+            [WslDistro {
+                name: "Ubuntu".into(),
+                state: "Running".into(),
+                version: 2,
+                default: true,
+                enabled: true,
+                slot: Some(1),
+                status: "starting",
+            }],
+            "the recorded docker-desktop row is a utility distro"
         );
         assert_eq!(fake.calls(), [vec!["-l".to_string(), "-v".to_string()]]);
+    }
+
+    #[tokio::test]
+    async fn an_enabled_utility_distro_stays_listed() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let mut config = config::WslConfig::default();
+        config.enable("docker-desktop").unwrap();
+        config::save(state.path(), &config).unwrap();
+        let (fake, _daemons) = FakeWsl::new(ListReply::Bytes(RECORDED_UTF16.to_vec()));
+
+        let listed = manager(Arc::new(fake), state.path(), bundle.path(), true)
+            .list()
+            .await
+            .unwrap();
+        let names: Vec<&str> = listed.distros.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["Ubuntu", "docker-desktop"]);
+        assert!(listed.distros[1].enabled);
+    }
+
+    #[tokio::test]
+    async fn enable_refuses_utility_distros_by_name() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let (fake, _daemons) = FakeWsl::new(list_text(
+            "  docker-desktop  Stopped  2\n  docker-desktop-data  Stopped  2\n  \
+             rancher-desktop  Stopped  2\n  rancher-desktop-data  Stopped  2\n",
+        ));
+        let fake = Arc::new(fake);
+        let wsl = manager(fake.clone(), state.path(), bundle.path(), true);
+
+        for name in distros::UTILITY {
+            let err = wsl.enable(name.into()).await.unwrap_err();
+            assert!(
+                err.starts_with(name) && err.contains("utility distro"),
+                "{err}"
+            );
+        }
+        assert!(!fake.ran_inside_a_distro());
+        assert!(config::load(state.path()).unwrap().distros.is_empty());
     }
 
     #[tokio::test]

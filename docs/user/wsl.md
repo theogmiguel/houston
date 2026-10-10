@@ -19,8 +19,10 @@ labelled **Experimental**.
 
 ## Enabling a distro
 
-Open **Settings → WSL**. It lists every installed distro with its state and WSL version.
-Select **Enable** on the distro you want. Houston checks the WSL version, architecture
+Open **Settings → WSL**. It lists every installed distro with its state and WSL version,
+except the utility distros that Docker Desktop and Rancher Desktop create for their
+engines (`docker-desktop`, `docker-desktop-data`, `rancher-desktop` and
+`rancher-desktop-data`), which cannot be enabled. Select **Enable** on the distro you want. Houston checks the WSL version, architecture
 and glibc, copies its bundled Linux daemon into the distro under
 `~/.local/lib/houston-wsl/`, and starts that daemon. When Houston cannot run in a distro,
 the row names the reason, such as `WSL 1` or the glibc version found. **Retry** runs the

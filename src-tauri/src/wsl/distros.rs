@@ -8,6 +8,18 @@ pub struct Distro {
     pub default: bool,
 }
 
+/// Distros that container engines create to host the engine itself; nobody works in them.
+pub const UTILITY: [&str; 4] = [
+    "docker-desktop",
+    "docker-desktop-data",
+    "rancher-desktop",
+    "rancher-desktop-data",
+];
+
+pub fn is_utility(name: &str) -> bool {
+    UTILITY.contains(&name)
+}
+
 /// `wsl.exe` writes UTF-16LE unless `WSL_UTF8=1` reached it; a NUL byte tells them apart.
 pub fn decode(bytes: &[u8]) -> String {
     let text = if bytes.contains(&0) {
