@@ -1,5 +1,6 @@
 export type SettingsSectionId =
   | 'appearance'
+  | 'mascot'
   | 'terminal'
   | 'shortcuts'
   | 'agents'
@@ -36,6 +37,7 @@ export interface SettingsSectionDef {
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'appearance', label: 'Appearance', icon: 'palette', keywords: ['theme', 'chrome', 'dark', 'light', 'color', 'palette', 'zoom', 'motion', 'background'] },
+  { id: 'mascot', label: 'Mascot', icon: 'user', keywords: ['mascot', 'companion', 'buddy', 'hat', 'holidays', 'pixel', 'colors', 'floating', 'rail', 'sounds', 'nap', 'break'] },
   { id: 'terminal', label: 'Terminal', icon: 'terminal', keywords: ['font', 'cursor', 'scrollback', 'ligatures', 'copy', 'bell', 'stack', 'tabs', 'idle'] },
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard', keywords: ['keyboard', 'keybind', 'rebind', 'hotkey', 'keys', 'keymap', 'vim', 'emacs'] },
   { id: 'agents', label: 'Agents', icon: 'user', keywords: ['accounts', 'profiles', 'hooks', 'status', 'setup', 'integration', 'login', 'claude', 'codex'] },

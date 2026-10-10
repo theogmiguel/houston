@@ -822,6 +822,15 @@ The rules:
    from nowhere.
 4. **Nothing loops but a genuine indeterminate.** Only `working` and `spawning`
    pulse; a running process has no known end time. `needs-input` is static.
+   The optional mascot companion is a scoped exception: its reference idle and
+   play loops pause while hidden or unfocused unless background animation is enabled,
+   and show stable poses under reduced motion. Its motion uses transform and opacity;
+   the reference one-shot glow and disco hue rotation may animate filter on mascot
+   elements and, during disco, the rail footer only. Panes and terminal surfaces
+   never inherit these effects. Mascot motion durations preserve the reference.
+   Mascot speech and introduction chrome preserve reference geometry and shadows
+   through dedicated `--mascot-*` tokens. These tokens and literal artwork colours
+   are confined to mascot primitives; ordinary app controls keep the shared recipes.
 5. **Reduced motion shows a settled frame, not a broken one.** Under
    `prefers-reduced-motion: reduce`, a pulse jumps to its mid-pulse frame rather
    than disappearing.

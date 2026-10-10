@@ -79,6 +79,10 @@ export function SettingsAppearance(): React.JSX.Element {
   return <SettingsScreen section="appearance" />
 }
 
+export function SettingsMascot(): React.JSX.Element {
+  return <SettingsScreen section="mascot" />
+}
+
 export function SettingsAppearanceCustom(): React.JSX.Element {
   React.useEffect(() => setMode('custom'), [])
   return <SettingsScreen section="appearance" />

@@ -9,6 +9,7 @@ import {
 } from '../layout/nativeSuppression'
 import {
   __resetBrowserSurfaceRegistryForTests,
+  nativeBrowserSurfaceRects,
   registerBrowserSurface,
   unregisterBrowserSurface
 } from './browserSurfaceRegistry'
@@ -145,4 +146,16 @@ it('replays intersecting overlays for a surface mounted later', () => {
   expect(visible).toHaveBeenCalledWith(false, 'popover:tabs')
   releaseNativeSuppression('popover', scope)
   expect(visible).toHaveBeenLastCalledWith(true, 'popover:tabs')
+})
+
+it('exposes live attached browser rectangles for renderer placement without including detached or empty surfaces', () => {
+  let rect = { x: 200, y: 100, width: 500, height: 400 }
+  registerBrowserSurface('attached', noop, () => false, () => rect)
+  registerBrowserSurface('detached', noop, () => true, () => rect)
+  registerBrowserSurface('empty', noop, () => false, () => ({ ...rect, width: 0 }))
+  expect(nativeBrowserSurfaceRects()).toEqual([rect])
+  rect = { ...rect, x: 300 }
+  expect(nativeBrowserSurfaceRects()).toEqual([rect])
+  unregisterBrowserSurface('attached')
+  expect(nativeBrowserSurfaceRects()).toEqual([])
 })

@@ -552,7 +552,7 @@ The local-install step, separate from packaging:
 
 Refuses, in order, on:
 
-- Missing icon SVG or `convert` (ImageMagick).
+- Missing promo-art PNG.
 - Missing app binary at `src-tauri/target/release/houston` (told to run
   `build-app.sh`).
 - **Renderer staleness** — re-runs `check-renderer-fresh.sh`.
@@ -570,7 +570,7 @@ Refuses, in order, on:
 Installs: `~/.local/lib/houston/{houston, tr-helper, houston-core,
 houston-supervisor, start.sh, launch.sh}`,
 `~/.local/share/applications/houston.desktop`
-(`StartupWMClass=houston`), and icon PNGs at 48/64/128/256/512px under
+(`StartupWMClass=houston`), and night-tile PNGs at 48/64/128/256/512px under
 `~/.local/share/icons/hicolor/**/apps/houston.png`.
 
 ## `tr-helper`

@@ -1,3 +1,4 @@
+import { MascotSurfaceMount } from '../mascot/MascotMount'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Callout, ChoiceCard, DetailsNote, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle, InsetList, InsetRow, MonoBlock, NotesItem, NotesPanel, ProgressBar, ProgressSteps, Text, VersionTag } from './ui'
 import { IconAlertTriangle, IconRefresh } from './icons'
@@ -284,6 +285,7 @@ export function UpdateInstallModal({
           </VersionTag>
         </DialogTitle>
         <DialogBody variant="stacked">
+          {!running && <MascotSurfaceMount mood="party" />}
           {running ? (
             <StepList steps={steps} active={currentStepIndex(install, steps)} percent={downloadPercent(install)} />
           ) : (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { notifyBrowserSurfaceRects } from './browserSurfaceRegistry'
 import { isTauri } from './host'
 import {
   BrowserGeometryEngine,
@@ -149,6 +150,7 @@ export function useBrowserHost(options: UseBrowserHostOptions): UseBrowserHostRe
   const setDetached = useCallback((value: boolean) => {
     detachedRef.current = value
     setDetachedState(value)
+    notifyBrowserSurfaceRects()
   }, [])
 
   useEffect(() => {
@@ -157,6 +159,7 @@ export function useBrowserHost(options: UseBrowserHostOptions): UseBrowserHostRe
 
     const measure = (): Rect => {
       const box = container.getBoundingClientRect()
+      notifyBrowserSurfaceRects()
       return {
         x: box.x,
         y: box.y,

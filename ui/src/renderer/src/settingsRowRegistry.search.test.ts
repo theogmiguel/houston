@@ -9,4 +9,16 @@ describe('settings row search', () => {
       title: 'Font size'
     })
   })
+
+  it('routes companion keywords and mascot rows to Mascot', () => {
+    for (const query of ['mascot', 'companion', 'buddy', 'hat', 'holidays', 'pixel', 'colors', 'floating', 'rail', 'sounds', 'nap', 'break']) {
+      const results = searchSettingsRows(query)
+      expect(results.length).toBeGreaterThan(0)
+      expect(results.every(hit => hit.section.id === 'mascot')).toBe(true)
+    }
+    expect(searchSettingsRows('Position')[0]).toEqual({
+      section: expect.objectContaining({ id: 'mascot' }),
+      title: 'Position'
+    })
+  })
 })

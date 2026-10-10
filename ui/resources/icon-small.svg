@@ -1,63 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Houston">
-  <!-- Houston's app icon: the small cut, and the source for every render at
-       48px and below.
-
-       Same composition as `icon.svg`, rebuilt rather than scaled. At 16px one
-       device pixel is 32 units of this canvas, so the detail cut's 4-unit
-       photon ring is an eighth of a pixel and its 17-unit disk is half of one;
-       a Gaussian blur at that scale is a full pixel of haze over a third of a
-       pixel of source. Everything here is therefore fat enough to survive the
-       downsample, and there are no filters at all.
-
-       Three parts carry the silhouette — jet, band, horizon — which is the
-       whole reason this composition was chosen over a disk-only one: a purely
-       rotational mark has nothing to thicken but its ring. -->
-  <defs>
-    <radialGradient id="hs-bg" cx="50%" cy="50%" r="75%">
-      <stop offset="0%" stop-color="#050C1A" />
-      <stop offset="100%" stop-color="#010308" />
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;border-radius:22.5%;background:radial-gradient(90% 90% at 50% 30%, #17206a, #070a26 75%);box-shadow:inset 0 0 0 1px #ffffff14, 0 2px 6px #0008;display:grid;place-items:center"><svg style="width:86%;height:86%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">  <defs>
+    <radialGradient id="g-sphere" cx="34%" cy="26%" r="80%">
+      <stop offset="0" stop-color="#8a6ef0"/><stop offset=".32" stop-color="#3b2fa6"/><stop offset=".68" stop-color="#1a1c55"/><stop offset="1" stop-color="#0b0e2c"/>
     </radialGradient>
-
-    <linearGradient id="hs-jet" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0" />
-      <stop offset="24%" stop-color="#00F0FF" stop-opacity="0.85" />
-      <stop offset="35%" stop-color="#FFFFFF" />
-      <stop offset="65%" stop-color="#FFFFFF" />
-      <stop offset="76%" stop-color="#00F0FF" stop-opacity="0.85" />
-      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    <linearGradient id="g-ring" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#b06cff"/><stop offset=".42" stop-color="#5a6cf6"/><stop offset=".78" stop-color="#34d2f6"/><stop offset="1" stop-color="#9ff6ff"/>
     </linearGradient>
-
-    <linearGradient id="hs-disk" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00F0FF" />
-      <stop offset="50%" stop-color="#7000FF" />
-      <stop offset="100%" stop-color="#3A86FF" />
+    <linearGradient id="g-ring-back" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6a3cd0"/><stop offset=".6" stop-color="#3550d8"/><stop offset="1" stop-color="#2aa6e0"/>
     </linearGradient>
-  </defs>
-
-  <rect width="512" height="512" rx="110" fill="url(#hs-bg)" />
-
-  <g transform="translate(256, 256)">
-    <!-- Jet waist is 60 units wide against the detail cut's 10: at 16px that
-         is 1.9 device pixels instead of 0.3, which is the difference between a
-         visible axis and a grey smear. -->
-    <polygon points="-46,-250 46,-250 30,-14 30,14 46,250 -46,250 -30,14 -30,-14"
-             fill="url(#hs-jet)" />
-
-    <g transform="rotate(-15)">
-      <ellipse rx="148" ry="40" fill="none" stroke="url(#hs-disk)" stroke-width="56" />
-    </g>
-
-    <!-- The photon ring becomes a filled disc behind the horizon rather than a
-         stroke around it. A 4-unit stroke vanishes here; an 14-unit annulus of
-         exposed cyan does not. -->
-    <circle r="96" fill="#00F0FF" opacity="0.45" />
-    <circle r="82" fill="#010308" />
-
-    <!-- Endpoints at 165° and 15° on the 148x40 ellipse above — same rule as
-         the detail cut. -->
-    <g transform="rotate(-15)">
-      <path d="M -142.9 10.4 A 148 40 0 0 0 142.9 10.4" fill="none"
-            stroke="#8FE9FF" stroke-width="48" stroke-linecap="round" />
-    </g>
-  </g>
-</svg>
+    <symbol id="mark-vector" viewBox="0 0 64 64">
+      <g transform="rotate(-16 32 35)"><path d="M3 35 A29 8.5 0 0 1 61 35" fill="none" stroke="url(#g-ring-back)" stroke-width="4.2" stroke-linecap="round"/></g>
+      <circle cx="32" cy="30" r="19.5" fill="url(#g-sphere)"/>
+      <path d="M40 12.6 A19.5 19.5 0 0 1 51 26" fill="none" stroke="#5fe4ff" stroke-width="1.6" stroke-linecap="round" opacity=".85"/>
+      <ellipse cx="32.5" cy="31.5" rx="12.6" ry="11.2" fill="#070a22"/>
+      <path d="M23.4 33.4 Q27 26.6 30.6 33.4 Q27 30.2 23.4 33.4Z" fill="#8ff6ff"/>
+      <path d="M34.4 33.4 Q38 26.6 41.6 33.4 Q38 30.2 34.4 33.4Z" fill="#8ff6ff"/>
+      <rect x="10" y="23.5" width="6.6" height="14" rx="3.3" fill="#262a66" stroke="#10133a" stroke-width="1"/>
+      <ellipse cx="13.2" cy="30.5" rx="1.7" ry="3.7" fill="none" stroke="#3fe0ff" stroke-width="1.5"/>
+      <rect x="47.4" y="23.5" width="6.6" height="14" rx="3.3" fill="#262a66" stroke="#10133a" stroke-width="1"/>
+      <ellipse cx="50.8" cy="30.5" rx="1.7" ry="3.7" fill="none" stroke="#3fe0ff" stroke-width="1.5"/>
+      <g transform="rotate(-16 32 35)"><path d="M3 35 A29 8.5 0 0 0 61 35" fill="none" stroke="url(#g-ring)" stroke-width="4.6" stroke-linecap="round"/></g>
+    </symbol>
+  </defs><use href="#mark-vector"/></svg>
+</div></foreignObject></svg>

@@ -1,3 +1,4 @@
+import { MascotSurfaceMount } from '../../mascot/MascotMount'
 import { Button, Chip, ChangeSummary, VersionBadge } from '../ui'
 import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { ThirdPartyNotices } from './ThirdPartyNotices'
@@ -324,6 +325,7 @@ export function AboutSection({
 
   return (
     <>
+      <MascotSurfaceMount hat="party" />
       <SettingsList>
         <Row title="Houston" desc={houstonDesc}>
           <VersionBadge>v{__APP_VERSION__}</VersionBadge>
