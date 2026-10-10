@@ -203,10 +203,10 @@ mod imp {
                     write_pty as WritePtyFn as *const c_void,
                 );
             }
-            // Matches the renderer's own construction sequence (ghostty/core.ts), so a
-            // snapshot taken here paints the same there. Safe only here: it runs before
-            // any PTY byte, so it cannot land inside a sequence already in flight.
-            me.feed(b"\x1b]133;A;redraw=1\x07");
+            // Byte-identical to ghostty/core.ts so a snapshot paints the same there; safe only
+            // before any PTY byte. 133;C closes the opt-in's prompt, or a TUI's unmarked rows
+            // stay prompt rows that every resize erases from screen and history.
+            me.feed(b"\x1b]133;A;redraw=1\x07\x1b]133;C\x07");
             Ok(me)
         }
 
@@ -639,6 +639,26 @@ mod tests {
             bounded.len(),
             full.len()
         );
+    }
+
+    #[test]
+    fn a_resize_keeps_rows_printed_without_prompt_marks() {
+        let mut vt = emulator(60, 8);
+        let lines: Vec<String> = (0..20).map(|n| format!("tui row {n:02}")).collect();
+        vt.feed(lines.join("\r\n").as_bytes());
+
+        for (cols, rows) in [(34, 6), (60, 8)] {
+            vt.resize(cols, rows);
+            let all = vt.screen_text(usize::MAX);
+            assert!(
+                all.ends_with(&lines[14..]),
+                "the screen at {cols}x{rows} lost the program's last rows: {all:?}"
+            );
+            assert!(
+                all.contains(&lines[0]),
+                "history at {cols}x{rows} lost the program's first row: {all:?}"
+            );
+        }
     }
 
     #[test]
