@@ -13,6 +13,7 @@ export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly s
   dictation: ['Groq API key', 'Enable dictation', 'Engine', 'Output', 'Tell the agent it is a translation', 'Activation', 'Dictation key', 'Microphone', 'Input device', 'Spoken language', 'Insertion', 'Vocabulary'],
   privacy: ['Command history', 'History ignore patterns', 'Browser pane data', 'Session database', 'Telemetry', 'Agent transcripts'],
   daemon: ['Keep Houston in the tray when the window closes', 'Stop daemon', 'Copy diagnostics', 'Daemon logs'],
+  wsl: ['WSL environments'],
   about: ['Houston', 'Contact', 'License', 'Third-party notices', 'Updates', 'Check for updates']
 }
 
