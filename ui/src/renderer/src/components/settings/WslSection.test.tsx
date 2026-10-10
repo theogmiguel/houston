@@ -107,6 +107,28 @@ describe('WslSection', () => {
     expect(byTestId('wsl-distro-error')[0]?.textContent).toBe('Debian reports glibc 2.31; Houston needs 2.35 or newer')
   })
 
+  it('re-reads distro states after a failed enable', async () => {
+    let lists = 0
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'wsl_list') {
+        lists++
+        if (lists === 1) return TWO_DISTROS
+        return { ...TWO_DISTROS, distros: [TWO_DISTROS.distros[0], { ...TWO_DISTROS.distros[1], state: 'Running' }] }
+      }
+      if (cmd === 'env_list') return []
+      if (cmd === 'wsl_enable') throw 'could not start Debian to check it'
+      throw new Error(`unexpected ${cmd}`)
+    })
+    await render()
+    expect(byTestId('wsl-distro-facts')[1]?.textContent).toBe('Stopped · WSL 2')
+
+    act(() => byTestId('wsl-distro-enable')[0].click())
+    await flush()
+
+    expect(byTestId('wsl-distro-facts')[1]?.textContent).toBe('Running · WSL 2')
+    expect(byTestId('wsl-distro-error')[0]?.textContent).toBe('could not start Debian to check it')
+  })
+
   it('disables a distro only after the confirmation', async () => {
     answer(TWO_DISTROS, { wsl_disable: () => ({ name: 'Ubuntu' }) })
     await render()

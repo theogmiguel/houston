@@ -150,9 +150,13 @@ export function WslSection(): React.JSX.Element {
       delete next[name]
       return next
     })
+    // A failed attempt may still have booted the distro, so its state is re-read too.
     void action()
-      .then(load, (err: unknown) => setActionErrors((prev) => ({ ...prev, [name]: message(err) })))
-      .finally(() => setPending(null))
+      .catch((err: unknown) => setActionErrors((prev) => ({ ...prev, [name]: message(err) })))
+      .finally(() => {
+        setPending(null)
+        load()
+      })
   }
 
   const row = (distro: WslDistro): React.JSX.Element => (
