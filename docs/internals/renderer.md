@@ -69,7 +69,10 @@ queue dropped, and the pane answers with one re-attach.
 and the engine's synchronous `term.write`. It owns escape-safe chunking (`findSafeSplit`
 never manufactures a cut inside a CSI, OSC/DCS/PM/APC/SOS, a bare two-byte escape, or a
 multi-byte UTF-8 codepoint), a single-write-in-flight gate, a stalled-write watchdog, and
-visible backpressure drops.
+the overflow policy. When the queue passes its cap, a synced pane whose daemon has an
+emulator discards the backlog and reattaches from a snapshot. The daemon has parsed every
+byte, so the screen comes back exact, and stdin stays live while the snapshot is in flight.
+Without a snapshot path, the queue drops its oldest bytes and says so in the pane.
 
 | Constant | Value | Reason |
 |---|---|---|

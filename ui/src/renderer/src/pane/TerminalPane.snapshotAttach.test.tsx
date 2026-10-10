@@ -227,6 +227,32 @@ describe('TerminalPane snapshot attach', () => {
     expect(stdinFrames()).toHaveLength(1)
   })
 
+  it('a pane that falls behind takes one fresh snapshot instead of dropping output, and keeps taking keystrokes', async () => {
+    const { ws, sinks } = await mount({ snapshotAttach: true, active: true })
+    ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) })
+    const before = attaches(ws).length
+    const stdinFrames = (): unknown[] => ws.sent.filter((m) => typeof m !== 'string')
+    const stdinBefore = stdinFrames().length
+    ghosttyMock.writes.length = 0
+
+    const chunk = new Uint8Array(256 * 1024).fill(0x61)
+    for (let i = 0; i < 12; i++) sinks.get(1)?.frame(i * chunk.length, chunk)
+
+    const after = attaches(ws).slice(before)
+    expect(after).toHaveLength(1)
+    expect(after[0]?.snapshot).toBe(true)
+    ghosttyMock.emitData('\x03')
+    expect(stdinFrames()).toHaveLength(stdinBefore + 1)
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    const written = ghosttyMock.writes
+      .map((w) => (typeof w === 'string' ? w : new TextDecoder().decode(w)))
+      .join('')
+    expect(written).not.toContain('dropped')
+  })
+
   it('overflowing the import buffer asks for exactly one fresh snapshot, never a raw flush', async () => {
     const { ws, sinks } = await mount({ snapshotAttach: true })
     const before = attaches(ws).length

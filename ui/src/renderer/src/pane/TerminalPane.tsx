@@ -257,6 +257,7 @@ export function TerminalPane({
   const lastReassertedSizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const resizeReassertTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const skipSnapshotOnceRef = useRef(false)
+  const overflowResyncRef = useRef(false)
   const [documentHidden, setDocumentHidden] = useState(() => document.visibilityState === 'hidden')
   const documentHiddenRef = useRef(documentHidden)
   documentHiddenRef.current = documentHidden
@@ -358,6 +359,7 @@ export function TerminalPane({
         term.write(payload, callback)
       },
       isAltBuffer: () => term.buffer.active.type === 'alternate',
+      resyncOnOverflow: () => resyncFromSnapshot(),
       onLossOutOfBand: (totalDropped) => {
         pushToastRef.current(
           'Output dropped',
@@ -1025,7 +1027,8 @@ export function TerminalPane({
           taLen: textareaLen()
         })
       }
-      if (liveRef.current && deliver && !seqRef.current.awaitingSnapshot) {
+      const inputHeld = seqRef.current.awaitingSnapshot && !overflowResyncRef.current
+      if (liveRef.current && deliver && !inputHeld) {
         clientRef.current.sendStdin(info.id, d)
       }
     })
@@ -1110,6 +1113,7 @@ export function TerminalPane({
       snapshot: (state, outputOffset) => {
         const s = seqRef.current
         s.awaitingSnapshot = false
+        overflowResyncRef.current = false
         const term = termRef.current
         if (!term || !term.importSnapshot(state)) {
           console.warn(
@@ -1420,7 +1424,23 @@ export function TerminalPane({
     clientRef.current.attachSession(info.id, replayBytes, snapshot || undefined, snapshot ? undefined : fromOffset)
   }
 
+  /** A pane that fell too far behind takes the daemon's screen instead of dropping
+   * the middle of its output. Frames keep buffering until the snapshot lands, and
+   * the pane keeps showing its current screen meanwhile. */
+  const resyncFromSnapshot = (): boolean => {
+    const s = seqRef.current
+    if (!s.synced || s.catchup || !wantsSnapshot()) return false
+    s.catchup = true
+    s.pending = []
+    s.pendingBytes = 0
+    // Input stays live: holding it would swallow the Ctrl-C a flood invites.
+    overflowResyncRef.current = true
+    sendAttach(ATTACH_REPLAY_BYTES)
+    return true
+  }
+
   const resetAndReattach = (): void => {
+    overflowResyncRef.current = false
     writeQueueRef.current?.discardPendingForReset()
     termRef.current?.reset()
     seqRef.current = {
