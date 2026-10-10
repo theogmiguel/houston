@@ -599,6 +599,7 @@ async fn retire_daemon_for_update_with(
         verb,
         candidate_bin: None,
         expected_sessions,
+        path: None,
     };
     let (http_status, json) =
         match manage_post_request(&client, fields.port, &fields.token, &request).await {
@@ -702,6 +703,7 @@ pub(crate) async fn request_candidate_handoff(
         verb: houston_protocol::ManageVerb::DaemonHandoff,
         candidate_bin: candidate.map(|p| p.to_string_lossy().into_owned()),
         expected_sessions: None,
+        path: None,
     };
     let (status, json) = manage_post_request(&client, fields.port, &fields.token, &request).await?;
     if !status.is_success() {
@@ -725,6 +727,7 @@ async fn manage_post(
         verb,
         candidate_bin: None,
         expected_sessions: None,
+        path: None,
     };
     manage_post_request(client, port, token, &body).await
 }

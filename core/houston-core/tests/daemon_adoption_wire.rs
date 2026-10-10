@@ -131,6 +131,7 @@ async fn daemon_handoff_to(
         verb: proto::ManageVerb::DaemonHandoff,
         candidate_bin: candidate_bin.map(str::to_string),
         expected_sessions: None,
+        path: None,
     };
     client
         .post(format!("http://127.0.0.1:{port}/manage"))
@@ -471,6 +472,7 @@ async fn manage_shutdown(port: u16, token: &str) {
             verb: proto::ManageVerb::DaemonShutdown,
             candidate_bin: None,
             expected_sessions: None,
+            path: None,
         })
         .timeout(Duration::from_secs(10))
         .send()

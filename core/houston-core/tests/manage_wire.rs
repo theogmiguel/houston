@@ -22,6 +22,7 @@ async fn manage_request(
             verb,
             candidate_bin: None,
             expected_sessions: None,
+            path: None,
         })
         .send()
         .await
@@ -84,6 +85,7 @@ async fn missing_bearer_is_unauthorized() {
             verb: proto::ManageVerb::DaemonStatus,
             candidate_bin: None,
             expected_sessions: None,
+            path: None,
         })
         .send()
         .await
@@ -371,6 +373,7 @@ async fn post_from_the_webview_origin_gets_the_cors_header_on_the_response() {
             verb: proto::ManageVerb::DaemonStatus,
             candidate_bin: None,
             expected_sessions: None,
+            path: None,
         })
         .send()
         .await
@@ -411,6 +414,7 @@ async fn manage_request_with_candidate(
             verb,
             candidate_bin: candidate_bin.map(str::to_string),
             expected_sessions: None,
+            path: None,
         })
         .send()
         .await
@@ -471,6 +475,7 @@ async fn manage_request_expecting(
             verb,
             candidate_bin: None,
             expected_sessions,
+            path: None,
         })
         .send()
         .await
@@ -592,4 +597,124 @@ async fn expected_sessions_is_refused_on_other_verbs_and_required_on_its_own() {
     assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
     let body: proto::ManageErrorBody = resp.json().await.unwrap();
     assert!(body.error.contains("expected_sessions"), "{}", body.error);
+}
+
+async fn workspace_open(addr: std::net::SocketAddr, token: &str, path: &str) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(manage_url(addr))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&proto::ManageRequest {
+            manage_version: proto::MANAGE_VERSION,
+            verb: proto::ManageVerb::WorkspaceOpen,
+            candidate_bin: None,
+            expected_sessions: None,
+            path: Some(path.to_string()),
+        })
+        .send()
+        .await
+        .expect("sending /manage workspace_open")
+}
+
+#[tokio::test]
+async fn workspace_open_adds_and_focuses() {
+    let (addr, _dir) = common::start_daemon().await;
+    let mut ws = common::connect_and_hello(addr, TOKEN).await;
+    common::next_control(&mut ws).await;
+    let project = tempfile::tempdir().unwrap();
+    let path = project.path().display().to_string();
+
+    let resp = workspace_open(addr, TOKEN, &path).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let body: proto::ManageWorkspaceOpenOk = resp.json().await.unwrap();
+    assert!(body.ok);
+    assert_eq!(body.path, path);
+
+    let (mut listed, mut focused) = (false, false);
+    while !(listed && focused) {
+        match common::next_control(&mut ws).await {
+            proto::ServerMsg::WorkspaceList { workspaces } => {
+                assert!(
+                    workspaces.iter().any(|w| w.path == path),
+                    "the broadcast list must contain {path}: {workspaces:?}"
+                );
+                listed = true;
+            }
+            proto::ServerMsg::WorkspaceFocus { path: focus } => {
+                assert_eq!(focus, path);
+                focused = true;
+            }
+            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
+            _ => {}
+        }
+    }
+
+    let mut fresh = common::connect_and_hello(addr, TOKEN).await;
+    match common::next_control(&mut fresh).await {
+        proto::ServerMsg::HelloOk { workspaces, .. } => {
+            assert!(workspaces.iter().any(|w| w.path == path), "{workspaces:?}")
+        }
+        other => panic!("expected hello_ok, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn workspace_open_rejects_bad_input() {
+    let (addr, _dir) = common::start_daemon().await;
+    let project = tempfile::tempdir().unwrap();
+
+    let resp = workspace_open(addr, TOKEN, "relative/project").await;
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: proto::ManageErrorBody = resp.json().await.unwrap();
+    assert!(body.error.contains("relative/project"), "{}", body.error);
+
+    let missing = project.path().join("missing").display().to_string();
+    let resp = workspace_open(addr, TOKEN, &missing).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let resp = workspace_open(
+        addr,
+        "not-the-daemon-token",
+        &project.path().display().to_string(),
+    )
+    .await;
+    assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let resp = manage_request(
+        addr,
+        TOKEN,
+        proto::MANAGE_VERSION,
+        proto::ManageVerb::WorkspaceOpen,
+    )
+    .await;
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: proto::ManageErrorBody = resp.json().await.unwrap();
+    assert!(body.error.contains("path"), "{}", body.error);
+
+    let resp = reqwest::Client::new()
+        .post(manage_url(addr))
+        .header("Authorization", format!("Bearer {TOKEN}"))
+        .json(&proto::ManageRequest {
+            manage_version: proto::MANAGE_VERSION,
+            verb: proto::ManageVerb::DaemonStatus,
+            candidate_bin: None,
+            expected_sessions: None,
+            path: Some(project.path().display().to_string()),
+        })
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: proto::ManageErrorBody = resp.json().await.unwrap();
+    assert!(body.error.contains("workspace_open"), "{}", body.error);
+
+    let mut ws = common::connect_and_hello(addr, TOKEN).await;
+    match common::next_control(&mut ws).await {
+        proto::ServerMsg::HelloOk { workspaces, .. } => {
+            assert!(
+                workspaces.is_empty(),
+                "a refused open adds nothing: {workspaces:?}"
+            )
+        }
+        other => panic!("expected hello_ok, got {other:?}"),
+    }
 }
