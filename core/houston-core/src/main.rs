@@ -358,6 +358,18 @@ async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) ->
     Ok(())
 }
 
+// Run inside a WSL distro by the Windows app or the `houston` launcher; they own no
+// daemon, so they are dispatched before channel ownership, supervisor and env setup.
+fn wsl_subcommand(name: &str) -> Option<fn(&[String]) -> i32> {
+    match name {
+        "wsl-ensure" => Some(houston_core::wsl_ensure::run_cli),
+        "wsl-launcher-remove" => Some(houston_core::wsl_ensure::run_launcher_remove),
+        "wsl-proxy" => Some(houston_core::wsl_proxy::run_proxy),
+        "open" => Some(houston_core::wsl_proxy::run_open),
+        _ => None,
+    }
+}
+
 fn main() -> Result<()> {
     if let Some(command) = std::env::args_os().nth(1).filter(|command| {
         command == houston_core::codex_pane::SUBCOMMAND
@@ -381,6 +393,24 @@ fn main() -> Result<()> {
             "{} is Linux-only; use the lifecycle-hook CLI launch",
             command.to_string_lossy()
         );
+    }
+    if let Some(run) = std::env::args_os()
+        .nth(1)
+        .and_then(|arg| wsl_subcommand(arg.to_str()?))
+    {
+        let mut args = Vec::new();
+        for arg in std::env::args_os().skip(2) {
+            match arg.into_string() {
+                Ok(arg) => args.push(arg),
+                Err(arg) => {
+                    eprintln!(
+                        "houston-core: argument {arg:?} is not UTF-8; expected UTF-8 arguments"
+                    );
+                    std::process::exit(2);
+                }
+            }
+        }
+        std::process::exit(run(&args));
     }
     if std::env::args_os()
         .nth(1)
