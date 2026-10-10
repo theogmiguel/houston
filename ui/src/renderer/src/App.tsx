@@ -512,6 +512,30 @@ function patchRosterIfNeeded(
   return true;
 }
 
+// `workspace_list` replaces the rail and keeps the selection while it survives;
+// `workspace_focus` (`houston .` in a WSL shell) selects the named workspace.
+function handleWorkspaceWireMessage(
+  msg: ServerMsg,
+  setWorkspaces: Dispatch<SetStateAction<Workspace[]>>,
+  setSelectedWs: Dispatch<SetStateAction<string>>,
+  setShowLauncher: Dispatch<SetStateAction<boolean>>,
+): boolean {
+  if (msg.type === "workspace_focus") {
+    setSelectedWs(msg.path);
+    setShowLauncher(false);
+    return true;
+  }
+  if (msg.type !== "workspace_list") return false;
+  setWorkspaces(msg.workspaces);
+  if (msg.workspaces.length > 0)
+    setSelectedWs((cur) =>
+      msg.workspaces.some((w) => w.path === cur)
+        ? cur
+        : msg.workspaces[0].path,
+    );
+  return true;
+}
+
 // After a hello, restore the selected workspace: the remembered one when it
 // still exists, else the first; an empty roster opens the launcher instead.
 function applyWorkspaceSelection(
@@ -1260,6 +1284,7 @@ export function App(): React.JSX.Element {
         if (msg.type === "tag_deleted") dropDeletedTagFromGrids(msg.tag);
         checkout.handleMessage(msg);
         if (handlePullRequestWireMessage(msg, prScreen.handleMessage)) return;
+        if (handleWorkspaceWireMessage(msg, setWorkspaces, setSelectedWs, setShowLauncher)) return;
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1358,15 +1383,6 @@ export function App(): React.JSX.Element {
             setActiveId((cur) => (cur === msg.session ? null : cur));
             forgetDictationSession(msg.session);
             setVoiceIndicator(msg.session, null);
-            break;
-          case "workspace_list":
-            setWorkspaces(msg.workspaces);
-            if (msg.workspaces.length > 0)
-              setSelectedWs((cur) =>
-                msg.workspaces.some((w) => w.path === cur)
-                  ? cur
-                  : msg.workspaces[0].path,
-              );
             break;
           case "agent_detected":
             setSessions((prev) => {
