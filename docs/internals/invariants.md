@@ -136,16 +136,21 @@ Seven recorded carve-outs stand. Further exceptions need the same recorded treat
 ### App-initiated config writes use reversible managed markers
 
 Hook entries in `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.cursor/hooks.json`,
-`~/.grok/hooks/…`, `~/.zcode/cli/config.json` and the OpenCode plugin carry
+`~/.grok/hooks/…`, ZCode's settings file and the OpenCode plugin carry
 `--houston-managed[=<channel>]` matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
 matching would let one channel evict the other. Claude preserves unrelated settings and hook
 commands, including user commands within a managed group. Its former `workspace_hooks`
 ownership records identify workspace files to migrate to global installation.
 Codex's `notify` is a single key, so a second channel parks the displaced line as a
-sentinel-carrying comment rather than clobbering it. ZCode's `hooks.enabled` is a single
-switch shared by every hook in `~/.zcode/cli/config.json`: the value Houston replaced is
-parked in a top-level `houstonParkedHooksEnabled` key and restored once no channel's
-sentinel remains. Its `plugins.dirs` entry is a path inside the channel's own state dir.
+sentinel-carrying comment rather than clobbering it. ZCode builds read different files
+(`setting.json` in the community package, `config.json` upstream); Houston keeps each one
+present in step. Its `hooks.enabled` is a single switch shared by every hook in the file:
+the value Houston replaced is parked in a top-level `houstonParkedHooksEnabled` key and
+restored once no channel's sentinel remains. Its `plugins.dirs` entry is a path inside the
+channel's own state dir. Every channel edits the same file, so an edit holds
+`config.json.houston-lock` beside it and replaces the file only if its bytes are still
+the ones read; removal drops Houston's command entries, never a user command sharing
+their group.
 User-initiated writes into a CLI's
 skill directories (`writeSkill`, skill push with backup) are fine.
 
@@ -229,10 +234,13 @@ they are never inferred from terminal text.
    screen in the subject line and again in the body.
 4. **First-prompt paste timing.** A CLI that takes no prompt in argv (ZCode) gets its
    first prompt pasted once the PTY has produced output and then stayed quiet for
-   `FIRST_PROMPT_QUIET_MS` (`Daemon::first_prompt_paste`, deadline
+   `FIRST_PROMPT_QUIET_MS` (`Daemon::first_prompt_deliver`, deadline
    `FIRST_PROMPT_DEADLINE`). It reads byte counters, never text, runs once per spawn and
-   decides only when input is written — never an `AgentStatus`. The emulator's
-   bracketed-paste mode would be a sharper signal but is not exposed by the VT binding.
+   decides only when input is written — never an `AgentStatus`, and never whether the
+   prompt arrived: that is the CLI's own `UserPromptSubmit` hook. Unconfirmed, the paste is
+   followed by one more Enter and never repeated, because a composer that kept the first
+   paste would submit it twice. The emulator's bracketed-paste mode would be a sharper
+   readiness signal but is not exposed by the VT binding.
 
 **One turn end per provider.** A provider's `agent_events.rs` table carries at most one
 `AgentEvent::TurnEnded` row, and that row is the CLI's loop-termination event — never a

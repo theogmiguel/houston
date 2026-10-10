@@ -100,17 +100,22 @@ it off removes exactly what Houston added:
 - **Grok** — writes its own hooks file under `~/.grok/hooks/`, one entry per lifecycle
   event; your own entries in that file stay, and turning Houston's off deletes only what
   it added, removing the file once nothing is left in it.
-- **ZCode** — adds one entry per lifecycle event to `~/.zcode/cli/config.json`, turns on
-  `hooks.enabled` (which also runs any hooks of yours that were switched off) and lists
-  Houston's plugin for the pane tools. Turning it off removes only Houston's entries and
-  restores `hooks.enabled` once no Houston channel has entries left; a `false` you set
-  yourself afterwards is kept, and the row then shows that the hooks need attention. ZCode
-  sends no hook when a turn fails (an API error, an exhausted Coding Plan quota, a network
-  failure) or when you interrupt it between tool calls, so such a pane shows Working until
-  its next prompt; a parent waiting on it gets no turn end. A denied permission sends no
-  hook either: the pane leaves Needs input when ZCode runs its next tool, and if you
-  dismiss the dialog with Esc it stays in Needs input until the next prompt. On Windows
-  the switch is refused: Houston's hook command needs a POSIX shell.
+- **ZCode** — adds one entry per lifecycle event to ZCode's settings file
+  (`~/.zcode/cli/setting.json` for the `zcode-app-cli` package, `~/.zcode/cli/config.json`
+  for the upstream command; see [install](install.md#zcode)), turns on `hooks.enabled`
+  (which also runs any hooks of yours that were switched off) and lists Houston's plugin
+  for the pane tools. Turning it off removes only Houston's entries and restores
+  `hooks.enabled` once no Houston channel has entries left; a `false` you set yourself
+  afterwards is kept, and the row then shows that the hooks need attention.
+
+  ZCode sends no hook when a turn fails (an API error, an exhausted Coding Plan quota, a
+  network failure). An interrupt (Esc or Ctrl+C) cancels ZCode's own hooks along with the
+  turn, so Houston cannot report it either. Such a pane shows Working until its next
+  prompt, and a parent waiting on it gets no turn end. A question or permission is closed
+  only by the result of the same tool call; another tool finishing meanwhile leaves it
+  open. A denied or dismissed permission sends no hook, so the pane stays in Needs input
+  until the turn ends or the next prompt starts. On Windows the switch is refused:
+  Houston's hook command needs a POSIX shell.
 - **Antigravity** — also installs a hook, into its own config; it has no dedicated
   write-up on this screen beyond the generic "installs a hook for this CLI."
 

@@ -137,7 +137,13 @@ Sign in with ZCode itself: `zcode login zai` for the international Z.ai service,
 option, so Houston refuses a model named for a ZCode pane, for example in `pane_spawn`;
 choose the model inside ZCode with `/model`. ZCode takes no prompt on its command line
 either: Houston pastes a pane's first prompt into ZCode's input once its interface has
-drawn.
+drawn, and counts it delivered only when ZCode's prompt hook reports it. Without that
+report Houston presses Enter once more, never pastes the prompt a second time, and then
+tells the pane's parent (or shows an error) to check the pane; the message never repeats
+the prompt. Without the hook toggle on, nothing can confirm the paste.
+ZCode loads a skill with `/skill <name>`, so a skill used in a ZCode pane is sent that way;
+ZCode finds skills in `~/.zcode/skills`, `~/.agents/skills` and the same folders in the
+project.
 
 What is transmitted: ZCode sends prompts, code and tool results to the service you signed
 in to — Z.ai, which processes data in Singapore, or BigModel, in China. For GLM Coding Plan
@@ -150,8 +156,11 @@ and Houston sends nothing to Z.ai. The official command has no update check of i
 Houston panes set `ZCODE_DISABLE_UPDATE_CHECK=1`, which turns off the one in the
 `zcode-app-cli` package.
 
-Turning the hook toggle on (Settings ▸ Agent setup ▸ ZCode) edits
-`~/.zcode/cli/config.json`:
+Turning the hook toggle on (Settings ▸ Agent setup ▸ ZCode) edits ZCode's settings file.
+The `zcode-app-cli` package reads `~/.zcode/cli/setting.json`; the upstream command reads
+`~/.zcode/cli/config.json`. Houston edits each of the two that exists, and creates
+`config.json` when neither does (the package copies it into `setting.json` on its first
+start). The edit adds:
 
 - one hook entry per lifecycle event, each carrying the `--houston-managed` marker;
 - `hooks.enabled` set to `true`. ZCode runs no hook without it, and the switch covers every
@@ -167,12 +176,15 @@ Turning the hook toggle on (Settings ▸ Agent setup ▸ ZCode) edits
   channel's are `mcp__plugin_houston-dev_houston__pane_*`) and asks for approval before
   each call unless the pane runs in yolo mode.
 
-Turning the toggle off removes only Houston's entries and its plugin directory. ZCode
-accepts strict JSON only; if the file does not parse, Houston refuses and names the
-problem without changing it. Houston replaces the file whole, so ZCode never reads a
-partly written one, and the keys come back in alphabetical order. If you later set
-`hooks.enabled` to `false` yourself, Houston keeps it when it refreshes its entries at
-startup. The toggle is refused on Windows, because Houston's hook command needs a POSIX
+Turning the toggle off removes only Houston's entries and its plugin directory; a command
+of yours in the same hook group stays. ZCode accepts strict JSON only; if the file does not
+parse, Houston refuses and names the problem without changing it. Houston replaces the file
+whole, so ZCode never reads a partly written one, and the keys come back in alphabetical
+order. Edits from Houston's installed and development channels take turns through a lock
+file, `config.json.houston-lock`, beside the settings file. If the file changes while
+Houston edits it, Houston reads it again rather than overwriting the change, and refuses
+with nothing written if it keeps changing. If you later set `hooks.enabled` to `false`
+yourself, Houston keeps it when it refreshes its entries at startup. The toggle is refused on Windows, because Houston's hook command needs a POSIX
 shell; ZCode panes still run there, without status or pane tools.
 
 ### Droid, Copilot, Aider

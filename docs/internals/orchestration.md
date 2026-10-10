@@ -106,7 +106,7 @@ all supported events. Every PTY additionally reports process exit independently.
 | OpenCode | User messages; busy status is activity | Permission/question events | session.idle; session.error is failure | Permission/question requests | PTY exit | 600 s with managed launch timeout | session.error | Unsupported: interrupt-to-idle contract unverified |
 | Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s | Unsupported in hooks | Refused: no verified key |
 | Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout | StopFailure | Ctrl+C with empty composer |
-| ZCode | UserPromptSubmit | AskUserQuestion PreToolUse; any PostToolUse/Failure (a denial fires no hook) | Stop (successful turns only); an interrupted tool's PostToolUseFailure is interruption | PermissionRequest, AskUserQuestion | PTY exit | 600 s with the plugin's 630 s tool timeout | Unsupported: a failed turn fires no hook and stays Working | Refused: no hook after an interrupt between tool calls |
+| ZCode | UserPromptSubmit | AskUserQuestion PreToolUse; the PostToolUse/Failure with the same tool_use_id (a denial fires no hook) | Stop (successful turns only); an interrupt cancels ZCode's hooks and reports nothing | PermissionRequest, AskUserQuestion | PTY exit | 600 s with the plugin's 630 s tool timeout | Unsupported: a failed turn fires no hook and stays Working | Refused: an interrupt reports no idle |
 
 Wait budgets belong to the calling parent, regardless of its children's providers. Requests
 above the cap are clamped and report the provider, requested value and cap. Claude's cap
@@ -356,8 +356,8 @@ variables. Its plugins do (`packages/adapters/src/plugins/mcp.ts`): a URL expand
 `${ZCODE_*}` names, headers expand any variable. Houston therefore owns a plugin directory
 in the channel's state dir, named `houston` or `houston-<channel>`, whose one HTTP server
 reads `${ZCODE_HOUSTON_MCP_URL[_<CHANNEL>]}` and `Bearer ${HOUSTON_MCP_TOKEN}`, and lists
-that directory in `plugins.dirs` of `~/.zcode/cli/config.json` alongside the hook entries.
-A ZCode pane receives only its own channel's URL variable, so another channel's plugin
+that directory in `plugins.dirs` of ZCode's settings file alongside the hook entries.
+A ZCode pane, or a shell pane that may run ZCode, receives only its own channel's URL variable, so another channel's plugin
 fails variable resolution there and registers nothing; no port or token reaches disk. The
 plugin is written and listed with the ZCode hook toggle and removed with it.
 
@@ -1153,26 +1153,30 @@ What changes per provider, beyond the shared inbox:
   camelCase twin, for Grok alone. Grok also reads Claude-format workspace hooks. A remaining
   Claude-path entry could deliver the same event twice; the helper exits without writing a
   drop when `--agent` is absent and `GROK_SESSION_ID` is set, so only the Grok-side drop lands.
-- **ZCode.** Hooks run only from `~/.zcode/cli/config.json` and only with `hooks.enabled`,
-  so the installer parks the previous value (see invariants). The stdin carries Claude's
-  snake_case aliases next to ZCode's camelCase fields; its `transcript_path` is a temporary
-  file ZCode deletes after the hook, so it is never recorded. `SessionStart` fires inside
-  the first turn rather than at launch, so neither status nor first-prompt delivery can
-  wait for it: the first prompt is pasted once the TUI has drawn and stayed quiet for a
-  second (delivery timing only, no status). The Claude correlation rules apply
-  (`AskUserQuestion` blocks through `PreToolUse`, `PostToolUse` resolves episodes), except
-  that any tool result closes every open episode, because a denied permission fires no hook;
-  an Esc on the dialog fires nothing and leaves the pane in Needs input until the next
-  prompt. A `SessionStart` that arrives with the first turn also exempts ZCode from the
-  spawn-grace expiry to Unavailable. `Stop` runs only after a successful turn, never after
-  an API, quota or network failure; a `PostToolUseFailure` with `is_interrupt` is the
-  only interrupt signal, and an interrupt between tool calls reports nothing. Resume is by
-  exact `--resume <session id>` without a transcript check, since ZCode keeps sessions in
-  its own database. Handoff generation runs `zcode --mode plan -p`, because `-p` defaults
-  to yolo. The hook toggle is refused on Windows: the hook command is the POSIX guard, and
-  the extension-less launcher copy there cannot be started as a ZCode `process` hook
-  either. Tasks, routines and harness runs refuse ZCode by name: they cannot
-  confirm a pasted first prompt unattended. Evidence is ZCode's source, not a live
+- **ZCode.** Hooks run only from ZCode's settings file (`setting.json` in the community
+  package, `config.json` upstream) and only with `hooks.enabled`, so the installer parks
+  the previous value (see invariants). The stdin carries Claude's snake_case aliases next
+  to ZCode's camelCase fields; its `transcript_path` is a temporary file ZCode deletes after
+  the hook, so it is never recorded. `SessionStart` fires inside the first turn rather than
+  at launch, so neither status nor first-prompt delivery can wait for it: the first prompt
+  is pasted once the TUI has drawn and stayed quiet for a second, and counts as delivered
+  when a `UserPromptSubmit` that begins like it arrives (invariants, carve-out 4). The
+  Claude correlation rules apply: `AskUserQuestion` blocks through `PreToolUse`, and a
+  `PostToolUse`/`PostToolUseFailure` resolves the episode with its own `tool_use_id`, which
+  ZCode passes unchanged through every hook of one call. A denied or dismissed permission
+  fires no hook, so it stays open until `Stop` or the next prompt. A `SessionStart` that
+  arrives with the first turn also exempts ZCode from the spawn-grace expiry to Unavailable.
+  `Stop` runs only after a successful turn, never after an API, quota or network failure.
+  An interrupt aborts ZCode's hook runner with the turn, so it reports nothing; an
+  `is_interrupt` failure that does arrive names one cancelled tool in a running turn and is
+  handled like any other tool result. Resume is by exact `--resume <session id>` without a
+  transcript check, since ZCode keeps sessions in its own database; a resumed process fires
+  `SessionStart` with source `resume`, which releases a shell pane's deferred children.
+  Handoff generation runs `zcode --mode plan -p`, because `-p` defaults to yolo. Routines
+  run only with isolated full access: `--mode edit` approves workspace file edits alone and
+  waits on every other command's approval without a timeout. The hook toggle is refused on
+  Windows: the hook command is the POSIX guard, and the extension-less launcher copy there
+  cannot be started as a ZCode `process` hook either. Evidence is ZCode's source, not a live
   authenticated probe.
 - **OpenCode.** No native hook contract at all — its plugin bus fires JS callbacks, not a
   shell command with its own stdin — so `houston-notify.js` is the hook contract: it builds

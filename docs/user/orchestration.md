@@ -161,8 +161,10 @@ mode ZCode asks for approval before every Houston tool call, so a ZCode parent a
 before each `pane_spawn` and `pane_wait`.
 
 A ZCode child whose turn fails — an API error, an exhausted Coding Plan quota, a network
-failure — or is interrupted between tool calls reports no turn end: its parent's wait
-times out instead of returning, and the child shows Working until it is prompted again.
+failure — or is interrupted reports no turn end: its parent's wait times out instead of
+returning, and the child shows Working until it is prompted again. A ZCode child's brief
+is pasted into its interface; if ZCode does not report it as submitted, the parent gets a
+`prompt_failed` note and can resend it with `pane_prompt`.
 Inspect it with `pane_read` when a wait on a ZCode child keeps timing out.
 
 ## Handing work off to a new pane
