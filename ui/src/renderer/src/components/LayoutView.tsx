@@ -741,7 +741,10 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
                             }
                       }
                     >
-                      {renderChildBody(child)}
+                      {/* An undisplayed tab pauses like a pane behind an expanded one. */}
+                      <GridHiddenContext.Provider value={gridHidden || !shown}>
+                        {renderChildBody(child)}
+                      </GridHiddenContext.Provider>
                     </div>
                   )
                 })}
