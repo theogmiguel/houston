@@ -44,16 +44,7 @@ impl Runner for WslExe {
         cmd.args(argv).env("WSL_UTF8", "1");
         let output = match stdin {
             Stdin::Null => {
-                houston_core::spawn::output_within(cmd, RUN_TIMEOUT)?.ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        format!(
-                            "{} did not finish within {} s",
-                            describe(argv),
-                            RUN_TIMEOUT.as_secs()
-                        ),
-                    )
-                })?
+                houston_core::spawn::output_within(cmd, RUN_TIMEOUT)?.ok_or_else(timed_out)?
             }
             Stdin::File(path) => cmd
                 .stdin(std::fs::File::open(path)?)
@@ -84,6 +75,14 @@ impl Runner for WslExe {
             child: Some(child),
         })
     }
+}
+
+/// `output_within` kills the child at the deadline; this is how that reaches the caller.
+pub fn timed_out() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::TimedOut,
+        format!("timed out after {} s", RUN_TIMEOUT.as_secs()),
+    )
 }
 
 /// For error messages; no argv built here carries a secret.

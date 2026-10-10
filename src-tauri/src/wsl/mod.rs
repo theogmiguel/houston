@@ -204,13 +204,24 @@ fn parse_version(raw: &str) -> Option<(u32, u32)> {
     Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
 }
 
+/// `wsl.exe` prints its own errors on stdout, and the probe's stdout carries no secret.
+fn probe_failure(distro: &str, out: &RunOutput) -> String {
+    let said = format!(
+        "{}
+{}",
+        decode(&out.stdout).trim(),
+        stderr_text(out)
+    );
+    format!(
+        "could not start {distro} to check it (exit {:?}): {}",
+        out.code,
+        said.trim()
+    )
+}
+
 fn check_capabilities(distro: &str, out: &RunOutput) -> Result<(), String> {
     if out.code != Some(0) {
-        return Err(format!(
-            "could not start {distro} to check it (exit {:?}): {}",
-            out.code,
-            stderr_text(out)
-        ));
+        return Err(probe_failure(distro, out));
     }
     let text = String::from_utf8_lossy(&out.stdout);
     let mut lines = text.lines().map(str::trim);
@@ -254,9 +265,26 @@ impl Inner {
         blocking(move || {
             runner
                 .run(&argv, command::Stdin::Null)
-                .map_err(|e| format!("{} could not be started: {e}", command::describe(&argv)))
+                .map_err(|e| match e.kind() {
+                    std::io::ErrorKind::TimedOut => format!("{} {e}", command::describe(&argv)),
+                    _ => format!("{} could not be started: {e}", command::describe(&argv)),
+                })
         })
         .await
+    }
+
+    /// A distro that is still booting can make `wsl.exe` itself fail, so a non-zero exit
+    /// is retried once. A timeout is not: it already waited the full deadline.
+    async fn probe(&self, distro: &str) -> Result<RunOutput, String> {
+        let out = self.run(command::probe(distro)).await?;
+        if out.code == Some(0) {
+            return Ok(out);
+        }
+        eprintln!(
+            "houston-tauri: wsl {distro}: probe failed, retrying once: {}",
+            probe_failure(distro, &out)
+        );
+        self.run(command::probe(distro)).await
     }
 
     /// `Err` is the reason WSL is unavailable.
@@ -556,7 +584,7 @@ impl WslManager {
             ));
         }
         provision::bundled_files(&inner.opts.bundle_dir.clone()?)?;
-        check_capabilities(&name, &inner.run(command::probe(&name)).await?)?;
+        check_capabilities(&name, &inner.probe(&name).await?)?;
         let slot = config.enable(&name)?;
         config::save(&inner.opts.state_dir, &config)?;
         if let Err(e) = inner.start_env(&name, slot).await {
@@ -736,6 +764,8 @@ mod tests {
     struct FakeWsl {
         list: ListReply,
         probes: HashMap<String, String>,
+        /// Answers the probe gives before falling back to `probes`, first one first.
+        probe_replies: Mutex<std::collections::VecDeque<std::io::Result<RunOutput>>>,
         ensure: String,
         calls: Mutex<Vec<Vec<String>>>,
         daemons: tokio::sync::mpsc::UnboundedSender<DuplexStream>,
@@ -747,6 +777,7 @@ mod tests {
             let fake = FakeWsl {
                 list,
                 probes: HashMap::new(),
+                probe_replies: Mutex::new(Default::default()),
                 ensure: format!(
                     r#"{{"state":"spawned","port":40001,"token":"{TOKEN}","build":"{BUILD}","protocol":131}}"#
                 ),
@@ -789,6 +820,9 @@ mod tests {
             }
             let distro = argv[1].as_str();
             if argv == command::probe(distro).as_slice() {
+                if let Some(reply) = self.probe_replies.lock().unwrap().pop_front() {
+                    return reply;
+                }
                 return ok(self.probes.get(distro).cloned().unwrap_or_default());
             }
             if argv == command::remote_hashes(distro, BUILD).as_slice() {
@@ -1180,6 +1214,78 @@ mod tests {
             "nothing boots without a bundle"
         );
         assert!(config::load(state.path()).unwrap().distros.is_empty());
+    }
+
+    /// What `wsl.exe` printed when it could not start a cold distro: exit -1, its own
+    /// UTF-16 message on stdout, nothing on stderr.
+    fn wsl_exe_failure() -> std::io::Result<RunOutput> {
+        let text = "The operation timed out.\r\nError code: Wsl/Service/E_UNEXPECTED\r\n";
+        Ok(RunOutput {
+            code: Some(-1),
+            stdout: text.encode_utf16().flat_map(u16::to_le_bytes).collect(),
+            stderr: Vec::new(),
+        })
+    }
+
+    fn probe_calls(fake: &FakeWsl, distro: &str) -> usize {
+        let probe = command::probe(distro);
+        fake.calls().iter().filter(|argv| **argv == probe).count()
+    }
+
+    #[tokio::test]
+    async fn a_cold_distro_probe_is_retried_once() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let (mut fake, _daemons) = FakeWsl::new(list_text("* Ubuntu  Stopped  2\n"));
+        fake.probes
+            .insert("Ubuntu".into(), "x86_64\nglibc 2.39\n".into());
+        fake.probe_replies
+            .get_mut()
+            .unwrap()
+            .push_back(wsl_exe_failure());
+        let fake = Arc::new(fake);
+        let wsl = manager(fake.clone(), state.path(), bundle.path(), true);
+
+        let enabled = wsl.enable("Ubuntu".into()).await.unwrap();
+        assert_eq!(enabled.status, "ready");
+        assert_eq!(probe_calls(&fake, "Ubuntu"), 2);
+    }
+
+    #[tokio::test]
+    async fn a_failed_probe_quotes_wsl_exe() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let (fake, _daemons) = FakeWsl::new(list_text("* Ubuntu  Stopped  2\n"));
+        let replies = [wsl_exe_failure(), wsl_exe_failure()];
+        fake.probe_replies.lock().unwrap().extend(replies);
+        let fake = Arc::new(fake);
+        let wsl = manager(fake.clone(), state.path(), bundle.path(), true);
+
+        let err = wsl.enable("Ubuntu".into()).await.unwrap_err();
+        assert!(err.contains("Wsl/Service/E_UNEXPECTED"), "{err}");
+        assert_eq!(probe_calls(&fake, "Ubuntu"), 2);
+        assert!(config::load(state.path()).unwrap().distros.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_timed_out_probe_says_so_and_is_not_retried() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let (fake, _daemons) = FakeWsl::new(list_text("* Ubuntu  Stopped  2\n"));
+        fake.probe_replies
+            .lock()
+            .unwrap()
+            .push_back(Err(command::timed_out()));
+        let fake = Arc::new(fake);
+        let wsl = manager(fake.clone(), state.path(), bundle.path(), true);
+
+        let err = wsl.enable("Ubuntu".into()).await.unwrap_err();
+        let expected = format!(
+            "{} timed out after 180 s",
+            command::describe(&command::probe("Ubuntu"))
+        );
+        assert_eq!(err, expected);
+        assert_eq!(probe_calls(&fake, "Ubuntu"), 1);
     }
 
     #[tokio::test]
