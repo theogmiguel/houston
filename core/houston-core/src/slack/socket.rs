@@ -283,6 +283,17 @@ mod tests {
             ))
             .await
             .unwrap();
+            // Drain through the client's close; unread pings reset TCP on Windows.
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while let Some(frame) = ws.next().await {
+                    if matches!(frame.unwrap(), Message::Close(_)) {
+                        return;
+                    }
+                }
+                panic!("the client must send Close after the requested refresh");
+            })
+            .await
+            .expect("the refresh must close the connection");
         });
         let (signals, _received) = mpsc::channel(8);
         let ended = tokio::time::timeout(
@@ -291,7 +302,7 @@ mod tests {
                 Url::parse(&format!("ws://{addr}/")).unwrap(),
                 signals,
                 Duration::from_millis(400),
-                Duration::from_millis(100),
+                Duration::from_secs(10),
             ),
         )
         .await
