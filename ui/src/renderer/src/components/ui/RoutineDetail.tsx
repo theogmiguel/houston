@@ -113,7 +113,7 @@ export function RoutineDetail({
           <Select
             aria-label="Runs on"
             value={routine.engine}
-            options={ENGINE_ORDER.filter((engine) => ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'].includes(engine)).map((engine) => ({ value: engine, label: engineLabel(engine) }))}
+            options={ENGINE_ORDER.filter((engine) => ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode'].includes(engine)).map((engine) => ({ value: engine, label: engineLabel(engine) }))}
             onChange={(value) => onUpdateEngine(value as AgentKind)}
             width="full"
           />

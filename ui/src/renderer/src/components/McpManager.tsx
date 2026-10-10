@@ -28,7 +28,8 @@ const TOOL_LABEL: Partial<Record<AgentKind, string>> = {
   opencode: 'OpenCode',
   cursor: 'Cursor',
   antigravity: 'Antigravity',
-  grok: 'Grok'
+  grok: 'Grok',
+  zcode: 'ZCode'
 }
 
 function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: MatrixRow[] }): React.JSX.Element {

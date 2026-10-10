@@ -93,7 +93,7 @@ describe('Connections matrix', () => {
     const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent)
     expect(headers).toEqual(expect.arrayContaining(['Server', 'Claude Code', 'Codex', 'OpenCode', 'Cursor']))
     expect(screen.getByRole('heading', { name: 'No MCP servers' })).toBeTruthy()
-    expect(document.body.textContent).toContain('Not managed here: Grok, Antigravity.')
+    expect(document.body.textContent).toContain('Not managed here: ZCode, Grok, Antigravity.')
     expect(document.body.textContent).not.toContain('Click a cell')
   })
 })

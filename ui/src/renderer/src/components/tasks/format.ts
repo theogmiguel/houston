@@ -286,7 +286,8 @@ export const TASK_AGENTS: readonly AgentKind[] = [
   'antigravity',
   'opencode',
   'cursor',
-  'grok'
+  'grok',
+  'zcode'
 ]
 
 const TASK_AGENT_LABEL: Readonly<Record<string, string>> = {
