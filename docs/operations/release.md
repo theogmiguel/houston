@@ -506,6 +506,20 @@ install the artifact and run it (`./scripts/linux-vm.sh app` on the testbed)
 first. The graphical test is Linux only while cuts are Linux only; it extends
 to Windows on the first cut that ships a Windows installer.
 
+A Windows installer also gets a WSL pass, because no CI job reaches a real distro.
+Install it, then on a test channel (for example `houston.exe --channel wslt`, so
+neither the release state nor the distro's `~/.houston` is touched):
+
+1. Settings → WSL → **Enable** an x86_64 WSL 2 distro; its row reaches the running state.
+2. **Workspaces → + → Local folder…** → a folder under `\\wsl.localhost\<distro>\home\…`;
+   the rail shows it with `WSL: <distro>`.
+3. Open a shell pane there; `uname -s` prints `Linux` and `pwd` the POSIX path.
+4. In that pane, `houston .` from another folder selects it in the Windows app.
+5. Quit from the tray; the distro's `~/.houston-wslt/daemon.json` is gone afterwards.
+
+The `wsl_live` tests in [`development.md`](development.md#wsl_live) cover the daemon,
+relay and session path of that pass against the same distro without the installer.
+
 ### 4. Publish
 
 A local cut signs its bundles the same way CI does, so the two secrets have to

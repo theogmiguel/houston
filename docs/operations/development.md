@@ -105,6 +105,11 @@ restarting `dev`) is allowed and is the normal way to work.
 `flock`-based advisory lock) both live in the channel's state dir. The daemon
 refuses to boot when another process holds the target channel's lock, naming it.
 
+A Windows app with a WSL distro enabled starts that distro's daemon on the app's channel,
+in the distro user's own `~/.houston-<channel>`. A Linux Houston inside that distro on the
+same channel shares it, so test WSL environments on a channel nothing else in the distro
+uses, such as `wslt`.
+
 `HOUSTON_SESSION` is set inside a Houston pane; it's what the `--fresh`
 refusal above uses to detect "this shell is itself running inside a pane on
 the channel I'm about to restart."
@@ -445,6 +450,28 @@ number from a busy box is no evidence either way. Linux-only, and run locally
 
 Sibling test `memory_perf_smoke` gates the memory write-path floor the same
 way, also `--ignored`, also run locally.
+
+### `wsl_live`
+
+`src-tauri/tests/wsl_live.rs`, Windows only and `#[ignore]` by default, runs against a
+real WSL 2 distro. Build the Linux binaries inside the distro first
+(`cargo build --release --bin houston-core --bin tr-helper --bin houston-supervisor` in
+`core/`), then from Git Bash on Windows:
+
+```
+cd src-tauri
+MSYS_NO_PATHCONV=1 HOUSTON_TEST_WSL_DISTRO=Ubuntu HOUSTON_TEST_WSL_CHANNEL=wslt \
+  HOUSTON_TEST_WSL_LINUX_BIN=<in-distro path of core/target/release> \
+  cargo test --test wsl_live -- --ignored --test-threads=1 --nocapture
+```
+
+Without `HOUSTON_TEST_WSL_DISTRO` every test prints `SKIPPED` and passes.
+`MSYS_NO_PATHCONV=1` stops Git Bash from rewriting the POSIX path into a Windows one.
+Each test copies the binaries into a throwaway `/tmp/houston-live-*` HOME inside the
+distro, runs every in-distro command under that HOME, and stops its daemon through
+`wsl-proxy` and `/manage daemon_shutdown` before removing the HOME, also on failure.
+`live_relay_throughput_and_echo_latency` prints PTY throughput and keystroke echo latency
+through the relay; like `perf_smoke`, read it only from an idle machine.
 
 ### `idle_loops_wire`
 
