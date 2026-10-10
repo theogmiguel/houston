@@ -35,6 +35,9 @@ const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 const FIRST_PROMPT_QUIET_MS: u64 = 1_000;
 // Covers a cold Node start on a loaded machine; past it the paste goes in regardless.
 const FIRST_PROMPT_DEADLINE: Duration = Duration::from_secs(60);
+// A submitted prompt's UserPromptSubmit drop lands within a hook-drain tick or two;
+// the margin covers a CLI still finishing its startup when the paste arrived.
+const FIRST_PROMPT_CONFIRM: Duration = Duration::from_secs(20);
 const SWARM_WAKE_LANE_MAX: usize = 16;
 // Back off composer checks while retaining sub-second responsiveness to a cleared hold.
 const SWARM_WAKE_BACKOFF_MAX: Duration = Duration::from_millis(640);
@@ -5362,7 +5365,7 @@ impl Daemon {
         let Some(engine) = engine else {
             bail!(
                 "a routine needs its own engine: pass engine (one of claude, codex, \
-                 antigravity, opencode, cursor, grok)"
+                 antigravity, opencode, cursor, grok, zcode)"
             );
         };
         self.routine_create_impl(

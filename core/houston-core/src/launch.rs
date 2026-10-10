@@ -422,12 +422,6 @@ pub fn routine_argv(
     effort: Option<proto::ChatEffort>,
     permission_mode: proto::ChatPermissionMode,
 ) -> Result<(Vec<String>, ApprovalMode)> {
-    if !prompt_in_argv(agent) {
-        bail!(
-            "agent {agent:?} cannot run a routine: its first prompt is pasted into its TUI \
-             after start, which an unattended run cannot confirm; choose another engine"
-        );
-    }
     let approval = match permission_mode {
         proto::ChatPermissionMode::AcceptEdits => ApprovalMode::Auto,
         proto::ChatPermissionMode::BypassPermissions => ApprovalMode::Bypass,
@@ -437,6 +431,15 @@ pub fn routine_argv(
             bail!(
                 "agent Opencode has no bounded accept-edits mode for an unattended run; use \
                  an isolated full-access routine or choose another provider"
+            );
+        }
+        // `--mode edit` approves workspace file edits only; every other command asks,
+        // and its TUI waits on an unanswered approval without a timeout.
+        if agent == proto::AgentKind::Zcode {
+            bail!(
+                "agent Zcode has no bounded accept-edits mode for an unattended run: its edit \
+                 mode stops at every shell command for an approval nobody gives; use an \
+                 isolated full-access routine or choose another provider"
             );
         }
         if let Some(model) = model {
@@ -729,18 +732,28 @@ mod tests {
         assert!(!prompt_in_argv(Zcode));
         let err = launch_args(Zcode, false, false, None, "fix it", None, "x").unwrap_err();
         assert!(err.to_string().contains("no prompt in argv"), "{err}");
-        let err = routine_argv(
+        assert!(effort_args(Zcode, proto::ChatEffort::High).is_err());
+    }
+
+    #[test]
+    fn a_zcode_routine_runs_with_full_access_and_refuses_accept_edits_by_name() {
+        use proto::AgentKind::Zcode;
+        let (argv, approval) = routine_argv(
             Zcode,
             None,
             None,
             proto::ChatPermissionMode::BypassPermissions,
         )
-        .unwrap_err();
+        .expect("an isolated full-access routine runs ZCode");
+        assert_eq!(argv, ["zcode", "--mode", "yolo"]);
+        assert_eq!(approval, ApprovalMode::Bypass);
+        let err = routine_argv(Zcode, None, None, proto::ChatPermissionMode::AcceptEdits)
+            .expect_err("edit mode blocks on shell approvals");
         assert!(
-            err.to_string().contains("Zcode cannot run a routine"),
+            err.to_string()
+                .contains("agent Zcode has no bounded accept-edits mode"),
             "{err}"
         );
-        assert!(effort_args(Zcode, proto::ChatEffort::High).is_err());
     }
 
     #[test]

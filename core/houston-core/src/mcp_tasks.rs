@@ -371,15 +371,16 @@ fn plan_submit_spec() -> ToolSpec {
     )
 }
 
-/// The providers a task child or reviewer can be launched as: `pane_spawn`'s,
-/// except ZCode, whose first prompt waits for its TUI.
-const SPAWNABLE_AGENTS: [&str; 6] = [
+/// The providers a task child or reviewer can be launched as; the same seven
+/// `pane_spawn` accepts.
+const SPAWNABLE_AGENTS: [&str; 7] = [
     "claude",
     "codex",
     "antigravity",
     "opencode",
     "cursor",
     "grok",
+    "zcode",
 ];
 
 fn read_specs() -> Vec<ToolSpec> {

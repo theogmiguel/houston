@@ -20,7 +20,15 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "opencode", "cursor-agent"] {
+        for name in [
+            "grok",
+            "codex",
+            "claude",
+            "agy",
+            "opencode",
+            "cursor-agent",
+            "zcode",
+        ] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
@@ -584,6 +592,98 @@ async fn prefill_places_the_brief_in_the_input_box_without_submitting_it() {
         "the launched argv does not carry the brief: {out:?}"
     );
     assert_eq!(r.task_status(id), "in_progress");
+}
+
+/// ZCode takes no prompt in argv: a Start launches it in the task worktree and pastes
+/// the brief once its TUI is up; a prefilled brief is pasted the same way without Enter.
+#[tokio::test]
+async fn a_zcode_start_pastes_the_brief_into_its_tui_and_prefill_leaves_it_unsent() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("start-zcode").await;
+    let id = r.create_task("Zcode task", "ZCODE-BRIEF-BODY for the task.", &["one"]);
+    r.daemon
+        .task_start(id, proto::AgentKind::Zcode, None)
+        .unwrap();
+    let run = r.runs().pop().unwrap();
+    assert_eq!(
+        (run.state.as_str(), run.provider.as_str()),
+        ("running", "zcode")
+    );
+    let session = run.session_id.unwrap();
+    let out = r.await_output(session, "ZCODE-BRIEF-BODY").await;
+    let fixture = out.find("FIXTURE-READY").expect("the TUI drew first");
+    let argv_report = &out[out.find("CWD:").unwrap()..fixture];
+    assert!(
+        !argv_report.contains("ZCODE-BRIEF-BODY"),
+        "the brief does not ride argv: {out:?}"
+    );
+    assert!(
+        out.find("ZCODE-BRIEF-BODY").unwrap() > fixture,
+        "the brief is pasted after the TUI drew: {out:?}"
+    );
+    assert_eq!(r.task_status(id), "in_progress");
+
+    let prefilled = r.create_task("Zcode prefill", "ZCODE-PREFILL-BODY here.", &["one"]);
+    r.daemon
+        .tasks_start_settings_set(
+            &r.workspace(),
+            proto::AgentKind::Zcode,
+            proto::TaskPromptDelivery::Prefill,
+        )
+        .unwrap();
+    r.daemon
+        .task_start(prefilled, proto::AgentKind::Zcode, None)
+        .unwrap();
+    let session = r.runs().pop().unwrap().session_id.unwrap();
+    let end = "\u{1b}[201~";
+    let out = r.await_output(session, end).await;
+    let fixture = out.find("FIXTURE-READY").expect("the TUI drew first");
+    let paste = out
+        .find("ZCODE-PREFILL-BODY")
+        .expect("the brief is prefilled");
+    assert!(paste > fixture, "{out:?}");
+    let paste_end = out.find(end).unwrap();
+    assert!(
+        !out[paste_end + end.len()..].starts_with('\r'),
+        "prefill must not submit with Enter: {out:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_zcode_plan_runs_in_zcode_plan_mode() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("plan-zcode").await;
+    let id = r.create_task("Zcode plan", "Plan the parser rework.", &["one"]);
+    let revision = match r.daemon.task_get(id).unwrap() {
+        proto::ServerMsg::TaskDetail { task, .. } => task.revision,
+        other => panic!("expected TaskDetail, got {other:?}"),
+    };
+    let reply = r
+        .daemon
+        .task_plan_start(id, revision, proto::AgentKind::Zcode)
+        .unwrap();
+    assert!(
+        !matches!(reply, proto::ServerMsg::TaskRefused { .. }),
+        "{reply:?}"
+    );
+    let session = r
+        .daemon
+        .list()
+        .into_iter()
+        .find(|s| s.agent == proto::AgentKind::Zcode)
+        .expect("a ZCode planning pane")
+        .id;
+    let out = r.await_output(session, "Plan the parser rework.").await;
+    let fixture = out.find("FIXTURE-READY").unwrap();
+    let argv_report = &out[out.find("CWD:").unwrap()..fixture];
+    assert!(
+        argv_report.contains("ARG:--mode") && argv_report.contains("ARG:plan"),
+        "read-only planning uses ZCode's plan mode: {out:?}"
+    );
+    assert!(
+        out.find("Plan the parser rework.").unwrap() > fixture,
+        "the planning brief is pasted after the TUI drew: {out:?}"
+    );
 }
 
 #[tokio::test]

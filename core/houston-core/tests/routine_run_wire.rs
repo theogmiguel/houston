@@ -419,3 +419,92 @@ async fn a_run_left_in_flight_by_a_dead_daemon_reads_failed_on_boot() {
     assert!(error.contains("daemon stopped"), "{error}");
     assert!(runs[0].ended_at_ms.is_some(), "a closed run is dated");
 }
+
+/// ZCode's edit mode stops at every shell command for an approval, so an unattended
+/// accept-edits routine is refused by name; an isolated full-access one runs, with
+/// its prompt pasted once the TUI has drawn.
+#[tokio::test]
+async fn a_zcode_routine_runs_with_isolated_full_access_and_refuses_accept_edits() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let dir = state.path().join("zcode-repo");
+    std::fs::create_dir_all(&dir).unwrap();
+    for args in [
+        &["init", "-b", "main"][..],
+        &[
+            "-c",
+            "user.email=t@t.local",
+            "-c",
+            "user.name=t",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "init",
+        ][..],
+    ] {
+        let out = houston_core::spawn::command("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    }
+    let ws = dir.canonicalize().unwrap().display().to_string();
+    let err = daemon
+        .routine_create_full(
+            "Zcode edits",
+            "tidy the changelog",
+            proto::Cadence::Interval { seconds: 86_400 },
+            Some(ws.clone()),
+            Some(proto::AgentKind::Zcode),
+            None,
+            None,
+            Some(proto::ChatPermissionMode::AcceptEdits),
+            Some(false),
+        )
+        .expect_err("accept-edits is refused for ZCode");
+    assert!(
+        err.to_string()
+            .contains("agent Zcode has no bounded accept-edits mode"),
+        "{err:#}"
+    );
+
+    let proto::ServerMsg::Routines { routines, .. } = daemon
+        .routine_create_full(
+            "Zcode sweep",
+            "ZCODE-ROUTINE-PROMPT tidy the changelog",
+            proto::Cadence::Interval { seconds: 86_400 },
+            Some(ws),
+            Some(proto::AgentKind::Zcode),
+            None,
+            None,
+            Some(proto::ChatPermissionMode::BypassPermissions),
+            Some(true),
+        )
+        .expect("an isolated full-access ZCode routine is accepted")
+    else {
+        panic!("routine_create answers Routines");
+    };
+    let routine = routines
+        .into_iter()
+        .find(|r| r.name == "Zcode sweep")
+        .expect("listed")
+        .id;
+    daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".into(),
+        "-c".into(),
+        "echo ZCODE-TUI-READY; stty -echo; exec cat".into(),
+    ]);
+    daemon.routine_run_now(routine).expect("run now");
+    let session = routine_of(&daemon, routine)
+        .last_run_session_id
+        .expect("the run opened a pane");
+    let d = daemon.clone();
+    wait_until("the routine prompt to be pasted", move || {
+        d.session_screen_for_test(session)
+            .iter()
+            .any(|line| line.contains("ZCODE-ROUTINE-PROMPT"))
+    })
+    .await;
+    daemon.close(session).expect("the pane closes");
+}
