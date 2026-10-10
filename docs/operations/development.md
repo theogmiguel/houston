@@ -205,6 +205,7 @@ worktrees sharing one directory overwrite each other's binaries.
 | `HOUSTON_DEVTOOLS=1` | Opens the webview devtools on launch (`src-tauri/src/main.rs`). |
 | `RUST_LOG` | Standard `tracing`/`env_logger`-style filter, read by the daemon's logging setup. |
 | `TR_DEBUG_PTY_DUMP=<dir>` | Resolved once; when set, dumps raw PTY bytes to that directory for debugging. |
+| `HOUSTON_WSL_BIN_DIR=<dir>` | Where WSL environments read the Linux `houston-core`, `tr-helper` and `houston-supervisor` they install into a distro, instead of the bundled `wsl/` resources. A development build has no bundle; point it at a Linux build of `core/target/<profile>`. |
 | `HOUSTON_DAEMON_BIN_DIR=<dir>` | Where connect-or-spawn looks for `houston-core` (and, on Linux, `houston-supervisor`) instead of beside the app's own binary. Set by `dev.sh` to `core/target/debug`; unset in a packaged install, where the sidecars are frozen copies beside `houston`. |
 
 `HOUSTON_DISABLE_SWARM_AUTOLAUNCH`, `TR_BENCH_RESULTS_PATH`, and

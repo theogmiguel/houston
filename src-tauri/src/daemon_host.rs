@@ -487,7 +487,7 @@ const PRECHECK_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 // minute covers a full grid. A hang here is a bug, not a slow handoff.
 pub(crate) const HANDOFF_HTTP_TIMEOUT: Duration = Duration::from_secs(60);
 
-fn manage_http_client() -> reqwest::Client {
+pub(crate) fn manage_http_client() -> reqwest::Client {
     manage_http_client_with(MANAGE_HTTP_TIMEOUT)
 }
 
@@ -716,7 +716,7 @@ pub(crate) async fn request_candidate_handoff(
     })
 }
 
-async fn manage_post(
+pub(crate) async fn manage_post(
     client: &reqwest::Client,
     port: u16,
     token: &str,
