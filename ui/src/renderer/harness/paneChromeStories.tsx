@@ -96,6 +96,23 @@ export function PaneCheckoutHeaderStory(): React.JSX.Element {
   )
 }
 
+export function PaneOrchestratorHeaderStory(): React.JSX.Element {
+  const primary = { root: '/home/dev/code/houston', kind: 'primary', branch: 'main', head: null }
+  const worktree = (slug: string): unknown => ({ root: `/home/dev/code/houston/.houston/worktrees/${slug}`, kind: { worktree: { slug } }, branch: `houston/${slug}`, head: null })
+  const parent = mkInfo({ id: 601, title: 'Global Claude hooks', codename: 'Max', status: 'idle', live_children: 2, tags: [], checkout: primary } as Partial<SessionInfo>)
+  const child = (id: number, codename: string, slug: string): SessionInfo => mkInfo({ id, codename, title: slug, spawned_by: 601, tags: [], checkout: worktree(slug), delegation: { parent: 601, role: slug, state: 'working', stalled: false, started_at: Date.now(), result_staged: false, superseded: 0, inbox_owed: 0, inbox_provisional: 0, reusable: false } } as unknown as Partial<SessionInfo>)
+  const store = React.useMemo(() => createSessionsStore(new Map([[601, parent], [602, child(602, 'Zane', 'claude-global-hooks')], [603, child(603, 'Ivy', 'rail-status')]])), [])
+  return (
+    <TagsContext.Provider value={TAGS}>
+      <SessionsStoreContext.Provider value={store}>
+        <div style={{ height: '100%', padding: 12, display: 'flex' }}>
+          <PaneFor info={parent} branch="main" />
+        </div>
+      </SessionsStoreContext.Provider>
+    </TagsContext.Provider>
+  )
+}
+
 const ENDED = mkInfo({ state: 'exited', status: 'idle', resumable: true, resume_notice: 'No conversation to resume, so this pane started fresh.', tags: [1, 2, 3] } as Partial<SessionInfo>)
 
 export function PaneEndedStory(): React.JSX.Element {

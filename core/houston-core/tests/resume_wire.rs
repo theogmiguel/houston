@@ -448,10 +448,69 @@ async fn shell_hosted_claude_hook_is_recorded_and_restart_resumes_inside_shell()
     assert_eq!(restored.session_origin, Some(shell.id));
     assert_eq!(restored.cwd, hook_cwd.display().to_string());
     assert_eq!(restored.detected_agent, Some(proto::AgentKind::Claude));
+    let argv = argv_of(&env, restored.id).await;
     assert_eq!(
-        resume_of(&argv_of(&env, restored.id).await).as_deref(),
+        resume_of(&argv).as_deref(),
         Some(conversation),
         "the restored shell must relaunch the exact Claude conversation"
+    );
+    let settings_file = flag(&argv, "--settings").expect(
+        "shell recovery must carry pane identity in Claude arguments, even if its daemon drops env",
+    );
+    let settings: Value = serde_json::from_slice(&std::fs::read(&settings_file).unwrap()).unwrap();
+    assert_eq!(settings["env"]["TR_SESSION"], restored.id.to_string());
+    assert_eq!(settings["env"]["HOUSTON_SESSION"], restored.id.to_string());
+    let home = tempfile::tempdir().unwrap();
+    let mut hook = houston_core::spawn::command(env!("CARGO_BIN_EXE_houston-core"));
+    hook.args(["hook", "UserPromptSubmit"])
+        .env_clear()
+        .env("HOME", home.path());
+    for (key, value) in settings["env"].as_object().unwrap() {
+        hook.env(key, value.as_str().unwrap());
+    }
+    hook.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+    let mut child = hook.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            serde_json::json!({
+                "session_id": conversation, "cwd": hook_cwd, "prompt": "resume work"
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let channel =
+        houston_core::paths::validate_channel(settings["env"]["HOUSTON_CHANNEL"].as_str().unwrap())
+            .unwrap();
+    let drops = houston_core::hook_drop::drop_dir(&houston_core::paths::dir_for(
+        home.path(),
+        channel.as_deref(),
+    ));
+    let drop = std::fs::read_dir(drops)
+        .unwrap()
+        .flatten()
+        .find(|entry| {
+            houston_core::hook_drop::parse_drop_name(&entry.file_name().to_string_lossy()).is_some()
+        })
+        .unwrap();
+    let drop: HookDrop = serde_json::from_slice(&std::fs::read(drop.path()).unwrap()).unwrap();
+    assert_eq!(drop.session, restored.id);
+    apply_drop(&env, &restarted, drop).await;
+    assert_eq!(
+        restarted
+            .list()
+            .into_iter()
+            .find(|pane| pane.id == restored.id)
+            .unwrap()
+            .status,
+        Some(proto::AgentStatus::Working)
     );
     daemon.close(shell.id).unwrap();
     restarted.close(restored.id).unwrap();

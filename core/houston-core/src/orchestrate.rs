@@ -1369,18 +1369,22 @@ impl TurnEndSource {
     }
 }
 
-pub fn turn_end_source(kind: proto::AgentKind, acp: bool) -> TurnEndSource {
+pub fn turn_end_source(
+    kind: proto::AgentKind,
+    acp: bool,
+    lifecycle_hook_seen: bool,
+) -> TurnEndSource {
     if acp {
         TurnEndSource::AcpTurn
-    } else if signals_turn_end(kind) {
+    } else if signals_turn_end(kind) && lifecycle_hook_seen {
         TurnEndSource::StopHook
     } else {
         TurnEndSource::QuietSettle
     }
 }
 
-// how long a quiet-settle provider (no turn-end hook) must sit with a still screen
-// before Houston reads that silence as done, rather than an ordinary thinking pause
+// A child without lifecycle evidence must keep a still screen for this long so an
+// ordinary thinking pause does not immediately release its delegation.
 pub const DELEGATION_SETTLE_QUIET_MS: u64 = 15_000;
 
 pub const DELEGATION_SETTLE_TAIL_LINES: usize = 40;
@@ -2359,6 +2363,12 @@ it, and the operator can close this pane without killing it. Put everything
 it needs in the prompt, since it cannot ask you. `--output-format` and
 `--reusable` are refused with `--handoff`, and only a pane without a parent
 may hand off.
+
+For single-branch work this pane will edit itself, continue with
+`pane_spawn{handoff: true, worktree: SLUG}` (`hs-pane spawn --handoff --worktree SLUG`),
+passing context via `state_doc` (`--state-doc` or `--state-doc-path`); never edit a
+child's worktree from the primary checkout. Delegated multi-branch work uses child
+panes with `worktree`.
 
 ## How a delegation actually goes
 
@@ -4056,7 +4066,12 @@ mod tests {
         use proto::AgentKind::*;
         for hooked in [Claude, Codex, Antigravity, Opencode, Cursor, Grok] {
             assert_eq!(
-                turn_end_source(hooked, false),
+                turn_end_source(hooked, false, false),
+                TurnEndSource::QuietSettle
+            );
+            assert_eq!(turn_end_source(hooked, true, false), TurnEndSource::AcpTurn);
+            assert_eq!(
+                turn_end_source(hooked, false, true),
                 TurnEndSource::StopHook,
                 "{hooked:?}"
             );
@@ -4064,11 +4079,14 @@ mod tests {
         {
             let hookless = Custom;
             assert_eq!(
-                turn_end_source(hookless, false),
+                turn_end_source(hookless, false, false),
                 TurnEndSource::QuietSettle,
                 "{hookless:?}"
             );
-            assert_eq!(turn_end_source(hookless, true), TurnEndSource::AcpTurn);
+            assert_eq!(
+                turn_end_source(hookless, true, false),
+                TurnEndSource::AcpTurn
+            );
         }
         assert!(TurnEndSource::StopHook.is_reported());
         assert!(TurnEndSource::AcpTurn.is_reported());

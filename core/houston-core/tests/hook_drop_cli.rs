@@ -446,3 +446,117 @@ fn claude_stop_failure_drop_preserves_binary_schema() {
     assert_eq!(got[0].error.as_deref(), Some("rate_limit"));
     assert_eq!(got[0].error_details.as_deref(), Some("Usage limit reached"));
 }
+
+#[test]
+fn missing_pane_identity_is_silent_and_leaves_no_trace() {
+    // Global provider hooks also fire in sessions Houston did not launch.
+    let f = Fixture::new();
+    let before = std::fs::read_dir(&f.home).unwrap().count();
+    let mut cmd = Command::new(bin());
+    cmd.args(["hook", "UserPromptSubmit"]);
+    cmd.env_clear();
+    cmd.env("HOME", &f.home);
+    cmd.env("HOUSTON_CHANNEL", CHANNEL);
+    let (code, stdout, stderr) = run_with_stdin(cmd, "{}");
+    assert_eq!(code, 0);
+    assert!(stdout.is_empty(), "{stdout}");
+    assert!(stderr.is_empty(), "{stderr}");
+    assert!(drops(&f.drop_dir()).is_empty());
+    assert_eq!(std::fs::read_dir(&f.home).unwrap().count(), before);
+}
+
+#[test]
+fn claude_launcher_losing_pane_env_still_attributes_hooks() {
+    use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
+    use houston_protocol as proto;
+    use std::os::unix::fs::PermissionsExt;
+
+    let f = Fixture::new();
+    let script = f.project_dir.join("claude");
+    std::fs::write(
+        &script,
+        r#"#!/usr/bin/python3
+import json, os, pathlib, subprocess, sys, time
+root = pathlib.Path.cwd()
+args = sys.argv[1:]
+if '--host' not in args:
+    assert os.environ['TR_SESSION'] == os.environ['HOUSTON_SESSION']
+    os.execve('/usr/bin/python3', ['/usr/bin/python3', sys.argv[0], '--host'] + args,
+        {'HOME': str(root / 'home')})
+assert 'TR_SESSION' not in os.environ and 'HOUSTON_SESSION' not in os.environ
+env = dict(os.environ)
+if '--settings' in args:
+    settings = args[args.index('--settings') + 1]
+    if not settings.startswith('{'):
+        settings = pathlib.Path(settings).read_text()
+    env.update(json.loads(settings)['env'])
+(root / 'restored-env').write_text(json.dumps(env))
+result = subprocess.run([str(root / 'hook-bin'), 'hook', 'UserPromptSubmit'],
+    env=env, input='{"session_id":"10300000-0000-4000-8000-000000000001","prompt":"work"}', text=True,
+    capture_output=True)
+(root / 'hook-result').write_text(result.stderr)
+while True:
+    time.sleep(1)
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::os::unix::fs::symlink(bin(), f.project_dir.join("hook-bin")).unwrap();
+    let daemon = Daemon::new(DaemonConfig {
+        token: "test".into(),
+        db_path: f.state_dir().join("test.db"),
+    })
+    .unwrap();
+    let info = daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Claude,
+            project_dir: f.project_dir.clone(),
+            cmd: Some(vec![script.display().to_string()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while !f.project_dir.join("hook-result").exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let restored = std::fs::read(f.project_dir.join("restored-env"));
+    let home = f.project_dir.join("home");
+    let got = drops(&hook_drop::drop_dir(
+        &home.join(format!(".houston-{CHANNEL}")),
+    ));
+    if let Some(drop) = got.first() {
+        daemon.handle_hook(drop.session, &drop.event, drop.cwd.as_deref());
+    }
+    let status = daemon
+        .list()
+        .into_iter()
+        .find(|pane| pane.id == info.id)
+        .unwrap()
+        .status;
+    daemon.kill(info.id).unwrap();
+    let restored: serde_json::Value = serde_json::from_slice(&restored.unwrap()).unwrap();
+    assert_eq!(restored["TR_SESSION"], info.id.to_string());
+    assert_eq!(restored["HOUSTON_SESSION"], info.id.to_string());
+    assert_eq!(restored["HOUSTON_CHANNEL"], CHANNEL);
+    assert_eq!(
+        got.len(),
+        1,
+        "hook must survive the environment hand-off: {got:?}"
+    );
+    assert_eq!(got[0].session, info.id);
+    assert_eq!(got[0].event, "UserPromptSubmit");
+    assert_eq!(
+        got[0].session_id.as_deref(),
+        Some("10300000-0000-4000-8000-000000000001")
+    );
+    assert_eq!(status, Some(proto::AgentStatus::Working));
+}

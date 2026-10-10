@@ -11,6 +11,7 @@ import { Tooltip } from '../Tooltip'
 
 export function GridRailTitleRow({
   name,
+  unread = false,
   tags,
   hasTags,
   tagDisplay,
@@ -27,6 +28,8 @@ export function GridRailTitleRow({
   openTagPopover,
 }: {
   name: string
+  // Unread is carried by the title, so the status column keeps a single dot and amber stays reserved for needs-input.
+  unread?: boolean
   pinned: boolean
   tags: readonly TagInfo[]
   hasTags: boolean
@@ -48,7 +51,9 @@ export function GridRailTitleRow({
   const tagNames = tags.map((tag) => tag.name)
   return (
     <div className="flex h-5 min-w-0 items-center gap-1.5 text-[length:var(--tr-text-base)] leading-5">
-      <span data-testid="grid-name" className="min-w-0 flex-1 truncate">{name}</span>
+      <span data-testid="grid-name" className={`min-w-0 truncate ${unread ? 'font-semibold text-[var(--text-primary)]' : ''}`}>{name}</span>
+      {unread && <span role="img" aria-label="Unread" data-testid="grid-unread-pip" className="size-1.5 flex-none rounded-full bg-[var(--accent)]" />}
+      <span aria-hidden className="min-w-0 flex-1" />
       {pr?.is_draft && <span className="flex-none rounded border border-[var(--border)] px-1 text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">draft</span>}
       {hasTags && tagDisplay === 'dots' && <TagCardAffordance tags={tags} mode="dots" onClick={(anchor) => openTagPopover({ anchor, gridId, view: 'pick' })} />}
       {hasTags && tagDisplay === 'icon' && tags.length > 0 && (

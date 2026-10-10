@@ -54,17 +54,19 @@ For every provider it can spawn, Houston needs a small amount of integration in 
 CLI's own configuration, so the CLI reports its lifecycle (idle, waiting, done) back to
 Houston. That write is always a clearly marked block Houston owns, never a hand rewrite
 of your file, and it is always reversible: turn the corresponding hook toggle off in
-Houston and the block is removed, restoring the file to what it looked like before —
-including deleting the file entirely if Houston is the one that created it.
+Houston and its entries are removed, preserving unrelated configuration. Some installers
+also delete an empty file or object that Houston created.
 
 ### Claude Code
 
-Houston writes a managed hooks block into your workspace's own
-`.claude/settings.local.json` (not a global file — this happens once per workspace you
-open Claude Code in). Each managed hook command in that file carries a trailing
-`--houston-managed` marker; turning the hook toggle off for that workspace removes only
-the entries carrying that marker, and deletes the `hooks` object or the file itself if
-Houston was the one that created it.
+Houston writes managed lifecycle hook entries into `~/.claude/settings.json`, or
+`settings.json` in `CLAUDE_CONFIG_DIR` and Houston account profile directories. Each
+command carries a channel-specific `--houston-managed` marker and exits silently when
+`TR_SESSION` is empty. Claude launched from any directory inside a Houston pane can
+report status. Turn the switch off in Settings → Agent status → Claude to remove
+Houston's entries while preserving your hooks and other settings. Migration removes
+Houston's old entries from workspace `.claude/settings.local.json` files. Installation
+is unsupported on Windows because these commands require POSIX `sh`.
 
 Houston also registers itself as an MCP server in `~/.claude.json` (or under
 `$CLAUDE_CONFIG_DIR` if you've set that), so agents in Claude Code panes can spawn and

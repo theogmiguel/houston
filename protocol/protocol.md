@@ -559,13 +559,17 @@ DelegationInfo     started_at (epoch ms), settled_at? (epoch ms), retained_until
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
                    last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
                    still owes its parent, the correction link, what its CLI cannot report, and
-                   why door 3 is holding the rows; `reusable` is the persisted lifecycle choice).
+                   why delivery is held, including a staged result awaiting turn completion;
+                   `reusable` is the persisted lifecycle choice).
                    The record a pane is the CHILD of; `None`
                    for an operator-spawned pane. Deliberately NOT the record's `brief` (8 000 chars, on
                    every roster broadcast) — that stays MCP-only, on `pane_get`'s `DelegationView`
 DelegationState    snake: spawning | working | needs_input | done | failed | cancelled | unknown
                    (the last four terminal; `unknown` is a daemon restart mid-flight, not a failure)
 TurnEndSource      kebab: stop-hook | acp-turn | quiet-settle
+                   Effective completion source: stop-hook requires a lifecycle hook received
+                   since spawn; without that evidence, quiet-settle applies even to hook-capable
+                   providers. ACP keeps acp-turn.
 InboxRow           v96: id, to_session, original_to?, workspace, from_session?, request_id?,
                    kind: InboxKind, urgent, summary, body, artifacts, superseded, provisional, corrects?,
                    reason?, created_at, ready_at?, resolved_at?, delivered_at?, delivered_via?:
@@ -655,7 +659,7 @@ McpConnectionCheck tag "state": not_checked | checking | verified{tool_count} | 
 SkillEntry         name, path, digest
 SkillToolState     tool, path, detected, inherits_claude, skills, error?
 SkillPushRecord    tool, skill, path, pushed_at, had_existing
-AgentHookState     provider, path (the exact file Houston writes), scope (workspace | global), enabled, installed, error?,
+AgentHookState     provider, path (the exact file Houston writes), scope (workspace | global; Claude reports global), enabled, installed, error?,
                    present (the CLI binary resolves on PATH), version? (what `<binary> --version` reported),
                    trust? (HookTrust, Codex only: whether its own review screen has ever trusted a hook)
 
@@ -1102,9 +1106,13 @@ accepts `state_doc` only with `handoff: true`: text, `{text}`, or `{path}` insid
 target workspace, bounded by `STATE_DOC_MAX_BYTES` (65536 bytes).
 
 `pane_spawn` HTTP and MCP results include `warnings: PaneSpawnWarning[]`, whose
-entries contain `code` and `message`. Codes are `shared_checkout` and `worktree_trust`.
+entries contain `code` and `message`. Codes include `shared_checkout`, `worktree_trust`
+and provider-specific guidance. Codex setup failures use `hooks_off`,
+`hooks_not_installed` or `hooks_trust_unconfirmed`; the message names the cause and
+Settings → Agent status → Codex repair path. The same cause is recorded in an
+`operator_note` inbox row's `reason` and `body`, with `from_session` identifying the pane.
 The legacy nullable `warning` string remains available. Spawn warnings return to the
-caller and do not create operator-addressed inbox rows.
+caller; shared-checkout and worktree-trust warnings do not create inbox rows.
 
 `POST /inbox/tool-boundary`, authenticated with a pane token, returns `{text: string | null}`
 for Claude and Codex PostToolUse context. These supplementary hints do not acknowledge,

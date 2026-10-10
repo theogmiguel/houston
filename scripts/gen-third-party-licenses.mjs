@@ -96,10 +96,12 @@ function cargoPackages(manifest) {
     const p = byId.get(id);
     // A crate of ours reached as a path dependency is a member of the other
     // workspace, not a third party, so `workspace_members` alone misses it.
+    // Vendored upstream crates under src-tauri/patches/ stay third party.
     if (!p) continue;
     const fromRoot = relative(ROOT, resolve(p.manifest_path));
     const outside = isAbsolute(fromRoot) || fromRoot === ".." || fromRoot.startsWith(`..${sep}`);
-    if (!outside) continue;
+    const vendored = fromRoot.startsWith(join("src-tauri", "patches") + sep);
+    if (!outside && !vendored) continue;
     out.push(
       applyOverride({
         origin: "cargo",

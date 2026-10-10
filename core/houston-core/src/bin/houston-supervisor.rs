@@ -246,11 +246,27 @@ fn run(cli: Cli) -> ! {
     }
 }
 
+// Command::spawn reaps its own failed exec child before returning the error.
+#[cfg(unix)]
+static SPAWN_REAP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(unix)]
 fn reaper_loop(tx: Sender<Event>) {
     loop {
         use nix::sys::wait::{waitid, Id, WaitPidFlag, WaitStatus};
-        match waitid(Id::All, WaitPidFlag::WEXITED) {
+        let pending = waitid(Id::All, WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT);
+        let result = match pending {
+            Ok(WaitStatus::Exited(pid, _) | WaitStatus::Signaled(pid, _, _)) => {
+                let _guard = SPAWN_REAP_LOCK.lock().expect("spawn/reap lock");
+                // The failed exec child may have been collected by Command::spawn.
+                match waitid(Id::Pid(pid), WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG) {
+                    Err(nix::errno::Errno::ECHILD) => continue,
+                    result => result,
+                }
+            }
+            result => result,
+        };
+        match result {
             Ok(WaitStatus::Exited(pid, code)) => {
                 let _ = tx.send(Event::Reaped {
                     pid: pid.as_raw(),
@@ -368,6 +384,7 @@ fn spawn_daemon_process(
             Ok(())
         });
     }
+    let _guard = SPAWN_REAP_LOCK.lock().expect("spawn/reap lock");
     let child = cmd.spawn()?;
     let pid = child.id() as i32;
     drop(child);

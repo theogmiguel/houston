@@ -1,3 +1,4 @@
+import { MascotSurfaceMount } from '../mascot/MascotMount'
 import { IconGlobe, IconSparkles, IconSquareTerminal } from './icons'
 import { Icon } from './ui/Icon'
 import { WorkspaceActions } from './ui/WorkspaceActions'
@@ -41,6 +42,7 @@ export function WorkspaceEmpty({
         clip={false}
         className=""
       >
+      <MascotSurfaceMount />
       <EmptyStateHeading
         data-testid="workspace-empty-headline"
       >

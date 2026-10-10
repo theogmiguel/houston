@@ -90,8 +90,22 @@ export function GridRailRow({
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverMounted = useRef(false)
   const { open: openTagPopover } = useTagPopover()
+  // Descendants outside the grid still lift an idle orchestrator's status.
   const sessions = useSessionsSelector(
-    (store) => paneIds.flatMap((id) => store.get(id) ?? []),
+    (store) => {
+      const picked = paneIds.flatMap((id) => store.get(id) ?? [])
+      const ids = new Set(picked.map((session) => session.id))
+      for (let grew = true; grew;) {
+        grew = false
+        for (const session of store.values()) {
+          if (session.spawned_by == null || ids.has(session.id) || !ids.has(session.spawned_by)) continue
+          ids.add(session.id)
+          picked.push(session)
+          grew = true
+        }
+      }
+      return picked
+    },
     shallowArrayEqual,
     fallbackSessions.filter((session) => paneIds.includes(session.id)),
   )

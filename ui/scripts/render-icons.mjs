@@ -2,18 +2,15 @@ import { chromium } from 'playwright'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 
-// WHY A BROWSER: the masters use gradients and feGaussianBlur, which
-// ImageMagick's fallback parser drops silently, producing a plausible-looking
-// wrong icon. Playwright rasterises with the engine the app itself ships on.
-
+// Browser rendering preserves the tile's CSS gradient, inset rim and shadow at each cut.
 const here = dirname(fileURLToPath(import.meta.url))
 const resources = join(here, '..', 'resources')
 
-// 48 is the largest standard size where the thin small cut still reads as the
-// same object: its 3.2-unit front edge is one device pixel at 160px and a
-// quarter of one at 40px.
-const SMALL_AT = 48
+// The vector tile keeps the face readable on taskbars at 32 px and below.
+const SMALL_AT = 32
 
 const SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512]
 
@@ -50,10 +47,15 @@ function trayState(master, state) {
 }
 
 async function main() {
-  const detail = await readFile(join(resources, 'icon.svg'), 'utf8')
-  const small = await readFile(join(resources, 'icon-small.svg'), 'utf8')
+  const resized = await lanczosSources()
+  const detail = `<div style="width:100%;height:100%;border-radius:22.5%;background:url(data:image/png;base64,${resized.tile}) center / cover;box-shadow:inset 0 0 0 1px #ffffff14, 0 2px 6px #0008"></div>`
+  const smallSource = await readFile(join(resources, 'icon-small.svg'), 'utf8')
+  const smallTile = smallSource.match(/<foreignObject[^>]*>([\s\S]*)<\/foreignObject>/)
+  if (!smallTile) throw new Error(`icon-small.svg at ${resources}: expected a foreignObject containing tile markup`)
+  const small = smallTile[1]
 
-  const browser = await chromium.launch()
+  const vector = await readFile(join(resources, 'mark-vector.svg'), 'utf8')
+  const browser = await chromium.launch({ channel: process.env.HOUSTON_ICON_BROWSER })
   try {
     const written = []
     const icoPngs = new Map()
@@ -82,12 +84,18 @@ async function main() {
       buildIco(ICO_SIZES.map((size) => [size, icoPngs.get(size)]))
     )
 
-    const tray = await readFile(join(resources, 'icon-tray.svg'), 'utf8')
+    const brandOut = join(here, '..', 'src', 'renderer', 'src', 'assets')
+    for (const size of [32, 64, 96]) {
+      await writeFile(join(brandOut, `brand-mark-${size}.png`), Buffer.from(resized[`head${size}`], 'base64'))
+    }
     await mkdir(trayOut, { recursive: true })
     const trayWritten = []
     for (const state of ['idle', 'active', 'attention']) {
-      const svg = trayState(tray, state)
       for (const size of TRAY_SIZES) {
+        const head = size >= 32
+          ? `<svg xmlns="http://www.w3.org/2000/svg"><image width="16" height="16" href="data:image/png;base64,${resized[`head${size}`]}" /></svg>`
+          : `<svg xmlns="http://www.w3.org/2000/svg">${vector.replace('<svg ', '<svg width="16" height="16" ', 1)}</svg>`
+        const svg = trayState(head, state)
         const out = join(trayOut, `${state}-${size}.png`)
         await writeFile(out, await rasterise(browser, svg, size))
         trayWritten.push([state, size])
@@ -118,7 +126,7 @@ async function rasterise(browser, svg, size) {
     await page.setContent(
       `<!doctype html><meta charset="utf-8">` +
         `<style>html,body{margin:0;padding:0;background:transparent}` +
-        `svg{display:block;width:${size}px;height:${size}px}</style>` +
+        `body>svg{display:block;width:${size}px;height:${size}px}body{width:${size}px;height:${size}px}</style>` +
         svg,
       { waitUntil: 'load' }
     )
@@ -126,6 +134,25 @@ async function rasterise(browser, svg, size) {
   } finally {
     await page.close()
   }
+}
+
+async function lanczosSources() {
+  const { stdout } = await promisify(execFile)('python3', ['-c', `
+import base64, io, json, sys
+from PIL import Image
+from pathlib import Path
+root = Path(sys.argv[1])
+head = Image.open(root / 'branding/houston-icon-small.png')
+tile = Image.open(root / 'branding/houston-promo-background.png')
+lanczos = getattr(Image, 'Resampling', Image).LANCZOS
+result = {}
+for key, source, size in [('tile', tile, 512)] + [('head'+str(n), head, n) for n in [32, 40, 44, 48, 64, 96]]:
+    output = io.BytesIO()
+    source.resize((size, size), lanczos).save(output, format='PNG')
+    result[key] = base64.b64encode(output.getvalue()).decode('ascii')
+print(json.dumps(result))
+`, resources], { maxBuffer: 4 * 1024 * 1024 })
+  return JSON.parse(stdout)
 }
 
 function buildIco(entries) {

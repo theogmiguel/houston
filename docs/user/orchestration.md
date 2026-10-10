@@ -74,8 +74,13 @@ clamped and the response names the requested value and cap. A timeout asks the p
 to wait again. Starting another wait replaces the previous one;
 interrupted waits leave results available for delivery. If there are no live children or
 pending messages, a whole-inbox wait returns immediately. A result submitted before the
-child finishes its turn remains staged; `pane_get` exposes its age when you need to
-diagnose a missing completion. Claude background jobs hold a turn open for at most
+child finishes its turn remains staged; `pane_get` exposes its age and hold reason when
+you need to diagnose a missing completion. Wait timeouts also explain staged-result
+holds. For children without an ACP stream, until a child reports a lifecycle hook,
+Houston uses a quiet period of 15 seconds on a still screen with no running descendants
+to release its submitted result. After hooks report, Houston waits for the provider's
+turn-end event. ACP streams report turn completion directly. Claude background jobs
+hold a turn open for at most
 45 minutes before a missing-handback notice reaches the parent.
 
 Result bodies up to 4096 characters arrive whole; larger bodies arrive as a bounded
@@ -162,6 +167,13 @@ original agent cannot prompt or wait on it, and you can close the original pane 
 closing the new one. Only a pane without a parent can hand off, and `reusable` and
 `output_format` are refused with `handoff`. Orchestration must be enabled in
 Settings → Orchestration.
+
+When you ask for single-branch work that the orchestrator will edit itself, it continues
+in a new pane inside that branch's worktree using `pane_spawn{handoff: true, worktree: SLUG}`
+(`hs-pane spawn --handoff --worktree SLUG`), passing context via `state_doc`
+(`--state-doc` or `--state-doc-path`). It must not edit a child's worktree from the primary
+checkout; the new pane reports the checkout where it works. Delegated multi-branch work
+continues to use child panes with `worktree`.
 
 Each compaction of an agent's context lowers what it remembers of earlier decisions.
 Houston counts the compactions that Claude, Codex, Grok, Cursor and OpenCode report

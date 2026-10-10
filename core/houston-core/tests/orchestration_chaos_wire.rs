@@ -37,6 +37,7 @@ fn shim_dir() -> &'static Path {
         let home = dir.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
         std::env::set_var("HOME", home);
+        std::env::remove_var("CODEX_HOME");
         dir
     })
     .path()
@@ -78,6 +79,7 @@ impl Rig {
         })
         .unwrap();
         daemon.reap_set_exit_hook_for_test(Box::new(|| {}));
+        daemon.install_consented_agent_hooks();
         daemon.workspace_add(workspace.to_str().unwrap()).unwrap();
         daemon.orchestration_set(true).unwrap();
         daemon.set_orchestration_caps(LIVE_CAP, 3).unwrap();
@@ -1559,6 +1561,52 @@ async fn h4_auto_review_marker_is_deduplicated_wait_only_and_cleared() {
     assert!(!rig.logs().iter().any(
         |record| record["event"] == "prompt" && record["data"].to_string().contains("stalled?")
     ));
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn h4_auto_review_with_its_command_running_is_not_stalled() {
+    use houston_core::hook_drop::{drop_dir, now_ms, write_drop, HookDrop};
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let parent = rig.fake_parent("claude", 42).await;
+    let script = rig.script(
+        "codex",
+        42,
+        "review-approved",
+        json!([{"op":"run_command","secs":60}, {"op":"hang"}]),
+    );
+    let child = rig.spawn(parent, "codex", &script, json!({})).await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        rig.daemon.hook_drop_tick_for_test();
+        if rig.daemon.session_status(child).unwrap() == Some(proto::AgentStatus::Working) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "startup prompt was not applied");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let drop = HookDrop {
+        session: child,
+        agent: Some("codex".into()),
+        event: "PermissionRequest".into(),
+        prompt_id: Some("review-turn".into()),
+        tool_name: Some("Bash".into()),
+        tool_input_fingerprint: Some("input-digest".into()),
+        ..Default::default()
+    };
+    write_drop(&drop_dir(rig.state.path()), &drop, now_ms()).unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+    let raised_at = now_ms() + houston_core::orchestrate::CODEX_AUTO_REVIEW_STALL_MS + 1;
+    rig.daemon.subagent_expiry_tick_at(raised_at);
+    assert!(
+        !rig.daemon
+            .inbox_rows_for_test(parent)
+            .iter()
+            .any(|row| row.reason.as_deref() == Some("approval_outcome_unobserved")),
+        "an approved command that is still executing is not an unobserved approval"
+    );
+    assert!(!rig.daemon.delegation_of(child).unwrap().stalled);
 }
 
 #[cfg(feature = "test-barriers")]

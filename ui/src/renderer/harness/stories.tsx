@@ -1,3 +1,4 @@
+import { MascotStory } from './mascotStories'
 import React from 'react'
 import {
   BrowserActModalStory,
@@ -95,7 +96,7 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
 })
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -176,7 +177,7 @@ import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
-import { PaneCheckoutHeaderStory, PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
+import { PaneCheckoutHeaderStory, PaneEndedStory, PaneOrchestratorHeaderStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
 import { PullRequestDetailStory, PullRequestsScreenStory } from './prsStories'
@@ -267,6 +268,7 @@ function RailWorkspacesMulti(): React.JSX.Element {
 }
 
 export const STORIES: Record<string, () => React.JSX.Element> = {
+  mascot: () => <MascotStory />,
   'browser/pane': () => <BrowserPanePage />,
   'browser/pane-focused': () => <BrowserPaneFocused />,
   'browser/pane-fresh': () => <BrowserPaneFresh />,
@@ -424,6 +426,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/agents-loading': () => <SettingsAgentStatusLoading />,
   'settings/agents-empty': () => <SettingsAgentStatusEmpty />,
   'settings/appearance': () => <SettingsAppearance />,
+  'settings/mascot': () => <SettingsMascot />,
   'settings/appearance-custom': () => <SettingsAppearanceCustom />,
   'settings/detail': () => <SettingsDetailStory />,
   'settings/detail-error': () => <SettingsDetailStory state="error" />,
@@ -524,6 +527,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'panes/lifecycle': () => <PaneLifecycleStory />,
   'panes/chrome-menu': () => <PaneMenuStory />,
   'surface/pane-header': () => <PaneCheckoutHeaderStory />,
+  'surface/pane-header-orchestrator': () => <PaneOrchestratorHeaderStory />,
   'panes/chrome-ended': () => <PaneEndedStory />,
   'panes/sleeping': () => <PaneSleepingStory />,
   'panes/recovery-deferred': () => <PaneRecoveryDeferredStory />,

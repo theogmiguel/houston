@@ -1,3 +1,4 @@
+import { MascotMount } from '../mascot/MascotMount'
 import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore';
 import type { TagInfo } from "../houston/generated/TagInfo";
 import {
@@ -69,7 +70,7 @@ import {
 import { Tooltip } from "./ui/Tooltip";
 import { useLastGridConfirm } from "./rail/LastGridConfirm";
 import { NavigationRailHeader } from "./ui/NavigationRail";
-import logoUrl from "../assets/logo-chrome.svg";
+import logoUrl from "../assets/brand-mark";
 import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { Icon } from "./ui/Icon";
@@ -418,6 +419,8 @@ export function workspaceColor(index: number): string {
 }
 
 interface Props {
+  mascotFirstRun?: boolean;
+  mascotWorkspacesEmpty?: boolean;
   workspaces: Workspace[];
   sessions: SessionInfo[];
   selected: string;
@@ -2340,6 +2343,8 @@ function RailTree({
 }
 
 export function Sidebar({
+  mascotFirstRun = false,
+  mascotWorkspacesEmpty,
   workspaces,
   sessions,
   selected,
@@ -2974,6 +2979,7 @@ export function Sidebar({
         )}
       </NavigationRailScroll>
 
+      <MascotMount existingUser={workspaces.length > 0} firstRun={mascotFirstRun} workspacesEmpty={mascotWorkspacesEmpty} />
       <NavigationRailFooter>
         {}
         <Tooltip label="Settings">

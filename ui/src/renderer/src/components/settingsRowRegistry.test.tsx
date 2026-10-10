@@ -61,7 +61,7 @@ const SECTION_OVERRIDES: Partial<
   Record<SettingsSectionId, Partial<React.ComponentProps<typeof SettingsView>>>
 > = {
   agents: {
-    agentHooks: (['claude', 'codex', 'opencode', 'cursor', 'grok'] as const).map((provider) => ({ provider, path: `~/.${provider}/settings.json`, scope: 'workspace', enabled: true, installed: true, error: null, present: true, version: '1.0.0', trust: null })) as AgentHookState[],
+    agentHooks: (['claude', 'codex', 'opencode', 'cursor', 'grok'] as const).map((provider) => ({ provider, path: `~/.${provider}/settings.json`, scope: 'global', enabled: true, installed: true, error: null, present: true, version: '1.0.0', trust: null })) as AgentHookState[],
     agentProfiles: { profiles: [], active: [] }
   },
   orchestration: {
@@ -108,6 +108,20 @@ describe('settingsRowRegistry — every registered title actually renders', () =
     host.remove()
     setSettingsNavForTests({ section: 'appearance' })
     setRailViewForTests({ hidden: [] })
+  })
+
+  it('renders mascot rows in Mascot and removes them from Appearance', () => {
+    act(() => setSettingsNavForTests({ section: 'mascot' }))
+    act(() => root.render(<SettingsView {...baseSettingsViewProps()} />))
+    const rowNames = (): (string | null)[] => Array.from(
+      host.querySelectorAll('[data-settings-row-name]')
+    ).map(row => row.getAttribute('data-settings-row-name'))
+    const mascotRows = SETTINGS_ROW_REGISTRY.mascot!
+    expect(rowNames().slice(0, mascotRows.length)).toEqual(mascotRows)
+
+    act(() => setSettingsNavForTests({ section: 'appearance' }))
+    expect(rowNames()).toContain('App zoom')
+    for (const title of mascotRows) expect(rowNames()).not.toContain(title)
   })
 
   it.each(Object.entries(SETTINGS_ROW_REGISTRY) as [SettingsSectionId, readonly string[]][])(

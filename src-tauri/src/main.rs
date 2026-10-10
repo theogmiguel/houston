@@ -19,6 +19,8 @@ mod shells;
 mod skills;
 mod spike_webview;
 mod system;
+#[cfg(test)]
+mod test_home;
 mod tray;
 mod watchdog;
 mod webview_render;

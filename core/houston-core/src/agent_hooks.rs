@@ -59,7 +59,7 @@ pub fn config_path(provider: proto::AgentKind, home: &ConfigHome) -> Result<Path
         proto::AgentKind::Antigravity => home.home.join(".gemini").join("config").join("hooks.json"),
         other => bail!(
             "{other:?} has no hook installer here (expected codex, opencode, cursor, grok or antigravity; \
-             Claude Code installs per workspace via claude_hooks.rs)"
+             Claude Code installs globally via claude_hooks.rs)"
         ),
     })
 }
@@ -278,7 +278,17 @@ fn opens_unclosed_array(line: &str) -> bool {
 
 fn codex_install(path: &Path, commands: &[(&str, String)], sentinel: &str) -> Result<()> {
     codex_park_notify(&codex_config_toml_path(path), sentinel)?;
-    grok_install(path, commands, sentinel, proto::AgentKind::Codex)
+    let outcome = grok_install(path, commands, sentinel, proto::AgentKind::Codex)
+        .and_then(|()| codex_write_trust(path, sentinel));
+    if let Err(error) = outcome {
+        if let Err(cleanup) = codex_uninstall(path, sentinel) {
+            return Err(error.context(format!(
+                "cleaning up Houston hooks after install failed: {cleanup:#}"
+            )));
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn codex_config_toml_path(hooks_json: &Path) -> PathBuf {
@@ -357,8 +367,20 @@ fn codex_wake_notify(path: &Path, sentinel: &str) -> Result<bool> {
 
 fn codex_uninstall(path: &Path, sentinel: &str) -> Result<bool> {
     let removed_hooks = grok_uninstall(path, sentinel)?;
-    let restored = codex_wake_notify(&codex_config_toml_path(path), sentinel)?;
-    Ok(removed_hooks || restored)
+    let config = codex_config_toml_path(path);
+    let trust_cleanup = (|| -> Result<bool> {
+        let text = read_to_string_or_empty(&config)?;
+        let clean = codex_without_trust_block(&text, sentinel)?;
+        if clean == text {
+            return Ok(false);
+        }
+        std::fs::write(&config, clean).with_context(|| format!("writing {}", config.display()))?;
+        Ok(true)
+    })();
+    let restored = codex_wake_notify(&config, sentinel);
+    let removed_trust = trust_cleanup?;
+    let restored = restored?;
+    Ok(removed_hooks || removed_trust || restored)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -368,17 +390,248 @@ pub enum CodexHookTrust {
     NoConfig,
 }
 
+// Trust keys and hashes follow Codex's hooks/engine/discovery.rs and config/fingerprint.rs.
+// Only the exact command groups Houston generates are accepted here; edited definitions
+// require a reinstall instead of silently granting trust to new commands or options.
+fn codex_trust_entries(path: &Path, sentinel: &str) -> Result<Vec<(String, String)>> {
+    use sha2::{Digest, Sha256};
+    let root: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+    let hooks = root
+        .get("hooks")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| anyhow!("{}: expected a hooks object", path.display()))?;
+    let events = crate::agent_events::events_for(proto::AgentKind::Codex)
+        .iter()
+        .map(|(event, _)| *event)
+        .chain(
+            crate::agent_events::CODEX_CORRELATION_EVENTS
+                .iter()
+                .copied(),
+        )
+        .chain(crate::agent_events::compaction_event(
+            proto::AgentKind::Codex,
+        ));
+    let mut entries = Vec::new();
+    for event in events {
+        let label = match event {
+            "SessionStart" => "session_start",
+            "UserPromptSubmit" => "user_prompt_submit",
+            "Stop" => "stop",
+            "PermissionRequest" => "permission_request",
+            "Interrupt" => "interrupt",
+            "SessionEnd" => "session_end",
+            "SubagentStart" => "subagent_start",
+            "SubagentStop" => "subagent_stop",
+            "PreToolUse" => "pre_tool_use",
+            "PostToolUse" => "post_tool_use",
+            "PreCompact" => "pre_compact",
+            _ => bail!("unsupported Codex trust event {event:?}"),
+        };
+        let groups = hooks
+            .get(event)
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow!("{}: Houston {event} hook is missing", path.display()))?;
+        let mut found = false;
+        for (ordinal, group) in groups.iter().enumerate() {
+            if !grok_entry_is_ours(group, sentinel) {
+                continue;
+            }
+            if found {
+                bail!("{}: duplicate Houston {event} hook groups", path.display());
+            }
+            let command = group
+                .get("hooks")
+                .and_then(|v| v.as_array())
+                .filter(|handlers| handlers.len() == 1)
+                .and_then(|handlers| handlers[0].get("command"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    anyhow!(
+                        "{}: expected one Houston command for {event}",
+                        path.display()
+                    )
+                })?;
+            let mut expected =
+                serde_json::json!({"hooks": [{"type": "command", "command": command}]});
+            if matches!(event, "PreToolUse" | "PostToolUse") {
+                expected["matcher"] = serde_json::json!("*");
+            }
+            if *group != expected || !has_sentinel(command, sentinel) {
+                bail!(
+                    "{}: Houston {event} hook definition changed; reinstall to confirm trust",
+                    path.display()
+                );
+            }
+            let timeout = if matches!(event, "SessionEnd" | "Interrupt") {
+                1
+            } else {
+                600
+            };
+            let mut identity = serde_json::json!({
+                "event_name": label,
+                "hooks": [{"type": "command", "command": command, "timeout": timeout, "async": false}]
+            });
+            if matches!(event, "PreToolUse" | "PostToolUse") {
+                identity["matcher"] = serde_json::json!("*");
+            }
+            identity.sort_all_objects();
+            let hash = Sha256::digest(serde_json::to_vec(&identity)?);
+            entries.push((
+                format!("{}:{label}:{ordinal}:0", path.display()),
+                format!("sha256:{hash:x}"),
+            ));
+            found = true;
+        }
+        if !found {
+            bail!("{}: Houston {event} hook is missing", path.display());
+        }
+    }
+    Ok(entries)
+}
+
+fn codex_without_trust_block(text: &str, sentinel: &str) -> Result<String> {
+    let begin = format!("# BEGIN Houston Codex hook trust {sentinel}\n");
+    let end = format!("# END Houston Codex hook trust {sentinel}\n");
+    let inserted_newline =
+        format!("\n# BEGIN Houston Codex hook trust {sentinel} (inserted newline)\n");
+    let marker = if text.contains(&inserted_newline) {
+        &inserted_newline
+    } else {
+        &begin
+    };
+    let Some(start) = text.find(marker) else {
+        if text.contains(&end) {
+            bail!("unmatched Houston Codex trust end marker {sentinel:?}");
+        }
+        return Ok(text.to_string());
+    };
+    let tail = &text[start + marker.len()..];
+    let stop = tail
+        .find(&end)
+        .ok_or_else(|| anyhow!("missing Houston Codex trust end marker {sentinel:?}"))?;
+    if tail.contains(&begin)
+        || tail.contains(&inserted_newline)
+        || tail[stop + end.len()..].contains(&end)
+    {
+        bail!("duplicate Houston Codex trust markers {sentinel:?}");
+    }
+    let remainder = &tail[stop + end.len()..];
+    let separator = if marker == &inserted_newline && !remainder.is_empty() {
+        "\n"
+    } else {
+        ""
+    };
+    Ok(format!("{}{separator}{remainder}", &text[..start]))
+}
+
+fn codex_entries_trusted(root: &toml::Value, entries: &[(String, String)]) -> bool {
+    let Some(state) = root.get("hooks").and_then(|h| h.get("state")) else {
+        return false;
+    };
+    !entries.is_empty()
+        && entries.iter().all(|(key, hash)| {
+            state.get(key).is_some_and(|entry| {
+                entry.get("trusted_hash").and_then(|v| v.as_str()) == Some(hash.as_str())
+                    && entry
+                        .get("enabled")
+                        .is_none_or(|v| v.as_bool() == Some(true))
+            })
+        })
+}
+
+fn codex_write_trust(path: &Path, sentinel: &str) -> Result<()> {
+    let config = codex_config_toml_path(path);
+    let entries = codex_trust_entries(path, sentinel)?;
+    let original = read_to_string_or_empty(&config)?;
+    let mut text = codex_without_trust_block(&original, sentinel)?;
+    let root = text
+        .parse::<toml::Value>()
+        .with_context(|| format!("{} is not valid TOML", config.display()))?;
+    let state = root.get("hooks").and_then(|h| h.get("state"));
+    let mut block = String::new();
+    for (key, hash) in &entries {
+        if let Some(existing) = state.and_then(|s| s.get(key)) {
+            if existing.get("trusted_hash").and_then(|v| v.as_str()) != Some(hash.as_str())
+                || existing
+                    .get("enabled")
+                    .is_some_and(|v| v.as_bool() != Some(true))
+            {
+                bail!(
+                    "{}: unmanaged trust entry {key:?} conflicts with Houston; trust unconfirmed",
+                    config.display()
+                );
+            }
+            continue;
+        }
+        block.push_str(&format!(
+            "[hooks.state.{}]\ntrusted_hash = {}\nenabled = true\n",
+            toml_string(key),
+            toml_string(hash)
+        ));
+    }
+    if !block.is_empty() {
+        let separator = if !text.is_empty() && !text.ends_with('\n') {
+            format!("\n# BEGIN Houston Codex hook trust {sentinel} (inserted newline)\n")
+        } else {
+            format!("# BEGIN Houston Codex hook trust {sentinel}\n")
+        };
+        text.push_str(&format!(
+            "{separator}{block}# END Houston Codex hook trust {sentinel}\n"
+        ));
+    }
+    let root = text
+        .parse::<toml::Value>()
+        .context("validating Houston Codex trust block")?;
+    if !codex_entries_trusted(&root, &entries) {
+        bail!("Houston Codex hook trust is unconfirmed");
+    }
+    if text != original {
+        ensure_parent(&config)?;
+        std::fs::write(&config, text).with_context(|| format!("writing {}", config.display()))?;
+    }
+    let saved = std::fs::read_to_string(&config)?.parse::<toml::Value>()?;
+    if !codex_entries_trusted(&saved, &codex_trust_entries(path, sentinel)?) {
+        bail!(
+            "{}: Houston Codex hook trust is unconfirmed after writing",
+            config.display()
+        );
+    }
+    Ok(())
+}
+
 pub fn codex_trust_status(home: &ConfigHome) -> CodexHookTrust {
-    let path = home.home.join(".codex").join("config.toml");
+    codex_trust_status_for(home, &crate::claude_hooks::sentinel_for(None))
+}
+
+pub fn codex_hooks_installed_at(hooks_json: &Path, sentinel: &str) -> bool {
+    std::fs::read_to_string(hooks_json)
+        .ok()
+        .is_some_and(|text| {
+            hooks_json_commands(&text)
+                .iter()
+                .any(|command| has_sentinel(command, sentinel))
+        })
+}
+
+pub fn codex_trust_status_for(home: &ConfigHome, sentinel: &str) -> CodexHookTrust {
+    codex_trust_status_at(&home.home.join(".codex").join("hooks.json"), sentinel)
+}
+
+pub fn codex_trust_status_at(hooks_json: &Path, sentinel: &str) -> CodexHookTrust {
+    let path = codex_config_toml_path(hooks_json);
     let Ok(text) = std::fs::read_to_string(&path) else {
         return CodexHookTrust::NoConfig;
     };
     let Ok(root) = text.parse::<toml::Value>() else {
-        return CodexHookTrust::NoConfig;
+        return CodexHookTrust::NotConfirmed;
     };
-    match root.get("hooks").and_then(|h| h.get("state")) {
-        Some(toml::Value::Table(t)) if !t.is_empty() => CodexHookTrust::SomeTrusted,
-        _ => CodexHookTrust::NotConfirmed,
+    let Ok(entries) = codex_trust_entries(hooks_json, sentinel) else {
+        return CodexHookTrust::NotConfirmed;
+    };
+    if codex_entries_trusted(&root, &entries) {
+        CodexHookTrust::SomeTrusted
+    } else {
+        CodexHookTrust::NotConfirmed
     }
 }
 
@@ -1052,7 +1305,7 @@ mod tests {
              { trusted_hash = \"sha256:deadbeef\" }\n",
         )
         .expect("write");
-        assert_eq!(codex_trust_status(&h), CodexHookTrust::SomeTrusted);
+        assert_eq!(codex_trust_status(&h), CodexHookTrust::NotConfirmed);
     }
 
     #[test]

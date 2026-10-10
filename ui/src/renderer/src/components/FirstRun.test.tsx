@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FirstRun, type FirstRunProps } from './FirstRun'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
+import { isSettingsOpen, settingsSectionLabel, setSettingsNavForTests } from '../settingsNav'
+import { DEFAULT_PREFS, setMascotPrefsForTests } from '../mascot/mascotPrefs'
 
 const keymapOverrides = { shortcuts_enabled: true, bindings: {} } as unknown as KeymapOverrides
 
@@ -35,6 +37,8 @@ describe('FirstRun', () => {
   let root: Root
 
   beforeEach(() => {
+    localStorage.removeItem('tr-mascot-ledger')
+    setMascotPrefsForTests({ ...DEFAULT_PREFS, enabled: false })
     host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
@@ -43,6 +47,7 @@ describe('FirstRun', () => {
   afterEach(() => {
     act(() => root.unmount())
     host.remove()
+    setMascotPrefsForTests({ ...DEFAULT_PREFS })
   })
 
   const render = (p: FirstRunProps): void => {
@@ -57,6 +62,56 @@ describe('FirstRun', () => {
     expect(host.querySelector('[data-testid="workspaces-empty"]')).not.toBeNull()
     expect(step()).toBe('Step 1 of 3')
     expect(host.querySelector('[data-testid="first-run-skip"]')).toBeNull()
+  })
+
+  it('shows the mascot hero when enabled and restores the workspace actions after Skip intro', async () => {
+    setMascotPrefsForTests({ ...DEFAULT_PREFS })
+    await act(async () => {
+      root.render(<FirstRun {...props()} />)
+      await import('./ui/MascotIntro')
+    })
+    expect(host.querySelector('[data-testid="mascot-intro"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="workspaces-empty"]')).toBeNull()
+    expect(host.querySelector('[data-testid="first-run-step"]')).toBeNull()
+    act(() => host.querySelector<HTMLButtonElement>('.mascot-skipintro')!.click())
+    expect(host.querySelector('[data-testid="mascot-intro"]')).toBeNull()
+    expect(host.querySelector('[data-testid="workspaces-empty"]')).not.toBeNull()
+    expect(step()).toBe('Step 1 of 3')
+    expect(host.querySelector('[data-testid="first-run-skip"]')).toBeNull()
+  })
+
+  it.each(['Add workspace', 'Open settings'])('delivers %s without waiting for a stalled WebKit flight', async (label) => {
+    setMascotPrefsForTests({ ...DEFAULT_PREFS })
+    setSettingsNavForTests({ open: false, section: 'appearance' })
+    const onAdd = vi.fn()
+    const rail = document.createElement('button')
+    rail.dataset.testid = 'mascot-companion'
+    document.body.appendChild(rail)
+    const animate = vi.fn(() => ({ onfinish: null, cancel: vi.fn() }))
+    const previous = HTMLElement.prototype.animate
+    HTMLElement.prototype.animate = animate as unknown as typeof previous
+    try {
+      await act(async () => {
+        root.render(<FirstRun {...props({ workspaces: { onAdd, pending: false, refusals: [], keymapOverrides } })} />)
+        await import('./ui/MascotIntro')
+      })
+      act(() => Array.from(host.querySelectorAll('button')).find(button => button.textContent === label)!.click())
+      expect(host.querySelector('[data-testid="mascot-intro"]')).toBeNull()
+      if (label === 'Add workspace') expect(onAdd).toHaveBeenCalledOnce()
+      else {
+        expect(isSettingsOpen()).toBe(true)
+        expect(settingsSectionLabel()).toBe('Mascot')
+        act(() => root.unmount())
+        root = createRoot(host)
+        render(props())
+        expect(host.querySelector('[data-testid="mascot-intro"]')).toBeNull()
+        expect(host.querySelector('[data-testid="workspaces-empty"]')).not.toBeNull()
+      }
+    } finally {
+      HTMLElement.prototype.animate = previous
+      rail.remove()
+      setSettingsNavForTests({ open: false, section: 'appearance' })
+    }
   })
 
   it('never draws a step whose prerequisite is already met', () => {
@@ -128,7 +183,7 @@ describe('FirstRun', () => {
   it('installs a selected CLI through the existing hook message', () => {
     const onAgentHooksSet = vi.fn()
     const claude: AgentHookState = {
-      provider: 'claude', path: '~/.claude/settings.json', scope: 'workspace', enabled: false,
+      provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: false,
       installed: true, error: null, present: true, version: '2.3.1', trust: null
     }
     const codex: AgentHookState = {
@@ -143,7 +198,7 @@ describe('FirstRun', () => {
   it('installs every silent present CLI from the primary action and gives absent CLIs no action', () => {
     const onAgentHooksSet = vi.fn()
     const base: AgentHookState = {
-      provider: 'claude', path: '~/.claude/settings.json', scope: 'workspace', enabled: false,
+      provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: false,
       installed: false, error: null, present: true, version: '1.0.0', trust: null
     }
     render(props({
@@ -175,7 +230,7 @@ describe('FirstRun', () => {
 
   it('shows the provider error and explains why the bulk action is disabled', () => {
     const claude: AgentHookState = {
-      provider: 'claude', path: '~/.claude/settings.json', scope: 'workspace', enabled: false,
+      provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: false,
       installed: true, error: 'Unsupported settings format', present: true, version: '2.3.1', trust: null
     }
     render(props({ hasWorkspace: true, orchestrationConsented: true, agentHooks: [claude] }))

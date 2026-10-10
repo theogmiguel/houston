@@ -2,7 +2,7 @@ import type { PrInfo, SessionInfo } from '../../houston/client'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionActivity } from '../../houston/generated/SessionActivity'
 import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
-import { gridStatus, type GridStatusModel } from '../ui/railRows'
+import { gridStatus, liftDelegatedWork, type GridStatusModel } from '../ui/railRows'
 import { orderGridPanes } from '../ui/railRowModel'
 
 export type CheckoutIdentity =
@@ -88,7 +88,7 @@ function activityOf(session: SessionInfo): SessionActivity | null {
 
 export function buildRailCard(source: RailCardSource): RailCard {
   const branches = source.branches ?? new Map<number, string>()
-  const panes = orderGridPanes(source.sessions, source.paneIds)
+  const panes = orderGridPanes(source.sessions, source.paneIds).map((pane) => ({ ...pane, session: liftDelegatedWork(pane.session, source.sessions) }))
   const checkouts: CheckoutIdentity[] = []
   const checkoutKeys = new Set<string>()
   const agents = panes.map(({ session, depth }): RailAgentRow => {

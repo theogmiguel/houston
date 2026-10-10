@@ -55,10 +55,10 @@ describe('per-pane status dot colour', () => {
     expect(dot.className).toContain('bg-[var(--accent)]')
   })
 
-  it('unavailable is a neutral outline and is named accessibly', () => {
+  it('unavailable is a readable outline drawn with a border, so the roster dot halo cannot erase it', () => {
     const dot = renderDot('unavailable')
-    expect(dot.className).toContain('bg-transparent')
-    expect(dot.className).toContain('ring-[var(--text-faint)]')
+    expect(dot.className).toContain('border-[var(--text-secondary)]')
+    expect(dot.className).not.toContain('ring-')
     expect(dot.getAttribute('aria-label')).toBe('status unavailable')
     expect(dot.getAttribute('role')).toBe('img')
   })
