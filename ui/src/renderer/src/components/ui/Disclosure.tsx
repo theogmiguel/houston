@@ -96,6 +96,7 @@ export function Disclosure({
 }: DisclosureProps): React.JSX.Element {
   const [openState, setOpenState] = useState(defaultOpen)
   const open = openProp ?? openState
+  const bodyOpen = open && !disabled
 
   const toggle = (): void => {
     if (disabled) return
@@ -143,10 +144,10 @@ export function Disclosure({
         </button>
       </Tooltip>
       <div
-        inert={!open || disabled}
-        aria-hidden={!open || disabled}
+        inert={!bodyOpen}
+        aria-hidden={!bodyOpen}
         className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-[var(--motion-menu-t)] motion-safe:ease-[var(--motion-menu-ease)] ${
-          open && !disabled ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+          bodyOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
         }`}
       >
         <div className="min-h-0 overflow-hidden">
