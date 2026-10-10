@@ -31,8 +31,9 @@ OpenCode reports permissions, structured questions, busy/retry, completion and e
 Starting a supported CLI from a shell pane gives it that provider’s reported status
 and orchestration capabilities once its first hook arrives.
 
-Quiet or prolonged approval review is a warning on ongoing work, rather than a request
-for your input. A live child can show Done or Failed while its process remains open;
+Quiet or prolonged approval review can show **Stalled** with a muted gray dot. This is a
+heuristic about ongoing work; its tooltip names the observed reason. Amber remains
+reserved for requests for your input. A live child can show Done or Failed while its process remains open;
 its result may still be pending delivery to its parent.
 
 The pane and grid indicators use the same language: blue pulse for starting or working,

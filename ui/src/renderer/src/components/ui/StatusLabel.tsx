@@ -36,7 +36,7 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   Ended: 'var(--info)',
   Failed: 'var(--stop)',
   Paused: 'var(--text-muted)',
-  Stalled: 'var(--warn)',
+  Stalled: 'var(--text-muted)',
   'Result staged': 'var(--info)',
   'Pending delivery': 'var(--info)',
   'In sync': 'var(--ok)',

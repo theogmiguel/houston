@@ -91,7 +91,8 @@ export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Eleme
   const state = childStateWord(info)
   if (state === 'done' || state === 'failed' || state === 'stalled') {
     const status = state === 'done' ? 'Done' : state === 'failed' ? 'Failed' : 'Stalled'
-    return <Tooltip label={status}><StatusLabel status={status} variant="dot" /></Tooltip>
+    const label = state === 'stalled' ? ['Stalled · Heuristic', info.delegation?.hold_reason].filter(Boolean).join(' · ') : status
+    return <Tooltip label={label}><StatusLabel status={status} variant="dot" /></Tooltip>
   }
   return <StatusDot live status={childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'unavailable'} />
 }
