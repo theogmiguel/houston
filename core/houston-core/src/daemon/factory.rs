@@ -87,7 +87,8 @@ impl Daemon {
             .map(|(reason, _, _)| reason))
     }
 
-    /// The full cap a start would pass: its reason, limit and count.
+    /// The cap a start would pass: its reason, its limit and the count the
+    /// start would reach (a start adds a live run, never a needs-you item).
     fn factory_cap_reached(
         &self,
         automatic: bool,
@@ -102,7 +103,7 @@ impl Daemon {
                      Factory, live runs)"
                 ),
                 live_max,
-                live,
+                live + 1,
             )));
         }
         if automatic {
@@ -137,7 +138,7 @@ impl Daemon {
             id,
             proto::TaskErrorKind::Limit,
             Some(limit),
-            Some(u64::from(count) + 1),
+            Some(u64::from(count)),
             None,
             None,
             format!("{operation} refused: {reason}"),

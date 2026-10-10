@@ -12,6 +12,9 @@ use super::Daemon;
 
 const PR_WATCH_ACTOR: &str = "houston:pr-watch";
 
+/// The run a proof landed on, and the note for missing verification.
+pub(crate) type ProofOutcome = (Option<(i64, TaskProof)>, Option<String>);
+
 /// What an agent hands back as evidence; every field is optional on the wire
 /// and checked by `TaskProofInput::normalized`.
 #[derive(Debug, Default, Deserialize)]
@@ -218,7 +221,7 @@ impl Daemon {
         id: i64,
         session: u32,
         input: Option<TaskProofInput>,
-    ) -> Result<(Option<(i64, TaskProof)>, Option<String>)> {
+    ) -> Result<ProofOutcome> {
         let run = self
             .db
             .open_task_run_for_task(id)?

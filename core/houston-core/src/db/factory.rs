@@ -35,6 +35,9 @@ pub struct TaskQuestionRow {
     pub created_at_ms: i64,
 }
 
+/// A run's pull request number and URL.
+pub type TaskPr = (Option<u32>, Option<String>);
+
 const QUESTION_COLUMNS: &str = "id, task_id, run_id, session_id, form, answer, created_at";
 
 /// A question counts only while the run that asked it is open.
@@ -116,12 +119,15 @@ impl Db {
         Ok(rows)
     }
 
-    /// `Ok(false)` when the question already had an answer: the first wins.
+    /// `Ok(false)` when the question already had an answer (the first wins) or
+    /// its run has ended.
     pub fn task_question_answer(&self, id: i64, answer: &str, now_ms: i64) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn.execute(
-            "UPDATE backlog_task_questions SET answer = ?2, answered_at = ?3 \
-             WHERE id = ?1 AND answer IS NULL",
+            &format!(
+                "UPDATE backlog_task_questions AS q SET answer = ?2, answered_at = ?3 \
+                 WHERE id = ?1 AND answer IS NULL AND {OPEN_QUESTION_RUN}"
+            ),
             rusqlite::params![id, answer, now_ms],
         )? > 0)
     }
@@ -130,8 +136,8 @@ impl Db {
     pub fn task_questions_undelivered(&self) -> Result<Vec<TaskQuestionRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(&format!(
-            "SELECT {QUESTION_COLUMNS} FROM backlog_task_questions \
-             WHERE answer IS NOT NULL AND delivered_at IS NULL ORDER BY id"
+            "SELECT {QUESTION_COLUMNS} FROM backlog_task_questions q \
+             WHERE answer IS NOT NULL AND delivered_at IS NULL AND {OPEN_QUESTION_RUN} ORDER BY id"
         ))?;
         let rows = stmt
             .query_map([], question_row)?
@@ -149,9 +155,7 @@ impl Db {
     }
 
     /// Each task's newest run that recorded a pull request.
-    pub fn task_latest_prs(
-        &self,
-    ) -> Result<std::collections::HashMap<i64, (Option<u32>, Option<String>)>> {
+    pub fn task_latest_prs(&self) -> Result<std::collections::HashMap<i64, TaskPr>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
             "SELECT task_id, pr_number, pr_url FROM backlog_task_runs \
@@ -159,7 +163,7 @@ impl Db {
         )?;
         let rows = stmt
             .query_map([], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
-            .collect::<rusqlite::Result<Vec<(i64, (Option<u32>, Option<String>))>>>()?;
+            .collect::<rusqlite::Result<Vec<(i64, TaskPr)>>>()?;
         Ok(rows.into_iter().collect())
     }
 

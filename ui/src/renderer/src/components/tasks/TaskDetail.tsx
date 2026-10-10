@@ -409,7 +409,13 @@ function RefusalBanner({
   )
 }
 
-const EXECUTABLE_ITEM = /`[^`]+`/
+// The daemon's rule (task_proof.rs acceptance_command): the first backtick
+// pair, trimmed of spaces, holds a command.
+function isExecutableItem(text: string): boolean {
+  const start = text.indexOf('`')
+  const end = start < 0 ? -1 : text.indexOf('`', start + 1)
+  return end > start && text.slice(start + 1, end).replace(/^ +| +$/g, '') !== ''
+}
 
 /// Acceptance with in-place editing. A save replaces the list through
 /// `task_save`; the daemon keeps the tick of each item whose text is unchanged.
@@ -427,7 +433,7 @@ function AcceptanceSection({ taskId, revision, items, checked, onCheck, onSave }
   useEffect(() => {
     setDraft(null)
   }, [taskId])
-  const executable = items.filter((item) => EXECUTABLE_ITEM.test(item.text)).length
+  const executable = items.filter((item) => isExecutableItem(item.text)).length
   const edit = (index: number, value: string): void => setDraft((current) => current && { ...current, items: current.items.map((item, i) => (i === index ? value : item)) })
   const save = (): void => {
     if (!draft) return
@@ -507,7 +513,7 @@ function AcceptanceList({
               onToggle={() => onCheck(item.id, item.checked_at_ms == null)}
             />
           </Tooltip>
-          {EXECUTABLE_ITEM.test(item.text) && <span data-testid={`task-acceptance-executable-${item.id}`}><Chip variant="state" tone="info" label="Executable" /></span>}
+          {isExecutableItem(item.text) && <span data-testid={`task-acceptance-executable-${item.id}`}><Chip variant="state" tone="info" label="Executable" /></span>}
         </div>
   ))
   return <div>{rows}</div>

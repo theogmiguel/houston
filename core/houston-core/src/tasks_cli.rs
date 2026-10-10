@@ -229,7 +229,10 @@ fn proof_flags(args: &[String]) -> Result<Value> {
     let mut verification: Vec<Value> = Vec::new();
     let mut i = 0;
     while i < args.len() {
-        let value = args.get(i + 1).filter(|v| !v.starts_with("--"));
+        // `--verify` and `--output` take the next argument as it is: a test
+        // failure's output often starts with dashes.
+        let verbatim = matches!(args[i].as_str(), "--verify" | "--output");
+        let value = args.get(i + 1).filter(|v| verbatim || !v.starts_with("--"));
         match args[i].as_str() {
             "--verify" => {
                 let Some(command) = value else {
@@ -262,7 +265,8 @@ fn proof_flags(args: &[String]) -> Result<Value> {
             }
             _ => {}
         }
-        i += 1;
+        // A value this flag consumed is never read as a flag itself.
+        i += if verbatim && value.is_some() { 2 } else { 1 };
     }
     if let Some(entry) = verification.iter().find(|v| v["passed"].is_null()) {
         bail!(
@@ -388,7 +392,40 @@ fn query_escape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::repeated;
+    use super::{proof_flags, repeated};
+
+    #[test]
+    fn proof_flags_pair_each_result_with_its_verify_and_keep_dashed_output() {
+        let args: Vec<String> = [
+            "handback",
+            "--verify",
+            "cargo test",
+            "--output",
+            "---- tests::login stdout ----",
+            "--failed",
+            "--verify",
+            "true",
+            "--passed",
+            "--sha",
+            "abc1234",
+            "--permanent",
+            "adds a column",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let proof = proof_flags(&args).unwrap();
+        assert_eq!(proof["pushed_sha"], "abc1234");
+        assert_eq!(proof["permanent"][0], "adds a column");
+        let checks = proof["verification"].as_array().unwrap();
+        assert_eq!(checks.len(), 2);
+        assert_eq!(checks[0]["output"], "---- tests::login stdout ----");
+        assert_eq!(checks[0]["passed"], false);
+        assert_eq!(checks[1]["command"], "true");
+        assert_eq!(checks[1]["passed"], true);
+        let unpaired: Vec<String> = ["--verify", "true"].iter().map(|s| s.to_string()).collect();
+        assert!(proof_flags(&unpaired).is_err(), "a result is required");
+    }
 
     #[test]
     fn a_repeated_flag_keeps_every_value_in_order() {
