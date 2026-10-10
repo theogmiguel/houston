@@ -693,9 +693,27 @@
       ' END; touch ' + doneFile + '; sleep 86400\n';
   }
 
+  // How panes recovered during a round: daemon gap frames, re-attaches, and write-queue
+  // overflows answered with a snapshot.
+  function m12RecoveryCounters() {
+    var ws = globalThis.__trWsGapStats__ || {};
+    var wq = globalThis.__trWriteQueueStats__ || {};
+    return { gaps: ws.gaps || 0, reattaches: ws.reattaches || 0, overflowResyncs: wq.overflowResyncs || 0 };
+  }
+
+  function m12RecoveryDelta(before) {
+    var now = m12RecoveryCounters();
+    return {
+      gaps: now.gaps - before.gaps,
+      reattaches: now.reattaches - before.reattaches,
+      overflowResyncs: now.overflowResyncs - before.overflowResyncs
+    };
+  }
+
   function m12CheckContent(text, tag, lines) {
     var expectedRest = ' ' + M12_FILL;
     var seen = 0, gaps = 0, corrupt = 0, prev = null, last = null, firstGap = null;
+    var corruptSamples = [];
     var rows = text.split('\n');
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i].replace(/\s+$/, '');
@@ -703,11 +721,14 @@
       var num = Number(row.slice(tag.length + 1, tag.length + 9));
       if (!Number.isInteger(num) || row.slice(tag.length + 9) !== expectedRest) {
         corrupt++;
+        if (corruptSamples.length < 2) corruptSamples.push(row.slice(0, 240));
         continue;
       }
       if (prev !== null && num !== prev + 1) {
         gaps++;
-        if (firstGap === null) firstGap = { after: prev, next: num };
+        if (firstGap === null) {
+          firstGap = { after: prev, next: num, context: rows.slice(Math.max(0, i - 3), i + 1).join('\n').slice(0, 800) };
+        }
       }
       prev = num;
       last = num;
@@ -720,6 +741,7 @@
       gaps: gaps,
       firstGap: firstGap,
       corrupt: corrupt,
+      corruptSamples: corruptSamples,
       endMarker: text.indexOf(tag + '-END') !== -1
     };
   }
@@ -762,6 +784,7 @@
 
     var stats0 = globalThis.__trGhosttyPaintStats__;
     var parse0 = { ms: stats0.parseMs, bytes: stats0.parseBytes };
+    var recovery0 = m12RecoveryCounters();
     var floodFrames = startRaf();
     var floodStartedAt = performance.now();
     for (var f = 0; f < hiddenIds.length; f++) {
@@ -862,6 +885,7 @@
       hiddenPanes: hiddenIds.length,
       detachedWhileHidden: detached,
       floodDone: floodDone,
+      recovery: m12RecoveryDelta(recovery0),
       floodMs: Math.round(floodMs),
       hiddenParse: hiddenParse,
       floodFrame: {
@@ -894,7 +918,9 @@
       ' intermediate=' + round.reveal.intermediatePaints + ' skeleton=' + round.reveal.panesWithSkeleton +
       '; content complete=' + round.content.panesComplete + '/' + hiddenIds.length + ' minRetained=' +
       round.content.minRetainedLines + '/' + lines + ' gaps=' + round.content.gaps + ' corrupt=' +
-      round.content.corrupt + (allSettled ? '' : ' [WARNING: not every pane settled within ' +
+      round.content.corrupt + '; recovery gaps=' + round.recovery.gaps + ' reattaches=' +
+      round.recovery.reattaches + ' overflowResyncs=' + round.recovery.overflowResyncs +
+      (allSettled ? '' : ' [WARNING: not every pane settled within ' +
       M12_REVEAL_DEADLINE_MS + 'ms]') + (floodDone ? '' : ' [WARNING: floods did not finish]'));
     return round;
   }
@@ -957,19 +983,48 @@
     "time.sleep(0.05)) for i in itertools.count()]'\n";
 
   // Types unique tokens into a pane running `cat` and times each until it is painted.
-  function m13InputProbe(probe) {
+  // Arrival (socket frame carrying the echo) splits echo into transport and renderer time.
+  function m13InputProbe(probe, session) {
     var samples = [];
+    var arrivals = [];
+    var parses = [];
     var timeouts = 0;
     var seq = 0;
     var running = true;
     var pending = [];
     var sentOnLine = 0;
+    var decoder = new TextDecoder();
+    globalThis.__trBenchFrameTap__ = function (id, payload) {
+      if (id !== session || !pending.length) return;
+      var text = decoder.decode(payload);
+      var now = performance.now();
+      for (var i = 0; i < pending.length; i++) {
+        var p = pending[i];
+        if (p.arrivedAt === undefined && text.indexOf(p.token) !== -1) {
+          p.arrivedAt = now;
+          watchParse(p);
+        }
+      }
+    };
+    // Polls the engine on timers, not frames, so parse time and frame wait separate.
+    function watchParse(p) {
+      setTimeout(function poll() {
+        if (p.parsedAt !== undefined || performance.now() - p.at > M13_ECHO_DEADLINE_MS) return;
+        if (probe.screenText().indexOf(p.token) !== -1) p.parsedAt = performance.now();
+        else setTimeout(poll, 1);
+      }, 0);
+    }
     function check() {
       if (pending.length) {
         var screen = probe.screenText();
         var now = performance.now();
         pending = pending.filter(function (p) {
-          if (screen.indexOf(p.token) !== -1) { samples.push(now - p.at); return false; }
+          if (screen.indexOf(p.token) !== -1) {
+            samples.push(now - p.at);
+            if (p.arrivedAt !== undefined) arrivals.push(p.arrivedAt - p.at);
+            if (p.parsedAt !== undefined) parses.push(p.parsedAt - p.at);
+            return false;
+          }
           if (now - p.at > M13_ECHO_DEADLINE_MS) { timeouts++; return false; }
           return true;
         });
@@ -990,8 +1045,15 @@
         running = false;
         clearInterval(timer);
         return sleep(M13_ECHO_DEADLINE_MS).then(function () {
+          globalThis.__trBenchFrameTap__ = undefined;
           var sorted = samples.slice().sort(function (a, b) { return a - b; });
+          var arrived = arrivals.slice().sort(function (a, b) { return a - b; });
+          var parsed = parses.slice().sort(function (a, b) { return a - b; });
           return {
+            arrivalP50Ms: Math.round(percentile(arrived, 50)),
+            arrivalP95Ms: Math.round(percentile(arrived, 95)),
+            parsedP50Ms: Math.round(percentile(parsed, 50)),
+            parsedP95Ms: Math.round(percentile(parsed, 95)),
             sent: seq,
             echoed: sorted.length,
             timeouts: timeouts,
@@ -1005,7 +1067,28 @@
     };
   }
 
-  async function m13Phase(name, inputProbe) {
+  // How late a 4 ms timer fires: main-thread work that output frames queue behind.
+  function m13TimerLag() {
+    var lags = [];
+    var running = true;
+    function arm() {
+      var armedAt = performance.now();
+      setTimeout(function () {
+        lags.push(performance.now() - armedAt - 4);
+        if (running) setTimeout(arm, 20);
+      }, 4);
+    }
+    arm();
+    return {
+      stop: function () {
+        running = false;
+        var sorted = lags.slice().sort(function (a, b) { return a - b; });
+        return { p50Ms: Math.round(percentile(sorted, 50)), p95Ms: Math.round(percentile(sorted, 95)) };
+      }
+    };
+  }
+
+  async function m13Phase(name, inputProbe, inputSession) {
     // Typing happens in a focused pane, which is the one pane painted every frame.
     inputProbe.focus();
     await sleep(100);
@@ -1013,12 +1096,15 @@
     var stats0 = globalThis.__trGhosttyPaintStats__;
     var before = { parseMs: stats0.parseMs, parseBytes: stats0.parseBytes, paintMs: stats0.paintMs, paintFrames: stats0.paintFrames };
     var frames = startRaf();
-    var input = m13InputProbe(inputProbe);
+    var input = m13InputProbe(inputProbe, inputSession);
+    var timerLag = m13TimerLag();
+    var animations = document.getAnimations ? document.getAnimations().length : -1;
     var startEpochMs = Date.now();
     log('M13 phase ' + name + ' start');
     await sleep(M13_PHASE_MS);
     var endEpochMs = Date.now();
     frames.stop();
+    var lag = timerLag.stop();
     var stats1 = globalThis.__trGhosttyPaintStats__;
     var echo = await input.stop();
     var sorted = frames.samples.slice().sort(function (a, b) { return a - b; });
@@ -1037,13 +1123,17 @@
         maxMs: sorted.length ? sorted[sorted.length - 1] : 0
       },
       echo: echo,
+      timerLag: lag,
+      animations: animations,
       inputFocused: inputFocused
     };
     log('M13 phase ' + name + (inputFocused ? '' : ' [input pane NOT focused]') + ': parse ' + phase.parseMiB + ' MiB/' + phase.parseMs + 'ms, paint ' +
       phase.paintFrames + ' frames/' + phase.paintMs + 'ms, frame p95=' + phase.frame.p95Ms.toFixed(1) +
       'ms max=' + phase.frame.maxMs.toFixed(1) + 'ms; echo p50=' + echo.p50Ms + 'ms p95=' + echo.p95Ms +
       'ms p99=' + echo.p99Ms + 'ms max=' + echo.maxMs + 'ms (' + echo.echoed + '/' + echo.sent +
-      ', timeouts ' + echo.timeouts + ')');
+      ', timeouts ' + echo.timeouts + '); arrival p50=' + echo.arrivalP50Ms + 'ms p95=' +
+      echo.arrivalP95Ms + 'ms; in engine p50=' + echo.parsedP50Ms + 'ms p95=' + echo.parsedP95Ms + 'ms; timer lag p50=' +
+      lag.p50Ms + 'ms p95=' + lag.p95Ms + 'ms; animations ' + animations);
     return phase;
   }
 
@@ -1079,12 +1169,12 @@
     await sleep(1000);
 
     var phases = [];
-    phases.push(await m13Phase('idle', inputProbe));
+    phases.push(await m13Phase('idle', inputProbe, Number(inputId)));
     for (var s = 0; s < streamIds.length; s++) {
       await invoke('bench_stdin', { session: Number(streamIds[s]), text: M13_STREAM_CMD });
     }
     await sleep(2000);
-    phases.push(await m13Phase('stream-visible', inputProbe));
+    phases.push(await m13Phase('stream-visible', inputProbe, Number(inputId)));
     await toggleExpand();
     await sleep(M12_HIDE_SETTLE_MS);
     var inputEl = document.querySelector('[data-panekey="' + inputId + '"]');
@@ -1092,12 +1182,12 @@
       throw new Error('M13: the expand shortcut no longer targets the input pane ' + inputId);
     }
     var detached = streamIds.filter(function (id) { return !map.get(Number(id)).attached(); }).length;
-    var phase = await m13Phase('stream-expanded', inputProbe);
+    var phase = await m13Phase('stream-expanded', inputProbe, Number(inputId));
     phase.detachedStreams = detached;
     phases.push(phase);
     await toggleExpand();
     await sleep(2000);
-    phases.push(await m13Phase('stream-visible-again', inputProbe));
+    phases.push(await m13Phase('stream-visible-again', inputProbe, Number(inputId)));
 
     for (var c = 0; c < ids.length; c++) {
       await invoke('bench_session_kill', { session: Number(ids[c]) }).catch(function (err) {
