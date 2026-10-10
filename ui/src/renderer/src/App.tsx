@@ -1392,6 +1392,14 @@ export function App(): React.JSX.Element {
             });
             break;
 
+          case "session_checkout":
+            setSessions((prev) => {
+              const session = prev.get(msg.id);
+              if (!session) return prev;
+              return new Map(prev).set(msg.id, { ...session, checkout: msg.checkout ?? null });
+            });
+            break;
+
           case "clipboard_set":
             if (osc52Ref.current) {
               void navigator.clipboard.writeText(msg.text).then(
