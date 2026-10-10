@@ -2858,8 +2858,23 @@ impl Daemon {
         Ok(self.tasks_review_settings_state(workspace))
     }
 
+    /// Project and tracker snapshots plus an approved plan's pointers,
+    /// exclusions and answers, which approval does not copy into the task.
     fn task_project_and_tracker_context(&self, row: &TaskRow) -> Result<String> {
-        Ok(self.task_project_and_tracker_context_snapshot(row)?.0)
+        let context = self.task_project_and_tracker_context_snapshot(row)?.0;
+        let proto::ServerMsg::TaskDomainState { domain } = self.task_domain_state(row.id)? else {
+            return Ok(context);
+        };
+        let Some(plan) = domain.plan.filter(|p| p.approved_revision.is_some()) else {
+            return Ok(context);
+        };
+        let mut value: serde_json::Value = serde_json::from_str(&context)?;
+        value["approved_plan"] = serde_json::json!({
+            "pointers": plan.proposal.pointers,
+            "out_of_scope": plan.proposal.out_of_scope,
+            "answers": plan.answers,
+        });
+        Ok(serde_json::to_string(&value)?)
     }
 
     fn task_project_and_tracker_context_snapshot(
@@ -2928,7 +2943,11 @@ impl Daemon {
             }
         }
         if !external_references.is_empty() && external_references != "[]" {
-            block.push_str("\nProject and tracker context (unverified snapshots): ");
+            block.push_str(
+                "\nProject, tracker and approved plan context (tracker parts are unverified \
+                 snapshots; approved_plan lists files to start from, what is out of scope and \
+                 the user's answers to the planner): ",
+            );
             block.push_str(external_references);
             block.push('\n');
         }
