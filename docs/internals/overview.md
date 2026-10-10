@@ -74,7 +74,10 @@ and daemon share that service, independently of the app's desktop scope. Each ne
 enters a separate `houston-session-<channel>-<session>-<id>.scope` before executing the
 CLI, so descendants inherit its scope without a migration race. The daemon remains
 the PTY owner; PID, session leadership and terminal input are preserved. Killing one
-session scope leaves the daemon and sibling scopes running. Units are collected when
+session scope leaves the daemon and sibling scopes running. A failed scope stop falls
+back to signalling the PTY's process groups and is logged, because some user managers
+(WSL's among them) answer `KillUnit` with `InvalidArgs` while the processes die; a kill,
+and therefore a daemon shutdown, never fails on the scope alone. Units are collected when
 inactive or failed; discovery and adoption retain the channel's existing files and
 authenticated endpoints.
 

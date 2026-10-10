@@ -187,6 +187,48 @@ fn interpret_ensure(
     }
 }
 
+/// Why `daemon_shutdown` did not stop the daemon, if it says so: it answers HTTP 200
+/// with `ok: false` when a session would not end.
+fn shutdown_refusal(
+    answer: Result<(reqwest::StatusCode, serde_json::Value), String>,
+) -> Option<String> {
+    match answer {
+        Ok((status, body)) if status.is_success() && body["ok"] != false => None,
+        Ok((status, body)) => Some(format!(
+            "daemon_shutdown answered HTTP {status}: {}",
+            body["error"].as_str().unwrap_or("no reason given")
+        )),
+        Err(e) => Some(format!("daemon_shutdown failed: {e}")),
+    }
+}
+
+fn check_stopped(
+    distro: &str,
+    channel: &str,
+    stopped: Result<RunOutput, String>,
+    shutdown_failure: Option<String>,
+) -> Result<(), String> {
+    let still = match stopped {
+        Ok(out) if out.code == Some(0) => return Ok(()),
+        Ok(out) if out.code == Some(1) => {
+            let pid = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            format!(
+                "Houston's {channel} daemon in {distro} (pid {}) is still running",
+                if pid.is_empty() { "unknown" } else { &pid }
+            )
+        }
+        Ok(out) => format!(
+            "could not check whether Houston's daemon in {distro} stopped: {}",
+            command::failure(&command::daemon_stopped(distro, channel), &out, true)
+        ),
+        Err(e) => format!("could not check whether Houston's daemon in {distro} stopped: {e}"),
+    };
+    Err(match shutdown_failure {
+        Some(reason) => format!("{distro} is disabled, but {still}; {reason}"),
+        None => format!("{distro} is disabled, but {still}"),
+    })
+}
+
 fn accept_report(distro: &str, report: EnsureReport) -> Result<EnsureReport, String> {
     if report.state == EnsureState::Refused {
         return Err(format!(
@@ -619,27 +661,35 @@ impl WslManager {
                 None => (None, None, None),
             }
         };
+        let mut shutdown_failure = None;
         if let (Some(port), Some(token)) = (relay_port, token) {
             let client = crate::daemon_host::manage_http_client();
-            match crate::daemon_host::manage_post(
+            let answer = crate::daemon_host::manage_post(
                 &client,
                 port,
                 &token,
                 houston_protocol::ManageVerb::DaemonShutdown,
             )
-            .await
-            {
-                Ok((status, _)) => {
-                    eprintln!("houston-tauri: wsl {name}: daemon_shutdown answered HTTP {status}")
+            .await;
+            eprintln!(
+                "houston-tauri: wsl {name}: daemon_shutdown {}",
+                match &answer {
+                    Ok((status, body)) => format!("answered HTTP {status}: {body}"),
+                    Err(e) => format!("failed: {e}"),
                 }
-                Err(e) => eprintln!("houston-tauri: wsl {name}: daemon_shutdown failed: {e}"),
-            }
+            );
+            shutdown_failure = shutdown_refusal(answer);
         }
+        // The distro is disabled either way; a daemon that outlived it is reported.
+        let stopped = inner
+            .run(command::daemon_stopped(&name, &inner.opts.channel))
+            .await;
         config.disable(&name)?;
         config::save(&inner.opts.state_dir, &config)?;
         inner.envs.lock().expect("wsl envs lock").remove(&name);
         inner.notify();
         inner.remove_launcher(&name, install_dir).await;
+        check_stopped(&name, &inner.opts.channel, stopped, shutdown_failure)?;
         Ok(Disabled { name })
     }
 
@@ -755,6 +805,8 @@ mod tests {
         probes: HashMap<String, String>,
         /// Answers the probe gives before falling back to `probes`, first one first.
         probe_replies: Mutex<std::collections::VecDeque<std::io::Result<RunOutput>>>,
+        /// What `daemon_stopped` answers; a stopped daemon by default.
+        stopped: Option<RunOutput>,
         ensure: String,
         calls: Mutex<Vec<Vec<String>>>,
         daemons: tokio::sync::mpsc::UnboundedSender<DuplexStream>,
@@ -767,6 +819,7 @@ mod tests {
                 list,
                 probes: HashMap::new(),
                 probe_replies: Mutex::new(Default::default()),
+                stopped: None,
                 ensure: format!(
                     r#"{{"state":"spawned","port":40001,"token":"{TOKEN}","build":"{BUILD}","protocol":131}}"#
                 ),
@@ -813,6 +866,11 @@ mod tests {
                     return reply;
                 }
                 return ok(self.probes.get(distro).cloned().unwrap_or_default());
+            }
+            if argv == command::daemon_stopped(distro, "wslt").as_slice() {
+                if let Some(reply) = &self.stopped {
+                    return Ok(reply.clone());
+                }
             }
             if argv == command::remote_hashes(distro, BUILD).as_slice() {
                 return ok("/home/u\n");
@@ -868,7 +926,11 @@ mod tests {
     }
 
     /// Answers one relayed request as a daemon would, and hands back what it read.
-    async fn serve_manage(mut daemon: DuplexStream) -> String {
+    async fn serve_manage(daemon: DuplexStream) -> String {
+        serve_manage_with(daemon, r#"{"ok":true}"#).await
+    }
+
+    async fn serve_manage_with(mut daemon: DuplexStream, body: &str) -> String {
         let mut raw = Vec::new();
         let mut buf = [0u8; 4096];
         let total = loop {
@@ -892,7 +954,6 @@ mod tests {
             let n = daemon.read(&mut buf).await.unwrap();
             raw.extend_from_slice(&buf[..n]);
         }
-        let body = r#"{"ok":true}"#;
         let reply = format!(
             "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
             body.len()
@@ -1052,6 +1113,59 @@ mod tests {
         assert!(fake.calls().is_empty(), "nothing runs off Windows");
         wsl.start_enabled();
         assert!(wsl.wsl_envs().is_empty());
+    }
+
+    #[tokio::test]
+    async fn disable_reports_a_daemon_that_did_not_stop() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let (mut fake, mut daemons) = FakeWsl::new(list_text("* Ubuntu  Running  2\n"));
+        fake.probes
+            .insert("Ubuntu".into(), "x86_64\nglibc 2.39\n".into());
+        fake.stopped = Some(RunOutput {
+            code: Some(1),
+            stdout: b"6822\n".to_vec(),
+            stderr: Vec::new(),
+        });
+        let fake = Arc::new(fake);
+        let wsl = manager(fake.clone(), state.path(), bundle.path(), true);
+        wsl.enable("Ubuntu".into()).await.unwrap();
+
+        let refusal = r#"{"ok":false,"error":"failed to terminate 1 of 1 session(s): 1: InvalidArgs","unterminated":[1]}"#;
+        tokio::spawn(async move {
+            while let Some(daemon) = daemons.recv().await {
+                serve_manage_with(daemon, refusal).await;
+            }
+        });
+        let err = wsl.disable("Ubuntu".into()).await.unwrap_err();
+
+        assert!(err.starts_with("Ubuntu is disabled, but"), "{err}");
+        assert!(err.contains("(pid 6822) is still running"), "{err}");
+        assert!(
+            err.contains("failed to terminate 1 of 1 session(s)"),
+            "{err}"
+        );
+        assert!(fake
+            .calls()
+            .contains(&command::daemon_stopped("Ubuntu", "wslt")));
+        assert!(!config::load(state.path()).unwrap().is_enabled("Ubuntu"));
+        assert!(wsl.wsl_envs().is_empty());
+    }
+
+    #[test]
+    fn a_shutdown_answer_with_ok_false_is_a_refusal() {
+        let ok = Ok((reqwest::StatusCode::OK, serde_json::json!({"ok": true})));
+        assert_eq!(shutdown_refusal(ok), None);
+        let refused = Ok((
+            reqwest::StatusCode::OK,
+            serde_json::json!({"ok": false, "error": "session 1 would not end"}),
+        ));
+        assert_eq!(
+            shutdown_refusal(refused).unwrap(),
+            "daemon_shutdown answered HTTP 200 OK: session 1 would not end"
+        );
+        let failed = shutdown_refusal(Err("connection refused".into())).unwrap();
+        assert!(failed.contains("connection refused"), "{failed}");
     }
 
     #[tokio::test]

@@ -188,6 +188,14 @@ pub fn proxy(distro: &str, install_dir: &str, channel: &str) -> Vec<String> {
     )
 }
 
+const STOPPED_SCRIPT: &str = r#"d="$HOME/.houston"; [ "$1" = release ] || d="$d-$1"; i=0; while [ -e "$d/daemon.json" ]; do i=$((i+1)); if [ $i -gt 50 ]; then sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$d/daemon.json"; exit 1; fi; sleep 0.1; done"#;
+
+/// Waits up to 5 s for the channel's `daemon.json` to go, which a completed shutdown
+/// removes. Exit 1 prints the pid it still names, never the token beside it.
+pub fn daemon_stopped(distro: &str, channel: &str) -> Vec<String> {
+    in_distro(distro, &["/bin/sh", "-c", STOPPED_SCRIPT, "sh", channel])
+}
+
 pub fn launcher_remove(distro: &str, install_dir: &str) -> Vec<String> {
     in_distro(distro, &[&core_bin(install_dir), "wsl-launcher-remove"])
 }

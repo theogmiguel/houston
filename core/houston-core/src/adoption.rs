@@ -252,26 +252,29 @@ impl RawMasterPty {
         let pid: u32 = pid
             .try_into()
             .map_err(|_| anyhow!("adopted child pid {pid} is not a signallable pid"))?;
+        let by_pty = || {
+            let guard = self.file.lock().expect("raw pty file lock");
+            crate::pid::terminate_pty_session(
+                pid,
+                guard.as_ref().map(AsRawFd::as_raw_fd),
+                self.child_creation,
+            )
+            .map_err(|error| error.to_string())
+        };
         #[cfg(target_os = "linux")]
-        if crate::session_isolation::terminate_owned_scope(
+        let result = crate::session_isolation::terminate_session(
             pid,
             session_id,
             channel,
             self.child_creation,
-        )
-        .map_err(anyhow::Error::msg)?
-        {
-            return Ok(());
-        }
+            by_pty,
+        );
         #[cfg(not(target_os = "linux"))]
-        let _ = (session_id, channel);
-        let guard = self.file.lock().expect("raw pty file lock");
-        crate::pid::terminate_pty_session(
-            pid,
-            guard.as_ref().map(AsRawFd::as_raw_fd),
-            self.child_creation,
-        )
-        .map_err(anyhow::Error::from)
+        let result = {
+            let _ = (session_id, channel);
+            by_pty()
+        };
+        result.map_err(anyhow::Error::msg)
     }
 
     pub fn release(&self) {

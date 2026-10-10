@@ -987,22 +987,21 @@ impl Backend {
                         let fd = master.as_ref().and_then(|master| master.as_raw_fd());
                         match pid {
                             Some(pid) => {
+                                let by_pty = || {
+                                    crate::pid::terminate_pty_session(pid, fd, *pid_creation)
+                                        .map_err(|error| error.to_string())
+                                };
                                 #[cfg(target_os = "linux")]
-                                let scoped = crate::session_isolation::terminate_owned_scope(
+                                let result = crate::session_isolation::terminate_session(
                                     pid,
                                     id,
                                     channel,
                                     *pid_creation,
-                                )
-                                .map_err(std::io::Error::other)?;
+                                    by_pty,
+                                );
                                 #[cfg(not(target_os = "linux"))]
-                                let scoped = false;
-                                if scoped {
-                                    Ok(())
-                                } else {
-                                    crate::pid::terminate_pty_session(pid, fd, *pid_creation)
-                                        .map_err(std::io::Error::other)
-                                }
+                                let result = by_pty();
+                                result.map_err(std::io::Error::other)
                             }
                             None => Err(std::io::Error::other(format!(
                                 "session {id} has no recorded PTY root pid"

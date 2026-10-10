@@ -41,7 +41,8 @@ the reason names both versions.
 Select **Disable** and confirm. Houston stops its daemon inside that distro, which ends
 every session that daemon owns, and the distro's workspaces leave the rail until you
 enable it again. It also removes the `houston` command it added (below), but only if that
-file is still Houston's own.
+file is still Houston's own. If the daemon is still running afterwards, the row says so
+and names its process ID.
 
 ## Opening a WSL folder
 
