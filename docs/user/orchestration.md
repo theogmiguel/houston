@@ -260,6 +260,18 @@ with a warning indicator.
 Show only on the Needs you heading hides the other groups until you select it again, or
 until no child needs you. Houston never answers a child's question for you.
 
+The roster's **Queue** tab lists the workspace's todo tasks in start order (priority, then
+task number) under the count of ready ones; select a row to open the task. **Live children**
+shows live children against the cap from Settings ▸ Orchestration; settled children do not
+count. **Run next N** starts the top N ready tasks as children of this orchestrator, where
+N is the ready count limited by the free child slots. It is disabled when no task is ready
+or no slot is free, and its tooltip names the limit. Started task keys and each refusal
+appear below the button.
+
+An idle orchestrator whose child or deeper descendant is working shows as working on its
+rail card and in the card's agent row; a top-level orchestrator's pane header shows the
+same. The roster keeps the orchestrator's own status.
+
 Overview opens a closable side-panel tab for that orchestrator. Group its children by
 status or worktree, select a terminal, or review changes in the child's checkout.
 The parent’s Inbox count opens pending messages. A child’s Pending delivery badge

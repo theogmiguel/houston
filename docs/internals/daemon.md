@@ -375,7 +375,13 @@ only on rare control-plane events — the PTY path never touches SQLite.
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
-| bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove) |
+| projects and task domain | `backlog_projects`, `backlog_project_history`, `backlog_task_domain` (Delivery or Slice, Project, status override), `backlog_task_planning_capabilities` |
+| task trackers | `task_tracker_settings`, `task_tracker_poll_state`, `task_tracker_refresh_cursor`, `task_tracker_database_identity`, `task_tracker_outbox` (keyed writes to enabled connections), `task_external_links` |
+| Slack intake | `intake_events`, `intake_questions`, `intake_outbox`, `intake_results`, `intake_adjustments` |
+| harness review | `harness_routines`, `harness_reviews`, `harness_findings`, `harness_decisions`, `harness_finding_tasks`, `harness_verifications` |
+| orchestration | `delegations`, `pane_inbox`, `orchestration_receipts`, `pr_watches` |
+| usage | `usage_daily_rollup` |
+| bookkeeping | `settings`, `tags`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove) |
 | legacy tasks | `tasks`, `task_events` — an orphan from before the `backlog_` tables, retained for database compatibility and never read or written by Tasks |
 | legacy substrate | `swarms`, `swarm_agents`, `swarm_messages`, `swarm_deliveries`, `swarm_plan_events_applied` |
 
@@ -394,9 +400,14 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns seven tasks:
+`boot::spawn_background_loops` is called only by the daemon host and spawns ten tasks:
 `swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
-`worktree_cleanup_loop`, `task_pr_watch_loop` and `checkout_watch_loop`. The checkout
+`worktree_cleanup_loop`, `task_pr_watch_loop`, `pr_watch_loop`, `checkout_watch_loop`,
+`slack_loops` and `task_tracker_loop`. `pr_watch_loop` polls each `pr_watches` row every
+`PR_WATCH_INTERVAL_MS` and wakes the owning pane on a change. `slack_loops` (the Socket
+Mode connection and the intake tick) idles while the Slack intake is off.
+`task_tracker_loop` polls and drains the tracker outbox every 20 seconds for connections a
+workspace enabled; without one it sends nothing. The checkout
 watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
 debounces changes and broadcasts updated checkout identity. It caps filesystem watches at
 256; excess checkouts use a 30-second poll so a large workspace set cannot grow watcher
