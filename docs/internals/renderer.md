@@ -104,6 +104,9 @@ the setting at the current width (`scrollbackLinesToBytes`) and recomputes the c
 `houston_vt_set_max_scrollback` whenever the width changes. Without that, a pane opened
 narrow during a split would keep a narrow pane's history after it widens.
 
+Output in unfocused panes repaints on one shared tick (`BACKGROUND_OUTPUT_PAINT_MS`, about
+15 Hz). The focused pane, input, scrolling, selection and resizes repaint on the next frame.
+
 Terminal palettes are applied **to the engine, not to CSS**: `theme.ts` holds
 `TERMINAL_PALETTES`, and `ghosttyThemeFromCss` converts a palette's hex values to the
 engine's RGB theme. `[data-theme]` scopes app chrome only; it never reaches the terminal
