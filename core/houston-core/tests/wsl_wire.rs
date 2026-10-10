@@ -183,6 +183,160 @@ fn wsl_ensure_attaches_to_matching_daemon() {
     );
 }
 
+// Puts the real daemon's discovery record back before `EnsuredDaemon` shuts it down.
+#[cfg(unix)]
+struct RestoreDaemonFile(std::path::PathBuf, String);
+
+#[cfg(unix)]
+impl Drop for RestoreDaemonFile {
+    fn drop(&mut self) {
+        let _ = std::fs::write(self.0.join("daemon.json"), &self.1);
+    }
+}
+
+// Answers every request with `body` as a 200, the way a daemon answers daemon_status,
+// and hands each raw request back to the test.
+#[cfg(unix)]
+fn serve_status_stub(
+    body: String,
+) -> (
+    u16,
+    std::sync::mpsc::Receiver<String>,
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (tx, rx) = std::sync::mpsc::channel();
+    let stopped = stop.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            if stopped.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            let Ok(mut stream) = stream else { continue };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let mut raw = Vec::new();
+            let mut buf = [0u8; 4096];
+            let head_end = loop {
+                if let Some(at) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break Some(at + 4);
+                }
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => break None,
+                    Ok(n) => raw.extend_from_slice(&buf[..n]),
+                }
+            };
+            let Some(head_end) = head_end else { continue };
+            let head = text(&raw[..head_end]).to_ascii_lowercase();
+            let length: usize = head
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length:"))
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(0);
+            while raw.len() < head_end + length {
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => raw.extend_from_slice(&buf[..n]),
+                }
+            }
+            let _ = tx.send(text(&raw));
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
+                 Connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    (port, rx, stop)
+}
+
+// A newer Houston daemon owns the channel: a live houston process in daemon.json whose
+// daemon_status reports a higher protocol. Ensure must refuse it, not replace it.
+#[cfg(unix)]
+#[test]
+fn wsl_ensure_exits_3_for_a_newer_daemon() {
+    let home = tempfile::tempdir().unwrap();
+    let state_dir = home.path().join(".houston-wslt-newer");
+    let _daemon = EnsuredDaemon(state_dir.clone());
+
+    let first = run_core(
+        core_bin(),
+        home.path(),
+        &["wsl-ensure", "--channel", "wslt-newer"],
+    );
+    let first = ensure_report(&first);
+    assert_eq!(first["state"], "spawned", "{first}");
+    let real = read_daemon_file(&state_dir).unwrap();
+    let mut status: proto::ManageDaemonStatus =
+        manage_blocking(real.port, &real.token, proto::ManageVerb::DaemonStatus)
+            .json()
+            .unwrap();
+    let newer = proto::PROTOCOL_VERSION + 1;
+    status.protocol_version = newer;
+    let (stub_port, requests, stop_stub) =
+        serve_status_stub(serde_json::to_string(&status).unwrap());
+
+    let original = std::fs::read_to_string(state_dir.join("daemon.json")).unwrap();
+    let _restore = RestoreDaemonFile(state_dir.clone(), original.clone());
+    let mut record: serde_json::Value = serde_json::from_str(&original).unwrap();
+    record["port"] = stub_port.into();
+    std::fs::write(state_dir.join("daemon.json"), record.to_string()).unwrap();
+
+    let out = run_core(
+        core_bin(),
+        home.path(),
+        &["wsl-ensure", "--channel", "wslt-newer"],
+    );
+    stop_stub.store(true, std::sync::atomic::Ordering::SeqCst);
+    let _ = std::net::TcpStream::connect(("127.0.0.1", stub_port));
+    let report = ensure_report(&out);
+    assert_eq!(out.status.code(), Some(3), "stderr: {}", text(&out.stderr));
+    assert_eq!(report["state"], "refused", "{report}");
+    let fields = report.as_object().unwrap();
+    assert!(
+        !fields.contains_key("port") && !fields.contains_key("token"),
+        "a refusal must not hand out the daemon's port or token: {report}"
+    );
+    assert_eq!(report["protocol"], newer);
+    let reason = report["reason"].as_str().expect("refused carries a reason");
+    assert!(
+        reason.contains(&newer.to_string())
+            && reason.contains(&proto::PROTOCOL_VERSION.to_string()),
+        "the reason must name protocols {newer} and {}: {reason}",
+        proto::PROTOCOL_VERSION
+    );
+    assert!(
+        !text(&out.stderr).contains(&real.token),
+        "the token must never reach stderr"
+    );
+
+    let asked = requests
+        .try_recv()
+        .expect("ensure must ask the owning daemon for its status");
+    assert!(asked.starts_with("POST /manage "), "{asked:?}");
+    assert!(asked.contains("\"daemon_status\""), "{asked:?}");
+    assert!(
+        asked
+            .to_ascii_lowercase()
+            .contains(&format!("authorization: bearer {}", real.token).to_ascii_lowercase()),
+        "{asked:?}"
+    );
+    let after = read_daemon_file(&state_dir).expect("daemon.json survives a refusal");
+    assert_eq!(after.pid, real.pid, "a refusal must not spawn a daemon");
+    assert_eq!(
+        after.port, stub_port,
+        "a refusal must not touch daemon.json"
+    );
+    assert!(
+        houston_core::pid::process_is_alive(real.pid),
+        "a refusal must not stop the newer daemon"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn wsl_ensure_exits_1_when_supervisor_missing() {
