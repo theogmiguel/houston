@@ -113,16 +113,19 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
     Ok(())
 }
 
-fn read_root(path: &Path) -> Result<Option<Value>> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
-    };
-    if text.trim().is_empty() {
-        return Ok(None);
+fn read_text(path: &Path) -> Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(t) => Ok(Some(t)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
     }
-    let root: Value = serde_json::from_str(&text).with_context(|| {
+}
+
+fn parse_root(path: &Path, text: Option<&str>) -> Result<Option<Value>> {
+    let Some(text) = text.filter(|t| !t.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let root: Value = serde_json::from_str(text).with_context(|| {
         format!(
             "{} is not valid JSON (ZCode accepts strict JSON only) — refusing to rewrite it",
             path.display()
@@ -136,6 +139,81 @@ fn read_root(path: &Path) -> Result<Option<Value>> {
         );
     }
     Ok(Some(root))
+}
+
+fn read_root(path: &Path) -> Result<Option<Value>> {
+    parse_root(path, read_text(path)?.as_deref())
+}
+
+/// Next to the config: every channel's daemon edits the same file, and a dev and a
+/// release toggle racing would otherwise each write back a copy without the other's entries.
+pub const LOCK_FILE: &str = "config.json.houston-lock";
+
+// A toggle holds the lock for one read-modify-write; longer means a stuck holder.
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+const LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(25);
+
+// ZCode or an editor may write the file while Houston edits it; each retry rereads it.
+const EDIT_ATTEMPTS: u32 = 3;
+
+fn lock_config(path: &Path, wait: std::time::Duration) -> Result<std::fs::File> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| anyhow!("{} has no parent directory", path.display()))?;
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let lock_path = dir.join(LOCK_FILE);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .with_context(|| format!("opening {}", lock_path.display()))?;
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(LOCK_POLL);
+            }
+            Err(std::fs::TryLockError::WouldBlock) => bail!(
+                "another Houston channel is editing {} (lock {} held for over {} ms); nothing                  was written, try again",
+                path.display(),
+                lock_path.display(),
+                wait.as_millis()
+            ),
+            Err(std::fs::TryLockError::Error(e)) => {
+                return Err(e).with_context(|| format!("locking {}", lock_path.display()))
+            }
+        }
+    }
+}
+
+/// One read-modify-write of the shared config under the cross-channel lock. `change`
+/// returns whether it changed anything; the file is replaced only if its bytes are
+/// still the ones read, so a concurrent edit by ZCode or the user is reread, never lost.
+fn edit(
+    path: &Path,
+    wait: std::time::Duration,
+    mut change: impl FnMut(Option<Value>) -> Result<Option<Value>>,
+    mut before_write: impl FnMut(),
+) -> Result<bool> {
+    let _lock = lock_config(path, wait)?;
+    for _ in 0..EDIT_ATTEMPTS {
+        let text = read_text(path)?;
+        let Some(next) = change(parse_root(path, text.as_deref())?)? else {
+            return Ok(false);
+        };
+        before_write();
+        if read_text(path)? != text {
+            continue;
+        }
+        write_json(path, &next)?;
+        return Ok(true);
+    }
+    bail!(
+        "{} changed while Houston was editing it, {EDIT_ATTEMPTS} times in a row; nothing was          written, try again once it is no longer being modified",
+        path.display()
+    )
 }
 
 fn shape(v: &Value) -> &'static str {
@@ -207,17 +285,32 @@ fn plugin_entry_is_ours(entry: &Value, sentinel: &str) -> bool {
             .is_some_and(|(found, want)| found == want)
 }
 
-fn remove_our_groups(events: &mut Map<String, Value>, sentinel: &str) -> bool {
+fn hook_is_ours(hook: &Value, sentinel: &str) -> bool {
+    hook.get("command")
+        .and_then(|c| c.as_str())
+        .is_some_and(|c| crate::agent_hooks::has_sentinel(c, sentinel))
+}
+
+/// Removes this channel's hook entries only. A user command sharing a group with one
+/// of them stays; a group goes when Houston's removal leaves it with no hooks.
+fn remove_our_entries(events: &mut Map<String, Value>, sentinel: &str) -> bool {
     let mut removed = false;
     let mut emptied = Vec::new();
     for (event, value) in events.iter_mut() {
-        let Some(arr) = value.as_array_mut() else {
+        let Some(groups) = value.as_array_mut() else {
             continue;
         };
-        let before = arr.len();
-        arr.retain(|g| !group_is_ours(g, sentinel));
-        removed |= arr.len() != before;
-        if arr.is_empty() && before > 0 {
+        let before = groups.len();
+        groups.retain_mut(|group| {
+            let Some(hooks) = group.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+                return true;
+            };
+            let had = hooks.len();
+            hooks.retain(|hook| !hook_is_ours(hook, sentinel));
+            removed |= hooks.len() != had;
+            !(hooks.is_empty() && had > 0)
+        });
+        if groups.is_empty() && before > 0 {
             emptied.push(event.clone());
         }
     }
@@ -236,6 +329,28 @@ pub fn install(
     plugin_dir: Option<&Path>,
     keep_disabled: bool,
 ) -> Result<()> {
+    let install = Install {
+        commands,
+        sentinel,
+        plugin_dir,
+        keep_disabled,
+    };
+    install_with(path, &install, LOCK_WAIT, || {})
+}
+
+struct Install<'a> {
+    commands: &'a [(&'a str, String)],
+    sentinel: &'a str,
+    plugin_dir: Option<&'a Path>,
+    keep_disabled: bool,
+}
+
+fn install_with(
+    path: &Path,
+    install: &Install<'_>,
+    wait: std::time::Duration,
+    before_write: impl FnMut(),
+) -> Result<()> {
     if cfg!(windows) {
         bail!(
             "ZCode hooks are not installed on Windows: Houston's hook command needs a POSIX \
@@ -243,8 +358,21 @@ pub fn install(
              run, without status or pane tools"
         );
     }
-    let mut root = read_root(path)?.unwrap_or_else(|| json!({}));
-    let obj = root.as_object_mut().expect("read_root returns an object");
+    edit(
+        path,
+        wait,
+        |root| {
+            let mut root = root.unwrap_or_else(|| json!({}));
+            apply_install(&mut root, path, install)?;
+            Ok(Some(root))
+        },
+        before_write,
+    )?;
+    Ok(())
+}
+
+fn apply_install(root: &mut Value, path: &Path, install: &Install<'_>) -> Result<()> {
+    let obj = root.as_object_mut().expect("parse_root returns an object");
     let enabled_before = match obj.get("hooks").and_then(|h| h.get("enabled")) {
         None => None,
         Some(Value::Bool(b)) => Some(*b),
@@ -263,15 +391,15 @@ pub fn install(
             shape(&events[event])
         );
     }
-    let user_disabled = keep_disabled
+    let user_disabled = install.keep_disabled
         && enabled_before == Some(false)
         && events
             .values()
             .filter_map(|v| v.as_array())
             .flatten()
             .any(group_is_any_houston);
-    remove_our_groups(events, sentinel);
-    for (event, command) in commands {
+    remove_our_entries(events, install.sentinel);
+    for (event, command) in install.commands {
         let mut group = json!({ "hooks": [{ "type": "command", "command": command }] });
         if *event == "PreToolUse" {
             group["matcher"] = json!(PRE_TOOL_USE_MATCHER);
@@ -292,7 +420,7 @@ pub fn install(
             enabled_before.map_or(Value::Null, Value::Bool),
         );
     }
-    if let Some(dir) = plugin_dir {
+    if let Some(dir) = install.plugin_dir {
         let plugins = child_object(obj, "plugins", path, "plugins")?;
         let dirs = plugins
             .entry("dirs".to_string())
@@ -305,28 +433,43 @@ pub fn install(
             )
         })?;
         let dir = dir.display().to_string();
+        let sentinel = install.sentinel;
         dirs.retain(|d| !plugin_entry_is_ours(d, sentinel) || d.as_str() == Some(dir.as_str()));
         if !dirs.iter().any(|d| d.as_str() == Some(dir.as_str())) {
             dirs.push(json!(dir));
         }
     }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {} for a hook install", parent.display()))?;
-    }
-    write_json(path, &root)
+    Ok(())
 }
 
 pub fn uninstall(path: &Path, sentinel: &str) -> Result<bool> {
-    let Some(mut root) = read_root(path)? else {
+    uninstall_with(path, sentinel, LOCK_WAIT)
+}
+
+fn uninstall_with(path: &Path, sentinel: &str, wait: std::time::Duration) -> Result<bool> {
+    if read_text(path)?.is_none() {
         return Ok(false);
-    };
-    let obj = root.as_object_mut().expect("read_root returns an object");
+    }
+    edit(
+        path,
+        wait,
+        |root| {
+            let Some(mut root) = root else {
+                return Ok(None);
+            };
+            Ok(apply_uninstall(&mut root, sentinel).then_some(root))
+        },
+        || {},
+    )
+}
+
+fn apply_uninstall(root: &mut Value, sentinel: &str) -> bool {
+    let obj = root.as_object_mut().expect("parse_root returns an object");
     let mut changed = false;
     let mut houston_left = false;
     if let Some(hooks) = obj.get_mut("hooks").and_then(|h| h.as_object_mut()) {
         if let Some(events) = hooks.get_mut("events").and_then(|e| e.as_object_mut()) {
-            changed |= remove_our_groups(events, sentinel);
+            changed |= remove_our_entries(events, sentinel);
             houston_left = events
                 .values()
                 .filter_map(|v| v.as_array())
@@ -373,11 +516,7 @@ pub fn uninstall(path: &Path, sentinel: &str) -> Result<bool> {
             }
         }
     }
-    if !changed {
-        return Ok(false);
-    }
-    write_json(path, &root)?;
-    Ok(true)
+    changed
 }
 
 /// Installed means ZCode will run the entries: they are present and `hooks.enabled` is on.
@@ -673,7 +812,7 @@ mod tests {
             .expect("list")
             .flatten()
             .map(|e| e.file_name())
-            .filter(|n| n != "config.json")
+            .filter(|n| n != "config.json" && n != LOCK_FILE)
             .collect();
         assert!(
             leftovers.is_empty(),
@@ -701,5 +840,121 @@ mod tests {
         remove_plugin(dir.path()).expect("remove");
         assert!(!root.exists());
         remove_plugin(dir.path()).expect("removing an absent plugin is not an error");
+    }
+
+    fn dev_commands() -> Vec<(&'static str, String)> {
+        vec![("Stop", format!("/home/dev/.houston-dev/bin/claude-hook Stop {DEV}"))]
+    }
+
+    fn dev_install<'a>(commands: &'a [(&'static str, String)]) -> Install<'a> {
+        Install {
+            commands,
+            sentinel: DEV,
+            plugin_dir: None,
+            keep_disabled: false,
+        }
+    }
+
+    #[test]
+    fn a_user_command_sharing_a_group_with_houstons_entry_survives_reinstall_and_uninstall() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let h = home(&dir);
+        let path =
+            agent_hooks::install(Zcode, &h, &launcher(".houston-dev"), DEV).expect("install");
+        let mut root = read(&path);
+        root["hooks"]["events"]["Stop"][0]["hooks"]
+            .as_array_mut()
+            .expect("Houston's Stop group")
+            .push(json!({ "type": "command", "command": "notify-send done" }));
+        std::fs::write(&path, root.to_string()).expect("the user adds a command to the group");
+
+        agent_hooks::install(Zcode, &h, &launcher(".houston-dev"), DEV).expect("reinstall");
+        let user_kept = |root: &Value| {
+            root["hooks"]["events"]["Stop"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|g| g["hooks"].as_array().into_iter().flatten())
+                .any(|h| h["command"] == json!("notify-send done"))
+        };
+        assert!(user_kept(&read(&path)), "a reinstall keeps the user's command");
+
+        assert!(agent_hooks::uninstall(Zcode, &h, DEV).expect("uninstall"));
+        let after = read(&path);
+        assert_eq!(
+            after["hooks"]["events"]["Stop"],
+            json!([{ "hooks": [{ "type": "command", "command": "notify-send done" }] }]),
+            "only Houston's entry goes; the group stays for the user's command: {after}"
+        );
+        assert_eq!(houston_groups(&after, DEV), 0);
+    }
+
+    #[test]
+    fn an_edit_made_between_houstons_read_and_write_is_reread_and_kept() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = config_path(dir.path());
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "{}").expect("write");
+        let mut external = Some(r#"{"theme":"dark"}"#);
+        let commands = dev_commands();
+        install_with(&path, &dev_install(&commands), LOCK_WAIT, || {
+            if let Some(text) = external.take() {
+                std::fs::write(&path, text).expect("ZCode writes its config meanwhile");
+            }
+        })
+        .expect("the install retries on the new content");
+        let root = read(&path);
+        assert_eq!(root["theme"], json!("dark"), "the concurrent edit is kept: {root}");
+        assert_eq!(houston_groups(&root, DEV), 1, "{root}");
+    }
+
+    #[test]
+    fn a_config_that_keeps_changing_is_refused_and_left_as_last_written() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = config_path(dir.path());
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "{}").expect("write");
+        let mut n = 0;
+        let commands = dev_commands();
+        let err = install_with(&path, &dev_install(&commands), LOCK_WAIT, || {
+            n += 1;
+            std::fs::write(&path, format!(r#"{{"edit":{n}}}"#)).expect("write");
+        })
+        .expect_err("refused");
+        assert!(
+            format!("{err:#}").contains("changed while Houston was editing it, 3 times"),
+            "{err:#}"
+        );
+        assert_eq!(read(&path), json!({ "edit": EDIT_ATTEMPTS }));
+    }
+
+    #[test]
+    fn a_channel_waits_for_another_channels_edit_and_refuses_a_stuck_one() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = config_path(dir.path());
+        let held = lock_config(&path, LOCK_WAIT).expect("release holds the lock");
+        let commands = dev_commands();
+        let err = install_with(
+            &path,
+            &dev_install(&commands),
+            std::time::Duration::from_millis(100),
+            || {},
+        )
+        .expect_err("refused while the lock is held");
+        let err = format!("{err:#}");
+        assert!(
+            err.contains("another Houston channel is editing") && err.contains(LOCK_FILE),
+            "{err}"
+        );
+        assert!(!path.exists(), "nothing was written");
+
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            drop(held);
+        });
+        install_with(&path, &dev_install(&commands), LOCK_WAIT, || {})
+            .expect("the edit goes in once the lock is free");
+        release.join().expect("join");
+        assert_eq!(houston_groups(&read(&path), DEV), 1);
     }
 }
