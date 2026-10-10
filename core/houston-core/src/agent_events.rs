@@ -152,8 +152,8 @@ const ANTIGRAVITY_EVENTS: [(&str, AgentEvent); 4] = [
 pub const ANTIGRAVITY_CORRELATION_EVENTS: [&str; 1] = ["PostToolUse"];
 
 // ZCode fires SessionStart once per process, inside its first turn or on resume.
-// Its Stop runs only after a successful turn; an interrupt surfaces as a
-// PostToolUseFailure carrying is_interrupt, which the daemon reads.
+// Its Stop runs only after a successful turn; an interrupt aborts its hook runner
+// with the turn, so an interrupted turn reports no end.
 const ZCODE_EVENTS: [(&str, AgentEvent); 4] = [
     ("SessionStart", AgentEvent::SessionStarted),
     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
