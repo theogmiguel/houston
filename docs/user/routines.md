@@ -19,9 +19,11 @@ change.
 
 ## Access and isolation
 
-**Accept edits** uses the provider's bounded unattended mode. **Full access** never asks for
-approval and is therefore available only with isolation enabled in a Git working directory.
-The isolated worktree keeps that run away from the tree you are editing.
+**Accept edits** uses the provider's bounded unattended mode. OpenCode and ZCode have none:
+ZCode's edit mode stops at every shell command for an approval nobody gives, so both run
+only with full access. **Full access** never asks for approval and is therefore available
+only with isolation enabled in a Git working directory. The isolated worktree keeps that
+run away from the tree you are editing.
 
 ## Running and reviewing
 
