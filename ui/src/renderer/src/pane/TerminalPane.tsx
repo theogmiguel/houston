@@ -60,6 +60,7 @@ import {
 } from './tuiDragCopy'
 import { shellQuote } from './shellQuote'
 import { PaneWriteQueue } from './writeQueue'
+import { registerBenchProbe } from './benchProbe'
 import { useNotices } from '../notices'
 import { NoticeStack } from '../components/NoticeStack'
 import { findUrls, rangesOverlap, joinWrappedLine, mapJoinedOffset } from './webLinks'
@@ -364,6 +365,28 @@ export function TerminalPane({
       }
     })
     writeQueueRef.current = writeQueue
+    const unregisterBenchProbe = registerBenchProbe(info.id, {
+      screenText: () => {
+        const buf = term.buffer.active
+        const lines: string[] = []
+        for (let y = 0; y < buf.length; y++) {
+          const line = buf.getLine(y)
+          const wrapsOn = buf.getLine(y + 1)?.isWrapped ?? false
+          const text = line?.translateToString(!wrapsOn) ?? ''
+          if (line?.isWrapped && lines.length > 0) lines[lines.length - 1] += text
+          else lines.push(text)
+        }
+        return lines.join('\n')
+      },
+      size: () => ({ cols: term.cols, rows: term.rows }),
+      sendInput: (text) => clientRef.current.sendStdin(info.id, text),
+      focus: () => term.focus(),
+      hasFocus: () => host.contains(document.activeElement),
+      fullText: () => ghosttyTerm.getFullText(),
+      paintCount: () => ghosttyTerm.paintCount(),
+      synced: () => seqRef.current.synced,
+      attached: () => attachedRef.current
+    })
     const ghostty = ghosttyTerm
     const fitTerminal = (): boolean => ghostty.fit()
     searchRef.current = createGhosttyFinder({
@@ -1183,6 +1206,7 @@ export function TerminalPane({
       linkProviderDisposable.dispose()
       webLinkProviderDisposable.dispose()
       taskLinkProviderDisposable.dispose()
+      unregisterBenchProbe()
       writeQueue.dispose()
       term.dispose()
       termRef.current = null

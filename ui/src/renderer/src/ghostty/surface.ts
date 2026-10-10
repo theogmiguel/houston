@@ -541,6 +541,7 @@ export class GhosttyTerminalSurface {
   private snapshot: GhosttySnapshot | null = null
   private frame = 0
   private paused = false
+  private paintedFrames = 0
   private cursorTimer: number | null = null
   private compositionInputToSuppress: string | null = null
   private compositionSuppressionTimer: number | null = null
@@ -983,6 +984,11 @@ export class GhosttyTerminalSurface {
 
   getSelection(): string {
     return this.core.selectionText()
+  }
+
+  /** Frames this surface has painted, for bench probes that watch one pane. */
+  paintCount(): number {
+    return this.paintedFrames
   }
 
   getBufferText(): string {
@@ -1900,6 +1906,7 @@ export class GhosttyTerminalSurface {
     this.scheduleCursorBlink()
     paintStats.paintMs += performance.now() - paintStartedAt
     paintStats.paintFrames += 1
+    this.paintedFrames += 1
   }
 
   private scheduleCursorBlink(): void {

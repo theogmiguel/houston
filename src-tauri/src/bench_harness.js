@@ -661,6 +661,464 @@
     return result;
   }
 
+  // Flood sizes straddle the reveal paths: 1 MiB fits the 2 MiB attach replay, 3 MiB
+  // needs the daemon's 4 MiB ring, 8 MiB overflows it and falls back to a snapshot.
+  var M12_FLOOD_MIB = [1, 3, 8];
+  var M12_PANE_COUNT = 12;
+  var M12_FILL = 'lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor';
+  var M12_FLOOD_DEADLINE_MS = 180000;
+  var M12_REVEAL_DEADLINE_MS = 30000;
+  // Above HIBERNATE_DEBOUNCE_MS (200) so a hibernating pane has detached before output starts.
+  var M12_HIDE_SETTLE_MS = 600;
+
+  function probes() {
+    return globalThis.__trBenchProbes__;
+  }
+
+  function toggleExpand() {
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    return sleep(100).then(function () { pressKey('z'); });
+  }
+
+  function m12LineBytes(tag) {
+    // SGR open (5) + tag + space + 8 digits + SGR reset (4) + space + fill + CRLF.
+    return 5 + tag.length + 1 + 8 + 4 + 1 + M12_FILL.length + 2;
+  }
+
+  // Ends in a foreground sleep so no prompt pushes the end marker off a short pane; the
+  // next round sends Ctrl-C first to end it.
+  function m12FloodCommand(tag, lines, doneFile) {
+    return "awk 'BEGIN{for(i=1;i<=" + lines + ";i++)printf \"\\033[3%dm" + tag +
+      " %08d\\033[0m " + M12_FILL + "\\n\", i%7+1, i}'; printf '%s-%s\\n' " + tag +
+      ' END; touch ' + doneFile + '; sleep 86400\n';
+  }
+
+  function m12CheckContent(text, tag, lines) {
+    var expectedRest = ' ' + M12_FILL;
+    var seen = 0, gaps = 0, corrupt = 0, prev = null, last = null, firstGap = null;
+    var rows = text.split('\n');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i].replace(/\s+$/, '');
+      if (row.indexOf(tag + ' ') !== 0) continue;
+      var num = Number(row.slice(tag.length + 1, tag.length + 9));
+      if (!Number.isInteger(num) || row.slice(tag.length + 9) !== expectedRest) {
+        corrupt++;
+        continue;
+      }
+      if (prev !== null && num !== prev + 1) {
+        gaps++;
+        if (firstGap === null) firstGap = { after: prev, next: num };
+      }
+      prev = num;
+      last = num;
+      seen++;
+    }
+    return {
+      retainedLines: seen,
+      lastLine: last,
+      complete: last === lines,
+      gaps: gaps,
+      firstGap: firstGap,
+      corrupt: corrupt,
+      endMarker: text.indexOf(tag + '-END') !== -1
+    };
+  }
+
+  async function m12Round(mib, ids) {
+    var tag = 'M12S' + mib + 'X' + Math.floor(Math.random() * 1e6);
+    var lines = Math.floor((mib * 1048576) / m12LineBytes(tag));
+    var doneDir = '${TMPDIR:-/tmp}/houston-' + tag;
+    var map = probes();
+
+    await toggleExpand();
+    await sleep(M12_HIDE_SETTLE_MS);
+    // The shortcut expands the active pane, so read which one stayed visible.
+    var visibleIds = ids.filter(function (id) {
+      var el = document.querySelector('[data-panekey="' + id + '"]');
+      return el && getComputedStyle(el).visibility !== 'hidden';
+    });
+    if (visibleIds.length !== 1) {
+      throw new Error('M12: after the expand shortcut ' + visibleIds.length + ' of ' + ids.length +
+        ' panes are visible (' + visibleIds.join(',') + '); expected exactly 1');
+    }
+    var expandedId = visibleIds[0];
+    var hiddenIds = ids.filter(function (id) { return id !== expandedId; });
+    var detached = 0;
+    for (var h = 0; h < hiddenIds.length; h++) {
+      var hp = map.get(Number(hiddenIds[h]));
+      if (hp && !hp.attached()) detached++;
+    }
+
+    var waiter = 'd=' + doneDir + '; mkdir -p "$d"; while [ "$(ls "$d" | wc -l)" -lt ' +
+      hiddenIds.length + " ]; do sleep 0.1; done; printf '%s-%s\\n' " + tag + ' ALLDONE\n';
+    await invoke('bench_stdin', { session: Number(expandedId), text: waiter });
+    await sleep(300);
+
+    for (var k = 0; k < hiddenIds.length; k++) {
+      await invoke('bench_stdin', { session: Number(hiddenIds[k]), text: '\x03' });
+    }
+    // Shells may discard typeahead that arrives while they handle SIGINT.
+    await sleep(500);
+
+    var stats0 = globalThis.__trGhosttyPaintStats__;
+    var parse0 = { ms: stats0.parseMs, bytes: stats0.parseBytes };
+    var floodFrames = startRaf();
+    var floodStartedAt = performance.now();
+    for (var f = 0; f < hiddenIds.length; f++) {
+      await invoke('bench_stdin', {
+        session: Number(hiddenIds[f]),
+        text: m12FloodCommand(tag, lines, doneDir + '/' + hiddenIds[f])
+      });
+    }
+    var expandedProbe = map.get(Number(expandedId));
+    var floodDone = await waitFor(function () {
+      return expandedProbe && expandedProbe.screenText().indexOf(tag + '-ALLDONE') !== -1;
+    }, M12_FLOOD_DEADLINE_MS, 100);
+    var floodMs = performance.now() - floodStartedAt;
+    floodFrames.stop();
+    var stats1 = globalThis.__trGhosttyPaintStats__;
+    var hiddenParse = {
+      ms: Math.round((stats1.parseMs - parse0.ms) * 10) / 10,
+      mib: Math.round(((stats1.parseBytes - parse0.bytes) / 1048576) * 100) / 100
+    };
+
+    var panes = hiddenIds.map(function (id) {
+      var p = map.get(Number(id));
+      return {
+        id: id, probe: p, paints0: p ? p.paintCount() : 0, lastPaints: p ? p.paintCount() : 0,
+        blank: 0, intermediate: 0, skeleton: false, settledMs: null, earlyPaints: []
+      };
+    });
+    var revealDeltas = [];
+    var sampling = true;
+    var lastTs = null;
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    await sleep(100);
+    var t0 = performance.now();
+    function sample(ts) {
+      if (lastTs !== null) revealDeltas.push(ts - lastTs);
+      lastTs = ts;
+      for (var i = 0; i < panes.length; i++) {
+        var pane = panes[i];
+        if (!pane.probe || pane.settledMs !== null) continue;
+        if (!pane.probe.synced()) pane.skeleton = true;
+        var paints = pane.probe.paintCount();
+        if (paints === pane.lastPaints) continue;
+        pane.lastPaints = paints;
+        var screen = pane.probe.screenText();
+        if (pane.earlyPaints.length < 4) {
+          pane.earlyPaints.push({
+            ms: Math.round(performance.now() - t0), synced: pane.probe.synced(),
+            attached: pane.probe.attached(), size: pane.probe.size(), head: screen.trim().slice(0, 60)
+          });
+        }
+        if (screen.indexOf(tag + '-END') !== -1) {
+          pane.settledMs = performance.now() - t0;
+        } else if (screen.trim() === '') {
+          pane.blank++;
+        } else {
+          pane.intermediate++;
+        }
+      }
+      if (sampling) requestAnimationFrame(sample);
+    }
+    requestAnimationFrame(sample);
+    pressKey('z');
+    var allSettled = await waitFor(function () {
+      return panes.every(function (p) { return p.settledMs !== null; });
+    }, M12_REVEAL_DEADLINE_MS, 50);
+    sampling = false;
+    await sleep(500);
+
+    var perPane = panes.map(function (pane) {
+      var screenNow = pane.probe ? pane.probe.screenText() : '';
+      var fullNow = pane.probe ? pane.probe.fullText() : '';
+      var content = pane.probe ? m12CheckContent(fullNow, tag, lines) : null;
+      return {
+        id: pane.id,
+        size: pane.probe ? pane.probe.size() : null,
+        fullTextLength: fullNow.length,
+        fullTail: fullNow.replace(/\s+$/, '').slice(-160),
+        syncedAtEnd: pane.probe ? pane.probe.synced() : null,
+        attachedAtEnd: pane.probe ? pane.probe.attached() : null,
+        screenTail: screenNow.replace(/\s+$/, '').slice(-240),
+        settledMs: pane.settledMs === null ? null : Math.round(pane.settledMs),
+        paints: (pane.probe ? pane.probe.paintCount() : 0) - pane.paints0,
+        blankPaints: pane.blank,
+        earlyPaints: pane.earlyPaints,
+        intermediatePaints: pane.intermediate,
+        skeletonShown: pane.skeleton,
+        content: content
+      };
+    });
+    var settled = perPane.map(function (p) { return p.settledMs; })
+      .filter(function (v) { return v !== null; })
+      .sort(function (a, b) { return a - b; });
+    var revealSorted = revealDeltas.slice().sort(function (a, b) { return a - b; });
+    var floodSorted = floodFrames.samples.slice().sort(function (a, b) { return a - b; });
+    var round = {
+      floodMiB: mib,
+      linesPerPane: lines,
+      hiddenPanes: hiddenIds.length,
+      detachedWhileHidden: detached,
+      floodDone: floodDone,
+      floodMs: Math.round(floodMs),
+      hiddenParse: hiddenParse,
+      floodFrame: {
+        samples: floodSorted.length,
+        p95Ms: percentile(floodSorted, 95),
+        maxMs: floodSorted.length ? floodSorted[floodSorted.length - 1] : 0
+      },
+      allSettled: allSettled,
+      reveal: {
+        p50Ms: percentile(settled, 50),
+        maxMs: settled.length ? settled[settled.length - 1] : null,
+        frameP95Ms: percentile(revealSorted, 95),
+        frameMaxMs: revealSorted.length ? revealSorted[revealSorted.length - 1] : 0,
+        blankPaints: perPane.reduce(function (n, p) { return n + p.blankPaints; }, 0),
+        intermediatePaints: perPane.reduce(function (n, p) { return n + p.intermediatePaints; }, 0),
+        panesWithSkeleton: perPane.filter(function (p) { return p.skeletonShown; }).length
+      },
+      content: {
+        panesComplete: perPane.filter(function (p) { return p.content && p.content.complete; }).length,
+        minRetainedLines: Math.min.apply(null, perPane.map(function (p) { return p.content ? p.content.retainedLines : 0; })),
+        gaps: perPane.reduce(function (n, p) { return n + (p.content ? p.content.gaps : 0); }, 0),
+        corrupt: perPane.reduce(function (n, p) { return n + (p.content ? p.content.corrupt : 0); }, 0)
+      },
+      perPane: perPane
+    };
+    log('M12 ' + mib + ' MiB x ' + hiddenIds.length + ' hidden: flood ' + round.floodMs + 'ms, hidden parse ' +
+      hiddenParse.mib + ' MiB/' + hiddenParse.ms + 'ms, detached ' + detached + '/' + hiddenIds.length +
+      '; reveal p50=' + round.reveal.p50Ms + 'ms max=' + round.reveal.maxMs + 'ms frame p95=' +
+      round.reveal.frameP95Ms.toFixed(1) + 'ms, paints blank=' + round.reveal.blankPaints +
+      ' intermediate=' + round.reveal.intermediatePaints + ' skeleton=' + round.reveal.panesWithSkeleton +
+      '; content complete=' + round.content.panesComplete + '/' + hiddenIds.length + ' minRetained=' +
+      round.content.minRetainedLines + '/' + lines + ' gaps=' + round.content.gaps + ' corrupt=' +
+      round.content.corrupt + (allSettled ? '' : ' [WARNING: not every pane settled within ' +
+      M12_REVEAL_DEADLINE_MS + 'ms]') + (floodDone ? '' : ' [WARNING: floods did not finish]'));
+    return round;
+  }
+
+  async function m12() {
+    globalThis.__trBenchProbes__ = new Map();
+    var policy = globalThis.__TR_HIDDEN_PANE_POLICY__ || 'attached';
+    log('M12 (' + policy + '): waiting for the real grid...');
+    var initialCount = await waitForGrid('M12');
+    var ids = await spawnShellPanes(M12_PANE_COUNT, 'M12');
+    // Spawning splits the active pane, leaving the last ones a few columns wide.
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    await sleep(100);
+    pressKey('y');
+    await sleep(3000);
+    var consoleLines = [];
+    ['warn', 'error'].forEach(function (level) {
+      var original = console[level];
+      console[level] = function () {
+        var line = level + ': ' + Array.prototype.map.call(arguments, String).join(' ');
+        if (consoleLines.length < 200) consoleLines.push(line.slice(0, 400));
+        return original.apply(console, arguments);
+      };
+    });
+    var missing = ids.filter(function (id) { return !probes().has(Number(id)); });
+    if (missing.length) {
+      throw new Error('M12: no bench probe registered for session(s) ' + missing.join(',') +
+        ' -- the renderer predates registerBenchProbe or the panes mounted before the harness ran');
+    }
+    var rounds = [];
+    for (var r = 0; r < M12_FLOOD_MIB.length; r++) {
+      rounds.push(await m12Round(M12_FLOOD_MIB[r], ids));
+    }
+    for (var c = 0; c < ids.length; c++) {
+      await invoke('bench_session_kill', { session: Number(ids[c]) }).catch(function (err) {
+        log('M12: bench_session_kill(' + ids[c] + ') failed: ' + err);
+      });
+    }
+    var renderUnthrottled = await measureRenderCadence(500);
+    return {
+      policy: policy,
+      preExistingPanes: initialCount,
+      windowVisible: document.visibilityState === 'visible',
+      windowFocused: document.hasFocus(),
+      renderUnthrottled: renderUnthrottled,
+      paneSizes: ids.map(function (id) { return probes().get(Number(id)).size(); }),
+      console: consoleLines,
+      rounds: rounds
+    };
+  }
+
+  var M13_PANE_COUNT = 12;
+  var M13_PHASE_MS = 20000;
+  // One typed token every 200 ms gives ~100 echo samples per phase.
+  var M13_INPUT_EVERY_MS = 200;
+  var M13_ECHO_DEADLINE_MS = 5000;
+  // 20 lines/s of ~90 bytes per pane, the order of a busy agent's output.
+  var M13_STREAM_CMD = "python3 -uc 'import time,itertools;[(print(\"\\x1b[3%dmSTREAM %08d\\x1b[0m " +
+    "lorem ipsum dolor sit amet consectetur adipiscing elit sed do\" % (i%7+1, i)), " +
+    "time.sleep(0.05)) for i in itertools.count()]'\n";
+
+  // Types unique tokens into a pane running `cat` and times each until it is painted.
+  function m13InputProbe(probe) {
+    var samples = [];
+    var timeouts = 0;
+    var seq = 0;
+    var running = true;
+    var pending = [];
+    var sentOnLine = 0;
+    function check() {
+      if (pending.length) {
+        var screen = probe.screenText();
+        var now = performance.now();
+        pending = pending.filter(function (p) {
+          if (screen.indexOf(p.token) !== -1) { samples.push(now - p.at); return false; }
+          if (now - p.at > M13_ECHO_DEADLINE_MS) { timeouts++; return false; }
+          return true;
+        });
+      }
+      if (running || pending.length) requestAnimationFrame(check);
+    }
+    requestAnimationFrame(check);
+    var timer = setInterval(function () {
+      seq++;
+      var token = 'q' + seq + ';';
+      if (sentOnLine >= 8) { probe.sendInput('\r'); sentOnLine = 0; }
+      pending.push({ token: token, at: performance.now() });
+      probe.sendInput(token);
+      sentOnLine++;
+    }, M13_INPUT_EVERY_MS);
+    return {
+      stop: function () {
+        running = false;
+        clearInterval(timer);
+        return sleep(M13_ECHO_DEADLINE_MS).then(function () {
+          var sorted = samples.slice().sort(function (a, b) { return a - b; });
+          return {
+            sent: seq,
+            echoed: sorted.length,
+            timeouts: timeouts,
+            p50Ms: Math.round(percentile(sorted, 50)),
+            p95Ms: Math.round(percentile(sorted, 95)),
+            p99Ms: Math.round(percentile(sorted, 99)),
+            maxMs: sorted.length ? Math.round(sorted[sorted.length - 1]) : null
+          };
+        });
+      }
+    };
+  }
+
+  async function m13Phase(name, inputProbe) {
+    // Typing happens in a focused pane, which is the one pane painted every frame.
+    inputProbe.focus();
+    await sleep(100);
+    var inputFocused = inputProbe.hasFocus();
+    var stats0 = globalThis.__trGhosttyPaintStats__;
+    var before = { parseMs: stats0.parseMs, parseBytes: stats0.parseBytes, paintMs: stats0.paintMs, paintFrames: stats0.paintFrames };
+    var frames = startRaf();
+    var input = m13InputProbe(inputProbe);
+    var startEpochMs = Date.now();
+    log('M13 phase ' + name + ' start');
+    await sleep(M13_PHASE_MS);
+    var endEpochMs = Date.now();
+    frames.stop();
+    var stats1 = globalThis.__trGhosttyPaintStats__;
+    var echo = await input.stop();
+    var sorted = frames.samples.slice().sort(function (a, b) { return a - b; });
+    var phase = {
+      name: name,
+      startEpochMs: startEpochMs,
+      endEpochMs: endEpochMs,
+      parseMs: Math.round((stats1.parseMs - before.parseMs) * 10) / 10,
+      parseMiB: Math.round(((stats1.parseBytes - before.parseBytes) / 1048576) * 100) / 100,
+      paintMs: Math.round((stats1.paintMs - before.paintMs) * 10) / 10,
+      paintFrames: stats1.paintFrames - before.paintFrames,
+      frame: {
+        samples: sorted.length,
+        p50Ms: percentile(sorted, 50),
+        p95Ms: percentile(sorted, 95),
+        maxMs: sorted.length ? sorted[sorted.length - 1] : 0
+      },
+      echo: echo,
+      inputFocused: inputFocused
+    };
+    log('M13 phase ' + name + (inputFocused ? '' : ' [input pane NOT focused]') + ': parse ' + phase.parseMiB + ' MiB/' + phase.parseMs + 'ms, paint ' +
+      phase.paintFrames + ' frames/' + phase.paintMs + 'ms, frame p95=' + phase.frame.p95Ms.toFixed(1) +
+      'ms max=' + phase.frame.maxMs.toFixed(1) + 'ms; echo p50=' + echo.p50Ms + 'ms p95=' + echo.p95Ms +
+      'ms p99=' + echo.p99Ms + 'ms max=' + echo.maxMs + 'ms (' + echo.echoed + '/' + echo.sent +
+      ', timeouts ' + echo.timeouts + ')');
+    return phase;
+  }
+
+  async function m13() {
+    globalThis.__trBenchProbes__ = new Map();
+    var policy = globalThis.__TR_HIDDEN_PANE_POLICY__ || 'attached';
+    log('M13 (' + policy + '): waiting for the real grid...');
+    var initialCount = await waitForGrid('M13');
+    var ids = await spawnShellPanes(M13_PANE_COUNT, 'M13');
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    await sleep(100);
+    pressKey('y');
+    await sleep(3000);
+    var map = probes();
+
+    // The expand shortcut targets the active pane; that pane runs `cat` for the echo probe.
+    await toggleExpand();
+    await sleep(M12_HIDE_SETTLE_MS);
+    var visibleIds = ids.filter(function (id) {
+      var el = document.querySelector('[data-panekey="' + id + '"]');
+      return el && getComputedStyle(el).visibility !== 'hidden';
+    });
+    if (visibleIds.length !== 1) {
+      throw new Error('M13: after the expand shortcut ' + visibleIds.length + ' of ' + ids.length +
+        ' panes are visible; expected exactly 1');
+    }
+    var inputId = visibleIds[0];
+    await toggleExpand();
+    await sleep(1000);
+    var inputProbe = map.get(Number(inputId));
+    var streamIds = ids.filter(function (id) { return id !== inputId; });
+    await invoke('bench_stdin', { session: Number(inputId), text: 'cat\n' });
+    await sleep(1000);
+
+    var phases = [];
+    phases.push(await m13Phase('idle', inputProbe));
+    for (var s = 0; s < streamIds.length; s++) {
+      await invoke('bench_stdin', { session: Number(streamIds[s]), text: M13_STREAM_CMD });
+    }
+    await sleep(2000);
+    phases.push(await m13Phase('stream-visible', inputProbe));
+    await toggleExpand();
+    await sleep(M12_HIDE_SETTLE_MS);
+    var inputEl = document.querySelector('[data-panekey="' + inputId + '"]');
+    if (!inputEl || getComputedStyle(inputEl).visibility === 'hidden') {
+      throw new Error('M13: the expand shortcut no longer targets the input pane ' + inputId);
+    }
+    var detached = streamIds.filter(function (id) { return !map.get(Number(id)).attached(); }).length;
+    var phase = await m13Phase('stream-expanded', inputProbe);
+    phase.detachedStreams = detached;
+    phases.push(phase);
+    await toggleExpand();
+    await sleep(2000);
+    phases.push(await m13Phase('stream-visible-again', inputProbe));
+
+    for (var c = 0; c < ids.length; c++) {
+      await invoke('bench_session_kill', { session: Number(ids[c]) }).catch(function (err) {
+        log('M13: bench_session_kill(' + ids[c] + ') failed: ' + err);
+      });
+    }
+    var renderUnthrottled = await measureRenderCadence(500);
+    return {
+      policy: policy,
+      backgroundPaintMs: globalThis.__TR_BACKGROUND_PAINT_MS === undefined ? 'default' : globalThis.__TR_BACKGROUND_PAINT_MS,
+      preExistingPanes: initialCount,
+      paneCount: ids.length,
+      inputPane: inputId,
+      windowVisible: document.visibilityState === 'visible',
+      windowFocused: document.hasFocus(),
+      renderUnthrottled: renderUnthrottled,
+      paneSizes: ids.map(function (id) { return map.get(Number(id)).size(); }),
+      phases: phases
+    };
+  }
+
   var SIZES = [16, 64, 256, 900, 1000, 1023, 1024, 1100, 2048, 4096, 16384, 65536, 262144];
 
   async function run() {
@@ -682,7 +1140,7 @@
       selectedSet = {};
       for (var sc = 0; sc < scenarioSelection.length; sc++) selectedSet[scenarioSelection[sc]] = true;
     }
-    var RENDERER_SCENARIOS = { M9: 1, M10: 1, M11: 1 };
+    var RENDERER_SCENARIOS = { M9: 1, M10: 1, M11: 1, M12: 1, M13: 1 };
     function selected(name) {
       if (!selectedSet) return RENDERER_SCENARIOS[name] !== 1;
       return !!selectedSet[name];
@@ -695,13 +1153,15 @@
     var runM9 = selected('M9');
     var runM10 = selected('M10');
     var runM11 = selected('M11');
+    var runM12 = selected('M12');
+    var runM13 = selected('M13');
     var needSize16384Only = runM6 && !runChannelSweep;
     results.scenarioSelection = scenarioSelection;
     log('scenario selection: ' + (scenarioSelection ? scenarioSelection.join(',') : 'all transport (default --bench)') +
       ' -- channel sweep(M1-M4)=' + runChannelSweep + (needSize16384Only ? ' (size=16384 only, for M6)' : '') +
       ' ws sweep(M5)=' + runWsSweep + ' M6=' + runM6 + ' M7=' + runM7 + ' M8=' + runM8 +
-      ' M9=' + runM9 + ' M10=' + runM10 + ' M11=' + runM11);
-    if (!runM10 && !runM9 && !runM11) {
+      ' M9=' + runM9 + ' M10=' + runM10 + ' M11=' + runM11 + ' M12=' + runM12 + ' M13=' + runM13);
+    if (!runM10 && !runM9 && !runM11 && !runM12 && !runM13) {
       takeOverDom();
     } else if (runChannelSweep || runWsSweep || runM6) {
       log('WARNING: transport scenarios selected alongside a renderer scenario -- the app DOM ' +
@@ -798,6 +1258,16 @@
 
     if (runM9) {
       results.m9 = await m9(buildInfo.binary_path);
+      await checkpoint(results);
+    }
+
+    if (runM12) {
+      results.m12 = await m12();
+      await checkpoint(results);
+    }
+
+    if (runM13) {
+      results.m13 = await m13();
       await checkpoint(results);
     }
 

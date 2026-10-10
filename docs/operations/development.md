@@ -539,6 +539,41 @@ long until you can type into it:
   which fires regardless of focus. It is still wall-clock: an idle machine
   still matters.
 
+### `scripts/m12-hidden-reveal.sh`
+
+Cost and fidelity of panes hidden behind an expanded pane:
+
+```
+./scripts/m12-hidden-reveal.sh    # RUNS=3, VARIANTS="attached hibernate hibernate-snapshot"
+```
+
+- Same build and throwaway-channel rules as `m9-baseline.sh`. Each variant sets
+  `TR_BENCH_HIDDEN_POLICY`; runs are interleaved so machine load hits every
+  variant alike.
+- Floods 11 hidden panes with 1, 3 and 8 MiB of numbered lines, then collapses
+  the expanded pane. Reports client parse while hidden, reveal time per pane,
+  blank and intermediate paints, skeleton fallbacks, and content checks
+  (retained lines, gaps, corrupt lines).
+- A run whose window was hidden or unfocused is reported VOID: rAF throttling
+  stalls the reveal it measures.
+
+### `scripts/m13-steady-load.sh`
+
+CPU and input latency under steady output in a 12-pane grid:
+
+```
+./scripts/m13-steady-load.sh      # RUNS=3, VARIANTS="attached@0 attached@default hibernate-snapshot@default"
+```
+
+- A variant is `policy@paintMs`: the hidden-pane policy and
+  `TR_BENCH_BACKGROUND_PAINT_MS` (`0` repaints unfocused panes every frame,
+  `default` keeps the built-in tick).
+- Eleven panes print 20 lines/s each; the twelfth runs `cat` and receives a
+  typed token every 200 ms. Echo is measured from send to the token painted.
+- Phases (idle, streaming visible, streaming behind an expanded pane, visible
+  again) each sample `/proc` CPU of the app, WebKit and daemon processes. A
+  phase with fewer than 500 frames is VOID.
+
 ## Maintaining model data
 
 Houston reads LiteLLM's
