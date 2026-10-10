@@ -100,7 +100,7 @@ export class GhosttyRuntime {
     let end = jsonPointer;
     while (end < bytes.length && bytes[end] !== 0) end += 1;
     const manifest = JSON.parse(textDecoder.decode(bytes.subarray(jsonPointer, end))) as { schema: number; types: TypeLayouts };
-    if (manifest.schema !== 1) throw new Error(`Unsupported libghostty-vt ABI schema: ${manifest.schema}; expected 1`);
+    if (manifest.schema !== 1) throw new Error(`libghostty-vt ABI schema ${manifest.schema}; expected 1`);
     this.layouts = manifest.types;
   }
 

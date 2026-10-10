@@ -466,11 +466,12 @@ function patchRosterFields(
   prev: Map<number, SessionInfo>,
   msg: RosterPatchMsg,
 ): Map<number, SessionInfo> {
-  const id = msg.type === "session_checkout" ? msg.id : msg.session;
+  const isCheckout = msg.type === "session_checkout";
+  const id = isCheckout ? msg.id : msg.session;
   const cur = prev.get(id);
   if (!cur) return prev;
   const patch: Partial<SessionInfo> =
-    msg.type === "session_checkout"
+    isCheckout
       ? { checkout: msg.checkout ?? null }
       : msg.type === "session_renamed"
         ? { title: msg.title }

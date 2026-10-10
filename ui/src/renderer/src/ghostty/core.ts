@@ -637,7 +637,6 @@ export class GhosttyTerminalCore {
     if (input.length === 0) return "";
     const inputPointer = this.runtime.alloc(input.length);
     this.runtime.bytes(inputPointer, input.length).set(input);
-    this.runtime.bytes(this.scratch, 1)[0] = 0;
     const bracketed =
       this.modeEnabled(2004);
     const written = this.runtime.alloc(4);
