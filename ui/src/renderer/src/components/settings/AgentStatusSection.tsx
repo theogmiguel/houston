@@ -20,7 +20,7 @@ export const HOOK_COPY: Record<string, { label: string; writes: string }> = {
   claude: {
     label: 'Claude Code',
     writes:
-      'Adds four hook entries to each workspace Houston opens. Your own hooks are untouched, and turning this off removes exactly what Houston added.'
+      'Adds lifecycle hooks to your Claude user settings and Houston account profiles. Claude reports status from any directory inside a Houston pane. Your own hooks are preserved; turning this off removes Houston’s entries.'
   },
   codex: {
     label: 'Codex',

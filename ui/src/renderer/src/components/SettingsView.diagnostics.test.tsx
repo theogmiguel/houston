@@ -17,7 +17,7 @@ function hook(overrides: Partial<AgentHookState>): AgentHookState {
   return {
     provider: 'claude',
     path: '~/.claude/settings.json',
-    scope: 'workspace',
+    scope: 'global',
     enabled: true,
     installed: true,
     error: null,

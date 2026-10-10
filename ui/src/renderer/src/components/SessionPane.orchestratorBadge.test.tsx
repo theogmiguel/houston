@@ -247,3 +247,89 @@ it('updates an open delegation card from the live store with unchanged roster pr
   expect(badge.getAttribute('aria-label')).toContain('1 waiting on you')
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain('needs input')
 })
+
+it('shows an idle orchestrator as working in its header while a child works, and keeps its roster row idle', () => {
+  const parent: SessionInfo = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', status: 'idle', title: 'parent', codename: 'parent', hidden: false, spawned_by: null, live_children: 1, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false }
+  const child: SessionInfo = { ...parent, id: 2, spawned_by: 1, status: 'working', codename: 'worker', title: 'worker', live_children: 0 }
+  const sessions = new Map([[1, parent], [2, child]])
+  const store = createSessionsStore(sessions)
+  root = createRoot(container!)
+  act(() => root!.render(
+    <SessionsStoreContext.Provider value={store}>
+      <SessionPane
+        client={{ subscribe: () => () => {}, taskSnapshot: () => {}, taskQueueRun: () => {} } as unknown as HoustonClient}
+        info={parent}
+        roster={{ sessions, maxLiveChildren: null }}
+        theme="black"
+        active
+        connected
+        fontSize={13}
+        copyOnSelect={false}
+        stripBoxGlyphs={false}
+        showProject={false}
+        registerOutput={() => noop}
+        shellIntegration={false}
+        onReconnectSsh={noop}
+        onActivate={noop}
+        onExpand={noop}
+        onZoom={noop}
+        onShellZoom={noop}
+        onSplit={noop}
+        onHeaderPointerDown={noop}
+        onHandoff={noop}
+        onOpenFile={noop}
+        onOpenDir={noop}
+      />
+    </SessionsStoreContext.Provider>
+  ))
+  const headerDot = container!.querySelector('[data-testid="head-identity"] .agent-dot')
+  expect(headerDot?.getAttribute('aria-label')).toBe('working')
+  const rosterLabels = [...container!.querySelectorAll('[aria-label="Children roster"] .agent-dot')].map((dot) => dot.getAttribute('aria-label'))
+  expect(rosterLabels).toContain('ready')
+  act(() => store.set((previous) => new Map(previous).set(2, { ...child, status: 'idle' })))
+  expect(container!.querySelector('[data-testid="head-identity"] .agent-dot')?.getAttribute('aria-label')).toBe('ready')
+})
+
+it("counts live children in worktrees on the orchestrator's branch chip and lists their branches in its tooltip", () => {
+  const primary = { root: '/tmp/project', kind: 'primary', branch: 'main', head: null }
+  const worktree = (slug: string) => ({ root: `/tmp/project/.houston/worktrees/${slug}`, kind: { worktree: { slug } }, branch: `houston/${slug}`, head: null })
+  const parent = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', status: 'idle', title: 'parent', codename: 'Max', hidden: false, spawned_by: null, live_children: 3, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, checkout: primary } as SessionInfo
+  const child = (id: number, codename: string, slug: string | null, state = 'running') => ({ ...parent, id, codename, title: `task-${id}`, spawned_by: 1, live_children: 0, state, checkout: slug ? worktree(slug) : primary, delegation: { role: slug ?? 'in-place' } }) as SessionInfo
+  const sessions = new Map([[1, parent], [2, child(2, 'Zane', 'claude-global-hooks')], [3, child(3, 'Ivy', 'rail-status')], [4, child(4, 'Bo', null)], [5, child(5, 'Old', 'gone', 'exited')]])
+  root = createRoot(container!)
+  act(() => root!.render(
+    <SessionsStoreContext.Provider value={createSessionsStore(sessions)}>
+      <SessionPane
+        client={{ subscribe: () => () => {}, taskSnapshot: () => {}, taskQueueRun: () => {} } as unknown as HoustonClient}
+        info={parent}
+        theme="black"
+        active
+        connected
+        fontSize={13}
+        copyOnSelect={false}
+        stripBoxGlyphs={false}
+        showProject={false}
+        registerOutput={() => noop}
+        shellIntegration={false}
+        onReconnectSsh={noop}
+        onActivate={noop}
+        onExpand={noop}
+        onZoom={noop}
+        onShellZoom={noop}
+        onSplit={noop}
+        onHeaderPointerDown={noop}
+        onHandoff={noop}
+        onOpenFile={noop}
+        onOpenDir={noop}
+      />
+    </SessionsStoreContext.Provider>
+  ))
+  const chip = container!.querySelector('[data-testid="branch-chip"]')!
+  expect(chip.querySelector('[data-testid="branch-chip-children"]')?.textContent).toBe('2')
+  const tooltip = chip.closest('[data-tooltip]')!.getAttribute('data-tooltip')!
+  expect(tooltip).toContain('primary · main')
+  expect(tooltip).toContain('Zane · claude-global-hooks: houston/claude-global-hooks')
+  expect(tooltip).toContain('Ivy · rail-status: houston/rail-status')
+  expect(tooltip).not.toContain('Bo')
+  expect(tooltip).not.toContain('houston/gone')
+})

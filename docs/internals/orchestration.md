@@ -14,7 +14,8 @@ isolating it. The one
 exception is asked for, never implied: `pane_spawn { worktree: "<slug>" }` (`hs-pane spawn
 --worktree SLUG`) first creates a git worktree at `<workspace>/.houston/worktrees/<slug>` on
 branch `houston/<slug>` (or `branch`), records it in `managed_worktrees`, and starts the
-child there. The base resolves in order: `origin/HEAD`, `main`, `master`, then `HEAD`;
+pane there, including an independent pane when combined with `handoff: true`.
+The base resolves in order: `origin/HEAD`, `main`, `master`, then `HEAD`;
 it does not follow the caller's feature branch. `branch` names the new branch, not its
 base; `pane_spawn` has no base override. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
 rejects. A child that fails to start takes its new worktree and branch with it; a worktree
@@ -22,6 +23,12 @@ that cannot be removed keeps its branch and record. Removing a worktree from the
 pane drops its record, and a new worktree at a recorded path replaces the stale record, so
 a slug is reusable once its worktree and branch are gone. Houston does not commit changes
 on an agent's behalf.
+
+For single-branch work the orchestrator will edit itself, it continues in the new
+worktree with `pane_spawn{handoff: true, worktree: SLUG}` (`hs-pane spawn --handoff
+--worktree SLUG`), passing context via `state_doc`. It must not edit a child's worktree
+from the primary checkout: the pane's checkout must describe where its process works.
+Delegated multi-branch work continues to use child panes with `worktree`.
 
 ## Guarantees
 
@@ -169,7 +176,7 @@ during setup. This is the one place `core/` gains a capability it cannot see its
 `browser_click` and `browser_type` pass a human confirmation gate before acting.
 
 `pane_spawn` takes `kind` (`claude | codex | antigravity | opencode | cursor | grok`), `prompt`,
-and optional `model`, `cwd`, `target_workspace`, `reusable`, `handoff`, `effort`,
+and optional `model`, `cwd`, `target_workspace`, `worktree`, `branch`, `reusable`, `handoff`, `state_doc`, `effort`,
 `auto_approve`, `profile`, `role`, `output_format`, `boundaries`. `target_workspace` must match a registered
 workspace after canonicalization, and `cwd` must remain under that root. `reusable` defaults
 to false for new API spawns; legacy delegation rows migrate as reusable to preserve their
@@ -1131,10 +1138,9 @@ What changes per provider, beyond the shared inbox:
   "blocked asking" moment `NeedsInput` means — so `Notification` stays the one block
   signal. Grok's field casing is unconfirmed (one docs fetch said camelCase, the code
   assumed Claude's snake_case), so `parse_hook_payload` tries snake_case first, then the
-  camelCase twin, for Grok alone. Grok also reads a workspace's `.claude/settings.json`
-  hooks, so a Grok pane in a workspace where Houston installed Claude hooks fires the same
-  moment twice; the Claude-path helper now exits without writing a drop when `--agent` is
-  absent and `GROK_SESSION_ID` is set, so only the Grok-side drop lands.
+  camelCase twin, for Grok alone. Grok also reads Claude-format workspace hooks. A remaining
+  Claude-path entry could deliver the same event twice; the helper exits without writing a
+  drop when `--agent` is absent and `GROK_SESSION_ID` is set, so only the Grok-side drop lands.
 - **OpenCode.** No native hook contract at all — its plugin bus fires JS callbacks, not a
   shell command with its own stdin — so `houston-notify.js` is the hook contract: it builds
   the JSON `parse_hook_payload` expects itself and pipes it into the same

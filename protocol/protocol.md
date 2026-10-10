@@ -659,7 +659,7 @@ McpConnectionCheck tag "state": not_checked | checking | verified{tool_count} | 
 SkillEntry         name, path, digest
 SkillToolState     tool, path, detected, inherits_claude, skills, error?
 SkillPushRecord    tool, skill, path, pushed_at, had_existing
-AgentHookState     provider, path (the exact file Houston writes), scope (workspace | global), enabled, installed, error?,
+AgentHookState     provider, path (the exact file Houston writes), scope (workspace | global; Claude reports global), enabled, installed, error?,
                    present (the CLI binary resolves on PATH), version? (what `<binary> --version` reported),
                    trust? (HookTrust, Codex only: whether its own review screen has ever trusted a hook)
 

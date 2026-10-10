@@ -2364,6 +2364,12 @@ it needs in the prompt, since it cannot ask you. `--output-format` and
 `--reusable` are refused with `--handoff`, and only a pane without a parent
 may hand off.
 
+For single-branch work this pane will edit itself, continue with
+`pane_spawn{handoff: true, worktree: SLUG}` (`hs-pane spawn --handoff --worktree SLUG`),
+passing context via `state_doc` (`--state-doc` or `--state-doc-path`); never edit a
+child's worktree from the primary checkout. Delegated multi-branch work uses child
+panes with `worktree`.
+
 ## How a delegation actually goes
 
 1. `hs-pane spawn --kind <cli> --prompt "…" [--output-format "…"]

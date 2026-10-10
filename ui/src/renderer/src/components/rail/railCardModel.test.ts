@@ -61,6 +61,18 @@ describe('buildRailCard', () => {
     expect(card.agents.map((row) => row.agent)).toEqual(['codex', 'shell', 'claude'])
   })
 
+  it('shows an idle orchestrator as working while a child outside the grid works', () => {
+    const card = buildRailCard({
+      gridId: 'g1',
+      workspace: '/repo',
+      title: 'Orchestrated',
+      paneIds: [1],
+      sessions: [session({ id: 1, status: 'idle' }), session({ id: 2, status: 'working', spawned_by: 1 })],
+    })
+    expect(card.status.kind).toBe('working')
+    expect(card.agents.map((agent) => agent.session.status)).toEqual(['working'])
+  })
+
   it('returns empty checkouts and idle status for an empty grid', () => {
     const card = buildRailCard({ gridId: 'empty', workspace: '/repo', title: 'Empty', paneIds: [], sessions: [] })
     expect(card.checkouts).toEqual([])

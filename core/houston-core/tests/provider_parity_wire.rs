@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::start_daemon_with_handle;
+use houston_core::agent_hooks::{self, CodexHookTrust, ConfigHome};
 use houston_core::daemon::{CreateParams, Daemon};
 use houston_core::hook_drop::HookDrop;
 use houston_core::mcp_creds::McpScope;
@@ -16,7 +16,47 @@ use std::time::Duration;
 
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 async fn serial() -> tokio::sync::MutexGuard<'static, ()> {
-    SERIAL.lock().await
+    let guard = SERIAL.lock().await;
+    config_home();
+    guard
+}
+
+fn config_home() -> ConfigHome {
+    // All tests share one isolated home for the lifetime of their background daemons.
+    // Workspace creation may also refresh global Claude hooks.
+    static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let home = HOME.get_or_init(|| {
+        let home = tempfile::tempdir().expect("provider config home");
+        std::env::set_var("HOME", home.path());
+        std::env::set_var("USERPROFILE", home.path());
+        std::env::set_var("XDG_CONFIG_HOME", home.path().join(".config"));
+        std::env::remove_var("CLAUDE_CONFIG_DIR");
+        std::env::remove_var("CODEX_HOME");
+        home
+    });
+    ConfigHome {
+        home: home.path().to_path_buf(),
+        xdg_config: Some(home.path().join(".config")),
+    }
+}
+
+async fn start_daemon_with_handle() -> (SocketAddr, tempfile::TempDir, Arc<Daemon>) {
+    let (addr, state, daemon) = common::start_daemon_with_handle().await;
+    let home = config_home();
+    let sentinel = houston_core::claude_hooks::sentinel_for(daemon.channel());
+    let hooks = agent_hooks::install(
+        proto::AgentKind::Codex,
+        &home,
+        &houston_core::claude_hooks::launcher_path(state.path()),
+        &sentinel,
+    )
+    .expect("install fixture Codex hooks and trust");
+    assert!(agent_hooks::codex_hooks_installed_at(&hooks, &sentinel));
+    assert_eq!(
+        agent_hooks::codex_trust_status_at(&hooks, &sentinel),
+        CodexHookTrust::SomeTrusted
+    );
+    (addr, state, daemon)
 }
 
 fn helper_bin() -> &'static str {

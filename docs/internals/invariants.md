@@ -135,11 +135,12 @@ Seven recorded carve-outs stand. Further exceptions need the same recorded treat
 
 ### App-initiated config writes use reversible managed markers
 
-Hook entries in `.claude/settings.local.json`, `~/.codex/config.toml`, `~/.cursor/hooks.json`,
+Hook entries in `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.cursor/hooks.json`,
 `~/.grok/hooks/…` and the OpenCode plugin carry `--houston-managed[=<channel>]`
 matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
-matching would let one channel evict the other. What Houston created (the file, the top-level
-`hooks` object) is recorded in `workspace_hooks` so uninstall removes exactly Houston's residue.
+matching would let one channel evict the other. Claude preserves unrelated settings and hook
+commands, including user commands within a managed group. Its former `workspace_hooks`
+ownership records identify workspace files to migrate to global installation.
 Codex's `notify` is a single key, so a second channel parks the displaced line as a
 sentinel-carrying comment rather than clobbering it. User-initiated writes into a CLI's
 skill directories (`writeSkill`, skill push with backup) are fine.

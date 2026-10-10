@@ -960,6 +960,10 @@ mod tests {
 
     #[test]
     fn byte_accounting() {
+        // Workspace registration installs hooks; keep process-wide config out of parallel tests.
+        if crate::test_home::run_isolated_test("browser::mcp_tools::tests::byte_accounting") {
+            return;
+        }
         let tmp = tempfile::tempdir().expect("tempdir");
         let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig {
             token: "byte-accounting-token".to_string(),

@@ -95,7 +95,7 @@ const PANE_ROUTING: &str = concat!(
      question, or an exit. Use diagnostics only after a wait timeout, for help, or when the \
      operator asks; do not sit in a diagnostic loop. ",
     "Its signature: `pane_spawn{kind: claude|codex|antigravity|opencode|cursor|grok, prompt, model?, cwd?, ",
-    "auto_approve?, profile?, role?, target_workspace?, reusable?, handoff?, state_doc?, effort?, \
+    "auto_approve?, profile?, role?, target_workspace?, worktree?, branch?, reusable?, handoff?, state_doc?, effort?, \
      output_format?, boundaries?}` — `role` is your own short name ",
     "for that child, unique among your live children, and it is how every wake from it identifies ",
     "itself; `output_format` and `boundaries` are the other two thirds of a brief, composed into ",
@@ -104,6 +104,10 @@ const PANE_ROUTING: &str = concat!(
      longer needed — pass `handoff: true`: the new pane is independent, not your child, so it \
      never reports back and the user can close this pane without killing it. Only a top-level \
      pane can hand off; child and depth caps apply to child spawning. ",
+    "For single-branch work this pane will edit itself, continue with \
+     `pane_spawn{handoff: true, worktree: SLUG}` (`hs-pane spawn --handoff --worktree SLUG`), \
+     passing context via `state_doc`; never edit a child's worktree from the primary checkout. \
+     Delegated multi-branch work uses child panes with `worktree`. ",
     "`workspace_info` lists registered target workspaces; `target_workspace` accepts only one \
      of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",

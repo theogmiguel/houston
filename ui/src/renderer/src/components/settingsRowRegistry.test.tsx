@@ -61,7 +61,7 @@ const SECTION_OVERRIDES: Partial<
   Record<SettingsSectionId, Partial<React.ComponentProps<typeof SettingsView>>>
 > = {
   agents: {
-    agentHooks: (['claude', 'codex', 'opencode', 'cursor', 'grok'] as const).map((provider) => ({ provider, path: `~/.${provider}/settings.json`, scope: 'workspace', enabled: true, installed: true, error: null, present: true, version: '1.0.0', trust: null })) as AgentHookState[],
+    agentHooks: (['claude', 'codex', 'opencode', 'cursor', 'grok'] as const).map((provider) => ({ provider, path: `~/.${provider}/settings.json`, scope: 'global', enabled: true, installed: true, error: null, present: true, version: '1.0.0', trust: null })) as AgentHookState[],
     agentProfiles: { profiles: [], active: [] }
   },
   orchestration: {

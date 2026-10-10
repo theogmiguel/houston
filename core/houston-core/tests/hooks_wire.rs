@@ -678,13 +678,18 @@ async fn antigravitys_mid_turn_events_never_end_the_turn() {
 
 #[tokio::test]
 async fn claude_hook_consent_uninstalls_for_real_and_stays_off() {
+    if run_codex_status_test_in_isolated_home(
+        "claude_hook_consent_uninstalls_for_real_and_stays_off",
+    ) {
+        return;
+    }
     let (_addr, _state, daemon) = start_daemon_with_handle().await;
     let ws = tempfile::tempdir().unwrap();
     daemon
         .workspace_add(&ws.path().display().to_string())
         .expect("add workspace");
 
-    let settings = ws.path().join(".claude").join("settings.local.json");
+    let settings = Path::new(&std::env::var("HOME").unwrap()).join(".claude/settings.json");
     let read = || std::fs::read_to_string(&settings).unwrap_or_default();
     assert!(
         read().contains("houston-managed"),
@@ -745,7 +750,7 @@ async fn providers_report_their_config_scope_and_default_consent() {
     );
     for row in &rows {
         if row.provider == proto::AgentKind::Claude {
-            assert_eq!(row.scope, proto::AgentHookScope::Workspace);
+            assert_eq!(row.scope, proto::AgentHookScope::Global);
             assert!(row.enabled, "Claude hooks default to on");
             continue;
         }
@@ -899,7 +904,12 @@ async fn boot_creates_the_drop_dir_private() {
 }
 
 #[tokio::test]
-async fn boot_points_the_launcher_and_workspaces_bake_it() {
+async fn boot_points_the_launcher_and_global_settings_bake_it() {
+    if run_codex_status_test_in_isolated_home(
+        "boot_points_the_launcher_and_global_settings_bake_it",
+    ) {
+        return;
+    }
     let (_addr, state, daemon) = start_daemon_with_handle().await;
     let state_dir = state.path();
     let launcher = state_dir.join("bin").join("claude-hook");
@@ -931,7 +941,10 @@ async fn boot_points_the_launcher_and_workspaces_bake_it() {
         .workspace_add(&ws.path().display().to_string())
         .unwrap();
     let settings: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(ws.path().join(".claude/settings.local.json")).unwrap(),
+        &std::fs::read_to_string(
+            Path::new(&std::env::var("HOME").unwrap()).join(".claude/settings.json"),
+        )
+        .unwrap(),
     )
     .unwrap();
     let cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
@@ -940,11 +953,11 @@ async fn boot_points_the_launcher_and_workspaces_bake_it() {
         .to_string();
     assert!(
         cmd.contains(&houston_core::exe_path::command_spelling(&launcher)),
-        "the workspace must bake the launcher (command spelling): {cmd}"
+        "the global settings must bake the launcher (command spelling): {cmd}"
     );
     assert!(
         !cmd.contains(&std::env::current_exe().unwrap().display().to_string()),
-        "the workspace must NOT bake the binary path: {cmd}"
+        "the global settings must NOT bake the binary path: {cmd}"
     );
 }
 
