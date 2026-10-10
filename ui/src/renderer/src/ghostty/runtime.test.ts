@@ -4,7 +4,8 @@ import { GhosttyRuntime } from "./runtime";
 
 function buildStubModule(): Uint8Array<ArrayBuffer> {
   const layouts = JSON.stringify({
-    GhosttyStyle: { size: 8, align: 1, fields: { bold: { offset: 4, size: 1, type: "bool" } } },
+    schema: 1,
+    types: { GhosttyStyle: { size: 8, align: 1, fields: { bold: { offset: 4, size: 1, type: "bool" } } } },
   });
   const json = new TextEncoder().encode(layouts + "\0");
 

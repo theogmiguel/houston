@@ -1,15 +1,11 @@
 Route and export Houston's snapshot module.
 
-The module itself is copied in by core/houston-core/build.rs, not carried
-here, so an upstream bump fails on these two hunks rather than on the
-whole file.
-
 --- a/src/lib_vt.zig
 +++ b/src/lib_vt.zig
-@@ -289,6 +289,11 @@
-         @export(&c.tracked_grid_ref_point, .{ .name = "ghostty_tracked_grid_ref_point" });
-         @export(&c.tracked_grid_ref_set, .{ .name = "ghostty_tracked_grid_ref_set" });
-         @export(&c.tracked_grid_ref_snapshot, .{ .name = "ghostty_tracked_grid_ref_snapshot" });
+@@ -419,6 +419,11 @@
+         if (features.grid_introspection and features.snapshot) {
+             @export(&c.tracked_grid_ref_snapshot, .{ .name = "ghostty_tracked_grid_ref_snapshot" });
+         }
 +        @export(&c.houston_snapshot_format_version, .{ .name = "houston_vt_snapshot_format_version" });
 +        @export(&c.houston_snapshot_parser_state, .{ .name = "houston_vt_snapshot_parser_state" });
 +        @export(&c.houston_snapshot_encode, .{ .name = "houston_vt_snapshot_encode" });
@@ -20,21 +16,48 @@ whole file.
          @export(&c.alloc_alloc, .{ .name = "ghostty_alloc" });
 --- a/src/terminal/c/main.zig
 +++ b/src/terminal/c/main.zig
-@@ -43,10 +43,17 @@
+@@ -47,10 +47,18 @@
  pub const style = @import("style.zig");
  pub const sys = @import("sys.zig");
  pub const terminal = @import("terminal.zig");
 +pub const houston_snapshot = @import("houston_snapshot.zig");
- 
+ pub const unicode = @import("unicode.zig");
+
  // The full C API, unexported.
  pub const build_info = buildpkg.get;
- 
++
 +pub const houston_snapshot_format_version = houston_snapshot.snapshot_format_version;
 +pub const houston_snapshot_parser_state = houston_snapshot.snapshot_parser_state;
 +pub const houston_snapshot_encode = houston_snapshot.snapshot_encode;
 +pub const houston_snapshot_import = houston_snapshot.snapshot_import;
 +pub const houston_set_max_scrollback = houston_snapshot.set_max_scrollback;
 +
+
  pub const osc_new = osc.new;
  pub const osc_free = osc.free;
- pub const osc_reset = osc.reset;
+--- a/src/terminal/Screen.zig
++++ b/src/terminal/Screen.zig
+@@ -2285,7 +2285,7 @@
+             },
+
+             .true => {
+-                const start = start: {
++                var start = start: {
+                     var it = self.cursor.page_pin.promptIterator(
+                         .left_up,
+                         null,
+@@ -2298,6 +2298,14 @@
+                         break :prompt;
+                     };
+                 };
++
++                // Reflow copies prompt metadata onto wrapped rows. Walk back
++                // over those rows to clear the entire original prompt.
++                while (start.up(1)) |prior| {
++                    const row = prior.rowAndCell().row;
++                    if (!row.wrap or row.semantic_prompt == .none) break;
++                    start = prior.left(prior.x);
++                }
+
+                 // Clear cells from our start down. We replace it with spaces,
+                 // and do not physically erase the rows (eraseRows) because the

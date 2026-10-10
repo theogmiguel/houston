@@ -204,12 +204,15 @@ it('regroups a child after a pure status update while its input props remain unc
 
 describe('reported child state', () => {
   it('keeps a stalled working delegation out of human attention', () => {
-    children = [{ ...child(2), delegation: { state: 'working', stalled: true } as SessionInfo['delegation'] }]
+    children = [{ ...child(2), delegation: { state: 'working', stalled: true, hold_reason: 'stalled? approval_outcome_unobserved' } as SessionInfo['delegation'] }]
     expect(childGroup(children[0])).toBe('Working')
     expect(childStateWord(children[0])).toBe('stalled')
     render()
     expect(host.querySelector('[aria-label="Answer 2"]')).toBeNull()
     expect(host.querySelector('[aria-label="Stalled"]')).not.toBeNull()
+    const dot = host.querySelector('[aria-label="Stalled"]')!
+    expect(dot.querySelector('.agent-dot')?.getAttribute('style')).toContain('var(--text-muted)')
+    expect(dot.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toContain('approval_outcome_unobserved')
   })
   it.each(['done', 'failed'] as const)('shows a live %s verdict without closing the PTY', (state) => {
     children = [{ ...child(2), delegation: { state } as SessionInfo['delegation'] }]
