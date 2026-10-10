@@ -427,6 +427,58 @@ pub struct TaskQuery<'a> {
     pub limit: u32,
 }
 
+/// A write that leaves the task's definition alone keeps an approved plan
+/// approved: the approval follows the revision bump made in the same `tx`.
+fn carry_plan_approval(tx: &rusqlite::Transaction, task_id: i64) -> Result<()> {
+    tx.execute(
+        "UPDATE backlog_task_domain SET approved_task_revision = approved_task_revision + 1, \
+         plan_json = json_set(plan_json, '$.approved_revision', approved_task_revision + 1) \
+         WHERE task_id = ?1 AND plan_json IS NOT NULL \
+         AND approved_task_revision = (SELECT revision FROM backlog_tasks WHERE id = ?1) - 1 \
+         AND json_extract(plan_json, '$.approved_revision') = approved_task_revision",
+        [task_id],
+    )?;
+    Ok(())
+}
+
+/// Replaces the acceptance list, keeping the tick of every item whose text
+/// is unchanged.
+fn replace_acceptance(tx: &rusqlite::Transaction, task_id: i64, items: &[String]) -> Result<()> {
+    let mut ticks: std::collections::HashMap<String, (Option<i64>, Option<String>)> = {
+        let mut stmt = tx.prepare(
+            "SELECT text, checked_at, checked_by FROM backlog_task_acceptance WHERE task_id = ?1",
+        )?;
+        let rows = stmt
+            .query_map([task_id], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
+            .collect::<rusqlite::Result<Vec<(String, (Option<i64>, Option<String>))>>>()?;
+        rows.into_iter().collect()
+    };
+    tx.execute(
+        "DELETE FROM backlog_task_acceptance WHERE task_id = ?1",
+        [task_id],
+    )?;
+    for (position, text) in items.iter().enumerate() {
+        let (checked_at, checked_by) = ticks.remove(text).unwrap_or((None, None));
+        tx.execute(
+            "INSERT INTO backlog_task_acceptance (task_id, position, text, checked_at, checked_by) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![task_id, position as i64, text, checked_at, checked_by],
+        )?;
+    }
+    Ok(())
+}
+
+/// The acceptance texts in position order.
+fn acceptance_texts(tx: &rusqlite::Transaction, task_id: i64) -> Result<Vec<String>> {
+    let mut stmt = tx.prepare(
+        "SELECT text FROM backlog_task_acceptance WHERE task_id = ?1 ORDER BY position, id",
+    )?;
+    let rows = stmt
+        .query_map([task_id], |r| r.get(0))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    Ok(rows)
+}
+
 /// `LIKE` with `\` as the escape, so a `%` or `_` in a search box is a literal.
 fn like_pattern(q: &str) -> String {
     let mut out = String::with_capacity(q.len() + 2);
@@ -1370,6 +1422,24 @@ impl Db {
     pub fn update_task(&self, u: &TaskUpdate<'_>) -> Result<bool> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
+        let before: Option<(String, String)> = tx
+            .query_row(
+                "SELECT title, description FROM backlog_tasks WHERE id = ?1",
+                [u.id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let definition_changed = match &before {
+            Some((title, description)) => {
+                title != u.title
+                    || description != u.description
+                    || match u.acceptance {
+                        Some(items) => acceptance_texts(&tx, u.id)? != items,
+                        None => false,
+                    }
+            }
+            None => true,
+        };
         let changed = tx.execute(
             "UPDATE backlog_tasks SET title = ?2, description = ?3, status = ?4, priority = ?5, \
                  parent_id = ?6, ref_url = ?7, revision = revision + 1, updated_at = ?8, workspace = ?10 \
@@ -1390,24 +1460,22 @@ impl Db {
         if changed == 0 {
             return Ok(false);
         }
+        if definition_changed {
+            tx.execute(
+                "UPDATE backlog_task_domain SET approved_task_revision = NULL WHERE task_id = ?1",
+                [u.id],
+            )?;
+        } else {
+            carry_plan_approval(&tx, u.id)?;
+        }
         tx.execute(
-            "UPDATE backlog_task_domain SET approved_task_revision = NULL, planning_session_id = NULL, planning_task_revision = NULL, \
+            "UPDATE backlog_task_domain SET planning_session_id = NULL, planning_task_revision = NULL, \
              user_status_override = CASE WHEN ?2 = 'user' AND ?3 LIKE '%\"status\"%' \
                  THEN 1 ELSE user_status_override END WHERE task_id = ?1",
             rusqlite::params![u.id, u.actor, u.changes],
         )?;
         if let Some(items) = u.acceptance {
-            tx.execute(
-                "DELETE FROM backlog_task_acceptance WHERE task_id = ?1",
-                rusqlite::params![u.id],
-            )?;
-            for (position, text) in items.iter().enumerate() {
-                tx.execute(
-                    "INSERT INTO backlog_task_acceptance (task_id, position, text) \
-                     VALUES (?1, ?2, ?3)",
-                    rusqlite::params![u.id, position as i64, text],
-                )?;
-            }
+            replace_acceptance(&tx, u.id, items)?;
         }
         tx.execute(
             "INSERT INTO backlog_task_history (task_id, actor, action, changes, created_at) \
@@ -1435,6 +1503,7 @@ impl Db {
         if changed == 0 {
             bail!("task {id} disappeared while adding a comment");
         }
+        carry_plan_approval(&tx, id)?;
         tx.execute(
             "INSERT INTO backlog_task_history (task_id, actor, action, changes, created_at) \
              VALUES (?1, ?2, 'comment', ?3, ?4)",
@@ -1488,6 +1557,7 @@ impl Db {
         if changed == 0 {
             bail!("task {id} disappeared while checking one of its acceptance items");
         }
+        carry_plan_approval(&tx, id)?;
         tx.execute(
             "INSERT INTO backlog_task_history (task_id, actor, action, changes, created_at) \
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1523,6 +1593,7 @@ impl Db {
         if changed == 0 {
             return Ok(false);
         }
+        carry_plan_approval(&tx, id)?;
         tx.execute(
             "INSERT INTO backlog_task_history (task_id, actor, action, changes, created_at) \
              VALUES (?1, ?2, ?3, '{}', ?4)",
@@ -2184,16 +2255,7 @@ impl Db {
             "UPDATE backlog_tasks SET description = ?2, revision = ?3, updated_at = ?4 WHERE id = ?1 AND revision = ?5",
             rusqlite::params![task_id, plan.proposal.description, new_revision, now_ms, revision],
         )?;
-        tx.execute(
-            "DELETE FROM backlog_task_acceptance WHERE task_id = ?1",
-            [task_id],
-        )?;
-        for (position, text) in plan.proposal.acceptance.iter().enumerate() {
-            tx.execute(
-                "INSERT INTO backlog_task_acceptance(task_id, position, text) VALUES (?1, ?2, ?3)",
-                rusqlite::params![task_id, position as i64, text],
-            )?;
-        }
+        replace_acceptance(&tx, task_id, &plan.proposal.acceptance)?;
         tx.execute(
             "INSERT INTO backlog_task_history(task_id, actor, action, changes, created_at) VALUES (?1, 'user', 'plan_approved', ?2, ?3)",
             rusqlite::params![task_id, changes, now_ms],
@@ -2333,6 +2395,7 @@ impl Db {
         if changed == 0 {
             return Ok(false);
         }
+        carry_plan_approval(&tx, task_id)?;
         tx.execute(
             "DELETE FROM backlog_task_blocks WHERE task_id = ?1",
             [task_id],
