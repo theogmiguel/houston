@@ -57,6 +57,7 @@ import {
   IconSliders,
   IconTag,
   IconServer,
+  IconTux,
   IconUser,
   IconTarget,
   IconTasks,
@@ -75,7 +76,6 @@ import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { Icon } from "./ui/Icon";
 import { Count } from "./ui/Count";
-import { Chip } from "./ui/Chip";
 import { wslWorkspaces } from "../houston/environments";
 import {
   RAIL_VIEWS,
@@ -855,10 +855,17 @@ function tagsOf(s: SessionInfo): number[] {
   return s.tags ?? [];
 }
 
-// A workspace that lives in a WSL distro names it; Windows workspaces show nothing.
+// A workspace that lives in a WSL distro shows Tux, naming the distro on hover and to
+// screen readers; Windows workspaces show nothing.
 function EnvironmentBadge({ path }: { path: string }): React.JSX.Element | null {
   const distro = wslWorkspaces.get(path);
-  return distro === undefined ? null : <Chip variant="state" label={`WSL: ${distro}`} className="flex-none" />;
+  if (distro === undefined) return null;
+  const label = `WSL: ${distro}`;
+  return (
+    <Tooltip label={label} inline>
+      <Icon glyph={IconTux} role="ui" opacity="muted" label={label} />
+    </Tooltip>
+  );
 }
 
 function PinIndicator(): React.JSX.Element {

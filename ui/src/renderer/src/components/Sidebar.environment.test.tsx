@@ -63,13 +63,14 @@ describe('Sidebar environment badge', () => {
     return found
   }
 
-  it('badges wsl workspaces', () => {
+  it('marks wsl workspaces with Tux, naming the distro', () => {
     for (const gridsByWorkspace of [undefined, { [WINDOWS]: [{ id: 'w1', name: 'main' }], [LINUX]: [{ id: 'l1', name: 'main' }] }]) {
       act(() => root.render(<Sidebar {...props({ gridsByWorkspace, selectedGridId: 'w1' })} />))
 
-      expect(row(LINUX).textContent).toContain('WSL: Ubuntu')
-      expect(row(WINDOWS).textContent).not.toContain('WSL:')
-      expect(row(WINDOWS).querySelector('[data-testid="chip"]')).toBeNull()
+      const tux = row(LINUX).querySelector('[role="img"][aria-label="WSL: Ubuntu"]')
+      expect(tux?.tagName.toLowerCase()).toBe('svg')
+      expect(row(LINUX).textContent).not.toContain('WSL:')
+      expect(row(WINDOWS).querySelector('[aria-label^="WSL:"]')).toBeNull()
     }
   })
 })

@@ -48,9 +48,10 @@ file is still Houston's own.
 Use **Workspaces → + → Local folder…** and pick a folder under `\\wsl.localhost\<distro>\`
 (or `\\wsl$\<distro>\`) in the folder picker. Houston adds the workspace to that
 distro's environment with its Linux path, for example `/home/you/project`, and the rail
-marks it `WSL: <distro>`. Picking a folder from a distro that is not enabled is refused
-with a message telling you to enable it in Settings → WSL. A Linux path can belong to
-only one distro: opening the same path from a second distro is refused.
+marks it with a penguin icon that reads `WSL: <distro>` on hover. Picking a folder from a
+distro that is not enabled is refused with a message telling you to enable it in
+Settings → WSL. A Linux path can belong to only one distro: opening the same path from a
+second distro is refused.
 
 New panes in a WSL workspace start inside the distro in that folder.
 
