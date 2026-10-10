@@ -22,7 +22,8 @@ describe('firstRunHookRows', () => {
     const rows = firstRunHookRows([
       state({ provider: 'claude', installed: true, version: '2.3.1' }),
       state({ provider: 'codex', version: '0.98.0' }),
-      state({ provider: 'cursor', present: false, version: null })
+      state({ provider: 'cursor', present: false, version: null }),
+      state({ provider: 'zcode', present: false, version: null })
     ])
 
     expect(rows.map(({ provider, status }) => [provider, status])).toEqual([
@@ -31,7 +32,8 @@ describe('firstRunHookRows', () => {
       ['opencode', 'not-found'],
       ['grok', 'not-found'],
       ['cursor', 'not-found'],
-      ['antigravity', 'not-found']
+      ['antigravity', 'not-found'],
+      ['zcode', 'not-found']
     ])
     expect(rows[0]).toMatchObject({ name: 'Claude Code', version: '2.3.1' })
     expect(rows[1]).toMatchObject({ name: 'Codex', version: '0.98.0' })
