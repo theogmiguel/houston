@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WslList } from '../../houston/wslDistros'
-import { WslSection } from './WslSection'
+import { SETTLE_MS, WslSection } from './WslSection'
 
 const { invokeMock, listeners } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
@@ -143,6 +143,39 @@ describe('WslSection', () => {
     await flush()
 
     expect(invokeMock).toHaveBeenCalledWith('wsl_disable', { name: 'Ubuntu' })
+  })
+
+  it('a disable stays disabled: the Enable that replaces Disable is inert while it settles', async () => {
+    let enabled = true
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'wsl_list') return { available: true, distros: [{ ...TWO_DISTROS.distros[0], enabled, status: enabled ? 'ready' : 'disabled' }] }
+      if (cmd === 'env_list') return []
+      if (cmd === 'wsl_disable') {
+        enabled = false
+        setTimeout(() => listeners.get('wsl://environments')?.(), 0)
+        return { name: 'Ubuntu' }
+      }
+      if (cmd === 'wsl_enable') return { name: 'Ubuntu', slot: 1, status: 'ready' }
+      throw new Error(`unexpected ${cmd}`)
+    })
+    await render()
+    const wait = (ms: number) => act(() => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+    act(() => byTestId('wsl-distro-disable')[0].click())
+    await flush()
+    const confirm = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Disable' && !b.dataset.testid)
+    act(() => confirm!.click())
+    await flush()
+
+    const enable = byTestId('wsl-distro-enable')[0] as HTMLButtonElement
+    expect(enable.textContent).toBe('Enable')
+    expect(enable.disabled).toBe(true)
+    act(() => enable.click())
+    await wait(SETTLE_MS / 2)
+    expect((byTestId('wsl-distro-enable')[0] as HTMLButtonElement).disabled).toBe(true)
+    await wait(SETTLE_MS)
+    expect((byTestId('wsl-distro-enable')[0] as HTMLButtonElement).disabled).toBe(false)
+    expect(invokeMock.mock.calls.filter(([cmd]) => cmd === 'wsl_enable')).toEqual([])
+    expect(byTestId('wsl-distro-disable')).toHaveLength(0)
   })
 
   it('reloads the list when the environments change', async () => {

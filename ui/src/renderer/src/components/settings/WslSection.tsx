@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { listEnvironments } from '../../houston/environments'
 import {
   onEnvironmentsChanged,
@@ -12,6 +12,13 @@ import { Button, Stack, Text } from '../ui'
 import { Chip } from '../ui/Chip'
 import { ConfirmModal } from '../ConfirmModal'
 import { Group, Row } from './shared'
+
+type Action = 'enable' | 'disable'
+
+// Enable and Disable share the row's button slot, so the replacement appears under a
+// pointer or focus aimed at the one it replaced; it stays inert this long after the
+// re-read that swapped them lands.
+export const SETTLE_MS = 800
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -36,7 +43,7 @@ function DistroRow({
 }: {
   distro: WslDistro
   reason: string | null
-  pending: boolean
+  pending: Action | null
   onEnable: () => void
   onDisable: () => void
 }): React.JSX.Element {
@@ -57,12 +64,12 @@ function DistroRow({
     >
       <Stack gap={2} axis="horizontal" align="center">
         {(!distro.enabled || distro.status === 'error') && (
-          <Button type="button" variant="secondary" disabled={pending} onClick={onEnable} data-testid="wsl-distro-enable">
-            {pending ? 'Enabling…' : distro.enabled ? 'Retry' : 'Enable'}
+          <Button type="button" variant="secondary" disabled={pending !== null} onClick={onEnable} data-testid="wsl-distro-enable">
+            {pending === 'enable' ? 'Enabling…' : distro.enabled ? 'Retry' : 'Enable'}
           </Button>
         )}
         {distro.enabled && (
-          <Button type="button" variant="danger" disabled={pending} onClick={onDisable} data-testid="wsl-distro-disable">
+          <Button type="button" variant="danger" disabled={pending !== null} onClick={onDisable} data-testid="wsl-distro-disable">
             Disable
           </Button>
         )}
@@ -113,11 +120,12 @@ export function WslSection(): React.JSX.Element {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [envReasons, setEnvReasons] = useState<Record<string, string>>({})
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
-  const [pending, setPending] = useState<string | null>(null)
+  const [pending, setPending] = useState<{ name: string; action: Action } | null>(null)
+  const busy = useRef(false)
   const [confirming, setConfirming] = useState<string | null>(null)
 
-  const load = useCallback((): void => {
-    void Promise.all([wslList(), listEnvironments().catch(() => [])]).then(
+  const load = useCallback((): Promise<void> => {
+    return Promise.all([wslList(), listEnvironments().catch(() => [])]).then(
       ([next, environments]) => {
         setList(next)
         setLoadError(null)
@@ -130,10 +138,10 @@ export function WslSection(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    load()
+    void load()
     let off: (() => void) | null = null
     let disposed = false
-    void onEnvironmentsChanged(load).then(
+    void onEnvironmentsChanged(() => void load()).then(
       (unlisten) => (disposed ? unlisten() : (off = unlisten)),
       (err: unknown) => console.warn('houston: could not watch WSL environments', err)
     )
@@ -143,19 +151,24 @@ export function WslSection(): React.JSX.Element {
     }
   }, [load])
 
-  const run = (name: string, action: () => Promise<unknown>): void => {
-    setPending(name)
+  const run = (name: string, action: Action, invoke: () => Promise<unknown>): void => {
+    if (busy.current) return
+    busy.current = true
+    setPending({ name, action })
     setActionErrors((prev) => {
       const next = { ...prev }
       delete next[name]
       return next
     })
     // A failed attempt may still have booted the distro, so its state is re-read too.
-    void action()
+    void invoke()
       .catch((err: unknown) => setActionErrors((prev) => ({ ...prev, [name]: message(err) })))
+      .then(load)
       .finally(() => {
-        setPending(null)
-        load()
+        setTimeout(() => {
+          busy.current = false
+          setPending(null)
+        }, SETTLE_MS)
       })
   }
 
@@ -164,8 +177,8 @@ export function WslSection(): React.JSX.Element {
       key={distro.name}
       distro={distro}
       reason={actionErrors[distro.name] ?? (distro.status === 'error' ? envReasons[distro.name] ?? null : null)}
-      pending={pending === distro.name}
-      onEnable={() => run(distro.name, () => wslEnable(distro.name))}
+      pending={pending?.name === distro.name ? pending.action : null}
+      onEnable={() => run(distro.name, 'enable', () => wslEnable(distro.name))}
       onDisable={() => setConfirming(distro.name)}
     />
   )
@@ -180,7 +193,7 @@ export function WslSection(): React.JSX.Element {
           <Chip variant="state" tone="warning" label="Experimental" />
         </Row>
       </Group>
-      <DistroList list={list} loadError={loadError} onRetry={load} row={row} />
+      <DistroList list={list} loadError={loadError} onRetry={() => void load()} row={row} />
       {confirming !== null && (
         <ConfirmModal
           title="DISABLE DISTRO"
@@ -189,7 +202,7 @@ export function WslSection(): React.JSX.Element {
           onConfirm={() => {
             const name = confirming
             setConfirming(null)
-            run(name, () => wslDisable(name))
+            run(name, 'disable', () => wslDisable(name))
           }}
           onCancel={() => setConfirming(null)}
         />

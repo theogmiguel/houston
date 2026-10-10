@@ -583,6 +583,8 @@ impl WslManager {
     pub async fn enable(&self, name: String) -> Result<Enabled, String> {
         let inner = &self.inner;
         inner.gate()?;
+        // Logged so the app log shows which request a state change answered.
+        eprintln!("houston-tauri: wsl {name}: enable requested");
         if distros::is_utility(&name) {
             return Err(format!(
                 "{name} is a container engine's utility distro; Houston does not run in {}",
@@ -640,6 +642,7 @@ impl WslManager {
     pub async fn disable(&self, name: String) -> Result<Disabled, String> {
         let inner = &self.inner;
         inner.gate()?;
+        eprintln!("houston-tauri: wsl {name}: disable requested");
         let _ops = inner.ops.lock().await;
         let mut config = config::load(&inner.opts.state_dir)?;
         if !config.is_enabled(&name) {
