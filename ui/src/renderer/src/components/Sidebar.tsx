@@ -1492,6 +1492,7 @@ function RailHead({
 
 const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Element>> =
   Object.freeze({
+    factory: IconWrench,
     tasks: IconTasks,
     skills: IconZap,
     routines: IconClock,

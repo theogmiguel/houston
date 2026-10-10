@@ -548,6 +548,7 @@ function offeredUpdate(
 const RECONNECT_MS = 1000;
 const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
+const FactorySurface = lazy(() => import('./components/nav/FactorySurface').then((module) => ({ default: module.FactorySurface })))
 
 // Connections before its first `mcp_state` shows empty lists, not a missing view.
 function mcpSurfaceLists(mcp: McpStateView | null) {
@@ -3953,6 +3954,30 @@ export function App(): React.JSX.Element {
                       onRefresh={prScreen.refresh}
                       onOpenSurface={openPanelSurface}
                     />
+                  ) : railView === "factory" ? (
+                    <Suspense fallback={<div className="flex-1" />}>
+                      <FactorySurface
+                        client={conn.kind === "ready" ? conn.client : null}
+                        workspaces={workspaces.map((w) => ({ path: w.path, name: w.name }))}
+                        sessions={sessions}
+                        now={Date.now()}
+                        pullRequests={linkedPullRequests}
+                        onOpenSession={(sessionId) => {
+                          setRailView(null);
+                          focusPane(sessionId);
+                        }}
+                        onOpenTask={(taskId) => openSideTasks(false, taskId)}
+                        onOpenPullRequest={(link: PullRequestLink) => {
+                          setRailView(null);
+                          setRequestedPr(link);
+                          setScmTab('pull-request');
+                          setScmOpen(true);
+                          setActiveSurface('side');
+                        }}
+                        onOpenExternal={(url) => void openExternal(url)}
+                        onStartRequested={handleTaskStartRequested}
+                      />
+                    </Suspense>
                   ) : railView === "tasks" ? (
                     <Suspense fallback={<div className="flex-1" />}>
                       <TasksSurface

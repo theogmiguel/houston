@@ -110,7 +110,7 @@ describe('the rail nav block', () => {
   it('navigation rows leave Pull requests and Usage in the footer', () => {
     render()
     expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(RAIL_VIEWS.filter((view) => view !== 'usage' && view !== 'prs'))
-    expect(rows().map((r) => r.textContent)).toEqual(['Tasks', 'Skills', 'Routines', 'Harness', 'Connections'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Factory', 'Tasks', 'Skills', 'Routines', 'Harness', 'Connections'])
     expect(q('.railfoot button[aria-label="Usage"]')).not.toBeNull()
   })
 
@@ -152,7 +152,7 @@ describe('the rail nav block', () => {
     expect(hide.textContent).toContain('Hide from sidebar')
 
     act(() => hide.click())
-    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['tasks', 'routines', 'harness', 'mcp'])
+    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['factory', 'tasks', 'routines', 'harness', 'mcp'])
     expect(localStorage.getItem('tr-rail-views-hidden')).toContain('skills')
   })
 

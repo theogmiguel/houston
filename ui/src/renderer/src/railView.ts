@@ -1,10 +1,11 @@
 import { useSyncExternalStore } from 'react'
 
-export const RAIL_VIEWS = ['tasks', 'skills', 'routines', 'harness', 'mcp', 'prs', 'usage'] as const
+export const RAIL_VIEWS = ['factory', 'tasks', 'skills', 'routines', 'harness', 'mcp', 'prs', 'usage'] as const
 
 export type RailView = (typeof RAIL_VIEWS)[number]
 
 export const RAIL_VIEW_LABEL: Readonly<Record<RailView, string>> = Object.freeze({
+  factory: 'Factory',
   tasks: 'Tasks',
   skills: 'Skills',
   routines: 'Routines',
