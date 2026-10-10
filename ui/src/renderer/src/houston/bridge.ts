@@ -1,11 +1,14 @@
 import { isTauri } from './host'
+import { wslWorkspaces } from './environments'
 import type { DirEntry, Skill } from '../env'
 
 async function invoker(): Promise<
   <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
 > {
   const { invoke } = await import('@tauri-apps/api/core')
-  return invoke
+  if (wslWorkspaces.size === 0) return invoke
+  const { wslInvoke } = await import('./wslInvoke')
+  return wslInvoke(invoke)
 }
 
 export async function pickDirectory(): Promise<string | null> {
@@ -461,5 +464,9 @@ export async function unwatchFileDirs(root: string): Promise<void> {
 
 export async function onFilesChanged(handler: (event: { root: string; paths: string[] }) => void): Promise<() => void> {
   const { listen } = await import('@tauri-apps/api/event')
-  return listen('fs://changed', (event) => handler(event.payload as { root: string; paths: string[] }))
+  return listen('fs://changed', (event) => {
+    const payload = event.payload as { root: string; paths: string[] }
+    if (wslWorkspaces.size === 0) return handler(payload)
+    void import('./wslInvoke').then((m) => handler(m.fromWindowsPaths(payload)))
+  })
 }
