@@ -1483,6 +1483,61 @@ impl Daemon {
         })
     }
 
+    /// Discards the planning proposal the user read; the reason becomes a
+    /// comment and the task keeps its definition.
+    pub fn task_plan_reject(
+        &self,
+        id: i64,
+        expected_revision: i64,
+        plan_revision: i64,
+        reason: &str,
+    ) -> Result<proto::ServerMsg> {
+        let operation = "task_plan_reject";
+        let reason = reason.trim();
+        if reason.is_empty() || reason.len() > proto::TASK_COMMENT_MAX {
+            return Ok(Self::task_invalid(
+                Some(id),
+                operation,
+                format!(
+                    "the reason is {} bytes (expected 1 to {})",
+                    reason.len(),
+                    proto::TASK_COMMENT_MAX
+                ),
+            ));
+        }
+        let Some(revision) = self.db.reject_task_plan(
+            id,
+            expected_revision,
+            plan_revision,
+            reason,
+            USER_ACTOR,
+            now_unix_ms(),
+        )?
+        else {
+            let actual = self.db.task(id)?.map(|t| t.revision);
+            return Ok(Self::task_refused(
+                Some(id),
+                proto::TaskErrorKind::Conflict,
+                None,
+                None,
+                Some(expected_revision),
+                actual,
+                format!(
+                    "{operation} refused: the task revision or plan revision {plan_revision} \
+                     changed, or the task has no plan"
+                ),
+            ));
+        };
+        if let Some(task) = self.db.task(id)? {
+            self.broadcast_control(&proto::ServerMsg::TaskChanged {
+                workspace: task.workspace,
+                id,
+                revision,
+            });
+        }
+        Ok(proto::ServerMsg::TaskPlanChanged { id, revision })
+    }
+
     pub fn task_plan_session(&self, session_id: u32) -> Result<Option<(i64, i64)>> {
         self.db.task_planning_session(session_id)
     }

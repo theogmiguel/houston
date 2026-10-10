@@ -1459,6 +1459,48 @@ async fn dispatch(
                 Ok(())
             }
         },
+        proto::ClientMsg::TaskPlanReject {
+            id,
+            expected_revision,
+            plan_revision,
+            reason,
+        } => match daemon.task_plan_reject(id, expected_revision, plan_revision, &reason)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskQuestionAnswer {
+            question_id,
+            answer,
+        } => {
+            let d = Arc::clone(daemon);
+            let msg =
+                tokio::task::spawn_blocking(move || d.task_question_answer(question_id, &answer))
+                    .await??;
+            if matches!(msg, proto::ServerMsg::TaskRefused { .. }) {
+                let _ = send_msg(sink, &msg).await;
+            }
+            Ok(())
+        }
+        proto::ClientMsg::FactorySettingsGet => {
+            let _ = send_msg(sink, &daemon.factory_settings_state()?).await;
+            Ok(())
+        }
+        proto::ClientMsg::FactorySettingsSet {
+            live_runs_max,
+            needs_you_max,
+        } => {
+            let msg = daemon.factory_settings_set(live_runs_max, needs_you_max)?;
+            if matches!(msg, proto::ServerMsg::TaskRefused { .. }) {
+                let _ = send_msg(sink, &msg).await;
+            }
+            Ok(())
+        }
         proto::ClientMsg::TaskSave {
             workspace,
             id,

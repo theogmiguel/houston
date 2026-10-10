@@ -4,7 +4,7 @@ import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { HoustonClient } from '../../houston/client'
 import type { TaskDetailData } from '../../houston/useTasks'
 import { sendTaskWire, type TaskDomain, type TaskProject } from '../../houston/taskDomain'
-import { BulletList, Button, Card, Field, Inline, Notice, SectionHead, Select, Text, TextInput } from '../ui'
+import { BulletList, Button, Card, DialogActions, DialogBackdrop, DialogBody, DialogForm, DialogTitle, Field, Inline, Notice, SectionHead, Select, Text, TextArea, TextInput } from '../ui'
 
 export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartRequested }: {
   client: Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'>
@@ -98,7 +98,7 @@ function WorkflowReadiness({ domain, manualStart, onStartAnyway }: {
   return <div aria-live="polite" className="grid gap-[var(--space-1)]">
     <Text weight="semibold" tone={domain.readiness.ready ? 'success' : 'warning'}>{domain.readiness.ready ? 'Ready to start' : 'Not ready'}</Text>
     {!domain.readiness.ready && <BulletList items={domain.readiness.reasons} />}
-    <Text size="small" tone="muted">{domain.readiness.acceptance_verifiable} of {domain.readiness.acceptance_total} acceptance items are verifiable.</Text>
+    <Text size="small" tone="muted">{domain.readiness.acceptance_executable} of {domain.readiness.acceptance_total} acceptance items are executable.</Text>
     {!domain.readiness.ready && manualStart && <Button variant="danger" onClick={onStartAnyway}>Start anyway</Button>}
   </div>
 }
@@ -111,6 +111,7 @@ function WorkflowPlan({ client, detail, domain, plan, answers, setAnswers }: {
   answers: Record<string, string>
   setAnswers: React.Dispatch<React.SetStateAction<Record<string, string>>>
 }): React.JSX.Element | null {
+  const [rejecting, setRejecting] = useState(false)
   if (!plan) return null
   const { task } = detail
 
@@ -121,11 +122,49 @@ function WorkflowPlan({ client, detail, domain, plan, answers, setAnswers }: {
     <ProposalList heading="Pointers" items={plan.proposal.pointers} />
     <ProposalList heading="Out of scope" items={plan.proposal.out_of_scope} />
     {plan.proposal.questions.map((question) => <div key={question} className="grid gap-[var(--space-1)]"><span>{question}</span><TextInput aria-label={`Answer: ${question}`} value={answers[question] ?? plan.answers.find((item) => item.question === question)?.answer ?? ''} onChange={(event) => setAnswers((current) => ({ ...current, [question]: event.target.value }))} /><Button variant="secondary" disabled={!(answers[question] ?? '').trim()} onClick={() => sendTaskWire(client, { type: 'task_plan_answer', id: task.id, expected_revision: task.revision, question, answer: answers[question].trim() })}>Save answer</Button></div>)}
-    <Button variant="secondary" disabled={domain.readiness.unresolved_questions > 0 || domain.readiness.unresolved_tracker_conflicts > 0} onClick={() => sendTaskWire(client, { type: 'task_plan_approve', id: task.id, expected_revision: task.revision, plan_revision: plan.revision })}>{plan.approved_revision === task.revision ? 'Approved for this task revision' : 'Approve this plan revision'}</Button>
+    <Inline wrap gap="small">
+      <Button variant="secondary" disabled={domain.readiness.unresolved_questions > 0 || domain.readiness.unresolved_tracker_conflicts > 0} onClick={() => sendTaskWire(client, { type: 'task_plan_approve', id: task.id, expected_revision: task.revision, plan_revision: plan.revision })}>{plan.approved_revision === task.revision ? 'Approved for this task revision' : 'Approve this plan revision'}</Button>
+      <Button variant="secondary" onClick={() => setRejecting(true)}>Reject plan</Button>
+    </Inline>
     {plan.approved_revision != null && plan.approved_revision !== task.revision && <Notice tone="warn">This approval is stale. Review and approve the current task revision.</Notice>}
+    {rejecting && <RejectPlanDialog onCancel={() => setRejecting(false)} onReject={(reason) => {
+      setRejecting(false)
+      sendTaskWire(client, { type: 'task_plan_reject', id: task.id, expected_revision: task.revision, plan_revision: plan.revision, reason })
+    }} />}
   </Card>
 }
 
 function ProposalList({ heading, items }: { heading: string; items: string[] }): React.JSX.Element | null {
   return items.length ? <div><Text weight="semibold">{heading}</Text><BulletList items={items} /></div> : null
+}
+
+// Rejecting discards the proposal; the reason is required so the next
+// planning round knows what to change.
+function RejectPlanDialog({ onCancel, onReject }: { onCancel: () => void; onReject: (reason: string) => void }): React.JSX.Element {
+  const [reason, setReason] = useState('')
+  const trimmed = reason.trim()
+  return <DialogBackdrop onMouseDown={onCancel}>
+    <DialogForm
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-plan-reject-title"
+      onMouseDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onCancel() } }}
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (trimmed) onReject(trimmed)
+      }}
+    >
+      <DialogTitle id="task-plan-reject-title">Reject plan</DialogTitle>
+      <DialogBody variant="stacked">
+        <Field label="Reason" hint="Required. The proposal is discarded; say what the next plan should change.">
+          <TextArea rows={3} value={reason} autoFocus onChange={(event) => setReason(event.target.value)} />
+        </Field>
+      </DialogBody>
+      <DialogActions variant="wrap">
+        <Button variant="ghost" type="button" onClick={onCancel}>Cancel</Button>
+        <Button variant="danger" type="submit" disabled={!trimmed}>Reject plan</Button>
+      </DialogActions>
+    </DialogForm>
+  </DialogBackdrop>
 }

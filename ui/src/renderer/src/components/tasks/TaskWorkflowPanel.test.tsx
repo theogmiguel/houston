@@ -20,7 +20,7 @@ const DOMAIN: TaskDomain = {
   task_id: 42, kind: 'slice', project_id: 9, delivery_id: null, slice_total: 0, slice_done: 0, planning_session_id: null, blocked_by: [13],
   readiness: {
     ready: false, reasons: ['Blocked by HOU-13', 'Acceptance is not verifiable'],
-    acceptance_total: 2, acceptance_verifiable: 0, unresolved_questions: 0,
+    acceptance_total: 2, acceptance_verifiable: 0, acceptance_executable: 0, unresolved_questions: 0,
     unresolved_tracker_conflicts: 0, unfinished_blockers: [13]
   }, plan: null, unresolved_tracker_conflicts: 0
 }
@@ -43,6 +43,7 @@ describe('task workflow panel', () => {
     const domainState: ServerMsg = { type: 'task_domain_state', domain: DOMAIN }
     act(() => handlers.forEach((handler) => handler(domainState)))
     expect(await screen.findByText('Blocked by HOU-13')).toBeTruthy()
+    expect(screen.getByText('0 of 2 acceptance items are executable.')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Start anyway' }))
     expect(onStartRequested).toHaveBeenCalledWith(42, '/work/app')
@@ -99,6 +100,45 @@ describe('task workflow panel', () => {
     expect(screen.getByText('This approval is stale. Review and approve the current task revision.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Approve this plan revision' }))
     expect(sent.at(-1)).toMatchObject({ type: 'task_plan_approve', id: 42, expected_revision: 8, plan_revision: 2 })
+  })
+
+  it('rejects the current plan revision only with a reason', () => {
+    const handlers = new Set<(message: ServerMsg) => void>()
+    const sent: ClientMsg[] = []
+    const client = {
+      subscribeAll: (handler: (message: ServerMsg) => void) => { handlers.add(handler); return () => handlers.delete(handler) },
+      taskSnapshot: () => {},
+      taskSave: () => {},
+      send: (message: ClientMsg) => sent.push(message)
+    }
+    render(<TaskWorkflowPanel client={client} detail={DETAIL} onOpenSession={() => {}} />)
+    const planDomain: TaskDomain = {
+      ...DOMAIN,
+      plan: {
+        revision: 3,
+        proposal: { description: 'Rewrite the recovery flow.', acceptance: ['`bun run test`'], pointers: [], out_of_scope: [], questions: [] },
+        answers: [],
+        approved_revision: null
+      }
+    }
+    act(() => handlers.forEach((handler) => handler({ type: 'task_domain_state', domain: planDomain })))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject plan' }))
+    const dialog = screen.getByRole('dialog', { name: 'Reject plan' })
+    const submit = dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!
+    expect(submit.disabled).toBe(true)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Reason' }), { target: { value: '   ' } })
+    expect(submit.disabled).toBe(true)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Reason' }), { target: { value: '  Keep the old API.  ' } })
+    fireEvent.click(submit)
+    expect(sent.at(-1)).toEqual({ type: 'task_plan_reject', id: 42, expected_revision: 8, plan_revision: 3, reason: 'Keep the old API.' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    const before = sent.length
+    fireEvent.click(screen.getByRole('button', { name: 'Reject plan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(sent.length).toBe(before)
   })
 
   it('leaves a daemon refusal to the task banner instead of repeating it inside the panel', () => {

@@ -2268,6 +2268,69 @@ impl Db {
         Ok(Some(plan))
     }
 
+    /// Drops the plan of revision `plan_revision`, writing the reason as a
+    /// comment. `Ok(None)` is a stale task or plan revision; nothing changed.
+    pub fn reject_task_plan(
+        &self,
+        task_id: i64,
+        expected_task_revision: i64,
+        plan_revision: i64,
+        reason: &str,
+        actor: &str,
+        now_ms: i64,
+    ) -> Result<Option<i64>> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let current: Option<(i64, Option<String>)> = tx
+            .query_row(
+                "SELECT t.revision, d.plan_json FROM backlog_tasks t \
+                 JOIN backlog_task_domain d ON d.task_id = t.id WHERE t.id = ?1",
+                [task_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((revision, Some(raw))) = current else {
+            return Ok(None);
+        };
+        let plan: proto::TaskPlan = serde_json::from_str(&raw)?;
+        if revision != expected_task_revision || plan.revision != plan_revision {
+            return Ok(None);
+        }
+        tx.execute(
+            "UPDATE backlog_task_domain SET plan_json = NULL, approved_task_revision = NULL, \
+             plan_context_bound = 0, plan_project_id = NULL, plan_project_revision = NULL \
+             WHERE task_id = ?1",
+            [task_id],
+        )?;
+        tx.execute(
+            "INSERT INTO backlog_task_comments (task_id, body, author, created_at) \
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![
+                task_id,
+                format!("Plan revision {plan_revision} rejected: {reason}"),
+                actor,
+                now_ms
+            ],
+        )?;
+        let new_revision = revision + 1;
+        tx.execute(
+            "UPDATE backlog_tasks SET revision = ?2, updated_at = ?3 WHERE id = ?1",
+            rusqlite::params![task_id, new_revision, now_ms],
+        )?;
+        tx.execute(
+            "INSERT INTO backlog_task_history (task_id, actor, action, changes, created_at) \
+             VALUES (?1, ?2, 'plan_rejected', ?3, ?4)",
+            rusqlite::params![
+                task_id,
+                actor,
+                serde_json::json!({ "plan_revision": plan_revision, "reason": reason }).to_string(),
+                now_ms
+            ],
+        )?;
+        tx.commit()?;
+        Ok(Some(new_revision))
+    }
+
     pub fn task_blockers(&self, task_id: i64) -> Result<Vec<i64>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
