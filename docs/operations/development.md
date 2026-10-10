@@ -441,22 +441,26 @@ way, also `--ignored`, also run locally.
 ### `idle_loops_wire`
 
 `core/houston-core/tests/idle_loops_wire.rs`, the detached daemon's idle
-budget, `#[ignore]` by default and `--test-threads=1` because each reads a
-whole-process figure:
+budget, `#[ignore]` by default. Each test reads a whole-process figure, and a
+daemon booted by an earlier test stays resident, so run each in its own process:
 
 ```
-cargo test --release --test idle_loops_wire -- --ignored --nocapture --test-threads=1
+for t in p3_idle_context_switches_per_minute p4_idle_rss_at_zero_sessions \
+         p4_idle_rss_with_twelve_saturated_emulators; do
+  cargo test --release --test idle_loops_wire -- --ignored --nocapture --exact "$t"
+done
 ```
 
 - **P3, idle scheduling**: ≤ 15 thread-summed context switches per minute with no
   client, no session and one routine armed far in the future (so the reap rule
   does not end the run). Measured 0 over 20 s on the complete daemon, against a
   211/min baseline before the idle profile.
-- **P4, idle RSS**: ≤ 30 MiB at zero sessions (measured 11.9 MiB) and ≤ 64 MiB
-  with twelve idle shells whose emulators are saturated at their full history
-  budget (measured 49–51 MiB across two runs, 29 threads). Closing the twelve
-  returns the daemon to within 3.5 MiB of baseline once the PTY reader threads
-  wind down, about 8 s.
+- **P4, idle RSS**: ≤ 30 MiB at zero sessions and ≤ 64 MiB with twelve idle
+  shells whose emulators are saturated at their full history budget. Both include
+  the boot-time update check and model-catalog refresh, which need network access:
+  measured 25.1 MiB at zero sessions (11.9 MiB before those requests) and 62 MiB
+  with twelve shells, 34 threads. Closing the twelve returns the daemon to within
+  3 MiB of baseline once the PTY reader threads wind down.
 
 Same rules as `perf_smoke`: release build, idle machine, run locally.
 
