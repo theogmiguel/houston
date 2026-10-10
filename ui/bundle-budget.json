@@ -118,7 +118,11 @@
     "Re-cut against 928,607 bytes (one boot chunk) at the same ~3%: the rail's",
     "grid cards, workspace rows and tag chips, the pane header's surface",
     "launcher and the panel surface router are boot-path code, each rendered at",
-    "first paint or on the first panel toggle."
+    "first paint or on the first panel toggle.",
+    "",
+    "The update install modal joined them behind one `lazy()` in UpdateInstallHost:",
+    "it renders only while an update installs, and the headroom it gave back pays",
+    "for the WSL environment wiring that must sit on the boot path."
   ],
   "maxBootBytes": 956465,
   "forbiddenBootPackages": [
@@ -165,6 +169,7 @@
     "src/renderer/src/components/ui/MascotRig.tsx",
     "src/renderer/src/components/ui/MascotIntro.tsx",
     "src/renderer/src/components/ui/MascotGame.tsx",
-    "src/renderer/src/components/ui/mascotPixel.js"
+    "src/renderer/src/components/ui/mascotPixel.js",
+    "src/renderer/src/components/UpdateInstallModal.tsx"
   ]
 }

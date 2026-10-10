@@ -1,5 +1,5 @@
+import { lazy, Suspense } from 'react'
 import { AnimOut } from './ui/AnimOut'
-import { UpdateInstallModal } from './UpdateInstallModal'
 import { isLive } from '../houston/client'
 import { dismissUpdate } from '../updateDismissal'
 import { closeUpdateModal, useUpdateModalOpen } from '../updateModal'
@@ -11,6 +11,10 @@ export function liveSessionCount(sessions: Iterable<SessionInfo>): number {
   for (const s of sessions) if (isLive(s.state)) n += 1
   return n
 }
+
+const UpdateInstallModal = lazy(() =>
+  import('./UpdateInstallModal').then((module) => ({ default: module.UpdateInstallModal }))
+)
 
 // Where the install modal mounts: shown while the store says so and a release is on offer.
 export function UpdateInstallHost({
@@ -27,17 +31,19 @@ export function UpdateInstallHost({
   return (
     <AnimOut open={open && release !== null} suppress="modal">
       {release && (
-        <UpdateInstallModal
-          release={release}
-          currentVersion={__APP_VERSION__}
-          sessions={sessions}
-          onClose={closeUpdateModal}
-          onLater={() => {
-            dismissUpdate(release.version)
-            closeUpdateModal()
-          }}
-          onOpenExternal={onOpenExternal}
-        />
+        <Suspense fallback={null}>
+          <UpdateInstallModal
+            release={release}
+            currentVersion={__APP_VERSION__}
+            sessions={sessions}
+            onClose={closeUpdateModal}
+            onLater={() => {
+              dismissUpdate(release.version)
+              closeUpdateModal()
+            }}
+            onOpenExternal={onOpenExternal}
+          />
+        </Suspense>
       )}
     </AnimOut>
   )
