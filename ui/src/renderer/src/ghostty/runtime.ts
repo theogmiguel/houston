@@ -10,6 +10,7 @@ export interface TypeField {
 }
 
 interface TypeLayout {
+  readonly underlying?: string;
   readonly size: number;
   readonly align: number;
   readonly fields: Readonly<Record<string, TypeField>>;
@@ -98,7 +99,9 @@ export class GhosttyRuntime {
     const bytes = new Uint8Array(memory.buffer);
     let end = jsonPointer;
     while (end < bytes.length && bytes[end] !== 0) end += 1;
-    this.layouts = JSON.parse(textDecoder.decode(bytes.subarray(jsonPointer, end))) as TypeLayouts;
+    const manifest = JSON.parse(textDecoder.decode(bytes.subarray(jsonPointer, end))) as { schema: number; types: TypeLayouts };
+    if (manifest.schema !== 1) throw new Error(`Unsupported libghostty-vt ABI schema: ${manifest.schema}; expected 1`);
+    this.layouts = manifest.types;
   }
 
   private static wasmImports(): {
@@ -178,20 +181,20 @@ export class GhosttyRuntime {
   }
 
   alloc(size: number): number {
-    const pointer = this.call("ghostty_wasm_alloc_u8_array", size);
+    const pointer = this.call("ghostty_wasm_alloc", size);
     if (pointer === 0) throw new Error(`libghostty-vt failed to allocate ${size} bytes`);
     this.zero(pointer, size);
     return pointer;
   }
 
   allocUninit(size: number): number {
-    const pointer = this.call("ghostty_wasm_alloc_u8_array", size);
+    const pointer = this.call("ghostty_wasm_alloc", size);
     if (pointer === 0) throw new Error(`libghostty-vt failed to allocate ${size} bytes`);
     return pointer;
   }
 
   free(pointer: number, size: number): void {
-    if (pointer !== 0) this.call("ghostty_wasm_free_u8_array", pointer, size);
+    if (pointer !== 0) this.call("ghostty_wasm_free", pointer, size);
   }
 
   allocOpaque(): number {
@@ -215,8 +218,10 @@ export class GhosttyRuntime {
     const key = `${structName}.${fieldName}`;
     const hit = this.fieldCache.get(key);
     if (hit) return hit;
-    const field = this.layout(structName).fields[fieldName];
-    if (!field) throw new Error(`libghostty-vt field is unavailable: ${structName}.${fieldName}`);
+    const declared = this.layout(structName).fields[fieldName];
+    if (!declared) throw new Error(`libghostty-vt field is unavailable: ${structName}.${fieldName}`);
+    const underlying = this.layouts[declared.type]?.underlying;
+    const field = underlying ? { ...declared, type: underlying } : declared;
     this.fieldCache.set(key, field);
     return field;
   }
@@ -294,8 +299,7 @@ export class GhosttyRuntime {
   }
 
   setField(pointer: number, structName: string, fieldName: string, value: number): void {
-    const field = this.layout(structName).fields[fieldName];
-    if (!field) throw new Error(`libghostty-vt field is unavailable: ${structName}.${fieldName}`);
+    const field = this.field(structName, fieldName);
     const view = this.view(pointer + field.offset, field.size);
     switch (field.type) {
       case "bool":
@@ -321,8 +325,7 @@ export class GhosttyRuntime {
   }
 
   readField(pointer: number, structName: string, fieldName: string): number {
-    const field = this.layout(structName).fields[fieldName];
-    if (!field) throw new Error(`libghostty-vt field is unavailable: ${structName}.${fieldName}`);
+    const field = this.field(structName, fieldName);
     const view = this.view(pointer + field.offset, field.size);
     switch (field.type) {
       case "bool":

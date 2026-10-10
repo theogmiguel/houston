@@ -390,7 +390,7 @@ fn importBytes(wrapper: anytype, buf: []const u8) !Result {
         return .invalid_value;
     }
     if (cols == 0 or rows == 0) return .invalid_value;
-    try t.resize(t.gpa(), cols, rows);
+    try t.resize(t.gpa(), .{ .cols = cols, .rows = rows });
 
     // Tabstops, the palette and the pwd first: emitting a tabstop is HTS at
     // a cursor position, so this walks the cursor across the row and must
