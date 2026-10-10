@@ -1409,6 +1409,8 @@ pub struct Daemon {
     composer_occupied: Mutex<HashMap<u32, ComposerKeystroke>>,
     orchestration_retry_lock: Mutex<()>,
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
+    first_prompts: Mutex<HashMap<u32, FirstPrompt>>,
+    first_prompt_confirm_ms: AtomicU64,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
     prompt_awaiting_hook: Mutex<HashSet<u32>>,
@@ -2874,6 +2876,8 @@ impl Daemon {
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),
             paste_confirmations: Mutex::new(HashMap::new()),
+            first_prompts: Mutex::new(HashMap::new()),
+            first_prompt_confirm_ms: AtomicU64::new(FIRST_PROMPT_CONFIRM.as_millis() as u64),
             turn_start_round: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new(HashMap::new()),
             prompt_awaiting_hook: Mutex::new(HashSet::new()),
@@ -7739,17 +7743,12 @@ impl Daemon {
                 Some(init_prompts_dir(&p.project_dir)?)
             };
             // A CLI that takes no prompt in argv gets it pasted once its TUI accepts input.
-            let argv_prompt = if crate::launch::prompt_in_argv(p.agent)
-                || p.cmd.is_some()
-                || prompt.trim().is_empty()
+            let argv_prompt = if crate::launch::prompt_in_argv(p.agent) || prompt.trim().is_empty()
             {
                 prompt
             } else {
-                let (text, file) = crate::launch::prompt_text(
-                    prompt,
-                    prompts_dir.as_deref(),
-                    &prompt_label,
-                )?;
+                let (text, file) =
+                    crate::launch::prompt_text(prompt, prompts_dir.as_deref(), &prompt_label)?;
                 first_prompt = Some(text);
                 pasted_prompt_file = file;
                 ""
@@ -7847,7 +7846,7 @@ impl Daemon {
         };
         self.record_approval_mode(info.id, approval);
         if let Some(text) = first_prompt {
-            self.deliver_first_prompt(info.id, text, None);
+            self.deliver_first_prompt(info.id, text, None, true);
         }
         Ok(info)
     }
@@ -12873,6 +12872,9 @@ impl Daemon {
         if ev == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
             self.clear_composer_occupied(d.session);
             self.confirm_paste_from_prompt(d.session, d.prompt.as_deref());
+            if !d.internal_prompt {
+                self.confirm_first_prompt(d.session, d.prompt.as_deref());
+            }
         }
 
         if correlates && ev == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
@@ -15428,39 +15430,75 @@ impl Daemon {
     }
 
     /// Pastes the first prompt of a CLI that takes none in argv once its TUI has drawn
-    /// and gone quiet. This times input delivery only; no status is read from output.
-    fn deliver_first_prompt(self: &Arc<Self>, session: u32, text: String, sender: Option<u32>) {
+    /// and gone quiet. Quiet only times the paste; delivery counts when the CLI's own
+    /// UserPromptSubmit hook reports it. The text never reaches a log or a notice.
+    pub(crate) fn deliver_first_prompt(
+        self: &Arc<Self>,
+        session: u32,
+        text: String,
+        sender: Option<u32>,
+        submit: bool,
+    ) {
         let daemon = Arc::clone(self);
         let spawned = std::thread::Builder::new()
             .name(format!("first-prompt-{session}"))
             .spawn(move || {
-                let outcome = daemon.first_prompt_paste(session, &text);
-                if let Err(why) = outcome {
-                    let why = format!(
-                        "first prompt for pane {session} was not delivered: {why}. Pending \
-                         prompt:\n{text}"
-                    );
-                    match sender {
-                        Some(sender) => {
-                            daemon.note_to_sender(session, sender, "prompt_failed", &why)
-                        }
-                        None => {
-                            tracing::warn!("{why}");
-                            daemon.broadcast_control(&proto::ServerMsg::Error {
-                                message: why,
-                                context: Some(format!("first prompt for session {session}")),
-                            });
-                        }
+                let outcome = daemon.first_prompt_deliver(session, &text, submit);
+                daemon
+                    .first_prompts
+                    .lock()
+                    .expect("first prompts lock")
+                    .remove(&session);
+                let why = match outcome {
+                    Ok(FirstPromptOutcome::Confirmed) => return,
+                    Ok(FirstPromptOutcome::Unconfirmable(why)) => {
+                        tracing::info!("first prompt for pane {session}: {why}");
+                        return;
                     }
-                }
+                    Err(why) => format!(
+                        "first prompt for pane {session} is not confirmed as submitted: {why:#}"
+                    ),
+                };
+                daemon.first_prompt_failed(session, sender, why);
             });
         if let Err(e) = spawned {
             tracing::warn!("starting first-prompt delivery for pane {session}: {e}");
         }
     }
 
-    fn first_prompt_paste(self: &Arc<Self>, session: u32, text: &str) -> Result<()> {
-        let deadline = Instant::now() + FIRST_PROMPT_DEADLINE;
+    fn first_prompt_failed(self: &Arc<Self>, session: u32, sender: Option<u32>, why: String) {
+        tracing::warn!("{why}");
+        // A routine run whose prompt never landed has failed; its pane stays to be read.
+        let run = {
+            let mut runs = self.routine_runs.lock().expect("routine run lock");
+            let found = runs
+                .iter()
+                .find(|(_, run)| run.session_id == Some(session))
+                .map(|(routine, run)| (*routine, run.run_id));
+            if let Some((routine, _)) = found {
+                runs.remove(&routine);
+            }
+            found
+        };
+        if let Some((routine, run_id)) = run {
+            self.settle_run(
+                run_id,
+                routine,
+                proto::RoutineOutcome::Failed,
+                Some(why.clone()),
+            );
+        }
+        match sender {
+            Some(sender) => self.note_to_sender(session, sender, "prompt_failed", &why),
+            None => self.broadcast_control(&proto::ServerMsg::Error {
+                message: why,
+                context: Some(format!("first prompt for session {session}")),
+            }),
+        }
+    }
+
+    /// Waits until the pane has drawn and stayed quiet, or `deadline` passes with output.
+    fn first_prompt_wait_ready(&self, session: u32, deadline: Instant) -> Result<()> {
         loop {
             let Ok(s) = self.get(session) else {
                 bail!("the pane closed first");
@@ -15475,7 +15513,7 @@ impl Daemon {
             let late = Instant::now() >= deadline;
             let held = self.immediate_paste_hold_reason(session);
             if drawn && held.is_none() && (quiet >= FIRST_PROMPT_QUIET_MS || late) {
-                break;
+                return Ok(());
             }
             if late {
                 bail!(
@@ -15486,12 +15524,133 @@ impl Daemon {
             }
             std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
         }
+    }
+
+    fn first_prompt_confirmed_within(&self, session: u32, wait: Duration) -> bool {
+        let deadline = Instant::now() + wait;
+        loop {
+            let confirmed = self
+                .first_prompts
+                .lock()
+                .expect("first prompts lock")
+                .get(&session)
+                .is_some_and(|pending| pending.confirmed);
+            if confirmed || Instant::now() >= deadline || self.get(session).is_err() {
+                return confirmed;
+            }
+            std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
+        }
+    }
+
+    /// One paste, then Enter. Unconfirmed, Enter is sent once more: it submits a text
+    /// left in the composer and does nothing in an empty one. The text is never pasted
+    /// twice, since a second paste into a composer that kept the first would duplicate it.
+    fn first_prompt_deliver(
+        self: &Arc<Self>,
+        session: u32,
+        text: &str,
+        submit: bool,
+    ) -> Result<FirstPromptOutcome> {
+        self.first_prompt_wait_ready(session, Instant::now() + FIRST_PROMPT_DEADLINE)?;
+        let agent = self.get(session).map(|s| s.info.agent)?;
+        // Only hooks ZCode will run can confirm; without them one paste is all that is safe.
+        let confirmable = submit
+            && self.hook_consent(agent)
+            && self.hook_config_home().is_ok_and(|home| {
+                crate::agent_hooks::is_installed(agent, &home, &self.hook_sentinel())
+            });
+        if confirmable {
+            self.first_prompts
+                .lock()
+                .expect("first prompts lock")
+                .insert(
+                    session,
+                    FirstPrompt {
+                        head: prompt_head(text),
+                        confirmed: false,
+                    },
+                );
+        }
         self.write_stdin_counting(session, &bracketed_paste(text))
             .map_err(|e| anyhow!("pasting: {e}"))?;
+        if !submit {
+            return Ok(FirstPromptOutcome::Unconfirmable(
+                "prefilled; the operator submits it".into(),
+            ));
+        }
         std::thread::sleep(SWARM_WAKE_SETTLE);
         self.write_stdin_counting(session, b"\r")
-            .map_err(|e| anyhow!("submitting Enter: {e}; the text remains in its composer"))
+            .map_err(|e| anyhow!("submitting Enter: {e}; the text remains in its composer"))?;
+        if !confirmable {
+            return Ok(FirstPromptOutcome::Unconfirmable(format!(
+                "pasted unconfirmed: {agent:?} status hooks are off, so no UserPromptSubmit \
+                 can confirm it"
+            )));
+        }
+        let wait = Duration::from_millis(self.first_prompt_confirm_ms.load(Ordering::Relaxed));
+        if self.first_prompt_confirmed_within(session, wait) {
+            return Ok(FirstPromptOutcome::Confirmed);
+        }
+        self.first_prompt_wait_ready(session, Instant::now() + wait)?;
+        self.write_stdin_counting(session, b"\r")
+            .map_err(|e| anyhow!("resubmitting Enter: {e}"))?;
+        if self.first_prompt_confirmed_within(session, wait) {
+            return Ok(FirstPromptOutcome::Confirmed);
+        }
+        bail!(
+            "the CLI reported no UserPromptSubmit within {} ms of the paste and of one more \
+             Enter; it was not pasted again, to avoid a duplicate. Read the pane: the prompt \
+             may still be in its composer, or the CLI refused it",
+            2 * wait.as_millis()
+        )
     }
+
+    /// A submitted prompt confirms a pending first prompt when it begins like it.
+    fn confirm_first_prompt(&self, session: u32, prompt: Option<&str>) {
+        let mut pending = self.first_prompts.lock().expect("first prompts lock");
+        if let Some(first) = pending.get_mut(&session) {
+            first.confirmed |= prompt.is_none_or(|p| prompt_head(p).starts_with(&first.head));
+        }
+    }
+
+    /// `Some(true)` while a first prompt waits for its confirming hook.
+    #[doc(hidden)]
+    pub fn first_prompt_pending_for_test(&self, session: u32) -> Option<bool> {
+        self.first_prompts
+            .lock()
+            .expect("first prompts lock")
+            .get(&session)
+            .map(|pending| !pending.confirmed)
+    }
+
+    #[doc(hidden)]
+    pub fn set_first_prompt_confirm_for_test(&self, wait: Duration) {
+        self.first_prompt_confirm_ms
+            .store(wait.as_millis() as u64, Ordering::Relaxed);
+    }
+}
+
+enum FirstPromptOutcome {
+    Confirmed,
+    Unconfirmable(String),
+}
+
+struct FirstPrompt {
+    head: String,
+    confirmed: bool,
+}
+
+// Enough of a prompt to tell it from another; whitespace is normalised because a
+// TUI may trim or rewrap what was pasted.
+const FIRST_PROMPT_HEAD_CHARS: usize = 48;
+
+fn prompt_head(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(FIRST_PROMPT_HEAD_CHARS)
+        .collect()
 }
 
 struct WakeLane {
@@ -16719,7 +16878,7 @@ impl Daemon {
         };
         self.record_approval_mode(sid, requested_mode);
         if let Some(text) = first_prompt {
-            self.deliver_first_prompt(sid, text, Some(caller));
+            self.deliver_first_prompt(sid, text, Some(caller), true);
         }
         if handoff {
             if let Err(e) = self.db.session_mark_handed_off(caller, now_ms()) {

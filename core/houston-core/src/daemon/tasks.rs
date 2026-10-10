@@ -3332,8 +3332,11 @@ impl Daemon {
         self.record_approval_mode(info.id, mode);
         if matches!(delivery, proto::TaskPromptDelivery::Prefill) {
             // Prefill types the brief into the CLI's input box without the
-            // submitting Enter; the user reviews and sends it.
-            if let Err(e) = self.write_stdin(info.id, &bracketed_paste(&brief)) {
+            // submitting Enter; the user reviews and sends it. A CLI that takes
+            // no prompt in argv reads its composer only once its TUI is up.
+            if !crate::launch::prompt_in_argv(agent) {
+                self.deliver_first_prompt(info.id, brief.clone(), None, false);
+            } else if let Err(e) = self.write_stdin(info.id, &bracketed_paste(&brief)) {
                 tracing::warn!("prefilling task brief into pane {}: {e:#}", info.id);
             }
         }

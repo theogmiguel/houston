@@ -175,9 +175,15 @@ async fn drive(state: &Path, daemon: &Arc<Daemon>, event: &str, session: u32, na
     let mut payload: serde_json::Value = serde_json::from_str(&fixture(name)).unwrap();
     payload["cwd"] = cwd.into();
     let drop = run_hook(event, session, payload.to_string()).await;
+    apply(state, daemon, &drop).await;
+}
+
+/// Hands one hook drop to the daemon and waits until it is applied.
+async fn apply(state: &Path, daemon: &Arc<Daemon>, drop: &HookDrop) {
+    let event = &drop.event;
     let path = houston_core::hook_drop::write_drop(
         &houston_core::hook_drop::drop_dir(state),
-        &drop,
+        drop,
         houston_core::daemon::now_ms(),
     )
     .unwrap();
@@ -360,6 +366,130 @@ async fn an_operator_zcode_pane_gets_its_prompt_pasted_and_bypass_as_yolo() {
     assert_eq!(flag(&argv, "--mode").as_deref(), Some("yolo"), "{argv:?}");
     assert!(!argv.iter().any(|a| a.contains("OPERATOR-PROMPT-MARKER")));
     screen_shows(&daemon, info.id, "OPERATOR-PROMPT-MARKER").await;
+}
+
+/// ZCode status hooks installed for this daemon in a scratch `HOME`: only hooks ZCode
+/// runs can confirm a paste. `HOME` comes back when the guard drops.
+struct HooksOn {
+    _home: tempfile::TempDir,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl Drop for HooksOn {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+}
+
+fn zcode_hooks_on(daemon: &Arc<Daemon>) -> HooksOn {
+    let home = tempfile::tempdir().unwrap();
+    let previous = std::env::var_os("HOME");
+    std::env::set_var("HOME", home.path());
+    let guard = HooksOn {
+        _home: home,
+        previous,
+    };
+    let rows = daemon.agent_hooks_set(proto::AgentKind::Zcode, true);
+    let row = rows
+        .iter()
+        .find(|r| r.provider == proto::AgentKind::Zcode)
+        .expect("a ZCode row");
+    assert!(row.installed && row.error.is_none(), "{row:?}");
+    guard
+}
+
+async fn wait_for(what: &str, mut f: impl FnMut() -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while !f() {
+        assert!(tokio::time::Instant::now() < deadline, "timed out: {what}");
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_pasted_first_prompt_stays_pending_until_its_own_prompt_hook_confirms_it() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let _hooks = zcode_hooks_on(&daemon);
+    let dir = tempfile::tempdir().unwrap();
+    let marker = "CONFIRM-MARKER fix the parser";
+    let id = zcode_pane(&daemon, dir.path(), Some(marker)).id;
+    screen_shows(&daemon, id, "CONFIRM-MARKER").await;
+    assert_eq!(
+        daemon.first_prompt_pending_for_test(id),
+        Some(true),
+        "a paste alone is not a delivery"
+    );
+
+    let cwd = daemon.list().into_iter().find(|s| s.id == id).unwrap().cwd;
+    let mut other: serde_json::Value =
+        serde_json::from_str(&fixture("zcode-3.14.3-src-02-UserPromptSubmit.json")).unwrap();
+    other["cwd"] = cwd.clone().into();
+    let drop = run_hook("UserPromptSubmit", id, other.to_string()).await;
+    apply(env.state.path(), &daemon, &drop).await;
+    assert_eq!(
+        daemon.first_prompt_pending_for_test(id),
+        Some(true),
+        "another prompt does not confirm this one"
+    );
+
+    let mut own = other;
+    own["prompt"] = marker.into();
+    let drop = run_hook("UserPromptSubmit", id, own.to_string()).await;
+    apply(env.state.path(), &daemon, &drop).await;
+    wait_for("the delivery to settle", || {
+        daemon.first_prompt_pending_for_test(id).is_none()
+    })
+    .await;
+    let screen = daemon.session_screen_for_test(id).join("\n");
+    assert_eq!(screen.matches("CONFIRM-MARKER").count(), 1, "{screen}");
+}
+
+#[tokio::test]
+async fn an_unconfirmed_first_prompt_gets_one_more_enter_never_a_second_paste() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let _hooks = zcode_hooks_on(&daemon);
+    daemon.set_first_prompt_confirm_for_test(Duration::from_millis(300));
+    let addr = serve(&daemon).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (parent, token) = parent(&daemon, dir.path());
+    let (code, body) = http_json(
+        addr,
+        "/orchestrate/spawn",
+        &token,
+        serde_json::json!({"kind": "zcode", "prompt": "UNCONFIRMED-MARKER secret mission"}),
+    )
+    .await;
+    assert_eq!(code, 200, "spawn body: {body}");
+    let child = body["session_id"].as_u64().unwrap() as u32;
+
+    wait_for("the sender to hear the prompt is unconfirmed", || {
+        daemon
+            .inbox_rows_for_test(parent.id)
+            .iter()
+            .any(|row| row.summary.contains("prompt_failed"))
+    })
+    .await;
+    let note = daemon
+        .inbox_rows_for_test(parent.id)
+        .into_iter()
+        .find(|row| row.summary.contains("prompt_failed"))
+        .unwrap();
+    let text = format!("{note:?}");
+    assert!(
+        text.contains("not pasted again") && !text.contains("secret mission"),
+        "the note explains without carrying the prompt: {text}"
+    );
+    let screen = daemon.session_screen_for_test(child).join("\n");
+    assert_eq!(
+        screen.matches("UNCONFIRMED-MARKER").count(),
+        1,
+        "pasted once: {screen}"
+    );
 }
 
 #[tokio::test]
