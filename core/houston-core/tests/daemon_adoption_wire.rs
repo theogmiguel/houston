@@ -1170,24 +1170,26 @@ async fn failed_candidate_exec_keeps_the_original_generation_and_session() {
     let candidate = home.path().join("unlaunchable-daemon");
     std::fs::write(&candidate, b"#!/nonexistent/daemon-interpreter\n").unwrap();
     std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let result = daemon_handoff_to(
-        before.port,
-        &before.token,
-        Some(&candidate.to_string_lossy()),
-    )
-    .await;
-    assert!(
-        !result.accepted,
-        "failed exec must abort adoption: {result:?}"
-    );
-    assert!(
-        result
-            .reason
-            .as_deref()
-            .unwrap_or_default()
-            .contains("candidate did not connect"),
-        "{result:?}"
-    );
+    for _ in 0..3 {
+        let result = daemon_handoff_to(
+            before.port,
+            &before.token,
+            Some(&candidate.to_string_lossy()),
+        )
+        .await;
+        assert!(
+            !result.accepted,
+            "failed exec must abort adoption: {result:?}"
+        );
+        assert!(
+            result
+                .reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("candidate did not connect"),
+            "{result:?}"
+        );
+    }
     let stderr = std::fs::read_to_string(&stderr_path).unwrap();
     assert!(
         stderr.contains(&candidate.to_string_lossy().to_string()),

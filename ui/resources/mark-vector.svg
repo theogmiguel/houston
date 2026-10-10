@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">  <defs>
+    <radialGradient id="g-sphere" cx="34%" cy="26%" r="80%">
+      <stop offset="0" stop-color="#8a6ef0"/><stop offset=".32" stop-color="#3b2fa6"/><stop offset=".68" stop-color="#1a1c55"/><stop offset="1" stop-color="#0b0e2c"/>
+    </radialGradient>
+    <linearGradient id="g-ring" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#b06cff"/><stop offset=".42" stop-color="#5a6cf6"/><stop offset=".78" stop-color="#34d2f6"/><stop offset="1" stop-color="#9ff6ff"/>
+    </linearGradient>
+    <linearGradient id="g-ring-back" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6a3cd0"/><stop offset=".6" stop-color="#3550d8"/><stop offset="1" stop-color="#2aa6e0"/>
+    </linearGradient>
+    <symbol id="mark-vector" viewBox="0 0 64 64">
+      <g transform="rotate(-16 32 35)"><path d="M3 35 A29 8.5 0 0 1 61 35" fill="none" stroke="url(#g-ring-back)" stroke-width="4.2" stroke-linecap="round"/></g>
+      <circle cx="32" cy="30" r="19.5" fill="url(#g-sphere)"/>
+      <path d="M40 12.6 A19.5 19.5 0 0 1 51 26" fill="none" stroke="#5fe4ff" stroke-width="1.6" stroke-linecap="round" opacity=".85"/>
+      <ellipse cx="32.5" cy="31.5" rx="12.6" ry="11.2" fill="#070a22"/>
+      <path d="M23.4 33.4 Q27 26.6 30.6 33.4 Q27 30.2 23.4 33.4Z" fill="#8ff6ff"/>
+      <path d="M34.4 33.4 Q38 26.6 41.6 33.4 Q38 30.2 34.4 33.4Z" fill="#8ff6ff"/>
+      <rect x="10" y="23.5" width="6.6" height="14" rx="3.3" fill="#262a66" stroke="#10133a" stroke-width="1"/>
+      <ellipse cx="13.2" cy="30.5" rx="1.7" ry="3.7" fill="none" stroke="#3fe0ff" stroke-width="1.5"/>
+      <rect x="47.4" y="23.5" width="6.6" height="14" rx="3.3" fill="#262a66" stroke="#10133a" stroke-width="1"/>
+      <ellipse cx="50.8" cy="30.5" rx="1.7" ry="3.7" fill="none" stroke="#3fe0ff" stroke-width="1.5"/>
+      <g transform="rotate(-16 32 35)"><path d="M3 35 A29 8.5 0 0 0 61 35" fill="none" stroke="url(#g-ring)" stroke-width="4.6" stroke-linecap="round"/></g>
+    </symbol>
+  </defs><use href="#mark-vector"/></svg>

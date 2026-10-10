@@ -4,13 +4,13 @@ import { NAVIGABLE_SETTINGS_SECTIONS, SETTINGS_SECTIONS } from './settingsSectio
 describe('settingsSections', () => {
   it('provides the approved flat navigation order with Notifications built', () => {
     expect(SETTINGS_SECTIONS.map(({ id, label }) => [id, label])).toEqual([
-      ['appearance', 'Appearance'], ['terminal', 'Terminal'], ['shortcuts', 'Shortcuts'],
+      ['appearance', 'Appearance'], ['mascot', 'Mascot'], ['terminal', 'Terminal'], ['shortcuts', 'Shortcuts'],
       ['agents', 'Agents'], ['notifications', 'Notifications'], ['workspaces', 'Workspaces'],
       ['orchestration', 'Orchestration'], ['tasks', 'Tasks'], ['dictation', 'Dictation'],
       ['privacy', 'Privacy & data'], ['daemon', 'Daemon'], ['about', 'About']
     ])
     expect(SETTINGS_SECTIONS.find(({ id }) => id === 'notifications')?.pending).toBeUndefined()
-    expect(NAVIGABLE_SETTINGS_SECTIONS).toHaveLength(12)
+    expect(NAVIGABLE_SETTINGS_SECTIONS).toHaveLength(13)
   })
 
   it('keeps every section searchable', () => {

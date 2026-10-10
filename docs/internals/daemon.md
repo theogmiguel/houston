@@ -157,7 +157,7 @@ What it does: sets `PR_SET_CHILD_SUBREAPER`, then forks every daemon generation 
 child (never a sibling) over a `UnixStream::pair()` socketpair, with the daemon's end
 inherited at fd 3 and `HOUSTON_SUPERVISOR_FD=3` in its environment. Being the real ancestor of
 every generation means a generation's orphaned PTY children reparent onto the supervisor, not
-onto `init`, when that generation exits — so its `waitid(P_ALL, WEXITED)` reap loop sees their
+onto `init`, when that generation exits — so its `waitid(P_ALL, WEXITED | WNOWAIT)` observation loop sees their
 *real* kernel-reported exit code or signal and relays `{pid, code, signal}` over the socket to
 whichever generation is current. A daemon can ask the supervisor to spawn its replacement
 (`spawn_next {daemon_path, args}`) over the same socket — the mechanism Handoff (below) uses
@@ -167,6 +167,11 @@ reparented child remains, so the reap rule still empties the machine when nothin
 daemon, one process down. It writes `supervisor.json` (`{pid, pid_creation, generation}`,
 atomic, 0600) beside `daemon.json`. It is Linux-only; the binary still compiles on Windows and
 refuses by name at startup, and the app spawns `houston-core` directly there instead.
+
+Final reaping is serialized with candidate creation. `Command::spawn` collects its own
+failed-exec child; the supervisor must not consume that exit status first. Observing exits
+without reaping keeps this lock out of the blocking wait, so a running daemon does not
+prevent the next candidate from starting.
 
 What it never does: it never calls `kill(2)` itself, never substitutes a PTY EOF for an exit
 code, and never spawns a replacement generation on its own initiative — only when asked. On

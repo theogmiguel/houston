@@ -21,6 +21,7 @@ import { PageFrame } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
 import { AppearanceSection } from './settings/AppearanceSection'
+import { MascotSettings } from './settings/MascotSettings'
 import { TerminalSection } from './settings/TerminalSection'
 import { DiagnosticsSection } from './settings/DiagnosticsSection'
 import { DaemonSection } from './settings/DaemonSection'
@@ -266,6 +267,8 @@ function SectionDispatch({
             onUiZoom={onUiZoom}
           />
         )}
+
+        {section === 'mascot' && <MascotSettings />}
 
         {section === 'terminal' && (
           <TerminalSection

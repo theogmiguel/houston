@@ -140,6 +140,11 @@ await (await import('../components/Sidebar')).preloadRailOptionsMenu()
 await (await import('../App')).preloadSidePanel()
 await import('../components/ui/GridRailRow')
 await import('../components/rail/RailOptionsMenu')
+await import('../components/UsageSection')
+await import('../components/nav/TasksSurface')
+await import('../mascot/MascotCompanion')
+await import('../components/ui/MascotSurface')
+await import('../components/ui/MascotIntro')
 const { setSettingsNavForTests } = await import('../settingsNav')
 
 function installHoustonBridge(): void {

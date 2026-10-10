@@ -183,6 +183,7 @@ describe('Sidebar rail — Settings mode state matrix', () => {
     ).map((r) => r.getAttribute('data-section-id'))
     expect(ids).toEqual([
       'appearance',
+      'mascot',
       'terminal',
       'shortcuts',
       'agents',

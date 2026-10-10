@@ -159,6 +159,12 @@
     "src/renderer/src/components/SidePanel.tsx",
     "src/renderer/src/components/SourceControlPanel.tsx",
     "src/renderer/src/components/tags/TagPopoverSurface.tsx",
-    "src/renderer/src/components/rail/RailOptionsMenu.tsx"
+    "src/renderer/src/components/rail/RailOptionsMenu.tsx",
+    "src/renderer/src/mascot/MascotCompanion.tsx",
+    "src/renderer/src/mascot/MascotFloatingHost.tsx",
+    "src/renderer/src/components/ui/MascotRig.tsx",
+    "src/renderer/src/components/ui/MascotIntro.tsx",
+    "src/renderer/src/components/ui/MascotGame.tsx",
+    "src/renderer/src/components/ui/mascotPixel.js"
   ]
 }
