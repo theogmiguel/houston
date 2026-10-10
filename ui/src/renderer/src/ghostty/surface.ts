@@ -942,6 +942,7 @@ export class GhosttyTerminalSurface {
     const grid = terminalGridSize(width, height, this.metrics, CONTENT_PADDING)
     this.mountHeight = height
     if (grid.cols !== this.cols || grid.rows !== this.rows || !this.resizeNotified) {
+      if (grid.cols !== this.cols) this.sizeScrollbackCap(grid.cols)
       this.cols = grid.cols
       this.rows = grid.rows
       this.core.resize(grid.cols, grid.rows, this.metrics.width, this.metrics.height)
@@ -1002,6 +1003,13 @@ export class GhosttyTerminalSurface {
 
   getSelection(): string {
     return this.core.selectionText()
+  }
+
+  /** The cap is bytes, so "N lines" holds at the current width only; a pane that
+   * opened narrow would otherwise keep a narrow pane's history after widening. */
+  private sizeScrollbackCap(cols: number): void {
+    const lines = this.options.maxScrollbackLines
+    if (lines !== undefined) this.core.setMaxScrollback(scrollbackLinesToBytes(lines, cols))
   }
 
   /** Frames this surface has painted, for bench probes that watch one pane. */

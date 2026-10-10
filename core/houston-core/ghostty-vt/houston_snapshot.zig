@@ -551,6 +551,22 @@ fn importScreen(wrapper: anytype, key: ScreenSet.Key, body: []const u8) !Cursor 
     return cursor;
 }
 
+// -- scrollback -------------------------------------------------------------
+
+/// Sets the primary screen's scrollback cap in bytes, trimming the oldest
+/// history at once when it shrinks. The embedder sizes the cap from the grid
+/// width, so it changes when the pane does.
+pub fn set_max_scrollback(
+    terminal_: Terminal,
+    bytes: usize,
+) callconv(lib.calling_conv) Result {
+    const wrapper = terminal_ orelse return .invalid_value;
+    const screen: *Screen = wrapper.terminal.screens.all.get(.primary) orelse return .invalid_value;
+    screen.pages.explicit_max_size = bytes;
+    trimHistory(&screen.pages);
+    return .success;
+}
+
 /// Drops the oldest history a whole page at a time until the screen is back
 /// under its scrollback cap -- what `grow` would have pruned while painting.
 fn trimHistory(pages: *PageList) void {

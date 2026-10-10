@@ -96,6 +96,11 @@ because growing a `WebAssembly.Memory` detaches the old `ArrayBuffer`.
 The render target is **Canvas 2D** — not WebGL, not DOM (`ghostty/renderer.ts`,
 `ghostty/surface.ts`). `pane/ghosttyTerminal.ts` is the pane-facing wrapper.
 
+The engine caps scrollback in bytes, while the setting counts lines. The surface converts
+the setting at the current width (`scrollbackLinesToBytes`) and recomputes the cap through
+`houston_vt_set_max_scrollback` whenever the width changes. Without that, a pane opened
+narrow during a split would keep a narrow pane's history after it widens.
+
 Terminal palettes are applied **to the engine, not to CSS**: `theme.ts` holds
 `TERMINAL_PALETTES`, and `ghosttyThemeFromCss` converts a palette's hex values to the
 engine's RGB theme. `[data-theme]` scopes app chrome only; it never reaches the terminal

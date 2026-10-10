@@ -362,6 +362,19 @@ export class GhosttyTerminalCore {
     return this.runtime.call("houston_vt_snapshot_format_version");
   }
 
+  /** Re-sizes the scrollback byte cap; shrinking it drops the oldest history at once. */
+  setMaxScrollback(bytes: number): void {
+    this.ensureActive();
+    this.assertSuccess(
+      "houston_vt_set_max_scrollback",
+      this.runtime.call(
+        "houston_vt_set_max_scrollback",
+        this.terminal,
+        Math.max(0, Math.min(0xffff_ffff, Math.round(bytes))),
+      ),
+    );
+  }
+
   /** A refusal (bad format version, truncated buffer) resets the terminal instead of
    * leaving it half-imported; the caller then falls back to a byte replay. The pty
    * writer is detached during import so its mode/cursor writes never reach the shell. */
