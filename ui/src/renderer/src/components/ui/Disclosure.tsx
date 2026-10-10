@@ -143,54 +143,58 @@ export function Disclosure({
         </button>
       </Tooltip>
       <div
+        inert={!open || disabled}
+        aria-hidden={!open || disabled}
         className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-[var(--motion-menu-t)] motion-safe:ease-[var(--motion-menu-ease)] ${
           open && !disabled ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
         }`}
       >
-        <div className="overflow-hidden border-t border-[var(--divider)] px-[var(--space-3)] py-[var(--space-2)]">
-          {error ? (
-            <div className="flex flex-col gap-[var(--space-2)] text-[length:var(--tr-text-small-size)]">
-              {children !== undefined && children !== null && (
-                <DisclosureBody
-                  maxBodyHeight={maxBodyHeight}
-                  scrollBody={scrollBody}
-                >
-                  {children}
-                </DisclosureBody>
-              )}
-              <div>
-                {error.failingStep ? `${error.failingStep}: ` : ''}
-                {error.message}
-              </div>
-              <div className="flex items-center gap-[var(--space-2)]">
-                <button
-                  type="button"
-                  onClick={error.onRetry}
-                  className={`bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current font-semibold focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${HIT_TARGET_28}`}
-                >
-                  Try again
-                </button>
-                {error.elapsedMs !== undefined && (
-                  <span
-                    data-testid="disclosure-elapsed"
-                    className="tabular-nums text-[var(--text-muted)]"
+        <div className="min-h-0 overflow-hidden">
+          <div data-testid="disclosure-content" className="border-t border-[var(--divider)] px-[var(--space-3)] py-[var(--space-2)]">
+            {error ? (
+              <div className="flex flex-col gap-[var(--space-2)] text-[length:var(--tr-text-small-size)]">
+                {children !== undefined && children !== null && (
+                  <DisclosureBody
+                    maxBodyHeight={maxBodyHeight}
+                    scrollBody={scrollBody}
                   >
-                    {(error.elapsedMs / 1000).toFixed(1)}s
-                  </span>
+                    {children}
+                  </DisclosureBody>
                 )}
+                <div>
+                  {error.failingStep ? `${error.failingStep}: ` : ''}
+                  {error.message}
+                </div>
+                <div className="flex items-center gap-[var(--space-2)]">
+                  <button
+                    type="button"
+                    onClick={error.onRetry}
+                    className={`bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current font-semibold focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${HIT_TARGET_28}`}
+                  >
+                    Try again
+                  </button>
+                  {error.elapsedMs !== undefined && (
+                    <span
+                      data-testid="disclosure-elapsed"
+                      className="tabular-nums text-[var(--text-muted)]"
+                    >
+                      {(error.elapsedMs / 1000).toFixed(1)}s
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ) : loading ? (
-            <div className="text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">Loading…</div>
-          ) : isEmptySet ? (
-            <div data-testid="disclosure-empty-set" className="text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
-              {emptySetLabel}
-            </div>
-          ) : (
-            <DisclosureBody maxBodyHeight={maxBodyHeight} scrollBody={scrollBody}>
-              {children}
-            </DisclosureBody>
-          )}
+            ) : loading ? (
+              <div className="text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">Loading…</div>
+            ) : isEmptySet ? (
+              <div data-testid="disclosure-empty-set" className="text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
+                {emptySetLabel}
+              </div>
+            ) : (
+              <DisclosureBody maxBodyHeight={maxBodyHeight} scrollBody={scrollBody}>
+                {children}
+              </DisclosureBody>
+            )}
+          </div>
         </div>
       </div>
     </div>
