@@ -727,4 +727,54 @@ describe('surface fit scheduling', () => {
       vi.unstubAllGlobals()
     }
   })
+
+  it('reflows an observed resize only when the PTY is told, in the same tick', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('window', {
+      devicePixelRatio: 1,
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout
+    })
+    try {
+      const calls: string[] = []
+      const box = { width: 160, height: 100 }
+      const surface = Object.create(GhosttyTerminalSurface.prototype)
+      Object.assign(surface, {
+        disposed: false,
+        mount: { clientWidth: 160, clientHeight: 100 },
+        canvas: { width: 160, height: 100, getBoundingClientRect: () => box },
+        context: { setTransform: vi.fn() },
+        metrics: { width: 8, height: 16 },
+        synchronizedOutput: { defer: vi.fn(() => false) },
+        canvasConfigured: true,
+        fitted: true,
+        resizeNotified: true,
+        resizeNotifyTimer: null,
+        pendingGrid: null,
+        cols: 19,
+        rows: 5,
+        core: { resize: vi.fn((cols: number, rows: number) => calls.push(`reflow ${cols}x${rows}`)) },
+        options: { onResize: (cols: number, rows: number) => calls.push(`pty ${cols}x${rows}`) },
+        renderFrame: vi.fn(),
+        requestRender: vi.fn()
+      })
+
+      box.width = 80
+      surface.fit(true)
+      box.width = 120
+      surface.fit(true)
+      expect(calls).toEqual([])
+      expect([surface.cols, surface.rows]).toEqual([19, 5])
+
+      vi.advanceTimersByTime(150)
+      expect(calls).toEqual(['reflow 14x5', 'pty 14x5'])
+
+      box.width = 160
+      surface.fit()
+      expect(calls).toEqual(['reflow 14x5', 'pty 14x5', 'reflow 19x5'])
+    } finally {
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    }
+  })
 })
