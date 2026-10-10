@@ -18,6 +18,7 @@ import {
 } from './renderer'
 import { findUrls, joinWrappedLine, mapJoinedOffset, type JoinedLine } from '../pane/webLinks'
 import { SynchronizedOutput } from './synchronizedOutput'
+import { SharedPaintTick } from './sharedPaintTick'
 
 export const DEFAULT_TERMINAL_FONT_SIZE = 13
 const MIN_TERMINAL_FONT_SIZE = 6
@@ -65,6 +66,18 @@ const paintStats: GhosttyPaintStats = {
 
 export function ghosttyPaintStats(): GhosttyPaintStats {
   return paintStats
+}
+
+// Unfocused panes repaint output on one shared ~15 Hz tick, so the compositor sees one
+// frame per tick rather than one per pane per frame; scrolling output stays readable.
+// Measured with the M13 bench (scripts/m13-steady-load.sh).
+const BACKGROUND_OUTPUT_PAINT_MS = 66
+
+function backgroundOutputPaintMs(): number {
+  const override = (globalThis as { __TR_BACKGROUND_PAINT_MS?: unknown }).__TR_BACKGROUND_PAINT_MS
+  return typeof override === 'number' && Number.isFinite(override) && override >= 0
+    ? override
+    : BACKGROUND_OUTPUT_PAINT_MS
 }
 
 export interface GhosttyTerminalFont {
@@ -517,6 +530,8 @@ export interface GhosttyTerminalSurfaceOptions {
   readonly maxScrollbackLines?: number
 }
 
+const backgroundPaintTick = new SharedPaintTick(backgroundOutputPaintMs)
+
 export class GhosttyTerminalSurface {
   readonly canvas: HTMLCanvasElement
   readonly input: HTMLTextAreaElement
@@ -614,7 +629,7 @@ export class GhosttyTerminalSurface {
     this.scrollbarThumb = scrollbarThumb
     this.context = context
     this.core = core
-    this.synchronizedOutput = new SynchronizedOutput(core, () => this.requestRender())
+    this.synchronizedOutput = new SynchronizedOutput(core, () => this.requestOutputRender())
     this.metrics = metrics
     this.options = options
     this.theme = options.theme
@@ -732,7 +747,7 @@ export class GhosttyTerminalSurface {
     paintStats.parseBytes += typeof data === 'string' ? data.length : data.byteLength
     this.cursorOn = true
     this.scrollbarDirty = true
-    this.requestRender()
+    this.requestOutputRender()
   }
 
   resetAndWrite(data: string): void {
@@ -1141,6 +1156,7 @@ export class GhosttyTerminalSurface {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    backgroundPaintTick.cancel(this)
     this.synchronizedOutput.dispose()
     this.resizeObserver.disconnect()
     if (this.fitFrame !== 0) window.cancelAnimationFrame(this.fitFrame)
@@ -1835,6 +1851,23 @@ export class GhosttyTerminalSurface {
     this.scrollbarDirty = true
     this.requestRender()
   }
+
+  /** Output-driven repaint: immediate for the focused pane, on the shared background
+   * tick otherwise. Input, scrolling, selection and resizes call `requestRender`. */
+  private requestOutputRender(): void {
+    if (this.focused || backgroundOutputPaintMs() === 0) {
+      this.requestRender()
+      return
+    }
+    if (this.disposed || this.paused) return
+    if (this.frame !== 0) {
+      paintStats.coalescedRenders += 1
+      return
+    }
+    backgroundPaintTick.schedule(this, this.paintFromTick)
+  }
+
+  private readonly paintFromTick = (): void => this.requestRender()
 
   private requestRender(): void {
     if (this.disposed || this.paused) return
