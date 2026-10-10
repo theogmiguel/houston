@@ -802,11 +802,12 @@ impl Db {
         until_ms: i64,
     ) -> Result<Vec<(proto::AgentKind, u32)>> {
         let conn = self.conn.lock().expect("db lock");
+        // `sessions.created_at` is in seconds; the window is in milliseconds.
         let mut stmt = conn.prepare(
             "SELECT agent, COUNT(*) FROM sessions WHERE \
              (project_dir = ?1 OR substr(project_dir, 1, length(?1) + 1) = ?1 || '/') \
-             AND created_at >= ?2 \
-             AND created_at < ?3 AND agent IN ('opencode', 'cursor', 'grok', 'antigravity') \
+             AND created_at * 1000 >= ?2 AND created_at * 1000 < ?3 \
+             AND agent IN ('opencode', 'cursor', 'grok', 'antigravity', 'zcode') \
              GROUP BY agent ORDER BY agent",
         )?;
         let rows = stmt.query_map(rusqlite::params![workspace, since_ms, until_ms], |r| {
