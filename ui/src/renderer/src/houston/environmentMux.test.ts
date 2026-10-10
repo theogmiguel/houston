@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CLIENT_ROUTES, EnvironmentMux, SERVER_ROUTES } from './environmentMux'
+import { CLIENT_ROUTES, EnvironmentMux, SERVER_ROUTES, tagSession } from './environmentMux'
 import type { EnvironmentEntry } from './environments'
 import { wslWorkspaces } from './environments'
 import { encodeStdinFrame } from './client'
@@ -406,6 +406,36 @@ describe('environmentMux', () => {
     again.onopen?.({} as Event)
     expect(again.json()).toEqual([{ type: 'hello', token: entry.token, protocol: 131 }])
     expect(r.local.json().some((m) => m.type === 'hello')).toBe(false)
+  })
+
+  it('answers a pane that attached while its environment was down once it is back', () => {
+    const r = rig()
+    const entry = wslEntry('Ubuntu', 1)
+    const ended = session(4, { state: 'killed' })
+    const first = connect(r, [{ entry, sessions: [ended] }]).get('Ubuntu')!
+    const tagged = tagSession(1, 4)
+    const scrollback = (attempt: number) => ({
+      type: 'scrollback', session: 4, data: 'aGk=', generation: 1, replayed_bytes: 2, bytes_seen: 2, attempt
+    })
+
+    r.clientSend({ type: 'session_attach', session: tagged, replay_bytes: 1024 })
+    first.receive(scrollback(1))
+    const attempts = () => r.deliveredJson().filter((m) => m.type === 'scrollback').map((m) => [m.session, m.attempt])
+    expect(attempts()).toEqual([[tagged, 1]])
+
+    r.mux.setEnvironments([LOCAL_ENTRY])
+    r.clientSend({ type: 'session_attach', session: tagged, replay_bytes: 1024 })
+    r.mux.setEnvironments([LOCAL_ENTRY, entry])
+    const second = r.opened.at(-1)!
+    expect(second).not.toBe(first)
+    second.onopen?.({} as Event)
+    second.receive(hello([ended]))
+
+    expect(second.json().filter((m) => m.type === 'session_attach')).toEqual([
+      { type: 'session_attach', session: 4, replay_bytes: 1024 }
+    ])
+    second.receive(scrollback(1))
+    expect(attempts()).toEqual([[tagged, 1], [tagged, 2]])
   })
 
   it('drops a disabled environment and its workspaces from the merged view', () => {

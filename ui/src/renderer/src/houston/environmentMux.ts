@@ -447,6 +447,8 @@ interface WslEnvironment {
   retry: ReturnType<typeof setTimeout> | null
   lists: Partial<Record<ListType, unknown[]>>
   reported: Set<string>
+  /** `session_attach` messages this connection carried, by tagged session id. */
+  attaches: Map<number, number>
 }
 
 interface ListRound {
@@ -469,6 +471,10 @@ export class EnvironmentMux {
   private rounds = new Map<ListType, ListRound>()
   private handoffs = new Map<number, WslEnvironment>()
   private focusAfterList: string[] = []
+  // A daemon numbers attach replies per connection, the client per session for as long
+  // as its own socket lives; an environment reconnect would leave every reply stale.
+  private clientAttaches = new Map<number, number>()
+  private lastAttach = new Map<number, Json>()
   private sendLocal: (data: string | ArrayBuffer) => void
   private deliverToClient: (ev: MessageEvent) => void
   private disposed = false
@@ -499,7 +505,8 @@ export class EnvironmentMux {
           helloed: false,
           retry: null,
           lists: {},
-          reported: new Set()
+          reported: new Set(),
+          attaches: new Map()
         })
       } else {
         const moved = env.entry.port !== entry.port || env.entry.token !== entry.token
@@ -536,6 +543,7 @@ export class EnvironmentMux {
     const socket = this.open(`ws://127.0.0.1:${env.entry.port}/ws`)
     socket.binaryType = 'arraybuffer'
     env.socket = socket
+    env.attaches = new Map()
     socket.onopen = () => {
       socket.send(JSON.stringify({ type: 'hello', token: env.entry.token, protocol: PROTOCOL_VERSION }))
     }
@@ -573,18 +581,20 @@ export class EnvironmentMux {
     this.deliverToClient({ data } as MessageEvent)
   }
 
-  private sendTo(env: WslEnvironment, data: string | ArrayBuffer, type: string): void {
+  private sendTo(env: WslEnvironment, data: string | ArrayBuffer, type: string): boolean {
     if (env.socket?.readyState === OPEN && env.helloed) {
       env.socket.send(data)
-      return
+      return true
     }
     console.warn(`houston: dropped ${type} for ${env.label} - it is not connected`)
+    return false
   }
 
   private fromClient(data: string | ArrayBuffer): void {
-    if (this.envs.size === 0) return this.sendLocal(data)
-    if (typeof data !== 'string') return this.stdinFromClient(data)
+    if (typeof data !== 'string') return this.envs.size === 0 ? this.sendLocal(data) : this.stdinFromClient(data)
     const msg = JSON.parse(data) as Json
+    this.noteAttach(msg)
+    if (this.envs.size === 0) return this.sendLocal(data)
     const route = CLIENT_ROUTES[msg.type as ClientMsg['type']] ?? 'local'
     if (route === 'local') return this.sendLocal(data)
     if (route === 'all') {
@@ -640,7 +650,41 @@ export class EnvironmentMux {
     if (!isTagged(id)) return this.sendLocal(data)
     const env = this.envForSession(id)
     if (env === null) return
-    this.sendTo(env, JSON.stringify({ ...msg, [field]: id % SLOT_SPAN }), msg.type)
+    this.sendToEnv(env, msg, field, id)
+  }
+
+  private sendToEnv(env: WslEnvironment, msg: Json, field: string, id: number): void {
+    const sent = this.sendTo(env, JSON.stringify({ ...msg, [field]: id % SLOT_SPAN }), msg.type as string)
+    if (sent && msg.type === 'session_attach') env.attaches.set(id, (env.attaches.get(id) ?? 0) + 1)
+  }
+
+  /** Remembers each tagged session's newest attach until its pane lets go of it. */
+  private noteAttach(msg: Json): void {
+    const id = msg.session
+    if (!isTagged(id)) return
+    if (msg.type === 'session_attach') {
+      this.clientAttaches.set(id, (this.clientAttaches.get(id) ?? 0) + 1)
+      this.lastAttach.set(id, msg)
+    } else if (msg.type === 'session_close' || msg.type === 'session_kill' || (msg.type === 'session_visibility' && msg.visible === false)) {
+      this.lastAttach.delete(id)
+    }
+  }
+
+  /** Renumbers a reply's attempt into the client's count: the attaches this connection
+   *  never carried were sent before it opened, or dropped while it was down. */
+  private renumberAttempt(env: WslEnvironment, msg: Json): void {
+    const id = msg.session as number
+    const missed = (this.clientAttaches.get(id) ?? 0) - (env.attaches.get(id) ?? 0)
+    msg.attempt = (msg.attempt as number) + missed
+  }
+
+  /** A pane whose attach was dropped while its environment was down waits for that reply;
+   *  ask again for every session the environment still has. */
+  private replayAttaches(env: WslEnvironment): void {
+    const listed = new Set((env.lists.session_list ?? []).map((info) => (info as { id: number }).id))
+    for (const [id, msg] of this.lastAttach) {
+      if (slotOf(id) === env.entry.slot && listed.has(id)) this.sendToEnv(env, msg, 'session', id)
+    }
   }
 
   private routeSessionList(msg: Json, field: string): void {
@@ -762,6 +806,7 @@ export class EnvironmentMux {
       throw err
     }
     if (msg.type === 'handoff_started') this.handoffs.set(msg.request as number, env)
+    if (msg.type === 'scrollback' || msg.type === 'attach_snapshot') this.renumberAttempt(env, msg)
     this.deliver(JSON.stringify(msg))
   }
 
@@ -819,6 +864,7 @@ export class EnvironmentMux {
     this.syncRegistry()
     this.startRound('session_list', env.entry.id)
     this.startRound('workspace_list', env.entry.id)
+    this.replayAttaches(env)
   }
 
   private syncRegistry(): void {
