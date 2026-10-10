@@ -194,6 +194,28 @@ A shared `CARGO_TARGET_DIR` is not an option: `dev.sh`, `stage-helper.sh` and
 `install-desktop.sh` read binaries from each checkout's own `target/`, and
 worktrees sharing one directory overwrite each other's binaries.
 
+A shared `build.build-dir` (Cargo 1.91+) avoids that conflict. It moves only the
+intermediates (`deps/`, `incremental/`, `build/`, nearly all of the disk use);
+final binaries stay in each checkout's `target/`, where the scripts read them.
+Set it in your user config, never in the repository:
+
+```toml
+# ~/.cargo/config.toml
+[build]
+build-dir = "{cargo-cache-home}/build-dir/{workspace-path-hash}"
+```
+
+- `{workspace-path-hash}` hashes the manifest path, so `core/`, `src-tauri/`
+  and every agent worktree get separate intermediates.
+- `scripts/sweep-targets.sh` sweeps `target/` directories only and no longer
+  reaches the intermediates. Clean the build-dir root instead: delete whole
+  workspace directories that have gone idle, which costs only a rebuild. Cargo
+  treats the layout inside them as internal and changes it between releases.
+- Removing a worktree leaves its intermediates behind until that cleanup runs.
+- For a hard ceiling, mount a fixed-size filesystem (for example a sparse,
+  loop-mounted ext4 image with `discard`) at the build-dir root; a full volume
+  fails the build instead of filling the disk.
+
 ### Env knobs (developer-facing)
 
 | Var | Effect |
