@@ -72,9 +72,8 @@ import {
 import { USAGE_WINDOW_REFUSED } from "./houston/generated/DEFAULTS";
 import type { UsageSummaryMsg } from "./components/UsageSection";
 import type { UsageActivityDay } from "./houston/generated/UsageActivityDay";
-import { daemonShutdown, daemonStatus } from "./houston/manage";
-import { appQuit } from "./houston/tray";
-import { useTrayBridge } from "./houston/useTray";
+import { daemonStatus } from "./houston/manage";
+import { stopDaemonThenQuit, useTrayBridge } from "./houston/useTray";
 import { stopConfirmCopy } from "./components/daemonStopConfirmCopy";
 import { QuitAndStopDaemonConfirm } from "./components/QuitAndStopDaemonConfirm";
 import { useBrowserFocus } from "./houston/browserFocus";
@@ -2765,18 +2764,7 @@ export function App(): React.JSX.Element {
 
   const confirmQuitAndStopDaemon = useCallback(() => {
     setQuitAndStopDaemonConfirm(null);
-    void daemonShutdown()
-      .catch((err: unknown) => {
-        console.warn(
-          "houston: daemon_shutdown before quit failed, quitting without stopping it",
-          err,
-        );
-      })
-      .finally(() => {
-        void appQuit().catch((err: unknown) => {
-          console.warn("houston: app_quit failed", err);
-        });
-      });
+    stopDaemonThenQuit();
   }, []);
 
   const handleDetach = useCallback(

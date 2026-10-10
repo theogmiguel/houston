@@ -30,14 +30,15 @@ async function stopEveryDaemon(): Promise<void> {
   results.forEach((result, i) => {
     if (result.status === 'rejected') {
       console.warn(
-        `houston: daemon_shutdown from the tray failed for ${targets[i]?.id ?? 'local'}, quitting without stopping it`,
+        `houston: daemon_shutdown before quitting failed for ${targets[i]?.id ?? 'local'}, quitting without stopping it`,
         result.reason
       )
     }
   })
 }
 
-function stopDaemonThenQuit(): void {
+/** The tray's and the command palette's "stop daemon and quit". */
+export function stopDaemonThenQuit(): void {
   void stopEveryDaemon()
     .finally(() => {
       void appQuit().catch((err: unknown) => {
