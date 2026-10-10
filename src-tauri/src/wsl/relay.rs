@@ -149,8 +149,8 @@ async fn serve(client: TcpStream, shared: Arc<Shared>) {
             }
             _ = &mut up_done_rx => {}
         }
-        // Closing the child's stdin half-closes wsl-proxy's socket; it exits once the
-        // daemon's reply has drained.
+        // Closing the child's stdin ends wsl-proxy once the daemon closes, or after
+        // its stdin grace when the daemon keeps the connection open.
         let _ = upstream_in.shutdown().await;
         drop(upstream_in);
     };

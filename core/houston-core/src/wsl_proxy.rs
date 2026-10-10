@@ -9,6 +9,8 @@ pub const NOT_RUNNING: &str =
 pub const EXIT_NO_DAEMON: i32 = 2;
 // Matches a WebSocket burst of PTY output, so one read rarely splits a frame.
 const SPLICE_BUFFER: usize = 64 * 1024;
+// Covers daemon_shutdown, which drains sessions for up to 5 s before it answers.
+const STDIN_EOF_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 
 pub fn run_proxy(args: &[String]) -> i32 {
     let channel = match split_channel("wsl-proxy", args) {
@@ -54,8 +56,9 @@ pub fn run_proxy(args: &[String]) -> i32 {
     splice(upstream)
 }
 
-// Returns when the daemon or stdout closes; stdin EOF only half-closes the socket,
-// so a reply already on its way still reaches stdout.
+// Returns when the daemon or stdout closes. Stdin EOF leaves the socket open, because
+// the daemon's HTTP server drops an unanswered request once its peer half-closes;
+// the reply keeps flowing until the daemon closes or the grace ends the process.
 fn splice(upstream: std::net::TcpStream) -> i32 {
     let mut to_daemon = match upstream.try_clone() {
         Ok(stream) => stream,
@@ -79,7 +82,8 @@ fn splice(upstream: std::net::TcpStream) -> i32 {
                 Err(_) => break,
             }
         }
-        let _ = to_daemon.shutdown(std::net::Shutdown::Write);
+        std::thread::sleep(STDIN_EOF_GRACE);
+        std::process::exit(0);
     });
     let mut from_daemon = upstream;
     let mut stdout = std::io::stdout().lock();

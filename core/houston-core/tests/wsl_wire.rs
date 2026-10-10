@@ -281,6 +281,135 @@ async fn wsl_proxy_splices_manage_request() {
     assert_eq!(status.code(), Some(0), "stderr: {stderr}");
 }
 
+// A piped request (`printf ... | wsl-proxy`) ends stdin before the daemon answers; a
+// handler that yields, as daemon_shutdown does, must still answer and run.
+#[tokio::test(flavor = "multi_thread")]
+async fn wsl_proxy_completes_a_slow_request_after_stdin_eof() {
+    let home = tempfile::tempdir().unwrap();
+    let state_dir = home.path().join(".houston-wslt-slow");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig {
+        token: TOKEN.to_string(),
+        db_path: state_dir.join("test.db"),
+    })
+    .unwrap();
+    let (addr, _handle) =
+        houston_core::server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+    daemon.set_port(addr.port());
+    let exited = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let exited = exited.clone();
+        daemon.reap_set_exit_hook_for_test(Box::new(move || {
+            exited.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+    }
+    write_daemon_json(&state_dir, addr.port());
+    let home_path = home.path().to_path_buf();
+
+    let run = tokio::task::spawn_blocking(move || {
+        let mut child = common::hermetic_command(core_bin(), &home_path)
+            .args(["wsl-proxy", "--channel", "wslt-slow"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let body = serde_json::to_string(&proto::ManageRequest {
+            manage_version: proto::MANAGE_VERSION,
+            verb: proto::ManageVerb::DaemonShutdown,
+            candidate_bin: None,
+            expected_sessions: None,
+            path: None,
+        })
+        .unwrap();
+        let request = format!(
+            "POST /manage HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {TOKEN}\r\n\
+             Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(request.as_bytes()).unwrap();
+        drop(stdin);
+        let mut response = Vec::new();
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_end(&mut response)
+            .unwrap();
+        let status = child.wait().unwrap();
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .unwrap();
+        (text(&response), status, stderr)
+    });
+    let (response, status, stderr) = tokio::time::timeout(Duration::from_secs(30), run)
+        .await
+        .expect("the proxy must exit once the daemon closes the connection")
+        .unwrap();
+
+    assert!(
+        response.starts_with("HTTP/1.1 200"),
+        "response {response:?}, stderr {stderr:?}"
+    );
+    assert!(response.contains("\"ok\":true"), "{response:?}");
+    assert_eq!(status.code(), Some(0), "stderr: {stderr}");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !exited.load(std::sync::atomic::Ordering::SeqCst) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "daemon_shutdown answered but the daemon never ran its exit"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        !state_dir.join("daemon.json").exists(),
+        "a completed daemon_shutdown removes daemon.json"
+    );
+}
+
+// A WebSocket peer never closes on its own: after the relay closes stdin, the proxy
+// must still end within its grace so `wsl.exe` and the relay task exit.
+#[test]
+fn wsl_proxy_exits_after_stdin_eof_when_the_daemon_stays_open() {
+    let home = tempfile::tempdir().unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    write_daemon_json(
+        &home.path().join(".houston-wslt-idle"),
+        listener.local_addr().unwrap().port(),
+    );
+    let holder = std::thread::spawn(move || listener.accept().map(|(stream, _)| stream));
+
+    let started = std::time::Instant::now();
+    let mut child = common::hermetic_command(core_bin(), home.path())
+        .args(["wsl-proxy", "--channel", "wslt-idle"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let _held = holder.join().unwrap().expect("the proxy connects");
+    drop(child.stdin.take());
+    let deadline = started + Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            panic!("wsl-proxy still running 30 s after stdin closed");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(status.code(), Some(0));
+}
+
 #[test]
 fn wsl_proxy_exits_2_without_daemon() {
     let home = tempfile::tempdir().unwrap();
