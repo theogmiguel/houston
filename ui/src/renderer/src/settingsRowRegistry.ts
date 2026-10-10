@@ -8,7 +8,7 @@ export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly s
   agents: ['Claude Code', 'Codex', 'OpenCode', 'Cursor', 'Grok', 'Active profile', 'Saved profiles', 'Add profile'],
   workspaces: ['Restore budget', 'Resume conversations when restoring panes', 'Remove worktrees automatically', 'Grace after merge', 'Remove idle worktrees after', 'Close idle background sessions', 'Idle for', 'Open links in a browser pane'],
   orchestration: ['Max child panes per agent', 'Max nesting depth', 'Enable orchestration', 'Mailbox retention'],
-  tasks: ['Agent access', 'Task key prefix'],
+  tasks: ['Agent access', 'Task key prefix', 'Live task runs', 'Needs-you items before automatic starts pause'],
   notifications: ['Desktop notifications', 'In-app notifications'],
   dictation: ['Groq API key', 'Enable dictation', 'Engine', 'Output', 'Tell the agent it is a translation', 'Activation', 'Dictation key', 'Microphone', 'Input device', 'Spoken language', 'Insertion', 'Vocabulary'],
   privacy: ['Command history', 'History ignore patterns', 'Browser pane data', 'Session database', 'Telemetry', 'Agent transcripts'],

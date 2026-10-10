@@ -1254,9 +1254,12 @@ impl DelegationSettleSample {
     }
 }
 
+mod factory;
 mod harness_review;
 mod slack;
+mod task_proof;
 mod task_trackers;
+pub use task_proof::TaskProofInput;
 pub(crate) mod tasks;
 mod worktree_pass;
 
@@ -10401,6 +10404,9 @@ impl Daemon {
 
     fn swarm_mail_tick(self: &Arc<Self>) -> Duration {
         let (drop_applied, drop_listed_ok) = self.hook_drop_tick(crate::hook_drop::Pass::Steady);
+        // Right after the hooks moved statuses, so an answer waiting for an
+        // idle pane goes in on the tick that pane went idle.
+        self.task_deliver_answers();
 
         let swarms = match self.db.list_swarms() {
             Ok(s) => s,

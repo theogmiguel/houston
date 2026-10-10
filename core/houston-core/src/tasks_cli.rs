@@ -14,7 +14,7 @@ hs-task — a Houston pane's view of its workspace's task backlog
   hs-task claim [HOU-n]
   hs-task comment [HOU-n] TEXT
   hs-task check [HOU-n] ITEM          (ITEM is the 1-based acceptance position)
-  hs-task handback [HOU-n] --summary T
+  hs-task handback [HOU-n] --summary T [PROOF]
   hs-task handback [HOU-n] --subject T --changes T --step T [--step …] [--caveats T]
              --live-note T --dropped-note T [--size small|medium|large]
              [--note T …] [--warning T …] [--blocker T …]
@@ -22,7 +22,12 @@ hs-task — a Houston pane's view of its workspace's task backlog
   hs-task handback [HOU-n] --refused --subject T --changes T
              (a Slack-filed task: refused at triage)
   hs-task ask --question Q --option A --option B [--option …] --recommended N
-             [--why T] [--context T]           (a Slack-filed task: asks in its thread)
+             [--why T] [--context T]   (asks in Houston, or in a Slack-filed task's thread)
+
+PROOF, on any handback: [--pr N|URL] [--sha COMMIT]
+             [--verify CMD [--output T] --passed|--failed …] [--capture PATH]
+             [--permanent T …]   (one --verify per command run; expected for every
+             acceptance item with a command in backticks)
 
 The task key defaults to $HOUSTON_TASK when set; otherwise pass HOU-n.
 Statuses: backlog, todo, in_progress, in_review, done, canceled.
@@ -179,6 +184,10 @@ fn cli(args: &[String]) -> Result<()> {
                      --subject, --changes, --step, --live-note and --dropped-note instead)"
                 );
             }
+            let evidence = proof_flags(&args)?;
+            if !evidence.as_object().is_some_and(|o| o.is_empty()) {
+                body["evidence"] = evidence;
+            }
             print(call("POST", "/task/handback", Some(body))?)
         }
         "ask" => {
@@ -211,6 +220,68 @@ fn cli(args: &[String]) -> Result<()> {
         }
         other => bail!("unknown hs-task command {other:?}\n\n{USAGE}"),
     }
+}
+
+/// The handback's proof flags. `--output` and `--passed`/`--failed` belong to
+/// the `--verify` before them, so this reads the arguments in order.
+fn proof_flags(args: &[String]) -> Result<Value> {
+    let mut evidence = serde_json::Map::new();
+    let mut verification: Vec<Value> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        // `--verify` and `--output` take the next argument as it is: a test
+        // failure's output often starts with dashes.
+        let verbatim = matches!(args[i].as_str(), "--verify" | "--output");
+        let value = args.get(i + 1).filter(|v| verbatim || !v.starts_with("--"));
+        match args[i].as_str() {
+            "--verify" => {
+                let Some(command) = value else {
+                    bail!(
+                        "--verify needs the command it ran, e.g. --verify \"cargo test\" --passed"
+                    );
+                };
+                verification.push(json!({ "command": command, "output": "", "passed": null }));
+            }
+            "--output" | "--passed" | "--failed" => {
+                let Some(last) = verification.last_mut() else {
+                    bail!("{} needs a --verify before it", args[i]);
+                };
+                match args[i].as_str() {
+                    "--output" => last["output"] = json!(value.cloned().unwrap_or_default()),
+                    "--passed" => last["passed"] = json!(true),
+                    _ => last["passed"] = json!(false),
+                }
+            }
+            "--pr" | "--sha" | "--capture" => {
+                let Some(value) = value else {
+                    bail!("{} needs a value", args[i]);
+                };
+                let key = match args[i].as_str() {
+                    "--pr" => "pr",
+                    "--sha" => "pushed_sha",
+                    _ => "capture_path",
+                };
+                evidence.insert(key.to_string(), json!(value));
+            }
+            _ => {}
+        }
+        // A value this flag consumed is never read as a flag itself.
+        i += if verbatim && value.is_some() { 2 } else { 1 };
+    }
+    if let Some(entry) = verification.iter().find(|v| v["passed"].is_null()) {
+        bail!(
+            "--verify {} needs --passed or --failed after it",
+            entry["command"]
+        );
+    }
+    if !verification.is_empty() {
+        evidence.insert("verification".into(), Value::Array(verification));
+    }
+    let permanent = repeated(args, "--permanent");
+    if !permanent.is_empty() {
+        evidence.insert("permanent".into(), json!(permanent));
+    }
+    Ok(Value::Object(evidence))
 }
 
 /// Every value of a flag that may repeat, in order; the shared parser keeps
@@ -321,7 +392,40 @@ fn query_escape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::repeated;
+    use super::{proof_flags, repeated};
+
+    #[test]
+    fn proof_flags_pair_each_result_with_its_verify_and_keep_dashed_output() {
+        let args: Vec<String> = [
+            "handback",
+            "--verify",
+            "cargo test",
+            "--output",
+            "---- tests::login stdout ----",
+            "--failed",
+            "--verify",
+            "true",
+            "--passed",
+            "--sha",
+            "abc1234",
+            "--permanent",
+            "adds a column",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let proof = proof_flags(&args).unwrap();
+        assert_eq!(proof["pushed_sha"], "abc1234");
+        assert_eq!(proof["permanent"][0], "adds a column");
+        let checks = proof["verification"].as_array().unwrap();
+        assert_eq!(checks.len(), 2);
+        assert_eq!(checks[0]["output"], "---- tests::login stdout ----");
+        assert_eq!(checks[0]["passed"], false);
+        assert_eq!(checks[1]["command"], "true");
+        assert_eq!(checks[1]["passed"], true);
+        let unpaired: Vec<String> = ["--verify", "true"].iter().map(|s| s.to_string()).collect();
+        assert!(proof_flags(&unpaired).is_err(), "a result is required");
+    }
 
     #[test]
     fn a_repeated_flag_keeps_every_value_in_order() {

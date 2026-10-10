@@ -106,7 +106,7 @@ async fn create(
             expected_revision: None,
             patch: proto::TaskPatch {
                 title: Some(title.to_string()),
-                acceptance: Some(vec!["observable outcome exists".into()]),
+                acceptance: Some(vec!["observable outcome exists `true`".into()]),
                 parent_id: Some(parent_id),
                 ..Default::default()
             },
@@ -480,7 +480,7 @@ async fn manual_start_requires_readiness_unless_override_is_explicit() {
     let proto::ServerMsg::TaskRefused { message, .. } = task_reply(&mut ws).await else {
         panic!("an unready task must be refused before launch");
     };
-    assert!(message.contains("verifiable acceptance"));
+    assert!(message.contains("executable acceptance"));
 
     send(
         &mut ws,
@@ -510,7 +510,7 @@ async fn plan_submission_is_rejected_without_a_recorded_planning_session() {
             0,
             proto::TaskPlanProposal {
                 description: "A typed proposal".into(),
-                acceptance: vec!["The result is observable".into()],
+                acceptance: vec!["The result is observable `true`".into()],
                 pointers: Vec::new(),
                 out_of_scope: Vec::new(),
                 questions: Vec::new(),

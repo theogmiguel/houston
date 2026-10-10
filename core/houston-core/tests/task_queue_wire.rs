@@ -121,7 +121,7 @@ impl Rig {
             title: Some(title.to_string()),
             status: Some(proto::TaskStatus::Todo),
             priority: Some(priority),
-            acceptance: Some(vec!["The queued task can be started".to_string()]),
+            acceptance: Some(vec!["The queued task can be started `true`".to_string()]),
             ..Default::default()
         };
         match self

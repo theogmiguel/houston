@@ -1,4 +1,4 @@
-# Wire protocol v130
+# Wire protocol v131
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -308,6 +308,10 @@ every refusal names the setting.
 | `task_plan_start` | `id`, `expected_revision`, `agent` | `task_plan_started`; reserves a task-scoped read-only planning capability before launching the provider; creates no worktree |
 | `task_plan_answer` | `id`, `expected_revision`, `question`, `answer` | `task_plan_changed` |
 | `task_plan_approve` | `id`, `expected_revision`, `plan_revision` | `task_plan_changed` and `task_changed`; applies the proposal only after every question has an answer and the task, plan and captured Project revisions match |
+| `task_plan_reject` | `id`, `expected_revision`, `plan_revision`, `reason` (non-empty, ≤ `TASK_COMMENT_MAX`) | `task_plan_changed` and `task_changed`; drops the proposal, writes `Plan revision N rejected: reason` as a comment and keeps the task's definition; `task_refused` `conflict` for a stale task or plan revision |
+| `task_question_answer` | `question_id`, `answer` (1..=`TASK_ANSWER_MAX_BYTES`) | `task_changed` (bcast); the answer is typed into the asking pane once it is idle; `task_refused` `not_found`, `invalid` (already answered or empty) |
+| `factory_settings_get` | — | `factory_settings` (direct) |
+| `factory_settings_set` | `live_runs_max`, `needs_you_max` (each `1..=FACTORY_CAP_MAX`) | `factory_settings` (bcast); `task_refused` `limit` naming the field, value and range |
 | `task_tracker_settings_get` | `workspace` | `task_tracker_settings` |
 | `task_tracker_settings_set` | `settings: TaskTrackerWorkspaceSettings` | `task_tracker_settings`, with current saved values or a refusal |
 | `task_tracker_credential_set` | `workspace`, `provider`, `token` | `task_tracker_settings`; Notion only, token stored in the OS keychain |
@@ -480,6 +484,7 @@ every refusal names the setting.
 | `task_domain_state` | `domain: TaskDomain` | reply to `task_domain_get` |
 | `task_plan_started` | `id`, `session_id`, `revision` | a read-only planning pane was reserved and launched |
 | `task_plan_changed` | `id`, `revision` | proposal submission, answer or approval; refresh task/domain details |
+| `factory_settings` | `live_runs_max`, `needs_you_max`, `live_runs`, `needs_you` | reply to `factory_settings_get`; bcast after a change. `live_runs` counts live implementation runs in every workspace; `needs_you` counts tasks in review, with a run waiting for input, or with an unanswered agent question of an open run. Every task start is refused at `live_runs_max`; automatic starts (Slack queue, accepted adjustments, `task_execute`, rework, Run next N) also wait at `needs_you_max`, not counting the task being started |
 | `task_tracker_settings` | `settings: TaskTrackerWorkspaceSettings[]`, `refusal?` | current per-workspace connector settings; contains credential presence, never its value |
 | `task_tracker_links` | `task_id`, `links: TaskExternalLink[]` | bounded source snapshots, sync state and conflicts |
 | `task_tracker_sync_state` | `workspace`, `provider`, `last_sync_at_ms?`, `error?` | a sync completed or failed |
@@ -716,6 +721,11 @@ TaskSummary        id, workspace? (null = unassigned), number, key (`HOU-<number
                    validating, so the list can draw the execution card without a detail fetch),
                    origin?: TaskOrigin
                    intake?: TaskIntake (set when the task was filed from Slack)
+                   open_question?: TaskQuestion (the newest unanswered `task_ask` of a task
+                   not filed from Slack, while its run is open)
+                   pr_number?, pr_url? (the newest pull request any run of the task recorded)
+TaskQuestion       id, task_id, run_id, session_id, question, options, recommended? (1-based),
+                   why?, context?, created_at_ms
 Task               as TaskSummary plus description (≤ `TASK_DESCRIPTION_MAX`)
 TaskOrigin         harness_finding: workspace, key, review_id
 TaskStatus         backlog | todo | in_progress | in_review | done | canceled
@@ -729,7 +739,13 @@ TaskRun            id, task_id, attempt, kind: TaskRunKind, state: TaskRunState,
                    reason? (why the run is not running: an interrupted pane, a missing or
                    unauthenticated `gh` during the PR watch, or a refused resume),
                    started_at_ms, ended_at_ms?, pr_url? (the pull request `gh` found for the
-                   branch when a Slack-filed run was handed back)
+                   branch when a Slack-filed run was handed back, or the URL a handback named),
+                   pr_number?, pushed_sha?, evidence?: TaskRunEvidence (the handback's proof)
+TaskRunEvidence    verification: TaskVerification[] (≤ `TASK_VERIFICATIONS_MAX`),
+                   capture_path? (an existing file), permanent: string[] (what stays beyond
+                   code: migrations, configuration, data)
+TaskVerification   command, output (redacted; the tail is kept within
+                   `TASK_VERIFICATION_OUTPUT_MAX_BYTES`), passed
 TaskRunKind        implementation | review
 TaskRunState       preparing | running | waiting_for_input | validating | handed_back |
                    needs_review | failed | cancelled | interrupted
@@ -1138,6 +1154,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 131 | **A task carries its proof of done and the factory paces automatic starts.** New `task_plan_reject`, `task_question_answer`, `factory_settings_get` and `factory_settings_set` client messages and the `factory_settings` reply; `TaskSummary.open_question?` with `TaskQuestion`, `TaskSummary.pr_number?` and `pr_url?`; `TaskRun.pr_number?`, `pushed_sha?` and `evidence?` with `TaskRunEvidence` and `TaskVerification`; `TaskReadiness.acceptance_executable`. Readiness needs at least one acceptance item with a command in backticks. Any task's handback (`task_handback.evidence` or `hs-task handback --pr/--sha/--verify/--capture/--permanent`) records the proof on its run, is marked `[no verification]` when an executable item got no verification, and registers a PR watch on the handing-back pane for the named pull request; an orchestrated child records the same proof through `task_result.evidence`. `task_ask` works for any task run: Slack-filed tasks ask in their thread, others in the app. An approved plan stays approved across writes that leave the task's title, description and acceptance unchanged, and the brief carries its pointers, exclusions and answers. Existing messages are unchanged |
 | 129 | **Checkout, activity and pull-request surfaces gain their wire data.** `SessionInfo.checkout?` (`SessionCheckout`, `CheckoutKind`) and `SessionInfo.activity?` (`SessionActivity`) have matching `session_checkout` and `session_activity` broadcasts. `PrInfo` and `PrListItem` gain title, branch, diffstat, creation, comment, review-request and mergeability details; `pr_list` gains `PrSort`; `pr_status_batch` requests one existing `pr_status` reply per directory. `PrCheck.run_id` and `pr_check_log` expose a tail capped at 40 lines and 16 KiB. Tag colors accept any six-digit hexadecimal `#rrggbb`, stored lowercase; `TAG_PALETTE` remains the preset list. `session_attach` gains `from_offset?` and `generation?`, so a client that already holds a session's output asks only for the bytes after it |
 | 128 | Manual Sleep/Wake adds `SessionState.sleeping`, retained hook-fed cues and context, `session_sleep`, `session_wake`, `session_memory_get`, `session_updated` and `session_memory`. Sleeping panes do not auto-restore. Task Projects, Delivery/Slice metadata, blockers, readiness, revision-bound read-only Plan and per-workspace GitHub Issues/Notion connectors add the corresponding `task_project_*`, `task_domain_*`, `task_plan_*` and `task_tracker_*` messages and shared shapes above. Manual `task_start` gains `override_readiness`; automatic starts never bypass readiness. External snapshots preserve both conflicting values until an explicit resolution. |
 | 127 | Managed worktree entries carry their recorded `base_branch` and a `status` (`ready`, `stale`, `kept`). `WorktreeKeep.not_integrated { count, base }` means `git cherry` found `count` commits on a branch with no PR that have no patch-equivalent in `base` (the recorded base, or the default branch for rows recorded without one); with none, the worktree is integrated and removable after the grace. `WorktreeKeep.stale` carries `idle_days` and `removal_in_days`; a worktree becomes stale at half the idle removal threshold, which defaults to 30 days and is reported by `host_info.worktree_idle_removal_days`. When automatic removal is enabled, a qualifying worktree is removed at the threshold and its branch is kept. Manual stale removal also keeps the branch. |

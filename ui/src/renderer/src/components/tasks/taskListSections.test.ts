@@ -20,7 +20,7 @@ function project(id: number, name: string, archived = false): TaskProject {
 function domain(task_id: number, kind: TaskDomain['kind'], project_id: number | null): TaskDomain {
   return {
     task_id, kind, project_id, delivery_id: null, blocked_by: [], slice_total: 0, slice_done: 0, planning_session_id: null, plan: null,
-    readiness: { ready: true, reasons: [], acceptance_total: 0, acceptance_verifiable: 0, unresolved_questions: 0, unresolved_tracker_conflicts: 0, unfinished_blockers: [] },
+    readiness: { ready: true, reasons: [], acceptance_total: 0, acceptance_verifiable: 0, acceptance_executable: 0, unresolved_questions: 0, unresolved_tracker_conflicts: 0, unfinished_blockers: [] },
     unresolved_tracker_conflicts: 0
   }
 }

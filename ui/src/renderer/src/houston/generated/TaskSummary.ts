@@ -2,6 +2,7 @@
 import type { TaskIntake } from "./TaskIntake";
 import type { TaskOrigin } from "./TaskOrigin";
 import type { TaskPriority } from "./TaskPriority";
+import type { TaskQuestion } from "./TaskQuestion";
 import type { TaskRun } from "./TaskRun";
 import type { TaskStatus } from "./TaskStatus";
 
@@ -23,4 +24,13 @@ intake?: TaskIntake | null,
  * carries it so the list can show the execution card without a detail
  * fetch. Handed-back and finished runs stay only in `task_detail.runs`.
  */
-open_run?: TaskRun | null, origin?: TaskOrigin | null, };
+open_run?: TaskRun | null, origin?: TaskOrigin | null,
+/**
+ * The agent's newest unanswered question, for a task not filed from
+ * Slack (a Slack-filed task asks in its thread).
+ */
+open_question?: TaskQuestion | null,
+/**
+ * The newest pull request any run of the task recorded.
+ */
+pr_number?: number | null, pr_url?: string | null, };

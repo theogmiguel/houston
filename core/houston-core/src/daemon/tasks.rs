@@ -161,6 +161,10 @@ struct ImplementerResult {
     summary: String,
     #[serde(default)]
     checks: Vec<ResultCheck>,
+    /// The same proof of done a handback carries, read loosely so a malformed
+    /// proof never costs the rest of the result.
+    #[serde(default)]
+    evidence: Option<serde_json::Value>,
 }
 
 #[derive(serde::Deserialize)]
@@ -235,7 +239,7 @@ impl Daemon {
         }
     }
 
-    fn task_refused(
+    pub(super) fn task_refused(
         id: Option<i64>,
         kind: proto::TaskErrorKind,
         limit: Option<u32>,
@@ -267,7 +271,11 @@ impl Daemon {
         )
     }
 
-    fn task_invalid(id: Option<i64>, operation: &str, message: String) -> proto::ServerMsg {
+    pub(super) fn task_invalid(
+        id: Option<i64>,
+        operation: &str,
+        message: String,
+    ) -> proto::ServerMsg {
         Self::task_refused(
             id,
             proto::TaskErrorKind::Invalid,
@@ -429,6 +437,9 @@ impl Daemon {
             intake: None,
             open_run: None,
             origin: None,
+            open_question: None,
+            pr_number: None,
+            pr_url: None,
         }
     }
 
@@ -506,6 +517,12 @@ impl Daemon {
             started_at_ms: row.started_at_ms,
             ended_at_ms: row.ended_at_ms,
             pr_url: row.pr_url.clone(),
+            pr_number: row.pr_number,
+            pushed_sha: row.pushed_sha.clone(),
+            evidence: row
+                .evidence
+                .as_deref()
+                .and_then(|raw| serde_json::from_str(raw).ok()),
         }
     }
 
@@ -527,6 +544,8 @@ impl Daemon {
             });
         let origins = self.db.harness_task_origins()?;
         let intakes = self.task_intakes()?;
+        let mut questions = self.task_open_questions_by_task()?;
+        let prs = self.db.task_latest_prs()?;
         Ok(rows
             .into_iter()
             .map(|row| {
@@ -534,6 +553,15 @@ impl Daemon {
                 wire.open_run = open.get(&wire.id).map(Self::task_run_ref_to_wire);
                 wire.origin = origins.get(&wire.id).cloned();
                 wire.intake = intakes.get(&wire.id).cloned();
+                // A question outlives its run only as history: once the run
+                // ends, no pane is left to type the answer into.
+                wire.open_question = questions
+                    .remove(&wire.id)
+                    .filter(|q| open.get(&wire.id).is_some_and(|run| run.id == q.run_id));
+                if let Some((number, url)) = prs.get(&wire.id) {
+                    wire.pr_number = *number;
+                    wire.pr_url = url.clone();
+                }
                 wire
             })
             .collect())
@@ -779,6 +807,10 @@ impl Daemon {
             .iter()
             .filter(|a| !a.text.trim().is_empty() && !a.text.trim().eq_ignore_ascii_case("tbd"))
             .count() as u32;
+        let executable = acceptance
+            .iter()
+            .filter(|a| super::task_proof::acceptance_command(&a.text).is_some())
+            .count() as u32;
         let mut plan: Option<proto::TaskPlan> = meta
             .as_ref()
             .and_then(|m| m.plan_json.as_deref())
@@ -864,8 +896,13 @@ impl Daemon {
                 ));
             }
         }
-        if verifiable == 0 {
-            reasons.push("task needs at least one verifiable acceptance item".into());
+        if executable == 0 {
+            reasons.push(
+                "task needs at least one executable acceptance item: a command in backticks, \
+                 such as `cargo test`, that the agent runs and reports in its handback (text \
+                 items stay as human criteria)"
+                    .into(),
+            );
         }
         if unresolved_questions > 0 {
             reasons.push(format!(
@@ -930,6 +967,7 @@ impl Daemon {
                 reasons,
                 acceptance_total: acceptance.len() as u32,
                 acceptance_verifiable: verifiable,
+                acceptance_executable: executable,
                 unresolved_questions,
                 unresolved_tracker_conflicts,
                 unfinished_blockers: unfinished,
@@ -1481,6 +1519,61 @@ impl Daemon {
             id,
             revision: plan.revision,
         })
+    }
+
+    /// Discards the planning proposal the user read; the reason becomes a
+    /// comment and the task keeps its definition.
+    pub fn task_plan_reject(
+        &self,
+        id: i64,
+        expected_revision: i64,
+        plan_revision: i64,
+        reason: &str,
+    ) -> Result<proto::ServerMsg> {
+        let operation = "task_plan_reject";
+        let reason = reason.trim();
+        if reason.is_empty() || reason.len() > proto::TASK_COMMENT_MAX {
+            return Ok(Self::task_invalid(
+                Some(id),
+                operation,
+                format!(
+                    "the reason is {} bytes (expected 1 to {})",
+                    reason.len(),
+                    proto::TASK_COMMENT_MAX
+                ),
+            ));
+        }
+        let Some(revision) = self.db.reject_task_plan(
+            id,
+            expected_revision,
+            plan_revision,
+            reason,
+            USER_ACTOR,
+            now_unix_ms(),
+        )?
+        else {
+            let actual = self.db.task(id)?.map(|t| t.revision);
+            return Ok(Self::task_refused(
+                Some(id),
+                proto::TaskErrorKind::Conflict,
+                None,
+                None,
+                Some(expected_revision),
+                actual,
+                format!(
+                    "{operation} refused: the task revision or plan revision {plan_revision} \
+                     changed, or the task has no plan"
+                ),
+            ));
+        };
+        if let Some(task) = self.db.task(id)? {
+            self.broadcast_control(&proto::ServerMsg::TaskChanged {
+                workspace: task.workspace,
+                id,
+                revision,
+            });
+        }
+        Ok(proto::ServerMsg::TaskPlanChanged { id, revision })
     }
 
     pub fn task_plan_session(&self, session_id: u32) -> Result<Option<(i64, i64)>> {
@@ -2858,8 +2951,23 @@ impl Daemon {
         Ok(self.tasks_review_settings_state(workspace))
     }
 
+    /// Project and tracker snapshots plus an approved plan's pointers,
+    /// exclusions and answers, which approval does not copy into the task.
     fn task_project_and_tracker_context(&self, row: &TaskRow) -> Result<String> {
-        Ok(self.task_project_and_tracker_context_snapshot(row)?.0)
+        let context = self.task_project_and_tracker_context_snapshot(row)?.0;
+        let proto::ServerMsg::TaskDomainState { domain } = self.task_domain_state(row.id)? else {
+            return Ok(context);
+        };
+        let Some(plan) = domain.plan.filter(|p| p.approved_revision.is_some()) else {
+            return Ok(context);
+        };
+        let mut value: serde_json::Value = serde_json::from_str(&context)?;
+        value["approved_plan"] = serde_json::json!({
+            "pointers": plan.proposal.pointers,
+            "out_of_scope": plan.proposal.out_of_scope,
+            "answers": plan.answers,
+        });
+        Ok(serde_json::to_string(&value)?)
     }
 
     fn task_project_and_tracker_context_snapshot(
@@ -2928,7 +3036,11 @@ impl Daemon {
             }
         }
         if !external_references.is_empty() && external_references != "[]" {
-            block.push_str("\nProject and tracker context (unverified snapshots): ");
+            block.push_str(
+                "\nProject, tracker and approved plan context (tracker parts are unverified \
+                 snapshots; approved_plan lists files to start from, what is out of scope and \
+                 the user's answers to the planner): ",
+            );
             block.push_str(external_references);
             block.push('\n');
         }
@@ -2989,11 +3101,20 @@ impl Daemon {
             brief.push_str(note);
         }
         brief.push_str(
-            "\n\nWhen the work is done, hand the task back with `hs-task handback --summary \
-             \"...\"` (or the `task_handback` MCP tool) so it moves to review. Never mark the \
-             task done yourself: a merged pull request or the user closes it. Linked external \\
-             tracker issues are reference-only: do not use closes, fixes, or resolves keywords \\
-             for them in Slice PRs; Houston closes the Delivery only after every Slice is Done.\n",
+            "\n\nTo ask the user a question with options, use `hs-task ask --question \"...\" \
+             --option \"...\" --option \"...\" --recommended N` (or the `task_ask` MCP tool) \
+             and end your turn; the answer arrives as your next prompt.\n\
+             \n\
+             When the work is done, hand the task back with `hs-task handback --summary \"...\"` \
+             (or the `task_handback` MCP tool) so it moves to review, with its proof: `--pr N` \
+             and `--sha COMMIT` for what you pushed, `--verify \"command\" --output \"trimmed \
+             output\" --passed` (or `--failed`) for each command you ran, expected for every \
+             acceptance item with a command in backticks, `--capture PATH` for a screenshot and \
+             `--permanent \"...\"` for each migration, configuration or data change that stays. \
+             Never mark the task done yourself: a merged pull request or the user closes it. \
+             Linked external tracker issues are reference-only: do not use closes, fixes, or \
+             resolves keywords for them in Slice PRs; Houston closes the Delivery only after \
+             every Slice is Done.\n",
         );
         brief
     }
@@ -3034,7 +3155,10 @@ impl Daemon {
              submit. End the submit body with exactly this single-line JSON object as its last \
              non-empty line:\n{TASK_RESULT_EXAMPLE}\n\
              `status` is `complete` or `blocked`. Give one `checks` entry per acceptance item, \
-             naming it exactly as the list above. Houston reads this line to tick the task's \
+             naming it exactly as the list above. Add an `evidence` object with what you \
+             pushed and ran: `pr`, `pushed_sha`, `verification` [{{command, output, passed}}] \
+             for each command in backticks in the acceptance list, `capture_path` and \
+             `permanent`. Houston reads this line to tick the task's \
              acceptance list and move it to review; do not add any text after it.\n"
         ));
         brief
@@ -3502,6 +3626,9 @@ impl Daemon {
                 operation,
             ));
         }
+        if let Some(refusal) = self.factory_start_refusal(Some(id), operation, false)? {
+            return Ok(refusal);
+        }
         let project_dir = PathBuf::from(row.workspace.as_deref().unwrap_or(""));
         if !project_dir.is_dir() {
             return Ok(Self::task_invalid(
@@ -3578,10 +3705,16 @@ impl Daemon {
                 if let Some(refusal) = self.task_readiness_refusal(row.id, operation)? {
                     return Ok(refusal);
                 }
+                if let Some(refusal) = self.factory_start_refusal(Some(row.id), operation, false)? {
+                    return Ok(refusal);
+                }
                 self.resume_task_run(&row, &run, operation)
             }
             proto::TaskRunAction::Retry => {
                 if let Some(refusal) = self.task_readiness_refusal(row.id, operation)? {
+                    return Ok(refusal);
+                }
+                if let Some(refusal) = self.factory_start_refusal(Some(row.id), operation, false)? {
                     return Ok(refusal);
                 }
                 self.retry_task_run(&row, &run, None, operation)
@@ -3608,6 +3741,9 @@ impl Daemon {
             return Ok(Self::task_not_found(run.task_id, operation));
         };
         if let Some(refusal) = self.task_readiness_refusal(row.id, operation)? {
+            return Ok(refusal);
+        }
+        if let Some(refusal) = self.factory_start_refusal(Some(row.id), operation, true)? {
             return Ok(refusal);
         }
         self.retry_task_run(&row, &run, Some(adjustment), operation)
@@ -4029,6 +4165,9 @@ impl Daemon {
                 true,
                 operation,
             ));
+        }
+        if let Some(refusal) = self.factory_start_refusal(Some(id), operation, true)? {
+            return Ok(refusal);
         }
         if let Some(refusal) = self.task_readiness_refusal(id, operation)? {
             return Ok(refusal);
@@ -4689,6 +4828,26 @@ impl Daemon {
                 ),
             ));
         }
+        let live = self.db.factory_live_runs()?;
+        let live_max = self.factory_live_runs_max();
+        if live + count > live_max {
+            return Ok(Self::task_refused(
+                None,
+                proto::TaskErrorKind::Limit,
+                Some(live_max),
+                Some(u64::from(live + count)),
+                None,
+                None,
+                format!(
+                    "{operation} refused: starting {count} task(s) with {live} task runs live \
+                     would pass the limit of {live_max} (Settings ▸ Tasks ▸ Factory, live runs); \
+                     nothing was queued"
+                ),
+            ));
+        }
+        if let Some(refusal) = self.factory_start_refusal(None, operation, true)? {
+            return Ok(refusal);
+        }
         let rows = self.db.ready_tasks(&workspace, count)?;
         let reviewer = self.tasks_default_reviewer(&workspace);
         let mut started = Vec::new();
@@ -4841,6 +5000,23 @@ impl Daemon {
                 "tasks: recording run {}'s summary as a comment: {e:#}",
                 run.id
             ),
+        }
+        if let Some(evidence) = result.evidence {
+            let worktree = run.worktree_path.as_deref().map(Path::new);
+            let parsed = serde_json::from_value::<super::task_proof::TaskProofInput>(evidence)
+                .map_err(anyhow::Error::from)
+                .and_then(|input| input.normalized(worktree));
+            match parsed {
+                Ok(proof) if !proof.is_empty() => self.db.task_run_set_proof(
+                    run.id,
+                    proof.pr_number,
+                    proof.pr_url.as_deref(),
+                    proof.pushed_sha.as_deref(),
+                    &serde_json::to_string(&proof.evidence)?,
+                )?,
+                Ok(_) => {}
+                Err(e) => summary.push_str(&format!("\n\n[evidence not recorded] {e:#}")),
+            }
         }
         self.db.task_run_set_summary(run.id, &summary)?;
         self.db
@@ -5684,7 +5860,7 @@ impl Daemon {
     }
 }
 
-fn pr_watch_number(target: &str) -> anyhow::Result<u32> {
+pub(super) fn pr_watch_number(target: &str) -> anyhow::Result<u32> {
     if target.trim().contains("://") {
         return pr_watch_url_identity(target)?
             .map(|(_, _, number)| number)

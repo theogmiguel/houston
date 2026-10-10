@@ -344,7 +344,7 @@ async fn claim_check_and_handback_move_the_task_with_the_panes_provenance() {
         r.addr,
         &token,
         "task_create",
-        json!({ "title": "Claim me", "status": "todo", "acceptance": ["item one"] }),
+        json!({ "title": "Claim me", "status": "todo", "acceptance": ["item one `true`"] }),
     )
     .await;
     let id = created["id"].as_i64().unwrap();
@@ -391,7 +391,14 @@ async fn claim_check_and_handback_move_the_task_with_the_panes_provenance() {
         r.addr,
         &token,
         "task_handback",
-        json!({ "id": id, "summary": "done, tests pass" }),
+        json!({
+            "id": id,
+            "summary": "done, tests pass",
+            "evidence": {
+                "pushed_sha": "abc1234",
+                "verification": [{ "command": "true", "output": "", "passed": true }],
+            },
+        }),
     )
     .await;
     assert_eq!(handed["status"], "in_review", "{handed}");
@@ -430,7 +437,7 @@ async fn ready_tasks_order_by_priority_and_next_returns_the_first() {
                 "title": title,
                 "status": status,
                 "priority": priority,
-                "acceptance": ["The task can be claimed when ready"],
+                "acceptance": ["The task can be claimed when ready `true`"],
             }),
         )
         .await;
@@ -576,7 +583,7 @@ async fn hs_task_next_claim_and_handback_work_over_the_http_door() {
         json!({
             "title": "CLI work",
             "status": "todo",
-            "acceptance": ["The CLI can claim and hand back this task"],
+            "acceptance": ["The CLI can claim and hand back this task `true`"],
         }),
     )
     .await;
@@ -601,9 +608,20 @@ async fn hs_task_next_claim_and_handback_work_over_the_http_door() {
     assert_eq!(run(&["claim", "HOU-1"]).await.unwrap(), 0, "hs-task claim");
     std::env::set_var("HOUSTON_TASK", "HOU-1");
     assert_eq!(
-        run(&["handback", "--summary", "finished from the CLI"])
-            .await
-            .unwrap(),
+        run(&[
+            "handback",
+            "--summary",
+            "finished from the CLI",
+            "--verify",
+            "true",
+            "--output",
+            "ok",
+            "--passed",
+            "--permanent",
+            "nothing stays",
+        ])
+        .await
+        .unwrap(),
         0,
         "hs-task handback with $HOUSTON_TASK"
     );
@@ -619,6 +637,18 @@ async fn hs_task_next_claim_and_handback_work_over_the_http_door() {
             .any(|comment| comment.body == "finished from the CLI"),
         "{comments:?}"
     );
+    let proto::ServerMsg::TaskDetail { runs, .. } = r.daemon.task_get(id).unwrap() else {
+        panic!("expected TaskDetail");
+    };
+    let evidence = runs[0]
+        .evidence
+        .as_ref()
+        .expect("the CLI proof is recorded");
+    assert_eq!(evidence.verification.len(), 1);
+    assert_eq!(evidence.verification[0].command, "true");
+    assert_eq!(evidence.verification[0].output, "ok");
+    assert!(evidence.verification[0].passed);
+    assert_eq!(evidence.permanent, vec!["nothing stays"]);
 }
 
 #[tokio::test]
@@ -654,7 +684,7 @@ async fn task_tools_read_globally_and_write_only_own_workspace() {
             r.addr,
             &first,
             "task_create",
-            json!({ "title": title, "acceptance": ["The task can be claimed"] }),
+            json!({ "title": title, "acceptance": ["The task can be claimed `true`"] }),
         )
         .await;
     }
@@ -664,14 +694,14 @@ async fn task_tools_read_globally_and_write_only_own_workspace() {
         r.addr,
         &token,
         "task_create",
-        json!({ "title": "second one", "acceptance": ["The task can be handed back"] }),
+        json!({ "title": "second one", "acceptance": ["The task can be handed back `true`"] }),
     )
     .await;
     let two = ok_call(
         r.addr,
         &token,
         "task_create",
-        json!({ "title": "second two", "acceptance": ["The task can be claimed"] }),
+        json!({ "title": "second two", "acceptance": ["The task can be claimed `true`"] }),
     )
     .await;
     assert_eq!(
@@ -789,7 +819,7 @@ async fn unassigned_tasks_are_visible_and_claim_assigns_the_callers_workspace() 
         json!({
             "title": "unassigned",
             "workspace": null,
-            "acceptance": ["The task can be claimed after workspace assignment"],
+            "acceptance": ["The task can be claimed after workspace assignment `true`"],
         }),
     )
     .await;
@@ -821,7 +851,7 @@ async fn an_unready_unassigned_claim_keeps_workspace_assignment_without_a_run() 
 
     let message = refused(r.addr, &token, "task_claim", json!({ "id": id })).await;
     assert!(
-        message.contains("task needs at least one verifiable acceptance item"),
+        message.contains("task needs at least one executable acceptance item"),
         "{message}"
     );
     assert_eq!(

@@ -129,7 +129,7 @@ impl Rig {
                 None,
                 proto::TaskPatch {
                     title: Some(title.to_string()),
-                    acceptance: Some(vec!["The task can be claimed or resumed".to_string()]),
+                    acceptance: Some(vec!["The task can be claimed or resumed `true`".to_string()]),
                     ..Default::default()
                 },
             )

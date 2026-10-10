@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Tooltip } from './ui/Tooltip'
 import {
   FreeTextOption,
@@ -44,6 +44,12 @@ export interface QuestionCardProps {
   error?: QuestionCardError
   disabled?: boolean
   disabledReason?: string
+  /** Context below the question, such as why it is asked. */
+  notes?: ReactNode
+  /** False when the asker has no skip, so the header offers none. */
+  skippable?: boolean
+  /** False when several cards share a page: each would answer the same digit key. */
+  keyboard?: boolean
   className?: string
 }
 
@@ -65,17 +71,22 @@ export function QuestionCard({
   error,
   disabled = false,
   disabledReason,
+  notes,
+  skippable = true,
+  keyboard = true,
   className = ''
 }: QuestionCardProps): React.JSX.Element {
   const isSelectBody = body === 'multi-select' || body === 'single-select'
   const isEmpty = isSelectBody && options === undefined
   const isEmptySet = isSelectBody && options !== undefined && options.length === 0
   const escapeHatchNumber = (options?.length ?? 0) + 1
-  const interactive = isSelectBody && !disabled && !loading && !error && !isEmpty && !isEmptySet
+  const interactive = keyboard && isSelectBody && !disabled && !loading && !error && !isEmpty && !isEmptySet
 
   useEffect(() => {
     if (!interactive) return
     const handler = (e: KeyboardEvent): void => {
+      // Digits typed into a field or a terminal belong to that field, not to the card.
+      if (e.ctrlKey || e.metaKey || e.altKey || isTextEntry(e.target)) return
       const n = Number(e.key)
       if (!Number.isInteger(n) || n < 1) return
       if (n === escapeHatchNumber) {
@@ -103,12 +114,13 @@ export function QuestionCard({
         <QuestionPager>
           ‹ {questionIndex} of {questionCount} ›
         </QuestionPager>
-        <Tooltip label={disabled ? disabledReason : undefined} className="inline-flex">
+        {skippable && <Tooltip label={disabled ? disabledReason : undefined} className="inline-flex">
           <SkipButton disabled={disabled} onClick={onSkip} />
-        </Tooltip>
+        </Tooltip>}
       </PromptHeader>
 
       <PromptText>{question}</PromptText>
+      {notes}
 
       {error ? (
         <RetryMessage message={error.message} onRetry={error.onRetry} />
@@ -161,4 +173,9 @@ export function QuestionCard({
       )}
     </PromptCard>
   )
+}
+
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
 }

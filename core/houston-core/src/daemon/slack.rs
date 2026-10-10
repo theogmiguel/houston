@@ -1358,7 +1358,9 @@ impl Daemon {
         }
         tracing::info!("slack: the owner accepted request {}", row.id);
         let working = self.slack_working_runs()?;
-        if working >= proto::SLACK_RUNS_WORKING_MAX {
+        if working >= proto::SLACK_RUNS_WORKING_MAX
+            || self.factory_start_blocked(true, row.task_id)?.is_some()
+        {
             let now = now_unix_ms();
             self.db.intake_set_state(row.id, INTAKE_QUEUED, now)?;
             let position = self
@@ -2314,7 +2316,9 @@ impl Daemon {
         self.slack_close_finished()?;
         self.slack_follow_runs().await?;
         for row in self.db.intake_queue()? {
-            if self.slack_working_runs()? >= proto::SLACK_RUNS_WORKING_MAX {
+            if self.slack_working_runs()? >= proto::SLACK_RUNS_WORKING_MAX
+                || self.factory_start_blocked(true, row.task_id)?.is_some()
+            {
                 break;
             }
             self.slack_start(&row).await?;
@@ -2698,11 +2702,15 @@ impl Daemon {
         id: i64,
         summary: Option<&str>,
         form: Option<ResultForm>,
+        evidence: Option<super::task_proof::TaskProofInput>,
         session: u32,
         actor: &str,
         operation: &str,
     ) -> Result<proto::ServerMsg> {
         let summary = summary.map(str::trim).filter(|s| !s.is_empty());
+        // Checked and stored first, so a malformed proof is refused before the
+        // handback writes anything.
+        let (proof, missing) = self.task_record_proof(id, session, evidence)?;
         let intake = self.db.intake_for_task(id)?;
         let summary = match (&intake, form) {
             (Some(row), form) => {
@@ -2746,7 +2754,17 @@ impl Daemon {
                 ),
             },
         };
-        self.task_handback(workspace, id, &summary, session, actor, operation)
+        let summary = match missing {
+            Some(note) => format!("{summary}\n\n{note}"),
+            None => summary,
+        };
+        let msg = self.task_handback(workspace, id, &summary, session, actor, operation)?;
+        if let (proto::ServerMsg::TaskChanged { .. }, Some((_, proof))) = (&msg, &proof) {
+            if let Some(pr) = proof.pr_number {
+                self.task_watch_handback_pr(id, session, pr);
+            }
+        }
+        Ok(msg)
     }
 
     /// Answers are typed into their pane only when it is idle, the way a

@@ -6,8 +6,16 @@ import type { Task } from '../../houston/generated/Task'
 import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
 import type { TaskStartSettings } from '../../houston/useTasks'
+import { isPullRequestUrl } from '../../houston/taskDomain'
 import {
+  BulletList,
   Button,
+  CopyChip,
+  Disclosure,
+  Inline,
+  InlineLink,
+  MonoBlock,
+  StatusLabel,
   TaskAgentIcon,
   TaskAgentTag,
   TaskButton,
@@ -23,7 +31,8 @@ import {
   TaskReviewVerdict,
   TaskStartSelect,
   TaskStateText,
-  TaskTagChip
+  TaskTagChip,
+  Text
 } from '../ui'
 import { Icon } from '../ui/Icon'
 import { IconGitBranch, IconPlay } from '../icons'
@@ -273,6 +282,7 @@ export function TaskExecutionCard({
       </TaskExecDetails>
       {outcome !== null && <ReviewFindings outcome={outcome} />}
       {reason !== null && reason !== '' && <RunReason reason={reason} />}
+      <RunProof run={run} pullRequestUrl={pullRequestUrl ?? null} />
       <ExecutionActions
         run={run}
         session={session}
@@ -315,7 +325,7 @@ function TaskDrawerExecution({
   onRunControl: (runId: number, action: TaskRunAction) => void
 }): React.JSX.Element {
   const branch = branchReuse ? `Reuses ${branchReuse}` : run.branch ? `Reuses ${run.branch}` : 'Reuses task worktree'
-  const pullRequest = pullRequestUrl ? pullRequestNumber(pullRequestUrl) : null
+  const pullRequest = run.pr_number ?? (pullRequestUrl ? pullRequestNumber(pullRequestUrl) : null)
   const age = runIsOpen(run.state) ? formatAge(run.started_at_ms, now) : `Stopped ${formatAge(run.ended_at_ms ?? run.started_at_ms, now)} ago`
   const status = runIsOpen(run.state) ? runStateLabel(run.state, run.kind) : 'Idle'
 
@@ -327,6 +337,7 @@ function TaskDrawerExecution({
   >
     {outcome !== null && <ReviewFindings outcome={outcome} />}
     {reason !== null && reason !== '' && <RunReason reason={reason} />}
+    <RunProof run={run} pullRequestUrl={pullRequestUrl ?? null} />
     <ExecutionActions
       run={run}
       session={session}
@@ -342,6 +353,47 @@ function TaskDrawerExecution({
 
 function pullRequestNumber(url: string): string | null {
   return url.match(/\/pull\/(\d+)(?:\/|[?#]|$)/)?.[1] ?? null
+}
+
+// A git short hash, as `git log --oneline` prints it.
+const SHORT_SHA = 7
+
+// What the agent's handback reported: the pull request, the pushed commit, the
+// commands it says it ran with their output, the capture and what becomes
+// permanent. Houston did not run these checks, so the labels say so.
+function RunProof({ run, pullRequestUrl }: { run: TaskRun; pullRequestUrl: string | null }): React.JSX.Element | null {
+  const url = pullRequestUrl ?? (run.pr_url && isPullRequestUrl(run.pr_url) ? run.pr_url : null)
+  const number = run.pr_number ?? (url ? pullRequestNumber(url) : null)
+  const sha = run.pushed_sha ?? null
+  const evidence = run.evidence ?? null
+  if (number == null && !sha && !evidence) return null
+  return (
+    <section aria-label="Run proof" data-testid="task-run-proof" className="grid gap-[var(--space-2)]">
+      {(number != null || sha) && <Inline wrap gap="small">
+        {number != null && (url ? <InlineLink href={url}>Pull request #{number}</InlineLink> : <Text size="small">Pull request #{number}</Text>)}
+        {sha && <Text as="span" size="small" tone="muted">Pushed <CopyChip value={sha}>{sha.slice(0, SHORT_SHA)}</CopyChip></Text>}
+      </Inline>}
+      {evidence && evidence.verification.length > 0 && <div className="grid gap-[var(--space-1)]">
+        <Text size="small" weight="semibold">Verification reported by the agent</Text>
+        {evidence.verification.map((check, index) => (
+          <Disclosure key={index} summary={<span className="inline-flex min-w-0 items-center gap-[var(--space-2)]">
+            <StatusLabel status={check.passed ? 'Passed' : 'Failed'} size="small" />
+            <Text as="span" size="small" mono className="truncate">{check.command}</Text>
+          </span>}>
+            <MonoBlock variant="reason" data-testid="task-run-verification-output">{check.output || 'No output recorded.'}</MonoBlock>
+          </Disclosure>
+        ))}
+      </div>}
+      {evidence?.capture_path && <div className="grid gap-[var(--space-1)]">
+        <Text size="small" weight="semibold">Capture</Text>
+        <div><CopyChip value={evidence.capture_path}>{evidence.capture_path}</CopyChip></div>
+      </div>}
+      {evidence && evidence.permanent.length > 0 && <div className="grid gap-[var(--space-1)]">
+        <Text size="small" weight="semibold">What becomes permanent</Text>
+        <BulletList items={evidence.permanent} />
+      </div>}
+    </section>
+  )
 }
 
 // The execution card's slot for a task no run has opened. The mock has no

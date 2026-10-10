@@ -68,7 +68,7 @@ describe('TaskDetail tracker conflict guards', () => {
 
     act(() => emit({ type: 'task_domain_state', domain: {
       task_id: TASK.id, kind: 'delivery', project_id: PROJECT.id, delivery_id: null, blocked_by: [], slice_total: 0, slice_done: 0,
-      planning_session_id: null, readiness: { ready: true, reasons: [], acceptance_total: 0, acceptance_verifiable: 0, unresolved_questions: 0, unresolved_tracker_conflicts: 0, unfinished_blockers: [] },
+      planning_session_id: null, readiness: { ready: true, reasons: [], acceptance_total: 0, acceptance_verifiable: 0, acceptance_executable: 0, unresolved_questions: 0, unresolved_tracker_conflicts: 0, unfinished_blockers: [] },
       plan: null, unresolved_tracker_conflicts: 0
     } }))
     expect(sent.at(-1)).toEqual({ type: 'task_project_get', id: PROJECT.id })

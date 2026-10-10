@@ -76,10 +76,10 @@ five attempts, and the status line names it.
    start of the request, whether it would start now or wait, and **Accept**, **Refuse** and
    **View message** buttons. Nothing is written in the thread. The task waits in **Backlog**
    with a **Slack · awaiting ✅** chip. Before starting, open the task in Houston, complete
-   any required Plan, add at least one verifiable acceptance criterion and make sure the
-   task is ready.
+   any required Plan, add at least one executable acceptance criterion (a command in
+   backticks the agent runs, such as `` `npm test` ``) and make sure the task is ready.
 2. The owner starts a ready task with **Accept**, by reacting with ✅ to the request, or
-   with **Start** in the Tasks tab. An attempt to accept an unready task does not start it:
+   with **Start** on the Tasks page. An attempt to accept an unready task does not start it:
    the request stays pending, gets ⚠️ and the owner receives the missing readiness criteria.
    Fix the task in Houston, then retry. A ✅ or a click
    from anyone else does nothing. **Refuse** asks for an optional reason: the reason is
@@ -90,7 +90,9 @@ five attempts, and the status line names it.
    a new worktree, as a Start does; the brief tells the agent to follow the repository's
    own factory skill when there is one and to hand the task back when done.
 3. At most two Slack runs work at once. A run waiting for an answer or for a confirmation
-   in Houston does not count. A request accepted beyond the limit waits with
+   in Houston does not count. The factory limits in Settings ▸ Tasks ▸ Factory also apply:
+   live task runs across every workspace, and the number of tasks waiting on you before
+   automatic starts pause. A request accepted beyond any of these limits waits with
    **Slack · queued #n**, the owner's message shows its place, and it starts when a slot
    frees.
 
@@ -108,7 +110,9 @@ five attempts, and the status line names it.
    subject of at most 60 characters, what changes, up to three steps to see it once it is
    live, caveats, a note for when it goes live and one for when it is dropped, and, for the
    owner only, short facts and warnings (`hs-task handback --subject … --changes … --step …
-   --live-note … --dropped-note …`, or the `result` of the `task_handback` tool). The
+   --live-note … --dropped-note …`, or the `result` of the `task_handback` tool), plus the
+   same proof any task's handback carries (pull request, pushed commit, verification
+   commands and their output; see [Tasks](tasks.md)), which stays in Houston. The
    thread gets **Ready, waiting for review** with what changes, how to check it and that a
    developer still reviews it; the request gets 🏁. A request the agent refuses at triage
    (`--refused`) gets **Not going ahead** with the agent's reason instead, and 🚫. The
@@ -129,9 +133,9 @@ five attempts, and the status line names it.
    repository's own rule; without it, three files or fewer count as small. Up to 15 files
    and 600 changed lines is medium; anything larger is large.
 
-6. When the owner moves a handed-back task to **Done**, Houston posts the agent's "live"
+6. When the owner moves a handed-back task to **Done** (**Mark done** in the task), Houston posts the agent's "live"
    note to the thread, with how to ask for another change, and the request gets 🚀; on GitHub, the merge watch moves the task to
-   Done by itself. Moving it to **Canceled** posts the "dropped" note and 🚫. A request
+   Done by itself. Moving it to **Canceled** (**Cancel task**) posts the "dropped" note and 🚫. A request
    refused at triage gets no second note. Houston watches no forge for a merge or a
    deploy of its own: the task's state is the signal.
 

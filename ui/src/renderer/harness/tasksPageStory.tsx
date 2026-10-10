@@ -44,7 +44,7 @@ function domain(id: number): TaskDomain {
   return {
     task_id: id, kind: delivery ? 'delivery' : 'slice', project_id: projectId, delivery_id: id === 45 || id === 42 ? 39 : null,
     slice_total: delivery ? 2 : 0, slice_done: 0, planning_session_id: null, blocked_by: [], plan: null,
-    readiness: { ready: reasons.length === 0, reasons, acceptance_total: 2, acceptance_verifiable: 1, unresolved_questions: 0, unresolved_tracker_conflicts: 0, unfinished_blockers: [] },
+    readiness: { ready: reasons.length === 0, reasons, acceptance_total: 2, acceptance_verifiable: 1, acceptance_executable: 1, unresolved_questions: 0, unresolved_tracker_conflicts: 0, unfinished_blockers: [] },
     unresolved_tracker_conflicts: 0
   }
 }

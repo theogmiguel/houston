@@ -7,10 +7,13 @@ import type { TaskHistoryEntry } from '../../houston/generated/TaskHistoryEntry'
 import type { TaskPatch } from '../../houston/generated/TaskPatch'
 import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
+import type { TaskStatus } from '../../houston/generated/TaskStatus'
+import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskDetailData, TaskRefusal, TaskStartSettings } from '../../houston/useTasks'
 import type { HoustonClient } from '../../houston/client'
 import { isPullRequestUrl, linkIsPullRequest, sendTaskWire, type TaskProject, type TaskTrackerLink } from '../../houston/taskDomain'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { Icon } from '../ui/Icon'
 import { MarkdownPreview } from '../MarkdownPreview'
 import { ShellElement, ShellTaskDescriptionEditButton, ShellTaskDescriptionTextarea } from '../ui/ShellPrimitives'
@@ -36,11 +39,14 @@ import {
   actorLabel,
   formatAge,
   historyLine,
+  intakeLabel,
   READ_ONLY_REASON,
   taskReviewOutcome
 } from './format'
 import { TaskExecutionCard, TaskStartCard } from './TaskExecution'
+import { ACCEPTANCE_ITEMS_PER_TASK } from '../../houston/generated/DEFAULTS'
 import { TaskMenu } from './TaskMenu'
+import { TaskQuestionCard } from './TaskQuestionCard'
 import { TaskWorkflowPanel } from './TaskWorkflowPanel'
 import {
   Button,
@@ -64,6 +70,8 @@ import {
   TaskDrawerCard,
   TaskDrawerHeader,
   TaskDrawerOrigin,
+  TaskFieldInput,
+  TaskIconButton,
   Card,
   Inline,
   InlineLink,
@@ -74,6 +82,8 @@ import {
 
 export interface TaskDetailProps {
   detail: TaskDetailData
+  /** The list's summary of this task: it carries the intake state and the agent's open question. */
+  summary?: TaskSummary | null
   access: TasksAccess | null
   refusal: TaskRefusal | null
   now: number
@@ -179,6 +189,9 @@ function TaskDetailDrawer({ props, trackerLinks, trackerProject }: { props: Task
   const { task } = detail
   const latestRun = detail.runs[0] ?? null
   const archived = task.archived_at_ms != null
+  const finished = task.status === 'done' || task.status === 'canceled'
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const setStatus = (status: TaskStatus): void => props.onSave(task.id, task.revision, { status })
 
   return <TaskDetailFrame>
     {props.refusal && props.refusal.id === task.id && <RefusalBanner refusal={props.refusal} onReload={props.onReload} taskId={task.id} />}
@@ -189,6 +202,9 @@ function TaskDetailDrawer({ props, trackerLinks, trackerProject }: { props: Task
       status={task.status}
       actions={<>
         {props.primaryAction}
+        {finished
+          ? <Button variant="secondary" size="sm" data-testid="task-reopen" onClick={() => setStatus('todo')}>Reopen</Button>
+          : <Button variant="secondary" size="sm" data-testid="task-mark-done" onClick={() => setStatus('done')}>Mark done</Button>}
         {props.onBack && <Button variant="icon" icon={IconClose} aria-label="Close task details" onClick={props.onBack} />}
         <TaskMenu
           label="Task actions"
@@ -197,12 +213,24 @@ function TaskDetailDrawer({ props, trackerLinks, trackerProject }: { props: Task
           sections={[{ items: [
             ...(latestRun?.session_id != null ? [{ id: 'task-open-session', label: 'Open session', onSelect: () => props.onOpenSession(latestRun.session_id!) }] : []),
             { id: 'task-copy-key', label: 'Copy task key', onSelect: () => void navigator.clipboard?.writeText(task.key).catch(() => {}) },
+            ...(finished ? [] : [{ id: 'task-cancel', label: 'Cancel task', onSelect: () => setConfirmCancel(true) }]),
             { id: 'task-archive', label: archived ? 'Restore task' : 'Archive task', onSelect: () => props.onArchive(task.id, !archived, task.revision) }
           ] }]}
         />
       </>}
     />
     <TaskDrawerContents props={props} trackerLinks={trackerLinks} trackerProject={trackerProject} />
+    {confirmCancel && <ConfirmDialog
+      title={`Cancel ${task.key}?`}
+      confirmLabel="Cancel task"
+      onCancel={() => setConfirmCancel(false)}
+      onConfirm={() => {
+        setConfirmCancel(false)
+        setStatus('canceled')
+      }}
+    >
+      <Text>The task moves to Canceled. Reopen returns it to Todo.</Text>
+    </ConfirmDialog>}
   </TaskDetailFrame>
 }
 
@@ -218,8 +246,12 @@ function TaskDrawerContents({ props, trackerLinks, trackerProject }: {
   const review = taskReviewOutcome(detail.runs, detail.comments)
   const checked = detail.acceptance.filter((item) => item.checked_at_ms != null).length
   const [description, setDescription] = useServerDraft(task.description, task.revision)
+  const intake = props.summary?.id === task.id ? intakeLabel(props.summary) : null
+  const question = props.summary?.id === task.id ? props.summary.open_question ?? null : null
 
   return <>
+    {intake && <TaskDrawerOrigin><span data-testid="task-intake-chip"><Chip variant="state" tone="info" label={intake} /></span></TaskDrawerOrigin>}
+    {question && <TaskQuestionCard question={question} client={props.client ?? null} refusal={props.refusal} onOpenSession={props.onOpenSession} />}
     {latestRun && <TaskExecutionCard
       run={latestRun}
       sessions={props.sessions}
@@ -238,12 +270,14 @@ function TaskDrawerContents({ props, trackerLinks, trackerProject }: {
     <TaskDescriptionSection task={task} description={description} setDescription={setDescription} onSave={props.onSave} />
     <div className="grid gap-[var(--space-2)]">
       <TaskTrackerLinks client={props.client} taskId={task.id} taskRevision={task.revision} projectRevision={trackerProject?.revision ?? null} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
-      <TaskSectionLabel heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
-      <TaskDrawerCard><AcceptanceList
+      <AcceptanceSection
+        taskId={task.id}
+        revision={task.revision}
         items={detail.acceptance}
-        readOnly={false}
+        checked={checked}
         onCheck={(item, isChecked) => props.onCheck(task.id, item, isChecked)}
-      /></TaskDrawerCard>
+        onSave={props.onSave}
+      />
       {task.origin?.kind === 'harness_finding' && <TaskDrawerOrigin><Chip variant="compound" label={`From Harness finding · ${task.origin.key}`} /></TaskDrawerOrigin>}
     </div>
     <section className="grid gap-[var(--space-2)]">
@@ -375,6 +409,88 @@ function RefusalBanner({
   )
 }
 
+// The daemon's rule (task_proof.rs acceptance_command): the first backtick
+// pair, trimmed of spaces, holds a command.
+function isExecutableItem(text: string): boolean {
+  const start = text.indexOf('`')
+  const end = start < 0 ? -1 : text.indexOf('`', start + 1)
+  return end > start && text.slice(start + 1, end).replace(/^ +| +$/g, '') !== ''
+}
+
+/// Acceptance with in-place editing. A save replaces the list through
+/// `task_save`; the daemon keeps the tick of each item whose text is unchanged.
+function AcceptanceSection({ taskId, revision, items, checked, onCheck, onSave }: {
+  taskId: number
+  revision: number
+  items: TaskAcceptanceItem[]
+  checked: number
+  onCheck: (itemId: number, checked: boolean) => void
+  onSave: TaskDetailProps['onSave']
+}): React.JSX.Element {
+  // The revision the draft was read at, so a change made meanwhile comes back as a conflict.
+  const [draft, setDraft] = useState<{ items: string[]; revision: number } | null>(null)
+  const [addedItem, setAddedItem] = useState<number | null>(null)
+  useEffect(() => {
+    setDraft(null)
+  }, [taskId])
+  const executable = items.filter((item) => isExecutableItem(item.text)).length
+  const edit = (index: number, value: string): void => setDraft((current) => current && { ...current, items: current.items.map((item, i) => (i === index ? value : item)) })
+  const save = (): void => {
+    if (!draft) return
+    onSave(taskId, draft.revision, { acceptance: draft.items.map((item) => item.trim()).filter((item) => item !== '') })
+    setDraft(null)
+  }
+
+  return <section className="grid gap-[var(--space-2)]" aria-label="Acceptance" data-testid="task-acceptance">
+    <div className="flex items-center gap-[var(--space-2)]">
+      <div className="flex-1"><TaskSectionLabel heading="Acceptance" trailing={`${checked}/${items.length} · ${executable} executable`} /></div>
+      {!draft && <Button variant="ghost" size="sm" data-testid="task-acceptance-edit" onClick={() => {
+        setAddedItem(null)
+        setDraft({ items: items.map((item) => item.text), revision })
+      }}>Edit</Button>}
+    </div>
+    <TaskDrawerCard>
+      {draft ? <div className="grid gap-[var(--space-2)]">
+        {draft.items.map((item, index) => (
+          <div key={index} className="flex items-center gap-[var(--space-2)]">
+            <TaskFieldInput
+              className="flex-1"
+              autoFocus={index === addedItem}
+              aria-label={`Acceptance item ${index + 1}`}
+              value={item}
+              onChange={(event) => edit(index, event.target.value)}
+            />
+            <TaskIconButton
+              glyph={IconClose}
+              aria-label={`Remove acceptance item ${index + 1}`}
+              onClick={() => setDraft((current) => current && { ...current, items: current.items.filter((_, i) => i !== index) })}
+            />
+          </div>
+        ))}
+        <Text size="small" tone="muted">A command in backticks, such as `cargo test -p app`, makes an item executable. A task needs one to be ready; other items stay as criteria for you.</Text>
+        <Inline wrap gap="small">
+          <Tooltip label={draft.items.length >= ACCEPTANCE_ITEMS_PER_TASK ? `A task holds at most ${ACCEPTANCE_ITEMS_PER_TASK} acceptance items` : undefined} className="inline-flex">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={IconPlus}
+              data-testid="task-acceptance-add"
+              disabled={draft.items.length >= ACCEPTANCE_ITEMS_PER_TASK}
+              onClick={() => {
+                setAddedItem(draft.items.length)
+                setDraft((current) => current && { ...current, items: [...current.items, ''] })
+              }}
+            >Add item</Button>
+          </Tooltip>
+          <span className="flex-1" />
+          <Button variant="ghost" size="sm" onClick={() => setDraft(null)}>Cancel</Button>
+          <Button variant="primary" size="sm" data-testid="task-acceptance-save" onClick={save}>Save acceptance</Button>
+        </Inline>
+      </div> : <AcceptanceList items={items} readOnly={false} onCheck={onCheck} />}
+    </TaskDrawerCard>
+  </section>
+}
+
 function AcceptanceList({
   items,
   readOnly,
@@ -386,16 +502,19 @@ function AcceptanceList({
 }): React.JSX.Element {
   if (items.length === 0) return <TaskBody>No acceptance items.</TaskBody>
   const rows = items.map((item) => (
-        <Tooltip key={item.id} label={readOnly ? READ_ONLY_REASON : undefined} className="flex">
-          <TaskAcceptanceRow
-            testId={`task-acceptance-${item.id}`}
-            checked={item.checked_at_ms != null}
-            text={item.text}
-            by={item.checked_by ? actorLabel(item.checked_by) : null}
-            disabled={readOnly}
-            onToggle={() => onCheck(item.id, item.checked_at_ms == null)}
-          />
-        </Tooltip>
+        <div key={item.id} className="flex items-center gap-[var(--space-2)]">
+          <Tooltip label={readOnly ? READ_ONLY_REASON : undefined} className="flex min-w-0 flex-1">
+            <TaskAcceptanceRow
+              testId={`task-acceptance-${item.id}`}
+              checked={item.checked_at_ms != null}
+              text={item.text}
+              by={item.checked_by ? actorLabel(item.checked_by) : null}
+              disabled={readOnly}
+              onToggle={() => onCheck(item.id, item.checked_at_ms == null)}
+            />
+          </Tooltip>
+          {isExecutableItem(item.text) && <span data-testid={`task-acceptance-executable-${item.id}`}><Chip variant="state" tone="info" label="Executable" /></span>}
+        </div>
   ))
   return <div>{rows}</div>
 }

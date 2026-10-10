@@ -185,7 +185,7 @@ impl Rig {
                 proto::TaskPatch {
                     title: Some(title.into()),
                     status: Some(proto::TaskStatus::Todo),
-                    acceptance: Some(vec!["Windows check passes".into()]),
+                    acceptance: Some(vec!["Windows check passes `true`".into()]),
                     ..Default::default()
                 },
             )
@@ -297,7 +297,7 @@ async fn windows_task_queue_result_and_independent_review_complete_a_task() {
         .orchestrate_submit(
             child,
             json!({"task_result":{"status":"complete","summary":"Windows implementation verified",
-            "checks":[{"name":"Windows check passes","passed":true,"evidence":"fixture"}]}})
+            "checks":[{"name":"Windows check passes `true`","passed":true,"evidence":"fixture"}]}})
             .to_string()
             .into(),
         )
@@ -333,7 +333,7 @@ async fn windows_task_queue_result_and_independent_review_complete_a_task() {
         .orchestrate_submit(
             reviewer,
             json!({"task_review":{"verdict":"pass","findings":[],
-            "checks":[{"name":"Windows check passes","passed":true,"evidence":"fixture"}]}})
+            "checks":[{"name":"Windows check passes `true`","passed":true,"evidence":"fixture"}]}})
             .to_string()
             .into(),
         )

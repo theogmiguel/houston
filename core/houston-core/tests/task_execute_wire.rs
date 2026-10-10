@@ -352,7 +352,7 @@ async fn execute_spawns_a_child_with_a_delegation_and_the_task_worktree() {
     let r = rig("execute-child").await;
     r.daemon.orchestration_set(true).unwrap();
     let parent = r.parent();
-    let id = r.create_task("Fix login", &["Login no longer crashes"]);
+    let id = r.create_task("Fix login", &["Login no longer crashes `true`"]);
 
     let reply = r
         .daemon
@@ -413,7 +413,7 @@ async fn a_structured_result_ticks_acceptance_and_moves_to_review() {
     let parent = r.parent();
     let id = r.create_task(
         "Fix login",
-        &["Login no longer crashes", "A test covers it"],
+        &["Login no longer crashes `true`", "A test covers it `true`"],
     );
     r.daemon
         .task_execute(
@@ -430,8 +430,8 @@ async fn a_structured_result_ticks_acceptance_and_moves_to_review() {
 
     let body = "The login fix is in.\n\
                 {\"task_result\":{\"status\":\"complete\",\"summary\":\"guarded the empty \
-                password\",\"checks\":[{\"name\":\"Login no longer crashes\",\"passed\":true,\
-                \"evidence\":\"tests/login.rs\"},{\"name\":\"A test covers it\",\"passed\":false,\
+                password\",\"checks\":[{\"name\":\"Login no longer crashes `true`\",\"passed\":true,\
+                \"evidence\":\"tests/login.rs\"},{\"name\":\"A test covers it `true`\",\"passed\":false,\
                 \"evidence\":\"\"}]}}";
     r.daemon
         .orchestrate_submit(child, body.to_string().into())
@@ -458,7 +458,7 @@ async fn a_malformed_result_leaves_the_run_needing_review_with_the_raw_text() {
     let r = rig("execute-malformed").await;
     r.daemon.orchestration_set(true).unwrap();
     let parent = r.parent();
-    let id = r.create_task("Fix login", &["Login no longer crashes"]);
+    let id = r.create_task("Fix login", &["Login no longer crashes `true`"]);
     r.daemon
         .task_execute(
             &r.workspace(),

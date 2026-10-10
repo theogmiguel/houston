@@ -7,14 +7,15 @@ import { useTaskProjects } from '../../houston/useTaskProjects'
 import type { TaskDomain, TaskProject } from '../../houston/taskDomain'
 import { AnimOut } from '../ui/AnimOut'
 import { PanelListHead, PanelTextInput } from '../ui/PanelControls'
-import { Button, EmptyState, Inline, ListDetail, NavSurfaceFrame, PageFrame, PageHeader, Segmented, Select, StatusLabel, Text, type ListDetailItem } from '../ui'
+import { Button, Chip, EmptyState, Inline, ListDetail, NavSurfaceFrame, PageFrame, PageHeader, Segmented, Select, StatusLabel, Text, type ListDetailItem } from '../ui'
 import { IconChevronDown, IconChevronRight, IconFolderOpen, IconPlus, IconTasks } from '../icons'
 import { TaskComposer } from '../tasks/TaskComposer'
 import { TaskDetail } from '../tasks/TaskDetail'
 import { TaskProjectsDialog } from '../tasks/TaskProjectsDialog'
-import { FINISHED_GROUP_LABEL, formatAge, formatAgo, queueActionOf, queueGroupOf, STATUS_LABEL, taskAgentLabel } from '../tasks/format'
+import { FINISHED_GROUP_LABEL, formatAge, formatAgo, intakeLabel, queueActionOf, queueGroupOf, STATUS_LABEL, taskAgentLabel } from '../tasks/format'
 import { filterTasks, isFinished, projectEntries, queueEntries, type TaskGrouping, type TaskListEntry } from '../tasks/taskListSections'
 import { isPullRequestUrl } from '../../houston/taskDomain'
+import { queueAgentLabel, questionFor, useInboxRows } from '../tasks/needsInput'
 import type { InboxRow } from '../../houston/generated/InboxRow'
 
 type TaskItem = ListDetailItem & { task: TaskSummary }
@@ -158,6 +159,7 @@ export function TasksSurface({
             : tasks.detail && tasks.detail.task.id === item.task.id ? (
               <TaskDetail
                 client={client}
+                summary={item.task}
                 onStartRequested={onStartRequested}
                 detail={tasks.detail}
                 access={tasks.access}
@@ -231,21 +233,6 @@ function TaskListEmpty({ filtered }: { filtered: boolean }): React.JSX.Element {
     : <EmptyState icon={IconTasks} heading="No tasks" description="Create a task to hand work to an agent." copy="compact" />
 }
 
-function useInboxRows(client: HoustonClient | null, workspaces: string[], setRows: React.Dispatch<React.SetStateAction<InboxRow[]>>): void {
-  useEffect(() => {
-    if (!client || workspaces.length === 0) return
-    const known = new Set(workspaces)
-    const offRows = client.subscribe('inbox_rows', (message) => {
-      if (known.has(message.workspace)) setRows((current) => [...current.filter((row) => row.workspace !== message.workspace), ...message.rows])
-    })
-    const offChanged = client.subscribe('inbox_changed', (message) => {
-      if (known.has(message.workspace)) setRows((current) => [...current.filter((row) => row.id !== message.row.id), message.row])
-    })
-    workspaces.forEach((path) => client.inboxList(path))
-    return () => { offRows(); offChanged() }
-  }, [client, workspaces, setRows])
-}
-
 /** The queue's next step for a task when the detail does not already offer it. */
 function QueueActionButton({ task, sessions, onAction }: { task: TaskSummary; sessions: ReadonlyMap<number, SessionInfo>; onAction: () => void }): React.JSX.Element | null {
   const action = queueActionOf(task)
@@ -258,11 +245,13 @@ function QueueActionButton({ task, sessions, onAction }: { task: TaskSummary; se
 function TaskListMeta({ entry, notes }: { entry: TaskListEntry; notes: React.ReactNode[] }): React.JSX.Element {
   const { task } = entry
   const status = statusOf(task)
+  const intake = intakeLabel(task)
   return (
     <span className="inline-flex min-w-0 items-center gap-[var(--space-1-5)]">
       {status ? <StatusLabel status={status} size="small" /> : <span>{STATUS_LABEL[task.status]}</span>}
       <span aria-hidden="true">·</span>
       <Text as="span" mono>{task.key}</Text>
+      {intake && <span data-testid="task-intake-chip"><Chip variant="state" tone="info" label={intake} /></span>}
       {notes.map((note, index) => <Fragment key={index}><span aria-hidden="true">·</span><span className="truncate">{note}</span></Fragment>)}
     </span>
   )
@@ -277,7 +266,7 @@ function projectNotes(task: TaskSummary, delivery: TaskSummary | null, domain: T
 }
 
 function statusOf(task: TaskSummary): 'Needs input' | 'Ready' | 'Working' | 'Idle' | null {
-  if (task.open_run?.state === 'waiting_for_input') return 'Needs input'
+  if (task.open_question || task.open_run?.state === 'waiting_for_input') return 'Needs input'
   if (task.status === 'in_review') return 'Ready'
   if (queueGroupOf(task) === 'working') return 'Working'
   if (queueGroupOf(task) === 'stopped') return 'Idle'
@@ -285,6 +274,7 @@ function statusOf(task: TaskSummary): 'Needs input' | 'Ready' | 'Working' | 'Idl
 }
 
 function metaOf(task: TaskSummary, now: number, sessions: ReadonlyMap<number, SessionInfo>, inboxRows: InboxRow[]): React.ReactNode {
+  if (task.open_question) return `${task.open_run ? queueAgentLabel(task.open_run.provider) : 'The agent'} asks: “${task.open_question.question}”`
   if (task.open_run?.state === 'waiting_for_input') {
     const question = questionFor(task, sessions, inboxRows)
     return question ? `${queueAgentLabel(task.open_run.provider)} asks: “${question}”` : `${queueAgentLabel(task.open_run.provider)} needs input`
@@ -297,27 +287,6 @@ function metaOf(task: TaskSummary, now: number, sessions: ReadonlyMap<number, Se
   if (task.status === 'in_progress' || task.status === 'canceled') return <>stopped {formatAgo(task.updated_at_ms, now)} · acceptance {task.acceptance_checked}/{task.acceptance_total}</>
   if (task.origin?.kind === 'harness_finding') return 'From Harness'
   return task.workspace?.split(/[\\/]/).filter(Boolean).at(-1) ?? 'No workspace'
-}
-
-function questionFor(task: TaskSummary, sessions: ReadonlyMap<number, SessionInfo>, rows: InboxRow[]): string | null {
-  const sessionId = task.open_run?.session_id
-  if (sessionId == null) return null
-  const holdReason = sessions.get(sessionId)?.delegation?.hold_reason?.trim()
-  if (holdReason) return holdReason
-  const row = rows
-    .filter((item) => item.kind === 'needs_input' && item.from_session === sessionId && item.resolved_at == null)
-    .sort((a, b) => Number(b.created_at - a.created_at))[0]
-  if (!row) return null
-  const body = row.body.trim()
-  const specific = body.match(/^this child needs input:\s*(.*?)\s*\.?\s*Inspect it\s*\(/i)?.[1]?.trim().replace(/\.\s*$/, '')
-  if (specific) return specific
-  if (body.includes('did not say why')) return null
-  return body || row.summary || null
-}
-
-function queueAgentLabel(provider: AgentKind): string {
-  const label = taskAgentLabel(provider)
-  return provider === 'claude' ? `${label} Code` : label
 }
 
 function pullRequestNumber(url: string): string | null {

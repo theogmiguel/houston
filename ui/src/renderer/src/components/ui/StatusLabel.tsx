@@ -23,7 +23,8 @@ export const STATUS_LABELS = [
   'Stale',
   'Kept',
   'Watching',
-  'Verified'
+  'Verified',
+  'Passed'
 ] as const
 
 export type StatusLabelValue = (typeof STATUS_LABELS)[number]
@@ -53,7 +54,8 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   Stale: 'var(--warn)',
   Kept: 'var(--text-faint)',
   Watching: 'var(--info)',
-  Verified: 'var(--ok)'
+  Verified: 'var(--ok)',
+  Passed: 'var(--ok)'
 }
 
 const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {

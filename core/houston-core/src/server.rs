@@ -1459,6 +1459,48 @@ async fn dispatch(
                 Ok(())
             }
         },
+        proto::ClientMsg::TaskPlanReject {
+            id,
+            expected_revision,
+            plan_revision,
+            reason,
+        } => match daemon.task_plan_reject(id, expected_revision, plan_revision, &reason)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskQuestionAnswer {
+            question_id,
+            answer,
+        } => {
+            let d = Arc::clone(daemon);
+            let msg =
+                tokio::task::spawn_blocking(move || d.task_question_answer(question_id, &answer))
+                    .await??;
+            if matches!(msg, proto::ServerMsg::TaskRefused { .. }) {
+                let _ = send_msg(sink, &msg).await;
+            }
+            Ok(())
+        }
+        proto::ClientMsg::FactorySettingsGet => {
+            let _ = send_msg(sink, &daemon.factory_settings_state()?).await;
+            Ok(())
+        }
+        proto::ClientMsg::FactorySettingsSet {
+            live_runs_max,
+            needs_you_max,
+        } => {
+            let msg = daemon.factory_settings_set(live_runs_max, needs_you_max)?;
+            if matches!(msg, proto::ServerMsg::TaskRefused { .. }) {
+                let _ = send_msg(sink, &msg).await;
+            }
+            Ok(())
+        }
         proto::ClientMsg::TaskSave {
             workspace,
             id,
@@ -4853,6 +4895,9 @@ struct TaskHandbackBody {
     /// A Slack-filed task's fields for the thread and the owner.
     #[serde(default)]
     result: Option<crate::slack::form::ResultForm>,
+    /// The proof of done any task's handback may carry.
+    #[serde(default)]
+    evidence: Option<crate::daemon::TaskProofInput>,
 }
 
 /// Resolves global task references and checks the caller's agent scope.
@@ -5142,6 +5187,7 @@ async fn task_handback(
             id,
             body.summary.as_deref(),
             body.result,
+            body.evidence,
             scope.session_id,
             actor,
             "task_handback",
@@ -5150,8 +5196,8 @@ async fn task_handback(
     .await
 }
 
-/// Posts a Slack-filed task's question to its thread and returns at once; the
-/// answer reaches the pane later as a prompt, never as this call's result.
+/// Posts a task's question (to its Slack thread, or to Houston for any other
+/// task) and returns at once; the answer reaches the pane later as a prompt.
 async fn task_ask(
     State(daemon): State<Arc<Daemon>>,
     headers: HeaderMap,
@@ -5161,7 +5207,7 @@ async fn task_ask(
         Ok(s) => s,
         Err(r) => return *r,
     };
-    match tokio::task::spawn_blocking(move || daemon.slack_task_ask(scope.session_id, body)).await {
+    match tokio::task::spawn_blocking(move || daemon.task_ask(scope.session_id, body)).await {
         Ok(Ok(text)) => (StatusCode::OK, axum::Json(json!({"text": text}))).into_response(),
         Ok(Err(e)) => orch_error(StatusCode::CONFLICT, e),
         Err(e) => orch_err_response(anyhow::anyhow!("task ask worker failed: {e}")),

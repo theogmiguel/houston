@@ -13,7 +13,7 @@ import {
   TaskTagChip
 } from '../ui/TaskSurface'
 import { Tooltip } from '../ui/Tooltip'
-import { formatAge, runStateLabel, runStateTone, taskAgentLabel } from './format'
+import { formatAge, intakeLabel, runStateLabel, runStateTone, taskAgentLabel } from './format'
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 
 // The fixed right slot of a task row: a run's provider, state dot and label,
@@ -32,16 +32,6 @@ export function TaskRunMark({ run, showProvider = true }: { run: TaskRun; showPr
       <TaskStateText tone={tone}>{runStateLabel(run.state, run.kind)}</TaskStateText>
     </TaskLive>
   )
-}
-
-// A Slack-filed task waiting to start says why: for the owner's ✅, or for a
-// working slot with its place in the queue.
-function intakeLabel(task: TaskSummary): string | null {
-  const intake = task.intake
-  if (!intake || task.open_run) return null
-  if (intake.state === 'pending') return 'Slack · awaiting ✅'
-  if (intake.state === 'queued') return `Slack · queued #${intake.queue_position ?? '?'}`
-  return null
 }
 
 export function TaskRow({

@@ -282,14 +282,18 @@ fn all_specs() -> Vec<ToolSpec> {
             "task_handback",
             "Hand a task back",
             "Return finished work: the summary becomes a comment and the task moves to \
-             in_review, never done. A Slack-filed task gives `result` (fields in its brief).",
+             in_review, never done. A Slack-filed task gives `result` (fields in its brief). \
+             `evidence` records the PR, pushed SHA, verification commands with their output \
+             (expected for each acceptance item with a command in backticks), a capture path and \
+             what becomes permanent.",
             handback_schema(true),
         ),
         local_write(
             "task_ask",
-            "Ask in the request's thread",
-            "Slack-filed task: post one question to its thread, one button per option, then \
-             end your turn; the answer arrives as your next prompt.",
+            "Ask about the task",
+            "Ask the user one question about your task, one button per option: a Slack-filed \
+             task asks in its thread, any other task in Houston. Then end your turn; the answer \
+             arrives as your next prompt.",
             json!({
                 "type": "object",
                 "properties": {
@@ -469,10 +473,12 @@ fn advertised(daemon: &Daemon, scope: &McpScope) -> Vec<ToolSpec> {
     if !daemon.spawnable_by(scope.session_id) {
         specs.retain(|spec| spec.name != "task_execute" && spec.name != "task_review");
     }
-    // The Slack verbs cost every other pane advertisement bytes, so only a
-    // pane running a Slack-filed task sees them.
-    if !daemon.slack_task_session(scope.session_id) {
+    // task_ask costs every other pane advertisement bytes, so only a pane
+    // holding a task run sees it; the Slack fields only a Slack-filed one.
+    if !daemon.task_run_session(scope.session_id) {
         specs.retain(|spec| spec.name != "task_ask");
+    }
+    if !daemon.slack_task_session(scope.session_id) {
         for spec in specs.iter_mut().filter(|s| s.name == "task_handback") {
             spec.description = HANDBACK_DESCRIPTION.to_string();
             spec.input_schema = handback_schema(false);
@@ -482,7 +488,37 @@ fn advertised(daemon: &Daemon, scope: &McpScope) -> Vec<ToolSpec> {
 }
 
 const HANDBACK_DESCRIPTION: &str = "Return finished work: the summary becomes a comment and \
-     the task moves to in_review, never done.";
+     the task moves to in_review, never done. `evidence` records the PR, pushed SHA, the \
+     verification commands you ran with their output (expected for each acceptance item with a \
+     command in backticks), a capture path and what becomes permanent.";
+
+/// The proof of done a handback carries: required verification when the
+/// acceptance list has a command in backticks, everything else optional.
+fn evidence_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "pr": { "type": ["integer", "string"], "description": "Pull request number or URL; Houston watches it." },
+            "pushed_sha": { "type": "string" },
+            "verification": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string" },
+                        "output": { "type": "string" },
+                        "passed": { "type": "boolean" },
+                    },
+                    "required": ["command", "passed"],
+                    "additionalProperties": false,
+                },
+            },
+            "capture_path": { "type": "string" },
+            "permanent": { "type": "array", "items": { "type": "string" } },
+        },
+        "additionalProperties": false,
+    })
+}
 
 /// `result` carries a Slack-filed task's fields instead of the summary.
 fn handback_schema(slack: bool) -> Value {
@@ -493,6 +529,7 @@ fn handback_schema(slack: bool) -> Value {
                 "id": id_property(),
                 "summary": { "type": "string" },
                 "result": { "type": "object" },
+                "evidence": evidence_schema(),
             },
             "required": ["id"],
             "additionalProperties": false,
@@ -503,6 +540,7 @@ fn handback_schema(slack: bool) -> Value {
             "properties": {
                 "id": id_property(),
                 "summary": { "type": "string" },
+                "evidence": evidence_schema(),
             },
             "required": ["id", "summary"],
             "additionalProperties": false,
@@ -791,11 +829,20 @@ fn dispatch(
                 ),
                 None => None,
             };
+            let evidence = match args.get("evidence") {
+                Some(raw) => Some(
+                    serde_json::from_value::<crate::daemon::TaskProofInput>(raw.clone()).map_err(
+                        |e| anyhow::anyhow!("task_handback evidence does not parse: {e}"),
+                    )?,
+                ),
+                None => None,
+            };
             let msg = daemon.task_handback_from(
                 workspace,
                 id,
                 summary,
                 result,
+                evidence,
                 session,
                 &actor,
                 "task_handback",
@@ -806,7 +853,7 @@ fn dispatch(
         "task_ask" => {
             let form: crate::slack::form::QuestionForm = serde_json::from_value(args.clone())
                 .map_err(|e| anyhow::anyhow!("task_ask arguments do not parse: {e}"))?;
-            let text = daemon.slack_task_ask(session, form)?;
+            let text = daemon.task_ask(session, form)?;
             Ok(task_output(json!({ "posted": true, "next": text })))
         }
         "task_execute" => {
