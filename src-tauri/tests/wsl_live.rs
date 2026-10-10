@@ -8,6 +8,8 @@
 mod wsl {
     #[path = "../../src/wsl/command.rs"]
     pub mod command;
+    #[path = "../../src/wsl/distros.rs"]
+    pub mod distros;
     #[path = "../../src/wsl/relay.rs"]
     pub mod relay;
 }

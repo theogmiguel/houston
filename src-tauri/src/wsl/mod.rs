@@ -167,7 +167,11 @@ pub fn ensure_log_line(distro: &str, outcome: &Result<EnsureReport, String>) -> 
 
 /// Exit 0 and 3 print one JSON line; anything else is a failure described on stderr.
 /// Stdout is never quoted in an error: it carries the token.
-fn interpret_ensure(distro: &str, out: &RunOutput) -> Result<EnsureReport, String> {
+fn interpret_ensure(
+    distro: &str,
+    argv: &[String],
+    out: &RunOutput,
+) -> Result<EnsureReport, String> {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let report = stdout
         .lines()
@@ -176,9 +180,9 @@ fn interpret_ensure(distro: &str, out: &RunOutput) -> Result<EnsureReport, Strin
         .and_then(|line| serde_json::from_str::<EnsureReport>(line.trim()).ok());
     match (out.code, report) {
         (Some(0 | 3), Some(report)) => Ok(report),
-        (code, _) => Err(format!(
-            "wsl-ensure failed in {distro} (exit {code:?}): {}",
-            stderr_text(out)
+        _ => Err(format!(
+            "wsl-ensure failed in {distro}: {}",
+            command::failure(argv, out, false)
         )),
     }
 }
@@ -204,19 +208,9 @@ fn parse_version(raw: &str) -> Option<(u32, u32)> {
     Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
 }
 
-/// `wsl.exe` prints its own errors on stdout, and the probe's stdout carries no secret.
 fn probe_failure(distro: &str, out: &RunOutput) -> String {
-    let said = format!(
-        "{}
-{}",
-        decode(&out.stdout).trim(),
-        stderr_text(out)
-    );
-    format!(
-        "could not start {distro} to check it (exit {:?}): {}",
-        out.code,
-        said.trim()
-    )
+    let failure = command::failure(&command::probe(distro), out, true);
+    format!("could not start {distro} to check it: {failure}")
 }
 
 fn check_capabilities(distro: &str, out: &RunOutput) -> Result<(), String> {
@@ -291,12 +285,7 @@ impl Inner {
     async fn distros(&self) -> Result<Vec<Distro>, String> {
         let out = self.run(command::list()).await?;
         if out.code != Some(0) {
-            let said = format!("{}\n{}", decode(&out.stdout).trim(), stderr_text(&out));
-            return Err(format!(
-                "wsl.exe -l -v exited with {:?}: {}",
-                out.code,
-                said.trim()
-            ));
+            return Err(command::failure(&command::list(), &out, true));
         }
         Ok(distros::parse_list(&decode(&out.stdout)))
     }
@@ -309,8 +298,8 @@ impl Inner {
 
     async fn ensure(&self, distro: &str, install_dir: &str) -> Result<EnsureReport, String> {
         let argv = command::ensure(distro, install_dir, &self.opts.channel);
-        let outcome = match self.run(argv).await {
-            Ok(out) => interpret_ensure(distro, &out),
+        let outcome = match self.run(argv.clone()).await {
+            Ok(out) => interpret_ensure(distro, &argv, &out),
             Err(e) => Err(e),
         };
         eprintln!("{}", ensure_log_line(distro, &outcome));
@@ -418,7 +407,7 @@ impl Inner {
             Ok(dir) => self
                 .run(command::launcher_remove(distro, &dir))
                 .await
-                .map(|out| format!("exit {:?}: {}", out.code, stderr_text(&out))),
+                .map(|out| format!("{}: {}", command::exit_text(out.code), stderr_text(&out))),
             Err(e) => Err(e),
         };
         match outcome {
@@ -1169,7 +1158,7 @@ mod tests {
             stdout: format!("{}\n", serde_json::to_string(&report).unwrap()).into_bytes(),
             stderr: b"houston-core wsl-ensure: channel wslt: Attached".to_vec(),
         };
-        let line = ensure_log_line("Ubuntu", &interpret_ensure("Ubuntu", &out));
+        let line = ensure_log_line("Ubuntu", &interpret_ensure("Ubuntu", &ensure_argv(), &out));
         assert!(line.contains("attached") && !line.contains(TOKEN), "{line}");
 
         let garbled = RunOutput {
@@ -1177,7 +1166,10 @@ mod tests {
             stdout: format!("{{\"token\":\"{TOKEN}\"").into_bytes(),
             stderr: b"failed for channel wslt".to_vec(),
         };
-        let line = ensure_log_line("Ubuntu", &interpret_ensure("Ubuntu", &garbled));
+        let line = ensure_log_line(
+            "Ubuntu",
+            &interpret_ensure("Ubuntu", &ensure_argv(), &garbled),
+        );
         assert!(line.contains("Ubuntu") && line.contains("failed"), "{line}");
         assert!(!line.contains(TOKEN), "{line}");
 
@@ -1227,6 +1219,10 @@ mod tests {
         })
     }
 
+    fn ensure_argv() -> Vec<String> {
+        command::ensure("Ubuntu", "/home/u/.local/lib/houston-wsl/b2", "wslt")
+    }
+
     fn probe_calls(fake: &FakeWsl, distro: &str) -> usize {
         let probe = command::probe(distro);
         fake.calls().iter().filter(|argv| **argv == probe).count()
@@ -1263,6 +1259,10 @@ mod tests {
 
         let err = wsl.enable("Ubuntu".into()).await.unwrap_err();
         assert!(err.contains("Wsl/Service/E_UNEXPECTED"), "{err}");
+        assert!(
+            err.contains("exit code -1") && !err.contains("Some("),
+            "{err}"
+        );
         assert_eq!(probe_calls(&fake, "Ubuntu"), 2);
         assert!(config::load(state.path()).unwrap().distros.is_empty());
     }

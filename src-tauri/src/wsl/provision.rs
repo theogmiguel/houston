@@ -2,7 +2,6 @@
 //! distro, streaming only the files whose sha256 differs from the installed copy.
 
 use super::command::{self, Runner, Stdin};
-use super::distros::decode;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::Read;
@@ -96,9 +95,8 @@ pub fn remote_state(
         .map_err(|e| format!("{} could not run: {e}", command::describe(&argv)))?;
     if out.code != Some(0) {
         return Err(format!(
-            "reading the installed Houston files in {distro} failed (exit {:?}): {}",
-            out.code,
-            decode(&out.stderr).trim()
+            "reading the installed Houston files in {distro} failed: {}",
+            command::failure(&argv, &out, true)
         ));
     }
     parse_remote(&out.stdout)
@@ -136,10 +134,9 @@ pub fn provision(
             .map_err(|e| format!("{} could not run: {e}", command::describe(&argv)))?;
         if out.code != Some(0) {
             return Err(format!(
-                "installing {name} into {} in {distro} failed (exit {:?}): {}",
+                "installing {name} into {} in {distro} failed: {}",
                 install_dir(&home, build),
-                out.code,
-                decode(&out.stderr).trim()
+                command::failure(&argv, &out, true)
             ));
         }
         written.push(name);
