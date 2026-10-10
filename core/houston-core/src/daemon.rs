@@ -11315,7 +11315,7 @@ impl Daemon {
                 }
             )
         })?;
-        let state = emulator.snapshot(crate::vt::VT_HISTORY_ROWS)?;
+        let state = emulator.snapshot(crate::vt::VT_ATTACH_HISTORY_ROWS)?;
         Ok(TakenSnapshot {
             generation,
             output_offset,

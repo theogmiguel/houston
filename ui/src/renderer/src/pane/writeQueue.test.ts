@@ -254,6 +254,34 @@ describe('PaneWriteQueue', () => {
     )
   })
 
+  it('hands an overflow to an owner that resyncs, dropping the backlog without a notice', () => {
+    const calls: Uint8Array[] = []
+    const pending: Array<() => void> = []
+    let resyncs = 0
+    const q = new PaneWriteQueue({
+      batchWindowMs: 0,
+      chunkBytes: 1024,
+      maxQueuedBytes: 100,
+      smallWriteBytes: 0,
+      resyncOnOverflow: () => {
+        resyncs += 1
+        return true
+      },
+      write: (payload, cb) => {
+        calls.push(payload)
+        pending.push(cb)
+      }
+    })
+    q.enqueue(bytes('A'.repeat(50)))
+    q.enqueue(bytes('B'.repeat(60)))
+    q.enqueue(bytes('C'.repeat(60)))
+    expect(resyncs).toBe(1)
+    expect(q.totalDropped).toBe(0)
+
+    while (pending.length > 0) pending.shift()!()
+    expect(calls.map((c) => dec.decode(c))).toEqual(['A'.repeat(50)])
+  })
+
   it('protects an already-queued warning from being discarded by a later overflow', () => {
     const calls: Uint8Array[] = []
     const pending: Array<() => void> = []

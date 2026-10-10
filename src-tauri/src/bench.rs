@@ -37,7 +37,7 @@ pub fn bench_scenario_selection(state: State<'_, BenchState>) -> Option<Vec<Stri
 }
 
 pub const BENCH_SCENARIOS: &[&str] = &[
-    "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11",
+    "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13",
 ];
 
 #[derive(Debug, PartialEq, Eq)]

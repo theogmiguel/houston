@@ -261,10 +261,13 @@ fn encodeScreen(
     {
         var f: formatterpkg.ScreenFormatter = .init(screen, .{
             .emit = .vt,
+            // A soft-wrapped row goes out joined to its continuation, so the
+            // importer's own autowrap rebuilds the wrap at the same width;
+            // a newline there would turn it into a hard line break.
+            .unwrap = true,
             // Trailing whitespace can carry a background colour, and a
             // trimmed trailing blank row would shift every row above it up
             // by one on import. Exact reattach cannot afford either.
-            .unwrap = false,
             .trim = false,
         });
         f.extra = .{
@@ -469,14 +472,27 @@ fn importScreen(wrapper: anytype, key: ScreenSet.Key, body: []const u8) !Cursor 
     if (body.len < 4) return error.Malformed;
     const vt_len = readInt(u32, body[0..4]);
     if (4 + vt_len > body.len) return error.Malformed;
+    const t: *ZigTerminal = wrapper.terminal;
+    const screen: *Screen = t.screens.all.get(key) orelse return error.NoScreen;
+
+    // The padding below counts rows against the source's total, which only
+    // holds if nothing is evicted while painting; a smaller scrollback cap
+    // here would otherwise scroll the whole import out as blank rows.
+    const max_bytes = screen.pages.limits.bytes.explicit;
+    const max_lines = screen.pages.limits.lines.explicit;
+    screen.pages.setMaxBytes(null);
+    screen.pages.setMaxLines(null);
+    defer {
+        screen.pages.setMaxBytes(max_bytes);
+        screen.pages.setMaxLines(max_lines);
+    }
+
     // The content stream paints from wherever the cursor stands, and the
     // tabstop section just walked it across the top row with CHA.
     wrapper.stream.nextSlice("\x1b[H\x1b[0m");
     wrapper.stream.nextSlice(body[4..][0..vt_len]);
 
     var i: usize = 4 + vt_len;
-    const t: *ZigTerminal = wrapper.terminal;
-    const screen: *Screen = t.screens.all.get(key) orelse return error.NoScreen;
 
     if (i + 4 > body.len) return error.Malformed;
     const target_rows = readInt(u32, body[i..][0..4]);
@@ -534,6 +550,21 @@ fn importScreen(wrapper: anytype, key: ScreenSet.Key, body: []const u8) !Cursor 
     i = try readCharset(body, i, &saved.charset);
     screen.saved_cursor = saved;
     return cursor;
+}
+
+// -- scrollback -------------------------------------------------------------
+
+/// Sets the primary screen's scrollback cap in bytes, trimming the oldest
+/// history at once when it shrinks. The embedder sizes the cap from the grid
+/// width, so it changes when the pane does.
+pub fn set_max_scrollback(
+    terminal_: Terminal,
+    bytes: usize,
+) callconv(lib.calling_conv) Result {
+    const wrapper = terminal_ orelse return .invalid_value;
+    const screen: *Screen = wrapper.terminal.screens.all.get(.primary) orelse return .invalid_value;
+    screen.pages.setMaxBytes(bytes);
+    return .success;
 }
 
 // -- little-endian primitives --------------------------------------------

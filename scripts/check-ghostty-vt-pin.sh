@@ -45,7 +45,8 @@ shim_format="$(grep -oP 'pub const FORMAT_VERSION: u32 = \K[0-9]+' "$SHIM" || tr
 grep -qa -- "$version_string" "$WASM" || fail "$WASM does not contain the pinned version stamp '$version_string'. Rebuild it: scripts/build-ghostty-vt-wasm.sh"
 
 for symbol in houston_vt_snapshot_format_version houston_vt_snapshot_parser_state \
-              houston_vt_snapshot_encode houston_vt_snapshot_import; do
+              houston_vt_snapshot_encode houston_vt_snapshot_import \
+              houston_vt_set_max_scrollback; do
   grep -qa -- "$symbol" "$WASM" || fail "$WASM does not export $symbol. It was built without $PATCHES applied; rebuild it with scripts/build-ghostty-vt-wasm.sh"
 done
 

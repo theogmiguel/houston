@@ -212,6 +212,50 @@ fn is_non_conversational_model(id: &str) -> bool {
     .any(|term| id.contains(term))
 }
 
+/// Every field `ModelTable::from_document` reads. Parsing keeps only these, so the
+/// multi-MiB upstream document never exists as a whole `Value` tree.
+const TABLE_FIELDS: &[&str] = &[
+    "litellm_provider",
+    "mode",
+    "max_input_tokens",
+    "input_cost_per_token",
+    "output_cost_per_token",
+    "cache_read_input_token_cost",
+    "cache_creation_input_token_cost",
+    "provider_specific_entry",
+    "input_cost_per_token_priority",
+    "output_cost_per_token_priority",
+    "cache_read_input_token_cost_priority",
+    "cache_creation_input_token_cost_priority",
+    "input_cost_per_token_ultrafast",
+    "output_cost_per_token_ultrafast",
+    "cache_read_input_token_cost_ultrafast",
+    "cache_creation_input_token_cost_ultrafast",
+];
+
+/// Parses a catalog one model at a time, dropping non-object entries (which
+/// `from_document` skips) and every field outside `TABLE_FIELDS`.
+fn table_fields_only<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Value, D::Error> {
+    struct Prune;
+    impl<'de> serde::de::Visitor<'de> for Prune {
+        type Value = Value;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a JSON object keyed by model id")
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
+            let mut models = serde_json::Map::new();
+            while let Some((name, entry)) = map.next_entry::<String, Value>()? {
+                if let Value::Object(mut fields) = entry {
+                    fields.retain(|key, _| TABLE_FIELDS.contains(&key.as_str()));
+                    models.insert(name, Value::Object(fields));
+                }
+            }
+            Ok(Value::Object(models))
+        }
+    }
+    deserializer.deserialize_map(Prune)
+}
+
 #[derive(Debug, Clone)]
 pub struct CatalogSnapshot {
     pub table: ModelTable,
@@ -222,6 +266,7 @@ pub struct CatalogSnapshot {
 struct CachedCatalog {
     fetched_at_ms: i64,
     source: String,
+    #[serde(deserialize_with = "table_fields_only")]
     document: Value,
     #[serde(default)]
     etag: Option<String>,
@@ -484,8 +529,11 @@ fn download_from(url: &str, etag: Option<&str>) -> Result<CatalogResponse> {
             .is_none_or(|size| size <= MAX_BYTES),
         "model catalog exceeds {MAX_BYTES} bytes"
     );
-    let document =
-        serde_json::from_slice(&read_bounded(response)?).context("invalid model catalog JSON")?;
+    let bytes = read_bounded(response)?;
+    let mut parser = serde_json::Deserializer::from_slice(&bytes);
+    let document = table_fields_only(&mut parser)
+        .and_then(|document| parser.end().map(|()| document))
+        .context("invalid model catalog JSON")?;
     Ok(CatalogResponse::Modified { document, etag })
 }
 
@@ -936,6 +984,49 @@ mod tests {
             );
         });
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_download_keeps_only_the_fields_the_table_reads() {
+        let full = json!({
+            "claude-new-model": {
+                "litellm_provider": "anthropic", "mode": "chat",
+                "max_input_tokens": 500_000, "max_output_tokens": 456,
+                "input_cost_per_token": 0.000001, "output_cost_per_token": 0.000002,
+                "cache_read_input_token_cost": 0.0000001,
+                "input_cost_per_token_priority": 0.000002, "output_cost_per_token_priority": 0.000004,
+                "provider_specific_entry": {"fast": 2.0},
+                "supports_vision": true, "supported_regions": ["us", "eu"], "source": "https://example.com"
+            },
+            "sample_spec": "not a model"
+        });
+        let (url, server) =
+            serve_catalog(vec![(response("200 OK", None, &full.to_string()), None)]);
+        let dir = tempfile::tempdir().unwrap();
+        let catalog = ModelCatalog::new(dir.path());
+        let snapshot = catalog.load_with(true, true, || 100, |etag| download_from(&url, etag));
+        server.join().unwrap();
+
+        let reference = ModelTable::from_document(&full);
+        let id = "claude-new-model";
+        assert_eq!(snapshot.table.rate(id), reference.rate(id));
+        assert_eq!(snapshot.table.window(id), reference.window(id));
+        assert_eq!(snapshot.table.options(), reference.options());
+        let cache: Value =
+            serde_json::from_slice(&std::fs::read(cache_path(dir.path())).unwrap()).unwrap();
+        let entry = cache["document"][id].as_object().unwrap();
+        for dropped in [
+            "supports_vision",
+            "supported_regions",
+            "source",
+            "max_output_tokens",
+        ] {
+            assert!(
+                !entry.contains_key(dropped),
+                "cache kept {dropped}: {entry:?}"
+            );
+        }
+        assert!(cache["document"].get("sample_spec").is_none());
     }
 
     #[test]

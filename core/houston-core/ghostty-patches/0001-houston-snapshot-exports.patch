@@ -2,7 +2,7 @@ Route and export Houston's snapshot module.
 
 --- a/src/lib_vt.zig
 +++ b/src/lib_vt.zig
-@@ -419,6 +419,10 @@
+@@ -419,6 +419,11 @@
          if (features.grid_introspection and features.snapshot) {
              @export(&c.tracked_grid_ref_snapshot, .{ .name = "ghostty_tracked_grid_ref_snapshot" });
          }
@@ -10,12 +10,13 @@ Route and export Houston's snapshot module.
 +        @export(&c.houston_snapshot_parser_state, .{ .name = "houston_vt_snapshot_parser_state" });
 +        @export(&c.houston_snapshot_encode, .{ .name = "houston_vt_snapshot_encode" });
 +        @export(&c.houston_snapshot_import, .{ .name = "houston_vt_snapshot_import" });
++        @export(&c.houston_set_max_scrollback, .{ .name = "houston_vt_set_max_scrollback" });
          @export(&c.build_info, .{ .name = "ghostty_build_info" });
          @export(&c.type_json, .{ .name = "ghostty_type_json" });
          @export(&c.alloc_alloc, .{ .name = "ghostty_alloc" });
 --- a/src/terminal/c/main.zig
 +++ b/src/terminal/c/main.zig
-@@ -47,10 +47,17 @@
+@@ -47,10 +47,18 @@
  pub const style = @import("style.zig");
  pub const sys = @import("sys.zig");
  pub const terminal = @import("terminal.zig");
@@ -29,6 +30,7 @@ Route and export Houston's snapshot module.
 +pub const houston_snapshot_parser_state = houston_snapshot.snapshot_parser_state;
 +pub const houston_snapshot_encode = houston_snapshot.snapshot_encode;
 +pub const houston_snapshot_import = houston_snapshot.snapshot_import;
++pub const houston_set_max_scrollback = houston_snapshot.set_max_scrollback;
 +
 
  pub const osc_new = osc.new;

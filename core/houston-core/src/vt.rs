@@ -2,9 +2,13 @@
 //! streams as raw bytes -- this is for attach, terminal queries and `pane_read --source
 //! screen`. OSC 7501 callbacks receive declared program status, never rendered cells.
 
-// Bound on how much history a reattach snapshot carries; VT_HISTORY_BYTES is the real
-// cap on live retention (the library evicts by bytes, not rows).
+// History rows a daemon handoff snapshot carries, kept low for the manifest byte cap;
+// VT_HISTORY_BYTES is the real cap on live retention (the library evicts by bytes).
 pub const VT_HISTORY_ROWS: u32 = 1000;
+
+// Row bound for a client attach snapshot: high enough that VT_HISTORY_BYTES decides what a
+// reattaching pane gets back. A full history at 32 columns measured ~230 KiB, ~5 ms import.
+pub const VT_ATTACH_HISTORY_ROWS: u32 = 10_000;
 
 // Per-session scrollback budget (bytes, not rows -- the library evicts by page).
 // Sized so twelve live sessions stay under the daemon's RSS ceiling.

@@ -100,6 +100,24 @@ fn scenarios() -> Vec<Scenario> {
         a: history,
         b: b"tail row\r\n".to_vec(),
     });
+    let mut wrapped = Vec::new();
+    for i in 0..40 {
+        wrapped.extend_from_slice(
+            format!(
+                "\x1b[3{}mwrapped {i:04}\x1b[0m {}\r\n",
+                i % 8,
+                "lorem ipsum ".repeat(9)
+            )
+            .as_bytes(),
+        );
+    }
+    // A wide character that cannot fit the last column wraps early, leaving a spacer.
+    wrapped.extend_from_slice(format!("{}\u{6f22}tail", "x".repeat(79)).as_bytes());
+    out.push(Scenario {
+        name: "soft-wrapped lines",
+        a: wrapped,
+        b: b" continues\r\n".to_vec(),
+    });
     out
 }
 

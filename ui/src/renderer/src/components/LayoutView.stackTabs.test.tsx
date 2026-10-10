@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act, useEffect } from 'react'
+import { act, useContext, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, SessionInfo } from '../houston/client'
+import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { leaf, stackWith, type LayoutNode } from '../layout/tree'
 import { LayoutView } from './LayoutView'
 
@@ -11,8 +12,10 @@ vi.mock('./EditorLeaf', () => ({ EditorLeaf: () => null }))
 
 let mountCount = 0
 let unmountCount = 0
+const hiddenBySession = new Map<number, boolean>()
 vi.mock('../pane/TerminalPane', () => ({
   TerminalPane: ({ info }: { info: SessionInfo }) => {
+    hiddenBySession.set(info.id, useContext(GridHiddenContext))
     useEffect(() => {
       mountCount++
       return () => {
@@ -128,6 +131,23 @@ describe('LayoutView tab stacks', () => {
 
     const slots = container.querySelectorAll('[data-testid="stack-child-slot"]')
     expect(slots).toHaveLength(2)
+  })
+
+  it('tells only the undisplayed tab that it is hidden', () => {
+    const tree = stackWith(
+      { kind: 'split', dir: 'row', children: [leaf(1), leaf(2)], weights: [50, 50] },
+      1,
+      2
+    )
+    const sessions = new Map([
+      [1, makeSession(1)],
+      [2, makeSession(2)]
+    ])
+    renderStack(tree, sessions)
+    const shownFirst = hiddenBySession.get(1) === false ? 1 : 2
+    const other = shownFirst === 1 ? 2 : 1
+    expect(hiddenBySession.get(shownFirst)).toBe(false)
+    expect(hiddenBySession.get(other)).toBe(true)
   })
 
   it('a background tab that needs input shows a badge without being selected', () => {

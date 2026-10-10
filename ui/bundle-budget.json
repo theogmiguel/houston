@@ -118,9 +118,15 @@
     "Re-cut against 928,607 bytes (one boot chunk) at the same ~3%: the rail's",
     "grid cards, workspace rows and tag chips, the pane header's surface",
     "launcher and the panel surface router are boot-path code, each rendered at",
-    "first paint or on the first panel toggle."
+    "first paint or on the first panel toggle.",
+    "",
+    "Re-cut against 957,904 bytes (one boot chunk, measured by the Windows",
+    "renderer job, the larger of the two builds) at the same ~3%: a pane's",
+    "write-queue overflow resync, the hidden signal for undisplayed stack tabs",
+    "and the hidden-pane policy run inside every mounted pane, and the bench",
+    "probe registers from the pane's mount effect."
   ],
-  "maxBootBytes": 956465,
+  "maxBootBytes": 986641,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

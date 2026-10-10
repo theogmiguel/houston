@@ -677,6 +677,7 @@ describe('surface fit scheduling', () => {
         resizeNotified: true,
         cols: 1,
         rows: 1,
+        options: {},
         core: { resize: vi.fn() },
         notifyResize: vi.fn(),
         renderFrame
@@ -687,6 +688,41 @@ describe('surface fit scheduling', () => {
       expect(renderFrame).toHaveBeenCalledTimes(1)
       expect(requestAnimationFrame).not.toHaveBeenCalled()
       expect(nextFrame).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('re-sizes the scrollback byte cap when a fit changes the width', () => {
+    vi.stubGlobal('window', { devicePixelRatio: 1, requestAnimationFrame: vi.fn(() => 1) })
+    try {
+      const setMaxScrollback = vi.fn()
+      const surface = Object.create(GhosttyTerminalSurface.prototype)
+      Object.assign(surface, {
+        disposed: false,
+        paused: false,
+        frame: 0,
+        mount: { clientWidth: 160, clientHeight: 100 },
+        canvas: { width: 100, height: 80, getBoundingClientRect: () => ({ width: 160, height: 100 }) },
+        context: { setTransform: vi.fn() },
+        metrics: { width: 8, height: 16 },
+        synchronizedOutput: { defer: vi.fn(() => false) },
+        canvasConfigured: true,
+        fitted: true,
+        resizeNotified: true,
+        cols: 1,
+        rows: 1,
+        options: { maxScrollbackLines: 10_000 },
+        core: { resize: vi.fn(), setMaxScrollback },
+        notifyResize: vi.fn(),
+        renderFrame: vi.fn()
+      })
+
+      surface.fit()
+
+      expect(setMaxScrollback).toHaveBeenCalledTimes(1)
+      expect(setMaxScrollback).toHaveBeenCalledWith(scrollbackLinesToBytes(10_000, surface.cols))
+      expect(surface.cols).toBeGreaterThan(1)
     } finally {
       vi.unstubAllGlobals()
     }

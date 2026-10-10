@@ -469,22 +469,26 @@ way, also `--ignored`, also run locally.
 ### `idle_loops_wire`
 
 `core/houston-core/tests/idle_loops_wire.rs`, the detached daemon's idle
-budget, `#[ignore]` by default and `--test-threads=1` because each reads a
-whole-process figure:
+budget, `#[ignore]` by default. Each test reads a whole-process figure, and a
+daemon booted by an earlier test stays resident, so run each in its own process:
 
 ```
-cargo test --release --test idle_loops_wire -- --ignored --nocapture --test-threads=1
+for t in p3_idle_context_switches_per_minute p4_idle_rss_at_zero_sessions \
+         p4_idle_rss_with_twelve_saturated_emulators; do
+  cargo test --release --test idle_loops_wire -- --ignored --nocapture --exact "$t"
+done
 ```
 
 - **P3, idle scheduling**: ≤ 15 thread-summed context switches per minute with no
   client, no session and one routine armed far in the future (so the reap rule
   does not end the run). Measured 0 over 20 s on the complete daemon, against a
   211/min baseline before the idle profile.
-- **P4, idle RSS**: ≤ 30 MiB at zero sessions (measured 11.9 MiB) and ≤ 64 MiB
-  with twelve idle shells whose emulators are saturated at their full history
-  budget (measured 49–51 MiB across two runs, 29 threads). Closing the twelve
-  returns the daemon to within 3.5 MiB of baseline once the PTY reader threads
-  wind down, about 8 s.
+- **P4, idle RSS**: ≤ 30 MiB at zero sessions and ≤ 64 MiB with twelve idle
+  shells whose emulators are saturated at their full history budget. Both include
+  the boot-time update check and model-catalog refresh, which need network access:
+  measured 25.1 MiB at zero sessions (11.9 MiB before those requests) and 62 MiB
+  with twelve shells, 34 threads. Closing the twelve returns the daemon to within
+  3 MiB of baseline once the PTY reader threads wind down.
 
 Same rules as `perf_smoke`: release build, idle machine, run locally.
 
@@ -566,6 +570,41 @@ long until you can type into it:
   `BOOT_PHASE_DEADLINE_MS`. `waitForDom` now also polls on a `setInterval`,
   which fires regardless of focus. It is still wall-clock: an idle machine
   still matters.
+
+### `scripts/m12-hidden-reveal.sh`
+
+Cost and fidelity of panes hidden behind an expanded pane:
+
+```
+./scripts/m12-hidden-reveal.sh    # RUNS=3, VARIANTS="attached hibernate hibernate-snapshot"
+```
+
+- Same build and throwaway-channel rules as `m9-baseline.sh`. Each variant sets
+  `TR_BENCH_HIDDEN_POLICY`; runs are interleaved so machine load hits every
+  variant alike.
+- Floods 11 hidden panes with 1, 3 and 8 MiB of numbered lines, then collapses
+  the expanded pane. Reports client parse while hidden, reveal time per pane,
+  blank and intermediate paints, skeleton fallbacks, and content checks
+  (retained lines, gaps, corrupt lines).
+- A run whose window was hidden or unfocused is reported VOID: rAF throttling
+  stalls the reveal it measures.
+
+### `scripts/m13-steady-load.sh`
+
+CPU and input latency under steady output in a 12-pane grid:
+
+```
+./scripts/m13-steady-load.sh      # RUNS=3, VARIANTS="attached@0 attached@default hibernate-snapshot@default"
+```
+
+- A variant is `policy@paintMs`: the hidden-pane policy and
+  `TR_BENCH_BACKGROUND_PAINT_MS` (`0` repaints unfocused panes every frame,
+  `default` keeps the built-in tick).
+- Eleven panes print 20 lines/s each; the twelfth runs `cat` and receives a
+  typed token every 200 ms. Echo is measured from send to the token painted.
+- Phases (idle, streaming visible, streaming behind an expanded pane, visible
+  again) each sample `/proc` CPU of the app, WebKit and daemon processes. A
+  phase with fewer than 500 frames is VOID.
 
 ## Maintaining model data
 
