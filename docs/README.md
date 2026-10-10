@@ -13,6 +13,7 @@ Two halves. The first is for using Houston; the second is for working on it.
   providers it covers, and how to hide it
 - [Orchestration](user/orchestration.md) — letting an agent open and drive other panes
 - [Routines](user/routines.md) — scheduling repeatable work in an agent pane
+- [Factory](user/factory.md) — every workspace's task work by what needs you, and the factory limits
 - [Tasks](user/tasks.md) — a local backlog per workspace and the access agents get to it
 - [Slack requests](user/slack.md) — filing a Slack mention as a task the owner starts, and what that sends
 - [Changes](user/changes.md) — the git surface
