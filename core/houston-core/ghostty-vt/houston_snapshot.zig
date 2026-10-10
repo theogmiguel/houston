@@ -29,6 +29,7 @@ const terminal_c = @import("terminal.zig");
 const Terminal = terminal_c.Terminal;
 const ZigTerminal = @import("../Terminal.zig");
 const Screen = @import("../Screen.zig");
+const PageList = @import("../PageList.zig");
 const ScreenSet = @import("../ScreenSet.zig");
 const Selection = @import("../Selection.zig");
 const charsets = @import("../charsets.zig");
@@ -261,10 +262,13 @@ fn encodeScreen(
     {
         var f: formatterpkg.ScreenFormatter = .init(screen, .{
             .emit = .vt,
+            // A soft-wrapped row goes out joined to its continuation, so the
+            // importer's own autowrap rebuilds the wrap at the same width;
+            // a newline there would turn it into a hard line break.
+            .unwrap = true,
             // Trailing whitespace can carry a background colour, and a
             // trimmed trailing blank row would shift every row above it up
             // by one on import. Exact reattach cannot afford either.
-            .unwrap = false,
             .trim = false,
         });
         f.extra = .{
@@ -469,14 +473,25 @@ fn importScreen(wrapper: anytype, key: ScreenSet.Key, body: []const u8) !Cursor 
     if (body.len < 4) return error.Malformed;
     const vt_len = readInt(u32, body[0..4]);
     if (4 + vt_len > body.len) return error.Malformed;
+    const t: *ZigTerminal = wrapper.terminal;
+    const screen: *Screen = t.screens.all.get(key) orelse return error.NoScreen;
+
+    // The padding below counts rows against the source's total, which only
+    // holds if nothing is evicted while painting; a smaller scrollback cap
+    // here would otherwise scroll the whole import out as blank rows.
+    const max_size = screen.pages.explicit_max_size;
+    screen.pages.explicit_max_size = std.math.maxInt(usize);
+    defer {
+        screen.pages.explicit_max_size = max_size;
+        trimHistory(&screen.pages);
+    }
+
     // The content stream paints from wherever the cursor stands, and the
     // tabstop section just walked it across the top row with CHA.
     wrapper.stream.nextSlice("\x1b[H\x1b[0m");
     wrapper.stream.nextSlice(body[4..][0..vt_len]);
 
     var i: usize = 4 + vt_len;
-    const t: *ZigTerminal = wrapper.terminal;
-    const screen: *Screen = t.screens.all.get(key) orelse return error.NoScreen;
 
     if (i + 4 > body.len) return error.Malformed;
     const target_rows = readInt(u32, body[i..][0..4]);
@@ -534,6 +549,20 @@ fn importScreen(wrapper: anytype, key: ScreenSet.Key, body: []const u8) !Cursor 
     i = try readCharset(body, i, &saved.charset);
     screen.saved_cursor = saved;
     return cursor;
+}
+
+/// Drops the oldest history a whole page at a time until the screen is back
+/// under its scrollback cap -- what `grow` would have pruned while painting.
+fn trimHistory(pages: *PageList) void {
+    while (pages.page_size > pages.maxSize()) {
+        const first = pages.pages.first orelse return;
+        if (first == pages.pages.last) return;
+        const first_rows = first.data.size.rows;
+        if (first_rows == 0 or pages.total_rows - first_rows < pages.rows) return;
+        const before = pages.page_size;
+        pages.eraseHistory(.{ .history = .{ .y = first_rows - 1 } });
+        if (pages.page_size >= before) return;
+    }
 }
 
 // -- little-endian primitives --------------------------------------------

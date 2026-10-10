@@ -292,3 +292,40 @@ async fn a_snapshot_attach_for_an_unknown_session_is_refused_by_name() {
         }
     }
 }
+
+#[tokio::test]
+async fn an_attach_snapshot_carries_history_beyond_a_thousand_rows() {
+    let (addr, tmp) = start_daemon().await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+
+    let project = tempfile::tempdir_in(tmp.path()).unwrap();
+    ws.send(Message::text(create_custom_msg(
+        vec![
+            "sh",
+            "-c",
+            "awk 'BEGIN{for(i=0;i<2000;i++)print \"ROW \" i; print \"ROWS-DONE\"}'; cat",
+        ],
+        project.path(),
+    )))
+    .await
+    .unwrap();
+    let session = expect_created(&mut ws).await.id;
+    let (_, _) = frames_until(&mut ws, session, "ROWS-DONE").await;
+
+    ws.send(attach_msg(session, true)).await.unwrap();
+    let taken = take_snapshot(&mut ws, session).await;
+    let mut restored = houston_core::vt::Emulator::new(80, 24, houston_core::vt::VT_HISTORY_BYTES)
+        .expect("emulator");
+    restored.import(&taken.state).expect("import");
+    let rows = restored
+        .screen_text(usize::MAX)
+        .iter()
+        .filter(|line| line.starts_with("ROW "))
+        .count();
+    assert_eq!(
+        rows, 2000,
+        "a reattaching pane must get back the history the daemon still retains (2000 short \
+         rows, well inside VT_HISTORY_BYTES); the snapshot carried {rows}"
+    );
+}

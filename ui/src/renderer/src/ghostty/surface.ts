@@ -754,6 +754,9 @@ export class GhosttyTerminalSurface {
     const grid = imported ? this.core.gridSize() : null
     const usable = grid === null ? false : grid.cols === this.cols && grid.rows === this.rows
     if (imported && !usable) {
+      console.warn(
+        `houston: snapshot grid ${grid?.cols}x${grid?.rows} does not match the pane's ${this.cols}x${this.rows}`
+      )
       this.core.resetAndWrite('')
       this.core.resize(this.cols, this.rows, this.metrics.width, this.metrics.height)
     }
