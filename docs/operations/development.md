@@ -359,6 +359,7 @@ committed inventory and runs in its own `licence-inventory` job.
 | `check-loop-spawn-sync.sh` | both daemon hosts (`houston-core/src/main.rs`, `src-tauri/src/daemon_host.rs`) call the single `spawn_background_loops` helper | Text search for the helper's definition and each call site — deliberately not a real parser |
 | `check-title-tooltip-guard.sh` | native `title=` DOM tooltips vs. component `title` props (visible headings) are not confused, and the remaining native `title=` only ever shrink toward `Tooltip` | Scan over `.tsx` for capitalised JSX tags carrying `title=`, checked against an explicit component-props allowlist; a third check counts native lowercase-element `title=` per file against a ratchet |
 | `check-spawn-window.sh` | every production spawn goes through `houston_core::spawn` (`CREATE_NO_WINDOW` on Windows) | Checks `clippy.toml` disallows raw `Command::new`; checks `spawn.rs` sets the flag; asserts it's **not** applied to the PTY's `portable_pty::CommandBuilder` |
+| `check-wsl-bundle.sh` | the Windows installer bundles the Linux daemon for WSL distros | Checks `tauri.windows.conf.json`'s `bundle.resources`, then that `src-tauri/wsl/` holds only `houston-core`, `tr-helper` and `houston-supervisor`, each an x86-64 ELF; with nothing staged it passes unless `HOUSTON_WSL_BUNDLE_REQUIRED=1` |
 | `check-icon-imports.sh` | raw `lucide-react` imports live only in `components/icons.tsx` | `grep` over `ui/src` excluding tests and `icons.tsx`, checked against an allowlist |
 | `check-native-select.sh` | no native `<select>` in the renderer (its popup is an unstyled GTK window on Linux/WebKitGTK) | `grep` over `ui/src` excluding tests and `Select.tsx`, comments stripped first |
 | `check-native-input.sh` | no native `<input type="checkbox">`/`<input type="radio">` in the renderer (its box is drawn by the OS theme, never ours) | `grep` over `ui/src` excluding tests, comments stripped first; no exemptions — `Toggle`/`Segmented` cover both shapes |
@@ -628,10 +629,20 @@ head exports selected by `srcSet` for 1x/2x/3x displays.
 ### Windows
 
 ```
+$env:HOUSTON_WSL_LINUX_BIN_DIR = '<Linux core/target/release>'
 ./scripts/build-app.ps1
 cd src-tauri
 cargo tauri bundle --bundles nsis --ci --no-sign
 ```
+
+The installer carries `houston-core`, `tr-helper` and `houston-supervisor` built
+for `x86_64-unknown-linux-gnu` at the same commit, as the `wsl/` resources that WSL
+environments install into a distro. Build them inside WSL with
+`cargo build --release --bin houston-core --bin tr-helper --bin houston-supervisor`
+in `core/`; `build-app.ps1` refuses to run without `HOUSTON_WSL_LINUX_BIN_DIR`,
+stages them in `src-tauri/wsl/` and runs `check-wsl-bundle.sh` with
+`HOUSTON_WSL_BUNDLE_REQUIRED=1`. Other Windows builds compile with that directory
+empty.
 
 `build-app.ps1` runs the full renderer gate (`typecheck`, `test`, `build`,
 `check:css`), the same `check-renderer-fresh.sh` via Git Bash, stages

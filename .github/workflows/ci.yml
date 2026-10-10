@@ -63,6 +63,8 @@ jobs:
         run: bash scripts/check-title-tooltip-guard.sh
       - name: check-spawn-window.sh (CREATE_NO_WINDOW lint config still armed)
         run: bash scripts/check-spawn-window.sh
+      - name: check-wsl-bundle.sh (the Windows installer bundles the Linux daemon for WSL)
+        run: bash scripts/check-wsl-bundle.sh
       - name: check-icon-imports.sh (raw lucide-react imports outside components/icons.tsx)
         run: bash scripts/check-icon-imports.sh
       - name: check-native-select.sh (no native <select> — its popup is a GTK window)

@@ -30,12 +30,14 @@ lands the work, per [`docs/operations/development.md`](development.md).
 
 **`build-installers.yml`** is the manual dry run: by default it builds both Linux
 architectures and the Windows NSIS installer from any ref you name. Set `platform`
-to `windows` or `linux` to validate that platform alone. It files nothing.
+to `windows` or `linux` to validate that platform alone; `windows` still builds the
+Linux bundles, because the installer carries their x86_64 daemon for WSL distros
+(artifact `wsl-linux-x86_64-<version>`). It files nothing.
 Since `ci.yml` never builds an installer, it is the only way to
 exercise the bundle pipeline without cutting a version.
 
-**`release-publish.yml`** refuses a bundle set that is missing an artifact or
-its `.sig`, generates the release notes once and reuses them, and writes
+**`release-publish.yml`** reads only the `houston-*` artifacts. It refuses a
+bundle set that is missing an artifact or its `.sig`, generates the release notes once and reuses them, and writes
 `latest.json` with each signature embedded. It files a draft, never a public
 release.
 

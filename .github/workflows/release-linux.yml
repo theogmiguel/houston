@@ -286,6 +286,19 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+      # The Windows installer bundles these for WSL distros: the same commit, built on
+      # jammy and gated above through the deb. Not a release asset (publish takes houston-*).
+      - name: Upload the Linux daemon for the Windows installer's WSL support
+        if: matrix.arch == 'x86_64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: wsl-linux-x86_64-${{ inputs.version }}
+          path: |
+            core/target/release/houston-core
+            core/target/release/tr-helper
+            core/target/release/houston-supervisor
+          if-no-files-found: error
+
       - name: Record job timing
         if: always()
         continue-on-error: true

@@ -311,8 +311,9 @@ jobs:
       require_signing: true
     secrets: inherit
 
+  # After the Linux bundles: the installer carries their x86_64 daemon for WSL distros.
   windows-bundle:
-    needs: prepare
+    needs: [prepare, linux-bundle]
     if: inputs.include_windows
     uses: ./.github/workflows/release-windows.yml
     with:
