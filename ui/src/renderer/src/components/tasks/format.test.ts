@@ -85,6 +85,16 @@ describe('Tasks page queue', () => {
     ])
   })
 
+  it('puts a task with an open question in Your turn, even while its run is live', () => {
+    const question = { id: 31, task_id: 10, run_id: 10, session_id: 40, question: 'Which path?', options: ['A'], recommended: null, why: null, context: null, created_at_ms: 1 }
+    const asking = task({ id: 10, status: 'in_progress', open_run: run({ id: 10, state: 'running', session_id: 40 }), open_question: question })
+    const working = task({ id: 11, status: 'in_progress', open_run: run({ id: 11, state: 'running' }) })
+    expect(queueGroups([asking, working]).map((group) => [group.key, group.tasks.map((item) => item.id)])).toEqual([
+      ['your-turn', [10]], ['working', [11]]
+    ])
+    expect(queueActionOf(asking)).toBe('Answer')
+  })
+
   it('maps each supported state to the matching action', () => {
     expect(queueActionOf(task({ id: 1, status: 'in_progress', open_run: run({ id: 1, state: 'waiting_for_input' }) }))).toBe('Answer')
     expect(queueActionOf(task({ id: 2, status: 'in_review', ref_url: 'https://github.com/org/repo/pull/61' }))).toBe('Review changes')

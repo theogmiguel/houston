@@ -9,6 +9,7 @@ import { TaskStartCard } from './TaskExecution'
 import { createSessionsStore, SessionsStoreContext } from '../../sessionsStore'
 import type { SessionInfo } from '../../houston/client'
 import type { TaskRun } from '../../houston/generated/TaskRun'
+import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import { TaskNowCard } from './TaskNowCard'
 import { TaskDetail } from './TaskDetail'
 
@@ -31,7 +32,7 @@ function state() {
     snapshot: { scope: 'all', tasks: [
       { ...TASK, acceptance_checked: 0, acceptance_total: 0 },
       { ...TASK, id: 8, number: 8, key: 'HOU-8', title: 'Other task', workspace: '/other', acceptance_checked: 0, acceptance_total: 0 }
-    ], counts: {} },
+    ] as TaskSummary[], counts: {} },
     detail: null, watched: null, access: 'off', refusal: null,
     watchTask: vi.fn(), openTask: vi.fn(), saveTask: mocks.saveTask, createTask: vi.fn(),
     setAccess: vi.fn(), startTask: mocks.startTask
@@ -103,6 +104,30 @@ describe('Tasks surface and drawer', () => {
     const meta = container.querySelector('[data-testid="list-detail-item"]')!.textContent
     expect(meta).toContain('stopped just now')
     expect(meta).not.toContain('now ago')
+  })
+
+  it('marks Slack-filed tasks waiting for approval or a slot in the list', () => {
+    const snapshot = state()
+    snapshot.snapshot.tasks = [
+      { ...TASK, title: 'Awaiting approval', intake: { source: 'slack', author: 'U1', state: 'pending', queue_position: null, permalink: null }, acceptance_checked: 0, acceptance_total: 0 },
+      { ...TASK, id: 9, number: 9, key: 'HOU-9', title: 'Queued request', intake: { source: 'slack', author: 'U1', state: 'queued', queue_position: 2, permalink: null }, acceptance_checked: 0, acceptance_total: 0 }
+    ]
+    mocks.useTasks.mockReturnValue(snapshot)
+    act(() => root.render(<TasksSurface client={null} workspace="/project" workspaces={WORKSPACES} sessions={new Map()} now={1}
+      onStartRequested={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()} onOpenExternal={vi.fn()} />))
+    const chips = [...container.querySelectorAll('[data-testid="list-detail-item"] [data-testid="task-intake-chip"]')].map((chip) => chip.textContent)
+    expect(chips.sort()).toEqual(['Slack · awaiting ✅', 'Slack · queued #2'])
+  })
+
+  it('names the open question in the row meta', () => {
+    const snapshot = state()
+    const run: TaskRun = { id: 3, task_id: 7, attempt: 1, kind: 'implementation', state: 'running', provider: 'claude', session_id: 1, initial_revision: 1, started_at_ms: 1, pr_number: null, pushed_sha: null, evidence: null }
+    const question = { id: 31, task_id: 7, run_id: 3, session_id: 1, question: 'Which migration path?', options: ['Add a column'], recommended: null, why: null, context: null, created_at_ms: 1 }
+    snapshot.snapshot.tasks = [{ ...TASK, status: 'in_progress', open_run: run, open_question: question, acceptance_checked: 0, acceptance_total: 0 }]
+    mocks.useTasks.mockReturnValue(snapshot)
+    act(() => root.render(<TasksSurface client={null} workspace="/project" workspaces={WORKSPACES} sessions={new Map()} now={1}
+      onStartRequested={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()} onOpenExternal={vi.fn()} />))
+    expect(container.querySelector('[data-testid="list-detail-item"]')!.textContent).toContain('Claude Code asks: “Which migration path?”')
   })
 
   it('expands finished tasks below the Done and archived toggle', () => {

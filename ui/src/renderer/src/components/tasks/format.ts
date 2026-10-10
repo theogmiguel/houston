@@ -112,6 +112,7 @@ export function queueGroupOf(task: TaskSummary): QueueGroupKey | null {
   if (task.archived_at_ms != null) return 'archived'
   if (task.status === 'done') return 'done'
   if (task.status === 'canceled') return 'stopped'
+  if (task.open_question) return 'your-turn'
   if (task.open_run?.state === 'waiting_for_input') return 'your-turn'
   if (task.status === 'in_review') return 'your-turn'
   if (task.open_run != null && ['preparing', 'running', 'validating'].includes(task.open_run.state)) return 'working'
@@ -121,11 +122,21 @@ export function queueGroupOf(task: TaskSummary): QueueGroupKey | null {
 }
 
 export function queueActionOf(task: TaskSummary): QueueAction {
-  if (task.open_run?.state === 'waiting_for_input') return 'Answer'
+  if (task.open_question || task.open_run?.state === 'waiting_for_input') return 'Answer'
   if (task.status === 'in_review') return task.open_run?.pr_url && isPullRequestUrl(task.open_run.pr_url) ? 'Open PR' : 'Review changes'
   if (task.open_run?.session_id != null) return 'Open pane'
   if (task.status === 'in_progress' || task.status === 'canceled') return 'Start again'
   return 'Start'
+}
+
+// A Slack-filed task waiting to start says why: for the owner's ✅, or for a
+// working slot with its place in the queue.
+export function intakeLabel(task: Pick<TaskSummary, 'intake' | 'open_run'>): string | null {
+  const intake = task.intake
+  if (!intake || task.open_run) return null
+  if (intake.state === 'pending') return 'Slack · awaiting ✅'
+  if (intake.state === 'queued') return `Slack · queued #${intake.queue_position ?? '?'}`
+  return null
 }
 
 export const FINISHED_GROUP_LABEL = 'Done and Archived'
