@@ -161,6 +161,10 @@ struct ImplementerResult {
     summary: String,
     #[serde(default)]
     checks: Vec<ResultCheck>,
+    /// The same proof of done a handback carries, read loosely so a malformed
+    /// proof never costs the rest of the result.
+    #[serde(default)]
+    evidence: Option<serde_json::Value>,
 }
 
 #[derive(serde::Deserialize)]
@@ -506,6 +510,12 @@ impl Daemon {
             started_at_ms: row.started_at_ms,
             ended_at_ms: row.ended_at_ms,
             pr_url: row.pr_url.clone(),
+            pr_number: row.pr_number,
+            pushed_sha: row.pushed_sha.clone(),
+            evidence: row
+                .evidence
+                .as_deref()
+                .and_then(|raw| serde_json::from_str(raw).ok()),
         }
     }
 
@@ -3073,11 +3083,20 @@ impl Daemon {
             brief.push_str(note);
         }
         brief.push_str(
-            "\n\nWhen the work is done, hand the task back with `hs-task handback --summary \
-             \"...\"` (or the `task_handback` MCP tool) so it moves to review. Never mark the \
-             task done yourself: a merged pull request or the user closes it. Linked external \\
-             tracker issues are reference-only: do not use closes, fixes, or resolves keywords \\
-             for them in Slice PRs; Houston closes the Delivery only after every Slice is Done.\n",
+            "\n\nTo ask the user a question with options, use `hs-task ask --question \"...\" \
+             --option \"...\" --option \"...\" --recommended N` (or the `task_ask` MCP tool) \
+             and end your turn; the answer arrives as your next prompt.\n\
+             \n\
+             When the work is done, hand the task back with `hs-task handback --summary \"...\"` \
+             (or the `task_handback` MCP tool) so it moves to review, with its proof: `--pr N` \
+             and `--sha COMMIT` for what you pushed, `--verify \"command\" --output \"trimmed \
+             output\" --passed` (or `--failed`) for each command you ran, expected for every \
+             acceptance item with a command in backticks, `--capture PATH` for a screenshot and \
+             `--permanent \"...\"` for each migration, configuration or data change that stays. \
+             Never mark the task done yourself: a merged pull request or the user closes it. \
+             Linked external tracker issues are reference-only: do not use closes, fixes, or \
+             resolves keywords for them in Slice PRs; Houston closes the Delivery only after \
+             every Slice is Done.\n",
         );
         brief
     }
@@ -3118,7 +3137,10 @@ impl Daemon {
              submit. End the submit body with exactly this single-line JSON object as its last \
              non-empty line:\n{TASK_RESULT_EXAMPLE}\n\
              `status` is `complete` or `blocked`. Give one `checks` entry per acceptance item, \
-             naming it exactly as the list above. Houston reads this line to tick the task's \
+             naming it exactly as the list above. Add an `evidence` object with what you \
+             pushed and ran: `pr`, `pushed_sha`, `verification` [{{command, output, passed}}] \
+             for each command in backticks in the acceptance list, `capture_path` and \
+             `permanent`. Houston reads this line to tick the task's \
              acceptance list and move it to review; do not add any text after it.\n"
         ));
         brief
@@ -4926,6 +4948,23 @@ impl Daemon {
                 run.id
             ),
         }
+        if let Some(evidence) = result.evidence {
+            let worktree = run.worktree_path.as_deref().map(Path::new);
+            let parsed = serde_json::from_value::<super::task_proof::TaskProofInput>(evidence)
+                .map_err(anyhow::Error::from)
+                .and_then(|input| input.normalized(worktree));
+            match parsed {
+                Ok(proof) if !proof.is_empty() => self.db.task_run_set_proof(
+                    run.id,
+                    proof.pr_number,
+                    proof.pr_url.as_deref(),
+                    proof.pushed_sha.as_deref(),
+                    &serde_json::to_string(&proof.evidence)?,
+                )?,
+                Ok(_) => {}
+                Err(e) => summary.push_str(&format!("\n\n[evidence not recorded] {e:#}")),
+            }
+        }
         self.db.task_run_set_summary(run.id, &summary)?;
         self.db
             .task_run_set_state(run.id, proto::TaskRunState::HandedBack, None, true, now)?;
@@ -5768,7 +5807,7 @@ impl Daemon {
     }
 }
 
-fn pr_watch_number(target: &str) -> anyhow::Result<u32> {
+pub(super) fn pr_watch_number(target: &str) -> anyhow::Result<u32> {
     if target.trim().contains("://") {
         return pr_watch_url_identity(target)?
             .map(|(_, _, number)| number)

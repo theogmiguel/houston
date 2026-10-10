@@ -1254,9 +1254,12 @@ impl DelegationSettleSample {
     }
 }
 
+mod factory;
 mod harness_review;
 mod slack;
+mod task_proof;
 mod task_trackers;
+pub use task_proof::TaskProofInput;
 pub(crate) mod tasks;
 mod worktree_pass;
 

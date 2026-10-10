@@ -668,7 +668,10 @@ async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
         "the requester's own check mark starts nothing"
     );
 
-    r.set_acceptance(tasks[0].0, "The footer no longer overlaps its content.");
+    r.set_acceptance(
+        tasks[0].0,
+        "The footer no longer overlaps its content. `true`",
+    );
     r.fake
         .send_event("e5", check_mark("1800000000.000100", OWNER));
     let runs = r.await_runs(1).await;
@@ -708,7 +711,7 @@ async fn an_owners_check_mark_keeps_an_unready_request_pending_and_reports_readi
     let dm = r.fake.await_dm("task is not ready").await;
     assert!(
         dm.to_string()
-            .contains("at least one verifiable acceptance item"),
+            .contains("at least one executable acceptance item"),
         "the owner is told what readiness is missing: {dm}"
     );
     r.fake
@@ -724,7 +727,7 @@ async fn an_owners_check_mark_keeps_an_unready_request_pending_and_reports_readi
         "the owner can retry after fixing readiness"
     );
 
-    r.set_acceptance(task_id, "The footer no longer overlaps its content.");
+    r.set_acceptance(task_id, "The footer no longer overlaps its content. `true`");
     r.fake
         .send_event("u3", check_mark("1800000000.000100", OWNER));
     r.await_runs(1).await;
@@ -741,7 +744,7 @@ async fn the_owners_accept_button_starts_the_request_and_nobody_elses_does() {
         mention("1800000000.000100", REQUESTER, "rename the button"),
     );
     let task_id = r.await_tasks(1).await[0].0;
-    r.set_acceptance(task_id, "The button label is updated to Submit.");
+    r.set_acceptance(task_id, "The button label is updated to Submit. `true`");
     let dm = r.fake.await_dm("Novo pedido").await;
     let id = accept_value(&dm);
 
@@ -1008,7 +1011,7 @@ async fn a_question_has_a_button_per_option_and_only_the_requester_or_owner_answ
         mention("1800000001.000100", REQUESTER, "rename the button"),
     );
     let task_id = r.await_tasks(1).await[0].0;
-    r.set_acceptance(task_id, "The button label is updated to Submit.");
+    r.set_acceptance(task_id, "The button label is updated to Submit. `true`");
     r.fake
         .send_event("q2", check_mark("1800000001.000100", OWNER));
     let session = r.await_runs(1).await[0].1;
@@ -1130,7 +1133,7 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
         mention("1800000001.000100", REQUESTER, "rename the button"),
     );
     let task_id = r.await_tasks(1).await[0].0;
-    r.set_acceptance(task_id, "The button label is updated to Submit.");
+    r.set_acceptance(task_id, "The button label is updated to Submit. `true`");
     r.fake
         .send_event("q2", check_mark("1800000001.000100", OWNER));
     let session = r.await_runs(1).await[0].1;
@@ -1167,6 +1170,7 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
             &r.workspace(),
             task_id,
             Some("Renamed it"),
+            None,
             None,
             session,
             "agent:one (operator)",
@@ -1220,6 +1224,7 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
                 ],
                 ..Default::default()
             }),
+            None,
             session,
             "agent:one (operator)",
             "task_handback",
@@ -1345,7 +1350,7 @@ async fn a_task_canceled_after_its_hand_back_posts_the_dropped_note() {
         mention("1800000004.000100", REQUESTER, "rename the button"),
     );
     let task_id = r.await_tasks(1).await[0].0;
-    r.set_acceptance(task_id, "The button label is updated to Submit.");
+    r.set_acceptance(task_id, "The button label is updated to Submit. `true`");
     r.fake
         .send_event("d2", check_mark("1800000004.000100", OWNER));
     let session = r.await_runs(1).await[0].1;
@@ -1363,6 +1368,7 @@ async fn a_task_canceled_after_its_hand_back_posts_the_dropped_note() {
                 blockers: vec!["Gates vermelhos: lint. Não mergear antes de corrigir.".into()],
                 ..Default::default()
             }),
+            None,
             session,
             "agent:one (operator)",
             "task_handback",
@@ -1399,7 +1405,10 @@ async fn a_refusal_at_triage_tells_the_thread_why_and_marks_the_request() {
         mention("1800000003.000100", REQUESTER, "email every client"),
     );
     let task_id = r.await_tasks(1).await[0].0;
-    r.set_acceptance(task_id, "The task is evaluated before emailing clients.");
+    r.set_acceptance(
+        task_id,
+        "The task is evaluated before emailing clients. `true`",
+    );
     r.fake
         .send_event("t2", check_mark("1800000003.000100", OWNER));
     let session = r.await_runs(1).await[0].1;
@@ -1414,6 +1423,7 @@ async fn a_refusal_at_triage_tells_the_thread_why_and_marks_the_request() {
                 changes: "Enviar mensagens a clientes precisa de uma pessoa. Com o texto aprovado, dá para preparar o envio.".into(),
                 ..Default::default()
             }),
+            None,
             session,
             "agent:one (operator)",
             "task_handback",
@@ -1464,7 +1474,7 @@ async fn accepted_requests_past_the_working_cap_wait_in_a_queue() {
         r.set_acceptance(
             *task_id,
             &format!(
-                "Request {} receives a summary in its Slack thread.",
+                "Request {} receives a summary in its Slack thread. `true`",
                 index + 1
             ),
         );
@@ -1563,7 +1573,7 @@ async fn a_reconnect_replays_what_was_missed_while_offline() {
     assert!(r.runs().is_empty(), "catchup cannot bypass readiness");
     r.set_acceptance(
         tasks[0].0,
-        "The offline request receives a summary in its Slack thread.",
+        "The offline request receives a summary in its Slack thread. `true`",
     );
     r.fake
         .send_event("catchup-retry", check_mark(&offline_ts, OWNER));
@@ -1651,7 +1661,7 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
     r.fake
         .send_event("a1", mention(request, REQUESTER, "rename the button"));
     let task_id = r.await_tasks(1).await[0].0;
-    r.set_acceptance(task_id, "The button label is updated to Submit.");
+    r.set_acceptance(task_id, "The button label is updated to Submit. `true`");
     r.fake.send_event("a2", check_mark(request, OWNER));
     let session = r.await_runs(1).await[0].1;
     r.daemon
@@ -1660,6 +1670,7 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
             task_id,
             None,
             Some(ready_result("Rótulo do botão")),
+            None,
             session,
             "agent:one (operator)",
             "task_handback",
@@ -1751,6 +1762,7 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
             task_id,
             None,
             Some(ready_result("Rótulo do botão")),
+            None,
             runs[1].1,
             "agent:one (operator)",
             "task_handback",
@@ -1852,7 +1864,7 @@ async fn a_reply_before_the_work_joins_the_task_and_one_during_it_reaches_the_ow
     r.fake
         .send_event("c1", mention(request, REQUESTER, "add a team column"));
     let task_id = r.await_tasks(1).await[0].0;
-    r.set_acceptance(task_id, "The table shows the team column.");
+    r.set_acceptance(task_id, "The table shows the team column. `true`");
     let reply = |user: &str, text: &str, ts: &str| {
         json!({"type": "message", "channel": CHANNEL, "user": user, "team": "T1", "ts": ts,
             "thread_ts": request, "text": text})

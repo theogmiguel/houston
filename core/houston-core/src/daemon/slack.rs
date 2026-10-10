@@ -2698,11 +2698,15 @@ impl Daemon {
         id: i64,
         summary: Option<&str>,
         form: Option<ResultForm>,
+        evidence: Option<super::task_proof::TaskProofInput>,
         session: u32,
         actor: &str,
         operation: &str,
     ) -> Result<proto::ServerMsg> {
         let summary = summary.map(str::trim).filter(|s| !s.is_empty());
+        // Checked and stored first, so a malformed proof is refused before the
+        // handback writes anything.
+        let (proof, missing) = self.task_record_proof(id, session, evidence)?;
         let intake = self.db.intake_for_task(id)?;
         let summary = match (&intake, form) {
             (Some(row), form) => {
@@ -2746,7 +2750,17 @@ impl Daemon {
                 ),
             },
         };
-        self.task_handback(workspace, id, &summary, session, actor, operation)
+        let summary = match missing {
+            Some(note) => format!("{summary}\n\n{note}"),
+            None => summary,
+        };
+        let msg = self.task_handback(workspace, id, &summary, session, actor, operation)?;
+        if let (proto::ServerMsg::TaskChanged { .. }, Some((_, proof))) = (&msg, &proof) {
+            if let Some(pr) = proof.pr_number {
+                self.task_watch_handback_pr(id, session, pr);
+            }
+        }
+        Ok(msg)
     }
 
     /// Answers are typed into their pane only when it is idle, the way a

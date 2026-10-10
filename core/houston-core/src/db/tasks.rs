@@ -133,6 +133,9 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
     )?;
     super::add_column_if_missing(conn, "backlog_task_runs", "reason", "reason TEXT")?;
     super::add_column_if_missing(conn, "backlog_task_runs", "pr_url", "pr_url TEXT")?;
+    super::add_column_if_missing(conn, "backlog_task_runs", "pr_number", "pr_number INTEGER")?;
+    super::add_column_if_missing(conn, "backlog_task_runs", "pushed_sha", "pushed_sha TEXT")?;
+    super::add_column_if_missing(conn, "backlog_task_runs", "evidence", "evidence TEXT")?;
     super::add_column_if_missing(
         conn,
         "backlog_task_domain",
@@ -356,6 +359,10 @@ pub struct TaskRunRow {
     pub started_at_ms: i64,
     pub ended_at_ms: Option<i64>,
     pub pr_url: Option<String>,
+    pub pr_number: Option<u32>,
+    pub pushed_sha: Option<String>,
+    /// A `TaskRunEvidence` as JSON.
+    pub evidence: Option<String>,
 }
 
 /// The fields a new run is inserted with; `attempt` is allocated as the task's
@@ -606,12 +613,12 @@ pub(crate) const TASK_COLUMN_COUNT: usize = 14;
 /// The columns `map_task_run_offset` reads, in order.
 pub(crate) const TASK_RUN_COLUMNS: &str = "id, task_id, attempt, kind, state, provider, reviewer, \
     session_id, delegation_id, worktree_path, branch, base_commit, initial_revision, summary, \
-    reason, started_at, ended_at, pr_url";
-pub(crate) const TASK_RUN_COLUMN_COUNT: usize = 18;
+    reason, started_at, ended_at, pr_url, pr_number, pushed_sha, evidence";
+pub(crate) const TASK_RUN_COLUMN_COUNT: usize = 21;
 
 const TASK_RUN_SELECT: &str = "SELECT id, task_id, attempt, kind, state, provider, reviewer, \
     session_id, delegation_id, worktree_path, branch, base_commit, initial_revision, summary, \
-    reason, started_at, ended_at, pr_url FROM backlog_task_runs";
+    reason, started_at, ended_at, pr_url, pr_number, pushed_sha, evidence FROM backlog_task_runs";
 
 /// The column list of a two-table join, qualified per alias.
 fn prefixed_columns(columns: &str, alias: &str) -> String {
@@ -699,6 +706,9 @@ fn map_task_run_offset(r: &rusqlite::Row, base: usize) -> rusqlite::Result<TaskR
         started_at_ms: r.get(base + 15)?,
         ended_at_ms: r.get(base + 16)?,
         pr_url: r.get(base + 17)?,
+        pr_number: r.get(base + 18)?,
+        pushed_sha: r.get(base + 19)?,
+        evidence: r.get(base + 20)?,
     })
 }
 

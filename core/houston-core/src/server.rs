@@ -4895,6 +4895,9 @@ struct TaskHandbackBody {
     /// A Slack-filed task's fields for the thread and the owner.
     #[serde(default)]
     result: Option<crate::slack::form::ResultForm>,
+    /// The proof of done any task's handback may carry.
+    #[serde(default)]
+    evidence: Option<crate::daemon::TaskProofInput>,
 }
 
 /// Resolves global task references and checks the caller's agent scope.
@@ -5184,6 +5187,7 @@ async fn task_handback(
             id,
             body.summary.as_deref(),
             body.result,
+            body.evidence,
             scope.session_id,
             actor,
             "task_handback",
