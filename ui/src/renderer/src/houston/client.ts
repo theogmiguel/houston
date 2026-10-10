@@ -128,7 +128,7 @@ import type { SessionState } from './generated/SessionState'
 
 import { PROTOCOL_VERSION } from './generated/PROTOCOL_VERSION'
 import { WriteLatencyTracker, logTerminalTransport } from './latency'
-import { getHostConfig, isTauri, isWindows } from './host'
+import { getHostConfig, isTauri } from './host'
 import type { TerminalTransport } from './transport/types'
 import { WsTerminalTransport } from './transport/ws'
 import { idleQuietMsDefault } from '../paneCaps'
@@ -424,7 +424,7 @@ export class HoustonClient {
     ws.onclose = () => client.onClose()
 
     client.send({ type: 'hello', token: cfg.token, protocol: PROTOCOL_VERSION })
-    if (isTauri() && isWindows()) {
+    if (isTauri() && navigator.platform.startsWith('Win')) {
       void import('./environmentMux')
         .then((m) => m.watchEnvironments(ws))
         .catch((err: unknown) => console.warn('houston: WSL environments are unavailable', err))
