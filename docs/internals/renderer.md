@@ -69,7 +69,10 @@ queue dropped, and the pane answers with one re-attach.
 and the engine's synchronous `term.write`. It owns escape-safe chunking (`findSafeSplit`
 never manufactures a cut inside a CSI, OSC/DCS/PM/APC/SOS, a bare two-byte escape, or a
 multi-byte UTF-8 codepoint), a single-write-in-flight gate, a stalled-write watchdog, and
-visible backpressure drops.
+the overflow policy. When the queue passes its cap, a synced pane whose daemon has an
+emulator discards the backlog and reattaches from a snapshot. The daemon has parsed every
+byte, so the screen comes back exact, and stdin stays live while the snapshot is in flight.
+Without a snapshot path, the queue drops its oldest bytes and says so in the pane.
 
 | Constant | Value | Reason |
 |---|---|---|
@@ -95,6 +98,14 @@ because growing a `WebAssembly.Memory` detaches the old `ArrayBuffer`.
 
 The render target is **Canvas 2D** — not WebGL, not DOM (`ghostty/renderer.ts`,
 `ghostty/surface.ts`). `pane/ghosttyTerminal.ts` is the pane-facing wrapper.
+
+The engine caps scrollback in bytes, while the setting counts lines. The surface converts
+the setting at the current width (`scrollbackLinesToBytes`) and recomputes the cap through
+`houston_vt_set_max_scrollback` whenever the width changes. Without that, a pane opened
+narrow during a split would keep a narrow pane's history after it widens.
+
+Output in unfocused panes repaints on one shared tick (`BACKGROUND_OUTPUT_PAINT_MS`, about
+15 Hz). The focused pane, input, scrolling, selection and resizes repaint on the next frame.
 
 Terminal palettes are applied **to the engine, not to CSS**: `theme.ts` holds
 `TERMINAL_PALETTES`, and `ghosttyThemeFromCss` converts a palette's hex values to the

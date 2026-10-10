@@ -60,6 +60,7 @@ import {
 } from './tuiDragCopy'
 import { shellQuote } from './shellQuote'
 import { PaneWriteQueue } from './writeQueue'
+import { hibernatesWhileHidden, hiddenPanePolicy, registerBenchProbe } from './benchProbe'
 import { useNotices } from '../notices'
 import { NoticeStack } from '../components/NoticeStack'
 import { findUrls, rangesOverlap, joinWrappedLine, mapJoinedOffset } from './webLinks'
@@ -229,6 +230,9 @@ export function TerminalPane({
   const hiddenRef = useRef(hiddenByExpand)
   hiddenRef.current = hiddenByExpand
   const warm = useContext(WarmContext)
+  const hibernateHidden = hibernatesWhileHidden(hiddenByExpand)
+  const hibernateHiddenRef = useRef(hibernateHidden)
+  hibernateHiddenRef.current = hibernateHidden
   const keymapOverrides = useContext(KeymapOverridesContext)
   const keymapOverridesRef = useRef(keymapOverrides)
   keymapOverridesRef.current = keymapOverrides
@@ -253,6 +257,7 @@ export function TerminalPane({
   const lastReassertedSizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const resizeReassertTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const skipSnapshotOnceRef = useRef(false)
+  const overflowResyncRef = useRef(false)
   const [documentHidden, setDocumentHidden] = useState(() => document.visibilityState === 'hidden')
   const documentHiddenRef = useRef(documentHidden)
   documentHiddenRef.current = documentHidden
@@ -354,6 +359,7 @@ export function TerminalPane({
         term.write(payload, callback)
       },
       isAltBuffer: () => term.buffer.active.type === 'alternate',
+      resyncOnOverflow: () => resyncFromSnapshot(),
       onLossOutOfBand: (totalDropped) => {
         pushToastRef.current(
           'Output dropped',
@@ -364,6 +370,28 @@ export function TerminalPane({
       }
     })
     writeQueueRef.current = writeQueue
+    const unregisterBenchProbe = registerBenchProbe(info.id, {
+      screenText: () => {
+        const buf = term.buffer.active
+        const lines: string[] = []
+        for (let y = 0; y < buf.length; y++) {
+          const line = buf.getLine(y)
+          const wrapsOn = buf.getLine(y + 1)?.isWrapped ?? false
+          const text = line?.translateToString(!wrapsOn) ?? ''
+          if (line?.isWrapped && lines.length > 0) lines[lines.length - 1] += text
+          else lines.push(text)
+        }
+        return lines.join('\n')
+      },
+      size: () => ({ cols: term.cols, rows: term.rows }),
+      sendInput: (text) => clientRef.current.sendStdin(info.id, text),
+      focus: () => term.focus(),
+      hasFocus: () => host.contains(document.activeElement),
+      fullText: () => ghosttyTerm.getFullText(),
+      paintCount: () => ghosttyTerm.paintCount(),
+      synced: () => seqRef.current.synced,
+      attached: () => attachedRef.current
+    })
     const ghostty = ghosttyTerm
     const fitTerminal = (): boolean => ghostty.fit()
     searchRef.current = createGhosttyFinder({
@@ -999,7 +1027,8 @@ export function TerminalPane({
           taLen: textareaLen()
         })
       }
-      if (liveRef.current && deliver && !seqRef.current.awaitingSnapshot) {
+      const inputHeld = seqRef.current.awaitingSnapshot && !overflowResyncRef.current
+      if (liveRef.current && deliver && !inputHeld) {
         clientRef.current.sendStdin(info.id, d)
       }
     })
@@ -1084,6 +1113,7 @@ export function TerminalPane({
       snapshot: (state, outputOffset) => {
         const s = seqRef.current
         s.awaitingSnapshot = false
+        overflowResyncRef.current = false
         const term = termRef.current
         if (!term || !term.importSnapshot(state)) {
           console.warn(
@@ -1128,7 +1158,7 @@ export function TerminalPane({
       },
       clipboardCopied: () => pushToast('Copied', undefined, 'success', 'auto-copy')
     })
-    if (!warmRef.current && !documentHiddenRef.current) {
+    if (!warmRef.current && !documentHiddenRef.current && !hibernateHiddenRef.current) {
       reportVisibility(true)
       sendAttach(activeAtMountRef.current ? ATTACH_REPLAY_BYTES : ATTACH_REPLAY_BYTES_BACKGROUND)
       attachedRef.current = true
@@ -1183,6 +1213,7 @@ export function TerminalPane({
       linkProviderDisposable.dispose()
       webLinkProviderDisposable.dispose()
       taskLinkProviderDisposable.dispose()
+      unregisterBenchProbe()
       writeQueue.dispose()
       term.dispose()
       termRef.current = null
@@ -1301,7 +1332,7 @@ export function TerminalPane({
   }, [])
 
   useEffect(() => {
-    if (!warm && !documentHidden) {
+    if (!warm && !documentHidden && !hibernateHidden) {
       if (hibernateTimerRef.current !== undefined) {
         clearTimeout(hibernateTimerRef.current)
         hibernateTimerRef.current = undefined
@@ -1309,12 +1340,13 @@ export function TerminalPane({
       if (!attachedRef.current) {
         syncSizeRef.current()
         seqRef.current.catchup = true
-        const synced = seqRef.current.synced
-        if (synced) skipSnapshotOnceRef.current = true
-        reportVisibility(true)
         // A synced pane already holds every byte before its cursor; asking from there
         // keeps a warm wake from re-sending megabytes the pane would discard.
-        sendAttach(ATTACH_REPLAY_BYTES, synced ? seqRef.current.cursor : undefined)
+        const replayFromCursor =
+          seqRef.current.synced && hiddenPanePolicy() !== 'hibernate-snapshot'
+        if (replayFromCursor) skipSnapshotOnceRef.current = true
+        reportVisibility(true)
+        sendAttach(ATTACH_REPLAY_BYTES, replayFromCursor ? seqRef.current.cursor : undefined)
         attachedRef.current = true
       }
       if (hibernatedRef.current) {
@@ -1328,7 +1360,8 @@ export function TerminalPane({
     if (hibernateTimerRef.current !== undefined) return
     hibernateTimerRef.current = setTimeout(() => {
       hibernateTimerRef.current = undefined
-      if ((!warmRef.current && !documentHiddenRef.current) || !attachedRef.current) return
+      const sleeping = warmRef.current || documentHiddenRef.current || hibernateHiddenRef.current
+      if (!sleeping || !attachedRef.current) return
       reportVisibility(false)
       attachedRef.current = false
     }, HIBERNATE_DEBOUNCE_MS)
@@ -1339,7 +1372,7 @@ export function TerminalPane({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [warm, documentHidden])
+  }, [warm, documentHidden, hibernateHidden])
 
   useEffect(() => {
     const wasHidden = prevHiddenRef.current
@@ -1391,7 +1424,23 @@ export function TerminalPane({
     clientRef.current.attachSession(info.id, replayBytes, snapshot || undefined, snapshot ? undefined : fromOffset)
   }
 
+  /** A pane that fell too far behind takes the daemon's screen instead of dropping
+   * the middle of its output. Frames keep buffering until the snapshot lands, and
+   * the pane keeps showing its current screen meanwhile. */
+  const resyncFromSnapshot = (): boolean => {
+    const s = seqRef.current
+    if (!s.synced || s.catchup || !wantsSnapshot()) return false
+    s.catchup = true
+    s.pending = []
+    s.pendingBytes = 0
+    // Input stays live: holding it would swallow the Ctrl-C a flood invites.
+    overflowResyncRef.current = true
+    sendAttach(ATTACH_REPLAY_BYTES)
+    return true
+  }
+
   const resetAndReattach = (): void => {
+    overflowResyncRef.current = false
     writeQueueRef.current?.discardPendingForReset()
     termRef.current?.reset()
     seqRef.current = {

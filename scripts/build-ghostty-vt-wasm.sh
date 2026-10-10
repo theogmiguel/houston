@@ -35,6 +35,13 @@ zig_sha256="$(lock_get "zig_sha256_${slug}")"
 mkdir -p "$cache"
 
 src="${HOUSTON_GHOSTTY_VT_SRC:-$cache/src-$revision}"
+patch_file="$repo_root/core/houston-core/ghostty-patches/0001-houston-snapshot-exports.patch"
+# The patch stamp holds the patch it applied. Re-extracting over a tree patched by an
+# older one restores the files it touched, so the current patch applies cleanly.
+if [[ -z "${HOUSTON_GHOSTTY_VT_SRC:-}" && -e "$src/.houston-patched" ]] &&
+   ! cmp -s "$patch_file" "$src/.houston-patched"; then
+  rm -f -- "$src/.houston-extracted" "$src/.houston-patched"
+fi
 if [[ ! -e "$src/.houston-extracted" && -z "${HOUSTON_GHOSTTY_VT_SRC:-}" ]]; then
   tarball="$cache/ghostty-$revision.tar.gz"
   [[ -f "$tarball" ]] || curl -sSL --fail -o "$tarball" "$source_url"
@@ -53,9 +60,11 @@ fi
 cp "$repo_root/core/houston-core/ghostty-vt/houston_snapshot.zig" \
    "$src/src/terminal/c/houston_snapshot.zig"
 if [[ ! -e "$src/.houston-patched" ]]; then
-  patch -p1 -F 0 --no-backup-if-mismatch -d "$src" \
-    -i "$repo_root/core/houston-core/ghostty-patches/0001-houston-snapshot-exports.patch"
-  touch "$src/.houston-patched"
+  patch -p1 -F 0 --no-backup-if-mismatch -d "$src" -i "$patch_file"
+  cp "$patch_file" "$src/.houston-patched"
+elif ! cmp -s "$patch_file" "$src/.houston-patched"; then
+  echo "$src was patched with a different $patch_file; point HOUSTON_GHOSTTY_VT_SRC at a freshly extracted tree of revision $revision" >&2
+  exit 1
 fi
 
 zig="${HOUSTON_ZIG:-$cache/zig-$slug-$zig_version/zig}"

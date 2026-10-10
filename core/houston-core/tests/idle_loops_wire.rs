@@ -232,6 +232,8 @@ async fn p4_idle_rss_with_twelve_saturated_emulators() {
 
     let (daemon, _state) = test_daemon();
     houston_core::boot::spawn_background_loops(&daemon);
+    // Boot opens a process-lifetime D-Bus connection; the baseline must include its threads.
+    tokio::time::sleep(Duration::from_secs(2)).await;
     let project = tempfile::tempdir().unwrap();
 
     let threads_before = thread_count();
