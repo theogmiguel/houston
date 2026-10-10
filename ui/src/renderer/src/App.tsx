@@ -1686,13 +1686,23 @@ export function App(): React.JSX.Element {
       if (picked === null || picked.length === 0) return;
       const refusals: string[] = [];
       const accepted: string[] = [];
-      for (const path of picked) {
-        const refusal = workspaceRefusal(path);
+      for (const pick of picked) {
+        // A `\\wsl.localhost` pick is added as its POSIX path in that distro.
+        const resolved = pick.startsWith("\\\\")
+          ? await (await import("./houston/workspacePick")).resolveWorkspacePick(pick)
+          : { wire: pick, path: pick };
+        if ("refusal" in resolved) {
+          pushError(resolved.refusal);
+          continue;
+        }
+        const refusal = workspaceRefusal(resolved.path);
         if (refusal !== null) refusals.push(refusal);
-        else if (!accepted.includes(path)) accepted.push(path);
+        else if (!accepted.includes(resolved.path)) {
+          accepted.push(resolved.path);
+          conn.client.addWorkspace(resolved.wire);
+        }
       }
       setWorkspaceRefusals(refusals);
-      for (const path of accepted) conn.client.addWorkspace(path);
       if (accepted.length > 0) {
         setSelectedWs(accepted[accepted.length - 1]);
         setShowLauncher(false);
@@ -1705,7 +1715,7 @@ export function App(): React.JSX.Element {
     } finally {
       setPickingWorkspace(false);
     }
-  }, [conn]);
+  }, [conn, pushError]);
 
   const replacedSessions = useMemo(
     () => respawnedSessions(sessions.values()),
