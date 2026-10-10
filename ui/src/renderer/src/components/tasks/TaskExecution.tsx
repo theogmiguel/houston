@@ -371,7 +371,7 @@ function RunProof({ run, pullRequestUrl }: { run: TaskRun; pullRequestUrl: strin
     <section aria-label="Run proof" data-testid="task-run-proof" className="grid gap-[var(--space-2)]">
       {(number != null || sha) && <Inline wrap gap="small">
         {number != null && (url ? <InlineLink href={url}>Pull request #{number}</InlineLink> : <Text size="small">Pull request #{number}</Text>)}
-        {sha && <Text as="span" size="small" tone="muted">Pushed <CopyChip value={sha} className="font-mono">{sha.slice(0, SHORT_SHA)}</CopyChip></Text>}
+        {sha && <Text as="span" size="small" tone="muted">Pushed <CopyChip value={sha}>{sha.slice(0, SHORT_SHA)}</CopyChip></Text>}
       </Inline>}
       {evidence && evidence.verification.length > 0 && <div className="grid gap-[var(--space-1)]">
         <Text size="small" weight="semibold">Verification reported by the agent</Text>
@@ -386,7 +386,7 @@ function RunProof({ run, pullRequestUrl }: { run: TaskRun; pullRequestUrl: strin
       </div>}
       {evidence?.capture_path && <div className="grid gap-[var(--space-1)]">
         <Text size="small" weight="semibold">Capture</Text>
-        <div><CopyChip value={evidence.capture_path} className="font-mono">{evidence.capture_path}</CopyChip></div>
+        <div><CopyChip value={evidence.capture_path}>{evidence.capture_path}</CopyChip></div>
       </div>}
       {evidence && evidence.permanent.length > 0 && <div className="grid gap-[var(--space-1)]">
         <Text size="small" weight="semibold">What becomes permanent</Text>
