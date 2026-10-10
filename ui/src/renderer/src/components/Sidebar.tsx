@@ -75,6 +75,8 @@ import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { Icon } from "./ui/Icon";
 import { Count } from "./ui/Count";
+import { Chip } from "./ui/Chip";
+import { wslWorkspaces } from "../houston/environments";
 import {
   RAIL_VIEWS,
   RAIL_VIEW_LABEL,
@@ -316,6 +318,7 @@ function WorkspaceRailGroupRow({
         {!hasGrids && <span aria-hidden="true" className="flex-none"><RailChevron collapsed /></span>}
         <Icon glyph={IconFolder} role="ui" opacity="muted" />
         <WorkspaceTreeLabel heading>{workspace.name}</WorkspaceTreeLabel>
+        <EnvironmentBadge path={workspace.path} />
         {count > 0 && <RailRowCount count={count} />}
         {pinned && <PinIndicator />}
         <WorkspaceTreeActions>
@@ -852,6 +855,12 @@ function tagsOf(s: SessionInfo): number[] {
   return s.tags ?? [];
 }
 
+// A workspace that lives in a WSL distro names it; Windows workspaces show nothing.
+function EnvironmentBadge({ path }: { path: string }): React.JSX.Element | null {
+  const distro = wslWorkspaces.get(path);
+  return distro === undefined ? null : <Chip variant="state" label={`WSL: ${distro}`} className="flex-none" />;
+}
+
 function PinIndicator(): React.JSX.Element {
   return <RailPinnedIndicator />;
 }
@@ -960,6 +969,7 @@ function CollapsedGridsRow({
           <WorkspaceTreeLabel>
             {w.name}
           </WorkspaceTreeLabel>
+          <EnvironmentBadge path={w.path} />
           <WorkspaceTreeActions>
             {pinned && <PinIndicator />}
           </WorkspaceTreeActions>
@@ -1201,6 +1211,7 @@ function ExpandedGridsRow({
           <WorkspaceTreeLabel>
             {w.name}
           </WorkspaceTreeLabel>
+          <EnvironmentBadge path={w.path} />
           <WorkspaceTreeActions>
             {pinned && <PinIndicator />}
           </WorkspaceTreeActions>
@@ -1434,6 +1445,7 @@ function PlainWorkspaceRow({
           <WorkspaceTreeLabel size="md">
             {w.name}
           </WorkspaceTreeLabel>
+          <EnvironmentBadge path={w.path} />
           <WorkspaceTreeActions>
             {pinned && <PinIndicator />}
             <Tooltip label="Close workspace (stops its agents)">
