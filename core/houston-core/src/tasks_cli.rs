@@ -17,8 +17,10 @@ hs-task — a Houston pane's view of its workspace's task backlog
   hs-task handback [HOU-n] --summary T
   hs-task handback [HOU-n] --subject T --changes T --step T [--step …] [--caveats T]
              --live-note T --dropped-note T [--size small|medium|large]
-             [--note T …] [--warning T …] [--blocker T …] [--refused]
+             [--note T …] [--warning T …] [--blocker T …]
              (a Slack-filed task)
+  hs-task handback [HOU-n] --refused --subject T --changes T
+             (a Slack-filed task: refused at triage)
   hs-task ask --question Q --option A --option B [--option …] --recommended N
              [--why T] [--context T]           (a Slack-filed task: asks in its thread)
 
