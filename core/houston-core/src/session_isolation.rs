@@ -303,10 +303,8 @@ pub fn fail_scope_termination_for_test(fail: bool) {
     FAIL_SCOPE_TERMINATION.store(fail, std::sync::atomic::Ordering::SeqCst);
 }
 
-/// Stops a session through its scope, or through `fallback` (the PTY's process groups)
-/// when it has none. A failed scope stop also falls back: WSL's user systemd answers
-/// KillUnit with InvalidArgs ("Failed to send signal SIGKILL to auxiliary processes")
-/// while the processes die, and a kill that errors there strands a daemon shutdown.
+/// Stops a session through its scope, else through `fallback` (the PTY's process groups).
+/// A failed scope stop also falls back; docs/internals/overview.md explains why.
 pub fn terminate_session(
     pid: u32,
     id: u32,
