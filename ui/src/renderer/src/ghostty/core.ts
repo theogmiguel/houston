@@ -491,11 +491,11 @@ export class GhosttyTerminalCore {
     this.applyDefaultCursorBlink();
   }
 
-  // Ghostty's C embedder defaults shell_redraws_prompt off; without it `resize`
-  // reflows a soft-wrapped prompt instead of clearing it, and the shell's SIGWINCH
-  // redraw then prints a duplicate. Written into the vt only, never the PTY.
+  // Ghostty's C embedder defaults shell_redraws_prompt off, so `resize` reflows a wrapped
+  // prompt that the shell's SIGWINCH redraw then duplicates. 133;C closes the prompt at
+  // once, or a TUI's unmarked rows stay prompt rows that resize erases. Vt only, not PTY.
   private enableShellRedrawsPrompt(): void {
-    this.write("\x1b]133;A;redraw=1\x07");
+    this.write("\x1b]133;A;redraw=1\x07\x1b]133;C\x07");
   }
 
   setTheme(theme: GhosttyTheme): void {

@@ -233,6 +233,22 @@ async fn screen_and_tail_agree_on_a_pane_that_prints_lines() {
 }
 
 #[tokio::test]
+async fn a_resize_keeps_the_rows_a_program_printed_without_prompt_marks() {
+    let _guard = serial().await;
+    let r = rig("read-source-resize").await;
+    let parent = r.parent();
+    let token = r.token_for(parent.id);
+    let child = r.spawn_child(&token, "codex").await;
+    r.read(&token, child, "screen", "LINE-THREE").await;
+
+    r.daemon.resize(child, 50, 10).expect("narrow the child");
+    r.daemon.resize(child, 100, 30).expect("widen the child");
+
+    let screen = r.read(&token, child, "screen", "LINE-THREE").await;
+    assert_eq!(screen, vec!["LINE-ONE", "LINE-TWO", "LINE-THREE"]);
+}
+
+#[tokio::test]
 async fn a_read_that_names_no_source_gets_the_screen() {
     let _guard = serial().await;
     let r = rig("read-source-default").await;
