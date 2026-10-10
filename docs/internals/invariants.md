@@ -310,6 +310,66 @@ respawned without their mission. Unsupported providers are refused by name in
 `launch::resume_args`. There is no transcript scan or history ledger; the handle lives
 on the session row and metadata validation never drives status.
 
+## Starting work
+
+### Starting is explicit
+
+Most task panes start on a click: Start, Retry, Run next N, Generate plan. The **automatic
+starts** below open a pane later, with no click in the app; each names the explicit act it
+inherits. An orchestrator's `task_execute` and `task_review` are agent requests instead,
+refused while agent spawning is off or the workspace's tasks access is not `write`, and
+counted against the calling pane's child cap.
+
+| Automatic start | Explicit act | Code |
+|---|---|---|
+| A Slack request starts | The owner's **Accept** button or ✅ reaction on the request or on one of Houston's replies in its thread. Anyone else's is ignored. | `daemon/slack.rs::slack_accept_row`, `slack/intake.rs::classify` |
+| An accepted request waiting behind `SLACK_RUNS_WORKING_MAX` starts when a working slot frees | The same acceptance. `slack_tick` drains the queue in order on every tick. | `daemon/slack.rs::slack_tick` |
+| A Slack adjustment opens the next attempt | The owner accepts the adjustment reply. | `daemon/slack.rs::slack_accept_adjustment` |
+| A reviewer child starts when an orchestrated implementation run hands back | The `reviewer` passed to `task_execute`, or the workspace's default reviewer (off by default) | `daemon/tasks.rs::task_review_internal` |
+| A failed review opens a rework attempt | `tasks_rework_rounds` above zero (default 0, at most `TASKS_REWORK_ROUNDS_MAX`) | `daemon/tasks.rs::maybe_auto_rework` |
+
+A Start in the Tasks tab on a Slack request's task is an ordinary click; the request then
+follows the run it opened (`slack_follow_runs`). A Harness fix task is created as Todo: the
+Harness view sends `harness_fix_task` with `start: false`. When a client sends `start: true`,
+the daemon calls the same `task_start` that the Tasks tab uses.
+
+**Enforced by** `task_readiness_refusal`, which the Slack accept, the queue drain, the
+adjustment retry and the rework round (`task_execute_internal`) all pass through. Only a
+manual Start with its readiness override (`task_start_with_override`) skips it. The
+reviewer is not re-gated: it reviews a run that passed readiness when that run started. A
+refused automatic start does not stay silent: a Slack request returns to pending with ⚠️
+and the owner receives the reason with **Accept** to retry; a refused review or rework
+round is written to the task as a comment (`note_auto_action`).
+`slack_intake_wire.rs` (owner-only acceptance, unready requests stay pending, the queue)
+and `task_review_wire.rs` (`automatic_rework_stops_at_the_configured_cap`) cover it.
+
+**Why.** An external event can create work, but it cannot start an agent by itself. Every
+automatic start is either an owner's acceptance of that specific request or a
+per-workspace setting the user turned on.
+
+### Tracker writes follow an enabled connection; nothing pushes or opens a pull request automatically
+
+When a workspace enables a tracker connection, `task_tracker_loop` writes to it with no
+click, from the `task_tracker_outbox`. Rows are queued only for enabled connections; a row
+whose connection was disabled or removed fails with that reason and sends nothing.
+
+- **GitHub Issues** (`task_trackers/github.rs`, through `gh`): a new issue for a Delivery
+  that belongs to a Project and has no GitHub source; a status comment when the task's
+  status changes; the handback summary and the pull request URL as comments; and closing
+  the Delivery issue when all of its Slices are Done, or when the user overrides the
+  Delivery to Done. `close_issue` refuses a payload without `authorized_by_daemon`, and
+  without either `all_children_done` or `user_override`. Comments strip closing keywords.
+- **Notion** (`task_trackers/notion.rs`): the mapped status property, the pull request URL
+  property and a handback summary comment on the linked page.
+
+No automatic path pushes a branch, opens a pull request or merges one. The task brief asks
+the agent to commit and open the pull request (`daemon/tasks.rs`), and an agent cannot mark a
+task Done. The Git and pull-request surfaces push, create and merge only on a client request
+(`GitPush`, `PrCreate`, `PrMerge` in `server.rs`).
+
+**Why.** Tracker status is the user's record of work. Code leaving the machine is the
+agent's act inside its own visible pane, or the user's act in the app.
+
 ## Wire
 
 - Daemon and UI ship wire changes in the same commit; one `PROTOCOL_VERSION` bump per
