@@ -478,8 +478,11 @@ async fn zcode_hooks_drive_status_through_a_turn_its_questions_and_permissions()
     );
 }
 
+/// What is proven is the parsing: if ZCode delivers an `is_interrupt` failure, it
+/// closes the request of the tool it names. ZCode cancels its hook runner with an
+/// interrupted turn, so a real Esc usually reports nothing at all.
 #[tokio::test]
-async fn an_interrupted_zcode_tool_ends_the_turn() {
+async fn an_is_interrupt_failure_that_arrives_closes_only_its_own_request() {
     let env = setup().await;
     let daemon = boot(&env);
     let dir = tempfile::tempdir().unwrap();
@@ -512,8 +515,8 @@ async fn an_interrupted_zcode_tool_ends_the_turn() {
     .await;
     assert_eq!(
         status(&daemon, id),
-        Some(proto::AgentStatus::Idle),
-        "ZCode runs no Stop after an interrupt; the aborted tool ends the turn"
+        Some(proto::AgentStatus::Working),
+        "a cancelled tool ends its own request, not the turn; Stop ends the turn"
     );
 }
 
@@ -605,21 +608,49 @@ async fn an_unprompted_zcode_pane_stays_starting_past_the_spawn_grace() {
     assert_eq!(status(&daemon, id), Some(proto::AgentStatus::Idle));
 }
 
+/// Tools run in parallel: a `Read` finishing must not close a question or a permission
+/// still open. Each closes on the result with its own `tool_use_id`; a permission the
+/// operator denied fires no hook and stays open until the turn ends.
 #[tokio::test]
-async fn a_denied_zcode_permission_clears_with_the_next_tool_result() {
+async fn a_parallel_tool_result_leaves_open_questions_and_permissions_pending() {
     let env = setup().await;
     let daemon = boot(&env);
     let dir = tempfile::tempdir().unwrap();
     let id = zcode_pane(&daemon, dir.path(), None).id;
     let state = env.state.path();
+    use proto::AgentStatus::*;
+    for (event, name) in [
+        (
+            "UserPromptSubmit",
+            "zcode-3.14.3-src-02-UserPromptSubmit.json",
+        ),
+        (
+            "PreToolUse",
+            "zcode-3.14.3-src-04-PreToolUse-AskUserQuestion.json",
+        ),
+        ("PostToolUse", "zcode-3.14.3-src-10-PostToolUse-Read.json"),
+    ] {
+        drive(state, &daemon, event, id, name).await;
+    }
+    assert_eq!(
+        status(&daemon, id),
+        Some(NeedsInput),
+        "the question is still open after an unrelated Read"
+    );
     drive(
         state,
         &daemon,
-        "UserPromptSubmit",
+        "PostToolUse",
         id,
-        "zcode-3.14.3-src-02-UserPromptSubmit.json",
+        "zcode-3.14.3-src-05-PostToolUse-AskUserQuestion.json",
     )
     .await;
+    assert_eq!(
+        status(&daemon, id),
+        Some(Working),
+        "its own answer closes it"
+    );
+
     drive(
         state,
         &daemon,
@@ -628,7 +659,6 @@ async fn a_denied_zcode_permission_clears_with_the_next_tool_result() {
         "zcode-3.14.3-src-06-PermissionRequest-Bash.json",
     )
     .await;
-    assert_eq!(status(&daemon, id), Some(proto::AgentStatus::NeedsInput));
     drive(
         state,
         &daemon,
@@ -639,8 +669,14 @@ async fn a_denied_zcode_permission_clears_with_the_next_tool_result() {
     .await;
     assert_eq!(
         status(&daemon, id),
-        Some(proto::AgentStatus::Working),
-        "a denial fires no hook; the turn going on with another tool closes the dialog"
+        Some(NeedsInput),
+        "the permission is still open after an unrelated Read"
+    );
+    drive(state, &daemon, "Stop", id, "zcode-3.14.3-src-03-Stop.json").await;
+    assert_eq!(
+        status(&daemon, id),
+        Some(Idle),
+        "a denied permission fires no hook; the turn's end closes it"
     );
 }
 

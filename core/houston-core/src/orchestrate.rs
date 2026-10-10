@@ -336,7 +336,7 @@ pub fn prompt_interrupt_key(provider: proto::AgentKind) -> anyhow::Result<&'stat
         Grok => Ok(b"\x03"),
         Claude => anyhow::bail!("mode restart refused for provider Claude: Stop does not run after user interrupts; no verified post-interrupt idle signal; accepted modes: queue, steer"),
         Opencode => anyhow::bail!("mode restart refused for provider OpenCode: no captured or documented post-interrupt idle contract for its interrupt sequence; accepted modes: queue, steer"),
-        Zcode => anyhow::bail!("mode restart refused for provider ZCode: Stop does not run after an interrupt and an interrupt between tool calls reports nothing; accepted modes: queue, steer"),
+        Zcode => anyhow::bail!("mode restart refused for provider ZCode: Stop does not run after an interrupt and the interrupt cancels ZCode's own hooks, so no idle is reported; accepted modes: queue, steer"),
         other => anyhow::bail!("mode restart refused for provider {other:?}: no verified interrupt key; accepted modes: queue, steer"),
     }
 }
@@ -807,7 +807,7 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
     if agent == proto::AgentKind::Zcode {
         notes.push(format!(
             "{provider} reports no turn end for a failed turn (API error, exhausted quota, \
-             network) or an interrupt between tool calls; the pane stays working until its \
+             network) or an interrupt; the pane stays working until its \
              next prompt"
         ));
     }
@@ -4573,7 +4573,7 @@ mod tests {
             Some(
                 "zcode has no handback-only launch rule configured; pane_submit follows its \
                  approval mode; zcode reports no turn end for a failed turn (API error, \
-                 exhausted quota, network) or an interrupt between tool calls; the pane stays \
+                 exhausted quota, network) or an interrupt; the pane stays \
                  working until its next prompt"
             )
         );

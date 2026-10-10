@@ -12838,31 +12838,25 @@ impl Daemon {
             if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
-            // ZCode runs no Stop after an interrupt; a tool aborted by it is the only signal.
-            if provider == proto::AgentKind::Zcode && d.interrupted {
-                self.resolve_permission_episodes(d.session, &orchestrate::EpisodeEnd::TurnEnded);
-                self.apply_agent_event(
+            // ZCode cancels its own hook runner with the turn, so an `is_interrupt` failure
+            // that does arrive names one cancelled tool in a turn still running.
+            if d.interrupted {
+                tracing::debug!(
+                    "session {}: {provider:?} reports tool {:?} cancelled",
                     d.session,
-                    &d.event,
-                    crate::agent_events::AgentEvent::TurnInterrupted,
-                    false,
-                    true,
+                    d.tool_use_id
                 );
-                return Some(crate::hook_drop::DropVerdict::Applied);
             }
-            // ZCode reports nothing when a permission is denied, so any later tool result
-            // means its dialog closed, whichever tool it names.
-            let end = if provider == proto::AgentKind::Zcode {
-                orchestrate::EpisodeEnd::TurnEnded
-            } else {
-                orchestrate::EpisodeEnd::PostToolUse {
+            // Tools run in parallel: a result closes only the request with its own id.
+            let resumed = self.resolve_permission_episodes(
+                d.session,
+                &orchestrate::EpisodeEnd::PostToolUse {
                     tool_use_id: d.tool_use_id.clone(),
                     prompt_id: d.prompt_id.clone(),
                     tool_name: d.tool_name.clone(),
                     tool_input_fingerprint: d.tool_input_fingerprint.clone(),
-                }
-            };
-            let resumed = self.resolve_permission_episodes(d.session, &end);
+                },
+            );
             if resumed {
                 self.apply_agent_event(
                     d.session,
