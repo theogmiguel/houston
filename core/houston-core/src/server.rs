@@ -837,6 +837,7 @@ async fn dispatch(
         }
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
         proto::ClientMsg::SessionCreate {
+            request,
             agent,
             project_dir,
             cmd,
@@ -869,12 +870,30 @@ async fn dispatch(
                 model,
                 effort,
             };
-            tokio::task::spawn_blocking(move || daemon.create_session(params))
+            let result = tokio::task::spawn_blocking(move || daemon.create_session(params))
                 .await
-                .unwrap_or_else(|e| Err(anyhow::anyhow!("create task panicked: {e}")))
-                .map(|info| {
-                    frames_wanted.insert(info.id);
-                })
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("create task panicked: {e}")));
+            if let Ok(info) = &result {
+                frames_wanted.insert(info.id);
+            }
+            if let Some(request) = request {
+                let (info, error) = match result {
+                    Ok(info) => (Some(info), None),
+                    Err(error) => (None, Some(format!("{error:#}"))),
+                };
+                send_msg(
+                    sink,
+                    &proto::ServerMsg::SessionCreateResult {
+                        request,
+                        info,
+                        error,
+                    },
+                )
+                .await
+                .map_err(|_| anyhow::anyhow!("sending create result failed"))
+            } else {
+                result.map(|_| ())
+            }
         }
         proto::ClientMsg::SessionKill {
             session,

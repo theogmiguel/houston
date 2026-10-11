@@ -1303,6 +1303,8 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     let cancelled = false;
+    let connecting = false;
+    let activeClient: HoustonClient | null = null;
     let bootTimer: ReturnType<typeof setTimeout> | undefined;
 
     function handleSessionState(msg: SessionStateMessage): void {
@@ -1319,9 +1321,10 @@ export function App(): React.JSX.Element {
 
     function wire(client: HoustonClient, boot: boolean): void {
       let helloed = false;
+      let disconnected = false;
       let helloError: string | null = null;
       client.subscribeAll((msg: ServerMsg) => {
-        if (cancelled) return;
+        if (cancelled || disconnected || activeClient !== client) return;
         if (!helloed) {
           if (msg.type === "hello_ok") {
             helloed = true;
@@ -1663,17 +1666,24 @@ export function App(): React.JSX.Element {
           }
         }
       });
-      client.onFrame = (session, offset, payload) =>
-        outputHandlers.current.get(session)?.frame(offset, payload);
-      client.onReplay = (session, data, bytesSeen) =>
-        outputHandlers.current.get(session)?.replay(data, bytesSeen);
-      client.onSnapshot = (session, state, outputOffset) =>
-        outputHandlers.current.get(session)?.snapshot(state, outputOffset);
-      client.onGap = (session) => outputHandlers.current.get(session)?.gap();
-      client.onResizeExhausted = (session) =>
-        outputHandlers.current.get(session)?.resizeExhausted();
+      client.onFrame = (session, offset, payload) => {
+        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.frame(offset, payload);
+      };
+      client.onReplay = (session, data, bytesSeen) => {
+        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.replay(data, bytesSeen);
+      };
+      client.onSnapshot = (session, state, outputOffset) => {
+        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.snapshot(state, outputOffset);
+      };
+      client.onGap = (session) => {
+        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.gap();
+      };
+      client.onResizeExhausted = (session) => {
+        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.resizeExhausted();
+      };
       client.onClose = () => {
-        if (cancelled) return;
+        if (cancelled || disconnected || activeClient !== client) return;
+        disconnected = true;
         if (boot && !helloed) {
           clearTimeout(bootTimer);
           setConn({
@@ -1698,15 +1708,35 @@ export function App(): React.JSX.Element {
       };
     }
 
-    function reconnect(): void {
+    function connect(boot: boolean): void {
+      if (cancelled || connecting) return;
+      connecting = true;
+      clearTimeout(retryTimerRef.current);
       Client.connect()
         .then((client) => {
-          if (!cancelled) wire(client, false);
+          connecting = false;
+          if (cancelled) {
+            client.close();
+            return;
+          }
+          const previous = activeClient;
+          activeClient = client;
+          previous?.close();
+          wire(client, boot);
         })
-        .catch(() => {
-          if (!cancelled)
+        .catch((error: Error) => {
+          connecting = false;
+          if (cancelled) return;
+          if (boot) {
+            clearTimeout(bootTimer);
+            setConn({ kind: "failed", error: error.message });
+          } else {
             retryTimerRef.current = setTimeout(reconnect, RECONNECT_MS);
+          }
         });
+    }
+    function reconnect(): void {
+      connect(false);
     }
     reconnectRef.current = reconnect;
 
@@ -1719,25 +1749,12 @@ export function App(): React.JSX.Element {
         );
     }, 12_000);
 
-    let bootClient: HoustonClient | null = null;
-    Client.connect()
-      .then((client) => {
-        if (cancelled) {
-          client.close();
-          return;
-        }
-        bootClient = client;
-        wire(client, true);
-      })
-      .catch((e: Error) => {
-        clearTimeout(bootTimer);
-        if (!cancelled) setConn({ kind: "failed", error: e.message });
-      });
+    connect(true);
     return () => {
       cancelled = true;
       clearTimeout(retryTimerRef.current);
       clearTimeout(bootTimer);
-      bootClient?.close();
+      activeClient?.close();
     };
   }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
   useRemoteGridPublish(readyClient(conn));

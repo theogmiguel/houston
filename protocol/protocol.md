@@ -1,4 +1,4 @@
-# Wire protocol v134
+# Wire protocol v135
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -92,7 +92,7 @@ failure not given a typed refusal comes back as `error`.
 | Message | Fields | Reply |
 |---|---|---|
 | `hello` | `token`, `protocol` | `hello_ok` (direct), or `error` + close |
-| `session_create` | `agent: AgentKind`, `project_dir`, `cmd?: string[]` (required for `custom`), `cols?`/`rows?` (default 80×24), `cwd_from?: u32` (start in that session's live cwd), `shell_integration?` (default true), `auto_approve?` (default false; refused for a kind with no bypass flag), `acp?` (slug from the ACP roster; refused with `cmd`), `profile?: ProfileChoice`, `prompt?` (initial task, delivered as argv, or as a `.houston/prompts/` file the child is told to read once it is over the argv-safe threshold), `model?` (provider model id), `effort?` (provider reasoning effort; refused when unsupported) | `session_created` (bcast); this socket starts receiving that session's frames |
+| `session_create` | `request?: u32` (connection-local correlation), `agent: AgentKind`, `project_dir`, `cmd?: string[]` (required for `custom`), `cols?`/`rows?` (default 80×24), `cwd_from?: u32` (start in that session's live cwd), `shell_integration?` (default true), `auto_approve?` (default false; refused for a kind with no bypass flag), `acp?` (slug from the ACP roster; refused with `cmd`), `profile?: ProfileChoice`, `prompt?` (initial task, delivered as argv, or as a `.houston/prompts/` file the child is told to read once it is over the argv-safe threshold), `model?` (provider model id), `effort?` (provider reasoning effort; refused when unsupported) | `session_created` (bcast); direct `session_create_result` when `request` is supplied, including refusal; this socket starts receiving that session's frames |
 | `session_kill` | `session`, `confirm_children?` | `session_state` (bcast); refused `live_children_confirmation_required:` when the pane has live children and `confirm_children` is not set |
 | `session_close` | `session`, `confirm_children?` | `session_removed` (bcast); same children refusal |
 | `session_respawn` | `session`, `shell_integration?`, `cwd?` (must exist), `shell?` (absolute shell binary, shell panes only), `force?` (restart a still-live session: kill, reap, respawn — without it a live session is refused by name), `fresh?` (v119: start a fresh CLI and forget the conversation; absent, a Claude session with a valid resume handle is relaunched with `--resume <id>`, and one whose handle fails validation starts fresh with `resume_notice` set) | broadcasts; a failed spawn leaves the husk intact |
@@ -394,6 +394,7 @@ every refusal names the setting.
 | Message | Fields | When it fires |
 |---|---|---|
 | `hello_ok` | `protocol`, `sessions: SessionInfo[]`, `workspaces: Workspace[]`, `tags: TagInfo[]` (v100: the tag registry, whole), `recovery?: RecoverySummary`, `safe_mode: SafeModeSummary`, `snapshot_attach` (v94: this daemon has a terminal emulator), `snapshot_format_version` (v94: the container version it writes) | direct, once, on a successful handshake |
+| `session_create_result` | `request: u32`, `info: SessionInfo \| null`, `error: string \| null` | direct, answers only this socket's create request; exactly one of `info` and `error` is non-null; broadcasts never acknowledge a request |
 | `session_created` | `info: SessionInfo` | bcast — a session was spawned; precedes any frame, `agent_detected` or `session_state` for it |
 | `session_updated` | `info: SessionInfo` | bcast after retained Sleep cues or a refused Wake notice change |
 | `session_memory` | `session`, `bytes?`, `measured_at_ms`, `unavailable_reason?` | direct reply to `session_memory_get`; a partial process-tree measurement is unavailable |

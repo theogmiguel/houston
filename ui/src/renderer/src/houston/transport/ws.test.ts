@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { WsTerminalTransport } from './ws'
 import type { ClientMsg } from '../generated/ClientMsg'
 
@@ -323,6 +323,7 @@ describe('WsTerminalTransport create forwards acp and profile (v62 #11 / v67 -- 
     expect(creates).toHaveLength(2)
     expect((creates[0] as { acp?: string | null }).acp).toBe('acp-grok')
     expect(creates[1]).not.toHaveProperty('acp')
+    for (const msg of creates) transport.handleControlMessage({ type: 'session_create_result', request: (msg as { request: number }).request, info: { id: 1 }, error: null })
   })
 
   it('passes profile straight through to session_create, and omits the key entirely when none was chosen', () => {
@@ -339,6 +340,7 @@ describe('WsTerminalTransport create forwards acp and profile (v62 #11 / v67 -- 
     expect(creates).toHaveLength(2)
     expect((creates[0] as { profile?: unknown }).profile).toEqual({ kind: 'profile', id: 3 })
     expect(creates[1]).not.toHaveProperty('profile')
+    for (const msg of creates) transport.handleControlMessage({ type: 'session_create_result', request: (msg as { request: number }).request, info: { id: 1 }, error: null })
   })
 })
 
@@ -410,4 +412,93 @@ describe('WsTerminalTransport snapshot attach (v94)', () => {
     transport.handleControlMessage(snapshotReply(5, 2, 20, 'SFZUUw=='))
     expect(calls).toBe(2)
   })
+})
+
+describe('correlated create results', () => {
+  it('ignores foreign broadcasts and resolves identical-workspace creates by request, not FIFO', async () => {
+    const { transport, ws } = makeTransportWithSocket()
+    const first = transport.create({ agent: 'shell', project_dir: '/project' })
+    const second = transport.create({ agent: 'shell', project_dir: '/project' })
+    const delivered: number[] = []
+    void first.then(info => delivered.push(info.id))
+    void second.then(info => delivered.push(info.id))
+    transport.handleControlMessage({ type: 'session_created', info: { id: 999, agent: 'shell', project_dir: '/project' } })
+    await Promise.resolve()
+    expect(delivered).toEqual([])
+    const requests = ws.sent as { request: number }[]
+    transport.handleControlMessage({ type: 'session_create_result', request: requests[1].request, info: { id: 2 }, error: null })
+    expect((await second).id).toBe(2)
+    transport.handleControlMessage({ type: 'session_create_result', request: requests[0].request, info: { id: 1 }, error: null })
+    expect((await first).id).toBe(1)
+    transport.dispose()
+  })
+
+  it('rejects a refusal before a foreign create, disposal, timeout and closed-socket creation', async () => {
+    const { transport, ws } = makeTransportWithSocket()
+    const refusal = transport.create({ agent: 'shell', project_dir: '/missing' })
+    const rejected = expect(refusal).rejects.toThrow('missing workspace')
+    transport.handleControlMessage({ type: 'session_create_result', request: (ws.sent[0] as { request: number }).request, info: null, error: 'missing workspace' })
+    transport.handleControlMessage({ type: 'session_created', info: { id: 999 } })
+    await rejected
+    const abandoned = transport.create({ agent: 'shell', project_dir: '/project' })
+    const disposed = expect(abandoned).rejects.toThrow('disposed')
+    transport.dispose()
+    await disposed
+    vi.useFakeTimers()
+    try {
+      const timeout = transport.create({ agent: 'shell', project_dir: '/project' })
+      const timedOut = expect(timeout).rejects.toThrow('timed out')
+      await vi.advanceTimersByTimeAsync(3000)
+      await timedOut
+    } finally { vi.useRealTimers() }
+    ws.readyState = MockWebSocket.CLOSED
+    await expect(transport.create({ agent: 'shell', project_dir: '/project' })).rejects.toThrow('not open')
+  })
+})
+
+it('settles abandoned creates on timeout and disposal', async () => {
+  vi.useFakeTimers()
+  try {
+    const transport = makeTransport()
+    const settled: string[] = []
+    void transport.create({ agent: 'shell', project_dir: '/project' }).then(
+      () => settled.push('success'), error => settled.push(error.message)
+    )
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(settled).toHaveLength(1)
+    expect(settled[0]).toContain('timed out')
+    void transport.create({ agent: 'shell', project_dir: '/project' }).then(
+      () => settled.push('success'), error => settled.push(error.message)
+    )
+    transport.dispose()
+    await Promise.resolve()
+    expect(settled).toHaveLength(2)
+    expect(settled[1]).toContain('disposed')
+  } finally { vi.useRealTimers() }
+})
+
+it('removes attach/generation metadata and waiters, rejecting late replays for removed sessions', async () => {
+  const transport = makeTransport()
+  const replay = vi.fn()
+  transport.onReplay = replay
+  for (let session = 1; session <= 2000; session++) {
+    const attach = transport.attach(session)
+    transport.handleControlMessage({ type: 'scrollback', session, attempt: 1, generation: 1, data: '', replayed_bytes: 0, bytes_seen: 0 })
+    await attach
+    transport.handleControlMessage({ type: 'session_removed', session })
+  }
+  const state = transport as unknown as { attachesSent: Map<number, number>; generations: Map<number, number> }
+  expect(state.attachesSent.size).toBe(0)
+  expect(state.generations.size).toBe(0)
+  replay.mockClear()
+  transport.handleControlMessage({ type: 'scrollback', session: 2000, attempt: 1, generation: 1, data: '', replayed_bytes: 0, bytes_seen: 0 })
+  expect(replay).not.toHaveBeenCalled()
+  const attach = transport.attach(2001)
+  const attachRejected = expect(attach).rejects.toThrow('abandoned')
+  const resize = transport.resize(2001, 80, 24)
+  const resizeRejected = expect(resize).rejects.toThrow('removed')
+  transport.handleControlMessage({ type: 'session_removed', session: 2001 })
+  await attachRejected
+  await resizeRejected
+  transport.dispose()
 })

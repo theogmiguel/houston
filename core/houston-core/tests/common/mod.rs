@@ -226,6 +226,7 @@ async fn collect_output(ws: &mut WsStream, session: u32, needle: &str, attach: b
 
 pub fn create_custom_msg(cmd: Vec<&str>, dir: &std::path::Path) -> String {
     serde_json::to_string(&proto::ClientMsg::SessionCreate {
+        request: None,
         agent: proto::AgentKind::Custom,
         project_dir: dir.display().to_string(),
         cmd: Some(cmd.into_iter().map(String::from).collect()),

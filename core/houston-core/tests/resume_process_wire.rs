@@ -330,6 +330,7 @@ async fn restart_roundtrip(signal: Signal) {
             send(
                 &mut ws,
                 proto::ClientMsg::SessionCreate {
+                    request: None,
                     agent,
                     project_dir: fixture.project.display().to_string(),
                     cmd: None,
