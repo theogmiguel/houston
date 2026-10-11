@@ -462,10 +462,10 @@ export async function unwatchFileDirs(root: string): Promise<void> {
   return invoke<void>('fs_unwatch', { root })
 }
 
-export async function onFilesChanged(handler: (event: { root: string; paths: string[] }) => void): Promise<() => void> {
+export async function onFilesChanged(handler: (event: { root: string; paths: string[]; rescan?: boolean }) => void): Promise<() => void> {
   const { listen } = await import('@tauri-apps/api/event')
   return listen('fs://changed', (event) => {
-    const payload = event.payload as { root: string; paths: string[] }
+    const payload = event.payload as { root: string; paths: string[]; rescan?: boolean }
     if (wslWorkspaces.size === 0) return handler(payload)
     void import('./wslInvoke').then((m) => handler(m.fromWindowsPaths(payload)))
   })

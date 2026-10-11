@@ -47,7 +47,9 @@ with spaces are quoted.
 
 Saves check the file's content revision atomically. When another process changes an
 unsaved file, Houston keeps your edits and offers Reload or Overwrite. Returning focus
-to the window also checks for external changes.
+to the window also checks for external changes. The tree continues refreshing during
+sustained filesystem activity. Large change bursts trigger a rescan; open files are
+checked against disk without replacing unsaved edits.
 
 ## Editor pane
 

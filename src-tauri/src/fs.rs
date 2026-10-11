@@ -3,7 +3,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Mutex, OnceLock};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{Emitter, State};
 
@@ -60,12 +60,81 @@ const MAX_INDEXED_PATHS: usize = 100_000;
 const MAX_WATCHED_DIRS: usize = 256;
 // Coalesces filesystem bursts into one UI refresh while keeping edits responsive.
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(150);
+// Larger bursts need a root rescan; retaining every path does not improve that refresh.
+const WATCH_CHANGED_PATHS_MAX: usize = 1024;
+const WATCH_CHANGED_BYTES_MAX: usize = 512 * 1024;
 
-// inotify also reports opens and reads; reading a file is not a change, and forwarding
-// it lets the reload that a change triggers retrigger itself.
-fn changed_paths(result: notify::Result<notify::Event>) -> Option<Vec<PathBuf>> {
-    let event = result.ok()?;
-    (!event.kind.is_access()).then_some(event.paths)
+#[derive(Default)]
+struct PendingChanges {
+    paths: HashSet<PathBuf>,
+    bytes: usize,
+    rescan: bool,
+}
+
+impl PendingChanges {
+    fn rescan(&mut self) {
+        self.paths.clear();
+        self.bytes = 0;
+        self.rescan = true;
+    }
+
+    fn add(&mut self, result: notify::Result<notify::Event>) -> bool {
+        let event = match result {
+            Ok(event) if event.kind.is_access() => return false,
+            Ok(event) => event,
+            Err(_) => {
+                self.rescan();
+                return true;
+            }
+        };
+        if event.need_rescan() || event.paths.is_empty() {
+            self.rescan();
+        }
+        if self.rescan {
+            return true;
+        }
+        for path in event.paths {
+            if self.paths.contains(&path) {
+                continue;
+            }
+            let bytes = path.as_os_str().len();
+            if self.paths.len() >= WATCH_CHANGED_PATHS_MAX
+                || bytes > WATCH_CHANGED_BYTES_MAX.saturating_sub(self.bytes)
+            {
+                self.rescan();
+                break;
+            }
+            self.bytes += bytes;
+            self.paths.insert(path);
+        }
+        true
+    }
+}
+
+fn publish_watch_batches(
+    receiver: mpsc::Receiver<()>,
+    pending: Arc<Mutex<PendingChanges>>,
+    mut publish: impl FnMut(PendingChanges),
+) {
+    while receiver.recv().is_ok() {
+        // A fixed deadline ensures continuous writes cannot postpone refresh forever.
+        let deadline = std::time::Instant::now() + WATCH_DEBOUNCE;
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match receiver.recv_timeout(remaining) {
+                Ok(()) => {}
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+        let changes = std::mem::take(&mut *pending.lock().expect("watch pending changes"));
+        if changes.rescan || !changes.paths.is_empty() {
+            publish(changes);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -342,6 +411,7 @@ struct RootWatcher {
 struct FsChangedPayload {
     root: String,
     paths: Vec<String>,
+    rescan: bool,
 }
 
 #[tauri::command]
@@ -409,11 +479,16 @@ pub async fn fs_watch_dirs(
         return Ok(());
     }
     let root_for_events = real_root.clone();
-    let (sender, receiver) = mpsc::channel::<Vec<PathBuf>>();
-    let event_sender = sender.clone();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let pending = Arc::new(Mutex::new(PendingChanges::default()));
+    let pending_events = pending.clone();
     let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-        if let Some(paths) = changed_paths(result) {
-            let _ = event_sender.send(paths);
+        if pending_events
+            .lock()
+            .expect("watch pending changes")
+            .add(result)
+        {
+            let _ = sender.try_send(());
         }
     })
     .map_err(|e| format!("cannot create watcher for {}: {e}", real_root.display()))?;
@@ -430,16 +505,8 @@ pub async fn fs_watch_dirs(
         path_counts.insert(path.clone(), 1);
     }
     std::thread::spawn(move || {
-        while let Ok(first) = receiver.recv() {
-            let mut changed = first.into_iter().collect::<HashSet<_>>();
-            loop {
-                match receiver.recv_timeout(WATCH_DEBOUNCE) {
-                    Ok(paths) => changed.extend(paths),
-                    Err(mpsc::RecvTimeoutError::Timeout) => break,
-                    Err(mpsc::RecvTimeoutError::Disconnected) => return,
-                }
-            }
-            let mut paths = changed.into_iter().collect::<Vec<_>>();
+        publish_watch_batches(receiver, pending, |changed| {
+            let mut paths = changed.paths.into_iter().collect::<Vec<_>>();
             paths.sort();
             if let Ok(mut cache) = path_index().lock() {
                 *cache
@@ -452,13 +519,14 @@ pub async fn fs_watch_dirs(
                 "fs://changed",
                 FsChangedPayload {
                     root: root_for_events.to_string_lossy().into_owned(),
+                    rescan: changed.rescan,
                     paths: paths
                         .into_iter()
                         .map(|path| path.to_string_lossy().into_owned())
                         .collect(),
                 },
             );
-        }
+        });
     });
     watchers.insert(
         real_root,
@@ -1703,6 +1771,88 @@ async fn set_file_mode_0600(_file: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn watcher_overflow_requests_a_rescan_with_bounded_retained_paths() {
+        let mut pending = super::PendingChanges::default();
+        for id in 0..=super::WATCH_CHANGED_PATHS_MAX {
+            pending.add(Ok(notify::Event::new(notify::EventKind::Any)
+                .add_path(std::path::PathBuf::from(format!("file-{id}")))));
+        }
+        assert!(pending.rescan);
+        assert!(pending.paths.is_empty());
+        assert_eq!(pending.bytes, 0);
+
+        let mut pending = super::PendingChanges::default();
+        for id in 0..super::WATCH_CHANGED_PATHS_MAX {
+            let path = format!("{}file-{id}", "directory/".repeat(100));
+            pending
+                .add(Ok(notify::Event::new(notify::EventKind::Any)
+                    .add_path(std::path::PathBuf::from(path))));
+            assert!(pending.bytes <= super::WATCH_CHANGED_BYTES_MAX);
+        }
+        assert!(pending.rescan, "the byte budget also bounds deep paths");
+        assert!(pending.paths.is_empty());
+    }
+
+    #[test]
+    fn watcher_errors_rescan_and_duplicate_paths_consume_one_slot() {
+        let mut pending = super::PendingChanges::default();
+        for _ in 0..100 {
+            pending.add(Ok(notify::Event::new(notify::EventKind::Any)
+                .add_path(std::path::PathBuf::from("file"))));
+        }
+        assert_eq!(pending.paths.len(), 1);
+        assert_eq!(pending.bytes, 4);
+        pending.add(Err(notify::Error::generic("event queue overflow")));
+        assert!(pending.rescan);
+        assert!(pending.paths.is_empty());
+    }
+
+    #[test]
+    fn continuous_watch_changes_publish_before_the_producer_stops() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let pending = std::sync::Arc::new(std::sync::Mutex::new(super::PendingChanges::default()));
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let (published, receipt) = std::sync::mpsc::channel();
+        let worker = {
+            let pending = pending.clone();
+            std::thread::spawn(move || {
+                super::publish_watch_batches(receiver, pending, |batch| {
+                    published.send(batch.paths.len()).unwrap();
+                })
+            })
+        };
+        let producer = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                let mut count = 0;
+                while !stop.load(Ordering::Acquire) {
+                    pending
+                        .lock()
+                        .unwrap()
+                        .add(Ok(notify::Event::new(notify::EventKind::Any)
+                            .add_path(std::path::PathBuf::from(format!("file-{count}")))));
+                    let _ = sender.try_send(());
+                    count += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                count
+            })
+        };
+        let result = receipt.recv_timeout(std::time::Duration::from_secs(5));
+        let still_producing = !producer.is_finished();
+        stop.store(true, Ordering::Release);
+        let count = producer.join().unwrap();
+        worker.join().unwrap();
+        assert!(
+            result.is_ok(),
+            "continuous writes must not starve refresh: {result:?}"
+        );
+        assert!(still_producing);
+        assert!(count > 1);
+    }
+
+    #[test]
     fn reading_a_watched_file_reports_no_change_but_writing_does() {
         use notify::Watcher as _;
         let dir = tempfile::tempdir().unwrap();
@@ -1710,8 +1860,9 @@ mod tests {
         std::fs::write(&file, "before").unwrap();
         let (sender, receiver) = std::sync::mpsc::channel();
         let mut watcher = notify::recommended_watcher(move |result| {
-            if let Some(paths) = super::changed_paths(result) {
-                let _ = sender.send(paths);
+            let mut changes = super::PendingChanges::default();
+            if changes.add(result) {
+                let _ = sender.send(changes.paths);
             }
         })
         .unwrap();
