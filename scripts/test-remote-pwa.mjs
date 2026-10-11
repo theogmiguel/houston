@@ -168,3 +168,132 @@ test('production pairing handler ignores old success and restores controls after
   assert.equal(S.token, 'current-token'); assert.equal(node('pair-submit').disabled, false);
   requests[2].resolve(reply({ sessions: [] })); await flush();
 });
+
+function pollingHarness(honorAbort) {
+  const h = harness(), { ctx, S, timers, requests } = h;
+  let now = 0, nextTimer = 0;
+  ctx.setTimeout = (fn, ms) => {
+    const id = ++nextTimer;
+    timers.set(id, { fn, at: now + ms });
+    return id;
+  };
+  ctx.clearTimeout = id => timers.delete(id);
+  ctx.fetch = (path, options) => new Promise((resolve, reject) => {
+    const request = { path, options, resolve, reject, at: now };
+    requests.push(request);
+    if (honorAbort) options.signal.addEventListener('abort', () => {
+      reject(new Error('transport aborted'));
+    }, { once: true });
+  });
+  const noop = () => {};
+  Object.assign(ctx, { notePending: noop, updateTitle: noop, renderWorking: noop });
+  S.inboxFeed = {}; S.home = 'inbox'; S.live = false;
+  vm.runInContext(source.match(/  var SAFETY_MS =[^\n]+/)[0], ctx);
+  vm.runInContext(['later', 'refreshAll', 'schedulePoll', 'loadSessions'].map(production).join('\n'), ctx);
+  h.advance = async ms => {
+    const end = now + ms;
+    await flush();
+    while (true) {
+      const due = [...timers].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) break;
+      now = due[1].at; timers.delete(due[0]); due[1].fn(); await flush();
+    }
+    now = end; await flush();
+  };
+  h.respondAfter = (request, ms, data) => ctx.setTimeout(() => request.resolve(reply(data)), ms);
+  return h;
+}
+
+for (const honorAbort of [true, false]) {
+  const transport = honorAbort ? 'abort-honoring' : 'abort-ignoring';
+  for (const terminal of [false, true]) {
+    test(`no SSE: four-second HTTP refreshes recover ${terminal ? 'terminal and answers' : 'list answers'} (${transport})`, async () => {
+      const h = pollingHarness(honorAbort), { ctx, S, requests, node } = h;
+      S.reachable = false; S.view = terminal ? 'pane' : 'list';
+      S.pane = terminal ? 1 : null; S.tab = terminal ? 'term' : 'conv';
+      const pending = { epoch: 'same', seq: 1, type: 'permission', decidable: true };
+      const snapshot = { sessions: [{ id: 1, state: 'running', status: 'needs-input', pending }] };
+      ctx.refreshAll(); ctx.schedulePoll();
+      for (const request of [...requests]) h.respondAfter(request, 4000,
+        request.path === '/api/sessions' ? snapshot : request.path.includes('/screen?') ? { lines: ['current terminal'] } : page(1));
+      await h.advance(4000);
+      if (terminal) assert.equal(node('screen').textContent, 'current terminal', 'a healthy screen must survive polling');
+      assert.equal(S.reachable, true, 'a healthy snapshot must restore answer availability');
+      assert.equal(requests.filter(r => r.path === '/api/sessions').length, 1, 'poll coalesces the session snapshot');
+      assert.equal(requests[0].options.signal.aborted, false);
+      if (terminal) {
+        assert.equal(requests.filter(r => r.path.includes('/screen?')).length, 1);
+      }
+      ctx.pendingOf = () => S.sessions[0].pending; ctx.cardState = () => null;
+      const answer = ctx.decide(1, 1, 'approve', null, 'same');
+      const mutation = requests.at(-1);
+      assert.match(mutation.path, /\/decide$/);
+      mutation.resolve(reply({})); assert.equal(await answer, true);
+      await h.advance(4000);
+      assert.ok(requests.filter(r => r.path === '/api/sessions').length > 1, 'settled refresh allows later polls');
+      if (terminal) assert.ok(requests.filter(r => r.path.includes('/screen?')).length > 1);
+      ctx.resetAuthRequests(); await flush();
+      assert.equal(S.httpRequests.size, 0);
+    });
+  }
+
+  test(`coalesced refreshes retain auth/navigation cancellation (${transport})`, async () => {
+    const h = pollingHarness(honorAbort), { ctx, S, requests, node } = h;
+    S.pane = 1; S.tab = 'term';
+    const oldSessions = ctx.loadSessions(), oldScreen = ctx.loadScreen();
+    assert.equal(ctx.loadSessions(), oldSessions);
+    assert.equal(ctx.loadScreen(), oldScreen);
+    ctx.resetPaneRequests(); S.pane = 2; ctx.resetPaneRequests(); S.pane = 1;
+    const newScreen = ctx.loadScreen();
+    assert.equal(requests[1].options.signal.aborted, true);
+    assert.equal(ctx.loadSessions(), oldSessions, 'session snapshots survive pane navigation');
+    ctx.resetAuthRequests(); S.token = 'new';
+    const newSessions = ctx.loadSessions();
+    assert.equal(requests[0].options.signal.aborted, true);
+    assert.equal(requests[2].options.signal.aborted, true);
+    requests[3].resolve(reply({ sessions: [{ id: 42 }] })); await newSessions;
+    const currentScreen = ctx.loadScreen();
+    requests[4].resolve(reply({ lines: ['new screen'] })); await currentScreen;
+    requests[0].resolve(reply({ sessions: [{ id: 99 }] }, 401));
+    requests[1].resolve(reply({ lines: ['old screen'] }));
+    requests[2].resolve(reply({ lines: ['intermediate screen'] }));
+    await oldSessions; await oldScreen; await newScreen; await flush();
+    assert.equal(S.token, 'new'); assert.equal(S.sessions[0].id, 42);
+    assert.equal(node('screen').textContent, 'new screen');
+    assert.equal(S.httpRequests.size, 0);
+  });
+
+  test(`polling does not extend refresh or mutation deadlines (${transport})`, async () => {
+    const h = pollingHarness(honorAbort), { ctx, S, requests, status } = h;
+    S.pane = 1; S.tab = 'term';
+    ctx.refreshAll(); ctx.schedulePoll();
+    const mutation = ctx.input({ text: 'hello' }, '');
+    const inputRequest = requests.at(-1);
+    await h.advance(14999);
+    assert.equal(S.busy, true); assert.equal(inputRequest.options.signal.aborted, false);
+    assert.equal(requests.filter(r => r.path === '/api/sessions').length, 1);
+    assert.equal(requests.filter(r => r.path.includes('/screen?')).length, 1);
+    await h.advance(1);
+    assert.equal(await mutation, false); assert.equal(S.busy, false);
+    assert.equal(inputRequest.options.signal.aborted, true);
+    assert.ok(status.some(s => /may already have reached/.test(s)));
+    assert.equal(requests[0].options.signal.aborted, true);
+    assert.equal(requests[2].options.signal.aborted, true);
+    await h.advance(2500);
+    assert.ok(requests.filter(r => r.path === '/api/sessions').length > 1, 'snapshot recovers after deadline');
+    assert.ok(requests.filter(r => r.path.includes('/screen?')).length > 1, 'screen recovers after deadline');
+    S.reachable = true;
+    ctx.pendingOf = () => ({ epoch: 'same', seq: 1, type: 'permission', decidable: true });
+    ctx.cardState = () => null;
+    const decision = ctx.decide(1, 1, 'approve', null, 'same');
+    const decisionRequest = requests.at(-1);
+    await h.advance(14999);
+    assert.equal(S.busy, true); assert.equal(decisionRequest.options.signal.aborted, false);
+    await h.advance(1);
+    assert.equal(await decision, false); assert.equal(S.busy, false);
+    assert.equal(decisionRequest.options.signal.aborted, true);
+    assert.ok(status.filter(s => /may already have reached/.test(s)).length >= 2);
+    ctx.resetAuthRequests(); await flush();
+    assert.equal(S.httpRequests.size, 0);
+  });
+}
