@@ -2,29 +2,26 @@
 //! runs every in-distro command under a throwaway `/tmp` HOME, so the distro user's
 //! home, launcher and state dirs are never touched.
 #![cfg(windows)]
-#![allow(clippy::disallowed_methods)]
+#![allow(dead_code, clippy::disallowed_methods)]
 
-#[allow(dead_code)]
-mod wsl {
-    #[path = "../../src/wsl/command.rs"]
-    pub mod command;
-    #[path = "../../src/wsl/distros.rs"]
-    pub mod distros;
-    #[path = "../../src/wsl/relay.rs"]
-    pub mod relay;
-}
+#[path = "../src/wsl/command.rs"]
+mod command;
+#[path = "../src/wsl/distros.rs"]
+mod distros;
+#[path = "../src/wsl/relay.rs"]
+mod relay;
 
+use command::{Piped, Runner, WslExe, WSL_EXE};
 use futures_util::future::BoxFuture;
 use futures_util::{SinkExt, StreamExt};
+use relay::{Backend, Relay, RETRY_DELAY};
 use std::io::Write;
 use std::process::{Output, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
-use wsl::command::{Piped, Runner, WslExe, WSL_EXE};
-use wsl::relay::{Backend, Relay, RETRY_DELAY};
 
-const CHECKED_PROTOCOL: u32 = 131;
+const CHECKED_PROTOCOL: u32 = houston_protocol::PROTOCOL_VERSION;
 const HOME_PREFIX: &str = "/tmp/houston-live-";
 const FRAME_OUTPUT: u8 = 1;
 const FRAME_STDIN: u8 = 2;

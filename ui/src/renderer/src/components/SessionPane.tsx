@@ -1,7 +1,9 @@
+import { ChildInputBanner } from './ChildInputDetails'
+import { askedOrchestrator, attentionStatus, needsUserInput } from '../sessionAttention'
 import { PaneFrame } from './ui/PaneFrame'
 import { shallowArrayEqual, useSession, useSessionFamily, useSessionsSelector } from '../sessionsStore'
 import { hasWorkingDescendant } from './ui/railRows'
-import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
+import { TERMINAL_FOCUS_EVENT, openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useCallback, useEffect, useContext, useRef, useState } from 'react'
 import { ChildrenRoster, ChildStatusDot, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
@@ -68,6 +70,7 @@ import {
 } from './ui/PaneControls'
 import {
   ChildrenColumn,
+  PeekTerminalLayer,
   PeekBarButton,
   PeekBarIconButton,
   SettledChildButton,
@@ -495,6 +498,7 @@ function SessionPaneImpl({
       return
     }
     setPeekId(id)
+    window.dispatchEvent(new CustomEvent(TERMINAL_FOCUS_EVENT, { detail: { session: id ?? info.id } }))
     if (id != null) setRecent((prev) => recentAfterSelection(prev, id, PEEK_KEEP_MOUNTED))
   }
   const moveChild = (id: number): void => {
@@ -596,6 +600,7 @@ function SessionPaneImpl({
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </PaneHeader>
       <ResumeNotice notice={info.resume_notice} />
+      <ChildInputBanner info={info} />
       <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} memoryResult={memoryResult} />
       {sleeping ? <SleepingSessionPlaceholder info={lifecycleInfo} onWake={() => client.send({ type: 'session_wake', session: info.id })} onFresh={() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)} /> : <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />}
       <AnimOut open={confirmRestart !== null} suppress="modal">
@@ -803,20 +808,21 @@ function RosterTerminals({ client, info, children, recent, gridSessionIds, peek,
               return child && !gridSessionIds?.has(id) ? [child] : []
             })].map((shown) => {
               const hidden = shown.id !== (peek?.id ?? info.id)
-              return <div key={shown.id} data-peek-session={shown.id} className="absolute inset-0 flex min-w-0 min-h-0" aria-hidden={hidden} style={hidden ? { visibility: 'hidden', pointerEvents: 'none' } : undefined}>
+              return <PeekTerminalLayer key={shown.id} sessionId={shown.id} hidden={hidden}>
+                {shown.id !== info.id && <ChildInputBanner info={shown} />}
                 <GridHiddenContext.Provider value={gridHidden || hidden}>
                   <WarmContext.Provider value={gridWarm || hidden}>
                     <TerminalPane client={client} info={shown} theme={theme} active={active && !hidden} connected={connected} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={() => onActivate(info.id)} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={(path, line, col) => onOpenFile(shown.id, path, line, col)} onOpenDir={(path) => onOpenDir(path, shown.id)} actions={shown.id === info.id ? termActions : undefined} />
                   </WarmContext.Provider>
                 </GridHiddenContext.Provider>
-              </div>
+              </PeekTerminalLayer>
             })}</>
 }
 
 function SessionHeaderStatusDot({ info, live }: { info: SessionInfo; live: boolean }): React.JSX.Element {
   const delegating = useSessionsSelector(useCallback((sessions) => hasWorkingDescendant(info.id, sessions.values()), [info.id]), Object.is, false)
   if (info.spawned_by != null) return <ChildStatusDot info={info} />
-  const status = info.children_waiting > 0 ? 'needs-input' : info.status === 'idle' && delegating ? 'working' : info.status
+  const status = needsUserInput(info) ? 'needs-input' : askedOrchestrator(info) ? 'idle' : info.status === 'idle' && delegating ? 'working' : attentionStatus(info)
   return <StatusDot status={status} live={live || info.children_waiting > 0} />
 }
 
@@ -934,7 +940,7 @@ function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveC
           {children.length > 0 && <RosterPeekbar>
             {peek ? <>
               <PeekBarButton onClick={() => selectChild(null)}>Orchestrator</PeekBarButton><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
-              <span className="flex-1" /><PeekBarButton shrink onClick={() => moveChild(peek.id)}>Move to grid</PeekBarButton>
+              <span className="flex-1" /><PeekBarButton shrink onClick={() => openSideOverview(info.id)}>Instructions</PeekBarButton><PeekBarButton shrink onClick={() => moveChild(peek.id)}>Move to grid</PeekBarButton>
               <Tooltip label="Return to orchestrator"><PeekBarIconButton aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></PeekBarIconButton></Tooltip>
             </> : <strong className="truncate min-w-0">Orchestrator</strong>}
           </RosterPeekbar>}

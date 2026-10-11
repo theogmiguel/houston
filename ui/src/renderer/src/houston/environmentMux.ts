@@ -76,6 +76,11 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   orchestration_settings_get: 'local',
   orchestration_set: 'all',
   delegation_results_list: { session: 'parent' },
+  delegation_result_get: { session: 'parent' },
+  instruction_queue_list: SESSION,
+  instruction_get: SESSION,
+  instruction_cancel: SESSION,
+  instruction_resume: SESSION,
   inbox_list: WORKSPACE,
   inbox_ack: 'local',
   inbox_resolve: 'local',
@@ -340,6 +345,14 @@ export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
     msg.parent = tag(msg.parent as number)
     for (const result of msg.results as Array<Record<string, number>>) result.child = tag(result.child)
   },
+  delegation_result_detail: (msg, tag) => {
+    retagFields('parent')(msg, tag)
+    INBOX_ROW(msg.row as Record<string, unknown>, tag)
+  },
+  delegation_result_refused: retagFields('parent'),
+  instruction_queue: (msg, tag) => SESSION_FIELD(msg.snapshot as Json, tag),
+  instruction_detail: (msg, tag) => SESSION_FIELD(msg.detail as Json, tag),
+  instruction_refused: SESSION_FIELD,
   inbox_rows: (msg, tag) => {
     for (const row of msg.rows as Array<Record<string, unknown>>) INBOX_ROW(row, tag)
   },

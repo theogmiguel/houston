@@ -37,7 +37,10 @@ describe('the rail nav rows drive the content area', () => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
-    act(() => destinationButton(container, view).click())
+    await act(async () => {
+      destinationButton(container, view).click()
+      if (view === 'usage') await import('./components/UsageSection')
+    })
     await waitFor(() => expect(surface(container)).not.toBeNull())
     expect(surface(container)!.className).toMatch(/(^|\s)(flex-1|w-full)(\s|$)/)
   })

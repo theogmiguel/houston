@@ -496,6 +496,8 @@ pub fn run_hook_client(args: &[String]) {
         agent_id: payload.agent_id,
         tool_use_id: payload.tool_use_id,
         tool_input_fingerprint: payload.tool_input_fingerprint,
+        permission_command: payload.permission_command,
+        permission_block_reason: payload.permission_block_reason,
         request_id: payload.request_id,
         resume_evidence: if matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
             && matches!(
@@ -730,6 +732,8 @@ pub(crate) struct HookPayload {
     pub subagent_type: Option<String>,
     pub tool_name: Option<String>,
     pub tool_input_fingerprint: Option<String>,
+    pub permission_command: Option<String>,
+    pub permission_block_reason: Option<String>,
     pub transcript_path: Option<String>,
 }
 
@@ -834,6 +838,33 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
                 .join("; ")
         })
         .filter(|s| !s.is_empty());
+    let permission_text = |value: Option<String>| {
+        value
+            .map(|text| {
+                crate::sanitize::redact_secrets(&text)
+                    .0
+                    .chars()
+                    .take(2000)
+                    .collect::<String>()
+            })
+            .filter(|text| !text.trim().is_empty())
+    };
+    // Only named command/reason fields are reported; tool names are not block reasons.
+    let permission_command = permission_text(match provider {
+        proto::AgentKind::Claude | proto::AgentKind::Codex => parsed
+            .as_ref()
+            .and_then(|v| v.get("tool_input"))
+            .and_then(|v| v.get("command").or_else(|| v.get("cmd")))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        _ => None,
+    });
+    let permission_block_reason =
+        permission_text(field("reason").or_else(|| field("message")).or_else(|| {
+            (provider == proto::AgentKind::Antigravity)
+                .then(|| questions.clone())
+                .flatten()
+        }));
     let step_idx = parsed
         .as_ref()
         .and_then(|v| v.get("stepIdx"))
@@ -882,7 +913,8 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             questions.clone()
         } else {
             tool_name.clone().or_else(|| field("message"))
-        }),
+        })
+        .map(|reason| reason.chars().take(2000).collect()),
         notification_type: grok_field("notification_type", "notificationType"),
         stop_hook_active: grok_bool("stop_hook_active", "stopHookActive").unwrap_or(false),
         prompt_id: grok_field("prompt_id", "promptId").or_else(|| field("turn_id")),
@@ -905,6 +937,8 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .flatten(),
         tool_name,
         tool_input_fingerprint,
+        permission_command,
+        permission_block_reason,
         transcript_path: if provider == proto::AgentKind::Antigravity {
             field("transcriptPath")
         } else {
@@ -1992,6 +2026,34 @@ mod tests {
             p.reason.as_deref(),
             Some("Delete the file?; Also the backup?")
         );
+    }
+}
+
+#[cfg(test)]
+mod permission_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn permission_capture_reports_only_named_fields_and_redacts_before_capping() {
+        let missing = parse_hook_payload(r#"{"tool_name":"Bash"}"#, proto::AgentKind::Claude);
+        assert_eq!(missing.permission_command, None);
+        assert_eq!(missing.permission_block_reason, None);
+        let secret = "ghp_0123456789abcdefghijklmnopqrstuvwxyz";
+        let payload = serde_json::json!({
+            "tool_input":{"command":format!("echo {secret} {}", "x".repeat(2500))},
+            "reason":"Provider requires consent",
+        });
+        let reported = parse_hook_payload(&payload.to_string(), proto::AgentKind::Claude);
+        let command = reported.permission_command.unwrap();
+        assert!(!command.contains(secret));
+        assert!(command.contains("[redacted:"));
+        assert!(command.chars().count() <= 2000);
+        assert_eq!(
+            reported.permission_block_reason.as_deref(),
+            Some("Provider requires consent")
+        );
+        let unsupported = parse_hook_payload(&payload.to_string(), proto::AgentKind::Cursor);
+        assert_eq!(unsupported.permission_command, None);
     }
 }
 

@@ -1,3 +1,4 @@
+import { withInputOwner } from '../test/inputFixtures'
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -132,7 +133,7 @@ describe('settled children', () => {
 })
 
 describe('needs-you filter', () => {
-  const needy = (id: number): SessionInfo => ({ ...child(id), status: 'needs-input' })
+  const needy = (id: number): SessionInfo => withInputOwner(child(id), 'user')
   it('lives on the Needs you heading, not the roster head', () => {
     children = [needy(2), child(3)]
     render()
@@ -196,13 +197,25 @@ it('regroups a child after a pure status update while its input props remain unc
   const store = createSessionsStore(sessions)
   act(() => root.render(<SessionsStoreContext.Provider value={store}><ChildrenRoster {...props()} parent={parent} roster={{ sessions, maxLiveChildren: null }} /></SessionsStoreContext.Provider>))
   expect(host.querySelector('[aria-label="Answer 4"]')).toBeNull()
-  act(() => store.set((previous) => new Map(previous).set(4, { ...children[0], status: 'needs-input' })))
+  act(() => store.set((previous) => new Map(previous).set(4, withInputOwner(children[0], 'user'))))
   expect(host.querySelector('[aria-label="Answer 4"]')).not.toBeNull()
   expect(host.querySelector('.children-list [aria-label="needs your input"]')).not.toBeNull()
 })
 
 
 describe('reported child state', () => {
+  it('keeps a raw child input request neutral until user ownership is reported', () => {
+    const parent = { ...child(1), spawned_by: null, status: 'working' as const }
+    children = [{ ...child(2), status: 'needs-input' }]
+    act(() => root.render(<ChildrenRoster {...props()} parent={parent} />))
+    const row = host.querySelectorAll('.children-list .children-row')[1]!
+    expect(host.querySelector('[aria-label="Answer 2"]')).toBeNull()
+    expect(host.querySelector('.children-group')?.textContent).not.toContain('Needs you')
+    expect(row.textContent).toContain('Asked orchestrator')
+    expect(row.querySelector('[aria-label="needs your input"]')).toBeNull()
+    expect(row.querySelector('.agent-dot')?.className).not.toContain('var(--warn)')
+    expect(row.querySelector('.agent-dot')?.getAttribute('style') ?? '').not.toContain('var(--warn)')
+  })
   it('keeps a stalled working delegation out of human attention', () => {
     children = [{ ...child(2), delegation: { state: 'working', stalled: true, hold_reason: 'stalled? approval_outcome_unobserved' } as SessionInfo['delegation'] }]
     expect(childGroup(children[0])).toBe('Working')
@@ -222,7 +235,7 @@ describe('reported child state', () => {
     expect(host.querySelector('[aria-label="Stop 2"]')).not.toBeNull()
   })
   it.each([{ status: 'needs-input' as const }, { children_waiting: 1 }])('prioritizes a current input request over a done turn (%o)', (signal) => {
-    children = [{ ...child(2), ...signal, delegation: { state: 'done' } as SessionInfo['delegation'] }]
+    children = [signal.status ? withInputOwner({ ...child(2), ...signal, delegation: { state: 'done' } as SessionInfo['delegation'] }, 'user') : { ...child(2), ...signal, delegation: { state: 'done' } as SessionInfo['delegation'] }]
     expect(childGroup(children[0])).toBe('Needs you')
     expect(childStateWord(children[0])).toBe('needs input')
     render()

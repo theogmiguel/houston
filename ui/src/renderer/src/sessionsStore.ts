@@ -1,3 +1,4 @@
+import { askedOrchestrator, attentionReason, inputEpisode, needsUserInput, ownUserInput } from './sessionAttention'
 import { createContext, useContext, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { SessionInfo } from './houston/client'
 
@@ -92,7 +93,7 @@ export function useSessionIds(filter?: (session: SessionInfo) => boolean): numbe
 
 export function useWorkspaceWaiting(path: string, fallback: boolean): boolean {
   return useSessionsSelector(
-    (sessions) => [...sessions.values()].some((session) => session.project_dir === path && session.children_waiting > 0),
+    (sessions) => [...sessions.values()].some((session) => session.project_dir === path && needsUserInput(session)),
     Object.is,
     fallback,
   )
@@ -109,6 +110,8 @@ export function layoutSessionsEqual(previous: SessionsSnapshot, next: SessionsSn
     const other = next.get(id)
     if (!other) return false
     if (session === other) continue
+    if (ownUserInput(session) !== ownUserInput(other) || inputEpisode(session) !== inputEpisode(other) ||
+        askedOrchestrator(session) !== askedOrchestrator(other) || (askedOrchestrator(session) && session.delegation?.input_request?.kind !== other.delegation?.input_request?.kind) || attentionReason(session) !== attentionReason(other)) return false
     const keys = Object.keys(session) as (keyof SessionInfo)[]
     const otherKeys = Object.keys(other) as (keyof SessionInfo)[]
     if (keys.some((key) => !leafFields.has(key) && !Object.is(session[key], other[key])) ||

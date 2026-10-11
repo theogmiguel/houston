@@ -42,7 +42,7 @@ describe('NotificationsSection', () => {
     expect(descriptionLayout?.className).toContain('whitespace-normal')
     expect(descriptionLayout?.className).not.toContain('truncate')
     expect(screen.getByTestId('notification-children-note').textContent).toBe(
-      'Child panes report to the agent that started them, not to you. The taskbar icon counts the panes waiting on you.'
+      'Child panes ask their orchestrator first. Only requests addressed to you trigger notifications and taskbar attention; requests escalated to you show their reason.'
     )
   })
 })

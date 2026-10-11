@@ -41,9 +41,41 @@ pub struct SessionManifest {
     pub swarm_agent: Option<u64>,
     pub hook_cwd: Option<String>,
     pub mcp_cred: Option<McpCredManifest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_input: Option<NativeInputSnapshot>,
     #[serde(with = "b64")]
     pub vt_snapshot: Vec<u8>,
     pub vt_format_version: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NativeInputSnapshot {
+    pub episodes: crate::orchestrate::PermissionEpisodes,
+    #[serde(default)]
+    pub lifecycle_hook_seen: bool,
+    pub operator_intervened: bool,
+    pub intervention_input_id: Option<String>,
+    #[serde(default)]
+    pub last_prompt_id: Option<String>,
+    #[serde(default)]
+    pub antigravity_root: Option<String>,
+}
+
+impl NativeInputSnapshot {
+    pub fn validate(&self) -> Result<()> {
+        self.episodes.validate_adoption()?;
+        for identity in [
+            &self.intervention_input_id,
+            &self.last_prompt_id,
+            &self.antigravity_root,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            crate::orchestrate::validate_native_input_identity(identity)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +122,8 @@ pub struct AdoptionHello {
     pub schema_version: u32,
     pub manifest_version: u32,
     pub platform: String,
+    #[serde(default)]
+    pub native_input_snapshot: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -322,6 +356,7 @@ mod tests {
                     workspace_id: "/tmp/p".to_string(),
                     remaining_secs: 3600,
                 }),
+                native_input: None,
                 vt_snapshot: vec![1, 2, 3, 4],
                 vt_format_version: 1,
             }],
@@ -360,6 +395,7 @@ mod tests {
             swarm_agent: None,
             hook_cwd: None,
             mcp_cred: None,
+            native_input: None,
             vt_snapshot: vec![0u8; 4096],
             vt_format_version: 1,
         };

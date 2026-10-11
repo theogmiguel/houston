@@ -610,7 +610,15 @@ mod codex {
         names.sort_unstable();
         assert_eq!(
             names,
-            vec!["call_tool", "list_tools", "pane_submit", "workspace_info"],
+            vec![
+                "call_tool",
+                "list_tools",
+                "pane_reply",
+                "pane_report",
+                "pane_submit",
+                "pane_wait",
+                "workspace_info"
+            ],
             "codex is gateway-served, plus the tools its approval rule would not gate: {res}"
         );
 
@@ -1077,7 +1085,17 @@ mod opencode {
             .unwrap_or_else(|| panic!("no tools array: {res}"));
         let mut names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         names.sort_unstable();
-        assert_eq!(names, vec!["pane_submit", "workspace_info"], "{res}");
+        assert_eq!(
+            names,
+            vec![
+                "pane_reply",
+                "pane_report",
+                "pane_submit",
+                "pane_wait",
+                "workspace_info"
+            ],
+            "{res}"
+        );
     }
 
     #[tokio::test]
@@ -1390,7 +1408,17 @@ mod grok {
             .unwrap_or_else(|| panic!("no tools array: {res}"));
         let mut names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         names.sort_unstable();
-        assert_eq!(names, vec!["pane_submit", "workspace_info"], "{res}");
+        assert_eq!(
+            names,
+            vec![
+                "pane_reply",
+                "pane_report",
+                "pane_submit",
+                "pane_wait",
+                "workspace_info"
+            ],
+            "{res}"
+        );
     }
 
     #[tokio::test]
@@ -1659,7 +1687,17 @@ mod cursor {
             .unwrap_or_else(|| panic!("no tools array: {res}"));
         let mut names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         names.sort_unstable();
-        assert_eq!(names, vec!["pane_submit", "workspace_info"], "{res}");
+        assert_eq!(
+            names,
+            vec![
+                "pane_reply",
+                "pane_report",
+                "pane_submit",
+                "pane_wait",
+                "workspace_info"
+            ],
+            "{res}"
+        );
     }
 
     #[tokio::test]
@@ -2024,7 +2062,17 @@ mod antigravity {
             .unwrap_or_else(|| panic!("no tools array: {res}"));
         let mut names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         names.sort_unstable();
-        assert_eq!(names, vec!["pane_submit", "workspace_info"], "{res}");
+        assert_eq!(
+            names,
+            vec![
+                "pane_reply",
+                "pane_report",
+                "pane_submit",
+                "pane_wait",
+                "workspace_info"
+            ],
+            "{res}"
+        );
     }
 
     #[tokio::test]

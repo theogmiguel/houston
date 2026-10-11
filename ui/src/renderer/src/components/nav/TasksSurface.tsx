@@ -1,3 +1,4 @@
+import { attentionLabel, attentionReason, needsUserInput } from '../../sessionAttention'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionInfo, HoustonClient } from '../../houston/client'
@@ -74,13 +75,16 @@ export function TasksSurface({
     .map((task) => ({ value: String(task.id), label: `${task.key} — ${task.title}` })), [allTasks, detailId])
   const entries = useMemo(() => {
     const visible = filterTasks(allTasks, query, projectFilter, projects.domains)
-    return grouping === 'queue' ? queueEntries(visible, showFinished) : projectEntries(visible, projects.projects ?? [], projects.domains, showFinished)
-  }, [allTasks, query, projectFilter, grouping, showFinished, projects.domains, projects.projects])
+    if (grouping !== 'queue') return projectEntries(visible, projects.projects ?? [], projects.domains, showFinished)
+    const grouped = queueEntries(visible, showFinished).map((entry) => entry.task.open_run?.state === 'waiting_for_input' && !taskNeedsUser(entry.task, sessions) ? { ...entry, section: 'Working' } : entry)
+    const order = [...new Set(grouped.map((entry) => entry.section))]
+    return grouped.sort((a, b) => order.indexOf(a.section) - order.indexOf(b.section))
+  }, [allTasks, query, projectFilter, grouping, showFinished, projects.domains, projects.projects, sessions])
   const finishedCount = useMemo(() => filterTasks(allTasks, query, projectFilter, projects.domains).filter(isFinished).length, [allTasks, query, projectFilter, projects.domains])
   const items: TaskItem[] = entries.map((entry) => ({
     id: String(entry.task.id),
     title: entry.task.title,
-    sub: <TaskListMeta entry={entry} notes={grouping === 'project' ? projectNotes(entry.task, entry.delivery, projects.domains[entry.task.id]) : [metaOf(entry.task, now, sessions, inboxRows)]} />,
+    sub: <TaskListMeta entry={entry} sessions={sessions} notes={grouping === 'project' ? projectNotes(entry.task, entry.delivery, projects.domains[entry.task.id]) : [metaOf(entry.task, now, sessions, inboxRows)]} />,
     section: entry.section,
     task: entry.task
   }))
@@ -248,16 +252,16 @@ function useInboxRows(client: HoustonClient | null, workspaces: string[], setRow
 
 /** The queue's next step for a task when the detail does not already offer it. */
 function QueueActionButton({ task, sessions, onAction }: { task: TaskSummary; sessions: ReadonlyMap<number, SessionInfo>; onAction: () => void }): React.JSX.Element | null {
-  const action = queueActionOf(task)
+  const action = taskAction(task, sessions)
   const session = task.open_run?.session_id == null ? undefined : sessions.get(task.open_run.session_id)
   const offered = action === 'Answer' || action === 'Open PR' || action === 'Open pane' || (action === 'Review changes' && session !== undefined)
   if (!offered || isFinished(task)) return null
   return <Button variant={action === 'Open pane' ? 'secondary' : 'primary'} size="sm" data-testid="task-queue-action" onClick={onAction}>{action}</Button>
 }
 
-function TaskListMeta({ entry, notes }: { entry: TaskListEntry; notes: React.ReactNode[] }): React.JSX.Element {
+function TaskListMeta({ entry, notes, sessions }: { entry: TaskListEntry; notes: React.ReactNode[]; sessions: ReadonlyMap<number, SessionInfo> }): React.JSX.Element {
   const { task } = entry
-  const status = statusOf(task)
+  const status = statusOf(task, sessions)
   return (
     <span className="inline-flex min-w-0 items-center gap-[var(--space-1-5)]">
       {status ? <StatusLabel status={status} size="small" /> : <span>{STATUS_LABEL[task.status]}</span>}
@@ -276,8 +280,19 @@ function projectNotes(task: TaskSummary, delivery: TaskSummary | null, domain: T
   return notes
 }
 
-function statusOf(task: TaskSummary): 'Needs input' | 'Ready' | 'Working' | 'Idle' | null {
-  if (task.open_run?.state === 'waiting_for_input') return 'Needs input'
+function taskNeedsUser(task: TaskSummary, sessions: ReadonlyMap<number, SessionInfo>): boolean {
+  const id = task.open_run?.session_id
+  const session = id == null ? undefined : sessions.get(id)
+  return session != null && needsUserInput(session)
+}
+
+function taskAction(task: TaskSummary, sessions: ReadonlyMap<number, SessionInfo>): ReturnType<typeof queueActionOf> {
+  const action = queueActionOf(task)
+  return action === 'Answer' && !taskNeedsUser(task, sessions) ? 'Open pane' : action
+}
+
+function statusOf(task: TaskSummary, sessions: ReadonlyMap<number, SessionInfo>): 'Needs input' | 'Ready' | 'Working' | 'Idle' | 'Asked orchestrator' | null {
+  if (task.open_run?.state === 'waiting_for_input') return taskNeedsUser(task, sessions) ? 'Needs input' : 'Asked orchestrator'
   if (task.status === 'in_review') return 'Ready'
   if (queueGroupOf(task) === 'working') return 'Working'
   if (queueGroupOf(task) === 'stopped') return 'Idle'
@@ -286,6 +301,10 @@ function statusOf(task: TaskSummary): 'Needs input' | 'Ready' | 'Working' | 'Idl
 
 function metaOf(task: TaskSummary, now: number, sessions: ReadonlyMap<number, SessionInfo>, inboxRows: InboxRow[]): React.ReactNode {
   if (task.open_run?.state === 'waiting_for_input') {
+    if (!taskNeedsUser(task, sessions)) {
+      const session = sessions.get(task.open_run.session_id ?? -1)
+      return session ? attentionLabel(session) : 'Asked orchestrator'
+    }
     const question = questionFor(task, sessions, inboxRows)
     return question ? `${queueAgentLabel(task.open_run.provider)} asks: “${question}”` : `${queueAgentLabel(task.open_run.provider)} needs input`
   }
@@ -302,7 +321,9 @@ function metaOf(task: TaskSummary, now: number, sessions: ReadonlyMap<number, Se
 function questionFor(task: TaskSummary, sessions: ReadonlyMap<number, SessionInfo>, rows: InboxRow[]): string | null {
   const sessionId = task.open_run?.session_id
   if (sessionId == null) return null
-  const holdReason = sessions.get(sessionId)?.delegation?.hold_reason?.trim()
+  const session = sessions.get(sessionId)
+  if (!session || !needsUserInput(session)) return null
+  const holdReason = attentionReason(session)?.trim()
   if (holdReason) return holdReason
   const row = rows
     .filter((item) => item.kind === 'needs_input' && item.from_session === sessionId && item.resolved_at == null)
@@ -336,7 +357,7 @@ function runAction({ task, client, tasks, startSettings, sessions, onStartReques
   onOpenExternal: (url: string) => void
   open: (id: number) => void
 }): void {
-  const action = queueActionOf(task)
+  const action = taskAction(task, sessions)
   if (action === 'Open PR' && task.open_run?.pr_url && isPullRequestUrl(task.open_run.pr_url)) {
     onOpenExternal(task.open_run.pr_url)
     return

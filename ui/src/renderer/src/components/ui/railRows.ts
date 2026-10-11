@@ -1,3 +1,4 @@
+import { attentionStatus } from '../../sessionAttention'
 import type { SessionInfo } from '../../houston/client'
 
 export type RailStatusKind = 'needs-input' | 'working' | 'starting' | 'exited' | 'done' | 'idle' | 'unavailable'
@@ -51,7 +52,7 @@ export function gridStatus(sessions: readonly SessionInfo[]): GridStatusModel {
   const statuses = sessions.map((session): GridStatusModel => {
     if (session.state !== 'running') return { kind: 'exited', label: 'Exited', since: session.status_since_ms ?? null }
     if (session.children_waiting > 0) return { kind: 'needs-input', label: 'Input', since: session.status === 'needs-input' ? session.status_since_ms ?? null : null }
-    switch (session.status) {
+    switch (attentionStatus(session)) {
       case 'needs-input': return { kind: 'needs-input', label: 'Input', since: session.status_since_ms ?? null }
       case 'working': return { kind: 'working', label: 'Working', since: session.status_since_ms ?? null }
       case 'spawning': return { kind: 'starting', label: 'Starting', since: session.status_since_ms ?? null }

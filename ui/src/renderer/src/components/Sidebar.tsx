@@ -1,3 +1,4 @@
+import { attentionStatus, needsUserInput } from '../sessionAttention'
 import { MascotMount } from '../mascot/MascotMount'
 import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore';
 import type { TagInfo } from "../houston/generated/TagInfo";
@@ -1004,8 +1005,8 @@ function gridLifecycle(sessions: SessionInfo[]): {
   if (live.length === 0) return { state: "stopped", label: "No live panes" };
 
   const count = (status: SessionInfo["status"]): number =>
-    live.filter((session) => session.status === status).length;
-  const needsInput = live.filter((session) => session.status === "needs-input" || session.children_waiting > 0).length;
+    live.filter((session) => attentionStatus(session) === status).length;
+  const needsInput = live.filter((session) => needsUserInput(session)).length;
   const working = count("working");
   const starting = count("spawning");
   const idle = count("idle");

@@ -1,3 +1,4 @@
+import { attentionReason } from './sessionAttention'
 import type { SessionInfo } from './houston/client'
 import type { NoticeInput } from './notices'
 import type { OrchestrationNotificationContext } from './orchestrationNotifications'
@@ -13,7 +14,7 @@ export function orchestrationNotice(
     code: `orchestration-${session.id}`,
     kind: needsInput ? 'warning' : 'success',
     title: `${session.title} ${needsInput ? 'needs your input' : 'finished'}`,
-    body: `${context.agent} · ${context.workspace} › ${context.grid}`,
+    body: `${context.agent} · ${context.workspace} › ${context.grid}${needsInput && attentionReason(session) ? ` · ${attentionReason(session)}` : ''}`,
     durationMs: needsInput ? null : 5_000,
     presentation: 'orchestration',
     action: { label: 'Open pane', onClick: () => onFocusPane(session.id) }

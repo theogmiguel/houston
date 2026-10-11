@@ -29,7 +29,9 @@ export const SCROLLBACK_BYTES_PER_CELL_ESTIMATE = 16
 const CONTENT_PADDING = 4
 const MIN_SCROLLBAR_THUMB_HEIGHT = 18
 const CURSOR_BLINK_INTERVAL_MS = 500
-const RESIZE_NOTIFY_DEBOUNCE_MS = 150
+// Long enough that a maximize or split animation reaches the PTY as one size:
+// each size change makes a TUI reprint its screen, and a reprint lands in history.
+const RESIZE_NOTIFY_DEBOUNCE_MS = 450
 const SELECTION_AUTOSCROLL_INTERVAL_MS = 80
 const COMPOSITION_SUPPRESSION_MS = 100
 const TERMINAL_FONT_LOAD_TEXT = 'iMW0@# .'
@@ -501,8 +503,12 @@ function measureMountBox(
   canvas: HTMLCanvasElement
 ): { readonly width: number; readonly height: number } {
   const rect = canvas.getBoundingClientRect()
-  const width = rect.width || canvas.clientWidth || mount.clientWidth
-  const height = rect.height || canvas.clientHeight || mount.clientHeight
+  // A transform (a new pane grows in from 97%) shrinks the client rect but not the
+  // box the pane settles at, and ending it fires no ResizeObserver to fit again.
+  const settled = (measured: number, layout: number): number =>
+    layout && Math.abs(measured - layout) >= 1 ? layout : measured
+  const width = settled(rect.width, canvas.clientWidth) || canvas.clientWidth || mount.clientWidth
+  const height = settled(rect.height, canvas.clientHeight) || canvas.clientHeight || mount.clientHeight
   return { width, height }
 }
 
@@ -571,6 +577,7 @@ export class GhosttyTerminalSurface {
   private scrollbarPointerOffset = 0
   private disposed = false
   private resizeNotifyTimer: number | null = null
+  private pendingGrid: { cols: number; rows: number } | null = null
   private originY = CONTENT_PADDING
   private mountHeight = 0
   private selectionEnd: { x: number; y: number } | null = null
@@ -893,11 +900,14 @@ export class GhosttyTerminalSurface {
     if (this.disposed || this.fitFrame !== 0) return
     this.fitFrame = window.requestAnimationFrame(() => {
       this.fitFrame = 0
-      this.fit()
+      this.fit(true)
     })
   }
 
-  fit(): boolean {
+  // `deferGrid` holds a new grid until the PTY learns it, in the same tick: a reflow
+  // the program has not been told about makes it draw for the old width into the new
+  // one. An explicit fit applies at once, since its caller sends the size right after.
+  fit(deferGrid = false): boolean {
     if (this.disposed) return false
     const box = measureMountBox(this.mount, this.canvas)
     const width = box.width
@@ -941,15 +951,18 @@ export class GhosttyTerminalSurface {
     }
     const grid = terminalGridSize(width, height, this.metrics, CONTENT_PADDING)
     this.mountHeight = height
-    if (grid.cols !== this.cols || grid.rows !== this.rows || !this.resizeNotified) {
-      if (grid.cols !== this.cols) this.sizeScrollbackCap(grid.cols)
-      this.cols = grid.cols
-      this.rows = grid.rows
-      this.core.resize(grid.cols, grid.rows, this.metrics.width, this.metrics.height)
+    const target = this.pendingGrid ?? { cols: this.cols, rows: this.rows }
+    if (deferGrid && this.resizeNotified) {
+      if (grid.cols !== target.cols || grid.rows !== target.rows) {
+        this.pendingGrid = grid
+        this.notifyResize()
+      }
+    } else if (grid.cols !== this.cols || grid.rows !== this.rows || !this.resizeNotified) {
+      this.applyGrid(grid)
       this.notifyResize()
-      this.forceFullRender = true
-      this.scrollbarDirty = true
       shouldRender = true
+    } else if (this.pendingGrid !== null) {
+      this.pendingGrid = null
     }
     if (shouldRender) {
       if (!this.fitted || resized) this.renderFrame()
@@ -959,13 +972,39 @@ export class GhosttyTerminalSurface {
     return true
   }
 
+  mountBox(): { width: number; height: number } {
+    return measureMountBox(this.mount, this.canvas)
+  }
+
+  /** The grid `fit` would choose for a mount box of this size; null when no cell fits. */
+  gridForBox(width: number, height: number): { cols: number; rows: number } | null {
+    if (!boxFitsOneCell(width, height, this.metrics, CONTENT_PADDING)) return null
+    return terminalGridSize(width, height, this.metrics, CONTENT_PADDING)
+  }
+
   private notifyResize(): void {
     this.resizeNotified = true
     if (this.resizeNotifyTimer !== null) window.clearTimeout(this.resizeNotifyTimer)
     this.resizeNotifyTimer = window.setTimeout(() => {
       this.resizeNotifyTimer = null
-      if (!this.disposed) this.options.onResize(this.cols, this.rows)
+      if (this.disposed) return
+      if (this.pendingGrid !== null) {
+        this.applyGrid(this.pendingGrid)
+        this.requestRender()
+      }
+      this.options.onResize(this.cols, this.rows)
     }, RESIZE_NOTIFY_DEBOUNCE_MS)
+  }
+
+  private applyGrid(grid: { cols: number; rows: number }): void {
+    this.pendingGrid = null
+    if (grid.cols === this.cols && grid.rows === this.rows && this.resizeNotified) return
+    if (grid.cols !== this.cols) this.sizeScrollbackCap(grid.cols)
+    this.cols = grid.cols
+    this.rows = grid.rows
+    this.core.resize(grid.cols, grid.rows, this.metrics.width, this.metrics.height)
+    this.forceFullRender = true
+    this.scrollbarDirty = true
   }
 
   focus(): void {
@@ -1176,7 +1215,8 @@ export class GhosttyTerminalSurface {
     if (this.resizeNotifyTimer !== null) {
       window.clearTimeout(this.resizeNotifyTimer)
       this.resizeNotifyTimer = null
-      this.options.onResize(this.cols, this.rows)
+      const grid = this.pendingGrid ?? { cols: this.cols, rows: this.rows }
+      this.options.onResize(grid.cols, grid.rows)
     }
     if (this.frame !== 0) window.cancelAnimationFrame(this.frame)
     if (this.cursorTimer !== null) window.clearTimeout(this.cursorTimer)

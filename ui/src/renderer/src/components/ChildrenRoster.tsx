@@ -1,3 +1,4 @@
+import { askedOrchestrator, attentionLabel, attentionReason, attentionStatus } from '../sessionAttention'
 import { useSession, useSessionFamily, useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { openSideOverview } from '../sidePanel'
@@ -66,6 +67,7 @@ export function childGroup(info: SessionInfo): 'Needs you' | 'Working' | 'Settle
 }
 
 export function childStateWord(info: SessionInfo): string {
+  if (askedOrchestrator(info)) return attentionLabel(info)
   if (childGroup(info) === 'Needs you') return 'needs input'
   if (isLive(info.state) && info.delegation?.state === 'unknown') return info.status ?? 'unavailable'
   return info.delegation ? stateWord(info.delegation) : childGroup(info) === 'Settled' ? 'done' : info.status ?? 'unavailable'
@@ -88,13 +90,14 @@ export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Eleme
     const status = info.delegation?.state === 'done' ? 'Done' : info.delegation?.state === 'failed' ? 'Failed' : 'Ended'
     return <Tooltip label="Ended"><StatusLabel status={status} variant="dot" /></Tooltip>
   }
+  if (askedOrchestrator(info)) return <Tooltip label={attentionLabel(info)}><StatusLabel status="Asked orchestrator" variant="dot" /></Tooltip>
   const state = childStateWord(info)
   if (state === 'done' || state === 'failed' || state === 'stalled') {
     const status = state === 'done' ? 'Done' : state === 'failed' ? 'Failed' : 'Stalled'
     const label = state === 'stalled' ? ['Stalled · Heuristic', info.delegation?.hold_reason].filter(Boolean).join(' · ') : status
     return <Tooltip label={label}><StatusLabel status={status} variant="dot" /></Tooltip>
   }
-  return <StatusDot live status={childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'unavailable'} />
+  return <StatusDot live status={attentionStatus(info) ?? 'unavailable'} />
 }
 
 function ChildDeliveryStatus({ info }: { info: SessionInfo }): React.JSX.Element | null {
@@ -219,7 +222,7 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
                   <Tooltip label={isLive(child.state) ? "Stop" : "Close"}><RosterIconButton aria-label={`${isLive(child.state) ? "Stop" : "Close"} ${child.id}`} onClick={() => client.closeSession(child.id)}><Icon glyph={isLive(child.state) ? IconStopCircle : IconClose} role="ui" /></RosterIconButton></Tooltip>
                 </RosterActions>
               </RosterSlot>
-              <RosterDetail><span className="truncate">{child.title}</span></RosterDetail>
+              <RosterDetail><span className="truncate">{askedOrchestrator(child) ? attentionLabel(child) : attentionReason(child) ?? child.title}</span></RosterDetail>
               <ChildDeliveryStatus info={child} />
             </RosterRow>)}
           </div>

@@ -1,5 +1,9 @@
+#[path = "orchestrate_doors.rs"]
+pub(crate) mod doors;
+
 use anyhow::Context as _;
 use houston_protocol as proto;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 // Five idle minutes allow a late handback without holding child capacity indefinitely.
@@ -214,6 +218,61 @@ pub struct Submission {
     pub summary: Option<String>,
     pub artifacts: Vec<String>,
     pub request_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerReport {
+    pub kind: ReportKind,
+    pub body: String,
+    pub request_id: u32,
+    #[serde(default)]
+    pub client_request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportKind {
+    Progress,
+    Question,
+    Blocked,
+}
+
+impl ReportKind {
+    pub fn inbox_kind(self) -> InboxKind {
+        match self {
+            Self::Progress => InboxKind::Progress,
+            Self::Question => InboxKind::Question,
+            Self::Blocked => InboxKind::Blocked,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerReply {
+    pub message_id: i64,
+    pub text: String,
+    #[serde(default)]
+    pub client_request_id: Option<String>,
+}
+
+// Bound unresolved questions even after delivery, and replies a worker has not read.
+pub const WORKER_REPORT_PENDING_MAX: u32 = 64;
+
+pub fn report_text(text: &str) -> anyhow::Result<String> {
+    let text = text.trim();
+    let len = text.chars().count();
+    anyhow::ensure!(
+        len > 0 && len <= SUBMIT_BODY_MAX_CHARS,
+        "report/reply refused: body has {len} characters; expected 1..={SUBMIT_BODY_MAX_CHARS}"
+    );
+    let text = sanitize_handoff_text(text).trim().to_string();
+    anyhow::ensure!(
+        !text.is_empty(),
+        "report/reply refused: body is empty after terminal escape removal; expected visible text"
+    );
+    Ok(text)
 }
 
 impl From<String> for Submission {
@@ -451,7 +510,7 @@ impl From<String> for Brief {
 
 pub const HANDBACK_PROTOCOL: &str = "\n\n## Handing back\nCall `pane_submit` with your result \
                                     when you are done — that, not this pane, is what reaches \
-                                    whoever asked. Answering only here reaches nobody.\nUse `run_in_background` and Monitor to wait until every required background job finishes; never end the turn while one is running. Finish with `pane_submit` and a non-empty body.";
+                                    whoever asked. Answering only here reaches nobody.\nDuring work, report progress, questions or blockers with `pane_report{kind,body,request_id}` using the current request number. For a question or blocker, wait with `pane_wait` without a session for a correlated reply; do not submit until the assigned work is complete. Delegated coding-agent work must use Houston panes, never internal sub-agents. Resolve routine child asks within existing authority first; request user decisions with pane_escalate, not prose alone. Every actual permission prompt routes parent-first in all launch modes. The parent NEVER approves: ALL keys are refused while any permission episode is pending; use pane_deny{child,episode_id} or pane_escalate{child,reason}; only the operator may approve. Verified denial stays pending until provider evidence. Input episode ids differ from worker request_id. Escalation transfers ownership to User and alerts amber; safety escalation requires authoritative Stop/ACP turn end or parent close/death, never quiet-settle. Bare Codex Auto PermissionRequest is non-alerting activity. Accepted instructions carry durable ids; use instruction list/get/cancel/resume, explicitly resume recovery holds and never resume uncertain work. Preserve partial results and distinguish steer adoption from delivery.\nTrack required background jobs with your CLI's supported wait or monitor tools until every job finishes. Never hand back while required work is still running. Close completed children you no longer need before your own handback. Finish with `pane_submit` and a non-empty body.";
 
 pub fn request_header(round: u32) -> String {
     format!(
@@ -606,6 +665,7 @@ pub struct PaneDetail {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DelegationView {
+    pub input_request: Option<proto::ChildInputRequest>,
     pub parent: u32,
     pub role: Option<String>,
     pub state: String,
@@ -626,6 +686,7 @@ impl From<DelegationState> for proto::DelegationState {
         match s {
             DelegationState::Spawning => proto::DelegationState::Spawning,
             DelegationState::Working => proto::DelegationState::Working,
+            DelegationState::AskedOrchestrator => proto::DelegationState::AskedOrchestrator,
             DelegationState::NeedsInput => proto::DelegationState::NeedsInput,
             DelegationState::Done => proto::DelegationState::Done,
             DelegationState::Failed => proto::DelegationState::Failed,
@@ -656,6 +717,10 @@ impl From<InboxKind> for proto::InboxKind {
             InboxKind::Stalled => proto::InboxKind::Stalled,
             InboxKind::OperatorNote => proto::InboxKind::OperatorNote,
             InboxKind::Mail => proto::InboxKind::Mail,
+            InboxKind::Progress => proto::InboxKind::Progress,
+            InboxKind::Question => proto::InboxKind::Question,
+            InboxKind::Blocked => proto::InboxKind::Blocked,
+            InboxKind::Reply => proto::InboxKind::Reply,
         }
     }
 }
@@ -680,6 +745,7 @@ pub fn delegation_info(
     hold_reason: Option<String>,
 ) -> proto::DelegationInfo {
     proto::DelegationInfo {
+        input_request: row.input_request,
         started_at: row.created_at,
         settled_at: row.settled_at,
         retained_until: row.retained_until,
@@ -808,6 +874,7 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
 impl DelegationView {
     pub fn from_row(row: crate::db::DelegationRow, pending: PendingHandback) -> Self {
         Self {
+            input_request: row.input_request,
             parent: row.parent_session,
             role: row.role,
             state: row.state,
@@ -828,6 +895,7 @@ impl DelegationView {
 impl From<crate::db::InboxRow> for proto::InboxRow {
     fn from(row: crate::db::InboxRow) -> Self {
         Self {
+            reply_to: row.reply_to,
             id: row.id,
             to_session: row.to_session,
             original_to: row.original_to,
@@ -1133,6 +1201,46 @@ pub const PANE_VERBS: &[VerbSpec] = &[
         args: &["body", "summary", "artifacts", "request_id"],
     },
     VerbSpec {
+        cli: "report",
+        tool: Some("pane_report"),
+        args: &["kind", "body", "request_id", "client_request_id"],
+    },
+    VerbSpec {
+        cli: "reply",
+        tool: Some("pane_reply"),
+        args: &["message_id", "text", "client_request_id"],
+    },
+    VerbSpec {
+        cli: "deny",
+        tool: Some("pane_deny"),
+        args: &["child", "episode_id"],
+    },
+    VerbSpec {
+        cli: "escalate",
+        tool: Some("pane_escalate"),
+        args: &["child", "reason"],
+    },
+    VerbSpec {
+        cli: "instruction-list",
+        tool: Some("pane_instruction_list"),
+        args: &["session"],
+    },
+    VerbSpec {
+        cli: "instruction-get",
+        tool: Some("pane_instruction_get"),
+        args: &["session", "instruction_id"],
+    },
+    VerbSpec {
+        cli: "instruction-cancel",
+        tool: Some("pane_instruction_cancel"),
+        args: &["session", "instruction_id"],
+    },
+    VerbSpec {
+        cli: "instruction-resume",
+        tool: Some("pane_instruction_resume"),
+        args: &["session", "instruction_id"],
+    },
+    VerbSpec {
         cli: "whoami",
         tool: None,
         args: &[],
@@ -1140,8 +1248,20 @@ pub const PANE_VERBS: &[VerbSpec] = &[
 ];
 
 // a while-loop, not .filter_map().collect(): this has to evaluate inside a const fn
-pub const PANE_TOOL_NAMES: [&str; 9] = {
-    let mut names = [""; 9];
+const PANE_TOOL_COUNT: usize = {
+    let mut count = 0;
+    let mut index = 0;
+    while index < PANE_VERBS.len() {
+        if PANE_VERBS[index].tool.is_some() {
+            count += 1;
+        }
+        index += 1;
+    }
+    count
+};
+
+pub const PANE_TOOL_NAMES: [&str; PANE_TOOL_COUNT] = {
+    let mut names = [""; PANE_TOOL_COUNT];
     let mut i = 0;
     let mut v = 0;
     while v < PANE_VERBS.len() {
@@ -1164,15 +1284,18 @@ pub enum ToolRole {
 impl ToolRole {
     pub fn advertises(self, tool: &str) -> bool {
         match self {
-            ToolRole::Leaf => matches!(tool, "pane_submit" | "workspace_info"),
-            ToolRole::Operator => !PANE_TOOL_NAMES.contains(&tool),
+            ToolRole::Leaf => matches!(
+                tool,
+                "pane_submit" | "pane_report" | "pane_reply" | "pane_wait" | "workspace_info"
+            ),
+            ToolRole::Operator => tool == "pane_reply" || !PANE_TOOL_NAMES.contains(&tool),
             ToolRole::Orchestrator {
                 has_parent,
                 spawnable,
             } => {
                 if tool == "pane_spawn" {
                     spawnable
-                } else if tool == "pane_submit" {
+                } else if matches!(tool, "pane_submit" | "pane_report") {
                     has_parent
                 } else {
                     true
@@ -1182,10 +1305,10 @@ impl ToolRole {
     }
 }
 
-pub fn tool_role(has_parent: bool, spawnable: bool, has_live_children: bool) -> ToolRole {
-    if has_parent && !spawnable && !has_live_children {
+pub fn tool_role(has_parent: bool, spawnable: bool, has_managed_children: bool) -> ToolRole {
+    if has_parent && !spawnable && !has_managed_children {
         ToolRole::Leaf
-    } else if spawnable || has_live_children {
+    } else if spawnable || has_managed_children {
         ToolRole::Orchestrator {
             has_parent,
             spawnable,
@@ -1236,6 +1359,7 @@ pub fn approval_ceiling_verdict(
 pub enum DelegationState {
     Spawning,
     Working,
+    AskedOrchestrator,
     NeedsInput,
     Done,
     Failed,
@@ -1274,6 +1398,7 @@ impl DelegationState {
         match self {
             DelegationState::Spawning => "spawning",
             DelegationState::Working => "working",
+            DelegationState::AskedOrchestrator => "asked_orchestrator",
             DelegationState::NeedsInput => "needs_input",
             DelegationState::Done => "done",
             DelegationState::Failed => "failed",
@@ -1286,6 +1411,7 @@ impl DelegationState {
         match s {
             "spawning" => Some(DelegationState::Spawning),
             "working" => Some(DelegationState::Working),
+            "asked_orchestrator" => Some(DelegationState::AskedOrchestrator),
             "needs_input" => Some(DelegationState::NeedsInput),
             "done" => Some(DelegationState::Done),
             "failed" => Some(DelegationState::Failed),
@@ -1317,7 +1443,9 @@ pub fn delegation_transition(
         (_, KilledByParent) | (_, KilledByOperator) => Some(Cancelled),
         (_, DaemonRestarted) => Some(Unknown),
         (Spawning, Spawned) => Some(Working),
-        (Spawning, TurnStarted) | (NeedsInput, TurnStarted) => Some(Working),
+        (Spawning, TurnStarted) | (NeedsInput, TurnStarted) | (AskedOrchestrator, TurnStarted) => {
+            Some(Working)
+        }
         (Spawning, Blocked) | (Working, Blocked) => Some(NeedsInput),
         (_, TurnEnded) => Some(if has_staged_result { Done } else { Working }),
         (_, ChildExited) => Some(if has_staged_result { Done } else { Failed }),
@@ -1443,11 +1571,10 @@ pub fn stalled_body(quiet_ms: u64) -> String {
 pub fn needs_input_body(reason: Option<&str>) -> String {
     match reason.map(str::trim).filter(|r| !r.is_empty()) {
         Some(r) => format!(
-            "this child needs input: {r}. Inspect it (`pane_read`) and answer it (`pane_send_keys`), or \
-             escalate — it will sit there until somebody does."
+            "this child needs input: {r}. Inspect it (`pane_read`) and answer a question within authority (`pane_send_keys`). For permissions use `pane_deny` or `pane_escalate`; only the operator may approve."
         ),
         None => "this child needs input and its CLI did not say why. Inspect it (`pane_read`) \
-                 and answer it (`pane_send_keys`), or escalate to the user."
+                 and answer a question within authority (`pane_send_keys`), or use `pane_deny`/`pane_escalate` for permissions; only the operator may approve."
             .to_string(),
     }
 }
@@ -1659,11 +1786,18 @@ pub enum InboxKind {
     Stalled,
     OperatorNote,
     Mail,
+    Progress,
+    Question,
+    Blocked,
+    Reply,
 }
 
 impl InboxKind {
     pub fn urgent(self) -> bool {
-        matches!(self, Self::NeedsInput | Self::Exited)
+        matches!(
+            self,
+            Self::NeedsInput | Self::Exited | Self::Question | Self::Blocked | Self::Reply
+        )
     }
 
     pub fn as_str(self) -> &'static str {
@@ -1676,6 +1810,10 @@ impl InboxKind {
             Self::Stalled => "stalled",
             Self::OperatorNote => "operator_note",
             Self::Mail => "mail",
+            Self::Progress => "progress",
+            Self::Question => "question",
+            Self::Blocked => "blocked",
+            Self::Reply => "reply",
         }
     }
 
@@ -1689,12 +1827,16 @@ impl InboxKind {
             "stalled" => Some(Self::Stalled),
             "operator_note" => Some(Self::OperatorNote),
             "mail" => Some(Self::Mail),
+            "progress" => Some(Self::Progress),
+            "question" => Some(Self::Question),
+            "blocked" => Some(Self::Blocked),
+            "reply" => Some(Self::Reply),
             _ => None,
         }
     }
 }
 
-pub const INBOX_KIND_VALUES: [&str; 8] = [
+pub const INBOX_KIND_VALUES: [&str; 12] = [
     "restored",
     "result",
     "no_handback",
@@ -1703,6 +1845,10 @@ pub const INBOX_KIND_VALUES: [&str; 8] = [
     "stalled",
     "operator_note",
     "mail",
+    "progress",
+    "question",
+    "blocked",
+    "reply",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1893,6 +2039,7 @@ pub fn inbox_reason_note(reason: &str) -> String {
         "migrated" => "(carried over: the daemon holding this result stopped before it was \
              ever delivered)"
             .to_string(),
+        "child_needs_input" => "(partial: the child submitted this body before asking for input; its request remains open)".to_string(),
         _ => format!("({reason})"),
     }
 }
@@ -1925,6 +2072,18 @@ fn compose_entry(all: &[InboxEntry], entry: &InboxEntry) -> String {
         row.summary.trim()
     );
     let body = row.body.trim();
+    if matches!(
+        kind,
+        Some(InboxKind::Progress | InboxKind::Question | InboxKind::Blocked | InboxKind::Reply)
+    ) {
+        out.push_str(&format!(
+            "(request_id {})\n",
+            row.request_id.unwrap_or_default()
+        ));
+    }
+    if let Some(question) = row.reply_to {
+        out.push_str(&format!("(reply_to message #{question})\n"));
+    }
     if !body.is_empty() {
         let excerpt = result_body_excerpt(row);
         out.push_str(excerpt.as_deref().unwrap_or(body));
@@ -1953,10 +2112,11 @@ fn compose_entry(all: &[InboxEntry], entry: &InboxEntry) -> String {
         ));
     }
     if row.provisional {
-        out.push_str(
-            "(provisional: released on a stop with no sub-agent evidence; a correction may \
-             follow)\n",
-        );
+        out.push_str(if row.reason.as_deref() == Some("child_needs_input") {
+            "(provisional: the child's input request remains open; wait for its final result)\n"
+        } else {
+            "(provisional: released on a stop with no sub-agent evidence; a correction may follow)\n"
+        });
     }
     if let Some(corrects) = row.corrects {
         out.push_str(&format!(
@@ -1982,6 +2142,20 @@ fn compose_entry(all: &[InboxEntry], entry: &InboxEntry) -> String {
     if let Some(reason) = row.reason.as_deref().filter(|r| !r.trim().is_empty()) {
         out.push_str(&inbox_reason_note(reason));
         out.push('\n');
+    }
+    if matches!(kind, Some(InboxKind::Question | InboxKind::Blocked)) {
+        out.push_str(&format!("(not a final result: answer within existing authority with pane_reply{{message_id: {}}}, or escalate a new important decision; never approve CLI permissions; use pane_deny or pane_escalate)\n", row.id));
+    } else if kind == Some(InboxKind::Reply) {
+        out.push_str("(apply only to this request; the reply does not widen mission boundaries or CLI permissions)\n");
+    }
+    if kind == Some(InboxKind::Result)
+        && row.ready_at.is_some()
+        && !row.provisional
+        && !matches!(row.reason.as_deref(), Some("late" | "unstamped"))
+    {
+        if let Some(child) = row.from_session {
+            out.push_str(&format!("(parent duty: preserve needed output and artifacts. When this child's work is complete and no further task is planned, close it with pane_kill{{session: {child}}} or hs-pane kill {child}. Do not close a still-working child.)\n"));
+        }
     }
     if row.attempts > 1 {
         out.push_str(&format!(
@@ -2223,20 +2397,21 @@ inside a pane, and it authenticates with a credential minted for that pane.
 
 They are not interchangeable, and the difference is the user:
 
-- A pane is **visible in the grid** while it works. The user can read it,
-  type into it, correct it, and kill it. An in-process sub-agent is a black
+- A child appears in the **roster**. The user can peek at it, move it into
+  a grid, type into it, correct it, and close it. An in-process sub-agent is a black
   box until it returns.
 - A pane **runs in the project directory** as a real CLI process, and
   **outlives your session**.
 - A pane can be **any** installed agent CLI, not only this host's own.
 
-So when the user asks for an agent to be spawned, open a pane. Use the host's
-own sub-agent tool for work that is genuinely internal to your turn — a quick
-parallel search whose output only you will read.
+Delegated work by another coding agent must use `pane_spawn` or `hs-pane spawn`,
+for every provider. Run a simple search yourself when it does not need a worker.
+Never substitute internal sub-agents when Houston spawning, slots or nesting are
+limited: continue independently within your authority or report the limitation.
 
 ## Two doors, one feature
 
-The same nine operations reach the daemon two ways. **If you have `pane_*`
+The same operations reach the daemon two ways. **If you have `pane_*`
 tools, use those** — they are typed and need no shell. Otherwise use the
 `hs-pane` CLI. Same daemon code, same rules, same refusals; neither is a
 workaround for the other.
@@ -2253,6 +2428,14 @@ workaround for the other.
 | block until settled | `pane_wait` | `hs-pane wait` |
 | end it | `pane_kill` | `hs-pane kill` |
 | hand back a result | `pane_submit` | `hs-pane submit` |
+| report progress, a question or a blocker | `pane_report` | `hs-pane report` |
+| answer a worker question | `pane_reply` | `hs-pane reply` |
+| deny a permission | `pane_deny` | `hs-pane deny` |
+| request a user decision | `pane_escalate` | `hs-pane escalate` |
+| list durable instructions | `pane_instruction_list` | `hs-pane instruction-list` |
+| read instruction body and state | `pane_instruction_get` | `hs-pane instruction-get` |
+| cancel pending instruction | `pane_instruction_cancel` | `hs-pane instruction-cancel` |
+| resume a recovery hold | `pane_instruction_resume` | `hs-pane instruction-resume` |
 | watch a pull request | `pane_pr_watch` | `hs-pane pr-watch` |
 | stop pull request watches | `pane_pr_unwatch` | `hs-pane pr-unwatch` |
 
@@ -2266,7 +2449,8 @@ This file does not repeat the flags on purpose: it ships once and the binary
 changes, so the binary is the authority.
 
 The verbs: `whoami`, `spawn`, `list`, `get`, `prompt`, `keys`, `wait`,
-`read`, `kill`, `submit`, `pr-watch`, `pr-unwatch`. Output is JSON (`read` prints plain lines).
+`read`, `kill`, `submit`, `report`, `reply`, `deny`, `escalate`, `instruction-list`,
+`instruction-get`, `instruction-cancel`, `instruction-resume`, `pr-watch`, `pr-unwatch`. Output is JSON (`read` prints plain lines).
 
 ## Reading a pane
 
@@ -2346,10 +2530,71 @@ Use `--reusable` for follow-up prompts or a live pane.
 
 ## The parent owns the user conversation
 
-Child results, spawn warnings and requests for input belong to the parent.
-Inspect a blocked child with `pane_read`, then answer through `pane_send_keys`;
-escalate to the user only when their decision is needed. Do not re-prompt a child
-while it is blocked. Delivery failures stay in your inbox and `pane_wait` reports
+The parent handles routine child asks within existing authority first. For a
+reported question or blocker, use `pane_reply{message_id,text}` (CLI:
+`hs-pane reply MESSAGE_ID TEXT`). A reply does not expand authority or approve a
+CLI prompt. When a child input episode requires a user decision, call
+`pane_escalate{child,reason}` / `hs-pane escalate CHILD --reason REASON` with
+nonblank text of at most 2000 characters. Prose alone does not escalate.
+
+Questions and every actual permission prompt route parent-first in every launch
+mode, including Ask, Auto and Bypass. Parent-owned requests stay gray and produce
+an actionable `needs_input` inbox row. Read a question and answer within authority
+with `pane_send_keys`; reported questions use `pane_reply`. The parent NEVER
+approves permissions. ALL keys, including Escape and n, are refused for a pending
+permission episode. Use `pane_deny{child,episode_id}` / `hs-pane deny CHILD
+--episode-id ID` for verified denial, or escalate with a recommendation in reason.
+Only the operator may approve. Denial remains pending until provider evidence;
+unsupported provider paths refuse. Input episode ids are distinct from worker
+`request_id`. Escalation transfers ownership to User, showing amber and notifications.
+A bare Codex Auto PermissionRequest is approval activity, not evidence of a human
+wait, and does not alert. Cursor has no needs-input signal. The operator can
+intervene before escalation; the parent receives a note. Accepted Stop/ACP turn
+end or parent close/death escalates unanswered input; quiet-settle never does.
+Do not paste a new task over a question or approval prompt.
+
+Workers use `pane_report{kind: progress|question|blocked,body,request_id}`
+(`hs-pane report question TEXT --request-id N`) during work. A question or blocker
+stays open after delivery until one reply resolves it. Wait without a session
+(`hs-pane wait`) for the answer, even when you have no children and cannot spawn.
+Use the reply's `reply_to` and `request_id` to identify the question and round.
+Reports and replies do not complete the round; finish with `pane_submit`.
+Each message permits 1–8000 characters; each worker has a cap of 64 outstanding
+reports and 64 unread replies. Delivered unanswered questions still use the cap.
+Choose a stable `client_request_id` before reporting or replying; retry the same
+key and payload after transport loss. Changing its payload is refused.
+
+For reusable workers, `pane_prompt` / `hs-pane prompt --mode` supports:
+- `queue` (default): hold while busy or while unsubmitted text is present.
+- `steer`: write during work; delivery does not prove adoption. Authoritative
+  adoption starts a distinct request round.
+- `restart`: interrupt, wait for authoritative idle, then write. Verified only
+  for Codex (Escape) and Grok (Ctrl+C); Claude, Antigravity, OpenCode and Cursor
+  are refused. Never derive idle from terminal text.
+
+Every accepted prompt returns a stable `instruction_id`, `accepted` and current
+`state`; acceptance does not prove delivery or completion. With CLI `--wait`,
+the wait result retains that receipt under `instruction_acceptance`. Inspect current truth
+with `hs-pane instruction-list SESSION` (counts, at most 32 previews and
+`truncated`) or `hs-pane instruction-get SESSION INSTRUCTION_ID` (full body).
+States are `queued`, `held_after_recovery`, `delivered`, `cancelled` and
+`uncertain`. Recovery holds never resume automatically: use
+`hs-pane instruction-resume SESSION INSTRUCTION_ID` explicitly. Never resume
+`uncertain` work. `hs-pane instruction-cancel SESSION INSTRUCTION_ID` cancels
+pending work; it cannot recall delivered work. Cancel/resume retries return the
+current state, not an old receipt. Instruction ids are opaque, 1–64 ASCII letters,
+digits, underscores or hyphens. Preserve partial results during steer or restart.
+
+HTTP uses GET `/orchestrate/instruction-list?session=SESSION` and
+`/orchestrate/instruction-get?session=SESSION&instruction_id=ID`; POST
+`/orchestrate/instruction-cancel` and `/orchestrate/instruction-resume` take
+`{session,instruction_id}`. POST `/orchestrate/deny` takes `{child,episode_id}`;
+POST `/orchestrate/escalate` takes `{child,reason}`.
+These doors use the pane credential and the same ancestry rules as MCP and CLI.
+
+Houston preserves the selected approval mode. Claude and Grok receive launch-only
+allow rules for the local dialogue tools: submit, report, reply, wait, deny and escalate.
+Other providers may require approval for these tools in ask mode. Delivery failures stay in your inbox and `pane_wait` reports
 why automatic delivery stopped. A dead parent passes rows to its nearest live
 ancestor; only the absence of any live ancestor addresses the operator.
 
@@ -2364,11 +2609,11 @@ it needs in the prompt, since it cannot ask you. `--output-format` and
 `--reusable` are refused with `--handoff`, and only a pane without a parent
 may hand off.
 
-For single-branch work this pane will edit itself, continue with
-`pane_spawn{handoff: true, worktree: SLUG}` (`hs-pane spawn --handoff --worktree SLUG`),
-passing context via `state_doc` (`--state-doc` or `--state-doc-path`); never edit a
-child's worktree from the primary checkout. Delegated multi-branch work uses child
-panes with `worktree`.
+Creating a worktree does not request a handoff. Normal delegation uses child panes
+without `handoff`, including isolated branch work with `worktree`. Use an independent
+handoff only when the operator explicitly asks to continue in a new pane, passing
+context via `state_doc` (`--state-doc` or `--state-doc-path`). Never edit a child's
+worktree from the primary checkout.
 
 ## How a delegation actually goes
 
@@ -2394,11 +2639,10 @@ panes with `worktree`.
      snapshot), list the requirements, and request focused evidence such as
      `file:line` and tests. Do not paste the parent's full transcript; the
      temporary review process ends after its durable handback; its transcript remains.
-   - The child starts in its CLI's **auto mode** — it will not stop for
-     routine approvals, because nobody is at its keyboard. It can still stop
-     for something genuinely dangerous; that shows up as `NeedsInput` and
-     reaches you. `--ask` makes it use the CLI's ordinary prompts instead,
-     `--bypass` skips even the ones auto mode raises.
+   - The child starts in its CLI's **auto mode** for routine approvals.
+     `--ask` uses ordinary provider prompts; `--bypass` selects Bypass. Every
+     actual permission prompt still routes parent-first. The parent denies or
+     escalates; only the operator may approve.
 2. `hs-pane prompt <id> "…"` — sends follow-up text. Add `--wait` only if you
    must have the reply inside this turn (see above). If a wait comes back
    `prompt_stalled`, the text landed but nothing moved within the stall
@@ -2417,6 +2661,9 @@ panes with `worktree`.
    descendants, inspect their purpose and do not confirm the subtree kill with
    `--yes` unless their work is also complete and preserved. Never tell a worker
    to kill itself before delivering its result.
+
+Before your final response or handback, close every completed child you no longer
+need. A reusable flag alone does not justify keeping a completed pane open.
 
 For a long result, do not try to scrape it out of the terminal. The child
 writes a file and names it in `--artifacts`; the path reaches you in the
@@ -2448,10 +2695,12 @@ parent has to decide.
 
 - **Only your own subtree.** Every verb refuses a pane you did not spawn (or
   whose ancestor you are not). Never try to reach the operator's panes.
-- **Never blind-type at a blocked agent.** `prompt` refuses a child sitting at
-  a permission or question prompt. `read` it, then answer what it is actually
-  asking with `hs-pane keys <id> …` — `esc enter up down tab ctrl+c y n`, and
-  nothing else. One key outside that list sends none of them.
+- **Never blind-type at a blocked agent.** `prompt` refuses questions and
+  permissions. Read a question before answering within authority with `hs-pane
+  keys <id> …` (`esc enter up down tab ctrl+c y n`). One invalid key sends none.
+  ALL keys are refused for pending permissions. Use `hs-pane deny CHILD
+  --episode-id ID` or `hs-pane escalate CHILD --reason REASON`; only the operator
+  may approve. Never use native CLI agents or keys to bypass Houston's refusal.
 - **Spawning is opt-in and capped.** If a spawn is refused because
   orchestration is off, tell the user to enable it in Settings → Orchestration;
   do not work around it. The child count and depth caps are also
@@ -2666,7 +2915,15 @@ hs-pane — a Houston pane controlling sibling agent panes
                                           human reads it. tail is the byte ring
                                           split on newlines)
   hs-pane kill <id> [--yes]              (--yes confirms killing live children)
-  hs-pane submit <result text…> [--summary \"…\"] [--artifacts A,B]
+  hs-pane report <progress|question|blocked> <body…> --request-id ID [--client-request-id KEY]
+  hs-pane reply <message-id> <text…> [--client-request-id KEY]
+  hs-pane deny CHILD --episode-id ID    (verified denial; only the operator may approve)
+  hs-pane escalate CHILD --reason REASON (request a user decision for child input)
+  hs-pane instruction-list SESSION      (bounded durable instruction queue)
+  hs-pane instruction-get SESSION INSTRUCTION_ID
+  hs-pane instruction-cancel SESSION INSTRUCTION_ID
+  hs-pane instruction-resume SESSION INSTRUCTION_ID (explicitly resume a recovery hold)
+  hs-pane submit <result text…> [--request-id ID] [--summary \"…\"] [--artifacts A,B]
                                          (worker → parent handoff; wakes your
                                           parent. --artifacts is a comma-separated
                                           list of files inside this workspace)
@@ -2763,6 +3020,55 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
     };
 
     match cmd.as_str() {
+        "deny" | "escalate" | "instruction-list" | "instruction-get" | "instruction-cancel"
+        | "instruction-resume" => {
+            if cmd == "deny" && args.len() != 4 {
+                anyhow::bail!("deny arguments {args:?}: expected hs-pane deny CHILD --episode-id ID exactly once");
+            }
+            if cmd == "deny"
+                && args.iter().enumerate().any(|(i, arg)| {
+                    arg == "--episode-id"
+                        && args.get(i + 1).is_none_or(|next| next.starts_with("--"))
+                })
+            {
+                anyhow::bail!(
+                    "--episode-id: got no value; expected hs-pane deny CHILD --episode-id ID"
+                );
+            }
+            if cmd == "escalate"
+                && args.iter().enumerate().any(|(i, arg)| {
+                    arg == "--reason" && args.get(i + 1).is_none_or(|next| next.starts_with("--"))
+                })
+            {
+                anyhow::bail!("--reason: expected nonblank REASON in hs-pane escalate CHILD --reason REASON; got no value");
+            }
+            let door = doors::cli_door(cmd, &positional, &flags)?;
+            let value = call(door.method, &door.path, door.body)?;
+            println!("{}", serde_json::to_string_pretty(&value)?);
+        }
+        "report" | "reply" => {
+            let mut body = if cmd == "report" {
+                let kind = positional
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("report needs progress, question or blocked"))?;
+                let request: u32 = flags
+                    .get("request-id")
+                    .ok_or_else(|| anyhow::anyhow!("report needs --request-id ID from whoami"))?
+                    .parse()?;
+                json!({"kind":kind,"body":join_rest(&positional[1..], "report body")?,"request_id":request})
+            } else {
+                let message: i64 = positional
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("reply needs a message id"))?
+                    .parse()?;
+                json!({"message_id":message,"text":join_rest(&positional[1..], "reply text")?})
+            };
+            if let Some(key) = flags.get("client-request-id") {
+                body["client_request_id"] = json!(key);
+            }
+            let value = call("POST", &format!("/orchestrate/{cmd}"), Some(body))?;
+            println!("{}", serde_json::to_string_pretty(&value)?);
+        }
         "pr-watch" => {
             let target = join_rest(&positional, "PR URL or number")?;
             let v = call("POST", "/orchestrate/pr-watch", Some(json!({"pr": target})))?;
@@ -2928,7 +3234,7 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
                     "stall_guard": true,
                     "timeout_ms": timeout_ms,
                 });
-                let w = cli_call(
+                let mut w = cli_call(
                     &base,
                     &token,
                     "POST",
@@ -2936,6 +3242,7 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
                     Some(body),
                     cli_wait_transport_timeout(timeout_ms),
                 )?;
+                w["instruction_acceptance"] = v;
                 println!("{}", serde_json::to_string_pretty(&w)?);
             } else {
                 println!("{}", serde_json::to_string_pretty(&v)?);
@@ -2989,6 +3296,18 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             if let Some(list) = flags.get("artifacts") {
                 let paths: Vec<&str> = list.split(',').map(str::trim).collect();
                 body["artifacts"] = json!(paths);
+            }
+            if let Some(request) = flags.get("request-id") {
+                let id = request
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|id| *id > 0)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "--request-id {request:?}: expected a positive request number"
+                        )
+                    })?;
+                body["request_id"] = json!(id);
             }
             let v = call("POST", "/orchestrate/submit", Some(body))?;
             println!("{}", serde_json::to_string_pretty(&v)?);
@@ -3221,10 +3540,7 @@ mod tests {
                 "the skill description must catch {phrase:?}: {front_matter}"
             );
         }
-        assert!(
-            SKILL_MD.contains("visible in the grid"),
-            "the user-visible argument"
-        );
+        assert!(SKILL_MD.contains("**roster**"), "the user-visible argument");
         assert!(
             SKILL_MD.contains("pane_wait"),
             "the async pattern — blocking in `wait` is what made panes cost more than sub-agents"
@@ -3311,7 +3627,8 @@ mod tests {
             let composed = brief.compose(1).unwrap();
             assert!(composed.contains("`pane_submit`"), "{composed}");
             assert!(
-                composed.contains("run_in_background") && composed.contains("Monitor"),
+                composed.contains("supported wait or monitor tools")
+                    && composed.contains("Never hand back while required work is still running"),
                 "{composed}"
             );
             assert!(composed.ends_with(HANDBACK_PROTOCOL), "{composed}");
@@ -3564,6 +3881,9 @@ mod tests {
         use ToolRole::*;
         let leaf = Leaf;
         assert!(leaf.advertises("pane_submit"));
+        assert!(leaf.advertises("pane_report"));
+        assert!(leaf.advertises("pane_reply"));
+        assert!(leaf.advertises("pane_wait"));
         assert!(leaf.advertises("workspace_info"));
         for hidden in [
             "pane_spawn",
@@ -3571,7 +3891,6 @@ mod tests {
             "pane_get",
             "pane_read",
             "pane_prompt",
-            "pane_wait",
             "pane_send_keys",
             "pane_kill",
             "routine_create",
@@ -3602,6 +3921,9 @@ mod tests {
             "pane_prompt",
             "pane_wait",
             "pane_send_keys",
+            "pane_deny",
+            "pane_escalate",
+            "pane_reply",
             "pane_kill",
         ] {
             assert!(
@@ -3621,7 +3943,10 @@ mod tests {
         );
 
         let operator = Operator;
-        for hidden in PANE_TOOL_NAMES {
+        for hidden in PANE_TOOL_NAMES
+            .into_iter()
+            .filter(|name| *name != "pane_reply")
+        {
             assert!(
                 !operator.advertises(hidden),
                 "an operator pane sees no {hidden}"
@@ -3629,6 +3954,16 @@ mod tests {
         }
         assert!(operator.advertises("workspace_info"));
         assert!(operator.advertises("routine_create"));
+    }
+
+    #[test]
+    fn tool_names_derive_from_every_cli_verb_without_empty_slots() {
+        let names: Vec<_> = PANE_VERBS.iter().filter_map(|verb| verb.tool).collect();
+        assert_eq!(PANE_TOOL_NAMES.as_slice(), names.as_slice());
+        assert!(PANE_TOOL_NAMES.contains(&"pane_deny"));
+        assert!(PANE_TOOL_NAMES.iter().all(|name| !name.is_empty()));
+        assert!(SKILL_MD.contains("only the operator may approve"));
+        assert!(!SKILL_MD.contains("wait goes directly to the user"));
     }
 
     #[test]
@@ -4355,6 +4690,7 @@ mod tests {
         for st in [
             DelegationState::Spawning,
             DelegationState::Working,
+            DelegationState::AskedOrchestrator,
             DelegationState::NeedsInput,
             DelegationState::Done,
             DelegationState::Failed,
@@ -4388,6 +4724,10 @@ mod tests {
             InboxKind::Stalled,
             InboxKind::OperatorNote,
             InboxKind::Mail,
+            InboxKind::Progress,
+            InboxKind::Question,
+            InboxKind::Blocked,
+            InboxKind::Reply,
         ] {
             let wire: proto::InboxKind = kind.into();
             assert_eq!(
@@ -4414,6 +4754,7 @@ mod tests {
     #[test]
     fn a_delegation_info_drops_the_brief_and_never_carries_the_staged_body() {
         let row = crate::db::DelegationRow {
+            input_request: None,
             id: 1,
             parent_session: 41,
             child_session: 58,
@@ -4477,6 +4818,7 @@ mod tests {
     #[test]
     fn an_unparsable_state_reads_as_unknown_rather_than_as_working() {
         let row = crate::db::DelegationRow {
+            input_request: None,
             id: 1,
             parent_session: 1,
             child_session: 2,
@@ -4970,6 +5312,26 @@ mod tests {
     }
 
     #[test]
+    fn hs_pane_submit_forwards_request_id() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let (port, server) = one_shot_server("200 OK", r#"{"submitted":true}"#);
+        std::env::set_var("HOUSTON_SESSION", "1");
+        std::env::set_var("HOUSTON_MCP_URL", format!("http://127.0.0.1:{port}"));
+        std::env::set_var("HOUSTON_MCP_TOKEN", "unused");
+        pane_cli_inner(&[
+            "submit".into(),
+            "answer to older request".into(),
+            "--request-id".into(),
+            "1".into(),
+        ])
+        .unwrap();
+        let request = server.join().unwrap();
+        let body: serde_json::Value =
+            serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(body["request_id"], json!(1));
+    }
+
+    #[test]
     fn hs_pane_spawn_reports_a_worktree_refusal_as_exit_1() {
         let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("HOUSTON_SESSION", "1");
@@ -5237,9 +5599,30 @@ mod tests {
         .unwrap_err();
     }
 
+    #[test]
+    fn dialogue_text_preserves_round_and_reply_correlation_when_reason_changes() {
+        let mut first = composed_row(70, 2, InboxKind::Question, "same", "Same body");
+        first.row.request_id = Some(1);
+        let mut second = composed_row(71, 2, InboxKind::Question, "same", "Same body");
+        second.row.request_id = Some(2);
+        let mut reply = composed_row(72, 1, InboxKind::Reply, "same", "Same body");
+        reply.row.request_id = Some(2);
+        reply.row.reply_to = Some(71);
+        for reason in ["parent_dead", "request_closed"] {
+            reply.row.reason = Some(reason.into());
+            let text = compose_inbox(&[first.clone(), second.clone(), reply.clone()], "delivery");
+            assert!(
+                text.contains("request_id 1") && text.contains("request_id 2"),
+                "{text}"
+            );
+            assert!(text.contains("reply_to message #71"), "{text}");
+        }
+    }
+
     fn composed_row(id: i64, from: u32, kind: InboxKind, summary: &str, body: &str) -> InboxEntry {
         InboxEntry {
             row: crate::db::InboxRow {
+                reply_to: None,
                 id,
                 to_session: 1,
                 original_to: None,
@@ -5291,6 +5674,35 @@ mod tests {
         );
         assert!(out.contains("the long form"), "{out}");
         assert!(out.ends_with("--- End Inbox ---"), "{out}");
+    }
+
+    #[test]
+    fn cleanup_duty_is_attached_only_to_an_eligible_final_result() {
+        let mut entry = composed_row(12, 7, InboxKind::Result, "done", "finished work");
+        let final_result = compose_inbox(&[entry.clone()], "delivery");
+        assert!(final_result.contains("pane_kill{session: 7}"));
+        assert!(final_result.contains("no further task is planned"));
+        assert!(final_result.contains("Do not close a still-working child"));
+        for (provisional, reason) in [
+            (true, None),
+            (false, Some("late")),
+            (false, Some("unstamped")),
+        ] {
+            entry.row.provisional = provisional;
+            entry.row.reason = reason.map(str::to_owned);
+            assert!(!compose_inbox(&[entry.clone()], "delivery").contains("parent duty"));
+        }
+        entry.row.provisional = false;
+        entry.row.reason = None;
+        for kind in [
+            InboxKind::Progress,
+            InboxKind::Question,
+            InboxKind::Blocked,
+            InboxKind::Reply,
+        ] {
+            entry.row.kind = kind.as_str().into();
+            assert!(!compose_inbox(&[entry.clone()], "delivery").contains("parent duty"));
+        }
     }
 
     #[test]
@@ -5706,7 +6118,7 @@ impl SubagentRound {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EpisodeKey {
     ToolUseId(String),
     Generated {
@@ -5729,8 +6141,10 @@ pub enum EpisodeEnd {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Episode {
+    pub permission: Option<proto::PermissionInputDetails>,
+    pub input_kind: proto::ChildInputKind,
     pub key: EpisodeKey,
     pub reason: Option<String>,
     pub tool_input_fingerprint: Option<String>,
@@ -5740,13 +6154,103 @@ pub struct Episode {
     pub stalled_reported: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct PermissionEpisodes {
     open: Vec<Episode>,
+    #[serde(with = "episode_generations")]
     generations: std::collections::HashMap<(Option<String>, String), u32>,
 }
 
+mod episode_generations {
+    use super::*;
+    type Generations = std::collections::HashMap<(Option<String>, String), u32>;
+
+    pub fn serialize<S: serde::Serializer>(value: &Generations, s: S) -> Result<S::Ok, S::Error> {
+        value.iter().collect::<Vec<_>>().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Generations, D::Error> {
+        let slots = Vec::<((Option<String>, String), u32)>::deserialize(d)?;
+        let count = slots.len();
+        let value: Generations = slots.into_iter().collect();
+        if value.len() != count {
+            return Err(serde::de::Error::custom(
+                "duplicate native input generation slot",
+            ));
+        }
+        Ok(value)
+    }
+}
+
+pub(crate) fn validate_native_input_identity(value: &str) -> anyhow::Result<()> {
+    // Refuse oversized or secret-bearing identities instead of changing exact correlation.
+    anyhow::ensure!(
+        value.len() <= 1024,
+        "native input identity has {} bytes; adoption limit is 1024",
+        value.len()
+    );
+    anyhow::ensure!(
+        crate::sanitize::redact_command_secrets(value).0 == value,
+        "native input identity requires secret redaction; exact recovery is unavailable"
+    );
+    Ok(())
+}
+
 impl PermissionEpisodes {
+    pub fn adoption_snapshot(&self) -> Self {
+        let mut snapshot = self.clone();
+        let metadata = |value: &str| {
+            crate::daemon::bounded_hook_text(&crate::sanitize::redact_review_secrets(value).0)
+        };
+        for episode in &mut snapshot.open {
+            episode.reason = episode.reason.as_deref().map(metadata);
+            if let Some(details) = episode.permission.as_mut() {
+                for value in [&mut details.command, &mut details.block_reason] {
+                    if let proto::ProviderReportedText::Reported { text } = value {
+                        *text = metadata(text);
+                    }
+                }
+            }
+        }
+        snapshot
+    }
+
+    pub fn validate_adoption(&self) -> anyhow::Result<()> {
+        let mut keys = std::collections::HashSet::new();
+        for episode in &self.open {
+            anyhow::ensure!(
+                keys.insert(&episode.key),
+                "duplicate native input episode identity"
+            );
+            match &episode.key {
+                EpisodeKey::ToolUseId(id) => validate_native_input_identity(id)?,
+                EpisodeKey::Generated {
+                    prompt_id,
+                    tool_name,
+                    generation,
+                } => {
+                    if let Some(id) = prompt_id {
+                        validate_native_input_identity(id)?;
+                    }
+                    validate_native_input_identity(tool_name)?;
+                    anyhow::ensure!(self.generations.get(&(prompt_id.clone(), tool_name.clone()))
+                        .is_some_and(|next| next > generation),
+                        "native input generation counter must exceed its pending episode generation");
+                }
+            }
+            if let Some(fingerprint) = &episode.tool_input_fingerprint {
+                validate_native_input_identity(fingerprint)?;
+            }
+        }
+        for (prompt_id, tool_name) in self.generations.keys() {
+            if let Some(id) = prompt_id {
+                validate_native_input_identity(id)?;
+            }
+            validate_native_input_identity(tool_name)?;
+        }
+        Ok(())
+    }
+
     pub fn open(
         &mut self,
         tool_use_id: Option<&str>,
@@ -5819,6 +6323,20 @@ impl PermissionEpisodes {
             EpisodeKey::Generated { .. } => self.resolve_on(&EpisodeEnd::NextPermissionRequest),
         };
         self.open.push(Episode {
+            permission: None,
+            input_kind: if matches!(
+                tool_name,
+                "AskUserQuestion"
+                    | "ExitPlanMode"
+                    | "request_user_input"
+                    | "ask_question"
+                    | "OpenCode question"
+                    | "Claude elicitation"
+            ) {
+                proto::ChildInputKind::Question
+            } else {
+                proto::ChildInputKind::Permission
+            },
             key: key.clone(),
             reason,
             tool_input_fingerprint,
@@ -5828,6 +6346,22 @@ impl PermissionEpisodes {
             stalled_reported: false,
         });
         (key, retired)
+    }
+
+    pub fn attach_permission_details(
+        &mut self,
+        key: &EpisodeKey,
+        details: proto::PermissionInputDetails,
+    ) {
+        if let Some(episode) = self.open.iter_mut().find(|episode| &episode.key == key) {
+            episode.permission = Some(details);
+        }
+    }
+
+    pub fn mark_permission_kind(&mut self, key: &EpisodeKey) {
+        if let Some(episode) = self.open.iter_mut().find(|episode| &episode.key == key) {
+            episode.input_kind = proto::ChildInputKind::Permission;
+        }
     }
 
     pub fn mark_codex_permission(&mut self, key: &EpisodeKey, auto_review: bool) {
@@ -5924,6 +6458,29 @@ impl PermissionEpisodes {
             });
         self.open = kept;
         resolved
+    }
+
+    pub fn confirm_waiting_permission(&mut self) {
+        if let Some(episode) = self.open.last_mut() {
+            episode.auto_review = false;
+            episode.input_kind = proto::ChildInputKind::Permission;
+        }
+    }
+
+    pub fn permission_episodes(&self) -> Vec<Episode> {
+        self.open
+            .iter()
+            .filter(|episode| episode.input_kind == proto::ChildInputKind::Permission)
+            .cloned()
+            .collect()
+    }
+
+    pub fn input_episodes(&self) -> Vec<Episode> {
+        self.open
+            .iter()
+            .filter(|episode| !episode.auto_review)
+            .cloned()
+            .collect()
     }
 
     pub fn open_count(&self) -> usize {
@@ -6203,6 +6760,75 @@ mod subagent_round_tests {
 #[cfg(test)]
 mod permission_episode_tests {
     use super::*;
+
+    #[test]
+    fn adoption_snapshot_keeps_auto_review_stalls_correlation_and_redacts_metadata() {
+        let mut episodes = PermissionEpisodes::default();
+        let (key, _) = episodes.open_with_fingerprint(
+            None,
+            Some("turn"),
+            "Bash",
+            Some("AKIAABCDEFGHIJKLMNOP password=fixture-secret".into()),
+            Some("digest".into()),
+            0,
+        );
+        episodes.mark_codex_permission(&key, true);
+        assert_eq!(
+            episodes
+                .take_auto_review_stalls(CODEX_AUTO_REVIEW_STALL_MS)
+                .len(),
+            1
+        );
+        let json = serde_json::to_string(&episodes.adoption_snapshot()).unwrap();
+        assert!(!json.contains("AKIAABCDEFGHIJKLMNOP"));
+        assert!(!json.contains("fixture-secret"));
+        let mut recovered: PermissionEpisodes = serde_json::from_str(&json).unwrap();
+        recovered.validate_adoption().unwrap();
+        assert!(recovered.has_auto_review_stall());
+        assert!(recovered.open[0].strict_correlation);
+        assert!(recovered.open[0].auto_review);
+        assert_eq!(recovered.open[0].opened_ms, 0);
+        assert_eq!(recovered.open[0].key, key);
+        assert_eq!(
+            recovered.open[0].tool_input_fingerprint.as_deref(),
+            Some("digest")
+        );
+        assert!(recovered
+            .take_auto_review_stalls(CODEX_AUTO_REVIEW_STALL_MS + 1)
+            .is_empty());
+        let (next, _) = recovered.open_with_fingerprint(
+            None,
+            Some("turn"),
+            "Bash",
+            None,
+            Some("next-digest".into()),
+            1,
+        );
+        assert!(matches!(next, EpisodeKey::Generated { generation: 1, .. }));
+    }
+
+    #[test]
+    fn adoption_snapshot_refuses_duplicate_episodes_and_rewound_generation_counters() {
+        let mut episodes = PermissionEpisodes::default();
+        episodes.open(None, Some("turn"), "Bash", None, 0);
+        let mut json = serde_json::to_value(episodes).unwrap();
+        let first = json["open"][0].clone();
+        json["open"].as_array_mut().unwrap().push(first);
+        let recovered: PermissionEpisodes = serde_json::from_value(json.clone()).unwrap();
+        assert!(recovered
+            .validate_adoption()
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate"));
+        json["open"].as_array_mut().unwrap().pop();
+        json["generations"][0][1] = json!(0);
+        let recovered: PermissionEpisodes = serde_json::from_value(json).unwrap();
+        assert!(recovered
+            .validate_adoption()
+            .unwrap_err()
+            .to_string()
+            .contains("generation counter"));
+    }
 
     #[test]
     fn two_consecutive_permissions_for_the_same_tool_are_two_episodes() {

@@ -1,3 +1,4 @@
+import { withInputOwner } from '../test/inputFixtures'
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -242,7 +243,7 @@ describe("the delegation card, opened from a parent's badge", () => {
     const parent = pane({ id: 41, title: 'crimson-harbor', spawned_by: null, live_children: 3, children_waiting: 1 })
     const crew = [
       pane({ id: 47, title: 'amber-signal', delegation: delegation({ role: 'test-writer' }) }),
-      pane({ id: 52, title: 'quiet-meridian', delegation: delegation({ role: 'reviewer', state: 'needs_input' }) }),
+      withInputOwner(pane({ id: 52, title: 'quiet-meridian', delegation: delegation({ role: 'reviewer', state: 'needs_input' }) }), 'user'),
       pane({ id: 58, title: 'slate-lantern', delegation: delegation({ role: 'docs-sweep', stalled: true }) })
     ]
     mount(
@@ -416,7 +417,7 @@ describe('the delegation card names its parent by codename and reports the inbox
 
 
 it.each([{ status: 'needs-input' as const }, { children_waiting: 1 }])('shows the current request ahead of a completed turn in the child card (%o)', async (signal) => {
-  mount(<HeaderDelegationBadge kind="origin" info={pane({ ...signal, delegation: delegation({ state: 'done' }) })} />)
+  mount(<HeaderDelegationBadge kind="origin" info={signal.status ? withInputOwner(pane({ ...signal, delegation: delegation({ state: 'done' }) }), 'user') : pane({ ...signal, delegation: delegation({ state: 'done' }) })} />)
   const card = await openCard('origin-badge')
   expect(card.textContent).toContain('needs input')
   expect(card.textContent).not.toContain('done')

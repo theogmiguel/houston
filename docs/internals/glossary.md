@@ -19,7 +19,12 @@ named.
 |---|---|
 | **settled child** | A retained completed delegation. The roster places only ended sessions under Settled; a live reusable Done-and-idle child remains Working. Retained for inspection, outside the live-child cap, until explicit close, parent close or retention expiry. |
 | **roster** | The orchestrator's child list, grouped into Needs you, Working and Settled. Selecting a child swaps the inspected terminal without changing session ownership. |
-| **overview tab** | A closable side-panel view of one orchestrator's children, checkouts, result excerpts and operator queue. Closing it does not close sessions. |
+| **overview tab** | A closable side-panel view of one orchestrator's children, checkouts, durable result previews and operator queue. Full result bodies are read on demand, including after child close. Closing it does not close sessions. |
+| **asked orchestrator** | A live child's unresolved input request owned by its orchestrator. A neutral state that never increases human-input counts or alerts the user. |
+| **needs you** | An unresolved input request owned by the user. Escalation transfers parent-owned questions and permissions into this state. Amber and input notifications describe this ownership. |
+| **input episode** | One durable unresolved child input request, identified by an opaque id distinct from the worker's request number. Questions and actual permission prompts start parent-owned; only the operator may approve permissions. |
+| **permission denial** | `pane_deny` targets a pending permission by child and episode id, sends a verified provider denial, and leaves it pending until provider evidence resolves it. |
+| **escalation** | Transfer of an unresolved child request to the user, with a displayed reason. Explicit through `pane_escalate`, or automatic at authoritative parent turn end or parent unavailability. |
 | **card** | A rail item representing one grid, with its status, unread state and optional checkout, pull request, diff, task, agent, context and tag details. | `rail/railCardModel.ts` |
 | **surface** | A tab in the side panel for Browser, Files, Diff, Pull request or Linked pull requests. Grid layouts do not own these surfaces. | `scmPanel.ts::SurfaceKind` |
 | **headless child** | A live child without a separate grid cell. Its PTY remains available through the orchestrator's roster. |
@@ -135,18 +140,21 @@ named.
 | Term | Meaning | Code |
 |---|---|---|
 | **orchestration** | Agent-spawns-agent. An agent in a pane opens, prompts, reads, waits on and kills child panes. | `orchestrate.rs`, `mcp_orchestration.rs` |
-| **`pane_*`** | The MCP verbs: `pane_spawn`, `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, `pane_send_keys`, `pane_kill`, `pane_submit`, plus `workspace_info`. | `mcp_orchestration.rs` |
+| **`pane_*`** | Houston's MCP orchestration verbs for child lifecycle, durable reports/replies, verified permission denial, input escalation and instruction control; `workspace_info` supplies identity and capabilities. | `mcp_orchestration.rs` |
 | **`hs-pane`** | The same verbs as a CLI, for agents without MCP. A shell wrapper the daemon writes at spawn. | `orchestrate.rs::run_pane_cli` |
 | **`hs-task`** | The Tasks backlog as a CLI for agents whose provider cannot use MCP: `next`, `ls`, `show`, `add`, `claim`, `comment`, `check`, `handback`. The key defaults to `$HOUSTON_TASK`; there is no `done`. Its wrapper sits beside `hs-pane`. | `tasks_cli.rs` |
 | **inbox** | One row per signal a pane owes another pane (or the operator), in the `pane_inbox` table. Producers write rows; the three doors read them. | `pane_inbox`, `InboxKind` |
-| **inbox row** | One signal: `kind` (`result` \| `no_handback` \| `needs_input` \| `exited` \| `stalled` \| `operator_note` \| `mail`), a redacted `summary`/`body`, optional `artifacts`, and three timestamps — `created_at` (persisted), `delivered_at` (sent), `confirmed_at` (proven). | `db::InboxRow` |
+| **inbox row** | One durable signal, including results, input, progress, questions, blockers and correlated replies. Delivery records receipt; resolution records handling. | `db::InboxRow` |
 | **door** | One of the three delivery mechanisms: door 1 returns rows inside a live `pane_wait`; door 2 prints them from a Working parent's own `Stop` hook; door 3 pastes them into an idle parent. Ordered by the parent's state. | `orchestrate.rs` |
 | **episode** | One permission block, from the event that named its tool (`PermissionRequest`, Antigravity's `PreToolUse` on an ask tool) to the evidence that that execution moved on. Keyed by the CLI's invocation id where it has one, else by `(prompt_id, tool_name, generation)`. | `orchestrate.rs::PermissionEpisodes` |
 | **round** | One accepted external request's worth of sub-agent activity — the object the withheld-turn-end rule operates on. Opens once per external request, travels as `delegations.round` / `request_id`, closes when both the in-flight and owed sets drain. | `orchestrate.rs::SubagentRound` |
-| **delegation** | The durable record one spawn opens: brief, lifecycle state (`spawning → working ⇄ needs_input`, closing `done|failed|cancelled|unknown`), and the `round` counter. What the child hands back is a `pane_inbox` row, never a slot on this record. | `db.rs::delegations` |
+| **delegation** | The durable record one spawn opens: brief, lifecycle state (`spawning → working ⇄ asked_orchestrator|needs_input`, closing `done|failed|cancelled|unknown`), input ownership and the `round` counter. A handback is a separate inbox row. | `db.rs::delegations` |
 | **provider catalog** | The bounded local inventory returned by `workspace_info`: CLI presence, known versions and models, and orchestration capabilities. | `daemon.rs::orchestration_provider_catalog` |
 | **retry receipt** | A bounded, durable record scoped to a calling pane and its `client_request_id`; binds a mutation's arguments to its original outcome. | `db.rs::orchestration_receipts` |
 | **prompt delivery mode** | Queue waits for idle, steer writes while working, and restart interrupts before queued delivery. Operator drafts remain protected. | `orchestrate.rs::PromptMode` |
+| **instruction** | A durable accepted follow-up prompt with a stable id, retained body, delivery state and request number assigned at dispatch. Acceptance does not prove delivery or completion. | `InstructionInfo`, `prompt_intents` |
+| **held after recovery** | An untouched instruction retained across daemon restart, awaiting explicit resume after its target and conversation are checked. | `InstructionState::HeldAfterRecovery` |
+| **uncertain delivery** | A prompt whose PTY write or acknowledgement is incomplete or cannot be proved after a crash. It blocks automatic replay and can be inspected and cancelled. | `InstructionState::Uncertain` |
 | **brief** | What a child is asked to do: `prompt` plus the optional `output_format` (the shape of the answer) and `boundaries` (what it must not do), composed into ONE instruction before launch. Not three fields on the wire past that point. | `orchestrate.rs::Brief` |
 | **artifact** | A file a worker names in its handback instead of quoting it. Resolved, required to exist, and held inside the workspace; the parent gets the path. | `orchestrate.rs::Submission` |
 | **staging** | A `pane_submit` while the child works writes a row with `ready_at = NULL` — stored but not eligible. The round close sets `ready_at` in the same transaction that moves the delegation, and a second answer to the same request replaces the first in place (counted in `superseded`) while it is unreserved. | `daemon.rs::orchestrate_submit` |

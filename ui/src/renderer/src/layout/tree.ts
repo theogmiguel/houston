@@ -969,6 +969,50 @@ export function syncSessionLayout(
   return restoreSessionSlots(syncTree(restoreSessionSlots(tree, replaced), alive, cols, autoPlaceIds.filter((id) => alive.includes(id))), replaced)
 }
 
+export function findSessionGrid(
+  session: number,
+  gridsByWorkspace: ReadonlyMap<string, readonly GridMeta[]>,
+  layouts: ReadonlyMap<string, LayoutState>
+): { workspace: string; gridId: string; key: string } | null {
+  for (const [workspace, grids] of gridsByWorkspace) {
+    for (const grid of grids) {
+      const key = gridStorageKey(workspace, grid.id)
+      const state = layouts.get(key) ?? loadLayout(key)
+      if (state.tree && findPane(state.tree, session)) return { workspace, gridId: grid.id, key }
+    }
+  }
+  return null
+}
+
+export function loadWorkspaceGridLayouts(
+  workspace: string,
+  grids: readonly GridMeta[],
+  layouts: ReadonlyMap<string, LayoutState>
+): Map<string, LayoutState> {
+  return new Map(grids.map((grid) => {
+    const key = gridStorageKey(workspace, grid.id)
+    return [key, layouts.get(key) ?? loadLayout(key)]
+  }))
+}
+
+export function workspaceGridSessionIds(
+  workspace: string,
+  grids: readonly GridMeta[],
+  layouts: ReadonlyMap<string, LayoutState>,
+  replaced: ReadonlyMap<number, number>,
+  sessions: ReadonlyMap<number, { id: number; project_dir: string; spawned_by?: number | null }>
+): number[] {
+  const placed = new Set(grids.flatMap((grid) => {
+    const key = gridStorageKey(workspace, grid.id)
+    const tree = layouts.get(key)?.tree ?? null
+    return preorderSessions(restoreSessionSlots(tree, replaced))
+  }))
+  return [...sessions.values()]
+    .filter((session) => session.project_dir === workspace || sessions.get(session.spawned_by ?? -1)?.project_dir === workspace || (session.spawned_by != null && placed.has(session.id)))
+    .map((session) => session.id)
+    .sort((a, b) => a - b)
+}
+
 export function syncWorkspaceGrids(
   path: string,
   grids: GridMeta[],

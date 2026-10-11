@@ -86,9 +86,10 @@ fn str_list_arg(args: &Value, key: &str) -> Result<Vec<String>, ToolError> {
 
 const PANE_ROUTING: &str = concat!(
     "You are running inside a Houston pane. ",
-    "To delegate work to another agent, prefer `pane_spawn` over this host's own sub-agent tool: ",
-    "a pane is visible to the user in the grid, runs in the project directory, outlives your session, ",
-    "and the user can read it and type into it while it works — none of which is true of an in-process sub-agent. ",
+    "Delegated work by another coding agent must use `pane_spawn` or `hs-pane spawn`. ",
+    "Do a simple search yourself; do not delegate it to an internal sub-agent. Never substitute ",
+    "internal sub-agents when Houston spawning, child slots or nesting are limited. Children ",
+    "are visible to the user in their parent's roster; the user can peek, move them into a grid, correct or close them. ",
     "When the user says \"spawn an agent\", \"another agent\", \"a Claude in another pane\" or similar, they mean a pane. ",
     "`pane_spawn` returns as soon as the child is up. Your next action is either independent \
      work or `pane_wait`: it blocks at zero token cost until your inbox has a result, a \
@@ -104,18 +105,19 @@ const PANE_ROUTING: &str = concat!(
      longer needed — pass `handoff: true`: the new pane is independent, not your child, so it \
      never reports back and the user can close this pane without killing it. Only a top-level \
      pane can hand off; child and depth caps apply to child spawning. ",
-    "For single-branch work this pane will edit itself, continue with \
-     `pane_spawn{handoff: true, worktree: SLUG}` (`hs-pane spawn --handoff --worktree SLUG`), \
-     passing context via `state_doc`; never edit a child's worktree from the primary checkout. \
-     Delegated multi-branch work uses child panes with `worktree`. ",
+    "Creating a worktree does not request a handoff. Normal delegation uses child panes \
+     with `handoff` omitted, including isolated branch work with `worktree`; never edit a \
+     child's worktree from the primary checkout. Use an independent handoff only when the \
+     operator explicitly asks to continue in a new pane. ",
     "`workspace_info` lists registered target workspaces; `target_workspace` accepts only one \
      of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
-    "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_pr_watch`, `pane_pr_unwatch`. ",
-    "After receiving a completed child's result, preserve its needed output and artifacts, then promptly close the pane with `pane_kill` (or `hs-pane kill`); completed panes remain until the parent closes them, so do not accumulate them. Keep a reusable pane only when you intentionally plan more assigned work. Never close a child that is still working; inspect live descendants and do not confirm ending them unless their work is also complete and preserved. The worker must not kill itself before delivering its result. ",
+    "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_deny`, `pane_escalate`, `pane_instruction_list/get/cancel/resume`, `pane_pr_watch`, `pane_pr_unwatch`. ",
+    "A worker sends `pane_report{kind: progress|question|blocked, body, request_id}` during work; question/blocked stays open until its recipient calls `pane_reply{message_id,text}`. The worker then uses `pane_wait` without a session, including without children or spawn authority. These messages do not finish a request; only `pane_submit` does. Parents resolve routine questions within existing authority first. When a child input episode needs a user decision, call `pane_escalate{child,reason}`; prose alone does not escalate. A reply does not grant extra permissions or automatically approve a CLI prompt. Reports/replies allow 8000 characters and 64 outstanding messages per worker; use a stable `client_request_id` for retry. ",
+    "For reusable workers `pane_prompt{mode: queue|steer|restart}` defaults to queue and returns an accepted instruction id and current state, not proof of completion or delivery. Use `pane_instruction_list/get/cancel/resume` for current durable control state: queued, held_after_recovery, delivered, cancelled or uncertain. After restart recovery, held work requires explicit resume; never resume uncertain work. Cancel/resume retries report current truth. Steer delivery and adoption are distinct: adoption starts a separate request round. Restart requires verified interrupt-to-idle (Codex Escape, Grok Ctrl+C); Claude, Antigravity, OpenCode and Cursor restart is refused. Preserve partial results. Needs-input requires an explicit decision, not paste. ",
+    "After receiving a completed child's result, preserve its needed output and artifacts, then close it with `pane_kill` (or `hs-pane kill`) as soon as no further task is planned. Before your final response or handback, close every completed child you no longer need. A reusable flag is not a reason to leave a completed pane open; keep one only for intentional assigned follow-up work. Never close a child that is still working; inspect live descendants and do not confirm ending them unless their work is also complete and preserved. The worker must not kill itself before delivering its result. ",
     "Call `pane_pr_watch` with a PR URL or number and end your turn; do not poll. Use `pane_pr_unwatch` when updates are no longer needed. ",
-    "A pane that needs input will not take a `pane_prompt` — read it, then answer it with ",
-    "`pane_send_keys` (esc enter up down tab ctrl+c y n), or escalate to the user when their decision is required. Child needs-input belongs to its parent and does not notify the desktop. ",
+    "Questions and every actual permission prompt route to the parent first in all launch modes. Parent-owned input stays gray and has an actionable needs_input inbox row. Answer routine questions within authority with pane_reply or pane_send_keys. The parent NEVER approves permissions: every pending permission episode refuses ALL pane_send_keys, including n/Escape. Use pane_deny{child,episode_id} for verified provider denial or pane_escalate{child,reason} for the operator's decision; only the operator may approve. Denial stays pending until provider evidence. Escalation transfers ownership to User with amber notifications. Bare Codex Auto PermissionRequest is non-alerting approval activity. Cursor reports no needs-input. Operator intervention is reported to the parent. Accepted Stop/ACP turn end or parent close/death escalates unanswered input; quiet-settle never does. ",
     "Scale the spawn to the work: do it yourself when the task is smaller than the brief it would ",
     "need, and when you do delegate, size the model to that chunk rather than taking the CLI's own ",
     "default. A long result is a file the child names in `pane_submit{artifacts}`, never a body ",
@@ -128,8 +130,7 @@ const PANE_ROUTING: &str = concat!(
     "on `haiku`, so that spawn is refused rather than demoted to a pane that blocks on ",
     "approvals nobody is there to answer. ",
     "A spawned pane starts in its CLI's AUTO mode — Claude's \"auto mode on\" — so it does not ",
-    "stop for routine approvals, since nobody is at its keyboard. It can still stop for something ",
-    "genuinely dangerous, which reaches you as that pane needing input.",
+    "stop for routine approvals. Every actual permission wait goes to the parent first; deny or escalate, never approve.",
 );
 
 /// A pane that HAS a parent is told its end-of-turn obligation by the daemon,
@@ -137,7 +138,7 @@ const PANE_ROUTING: &str = concat!(
 /// forgets otherwise waits on a promise this very block made.
 fn worker_duty(parent: u32) -> String {
     format!(
-        "You were spawned by pane {parent}. When your task is done, hand the result back with          `pane_submit` (or `hs-pane submit`) — that is your end-of-turn, and it is what wakes          the pane waiting on you. Say what you did, what you did not, and anything it must          decide. The parent closes the completed pane after receiving your result; do not try          to close your own pane. "
+        "You were spawned by pane {parent}. When your task is done, hand the result back with          `pane_submit` (or `hs-pane submit`) — that is your end-of-turn, and it is what wakes          the pane waiting on you. Say what you did, what you did not, and anything it must          decide. The parent closes the completed pane after receiving your result; do not try          to close your own pane. During work, use pane_report with the current request_id for progress, questions or blockers, then pane_wait without a session for the correlated reply; only pane_submit completes the request. Delegate coding-agent work through Houston panes, never internal sub-agents. "
     )
 }
 
@@ -182,9 +183,16 @@ impl ToolProvider for OrchestrationTools {
             return Vec::new();
         };
         let enabled = daemon.orchestration_enabled();
-        let show = daemon.parent_of(scope.session_id).is_some() || enabled;
+        let show = daemon.parent_of(scope.session_id).is_some()
+            || enabled
+            || daemon.has_managed_children(scope.session_id)
+            || daemon.has_worker_questions(scope.session_id);
         if !show {
-            return Vec::new();
+            return self
+                .pane_tools(None, false)
+                .into_iter()
+                .filter(|tool| tool.name == "pane_reply")
+                .collect();
         }
         let max = daemon.orchestration_max_live_children();
         let free = max.saturating_sub(daemon.active_children_of(scope.session_id).len() as u32);
@@ -265,6 +273,111 @@ impl ToolProvider for OrchestrationTools {
             let daemon = self.daemon()?;
             let caller = scope.session_id;
             match name {
+                "pane_deny" => {
+                    let child = u32_arg(args, "child")?;
+                    let episode_id = str_arg(args, "episode_id")?;
+                    orchestrate::doors::episode_id(episode_id).map_err(ToolError)?;
+                    if args.as_object().is_none_or(|args| {
+                        args.keys().any(|key| key != "child" && key != "episode_id")
+                    }) {
+                        return Err(ToolError(format!(
+                            "pane_deny arguments {args}: expected only child and episode_id"
+                        )));
+                    }
+                    let request = proto::PaneDenyRequest {
+                        child,
+                        episode_id: episode_id.to_string(),
+                    };
+                    let value = tokio::task::spawn_blocking(move || {
+                        daemon.orchestrate_deny(caller, request)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("deny task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(value))
+                }
+                "pane_escalate" => {
+                    let child = u32_arg(args, "child")?;
+                    let reason = str_arg(args, "reason")?;
+                    orchestrate::doors::escalation_reason(reason).map_err(ToolError)?;
+                    let request = proto::PaneEscalateRequest {
+                        child,
+                        reason: reason.to_string(),
+                    };
+                    let value = tokio::task::spawn_blocking(move || {
+                        daemon.orchestrate_escalate(caller, request)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("escalate task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(value))
+                }
+                "pane_instruction_list"
+                | "pane_instruction_get"
+                | "pane_instruction_cancel"
+                | "pane_instruction_resume" => {
+                    let session = u32_arg(args, "session")?;
+                    let instruction_id = if name == "pane_instruction_list" {
+                        None
+                    } else {
+                        let id = str_arg(args, "instruction_id")?;
+                        orchestrate::doors::instruction_id(id).map_err(ToolError)?;
+                        Some(id.to_string())
+                    };
+                    let operation = name.to_string();
+                    let value = tokio::task::spawn_blocking(move || -> anyhow::Result<Value> {
+                        match operation.as_str() {
+                            "pane_instruction_list" => Ok(serde_json::to_value(
+                                daemon.instruction_queue(Some(caller), session)?,
+                            )?),
+                            "pane_instruction_get" => {
+                                Ok(serde_json::to_value(daemon.instruction_get(
+                                    Some(caller),
+                                    session,
+                                    instruction_id.as_deref().expect("validated id"),
+                                )?)?)
+                            }
+                            "pane_instruction_cancel" => {
+                                Ok(serde_json::to_value(daemon.instruction_cancel(
+                                    Some(caller),
+                                    session,
+                                    instruction_id.as_deref().expect("validated id"),
+                                )?)?)
+                            }
+                            _ => Ok(serde_json::to_value(daemon.instruction_resume(
+                                Some(caller),
+                                session,
+                                instruction_id.as_deref().expect("validated id"),
+                            )?)?),
+                        }
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("instruction task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(value))
+                }
+                "pane_report" => {
+                    let report = serde_json::from_value(args.clone())
+                        .map_err(|e| ToolError(format!("pane_report: {e}")))?;
+                    let outcome = tokio::task::spawn_blocking(move || {
+                        daemon.orchestrate_report(caller, report)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("report task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(outcome))
+                }
+                "pane_reply" => {
+                    let reply = serde_json::from_value(args.clone())
+                        .map_err(|e| ToolError(format!("pane_reply: {e}")))?;
+                    let outcome = tokio::task::spawn_blocking(move || {
+                        daemon.orchestrate_reply(caller, reply)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("reply task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(outcome))
+                }
                 "pane_pr_watch" => {
                     let target = match args.get("pr") {
                         Some(Value::String(value)) => value.clone(),
@@ -428,8 +541,8 @@ impl ToolProvider for OrchestrationTools {
                         .flatten();
                     let response_mode = mode.clone().unwrap_or_else(|| "queue".into());
                     let text = text.to_string();
-                    let (source, status, held) = tokio::task::spawn_blocking(move || {
-                        daemon.orchestrate_prompt_request(
+                    let (acceptance, source, status) = tokio::task::spawn_blocking(move || {
+                        daemon.orchestrate_instruction_request(
                             caller,
                             session,
                             &text,
@@ -440,14 +553,12 @@ impl ToolProvider for OrchestrationTools {
                     .await
                     .map_err(|e| ToolError(format!("prompt task panicked: {e}")))?
                     .map_err(refused)?;
-                    Ok(ToolOutput::structured(json!({
-                        "mode": response_mode,
-                        "queued": true,
-                        "held": held,
-                        "note": if held.is_some() { "held on the bounded wake lane until the pane can accept a prompt" } else { "written to the pane and submitted" },
-                        "status_source": source,
-                        "status_after": status,
-                    })))
+                    Ok(ToolOutput::structured(orchestrate::doors::prompt_output(
+                        acceptance,
+                        source,
+                        status,
+                        &response_mode,
+                    )))
                 }
                 "pane_wait" => {
                     if args.get("until").is_some() {
@@ -641,14 +752,85 @@ impl OrchestrationTools {
             ..a
         };
         let spawn_description = String::from(
-            "Spawn a child with prompt, output_format and boundaries; returns session id. Child slot/depth caps apply. Top-level handoff creates an independent pane without a child slot. Size model to separable work.",
+            "Spawn a Houston child; returns id. Slot/depth limits apply. Handoff requires an operator request.",
         );
         let mut out = vec![
             ToolSpec {
+                name: "pane_deny".into(),
+                title: "Deny a child permission".into(),
+                description: "Deny an exact permission episode with verified bytes; provider proof resolves it. Only the operator approves.".into(),
+                input_schema: json!({"type":"object","properties":{
+                    "child":{"type":"integer","minimum":1},
+                    "episode_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_:-]+$"}
+                },"required":["child","episode_id"],"additionalProperties":false}),
+                annotations: Annotations::local_write(),
+            },
+            ToolSpec {
+                name: "pane_escalate".into(),
+                title: "Request a user decision".into(),
+                description: "Transfer child input to the operator with your recommendation; no terminal bytes.".into(),
+                input_schema: json!({"type":"object","properties":{
+                    "child":{"type":"integer","minimum":1},
+                    "reason":{"type":"string","minLength":1,"maxLength":2000}
+                },"required":["child","reason"],"additionalProperties":false}),
+                annotations: Annotations::local_write(),
+            },
+            ToolSpec {
+                name: "pane_instruction_list".into(),
+                title: "List durable instructions".into(),
+                description: "Queue counts and up to 32 previews; truncated marks omissions.".into(),
+                input_schema: json!({"type":"object","properties":{"session":{"type":"integer","minimum":1}},"required":["session"],"additionalProperties":false}),
+                annotations: local(Annotations::readonly()),
+            },
+            ToolSpec {
+                name: "pane_instruction_get".into(),
+                title: "Read a durable instruction".into(),
+                description: "Read full instruction and state.".into(),
+                input_schema: json!({"type":"object","properties":{"session":{"type":"integer","minimum":1},"instruction_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_-]+$"}},"required":["session","instruction_id"],"additionalProperties":false}),
+                annotations: local(Annotations::readonly()),
+            },
+            ToolSpec {
+                name: "pane_instruction_cancel".into(),
+                title: "Cancel a durable instruction".into(),
+                description: "Cancel undelivered work; uncertain cancellation cannot recall bytes. Idempotent.".into(),
+                input_schema: json!({"type":"object","properties":{"session":{"type":"integer","minimum":1},"instruction_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_-]+$"}},"required":["session","instruction_id"],"additionalProperties":false}),
+                annotations: Annotations::local_write(),
+            },
+            ToolSpec {
+                name: "pane_instruction_resume".into(),
+                title: "Resume a held instruction".into(),
+                description: "Resume held_after_recovery; refuses uncertain work. Idempotent.".into(),
+                input_schema: json!({"type":"object","properties":{"session":{"type":"integer","minimum":1},"instruction_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_-]+$"}},"required":["session","instruction_id"],"additionalProperties":false}),
+                annotations: Annotations::local_write(),
+            },
+            ToolSpec {
+                name: "pane_report".into(),
+                title: "Report progress or ask your parent".into(),
+                description: "Report progress/questions/blockers with context. pane_wait without session receives replies. Not completion or CLI approval; client_request_id deduplicates.".into(),
+                input_schema: json!({"type":"object","properties":{
+                    "kind":{"type":"string","enum":["progress","question","blocked"]},
+                    "body":{"type":"string","minLength":1,"maxLength":orchestrate::SUBMIT_BODY_MAX_CHARS},
+                    "request_id":{"type":"integer","minimum":1,"description":"Current request from workspace_info or the prompt header."},
+                    "client_request_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_.-]+$"}
+                },"required":["kind","body","request_id"],"additionalProperties":false}),
+                annotations: Annotations::local_write(),
+            },
+            ToolSpec {
+                name: "pane_reply".into(),
+                title: "Answer a worker question".into(),
+                description: "Answer a parent-owned question/blocker by message id; stale requests refuse. No permission approvals. client_request_id deduplicates.".into(),
+                input_schema: json!({"type":"object","properties":{
+                    "message_id":{"type":"integer","minimum":1},
+                    "text":{"type":"string","minLength":1,"maxLength":orchestrate::SUBMIT_BODY_MAX_CHARS},
+                    "client_request_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_.-]+$"}
+                },"required":["message_id","text"],"additionalProperties":false}),
+                annotations: Annotations::local_write(),
+            },
+            ToolSpec {
                 name: "pane_pr_watch".into(),
                 title: "Watch a PR".into(),
-                description: "Watch a GitHub PR; Houston checks each minute and wakes you on a failed check, all reported checks passing, a new review or comment, or a new conflict. Call it last, end your turn, do not poll.".into(),
-                input_schema: json!({"type":"object","properties":{"pr":{"type":["string","integer"],"description":"PR URL or number in this repository."}},"required":["pr"],"additionalProperties":false}),
+                description: "Watch PR checks/reviews/comments/conflicts. Call last; end your turn, do not poll.".into(),
+                input_schema: json!({"type":"object","properties":{"pr":{"type":["string","integer"]}},"required":["pr"],"additionalProperties":false}),
                 annotations: local(Annotations::local_write()),
             },
             ToolSpec {
@@ -669,93 +851,64 @@ impl OrchestrationTools {
                         "kind": {
                             "type": "string",
                             "enum": ["claude", "codex", "antigravity", "opencode", "cursor", "grok"],
-                            "description": "Which agent CLI to run in the new pane.",
                         },
                         "prompt": {
                             "type": "string",
-                            "description": "The task, as one self-contained instruction.",
                         },
                         "model": {
                             "type": "string",
-                            "description":
-                                "Exact CLI model id; consult workspace_info.providers. Omitted uses CLI default.",
                         },
                         "cwd": {
                             "type": "string",
-                            "description":
-                                "Working directory; must remain inside the selected target workspace.",
                         },
                         "worktree": {
                             "type": "string",
                             "description":
-                                "New worktree .houston/worktrees/<slug>, branch houston/<slug> or `branch`. Base: origin/HEAD, main, master, HEAD; no base override. Refuses cwd.",
+                                "Recorded worktree slug; refuses cwd. Base: origin/HEAD, main, master, HEAD; no base override.",
                         },
                         "branch": {
                             "type": "string",
-                            "description":
-                                "The new branch for `worktree`, instead of houston/<worktree>. \
-                                 Must not exist yet; refused without `worktree`.",
                         },
                         "target_workspace": {
                             "type": "string",
-                            "description":
-                                "A registered workspace path for the child. Omitted inherits \
-                                 the parent's current workspace; arbitrary paths are refused.",
                         },
                         "reusable": {
                             "type": "boolean",
                             "default": false,
-                            "description":
-                                "Keep the process for follow-ups after handback. Default: end it, keeping the transcript until close or expiry.",
                         },
                         "state_doc": {
-                            "description": "Handoff state, at most 65536 bytes: text or a path in the target workspace. Requires handoff.",
+                            "description": "Handoff state: text or workspace file, <=65536 bytes.",
                             "oneOf": [ {"type": "string"}, {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"], "additionalProperties": false}, {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": false} ]
                         },
                         "handoff": {
                             "type": "boolean",
                             "default": false,
                             "description":
-                                "Independent pane: no handback or cleanup; this pane may close. Top-level only; refuses reusable, output_format.",
+                                "Independent operator handoff; top-level only.",
                         },
                         "effort": {
                             "type": "string",
                             "enum": ["low", "medium", "high", "xhigh", "max"],
-                            "description":
-                                "Optional per-run reasoning effort; unsupported providers refuse \
-                                 the spawn.",
                         },
                         "auto_approve": {
                             "type": "boolean",
                             "description":
-                                "Omitted: CLI AUTO mode. true skips AUTO prompts (dangerous); \
-                                 false asks, reported as NeedsInput.",
+                                "Default Auto; true Bypass; false Ask. No parent approvals.",
                         },
                         "profile": {
                             "type": "string",
-                            "description":
-                                "Saved account label (Settings → Agent accounts); omitted uses the default. Unknown labels list valid ones.",
                         },
                         "role": {
                             "type": "string",
                             "maxLength": orchestrate::ROLE_MAX_CHARS,
-                            "description":
-                                "Child label in pane_list and handbacks: lowercase, digits, \
-                                 hyphens; unique among live children. Handoff: pane title only.",
                         },
                         "output_format": {
                             "type": "string",
                             "maxLength": orchestrate::BRIEF_FIELD_MAX_CHARS,
-                            "description":
-                                "The shape you want the answer in — \"a table of file:line \
-                                 and a one-line verdict\". Composed into the prompt.",
                         },
                         "boundaries": {
                             "type": "string",
                             "maxLength": orchestrate::BRIEF_FIELD_MAX_CHARS,
-                            "description":
-                                "Limits, e.g. \"read-only outside ui/\". Added to the prompt; \
-                                 the child must report at a limit, never cross it.",
                         },
                     },
                     "required": ["kind", "prompt"],
@@ -767,8 +920,7 @@ impl OrchestrationTools {
                 name: "pane_list".into(),
                 title: "List your agent panes".into(),
                 description: format!(
-                    "{}Every pane you spawned, and their descendants, with each one's \
-                     current status, role and delegation state. Use after a wait timeout, for help, or when the operator asks.",
+                    "{}Subtree status, role and delegation. Use after a wait timeout, for help or when asked.",
                     live.unwrap_or_default()
                 ),
                 input_schema: json!({
@@ -779,12 +931,12 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_get".into(),
                 title: "Everything about one pane".into(),
-                description: "Subtree state, children, depth, role, brief, stall and staged result. Inspect after a wait timeout, for help or when asked. result_id retrieves your stored body after closure.".into(),
+                description: "Subtree state/result; result_id reads an archived body. Use after a wait timeout, for help or when asked.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "session": { "type": "integer", "description": "The pane's session id." },
-                        "result_id": { "type": "integer", "description": "Stored inbox result id for full body retrieval." },
+                        "session": { "type": "integer", "minimum": 1 },
+                        "result_id": { "type": "integer" },
                     },
                     "required": ["session"],
                     "additionalProperties": false,
@@ -795,20 +947,18 @@ impl OrchestrationTools {
                 name: "pane_send_keys".into(),
                 title: "Press keys in a pane".into(),
                 description: format!(
-                    "Press up to {} keys in a blocked child: {}. Invalid keys send nothing; include enter explicitly. pane_prompt refuses permission/question prompts.",
+                    "Up to {} question keys. Permissions refuse ALL keys: use pane_deny or pane_escalate; only the operator may approve. Invalid keys send nothing; enter is explicit.",
                     orchestrate::SEND_KEYS_MAX,
-                    key_names().join(" "),
                 ),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "session": { "type": "integer", "description": "The pane's session id." },
+                        "session": { "type": "integer", "minimum": 1 },
                         "keys": {
                             "type": "array",
                             "minItems": 1,
                             "maxItems": orchestrate::SEND_KEYS_MAX,
                             "items": { "type": "string", "enum": key_names() },
-                            "description": "The keys to press, in order.",
                         },
                     },
                     "required": ["session", "keys"],
@@ -820,25 +970,23 @@ impl OrchestrationTools {
                 name: "pane_read".into(),
                 title: "Read a pane's terminal".into(),
                 description: format!(
-                    "Use after a wait timeout, for help, or when the operator asks. What a pane is showing, ANSI stripped. Default \
-                     {READ_LINES_DEFAULT} lines, at most {READ_LINES_MAX} and {} characters.",
+                    "Read after a wait timeout, for help or when asked. Default {READ_LINES_DEFAULT} lines; cap {READ_LINES_MAX} lines/{} characters.",
                     orchestrate::READ_TAIL_MAX_CHARS
                 ),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "session": { "type": "integer", "description": "The pane's session id." },
+                        "session": { "type": "integer", "minimum": 1 },
                         "lines": {
                             "type": "integer",
                             "minimum": 1,
                             "maximum": READ_LINES_MAX,
-                            "description": "How many lines to return.",
                         },
                         "source": {
                             "type": "string",
                             "enum": orchestrate::READ_SOURCE_VALUES,
                             "description":
-                                "screen (default): visible grid, including repainting CLIs. tail: newline-split raw ring, including text older than the screen.",
+                                "screen: visible terminal (default); tail: older raw ring text.",
                         },
                     },
                     "required": ["session"],
@@ -849,14 +997,14 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_prompt".into(),
                 title: "Send a prompt to a pane".into(),
-                description: "Prompt child: queue waits; steer writes now; restart interrupts, then waits. Drafts/permissions/questions block immediate modes. client_request_id deduplicates.".into(),
+                description: "Accept instruction id/state: queue waits, steer writes, restart interrupts then waits. Not completion; client_request_id deduplicates.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "session": { "type": "integer", "description": "The pane's session id." },
+                        "session": { "type": "integer", "minimum": 1 },
                         "client_request_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$" },
                         "mode": { "type": "string", "enum": ["queue", "steer", "restart"], "default": "queue" },
-                        "text": { "type": "string", "description": "What to send." },
+                        "text": { "type": "string" },
                     },
                     "required": ["session", "text"],
                     "additionalProperties": false,
@@ -866,35 +1014,28 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_wait".into(),
                 title: "Wait for your inbox".into(),
-                description: "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list. Returns inbox result, no-handback, question or exit rows at zero token cost while blocked. After receiving a completed result, preserve needed output and artifacts, then promptly close that completed pane with pane_kill; keep a reusable pane only for intentional follow-up work. Omit session for the whole inbox; specify a child to scope rows. Urgent child rows bypass kind. Without supported hooks, only submit or exit produces rows.".into(),
+                description: "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list. After completion, preserve needed output/artifacts; call pane_kill when no further task is planned. Omit session for all inbox/replies. Provisional/report rows are not completion. Urgent rows bypass kind.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "session": {
                             "type": "integer",
-                            "description":
-                                "Scope to one child's rows. Omit to wait on your whole inbox.",
                         },
                         "kind": {
                             "type": "string",
                             "enum": orchestrate::INBOX_KIND_VALUES,
                             "description":
-                                "Only rows of this kind — except an urgent one \
-                                 (needs_input, exited) for a waited child, which always \
-                                 comes through regardless.",
+                                "Kind filter; urgent child rows always arrive.",
                         },
                         "timeout_ms": {
                             "type": "integer",
                             "minimum": 1,
-                            "description": "Defaults to 600000 ms; clamped to the calling parent's provider cap, named in the response.",
+                            "description": "Default 600000 ms; clamped to the calling parent provider cap.",
                         },
                         "stall_guard": {
                             "type": "boolean",
                             "description":
-                                "For a wait right after `pane_prompt` (requires `session`): \
-                                 return `prompt_stalled` if no row has arrived and the \
-                                 pane's status has not moved within 5 s of this call, \
-                                 instead of blocking for the full timeout.",
+                                "Requires session: prompt_stalled after 5 s without activity.",
                         },
                     },
                     "additionalProperties": false,
@@ -904,14 +1045,13 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_kill".into(),
                 title: "Kill a pane you spawned".into(),
-                description: "End and dismiss your child's terminal. After receiving a completed result and preserving needed output/artifacts, close the pane promptly; do not accumulate completed panes. Keep a reusable pane only for intentional follow-up work. Do not kill a working child; inspect live descendants and confirm ending them only when their work is complete and preserved. Read needed output first.".into(),
+                description: "After a completed result, preserve output; do not accumulate completed panes. Do not kill a working child or unfinished descendants.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "session": { "type": "integer", "description": "The pane's session id." },
+                        "session": { "type": "integer", "minimum": 1 },
                         "confirm_children": {
                             "type": "boolean",
-                            "description": "Confirm killing its live children too.",
                         },
                     },
                     "required": ["session"],
@@ -923,34 +1063,27 @@ impl OrchestrationTools {
                 name: "pane_submit".into(),
                 title: "Hand your result to the pane that spawned you".into(),
                 description: format!(
-                    "Child panes only: deliver your final result to the parent's inbox, waking its wait or next turn. Call once at end-of-turn; report completed work, omissions and decisions. The parent closes your completed pane after receiving the result; do not try to close your own pane. Body clips at {} characters; put long results in files named by artifacts.",
+                    "Final handback once work is complete; never close yourself. Clips at {} characters; long results use artifacts.",
                     orchestrate::SUBMIT_BODY_MAX_CHARS
                 ),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "body": { "type": "string", "description": "Your result." },
+                        "body": { "type": "string" },
                         "summary": {
                             "type": "string",
                             "maxLength": orchestrate::SUBMIT_SUMMARY_MAX_CHARS,
-                            "description":
-                                "One line naming the outcome, read above the body — \"3 of \
-                                 7 call sites are unsafe\".",
                         },
                         "artifacts": {
                             "type": "array",
                             "maxItems": orchestrate::SUBMIT_ARTIFACTS_MAX,
                             "items": { "type": "string" },
-                            "description":
-                                "Files this result points at instead of quoting. Inside this \
-                                 workspace, absolute or relative to your own directory, and \
-                                 each must exist.",
                         },
                         "request_id": {
                             "type": "integer",
                             "minimum": 1,
                             "description":
-                                "Request answered; workspace_info reports the current one. Needed for an older request; omit for current, or unassociated if two are open.",
+                                "From workspace_info; omit for current. Required for an older request.",
                         },
                     },
                     "required": ["body"],
@@ -982,10 +1115,10 @@ mod tests {
         ));
         assert!(wait
             .description
-            .contains("preserve needed output and artifacts"));
+            .contains("preserve needed output/artifacts"));
         assert!(wait
             .description
-            .contains("promptly close that completed pane with pane_kill"));
+            .contains("call pane_kill when no further task is planned"));
         assert!(wait.input_schema["properties"]["timeout_ms"]
             .get("maximum")
             .is_none());
@@ -1018,6 +1151,14 @@ mod tests {
         assert_eq!(
             names,
             vec![
+                "pane_deny",
+                "pane_escalate",
+                "pane_instruction_list",
+                "pane_instruction_get",
+                "pane_instruction_cancel",
+                "pane_instruction_resume",
+                "pane_report",
+                "pane_reply",
                 "pane_pr_watch",
                 "pane_pr_unwatch",
                 "pane_spawn",
@@ -1044,6 +1185,59 @@ mod tests {
                 "{} acts on daemon-owned panes, not the open web",
                 spec.name
             );
+        }
+    }
+
+    #[test]
+    fn local_control_doors_require_managed_descendant_authority_without_spawn_authority() {
+        for name in [
+            "pane_deny",
+            "pane_escalate",
+            "pane_instruction_list",
+            "pane_instruction_get",
+            "pane_instruction_cancel",
+            "pane_instruction_resume",
+        ] {
+            for has_parent in [false, true] {
+                assert!(orchestrate::tool_role(has_parent, false, true).advertises(name));
+                assert!(!orchestrate::tool_role(has_parent, false, false).advertises(name));
+            }
+        }
+        assert!(orchestrate::ToolRole::Leaf.advertises("pane_reply"));
+        assert!(orchestrate::ToolRole::Operator.advertises("pane_reply"));
+    }
+
+    #[test]
+    fn escalation_and_instruction_schemas_publish_the_shared_limits() {
+        let provider = OrchestrationTools {
+            daemon: Weak::new(),
+        };
+        for tool in provider.all_tools() {
+            if tool.name == "pane_deny" {
+                let id = &tool.input_schema["properties"]["episode_id"];
+                assert_eq!(id["maxLength"], json!(64));
+                assert_eq!(id["pattern"], json!("^[A-Za-z0-9_:-]+$"));
+                assert_eq!(
+                    tool.input_schema["required"],
+                    json!(["child", "episode_id"])
+                );
+            } else if tool.name == "pane_escalate" {
+                assert_eq!(
+                    tool.input_schema["properties"]["reason"]["maxLength"],
+                    json!(2000)
+                );
+                assert_eq!(tool.input_schema["required"], json!(["child", "reason"]));
+            } else if tool.name.starts_with("pane_instruction_") {
+                assert_eq!(
+                    tool.input_schema["properties"]["session"]["minimum"],
+                    json!(1)
+                );
+                if tool.name != "pane_instruction_list" {
+                    let id = &tool.input_schema["properties"]["instruction_id"];
+                    assert_eq!(id["maxLength"], json!(64));
+                    assert_eq!(id["pattern"], json!("^[A-Za-z0-9_-]+$"));
+                }
+            }
         }
     }
 
@@ -1084,13 +1278,26 @@ mod tests {
         for spec in provider.all_tools() {
             let readonly = matches!(
                 spec.name.as_str(),
-                "pane_list" | "pane_get" | "pane_read" | "pane_wait"
+                "pane_list"
+                    | "pane_get"
+                    | "pane_read"
+                    | "pane_wait"
+                    | "pane_instruction_list"
+                    | "pane_instruction_get"
             );
             // pane_submit is neither: a local additive write, not a read and not
             // destructive (it only appends a row to the parent's own inbox).
             let local_write = matches!(
                 spec.name.as_str(),
-                "pane_submit" | "pane_pr_watch" | "pane_pr_unwatch"
+                "pane_submit"
+                    | "pane_report"
+                    | "pane_reply"
+                    | "pane_pr_watch"
+                    | "pane_pr_unwatch"
+                    | "pane_deny"
+                    | "pane_escalate"
+                    | "pane_instruction_cancel"
+                    | "pane_instruction_resume"
             );
             assert_eq!(
                 spec.annotations.read_only, readonly,
@@ -1122,6 +1329,12 @@ mod tests {
             "pane_list",
             "pane_get",
             "pane_read",
+            "pane_deny",
+            "pane_escalate",
+            "pane_instruction_list",
+            "pane_instruction_get",
+            "pane_instruction_cancel",
+            "pane_instruction_resume",
         ] {
             let spec = &by_name[name];
             assert!(
@@ -1136,6 +1349,14 @@ mod tests {
                 "{name} must stay behind call_tool"
             );
         }
+    }
+
+    #[test]
+    fn guidance_routes_all_actual_permissions_parent_first_without_approval_keys() {
+        assert!(PANE_ROUTING.contains("parent NEVER approves"));
+        assert!(PANE_ROUTING.contains("refuses ALL pane_send_keys"));
+        assert!(PANE_ROUTING.contains("pane_deny{child,episode_id}"));
+        assert!(!PANE_ROUTING.contains("goes directly to the user"));
     }
 
     #[test]

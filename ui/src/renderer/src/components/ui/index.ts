@@ -304,3 +304,5 @@ export { DelimitedTable, DelimitedTableSpecimen } from './DelimitedTable'
 export type { DelimitedTableProps } from './DelimitedTable'
 export { BrowserSurface } from '../browser/BrowserSurface'
 export type { BrowserSurfaceProps } from '../browser/BrowserSurface'
+
+export { OrchestrationBody, OrchestrationDetails, OrchestrationInset, OrchestrationReason, OrchestrationContentSpecimen } from './OrchestrationContent'

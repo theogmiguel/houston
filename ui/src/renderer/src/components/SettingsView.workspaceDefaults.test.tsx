@@ -117,12 +117,12 @@ describe('Settings › Workspaces (id `workspace-defaults`)', () => {
   })
 
   it('the idle-reap policy lives here under Background sessions and round-trips through onSessionPolicy', () => {
-    const sent: Array<{ idle_reap_enabled: boolean; idle_reap_minutes: number }> = []
+    const sent: Array<{ idle_reap_enabled: boolean; idle_reap_minutes: number; claude_fullscreen: boolean }> = []
     act(() => {
       root.render(
         <SettingsView
           {...baseSettingsViewProps()}
-          sessionPolicy={{ idle_reap_enabled: false, idle_reap_minutes: 15 }}
+          sessionPolicy={{ idle_reap_enabled: false, idle_reap_minutes: 15, claude_fullscreen: true }}
           onSessionPolicy={(next) => sent.push(next)}
         />
       )
@@ -135,7 +135,7 @@ describe('Settings › Workspaces (id `workspace-defaults`)', () => {
     act(() => {
       sw.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(sent).toEqual([{ idle_reap_enabled: true, idle_reap_minutes: 15 }])
+    expect(sent).toEqual([{ idle_reap_enabled: true, idle_reap_minutes: 15, claude_fullscreen: true }])
   })
 
   it('the idle-reap controls wait for the daemon: disabled while the policy is unknown', () => {

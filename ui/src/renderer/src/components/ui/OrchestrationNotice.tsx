@@ -30,7 +30,7 @@ export function OrchestrationNotice({
         <span className="truncate text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">
           {heading}
         </span>
-        <span className="truncate text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
+        <span className="break-words text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
           {body}
         </span>
       </div>
