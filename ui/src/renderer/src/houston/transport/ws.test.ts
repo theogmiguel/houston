@@ -476,3 +476,29 @@ it('settles abandoned creates on timeout and disposal', async () => {
     expect(settled[1]).toContain('disposed')
   } finally { vi.useRealTimers() }
 })
+
+it('removes attach/generation metadata and waiters, rejecting late replays for removed sessions', async () => {
+  const transport = makeTransport()
+  const replay = vi.fn()
+  transport.onReplay = replay
+  for (let session = 1; session <= 2000; session++) {
+    const attach = transport.attach(session)
+    transport.handleControlMessage({ type: 'scrollback', session, attempt: 1, generation: 1, data: '', replayed_bytes: 0, bytes_seen: 0 })
+    await attach
+    transport.handleControlMessage({ type: 'session_removed', session })
+  }
+  const state = transport as unknown as { attachesSent: Map<number, number>; generations: Map<number, number> }
+  expect(state.attachesSent.size).toBe(0)
+  expect(state.generations.size).toBe(0)
+  replay.mockClear()
+  transport.handleControlMessage({ type: 'scrollback', session: 2000, attempt: 1, generation: 1, data: '', replayed_bytes: 0, bytes_seen: 0 })
+  expect(replay).not.toHaveBeenCalled()
+  const attach = transport.attach(2001)
+  const attachRejected = expect(attach).rejects.toThrow('abandoned')
+  const resize = transport.resize(2001, 80, 24)
+  const resizeRejected = expect(resize).rejects.toThrow('removed')
+  transport.handleControlMessage({ type: 'session_removed', session: 2001 })
+  await attachRejected
+  await resizeRejected
+  transport.dispose()
+})

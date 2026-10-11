@@ -185,6 +185,19 @@ export class WsTerminalTransport implements TerminalTransport {
   }
 
   handleControlMessage(msg: { type: string; [k: string]: unknown }): void {
+    if (msg.type === 'session_removed') {
+      const session = msg.session as number
+      this.abandonAttach(session)
+      const resize = this.resizeWaiters.get(session)
+      if (resize) {
+        clearTimeout(resize.timer)
+        this.resizeWaiters.delete(session)
+        resize.reject(new Error(`session_resize abandoned — session ${session} removed`))
+      }
+      this.attachesSent.delete(session)
+      this.generations.delete(session)
+      return
+    }
     if (msg.type === 'scrollback') {
       const m = msg as unknown as {
         session: number
@@ -194,8 +207,8 @@ export class WsTerminalTransport implements TerminalTransport {
         bytes_seen: number
         attempt: number
       }
-      const sent = this.attachesSent.get(m.session) ?? 0
-      if (m.attempt !== sent) {
+      const sent = this.attachesSent.get(m.session)
+      if (sent === undefined || m.attempt !== sent) {
         console.warn(
           `houston: ignored scrollback for session ${m.session} — it answers attach #${m.attempt}, the newest sent is #${sent}`
         )
@@ -227,8 +240,8 @@ export class WsTerminalTransport implements TerminalTransport {
         format_version: number
         state: string
       }
-      const sent = this.attachesSent.get(m.session) ?? 0
-      if (m.attempt !== sent) {
+      const sent = this.attachesSent.get(m.session)
+      if (sent === undefined || m.attempt !== sent) {
         console.warn(
           `houston: ignored attach_snapshot for session ${m.session} — it answers attach #${m.attempt}, the newest sent is #${sent}`
         )

@@ -72,6 +72,10 @@ retries share the pending attempt; replacement closes the prior client. Cleanup 
 the active client and any late successful connection, and obsolete callbacks cannot mutate
 renderer state or start a retry.
 
+Removed sessions release readiness, attach-attempt and generation metadata. A bounded
+recent-removal set suppresses late readiness and background queries; exited sessions that
+remain in the roster keep their readiness suppression until removal.
+
 `sendStdin` is the outbound path: `term.onData` → `client.sendStdin` → the transport's
 `write`. It is not queued — a keystroke goes straight out.
 

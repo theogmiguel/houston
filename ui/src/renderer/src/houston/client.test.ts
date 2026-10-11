@@ -1332,3 +1332,24 @@ describe('workspace action targeting', () => {
     client.close()
   })
 })
+
+it('bounds removed-session bookkeeping through real control delivery and suppresses late readiness', async () => {
+  const { client, ws } = await connectFakeClient()
+  for (let session = 1; session <= 2000; session++) {
+    client.dispatchFrame(session, 0, new Uint8Array([65]))
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_state', session, state: 'exited', exit_code: 0 }) })
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_removed', session }) })
+  }
+  const state = client as unknown as { exitedSessions: Set<number>; readySessions: Set<number>; deadSessions: Set<number> }
+  expect(state.exitedSessions.size).toBe(0)
+  expect(state.readySessions.size).toBe(0)
+  expect(state.deadSessions.size).toBeLessThanOrEqual(512)
+  client.dispatchFrame(2000, 1, new Uint8Array([66]))
+  ws.onmessage?.({ data: JSON.stringify({ type: 'session_state', session: 2000, state: 'exited', exit_code: 0 }) })
+  expect(state.exitedSessions.size).toBe(0)
+  await expect(client.waitForReady(2000)).resolves.toBe(false)
+  // Respawn receives a distinct ID and can become ready normally.
+  client.dispatchFrame(2001, 0, new Uint8Array([65]))
+  await expect(client.waitForReady(2001)).resolves.toBe(true)
+  client.close()
+})
