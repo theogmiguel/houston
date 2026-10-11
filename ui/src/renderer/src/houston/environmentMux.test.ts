@@ -5,6 +5,7 @@ import { CLIENT_ROUTES, EnvironmentMux, SERVER_ROUTES, tagSession } from './envi
 import type { EnvironmentEntry } from './environments'
 import { wslWorkspaces } from './environments'
 import { encodeStdinFrame } from './client'
+import { PROTOCOL_VERSION } from './generated/PROTOCOL_VERSION'
 
 class FakeSocket {
   readyState = 1
@@ -404,7 +405,7 @@ describe('environmentMux', () => {
     const again = r.opened[1]
     expect(again.url).toBe(`ws://127.0.0.1:${entry.port}/ws`)
     again.onopen?.({} as Event)
-    expect(again.json()).toEqual([{ type: 'hello', token: entry.token, protocol: 131 }])
+    expect(again.json()).toEqual([{ type: 'hello', token: entry.token, protocol: PROTOCOL_VERSION }])
     expect(r.local.json().some((m) => m.type === 'hello')).toBe(false)
   })
 
