@@ -7,7 +7,7 @@ mod common;
 
 use common::start_daemon_with_handle;
 use houston_core::daemon::Daemon;
-use houston_core::remote::tls::Authority;
+use houston_core::remote::tls::{Authority, ServerCert};
 use houston_core::remote::ConfigPatch;
 use houston_protocol as proto;
 use std::net::SocketAddr;
@@ -15,6 +15,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_rustls::rustls;
+
+fn use_mock_keychain() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = keyring::Entry::new("__tr_mock_priming__", "__tr_mock_priming__");
+        keyring_core::set_default_store(
+            keyring_core::mock::Store::new().expect("building the mock credential store"),
+        );
+    });
+}
 
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -43,6 +53,7 @@ async fn remote_daemon(
     bind: &str,
     public_url: Option<String>,
 ) -> (Arc<Daemon>, SocketAddr, tempfile::TempDir) {
+    use_mock_keychain();
     let (_addr, state, daemon) = start_daemon_with_handle().await;
     tokio::spawn(daemon.clone().remote_loops());
     daemon
@@ -149,6 +160,140 @@ fn remote_info(daemon: &Daemon) -> proto::RemoteInfo {
         panic!("expected remote_state");
     };
     remote
+}
+
+/// Send ClientHello and receive the server's first byte, proving this socket
+/// was accepted. Withhold the client Finished so the handshake remains pending.
+async fn pending_handshake(addr: SocketAddr, ca_der: &[u8]) -> tokio::net::TcpStream {
+    let mut client = rustls::ClientConnection::new(client_config(ca_der), ip_name(addr)).unwrap();
+    let mut hello = Vec::new();
+    client.write_tls(&mut hello).unwrap();
+    let mut peer = tokio::net::TcpStream::connect(addr).await.unwrap();
+    peer.write_all(&hello).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), peer.read_exact(&mut [0u8; 1]))
+        .await
+        .expect("the server did not accept ClientHello")
+        .unwrap();
+    peer
+}
+
+async fn assert_peer_closed(mut peer: tokio::net::TcpStream) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        let mut buf = [0u8; 8192];
+        loop {
+            match peer.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(_) => continue, // Drain the remaining server handshake bytes.
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::UnexpectedEof
+                    ) =>
+                {
+                    break;
+                }
+                Err(e) => panic!("reading the old TLS peer: {e}"),
+            }
+        }
+    })
+    .await
+    .expect("the old TLS handshake retained its socket after cancellation");
+}
+
+async fn rebind(addr: SocketAddr) -> tokio::net::TcpListener {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            match tokio::net::TcpListener::bind(addr).await {
+                Ok(listener) => return listener,
+                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                Err(e) => panic!("rebinding the old listener address {addr}: {e}"),
+            }
+        }
+    })
+    .await
+    .expect("the cancelled TLS accept loop retained its listening socket")
+}
+
+#[tokio::test]
+async fn cancelling_serve_releases_the_listener_and_pending_tls_handshake() {
+    use_mock_keychain();
+    let (_, _state, daemon) = start_daemon_with_handle().await;
+    let ca = Authority::generate("cancel-test").unwrap();
+    let tls = ServerCert::new(ca.server_key(&["127.0.0.1".into()]).unwrap())
+        .server_config()
+        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let serving = tokio::spawn(houston_core::remote::http::serve(
+        daemon,
+        listener,
+        Some(tls),
+        std::future::pending(),
+    ));
+    let peer = pending_handshake(addr, ca.cert_der()).await;
+    serving.abort();
+    assert!(serving.await.unwrap_err().is_cancelled());
+    let _rebound = rebind(addr).await;
+    assert_peer_closed(peer).await;
+}
+
+#[tokio::test]
+async fn disabling_https_after_the_daemon_drain_releases_tls_owned_sockets() {
+    let (daemon, addr, _state) = wifi_daemon().await;
+    let ca = daemon.remote_authority().unwrap();
+    let peer = pending_handshake(addr, ca.cert_der()).await;
+    let mut active = tls_connect(addr, ca.cert_der(), ip_name(addr))
+        .await
+        .unwrap();
+    // An incomplete body keeps a real HTTP request open beyond LISTENER_DRAIN.
+    // 100 Continue proves Axum is waiting for that body before disabling.
+    active
+        .write_all(
+            format!(
+                "POST /api/pair HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\n\
+         Content-Length: 2\r\nExpect: 100-continue\r\nConnection: close\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let mut interim = [0u8; 25];
+    tokio::time::timeout(Duration::from_secs(2), active.read_exact(&mut interim))
+        .await
+        .expect("the HTTP request never started")
+        .unwrap();
+    assert_eq!(&interim, b"HTTP/1.1 100 Continue\r\n\r\n");
+    let disabled_at = tokio::time::Instant::now();
+    daemon
+        .remote_configure(ConfigPatch {
+            enabled: Some(false),
+            ..Default::default()
+        })
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(6), async {
+        while daemon.remote_listen_state().listening.is_some() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the daemon never completed its listener drain");
+    assert!(
+        disabled_at.elapsed() >= Duration::from_secs(3),
+        "the test must exercise drain expiration"
+    );
+    // The original socket was bound on every interface, so rebind that address.
+    let _rebound = rebind(SocketAddr::from(([0, 0, 0, 0], addr.port()))).await;
+    assert_peer_closed(peer).await;
+    // Existing HTTP work keeps its documented chance to finish after the drain.
+    active.write_all(b"{}").await.unwrap();
+    let response = read_all(&mut active).await;
+    assert!(
+        response.starts_with(b"HTTP/1.1 422"),
+        "{}",
+        String::from_utf8_lossy(&response)
+    );
 }
 
 #[tokio::test]
