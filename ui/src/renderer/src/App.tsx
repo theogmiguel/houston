@@ -1324,8 +1324,9 @@ export function App(): React.JSX.Element {
       let helloed = false;
       let disconnected = false;
       let helloError: string | null = null;
+      const isCurrent = (): boolean => !cancelled && !disconnected && activeClient === client;
       client.subscribeAll((msg: ServerMsg) => {
-        if (cancelled || disconnected || activeClient !== client) return;
+        if (!isCurrent()) return;
         if (!helloed) {
           if (msg.type === "hello_ok") {
             helloed = true;
@@ -1668,22 +1669,22 @@ export function App(): React.JSX.Element {
         }
       });
       client.onFrame = (session, offset, payload) => {
-        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.frame(offset, payload);
+        if (isCurrent()) outputHandlers.current.get(session)?.frame(offset, payload);
       };
       client.onReplay = (session, data, bytesSeen) => {
-        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.replay(data, bytesSeen);
+        if (isCurrent()) outputHandlers.current.get(session)?.replay(data, bytesSeen);
       };
       client.onSnapshot = (session, state, outputOffset) => {
-        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.snapshot(state, outputOffset);
+        if (isCurrent()) outputHandlers.current.get(session)?.snapshot(state, outputOffset);
       };
       client.onGap = (session) => {
-        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.gap();
+        if (isCurrent()) outputHandlers.current.get(session)?.gap();
       };
       client.onResizeExhausted = (session) => {
-        if (!cancelled && !disconnected && activeClient === client) outputHandlers.current.get(session)?.resizeExhausted();
+        if (isCurrent()) outputHandlers.current.get(session)?.resizeExhausted();
       };
       client.onClose = () => {
-        if (cancelled || disconnected || activeClient !== client) return;
+        if (!isCurrent()) return;
         disconnected = true;
         if (boot && !helloed) {
           clearTimeout(bootTimer);
