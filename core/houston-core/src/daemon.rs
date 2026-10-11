@@ -9242,6 +9242,7 @@ impl Daemon {
             }
             self.write_run_state();
         }
+        self.remote_forget_session(old_id);
         self.remove_persisted_scrollback(old_id);
         self.respawned_as
             .lock()
@@ -13267,6 +13268,7 @@ impl Daemon {
             .lock()
             .expect("sessions lock")
             .remove(&job.hidden);
+        self.remote_forget_session(job.hidden);
         let _ = std::fs::remove_file(&job.prompt_path);
 
         let exit = job.exit.flatten();

@@ -29,6 +29,8 @@ Secrets that match Houston's credential patterns are masked, long text is shorte
 nothing of it is saved: it is kept in memory and is gone when the daemon stops. Turning remote
 access off clears it, and nothing is collected while it is off, so activity from before
 remote access was last turned on is only in **View screen**.
+Closing or respawning a pane clears its old conversation and pending notifications.
+An exited pane keeps its conversation until it is closed or respawned.
 
 Activity lists recent finished turns, requests that need you and answers across panes.
 Answers identify whether they came from the phone or the terminal. Like conversations,
