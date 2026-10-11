@@ -35,14 +35,19 @@ for (const name of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'CARGO_HOME', 'RUSTUP_HOM
 console.log(JSON.stringify({ root, channel, mode }));
 const log = openSync(join(root, 'app.log'), 'w', 0o600);
 const app = Bun.spawn([resolve(appPath), '--channel', channel], { env, cwd: join(root, 'workspace'), stdout: log, stderr: log });
-let exitCode, daemon, daemonIdentity, socket, cleanupError;
+let exitCode, daemon, daemonIdentity, socket, cleanupError, socketError, createRequest;
 const ownedProcesses = [];
+const controls = [], outputs = new Map();
+let phase = 'starting client';
 app.exited.then(code => { exitCode = code; });
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const deadline = async (description, test, seconds = 15) => {
+  phase = description;
   const end = Date.now() + seconds * 1000;
   while (Date.now() < end) {
-    if (existsSync(join(root, 'failed'))) throw Error(readFileSync(join(root, 'failed'), 'utf8'));
+    if (socketError) throw Error(socketError);
+    if (existsSync(join(root, 'failed')))
+      throw Error(`native fixture failed while waiting for ${description}: ${readFileSync(join(root, 'failed'), 'utf8')}`);
     if (await test()) return;
     await pause(50);
   }
@@ -82,14 +87,14 @@ try {
   evidence.app_pid = app.pid; evidence.daemon_pid = daemon.pid;
   const before = await manage('daemon_status');
   if (before.pid !== daemon.pid) throw Error('daemon status identity mismatch');
-  const controls = [], outputs = new Map();
   socket = new WebSocket(`ws://127.0.0.1:${daemon.port}/ws`);
   socket.binaryType = 'arraybuffer';
-  let socketError;
   socket.onmessage = event => {
     if (typeof event.data === 'string') {
       const msg = JSON.parse(event.data);
       if (msg.type === 'error') socketError = JSON.stringify(msg);
+      if (msg.type === 'session_create_result' && msg.request === createRequest && msg.error)
+        socketError = `session_create request ${createRequest} refused: ${msg.error}`;
       controls.push(msg);
       if (controls.length > 256) controls.shift();
     } else {
@@ -103,11 +108,11 @@ try {
   socket.onerror = () => { socketError = 'fixture websocket failed'; };
   await deadline('fixture websocket open', () => socket.readyState === WebSocket.OPEN);
   const send = value => socket.send(JSON.stringify(value));
-  const control = async type => {
+  const control = async (type, matches = () => true) => {
     let result;
     await deadline(type, () => {
       if (socketError) throw Error(socketError);
-      const index = controls.findIndex(m => m.type === type);
+      const index = controls.findIndex(m => m.type === type && matches(m));
       if (index >= 0) result = controls.splice(index, 1)[0];
       return result !== undefined;
     });
@@ -117,12 +122,16 @@ try {
   await control('hello_ok');
   send({ type: 'workspace_add', path: join(root, 'workspace') });
   await control('workspace_list');
-  send({ type: 'session_create', agent: 'shell', project_dir: join(root, 'workspace'),
+  createRequest = Number.parseInt(randomUUID().replaceAll('-', '').slice(0, 8), 16);
+  evidence.session_create_request = createRequest;
+  send({ type: 'session_create', request: createRequest, agent: 'shell', project_dir: join(root, 'workspace'),
     cols: 80, rows: 24, shell_integration: false });
-  const session = (await control('session_created')).info.id;
+  const created = await control('session_create_result', msg => msg.request === createRequest);
+  if (!created.info) throw Error(`session_create request ${createRequest} returned no session: ${created.error}`);
+  const session = created.info.id;
   evidence.session = session;
   send({ type: 'session_attach', session, replay_bytes: 65536 });
-  await control('scrollback');
+  await control('scrollback', msg => msg.session === session);
   const stdin = text => {
     const input = new TextEncoder().encode(text);
     const frame = new Uint8Array(5 + input.length); frame[0] = 2;
@@ -186,6 +195,10 @@ try {
   evidence.result = 'PASS';
 } catch (error) {
   evidence.result = 'FAIL'; evidence.error = String(error); process.exitCode = 1;
+  evidence.phase = phase;
+  evidence.last_controls = controls.slice(-8).map(msg => ({ type: msg.type, session: msg.session ?? msg.info?.id,
+    state: msg.state, exit_code: msg.exit_code, request: msg.request }));
+  evidence.pty_tail = [...outputs].slice(-4).map(([session, text]) => ({ session, text: text.slice(-2048) }));
 } finally {
   socket?.close();
   // Cleanup is never success evidence: only the exact child handle may be killed.
