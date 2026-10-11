@@ -163,32 +163,126 @@ fn cap_patch(mut patch: String) -> (String, bool) {
     (patch, truncated)
 }
 
+// Git C-quotes filenames containing controls, quotes, backslashes or non-ASCII
+// bytes. Decode before applying filename rules, and refuse malformed headers.
+fn quoted_git_path(input: &str) -> Option<(String, &str)> {
+    let bytes = input.as_bytes();
+    if bytes.first() != Some(&b'"') {
+        return None;
+    }
+    let mut decoded = Vec::new();
+    let mut i = 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => return Some((String::from_utf8(decoded).ok()?, &input[i + 1..])),
+            b'\\' => {
+                i += 1;
+                let escaped = *bytes.get(i)?;
+                decoded.push(match escaped {
+                    b'a' => 7,
+                    b'b' => 8,
+                    b't' => b'\t',
+                    b'n' => b'\n',
+                    b'v' => 11,
+                    b'f' => 12,
+                    b'r' => b'\r',
+                    b'\\' | b'"' => escaped,
+                    b'0'..=b'3' => {
+                        let second = *bytes.get(i + 1)?;
+                        let third = *bytes.get(i + 2)?;
+                        if !(b'0'..=b'7').contains(&second) || !(b'0'..=b'7').contains(&third) {
+                            return None;
+                        }
+                        i += 2;
+                        (escaped - b'0') * 64 + (second - b'0') * 8 + (third - b'0')
+                    }
+                    _ => return None,
+                });
+            }
+            0..=31 | 127 => return None,
+            byte => decoded.push(byte),
+        }
+        i += 1;
+    }
+    None
+}
+
+fn git_patch_paths(header: &str) -> Option<(String, String)> {
+    let (a, b) = if header.starts_with('"') {
+        let (a, rest) = quoted_git_path(header)?;
+        let rest = rest.strip_prefix(' ')?;
+        let b = if rest.starts_with('"') {
+            let (b, remaining) = quoted_git_path(rest)?;
+            if !remaining.is_empty() {
+                return None;
+            }
+            b
+        } else {
+            if rest
+                .bytes()
+                .any(|b| b < 32 || matches!(b, 127 | b'"' | b'\\'))
+            {
+                return None;
+            }
+            rest.to_string()
+        };
+        (a, b)
+    } else {
+        // Unquoted Git paths can contain spaces. Multiple plausible separators
+        // are ambiguous, so discard the chunk rather than inspect the wrong name.
+        let mut boundaries = header
+            .match_indices(" b/")
+            .chain(header.match_indices(" \"b/"));
+        let (at, _) = boundaries.next()?;
+        if boundaries.next().is_some() {
+            return None;
+        }
+        let a = header[..at].to_string();
+        if a.bytes().any(|b| b < 32 || matches!(b, 127 | b'"' | b'\\')) {
+            return None;
+        }
+        let rest = &header[at + 1..];
+        let b = if rest.starts_with('"') {
+            let (b, remaining) = quoted_git_path(rest)?;
+            if !remaining.is_empty() {
+                return None;
+            }
+            b
+        } else {
+            if rest
+                .bytes()
+                .any(|b| b < 32 || matches!(b, 127 | b'"' | b'\\'))
+            {
+                return None;
+            }
+            rest.to_string()
+        };
+        (a, b)
+    };
+    let a = a.strip_prefix("a/")?;
+    let b = b.strip_prefix("b/")?;
+    if a.is_empty() || b.is_empty() || a.contains('\0') || b.contains('\0') {
+        return None;
+    }
+    Some((a.to_string(), b.to_string()))
+}
+
 fn split_patch_by_file(patch: &str) -> Vec<(String, String, String)> {
     let mut out = Vec::new();
     let mut current: Vec<&str> = Vec::new();
-    let mut a_path = String::new();
-    let mut b_path = String::new();
+    let mut paths: Option<(String, String)> = None;
     for line in patch.split('\n') {
         if let Some(rest) = line.strip_prefix("diff --git ") {
-            if !current.is_empty() {
-                out.push((a_path.clone(), b_path.clone(), current.join("\n")));
+            if let Some((a, b)) = paths.take() {
+                out.push((a, b, current.join("\n")));
             }
-            current = Vec::new();
-            match rest.split_once(" b/") {
-                Some((a, b)) => {
-                    a_path = a.strip_prefix("a/").unwrap_or(a).to_string();
-                    b_path = b.to_string();
-                }
-                None => {
-                    a_path = rest.to_string();
-                    b_path = rest.to_string();
-                }
-            }
+            current.clear();
+            paths = git_patch_paths(rest);
         }
         current.push(line);
     }
-    if !current.is_empty() {
-        out.push((a_path, b_path, current.join("\n")));
+    if let Some((a, b)) = paths {
+        out.push((a, b, current.join("\n")));
     }
     out
 }
@@ -2127,6 +2221,111 @@ mod tests {
             "{}",
             staged.patch
         );
+    }
+
+    #[test]
+    fn quoted_git_headers_decode_both_sides_before_filtering() {
+        for header in [
+            r#""a/demo\t.key" "b/demo\t.key""#,
+            r#""a/\303\251.key" "b/\303\251.key""#,
+            r#""a/demo\t.key" b/plain.txt"#,
+            r#"a/plain.txt "b/demo\t.key""#,
+        ] {
+            let patch = format!("diff --git {header}\n+synthetic private sentence\n");
+            assert!(exclude_sensitive_files(&patch).is_empty(), "{header}");
+        }
+        for (header, a, b) in [
+            (
+                r#""a/demo\t.txt" "b/demo\t.txt""#,
+                "demo\t.txt",
+                "demo\t.txt",
+            ),
+            (r#""a/\303\251.txt" "b/\303\251.txt""#, "é.txt", "é.txt"),
+            (
+                "a/some file.txt b/some file.txt",
+                "some file.txt",
+                "some file.txt",
+            ),
+        ] {
+            assert_eq!(git_patch_paths(header), Some((a.into(), b.into())));
+            let patch = format!("diff --git {header}\n+ordinary text\n");
+            assert_eq!(exclude_sensitive_files(&patch), patch);
+        }
+    }
+
+    #[test]
+    fn malformed_git_headers_are_dropped_without_losing_the_next_chunk() {
+        for header in [
+            r#""a/demo\q.key" "b/demo\q.key""#,
+            r#""a/demo\777.key" "b/demo\777.key""#,
+            r#""a/demo\37.key" "b/demo\37.key""#,
+            r#""a/demo.key" "b/demo.key" extra"#,
+            r#""a/demo.key b/demo.key"#,
+            "a/ambiguous b/name.txt b/ambiguous b/name.txt",
+            "a/ b/",
+            "unexpected",
+        ] {
+            let safe = "diff --git a/plain.txt b/plain.txt\n+ordinary text\n";
+            let patch = format!("preamble\ndiff --git {header}\n+private sentence\n{safe}");
+            assert_eq!(exclude_sensitive_files(&patch), safe, "{header}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_git_quoted_sensitive_names_are_blocked_in_review_and_sanitized_patches() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        let sensitive = "demo\t.key";
+        fs::write(tmp.path().join(sensitive), "staged private sentence\n").unwrap();
+        fs::write(
+            tmp.path().join("ordinary\t.txt"),
+            "ordinary staged sentence\n",
+        )
+        .unwrap();
+        git(tmp.path(), &["add", "-A"]);
+        fs::write(tmp.path().join(sensitive), "unstaged private sentence\n").unwrap();
+        fs::write(tmp.path().join("é\t.key"), "untracked private sentence\n").unwrap();
+        fs::write(tmp.path().join("é\t.txt"), "ordinary untracked sentence\n").unwrap();
+
+        let review = review_diffs(tmp.path()).unwrap();
+        assert!(review.blocked_paths.contains(&sensitive.to_string()));
+        assert!(review.blocked_paths.contains(&"é\t.key".to_string()));
+        let all_sections = review
+            .sections
+            .iter()
+            .map(|s| s.patch.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!all_sections.contains("private sentence"));
+        assert!(all_sections.contains("ordinary staged sentence"));
+        assert!(all_sections.contains("ordinary untracked sentence"));
+
+        // The checkpoint/review shared sanitizer must see actual Git quoting,
+        // with content that does not trigger value-shaped secret redaction.
+        for args in [vec!["diff", "--cached"], vec!["diff"]] {
+            let raw = run_git(tmp.path(), &args).unwrap();
+            assert!(raw.contains(r#""a/demo\t.key" "b/demo\t.key""#));
+            let (safe, _, _) = sanitized_patch(raw);
+            assert!(!safe.contains("private sentence"));
+        }
+        let checkpoint = crate::checkpoints::capture(tmp.path(), "manual", "quoted").unwrap();
+        fs::write(tmp.path().join(sensitive), "later private sentence\n").unwrap();
+        let (patch, _, _) = crate::checkpoints::diff(
+            tmp.path(),
+            &checkpoint.r#ref,
+            crate::checkpoints::CheckpointAgainst::Working,
+        )
+        .unwrap();
+        assert!(!patch.contains("private sentence"));
+        let (patch, _, _) = crate::checkpoints::diff(
+            tmp.path(),
+            &checkpoint.r#ref,
+            crate::checkpoints::CheckpointAgainst::Head,
+        )
+        .unwrap();
+        assert!(!patch.contains("private sentence"));
+        assert!(patch.contains("ordinary staged sentence"));
     }
 
     #[test]

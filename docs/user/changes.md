@@ -27,7 +27,10 @@ Selecting a file shows its diff. Diffs are capped in size; a patch beyond the ca
 truncated rather than left to grow the pane without bound. Certain path patterns (things
 that look like secrets — for example anything with "secrets" in the name) are excluded
 or redacted from the diff Houston builds for review, on the same rules whether the diff
-is read by you or handed to an agent for review.
+is read by you or handed to an agent for review. Filename rules also apply to paths
+containing tabs or non-ASCII characters, and to both names of a renamed file.
+Patches whose file names cannot be safely identified are excluded from review and
+checkpoint inspection.
 
 Review with agent opens a picker with the six engines Houston can spawn — Claude Code,
 Codex, Cursor Agent, Antigravity, OpenCode or Grok — and starts the one you choose in a
