@@ -443,6 +443,7 @@ impl Inner {
 
     async fn reensure(self: Arc<Self>, distro: String) -> Result<(), String> {
         let generation = self.generation.load(Ordering::SeqCst);
+        self.start_gate(generation)?;
         let _ops = self.ops.lock().await;
         self.start_gate(generation)?;
         let install_dir = self
@@ -625,6 +626,8 @@ impl WslManager {
     pub async fn enable(&self, name: String) -> Result<Enabled, String> {
         let inner = &self.inner;
         inner.gate()?;
+        let generation = inner.generation.load(Ordering::SeqCst);
+        inner.start_gate(generation)?;
         // Logged so the app log shows which request a state change answered.
         eprintln!("houston-tauri: wsl {name}: enable requested");
         if distros::is_utility(&name) {
@@ -633,7 +636,6 @@ impl WslManager {
                 distros::UTILITY.join(", ")
             ));
         }
-        let generation = inner.generation.load(Ordering::SeqCst);
         let _ops = inner.ops.lock().await;
         inner.start_gate(generation)?;
         let mut config = config::load(&inner.opts.state_dir)?;
@@ -803,7 +805,8 @@ impl WslManager {
     /// Brings up every enabled distro in the background; a failure marks only that one.
     pub fn start_enabled(&self) {
         let inner = &self.inner;
-        if !inner.opts.supported {
+        let generation = inner.generation.load(Ordering::SeqCst);
+        if !inner.opts.supported || inner.start_gate(generation).is_err() {
             return;
         }
         let config = match config::load(&inner.opts.state_dir) {
@@ -815,7 +818,6 @@ impl WslManager {
         };
         for entry in config.distros.into_iter().filter(|d| d.enabled) {
             let inner = Arc::clone(inner);
-            let generation = inner.generation.load(Ordering::SeqCst);
             tokio::spawn(async move {
                 let _ops = inner.ops.lock().await;
                 if inner.start_gate(generation).is_err() {
@@ -1069,6 +1071,19 @@ mod tests {
             .await
             .unwrap_err();
         assert!(refusal.contains("cannot be confirmed stopped"));
+        assert!(manager
+            .enable("Ubuntu".into())
+            .await
+            .unwrap_err()
+            .contains("cancelled"));
+        assert!(manager
+            .inner
+            .clone()
+            .reensure("Ubuntu".into())
+            .await
+            .unwrap_err()
+            .contains("cancelled"));
+        manager.start_enabled(); // Admission while paused must not queue a new generation.
         manager.keep_open_after_stop();
         drop(owner);
         assert!(enable.await.unwrap_err().contains("cancelled"));
