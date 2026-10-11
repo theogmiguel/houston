@@ -361,6 +361,7 @@ impl Inner {
     }
 
     async fn start_env(self: &Arc<Self>, distro: &str, slot: u8) -> Result<(), String> {
+        let generation = self.generation.load(Ordering::SeqCst);
         self.envs.lock().expect("wsl envs lock").insert(
             distro.to_string(),
             Env {
@@ -387,6 +388,7 @@ impl Inner {
                 installed.install_dir
             );
         }
+        self.start_gate(generation)?;
         let report = self.ensure(distro, &installed.install_dir).await?;
         self.update_env(distro, |env| {
             env.install_dir = Some(installed.install_dir.clone());
@@ -399,12 +401,21 @@ impl Inner {
         let relay = relay::Relay::start(backend, self.opts.retry_delay)
             .await
             .map_err(|e| format!("opening the loopback relay for {distro}: {e}"))?;
-        if self.stopping.load(Ordering::SeqCst) {
+        let interrupted = self.start_gate(generation).is_err();
+        if interrupted {
             relay.close();
         }
         self.update_env(distro, |env| {
             env.relay = Some(relay);
-            env.state = EnvState::Ready;
+            env.state = if interrupted {
+                EnvState::Error
+            } else {
+                EnvState::Ready
+            };
+            if interrupted {
+                env.reason =
+                    Some("Startup crossed Stop daemons; enable manually to reconnect".into());
+            }
         });
         self.notify();
         Ok(())
@@ -437,10 +448,16 @@ impl Inner {
             .and_then(|env| env.install_dir.clone())
             .ok_or_else(|| format!("{distro} has no recorded install directory"))?;
         let outcome = self.ensure(&distro, &install_dir).await;
+        let interrupted = self.start_gate(generation).is_err();
         match &outcome {
             Ok(report) => self.update_env(&distro, |env| {
-                env.state = EnvState::Ready;
-                env.reason = None;
+                env.state = if interrupted {
+                    EnvState::Error
+                } else {
+                    EnvState::Ready
+                };
+                env.reason = interrupted
+                    .then(|| "Reensure crossed Stop daemons; enable manually to reconnect".into());
                 env.token = report.token.clone();
             }),
             Err(e) => self.update_env(&distro, |env| {
@@ -1211,6 +1228,63 @@ mod tests {
         assert!(fake.calls().is_empty(), "nothing runs off Windows");
         wsl.start_enabled();
         assert!(wsl.wsl_envs().is_empty());
+    }
+
+    #[tokio::test]
+    async fn successful_stop_does_not_reensure_on_reconnect_or_keep_open() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let (mut fake, mut daemons) = FakeWsl::new(list_text("* Ubuntu  Running  2\n"));
+        fake.probes
+            .insert("Ubuntu".into(), "x86_64\nglibc 2.39\n".into());
+        let fake = Arc::new(fake);
+        let manager = manager(fake.clone(), state.path(), bundle.path(), true);
+        manager.enable("Ubuntu".into()).await.unwrap();
+        let targets = manager.pause_for_stop().await.unwrap();
+        let target = &targets[0];
+        let server = tokio::spawn(async move { serve_manage(daemons.recv().await.unwrap()).await });
+        let client = crate::daemon_host::manage_http_client();
+        let (_, answer) = crate::daemon_host::manage_post(
+            &client,
+            target.port,
+            &target.token,
+            houston_protocol::ManageVerb::DaemonShutdown,
+        )
+        .await
+        .unwrap();
+        assert_eq!(answer["ok"], true);
+        assert!(server.await.unwrap().contains("daemon_shutdown"));
+        // Another target's refusal dialog keeps the app and renderer connected.
+        for keep_open in [false, true] {
+            if keep_open {
+                manager.keep_open_after_stop();
+            }
+            let mut reconnect = tokio::net::TcpStream::connect(("127.0.0.1", target.port))
+                .await
+                .unwrap();
+            let mut bytes = Vec::new();
+            tokio::time::timeout(Duration::from_secs(5), reconnect.read_to_end(&mut bytes))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(bytes.is_empty());
+        }
+        let ensures = fake
+            .calls()
+            .into_iter()
+            .filter(|argv| argv.get(4).map(String::as_str) == Some("wsl-ensure"))
+            .count();
+        assert_eq!(
+            ensures, 1,
+            "only the original explicit enable may ensure a daemon"
+        );
+        assert!(manager.wsl_envs()[0]
+            .reason
+            .as_ref()
+            .unwrap()
+            .contains("manually"));
+        manager.enable("Ubuntu".into()).await.unwrap();
+        assert_eq!(manager.wsl_envs()[0].state, "ready");
     }
 
     #[tokio::test]
