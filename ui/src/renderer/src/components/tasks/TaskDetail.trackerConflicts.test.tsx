@@ -70,7 +70,7 @@ describe('TaskDetail tracker conflict guards', () => {
       task_id: TASK.id, kind: 'delivery', project_id: PROJECT.id, delivery_id: null, blocked_by: [], slice_total: 0, slice_done: 0,
       planning_session_id: null, readiness: { ready: true, reasons: [], acceptance_total: 0, acceptance_verifiable: 0, unresolved_questions: 0, unresolved_tracker_conflicts: 0, unfinished_blockers: [] },
       plan: null, unresolved_tracker_conflicts: 0
-    } }))
+    }, planning_refusals: [] }))
     expect(sent.at(-1)).toEqual({ type: 'task_project_get', id: PROJECT.id })
 
     act(() => emit({ type: 'task_project_state', project: { ...PROJECT, id: 10, revision: 50 } }))

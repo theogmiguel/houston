@@ -581,7 +581,7 @@ fn dispatch(
         "task_domain_get" => {
             require_domain_access(daemon, workspace, false)?;
             let id = task_ref(daemon, workspace, args, name)?;
-            let proto::ServerMsg::TaskDomainState { domain } =
+            let proto::ServerMsg::TaskDomainState { domain, .. } =
                 succeed(daemon.task_domain_state(id)?)?
             else {
                 unreachable!()

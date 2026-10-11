@@ -358,6 +358,9 @@ pub(crate) fn flags_only(
         }
     }
     if plan_mode {
+        if let Some(reason) = planning_refusal(agent) {
+            bail!("agent {agent:?} refused for read-only planning: {reason}");
+        }
         match agent {
             proto::AgentKind::Claude => {
                 args.push("--permission-mode".into());
@@ -380,10 +383,6 @@ pub(crate) fn flags_only(
             proto::AgentKind::Cursor => args.push("--plan".into()),
             proto::AgentKind::Grok => {
                 args.push("--permission-mode".into());
-                args.push("plan".into());
-            }
-            proto::AgentKind::Zcode => {
-                args.push("--mode".into());
                 args.push("plan".into());
             }
             _ => unreachable!("filtered above"),
@@ -424,6 +423,34 @@ pub(crate) fn effort_args(
              automatic for this routine"
         ),
     }
+}
+
+/// Why `agent` cannot start in an enforced read-only planning mode. `flags_only` refuses
+/// exactly these; task domain state carries them so the planning control is disabled.
+pub fn planning_refusal(agent: proto::AgentKind) -> Option<&'static str> {
+    match agent {
+        // `--mode` takes build, edit or yolo only. `/plan` inside the TUI is read-only,
+        // but no flag, setting or hook payload lets Houston set or confirm it.
+        proto::AgentKind::Zcode => Some(
+            "its command line has no read-only planning mode; planning is switched on only \
+             inside ZCode, with /plan",
+        ),
+        _ => None,
+    }
+}
+
+/// Every refusal `planning_refusal` makes, for the planning control.
+pub fn planning_refusals() -> Vec<proto::PlanningRefusal> {
+    use proto::AgentKind::*;
+    [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode]
+        .into_iter()
+        .filter_map(|agent| {
+            planning_refusal(agent).map(|reason| proto::PlanningRefusal {
+                agent,
+                reason: reason.to_string(),
+            })
+        })
+        .collect()
 }
 
 /// Why `agent` cannot run an unattended routine with `permission_mode`, whatever its
@@ -762,10 +789,6 @@ mod tests {
             flags_only(Zcode, true, false, None).unwrap(),
             ["--mode", "yolo"]
         );
-        assert_eq!(
-            flags_only(Zcode, false, true, None).unwrap(),
-            ["--mode", "plan"]
-        );
         assert_eq!(auto_mode_args(Zcode).unwrap(), ["--mode", "edit"]);
         assert_eq!(
             ApprovalMode::Bypass.args(Zcode).unwrap(),
@@ -790,6 +813,34 @@ mod tests {
         let err = launch_args(Zcode, false, false, None, "fix it", None, "x").unwrap_err();
         assert!(err.to_string().contains("no prompt in argv"), "{err}");
         assert!(effort_args(Zcode, proto::ChatEffort::High).is_err());
+    }
+
+    /// ZCode 3.14.4 exits on `--mode plan` ("Supported modes: build, edit, yolo").
+    #[test]
+    fn zcode_planning_is_refused_by_name_and_listed_for_the_planning_control() {
+        use proto::AgentKind::*;
+        let err = flags_only(Zcode, false, true, None)
+            .expect_err("ZCode has no read-only planning flag")
+            .to_string();
+        assert!(
+            err.contains("Zcode") && err.contains("read-only planning") && err.contains("/plan"),
+            "{err}"
+        );
+        let listed: Vec<_> = planning_refusals()
+            .into_iter()
+            .map(|r| (r.agent, r.reason))
+            .collect();
+        assert_eq!(listed.iter().map(|(a, _)| *a).collect::<Vec<_>>(), [Zcode]);
+        for agent in [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode] {
+            let refused = flags_only(agent, false, true, None).err();
+            match listed.iter().find(|(a, _)| *a == agent) {
+                Some((_, reason)) => {
+                    let err = refused.expect("a listed agent is refused").to_string();
+                    assert!(err.contains(reason.as_str()), "{err}");
+                }
+                None => assert!(refused.is_none(), "{agent:?}: {refused:?}"),
+            }
+        }
     }
 
     #[test]

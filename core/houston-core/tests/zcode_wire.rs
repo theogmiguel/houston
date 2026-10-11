@@ -20,11 +20,25 @@ use std::time::Duration;
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static SHIM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// Records its argv and the MCP URL variable per pane, then starts like ZCode's TUI:
-/// bracketed paste on and the cursor hidden, input dropped for `ZCODE_FAKE_BOOT_SECS`
-/// while it boots, the cursor shown once its composer has focus. Then it echoes
-/// whatever is typed or pasted into it.
+/// ZCode 3.14.4's `--mode` check and headless `-p`; else records argv per pane and boots
+/// like its TUI (paste mode on, input dropped for `ZCODE_FAKE_BOOT_SECS`, cursor shown
+/// once the composer has focus), then echoes its input.
 const FAKE_ZCODE: &str = r#"#!/bin/sh
+prev= mode=yolo headless=
+for a in "$@"; do
+  if [ "$prev" = --mode ]; then
+    case "$a" in
+      build|edit|yolo) mode=$a ;;
+      *) echo "Unsupported --mode value: $a. Supported modes: build, edit, yolo." >&2; exit 1 ;;
+    esac
+  fi
+  [ "$a" = -p ] && headless=1
+  prev=$a
+done
+if [ -n "$headless" ]; then
+  printf '<<<START>>>\n## Summary\nzcode-handoff mode=%s\n<<<END>>>\n' "$mode"
+  exit 0
+fi
 out="$ZCODE_ARGV_DIR/$HOUSTON_SESSION"
 : > "$out.tmp"
 for a in "$@"; do printf '%s\n' "$a" >> "$out.tmp"; done
@@ -345,6 +359,42 @@ async fn a_spawned_zcode_child_gets_its_mode_its_mcp_url_and_its_brief_pasted() 
     );
 
     screen_shows(&daemon, child, "ZCODE-BRIEF-MARKER").await;
+}
+
+/// ZCode's `-p` defaults to yolo and exits on `--mode plan`. A handoff runs it in build
+/// mode, where `-p` denies every call that would ask, so the summary cannot edit.
+#[tokio::test]
+async fn a_zcode_handoff_runs_headless_in_build_mode() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let addr = serve(&daemon).await;
+    let dir = tempfile::tempdir().unwrap();
+    let source = zcode_pane(&daemon, dir.path(), None);
+    screen_shows(&daemon, source.id, "FAKE-ZCODE-READY").await;
+    let mut ws = common::connect_and_hello(addr, TOKEN).await;
+    let _ = common::next_control(&mut ws).await;
+    let request = daemon
+        .handoff_generate(source.id, proto::AgentKind::Zcode, None)
+        .expect("a ZCode handoff starts");
+    loop {
+        match common::next_control(&mut ws).await {
+            proto::ServerMsg::HandoffDone {
+                request: r,
+                markdown,
+                ..
+            } if r == request => {
+                assert_eq!(markdown, "## Summary\nzcode-handoff mode=build");
+                break;
+            }
+            proto::ServerMsg::HandoffError {
+                request: r,
+                message,
+            } if r == request => {
+                panic!("the ZCode handoff failed: {message}")
+            }
+            _ => continue,
+        }
+    }
 }
 
 #[tokio::test]

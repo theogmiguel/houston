@@ -695,8 +695,11 @@ async fn a_slow_starting_zcode_gets_its_started_and_prefilled_brief_once_it_take
     );
 }
 
+/// ZCode 3.14.4 exits on `--mode plan` and turns planning on only inside its TUI, so
+/// planning refuses it by name before opening a pane, and the task's domain state lists
+/// the refusal for the planning control.
 #[tokio::test]
-async fn a_zcode_plan_runs_in_zcode_plan_mode() {
+async fn zcode_planning_is_refused_by_name_without_opening_a_pane() {
     let _guard = SERIAL.lock().await;
     let r = rig("plan-zcode").await;
     let id = r.create_task("Zcode plan", "Plan the parser rework.", &["one"]);
@@ -708,28 +711,34 @@ async fn a_zcode_plan_runs_in_zcode_plan_mode() {
         .daemon
         .task_plan_start(id, revision, proto::AgentKind::Zcode)
         .unwrap();
+    let proto::ServerMsg::TaskRefused { message, .. } = reply else {
+        panic!("ZCode planning must be refused: {reply:?}");
+    };
     assert!(
-        !matches!(reply, proto::ServerMsg::TaskRefused { .. }),
-        "{reply:?}"
-    );
-    let session = r
-        .daemon
-        .list()
-        .into_iter()
-        .find(|s| s.agent == proto::AgentKind::Zcode)
-        .expect("a ZCode planning pane")
-        .id;
-    let out = r.await_output(session, "Plan the parser rework.").await;
-    let fixture = out.find("FIXTURE-READY").unwrap();
-    let argv_report = &out[out.find("CWD:").unwrap()..fixture];
-    assert!(
-        argv_report.contains("ARG:--mode") && argv_report.contains("ARG:plan"),
-        "read-only planning uses ZCode's plan mode: {out:?}"
+        message.contains("Zcode") && message.contains("read-only planning"),
+        "{message}"
     );
     assert!(
-        out.find("Plan the parser rework.").unwrap() > fixture,
-        "the planning brief is pasted after the TUI drew: {out:?}"
+        r.daemon.list().is_empty(),
+        "no planning pane opens: {:?}",
+        r.daemon.list()
     );
+    let proto::ServerMsg::TaskDomainState {
+        domain,
+        planning_refusals,
+    } = r.daemon.task_domain_state(id).unwrap()
+    else {
+        panic!("expected TaskDomainState");
+    };
+    assert_eq!(domain.planning_session_id, None);
+    assert_eq!(
+        planning_refusals
+            .iter()
+            .map(|refusal| refusal.agent)
+            .collect::<Vec<_>>(),
+        [proto::AgentKind::Zcode]
+    );
+    assert!(message.contains(&planning_refusals[0].reason), "{message}");
 }
 
 #[tokio::test]

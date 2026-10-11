@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentKind } from '../../houston/generated/AgentKind'
+import type { PlanningRefusal } from '../../houston/generated/PlanningRefusal'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { HoustonClient } from '../../houston/client'
 import type { TaskDetailData } from '../../houston/useTasks'
 import { sendTaskWire, type TaskDomain, type TaskProject } from '../../houston/taskDomain'
-import { BulletList, Button, Card, Field, Inline, Notice, SectionHead, Select, Text, TextInput } from '../ui'
+import { engineLabel } from '../engineLabel'
+import { BulletList, Button, Card, Field, Inline, Notice, SectionHead, Select, Text, TextInput, Tooltip } from '../ui'
 
 export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartRequested }: {
   client: Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'>
@@ -20,6 +22,7 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
   const [domains, setDomains] = useState<Record<number, TaskDomain>>({})
   const [blockers, setBlockers] = useState('')
   const [agent, setAgent] = useState<AgentKind>('claude')
+  const [planningRefusals, setPlanningRefusals] = useState<PlanningRefusal[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const onOpenSessionRef = useRef(onOpenSession)
@@ -36,7 +39,10 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
         setDomain(message.domain)
         setBlockers(message.domain.blocked_by.join(', '))
       }
-      if (message.type === 'task_domain_state') setDomains((current) => ({ ...current, [message.domain.task_id]: message.domain }))
+      if (message.type === 'task_domain_state') {
+        setDomains((current) => ({ ...current, [message.domain.task_id]: message.domain }))
+        setPlanningRefusals(message.planning_refusals)
+      }
       if (message.type === 'task_projects_state' && message.workspace === task.workspace) setProjects(message.projects)
       if (message.type === 'task_snapshot' && message.scope === task.workspace) {
         setWorkspaceTasks(message.tasks)
@@ -65,6 +71,10 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
     sendTaskWire(client, { type: 'task_start', id: task.id, workspace, agent, override_readiness: true })
   }
   const plan = domain.plan
+  const planningRefusal = planningRefusals.find((refusal) => refusal.agent === agent)
+  const planningBlocked = planningRefusal
+    ? `${engineLabel(agent)} cannot generate a plan: ${planningRefusal.reason}. Choose another agent to plan; ${engineLabel(agent)} can still start the task.`
+    : null
   // The current parent stays listed even when it is no longer an open delivery of this project.
   const deliveryOptions = workspaceTasks.filter((item) => item.id !== task.id && item.workspace === workspace && (item.id === task.parent_id || (item.status !== 'done' && domains[item.id]?.kind === 'delivery' && domains[item.id]?.project_id === domain.project_id))).map((item) => ({ value: String(item.id), label: `${item.key} — ${item.title}` }))
 
@@ -84,7 +94,9 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
       save({ blocked_by: [...new Set(ids)] })
     }}>Save blockers</Button></div></Field>
     <WorkflowReadiness domain={domain} manualStart={manualStart} onStartAnyway={startAnyway} />
-    <Button variant="secondary" disabled={domain.planning_session_id != null} onClick={() => sendTaskWire(client, { type: 'task_plan_start', id: task.id, expected_revision: task.revision, agent })}>{domain.planning_session_id == null ? 'Generate plan' : 'Planning in progress'}</Button>
+    <Tooltip label={planningBlocked}>
+      <Button variant="secondary" disabled={domain.planning_session_id != null || planningBlocked != null} onClick={() => sendTaskWire(client, { type: 'task_plan_start', id: task.id, expected_revision: task.revision, agent })}>{domain.planning_session_id == null ? 'Generate plan' : 'Planning in progress'}</Button>
+    </Tooltip>
     {domain.planning_session_id != null && <Button variant="secondary" onClick={() => onOpenSession(domain.planning_session_id!)}>Open planning session</Button>}
     <WorkflowPlan client={client} detail={detail} domain={domain} plan={plan} answers={answers} setAnswers={setAnswers} />
   </Card>

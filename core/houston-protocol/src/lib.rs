@@ -3269,6 +3269,15 @@ pub const REMOTE_GRIDS_MAX: usize = 256;
 pub const REMOTE_GRID_SESSIONS_MAX: usize = 64;
 pub const REMOTE_GRID_NAME_MAX: usize = 120;
 
+/// A provider refused for read-only task planning. The planning control shows it
+/// disabled with `reason`; `task_plan_start` still refuses it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PlanningRefusal {
+    pub agent: AgentKind,
+    pub reason: String,
+}
+
 /// A routine engine refused under one access level, whatever its model. Pickers
 /// show it disabled with `reason`; `routine_create`/`routine_update` still refuse it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -5170,6 +5179,8 @@ pub enum ServerMsg {
     },
     TaskDomainState {
         domain: TaskDomain,
+        #[serde(default)]
+        planning_refusals: Vec<PlanningRefusal>,
     },
     TaskPlanChanged {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]

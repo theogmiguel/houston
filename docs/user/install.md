@@ -146,6 +146,9 @@ reports it. Without that
 report Houston presses Enter once more, never pastes the prompt a second time, and then
 tells the pane's parent (or shows an error) to check the pane; the message never repeats
 the prompt. Without the hook toggle on, nothing can confirm the paste.
+ZCode has no read-only mode on its command line (it turns planning on only inside its own
+interface, with `/plan`), so Houston does not use it to plan a task; see
+[Tasks](tasks.md#planning-a-task).
 ZCode loads a skill with `/skill <name>`, so a skill used in a ZCode pane is sent that way,
 and Skills shows and copies it that way while a ZCode pane is focused. ZCode finds skills
 in `~/.zcode/skills`, `~/.agents/skills` and the same folders in the project, not in

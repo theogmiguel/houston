@@ -73,7 +73,9 @@ that must finish before a slice can enter automatic execution.
 Use **Plan** before starting work when the request needs clarification. Houston opens a
 planning agent in the provider's read-only mode with the task, project context and repository.
 The proposal contains a description, acceptance items, file pointers, exclusions and open
-questions. Planning does not edit code or start implementation.
+questions. Planning does not edit code or start implementation. ZCode cannot plan: its
+command line has no read-only mode, so **Generate plan** is unavailable while ZCode is the
+chosen agent. Plan with another provider; ZCode can still start the task.
 
 Answer the questions and approve the proposal to apply it to the task. Approval belongs to
 the task and Project revisions the planner read: if either changed, refresh and plan

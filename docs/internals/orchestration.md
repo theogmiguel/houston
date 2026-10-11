@@ -1327,7 +1327,11 @@ What changes per provider, beyond the shared inbox:
   handled like any other tool result. Resume is by exact `--resume <session id>` without a
   transcript check, since ZCode keeps sessions in its own database; a resumed process fires
   `SessionStart` with source `resume`, which releases a shell pane's deferred children.
-  Handoff generation runs `zcode --mode plan -p`, because `-p` defaults to yolo. Routines
+  ZCode's `--mode` accepts only build, edit and yolo; `/plan` inside its TUI is read-only
+  (subagents inherit it, non-destructive MCP tools stay allowed), but no flag, setting or
+  hook payload lets the daemon set or confirm it, so task planning refuses ZCode by name.
+  Handoff generation runs `zcode --mode build -p`, because `-p` defaults to yolo and its
+  build mode denies every call that would ask for approval. Routines
   run only with isolated full access: `--mode edit` approves workspace file edits alone and
   waits on every other command's approval without a timeout. On Windows ZCode runs a
   `command` hook through `ComSpec`, where the POSIX guard cannot run, so each entry is a

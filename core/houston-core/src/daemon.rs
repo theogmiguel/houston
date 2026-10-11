@@ -12279,12 +12279,13 @@ impl Daemon {
                 ],
                 "grok".into(),
             ),
-            // `-p` defaults to yolo; a summary needs no write access.
+            // `-p` defaults to yolo and refuses `--mode plan`. In build mode `-p` denies
+            // every call that would ask (edits, shell, MCP), so the summary stays read-only.
             (proto::AgentKind::Zcode, _) => (
                 vec![
                     "sh".into(),
                     "-c".into(),
-                    r#"exec "$0" --mode plan -p "$(cat "$1")""#.into(),
+                    r#"exec "$0" --mode build -p "$(cat "$1")""#.into(),
                     "zcode".into(),
                     path_arg,
                 ],
@@ -12342,7 +12343,7 @@ impl Daemon {
                     vec![
                         "zcode".into(),
                         "--mode".into(),
-                        "plan".into(),
+                        "build".into(),
                         "-p".into(),
                         read_the_file(&path_arg),
                     ],

@@ -293,7 +293,7 @@ impl Daemon {
     }
 
     fn task_readiness_refusal(&self, id: i64, operation: &str) -> Result<Option<proto::ServerMsg>> {
-        let proto::ServerMsg::TaskDomainState { domain } = self.task_domain_state(id)? else {
+        let proto::ServerMsg::TaskDomainState { domain, .. } = self.task_domain_state(id)? else {
             anyhow::bail!("task_domain_get did not return domain state");
         };
         if domain.readiness.ready {
@@ -937,7 +937,10 @@ impl Daemon {
             plan,
             unresolved_tracker_conflicts,
         };
-        Ok(proto::ServerMsg::TaskDomainState { domain })
+        Ok(proto::ServerMsg::TaskDomainState {
+            domain,
+            planning_refusals: crate::launch::planning_refusals(),
+        })
     }
 
     pub fn task_domain_save(
@@ -2876,7 +2879,8 @@ impl Daemon {
         &self,
         row: &TaskRow,
     ) -> Result<(String, Option<i64>, Option<i64>)> {
-        let proto::ServerMsg::TaskDomainState { domain } = self.task_domain_state(row.id)? else {
+        let proto::ServerMsg::TaskDomainState { domain, .. } = self.task_domain_state(row.id)?
+        else {
             anyhow::bail!("task {} disappeared while building its context", row.id);
         };
         let project = domain
