@@ -18,22 +18,25 @@
 </head>
 <body>
 <header class="bar" id="bar">
-  <button id="back" class="icon-btn hidden" type="button" aria-label="Back to panes">
+  <button id="back" class="icon-btn hidden" type="button" aria-label="Back to main tabs">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
   </button>
+  <span id="provider-avatar" class="tav hidden" aria-hidden="true"></span>
   <div class="bar-title">
     <h1 id="heading">Houston</h1>
     <p id="subheading" class="bar-sub hidden"></p>
   </div>
   <span id="pane-status" class="status hidden"></span>
   <span id="conn" class="conn hidden" role="status"><span class="dot"></span><span id="conn-label">Connecting</span></span>
+  <button id="pane-menu" class="icon-btn hidden" type="button" aria-label="Pane menu">⋯</button>
 </header>
+<div id="reconnect" class="banner hidden" role="status"></div>
 
 <main id="view-pair" class="view pair hidden">
   <div class="pair-card">
     <img class="pair-mark" src="icon.svg" alt="" width="56" height="56">
-    <h2 class="pair-title">Pair this device</h2>
-    <p class="pair-lede">Follow and answer your Houston panes from here.</p>
+    <h2 id="pair-title" class="pair-title">Pair this device</h2>
+    <p id="pair-lede" class="pair-lede">Follow and answer your Houston panes from here.</p>
     <ol class="steps" id="pair-steps">
       <li id="step-1"><span class="step-n">1</span><span>On the computer running Houston, open <b>Settings ▸ Remote access</b>.</span></li>
       <li id="step-2"><span class="step-n">2</span><span>Choose <b>Pair a device</b>, then scan the code or open its link on this device.</span></li>
@@ -42,8 +45,11 @@
     <form id="pair-form" class="pair-form hidden">
       <label class="field-label" for="device-name">Device name</label>
       <input id="device-name" class="input" maxlength="64" autocomplete="off" required>
-      <button class="btn primary block" type="submit" id="pair-submit">Pair</button>
+      <button class="btn primary block" type="submit" id="pair-submit">Connect this phone</button>
     </form>
+    <p id="route-warning" class="notice hidden">Not encrypted: this connection uses HTTP.</p>
+    <div id="pair-connected" class="hidden"><div id="install-help" class="howto"></div><button id="pair-continue" class="btn primary block" type="button">Open Houston</button></div>
+    <button id="pair-again" class="btn block hidden" type="button">Pair again from the computer</button>
     <p id="pair-error" class="notice danger hidden" role="alert"></p>
   </div>
 </main>
@@ -59,28 +65,32 @@
 </main>
 
 <main id="view-pane" class="view pane hidden">
-  <div class="tabs" role="tablist" aria-label="Pane view">
-    <button id="tab-conv" class="tab" role="tab" type="button" aria-selected="true">Conversation</button>
-    <button id="tab-term" class="tab" role="tab" type="button" aria-selected="false">Terminal</button>
-  </div>
   <section id="conv" class="conv" aria-live="polite">
-    <div id="feed" class="feed"></div>
+    <div id="feed" class="feed ttl"></div>
+    <div id="children" class="tsg hidden"></div>
     <div id="feed-empty" class="empty hidden">
       <p class="empty-title">No activity yet</p>
-      <p class="empty-body">Prompts, replies and requests appear here as the agent reports them. Older output is in the Terminal tab.</p>
+      <p class="empty-body">Prompts, replies and requests appear here as the agent reports them. Older output is in View screen.</p>
     </div>
   </section>
-  <section id="term" class="term hidden">
+  <dialog id="screen-sheet" class="bsheet" aria-labelledby="screen-title">
+    <div class="sheet-head"><b id="screen-title">Screen</b><span>read-only · last 40 lines</span><button id="screen-close" class="link-btn" type="button">Done</button></div>
+  <section id="term" class="term">
     <pre id="screen" class="screen" tabindex="0" aria-label="Terminal screen"></pre>
     <p id="screen-note" class="term-note hidden"></p>
   </section>
-  <div class="dock" id="dock">
-    <div id="card" class="decision hidden" aria-live="assertive"></div>
+    <div id="screen-keys" class="keys" role="toolbar" aria-label="Send keys to the pane"></div>
+    <p class="term-note">Output from before remote access was turned on is only here.</p>
+  </dialog>
+  <div class="dock tdock" id="dock">
+    <div id="child-band" class="hidden"></div>
+    <div id="quick-replies" class="tsugs hidden" aria-label="Quick replies"></div>
+    <div id="card" class="decision tapp hidden" aria-live="assertive"></div>
     <div id="keys" class="keys hidden" role="toolbar" aria-label="Keys"></div>
     <div id="other" class="other hidden"><span id="other-label"></span><button id="other-cancel" class="link-btn" type="button">Cancel</button></div>
-    <div class="composer">
+    <div class="composer tcomp">
       <button id="more" class="icon-btn round" type="button" aria-label="Show keys" aria-expanded="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM7 9l3 3-3 3M13 15h4"/></svg>
       </button>
       <textarea id="text" rows="1" placeholder="Message" aria-label="Message to the pane"></textarea>
       <button id="send" class="send" type="button" aria-label="Send" disabled>
@@ -90,5 +100,14 @@
     <p id="dock-status" class="dock-status" role="status"></p>
   </div>
 </main>
+<nav id="tabbar" class="tabbar hidden" aria-label="Main navigation"></nav>
+<dialog id="menu-sheet" class="bsheet" aria-label="Pane menu">
+  <button id="view-screen" class="btn block" type="button">View screen</button>
+  <button id="copy-id" class="btn block" type="button">Copy pane id</button>
+  <button class="btn block" type="button" disabled aria-describedby="desktop-actions-note">Rename</button>
+  <button class="btn block" type="button" disabled aria-describedby="desktop-actions-note">Open on the computer</button>
+  <p id="desktop-actions-note" class="term-note">Rename and focus the pane from Houston on the computer.</p>
+  <button id="menu-close" class="link-btn" type="button">Done</button>
+</dialog>
 </body>
 </html>
