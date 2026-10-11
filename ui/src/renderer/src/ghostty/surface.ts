@@ -972,6 +972,16 @@ export class GhosttyTerminalSurface {
     return true
   }
 
+  mountBox(): { width: number; height: number } {
+    return measureMountBox(this.mount, this.canvas)
+  }
+
+  /** The grid `fit` would choose for a mount box of this size; null when no cell fits. */
+  gridForBox(width: number, height: number): { cols: number; rows: number } | null {
+    if (!boxFitsOneCell(width, height, this.metrics, CONTENT_PADDING)) return null
+    return terminalGridSize(width, height, this.metrics, CONTENT_PADDING)
+  }
+
   private notifyResize(): void {
     this.resizeNotified = true
     if (this.resizeNotifyTimer !== null) window.clearTimeout(this.resizeNotifyTimer)

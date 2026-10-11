@@ -98,6 +98,7 @@ import { useShellFocus } from "./Shell/useShellFocus";
 import { BrowserActConfirmModal } from "./components/BrowserActConfirm";
 import { useBrowserConfirm } from "./houston/browserConfirm";
 import { TERMINAL_SYNC_FIT_EVENT, TerminalTuningContext, type OutputSink } from "./pane/TerminalPane";
+import { newPaneSize, newPaneSizes } from "./pane/newPaneSize";
 import { CHROME_THEME_LABELS, THEME_LABELS } from "./theme";
 import { revealThemeFromClick } from "./themeReveal";
 import {
@@ -2113,9 +2114,15 @@ export function App(): React.JSX.Element {
     (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
       if (conn.kind !== "ready" || selectedWs === "all") return;
       setExpandedId(null);
+      const sizes = newPaneSizes({
+        current: currentTreeRef.current,
+        target: target === "new-grid" ? null : currentTreeRef.current,
+        count: slots.length,
+      });
       if (target === "new-grid") handleAddGrid(selectedWs);
-      for (const slot of slots) {
+      for (const [index, slot] of slots.entries()) {
         conn.client.createSession({
+          ...sizes[index],
           agent: slot.agent,
           project_dir: selectedWs,
           shell_integration: shellIntegration,
@@ -2250,6 +2257,10 @@ export function App(): React.JSX.Element {
         ts: Date.now(),
       });
       conn.client.createSession({
+        ...newPaneSize(currentTreeRef.current, currentTreeRef.current, {
+          anchor: session,
+          side,
+        }),
         agent: "shell",
         project_dir: info.project_dir,
         cwd_from: session,
@@ -2810,6 +2821,7 @@ export function App(): React.JSX.Element {
     }
     setExpandedId(null);
     conn.client.createSession({
+      ...newPaneSize(currentTreeRef.current, currentTreeRef.current),
       agent: "shell",
       project_dir: selectedWs,
       shell_integration: shellIntegration,
@@ -2822,6 +2834,7 @@ export function App(): React.JSX.Element {
       if (selectedWs === "all") return;
       setExpandedId(null);
       conn.client.createSession({
+        ...newPaneSize(currentTreeRef.current, currentTreeRef.current),
         agent,
         project_dir: selectedWs,
         shell_integration: shellIntegration,
@@ -2844,6 +2857,7 @@ export function App(): React.JSX.Element {
     setSelectedWorkspace: setSelectedWs,
     setExpandedId,
     splitIntents,
+    currentTreeRef,
   })
 
   const [addPanePopover, setAddPanePopover] = useState<{
@@ -2893,6 +2907,10 @@ export function App(): React.JSX.Element {
         ts: Date.now(),
       });
       conn.client.createSession({
+        ...newPaneSize(currentTreeRef.current, currentTreeRef.current, {
+          anchor: source.session,
+          side: "right",
+        }),
         agent,
         project_dir: info.project_dir,
         cwd_from: source.session,
@@ -4170,6 +4188,10 @@ export function App(): React.JSX.Element {
                         if (conn.kind !== "ready" || selectedWs === "all")
                           return;
                         conn.client.createSession({
+                          ...newPaneSize(
+                            currentTreeRef.current,
+                            currentTreeRef.current,
+                          ),
                           agent: acpAgent.agent,
                           project_dir: selectedWs,
                           acp: acpAgent.slug,

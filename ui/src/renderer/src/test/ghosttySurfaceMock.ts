@@ -253,6 +253,9 @@ export function ghosttySurfaceMockModule(): {
           blur: () => {
             ghosttyMock.blurSpy()
           },
+          // No measurable box: a pane mounted under the mock sizes no new pane.
+          mountBox: () => ({ width: 0, height: 0 }),
+          gridForBox: () => null,
           // A deferred fit notifies here too, standing in for the debounce firing.
           fit: (deferGrid = false) => {
             ghosttyMock.fitSpy(deferGrid)

@@ -264,6 +264,14 @@ export class GhosttyPaneTerminal implements PaneTerminal {
     return this.surface?.fit(deferGrid) ?? false
   }
 
+  mountBox(): { width: number; height: number } | null {
+    return this.surface?.mountBox() ?? null
+  }
+
+  gridForBox(width: number, height: number): { cols: number; rows: number } | null {
+    return this.surface?.gridForBox(width, height) ?? null
+  }
+
   onResize(listener: (cols: number, rows: number) => void): void {
     this.resizeListener = listener
   }
