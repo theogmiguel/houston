@@ -265,7 +265,7 @@ export function NavSkills(): React.JSX.Element {
           client={client}
           workspace="/home/dev/code/auth-refactor"
           focusedPaneName="auth-refactor"
-          canRunSkillInFocusedPane
+          runBlockedReason={null}
           onRunSkill={noop}
           pushes={[]}
           autoPushEnabled={false}

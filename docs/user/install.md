@@ -144,9 +144,9 @@ drawn, and counts it delivered only when ZCode's prompt hook reports it. Without
 report Houston presses Enter once more, never pastes the prompt a second time, and then
 tells the pane's parent (or shows an error) to check the pane; the message never repeats
 the prompt. Without the hook toggle on, nothing can confirm the paste.
-ZCode loads a skill with `/skill <name>`, so a skill used in a ZCode pane is sent that way;
-ZCode finds skills in `~/.zcode/skills`, `~/.agents/skills` and the same folders in the
-project.
+ZCode loads a skill with `/skill <name>`, so a skill used in a ZCode pane is sent that way,
+and Skills shows and copies it that way while a ZCode pane is focused. ZCode finds skills
+in `~/.zcode/skills`, `~/.agents/skills` and the same folders in the project.
 
 What is transmitted: ZCode sends prompts, code and tool results to the service you signed
 in to — Z.ai, which processes data in Singapore, or BigModel, in China. For GLM Coding Plan

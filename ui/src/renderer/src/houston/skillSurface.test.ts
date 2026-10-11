@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Skill } from '../env'
 import type { SkillToolState } from './generated/SkillToolState'
-import { canUseSkillInFocusedPane, skillCliRelations, skillInvocationFor, skillRelationLines, skillScopeLabel, skillUsageLine } from './skillSurface'
+import { canUseSkillInFocusedPane, focusedSkillAgent, paneSkillAgent, skillCliRelations, skillInvocationFor, skillRelationLines, skillRunBlocker, skillScopeLabel, skillUsageLine } from './skillSurface'
 import type { SessionInfo } from './generated/SessionInfo'
 
 const skill: Skill = {
@@ -103,5 +103,26 @@ describe('skillInvocationFor', () => {
     expect(skillInvocationFor('zcode', '/git:commit')).toBe('/skill git:commit')
     expect(skillInvocationFor('claude', '/ui-tokens')).toBe('/ui-tokens')
     expect(skillInvocationFor(null, '/ui-tokens')).toBe('/ui-tokens')
+  })
+
+  it('takes the agent from the CLI a shell pane runs, then the detected one, then the pane kind', () => {
+    const pane = { agent: 'zcode', state: 'running', project_dir: '/p' } as SessionInfo
+    expect(paneSkillAgent(pane)).toBe('zcode')
+    expect(paneSkillAgent({ ...pane, agent: 'shell', running_agent: 'zcode' })).toBe('zcode')
+    expect(paneSkillAgent({ ...pane, agent: 'shell', detected_agent: 'claude' })).toBe('claude')
+    expect(paneSkillAgent(undefined)).toBeNull()
+    expect(focusedSkillAgent(new Map([[1, pane]]), 1)).toBe('zcode')
+    expect(focusedSkillAgent(new Map([[1, pane]]), null)).toBeNull()
+  })
+})
+
+describe('skillRunBlocker', () => {
+  it('names why the focused pane cannot take a skill', () => {
+    const pane = { agent: 'zcode', state: 'running', project_dir: '/p' } as SessionInfo
+    const one = (p: SessionInfo): Map<number, SessionInfo> => new Map([[1, p]])
+    expect(skillRunBlocker(one(pane), 1, '/p', 'ready')).toBeNull()
+    expect(skillRunBlocker(one(pane), 1, '/other', 'ready')).toContain('another workspace')
+    expect(skillRunBlocker(one({ ...pane, agent: 'shell' }), 1, '/p', 'ready')).toContain('a shell')
+    expect(skillRunBlocker(one(pane), null, '/p', 'ready')).toBe('Focus a live agent pane to use this skill')
   })
 })
