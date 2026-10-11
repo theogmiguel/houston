@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
+import { waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type AppHarness,
@@ -39,6 +40,11 @@ const { daemonShutdownMock } = vi.hoisted(() => ({ daemonShutdownMock: vi.fn() }
 vi.mock('./houston/manage', async () => {
   const actual = await vi.importActual<typeof import('./houston/manage')>('./houston/manage')
   return { ...actual, daemonShutdown: daemonShutdownMock }
+})
+
+vi.mock('./houston/environments', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./houston/environments')>()
+  return { ...actual, listEnvironments: vi.fn(async () => []) }
 })
 
 const HERE = '/tmp/project'
@@ -197,9 +203,8 @@ describe('the tray is fed by this window', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    await flush()
+    await waitFor(() => expect(appQuitMock).toHaveBeenCalledTimes(1))
     expect(daemonShutdownMock).toHaveBeenCalledTimes(1)
-    expect(appQuitMock).toHaveBeenCalledTimes(1)
   })
 
   it('still quits when the stop fails, exactly as the in-app quit does', async () => {
@@ -213,7 +218,6 @@ describe('the tray is fed by this window', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    await flush()
-    expect(appQuitMock).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(appQuitMock).toHaveBeenCalledTimes(1))
   })
 })
