@@ -395,6 +395,25 @@ Two tiers. Tier 1 is Rust (`src-tauri/src/watchdog/`): a pure transition functio
 `SystemTime`), and a liveness probe (`probe.rs`) that is an `eval` round trip whose
 *absence* is the signal. Tier 2 is `ui/src/renderer/src/watchdog.ts`.
 
+Native recovery is opt-in through `HOUSTON_WATCHDOG_RECOVER=1`. A valid, current probe
+nonce and timestamps establish JavaScript liveness; empty native evaluation callbacks do
+not. Completed navigation reopens verification after a failed renderer, without resetting
+the reload budget. Automatic escalation rechecks visibility, inspector and wake grace
+at each attempt. Cooldown delays a pending reload, not the decision to stop trying after
+the ladder is exhausted.
+
+The native tray can quit independently of JavaScript. Confirmed shutdown contacts local
+and WSL daemons concurrently with bounded requests; failures require a native decision
+before the client exits. Closing a detected failed main window exits the client even if
+other windows are open. Client exit leaves sessions running unless daemon shutdown was
+explicitly confirmed.
+
+Recovery remains experimental: JavaScript liveness does not prove that painting or React
+initialization recovered, and native prompt results are not yet tagged by incident.
+Linux supports native recovery confirmation and forced web-process termination. Other
+platforms explicitly withhold focused recovery when native confirmation is unavailable;
+forced termination reports its lack of support and the ladder retries reload only.
+
 | Tier 2 constant | Value |
 |---|---|
 | `T_PAINT_BASE_MS` | 5000 |

@@ -81,6 +81,7 @@ pub enum TrayItem {
     Overflow(String),
     Group(String),
     Submenu { label: String, items: Vec<TrayItem> },
+    Quit,
     StopDaemon,
 }
 
@@ -277,14 +278,15 @@ pub fn menu_model(payload: &TrayPayload) -> Vec<TrayItem> {
         items.push(TrayItem::Separator);
     }
 
+    items.push(TrayItem::Quit);
     items.push(TrayItem::StopDaemon);
     items
 }
 
 pub fn stop_confirm_message(payload: &TrayPayload) -> String {
     if payload.connection != TrayConnection::Ready {
-        return "This ends an unknown number of live sessions — Houston is not connected to the \
-                daemon right now."
+        return "This stops the local daemon and connected WSL daemons, ending their sessions and \
+                disarming their routines. The last session count is unavailable."
             .into();
     }
     let live = payload
@@ -293,7 +295,7 @@ pub fn stop_confirm_message(payload: &TrayPayload) -> String {
         .filter(|s| !matches!(s.status, TrayStatus::Done | TrayStatus::Error))
         .count();
     format!(
-        "This ends {} and stops the daemon. Reopening Houston starts a new daemon.",
+        "This stops the local daemon and connected WSL daemons, ending their sessions and disarming their routines. The last reported count was {}. Reopening Houston starts the daemons again.",
         plural(live, "live session")
     )
 }
@@ -391,7 +393,7 @@ mod tests {
         );
         assert_eq!(
             stop_confirm_message(&payload),
-            "This ends 1 live session and stops the daemon. Reopening Houston starts a new daemon."
+            "This stops the local daemon and connected WSL daemons, ending their sessions and disarming their routines. The last reported count was 1 live session. Reopening Houston starts the daemons again."
         );
     }
 
@@ -474,6 +476,7 @@ mod tests {
                 TrayItem::Header("Houston · idle".into()),
                 TrayItem::Open,
                 TrayItem::Separator,
+                TrayItem::Quit,
                 TrayItem::StopDaemon,
             ]
         );
@@ -509,6 +512,7 @@ mod tests {
                     ],
                 },
                 TrayItem::Separator,
+                TrayItem::Quit,
                 TrayItem::StopDaemon,
             ],
             "the menu's shape must not change under the cursor as the fleet grows"
@@ -707,7 +711,7 @@ mod tests {
             session(3, "shell", "c", TrayStatus::Done),
         ]));
         assert!(
-            message.starts_with("This ends 2 live sessions"),
+            message.contains("last reported count was 2 live sessions"),
             "counted the finished pane: {message}"
         );
     }
@@ -718,7 +722,7 @@ mod tests {
             connection: TrayConnection::Failed,
             sessions: vec![],
         });
-        assert!(message.contains("unknown number"), "{message}");
+        assert!(message.contains("count is unavailable"), "{message}");
     }
 
     #[test]

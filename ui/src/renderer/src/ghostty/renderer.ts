@@ -20,15 +20,8 @@ export interface GhosttyCellRange {
 
 const DEFAULT_SELECTION_BACKGROUND = "rgba(72, 122, 191, 0.35)";
 
-const cssColorCache = new Map<number, string>();
-
 export function cssColor(color: GhosttyColor): string {
-  const key = (color.r << 16) | (color.g << 8) | color.b;
-  const hit = cssColorCache.get(key);
-  if (hit !== undefined) return hit;
-  const value = `rgb(${color.r}, ${color.g}, ${color.b})`;
-  cssColorCache.set(key, value);
-  return value;
+  return `rgb(${color.r}, ${color.g}, ${color.b})`;
 }
 
 export function syncCanvasBackground(

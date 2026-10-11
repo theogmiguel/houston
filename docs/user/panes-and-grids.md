@@ -151,16 +151,26 @@ the terminal's scrollback. To use Claude Code's inline renderer, turn off
 Settings ▸ Workspaces ▸ Start Claude in fullscreen; Claude Code's `/tui` command then
 decides. The setting applies to Claude panes started or restarted after the change.
 
+If terminal output falls behind, Houston requests a fresh screen from the daemon. If
+that screen is unavailable, it rebuilds from retained output and reports that earlier
+history may be unavailable. Input resumes after either form of attach completes.
+
 ## Closing the window
 
 Closing the window leaves the daemon and its sessions running. Settings ▸ Daemon ▸
 Background controls whether Houston stays in the tray or quits its client when the
 window closes. Reopen Houston to reconnect to the sessions. Tray counts include live
-sessions only; ended sessions do not appear in the tray menu.
+sessions only; ended sessions do not appear in the tray menu. **Quit and keep sessions**
+in the tray exits the client directly, including when the interface is unresponsive.
+When Houston detects that the interface has failed, closing the window exits the client
+instead of hiding it in the tray.
 
 To end the sessions and exit, use **Quit and stop daemon** in the command palette,
-or **Stop daemon** in Settings ▸ Daemon. Confirming names the affected sessions and
-routines before stopping them.
+or **Quit and stop daemons…** in the tray. Both stop the local daemon and connected WSL
+daemons after confirmation. Shutdown runs independently of the interface; if a daemon
+cannot be confirmed stopped, a native dialog names the failure and offers to keep Houston
+open or close it while those sessions may continue. **Stop daemon** in Settings ▸ Daemon
+stops the selected environment; its confirmation names the affected sessions and routines.
 
 ## Killing a pane
 

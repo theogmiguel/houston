@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type AppHarness,
@@ -13,12 +12,11 @@ import {
 } from './test/appTestHarness'
 import { NOTIFICATION_EVENT_FOCUS_PANE, TRAY_SYNC_MIN_INTERVAL_MS, type TraySyncPayload } from './houston/tray'
 
-const { syncTrayMock, onTrayEventMock, appQuitMock, listeners } = vi.hoisted(() => {
+const { syncTrayMock, onTrayEventMock, listeners } = vi.hoisted(() => {
   const listeners = new Map<string, (payload: never) => void>()
   return {
     listeners,
     syncTrayMock: vi.fn(async (_payload: unknown) => {}),
-    appQuitMock: vi.fn(async () => {}),
     onTrayEventMock: vi.fn(async (event: string, handler: (payload: never) => void) => {
       listeners.set(event, handler)
       return () => listeners.delete(event)
@@ -31,20 +29,8 @@ vi.mock('./houston/tray', async () => {
   return {
     ...actual,
     syncTray: syncTrayMock,
-    onTrayEvent: onTrayEventMock,
-    appQuit: appQuitMock
+    onTrayEvent: onTrayEventMock
   }
-})
-
-const { daemonShutdownMock } = vi.hoisted(() => ({ daemonShutdownMock: vi.fn() }))
-vi.mock('./houston/manage', async () => {
-  const actual = await vi.importActual<typeof import('./houston/manage')>('./houston/manage')
-  return { ...actual, daemonShutdown: daemonShutdownMock }
-})
-
-vi.mock('./houston/environments', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./houston/environments')>()
-  return { ...actual, listEnvironments: vi.fn(async () => []) }
 })
 
 const HERE = '/tmp/project'
@@ -84,8 +70,6 @@ describe('the tray is fed by this window', () => {
     listeners.clear()
     syncTrayMock.mockClear()
     onTrayEventMock.mockClear()
-    appQuitMock.mockClear()
-    daemonShutdownMock.mockReset()
   })
 
   afterEach(() => {
@@ -192,32 +176,9 @@ describe('the tray is fed by this window', () => {
     expect(() => (focus as (session: number) => void)(4242)).not.toThrow()
   })
 
-  it('stops the daemon through the same client Settings uses, then quits', async () => {
-    daemonShutdownMock.mockResolvedValue({ ok: true, stopped_sessions: 1, disarmed_routines: 0 })
+  it('does not depend on a renderer listener to quit from the native tray', async () => {
     harness = await renderReadyApp()
     await flush()
-    const stop = listeners.get('tray://stop-daemon')
-    if (!stop) throw new Error('App never subscribed to tray://stop-daemon')
-    await act(async () => {
-      ;(stop as (payload: null) => void)(null)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    await waitFor(() => expect(appQuitMock).toHaveBeenCalledTimes(1))
-    expect(daemonShutdownMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('still quits when the stop fails, exactly as the in-app quit does', async () => {
-    daemonShutdownMock.mockRejectedValue(new Error('daemon did not answer'))
-    harness = await renderReadyApp()
-    await flush()
-    const stop = listeners.get('tray://stop-daemon')
-    if (!stop) throw new Error('App never subscribed to tray://stop-daemon')
-    await act(async () => {
-      ;(stop as (payload: null) => void)(null)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    await waitFor(() => expect(appQuitMock).toHaveBeenCalledTimes(1))
+    expect(listeners.has('tray://stop-daemon')).toBe(false)
   })
 })

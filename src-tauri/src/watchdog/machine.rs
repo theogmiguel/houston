@@ -25,7 +25,7 @@ pub struct Thresholds {
     pub paint_ms: u64,
     /// Reload budget: `reload_budget` reloads per `reload_window_ms`, with
     /// `reload_cooldown_ms` between attempts, so a crash loop degrades to
-    /// the "Gone" terminal state instead of reloading forever.
+    /// the "Halted" terminal state instead of reloading forever.
     pub reload_cooldown_ms: u64,
     pub reload_budget: u32,
     pub reload_window_ms: u64,
@@ -180,6 +180,7 @@ pub struct Machine {
     reloads: VecDeque<u64>,
     last_reload_ms: Option<u64>,
     recovery_enabled: bool,
+    navigation_required: bool,
     incident: Option<Incident>,
     next_incident_id: u64,
     booting_since_ms: u64,
@@ -217,6 +218,7 @@ impl Machine {
             reloads: VecDeque::new(),
             last_reload_ms: None,
             recovery_enabled,
+            navigation_required: false,
             incident: None,
             next_incident_id: 1,
             booting_since_ms: now_ms,
@@ -226,7 +228,6 @@ impl Machine {
         }
     }
 
-    #[cfg(test)]
     pub fn state(&self) -> State {
         self.state
     }
@@ -280,7 +281,16 @@ impl Machine {
         let mut actions = Vec::new();
 
         match event {
-            Event::PageLoaded => {}
+            Event::PageLoaded => {
+                self.navigation_required = false;
+                self.booting_since_ms = now_ms;
+                actions.push(Action::DiscardOutstandingProbes);
+                if matches!(self.state, State::Gone | State::Halted) {
+                    // A completed navigation permits fresh verification, not proof of health.
+                    self.close_incident();
+                    self.state = State::Booting;
+                }
+            }
 
             Event::Tick => {
                 self.on_tick(now_ms, prev, &mut actions);
@@ -288,6 +298,9 @@ impl Machine {
             }
 
             Event::ProbeReturned { rtt_ms } => {
+                if self.navigation_required {
+                    return actions;
+                }
                 self.rtt_history.push_back(rtt_ms);
                 while self.rtt_history.len() > RTT_HISTORY_LEN {
                     self.rtt_history.pop_front();
@@ -398,6 +411,8 @@ impl Machine {
             }
 
             Event::WebProcessTerminated { reason } => {
+                self.navigation_required = true;
+                actions.push(Action::DiscardOutstandingProbes);
                 let expected = self
                     .incident
                     .as_ref()
@@ -406,7 +421,7 @@ impl Machine {
                 if let Some(incident) = self.incident.as_mut() {
                     incident.expecting_api_termination = false;
                 }
-                if expected {
+                if expected || self.state == State::Halted {
                     actions.push(self.log(prev, Trigger::WebProcessTerminated { reason }, None));
                 } else {
                     self.state = State::Gone;
@@ -470,7 +485,7 @@ impl Machine {
                 self.open_incident(&format!("renderer-requested:{reason}"));
                 self.state = State::Recovering;
                 actions.push(self.log(prev, Trigger::ReloadRequested { reason }, None));
-                self.issue_rung(now_ms, &mut actions);
+                self.issue_rung(now_ms, &mut actions, false);
             }
 
             Event::RecoveryConfirmed { timed_out } => {
@@ -482,7 +497,7 @@ impl Machine {
                     incident.prompt_deadline_ms = None;
                 }
                 actions.push(self.log(prev, Trigger::PromptAnswered { timed_out }, None));
-                self.issue_rung(now_ms, &mut actions);
+                self.issue_rung(now_ms, &mut actions, true);
             }
 
             Event::RecoveryDeclined => {
@@ -530,7 +545,7 @@ impl Machine {
                 incident.prompt_deadline_ms = None;
             }
             actions.push(self.log(prev, Trigger::PromptAnswered { timed_out: true }, None));
-            self.issue_rung(now_ms, actions);
+            self.issue_rung(now_ms, actions, true);
             return;
         }
 
@@ -541,7 +556,18 @@ impl Machine {
                 .and_then(|i| i.rung_issued_ms)
                 .is_some_and(|issued| now_ms.saturating_sub(issued) >= self.thresholds.recover_ms);
         if rung_expired {
-            self.issue_rung(now_ms, actions);
+            self.issue_rung(now_ms, actions, true);
+            return;
+        }
+
+        // A first rung deferred by cooldown or suppression has no issued timestamp.
+        if self.state == State::Recovering
+            && self
+                .incident
+                .as_ref()
+                .is_some_and(|i| i.rung_issued_ms.is_none() && i.prompt_deadline_ms.is_none())
+        {
+            self.issue_rung(now_ms, actions, true);
             return;
         }
 
@@ -630,7 +656,7 @@ impl Machine {
 
         self.state = State::Recovering;
         actions.push(self.log(prev, Trigger::RecoveryStarted, None));
-        self.issue_rung(now_ms, actions);
+        self.issue_rung(now_ms, actions, true);
     }
 
     fn log_withheld(&mut self, prev: State, reason: &'static str, actions: &mut Vec<Action>) {
@@ -650,8 +676,24 @@ impl Machine {
         }));
     }
 
-    fn issue_rung(&mut self, now_ms: u64, actions: &mut Vec<Action>) {
+    fn issue_rung(&mut self, now_ms: u64, actions: &mut Vec<Action>, automatic: bool) {
         let prev = self.state;
+        let Some(incident) = self.incident.as_ref() else {
+            return;
+        };
+        // Exhaustion emits no reload, so neither cooldown nor suppression delays it.
+        if incident.rung >= 2 {
+            self.state = State::Halted;
+            actions.push(self.log(prev, Trigger::LadderExhausted, None));
+            actions.push(Action::SetTitle(TitleState::NotResponding));
+            return;
+        }
+        if automatic {
+            if let Some(reason) = self.suppression_reason(now_ms) {
+                self.log_withheld(prev, reason, actions);
+                return;
+            }
+        }
         match self.reload_block(now_ms) {
             Some(ReloadBlock::BudgetExhausted) => {
                 self.state = State::Halted;
@@ -659,9 +701,13 @@ impl Machine {
                 actions.push(Action::SetTitle(TitleState::NotResponding));
                 return;
             }
-            Some(ReloadBlock::Cooldown) => return,
+            Some(ReloadBlock::Cooldown) => {
+                self.log_withheld(prev, "reload-cooldown", actions);
+                return;
+            }
             None => {}
         }
+        self.withheld_logged = None;
         let Some(incident) = self.incident.as_mut() else {
             return;
         };
@@ -687,11 +733,7 @@ impl Machine {
                 actions.push(Action::TerminateWebProcess);
                 actions.push(Action::Reload);
             }
-            _ => {
-                self.state = State::Halted;
-                actions.push(self.log(prev, Trigger::LadderExhausted, None));
-                actions.push(Action::SetTitle(TitleState::NotResponding));
-            }
+            _ => unreachable!("exhausted ladder checked before issuing a rung"),
         }
     }
 
@@ -758,6 +800,278 @@ mod tests {
             last = m.on_event(Event::ProbeFailed, at_ms);
         }
         last
+    }
+
+    #[test]
+    fn recovering_after_process_loss_requires_navigation_before_a_reply() {
+        let mut m = healthy(true);
+        let actions = m.on_event(
+            Event::WebProcessTerminated {
+                reason: TerminationReason::Crashed,
+            },
+            10_000,
+        );
+        assert_eq!(m.state(), State::Recovering);
+        assert!(has(&actions, &Action::DiscardOutstandingProbes));
+        assert!(
+            !has(&actions, &Action::Reload),
+            "confirmation is still pending"
+        );
+        let actions = m.on_event(Event::ProbeReturned { rtt_ms: 5 }, 10_001);
+        assert_eq!(m.state(), State::Recovering);
+        assert!(m.prompt_outstanding());
+        assert!(!has(&actions, &Action::SetTitle(TitleState::Normal)));
+        let actions = m.on_event(Event::PageLoaded, 11_000);
+        assert!(has(&actions, &Action::DiscardOutstandingProbes));
+        assert!(!has(&actions, &Action::SetTitle(TitleState::Normal)));
+        let actions = m.on_event(Event::ProbeReturned { rtt_ms: 5 }, 11_001);
+        assert_eq!(m.state(), State::Healthy);
+        assert!(has(&actions, &Action::SetTitle(TitleState::Normal)));
+    }
+
+    #[test]
+    fn a_gone_renderer_needs_a_new_load_before_a_probe_can_recover_it() {
+        let mut m = healthy(false);
+        m.on_event(
+            Event::WebProcessTerminated {
+                reason: TerminationReason::Crashed,
+            },
+            10_000,
+        );
+        let a = m.on_event(Event::ProbeReturned { rtt_ms: 5 }, 11_000);
+        assert_eq!(m.state(), State::Gone);
+        assert!(!has(&a, &Action::SetTitle(TitleState::Normal)));
+        let a = m.on_event(Event::PageLoaded, 12_000);
+        assert_eq!(m.state(), State::Booting);
+        assert!(m.incident.is_none());
+        assert!(has(&a, &Action::DiscardOutstandingProbes));
+        assert!(!has(&a, &Action::SetTitle(TitleState::Normal)));
+        let a = m.on_event(Event::ProbeReturned { rtt_ms: 10 }, 12_010);
+        assert_eq!(m.state(), State::Healthy);
+        assert!(has(&a, &Action::SetTitle(TitleState::Normal)));
+    }
+
+    #[test]
+    fn a_fresh_load_reverifies_halted_without_clearing_the_reload_budget() {
+        let mut m = healthy(true);
+        m.on_event(Event::WindowFocused(false), 0);
+        for now in [10_000, 70_000, 130_000] {
+            let a = m.on_event(
+                Event::ReloadRequested {
+                    reason: "user".into(),
+                },
+                now,
+            );
+            assert!(has(&a, &Action::Reload));
+            m.on_event(Event::ProbeReturned { rtt_ms: 5 }, now + 1);
+        }
+        m.on_event(
+            Event::ReloadRequested {
+                reason: "user".into(),
+            },
+            190_000,
+        );
+        assert_eq!(m.state(), State::Halted);
+        m.on_event(Event::ProbeReturned { rtt_ms: 5 }, 190_001);
+        assert_eq!(m.state(), State::Halted);
+        let a = m.on_event(Event::PageLoaded, 190_002);
+        assert_eq!(m.state(), State::Booting);
+        assert!(m.incident.is_none());
+        assert!(!has(&a, &Action::SetTitle(TitleState::Normal)));
+        m.on_event(Event::ProbeReturned { rtt_ms: 5 }, 190_003);
+        assert_eq!(m.state(), State::Healthy);
+        let a = fail_to_unresponsive(&mut m, 190_004);
+        assert_eq!(m.state(), State::Halted);
+        assert!(logs(&a)
+            .iter()
+            .any(|l| l.trigger == Trigger::BudgetExhausted));
+        assert!(!has(&a, &Action::Reload));
+    }
+
+    #[test]
+    fn a_new_load_clears_a_stale_prompt_from_a_gone_renderer() {
+        let mut m = healthy(true);
+        fail_to_unresponsive(&mut m, 10_000);
+        assert!(m.prompt_outstanding());
+        m.on_event(Event::WindowVisible(false), 11_000);
+        m.on_event(
+            Event::WebProcessTerminated {
+                reason: TerminationReason::Crashed,
+            },
+            11_001,
+        );
+        assert_eq!(m.state(), State::Gone);
+        m.on_event(Event::PageLoaded, 12_000);
+        assert_eq!(m.state(), State::Booting);
+        assert!(!m.prompt_outstanding());
+        let a = m.on_event(Event::RecoveryConfirmed { timed_out: true }, 20_000);
+        assert!(logs(&a).iter().any(|l| l.trigger == Trigger::PromptStale));
+        assert!(!has(&a, &Action::Reload));
+        assert_eq!(m.state(), State::Booting);
+    }
+
+    #[test]
+    fn a_new_load_restarts_boot_timeout_without_resetting_an_active_ladder() {
+        let mut m = healthy(false);
+        m.on_event(
+            Event::WebProcessTerminated {
+                reason: TerminationReason::Crashed,
+            },
+            1_000,
+        );
+        m.on_event(Event::PageLoaded, 100_000);
+        m.on_event(Event::Tick, 129_999);
+        assert_eq!(m.state(), State::Booting);
+        m.on_event(Event::Tick, 130_000);
+        assert_eq!(m.state(), State::Unresponsive);
+
+        let mut m = healthy(true);
+        m.on_event(Event::WindowFocused(false), 0);
+        fail_to_unresponsive(&mut m, 10_000);
+        let id = m.incident.as_ref().unwrap().id;
+        m.on_event(Event::PageLoaded, 11_000);
+        assert_eq!(m.state(), State::Recovering);
+        assert_eq!(m.incident.as_ref().unwrap().id, id);
+        assert_eq!(m.incident.as_ref().unwrap().rung, 1);
+        assert!(has(
+            &m.on_event(Event::Tick, 70_000),
+            &Action::TerminateWebProcess
+        ));
+    }
+
+    #[test]
+    fn requested_reload_retries_after_cooldown() {
+        let mut m = healthy(true);
+        m.on_event(Event::WindowFocused(false), 0);
+        assert!(has(&fail_to_unresponsive(&mut m, 10_000), &Action::Reload));
+        let a = m.on_event(
+            Event::ReloadRequested {
+                reason: "user".into(),
+            },
+            11_000,
+        );
+        assert!(!has(&a, &Action::Reload));
+        assert_eq!(m.state(), State::Recovering);
+        assert!(!has(&m.on_event(Event::Tick, 69_999), &Action::Reload));
+        let a = m.on_event(Event::Tick, 70_000);
+        assert!(
+            has(&a, &Action::Reload),
+            "deferred first rung must retry: {a:?}"
+        );
+        assert!(!has(&a, &Action::TerminateWebProcess));
+    }
+
+    #[test]
+    fn ladder_exhaustion_does_not_wait_for_reload_cooldown() {
+        let mut m = healthy(true);
+        m.on_event(Event::WindowFocused(false), 0);
+        fail_to_unresponsive(&mut m, 10_000);
+        assert!(has(&m.on_event(Event::Tick, 70_000), &Action::Reload));
+        assert_eq!(m.state(), State::Recovering);
+        assert!(m.on_event(Event::Tick, 89_999).is_empty());
+        let a = m.on_event(Event::Tick, 90_000);
+        assert_eq!(
+            m.state(),
+            State::Halted,
+            "no reload is needed to exhaust: {a:?}"
+        );
+        assert!(logs(&a)
+            .iter()
+            .any(|l| l.trigger == Trigger::LadderExhausted));
+        assert!(!has(&a, &Action::Reload));
+    }
+
+    fn suppression_cases() -> [(Event, Event); 3] {
+        [
+            (Event::WindowVisible(false), Event::WindowVisible(true)),
+            (
+                Event::InspectorAttached(true),
+                Event::InspectorAttached(false),
+            ),
+            (
+                Event::Suspended {
+                    suspended_ms: 60_000,
+                },
+                Event::Tick,
+            ),
+        ]
+    }
+
+    #[test]
+    fn suppression_during_recovery_defers_the_next_rung() {
+        for (suppress, resume) in suppression_cases() {
+            let mut m = healthy(true);
+            m.on_event(Event::WindowFocused(false), 0);
+            fail_to_unresponsive(&mut m, 10_000);
+            let id = m.incident.as_ref().unwrap().id;
+            m.on_event(suppress.clone(), 69_000);
+            let a = m.on_event(Event::Tick, 70_000);
+            assert!(!has(&a, &Action::Reload), "{suppress:?}: {a:?}");
+            assert!(!has(&a, &Action::TerminateWebProcess));
+            assert_eq!(m.incident.as_ref().unwrap().rung, 1);
+            m.on_event(resume, 83_999);
+            let a = m.on_event(Event::Tick, 84_000);
+            assert!(
+                has(&a, &Action::Reload),
+                "{suppress:?}: deferred intent lost: {a:?}"
+            );
+            assert!(has(&a, &Action::TerminateWebProcess));
+            assert_eq!(m.incident.as_ref().unwrap().id, id);
+        }
+    }
+
+    #[test]
+    fn suppression_during_prompt_defers_timeout_recovery() {
+        for (suppress, resume) in suppression_cases() {
+            let mut m = healthy(true);
+            assert!(has(
+                &fail_to_unresponsive(&mut m, 10_000),
+                &Action::PromptThenRecover { timeout_ms: 10_000 }
+            ));
+            m.on_event(suppress.clone(), 19_000);
+            let a = m.on_event(Event::Tick, 20_000);
+            assert!(!has(&a, &Action::Reload), "{suppress:?}: {a:?}");
+            assert_eq!(m.incident.as_ref().unwrap().rung, 0);
+            m.on_event(resume, 33_999);
+            let a = m.on_event(Event::Tick, 34_000);
+            assert!(
+                has(&a, &Action::Reload),
+                "{suppress:?}: deferred intent lost: {a:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn suppression_is_rechecked_on_native_prompt_timeout() {
+        let mut m = healthy(true);
+        fail_to_unresponsive(&mut m, 10_000);
+        m.on_event(Event::WindowVisible(false), 19_000);
+        let a = m.on_event(Event::RecoveryConfirmed { timed_out: true }, 20_000);
+        assert!(!has(&a, &Action::Reload), "{a:?}");
+        m.on_event(Event::WindowVisible(true), 21_000);
+        assert!(has(&m.on_event(Event::Tick, 21_000), &Action::Reload));
+    }
+
+    #[test]
+    fn a_new_crash_does_not_rearm_a_declined_recovery() {
+        let mut m = healthy(true);
+        fail_to_unresponsive(&mut m, 10_000);
+        m.on_event(Event::RecoveryDeclined, 11_000);
+        let a = m.on_event(
+            Event::WebProcessTerminated {
+                reason: TerminationReason::Crashed,
+            },
+            1_000_000,
+        );
+        assert_eq!(
+            m.state(),
+            State::Halted,
+            "automatic recovery remains latched: {a:?}"
+        );
+        assert!(!has(&a, &Action::Reload));
+        assert!(!a
+            .iter()
+            .any(|a| matches!(a, Action::PromptThenRecover { .. })));
     }
 
     #[test]

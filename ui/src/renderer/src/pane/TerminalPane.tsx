@@ -1084,8 +1084,24 @@ export function TerminalPane({
       },
       replay: (data, bytesSeen) => {
         const s = seqRef.current
+        if (s.synced && !s.catchup) return
+        s.awaitingSnapshot = false
+        if (overflowResyncRef.current) {
+          // The cursor includes queued bytes discarded by overflow recovery.
+          // A fallback replay must rebuild the screen, not skip those bytes.
+          writeQueue.discardPendingForReset()
+          term.reset()
+          s.synced = false
+          s.catchup = false
+          pushToastRef.current(
+            'Output recovered',
+            'Snapshot unavailable; rebuilt from retained output. Earlier history may be unavailable.',
+            'danger',
+            'backpressure'
+          )
+        }
+        overflowResyncRef.current = false
         if (s.synced) {
-          if (!s.catchup) return
           s.catchup = false
           const flushCatchup = (): void => {
             const held = s.pending
@@ -1107,6 +1123,8 @@ export function TerminalPane({
           }
           return
         }
+        // Replay and held frames form one recovery batch, even above the live cap.
+        s.catchup = true
         if (data.length > 0) writeQueue.enqueue(data, true)
         s.cursor = bytesSeen
         s.synced = true
@@ -1115,6 +1133,7 @@ export function TerminalPane({
         s.pending = []
         s.pendingBytes = 0
         for (const p of pending) writeFrom(p.offset, p.data, true)
+        s.catchup = false
       },
       snapshot: (state, outputOffset) => {
         const s = seqRef.current

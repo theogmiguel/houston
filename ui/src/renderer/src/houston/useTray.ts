@@ -1,50 +1,25 @@
 import { useEffect, useRef } from 'react'
-import { daemonShutdown } from './manage'
-import { listEnvironments } from './environments'
 import type { SessionInfo } from './generated/SessionInfo'
 import type { Workspace } from './generated/Workspace'
 import {
-  appQuit,
+  appStopDaemonsAndQuit,
   buildTrayPayload,
   createTraySync,
   NOTIFICATION_EVENT_FOCUS_PANE,
   onTrayEvent,
   syncTray,
   TRAY_EVENT_FOCUS_PANE,
-  TRAY_EVENT_STOP_DAEMON,
   updateTrayActivity,
   type TrayActivity,
   type TrayConnection,
   type TraySyncer
 } from './tray'
 
-// Stops the local daemon and each WSL environment's (through its relay port) at
-// once; a failure is logged and never keeps the others running or the app open.
-async function stopEveryDaemon(): Promise<void> {
-  const environments = await listEnvironments().catch((err: unknown) => {
-    console.warn('houston: env_list failed, stopping only the local daemon', err)
-    return []
-  })
-  const targets = [undefined, ...environments.filter((e) => e.kind === 'wsl' && e.token !== '')]
-  const results = await Promise.allSettled(targets.map((target) => daemonShutdown(target)))
-  results.forEach((result, i) => {
-    if (result.status === 'rejected') {
-      console.warn(
-        `houston: daemon_shutdown before quitting failed for ${targets[i]?.id ?? 'local'}, quitting without stopping it`,
-        result.reason
-      )
-    }
-  })
-}
-
-/** The tray's and the command palette's "stop daemon and quit". */
+/** The command palette confirms before handing shutdown to the native host. */
 export function stopDaemonThenQuit(): void {
-  void stopEveryDaemon()
-    .finally(() => {
-      void appQuit().catch((err: unknown) => {
-        console.warn('houston: app_quit failed', err)
-      })
-    })
+  void appStopDaemonsAndQuit().catch((err: unknown) => {
+    console.warn('houston: native shutdown request failed', err)
+  })
 }
 
 export function useTrayBridge(options: {
@@ -94,7 +69,6 @@ export function useTrayBridge(options: {
     void onTrayEvent<number>(NOTIFICATION_EVENT_FOCUS_PANE, (session) => {
       focusPane.current(session)
     }).then(track)
-    void onTrayEvent<null>(TRAY_EVENT_STOP_DAEMON, stopDaemonThenQuit).then(track)
     return () => {
       disposed = true
       for (const off of unlisten) off()
