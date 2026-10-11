@@ -276,6 +276,15 @@ returns explicit outcomes for queued jobs. PTY failures report the bytes already
 Handoff refuses while stdin delivery or its completion handling remains in flight, because
 queued input is not part of the adoption manifest.
 
+Off-connection control handlers use immediate admission: at most 16 per connection and
+64 per process, with no semaphore waiters. A process-owned task set retains admitted
+handlers through completion, including after disconnect; this preserves partially applied
+mutations and subprocess cleanup. Completed handles are collected at the next admission.
+Replies use a fixed 256-item queue and an 8 MiB byte budget, including the reply being sent.
+Cloning senders adds no capacity. Admission refusal names the limits and current counts.
+Reply overflow closes the connection for a full state resync; mutations already admitted
+still finish. These limits apply to off-connection handlers, not the attach-family path.
+
 ## The emulator
 
 Each session owns one libghostty-vt terminal (`vt.rs`), built natively into the daemon from the
