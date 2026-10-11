@@ -664,4 +664,3 @@ describe('WSL workspace paths', () => {
     expect(await bridge.readFile('/home/u/p/a.txt')).toBe(String.raw`\\wsl.localhost\Ubuntu\x`)
   })
 })
-

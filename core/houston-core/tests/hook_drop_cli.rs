@@ -357,6 +357,8 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
         background_tasks: Some(0),
         internal_prompt: false,
         reason: Some("Bash".into()),
+        permission_command: Some("printf verified".into()),
+        permission_block_reason: Some("Operator approval required".into()),
         error: Some("rate_limit".into()),
         error_details: Some("Usage limit reached".into()),
         notification_type: Some("permission_prompt".into()),

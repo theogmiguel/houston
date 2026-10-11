@@ -203,6 +203,7 @@ async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) ->
         schema_version: houston_core::db::SCHEMA_VERSION,
         manifest_version: adoption::MANIFEST_VERSION,
         platform: "linux".to_string(),
+        native_input_snapshot: true,
     };
     adoption::write_frame(&mut sock, &FromNew::Hello(hello)).context("sending adoption hello")?;
 
@@ -261,15 +262,27 @@ async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) ->
     let dir = owning_config_dir()?;
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
-    let daemon = Daemon::new_adopting(
+    let daemon = match Daemon::new_adopting(
         DaemonConfig {
             token: manifest.token.clone(),
             db_path: dir.join("houston.db"),
         },
         port,
         reconstructed,
-    )
-    .context("constructing the adopting daemon")?;
+    ) {
+        Ok(daemon) => daemon,
+        Err(error) => {
+            let reason = format!("constructing the adopting daemon: {error:#}");
+            adoption::write_frame(
+                &mut sock,
+                &FromNew::PrepareFailed {
+                    reason: reason.clone(),
+                },
+            )
+            .context("sending adoption prepare failure")?;
+            anyhow::bail!("{reason}");
+        }
+    };
     #[cfg(target_os = "linux")]
     daemon.set_session_launcher(houston_core::session_isolation::launcher());
 
@@ -328,6 +341,7 @@ async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) ->
 
     let _supervisor_pid = spawn_supervisor_reader(&daemon, supervisor);
 
+    daemon.start_adopted_hooks();
     houston_core::boot::spawn_startup_refresh(&daemon);
     houston_core::boot::spawn_background_loops(&daemon);
 

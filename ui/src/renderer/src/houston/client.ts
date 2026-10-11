@@ -1270,8 +1270,44 @@ export class HoustonClient {
     })
   }
 
-  delegationResultsList(parent: number): void {
-    this.send({ type: 'delegation_results_list', parent })
+  delegationResultsList(parent: number, beforeMessageId?: number | null): void {
+    this.send({ type: 'delegation_results_list', parent, before_message_id: beforeMessageId })
+  }
+
+  delegationResultGet(parent: number, messageId: number): void {
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      this.dispatchLocal({ type: 'delegation_result_refused', parent, message_id: messageId, message: 'Cannot read result: connection is unavailable.' })
+      return
+    }
+    this.send({ type: 'delegation_result_get', parent, message_id: messageId })
+  }
+
+  instructionQueueList(session: number): void {
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      this.dispatchLocal({ type: 'instruction_refused', session, instruction_id: null, message: 'Cannot list instructions: connection is unavailable.' })
+      return
+    }
+    this.send({ type: 'instruction_queue_list', session })
+  }
+
+  instructionGet(session: number, instructionId: string): void {
+    this.instructionRequest('instruction_get', session, instructionId)
+  }
+
+  instructionCancel(session: number, instructionId: string): void {
+    this.instructionRequest('instruction_cancel', session, instructionId)
+  }
+
+  instructionResume(session: number, instructionId: string): void {
+    this.instructionRequest('instruction_resume', session, instructionId)
+  }
+
+  private instructionRequest(type: 'instruction_get' | 'instruction_cancel' | 'instruction_resume', session: number, instructionId: string): void {
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      this.dispatchLocal({ type: 'instruction_refused', session, instruction_id: instructionId, message: `Cannot ${type.replace('instruction_', '')} instruction ${instructionId}: connection is unavailable.` })
+      return
+    }
+    this.send({ type, session, instruction_id: instructionId })
   }
 
   inboxList(workspace: string): void {

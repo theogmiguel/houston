@@ -1,3 +1,4 @@
+import { attentionStatus } from '../sessionAttention'
 import type { SessionInfo } from './generated/SessionInfo'
 import { isTauri } from './host'
 
@@ -29,7 +30,7 @@ export interface TrayStateView {
 export function trayStatusFor(session: SessionInfo): TrayStatus {
   switch (session.state) {
     case 'running':
-      switch (session.status) {
+      switch (attentionStatus(session)) {
         case 'needs-input':
           return 'needsInput'
         case 'idle':

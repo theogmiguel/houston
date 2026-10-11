@@ -97,9 +97,13 @@ pub struct HookDrop {
     pub tool_name: Option<String>,
     // A provider may omit its tool-call ID from the permission event while
     // including the command in the later completion event. Keep only a
-    // digest so command contents never enter daemon state or hook drops.
+    // digest so correlation stays independent of bounded permission display metadata.
     #[serde(default)]
     pub tool_input_fingerprint: Option<String>,
+    #[serde(default)]
+    pub permission_command: Option<String>,
+    #[serde(default)]
+    pub permission_block_reason: Option<String>,
     #[serde(default)]
     pub resume_evidence: Option<ResumeHookEvidence>,
 }
@@ -134,6 +138,8 @@ impl Default for HookDrop {
             subagent_type: None,
             tool_name: None,
             tool_input_fingerprint: None,
+            permission_command: None,
+            permission_block_reason: None,
             resume_evidence: None,
         }
     }

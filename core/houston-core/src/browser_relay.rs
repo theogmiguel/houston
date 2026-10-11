@@ -19,10 +19,8 @@ pub fn tool_specs() -> Vec<ToolSpec> {
         ToolSpec {
             name: "browser_current_page".into(),
             title: "Get browser page state".into(),
-            description: "Report the current URL, title, favicon, loading state and \
-                              back/forward availability of the browser pane in this agent's \
-                              workspace. Cheap: no screenshot, no page script. Use this to \
-                              check where the browser is before or after an action."
+            description: "Report this workspace's browser URL, title, favicon, loading state \
+                          and back/forward availability without a screenshot or page script."
                 .into(),
             input_schema: no_args(),
             annotations: Annotations::readonly(),
@@ -65,13 +63,10 @@ pub fn tool_specs() -> Vec<ToolSpec> {
         ToolSpec {
             name: "browser_snapshot".into(),
             title: "Inspect the browser page".into(),
-            description: "Return a structured snapshot of the page in this agent's browser \
-                          pane: url, title, load state, and every visible interactive and \
-                          landmark element with a stable `ref`, role, accessible name, value \
-                          and box. Call this before clicking or typing — the `ref` values it \
-                          returns are what browser_click and browser_type address. Far cheaper \
-                          than a screenshot. Refs belong to the document that was current when \
-                          the snapshot ran and do not survive a navigation."
+            description: "Inspect this workspace's page: URL, title, load state and visible \
+                          interactive/landmark elements with stable ref, role, accessible name, \
+                          value and box. Call before clicking/typing; refs expire on navigation. \
+                          Cheaper than a screenshot."
                 .into(),
             input_schema: no_args(),
             annotations: Annotations::readonly(),
@@ -199,9 +194,8 @@ pub fn tool_specs() -> Vec<ToolSpec> {
         ToolSpec {
             name: "browser_go_back".into(),
             title: "Go back in browser history".into(),
-            description: "Navigate the browser pane one step back in its history, like the \
-                          user pressing the back button. browser_current_page reports whether \
-                          going back is currently possible (canGoBack)."
+            description: "Go back one page in browser history; browser_current_page.canGoBack \
+                          reports availability."
                 .into(),
             input_schema: no_args(),
             annotations: Annotations {
@@ -212,10 +206,10 @@ pub fn tool_specs() -> Vec<ToolSpec> {
         ToolSpec {
             name: "browser_go_forward".into(),
             title: "Go forward in browser history".into(),
-            description: "Navigate the browser pane one step forward in its history \
-                          (canGoForward in browser_current_page says whether this is \
-                          possible)."
-                .into(),
+            description:
+                "Go forward one page in browser history; browser_current_page.canGoForward \
+                          reports availability."
+                    .into(),
             input_schema: no_args(),
             annotations: Annotations {
                 destructive: false,

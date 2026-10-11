@@ -1279,6 +1279,15 @@ impl OrchestrationHandoff {
         child_steps: serde_json::Value,
         wait_transport: Option<&str>,
     ) -> Self {
+        Self::new_with_approval(provider, child_steps, wait_transport, Some(false)).await
+    }
+
+    async fn new_with_approval(
+        provider: &str,
+        child_steps: serde_json::Value,
+        wait_transport: Option<&str>,
+        auto_approve: Option<bool>,
+    ) -> Self {
         use serde_json::json;
         let home = tempfile::tempdir().unwrap();
         let channel_dir = home.path().join(".houston-dev");
@@ -1290,7 +1299,7 @@ impl OrchestrationHandoff {
         drop(db);
         let command = common::hermetic_command(supervisor_bin(), home.path());
         drop(command);
-        for name in ["claude", "codex", "grok"] {
+        for name in ["claude", "codex", "grok", "opencode"] {
             let shim = home.path().join("provider-shims").join(name);
             std::fs::remove_file(&shim).unwrap();
             std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_fake_agent"), shim).unwrap();
@@ -1321,7 +1330,10 @@ impl OrchestrationHandoff {
         steps.extend(child_steps.as_array().unwrap().iter().cloned());
         steps.push(json!({"op":"hang"}));
         let child_script = script("child", 2, provider, json!(steps));
-        let mut args = json!({"kind":provider,"prompt":format!("@fake:{}",child_script.display()),"auto_approve":false,"reusable":true,"role":"worker"});
+        let mut args = json!({"kind":provider,"prompt":format!("@fake:{}",child_script.display()),"reusable":true,"role":"worker"});
+        if let Some(auto_approve) = auto_approve {
+            args["auto_approve"] = json!(auto_approve);
+        }
         if provider == "claude" {
             args["model"] = json!("haiku");
         }
@@ -1407,7 +1419,7 @@ impl OrchestrationHandoff {
             });
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        Self {
+        let rig = Self {
             _home: home,
             _channel: channel,
             _supervisor: supervisor,
@@ -1418,6 +1430,44 @@ impl OrchestrationHandoff {
             log,
             child_gate,
             parent_gate,
+        };
+        rig.wait_for_child_startup().await;
+        rig
+    }
+
+    async fn wait_for_child_startup(&self) {
+        let deadline = tokio::time::Instant::now() + POLL_TIMEOUT;
+        loop {
+            // Spawn returns before the child emits its startup hooks. The gate receipt
+            // proves both helpers finished; their drops must also be consumed before
+            // injecting a permission that a later initial prompt would legitimately clear.
+            let at_gate = Self::read_log(&self.log).iter().any(|row| {
+                row["seed"] == 2 && row["event"] == "step" && row["data"]["op"] == "wait_file"
+            });
+            let pending = std::fs::read_dir(houston_core::hook_drop::drop_dir(
+                self.cfg.parent().unwrap(),
+            ))
+            .unwrap()
+            .any(|entry| {
+                let name = entry.unwrap().file_name();
+                name.to_str()
+                    .and_then(houston_core::hook_drop::parse_drop_name)
+                    .is_some_and(|drop| drop.session == self.child)
+            });
+            if at_gate && !pending {
+                assert_eq!(
+                    self.session().await.status,
+                    Some(proto::AgentStatus::Working),
+                    "startup hooks must report a working child before native input is injected"
+                );
+                return;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "child startup did not reach its gate with hooks consumed: {:?}",
+                Self::read_log(&self.log)
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }
 
@@ -1427,6 +1477,134 @@ impl OrchestrationHandoff {
             .lines()
             .filter_map(|line| serde_json::from_str(line).ok())
             .collect()
+    }
+
+    fn db(&self) -> houston_core::db::Db {
+        houston_core::db::Db::open(&self.cfg.parent().unwrap().join("houston.db")).unwrap()
+    }
+
+    fn input(&self) -> Option<proto::ChildInputRequest> {
+        self.db().child_input_request(self.child).unwrap()
+    }
+
+    async fn native_drop(&self, mut drop: houston_core::hook_drop::HookDrop) {
+        drop.session = self.child;
+        let path = houston_core::hook_drop::write_drop(
+            &houston_core::hook_drop::drop_dir(self.cfg.parent().unwrap()),
+            &drop,
+            houston_core::daemon::now_ms(),
+        )
+        .unwrap();
+        let deadline = tokio::time::Instant::now() + POLL_TIMEOUT;
+        while path.exists() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "hook not applied: {drop:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn parent_token(&self) -> String {
+        let pid = Self::read_log(&self.log)
+            .into_iter()
+            .find(|row| row["seed"] == 1 && row["event"] == "start")
+            .unwrap()["data"]["pid"]
+            .as_u64()
+            .unwrap();
+        let environment = std::fs::read(format!("/proc/{pid}/environ")).unwrap();
+        environment
+            .split(|byte| *byte == 0)
+            .find_map(|item| {
+                std::str::from_utf8(item)
+                    .ok()?
+                    .strip_prefix("HOUSTON_MCP_TOKEN=")
+            })
+            .expect("the fixture parent's scoped credential")
+            .to_string()
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn child_detail(&self) -> serde_json::Value {
+        let current = read_daemon_json(&self.cfg).unwrap();
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(format!(
+                "http://127.0.0.1:{}/orchestrate/get?session={}",
+                current.port, self.child
+            ))
+            .bearer_auth(self.parent_token())
+            .send()
+            .await
+            .unwrap();
+        let status = response.status().as_u16();
+        let detail: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(status, 200, "{detail}");
+        detail
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn parent_post(&self, verb: &str, body: serde_json::Value) -> (u16, serde_json::Value) {
+        let current = read_daemon_json(&self.cfg).unwrap();
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .post(format!(
+                "http://127.0.0.1:{}/orchestrate/{verb}",
+                current.port
+            ))
+            .bearer_auth(self.parent_token())
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status().as_u16();
+        (status, response.json().await.unwrap())
+    }
+
+    async fn operator_input(&self, bytes: &[u8]) {
+        let current = read_daemon_json(&self.cfg).unwrap();
+        let mut ws = connect_when_ready(
+            format!("127.0.0.1:{}", current.port).parse().unwrap(),
+            &current.token,
+        )
+        .await;
+        let _ = common::next_control(&mut ws).await;
+        ws.send(Message::Binary(
+            proto::encode_stdin_frame(self.child, bytes).into(),
+        ))
+        .await
+        .unwrap();
+        // A control reply on the same connection proves the binary input was processed first.
+        ws.send(Message::text(
+            serde_json::to_string(&proto::ClientMsg::SessionList).unwrap(),
+        ))
+        .await
+        .unwrap();
+        while !matches!(
+            common::next_control(&mut ws).await,
+            proto::ServerMsg::SessionList { .. }
+        ) {}
+    }
+
+    async fn session(&self) -> proto::SessionInfo {
+        let current = read_daemon_json(&self.cfg).unwrap();
+        let mut ws = connect_when_ready(
+            format!("127.0.0.1:{}", current.port).parse().unwrap(),
+            &current.token,
+        )
+        .await;
+        let proto::ServerMsg::HelloOk { sessions, .. } = common::next_control(&mut ws).await else {
+            panic!("expected session snapshot")
+        };
+        sessions
+            .into_iter()
+            .find(|session| session.id == self.child)
+            .unwrap()
     }
 
     fn waits(&self) -> Vec<serde_json::Value> {
@@ -1555,7 +1733,7 @@ async fn l1_codex_cursor_query_before_handoff() {
 }
 
 #[tokio::test]
-async fn l1_manual_grok_child_gets_only_the_handback_permission() {
+async fn l1_manual_grok_child_gets_only_the_local_dialogue_and_input_permissions() {
     let rig=OrchestrationHandoff::new("grok",serde_json::json!([{"op":"require_handback_allow"},{"op":"submit","summary":"GROK_RESULT"}]),None).await;
     rig.release_result();
     rig.assert_result_once(2);
@@ -1590,4 +1768,593 @@ async fn l1_codex_split_cursor_query_and_post_adoption_da_are_answered() {
     });
     assert_eq!(replies[0]["data"]["reply"], "\x1b[3;7R");
     assert_eq!(replies[1]["data"]["reply"], "\x1b[?62;22c");
+}
+
+fn native_fingerprint(command: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let canonical = serde_json::to_vec(&serde_json::json!({"command":command})).unwrap();
+    format!("{:x}", Sha256::digest(canonical))
+}
+
+fn native_permission(provider: &str, id: Option<&str>) -> houston_core::hook_drop::HookDrop {
+    houston_core::hook_drop::HookDrop {
+        agent: Some(provider.into()),
+        event: if provider == "opencode" {
+            "permission.asked"
+        } else {
+            "PermissionRequest"
+        }
+        .into(),
+        tool_name: Some("Bash".into()),
+        tool_use_id: id.map(str::to_string),
+        request_id: id.map(str::to_string),
+        permission_command: Some("echo fixture".into()),
+        permission_block_reason: Some("Provider requests consent".into()),
+        ..Default::default()
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn adopted_native_permission_keeps_exact_id_denies_once_and_resolves_only_matching_proof() {
+    let rig = OrchestrationHandoff::new(
+        "claude",
+        serde_json::json!([
+            {"op":"read_bytes","count":1}, {"op":"read_bytes","count":1}
+        ]),
+        None,
+    )
+    .await;
+    std::fs::write(&rig.child_gate, "").unwrap();
+    let root_prompt = houston_core::hook_drop::HookDrop {
+        agent: Some("claude".into()),
+        event: "UserPromptSubmit".into(),
+        prompt_id: Some("adopted-root-turn".into()),
+        ..Default::default()
+    };
+    rig.native_drop(root_prompt.clone()).await;
+    rig.native_drop(native_permission("claude", Some("adopted-permission")))
+        .await;
+    let input = rig.input().unwrap();
+    assert_eq!(rig.child_detail().await["turn_end_source"], "stop-hook");
+    rig.handoff().await;
+    assert_eq!(rig.input(), Some(input.clone()));
+    assert_eq!(rig.child_detail().await["turn_end_source"], "stop-hook");
+    rig.native_drop(root_prompt).await;
+    assert_eq!(
+        rig.input(),
+        Some(input.clone()),
+        "a replayed root prompt cannot clear adopted input"
+    );
+    let deny = serde_json::json!({"child":rig.child,"episode_id":input.id});
+    let (status, reply) = rig.parent_post("deny", deny.clone()).await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(reply["denial_sent"], true);
+    assert_eq!(reply["pending"], true);
+    let receipt = poll_until(POLL_TIMEOUT, || {
+        OrchestrationHandoff::read_log(&rig.log)
+            .into_iter()
+            .find(|row| row["seed"] == 2 && row["event"] == "input_bytes")
+    });
+    assert_eq!(receipt["data"]["bytes"], serde_json::json!([27]));
+    assert_eq!(rig.input(), Some(input.clone()));
+
+    // A second real adoption also retains the durable attempted-denial latch.
+    let current = read_daemon_json(&rig.cfg).unwrap();
+    let result = daemon_handoff(current.port, &current.token).await;
+    assert!(result.accepted, "{result:?}");
+    poll_until(POLL_TIMEOUT, || {
+        read_daemon_json(&rig.cfg).filter(|file| file.pid != current.pid)
+    });
+    let (status, duplicate) = rig.parent_post("deny", deny).await;
+    assert_eq!(status, 200, "{duplicate}");
+    assert_eq!(duplicate["already_attempted"], true);
+    assert_eq!(duplicate["denial_sent"], false);
+    assert_eq!(
+        OrchestrationHandoff::read_log(&rig.log)
+            .iter()
+            .filter(|row| row["seed"] == 2 && row["event"] == "input_bytes")
+            .count(),
+        1
+    );
+    let (status, refused) = rig
+        .parent_post(
+            "keys",
+            serde_json::json!({"session":rig.child,"keys":["enter"]}),
+        )
+        .await;
+    assert_eq!(status, 409, "{refused}");
+    assert!(refused["error"]
+        .as_str()
+        .unwrap()
+        .contains("only the operator may approve"));
+
+    let mut proof = native_permission("claude", Some("unmatched-permission"));
+    proof.event = "PostToolUse".into();
+    rig.native_drop(proof.clone()).await;
+    assert_eq!(rig.input(), Some(input));
+    proof.tool_use_id = Some("adopted-permission".into());
+    rig.native_drop(proof).await;
+    assert_eq!(rig.input(), None);
+    assert_eq!(
+        rig.session().await.status,
+        Some(proto::AgentStatus::Working)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn native_proof_queued_during_handoff_resolves_after_commit_and_input_is_fenced() {
+    let rig = OrchestrationHandoff::new(
+        "claude",
+        serde_json::json!([{"op":"read_bytes","count":1}]),
+        None,
+    )
+    .await;
+    std::fs::write(&rig.child_gate, "").unwrap();
+    rig.native_drop(native_permission("claude", Some("queued-permission")))
+        .await;
+    let input = rig.input().unwrap();
+    let marker = rig._home.path().join("candidate-started");
+    let release = rig._home.path().join("candidate-release");
+    let candidate = rig._home.path().join("delayed-candidate");
+    let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
+    // Hold the candidate before Hello so the old generation is deterministically handing off.
+    std::fs::write(&candidate, format!(
+        "#!/bin/sh\n: > {}\ni=0\nwhile [ ! -e {} ] && [ \"$i\" -lt 250 ]; do sleep 0.02; i=$((i+1)); done\nexec {} \"$@\"\n",
+        quote(&marker.to_string_lossy()), quote(&release.to_string_lossy()), quote(core_bin()),
+    )).unwrap();
+    std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let before = rig.before.clone();
+    let candidate_path = candidate.to_string_lossy().into_owned();
+    let handoff = tokio::spawn(async move {
+        daemon_handoff_to(before.port, &before.token, Some(&candidate_path)).await
+    });
+    let deadline = tokio::time::Instant::now() + POLL_TIMEOUT;
+    while !marker.exists() {
+        assert!(tokio::time::Instant::now() < deadline);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    rig.operator_input(b"\r").await;
+    let (status, refusal) = rig
+        .parent_post(
+            "deny",
+            serde_json::json!({
+                "child":rig.child, "episode_id":input.id,
+            }),
+        )
+        .await;
+    assert!(status >= 400, "{refusal}");
+    assert!(!rig
+        .db()
+        .child_permission_deny_attempted(rig.child, &input.id)
+        .unwrap());
+    let proof = houston_core::hook_drop::HookDrop {
+        session: rig.child,
+        agent: Some("claude".into()),
+        event: "PostToolUse".into(),
+        tool_use_id: Some("queued-permission".into()),
+        tool_name: Some("Bash".into()),
+        ..Default::default()
+    };
+    let path = houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(rig.cfg.parent().unwrap()),
+        &proof,
+        houston_core::daemon::now_ms(),
+    )
+    .unwrap();
+    assert_eq!(rig.input(), Some(input));
+    std::fs::write(&release, "").unwrap();
+    let result = handoff.await.unwrap();
+    assert!(result.accepted, "{result:?}");
+    while path.exists() || rig.input().is_some() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "queued proof was not resolved"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(!OrchestrationHandoff::read_log(&rig.log)
+        .iter()
+        .any(|row| row["event"] == "input_bytes"));
+    assert_eq!(
+        rig.session().await.status,
+        Some(proto::AgentStatus::Working)
+    );
+    // Refused old-generation input did not create an intervention or deliver bytes later.
+    rig.operator_input(b"\r").await;
+    let receipt = poll_until(POLL_TIMEOUT, || {
+        OrchestrationHandoff::read_log(&rig.log)
+            .into_iter()
+            .find(|row| row["seed"] == 2 && row["event"] == "input_bytes")
+    });
+    assert_eq!(receipt["data"]["bytes"], serde_json::json!([13]));
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn adopted_generated_codex_permissions_keep_counters_digests_and_deny_cardinality() {
+    let rig = OrchestrationHandoff::new("codex", serde_json::json!([]), None).await;
+    let mut permission = native_permission("codex", None);
+    permission.prompt_id = Some("adopted-turn".into());
+    permission.tool_input_fingerprint = Some(native_fingerprint("echo fixture-digest-a"));
+    rig.native_drop(permission.clone()).await;
+    let input = rig.input().unwrap();
+    permission.tool_input_fingerprint = Some(native_fingerprint("echo fixture-digest-b"));
+    rig.native_drop(permission.clone()).await;
+    rig.handoff().await;
+    assert_eq!(rig.input(), Some(input.clone()));
+    permission.tool_input_fingerprint = Some(native_fingerprint("echo fixture-digest-c"));
+    rig.native_drop(permission.clone()).await;
+    let sources = rig
+        .db()
+        .child_input_pending_provider_sources(rig.child)
+        .unwrap();
+    assert_eq!(sources.len(), 3, "{sources:?}");
+    assert!(
+        sources
+            .iter()
+            .any(|source| source.contains("generation: 2")),
+        "{sources:?}"
+    );
+    let (status, refusal) = rig
+        .parent_post(
+            "deny",
+            serde_json::json!({"child":rig.child,"episode_id":input.id}),
+        )
+        .await;
+    assert_eq!(status, 409, "{refusal}");
+    assert!(refusal["error"]
+        .as_str()
+        .unwrap()
+        .contains("3 live provider prompts"));
+    assert!(!rig
+        .db()
+        .child_permission_deny_attempted(rig.child, &input.id)
+        .unwrap());
+
+    permission.event = "PostToolUse".into();
+    permission.tool_input_fingerprint = Some(native_fingerprint("echo fixture-digest-a"));
+    permission.prompt_id = Some("unrelated-turn".into());
+    rig.native_drop(permission.clone()).await;
+    assert_eq!(rig.input(), Some(input.clone()));
+    permission.prompt_id = Some("adopted-turn".into());
+    permission.tool_input_fingerprint = None;
+    rig.native_drop(permission.clone()).await;
+    assert_eq!(rig.input(), Some(input.clone()));
+    permission.tool_input_fingerprint = Some(native_fingerprint("echo fixture-digest-a"));
+    rig.native_drop(permission.clone()).await;
+    assert!(rig
+        .db()
+        .child_input_request_by_id(rig.child, &input.id)
+        .unwrap()
+        .is_none());
+    for fingerprint in [
+        native_fingerprint("echo fixture-digest-b"),
+        native_fingerprint("echo fixture-digest-c"),
+    ] {
+        permission.tool_input_fingerprint = Some(fingerprint);
+        rig.native_drop(permission.clone()).await;
+    }
+    assert_eq!(rig.input(), None);
+    assert_eq!(
+        rig.session().await.status,
+        Some(proto::AgentStatus::Working)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn adopted_question_keeps_operator_intervention_fence_until_matching_proof() {
+    let rig = OrchestrationHandoff::new("claude", serde_json::json!([]), None).await;
+    let question = houston_core::hook_drop::HookDrop {
+        agent: Some("claude".into()),
+        event: "PreToolUse".into(),
+        tool_name: Some("AskUserQuestion".into()),
+        tool_use_id: Some("adopted-question".into()),
+        ..Default::default()
+    };
+    rig.native_drop(question.clone()).await;
+    let input = rig.input().unwrap();
+    assert_eq!(input.kind, proto::ChildInputKind::Question);
+    rig.operator_input(b"\r").await;
+    rig.handoff().await;
+    assert_eq!(rig.input(), Some(input.clone()));
+    let (status, refusal) = rig
+        .parent_post(
+            "keys",
+            serde_json::json!({"session":rig.child,"keys":["enter"]}),
+        )
+        .await;
+    assert_eq!(status, 409, "{refusal}");
+    assert!(refusal["error"]
+        .as_str()
+        .unwrap()
+        .contains("operator intervention"));
+    let mut proof = question;
+    proof.event = "PostToolUse".into();
+    proof.tool_use_id = Some("unrelated-question".into());
+    rig.native_drop(proof.clone()).await;
+    assert_eq!(rig.input(), Some(input));
+    proof.tool_use_id = Some("adopted-question".into());
+    rig.native_drop(proof).await;
+    assert_eq!(rig.input(), None);
+    let (status, reply) = rig
+        .parent_post(
+            "keys",
+            serde_json::json!({"session":rig.child,"keys":["enter"]}),
+        )
+        .await;
+    assert_eq!(status, 200, "{reply}");
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn adopted_escalated_permission_remains_operator_owned() {
+    let rig = OrchestrationHandoff::new("claude", serde_json::json!([]), None).await;
+    rig.native_drop(native_permission("claude", Some("adopted-user-owned")))
+        .await;
+    let (status, reply) = rig
+        .parent_post(
+            "escalate",
+            serde_json::json!({"child":rig.child,"reason":"Operator decision required"}),
+        )
+        .await;
+    assert_eq!(status, 200, "{reply}");
+    let input = rig.input().unwrap();
+    assert_eq!(input.owner, proto::ChildInputOwner::User);
+    rig.handoff().await;
+    assert_eq!(rig.input(), Some(input.clone()));
+    let (status, refusal) = rig
+        .parent_post(
+            "deny",
+            serde_json::json!({"child":rig.child,"episode_id":input.id}),
+        )
+        .await;
+    assert_eq!(status, 409, "{refusal}");
+    assert!(refusal["error"]
+        .as_str()
+        .unwrap()
+        .contains("belongs to the operator"));
+    assert!(!rig
+        .db()
+        .child_permission_deny_attempted(rig.child, &input.id)
+        .unwrap());
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn adopted_codex_auto_review_keeps_strict_pending_evidence_without_a_human_ask() {
+    let rig =
+        OrchestrationHandoff::new_with_approval("codex", serde_json::json!([]), None, None).await;
+    let mut permission = native_permission("codex", None);
+    permission.prompt_id = Some("adopted-auto-turn".into());
+    permission.tool_input_fingerprint = Some(native_fingerprint("echo fixture-auto-digest"));
+    rig.native_drop(permission.clone()).await;
+    assert_eq!(rig.input(), None);
+    assert_eq!(
+        rig.session().await.status,
+        Some(proto::AgentStatus::Working)
+    );
+    rig.handoff().await;
+    assert_eq!(rig.child_detail().await["turn_end_source"], "stop-hook");
+    let (status, refusal) = rig
+        .parent_post(
+            "keys",
+            serde_json::json!({"session":rig.child,"keys":["enter"]}),
+        )
+        .await;
+    assert_eq!(status, 409, "{refusal}");
+    permission.event = "PostToolUse".into();
+    permission.tool_input_fingerprint = Some(native_fingerprint("echo fixture-unmatched-digest"));
+    rig.native_drop(permission.clone()).await;
+    let (status, refusal) = rig
+        .parent_post(
+            "keys",
+            serde_json::json!({"session":rig.child,"keys":["enter"]}),
+        )
+        .await;
+    assert_eq!(status, 409, "{refusal}");
+    permission.tool_input_fingerprint = Some(native_fingerprint("echo fixture-auto-digest"));
+    rig.native_drop(permission).await;
+    let (status, reply) = rig
+        .parent_post(
+            "keys",
+            serde_json::json!({"session":rig.child,"keys":["enter"]}),
+        )
+        .await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(rig.input(), None);
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn adopted_opencode_permission_retains_request_reply_correlation_and_unsupported_deny() {
+    let rig = OrchestrationHandoff::new("opencode", serde_json::json!([]), None).await;
+    rig.native_drop(native_permission(
+        "opencode",
+        Some("adopted-opencode-request"),
+    ))
+    .await;
+    let input = rig.input().unwrap();
+    rig.handoff().await;
+    assert_eq!(rig.input(), Some(input.clone()));
+    let (status, refusal) = rig
+        .parent_post(
+            "deny",
+            serde_json::json!({"child":rig.child,"episode_id":input.id}),
+        )
+        .await;
+    assert_eq!(status, 409, "{refusal}");
+    assert!(refusal["error"].as_str().unwrap().contains("OpenCode"));
+    assert!(!rig
+        .db()
+        .child_permission_deny_attempted(rig.child, &input.id)
+        .unwrap());
+    let mut proof = native_permission("opencode", Some("unmatched-request"));
+    proof.event = "permission.replied".into();
+    rig.native_drop(proof.clone()).await;
+    assert_eq!(rig.input(), Some(input));
+    proof.request_id = Some("adopted-opencode-request".into());
+    rig.native_drop(proof).await;
+    assert_eq!(rig.input(), None);
+    assert_eq!(
+        rig.session().await.status,
+        Some(proto::AgentStatus::Working)
+    );
+}
+
+#[tokio::test]
+async fn legacy_native_needs_input_without_snapshot_refuses_prepare_and_keeps_old_pty() {
+    legacy_native_input_without_snapshot(proto::AgentStatus::NeedsInput, false);
+}
+
+#[tokio::test]
+async fn legacy_working_without_native_request_can_prepare_without_snapshot() {
+    legacy_native_input_without_snapshot(proto::AgentStatus::Working, false);
+}
+
+#[tokio::test]
+async fn legacy_working_with_durable_native_request_without_snapshot_refuses_prepare() {
+    legacy_native_input_without_snapshot(proto::AgentStatus::Working, true);
+}
+
+fn legacy_native_input_without_snapshot(status: proto::AgentStatus, pending_source: bool) {
+    use std::io::{Read, Write};
+    use std::os::fd::FromRawFd;
+    let home = tempfile::tempdir().unwrap();
+    let (sock_path, listener) = fake_old_daemon(home.path());
+    let child = spawn_candidate(home.path(), &sock_path);
+    let (mut sock, _) = listener.accept().unwrap();
+    let hello = read_hello(&mut sock);
+    assert!(hello.native_input_snapshot);
+    let (mut master_fd, mut slave_fd) = (-1, -1);
+    let result = unsafe {
+        libc::openpty(
+            &mut master_fd,
+            &mut slave_fd,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    assert_eq!(result, 0, "{}", std::io::Error::last_os_error());
+    let mut master = unsafe { std::fs::File::from_raw_fd(master_fd) };
+    let mut slave = unsafe { std::fs::File::from_raw_fd(slave_fd) };
+    let session = adoption::SessionManifest {
+        session_id: 130,
+        pid: None,
+        cols: 80,
+        rows: 24,
+        output_offset: 0,
+        state: proto::SessionState::Running,
+        status: Some(status),
+        hidden: false,
+        project_dir: home.path().display().to_string(),
+        cwd: home.path().display().to_string(),
+        title: "legacy native input".into(),
+        codename: "legacy".into(),
+        tags: vec![],
+        agent: proto::AgentKind::Claude,
+        swarm_agent: None,
+        hook_cwd: None,
+        mcp_cred: None,
+        native_input: None,
+        vt_snapshot: vec![],
+        vt_format_version: 0,
+    };
+    let channel_dir = home.path().join(".houston-dev");
+    let db = houston_core::db::Db::open(&channel_dir.join("houston.db")).unwrap();
+    let mut child_info: proto::SessionInfo = serde_json::from_value(serde_json::json!({
+        "id": session.session_id, "agent": "claude", "project_dir": session.project_dir,
+        "cwd": session.cwd, "state": "running", "status": session.status,
+        "title": session.title
+    }))
+    .unwrap();
+    // Every transferred live PTY has a session row in the retiring daemon's database.
+    if pending_source {
+        let mut parent = child_info.clone();
+        parent.id = 129;
+        parent.title = "legacy parent".into();
+        parent.status = Some(proto::AgentStatus::Working);
+        child_info.spawned_by = Some(parent.id);
+        db.insert_session(&parent).unwrap();
+    }
+    db.insert_session(&child_info).unwrap();
+    let durable_input = if pending_source {
+        db.delegation_create(129, 130, None, "native input fixture", 1)
+            .unwrap();
+        Some(
+            db.child_input_open_provider(
+                130,
+                "ToolUseId(\"legacy-permission\")",
+                proto::ChildInputKind::Permission,
+                proto::ChildInputOwner::Orchestrator,
+                None,
+                2,
+            )
+            .unwrap()
+            .0,
+        )
+    } else {
+        None
+    };
+    drop(db);
+    let manifest = adoption::Manifest {
+        version: 2,
+        generation: 2,
+        token: "legacy-adoption-token".into(),
+        sessions: vec![session],
+    };
+    let serialized = serde_json::to_string(&manifest).unwrap();
+    assert!(
+        !serialized.contains("native_input"),
+        "old manifests omit the optional field"
+    );
+    adoption::write_frame(&mut sock, &FromOld::Manifest(manifest)).unwrap();
+    let transferred = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let lock = houston_core::lock::acquire_exclusive(&channel_dir).unwrap();
+    adoption::send_fds(
+        sock.as_raw_fd(),
+        &[
+            master.as_raw_fd(),
+            transferred.as_raw_fd(),
+            lock.as_raw_fd(),
+        ],
+    )
+    .unwrap();
+    let reply = adoption::read_frame::<_, FromNew>(&mut sock).unwrap();
+    if status == proto::AgentStatus::NeedsInput || pending_source {
+        let FromNew::PrepareFailed { reason } = reply else {
+            panic!("legacy input must refuse before Prepared and Commit")
+        };
+        assert!(
+            reason.contains("native input handoff refused for session 130"),
+            "{reason}"
+        );
+        assert!(reason.contains("no recovery snapshot"), "{reason}");
+    } else {
+        assert!(
+            matches!(reply, FromNew::Prepared),
+            "legacy Working without input is adoptable: {reply:?}"
+        );
+    }
+    drop(sock);
+    assert!(!child.wait_with_output().unwrap().status.success());
+    assert!(
+        !channel_dir.join("daemon.json").exists(),
+        "no new owner was committed"
+    );
+    assert!(
+        houston_core::lock::acquire_exclusive(&channel_dir).is_err(),
+        "the original owner retains the daemon lock"
+    );
+    if let Some(input) = durable_input {
+        let db = houston_core::db::Db::open(&channel_dir.join("houston.db")).unwrap();
+        assert_eq!(db.child_input_request(130).unwrap(), Some(input));
+    }
+    slave.write_all(b"old-owner-alive\n").unwrap();
+    let mut buffer = [0; 64];
+    let count = master.read(&mut buffer).unwrap();
+    assert!(String::from_utf8_lossy(&buffer[..count]).contains("old-owner-alive"));
 }

@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 132;
+pub const PROTOCOL_VERSION: u32 = 133;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1801,6 +1801,7 @@ pub enum VoiceState {
 pub enum DelegationState {
     Spawning,
     Working,
+    AskedOrchestrator,
     NeedsInput,
     Done,
     Failed,
@@ -1819,9 +1820,86 @@ pub enum TurnEndSource {
     QuietSettle,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ChildInputKind {
+    Question,
+    Blocked,
+    Permission,
+    Unclassified,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ChildInputOwner {
+    Orchestrator,
+    User,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ChildInputEscalationReason {
+    Explicit,
+    ParentTurnEnded,
+    ParentUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ChildInputRequest {
+    pub id: String,
+    pub kind: ChildInputKind,
+    pub owner: ChildInputOwner,
+    pub reason: Option<String>,
+    pub escalation_reason: Option<ChildInputEscalationReason>,
+    pub escalation_detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional))]
+    pub permission: Option<PermissionInputDetails>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ProviderReportedText {
+    Reported { text: String },
+    NotReported { provider: AgentKind },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PermissionInputDetails {
+    pub provider: AgentKind,
+    pub command: ProviderReportedText,
+    pub block_reason: ProviderReportedText,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PaneDenyRequest {
+    pub child: u32,
+    pub episode_id: String,
+}
+
+/// Escalation details fit one bounded orchestration notice.
+pub const PANE_ESCALATION_REASON_MAX: usize = 2000;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PaneEscalateRequest {
+    pub child: u32,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct DelegationInfo {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub input_request: Option<ChildInputRequest>,
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub started_at: u64,
@@ -1875,6 +1953,10 @@ pub enum InboxKind {
     Stalled,
     OperatorNote,
     Mail,
+    Progress,
+    Question,
+    Blocked,
+    Reply,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1890,6 +1972,9 @@ pub enum InboxDeliveredVia {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct InboxRow {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub reply_to: Option<i64>,
     pub id: i64,
     pub to_session: u32,
     #[serde(default)]
@@ -1956,13 +2041,95 @@ pub struct SessionWorktree {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct DelegationResult {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub message_id: i64,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub request_id: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub from_codename: Option<String>,
     pub child: u32,
     pub role: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub ready_at: Option<u64>,
+    #[serde(default)]
+    pub provisional: bool,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub reason: Option<String>,
     pub summary: String,
     pub excerpt: String,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
     pub delivered_via: Option<InboxDeliveredVia>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum InstructionMode {
+    Queue,
+    Steer,
+    Restart,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum InstructionState {
+    Queued,
+    HeldAfterRecovery,
+    Delivered,
+    Cancelled,
+    Uncertain,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct InstructionInfo {
+    pub id: String,
+    pub mode: InstructionMode,
+    pub state: InstructionState,
+    pub request_id: Option<u32>,
+    pub preview: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at: u64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub updated_at: u64,
+    pub hold_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct InstructionQueueSnapshot {
+    pub session: u32,
+    pub queued_count: u32,
+    pub held_count: u32,
+    pub uncertain_count: u32,
+    pub hold_reason: Option<String>,
+    pub items: Vec<InstructionInfo>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct InstructionDetail {
+    pub session: u32,
+    pub instruction: InstructionInfo,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct InstructionAcceptance {
+    pub instruction_id: String,
+    pub accepted: bool,
+    pub state: InstructionState,
+    pub request_id: Option<u32>,
+    pub hold_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3089,6 +3256,29 @@ pub enum ClientMsg {
     },
     DelegationResultsList {
         parent: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        before_message_id: Option<i64>,
+    },
+    DelegationResultGet {
+        parent: u32,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        message_id: i64,
+    },
+    InstructionQueueList {
+        session: u32,
+    },
+    InstructionGet {
+        session: u32,
+        instruction_id: String,
+    },
+    InstructionCancel {
+        session: u32,
+        instruction_id: String,
+    },
+    InstructionResume {
+        session: u32,
+        instruction_id: String,
     },
     InboxList {
         workspace: String,
@@ -4343,6 +4533,33 @@ pub enum ServerMsg {
         parent: u32,
         results: Vec<DelegationResult>,
         truncated: bool,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        before_message_id: Option<i64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        next_message_id: Option<i64>,
+    },
+    DelegationResultDetail {
+        parent: u32,
+        row: InboxRow,
+    },
+    DelegationResultRefused {
+        parent: u32,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        message_id: i64,
+        message: String,
+    },
+    InstructionQueue {
+        snapshot: InstructionQueueSnapshot,
+    },
+    InstructionDetail {
+        detail: InstructionDetail,
+    },
+    InstructionRefused {
+        session: u32,
+        instruction_id: Option<String>,
+        message: String,
     },
     InboxRows {
         workspace: String,

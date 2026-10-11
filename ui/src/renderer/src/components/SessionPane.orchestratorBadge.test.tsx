@@ -1,3 +1,4 @@
+import { withInputOwner } from '../test/inputFixtures'
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -243,7 +244,7 @@ it('updates an open delegation card from the live store with unchanged roster pr
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain('working')
   act(() => store.set((previous) => new Map(previous)
     .set(1, { ...parent, children_waiting: 1 })
-    .set(2, { ...child, delegation: { ...child.delegation!, state: 'needs_input', stalled: true } })))
+    .set(2, withInputOwner({ ...child, delegation: { ...child.delegation!, state: 'needs_input', stalled: true } }, 'user'))))
   expect(badge.getAttribute('aria-label')).toContain('1 waiting on you')
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain('needs input')
 })

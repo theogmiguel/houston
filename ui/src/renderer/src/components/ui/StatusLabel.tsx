@@ -1,6 +1,7 @@
 export const STATUS_LABELS = [
   'Working',
   'Needs input',
+  'Asked orchestrator',
   'Idle',
   'Done',
   'Ended',
@@ -31,6 +32,7 @@ export type StatusLabelValue = (typeof STATUS_LABELS)[number]
 const STATUS_DOT: Record<StatusLabelValue, string> = {
   Working: 'var(--info)',
   'Needs input': 'var(--warn)',
+  'Asked orchestrator': 'var(--text-muted)',
   Idle: 'var(--text-faint)',
   Done: 'var(--ok)',
   Ended: 'var(--info)',

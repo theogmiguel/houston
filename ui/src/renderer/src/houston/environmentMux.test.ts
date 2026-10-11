@@ -274,6 +274,75 @@ describe('environmentMux', () => {
     expect(debian.sent).toEqual([])
   })
 
+  it('routes archived results and instruction controls to their owning daemon', () => {
+    const r = rig()
+    const sockets = connect(r, [{ entry: wslEntry('Ubuntu', 1) }, { entry: wslEntry('Debian', 2) }])
+    const commands = [
+      { type: 'delegation_result_get', parent: 5, message_id: 91 },
+      { type: 'instruction_queue_list', session: 6 },
+      { type: 'instruction_get', session: 6, instruction_id: 'follow-up' },
+      { type: 'instruction_cancel', session: 6, instruction_id: 'follow-up' },
+      { type: 'instruction_resume', session: 6, instruction_id: 'follow-up' }
+    ]
+
+    for (const slot of [1, 2]) {
+      for (const command of commands) {
+        const key = 'parent' in command ? 'parent' : 'session'
+        r.clientSend({ ...command, [key]: tagSession(slot, command[key]!) })
+      }
+    }
+    expect(sockets.get('Ubuntu')!.json()).toEqual(commands)
+    expect(sockets.get('Debian')!.json()).toEqual(commands)
+    expect(r.local.sent).toEqual([])
+
+    for (const command of commands) r.clientSend(command)
+    expect(r.local.json()).toEqual(commands)
+    expect(sockets.get('Ubuntu')!.json()).toEqual(commands)
+    expect(sockets.get('Debian')!.json()).toEqual(commands)
+  })
+
+  it('retags nested archived result and instruction replies without changing task identities', () => {
+    const r = rig()
+    const sockets = connect(r, [{ entry: wslEntry('Ubuntu', 1) }, { entry: wslEntry('Debian', 2) }])
+    const row = {
+      id: 91, to_session: 5, original_to: 4, workspace: '/home/u/p', from_session: 6,
+      request_id: 2, kind: 'result', urgent: false, summary: 'Done', body: 'Completed work',
+      artifacts: [], superseded: 0, provisional: false, created_at: 1, attempts: 0
+    }
+    const instruction = {
+      id: 'follow-up', mode: 'queue', state: 'queued', request_id: 2, preview: 'Review',
+      created_at: 1, updated_at: 1, hold_reason: 'busy'
+    }
+    const snapshot = {
+      session: 6, queued_count: 1, held_count: 0, uncertain_count: 0, hold_reason: 'busy',
+      items: [instruction], truncated: false
+    }
+    const messages = [
+      { type: 'delegation_result_detail', parent: 5, row },
+      { type: 'delegation_result_refused', parent: 5, message_id: 91, message: 'Not retained' },
+      { type: 'instruction_queue', snapshot },
+      { type: 'instruction_detail', detail: { session: 6, instruction, body: 'Review' } },
+      { type: 'instruction_refused', session: 6, instruction_id: 'follow-up', message: 'Delivered' }
+    ]
+
+    for (const [distro, slot] of [['Ubuntu', 1], ['Debian', 2]] as const) {
+      for (const message of messages) sockets.get(distro)!.receive(message)
+      expect(r.deliveredJson().slice(-5)).toEqual([
+        { ...messages[0], parent: tagSession(slot, 5), row: {
+          ...row, to_session: tagSession(slot, 5), original_to: tagSession(slot, 4),
+          from_session: tagSession(slot, 6)
+        } },
+        { ...messages[1], parent: tagSession(slot, 5) },
+        { ...messages[2], snapshot: { ...snapshot, session: tagSession(slot, 6) } },
+        { ...messages[3], detail: { session: tagSession(slot, 6), instruction, body: 'Review' } },
+        { ...messages[4], session: tagSession(slot, 6) }
+      ])
+    }
+
+    for (const message of messages) r.local.receive(message)
+    expect(r.deliveredJson().slice(-5)).toEqual(messages)
+  })
+
   it('routes path and global messages', () => {
     const r = rig()
     const sockets = connect(r, [

@@ -5098,6 +5098,17 @@ impl Daemon {
     /// The in-process status hook: a Working or Spawning pane moves its task to
     /// in progress, a NeedsInput pane flags its run, and Idle changes nothing.
     pub(super) fn tasks_on_session_status(&self, session: u32, status: proto::AgentStatus) {
+        let status = self
+            .delegation_of(session)
+            .and_then(|row| row.input_request)
+            .map(|input| {
+                if input.owner == proto::ChildInputOwner::User {
+                    proto::AgentStatus::NeedsInput
+                } else {
+                    proto::AgentStatus::Working
+                }
+            })
+            .unwrap_or(status);
         let run = match self.db.open_task_run_for_session(session) {
             Ok(Some(run)) => run,
             Ok(None) => return,

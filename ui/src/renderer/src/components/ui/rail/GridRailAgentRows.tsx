@@ -1,3 +1,4 @@
+import { attentionLabel, attentionStatus } from '../../../sessionAttention'
 import type { SessionInfo } from '../../../houston/client'
 import type { RailAgentRow } from '../../rail/railCardModel'
 import type { AgentActivityMode, RailCardMode, RailCardProperty } from '../../../railPrefs'
@@ -6,13 +7,13 @@ import { IconAgent } from '../../icons'
 import { Tooltip } from '../Tooltip'
 
 function AgentStatusDot({ session, now }: { session: SessionInfo; now: number }): React.JSX.Element {
-  const quiet = session.status === 'working' && session.status_since_ms != null && now - session.status_since_ms >= 10 * 60_000
+  const quiet = attentionStatus(session) === 'working' && session.status_since_ms != null && now - session.status_since_ms >= 10 * 60_000
   return quiet ? (
     <Tooltip label={`No recent update from ${session.agent}`}>
       <span aria-label={`No recent update from ${session.agent}`} className="inline-block size-2 flex-none rounded-full border border-[var(--info)] bg-transparent" />
     </Tooltip>
   ) : (
-    <span aria-hidden data-testid="agent-row-dot" className={`inline-block ${session.status === 'working' ? 'size-[9px]' : 'size-2'} flex-none rounded-full ${agentRowDotClass(session.status)}`} />
+    <span aria-label={attentionLabel(session)} data-testid="agent-row-dot" className={`inline-block ${attentionStatus(session) === 'working' ? 'size-[9px]' : 'size-2'} flex-none rounded-full ${agentRowDotClass(attentionStatus(session))}`} />
   )
 }
 
@@ -32,7 +33,7 @@ function agentRowDotClass(status: SessionInfo['status']): string {
 }
 
 function ageLabel(session: SessionInfo, now: number): string {
-  if (session.status === 'working') return 'now'
+  if (attentionStatus(session) === 'working') return 'now'
   const elapsed = Math.max(0, now - (session.status_since_ms ?? now))
   const minutes = Math.floor(elapsed / 60_000)
   if (minutes < 1) return 'now'

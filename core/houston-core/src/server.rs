@@ -1,6 +1,9 @@
 //! The `/ws` endpoint: one socket carries control as JSON text frames and PTY
 //! bytes as binary frames, in both directions. It binds loopback only, since
 //! the renderer's WebSocket API cannot dial a unix socket.
+#[path = "server_orchestration_doors.rs"]
+mod orchestration_doors;
+
 use anyhow::Result;
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -68,6 +71,26 @@ pub async fn start_with_listener(
         .route("/orchestrate/wait", post(orch_wait))
         .route("/orchestrate/kill", post(orch_kill))
         .route("/orchestrate/submit", post(orch_submit))
+        .route("/orchestrate/report", post(orch_report))
+        .route("/orchestrate/reply", post(orch_reply))
+        .route("/orchestrate/deny", post(orchestration_doors::deny))
+        .route("/orchestrate/escalate", post(orchestration_doors::escalate))
+        .route(
+            "/orchestrate/instruction-list",
+            get(orchestration_doors::instruction_list),
+        )
+        .route(
+            "/orchestrate/instruction-get",
+            get(orchestration_doors::instruction_get),
+        )
+        .route(
+            "/orchestrate/instruction-cancel",
+            post(orchestration_doors::instruction_cancel),
+        )
+        .route(
+            "/orchestrate/instruction-resume",
+            post(orchestration_doors::instruction_resume),
+        )
         .route("/orchestrate/pr-watch", post(orch_pr_watch))
         .route("/orchestrate/pr-unwatch", post(orch_pr_unwatch))
         .route("/harness/publish", post(harness_publish))
@@ -690,6 +713,9 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::BrowserToolResult { .. }
             | proto::ClientMsg::InboxList { .. }
             | proto::ClientMsg::DelegationResultsList { .. }
+            | proto::ClientMsg::DelegationResultGet { .. }
+            | proto::ClientMsg::InstructionQueueList { .. }
+            | proto::ClientMsg::InstructionGet { .. }
             | proto::ClientMsg::TaskSnapshot { .. }
             | proto::ClientMsg::TaskGet { .. }
             | proto::ClientMsg::TaskProjectsList { .. }
@@ -1958,11 +1984,117 @@ async fn dispatch(
             let _ = send_msg(sink, &proto::ServerMsg::WorkspaceList { workspaces }).await;
             Ok(())
         }
-        proto::ClientMsg::DelegationResultsList { parent } => {
+        proto::ClientMsg::DelegationResultsList {
+            parent,
+            before_message_id,
+        } => {
             let daemon = Arc::clone(daemon);
-            let msg = tokio::task::spawn_blocking(move || daemon.delegation_results_list(parent))
-                .await
-                .map_err(|e| anyhow::anyhow!("result lookup task panicked: {e}"))??;
+            let msg = tokio::task::spawn_blocking(move || {
+                daemon.delegation_results_page(parent, before_message_id)
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("result lookup task panicked: {e}"))??;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::DelegationResultGet { parent, message_id } => {
+            let daemon = Arc::clone(daemon);
+            let result = tokio::task::spawn_blocking(move || {
+                daemon.delegation_result_get(parent, message_id)
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("result detail task panicked: {error}"))?;
+            let msg = result.unwrap_or_else(|error| proto::ServerMsg::DelegationResultRefused {
+                parent,
+                message_id,
+                message: error.to_string(),
+            });
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::InstructionQueueList { session } => {
+            let daemon = Arc::clone(daemon);
+            let result =
+                tokio::task::spawn_blocking(move || daemon.instruction_queue(None, session))
+                    .await
+                    .map_err(|error| anyhow::anyhow!("instruction queue task panicked: {error}"))?;
+            let msg = match result {
+                Ok(snapshot) => proto::ServerMsg::InstructionQueue { snapshot },
+                Err(error) => proto::ServerMsg::InstructionRefused {
+                    session,
+                    instruction_id: None,
+                    message: error.to_string(),
+                },
+            };
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::InstructionGet {
+            session,
+            instruction_id,
+        } => {
+            let daemon = Arc::clone(daemon);
+            let id = instruction_id.clone();
+            let result =
+                tokio::task::spawn_blocking(move || daemon.instruction_get(None, session, &id))
+                    .await
+                    .map_err(|error| {
+                        anyhow::anyhow!("instruction detail task panicked: {error}")
+                    })?;
+            let msg = match result {
+                Ok(detail) => proto::ServerMsg::InstructionDetail { detail },
+                Err(error) => proto::ServerMsg::InstructionRefused {
+                    session,
+                    instruction_id: Some(instruction_id),
+                    message: error.to_string(),
+                },
+            };
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::InstructionCancel {
+            session,
+            instruction_id,
+        } => {
+            let daemon = Arc::clone(daemon);
+            let id = instruction_id.clone();
+            let result =
+                tokio::task::spawn_blocking(move || daemon.instruction_cancel(None, session, &id))
+                    .await
+                    .map_err(|error| {
+                        anyhow::anyhow!("instruction cancellation task panicked: {error}")
+                    })?;
+            let msg = match result {
+                Ok(snapshot) => proto::ServerMsg::InstructionQueue { snapshot },
+                Err(error) => proto::ServerMsg::InstructionRefused {
+                    session,
+                    instruction_id: Some(instruction_id),
+                    message: error.to_string(),
+                },
+            };
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::InstructionResume {
+            session,
+            instruction_id,
+        } => {
+            let daemon = Arc::clone(daemon);
+            let id = instruction_id.clone();
+            let result =
+                tokio::task::spawn_blocking(move || daemon.instruction_resume(None, session, &id))
+                    .await
+                    .map_err(|error| {
+                        anyhow::anyhow!("instruction resumption task panicked: {error}")
+                    })?;
+            let msg = match result {
+                Ok(snapshot) => proto::ServerMsg::InstructionQueue { snapshot },
+                Err(error) => proto::ServerMsg::InstructionRefused {
+                    session,
+                    instruction_id: Some(instruction_id),
+                    message: error.to_string(),
+                },
+            };
             let _ = send_msg(sink, &msg).await;
             Ok(())
         }
@@ -4475,15 +4607,21 @@ struct PromptBody {
 async fn orch_prompt(
     State(daemon): State<Arc<Daemon>>,
     headers: HeaderMap,
-    axum::Json(body): axum::Json<PromptBody>,
+    payload: Result<axum::Json<PromptBody>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let scope = match orch_scope(&daemon, &headers) {
         Ok(s) => s,
         Err(r) => return *r,
     };
+    let axum::Json(body) = match payload {
+        Ok(body) => body,
+        Err(error) => return orch_error(StatusCode::BAD_REQUEST, anyhow::anyhow!(
+            "prompt payload: expected {{session: positive integer, text: nonblank string, client_request_id?: string, mode?: queue|steer|restart}}; {}", error.body_text()
+        )),
+    };
     let mode = body.mode.clone().unwrap_or_else(|| "queue".into());
     let result = tokio::task::spawn_blocking(move || {
-        daemon.orchestrate_prompt_request(
+        daemon.orchestrate_instruction_request(
             scope.session_id,
             body.session,
             &body.text,
@@ -4493,20 +4631,15 @@ async fn orch_prompt(
     })
     .await
     .unwrap_or_else(|e| Err(anyhow::anyhow!("orchestrate prompt panicked: {e}")));
-    let (source, status, held) = match result {
+    let (acceptance, source, status) = match result {
         Ok(result) => result,
         Err(e) => return orch_err_response(e),
     };
-
     (
         StatusCode::OK,
-        axum::Json(json!({
-            "mode": mode,
-            "queued": true,
-            "held": held,
-            "status_source": source,
-            "status_after": status,
-        })),
+        axum::Json(crate::orchestrate::doors::prompt_output(
+            acceptance, source, status, &mode,
+        )),
     )
         .into_response()
 }
@@ -5248,6 +5381,42 @@ async fn orch_submit(
         )
             .into_response(),
         Err(e) => orch_err_response(e),
+    }
+}
+
+async fn orch_report(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(payload): axum::Json<crate::orchestrate::WorkerReport>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(r) => return *r,
+    };
+    match tokio::task::spawn_blocking(move || daemon.orchestrate_report(scope.session_id, payload))
+        .await
+    {
+        Ok(Ok(value)) => (StatusCode::OK, axum::Json(value)).into_response(),
+        Ok(Err(e)) => orch_err_response(e),
+        Err(e) => orch_err_response(anyhow::anyhow!("report worker failed: {e}")),
+    }
+}
+
+async fn orch_reply(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(payload): axum::Json<crate::orchestrate::WorkerReply>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(r) => return *r,
+    };
+    match tokio::task::spawn_blocking(move || daemon.orchestrate_reply(scope.session_id, payload))
+        .await
+    {
+        Ok(Ok(value)) => (StatusCode::OK, axum::Json(value)).into_response(),
+        Ok(Err(e)) => orch_err_response(e),
+        Err(e) => orch_err_response(anyhow::anyhow!("reply worker failed: {e}")),
     }
 }
 
