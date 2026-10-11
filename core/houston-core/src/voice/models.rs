@@ -80,6 +80,11 @@ impl Manager {
     }
 
     pub fn cooldown_remaining(&self, models_dir: &Path, id: &str) -> Option<Duration> {
+        find(id)?;
+        self.cooldown_for_id(models_dir, id)
+    }
+
+    fn cooldown_for_id(&self, models_dir: &Path, id: &str) -> Option<Duration> {
         let _guard = self.lock.lock().expect("model download failures lock");
         let ledger = Self::read_ledger(models_dir);
         let state = ledger.get(id)?;
@@ -951,7 +956,7 @@ mod tests {
         let models_dir = dir.path();
         let manager = Manager::new();
         assert_eq!(
-            manager.cooldown_remaining(models_dir, "x"),
+            manager.cooldown_for_id(models_dir, "x"),
             None,
             "no attempts yet: no cooldown"
         );
@@ -959,15 +964,20 @@ mod tests {
             manager.record_failure(models_dir, "x");
         }
         assert_eq!(
-            manager.cooldown_remaining(models_dir, "x"),
+            manager.cooldown_for_id(models_dir, "x"),
             None,
             "fewer than {MAX_CONSECUTIVE_FAILURES} failures must not cool down yet"
         );
         manager.record_failure(models_dir, "x");
         let remaining = manager
-            .cooldown_remaining(models_dir, "x")
+            .cooldown_for_id(models_dir, "x")
             .expect("MAX_CONSECUTIVE_FAILURES in a row must engage the cooldown");
         assert!(remaining <= COOLDOWN && remaining > Duration::ZERO);
+        assert_eq!(
+            manager.cooldown_remaining(models_dir, "x"),
+            None,
+            "public cooldown lookup must ignore IDs outside the catalog"
+        );
     }
 
     #[test]
@@ -978,16 +988,16 @@ mod tests {
         for _ in 0..MAX_CONSECUTIVE_FAILURES {
             first.record_failure(models_dir, "x");
         }
-        assert!(first.cooldown_remaining(models_dir, "x").is_some());
+        assert!(first.cooldown_for_id(models_dir, "x").is_some());
 
         let restarted = Manager::new();
         assert!(
-            restarted.cooldown_remaining(models_dir, "x").is_some(),
+            restarted.cooldown_for_id(models_dir, "x").is_some(),
             "a restarted daemon must not hand back a clean slate"
         );
 
         let other = tempfile::tempdir().unwrap();
-        assert_eq!(restarted.cooldown_remaining(other.path(), "x"), None);
+        assert_eq!(restarted.cooldown_for_id(other.path(), "x"), None);
     }
 
     #[test]
@@ -995,7 +1005,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(FAILURES_FILE), "{ not json").unwrap();
         let manager = Manager::new();
-        assert_eq!(manager.cooldown_remaining(dir.path(), "x"), None);
+        assert_eq!(manager.cooldown_for_id(dir.path(), "x"), None);
     }
 
     #[test]
@@ -1006,10 +1016,10 @@ mod tests {
         for _ in 0..MAX_CONSECUTIVE_FAILURES {
             manager.record_failure(models_dir, "x");
         }
-        assert!(manager.cooldown_remaining(models_dir, "x").is_some());
+        assert!(manager.cooldown_for_id(models_dir, "x").is_some());
         manager.record_success(models_dir, "x");
         assert_eq!(
-            manager.cooldown_remaining(models_dir, "x"),
+            manager.cooldown_for_id(models_dir, "x"),
             None,
             "a subsequent success must clear the cooldown, not just decay it"
         );
