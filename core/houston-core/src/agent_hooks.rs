@@ -378,6 +378,12 @@ fn codex_wake_notify(path: &Path, sentinel: &str) -> Result<bool> {
     }
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     let marker = parked_marker(sentinel);
+    let current = text
+        .parse::<toml::Value>()
+        .with_context(|| format!("validating {} before restoring notify", path.display()))?;
+    if lines.iter().any(|line| is_parked(line, sentinel)) && current.get("notify").is_some() {
+        bail!("{}: cannot restore parked notify: an active user replacement exists; kept the replacement and parked original", path.display());
+    }
     let mut restored = false;
     for line in lines.iter_mut() {
         if !is_parked(line, sentinel) {
@@ -400,6 +406,8 @@ fn codex_wake_notify(path: &Path, sentinel: &str) -> Result<bool> {
     }
     let mut out = lines.join("\n");
     out.push('\n');
+    out.parse::<toml::Value>()
+        .with_context(|| format!("validating {} after restoring notify", path.display()))?;
     atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))?;
     Ok(true)
 }
@@ -1483,6 +1491,27 @@ mod tests {
                 original,
                 "unchanged hooks must keep their trust ordinals and original formatting"
             );
+        }
+    }
+
+    #[test]
+    fn codex_uninstall_preserves_user_notify_replacement() {
+        for sentinel in [DEV, RELEASE] {
+            let dir = tempfile::tempdir().unwrap();
+            let h = home(&dir);
+            let config = codex_config_toml(&h);
+            std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+            std::fs::write(&config, "notify = [\"old\"]\n").unwrap();
+            install(proto::AgentKind::Codex, &h, &launcher(), sentinel).unwrap();
+            let text = format!("notify = [\"replacement\"]\n{}", read(&config));
+            std::fs::write(&config, text).unwrap();
+            let error = uninstall(proto::AgentKind::Codex, &h, sentinel).unwrap_err();
+            assert!(format!("{error:#}").contains("active user replacement"));
+            let saved = read(&config);
+            let parsed = saved.parse::<toml::Value>().unwrap();
+            assert_eq!(parsed["notify"][0].as_str(), Some("replacement"));
+            assert!(saved.contains(&parked_marker(sentinel)));
+            assert!(!read(&config_path(proto::AgentKind::Codex, &h).unwrap()).contains(sentinel));
         }
     }
 
