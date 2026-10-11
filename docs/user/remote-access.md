@@ -206,7 +206,10 @@ computer are available from the desktop application.
    it and **Remove** turns notifications off.
 3. Adjust **Delay** (30 seconds by default, up to 600). A pane must keep waiting for that
    long before the notification goes out; if you answer on the desktop sooner, nothing is
-   sent. Each time a pane starts waiting, at most one notification is sent.
+   sent. Each time a pane starts waiting, at most one notification is sent. Closing
+   the pane cancels its pending notification. The current notification settings and
+   topic apply when the delay ends; turning off finished-turn notifications also
+   cancels finished-turn notifications still waiting to be sent.
 
 Tapping a notification with a pane link opens that pane on the paired device. A late link
 shows **Already answered** when the conversation reports an answer, or **No request
