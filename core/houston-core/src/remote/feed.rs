@@ -1066,6 +1066,18 @@ impl Store {
         })
     }
 
+    pub fn note_input_answer(&self, session: u32) -> bool {
+        self.with(|inner| {
+            match inner.sessions.get_mut(&session).and_then(|f| f.pending.as_mut()) {
+                Some(p) if matches!(p.card, Card::Input) && p.answered.is_none() => {
+                    p.answered = Some(Answered::Elsewhere);
+                    true
+                }
+                _ => false,
+            }
+        })
+    }
+
     pub fn page(&self, session: u32, after: u64) -> FeedPage {
         self.with(|inner| {
             let epoch = inner.epoch.clone();

@@ -581,7 +581,7 @@ impl Daemon {
     }
 
     fn remote_note_keystroke_from(&self, id: u32, origin: &'static str) {
-        if self.remote.feed.note_keystroke(id) {
+        if self.remote.feed.note_keystroke(id) || self.remote.feed.note_input_answer(id) {
             self.remote_activity(id, "answered", Some(origin));
             self.remote_emit(id, Change::Session(id));
         }

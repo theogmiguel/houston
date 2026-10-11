@@ -881,3 +881,22 @@ fn activity_ring_masks_and_pages_evicted_entries() {
     store.set_collecting(false);
     assert!(store.activity_page(0).entries.is_empty());
 }
+
+#[tokio::test]
+async fn activity_identifies_phone_keys_for_an_unstructured_request() {
+    let (_addr, _state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["sleep", "30"]);
+    daemon.handle_hook(info.id, "PermissionRequest", None);
+    let body = serde_json::json!({"keys":["esc"]}).to_string();
+    let sent = request(addr, "POST", &format!("/api/sessions/{}/input", info.id), Some(&token), Some(&body)).await;
+    assert_eq!(sent.status, 200);
+    daemon.handle_hook(info.id, "PostToolUse", None);
+    let page = request(addr, "GET", "/api/activity", Some(&token), None).await.json();
+    let answers: Vec<_> = page["entries"].as_array().unwrap().iter().filter(|e| e["kind"] == "answered").collect();
+    assert_eq!(answers.len(), 1);
+    assert_eq!(answers[0]["excerpt"], "from this phone");
+    daemon.kill(info.id).unwrap();
+}
