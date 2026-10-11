@@ -123,10 +123,12 @@ async fn update_policy_set_off_is_broadcast_as_disabled() {
 }
 
 // The daemon boots one update check and one catalog refresh. Pointing both at a local
-// listener proves the override reaches a spawned binary and that neither request leaves
-// the machine: without the override the paths below never arrive here.
+// listener proves the override reaches a spawned binary: without it the paths below never
+// arrive here. Unix only, like the other spawned-daemon suites: `hermetic_command` drops
+// `SystemRoot` on Windows and the child's Winsock then fails to initialise.
+#[cfg(unix)]
 #[tokio::test]
-async fn a_spawned_daemon_asks_only_the_configured_endpoints() {
+async fn a_spawned_daemon_requests_both_configured_endpoints() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
