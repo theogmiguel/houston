@@ -75,7 +75,7 @@ import type { UsageSummaryMsg } from "./components/UsageSection";
 import type { UsageActivityDay } from "./houston/generated/UsageActivityDay";
 import { daemonStatus } from "./houston/manage";
 import { stopDaemonThenQuit, useTrayBridge } from "./houston/useTray";
-import { stopConfirmCopy } from "./components/daemonStopConfirmCopy";
+import { quitConfirmCopy } from "./components/daemonStopConfirmCopy";
 import { QuitAndStopDaemonConfirm } from "./components/QuitAndStopDaemonConfirm";
 import { useBrowserFocus } from "./houston/browserFocus";
 import {
@@ -3519,9 +3519,9 @@ export function App(): React.JSX.Element {
     quitAndStopDaemon: () => {
       void daemonStatus().then(
         (status) =>
-          setQuitAndStopDaemonConfirm({ message: stopConfirmCopy(status) }),
+          setQuitAndStopDaemonConfirm({ message: quitConfirmCopy(status) }),
         () =>
-          setQuitAndStopDaemonConfirm({ message: stopConfirmCopy(null) }),
+          setQuitAndStopDaemonConfirm({ message: quitConfirmCopy(null) }),
       );
     },
     selectNavRow,
