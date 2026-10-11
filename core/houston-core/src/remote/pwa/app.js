@@ -420,7 +420,15 @@
     });
   }
 
-  function avatar(s) { return el("span", "tav " + s.kind, kindName(s.kind).slice(0, 1)); }
+  function avatar(s) { return el("span", "kd " + s.kind, s.kind === "codex" ? "X" : kindName(s.kind).slice(0, 1)); }
+
+  function providerGlyph(kind) {
+    if (kind !== "claude" && kind !== "codex" && kind !== "opencode") return document.createTextNode(kindName(kind).slice(0, 1));
+    var ns = "http://www.w3.org/2000/svg", icon = document.createElementNS(ns, "svg"), use = document.createElementNS(ns, "use");
+    icon.setAttribute("class", "pg"); icon.setAttribute("aria-hidden", "true");
+    use.setAttribute("href", "#p-" + kind); icon.appendChild(use);
+    return icon;
+  }
 
   function renderInbox(root) {
     var needs = S.sessions.filter(function (s) { return s.state === "running" && s.status === "needs-input"; });
@@ -572,7 +580,7 @@
     $("subheading").textContent = s.workspace.name + " · " + kindName(s.kind);
     var parent = s.parent != null ? session(s.parent) : null;
     if (parent) $("subheading").textContent = (parent.title || "Pane " + parent.id) + " / " + s.workspace.name;
-    $("provider-avatar").className = "tav " + s.kind; $("provider-avatar").textContent = kindName(s.kind).slice(0, 1);
+    $("provider-avatar").className = "tav " + s.kind; $("provider-avatar").replaceChildren(providerGlyph(s.kind));
     var st = statusOf(s), chip = $("pane-status");
     chip.className = "status " + st.cls;
     chip.textContent = st.label;

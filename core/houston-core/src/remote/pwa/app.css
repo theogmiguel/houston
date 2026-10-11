@@ -405,6 +405,11 @@ body[data-view="list"] .view { padding-bottom: calc(90px + env(safe-area-inset-b
 .tav { width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--border); background: var(--card-hover); display: inline-grid; place-items: center; font-size: 16px; font-weight: 600; flex: none; }
 .tav.claude { color: var(--claude); }
 .tav.antigravity { color: var(--antigravity); }
+.provider-symbols { position: absolute; width: 0; height: 0; overflow: hidden; }
+.tav svg.pg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+.kd { width: 22px; height: 22px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #0a0a0b; background: var(--text-secondary); flex: none; }
+.kd.claude { background: var(--claude); }
+.kd.antigravity { background: var(--antigravity); }
 .bar .status { padding: 5px 6px; border-radius: 5px; background: var(--hover-fill); font-size: 10px; text-transform: uppercase; font-weight: 700; }
 .bar .status.needs-input { background: var(--status-todo-bg); color: var(--warn); }
 .bar .status.working { background: color-mix(in srgb, var(--info) 14%, transparent); color: var(--info); }
