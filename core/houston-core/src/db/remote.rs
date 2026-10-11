@@ -94,11 +94,13 @@ impl Db {
 
     pub fn remote_device_hash(&self, id: i64) -> Result<Option<String>> {
         let conn = self.conn.lock().expect("db lock");
-        Ok(conn.query_row(
-            "SELECT token_hash FROM remote_devices WHERE id = ?1",
-            rusqlite::params![id],
-            |row| row.get(0),
-        ).optional()?)
+        Ok(conn
+            .query_row(
+                "SELECT token_hash FROM remote_devices WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .optional()?)
     }
 
     /// Returns whether a row was deleted.

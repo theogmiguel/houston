@@ -75,7 +75,8 @@ fn step_category(tool: &str) -> &'static str {
     match tool {
         "Read" | "read_file" | "read" => "read",
         "Grep" | "Glob" | "WebSearch" | "search" | "grep" | "glob" => "search",
-        "Edit" | "MultiEdit" | "Write" | "NotebookEdit" | "edit" | "write" | "edit_file" | "write_file" | "apply_patch" => "edit",
+        "Edit" | "MultiEdit" | "Write" | "NotebookEdit" | "edit" | "write" | "edit_file"
+        | "write_file" | "apply_patch" => "edit",
         "Bash" | "Shell" | "shell" | "run_command" | "exec_command" => "run",
         _ => "other",
     }
@@ -123,7 +124,10 @@ fn edit_diff(tool: &str, input: Option<&serde_json::Value>) -> Option<EditDiff> 
         let parts = if tool == "Write" {
             vec![("+", str_at(edit, "content")?)]
         } else {
-            vec![("-", str_at(edit, "old_string")?), ("+", str_at(edit, "new_string")?)]
+            vec![
+                ("-", str_at(edit, "old_string")?),
+                ("+", str_at(edit, "new_string")?),
+            ]
         };
         for (op, text) in parts {
             for raw in text.lines() {
@@ -132,12 +136,16 @@ fn edit_diff(tool: &str, input: Option<&serde_json::Value>) -> Option<EditDiff> 
                     break 'edits;
                 }
                 let hidden = raw.chars().any(is_format_char);
-                let clean: String = raw.chars()
+                let clean: String = raw
+                    .chars()
                     .filter(|c| (!c.is_control() || *c == '\t') && !is_format_char(*c))
                     .collect();
                 let masked = mask(&clean);
                 diff.truncated |= hidden || masked.chars().count() > DIFF_LINE_MAX_CHARS;
-                let line = DiffLine { op: op.into(), text: cut_chars(&masked, DIFF_LINE_MAX_CHARS) };
+                let line = DiffLine {
+                    op: op.into(),
+                    text: cut_chars(&masked, DIFF_LINE_MAX_CHARS),
+                };
                 let weight = serde_json::to_vec(&line).ok()?.len() + 1;
                 if bytes + weight > DIFF_MAX_BYTES {
                     diff.truncated = true;
@@ -447,7 +455,8 @@ pub fn from_hook(
             let (target, truncated) = tool_target(tool_input(&v), SUMMARY_MAX_CHARS, true);
             Some(HookFeed::Permission {
                 diff: if provider == proto::AgentKind::Claude {
-                    name.as_deref().and_then(|tool| edit_diff(tool, tool_input(&v)))
+                    name.as_deref()
+                        .and_then(|tool| edit_diff(tool, tool_input(&v)))
                 } else {
                     None
                 },
@@ -462,9 +471,15 @@ pub fn from_hook(
         }
         "PostToolUse" => Some(HookFeed::Step {
             target: tool_target(tool_input(&v), STEP_MAX_CHARS, false).0,
-            edited_path: name.as_deref().filter(|tool| step_category(tool) == "edit")
+            edited_path: name
+                .as_deref()
+                .filter(|tool| step_category(tool) == "edit")
                 .and_then(|_| tool_input(&v))
-                .and_then(|input| str_at(input, "file_path").or_else(|| str_at(input, "path")).or_else(|| str_at(input, "notebook_path")))
+                .and_then(|input| {
+                    str_at(input, "file_path")
+                        .or_else(|| str_at(input, "path"))
+                        .or_else(|| str_at(input, "notebook_path"))
+                })
                 .map(|path| cut_chars(&mask_text(path), TURN_PATH_MAX_CHARS)),
             tool: name?,
         }),
@@ -551,10 +566,18 @@ impl FeedItem {
                         .map_or(0, |a| a.iter().map(String::len).sum())
             }
             FeedItem::Answer { answers } => answers.iter().map(String::len).sum(),
-            FeedItem::Permission { tool, target, diff, .. } => {
-                tool.len() + target.len() + diff.as_ref().map_or(0, |d| {
-                    d.path.len() + d.lines.iter().map(|l| l.op.len() + l.text.len() + 32).sum::<usize>()
-                })
+            FeedItem::Permission {
+                tool, target, diff, ..
+            } => {
+                tool.len()
+                    + target.len()
+                    + diff.as_ref().map_or(0, |d| {
+                        d.path.len()
+                            + d.lines
+                                .iter()
+                                .map(|l| l.op.len() + l.text.len() + 32)
+                                .sum::<usize>()
+                    })
             }
             FeedItem::Step { tool, target } => tool.len() + target.len(),
             FeedItem::Status { .. } => 0,
@@ -714,7 +737,11 @@ pub enum Refusal {
     Unsupported(String),
     /// Approving a target the device could not see in full.
     Partial,
-    PartialDiff { lines: usize, line_chars: usize, bytes: usize },
+    PartialDiff {
+        lines: usize,
+        line_chars: usize,
+        bytes: usize,
+    },
     /// The choice does not answer this card.
     Choice(String),
 }
@@ -813,7 +840,10 @@ impl Store {
                 }
                 FeedItem::Prompt { .. } => {
                     feed.last_step = None;
-                    feed.turn = Turn { prompted_at: Some(now_ms), ..Default::default() };
+                    feed.turn = Turn {
+                        prompted_at: Some(now_ms),
+                        ..Default::default()
+                    };
                 }
                 _ => {}
             }
@@ -849,9 +879,18 @@ impl Store {
         })
     }
 
-    pub fn activity_push(&self, session: u32, kind: &'static str, title: &str, excerpt: Option<&str>, now_ms: u64) {
+    pub fn activity_push(
+        &self,
+        session: u32,
+        kind: &'static str,
+        title: &str,
+        excerpt: Option<&str>,
+        now_ms: u64,
+    ) {
         self.with(|inner| {
-            if !inner.collecting { return; }
+            if !inner.collecting {
+                return;
+            }
             inner.activity_seq += 1;
             inner.activity.push_back(ActivityEntry {
                 seq: inner.activity_seq,
@@ -870,14 +909,24 @@ impl Store {
     pub fn activity_page(&self, after: u64) -> ActivityPage {
         self.with(|inner| ActivityPage {
             epoch: inner.epoch.clone(),
-            entries: inner.activity.iter().filter(|e| e.seq > after).cloned().collect(),
-            truncated: inner.activity.front().is_some_and(|e| after.saturating_add(1) < e.seq && after < inner.activity_seq),
+            entries: inner
+                .activity
+                .iter()
+                .filter(|e| e.seq > after)
+                .cloned()
+                .collect(),
+            truncated: inner
+                .activity
+                .front()
+                .is_some_and(|e| after.saturating_add(1) < e.seq && after < inner.activity_seq),
         })
     }
 
     pub fn note_edited_path(&self, session: u32, path: &str) {
         self.with(|inner| {
-            if !inner.collecting { return; }
+            if !inner.collecting {
+                return;
+            }
             let files = &mut inner.sessions.entry(session).or_default().turn.files;
             let path = cut_chars(&mask_text(path), TURN_PATH_MAX_CHARS);
             if !path.is_empty() && files.len() < TURN_FILES_MAX && !files.contains(&path) {
@@ -888,7 +937,9 @@ impl Store {
 
     pub fn end_turn(&self, session: u32, outcome: &'static str, now_ms: u64) -> Option<FeedItem> {
         self.with(|inner| {
-            if !inner.collecting { return None; }
+            if !inner.collecting {
+                return None;
+            }
             let turn = std::mem::take(&mut inner.sessions.entry(session).or_default().turn);
             Some(FeedItem::TurnEnd {
                 duration_ms: turn.prompted_at.map_or(0, |at| now_ms.saturating_sub(at)),
@@ -1029,7 +1080,12 @@ impl Store {
                 if let Some(diff) = p.diff.as_ref().filter(|d| d.truncated) {
                     return Err(Refusal::PartialDiff {
                         lines: diff.lines.len(),
-                        line_chars: diff.lines.iter().map(|l| l.text.chars().count()).max().unwrap_or(0),
+                        line_chars: diff
+                            .lines
+                            .iter()
+                            .map(|l| l.text.chars().count())
+                            .max()
+                            .unwrap_or(0),
                         bytes: serde_json::to_vec(diff).map_or(0, |v| v.len()),
                     });
                 }
@@ -1077,7 +1133,11 @@ impl Store {
 
     pub fn note_input_answer(&self, session: u32) -> bool {
         self.with(|inner| {
-            match inner.sessions.get_mut(&session).and_then(|f| f.pending.as_mut()) {
+            match inner
+                .sessions
+                .get_mut(&session)
+                .and_then(|f| f.pending.as_mut())
+            {
                 Some(p) if matches!(p.card, Card::Input) && p.answered.is_none() => {
                     p.answered = Some(Answered::Elsewhere);
                     true

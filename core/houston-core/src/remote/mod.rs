@@ -77,7 +77,11 @@ pub(crate) fn host_name() -> String {
     };
     #[cfg(not(unix))]
     let raw = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "localhost".to_string());
-    feed::mask(&raw).chars().filter(|c| !c.is_control()).take(HOST_NAME_MAX_CHARS).collect()
+    feed::mask(&raw)
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(HOST_NAME_MAX_CHARS)
+        .collect()
 }
 
 /// Keys beyond the orchestration set (`orchestrate::SENDABLE_KEYS`) that a
@@ -743,7 +747,10 @@ impl Runtime {
     pub(crate) fn open_stream(
         &self,
         device: i64,
-    ) -> (StreamTicket, tokio::sync::oneshot::Receiver<Option<&'static str>>) {
+    ) -> (
+        StreamTicket,
+        tokio::sync::oneshot::Receiver<Option<&'static str>>,
+    ) {
         let (stop, stopped) = tokio::sync::oneshot::channel();
         let mut registry = self
             .streams
@@ -761,7 +768,10 @@ impl Runtime {
 
     /// Ends every event stream; an address change carries no revocation reason.
     pub(crate) fn stop_streams(&self, reason: Option<&'static str>) {
-        let mut streams = self.streams.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut streams = self
+            .streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for (_, (_, stop)) in streams.open.drain() {
             let _ = stop.send(reason);
         }
@@ -769,8 +779,16 @@ impl Runtime {
 
     /// Ends the event streams of a revoked device.
     pub(crate) fn stop_device_streams(&self, device: i64) {
-        let mut streams = self.streams.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let ids: Vec<u64> = streams.open.iter().filter(|(_, (d, _))| *d == device).map(|(id, _)| *id).collect();
+        let mut streams = self
+            .streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let ids: Vec<u64> = streams
+            .open
+            .iter()
+            .filter(|(_, (d, _))| *d == device)
+            .map(|(id, _)| *id)
+            .collect();
         for id in ids {
             if let Some((_, stop)) = streams.open.remove(&id) {
                 let _ = stop.send(Some("revoked"));
@@ -779,13 +797,21 @@ impl Runtime {
     }
 
     pub(crate) fn remember_revoked(&self, hash: String) {
-        let mut hashes = self.revoked_hashes.lock().expect("remote revoked hash lock");
+        let mut hashes = self
+            .revoked_hashes
+            .lock()
+            .expect("remote revoked hash lock");
         hashes.push_back(hash);
-        while hashes.len() > REVOKED_HASHES_MAX { hashes.pop_front(); }
+        while hashes.len() > REVOKED_HASHES_MAX {
+            hashes.pop_front();
+        }
     }
 
     pub(crate) fn was_revoked(&self, token: &str) -> bool {
-        self.revoked_hashes.lock().expect("remote revoked hash lock").contains(&hash_secret(token))
+        self.revoked_hashes
+            .lock()
+            .expect("remote revoked hash lock")
+            .contains(&hash_secret(token))
     }
 
     pub(crate) fn note_status(

@@ -697,10 +697,23 @@ async fn me_describes_the_host_and_configured_connection() {
     assert_eq!(me["host"]["version"], env!("CARGO_PKG_VERSION"));
     assert!(!me["host"]["name"].as_str().unwrap().is_empty());
     assert!(me["host"]["name"].as_str().unwrap().chars().count() <= 128);
-    assert_eq!(me["connection"], serde_json::json!({"url":format!("http://{addr}"),"https":false}));
-    daemon.remote_configure(ConfigPatch { public_url: Some("https://box.tail1.ts.net".into()), ..Default::default() }).unwrap();
-    let me = request(addr, "GET", "/api/me", &[("Authorization", &auth)], None).await.json();
-    assert_eq!(me["connection"], serde_json::json!({"url":"https://box.tail1.ts.net","https":true}));
+    assert_eq!(
+        me["connection"],
+        serde_json::json!({"url":format!("http://{addr}"),"https":false})
+    );
+    daemon
+        .remote_configure(ConfigPatch {
+            public_url: Some("https://box.tail1.ts.net".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    let me = request(addr, "GET", "/api/me", &[("Authorization", &auth)], None)
+        .await
+        .json();
+    assert_eq!(
+        me["connection"],
+        serde_json::json!({"url":"https://box.tail1.ts.net","https":true})
+    );
 }
 
 #[tokio::test]
@@ -709,10 +722,22 @@ async fn sessions_expose_null_orchestration_fields_for_root_panes() {
     let (token, _) = pair(&daemon, addr).await;
     let (info, _dir) = pane(&daemon, &["sleep", "30"]);
     let auth = format!("Bearer {token}");
-    let response = request(addr, "GET", "/api/sessions", &[("Authorization", &auth)], None).await;
+    let response = request(
+        addr,
+        "GET",
+        "/api/sessions",
+        &[("Authorization", &auth)],
+        None,
+    )
+    .await;
     assert_eq!(response.status, 200);
     let page = response.json();
-    let row = page["sessions"].as_array().unwrap().iter().find(|s| s["id"] == info.id).unwrap();
+    let row = page["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == info.id)
+        .unwrap();
     assert_eq!(row.get("parent"), Some(&serde_json::Value::Null));
     assert_eq!(row.get("role"), Some(&serde_json::Value::Null));
     daemon.kill(info.id).unwrap();

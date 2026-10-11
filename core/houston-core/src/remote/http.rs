@@ -391,7 +391,9 @@ fn authenticate(
             if daemon.remote.was_revoked(token) {
                 body["reason"] = json!("revoked");
             }
-            Err(Refused::from((StatusCode::UNAUTHORIZED, Json(body)).into_response()))
+            Err(Refused::from(
+                (StatusCode::UNAUTHORIZED, Json(body)).into_response(),
+            ))
         }
         Err(e) => Err(Refused::from(error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -492,7 +494,8 @@ async fn me(
             "host": {"name": super::host_name(), "version": env!("CARGO_PKG_VERSION")},
             "connection": {"url": super::feed::mask(&url), "https": url.starts_with("https://")},
         }))
-    }).await;
+    })
+    .await;
     match result {
         Ok(me) => Json(me).into_response(),
         Err(refused) => refused.into_response(),
@@ -599,12 +602,16 @@ async fn activity(
     query: Result<Query<FeedQuery>, QueryRejection>,
 ) -> Response {
     let Ok(Query(query)) = query else {
-        return error(StatusCode::BAD_REQUEST, "query is not valid: expected ?after=<sequence number, 0 for everything held>");
+        return error(
+            StatusCode::BAD_REQUEST,
+            "query is not valid: expected ?after=<sequence number, 0 for everything held>",
+        );
     };
     let result = blocking(move || {
         authenticate(&daemon, &headers, peer.0.ip())?;
         Ok(daemon.remote.feed.activity_page(query.after))
-    }).await;
+    })
+    .await;
     match result {
         Ok(page) => Json(page).into_response(),
         Err(refused) => refused.into_response(),
@@ -715,7 +722,8 @@ async fn events(
     let _ = blocking(move || {
         this.remote_check_stream_device(device_id);
         Ok(())
-    }).await;
+    })
+    .await;
     let ready =
         futures_util::stream::once(async { Ok(Event::default().event("ready").data("{}")) });
     let state = Some((rx, permit, ticket, stopped));
@@ -740,7 +748,10 @@ async fn events(
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
             },
         };
-        Some((Ok::<_, std::convert::Infallible>(event), Some((rx, permit, ticket, stopped))))
+        Some((
+            Ok::<_, std::convert::Infallible>(event),
+            Some((rx, permit, ticket, stopped)),
+        ))
     });
     let stream = futures_util::StreamExt::chain(ready, changes);
     let mut resp = Sse::new(stream)

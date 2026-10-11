@@ -396,7 +396,10 @@ impl Daemon {
                     id: info.id,
                     title: info.title.clone(),
                     parent: info.spawned_by,
-                    role: self.delegation_of(info.id).and_then(|d| d.role).map(|role| feed::mask(&role)),
+                    role: self
+                        .delegation_of(info.id)
+                        .and_then(|d| d.role)
+                        .map(|role| feed::mask(&role)),
                     workspace,
                     kind: info.detected_agent.unwrap_or(info.agent),
                     state: info.state,
@@ -544,7 +547,12 @@ impl Daemon {
         // card can never outlive the request it was built from.
         if status != proto::AgentStatus::NeedsInput {
             if status == proto::AgentStatus::Working
-                && self.remote.feed.pending(id).is_some_and(|p| p.answered.is_none()) {
+                && self
+                    .remote
+                    .feed
+                    .pending(id)
+                    .is_some_and(|p| p.answered.is_none())
+            {
                 self.remote_activity(id, "answered", Some("in the terminal"));
             }
             self.remote.feed.resolve_pending(id);
@@ -590,7 +598,9 @@ impl Daemon {
     fn remote_activity(&self, id: u32, kind: &'static str, excerpt: Option<&str>) {
         if let Ok(session) = self.remote_target(id) {
             let title = session.title.lock().expect("title lock").clone();
-            self.remote.feed.activity_push(id, kind, &title, excerpt, now_ms());
+            self.remote
+                .feed
+                .activity_push(id, kind, &title, excerpt, now_ms());
         }
     }
 
@@ -722,7 +732,11 @@ impl Daemon {
                     },
                 );
             }
-            Some(HookFeed::Step { tool, target, edited_path }) => {
+            Some(HookFeed::Step {
+                tool,
+                target,
+                edited_path,
+            }) => {
                 if let Some(path) = edited_path {
                     self.remote.feed.note_edited_path(id, path);
                 }
@@ -739,8 +753,10 @@ impl Daemon {
         }
         let event = crate::agent_events::AgentEvent::from_provider(provider, &d.event);
         use crate::agent_events::AgentEvent;
-        let turn_ended = matches!(event, Some(AgentEvent::TurnEnded | AgentEvent::TurnFailed | AgentEvent::TurnInterrupted))
-            && d.fully_idle != Some(false)
+        let turn_ended = matches!(
+            event,
+            Some(AgentEvent::TurnEnded | AgentEvent::TurnFailed | AgentEvent::TurnInterrupted)
+        ) && d.fully_idle != Some(false)
             && d.subagent_type.is_none()
             && d.agent_id.is_none();
         let speaks =
@@ -912,7 +928,11 @@ impl Daemon {
                         }
                         // Event streams never end on their own; graceful shutdown
                         // waits for every connection, so they are ended here.
-                        this.remote.stop_streams(if this.remote_config().enabled { None } else { Some("disabled") });
+                        this.remote.stop_streams(if this.remote_config().enabled {
+                            None
+                        } else {
+                            Some("disabled")
+                        });
                         let _ = stopping.send(());
                     };
                     let drained = async {

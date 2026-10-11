@@ -674,7 +674,10 @@ async fn turning_remote_access_off_ends_streams_rebinds_and_forgets_the_feed() {
         })
         .unwrap();
     read_to_end(&mut stream, &mut seen).await;
-    assert!(seen.contains("event: ended\ndata: {\"reason\":\"disabled\"}"), "{seen}");
+    assert!(
+        seen.contains("event: ended\ndata: {\"reason\":\"disabled\"}"),
+        "{seen}"
+    );
     listening(&daemon, false).await;
 
     // A hook applied while off is not collected.
@@ -704,7 +707,10 @@ async fn revoking_a_device_ends_its_event_stream() {
     read_until(&mut stream, &mut seen, "event: ready").await;
     daemon.remote_device_revoke(device).unwrap();
     read_to_end(&mut stream, &mut seen).await;
-    assert!(seen.contains("event: ended\ndata: {\"reason\":\"revoked\"}"), "{seen}");
+    assert!(
+        seen.contains("event: ended\ndata: {\"reason\":\"revoked\"}"),
+        "{seen}"
+    );
     for path in ["/api/me", "/api/activity", "/api/events", "/api/sessions"] {
         let response = request(addr, "GET", path, Some(&token), None).await;
         assert_eq!(response.status, 401);
@@ -744,20 +750,39 @@ async fn edit_permissions_expose_masked_bounded_diffs_in_feed_and_pending() {
     let token = pair(&daemon, addr).await;
     let (info, _dir) = pane(&daemon, &["sleep", "30"]);
     for (tool, input) in [
-        ("Edit", serde_json::json!({"file_path":"/work/config", "old_string":"old", "new_string":format!("token={TOKEN_IN_PROMPT}")})),
-        ("MultiEdit", serde_json::json!({"file_path":"/work/config", "edits":[{"old_string":"old", "new_string":"new"}]})),
-        ("Write", serde_json::json!({"file_path":"/work/config", "content":"first\nsecond"})),
+        (
+            "Edit",
+            serde_json::json!({"file_path":"/work/config", "old_string":"old", "new_string":format!("token={TOKEN_IN_PROMPT}")}),
+        ),
+        (
+            "MultiEdit",
+            serde_json::json!({"file_path":"/work/config", "edits":[{"old_string":"old", "new_string":"new"}]}),
+        ),
+        (
+            "Write",
+            serde_json::json!({"file_path":"/work/config", "content":"first\nsecond"}),
+        ),
     ] {
         let payload = serde_json::json!({"tool_name":tool,"tool_input":input});
-        apply(state.path(), &hook(None, "PermissionRequest", info.id, &payload)).await;
+        apply(
+            state.path(),
+            &hook(None, "PermissionRequest", info.id, &payload),
+        )
+        .await;
         let page = feed(addr, &token, info.id, 0).await;
         let entry = page["entries"].as_array().unwrap().last().unwrap();
         assert_eq!(entry["diff"]["path"], "/work/config");
         assert_eq!(entry["diff"]["truncated"], false);
         assert_eq!(entry["diff"], page["pending"]["diff"]);
-        assert_eq!(entry["diff"], session_row(addr, &token, info.id).await["pending"]["diff"]);
+        assert_eq!(
+            entry["diff"],
+            session_row(addr, &token, info.id).await["pending"]["diff"]
+        );
         assert!(!page.to_string().contains(TOKEN_IN_PROMPT));
-        assert_eq!(entry["diff"]["lines"][0]["op"], if tool == "Write" { "+" } else { "-" });
+        assert_eq!(
+            entry["diff"]["lines"][0]["op"],
+            if tool == "Write" { "+" } else { "-" }
+        );
     }
     for content in [
         "line\n".repeat(DIFF_MAX_LINES + 1),
@@ -765,15 +790,27 @@ async fn edit_permissions_expose_masked_bounded_diffs_in_feed_and_pending() {
         format!("{}\n", "界".repeat(DIFF_LINE_MAX_CHARS)).repeat(DIFF_MAX_LINES),
     ] {
         let payload = serde_json::json!({"tool_name":"Write","tool_input":{"file_path":"/work/config","content":content}});
-        apply(state.path(), &hook(None, "PermissionRequest", info.id, &payload)).await;
+        apply(
+            state.path(),
+            &hook(None, "PermissionRequest", info.id, &payload),
+        )
+        .await;
         let page = feed(addr, &token, info.id, 0).await;
         let diff = &page["pending"]["diff"];
         assert_eq!(diff["truncated"], true);
         assert!(diff.to_string().len() <= DIFF_MAX_BYTES);
         assert!(diff["lines"].as_array().unwrap().len() <= DIFF_MAX_LINES);
-        assert!(diff["lines"].as_array().unwrap().iter().all(|l| l["text"].as_str().unwrap().chars().count() <= DIFF_LINE_MAX_CHARS));
+        assert!(diff["lines"].as_array().unwrap().iter().all(|l| l["text"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .count()
+            <= DIFF_LINE_MAX_CHARS));
         let seq = page["pending"]["seq"].as_u64().unwrap();
-        assert_eq!(decide(addr, &token, info.id, seq, "approve").await.status, 409);
+        assert_eq!(
+            decide(addr, &token, info.id, seq, "approve").await.status,
+            409
+        );
     }
     daemon.kill(info.id).unwrap();
 }
@@ -785,25 +822,85 @@ async fn turn_end_counts_steps_and_distinct_edited_paths_from_the_prompt() {
     let addr = enable(&daemon).await;
     let token = pair(&daemon, addr).await;
     let (info, _dir) = pane(&daemon, &["sleep", "30"]);
-    apply(state.path(), &hook(None, "UserPromptSubmit", info.id, &serde_json::json!({"prompt":"change the file"}))).await;
+    apply(
+        state.path(),
+        &hook(
+            None,
+            "UserPromptSubmit",
+            info.id,
+            &serde_json::json!({"prompt":"change the file"}),
+        ),
+    )
+    .await;
     for tool in ["Read", "Grep", "Edit", "Edit", "Bash", "Task"] {
-        apply(state.path(), &hook(None, "PostToolUse", info.id, &serde_json::json!({
-            "tool_name":tool,"tool_input":{"file_path":"/work/main.rs"}
-        }))).await;
+        apply(
+            state.path(),
+            &hook(
+                None,
+                "PostToolUse",
+                info.id,
+                &serde_json::json!({
+                    "tool_name":tool,"tool_input":{"file_path":"/work/main.rs"}
+                }),
+            ),
+        )
+        .await;
     }
-    apply(state.path(), &hook(None, "Stop", info.id, &fixture("claude-2.1.263-05-Stop.json"))).await;
+    apply(
+        state.path(),
+        &hook(
+            None,
+            "Stop",
+            info.id,
+            &fixture("claude-2.1.263-05-Stop.json"),
+        ),
+    )
+    .await;
     let page = feed(addr, &token, info.id, 0).await;
-    let end = page["entries"].as_array().unwrap().iter().find(|e| e["type"] == "turn_end").unwrap();
+    let end = page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["type"] == "turn_end")
+        .unwrap();
     assert_eq!(end["outcome"], "done");
-    assert_eq!(end["counts"], serde_json::json!({"read":1,"search":1,"edit":2,"run":1,"other":1}));
+    assert_eq!(
+        end["counts"],
+        serde_json::json!({"read":1,"search":1,"edit":2,"run":1,"other":1})
+    );
     assert_eq!(end["files"], serde_json::json!(["/work/main.rs"]));
     let prompt_at = page["entries"][0]["at"].as_u64().unwrap();
-    assert_eq!(end["duration_ms"].as_u64().unwrap(), end["at"].as_u64().unwrap() - prompt_at);
-    for (agent, event, outcome) in [(None,"StopFailure","failed"), (Some("grok"),"StopCancelled","stopped")] {
-        apply(state.path(), &hook(agent, "UserPromptSubmit", info.id, &serde_json::json!({"prompt":"again"}))).await;
-        apply(state.path(), &hook(agent, event, info.id, &serde_json::json!({}))).await;
+    assert_eq!(
+        end["duration_ms"].as_u64().unwrap(),
+        end["at"].as_u64().unwrap() - prompt_at
+    );
+    for (agent, event, outcome) in [
+        (None, "StopFailure", "failed"),
+        (Some("grok"), "StopCancelled", "stopped"),
+    ] {
+        apply(
+            state.path(),
+            &hook(
+                agent,
+                "UserPromptSubmit",
+                info.id,
+                &serde_json::json!({"prompt":"again"}),
+            ),
+        )
+        .await;
+        apply(
+            state.path(),
+            &hook(agent, event, info.id, &serde_json::json!({})),
+        )
+        .await;
         let page = feed(addr, &token, info.id, 0).await;
-        let end = page["entries"].as_array().unwrap().iter().rev().find(|e| e["type"] == "turn_end").unwrap();
+        let end = page["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|e| e["type"] == "turn_end")
+            .unwrap();
         assert_eq!(end["outcome"], outcome);
         assert_eq!(end["counts"]["edit"], 0);
     }
@@ -812,19 +909,32 @@ async fn turn_end_counts_steps_and_distinct_edited_paths_from_the_prompt() {
 
 #[test]
 fn turn_summary_survives_eviction_and_bounds_edited_paths() {
-    use houston_core::remote::feed::{FeedItem, Store, ENTRIES_PER_SESSION, TURN_FILES_MAX, TURN_PATH_MAX_CHARS};
+    use houston_core::remote::feed::{
+        FeedItem, Store, ENTRIES_PER_SESSION, TURN_FILES_MAX, TURN_PATH_MAX_CHARS,
+    };
     let store = Store::default();
     store.set_collecting(true);
     store.push(1, FeedItem::Prompt { text: "go".into() }, 100);
     for i in 0..ENTRIES_PER_SESSION + 1 {
-        store.push(1, FeedItem::Step { tool: "Edit".into(), target: "path".into() }, 101);
+        store.push(
+            1,
+            FeedItem::Step {
+                tool: "Edit".into(),
+                target: "path".into(),
+            },
+            101,
+        );
         store.note_edited_path(1, &format!("/work/{i}/{}", "p".repeat(TURN_PATH_MAX_CHARS)));
     }
     let end = serde_json::to_value(store.end_turn(1, "done", 200).unwrap()).unwrap();
     assert_eq!(end["duration_ms"], 100);
     assert_eq!(end["counts"]["edit"], (ENTRIES_PER_SESSION + 1) as u64);
     assert_eq!(end["files"].as_array().unwrap().len(), TURN_FILES_MAX);
-    assert!(end["files"].as_array().unwrap().iter().all(|f| f.as_str().unwrap().chars().count() <= TURN_PATH_MAX_CHARS));
+    assert!(end["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|f| f.as_str().unwrap().chars().count() <= TURN_PATH_MAX_CHARS));
 }
 
 #[tokio::test]
@@ -836,27 +946,80 @@ async fn activity_pages_cross_sessions_and_identify_phone_and_terminal_answers()
     let (first, _d1) = pane(&daemon, &["sleep", "30"]);
     let (second, _d2) = pane(&daemon, &["sleep", "30"]);
     let permission = fixture("claude-2.1.263-08-PermissionRequest.json");
-    apply(state.path(), &hook(None, "PermissionRequest", first.id, &permission)).await;
-    let seq = feed(addr, &token, first.id, 0).await["pending"]["seq"].as_u64().unwrap();
-    assert_eq!(decide(addr, &token, first.id, seq, "deny").await.status, 200);
-    apply(state.path(), &hook(None, "PermissionRequest", second.id, &permission)).await;
+    apply(
+        state.path(),
+        &hook(None, "PermissionRequest", first.id, &permission),
+    )
+    .await;
+    let seq = feed(addr, &token, first.id, 0).await["pending"]["seq"]
+        .as_u64()
+        .unwrap();
+    assert_eq!(
+        decide(addr, &token, first.id, seq, "deny").await.status,
+        200
+    );
+    apply(
+        state.path(),
+        &hook(None, "PermissionRequest", second.id, &permission),
+    )
+    .await;
     daemon.note_operator_keystroke(second.id, b"1");
-    apply(state.path(), &hook(None, "Stop", second.id, &fixture("claude-2.1.263-05-Stop.json"))).await;
+    apply(
+        state.path(),
+        &hook(
+            None,
+            "Stop",
+            second.id,
+            &fixture("claude-2.1.263-05-Stop.json"),
+        ),
+    )
+    .await;
     let response = request(addr, "GET", "/api/activity?after=0", Some(&token), None).await;
     assert_eq!(response.status, 200);
     let page = response.json();
     let entries = page["entries"].as_array().unwrap();
-    assert!(entries.iter().any(|e| e["kind"] == "needs_you" && e["session"] == first.id));
-    assert!(entries.iter().any(|e| e["kind"] == "answered" && e["excerpt"] == "from this phone"));
-    assert!(entries.iter().any(|e| e["kind"] == "answered" && e["excerpt"] == "in the terminal"));
-    assert!(entries.iter().any(|e| e["kind"] == "finished" && e["session"] == second.id));
+    assert!(entries
+        .iter()
+        .any(|e| e["kind"] == "needs_you" && e["session"] == first.id));
+    assert!(entries
+        .iter()
+        .any(|e| e["kind"] == "answered" && e["excerpt"] == "from this phone"));
+    assert!(entries
+        .iter()
+        .any(|e| e["kind"] == "answered" && e["excerpt"] == "in the terminal"));
+    assert!(entries
+        .iter()
+        .any(|e| e["kind"] == "finished" && e["session"] == second.id));
     let last = entries.last().unwrap()["seq"].as_u64().unwrap();
-    assert!(request(addr, "GET", &format!("/api/activity?after={last}"), Some(&token), None).await.json()["entries"].as_array().unwrap().is_empty());
-    assert_eq!(request(addr, "GET", "/api/activity", None, None).await.status, 401);
-    daemon.remote_configure(ConfigPatch { enabled: Some(false), ..Default::default() }).unwrap();
+    assert!(request(
+        addr,
+        "GET",
+        &format!("/api/activity?after={last}"),
+        Some(&token),
+        None
+    )
+    .await
+    .json()["entries"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        request(addr, "GET", "/api/activity", None, None)
+            .await
+            .status,
+        401
+    );
+    daemon
+        .remote_configure(ConfigPatch {
+            enabled: Some(false),
+            ..Default::default()
+        })
+        .unwrap();
     listening(&daemon, false).await;
     let addr = enable(&daemon).await;
-    let cleared = request(addr, "GET", "/api/activity", Some(&token), None).await.json();
+    let cleared = request(addr, "GET", "/api/activity", Some(&token), None)
+        .await
+        .json();
     assert_ne!(cleared["epoch"], page["epoch"]);
     assert!(cleared["entries"].as_array().unwrap().is_empty());
     daemon.kill(first.id).unwrap();
@@ -865,18 +1028,32 @@ async fn activity_pages_cross_sessions_and_identify_phone_and_terminal_answers()
 
 #[test]
 fn activity_ring_masks_and_pages_evicted_entries() {
-    use houston_core::remote::feed::{Store, ACTIVITY_MAX_ENTRIES, ACTIVITY_TITLE_MAX_CHARS, EXCERPT_MAX_CHARS};
+    use houston_core::remote::feed::{
+        Store, ACTIVITY_MAX_ENTRIES, ACTIVITY_TITLE_MAX_CHARS, EXCERPT_MAX_CHARS,
+    };
     let store = Store::default();
     store.set_collecting(true);
     for i in 0..ACTIVITY_MAX_ENTRIES + 5 {
-        store.activity_push(1, "finished", &format!("{TOKEN_IN_PROMPT} {}", "t".repeat(500)), Some(&"e".repeat(500)), i as u64);
+        store.activity_push(
+            1,
+            "finished",
+            &format!("{TOKEN_IN_PROMPT} {}", "t".repeat(500)),
+            Some(&"e".repeat(500)),
+            i as u64,
+        );
     }
     let page = store.activity_page(0);
     assert!(page.truncated);
     assert_eq!(page.entries.len(), ACTIVITY_MAX_ENTRIES);
     assert_eq!(page.entries[0].seq, 6);
-    assert!(!serde_json::to_string(&page).unwrap().contains(TOKEN_IN_PROMPT));
-    assert!(page.entries.iter().all(|e| e.title.chars().count() <= ACTIVITY_TITLE_MAX_CHARS && e.excerpt.as_ref().unwrap().chars().count() <= EXCERPT_MAX_CHARS));
+    assert!(!serde_json::to_string(&page)
+        .unwrap()
+        .contains(TOKEN_IN_PROMPT));
+    assert!(page
+        .entries
+        .iter()
+        .all(|e| e.title.chars().count() <= ACTIVITY_TITLE_MAX_CHARS
+            && e.excerpt.as_ref().unwrap().chars().count() <= EXCERPT_MAX_CHARS));
     assert!(!store.activity_page(5).truncated);
     store.set_collecting(false);
     assert!(store.activity_page(0).entries.is_empty());
@@ -891,11 +1068,25 @@ async fn activity_identifies_phone_keys_for_an_unstructured_request() {
     let (info, _dir) = pane(&daemon, &["sleep", "30"]);
     daemon.handle_hook(info.id, "PermissionRequest", None);
     let body = serde_json::json!({"keys":["esc"]}).to_string();
-    let sent = request(addr, "POST", &format!("/api/sessions/{}/input", info.id), Some(&token), Some(&body)).await;
+    let sent = request(
+        addr,
+        "POST",
+        &format!("/api/sessions/{}/input", info.id),
+        Some(&token),
+        Some(&body),
+    )
+    .await;
     assert_eq!(sent.status, 200);
     daemon.handle_hook(info.id, "PostToolUse", None);
-    let page = request(addr, "GET", "/api/activity", Some(&token), None).await.json();
-    let answers: Vec<_> = page["entries"].as_array().unwrap().iter().filter(|e| e["kind"] == "answered").collect();
+    let page = request(addr, "GET", "/api/activity", Some(&token), None)
+        .await
+        .json();
+    let answers: Vec<_> = page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "answered")
+        .collect();
     assert_eq!(answers.len(), 1);
     assert_eq!(answers[0]["excerpt"], "from this phone");
     daemon.kill(info.id).unwrap();
