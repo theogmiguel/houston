@@ -36,9 +36,9 @@ activity is kept only in memory while remote access is on and clears when it is 
 
 ## Turn it on
 
-Choose **Connect phone** from the rail footer or command palette, or open
-**Settings ▸ Remote access ▸ Connect phone**. The dialog explains the access a paired
-device receives. Choose a route, enter its public URL, then choose **Enable remote access**.
+Choose **Connect phone** from the command palette, or open
+**Settings ▸ Remote access ▸ Connect phone**. The dialog notes the access a paired
+device receives. Choose a route, enter its address, then choose **Turn on and show code**.
 You can also turn on **Allow remote access** directly in Settings ▸ Remote access. By default, Houston listens on
 `127.0.0.1:47823` (`127.0.0.1:47824` for a development build), which only this computer can
 reach. The **Status** row shows the address devices open, or why Houston could not listen.
@@ -66,25 +66,37 @@ as this computer's Tailscale or LAN address. Listening on every interface (`0.0.
 address devices open. Without HTTPS in front, a device's token and the pane text it reads
 cross the network unencrypted, and Settings shows a warning.
 
-### Choose the route in Connect phone
+### Connect phone
 
-**Tailscale (works anywhere, HTTPS)** keeps Houston on `127.0.0.1` at its configured
-port. Choose **Copy command**, run the shown `tailscale serve --bg <port>` command on
-this computer, and paste the HTTPS address it prints into **HTTPS public URL**. Houston
-does not detect or install Tailscale. Both devices must be on the same tailnet.
+The dialog has three steps. When remote access is already on with a public URL it opens
+on step 2; **Settings ▸ Remote access ▸ Route ▸ Change…** opens it on step 1.
 
-**Same Wi-Fi (plain HTTP)** sets the listen address to `0.0.0.0` at the configured port.
-Enter this computer's LAN address and that port in **LAN public URL**, such as
-`http://192.168.1.20:47823`. Use a trusted network: device tokens and pane text cross it
-unencrypted. Your phone must be able to reach this computer; the dialog cannot discover
-its LAN address. Choose **Apply route** when remote access is already on.
+**1. Connect a phone.** Choose a **Route**:
 
-The QR code appears once Houston reports that the listener is ready at the selected
-address. Scan it with the phone camera, or choose **Copy link**. It works once and the
-countdown shows when it expires; choose **Get a new code** after expiry. Confirm on the
-phone to see **<device> is connected** on the desktop. Choose **Connect another** for
-another code or **Done** to close. Closing the dialog keeps remote access on. Listen
-address and public URL remain available under **Settings ▸ Remote access ▸ Advanced**.
+- **Tailscale · HTTPS** keeps Houston on `127.0.0.1` at its configured port. Choose
+  **Copy**, run the shown `tailscale serve --bg <port>` command on this computer, and
+  paste the HTTPS address it prints into **Address**. Houston does not detect or install
+  Tailscale. Both devices must be on the same tailnet.
+- **Same Wi-Fi · plain HTTP** sets the listen address to `0.0.0.0` at the configured
+  port. Enter this computer's LAN address and that port in **Address**, such as
+  `http://192.168.1.20:47823`. Use a trusted network: device tokens and pane text cross it
+  unencrypted. Your phone must be able to reach this computer; the dialog cannot discover
+  its LAN address.
+
+Choose **Turn on and show code**, or **Show code** when remote access is already on with
+that route. If Houston cannot listen or the address is not valid, the reason appears under
+**Address**.
+
+**2. Scan with your phone.** The QR code appears once Houston reports that the listener is
+ready at the selected address. Scan it with the phone camera, or choose **Copy link**. It
+works once and the countdown shows when it expires; after expiry the code is dimmed and
+**Get a new code** replaces it. The bottom-left button shows the current route and host;
+choose it to go back to step 1.
+
+**3. Connected.** Confirm on the phone to see **<device> is connected** on the desktop.
+Choose **Connect another** for another code or **Done** to close. Closing the dialog keeps
+remote access on. Listen address and public URL remain available under **Settings ▸
+Remote access ▸ Advanced**.
 
 The paired device can show this computer's name and Houston version, together with the
 remote access address and whether that address uses HTTPS.
