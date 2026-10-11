@@ -2006,6 +2006,7 @@
   window.addEventListener("resize", function () { if (S.tab === "term") fitScreen(); });
   window.addEventListener("scroll", function () {
     if (S.view === "list") document.body.classList.toggle("scrolled", window.scrollY > 8);
+    else if (document.body.classList.contains("composing")) fitKeyboard();
     else if (S.view === "pane" && pinned()) $("jump").classList.add("hidden");
   }, { passive: true });
   if (window.ResizeObserver) {
@@ -2062,11 +2063,26 @@
       document.documentElement.style.setProperty("--vv-h", Math.round(vv.height) + "px");
     }
   }
+  // iOS pans the page to the focused box after the keyboard has opened and
+  // does not always report the final position, so the frame follows the
+  // visible area every frame until the keyboard has settled. 1 s covers the
+  // keyboard animation (about 0.4 s) and the pan that follows it.
+  var KEYBOARD_SETTLE_MS = 1000, settleUntil = 0;
+  function settleKeyboard() {
+    var running = Date.now() < settleUntil;
+    settleUntil = Date.now() + KEYBOARD_SETTLE_MS;
+    if (running) return;
+    (function tick() {
+      fitKeyboard();
+      if (Date.now() < settleUntil && document.activeElement === $("text")) requestAnimationFrame(tick);
+      else settleUntil = 0;
+    })();
+  }
   if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", fitKeyboard);
+    window.visualViewport.addEventListener("resize", settleKeyboard);
     window.visualViewport.addEventListener("scroll", fitKeyboard);
   }
-  $("text").addEventListener("focus", fitKeyboard);
+  $("text").addEventListener("focus", settleKeyboard);
   // A blur that a tap on the dock causes is followed by a refocus; waiting a
   // moment keeps the frame from jumping in between.
   $("text").addEventListener("blur", function () { later("blur-fit", fitKeyboard, 120); });
