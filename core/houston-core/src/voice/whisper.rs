@@ -26,6 +26,17 @@ fn audio_ctx_for(samples: usize, sample_rate: u32) -> i32 {
         .min(WINDOW_FRAMES)
 }
 
+/// Whether an auto-language transcription first primes the encoder window: whisper.cpp
+/// detects the language before applying `audio_ctx`, so detection encodes the full 30 s
+/// window (5 s of speech on an i7-1355U: 10 s unprimed, 4.5 s primed, 2 s with a language).
+fn primes_detection(language: Option<&str>, audio_ctx: i32) -> bool {
+    language.is_none() && audio_ctx < WINDOW_FRAMES
+}
+
+/// Audio fed to the priming pass: whisper.cpp needs at least 100 ms, and a short
+/// prefix keeps the pass to one window encode and one decoded token.
+const PRIME_SAMPLES: usize = 16_000;
+
 /// One thread per physical core, up to `MAX_THREADS`; whisper.cpp defaults to 4.
 fn thread_count(available: usize) -> i32 {
     (available / 2).clamp(1, MAX_THREADS) as i32
@@ -78,10 +89,28 @@ impl WhisperTranscriber {
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
         params.set_single_segment(false);
-        params.set_audio_ctx(audio_ctx_for(audio.samples.len(), audio.sample_rate));
-        params.set_n_threads(thread_count(
-            std::thread::available_parallelism().map_or(1, |n| n.get()),
-        ));
+        let audio_ctx = audio_ctx_for(audio.samples.len(), audio.sample_rate);
+        let threads = thread_count(std::thread::available_parallelism().map_or(1, |n| n.get()));
+        params.set_audio_ctx(audio_ctx);
+        params.set_n_threads(threads);
+
+        if primes_detection(request.language, audio_ctx) {
+            let mut prime = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+            prime.set_language(Some("en"));
+            prime.set_audio_ctx(audio_ctx);
+            prime.set_n_threads(threads);
+            prime.set_no_context(true);
+            prime.set_single_segment(true);
+            prime.set_max_tokens(1);
+            prime.set_print_progress(false);
+            prime.set_print_special(false);
+            prime.set_print_realtime(false);
+            prime.set_print_timestamps(false);
+            let prefix = &audio.samples[..audio.samples.len().min(PRIME_SAMPLES)];
+            state
+                .full(prime, prefix)
+                .map_err(WhisperEngineError::Transcribe)?;
+        }
 
         state
             .full(params, &audio.samples)
@@ -172,6 +201,13 @@ mod tests {
         assert_eq!(audio_ctx_for(29 * 16_000, 16_000), WINDOW_FRAMES);
         assert_eq!(audio_ctx_for(30 * 16_000, 16_000), WINDOW_FRAMES);
         assert_eq!(audio_ctx_for(120 * 16_000, 16_000), WINDOW_FRAMES);
+    }
+
+    #[test]
+    fn only_an_auto_language_short_clip_primes_detection() {
+        assert!(primes_detection(None, 314));
+        assert!(!primes_detection(Some("pt"), 314));
+        assert!(!primes_detection(None, WINDOW_FRAMES));
     }
 
     #[test]
