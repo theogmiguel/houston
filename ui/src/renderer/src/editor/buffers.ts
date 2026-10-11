@@ -12,6 +12,7 @@ import { readFile, statFile, writeFileChecked } from '../houston/bridge'
 import {
   basename,
   bufferKey,
+  bufferLoads,
   detectLineEnding,
   notify,
   noteUpdate,
@@ -110,10 +111,10 @@ function defaultWrapFor(path: string): boolean {
 function loadLanguage(workspaceDir: string, path: string): void {
   const desc = LanguageDescription.matchFilename(languages, basename(path))
   if (!desc) return
+  const key = bufferKey(workspaceDir, path)
+  const e = store.get(key)
   void desc.load().then((support) => {
-    const key = bufferKey(workspaceDir, path)
-    const e = store.get(key)
-    if (!e) return
+    if (!e || store.get(key) !== e) return
     e.buf = {
       ...e.buf,
       state: e.buf.state.update({ effects: langCompartment.reconfigure(support) }).state
@@ -148,7 +149,7 @@ function bufferExtensions(
   ]
 }
 
-const loading = new Map<string, Promise<EditorBuffer>>()
+const loading = bufferLoads
 
 export async function ensureBuffer(
   workspaceDir: string,
@@ -160,11 +161,13 @@ export async function ensureBuffer(
   if (existing) return existing.buf
   const already = loading.get(key)
   if (already) return already
-  const p = (async (): Promise<EditorBuffer> => {
+  let p!: Promise<EditorBuffer>
+  p = (async (): Promise<EditorBuffer> => {
     const [content, stat] = await Promise.all([
       readFile(path),
       statFile(path)
     ])
+    if (loading.get(key) !== p) throw new Error(`Editor load closed: ${path}`)
     const wrap = defaultWrapFor(path)
     const extensions = bufferExtensions(workspaceDir, path, onSave, wrap)
     const buf: EditorBuffer = {
@@ -186,7 +189,7 @@ export async function ensureBuffer(
   try {
     return await p
   } finally {
-    loading.delete(key)
+    if (loading.get(key) === p) loading.delete(key)
   }
 }
 

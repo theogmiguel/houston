@@ -52,3 +52,35 @@ describe('Files tabs bound', () => {
     expect(result.current.tabs).toHaveLength(1)
   })
 })
+
+it('releases final closed documents and preserves another tab owner through Discard', async () => {
+  const first = renderHook(() => useFileTabs('/ws'))
+  const second = renderHook(() => useFileTabs('/ws'))
+  act(() => { first.result.current.pinFile('/ws/a'); second.result.current.pinFile('/ws/a') })
+  store.set(bufferKey('/ws', '/ws/a'), { buf: { state: EditorState.create({ doc: 'abandoned edit' }), dirty: true, conflict: false, wrap: false, mtimeMs: null, lineEnding: 'LF' }, extensions: [] })
+  act(() => first.result.current.requestCloseTab('/ws/a'))
+  await act(async () => first.result.current.discardAndClose())
+  expect(store.get(bufferKey('/ws', '/ws/a'))?.buf.state.doc.toString()).toBe('abandoned edit')
+  act(() => second.result.current.requestCloseTab('/ws/a'))
+  await act(async () => second.result.current.discardAndClose())
+  expect(store.has(bufferKey('/ws', '/ws/a'))).toBe(false)
+})
+
+it('replacing clean previews releases their documents without releasing pinned tabs', async () => {
+  const { result } = renderHook(() => useFileTabs('/ws'))
+  act(() => { result.current.pinFile('/ws/pinned'); result.current.previewFile('/ws/a') })
+  for (const path of ['/ws/pinned', '/ws/a']) store.set(bufferKey('/ws', path), { buf: { state: EditorState.create({ doc: path }), dirty: false, conflict: false, wrap: false, mtimeMs: null, lineEnding: 'LF' }, extensions: [] })
+  await act(async () => result.current.previewFile('/ws/b'))
+  expect(store.has(bufferKey('/ws', '/ws/a'))).toBe(false)
+  expect(store.has(bufferKey('/ws', '/ws/pinned'))).toBe(true)
+})
+
+it('transfers dirty documents to another surface without releasing the shared state', async () => {
+  const first = renderHook(() => useFileTabs('/ws'))
+  const second = renderHook(() => useFileTabs('/ws'))
+  act(() => first.result.current.pinFile('/ws/a'))
+  const entry = { buf: { state: EditorState.create({ doc: 'transferred edit' }), dirty: true, conflict: false, wrap: false, mtimeMs: null, lineEnding: 'LF' as const }, extensions: [] }
+  store.set(bufferKey('/ws', '/ws/a'), entry)
+  await act(async () => { first.result.current.transferTab('/ws/a'); second.result.current.pinFile('/ws/a') })
+  expect(store.get(bufferKey('/ws', '/ws/a'))).toBe(entry)
+})

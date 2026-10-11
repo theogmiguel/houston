@@ -1,3 +1,4 @@
+import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
 import { openConnectPhone } from './connectPhone';
 import { inputEpisode, ownUserInput } from './sessionAttention';
@@ -1837,6 +1838,8 @@ export function App(): React.JSX.Element {
     activeGridId,
   ]);
   useBrowserLayoutMigration(orderedWorkspaces, warmLayouts);
+  const documentLayouts = useMemo(() => new Map([...warmLayouts, ...layouts]), [warmLayouts, layouts]);
+  useLayoutDocumentOwners(orderedWorkspaces, documentLayouts);
 
   const gridsByWorkspace = useMemo(() => {
     const out: Record<

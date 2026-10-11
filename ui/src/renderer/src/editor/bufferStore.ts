@@ -3,6 +3,12 @@
 // editor pane opens, keeping the ~430 KB runtime stack off the boot path.
 import type { EditorState, Extension } from '@codemirror/state'
 
+// Bound retained tab documents and keep the tab strip manageable.
+export const FILES_TABS_MAX = 12
+export const FILES_TABS_STORAGE_PREFIX = 'tr-files-tabs:'
+export const fileTabOwners = new Map<string, { workspace: string; paths: string[] }>()
+export const DOCUMENT_TABS_EVENT = 'houston-document-tabs'
+
 export interface EditorBuffer {
   state: EditorState
   dirty: boolean
@@ -90,26 +96,35 @@ export function noteUpdate(
   notify(key)
 }
 
-const retained = new Map<string, number>()
+export const bufferLoads = new Map<string, Promise<EditorBuffer>>()
+const retained = new Map<string, { count: number }>()
 
 export function retainBuffer(workspaceDir: string, path: string): () => void {
   const key = bufferKey(workspaceDir, path)
-  retained.set(key, (retained.get(key) ?? 0) + 1)
+  const owner = retained.get(key) ?? { count: 0 }
+  retained.set(key, owner)
+  owner.count++
   let released = false
   return () => {
     if (released) return
     released = true
-    const n = (retained.get(key) ?? 1) - 1
-    if (n <= 0) retained.delete(key)
-    else retained.set(key, n)
+    owner.count--
+    // Transfers and React effect replacement acquire their new owner in this turn.
+    queueMicrotask(() => {
+      if (retained.get(key) !== owner || owner.count !== 0) return
+      retained.delete(key)
+      closeBuffer(workspaceDir, path)
+    })
   }
 }
 
 export function closeBuffer(workspaceDir: string, path: string): void {
   const key = bufferKey(workspaceDir, path)
-  notify(key)
-  if ((retained.get(key) ?? 0) > 0) return
+  if ((retained.get(key)?.count ?? 0) > 0) return
+  bufferLoads.delete(key)
+  pendingReveal.delete(key)
   store.delete(key)
+  notify(key)
 }
 
 export function dirtyBufferPaths(workspaceDir: string): string[] {
@@ -123,9 +138,12 @@ export function dirtyBufferPaths(workspaceDir: string): string[] {
 
 export function dropWorkspaceBuffers(workspaceDir: string): void {
   const prefix = `${workspaceDir}\0`
-  for (const key of [...store.keys()]) {
+  for (const [owner, tabs] of fileTabOwners) if (tabs.workspace === workspaceDir) fileTabOwners.delete(owner)
+  for (const key of new Set([...store.keys(), ...bufferLoads.keys(), ...retained.keys(), ...pendingReveal.keys()])) {
     if (key.startsWith(prefix)) {
       store.delete(key)
+      bufferLoads.delete(key)
+      pendingReveal.delete(key)
       retained.delete(key)
       notify(key)
     }

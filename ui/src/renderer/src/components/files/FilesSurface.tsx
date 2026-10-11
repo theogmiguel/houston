@@ -29,6 +29,7 @@ import { Icon } from '../ui/Icon'
 import '../ui/filesSurface.css'
 
 export interface FilesSurfaceProps {
+  documentOwnerId?: string
   workspaceRoot: string
   panelWidth: number
   onOpenInEditor?: (path: string) => void
@@ -247,6 +248,7 @@ function applyTreeKeyAction(
 
 export function FilesSurface({
   workspaceRoot,
+  documentOwnerId,
   panelWidth,
   onSendPath,
   onOpenFile,
@@ -257,7 +259,7 @@ export function FilesSurface({
   className = '',
 }: FilesSurfaceProps): React.JSX.Element {
   const root = workspaceRoot
-  const files = useFileTabs(root)
+  const files = useFileTabs(root, documentOwnerId)
   const [entries, setEntries] = useState<Map<string, DirEntry[]>>(new Map())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
