@@ -400,9 +400,13 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 `swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
 `worktree_cleanup_loop`, `task_pr_watch_loop` and `checkout_watch_loop`. The checkout
 watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
-debounces changes and broadcasts updated checkout identity. It caps filesystem watches at
-256; excess checkouts use a 30-second poll so a large workspace set cannot grow watcher
-use without bound. The task PR watch is not gated by
+debounces changes and broadcasts updated checkout identity. It reacts only to content
+changes that name the HEAD file and coalesces them into one pending flag per HEAD: its
+own refresh reads HEAD, so waking on reads would feed back into itself. Adopted sessions
+carry checkout identity from adoption, as spawned ones do, so the watcher never
+recomputes it. It caps filesystem watches at 256; excess checkouts use a 30-second poll
+so a large workspace set cannot grow watcher use without bound.
+The task PR watch is not gated by
 `worktree_cleanup_enabled`: every `TASK_PR_WATCH_INTERVAL_MS` it runs one `gh pr view` in
 the worktree of each in-review task that has a run branch. A merged PR records `done` with
 `houston:pr-merged` in history; a missing or unauthenticated `gh`, or a branch with no PR,
