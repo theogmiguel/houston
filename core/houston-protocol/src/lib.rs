@@ -1701,7 +1701,8 @@ impl Default for VoiceSettings {
                 model_id: "ggml-small".to_string(),
             },
             output_mode: VoiceOutputMode::Original,
-            input_language: None,
+            // Auto-detect costs whisper a full-window encode before transcribing.
+            input_language: Some("pt".to_string()),
             capture_mode: CaptureMode::Hold,
             input_device: None,
             insert_mode: InsertMode::Direct,
@@ -5733,6 +5734,14 @@ pub struct ManageErrorBody {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dictation_defaults_to_portuguese_rather_than_auto_detect() {
+        assert_eq!(
+            VoiceSettings::default().input_language.as_deref(),
+            Some("pt")
+        );
+    }
 
     #[test]
     fn output_frame_roundtrip() {
