@@ -31,6 +31,10 @@ ui/p5-harness/
 # tr-helper-<target triple>) — build output, never source
 src-tauri/binaries/
 
+# The Linux daemon staged for the Windows installer's WSL support
+# (scripts/build-app.ps1 fills it) — build output, never source
+src-tauri/wsl/
+
 # Local browser-inspection leftovers (Playwright CLI sessions and their screenshots)
 .playwright-cli/
 output/

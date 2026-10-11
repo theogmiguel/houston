@@ -294,6 +294,34 @@ pub fn run(args: Vec<OsString>) -> anyhow::Result<()> {
     ))
 }
 
+static FAIL_SCOPE_TERMINATION: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Makes every scope termination in this process fail, as WSL's user systemd does.
+#[doc(hidden)]
+pub fn fail_scope_termination_for_test(fail: bool) {
+    FAIL_SCOPE_TERMINATION.store(fail, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Stops a session through its scope, else through `fallback` (the PTY's process groups).
+/// A failed scope stop also falls back; docs/internals/overview.md explains why.
+pub fn terminate_session(
+    pid: u32,
+    id: u32,
+    channel: Option<&str>,
+    expected_creation: Option<u64>,
+    fallback: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    match terminate_owned_scope(pid, id, channel, expected_creation) {
+        Ok(true) => Ok(()),
+        Ok(false) => fallback(),
+        Err(scope) => {
+            tracing::warn!("{scope}; terminating session {id}'s PTY process groups instead");
+            fallback().map_err(|fallback| format!("{scope}; then {fallback}"))
+        }
+    }
+}
+
 pub fn terminate_owned_scope(
     pid: u32,
     id: u32,
@@ -301,6 +329,11 @@ pub fn terminate_owned_scope(
     expected_creation: Option<u64>,
 ) -> Result<bool, String> {
     crate::pid::checked_pid(pid).map_err(|error| error.to_string())?;
+    if FAIL_SCOPE_TERMINATION.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(format!(
+            "terminating session {id} scope: injected InvalidArgs failure"
+        ));
+    }
     let Some(channel) = channel else {
         return Ok(false);
     };

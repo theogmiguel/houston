@@ -1,0 +1,87 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { Sidebar } from './Sidebar'
+import type { SessionInfo, Workspace } from '../houston/client'
+import { wslWorkspaces } from '../houston/environments'
+
+function noop(): void {}
+
+const LINUX = '/home/u/p'
+const WINDOWS = 'C:\\work'
+
+function props(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}): React.ComponentProps<typeof Sidebar> {
+  return {
+    workspaces: [{ path: WINDOWS, name: 'work' }, { path: LINUX, name: 'p' }] as Workspace[],
+    sessions: [] as SessionInfo[],
+    selected: WINDOWS,
+    customColors: {},
+    colorIndexByPath: {},
+    renaming: null,
+    onSelect: noop,
+    onAddWorkspace: noop,
+    onRemoveWorkspace: noop,
+    onRenameStart: noop,
+    onRenameSubmit: noop,
+    onRenameCancel: noop,
+    onChangeColor: noop,
+    onReorderWorkspace: noop,
+    pinnedWorkspaces: new Set(),
+    onTogglePinWorkspace: noop,
+    onSshConnect: noop,
+    chromeTheme: 'graphite',
+    onToggleChromeTheme: noop,
+    ...overrides
+  }
+}
+
+describe('Sidebar environment badge', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    localStorage.clear()
+    wslWorkspaces.clear()
+    wslWorkspaces.set(LINUX, 'Ubuntu')
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+    wslWorkspaces.clear()
+  })
+
+  function row(path: string): HTMLElement {
+    const found = Array.from(container.querySelectorAll<HTMLElement>('[aria-label]')).find(
+      (el) => el.getAttribute('aria-label') === path
+    )
+    if (!found) throw new Error(`no rail row for ${path}`)
+    return found
+  }
+
+  it('marks wsl workspaces with Tux, naming the distro', () => {
+    for (const gridsByWorkspace of [undefined, { [WINDOWS]: [{ id: 'w1', name: 'main' }], [LINUX]: [{ id: 'l1', name: 'main' }] }]) {
+      act(() => root.render(<Sidebar {...props({ gridsByWorkspace, selectedGridId: 'w1' })} />))
+
+      const tux = row(LINUX).querySelector('[role="img"][aria-label="WSL: Ubuntu"]')
+      expect(tux?.tagName.toLowerCase()).toBe('svg')
+      expect(row(LINUX).textContent).not.toContain('WSL:')
+      expect(row(WINDOWS).querySelector('[aria-label^="WSL:"]')).toBeNull()
+    }
+  })
+
+  it('places the penguin after the pane count', () => {
+    const gridsByWorkspace = { [LINUX]: [{ id: 'l1', name: 'main' }, { id: 'l2', name: 'side' }] }
+    act(() => root.render(<Sidebar {...props({ gridsByWorkspace })} />))
+
+    const count = row(LINUX).querySelector('[data-count]')
+    const tux = row(LINUX).querySelector('[aria-label="WSL: Ubuntu"]')
+    expect(count?.getAttribute('data-count')).toBe('2')
+    expect(tux).not.toBeNull()
+    expect(count!.compareDocumentPosition(tux!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})

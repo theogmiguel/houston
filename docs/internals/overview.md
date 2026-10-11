@@ -74,7 +74,10 @@ and daemon share that service, independently of the app's desktop scope. Each ne
 enters a separate `houston-session-<channel>-<session>-<id>.scope` before executing the
 CLI, so descendants inherit its scope without a migration race. The daemon remains
 the PTY owner; PID, session leadership and terminal input are preserved. Killing one
-session scope leaves the daemon and sibling scopes running. Units are collected when
+session scope leaves the daemon and sibling scopes running. A failed scope stop falls
+back to signalling the PTY's process groups and is logged, because some user managers
+(WSL's among them) answer `KillUnit` with `InvalidArgs` while the processes die; a kill,
+and therefore a daemon shutdown, never fails on the scope alone. Units are collected when
 inactive or failed; discovery and adoption retain the channel's existing files and
 authenticated endpoints.
 
@@ -290,6 +293,51 @@ with the `tray-icon` feature on, `cargo tauri build` runs
 AppImage, and adds `libayatana-appindicator3-1` to the deb's depends itself — which is why
 `release-linux.yml` installs `libayatana-appindicator3-dev` and `tauri.conf.json` does not name
 the runtime package.
+
+### WSL environments (Windows only)
+
+An **environment** is where a daemon runs for the app: `local`, the daemon described
+above, or `wsl:<distro>`, an unchanged Linux daemon inside an enabled WSL 2 distro. The
+distro daemon is the execution boundary for its workspaces, so supervision, live handoff,
+hooks, MCP, login-`PATH` adoption and git work there as on Linux; nothing of the session
+model is reimplemented on Windows. Its channel is the app's own and its state dir is the
+distro user's `~/.houston[-<channel>]`, so a Linux Houston in the same distro on that
+channel shares it. Off Windows the commands refuse by name and Settings lists no section.
+
+- **Install and start.** The installer bundles the x86_64 Linux binaries. Enabling a
+  distro streams them over `wsl.exe` stdin into `~/.local/lib/houston-wsl/<build>/`,
+  never `~/.local/lib/houston/`, which belongs to the Linux desktop install. The app then
+  runs `houston-core wsl-ensure`, which attaches to the channel's live daemon, starts one
+  under `houston-supervisor` in a new session so the short-lived `wsl.exe` can exit, hands
+  a different build off to its own binary, or refuses a daemon with a higher protocol. It
+  prints exactly one JSON line; the app never reads the distro's `daemon.json` itself.
+- **Reach.** WSL 2's default NAT networking does not let the distro reach the host's
+  loopback, and the app does not depend on the reverse. Each environment instead gets a
+  relay: a `127.0.0.1` listener on Windows whose every connection runs
+  `wsl.exe --exec houston-core wsl-proxy`, a stdio splice to the daemon's loopback port.
+  When an upstream closes on its own, the next connection reruns `wsl-ensure` first, at
+  most once a second. `wsl-proxy` does not half-close the daemon socket when its stdin
+  ends, because the HTTP server then drops a request it has not answered; it keeps
+  relaying until the daemon closes, for at most a short grace.
+- **Renderer mux.** With a WSL environment present, the environment mux sits between
+  `HoustonClient` and the sockets. Every `ClientMsg` and `ServerMsg` type is classified in
+  a `Record` keyed by the generated union, so a new type without a route fails
+  `typecheck`. Session-scoped messages go to the session's environment and path-scoped
+  ones to the environment owning the path; list replies are merged; hook and
+  orchestration settings are broadcast. WSL session ids are tagged
+  `0x80000000 | slot<<24 | id` in JSON fields and binary frame headers, and a WSL id at
+  or above `2^24` is refused, because the binary frame's session field is a `u32`. A WSL
+  workspace's renderer path is its POSIX path, and one POSIX path belongs to one
+  environment; the Files surface reaches it as `\\wsl.localhost\<distro>\…`.
+- **Local only.** Daemon-global domains (tasks, projects, routines, harness, Slack,
+  voice, MCP and skill management, keymaps and the other settings) and inbox
+  acknowledgements stay on the local daemon. Inbox row ids are per daemon, so an
+  acknowledgement for a WSL row reaches the wrong daemon. Tags are stripped from WSL
+  sessions, browser tools are not offered to WSL agents, and orchestration does not cross
+  environments: tokens, mailboxes and the inbox are daemon-local.
+- **Lifetime.** A distro daemon outlives the app like the local one. Quitting from the
+  tray or the palette's **Quit and stop daemon** sends `daemon_shutdown` to every
+  environment's daemon; disabling a distro stops only its daemon.
 
 ## Boundaries that matter
 

@@ -26,6 +26,7 @@ mod watchdog;
 mod webview_render;
 mod window;
 mod window_state;
+mod wsl;
 
 use shells::ShellEntry;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -548,6 +549,10 @@ fn main() {
             tray::tray_state,
             tray::tray_set_keep_in_tray,
             tray::app_quit,
+            wsl::wsl_list,
+            wsl::wsl_enable,
+            wsl::wsl_disable,
+            wsl::env_list,
             spike_webview::spike_wv_mount,
             spike_webview::spike_wv_set_bounds,
             spike_webview::spike_wv_geometry,
@@ -701,6 +706,11 @@ fn main() {
         .setup(move |app| {
             let _ = APP_HANDLE.set(app.handle().clone());
             notifications::start_action_listener(app.handle().clone());
+            app.manage(wsl::WslManager::for_app(
+                app.handle(),
+                state_dir.clone(),
+                target_channel_label.clone(),
+            ));
 
             {
                 let app_handle = app.handle().clone();
@@ -760,6 +770,11 @@ fn main() {
                                 handle.port,
                                 handle.token.clone(),
                             ));
+
+                            if let Some(wsl) = app_handle.try_state::<wsl::WslManager>() {
+                                let wsl = wsl.inner().clone();
+                                tokio_runtime.spawn(async move { wsl.start_enabled() });
+                            }
 
                             tokio_runtime.spawn(async move {
                                 daemon_host::wait_for_terminate_or_interrupt().await;

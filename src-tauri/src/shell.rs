@@ -236,6 +236,8 @@ struct EditorSpec {
     id: &'static str,
     label: &'static str,
     goto_flag: bool,
+    /// Opens a file inside a WSL distro through `--remote wsl+<distro>`.
+    wsl_remote: bool,
 }
 
 const EDITOR_CANDIDATES: &[EditorSpec] = &[
@@ -243,31 +245,37 @@ const EDITOR_CANDIDATES: &[EditorSpec] = &[
         id: "code",
         label: "VS Code",
         goto_flag: true,
+        wsl_remote: true,
     },
     EditorSpec {
         id: "code-insiders",
         label: "VS Code Insiders",
         goto_flag: true,
+        wsl_remote: true,
     },
     EditorSpec {
         id: "codium",
         label: "VSCodium",
         goto_flag: true,
+        wsl_remote: true,
     },
     EditorSpec {
         id: "cursor",
         label: "Cursor",
         goto_flag: true,
+        wsl_remote: true,
     },
     EditorSpec {
         id: "zed",
         label: "Zed",
         goto_flag: false,
+        wsl_remote: false,
     },
     EditorSpec {
         id: "windsurf",
         label: "Windsurf",
         goto_flag: true,
+        wsl_remote: true,
     },
 ];
 
@@ -287,6 +295,32 @@ fn goto_argument(path: &Path, line: Option<u32>, col: Option<u32>) -> std::ffi::
         }
     }
     arg
+}
+
+/// A WSL path goes to the VS Code family as `--remote wsl+<distro> <posix path>`; any
+/// other editor gets the `\\wsl.localhost\<distro>\...` share path.
+fn editor_args(
+    spec: &EditorSpec,
+    path: &Path,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Vec<std::ffi::OsString> {
+    let wsl = path.to_str().and_then(crate::wsl::unc::parse);
+    let mut args = Vec::new();
+    let target = match wsl {
+        Some((distro, posix)) if spec.wsl_remote => {
+            args.push("--remote".into());
+            args.push(format!("wsl+{distro}").into());
+            PathBuf::from(posix)
+        }
+        Some((distro, posix)) => PathBuf::from(crate::wsl::unc::to_unc(&distro, &posix)),
+        None => path.to_path_buf(),
+    };
+    if spec.goto_flag {
+        args.push("--goto".into());
+    }
+    args.push(goto_argument(&target, line, col));
+    args
 }
 
 fn find_editor(id: &str) -> Result<&'static EditorSpec, String> {
@@ -341,12 +375,8 @@ pub async fn shell_open_in_editor(
             spec.label, spec.id, spec.id
         )
     })?;
-    let arg = goto_argument(&real, line, col);
     let mut cmd = houston_core::spawn::command(&program);
-    if spec.goto_flag {
-        cmd.arg("--goto");
-    }
-    cmd.arg(&arg);
+    cmd.args(editor_args(spec, &real, line, col));
     cmd.spawn().map(|_| ()).map_err(|e| {
         format!(
             "cannot open {path} in {}: failed to spawn {} ({e})",
@@ -430,6 +460,45 @@ mod tests {
         assert_eq!(
             flagged,
             vec!["code", "code-insiders", "codium", "cursor", "windsurf"]
+        );
+    }
+
+    #[test]
+    fn wsl_editor_args() {
+        let wsl_path = Path::new(r"\\?\UNC\wsl.localhost\Ubuntu\home\u\a.rs");
+        let remote = ["--remote", "wsl+Ubuntu", "--goto", "/home/u/a.rs:3"];
+        let unc = [r"\\wsl.localhost\Ubuntu\home\u\a.rs:3"];
+        let table: [(&str, &[&str]); 6] = [
+            ("code", &remote),
+            ("code-insiders", &remote),
+            ("codium", &remote),
+            ("cursor", &remote),
+            ("windsurf", &remote),
+            ("zed", &unc),
+        ];
+        assert_eq!(table.len(), EDITOR_CANDIDATES.len());
+        for (id, expected) in table {
+            let args = editor_args(find_editor(id).unwrap(), wsl_path, Some(3), None);
+            assert_eq!(args, expected, "{id}");
+        }
+
+        let code = find_editor("code").unwrap();
+        assert_eq!(
+            editor_args(code, Path::new(r"\\wsl$\Debian\srv\x.txt"), None, None),
+            ["--remote", "wsl+Debian", "--goto", "/srv/x.txt"]
+        );
+        assert_eq!(
+            editor_args(code, Path::new(r"C:\w\a.rs"), Some(2), Some(7)),
+            ["--goto", r"C:\w\a.rs:2:7"]
+        );
+        assert_eq!(
+            editor_args(
+                find_editor("zed").unwrap(),
+                Path::new("/ws/a.rs"),
+                None,
+                None
+            ),
+            ["/ws/a.rs"]
         );
     }
 

@@ -23,6 +23,16 @@ pub fn hermetic_command(
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("HOME", home)
         .env("USERPROFILE", home);
+    // `env_clear` would drop the offline endpoints `.cargo/config.toml` sets for every
+    // test process, and the daemon would then reach the real update manifest and catalog.
+    for name in [
+        houston_core::updates::UPDATE_MANIFEST_URL_ENV,
+        houston_core::model_catalog::CATALOG_URL_ENV,
+    ] {
+        if let Some(value) = std::env::var_os(name) {
+            cmd.env(name, value);
+        }
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

@@ -62,8 +62,11 @@ jobs:
       - name: Install signature verifier
         run: sudo apt-get update && sudo apt-get install -y minisign
 
+      # Only the bundles: the run also holds the raw Linux daemon the Windows
+      # installer embeds, which is no release asset.
       - uses: actions/download-artifact@v7
         with:
+          pattern: houston-*
           path: artifacts
           merge-multiple: true
 

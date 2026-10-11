@@ -12,7 +12,7 @@ on:
         default: 'main'
         required: true
       platform:
-        description: 'Installer platforms to validate'
+        description: 'Installer platforms to validate; windows also builds the Linux bundles, whose daemon it carries for WSL'
         type: choice
         options: [all, linux, windows]
         default: all
@@ -62,9 +62,10 @@ jobs:
             echo "| version-guard | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Runs for every platform choice: the Windows installer carries the Linux x86_64
+  # daemon this job builds, for WSL distros.
   linux-bundle:
     needs: version-guard
-    if: inputs.platform != 'windows'
     uses: ./.github/workflows/release-linux.yml
     with:
       ref: ${{ inputs.ref }}
@@ -76,7 +77,7 @@ jobs:
     secrets: inherit
 
   windows-bundle:
-    needs: version-guard
+    needs: [version-guard, linux-bundle]
     if: inputs.platform != 'linux'
     uses: ./.github/workflows/release-windows.yml
     with:

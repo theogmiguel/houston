@@ -44,6 +44,26 @@ describe('Disclosure — state matrix', () => {
     )
   })
 
+  it('removes collapsed and disabled content from keyboard navigation without unmounting it', () => {
+    const renderDisclosure = (open: boolean, disabled = false): void => {
+      act(() => root.render(<Disclosure summary="Description" open={open} disabled={disabled}><input defaultValue="Draft description" /></Disclosure>))
+    }
+    renderDisclosure(false)
+    const input = container.querySelector('input')!
+    const fold = input.closest('[inert]')!
+    expect(fold.getAttribute('aria-hidden')).toBe('true')
+    renderDisclosure(true)
+    expect(fold.hasAttribute('inert')).toBe(false)
+    expect(fold.getAttribute('aria-hidden')).toBe('false')
+    input.value = 'Unsaved edit'
+    renderDisclosure(false)
+    expect(fold.hasAttribute('inert')).toBe(true)
+    renderDisclosure(true, true)
+    expect(fold.hasAttribute('inert')).toBe(true)
+    expect(container.querySelector('input')).toBe(input)
+    expect(input.value).toBe('Unsaved edit')
+  })
+
   it('Hover — the summary button carries hover treatment', () => {
     act(() => {
       root.render(<Disclosure summary="Sessions" />)

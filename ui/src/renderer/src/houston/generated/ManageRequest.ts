@@ -12,4 +12,8 @@ candidate_bin?: string | null,
  * `daemon_shutdown_if_sessions` only: the live session ids the user
  * confirmed. Any other verb carrying it is refused by name.
  */
-expected_sessions?: Array<number> | null, };
+expected_sessions?: Array<number> | null,
+/**
+ * `workspace_open` only, and required there: an absolute directory path.
+ */
+path?: string | null, };
