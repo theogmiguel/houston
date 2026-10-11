@@ -56,6 +56,11 @@ fn is_ignored_entry(name: &str) -> bool {
 const MAX_PATH_SEARCH_RESULTS: usize = 200;
 // Bounds retained path strings for large monorepos while covering ordinary workspaces.
 const MAX_INDEXED_PATHS: usize = 100_000;
+// Allow directory traversal overhead while bounding empty-directory trees and path storage.
+const MAX_INDEX_SCANNED_ENTRIES: usize = 4 * MAX_INDEXED_PATHS;
+const MAX_INDEX_PATH_BYTES: usize = 16 * 1024 * 1024;
+// Interactive search must release a stalled Git metadata command so a later request can retry.
+const INDEX_GIT_TIMEOUT: Duration = Duration::from_secs(30);
 // Expanded folders in one tree fit within this watcher budget; overflow can refresh manually.
 const MAX_WATCHED_DIRS: usize = 256;
 // Coalesces filesystem bursts into one UI refresh while keeping edits responsive.
@@ -239,12 +244,19 @@ fn search_index(index: &[IndexedPath], query: &str, limit: usize) -> PathSearchR
 }
 
 fn collect_git_paths(root: &Path) -> Result<Option<(Vec<IndexedPath>, usize)>, String> {
-    let output = match houston_core::spawn::command("git")
+    let mut command = houston_core::spawn::command("git");
+    command
         .args(["ls-files", "-co", "--exclude-standard", "-z"])
-        .current_dir(root)
-        .output()
-    {
-        Ok(output) => output,
+        .current_dir(root);
+    let output = match houston_core::spawn::output_within(command, INDEX_GIT_TIMEOUT) {
+        Ok(Some(output)) => output,
+        Ok(None) => {
+            return Err(format!(
+                "fs_search_paths: git ls-files in {} exceeded the {:?} indexing deadline",
+                root.display(),
+                INDEX_GIT_TIMEOUT,
+            ))
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
             return Err(format!(
@@ -258,6 +270,7 @@ fn collect_git_paths(root: &Path) -> Result<Option<(Vec<IndexedPath>, usize)>, S
     }
     let mut paths = Vec::new();
     let mut count = 0;
+    let mut path_bytes = 0;
     for raw in output
         .stdout
         .split(|byte| *byte == 0)
@@ -271,27 +284,56 @@ fn collect_git_paths(root: &Path) -> Result<Option<(Vec<IndexedPath>, usize)>, S
         };
         if !metadata.is_dir() {
             count += 1;
-            if paths.len() < MAX_INDEXED_PATHS {
-                paths.push(IndexedPath {
-                    relative,
-                    is_dir: false,
-                });
-            }
+            validate_index_count(root, count)?;
+            path_bytes += relative.len();
+            check_index_budget(
+                root,
+                "retained path bytes",
+                MAX_INDEX_PATH_BYTES,
+                path_bytes,
+            )?;
+            paths.push(IndexedPath {
+                relative,
+                is_dir: false,
+            });
         }
     }
     Ok(Some((paths, count)))
 }
 
 fn collect_walk_paths(root: &Path) -> Result<(Vec<IndexedPath>, usize), String> {
+    collect_walk_paths_with_limits(root, MAX_INDEX_SCANNED_ENTRIES, MAX_INDEX_PATH_BYTES)
+}
+
+fn check_index_budget(root: &Path, name: &str, limit: usize, actual: usize) -> Result<(), String> {
+    if actual > limit {
+        return Err(format!(
+            "fs_search_paths: indexing {} exceeded the {name} limit {limit}; actual {actual}",
+            root.display(),
+        ));
+    }
+    Ok(())
+}
+
+fn collect_walk_paths_with_limits(
+    root: &Path,
+    max_entries: usize,
+    max_bytes: usize,
+) -> Result<(Vec<IndexedPath>, usize), String> {
     let mut pending = vec![root.to_path_buf()];
     let mut paths = Vec::new();
     let mut count = 0;
+    let mut visited = 0;
+    let mut bytes = root.as_os_str().len();
     while let Some(dir) = pending.pop() {
+        bytes -= dir.as_os_str().len();
         let entries =
             std::fs::read_dir(&dir).map_err(|e| format!("cannot walk {}: {e}", dir.display()))?;
         for entry in entries {
             let entry =
                 entry.map_err(|e| format!("cannot read entry under {}: {e}", dir.display()))?;
+            visited += 1;
+            check_index_budget(root, "scanned entries", max_entries, visited)?;
             let name = entry.file_name().to_string_lossy().into_owned();
             if is_ignored_entry(&name) {
                 continue;
@@ -300,21 +342,24 @@ fn collect_walk_paths(root: &Path) -> Result<(Vec<IndexedPath>, usize), String> 
                 .file_type()
                 .map_err(|e| format!("cannot inspect {}: {e}", entry.path().display()))?;
             let entry_path = entry.path();
-            let relative = entry_path
-                .strip_prefix(root)
-                .unwrap_or(&entry_path)
-                .to_string_lossy()
-                .replace('\\', "/");
             if file_type.is_dir() {
-                pending.push(entry.path());
+                bytes += entry_path.as_os_str().len();
+                check_index_budget(root, "retained path bytes", max_bytes, bytes)?;
+                pending.push(entry_path);
             } else {
                 count += 1;
-                if paths.len() < MAX_INDEXED_PATHS {
-                    paths.push(IndexedPath {
-                        relative,
-                        is_dir: false,
-                    });
-                }
+                validate_index_count(root, count)?;
+                let relative = entry_path
+                    .strip_prefix(root)
+                    .unwrap_or(&entry_path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                bytes += relative.len();
+                check_index_budget(root, "retained path bytes", max_bytes, bytes)?;
+                paths.push(IndexedPath {
+                    relative,
+                    is_dir: false,
+                });
             }
         }
     }
@@ -333,7 +378,7 @@ fn build_path_index(root: &Path) -> Result<Vec<IndexedPath>, String> {
 fn validate_index_count(root: &Path, count: usize) -> Result<(), String> {
     if count > MAX_INDEXED_PATHS {
         return Err(format!(
-            "fs_search_paths: {} contains {count} paths, exceeding MAX_INDEXED_PATHS ({MAX_INDEXED_PATHS})",
+            "fs_search_paths: {} contains at least {count} paths, exceeding MAX_INDEXED_PATHS ({MAX_INDEXED_PATHS})",
             root.display()
         ));
     }
@@ -370,34 +415,38 @@ pub async fn fs_search_paths(
             real_root.display()
         ));
     }
-    let index = loop {
-        let generation = {
-            let cache = path_index()
-                .lock()
-                .map_err(|_| "path index lock poisoned".to_string())?;
-            let generation = *cache.generations.get(&real_root).unwrap_or(&0);
-            if let Some((cached_generation, index)) = cache.indexes.get(&real_root) {
-                if *cached_generation == generation {
-                    break index.clone();
-                }
-            }
-            generation
-        };
-        let index_root = real_root.clone();
-        let index = tokio::task::spawn_blocking(move || build_path_index(&index_root))
-            .await
-            .map_err(|e| format!("fs_search_paths indexing task failed: {e}"))??;
-        let mut cache = path_index()
+    let index = load_path_index(real_root, |root| build_path_index(&root)).await?;
+    Ok(search_index(&index, &query, limit))
+}
+
+async fn load_path_index<F>(real_root: PathBuf, builder: F) -> Result<Vec<IndexedPath>, String>
+where
+    F: FnOnce(PathBuf) -> Result<Vec<IndexedPath>, String> + Send + 'static,
+{
+    let generation = {
+        let cache = path_index()
             .lock()
             .map_err(|_| "path index lock poisoned".to_string())?;
-        if *cache.generations.get(&real_root).unwrap_or(&0) == generation {
-            cache
-                .indexes
-                .insert(real_root.clone(), (generation, index.clone()));
-            break index;
+        let generation = *cache.generations.get(&real_root).unwrap_or(&0);
+        if let Some((cached_generation, index)) = cache.indexes.get(&real_root) {
+            if *cached_generation == generation {
+                return Ok(index.clone());
+            }
         }
+        generation
     };
-    Ok(search_index(&index, &query, limit))
+    let index_root = real_root.clone();
+    let index = tokio::task::spawn_blocking(move || builder(index_root))
+        .await
+        .map_err(|e| format!("fs_search_paths indexing task failed: {e}"))??;
+    let mut cache = path_index()
+        .lock()
+        .map_err(|_| "path index lock poisoned".to_string())?;
+    if *cache.generations.get(&real_root).unwrap_or(&0) == generation {
+        cache.indexes.insert(real_root, (generation, index.clone()));
+    }
+    // Return the completed snapshot; a changed generation must not cache it.
+    Ok(index)
 }
 
 struct RootWatcher {
@@ -1770,6 +1819,71 @@ async fn set_file_mode_0600(_file: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn indexing_refuses_large_empty_directory_trees_and_path_backlogs() {
+        let root = tempfile::tempdir().unwrap();
+        for id in 0..10 {
+            std::fs::create_dir(root.path().join(format!("directory-{id}"))).unwrap();
+        }
+        let entries = super::collect_walk_paths_with_limits(root.path(), 4, usize::MAX)
+            .err()
+            .expect("empty directories still consume the scan budget");
+        assert!(
+            entries.contains("scanned entries limit 4; actual 5"),
+            "{entries}"
+        );
+        let bytes = super::collect_walk_paths_with_limits(root.path(), usize::MAX, 1)
+            .err()
+            .expect("pending directory paths must fit the byte budget");
+        assert!(
+            bytes.contains("retained path bytes limit 1; actual"),
+            "{bytes}"
+        );
+    }
+
+    #[tokio::test]
+    async fn index_changed_during_build_returns_once_without_caching_a_stale_generation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("file.txt"), "content").unwrap();
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let builder = {
+            let calls = calls.clone();
+            move |root: std::path::PathBuf| {
+                if calls.fetch_add(1, Ordering::Relaxed) >= 3 {
+                    return Err(
+                        "indexing was restarted repeatedly during continuous changes".into(),
+                    );
+                }
+                let paths = super::build_path_index(&root)?;
+                // The watcher's invalidation arrives after this scan and before publication.
+                let mut cache = super::path_index().lock().unwrap();
+                *cache.generations.entry(root).or_default() += 1;
+                Ok(paths)
+            }
+        };
+        let index = super::load_path_index(root.path().to_path_buf(), builder.clone())
+            .await
+            .unwrap();
+        assert_eq!(index.len(), 1);
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert!(!super::path_index()
+            .lock()
+            .unwrap()
+            .indexes
+            .contains_key(root.path()));
+        // The next request reads again rather than reusing the invalidated snapshot.
+        super::load_path_index(root.path().to_path_buf(), builder)
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        super::path_index()
+            .lock()
+            .unwrap()
+            .generations
+            .remove(root.path());
+    }
+
     #[test]
     fn watcher_overflow_requests_a_rescan_with_bounded_retained_paths() {
         let mut pending = super::PendingChanges::default();
