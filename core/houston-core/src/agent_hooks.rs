@@ -166,7 +166,14 @@ fn install_with(
                 .parent()
                 .and_then(Path::parent)
                 .map(crate::zcode_config::plugin_dir);
-            crate::zcode_config::install(&path, &commands, sentinel, plugin.as_deref(), refreshing)?
+            crate::zcode_config::install(
+                &path,
+                &commands,
+                &crate::zcode_config::HookForm::for_platform(launcher),
+                sentinel,
+                plugin.as_deref(),
+                refreshing,
+            )?
         }
         other => bail!("{other:?} has no hook installer here"),
     }
@@ -217,11 +224,15 @@ fn hook_command(
 ) -> String {
     crate::claude_hooks::guard_launcher_exec(
         launcher,
-        &format!(
-            "hook {event} --agent {} {sentinel}",
-            provider_slug(provider)
-        ),
+        &hook_argv(provider, event, sentinel).join(" "),
     )
+}
+
+/// The helper's arguments for one event, for a CLI that starts it without a shell.
+pub fn hook_argv(provider: proto::AgentKind, event: &str, sentinel: &str) -> Vec<String> {
+    ["hook", event, "--agent", provider_slug(provider), sentinel]
+        .map(String::from)
+        .to_vec()
 }
 
 pub fn provider_slug(provider: proto::AgentKind) -> &'static str {

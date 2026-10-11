@@ -74,9 +74,17 @@ pub fn launcher_path(state_dir: &Path) -> PathBuf {
     launcher_dir(state_dir).join(LAUNCHER_NAME)
 }
 
+/// The launcher a CLI starts without a shell. Windows starts only a file with an
+/// extension, so `point_launcher` places this `.exe` copy beside the plain one there.
+pub fn executable_launcher(launcher: &Path) -> PathBuf {
+    if cfg!(windows) {
+        launcher.with_extension("exe")
+    } else {
+        launcher.to_path_buf()
+    }
+}
+
 pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
     let exe = crate::exe_path::agent_helper_exe(exe);
     let dir = launcher_dir(state_dir);
     let path = launcher_path(state_dir);
@@ -117,6 +125,16 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
         }
     }
     sweep_stale_tmp(&dir);
+    place_launcher(&dir, &exe, &path)?;
+    if cfg!(windows) {
+        place_launcher(&dir, &exe, &executable_launcher(&path))?;
+    }
+    Ok(path)
+}
+
+fn place_launcher(dir: &Path, exe: &Path, path: &Path) -> Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let tmp = dir.join(format!(
         "{LAUNCHER_NAME}.tr-tmp.{}.{}",
         std::process::id(),
@@ -124,7 +142,7 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
     ));
     let _ = std::fs::remove_file(&tmp);
     #[cfg(unix)]
-    std::os::unix::fs::symlink(&exe, &tmp).with_context(|| {
+    std::os::unix::fs::symlink(exe, &tmp).with_context(|| {
         format!(
             "linking {} -> {} (expected a writable directory)",
             tmp.display(),
@@ -133,11 +151,11 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
     })?;
     #[cfg(windows)]
     {
-        if std::fs::hard_link(&exe, &tmp)
+        if std::fs::hard_link(exe, &tmp)
             .with_context(|| format!("hard-linking {} -> {}", exe.display(), tmp.display()))
             .is_err()
         {
-            std::fs::copy(&exe, &tmp).with_context(|| {
+            std::fs::copy(exe, &tmp).with_context(|| {
                 format!(
                     "copying {} -> {} (hardlink failed - different volume?)",
                     exe.display(),
@@ -146,11 +164,11 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
             })?;
         }
     }
-    if let Err(e) = std::fs::rename(&tmp, &path) {
+    if let Err(e) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
         return Err(e).with_context(|| format!("renaming {} to {}", tmp.display(), path.display()));
     }
-    Ok(path)
+    Ok(())
 }
 
 fn sweep_stale_tmp(dir: &Path) {
@@ -1591,6 +1609,25 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o700, "launcher dir mode");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_places_an_exe_launcher_a_cli_starts_without_a_shell() {
+        let state = tempfile::tempdir().unwrap();
+        let cmd = PathBuf::from(std::env::var("ComSpec").expect("ComSpec names cmd.exe"));
+        let launcher = point_launcher(state.path(), &cmd).unwrap();
+        let program = executable_launcher(&launcher);
+        assert_eq!(program, launcher_dir(state.path()).join("claude-hook.exe"));
+        assert!(
+            launcher.is_file(),
+            "the plain launcher stays for shell commands"
+        );
+        let out = std::process::Command::new(&program)
+            .args(["/C", "echo", "launched"])
+            .output()
+            .unwrap_or_else(|e| panic!("starting {}: {e}", program.display()));
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "launched");
     }
 
     #[cfg(unix)]

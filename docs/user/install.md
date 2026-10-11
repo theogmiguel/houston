@@ -187,8 +187,11 @@ order. Edits from Houston's installed and development channels take turns throug
 file, `config.json.houston-lock`, beside the settings file. If the file changes while
 Houston edits it, Houston reads it again rather than overwriting the change, and refuses
 with nothing written if it keeps changing. If you later set `hooks.enabled` to `false`
-yourself, Houston keeps it when it refreshes its entries at startup. The toggle is refused on Windows, because Houston's hook command needs a POSIX
-shell; ZCode panes still run there, without status or pane tools.
+yourself, Houston keeps it when it refreshes its entries at startup. On Windows, where
+ZCode runs a shell command hook through `cmd.exe`, each entry instead names Houston's hook
+helper, `claude-hook.exe` in the channel's state directory (for example
+`%USERPROFILE%\.houston\bin`), which ZCode starts directly. Outside a Houston pane the
+helper exits at once without doing anything.
 
 ### Droid, Copilot, Aider
 

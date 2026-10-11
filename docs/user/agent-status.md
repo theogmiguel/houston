@@ -140,8 +140,9 @@ it off removes exactly what Houston added:
   prompt, and a parent waiting on it gets no turn end. A question or permission is closed
   only by the result of the same tool call; another tool finishing meanwhile leaves it
   open. A denied or dismissed permission sends no hook, so the pane stays in Needs input
-  until the turn ends or the next prompt starts. On Windows the switch is refused:
-  Houston's hook command needs a POSIX shell.
+  until the turn ends or the next prompt starts. On Windows the entries start Houston's
+  hook helper directly instead of through a shell, so status, a confirmed first prompt,
+  pane tools and resume work there as well.
 - **Antigravity** — also installs a hook, into its own config; it has no dedicated
   write-up on this screen beyond the generic "installs a hook for this CLI."
 

@@ -198,7 +198,8 @@ boot — an app upgrade moves the real binary. Claude's `hook_command()` builds
 `if [ -z "${TR_SESSION:-}" ]; then exit 0; fi; if [ -x '<launcher>' ]; then exec '<launcher>' hook <event> <sentinel>; fi`.
 The first guard makes the global entry a silent no-op outside Houston before the helper runs.
 The other providers guard executable availability with `--agent <provider>` added — except
-Codex's Windows arm, which builds its own argv directly and has no shell to guard through.
+Codex's Windows arm and ZCode's Windows `process` entries, which pass an argv directly and have
+no shell to guard through.
 
 One managed group per channel also means one event runs both channels' helpers, and each
 helper resolves its drop root from the pane's own `HOUSTON_CHANNEL`, not from where it was

@@ -6986,9 +6986,28 @@ impl Daemon {
         sentinel: &str,
     ) -> Result<PathBuf> {
         if provider == proto::AgentKind::Zcode {
-            crate::zcode_config::write_plugin(&self.state_dir, self.channel.as_deref())?;
+            self.prepare_zcode_hooks()?;
         }
         crate::agent_hooks::install(provider, home, launcher, sentinel)
+    }
+
+    /// On Windows ZCode starts the launcher itself, with no guard for a missing file, so
+    /// the launcher is pointed here rather than only alongside Claude's hooks.
+    fn prepare_zcode_hooks(&self) -> Result<()> {
+        crate::zcode_config::write_plugin(&self.state_dir, self.channel.as_deref())?;
+        if cfg!(windows) && self.hook_launcher().is_none() {
+            let program = crate::claude_hooks::executable_launcher(
+                &crate::claude_hooks::launcher_path(&self.state_dir),
+            );
+            if !program.is_file() {
+                bail!(
+                    "ZCode's hooks start {}, which Houston could not create (the daemon log \
+                     names the cause)",
+                    program.display()
+                );
+            }
+        }
+        Ok(())
     }
 
     pub fn install_consented_agent_hooks(&self) {
@@ -7003,10 +7022,9 @@ impl Daemon {
                 continue;
             }
             let refreshed = if provider == proto::AgentKind::Zcode {
-                crate::zcode_config::write_plugin(&self.state_dir, self.channel.as_deref())
-                    .and_then(|_| {
-                        crate::agent_hooks::refresh(provider, &home, &launcher, &sentinel)
-                    })
+                self.prepare_zcode_hooks().and_then(|()| {
+                    crate::agent_hooks::refresh(provider, &home, &launcher, &sentinel)
+                })
             } else {
                 self.install_agent_hooks(provider, &home, &launcher, &sentinel)
             };

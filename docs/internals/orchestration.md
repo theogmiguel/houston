@@ -1321,10 +1321,16 @@ What changes per provider, beyond the shared inbox:
   `SessionStart` with source `resume`, which releases a shell pane's deferred children.
   Handoff generation runs `zcode --mode plan -p`, because `-p` defaults to yolo. Routines
   run only with isolated full access: `--mode edit` approves workspace file edits alone and
-  waits on every other command's approval without a timeout. The hook toggle is refused on
-  Windows: the hook command is the POSIX guard, and the extension-less launcher copy there
-  cannot be started as a ZCode `process` hook either. Evidence is ZCode's source, not a live
-  authenticated probe.
+  waits on every other command's approval without a timeout. On Windows ZCode runs a
+  `command` hook through `ComSpec`, where the POSIX guard cannot run, so each entry is a
+  `process` hook: `command` names `<state dir>\bin\claude-hook.exe` and `args` carry the
+  event and sentinel, and ZCode starts it without a shell. ZCode resolves that file only
+  with its extension (an extension-less path is spawned as is, which Windows refuses), so
+  the daemon places the `.exe` copy beside the plain launcher and points it before
+  installing. Nothing guards a missing file or an empty `TR_SESSION` before the start; the
+  helper itself exits 0 for both an absent session and another channel's launcher, and
+  ZCode ignores the closed stdin pipe. Ownership checks read the sentinel from `args`.
+  Evidence is ZCode's source, not a live authenticated probe.
 - **OpenCode.** No native hook contract at all — its plugin bus fires JS callbacks, not a
   shell command with its own stdin — so `houston-notify.js` is the hook contract: it builds
   the JSON `parse_hook_payload` expects itself and pipes it into the same

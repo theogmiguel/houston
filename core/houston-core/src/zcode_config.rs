@@ -274,13 +274,61 @@ fn child_object<'a>(
     })
 }
 
+/// How ZCode starts Houston's helper. A `command` hook runs through the platform shell,
+/// which is cmd.exe on Windows, where the POSIX guard cannot run; a `process` hook starts
+/// the program named by `command` with `args` and no shell.
+#[derive(Debug, Clone)]
+pub enum HookForm {
+    Shell,
+    Process { program: PathBuf },
+}
+
+impl HookForm {
+    pub fn for_platform(launcher: &Path) -> HookForm {
+        if cfg!(windows) {
+            HookForm::Process {
+                program: crate::claude_hooks::executable_launcher(launcher),
+            }
+        } else {
+            HookForm::Shell
+        }
+    }
+
+    fn entry(&self, event: &str, command: &str, sentinel: &str) -> Value {
+        match self {
+            HookForm::Shell => json!({ "type": "command", "command": command }),
+            HookForm::Process { program } => json!({
+                "type": "process",
+                "command": program.display().to_string(),
+                "args": crate::agent_hooks::hook_argv(
+                    houston_protocol::AgentKind::Zcode,
+                    event,
+                    sentinel,
+                ),
+            }),
+        }
+    }
+}
+
+/// A hook's command and, for a `process` hook, each of its arguments.
+fn hook_words(hook: &Value) -> impl Iterator<Item = &str> {
+    let command = hook.get("command").and_then(|c| c.as_str());
+    let args = hook
+        .get("args")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|a| a.as_str());
+    command.into_iter().chain(args)
+}
+
 fn group_commands(group: &Value) -> impl Iterator<Item = &str> {
     group
         .get("hooks")
         .and_then(|h| h.as_array())
         .into_iter()
         .flatten()
-        .filter_map(|h| h.get("command").and_then(|c| c.as_str()))
+        .flat_map(hook_words)
 }
 
 fn group_is_ours(group: &Value, sentinel: &str) -> bool {
@@ -317,9 +365,7 @@ fn plugin_entry_is_ours(entry: &Value, sentinel: &str) -> bool {
 }
 
 fn hook_is_ours(hook: &Value, sentinel: &str) -> bool {
-    hook.get("command")
-        .and_then(|c| c.as_str())
-        .is_some_and(|c| crate::agent_hooks::has_sentinel(c, sentinel))
+    hook_words(hook).any(|w| crate::agent_hooks::has_sentinel(w, sentinel))
 }
 
 /// Removes this channel's hook entries only. A user command sharing a group with one
@@ -356,12 +402,14 @@ fn remove_our_entries(events: &mut Map<String, Value>, sentinel: &str) -> bool {
 pub fn install(
     path: &Path,
     commands: &[(&str, String)],
+    form: &HookForm,
     sentinel: &str,
     plugin_dir: Option<&Path>,
     keep_disabled: bool,
 ) -> Result<()> {
     let install = Install {
         commands,
+        form,
         sentinel,
         plugin_dir,
         keep_disabled,
@@ -374,6 +422,7 @@ pub fn install(
 
 struct Install<'a> {
     commands: &'a [(&'a str, String)],
+    form: &'a HookForm,
     sentinel: &'a str,
     plugin_dir: Option<&'a Path>,
     keep_disabled: bool,
@@ -385,13 +434,6 @@ fn install_with(
     wait: std::time::Duration,
     before_write: impl FnMut(),
 ) -> Result<()> {
-    if cfg!(windows) {
-        bail!(
-            "ZCode hooks are not installed on Windows: Houston's hook command needs a POSIX \
-             shell and ZCode runs command hooks through the platform shell; ZCode panes still \
-             run, without status or pane tools"
-        );
-    }
     edit(
         path,
         wait,
@@ -434,7 +476,8 @@ fn apply_install(root: &mut Value, path: &Path, install: &Install<'_>) -> Result
             .any(group_is_any_houston);
     remove_our_entries(events, install.sentinel);
     for (event, command) in install.commands {
-        let mut group = json!({ "hooks": [{ "type": "command", "command": command }] });
+        let entry = install.form.entry(event, command, install.sentinel);
+        let mut group = json!({ "hooks": [entry] });
         if *event == "PreToolUse" {
             group["matcher"] = json!(PRE_TOOL_USE_MATCHER);
         }
@@ -582,19 +625,130 @@ fn is_installed_in(path: &Path, sentinel: &str) -> bool {
             })
 }
 
-#[cfg(all(test, windows))]
-mod windows_tests {
+/// The `process` form, which Windows uses, checked on every platform.
+#[cfg(test)]
+mod process_form_tests {
+    use super::*;
+
+    const DEV: &str = "--houston-managed=dev";
+    const RELEASE: &str = "--houston-managed";
+
+    fn form(state: &str) -> HookForm {
+        HookForm::Process {
+            program: PathBuf::from(format!("C:/Users/u/{state}/bin/claude-hook.exe")),
+        }
+    }
+
+    fn commands(sentinel: &str) -> Vec<(&'static str, String)> {
+        ["SessionStart", "PreToolUse", "Stop"]
+            .into_iter()
+            .map(|event| (event, format!("unused shell command {sentinel}")))
+            .collect()
+    }
+
+    fn read(path: &Path) -> Value {
+        serde_json::from_str(&std::fs::read_to_string(path).expect("config exists"))
+            .expect("config stays valid JSON")
+    }
+
     #[test]
-    fn the_zcode_toggle_is_refused_on_windows_by_name() {
+    fn a_process_entry_starts_the_launcher_with_its_own_arguments_and_no_shell() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("config.json");
-        let err =
-            super::install(&path, &[], "--houston-managed", None, false).expect_err("refused");
-        assert!(
-            format!("{err:#}").contains("not installed on Windows"),
-            "{err:#}"
+        install(
+            &path,
+            &commands(DEV),
+            &form(".houston-dev"),
+            DEV,
+            None,
+            false,
+        )
+        .expect("install");
+        let root = read(&path);
+        assert_eq!(
+            root["hooks"]["events"]["Stop"],
+            json!([{ "hooks": [{
+                "type": "process",
+                "command": "C:/Users/u/.houston-dev/bin/claude-hook.exe",
+                "args": ["hook", "Stop", "--agent", "zcode", DEV],
+            }] }]),
+            "{root}"
         );
-        assert!(!path.exists());
+        assert_eq!(
+            root["hooks"]["events"]["PreToolUse"][0]["matcher"],
+            json!(PRE_TOOL_USE_MATCHER)
+        );
+        assert!(is_installed(&path, DEV));
+        assert!(
+            !is_installed(&path, RELEASE),
+            "the sentinel is matched whole"
+        );
+    }
+
+    #[test]
+    fn process_entries_are_replaced_and_removed_per_channel_and_keep_the_users() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("config.json");
+        std::fs::write(
+            &path,
+            r#"{"hooks":{"events":{"Stop":[{"hooks":[{"type":"process","command":"notify.exe","args":["done"]}]}]}}}"#,
+        )
+        .expect("user config");
+        install(
+            &path,
+            &commands(DEV),
+            &form(".houston-dev"),
+            DEV,
+            None,
+            false,
+        )
+        .expect("dev");
+        install(
+            &path,
+            &commands(RELEASE),
+            &form(".houston"),
+            RELEASE,
+            None,
+            false,
+        )
+        .expect("release");
+        install(
+            &path,
+            &commands(DEV),
+            &form(".houston-dev"),
+            DEV,
+            None,
+            false,
+        )
+        .expect("again");
+        let stop = read(&path)["hooks"]["events"]["Stop"].clone();
+        assert_eq!(
+            stop.as_array().map(Vec::len),
+            Some(3),
+            "user + one per channel: {stop}"
+        );
+
+        assert!(uninstall(&path, DEV).expect("dev off"));
+        assert!(is_installed(&path, RELEASE), "release keeps its entries");
+        assert!(!is_installed(&path, DEV));
+        assert!(uninstall(&path, RELEASE).expect("release off"));
+        assert_eq!(
+            read(&path),
+            json!({"hooks":{"events":{"Stop":[{"hooks":[{"type":"process","command":"notify.exe","args":["done"]}]}]}}}),
+            "only the user's entry is left, and hooks.enabled is restored to absent"
+        );
+    }
+
+    #[test]
+    fn windows_uses_the_process_form_with_the_exe_launcher() {
+        let launcher = Path::new("/state/.houston-dev/bin/claude-hook");
+        match HookForm::for_platform(launcher) {
+            HookForm::Process { program } if cfg!(windows) => {
+                assert_eq!(program, launcher.with_extension("exe"));
+            }
+            HookForm::Shell if cfg!(unix) => {}
+            other => panic!("unexpected form {other:?} for this platform"),
+        }
     }
 }
 
@@ -896,6 +1050,7 @@ mod tests {
     fn dev_install<'a>(commands: &'a [(&'static str, String)]) -> Install<'a> {
         Install {
             commands,
+            form: &HookForm::Shell,
             sentinel: DEV,
             plugin_dir: None,
             keep_disabled: false,
