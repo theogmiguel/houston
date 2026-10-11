@@ -830,7 +830,7 @@ impl OrchestrationTools {
                 name: "pane_pr_watch".into(),
                 title: "Watch a PR".into(),
                 description: "Watch PR checks/reviews/comments/conflicts. Call last; end your turn, do not poll.".into(),
-                input_schema: json!({"type":"object","properties":{"pr":{"type":["string","integer"]}},"required":["pr"],"additionalProperties":false}),
+                input_schema: json!({"type":"object","properties":{"pr":{"type":"string","description":"PR URL or number"}},"required":["pr"],"additionalProperties":false}),
                 annotations: local(Annotations::local_write()),
             },
             ToolSpec {

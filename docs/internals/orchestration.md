@@ -1143,6 +1143,14 @@ directly in `tools/list` by its own name and schema instead of behind
 `call_tool`, so a Codex caller spends no approval round-trip on it; a gated
 tool named directly is refused, naming `call_tool` as the way to reach it.
 
+**One value type per property.** A tool property's `type` names one value type, plus
+`null` where null means something. GLM, which ZCode drives, writes a string argument
+unquoted when the property's type is a union such as integer or string; ZCode cannot parse
+that call and drops the argument before validating it. A task `id` and `pane_pr_watch`'s
+`pr` are therefore strings, and the daemon still accepts an integer for either.
+`no_tool_property_is_a_union_of_value_types_and_a_task_id_reads_in_every_form` checks
+every advertised schema.
+
 **Depth-aware advertisement.** `pane_spawn` is in a pane's tool list exactly
 when that pane could use it: orchestration is on, it has a free child slot, and
 the child would fit under the depth cap. The default depth is **1** —

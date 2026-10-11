@@ -1768,8 +1768,12 @@ impl Daemon {
         let id = match value {
             serde_json::Value::Number(number) => number.as_i64().filter(|id| *id > 0)
                 .ok_or_else(|| anyhow::anyhow!("{operation} refused: id must be a positive task id or a key like HOU-1; got {value}"))?,
-            serde_json::Value::String(key) => self.task_id_for_key(workspace, key)?
-                .ok_or_else(|| anyhow::anyhow!("{operation} refused: no task with key {key:?} (expected an existing HOU-<number> or integer id)"))?,
+            // The MCP schema types `id` as a string, so an integer id may arrive as "7".
+            serde_json::Value::String(key) => match key.trim().parse::<i64>() {
+                Ok(id) if id > 0 => id,
+                _ => self.task_id_for_key(workspace, key)?
+                    .ok_or_else(|| anyhow::anyhow!("{operation} refused: no task with key {key:?} (expected an existing HOU-<number> or integer id)"))?,
+            },
             _ => bail!("{operation} refused: id must be an integer task id or a key like HOU-1; got {value}"),
         };
         if self.db.task(id)?.is_none() {
