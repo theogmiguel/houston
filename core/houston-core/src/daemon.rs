@@ -2656,6 +2656,8 @@ impl Daemon {
             let session = Arc::get_mut(session).expect("adoption owns the reconstructed session");
             session.info.spawned_by = parent;
             session.info.profile_label = profile;
+            // The checkout watcher recomputes a missing checkout on every wake-up.
+            Self::checkout_metadata(&db, &mut session.info);
         }
         drop(db);
         Self::new_inner_ex(cfg, None, Some(port), Some(adopted), None)
@@ -7630,6 +7632,10 @@ impl Daemon {
     }
 
     pub(crate) fn session_checkout_metadata(&self, info: &mut proto::SessionInfo) {
+        Self::checkout_metadata(&self.db, info);
+    }
+
+    fn checkout_metadata(db: &Db, info: &mut proto::SessionInfo) {
         if info.ssh_host.is_some() {
             info.checkout = Some(proto::SessionCheckout {
                 root: info.project_dir.clone(),
@@ -7646,7 +7652,7 @@ impl Daemon {
             .checkout_root
             .as_ref()
             .and_then(|root| Path::new(root).canonicalize().ok());
-        info.worktree = match self.db.managed_worktrees() {
+        info.worktree = match db.managed_worktrees() {
             Ok(rows) => rows
                 .into_iter()
                 .find(|row| {

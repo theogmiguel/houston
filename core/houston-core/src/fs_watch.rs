@@ -86,7 +86,7 @@ pub fn is_content_change_for_tests(kind: notify::event::EventKind) -> bool {
 // Content changes are create/remove, data/name modify, and a write-closing
 // access. Metadata events are the IN_ATTRIB trap and deliberately not one; the
 // catch-all treats notify overflow as a possible change, never a silent miss.
-fn is_content_change(kind: notify::event::EventKind) -> bool {
+pub(crate) fn is_content_change(kind: notify::event::EventKind) -> bool {
     use notify::event::{AccessKind, AccessMode, EventKind, ModifyKind};
     match kind {
         EventKind::Create(_) | EventKind::Remove(_) => true,
