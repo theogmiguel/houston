@@ -73,8 +73,9 @@ collaborator's contract, not just against its own assertions.
 
 - `ansi_flood` (`src/bin/ansi_flood.rs`) sprays heavy TUI output at maximum speed for
   throughput tests.
-- Sessions launched with an explicit `cmd` run that command for every agent kind, so a
-  fixture never silently launches whichever real CLI is installed.
+- Agent sessions launched with an explicit `cmd` run that command, so a fixture never
+  silently launches whichever real CLI is installed. Shell sessions select their configured
+  shell instead; fixtures must also isolate `SHELL` to avoid first-run setup prompts.
 - `HOUSTON_DISABLE_AUTO_RESTORE=1` and `HOUSTON_SAFE_MODE=1` keep a booted test
   daemon from restoring or auto-launching anything.
 - `m9-baseline.sh` uses a throwaway `m9bench` channel, wiped before every run and refused if

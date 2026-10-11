@@ -22,7 +22,7 @@ for (const name of ['home', 'config', 'data', 'cache', 'runtime', 'workspace']) 
 const inherited = { ...process.env };
 for (const name of Object.keys(inherited))
   if (name.startsWith('HOUSTON_') || name.startsWith('TR_')) delete inherited[name];
-const env = { ...inherited, HOME: home, USERPROFILE: home,
+const env = { ...inherited, HOME: home, USERPROFILE: home, SHELL: '/bin/bash',
   XDG_CONFIG_HOME: join(root, 'config'), XDG_DATA_HOME: join(root, 'data'),
   XDG_CACHE_HOME: join(root, 'cache'), XDG_STATE_HOME: join(root, 'data'), XDG_RUNTIME_DIR: join(root, 'runtime'),
   HOUSTON_CHANNEL: channel, HOUSTON_DAEMON_BIN_DIR: resolve(coreDir),
@@ -118,7 +118,7 @@ try {
   send({ type: 'workspace_add', path: join(root, 'workspace') });
   await control('workspace_list');
   send({ type: 'session_create', agent: 'shell', project_dir: join(root, 'workspace'),
-    cmd: ['/bin/bash', '--noprofile', '--norc'], cols: 80, rows: 24, shell_integration: false });
+    cols: 80, rows: 24, shell_integration: false });
   const session = (await control('session_created')).info.id;
   evidence.session = session;
   send({ type: 'session_attach', session, replay_bytes: 65536 });
