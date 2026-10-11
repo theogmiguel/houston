@@ -28,6 +28,11 @@ nothing of it is saved: it is kept in memory and is gone when the daemon stops. 
 access off clears it, and nothing is collected while it is off, so activity from before
 remote access was last turned on is only in the Terminal tab.
 
+Each completed turn shows its duration, tool counts and a bounded list of edited paths.
+A reported failure or interruption is shown when the agent's hooks identify it; otherwise
+the turn is marked done. A turn already underway when remote access starts has no known
+duration until a new prompt is reported.
+
 ## Turn it on
 
 Open **Settings ▸ Remote access** and turn on **Allow remote access**. Houston listens on

@@ -34,6 +34,37 @@ pub const DIFF_LINE_MAX_CHARS: usize = 500;
 // Bound UTF-8 and JSON escaping overhead independently of the line count.
 pub const DIFF_MAX_BYTES: usize = 32 * 1024;
 
+// A turn can touch a repository; retain a useful sample without a growing path set.
+pub const TURN_FILES_MAX: usize = 32;
+// Match permission paths while bounding each path independently of the file count.
+pub const TURN_PATH_MAX_CHARS: usize = 300;
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TurnCounts {
+    pub read: u64,
+    pub search: u64,
+    pub edit: u64,
+    pub run: u64,
+    pub other: u64,
+}
+
+fn step_category(tool: &str) -> &'static str {
+    match tool {
+        "Read" | "read_file" | "read" => "read",
+        "Grep" | "Glob" | "WebSearch" | "search" | "grep" | "glob" => "search",
+        "Edit" | "MultiEdit" | "Write" | "NotebookEdit" | "edit" | "write" | "edit_file" | "write_file" | "apply_patch" => "edit",
+        "Bash" | "Shell" | "shell" | "run_command" | "exec_command" => "run",
+        _ => "other",
+    }
+}
+
+#[derive(Default)]
+struct Turn {
+    prompted_at: Option<u64>,
+    counts: TurnCounts,
+    files: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiffLine {
     pub op: String,
@@ -150,6 +181,8 @@ pub enum HookFeed {
     Step {
         tool: String,
         target: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        edited_path: Option<String>,
     },
 }
 
@@ -406,6 +439,10 @@ pub fn from_hook(
         }
         "PostToolUse" => Some(HookFeed::Step {
             target: tool_target(tool_input(&v), STEP_MAX_CHARS, false).0,
+            edited_path: name.as_deref().filter(|tool| step_category(tool) == "edit")
+                .and_then(|_| tool_input(&v))
+                .and_then(|input| str_at(input, "file_path").or_else(|| str_at(input, "path")).or_else(|| str_at(input, "notebook_path")))
+                .map(|path| cut_chars(&mask_text(path), TURN_PATH_MAX_CHARS)),
             tool: name?,
         }),
         _ => None,
@@ -460,6 +497,12 @@ pub enum FeedItem {
     Status {
         status: &'static str,
     },
+    TurnEnd {
+        duration_ms: u64,
+        outcome: &'static str,
+        counts: TurnCounts,
+        files: Vec<String>,
+    },
 }
 
 impl FeedItem {
@@ -492,6 +535,7 @@ impl FeedItem {
             }
             FeedItem::Step { tool, target } => tool.len() + target.len(),
             FeedItem::Status { .. } => 0,
+            FeedItem::TurnEnd { files, .. } => 64 + files.iter().map(String::len).sum::<usize>(),
         }
     }
 }
@@ -596,6 +640,7 @@ struct SessionFeed {
     pending: Option<Pending>,
     last_reply_excerpt: Option<String>,
     last_step: Option<String>,
+    turn: Turn,
 }
 
 impl SessionFeed {
@@ -719,6 +764,14 @@ impl Store {
                     feed.last_reply_excerpt = Some(cut_chars(&one_line(text), EXCERPT_MAX_CHARS));
                 }
                 FeedItem::Step { tool, target } => {
+                    let count = match step_category(tool) {
+                        "read" => &mut feed.turn.counts.read,
+                        "search" => &mut feed.turn.counts.search,
+                        "edit" => &mut feed.turn.counts.edit,
+                        "run" => &mut feed.turn.counts.run,
+                        _ => &mut feed.turn.counts.other,
+                    };
+                    *count = count.saturating_add(1);
                     feed.last_step = Some(cut_chars(
                         &if target.is_empty() {
                             tool.clone()
@@ -728,7 +781,10 @@ impl Store {
                         STEP_MAX_CHARS,
                     ));
                 }
-                FeedItem::Prompt { .. } => feed.last_step = None,
+                FeedItem::Prompt { .. } => {
+                    feed.last_step = None;
+                    feed.turn = Turn { prompted_at: Some(now_ms), ..Default::default() };
+                }
                 _ => {}
             }
             feed.next_seq += 1;
@@ -760,6 +816,30 @@ impl Store {
                 inner.bytes -= w;
             }
             Some(seq)
+        })
+    }
+
+    pub fn note_edited_path(&self, session: u32, path: &str) {
+        self.with(|inner| {
+            if !inner.collecting { return; }
+            let files = &mut inner.sessions.entry(session).or_default().turn.files;
+            let path = cut_chars(&mask_text(path), TURN_PATH_MAX_CHARS);
+            if !path.is_empty() && files.len() < TURN_FILES_MAX && !files.contains(&path) {
+                files.push(path);
+            }
+        })
+    }
+
+    pub fn end_turn(&self, session: u32, outcome: &'static str, now_ms: u64) -> Option<FeedItem> {
+        self.with(|inner| {
+            if !inner.collecting { return None; }
+            let turn = std::mem::take(&mut inner.sessions.entry(session).or_default().turn);
+            Some(FeedItem::TurnEnd {
+                duration_ms: turn.prompted_at.map_or(0, |at| now_ms.saturating_sub(at)),
+                outcome,
+                counts: turn.counts,
+                files: turn.files,
+            })
         })
     }
 

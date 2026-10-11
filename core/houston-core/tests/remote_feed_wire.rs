@@ -143,6 +143,7 @@ fn pane(daemon: &Arc<Daemon>, cmd: &[&str]) -> (proto::SessionInfo, tempfile::Te
 fn hook(agent: Option<&str>, event: &str, session: u32, payload: &serde_json::Value) -> HookDrop {
     let provider = match agent {
         Some("codex") => proto::AgentKind::Codex,
+        Some("grok") => proto::AgentKind::Grok,
         _ => proto::AgentKind::Claude,
     };
     let text = payload.to_string();
@@ -343,11 +344,12 @@ async fn hook_payloads_become_a_masked_feed_with_a_pending_card() {
     apply(state.path(), &hook(None, "Stop", id, &stop)).await;
     let page = feed(addr, &token, id, last).await;
     let entries = page["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 2, "{page}");
+    assert_eq!(entries.len(), 3, "{page}");
     assert_eq!(entries[0]["type"], "reply");
     assert_eq!(entries[0]["text"], "## Done\nAll **green**.");
-    assert_eq!(entries[1]["type"], "status");
-    assert_eq!(entries[1]["status"], "finished");
+    assert_eq!(entries[1]["type"], "turn_end");
+    assert_eq!(entries[2]["type"], "status");
+    assert_eq!(entries[2]["status"], "finished");
     assert!(
         page["pending"].is_null(),
         "the card cleared once the turn ended"
@@ -764,4 +766,53 @@ async fn edit_permissions_expose_masked_bounded_diffs_in_feed_and_pending() {
         assert_eq!(decide(addr, &token, info.id, seq, "approve").await.status, 409);
     }
     daemon.kill(info.id).unwrap();
+}
+
+#[tokio::test]
+async fn turn_end_counts_steps_and_distinct_edited_paths_from_the_prompt() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["sleep", "30"]);
+    apply(state.path(), &hook(None, "UserPromptSubmit", info.id, &serde_json::json!({"prompt":"change the file"}))).await;
+    for tool in ["Read", "Grep", "Edit", "Edit", "Bash", "Task"] {
+        apply(state.path(), &hook(None, "PostToolUse", info.id, &serde_json::json!({
+            "tool_name":tool,"tool_input":{"file_path":"/work/main.rs"}
+        }))).await;
+    }
+    apply(state.path(), &hook(None, "Stop", info.id, &fixture("claude-2.1.263-05-Stop.json"))).await;
+    let page = feed(addr, &token, info.id, 0).await;
+    let end = page["entries"].as_array().unwrap().iter().find(|e| e["type"] == "turn_end").unwrap();
+    assert_eq!(end["outcome"], "done");
+    assert_eq!(end["counts"], serde_json::json!({"read":1,"search":1,"edit":2,"run":1,"other":1}));
+    assert_eq!(end["files"], serde_json::json!(["/work/main.rs"]));
+    let prompt_at = page["entries"][0]["at"].as_u64().unwrap();
+    assert_eq!(end["duration_ms"].as_u64().unwrap(), end["at"].as_u64().unwrap() - prompt_at);
+    for (agent, event, outcome) in [(None,"StopFailure","failed"), (Some("grok"),"StopCancelled","stopped")] {
+        apply(state.path(), &hook(agent, "UserPromptSubmit", info.id, &serde_json::json!({"prompt":"again"}))).await;
+        apply(state.path(), &hook(agent, event, info.id, &serde_json::json!({}))).await;
+        let page = feed(addr, &token, info.id, 0).await;
+        let end = page["entries"].as_array().unwrap().iter().rev().find(|e| e["type"] == "turn_end").unwrap();
+        assert_eq!(end["outcome"], outcome);
+        assert_eq!(end["counts"]["edit"], 0);
+    }
+    daemon.kill(info.id).unwrap();
+}
+
+#[test]
+fn turn_summary_survives_eviction_and_bounds_edited_paths() {
+    use houston_core::remote::feed::{FeedItem, Store, ENTRIES_PER_SESSION, TURN_FILES_MAX, TURN_PATH_MAX_CHARS};
+    let store = Store::default();
+    store.set_collecting(true);
+    store.push(1, FeedItem::Prompt { text: "go".into() }, 100);
+    for i in 0..ENTRIES_PER_SESSION + 1 {
+        store.push(1, FeedItem::Step { tool: "Edit".into(), target: "path".into() }, 101);
+        store.note_edited_path(1, &format!("/work/{i}/{}", "p".repeat(TURN_PATH_MAX_CHARS)));
+    }
+    let end = serde_json::to_value(store.end_turn(1, "done", 200).unwrap()).unwrap();
+    assert_eq!(end["duration_ms"], 100);
+    assert_eq!(end["counts"]["edit"], (ENTRIES_PER_SESSION + 1) as u64);
+    assert_eq!(end["files"].as_array().unwrap().len(), TURN_FILES_MAX);
+    assert!(end["files"].as_array().unwrap().iter().all(|f| f.as_str().unwrap().chars().count() <= TURN_PATH_MAX_CHARS));
 }

@@ -1161,7 +1161,12 @@ Errors are `{"error": "<message naming the value and the expected shape>"}`.
 `reply {text}` (markdown, ≤ 16 KiB), `question {questions: [{header, question, options:
 [{label, description}], multi_select, previews}], answers?}`, `answer {answers}`,
 `permission {tool, target, always, truncated, outcome?, diff?}`, `step {tool, target}` and
-`status {status: finished | exited}`. Text is masked by the credential redactor before it
+`status {status: finished | exited}`, and
+`turn_end {duration_ms, outcome: done | stopped | failed, counts: {read, search, edit, run,
+other}, files: string[]}`. Turn duration starts at the prompt (0 when no prompt was seen).
+Counts come from completed steps and survive feed eviction; files contain at most 32 distinct
+masked edited paths, each at most 300 characters. Supported failure/interruption hooks select
+`failed`/`stopped`; unknown outcomes use `done`. Text is masked by the credential redactor before it
 leaves the hook client; a permission `target` keeps its line breaks, loses invisible
 formatting characters, and is `truncated` when it was cut or had such characters removed.
 `Pending` is `{epoch, seq, type: question | permission | input, title, detail, truncated, diff?,

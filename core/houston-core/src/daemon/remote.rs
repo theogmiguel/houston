@@ -686,7 +686,10 @@ impl Daemon {
                     },
                 );
             }
-            Some(HookFeed::Step { tool, target }) => {
+            Some(HookFeed::Step { tool, target, edited_path }) => {
+                if let Some(path) = edited_path {
+                    self.remote.feed.note_edited_path(id, path);
+                }
                 self.remote_push(
                     id,
                     FeedItem::Step {
@@ -699,7 +702,8 @@ impl Daemon {
             Some(HookFeed::Prompt { .. }) | None => {}
         }
         let event = crate::agent_events::AgentEvent::from_provider(provider, &d.event);
-        let turn_ended = event == Some(crate::agent_events::AgentEvent::TurnEnded)
+        use crate::agent_events::AgentEvent;
+        let turn_ended = matches!(event, Some(AgentEvent::TurnEnded | AgentEvent::TurnFailed | AgentEvent::TurnInterrupted))
             && d.fully_idle != Some(false)
             && d.subagent_type.is_none()
             && d.agent_id.is_none();
@@ -716,6 +720,14 @@ impl Daemon {
             }
         }
         if turn_ended {
+            let outcome = match event {
+                Some(AgentEvent::TurnFailed) => "failed",
+                Some(AgentEvent::TurnInterrupted) => "stopped",
+                _ => "done",
+            };
+            if let Some(summary) = self.remote.feed.end_turn(id, outcome, now) {
+                self.remote_push(id, summary, now);
+            }
             self.remote_push(id, FeedItem::Status { status: "finished" }, now);
         }
         if self.remote.feed.session_count() > remote::SEEN_PRUNE_AT {
