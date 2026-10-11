@@ -1,5 +1,6 @@
+use super::ingress::EventSender;
 use super::RendererHealth;
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::Arc;
 
 use tauri::webview::PlatformWebview;
 
@@ -42,7 +43,7 @@ pub fn install_termination_logger(platform: &PlatformWebview, health: Arc<Render
 pub fn install_termination_logger(_platform: &PlatformWebview, _health: Arc<RendererHealth>) {}
 
 #[cfg(target_os = "linux")]
-pub fn install(platform: &PlatformWebview, tx: Sender<Event>) {
+pub(super) fn install(platform: &PlatformWebview, tx: EventSender) {
     let webview = platform.inner();
 
     let terminated_tx = tx.clone();
@@ -61,7 +62,7 @@ pub fn install(platform: &PlatformWebview, tx: Sender<Event>) {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn install(_platform: &PlatformWebview, _tx: Sender<Event>) {}
+pub(super) fn install(_platform: &PlatformWebview, _tx: EventSender) {}
 
 #[cfg(target_os = "linux")]
 pub fn poll(platform: &PlatformWebview) -> Vec<Event> {

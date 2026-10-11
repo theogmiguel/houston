@@ -431,9 +431,27 @@ before the client exits. Closing a detected failed main window exits the client 
 other windows are open. Client exit leaves sessions running unless daemon shutdown was
 explicitly confirmed.
 
-Recovery remains experimental: JavaScript liveness does not prove that painting or React
-initialization recovered, and native prompt results are not yet tagged by incident.
-Linux supports native recovery confirmation and forced web-process termination. Other
+A paint incident requires a successful animation-frame report from the current page
+generation, including after reload; JavaScript probe replies cannot clear it. Paint
+reports carry the generation obtained at installation and updated on completed navigation.
+Recovery confirmation owns an incident ID, page generation and one absolute monotonic
+deadline. Queued expired dialogs never open, and cancellation targets the individual
+dialog. Selecting Wait stops automatic escalation for that incident.
+
+The supervisor coalesces native state hints and bounds ordinary receipts. Process loss,
+navigation, stop and prompt answers have reserved ingress; native callbacks never wait
+for queue space. A single poll and two native evaluations may remain outstanding;
+reload requests coalesce behind a single native dispatch slot.
+Logical probe expiry does not release those physical permits. Superseded queued probes
+check generation before execution, and unchanged titles are not reissued. Window
+destruction stops the supervisor; app exit joins it independently of GTK work.
+Logging uses a bounded writer queue and keeps a current and previous log segment.
+Queue loss is reported on stderr by the writer when it resumes. A blocked OS write can
+retain that single worker until I/O returns; it cannot block supervisor shutdown.
+
+Recovery remains experimental: animation-frame and JavaScript liveness do not establish
+successful React initialization or correct rendered pixels. Linux supports native recovery
+confirmation and forced web-process termination. Other
 platforms explicitly withhold focused recovery when native confirmation is unavailable;
 forced termination reports its lack of support and the ladder retries reload only.
 
