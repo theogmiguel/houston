@@ -1506,7 +1506,7 @@ export function App(): React.JSX.Element {
           case "routines":
             setRoutines(msg.routines);
             setRoutinesRunning(msg.running);
-            setRoutineEngineRefusals(msg.engine_refusals);
+            setRoutineEngineRefusals(msg.engine_refusals ?? []);
             setRoutineRefusal(null);
             break;
           case "routine_runs": {

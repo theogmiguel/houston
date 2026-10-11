@@ -62,7 +62,7 @@ export function useHarness(
         findings: msg.findings,
         models: msg.models,
         providerCoverage: msg.provider_coverage,
-        engineRefusals: msg.engine_refusals
+        engineRefusals: msg.engine_refusals ?? []
       })
     })
     const offChanged = client.subscribe('harness_changed', (msg) => {

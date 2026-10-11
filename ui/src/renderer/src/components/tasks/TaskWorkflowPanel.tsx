@@ -41,7 +41,7 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
       }
       if (message.type === 'task_domain_state') {
         setDomains((current) => ({ ...current, [message.domain.task_id]: message.domain }))
-        setPlanningRefusals(message.planning_refusals)
+        setPlanningRefusals(message.planning_refusals ?? [])
       }
       if (message.type === 'task_projects_state' && message.workspace === task.workspace) setProjects(message.projects)
       if (message.type === 'task_snapshot' && message.scope === task.workspace) {
