@@ -14,23 +14,40 @@ fn atomic_config_write_with(
     path: &Path,
     write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
 ) -> Result<()> {
-    let target = match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            std::fs::canonicalize(path).with_context(|| format!("resolving {}", path.display()))?
+    let mut target = path.to_path_buf();
+    let mut links = 0;
+    loop {
+        match std::fs::symlink_metadata(&target) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                anyhow::ensure!(
+                    links < 40,
+                    "{}: symlink limit 40 reached while replacing config (actual {links})",
+                    path.display()
+                );
+                let link = std::fs::read_link(&target)?;
+                target = if link.is_absolute() {
+                    link
+                } else {
+                    target.parent().unwrap_or(Path::new(".")).join(link)
+                };
+                links += 1;
+            }
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(error.into()),
         }
-        Ok(_) => path.to_path_buf(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => path.to_path_buf(),
-        Err(error) => return Err(error.into()),
-    };
+    }
     let parent = target
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-    if let Ok(metadata) = std::fs::metadata(&target) {
-        temporary
+    match std::fs::metadata(&target) {
+        Ok(metadata) => temporary
             .as_file()
-            .set_permissions(metadata.permissions())?;
+            .set_permissions(metadata.permissions())?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
     write(temporary.as_file_mut())
         .with_context(|| format!("writing temporary config for {}", path.display()))?;
@@ -368,6 +385,8 @@ fn codex_park_notify(path: &Path, sentinel: &str) -> Result<()> {
     }
     let mut out = lines.join("\n");
     out.push('\n');
+    out.parse::<toml::Value>()
+        .with_context(|| format!("validating {} after parking notify", path.display()))?;
     atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))
 }
 
@@ -1349,6 +1368,15 @@ mod tests {
             .file_type()
             .is_symlink());
         assert_eq!(read(&target), "new");
+        let absent = dir.path().join("absent");
+        let dangling = dir.path().join("dangling");
+        symlink("absent", &dangling).unwrap();
+        atomic_config_write(&dangling, "created").unwrap();
+        assert_eq!(read(&absent), "created");
+        assert!(std::fs::symlink_metadata(&dangling)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         assert_eq!(
             std::fs::metadata(target).unwrap().permissions().mode() & 0o777,
             0o640
