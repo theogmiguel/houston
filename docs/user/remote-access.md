@@ -97,6 +97,10 @@ row after the request arrived, the card shows **Answered in the terminal** and o
 turned off and on since the page loaded, Houston refuses the tap instead of answering the
 wrong request.
 
+Claude edit permission cards also show the file path and a masked preview of removed and
+added lines. Large previews are shortened; approve those in the pane's terminal after
+reviewing the full request, or deny from the phone.
+
 Cards you can answer with a tap are available for Claude Code permission requests and
 single questions with one answer. Questions with several parts or several answers, and
 requests from Codex, Cursor, Grok, OpenCode and Antigravity, show a **Needs you** card with

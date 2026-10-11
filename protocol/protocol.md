@@ -1160,14 +1160,20 @@ Errors are `{"error": "<message naming the value and the expected shape>"}`.
 `FeedEntry` is `{seq, at (epoch ms), type, …}` with `type` one of `prompt {text}`,
 `reply {text}` (markdown, ≤ 16 KiB), `question {questions: [{header, question, options:
 [{label, description}], multi_select, previews}], answers?}`, `answer {answers}`,
-`permission {tool, target, always, truncated, outcome?}`, `step {tool, target}` and
+`permission {tool, target, always, truncated, outcome?, diff?}`, `step {tool, target}` and
 `status {status: finished | exited}`. Text is masked by the credential redactor before it
 leaves the hook client; a permission `target` keeps its line breaks, loses invisible
 formatting characters, and is `truncated` when it was cut or had such characters removed.
-`Pending` is `{epoch, seq, type: question | permission | input, title, detail, truncated,
+`Pending` is `{epoch, seq, type: question | permission | input, title, detail, truncated, diff?,
 since, decidable, sent, answered_elsewhere}`; `sent` and `answered_elsewhere` stay set until
 the pane's status changes or a new card replaces it. `input` is a pane waiting without a
 structured request, which a device answers through `input`.
+
+For Claude Edit, MultiEdit and Write permissions, `diff` is
+`{path: string, lines: [{op: " " | "+" | "-", text: string}], truncated: bool}`.
+The preview shows removed then added lines from the hook input, with every line masked.
+It is bounded to 200 lines, 500 characters per line and 32 KiB of serialized JSON.
+A truncated preview refuses approval with 409; denial remains available.
 
 Device auth is `Authorization: Bearer <token>`. Every request's `Host` must name
 an allowed host (`localhost`, `127.0.0.1`, `[::1]`, the bind IP, the public URL's

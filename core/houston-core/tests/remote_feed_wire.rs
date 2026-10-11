@@ -722,3 +722,46 @@ async fn a_feed_page_after_the_largest_sequence_is_empty() {
     assert_eq!(feed(addr, &token, info.id, 0).await["last_seq"], 1);
     daemon.kill(info.id).ok();
 }
+
+#[tokio::test]
+async fn edit_permissions_expose_masked_bounded_diffs_in_feed_and_pending() {
+    use houston_core::remote::feed::{DIFF_LINE_MAX_CHARS, DIFF_MAX_BYTES, DIFF_MAX_LINES};
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["sleep", "30"]);
+    for (tool, input) in [
+        ("Edit", serde_json::json!({"file_path":"/work/config", "old_string":"old", "new_string":format!("token={TOKEN_IN_PROMPT}")})),
+        ("MultiEdit", serde_json::json!({"file_path":"/work/config", "edits":[{"old_string":"old", "new_string":"new"}]})),
+        ("Write", serde_json::json!({"file_path":"/work/config", "content":"first\nsecond"})),
+    ] {
+        let payload = serde_json::json!({"tool_name":tool,"tool_input":input});
+        apply(state.path(), &hook(None, "PermissionRequest", info.id, &payload)).await;
+        let page = feed(addr, &token, info.id, 0).await;
+        let entry = page["entries"].as_array().unwrap().last().unwrap();
+        assert_eq!(entry["diff"]["path"], "/work/config");
+        assert_eq!(entry["diff"]["truncated"], false);
+        assert_eq!(entry["diff"], page["pending"]["diff"]);
+        assert_eq!(entry["diff"], session_row(addr, &token, info.id).await["pending"]["diff"]);
+        assert!(!page.to_string().contains(TOKEN_IN_PROMPT));
+        assert_eq!(entry["diff"]["lines"][0]["op"], if tool == "Write" { "+" } else { "-" });
+    }
+    for content in [
+        "line\n".repeat(DIFF_MAX_LINES + 1),
+        "x".repeat(DIFF_LINE_MAX_CHARS + 1),
+        format!("{}\n", "界".repeat(DIFF_LINE_MAX_CHARS)).repeat(DIFF_MAX_LINES),
+    ] {
+        let payload = serde_json::json!({"tool_name":"Write","tool_input":{"file_path":"/work/config","content":content}});
+        apply(state.path(), &hook(None, "PermissionRequest", info.id, &payload)).await;
+        let page = feed(addr, &token, info.id, 0).await;
+        let diff = &page["pending"]["diff"];
+        assert_eq!(diff["truncated"], true);
+        assert!(diff.to_string().len() <= DIFF_MAX_BYTES);
+        assert!(diff["lines"].as_array().unwrap().len() <= DIFF_MAX_LINES);
+        assert!(diff["lines"].as_array().unwrap().iter().all(|l| l["text"].as_str().unwrap().chars().count() <= DIFF_LINE_MAX_CHARS));
+        let seq = page["pending"]["seq"].as_u64().unwrap();
+        assert_eq!(decide(addr, &token, info.id, seq, "approve").await.status, 409);
+    }
+    daemon.kill(info.id).unwrap();
+}

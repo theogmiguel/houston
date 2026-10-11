@@ -539,6 +539,7 @@ impl Daemon {
                     card: Card::Input,
                     title: feed::card_title(&Card::Input, None),
                     detail: String::new(),
+                    diff: None,
                     provider: self.remote_provider(id),
                     truncated: false,
                     since_ms: now,
@@ -621,6 +622,7 @@ impl Daemon {
                         title: feed::card_title(&card, None),
                         card,
                         detail: String::new(),
+                        diff: None,
                         truncated: false,
                         provider,
                         since_ms: now,
@@ -652,6 +654,7 @@ impl Daemon {
                 target,
                 always,
                 truncated,
+                diff,
             }) => {
                 let Some(seq) = self.remote_push(
                     id,
@@ -661,6 +664,7 @@ impl Daemon {
                         always: *always,
                         truncated: *truncated,
                         outcome: None,
+                        diff: diff.clone(),
                     },
                     now,
                 ) else {
@@ -674,6 +678,7 @@ impl Daemon {
                         title: feed::card_title(&card, Some(tool)),
                         card,
                         detail: target.clone(),
+                        diff: diff.clone(),
                         truncated: *truncated,
                         provider,
                         since_ms: now,

@@ -378,6 +378,7 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
             target: "cargo test".into(),
             always: true,
             truncated: true,
+            diff: None,
         }),
     };
     let text = serde_json::to_string(&full).expect("serialize");

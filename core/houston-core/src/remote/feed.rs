@@ -27,6 +27,76 @@ const OPTIONS_MAX: usize = 9;
 // key event rather than one pasted chunk.
 const SETTLE_MS: u64 = 120;
 
+// A review card stays readable on a phone without retaining an entire file.
+pub const DIFF_MAX_LINES: usize = 200;
+// Long generated lines must not dominate the card or its memory allocation.
+pub const DIFF_LINE_MAX_CHARS: usize = 500;
+// Bound UTF-8 and JSON escaping overhead independently of the line count.
+pub const DIFF_MAX_BYTES: usize = 32 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiffLine {
+    pub op: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditDiff {
+    pub path: String,
+    pub lines: Vec<DiffLine>,
+    pub truncated: bool,
+}
+
+fn edit_diff(tool: &str, input: Option<&serde_json::Value>) -> Option<EditDiff> {
+    let input = input?;
+    if !matches!(tool, "Edit" | "MultiEdit" | "Write") {
+        return None;
+    }
+    let raw_path = str_at(input, "file_path")?;
+    let (path, hidden) = plain(&mask(raw_path), false);
+    let mut diff = EditDiff {
+        truncated: hidden || path.chars().count() > SUMMARY_MAX_CHARS,
+        path: cut_chars(&path, SUMMARY_MAX_CHARS),
+        lines: Vec::new(),
+    };
+    let mut bytes = serde_json::to_vec(&diff).ok()?.len();
+    let edits: &[serde_json::Value] = if tool == "MultiEdit" {
+        input.get("edits")?.as_array()?
+    } else {
+        std::slice::from_ref(input)
+    };
+    'edits: for edit in edits {
+        let parts = if tool == "Write" {
+            vec![("+", str_at(edit, "content")?)]
+        } else {
+            vec![("-", str_at(edit, "old_string")?), ("+", str_at(edit, "new_string")?)]
+        };
+        for (op, text) in parts {
+            for raw in text.lines() {
+                if diff.lines.len() >= DIFF_MAX_LINES {
+                    diff.truncated = true;
+                    break 'edits;
+                }
+                let hidden = raw.chars().any(is_format_char);
+                let clean: String = raw.chars()
+                    .filter(|c| (!c.is_control() || *c == '\t') && !is_format_char(*c))
+                    .collect();
+                let masked = mask(&clean);
+                diff.truncated |= hidden || masked.chars().count() > DIFF_LINE_MAX_CHARS;
+                let line = DiffLine { op: op.into(), text: cut_chars(&masked, DIFF_LINE_MAX_CHARS) };
+                let weight = serde_json::to_vec(&line).ok()?.len() + 1;
+                if bytes + weight > DIFF_MAX_BYTES {
+                    diff.truncated = true;
+                    break 'edits;
+                }
+                bytes += weight;
+                diff.lines.push(line);
+            }
+        }
+    }
+    Some(diff)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuestionOption {
     pub label: String,
@@ -74,6 +144,8 @@ pub enum HookFeed {
         /// formatting characters were removed from it.
         #[serde(default)]
         truncated: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        diff: Option<EditDiff>,
     },
     Step {
         tool: String,
@@ -318,6 +390,11 @@ pub fn from_hook(
         "PermissionRequest" => {
             let (target, truncated) = tool_target(tool_input(&v), SUMMARY_MAX_CHARS, true);
             Some(HookFeed::Permission {
+                diff: if provider == proto::AgentKind::Claude {
+                    name.as_deref().and_then(|tool| edit_diff(tool, tool_input(&v)))
+                } else {
+                    None
+                },
                 tool: name.unwrap_or_else(|| "tool".to_string()),
                 target,
                 always: v
@@ -373,6 +450,8 @@ pub enum FeedItem {
         truncated: bool,
         /// `resolved` once the agent moved on; which choice was made is not reported.
         outcome: Option<&'static str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        diff: Option<EditDiff>,
     },
     Step {
         tool: String,
@@ -406,9 +485,12 @@ impl FeedItem {
                         .map_or(0, |a| a.iter().map(String::len).sum())
             }
             FeedItem::Answer { answers } => answers.iter().map(String::len).sum(),
-            FeedItem::Permission { tool, target, .. } | FeedItem::Step { tool, target } => {
-                tool.len() + target.len()
+            FeedItem::Permission { tool, target, diff, .. } => {
+                tool.len() + target.len() + diff.as_ref().map_or(0, |d| {
+                    d.path.len() + d.lines.iter().map(|l| l.op.len() + l.text.len() + 32).sum::<usize>()
+                })
             }
+            FeedItem::Step { tool, target } => tool.len() + target.len(),
             FeedItem::Status { .. } => 0,
         }
     }
@@ -455,6 +537,7 @@ pub struct Pending {
     pub detail: String,
     /// `detail` is not exactly what the tool runs (see `HookFeed::Permission`).
     pub truncated: bool,
+    pub diff: Option<EditDiff>,
     pub provider: proto::AgentKind,
     pub since_ms: u64,
     /// Set once answered; the card stays consumed until the pane's status
@@ -474,6 +557,8 @@ pub struct PendingView {
     pub title: String,
     pub detail: String,
     pub truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff: Option<EditDiff>,
     pub since: u64,
     /// Houston knows the keys this provider's prompt takes for this card.
     pub decidable: bool,
@@ -494,6 +579,7 @@ impl Pending {
             title: self.title.clone(),
             detail: self.detail.clone(),
             truncated: self.truncated,
+            diff: self.diff.clone(),
             since: self.since_ms,
             decidable: decision_support(self.provider, &self.card).is_ok(),
             sent: self.answered == Some(Answered::Sent),
@@ -803,7 +889,8 @@ impl Store {
                 return Err(Refusal::Answered(answered));
             }
             decision_support(p.provider, &p.card).map_err(Refusal::Unsupported)?;
-            if p.truncated && matches!(choice, Choice::Approve | Choice::Always) {
+            if (p.truncated || p.diff.as_ref().is_some_and(|d| d.truncated))
+                && matches!(choice, Choice::Approve | Choice::Always) {
                 return Err(Refusal::Partial);
             }
             let plan = decision_keys(p.provider, &p.card, choice).map_err(Refusal::Choice)?;
@@ -1238,6 +1325,7 @@ mod tests {
             card: Card::Permission { always: false },
             title: "Bash".into(),
             detail: "npm test".into(),
+            diff: None,
             truncated,
             provider: CLAUDE,
             since_ms: 0,
