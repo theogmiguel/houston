@@ -21,9 +21,75 @@ use probe::{Completion, ProbeTable};
 
 const HALTED_TITLE: &str = "Houston — UI not responding (agents still running)";
 
+#[derive(Default)]
+pub struct RendererHealth {
+    state: std::sync::Mutex<HealthState>,
+}
+
+#[derive(Default)]
+struct HealthState {
+    unavailable: bool,
+    generation: u64,
+    navigation_required: bool,
+}
+
+impl RendererHealth {
+    fn state(&self) -> std::sync::MutexGuard<'_, HealthState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    pub fn unavailable(&self) -> bool {
+        self.state().unavailable
+    }
+
+    fn record_termination(&self) {
+        let mut state = self.state();
+        state.generation += 1;
+        state.navigation_required = true;
+        state.unavailable = true;
+    }
+
+    fn page_loaded(&self, watchdog_enabled: bool) {
+        let mut state = self.state();
+        state.generation += 1;
+        state.navigation_required = false;
+        if !watchdog_enabled {
+            state.unavailable = false;
+        }
+    }
+
+    fn probe_generation(&self) -> Option<u64> {
+        let state = self.state();
+        (!state.navigation_required).then_some(state.generation)
+    }
+
+    fn recover(&self, generation: u64) {
+        let mut state = self.state();
+        // Serialize acknowledgment with the native callback, including queued replies.
+        if !state.navigation_required && state.generation == generation {
+            state.unavailable = false;
+        }
+    }
+
+    fn record_state(&self, state: machine::State) {
+        if matches!(
+            state,
+            machine::State::Unresponsive
+                | machine::State::PaintStalled
+                | machine::State::Gone
+                | machine::State::Recovering
+                | machine::State::Halted
+        ) {
+            self.state().unavailable = true;
+        }
+    }
+}
+
 enum Msg {
     Event(Event),
-    ProbeReply(String),
+    ProbeReply { payload: String, generation: u64 },
 }
 
 pub struct WatchdogHandle {
@@ -45,16 +111,23 @@ pub struct Config {
 
 impl Config {
     pub fn from_env(log_path: std::path::PathBuf) -> Option<Self> {
-        let flag = |name: &str| std::env::var(name).is_ok_and(|v| v == "1");
-        if cfg!(debug_assertions) && !flag("TR_WATCHDOG") {
+        if cfg!(debug_assertions) && !env_flag("HOUSTON_WATCHDOG", "TR_WATCHDOG") {
             return None;
         }
         Some(Self {
             thresholds: Thresholds::default(),
-            recovery_enabled: flag("TR_WATCHDOG_RECOVER"),
+            recovery_enabled: env_flag("HOUSTON_WATCHDOG_RECOVER", "TR_WATCHDOG_RECOVER"),
             log_path,
         })
     }
+}
+
+fn flag_value(primary: Option<String>, legacy: Option<String>) -> bool {
+    primary.or(legacy).is_some_and(|value| value == "1")
+}
+
+fn env_flag(primary: &str, legacy: &str) -> bool {
+    flag_value(std::env::var(primary).ok(), std::env::var(legacy).ok())
 }
 
 pub fn install_termination_logger<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
@@ -66,11 +139,12 @@ pub fn install_termination_logger<R: Runtime>(app: &AppHandle<R>, label: &str) -
         );
         return false;
     };
+    let health = app.state::<Arc<RendererHealth>>().inner().clone();
     #[cfg(target_os = "linux")]
     {
-        if let Err(err) =
-            window.with_webview(|platform| gtk_signals::install_termination_logger(&platform))
-        {
+        if let Err(err) = window.with_webview(move |platform| {
+            gtk_signals::install_termination_logger(&platform, health)
+        }) {
             eprintln!(
                 "houston-tauri: renderer-crash logging not installed: could not reach \
                  the platform webview: {err}"
@@ -79,9 +153,9 @@ pub fn install_termination_logger<R: Runtime>(app: &AppHandle<R>, label: &str) -
         }
     }
     #[cfg(windows)]
-    if let Err(err) =
-        window.with_webview(|platform| webview2_signals::install_termination_logger(&platform))
-    {
+    if let Err(err) = window.with_webview(move |platform| {
+        webview2_signals::install_termination_logger(&platform, health)
+    }) {
         eprintln!(
             "houston-tauri: renderer-crash logging not installed: could not reach \
              the platform webview: {err}"
@@ -89,7 +163,7 @@ pub fn install_termination_logger<R: Runtime>(app: &AppHandle<R>, label: &str) -
         return false;
     }
     #[cfg(not(any(target_os = "linux", windows)))]
-    drop(window);
+    drop((window, health));
     true
 }
 
@@ -152,7 +226,11 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, label: &str, config: Config) -> b
 }
 
 pub fn note_page_loaded<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(handle) = app.try_state::<WatchdogHandle>() {
+    let handle = app.try_state::<WatchdogHandle>();
+    if let Some(health) = app.try_state::<Arc<RendererHealth>>() {
+        health.page_loaded(handle.is_some());
+    }
+    if let Some(handle) = handle {
         let _ = handle.tx.send(Msg::Event(Event::PageLoaded));
     }
 }
@@ -161,7 +239,8 @@ pub fn maybe_selftest_wedge<R: Runtime>(app: &AppHandle<R>) {
     if !cfg!(debug_assertions) {
         return;
     }
-    let Some(delay_ms) = std::env::var("TR_WATCHDOG_SELFTEST_WEDGE_MS")
+    let Some(delay_ms) = std::env::var("HOUSTON_WATCHDOG_SELFTEST_WEDGE_MS")
+        .or_else(|_| std::env::var("TR_WATCHDOG_SELFTEST_WEDGE_MS"))
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
     else {
@@ -175,6 +254,38 @@ pub fn maybe_selftest_wedge<R: Runtime>(app: &AppHandle<R>) {
         eprintln!("houston-tauri: watchdog selftest wedging the JS main thread now (unbounded)");
         let _ = window.eval("(function(){while(true){}})()");
     });
+}
+
+pub fn maybe_selftest_terminate<R: Runtime>(app: &AppHandle<R>) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let Some(delay_ms) = std::env::var("HOUSTON_WATCHDOG_SELFTEST_TERMINATE_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+    else {
+        return;
+    };
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, delay_ms);
+        eprintln!("houston-tauri: renderer termination selftest is only supported on Linux");
+    }
+    #[cfg(target_os = "linux")]
+    {
+        static FIRED: AtomicBool = AtomicBool::new(false);
+        if FIRED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let Some(window) = app.get_webview_window("main") else {
+            return;
+        };
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(delay_ms));
+            eprintln!("houston-tauri: selftest terminating the main renderer through WebKit");
+            let _ = window.with_webview(|platform| gtk_signals::terminate_web_process(&platform));
+        });
+    }
 }
 
 #[cfg(any(target_os = "linux", windows))]
@@ -240,27 +351,49 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                 Ok(Msg::Event(Event::PageLoaded)) => {
                     let now = self.clocks.sample();
                     self.page_loaded.store(true, Ordering::SeqCst);
-                    machine.note_reload_issued(now.mono_ms);
-                    probes.discard_all();
+                    self.prompt_cancel.store(true, Ordering::SeqCst);
+                    let actions = machine.on_event(Event::PageLoaded, now.mono_ms);
+                    self.apply(&mut machine, &mut probes, actions, now);
                     next_probe_ms = now.mono_ms;
                 }
                 Ok(Msg::Event(event)) => {
                     let now = self.clocks.sample();
+                    let terminated = matches!(event, Event::WebProcessTerminated { .. });
                     let actions = machine.on_event(event, now.mono_ms);
                     self.apply(&mut machine, &mut probes, actions, now);
+                    // Navigation may finish before the native signal forwarding thread runs.
+                    if terminated
+                        && self
+                            .window
+                            .app_handle()
+                            .state::<Arc<RendererHealth>>()
+                            .probe_generation()
+                            .is_some()
+                    {
+                        self.prompt_cancel.store(true, Ordering::SeqCst);
+                        let actions = machine.on_event(Event::PageLoaded, now.mono_ms);
+                        self.apply(&mut machine, &mut probes, actions, now);
+                    }
                 }
-                Ok(Msg::ProbeReply(payload)) => {
+                Ok(Msg::ProbeReply {
+                    payload,
+                    generation,
+                }) => {
+                    let health = self.window.app_handle().state::<Arc<RendererHealth>>();
+                    if health.probe_generation() != Some(generation) {
+                        continue;
+                    }
                     let now = self.clocks.sample();
                     let event = match probes.complete(&payload, now.mono_ms) {
                         Completion::Matched { rtt_ms, .. } => Some(Event::ProbeReturned { rtt_ms }),
-                        Completion::Malformed { rtt_ms, .. } => {
-                            Some(Event::ProbeReturned { rtt_ms })
-                        }
-                        Completion::Unknown => None,
+                        Completion::Malformed | Completion::Unknown => None,
                     };
                     if let Some(event) = event {
                         let actions = machine.on_event(event, now.mono_ms);
                         self.apply(&mut machine, &mut probes, actions, now);
+                        if machine.state() == machine::State::Healthy {
+                            health.recover(generation);
+                        }
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => {}
@@ -354,10 +487,17 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
     }
 
     fn issue_probe(&self, probes: &mut ProbeTable, now_ms: u64) {
+        let health = self.window.app_handle().state::<Arc<RendererHealth>>();
+        let Some(generation) = health.probe_generation() else {
+            return;
+        };
         let (nonce, script) = probes.issue(now_ms);
         let tx = self.tx.clone();
         if let Err(err) = self.window.eval_with_callback(script, move |payload| {
-            let _ = tx.send(Msg::ProbeReply(payload));
+            let _ = tx.send(Msg::ProbeReply {
+                payload,
+                generation,
+            });
         }) {
             eprintln!("houston-tauri: watchdog could not dispatch a probe: {err}");
             probes.discard(nonce);
@@ -371,6 +511,9 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
         actions: Vec<Action>,
         now: clocks::ClockSample,
     ) {
+        if let Some(health) = self.window.app_handle().try_state::<Arc<RendererHealth>>() {
+            health.record_state(machine.state());
+        }
         for action in actions {
             match action {
                 Action::Log(transition) => self.write(transition, now),
@@ -401,6 +544,8 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                     let _ = self
                         .window
                         .with_webview(|platform| gtk_signals::terminate_web_process(&platform));
+                    #[cfg(not(target_os = "linux"))]
+                    eprintln!("houston-tauri: forced renderer termination is unsupported on this platform; trying reload only");
                 }
                 Action::PromptThenRecover { timeout_ms } => {
                     self.prompt(timeout_ms);
@@ -534,7 +679,7 @@ fn native_prompt(
     match response {
         gtk::ResponseType::Accept => PromptOutcome::Reload,
         gtk::ResponseType::Cancel => PromptOutcome::Decline,
-        _ => PromptOutcome::TimedOut,
+        _ => PromptOutcome::Decline,
     }
 }
 
@@ -551,7 +696,8 @@ fn native_prompt(
     _parent: Option<&()>,
     _cancel: &Arc<AtomicBool>,
 ) -> PromptOutcome {
-    PromptOutcome::TimedOut
+    eprintln!("houston-tauri: native recovery confirmation is unsupported on this platform; recovery withheld");
+    PromptOutcome::Decline
 }
 
 const RECORD_RELOAD_JS: &str = r#"
@@ -701,5 +847,111 @@ mod tests {
     #[test]
     fn the_reload_mirror_script_cannot_throw_into_the_page() {
         assert!(RECORD_RELOAD_JS.contains("try {") && RECORD_RELOAD_JS.contains("catch"));
+    }
+}
+
+#[cfg(test)]
+mod reliability_tests {
+    use super::*;
+
+    #[test]
+    fn native_termination_rejects_a_queued_reply_before_the_forwarded_event() {
+        let health = RendererHealth::default();
+        let mut machine = Machine::new(Thresholds::default(), true, 0);
+        machine.on_event(Event::ProbeReturned { rtt_ms: 5 }, 1);
+        let queued = health.probe_generation().unwrap();
+        health.record_termination();
+        assert_eq!(health.probe_generation(), None);
+        health.recover(queued);
+        assert!(
+            health.unavailable(),
+            "the supervisor has not received termination yet"
+        );
+        let actions = machine.on_event(
+            Event::WebProcessTerminated {
+                reason: machine::TerminationReason::Crashed,
+            },
+            2,
+        );
+        health.record_state(machine.state());
+        assert_eq!(machine.state(), machine::State::Recovering);
+        assert!(actions.contains(&Action::DiscardOutstandingProbes));
+        let actions = machine.on_event(Event::ProbeReturned { rtt_ms: 5 }, 3);
+        assert!(!actions.contains(&Action::SetTitle(TitleState::Normal)));
+        health.recover(queued);
+        assert!(
+            health.unavailable(),
+            "recovery enabled must still await navigation"
+        );
+        health.page_loaded(true);
+        machine.on_event(Event::PageLoaded, 4);
+        health.recover(queued);
+        assert!(
+            health.unavailable(),
+            "navigation itself and old replies cannot recover"
+        );
+        let current = health.probe_generation().unwrap();
+        machine.on_event(Event::ProbeReturned { rtt_ms: 5 }, 5);
+        assert_eq!(machine.state(), machine::State::Healthy);
+        health.recover(current);
+        assert!(!health.unavailable());
+    }
+
+    #[test]
+    fn termination_between_reply_validation_and_acknowledgment_remains_latched() {
+        let health = RendererHealth::default();
+        let validated = health.probe_generation().unwrap();
+        health.record_termination();
+        health.page_loaded(true);
+        health.recover(validated);
+        assert!(health.unavailable());
+        let current = health.probe_generation().unwrap();
+        health.record_termination();
+        health.recover(current);
+        assert!(health.unavailable());
+    }
+
+    #[test]
+    fn every_navigation_invalidates_pre_load_replies() {
+        let health = RendererHealth::default();
+        health.record_state(machine::State::Unresponsive);
+        let old = health.probe_generation().unwrap();
+        health.page_loaded(true);
+        health.recover(old);
+        assert!(health.unavailable());
+        health.recover(health.probe_generation().unwrap());
+        assert!(!health.unavailable());
+    }
+
+    #[test]
+    fn every_detected_failure_allows_native_close_and_stale_state_cannot_clear_it() {
+        use machine::State;
+        for state in [
+            State::Unresponsive,
+            State::PaintStalled,
+            State::Gone,
+            State::Recovering,
+            State::Halted,
+        ] {
+            let health = RendererHealth::default();
+            health.record_state(state);
+            assert!(health.unavailable(), "{state:?}");
+            for stale in [State::Booting, State::Healthy, State::Suspect] {
+                health.record_state(stale);
+                assert!(
+                    health.unavailable(),
+                    "{stale:?} is not a fresh health acknowledgment"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn houston_flags_override_legacy_flags_including_explicit_disable() {
+        assert!(!flag_value(None, None));
+        assert!(flag_value(None, Some("1".into())));
+        assert!(flag_value(Some("1".into()), Some("0".into())));
+        assert!(!flag_value(Some("0".into()), Some("1".into())));
+        assert!(!flag_value(Some("invalid".into()), Some("1".into())));
     }
 }

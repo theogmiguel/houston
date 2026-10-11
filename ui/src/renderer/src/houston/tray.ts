@@ -165,7 +165,6 @@ export function createTraySync(
 
 export const TRAY_EVENT_FOCUS_PANE = 'tray://focus-pane'
 export const NOTIFICATION_EVENT_FOCUS_PANE = 'native-notification://focus-pane'
-export const TRAY_EVENT_STOP_DAEMON = 'tray://stop-daemon'
 
 async function invoker(): Promise<
   <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
@@ -196,6 +195,12 @@ export async function appQuit(): Promise<void> {
   if (!isTauri()) return
   const invoke = await invoker()
   await invoke<void>('app_quit', {})
+}
+
+export async function appStopDaemonsAndQuit(): Promise<void> {
+  if (!isTauri()) return
+  const invoke = await invoker()
+  await invoke<void>('app_stop_daemons_and_quit', {})
 }
 
 export async function onTrayEvent<T>(

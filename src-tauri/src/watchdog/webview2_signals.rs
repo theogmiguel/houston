@@ -1,13 +1,16 @@
 use super::machine::Event;
 #[cfg(windows)]
 use super::machine::TerminationReason;
-use std::sync::mpsc::Sender;
+use super::RendererHealth;
+use std::sync::{mpsc::Sender, Arc};
 use tauri::webview::PlatformWebview;
 
 #[cfg(windows)]
 pub fn install(platform: &PlatformWebview, tx: Sender<Event>) {
-    let outcome = install_with(platform, move |reason| {
-        let _ = tx.send(Event::WebProcessTerminated { reason });
+    let outcome = install_with(platform, move |_kind, event| {
+        if let Some(event) = event {
+            let _ = tx.send(event);
+        }
     });
     if let Err(err) = outcome {
         eprintln!(
@@ -22,11 +25,14 @@ pub fn install(platform: &PlatformWebview, tx: Sender<Event>) {
 pub fn install(_platform: &PlatformWebview, _tx: Sender<Event>) {}
 
 #[cfg(windows)]
-pub fn install_termination_logger(platform: &PlatformWebview) {
-    let outcome = install_with(platform, |reason| {
+pub fn install_termination_logger(platform: &PlatformWebview, health: Arc<RendererHealth>) {
+    let outcome = install_with(platform, move |kind, event| {
+        if matches!(event, Some(Event::WebProcessTerminated { .. })) {
+            health.record_termination();
+        }
         eprintln!(
-            "houston-tauri: webview process failed ({})",
-            reason.as_str()
+            "houston-tauri: WebView2 process failed (kind {}, event {event:?})",
+            kind.0
         );
     });
     if let Err(err) = outcome {
@@ -36,7 +42,7 @@ pub fn install_termination_logger(platform: &PlatformWebview) {
 
 #[cfg(not(windows))]
 #[allow(dead_code)]
-pub fn install_termination_logger(_platform: &PlatformWebview) {}
+pub fn install_termination_logger(_platform: &PlatformWebview, _health: Arc<RendererHealth>) {}
 
 #[cfg(windows)]
 pub fn poll(_platform: &PlatformWebview) -> Vec<Event> {
@@ -49,20 +55,33 @@ pub fn poll(_platform: &PlatformWebview) -> Vec<Event> {
     Vec::new()
 }
 
-// The pinned webview2-com-sys SDK only declares the exit-shaped kinds; every
-// kind it can deliver here reads as a crash to the recovery ladder, which is
-// the correct conservative mapping until the SDK exposes finer ones.
 #[cfg(windows)]
-fn map_reason(
-    _kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PROCESS_FAILED_KIND,
-) -> TerminationReason {
-    TerminationReason::Crashed
+fn map_event(
+    kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PROCESS_FAILED_KIND,
+) -> Option<Event> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::*;
+    match kind {
+        COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED
+        | COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED => {
+            Some(Event::WebProcessTerminated {
+                reason: TerminationReason::Crashed,
+            })
+        }
+        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE => {
+            Some(Event::ResponsivenessChanged { responsive: false })
+        }
+        _ => None,
+    }
 }
 
 #[cfg(windows)]
 fn install_with<F>(platform: &PlatformWebview, mut on_failed: F) -> windows_core::Result<()>
 where
-    F: FnMut(TerminationReason) + Send + 'static,
+    F: FnMut(
+            webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PROCESS_FAILED_KIND,
+            Option<Event>,
+        ) + Send
+        + 'static,
 {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2ProcessFailedEventArgs,
@@ -79,7 +98,7 @@ where
                 if let Some(args) = args.as_ref() {
                     let mut kind = Default::default();
                     if args.ProcessFailedKind(&mut kind).is_ok() {
-                        on_failed(map_reason(kind));
+                        on_failed(kind, map_event(kind));
                     }
                 }
                 Ok(())
@@ -88,5 +107,35 @@ where
         let mut token: i64 = 0;
         core.add_ProcessFailed(&handler, &mut token)?;
         Ok(())
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use webview2_com::Microsoft::Web::WebView2::Win32::*;
+
+    #[test]
+    fn only_main_process_exits_are_reported_as_gone() {
+        for kind in [
+            COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED,
+        ] {
+            assert!(matches!(
+                map_event(kind),
+                Some(Event::WebProcessTerminated { .. })
+            ));
+        }
+        assert_eq!(
+            map_event(COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE),
+            Some(Event::ResponsivenessChanged { responsive: false })
+        );
+        for kind in [
+            COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_UTILITY_PROCESS_EXITED,
+        ] {
+            assert_eq!(map_event(kind), None);
+        }
     }
 }
