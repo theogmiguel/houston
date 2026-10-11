@@ -1,22 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNativeOverlaySuppression } from '../layout/nativeSuppression'
-import { CONNECT_PHONE_EVENT } from '../connectPhone'
+import { CONNECT_PHONE_EVENT, type ConnectPhoneStep } from '../connectPhone'
 import type { HoustonClient } from '../houston/client'
-import { useRemote } from '../houston/useRemote'
-import { Button, Caption, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle, Field, Inline, Notice, QrImage, Select, TextInput } from './ui'
-import { Text } from './ui/Text'
-import { PairingProgress } from './ui/PairingProgress'
+import { useRemote, type RemotePairing } from '../houston/useRemote'
+import { IconAlertTriangle, IconCheck } from './icons'
+import { Button, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle, FormGrid, FormGridLabel, Icon, IconTile, Inline, QrImage, Select, Spinner, Stack, Text, TextInput } from './ui'
 import { useCopyFeedback } from './useCopyFeedback'
 import { useFocusTrap } from './dialogFocus'
 
 type Route = 'tailscale' | 'wifi'
+type View = 'route' | 'scan'
 const ROUTES = [
-  { value: 'tailscale', label: 'Tailscale (works anywhere, HTTPS)' },
-  { value: 'wifi', label: 'Same Wi-Fi (plain HTTP)' }
+  { value: 'tailscale', label: 'Tailscale · HTTPS' },
+  { value: 'wifi', label: 'Same Wi-Fi · plain HTTP' }
 ]
-const SECURITY = 'A paired device can read any pane and type into it, which is as much access as a shell on this computer.'
-const HTTP_WARNING = 'Devices reach this address over plain HTTP, so their token and the pane text they read cross the network unencrypted. Use tailscale serve and an https public URL.'
+const ROUTE_HINT: Record<Route, string> = {
+  tailscale: 'Works anywhere; only your own devices can open it.',
+  wifi: 'Works on a trusted home or office network; Houston listens on all interfaces.'
+}
+const SECURITY = 'A paired phone can read and type into any pane: as much access as a shell on this computer.'
+const HTTP_WARNING = 'Traffic crosses this network unencrypted, including the device token and the pane text it reads.'
 
 export function routeSettings(route: Route, port: string, value: string): { bind: string; public_url: string } | null {
   try {
@@ -30,20 +34,39 @@ export function routeSettings(route: Route, port: string, value: string): { bind
   }
 }
 
-export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient | null; onClose: () => void }): React.JSX.Element {
+function WarningLine({ children }: { children: string }): React.JSX.Element {
+  return (
+    <Inline gap="small" align="start">
+      <Text tone="muted"><Icon glyph={IconAlertTriangle} role="small" /></Text>
+      <Text as="p" size="small" tone="muted" flush>{children}</Text>
+    </Inline>
+  )
+}
+
+function hostOf(url: string | null | undefined): string {
+  try {
+    return url ? new URL(url).host : ''
+  } catch {
+    return url ?? ''
+  }
+}
+
+/** `initialStep` forces the route step (`'route'`) or the code step (`'scan'`); without it the dialog opens on the code step when remote access is already on with a public URL. */
+export function ConnectPhoneDialog({ client, onClose, initialStep }: { client: HoustonClient | null; onClose: () => void; initialStep?: ConnectPhoneStep }): React.JSX.Element {
   const { remote, pairing, error, configure, pairStart, pairCancel } = useRemote(client)
+  const [view, setView] = useState<View | null>(null)
   const [route, setRoute] = useState<Route>('tailscale')
   const [url, setUrl] = useState('')
-  const [initialized, setInitialized] = useState(false)
   const [confirmed, setConfirmed] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
   const [pending, setPending] = useState(false)
-  const [codeState, setCodeState] = useState<'idle' | 'creating' | 'issued'>('idle')
+  const [issued, setIssued] = useState<RemotePairing | null>(null)
+  const [copyTarget, setCopyTarget] = useState<'command' | 'link'>('command')
   const expected = useRef<{ bind: string; public_url: string } | null>(null)
   const baseline = useRef<Set<number> | null>(null)
   const requested = useRef(false)
   const root = useRef<HTMLDivElement>(null)
-  const close = useRef<HTMLButtonElement>(null)
+  const dismiss = useRef<HTMLButtonElement>(null)
   // A single selector branch preserves control order across DOM selector engines.
   const trapFocus = useFocusTrap(root, ':is(button, input, [tabindex="0"]):not([disabled])')
   useNativeOverlaySuppression('modal', true, root)
@@ -51,13 +74,17 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
   const port = remote?.bind.match(/:(\d+)$/)?.[1] ?? ''
   const settings = routeSettings(route, port, url)
   const urlError = url !== '' && !settings
-    ? `Connection URL ${JSON.stringify(url)} must be ${route === 'tailscale' ? 'an HTTPS origin without credentials, a path, query, or fragment.' : `a reachable HTTP origin at port ${port}, without credentials, a path, query, or fragment.`}`
+    ? `Address ${JSON.stringify(url)} must be ${route === 'tailscale' ? 'an HTTPS origin without credentials, a path, query, or fragment.' : `a reachable HTTP origin at port ${port}, without credentials, a path, query, or fragment.`}`
     : undefined
+  const fieldError = urlError ?? error ?? remote?.error ?? undefined
   const applied = !!remote && !!settings && remote.bind === settings.bind && remote.public_url?.replace(/\/$/, '') === settings.public_url
+  const live = applied && !!remote?.enabled && !!remote.listening
+  const command = `tailscale serve --bg ${port}`
+  const shown = pairing ?? issued
+  const expired = view === 'scan' && !pairing && !!issued
 
   useEffect(() => {
     const trigger = document.activeElement
-    close.current?.focus()
     return () => {
       pairCancel()
       if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus()
@@ -65,11 +92,11 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
   }, [pairCancel])
 
   useEffect(() => {
-    if (!remote || initialized) return
+    if (!remote || view) return
     setRoute(remote.public_url?.startsWith('http:') ? 'wifi' : 'tailscale')
     setUrl(remote.public_url ?? '')
-    setInitialized(true)
-  }, [remote, initialized])
+    setView(initialStep === 'route' || !remote.enabled || !remote.public_url ? 'route' : 'scan')
+  }, [remote, view, initialStep])
 
   useEffect(() => {
     if (!remote) return
@@ -85,18 +112,18 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
     if (target && remote.bind === target.bind && remote.public_url?.replace(/\/$/, '') === target.public_url && remote.enabled && remote.listening) {
       expected.current = null
       setPending(false)
+      setView('scan')
     }
-    if (!confirmed && initialized && applied && remote.enabled && remote.listening && !requested.current) {
+    if (!confirmed && view === 'scan' && live && !requested.current) {
       requested.current = true
       baseline.current = new Set(remote.devices.map((device) => device.id))
-      setCodeState('creating')
       pairStart()
     }
-  }, [remote, initialized, applied, confirmed, pairStart, pairCancel])
+  }, [remote, view, live, confirmed, pairStart, pairCancel])
 
   useEffect(() => {
     if (!pairing) return
-    setCodeState('issued')
+    setIssued(pairing)
     setNow(Date.now())
     // One second matches the displayed countdown; no terminal rendering is involved.
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -104,12 +131,23 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
   }, [pairing])
 
   useEffect(() => {
+    if (remote && !remote.enabled && view === 'scan') {
+      baseline.current = null
+      requested.current = false
+      setIssued(null)
+      setView('route')
+    }
+  }, [remote, view])
+
+  useEffect(() => {
     if (error || remote?.error || !remote?.enabled) setPending(false)
   }, [error, remote?.error, remote?.enabled])
 
   useEffect(() => {
-    if (confirmed) close.current?.focus()
-  }, [confirmed])
+    if (!view) return
+    if (view === 'route' && !confirmed) root.current?.querySelector<HTMLInputElement>('#connect-phone-address')?.focus()
+    else dismiss.current?.focus()
+  }, [view, confirmed])
 
   const resetPairing = (): void => {
     pairCancel()
@@ -117,77 +155,112 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
     requested.current = false
     expected.current = null
     setPending(false)
-    setCodeState('idle')
+    setIssued(null)
   }
-  const apply = (): void => {
-    if (!settings || !remote) return
+  const submit = (): void => {
+    if (!settings || !remote || pending || !client) return
     resetPairing()
+    if (live) {
+      setView('scan')
+      return
+    }
     expected.current = settings
     setPending(true)
     configure({ ...settings, ...(!remote.enabled ? { enabled: true } : {}) })
   }
   const retry = (): void => {
-    setCodeState('creating')
+    setIssued(null)
     requested.current = true
     baseline.current = new Set(remote?.devices.map((device) => device.id))
     pairStart()
   }
-  const seconds = Math.max(0, Math.ceil(((pairing?.expiresAt ?? now) - now) / 1000))
+  const copyText = (target: 'command' | 'link', text: string): void => {
+    setCopyTarget(target)
+    copy(text)
+  }
+  const seconds = Math.max(0, Math.ceil(((shown?.expiresAt ?? now) - now) / 1000))
   const countdown = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  const routeSummary = `${route === 'tailscale' ? 'Tailscale' : 'Same Wi-Fi'} · ${hostOf(remote?.public_url)} · Change`
+  const heading = confirmed ? `${confirmed} is connected` : view === 'scan' ? 'Scan with your phone' : 'Connect a phone'
 
   return createPortal(
     <DialogBackdrop onMouseDown={onClose}>
-      <DialogPanel size="handoff" ref={root} role="dialog" aria-modal="true" aria-labelledby="connect-phone-title" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => {
+      <DialogPanel size="wide" ref={root} role="dialog" aria-modal="true" aria-labelledby="connect-phone-title" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => {
         if (event.key === 'Escape') { event.stopPropagation(); onClose() }
+        if (event.key === 'Enter' && view === 'route' && event.target instanceof HTMLInputElement && !event.target.readOnly) {
+          event.preventDefault()
+          if (!event.nativeEvent.isComposing) submit()
+        }
         if (event.key === 'Tab') {
           event.stopPropagation()
           trapFocus(event)
         }
       }}>
-        <DialogTitle id="connect-phone-title">{confirmed ? `${confirmed} is connected` : 'Connect phone'}</DialogTitle>
-        <DialogBody variant="bounded">
-          {confirmed ? <>
-            <DialogDescription>It can follow and answer every pane. Manage it in Settings ▸ Remote access.</DialogDescription>
-            <PairingProgress listening waiting={false} confirmed />
-          </> : <>
+        {confirmed ? null : <DialogTitle id="connect-phone-title">{heading}</DialogTitle>}
+        <DialogBody>
+          {confirmed ? (
+            <Stack gap={3} align="center">
+              <IconTile tone="success" size="lg" radius="medium" icon={<Icon glyph={IconCheck} role="ui" />} />
+              <Text as="h2" size="subhead" tone="primary" flush center id="connect-phone-title">{heading}</Text>
+              <Text as="p" size="base" tone="secondary" flush center>It can follow and answer every pane. Manage it in Settings ▸ Remote access.</Text>
+            </Stack>
+          ) : !remote || !view ? (
+            <Inline gap="small"><Spinner label="Loading" /><Text size="small" tone="muted">Asking the daemon for its remote access settings…</Text></Inline>
+          ) : view === 'route' ? <>
             <DialogDescription>Follow and answer your panes when you are away from this computer.</DialogDescription>
-            <Notice tone="warn">{SECURITY}</Notice>
-            {!remote ? <Notice tone="info">Asking the daemon for its remote access settings.</Notice> : <Inline wrap align="start" gap="spacious">
-              <div className="grid gap-[var(--space-2)]">
-                {pairing && applied && remote.enabled && remote.listening ? <>
-                  <QrImage svg={pairing.qrSvg} label="Pairing code" />
-                  <Caption>Single use · expires in {countdown}</Caption>
-                  <Button size="sm" onClick={() => copy(pairing.url)}>Copy link</Button>
-                  <TextInput aria-label="Pairing link" readOnly value={pairing.url} width="wide" onFocus={(event) => event.currentTarget.select()} />
-                </> : <Notice tone="info">{pending ? 'Starting remote access…' : codeState === 'creating' && !error ? 'Creating a single-use code…' : codeState === 'issued' ? 'Code expired or unavailable. Get a new code.' : 'Choose a route and turn on remote access to get a code.'}</Notice>}
-              </div>
-              <div className="grid flex-1 gap-[var(--space-3)]">
-                <Field label="How will the phone reach this computer?">
-                  <Select aria-label="Connection route" value={route} options={ROUTES} onChange={(value) => { resetPairing(); setRoute(value as Route); setUrl('') }} />
-                </Field>
-                {route === 'tailscale' ? <>
-                  <DialogDescription>Install Tailscale on both devices. Run this command on the computer, then paste the HTTPS address it prints. Only your tailnet devices can open it.</DialogDescription>
-                  <Text size="small" mono breakAll>{`tailscale serve --bg ${port}`}</Text>
-                  <Button size="sm" onClick={() => copy(`tailscale serve --bg ${port}`)}>Copy command</Button>
-                </> : <>
-                  <DialogDescription>Use a trusted home or office network. Houston will listen on all interfaces. Enter this computer’s LAN address and port, such as http://192.168.1.20:{port}.</DialogDescription>
-                  <Notice tone="warn">{HTTP_WARNING}</Notice>
-                </>}
-                <Field label={route === 'tailscale' ? 'HTTPS public URL' : 'LAN public URL'} error={urlError} hint={route === 'tailscale' ? 'An HTTPS origin, such as https://machine.tailnet.ts.net.' : `An HTTP origin reachable by your phone, including port ${port}.`}>
-                  <TextInput type="url" aria-label="Connection URL" value={url} width="wide" aria-invalid={url !== '' && !settings} onChange={(event) => { resetPairing(); setUrl(event.target.value) }} />
-                </Field>
-                <Button variant="primary" disabled={!settings || pending || !client} onClick={apply}>{!remote.enabled ? 'Enable remote access' : 'Apply route'}</Button>
-                {applied && remote.enabled && remote.listening && !pairing && <Button onClick={retry}>Get a new code</Button>}
-                <PairingProgress listening={remote.enabled && remote.listening} waiting={!!pairing && applied} />
-              </div>
-            </Inline>}
+            <FormGrid>
+              <FormGridLabel>Route</FormGridLabel>
+              <Select aria-label="Route" width="full" value={route} options={ROUTES} onChange={(value) => { resetPairing(); setRoute(value as Route); setUrl('') }} />
+              <Text as="p" size="small" tone="muted" flush className="col-start-2">{ROUTE_HINT[route]}</Text>
+              {route === 'tailscale' && <>
+                <FormGridLabel htmlFor="connect-phone-command">Command</FormGridLabel>
+                <Inline gap="small">
+                  <TextInput variant="form" id="connect-phone-command" font="mono" readOnly value={command} onFocus={(event) => event.currentTarget.select()} />
+                  <Button size="sm" onClick={() => copyText('command', command)}>{copyState === 'success' && copyTarget === 'command' ? 'Copied' : 'Copy'}</Button>
+                </Inline>
+              </>}
+              <FormGridLabel htmlFor="connect-phone-address">Address</FormGridLabel>
+              <TextInput variant="form" id="connect-phone-address" type="url" font="mono" value={url} placeholder={route === 'tailscale' ? 'https://machine.tailnet.ts.net' : `http://192.168.1.20:${port}`} autoComplete="off" spellCheck={false} aria-invalid={!!fieldError} aria-describedby="connect-phone-address-note" onChange={(event) => { resetPairing(); setUrl(event.target.value) }} />
+              {fieldError
+                ? <Text as="p" size="small" tone="danger" flush role="alert" id="connect-phone-address-note" className="col-start-2">{fieldError}</Text>
+                : <Text as="p" size="small" tone="muted" flush id="connect-phone-address-note" className="col-start-2">{route === 'tailscale' ? 'Paste the HTTPS address the command prints.' : `The computer's LAN address with port ${port}, as the phone reaches it.`}</Text>}
+            </FormGrid>
+            {route === 'wifi' && <WarningLine>{HTTP_WARNING}</WarningLine>}
+            <WarningLine>{SECURITY}</WarningLine>
+            {copyState === 'error' && <Text as="p" size="small" tone="warn" flush role="status">Could not copy. Select the command and copy it manually.</Text>}
+          </> : <>
+            <DialogDescription>Open the camera and point it at the code.</DialogDescription>
+            <Stack gap={2} align="center">
+              {shown
+                ? <>
+                  <QrImage svg={shown.qrSvg} label="Pairing code" dimmed={expired} />
+                  <Inline gap="small">
+                    <Text size="small" tone="muted">{expired ? 'Code expired' : `Single use · expires in ${countdown} ·`}</Text>
+                    {!expired && <Button variant="link" onClick={() => copyText('link', shown.url)}>{copyState === 'success' && copyTarget === 'link' ? 'Copied' : 'Copy link'}</Button>}
+                  </Inline>
+                  {copyState === 'error' && copyTarget === 'link' && <TextInput aria-label="Pairing link" readOnly value={shown.url} width="full" onFocus={(event) => event.currentTarget.select()} />}
+                </>
+                : !error && !remote.error && <Inline gap="small"><Spinner label="Loading" /><Text size="small" tone="muted">{pending || !live ? 'Starting remote access…' : 'Creating a single-use code…'}</Text></Inline>}
+            </Stack>
+            {pairing && !expired && <Inline gap="small" className="justify-center"><Spinner label="Waiting" /><Text size="small" tone="muted">Waiting for the phone to confirm…</Text></Inline>}
+            {fieldError && <Text as="p" size="small" tone="danger" flush role="alert">{fieldError}</Text>}
           </>}
-          {(error || remote?.error) && <Notice tone="danger">{error ?? remote?.error}</Notice>}
-          {copyState !== 'idle' && <Notice tone={copyState === 'error' ? 'warn' : 'info'}>{copyState === 'error' ? 'Could not copy. Select and copy the text above.' : 'Copied.'}</Notice>}
         </DialogBody>
         <DialogActions variant="row">
-          {confirmed && <Button onClick={() => { resetPairing(); setConfirmed(null) }}>Connect another</Button>}
-          <Button ref={close} variant={confirmed ? 'primary' : 'ghost'} onClick={onClose}>{confirmed ? 'Done' : 'Close'}</Button>
+          {confirmed ? <>
+            <Button onClick={() => { resetPairing(); setConfirmed(null) }}>Connect another</Button>
+            <span className="flex-1" />
+            <Button ref={dismiss} variant="primary" onClick={onClose}>Done</Button>
+          </> : view === 'scan' ? <>
+            <Button variant="ghost" onClick={() => { resetPairing(); setView('route') }}>{routeSummary}</Button>
+            <span className="flex-1" />
+            <Button ref={dismiss} variant={expired ? 'secondary' : 'primary'} onClick={onClose}>Close</Button>
+            {expired && <Button variant="primary" onClick={retry}>Get a new code</Button>}
+          </> : <>
+            <Button ref={dismiss} variant="secondary" onClick={onClose}>Cancel</Button>
+            <span className="flex-1" />
+            <Button variant="primary" disabled={!settings || pending || !client || !remote} onClick={submit}>{pending ? 'Turning on…' : live ? 'Show code' : 'Turn on and show code'}</Button>
+          </>}
         </DialogActions>
       </DialogPanel>
     </DialogBackdrop>, document.body
@@ -195,11 +268,11 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
 }
 
 export function ConnectPhoneHost({ client }: { client: HoustonClient | null }): React.JSX.Element | null {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState<{ step?: ConnectPhoneStep } | null>(null)
   useEffect(() => {
-    const show = (): void => setOpen(true)
+    const show = (event: Event): void => setOpen((event as CustomEvent<{ step?: ConnectPhoneStep }>).detail ?? {})
     window.addEventListener(CONNECT_PHONE_EVENT, show)
     return () => window.removeEventListener(CONNECT_PHONE_EVENT, show)
   }, [])
-  return open ? <ConnectPhoneDialog client={client} onClose={() => setOpen(false)} /> : null
+  return open ? <ConnectPhoneDialog client={client} initialStep={open.step} onClose={() => setOpen(null)} /> : null
 }

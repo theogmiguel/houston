@@ -1,4 +1,4 @@
-import { PairingProgressSpecimen } from '../src/components/ui/PairingProgress'
+import { SpinnerSpecimen } from '../src/components/ui/Spinner'
 import { MascotDockSlot } from '../src/components/ui/MascotDockSlot'
 import { MascotArtSpecimen } from '../src/components/ui/MascotArt'
 import { MascotRigSpecimen } from '../src/components/ui/MascotRig'
@@ -325,6 +325,7 @@ import { SettingsButton } from '../src/components/ui/SettingsButtonRoles'
 import type { ManagedWorktreeInfo } from '../src/houston/generated/ManagedWorktreeInfo'
 
 const noop = (): void => {}
+const QR_SPECIMEN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1z" fill="#000"/></svg>'
 
 function SkillsChromeSpecimen(): React.JSX.Element {
   const [enabled, setEnabled] = useState(true)
@@ -1185,12 +1186,15 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <TextInput variant="task-number" aria-label="Task number" type="number" value={2} readOnly />
         </SpecimenGroup>
 
-        <SpecimenGroup heading="Phone pairing progress">
-          <PairingProgressSpecimen />
+        <SpecimenGroup heading="Spinner">
+          <SpinnerSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="QrImage">
-          <QrImage label="Pairing code" svg={'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1z" fill="#000"/></svg>'} />
+          <SpecimenRow>
+            <QrImage label="Pairing code" svg={QR_SPECIMEN_SVG} />
+            <QrImage label="Expired pairing code" svg={QR_SPECIMEN_SVG} dimmed />
+          </SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="EmptyState">
