@@ -59,12 +59,14 @@ const REVOKED_HASHES_MAX: usize = 256;
 
 // Hostnames are labels, so cap display length even when a platform returns arbitrary text.
 const HOST_NAME_MAX_CHARS: usize = 128;
+// A fixed buffer bounds hostname reads and holds common 255-byte names plus NUL.
+#[cfg(unix)]
+const HOST_NAME_BUFFER_BYTES: usize = 256;
 
 pub(crate) fn host_name() -> String {
     #[cfg(unix)]
     let raw = {
-        // POSIX hostnames fit in 255 bytes plus the terminating NUL.
-        let mut bytes = [0u8; 256];
+        let mut bytes = [0u8; HOST_NAME_BUFFER_BYTES];
         // SAFETY: the buffer is writable for the length passed to gethostname.
         if unsafe { libc::gethostname(bytes.as_mut_ptr().cast(), bytes.len()) } == 0 {
             let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
