@@ -9015,6 +9015,8 @@ impl Daemon {
             .lock()
             .expect("respawned_as lock")
             .insert(old_id, spawned.id);
+        self.frame_taps.forget_session(old_id);
+        self.forget_session_visibility(old_id);
         self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: old_id });
         if let Some(parent) = spawned.spawned_by {
             self.broadcast_live_children(parent);
@@ -12029,6 +12031,7 @@ impl Daemon {
             self.mcp_notify.close_session(id);
             self.remove_persisted_scrollback(id);
             self.frame_taps.forget_session(id);
+            self.forget_session_visibility(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             if let Some(parent) = session.info.spawned_by {
                 self.broadcast_live_children(parent);
@@ -12044,6 +12047,7 @@ impl Daemon {
             self.db.mark_closed(id)?;
             worktree_pass::queue_closed_session(self, id);
             self.remove_persisted_scrollback(id);
+            self.forget_session_visibility(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             return Ok(());
         }
@@ -12724,6 +12728,15 @@ impl Daemon {
 
     pub fn history_count(&self) -> Result<u32> {
         self.db.command_history_count(None).map(|n| n as u32)
+    }
+
+    pub(crate) fn has_session(&self, id: u32) -> bool {
+        let live = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .contains_key(&id);
+        live || self.dead.lock().expect("dead lock").contains_key(&id)
     }
 
     fn get(&self, id: u32) -> Result<Arc<Session>> {
@@ -14941,6 +14954,17 @@ impl Daemon {
             }
         }
         self.reap_reevaluate();
+    }
+
+    fn forget_session_visibility(&self, session: u32) {
+        for hidden in self
+            .visibility
+            .lock()
+            .expect("visibility lock")
+            .values_mut()
+        {
+            hidden.remove(&session);
+        }
     }
 
     pub fn conn_set_visibility(&self, conn: u64, session: u32, visible: bool) {

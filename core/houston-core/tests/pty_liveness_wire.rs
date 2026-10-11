@@ -513,3 +513,175 @@ async fn stdin_job_limit_refuses_admission_and_reports_every_cancelled_job() {
     .await
     .expect("all admitted input outcomes must finish");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hidden_and_removed_taps_release_connection_ownership() {
+    let _home = TestHome::new();
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut cleanup = Cleanup {
+        daemon: daemon.clone(),
+        ids: vec![],
+    };
+    let mut ws = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut ws).await;
+    ws.send(Message::text(common::create_custom_msg(
+        vec!["cat"],
+        dir.path(),
+    )))
+    .await
+    .unwrap();
+    let id = common::expect_created(&mut ws).await.id;
+    cleanup.ids.push(id);
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(id, b"TAP\n").into(),
+    ))
+    .await
+    .unwrap();
+    common::attach_and_collect_output_until(&mut ws, id, "TAP").await;
+    let old = daemon.frame_taps().taps_for_test(id);
+    assert_eq!(old.len(), 1);
+    control(
+        &mut ws,
+        proto::ClientMsg::SessionVisibility {
+            session: id,
+            visible: false,
+        },
+    )
+    .await;
+    session_list_receipt(&mut ws).await;
+    assert!(
+        old[0].upgrade().is_none(),
+        "hidden tap must release historical connection ownership"
+    );
+    control(
+        &mut ws,
+        proto::ClientMsg::SessionVisibility {
+            session: id,
+            visible: true,
+        },
+    )
+    .await;
+    session_list_receipt(&mut ws).await;
+    let shown = daemon.frame_taps().taps_for_test(id);
+    assert_eq!(shown.len(), 1);
+    control(
+        &mut ws,
+        proto::ClientMsg::SessionAttach {
+            session: id,
+            replay_bytes: None,
+            snapshot: Some(false),
+            from_offset: None,
+            generation: None,
+        },
+    )
+    .await;
+    loop {
+        if let proto::ServerMsg::Scrollback {
+            session, attempt, ..
+        } = common::next_control(&mut ws).await
+        {
+            if session == id {
+                assert_eq!(attempt, 2);
+                break;
+            }
+        }
+    }
+    let mut other = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut other).await;
+    control(
+        &mut other,
+        proto::ClientMsg::SessionRespawn {
+            session: id,
+            force: Some(true),
+            shell_integration: Some(false),
+            cwd: None,
+            shell: None,
+            fresh: None,
+        },
+    )
+    .await;
+    let replacement = common::expect_created(&mut other).await.id;
+    assert_ne!(replacement, id);
+    cleanup.ids.push(replacement);
+    removed_receipt(&mut ws, id).await;
+    assert!(
+        shown[0].upgrade().is_none(),
+        "respawn must release historical connection ownership"
+    );
+    common::attach_and_collect_output_until(&mut ws, replacement, "").await;
+    let replacement_taps = daemon.frame_taps().taps_for_test(replacement);
+    assert_eq!(replacement_taps.len(), 2);
+    control(
+        &mut other,
+        proto::ClientMsg::SessionClose {
+            session: replacement,
+            confirm_children: None,
+        },
+    )
+    .await;
+    removed_receipt(&mut ws, replacement).await;
+    removed_receipt(&mut other, replacement).await;
+    assert!(
+        replacement_taps.iter().all(|tap| tap.upgrade().is_none()),
+        "another client's close must release both watched taps"
+    );
+    for _ in 0..3 {
+        ws.send(Message::text(common::create_custom_msg(
+            vec!["cat"],
+            dir.path(),
+        )))
+        .await
+        .unwrap();
+        let id = common::expect_created(&mut ws).await.id;
+        cleanup.ids.push(id);
+        common::attach_and_collect_output_until(&mut ws, id, "").await;
+        let old = daemon.frame_taps().taps_for_test(id);
+        for socket in [&mut ws, &mut other] {
+            control(
+                socket,
+                proto::ClientMsg::SessionVisibility {
+                    session: id,
+                    visible: false,
+                },
+            )
+            .await;
+            session_list_receipt(socket).await;
+        }
+        assert!(daemon.session_hidden_everywhere(id));
+        control(
+            &mut other,
+            proto::ClientMsg::SessionClose {
+                session: id,
+                confirm_children: None,
+            },
+        )
+        .await;
+        removed_receipt(&mut ws, id).await;
+        assert!(
+            !daemon.session_hidden_everywhere(id),
+            "closed IDs must leave visibility votes"
+        );
+        assert!(old.iter().all(|tap| tap.upgrade().is_none()));
+    }
+}
+
+async fn session_list_receipt(ws: &mut common::WsStream) {
+    control(ws, proto::ClientMsg::SessionList).await;
+    loop {
+        if matches!(
+            common::next_control(ws).await,
+            proto::ServerMsg::SessionList { .. }
+        ) {
+            return;
+        }
+    }
+}
+
+async fn removed_receipt(ws: &mut common::WsStream, id: u32) {
+    loop {
+        if matches!(common::next_control(ws).await, proto::ServerMsg::SessionRemoved { session } if session == id)
+        {
+            return;
+        }
+    }
+}
