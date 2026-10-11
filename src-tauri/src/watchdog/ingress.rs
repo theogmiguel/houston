@@ -195,7 +195,13 @@ mod tests {
         let (done, completed) = mpsc::sync_channel(1);
         let worker = std::thread::spawn(move || {
             let _owner = owner;
-            while rx.recv_timeout(Duration::from_secs(10)).is_ok() {}
+            loop {
+                match rx.recv_timeout(Duration::from_secs(10)) {
+                    Ok(_) => {}
+                    Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => panic!("stop did not wake the owner"),
+                }
+            }
             done.send(()).unwrap();
         });
         tx.stop();

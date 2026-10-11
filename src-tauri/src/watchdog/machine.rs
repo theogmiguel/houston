@@ -1849,6 +1849,35 @@ mod tests {
     }
 
     #[test]
+    fn a_late_animation_frame_does_not_clear_paint_recovery() {
+        let mut m = healthy(true);
+        m.on_event(
+            Event::PaintReport {
+                ok: false,
+                raf_gap_ms: 9_000,
+            },
+            5_000,
+        );
+        m.on_event(
+            Event::PaintReport {
+                ok: true,
+                raf_gap_ms: 9_000,
+            },
+            6_000,
+        );
+        assert_eq!(m.state(), State::Recovering);
+        assert!(m.prompt_outstanding());
+        m.on_event(
+            Event::PaintReport {
+                ok: true,
+                raf_gap_ms: 16,
+            },
+            7_000,
+        );
+        assert_eq!(m.state(), State::Healthy);
+    }
+
+    #[test]
     fn reloaded_paint_incident_requires_new_page_paint() {
         let mut m = healthy(true);
         m.on_event(Event::WindowFocused(false), 0);

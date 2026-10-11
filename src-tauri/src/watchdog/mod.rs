@@ -635,6 +635,9 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
             let _ = window.eval_with_callback(script, move |payload| {
                 // Expiry in ProbeTable does not release this physical callback slot.
                 drop(permit.lock().unwrap_or_else(|p| p.into_inner()).take());
+                if payload.len() > 256 {
+                    return;
+                }
                 let _ = tx.send(Msg::ProbeReply {
                     payload,
                     generation,

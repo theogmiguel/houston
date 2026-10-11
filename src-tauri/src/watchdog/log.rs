@@ -311,9 +311,10 @@ mod tests {
             10_000 - 64
         );
         // Disconnection means the worker and its blocked-sink owner settled.
-        assert!(observed
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .is_err());
+        assert!(matches!(
+            observed.recv_timeout(std::time::Duration::from_secs(10)),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+        ));
     }
 
     fn transition() -> TransitionLog {
