@@ -1,4 +1,4 @@
-# Wire protocol v133
+# Wire protocol v134
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -366,6 +366,16 @@ every refusal names the setting.
 | `voice_model_delete` | `model_id` | `voice_model_state` + `voice_settings` (bcast) |
 | `voice_level_monitor` | `enabled` | `voice_level` every `VOICE_LEVEL_INTERVAL_MS` while anyone is monitoring. Opens the microphone; refcounted per connection as a set, and released on disconnect |
 
+### Remote access
+
+| Message | Fields | Reply |
+|---|---|---|
+| `remote_get` | — | `remote_state` (direct) |
+| `remote_configure` | `enabled?`, `bind?` (`IP:PORT`, port not 0), `public_url?` (an http(s) origin; `""` clears), `ntfy_url?` (an http(s) topic URL, stored in the OS keychain; `""` turns notifications off), `notify_delay_secs?` (`0..=REMOTE_NOTIFY_DELAY_MAX_SECS`), `notify_detail?: RemoteNotifyDetail`, `notify_finished?` | `remote_state` (bcast). Every field is validated before any is stored, so a refusal changes nothing; it is an `error` with `context: "remote"` naming the value and the expected shape (an ntfy refusal never echoes the URL) |
+| `remote_pair_start` | — | `remote_pairing` (direct). Replaces any earlier code |
+| `remote_device_revoke` | `id` | `remote_state` (bcast); an unknown id is an `error` with `context: "remote"` |
+| `remote_grids_publish` | `grids: RemoteGrid[]` (`{workspace, id, name, sessions: u32[]}`, sessions in the grid's reading order) | none. The renderer sends its saved grids on connect and after a layout save; the daemon keeps them in memory for paired devices and announces a change with the `grids` event. More than `REMOTE_GRIDS_MAX` (256) grids, more than `REMOTE_GRID_SESSIONS_MAX` (64) panes in a grid, a name over `REMOTE_GRID_NAME_MAX` (120) characters or an empty id is an `error` with `context: "remote"` naming the limit and the value, and stores nothing |
+
 ### Host and usage
 
 | Message | Fields | Reply |
@@ -509,6 +519,8 @@ every refusal names the setting.
 | `voice_transcript` | `session`, `text`, `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start` |
 | `voice_model_state` | `model: VoiceModelState` | bcast — download progress, completion, failure or deletion |
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
+| `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
+| `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
@@ -842,6 +854,13 @@ WorktreeKeep       stale{idle_days} | branch_changed{current?} | dirty{files} | 
                    commits_outside_pr{count, pr} | pr_head_unavailable{pr} | in_use{session} |
                    grace{until_ms} | not_merged{state} | no_pr | gh_unavailable{gh} |
                    probably_integrated | remove_failed{message}
+
+RemoteNotifyDetail generic | pane_name
+RemoteDevice       id, name, created_at (epoch ms), last_seen_at? (epoch ms)
+RemoteInfo         enabled, bind ("IP:PORT"), public_url?, url (public_url, else http://<bind>), listening,
+                   error? (the last bind or serve failure), ntfy_server? (origin only; the topic URL is in the
+                   OS keychain and never on the wire), notify_delay_secs, notify_detail: RemoteNotifyDetail,
+                   notify_finished, devices: RemoteDevice[]
 
 UsageProvider      claude | codex
 UsageTokenTotals   uncached_input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_tokens
@@ -1177,6 +1196,80 @@ bounded and redacted, with explicit `not_reported` markers when evidence is miss
 for Claude and Codex PostToolUse context. These supplementary hints do not acknowledge,
 resolve or consume the durable inbox rows.
 
+## Remote access HTTP API
+
+A separate, opt-in listener (`RemoteInfo.bind`, default `127.0.0.1:47823`, or
+`127.0.0.1:47824` on the dev channel so the two never share a web origin) serves
+paired devices. It is not `/ws`: it never serves `/ws`, `/mcp`, `/orchestrate`,
+`/task`, `/inbox`, `/harness` or `/manage`, and it carries no PTY byte stream.
+Bodies are JSON (`Content-Type: application/json`), at most `BODY_LIMIT` bytes.
+Errors are `{"error": "<message naming the value and the expected shape>"}`.
+A 401 for a known revoked token adds `"reason": "revoked"`; the daemon remembers the last
+256 revoked token hashes in memory, so an older revocation or daemon restart can omit it.
+
+| Route | Auth | Body / query | Reply |
+|---|---|---|---|
+| `GET /`, `/app.js`, `/app.css`, `/manifest.webmanifest`, `/icon-192.png`, `/apple-touch-icon.png`, `/fonts/{name}` | none | — | the embedded web client; `/` carries a CSP that admits scripts and styles only from this listener and no inline code |
+| `POST /api/pair` | pairing code | `{code, device_name}` (1–64 printable characters) | `{token, device_id}`. The token (256 bits, hex) is returned once; the daemon stores its SHA-256 |
+| `GET /api/activity` | device | `?after=` a global sequence number, default 0 | `{epoch, entries: [{seq, at (epoch ms), session, kind: finished | needs_you | answered, title, excerpt?}], truncated}`. A 500-entry memory ring; paging and epoch semantics match `/feed`. Titles are masked and capped at 300 characters, excerpts at 160. `answered` excerpts identify `from this phone` or `in the terminal` |
+| `GET /api/me` | device | — | `{device_id, name, host: {name, version}, connection: {url, https}}`. Host name is masked and capped at 128 characters; version is the daemon package version; URL is the configured public origin or HTTP bind origin, with `https` indicating its scheme |
+| `GET /api/sessions` | device | — | `{grids: [{workspace, id, name, sessions: number[]}], sessions: [{id, title, parent: number | null, role: string | null, workspace: {name, path}, kind: AgentKind, state: SessionState, status: AgentStatus?, reason: null, status_since?, pending?: Pending, waiting_since?, last_reply_excerpt? (≤ 160 characters), last_step? (≤ 120)}]}`, needs-input first, then working, idle, others, and panes that are not running. `pending` and `waiting_since` are set only while the pane needs input. `parent` and masked `role` come from daemon orchestration state. `grids` is the desktop's last published grids restricted to the listed panes, in published order; a pane two grids list stays in the first, and a grid left empty is omitted. It is empty until a desktop client has published |
+| `GET /api/sessions/{id}/feed` | device | `?after=` a sequence number, default 0 | `{id, epoch, entries: FeedEntry[], first_seq, last_seq, truncated, pending?: Pending}`: the entries after `after` still held. `truncated` means some entries after `after` were already evicted. Sequence numbers start at 1 per pane and restart with each `epoch` (a 16-digit hex string that changes when the daemon starts or remote access is turned back on) |
+| `POST /api/sessions/{id}/decide` | device | `{epoch, entry_seq, choice, text?}`; `choice` is `approve`, `always` or `deny` for a permission, an option number (`"1"`…) or `other` with `text` for a question (`other` is refused, 400, when the question has `previews`) | `{ok: true}` once the provider's keys for that choice were written to the PTY. 409 when `epoch` is not the current one, `entry_seq` is not the pane's pending card, the card was already answered from a device or in the terminal, the permission's target is `truncated` and the choice approves it, or Houston has no key mapping for the provider or the card's shape (the message names which); 400 for a choice the card does not offer |
+| `GET /api/events` | device | — | `text/event-stream`: `ready` once, then `session` `{id}` when a pane's status or card changes, `feed` `{id, seq}` when its feed grows, `grids` `{}` when the published grids change, and `resync` when this reader fell behind; a comment every 15 s. Before closing on revocation or disabling, the stream sends `ended` `{"reason":"revoked"}` or `{"reason":"disabled"}`. Address changes close it without an `ended` reason. At most `EVENT_STREAMS_MAX` (8) streams at once, else 503 |
+| `GET /api/sessions/{id}/screen` | device | `?lines=` 1–200, default 60 | `{id, lines: string[], source}`. `source: "screen"` is the same text extraction as `pane_read`; where the build has no terminal emulator (Windows) it is `"scrollback"`, the raw output tail with escape sequences removed. It never attaches or resizes |
+| `POST /api/sessions/{id}/input` | device | `{text?: string (≤ 4096 characters, no control characters but newline), keys?: string[] (≤ 16)}` | `{ok: true}`. Text is written first, then keys after a short settle, through the desktop's stdin path. Multi-line text is sent as a bracketed paste only when the pane's program enabled paste mode (2004), else refused with 409. One request per pane at a time; a concurrent one gets 409. Keys: `esc enter up down tab ctrl+c y n left right backspace space` |
+
+`FeedEntry` is `{seq, at (epoch ms), type, …}` with `type` one of `prompt {text}`,
+`reply {text}` (markdown, ≤ 16 KiB), `question {questions: [{header, question, options:
+[{label, description}], multi_select, previews}], answers?}`, `answer {answers}`,
+`permission {tool, target, always, truncated, outcome?, diff?}`, `step {tool, target, failed?: boolean}` and
+`status {status: finished | exited}`, and
+`turn_end {duration_ms, outcome: done | stopped | failed, counts: {read, search, edit, run,
+other}, files: string[]}`. Turn duration starts at the prompt (0 when no prompt was seen).
+Claude `PostToolUseFailure` produces a step with `failed: true`; successful steps use
+`failed: false` (older daemons may omit it). Failed `AskUserQuestion` calls produce no step
+or answer. Counts include successful and failed steps and survive feed eviction; files contain at most 32 distinct
+masked edited paths, each at most 300 characters, including paths from failed edit calls.
+These paths describe attempted edits, not confirmation that a file changed. Codex, Cursor,
+Grok, OpenCode and Antigravity have no installed per-tool failure hook mapped to failed
+steps; `PostToolUseFailure` is ignored for these providers. Grok `StopFailure` and OpenCode
+`session.error` report turn failures rather than tool steps. Supported failure/interruption hooks select
+`failed`/`stopped`; unknown outcomes use `done`. Text is masked by the credential redactor before it
+leaves the hook client; a permission `target` keeps its line breaks, loses invisible
+formatting characters, and is `truncated` when it was cut or had such characters removed.
+`Pending` is `{epoch, seq, type: question | permission | input, title, detail, truncated, diff?,
+since, decidable, sent, answered_elsewhere}`; `sent` and `answered_elsewhere` stay set until
+the pane's status changes or a new card replaces it. `input` is a pane waiting without a
+structured request, which a device answers through `input`.
+
+For Claude Edit, MultiEdit and Write permissions, `diff` is
+`{path: string, lines: [{op: " " | "+" | "-", text: string}], truncated: bool}`.
+The preview shows removed then added lines from the hook input, with every line masked.
+It is bounded to 200 lines, 500 characters per line and 32 KiB of serialized JSON.
+A truncated preview refuses approval with 409; denial remains available.
+
+Device auth is `Authorization: Bearer <token>`. Every request's `Host` must name
+an allowed host (`localhost`, `127.0.0.1`, `[::1]`, the bind IP, the public URL's
+host), else 421; a non-GET request whose `Origin` is not the public URL or
+`http://<allowed host>:<bind port>` (scheme, host and port compared) gets 403.
+Neither refusal lists the allowed names. A bind on every interface (`0.0.0.0`,
+`::`) is refused unless a public URL is set.
+
+Statuses: 400 invalid input, 401 missing or unknown token or pairing code, 404
+unknown pane, 408 a request ran past 20 s, 409 pane not running, input already
+in flight, multi-line text the program cannot take as a paste or a decision that
+no longer applies, 413 body too large, 429 locked out (with `Retry-After`), 503
+the daemon could not read its paired devices or too many event streams are open. Ten wrong tokens or pairing codes from one source within 60 s
+lock that source out of token checks and pairing for 60 s; loopback callers
+(everything behind `tailscale serve`) are one source; a valid token is never
+locked out. The listener holds at most 64 connections and closes one that is
+idle for 30 s.
+
+ntfy publishes set the `Click` header to `<listener URL>#session=<id>`, using the
+configured public origin or the HTTP bind origin. Notification bodies contain no terminal
+content; optional pane titles pass through the feed masker.
+
 ## Versioning rules
 
 - `PROTOCOL_VERSION` is bumped **once per wire-touching batch**, not once per
@@ -1197,6 +1290,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 134 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`, and `remote_grids_publish` with `RemoteGrid`, so paired devices group panes by desktop grid. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |
 | 133 | **Children ask the orchestrator before alerting the user, retain instruction queues and expose full results after close.** `InboxKind` gains progress/question/blocked/reply and `InboxRow.reply_to?`. `DelegationState.asked_orchestrator` and `DelegationInfo.input_request?` type input ownership, stable identity, bounded redacted provider permission evidence and escalation reasons. Every actual permission is parent-first; parents deny or escalate and only the operator may approve; only user-owned asks count in `children_waiting`. MCP/CLI gain report, reply, deny, escalate and instruction list/get/cancel/resume. Typed instruction snapshots, acceptance and detail record queued/held/delivered/cancelled/uncertain states. Result previews gain stable message/request identity and readiness; result pagination and scoped full-result detail/refusal support archived children. All new `/ws` messages and payloads are defined above. |
 | 132 | **Claude panes use the fullscreen TUI by default.** `SessionPolicy.claude_fullscreen` defaults to true and can be changed through `session_policy_set`; the launcher sets the fullscreen environment flag when enabled. |
 | 131 | **A folder opened from a WSL shell is focused in the app.** New `workspace_focus{path}` server message, broadcast after the new `/manage` verb `workspace_open` (`ManageRequest.path?`, `ManageWorkspaceOpenOk`) adds a workspace; `MANAGE_VERSION` stays 1 |

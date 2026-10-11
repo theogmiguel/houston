@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 133;
+pub const PROTOCOL_VERSION: u32 = 134;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -3199,6 +3199,75 @@ impl ChatPermissionMode {
     }
 }
 
+/// How much a remote-access notification says about the pane that waits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteNotifyDetail {
+    Generic,
+    PaneName,
+}
+
+/// A device paired for remote access; its token never leaves the pairing reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct RemoteDevice {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    pub name: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at: u64,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_seen_at: Option<u64>,
+}
+
+/// Settings ▸ Remote access: the configured values and what the listener is doing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct RemoteInfo {
+    pub enabled: bool,
+    pub bind: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub public_url: Option<String>,
+    /// The address a device opens: `public_url`, else `http://<bind>`.
+    pub url: String,
+    pub listening: bool,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub error: Option<String>,
+    /// Origin of the ntfy server; the topic URL stays in the OS keychain.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub ntfy_server: Option<String>,
+    pub notify_delay_secs: u32,
+    pub notify_detail: RemoteNotifyDetail,
+    pub notify_finished: bool,
+    pub devices: Vec<RemoteDevice>,
+}
+
+pub const REMOTE_NOTIFY_DELAY_MAX_SECS: u32 = 600;
+
+/// A desktop grid as a paired device shows it: the panes it holds, in the
+/// grid's reading order. Grids live in renderer storage; this copy is how the
+/// daemon learns them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct RemoteGrid {
+    /// The workspace path the grid belongs to.
+    pub workspace: String,
+    pub id: String,
+    pub name: String,
+    pub sessions: Vec<u32>,
+}
+
+// Generous for one person's workspaces; they bound what a client can make the
+// daemon hold, and a refusal names the limit that tripped.
+pub const REMOTE_GRIDS_MAX: usize = 256;
+pub const REMOTE_GRID_SESSIONS_MAX: usize = 64;
+pub const REMOTE_GRID_NAME_MAX: usize = 120;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -4385,6 +4454,41 @@ pub enum ClientMsg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    RemoteGet,
+    /// Absent fields keep their value; `""` clears `public_url` or `ntfy_url`.
+    RemoteConfigure {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        enabled: Option<bool>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        bind: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        public_url: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        ntfy_url: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        notify_delay_secs: Option<u32>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        notify_detail: Option<RemoteNotifyDetail>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        notify_finished: Option<bool>,
+    },
+    RemotePairStart,
+    RemoteDeviceRevoke {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+    },
+    /// Replaces the grids paired devices group panes by. No reply; a refusal
+    /// is an `error` with context `remote`.
+    RemoteGridsPublish {
+        grids: Vec<RemoteGrid>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5220,6 +5324,16 @@ pub enum ServerMsg {
         args: serde_json::Value,
         session_id: u32,
         workspace_id: String,
+    },
+    RemoteState {
+        remote: RemoteInfo,
+    },
+    /// Direct reply to `remote_pair_start`; any earlier code stops working.
+    RemotePairing {
+        url: String,
+        qr_svg: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expires_at: u64,
     },
 }
 

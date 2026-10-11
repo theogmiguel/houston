@@ -17,6 +17,7 @@ import { gridNext, gridPrev, wsLast, wsNext, wsPrev } from '../keymap'
 
 function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
   return {
+    openConnectPhone: vi.fn(),
     newTerminal: vi.fn(),
     splitPane: vi.fn(),
     newGrid: vi.fn(),
@@ -535,4 +536,14 @@ it('offers Return mascot to rail only while floating and enabled, and reverses t
     setMascotPrefsForTests({ ...DEFAULT_PREFS, enabled: false })
     expect(buildCommands(input).some(c => c.id === 'mascot.dock')).toBe(false)
   } finally { setMascotPosition(RAIL_POSITION); setMascotPrefsForTests({ ...DEFAULT_PREFS }) }
+})
+
+
+it('offers Connect phone without a workspace and dispatches the shared entry point', () => {
+  const openConnectPhone = vi.fn()
+  const command = buildCommands({ actions: makeActions({ openConnectPhone }), hasWorkspace: false, workspaces: [] }).find((command) => command.id === 'remote.connect-phone')!
+  expect(command.enabled).toBe(true)
+  expect(command.title).toBe('Connect phone')
+  command.run()
+  expect(openConnectPhone).toHaveBeenCalledOnce()
 })

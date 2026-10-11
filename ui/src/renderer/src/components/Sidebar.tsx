@@ -58,6 +58,7 @@ import {
   IconSliders,
   IconTag,
   IconServer,
+  IconPhone,
   IconTux,
   IconUser,
   IconTarget,
@@ -185,6 +186,7 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   info: IconInfo,
   wrench: IconWrench,
   server: IconServer,
+  phone: IconPhone,
 };
 
 const GridRailGitSubscription = lazy(() =>
@@ -3001,7 +3003,6 @@ export function Sidebar({
 
       <MascotMount existingUser={workspaces.length > 0} firstRun={mascotFirstRun} workspacesEmpty={mascotWorkspacesEmpty} />
       <NavigationRailFooter>
-        {}
         <Tooltip label="Settings">
           <Button
             variant="subtle-icon"

@@ -12,6 +12,8 @@ import type { HoustonClient, SessionInfo, Workspace } from '../src/houston/clien
 import type { RoleRoute } from '../src/houston/generated/RoleRoute'
 import type { VoiceModelState } from '../src/houston/generated/VoiceModelState'
 import type { VoiceSettings } from '../src/houston/generated/VoiceSettings'
+import type { RemoteInfo } from '../src/houston/generated/RemoteInfo'
+import type { ServerMsg } from '../src/houston/generated/ServerMsg'
 import type { AgentHookState } from '../src/houston/generated/AgentHookState'
 import type { UpdateState } from '../src/houston/generated/UpdateState'
 import type { SessionPolicy } from '../src/houston/generated/SessionPolicy'
@@ -286,6 +288,49 @@ function routingClient(routes: RoleRoute[]): HoustonClient {
       return () => undefined
     }
   }) as unknown as HoustonClient
+}
+
+function remoteClient(remote: RemoteInfo): HoustonClient {
+  let listener: ((message: ServerMsg) => void) | null = null
+  return new Proxy({
+    subscribe(type: string, handler: (message: ServerMsg) => void) {
+      if (type === 'remote_state') listener = handler
+      return () => { listener = null }
+    },
+    remoteGet() {
+      queueMicrotask(() => listener?.({ type: 'remote_state', remote }))
+    }
+  }, {
+    get(target, property, receiver) {
+      if (property in target) return Reflect.get(target, property, receiver)
+      return () => undefined
+    }
+  }) as unknown as HoustonClient
+}
+
+const remoteFixture: RemoteInfo = {
+  enabled: true,
+  bind: '127.0.0.1:47823',
+  public_url: 'https://workstation.tail1234.ts.net',
+  url: 'https://workstation.tail1234.ts.net',
+  listening: true,
+  error: null,
+  ntfy_server: 'ntfy.sh',
+  notify_delay_secs: 30,
+  notify_detail: 'generic',
+  notify_finished: false,
+  devices: [
+    { id: 1, name: 'Pixel 8 · Chrome', created_at: Date.now() - 4 * 86_400_000, last_seen_at: Date.now() - 2 * 60_000 },
+    { id: 2, name: 'MacBook · Safari', created_at: Date.now() - 6 * 86_400_000, last_seen_at: Date.now() - 26 * 3_600_000 }
+  ]
+}
+
+export function SettingsRemote(): React.JSX.Element {
+  return <SettingsScreen section="remote" props={{ daemonClient: remoteClient(remoteFixture) }} />
+}
+
+export function SettingsRemoteOff(): React.JSX.Element {
+  return <SettingsScreen section="remote" props={{ daemonClient: remoteClient({ ...remoteFixture, enabled: false, listening: false, public_url: null, url: 'http://127.0.0.1:47823', ntfy_server: null }) }} />
 }
 
 export function SettingsAgentSetup(): React.JSX.Element {

@@ -59,6 +59,7 @@ export interface Command {
 }
 
 export interface PaletteActions {
+  openConnectPhone: () => void
   mascotAction?: (action: MascotAction) => void
   workspaceActions?: readonly WorkspaceAction[]
   runWorkspaceAction?: (action: WorkspaceAction) => void
@@ -573,6 +574,7 @@ export interface GridTarget {
 export function buildCommands(input: BuildCommandsInput): Command[] {
   const { actions, hasWorkspace, workspaces, grids, sessions = [], activeSessionId } = input
   return [
+    { id: 'remote.connect-phone', title: 'Connect phone', group: 'View', keywords: ['remote', 'pair', 'QR', 'device', 'mobile'], enabled: true, run: () => actions.openConnectPhone() },
     ...mascotCommands(actions),
     ...sessions.filter((session) => session.state === 'running' && !session.hidden).map((session) => ({
       id: `session.focus.${session.id}`,

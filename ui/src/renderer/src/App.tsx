@@ -1,3 +1,5 @@
+import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
+import { openConnectPhone } from './connectPhone';
 import { inputEpisode, ownUserInput } from './sessionAttention';
 import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
@@ -36,6 +38,7 @@ import type {
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
 import type { VoiceDevice } from "./houston/generated/VoiceDevice";
+import { useRemoteGridPublish } from "./houston/useRemoteGridPublish";
 import type { VoiceModelState } from "./houston/generated/VoiceModelState";
 import type { VoiceSettings } from "./houston/generated/VoiceSettings";
 import {
@@ -1737,6 +1740,7 @@ export function App(): React.JSX.Element {
       bootClient?.close();
     };
   }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
+  useRemoteGridPublish(readyClient(conn));
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
     return registerOwned(outputHandlers.current, id, sink);
@@ -3468,6 +3472,7 @@ export function App(): React.JSX.Element {
   };
 
   const paletteActions: PaletteActions = {
+    openConnectPhone,
     mascotAction: (action) => { setSidebarRail(false); requestMascotAction(action) },
     workspaceActions,
     openManageTags: () => window.dispatchEvent(new Event(MANAGE_TAGS_EVENT)),
@@ -4647,6 +4652,8 @@ export function App(): React.JSX.Element {
               onRejectRemaining={rejectRemainingHostKeys}
             />
           </AnimOut>
+
+          <ConnectPhoneHost client={readyClient(conn)} />
 
           <UpdateInstallHost
             update={update}

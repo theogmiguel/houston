@@ -1,3 +1,4 @@
+import { openConnectPhoneRoute } from '../connectPhone'
 import type { HoustonClient } from '../houston/client'
 import { useEffect, useRef } from 'react'
 import type { ChromeTheme, TerminalPaletteChoice } from '../theme'
@@ -32,6 +33,7 @@ import { VoiceSection } from './settings/VoiceSection'
 import { ShortcutsSection } from './settings/ShortcutsSection'
 import { OrchestrationSection } from './settings/OrchestrationSection'
 import { TasksSection } from './settings/TasksSection'
+import { RemoteSection } from './settings/RemoteSection'
 import { NotificationsSection } from './settings/NotificationsSection'
 import type { DesktopNotificationMode } from '../usePreferences'
 import type { AgentProfile } from '../houston/generated/AgentProfile'
@@ -421,6 +423,7 @@ function SectionDispatch({
         )}
 
         {section === 'wsl' && <WslSection />}
+        {section === 'remote' && <RemoteSection client={daemonClient ?? null} onChangeRoute={openConnectPhoneRoute} />}
     </>
   )
 }

@@ -9,6 +9,7 @@ import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 
 function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
   return {
+    openConnectPhone: vi.fn(),
     newTerminal: vi.fn(),
     splitPane: vi.fn(),
     newGrid: vi.fn(),
