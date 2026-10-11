@@ -188,6 +188,7 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/app.css", get(app_css))
         .route("/api/pair", post(pair))
         .route("/api/me", get(me))
+        .route("/api/activity", get(activity))
         .route("/api/sessions", get(sessions))
         .route("/api/sessions/{id}/screen", get(screen))
         .route("/api/sessions/{id}/input", post(input))
@@ -578,6 +579,25 @@ async fn input(
 struct FeedQuery {
     #[serde(default)]
     after: u64,
+}
+
+async fn activity(
+    State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    headers: HeaderMap,
+    query: Result<Query<FeedQuery>, QueryRejection>,
+) -> Response {
+    let Ok(Query(query)) = query else {
+        return error(StatusCode::BAD_REQUEST, "query is not valid: expected ?after=<sequence number, 0 for everything held>");
+    };
+    let result = blocking(move || {
+        authenticate(&daemon, &headers, peer.0.ip())?;
+        Ok(daemon.remote.feed.activity_page(query.after))
+    }).await;
+    match result {
+        Ok(page) => Json(page).into_response(),
+        Err(refused) => refused.into_response(),
+    }
 }
 
 async fn feed(

@@ -703,6 +703,10 @@ impl Runtime {
         claimed.then(|| InputClaim { runtime: self, id })
     }
 
+    pub(crate) fn input_claimed(&self, id: u32) -> bool {
+        self.input_busy.lock().expect("remote input lock").contains(&id)
+    }
+
     pub(crate) fn emit(&self, change: feed::Change) {
         let _ = self.events.send(change);
     }

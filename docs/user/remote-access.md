@@ -33,6 +33,10 @@ A reported failure or interruption is shown when the agent's hooks identify it; 
 the turn is marked done. A turn already underway when remote access starts has no known
 duration until a new prompt is reported.
 
+Activity lists recent finished turns, requests that need you and answers across panes.
+Answers identify whether they came from the phone or the terminal. Like conversations,
+activity is kept only in memory while remote access is on and clears when it is turned off.
+
 ## Turn it on
 
 Open **Settings ▸ Remote access** and turn on **Allow remote access**. Houston listens on

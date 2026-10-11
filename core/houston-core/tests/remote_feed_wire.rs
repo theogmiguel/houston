@@ -816,3 +816,57 @@ fn turn_summary_survives_eviction_and_bounds_edited_paths() {
     assert_eq!(end["files"].as_array().unwrap().len(), TURN_FILES_MAX);
     assert!(end["files"].as_array().unwrap().iter().all(|f| f.as_str().unwrap().chars().count() <= TURN_PATH_MAX_CHARS));
 }
+
+#[tokio::test]
+async fn activity_pages_cross_sessions_and_identify_phone_and_terminal_answers() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (first, _d1) = pane(&daemon, &["sleep", "30"]);
+    let (second, _d2) = pane(&daemon, &["sleep", "30"]);
+    let permission = fixture("claude-2.1.263-08-PermissionRequest.json");
+    apply(state.path(), &hook(None, "PermissionRequest", first.id, &permission)).await;
+    let seq = feed(addr, &token, first.id, 0).await["pending"]["seq"].as_u64().unwrap();
+    assert_eq!(decide(addr, &token, first.id, seq, "deny").await.status, 200);
+    apply(state.path(), &hook(None, "PermissionRequest", second.id, &permission)).await;
+    daemon.note_operator_keystroke(second.id, b"1");
+    apply(state.path(), &hook(None, "Stop", second.id, &fixture("claude-2.1.263-05-Stop.json"))).await;
+    let response = request(addr, "GET", "/api/activity?after=0", Some(&token), None).await;
+    assert_eq!(response.status, 200);
+    let page = response.json();
+    let entries = page["entries"].as_array().unwrap();
+    assert!(entries.iter().any(|e| e["kind"] == "needs_you" && e["session"] == first.id));
+    assert!(entries.iter().any(|e| e["kind"] == "answered" && e["excerpt"] == "from this phone"));
+    assert!(entries.iter().any(|e| e["kind"] == "answered" && e["excerpt"] == "in the terminal"));
+    assert!(entries.iter().any(|e| e["kind"] == "finished" && e["session"] == second.id));
+    let last = entries.last().unwrap()["seq"].as_u64().unwrap();
+    assert!(request(addr, "GET", &format!("/api/activity?after={last}"), Some(&token), None).await.json()["entries"].as_array().unwrap().is_empty());
+    assert_eq!(request(addr, "GET", "/api/activity", None, None).await.status, 401);
+    daemon.remote_configure(ConfigPatch { enabled: Some(false), ..Default::default() }).unwrap();
+    let addr = enable(&daemon).await;
+    let cleared = request(addr, "GET", "/api/activity", Some(&token), None).await.json();
+    assert_ne!(cleared["epoch"], page["epoch"]);
+    assert!(cleared["entries"].as_array().unwrap().is_empty());
+    daemon.kill(first.id).unwrap();
+    daemon.kill(second.id).unwrap();
+}
+
+#[test]
+fn activity_ring_masks_and_pages_evicted_entries() {
+    use houston_core::remote::feed::{Store, ACTIVITY_MAX_ENTRIES, ACTIVITY_TITLE_MAX_CHARS, EXCERPT_MAX_CHARS};
+    let store = Store::default();
+    store.set_collecting(true);
+    for i in 0..ACTIVITY_MAX_ENTRIES + 5 {
+        store.activity_push(1, "finished", &format!("{TOKEN_IN_PROMPT} {}", "t".repeat(500)), Some(&"e".repeat(500)), i as u64);
+    }
+    let page = store.activity_page(0);
+    assert!(page.truncated);
+    assert_eq!(page.entries.len(), ACTIVITY_MAX_ENTRIES);
+    assert_eq!(page.entries[0].seq, 6);
+    assert!(!serde_json::to_string(&page).unwrap().contains(TOKEN_IN_PROMPT));
+    assert!(page.entries.iter().all(|e| e.title.chars().count() <= ACTIVITY_TITLE_MAX_CHARS && e.excerpt.as_ref().unwrap().chars().count() <= EXCERPT_MAX_CHARS));
+    assert!(!store.activity_page(5).truncated);
+    store.set_collecting(false);
+    assert!(store.activity_page(0).entries.is_empty());
+}

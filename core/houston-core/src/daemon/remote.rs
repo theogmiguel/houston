@@ -515,7 +515,7 @@ impl Daemon {
 
     pub(crate) fn remote_note_status(&self, id: u32, status: proto::AgentStatus) {
         let now = now_ms();
-        self.remote.note_status(id, status, now);
+        let from = self.remote.note_status(id, status, now);
         {
             let mut seen = self.remote.seen.lock().expect("remote seen lock");
             if seen.len() > remote::SEEN_PRUNE_AT {
@@ -526,12 +526,19 @@ impl Daemon {
         // Every transition retires the card, even with remote access off, so a
         // card can never outlive the request it was built from.
         if status != proto::AgentStatus::NeedsInput {
+            if status == proto::AgentStatus::Working
+                && self.remote.feed.pending(id).is_some_and(|p| p.answered.is_none()) {
+                self.remote_activity(id, "answered", Some("in the terminal"));
+            }
             self.remote.feed.resolve_pending(id);
         }
         if !self.remote_config().enabled {
             return;
         }
         if status == proto::AgentStatus::NeedsInput {
+            if from != Some(status) {
+                self.remote_activity(id, "needs_you", None);
+            }
             self.remote.feed.set_pending(
                 id,
                 Pending {
@@ -554,7 +561,16 @@ impl Daemon {
     /// open was answered there, so a device can no longer answer it with a tap.
     pub(crate) fn remote_note_keystroke(&self, id: u32) {
         if self.remote.feed.note_keystroke(id) {
+            let where_answered = if self.remote.input_claimed(id) { "from this phone" } else { "in the terminal" };
+            self.remote_activity(id, "answered", Some(where_answered));
             self.remote_emit(id, Change::Session(id));
+        }
+    }
+
+    fn remote_activity(&self, id: u32, kind: &'static str, excerpt: Option<&str>) {
+        if let Ok(session) = self.remote_target(id) {
+            let title = session.title.lock().expect("title lock").clone();
+            self.remote.feed.activity_push(id, kind, &title, excerpt, now_ms());
         }
     }
 
@@ -729,6 +745,8 @@ impl Daemon {
                 self.remote_push(id, summary, now);
             }
             self.remote_push(id, FeedItem::Status { status: "finished" }, now);
+            let excerpt = d.last_message.as_deref().map(feed::reply_text);
+            self.remote_activity(id, "finished", excerpt.as_deref());
         }
         if self.remote.feed.session_count() > remote::SEEN_PRUNE_AT {
             let live: std::collections::HashSet<u32> = self
@@ -814,6 +832,7 @@ impl Daemon {
                 return Err(ApiError::Conflict(format!("writing to pane {id}: {e}")));
             }
         }
+        self.remote_activity(id, "answered", Some("from this phone"));
         self.remote_emit(id, Change::Session(id));
         Ok(())
     }

@@ -39,6 +39,29 @@ pub const TURN_FILES_MAX: usize = 32;
 // Match permission paths while bounding each path independently of the file count.
 pub const TURN_PATH_MAX_CHARS: usize = 300;
 
+// Several days of ordinary pane transitions fit without an unbounded cross-session log.
+pub const ACTIVITY_MAX_ENTRIES: usize = 500;
+// Titles match permission summaries; excerpts match the existing reply excerpts.
+pub const ACTIVITY_TITLE_MAX_CHARS: usize = 300;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ActivityEntry {
+    pub seq: u64,
+    pub at: u64,
+    pub session: u32,
+    pub kind: &'static str,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub excerpt: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ActivityPage {
+    pub epoch: String,
+    pub entries: Vec<ActivityEntry>,
+    pub truncated: bool,
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct TurnCounts {
     pub read: u64,
@@ -709,6 +732,8 @@ impl Default for Store {
                 bytes: 0,
                 collecting: false,
                 epoch: new_epoch(),
+                activity: VecDeque::new(),
+                activity_seq: 0,
             }),
         }
     }
@@ -719,6 +744,8 @@ struct StoreInner {
     bytes: usize,
     collecting: bool,
     epoch: String,
+    activity: VecDeque<ActivityEntry>,
+    activity_seq: u64,
 }
 
 fn new_epoch() -> String {
@@ -742,6 +769,8 @@ impl Store {
             }
             inner.collecting = on;
             inner.sessions.clear();
+            inner.activity.clear();
+            inner.activity_seq = 0;
             inner.bytes = 0;
             inner.epoch = new_epoch();
         })
@@ -816,6 +845,32 @@ impl Store {
                 inner.bytes -= w;
             }
             Some(seq)
+        })
+    }
+
+    pub fn activity_push(&self, session: u32, kind: &'static str, title: &str, excerpt: Option<&str>, now_ms: u64) {
+        self.with(|inner| {
+            if !inner.collecting { return; }
+            inner.activity_seq += 1;
+            inner.activity.push_back(ActivityEntry {
+                seq: inner.activity_seq,
+                at: now_ms,
+                session,
+                kind,
+                title: cut_chars(&mask_text(title), ACTIVITY_TITLE_MAX_CHARS),
+                excerpt: excerpt.map(|s| cut_chars(&mask_text(s), EXCERPT_MAX_CHARS)),
+            });
+            while inner.activity.len() > ACTIVITY_MAX_ENTRIES {
+                inner.activity.pop_front();
+            }
+        })
+    }
+
+    pub fn activity_page(&self, after: u64) -> ActivityPage {
+        self.with(|inner| ActivityPage {
+            epoch: inner.epoch.clone(),
+            entries: inner.activity.iter().filter(|e| e.seq > after).cloned().collect(),
+            truncated: inner.activity.front().is_some_and(|e| after.saturating_add(1) < e.seq && after < inner.activity_seq),
         })
     }
 
