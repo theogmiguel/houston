@@ -4,7 +4,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const TOOLS_JS = resolve(process.cwd(), '../src-tauri/src/browser/tools.js')
+const TOOLS_JS = process.env.HOUSTON_BROWSER_TOOLS_SOURCE ||
+  resolve(process.cwd(), '../src-tauri/src/browser/tools.js')
 if (!existsSync(TOOLS_JS)) {
   throw new Error(
     `browserPageTools.test.ts cannot find the page toolkit at ${TOOLS_JS} (resolved from ` +
