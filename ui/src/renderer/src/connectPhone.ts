@@ -7,7 +7,7 @@ export function openConnectPhone(): void {
   window.dispatchEvent(new CustomEvent<{ step?: ConnectPhoneStep }>(CONNECT_PHONE_EVENT, { detail: {} }))
 }
 
-/** Opens the Connect phone dialog on step 1 (route and address), for editing how phones reach this computer. */
+/** Opens the Connect phone dialog on its route and address form, for editing how phones reach this computer. */
 export function openConnectPhoneRoute(): void {
   window.dispatchEvent(new CustomEvent<{ step?: ConnectPhoneStep }>(CONNECT_PHONE_EVENT, { detail: { step: 'route' } }))
 }

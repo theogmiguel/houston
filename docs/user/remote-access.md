@@ -68,10 +68,10 @@ cross the network unencrypted, and the **Route** row shows a warning.
 
 ### Connect phone
 
-The dialog has three steps. When remote access is already on with a public URL it opens
-on step 2; **Settings ▸ Remote access ▸ Route ▸ Change…** opens it on step 1.
+When remote access is already on with a public URL, the dialog opens on the code;
+**Settings ▸ Remote access ▸ Route ▸ Change…** opens it on the route.
 
-**1. Connect a phone.** Choose a **Route**:
+**Connect a phone.** Choose a **Route**:
 
 - **Tailscale · HTTPS** keeps Houston on `127.0.0.1` at its configured port. Choose
   **Copy**, run the shown `tailscale serve --bg <port>` command on this computer, and
@@ -87,13 +87,13 @@ Choose **Turn on and show code**, or **Show code** when remote access is already
 that route. If Houston cannot listen or the address is not valid, the reason appears under
 **Address**.
 
-**2. Scan with your phone.** The QR code appears once Houston reports that the listener is
+**Scan with your phone.** The QR code appears once Houston reports that the listener is
 ready at the selected address. Scan it with the phone camera, or choose **Copy link**. It
 works once and the countdown shows when it expires; after expiry the code is dimmed and
 **Get a new code** replaces it. The bottom-left button shows the current route and host;
-choose it to go back to step 1.
+choose it to change the route.
 
-**3. Connected.** Confirm on the phone to see **<device> is connected** on the desktop.
+**Connected.** Confirm on the phone to see **<device> is connected** on the desktop.
 Choose **Connect another** for another code or **Done** to close. Closing the dialog keeps
 remote access on. The route and listen address remain available under **Settings ▸ Remote access ▸
 Route** and **Listen address**.
