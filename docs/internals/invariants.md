@@ -276,7 +276,8 @@ they are never inferred from terminal text.
    signal: ConPTY draws before the CLI has started, and ZCode starts its TUI seconds
    before it focuses the input box, dropping keys that arrive in between. The scanner
    reads DEC private mode sequences, never text, and the VT binding exposes no modes. It
-   decides only when input is written — never an `AgentStatus`, and never whether the
+   exists only for a pane with a pasted first prompt pending and stops reading output
+   once that delivery ends. It decides only when input is written — never an `AgentStatus`, and never whether the
    prompt arrived: that is the CLI's own `UserPromptSubmit` hook, because ZCode fires
    SessionStart only inside its first turn. Unconfirmed, the paste is followed by one more
    Enter and never repeated, because a composer that kept the first paste would submit it

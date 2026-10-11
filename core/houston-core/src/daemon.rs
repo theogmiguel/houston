@@ -577,8 +577,10 @@ pub struct Session {
     osc_cwd: Mutex<Option<PathBuf>>,
     osc52: Mutex<crate::osc52::Osc52Scanner>,
     osc_title: Option<Mutex<crate::osc_title::OscTitleScanner>>,
-    // Only a CLI whose first prompt is pasted (see `Daemon::first_prompt_wait_ready`).
+    // Only while a pasted first prompt is pending (see `Daemon::first_prompt_wait_ready`);
+    // `composer_watch` stops the feed once its delivery ends.
     composer_ready: Option<Mutex<crate::composer_ready::ComposerReady>>,
+    composer_watch: AtomicBool,
     cli_title: Mutex<CliTitleState>,
     title_source: Mutex<TitleSource>,
     tags: Mutex<Vec<u32>>,
@@ -2114,6 +2116,9 @@ struct SpawnParams {
     resume_handle: Option<ResumeHandle>,
     resume_notice: Option<String>,
     scrollback_seed: Option<Scrollback>,
+    /// A first prompt will be pasted once the composer takes input, so its output is
+    /// watched for that until the delivery ends.
+    pastes_first_prompt: bool,
 }
 
 /// A conversation id and the transcript path the CLI reported with it.
@@ -4438,6 +4443,7 @@ impl Daemon {
             osc_title: (m.agent != proto::AgentKind::Shell)
                 .then(|| Mutex::new(crate::osc_title::OscTitleScanner::new())),
             composer_ready: None,
+            composer_watch: AtomicBool::new(false),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(TitleSource::Codename),
             tags: Mutex::new(m.tags.clone()),
@@ -6250,6 +6256,7 @@ impl Daemon {
             None,
             false,
             None,
+            false,
         );
         let session = match spawned {
             Ok(info) => info,
@@ -8025,7 +8032,7 @@ impl Daemon {
     }
 
     pub fn create_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
-        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false, None)
+        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false, None, false)
     }
 
     pub(crate) fn create_task_plan_session(
@@ -8042,12 +8049,13 @@ impl Daemon {
             None,
             true,
             Some((task_id, expected_revision)),
+            false,
         )
     }
 
-    /// `env` adds to the profile's environment, `spawn_args` follow the provider's
-    /// own, `prompt_label` names the prompt file (default: the session id) and `cwd`
-    /// starts the process elsewhere while the session stays in `project_dir`.
+    /// `env` adds to the profile's environment, `spawn_args` follow the provider's own,
+    /// `prompt_label` names the prompt file, `cwd` starts the process outside `project_dir`
+    /// and `prefill_follows` says the caller pastes a prompt once the session is up.
     #[allow(clippy::too_many_arguments)]
     fn create_session_with_env(
         self: &Arc<Self>,
@@ -8058,6 +8066,7 @@ impl Daemon {
         cwd: Option<PathBuf>,
         plan_mode: bool,
         plan_binding: Option<(i64, i64)>,
+        prefill_follows: bool,
     ) -> Result<proto::SessionInfo> {
         if self.refusing_mutations() {
             bail!("refused: daemon is shutting down");
@@ -8192,6 +8201,7 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
+            pastes_first_prompt: first_prompt.is_some() || prefill_follows,
         });
         let info = match spawned {
             Ok(info) => info,
@@ -8911,6 +8921,7 @@ impl Daemon {
             resume_handle,
             resume_notice,
             scrollback_seed,
+            pastes_first_prompt: false,
         }) {
             Ok(spawned) => spawned,
             Err(error) => {
@@ -9559,7 +9570,9 @@ impl Daemon {
             self.broadcast_control(&proto::ServerMsg::ClipboardSet { session: id, text });
         }
         if let Some(scanner) = &session.composer_ready {
-            scanner.lock().expect("composer ready lock").feed(chunk);
+            if session.composer_watch.load(Ordering::Relaxed) {
+                scanner.lock().expect("composer ready lock").feed(chunk);
+            }
         }
         if let Some(scanner) = &session.osc_title {
             let raw = scanner.lock().expect("osc title lock").feed(chunk);
@@ -9762,6 +9775,7 @@ impl Daemon {
             resume_handle,
             resume_notice,
             scrollback_seed,
+            pastes_first_prompt,
         } = p;
         let pty = native_pty_system();
         let pair = pty
@@ -10204,8 +10218,9 @@ impl Daemon {
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             osc_title: (agent != proto::AgentKind::Shell)
                 .then(|| Mutex::new(crate::osc_title::OscTitleScanner::new())),
-            composer_ready: (!crate::launch::prompt_in_argv(agent))
+            composer_ready: pastes_first_prompt
                 .then(|| Mutex::new(crate::composer_ready::ComposerReady::new())),
+            composer_watch: AtomicBool::new(pastes_first_prompt),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(title_source),
             tags: Mutex::new(p_tags),
@@ -10633,6 +10648,7 @@ impl Daemon {
             osc_cwd: Mutex::new(None),
             osc_title: None,
             composer_ready: None,
+            composer_watch: AtomicBool::new(false),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(TitleSource::Codename),
             tags: Mutex::new(Vec::new()),
@@ -12403,6 +12419,7 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
+            pastes_first_prompt: false,
         });
         if let Err(e) = spawned {
             self.handoff_jobs
@@ -16090,6 +16107,9 @@ impl Daemon {
             .name(format!("first-prompt-{session}"))
             .spawn(move || {
                 let outcome = daemon.first_prompt_deliver(session, &text, submit);
+                if let Ok(s) = daemon.get(session) {
+                    s.composer_watch.store(false, Ordering::Relaxed);
+                }
                 daemon
                     .first_prompts
                     .lock()
@@ -16277,6 +16297,15 @@ impl Daemon {
             .expect("first prompts lock")
             .get(&session)
             .map(|pending| !pending.confirmed)
+    }
+
+    /// `None` without a composer scanner, else whether output still feeds it.
+    #[doc(hidden)]
+    pub fn composer_watched_for_test(&self, session: u32) -> Option<bool> {
+        let s = self.get(session).ok()?;
+        s.composer_ready
+            .as_ref()
+            .map(|_| s.composer_watch.load(Ordering::Relaxed))
     }
 
     #[doc(hidden)]
@@ -17527,6 +17556,7 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
+            pastes_first_prompt: first_prompt.is_some(),
         });
         let info = match spawned {
             Ok(info) => info,

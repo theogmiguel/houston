@@ -586,6 +586,11 @@ async fn a_late_starting_zcode_gets_its_first_prompt_once_its_composer_has_focus
     .await;
     let screen = daemon.session_screen_for_test(id).join("\n");
     assert_eq!(screen.matches("LATE-START-MARKER").count(), 1, "{screen}");
+    assert_eq!(
+        daemon.composer_watched_for_test(id),
+        Some(false),
+        "a delivered prompt stops the composer scan"
+    );
 }
 
 #[tokio::test]
@@ -817,6 +822,11 @@ async fn an_unprompted_zcode_pane_stays_starting_past_the_spawn_grace() {
     let dir = tempfile::tempdir().unwrap();
     let id = zcode_pane(&daemon, dir.path(), None).id;
     assert_eq!(status(&daemon, id), Some(proto::AgentStatus::Spawning));
+    assert_eq!(
+        daemon.composer_watched_for_test(id),
+        None,
+        "no pending first prompt, no composer scan"
+    );
     daemon.expire_spawn_grace_for_test(id);
     assert_eq!(
         status(&daemon, id),

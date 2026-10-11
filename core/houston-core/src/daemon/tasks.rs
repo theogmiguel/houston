@@ -3290,6 +3290,8 @@ impl Daemon {
         }
         let delivery = self.tasks_prompt_delivery(row.workspace.as_deref().unwrap_or(""));
         let prompt = matches!(delivery, proto::TaskPromptDelivery::Send).then(|| brief.clone());
+        let pasted_prefill = matches!(delivery, proto::TaskPromptDelivery::Prefill)
+            && !crate::launch::prompt_in_argv(agent);
         let label = format!("task-{}-attempt-{}", key.to_lowercase(), run.attempt);
         let spawned = self.create_session_with_env(
             super::CreateParams {
@@ -3313,6 +3315,7 @@ impl Daemon {
             Some(created.path.clone()),
             false,
             None,
+            pasted_prefill,
         );
         let info = match spawned {
             Ok(info) => info,
@@ -3338,7 +3341,7 @@ impl Daemon {
             // Prefill types the brief into the CLI's input box without the
             // submitting Enter; the user reviews and sends it. A CLI that takes
             // no prompt in argv reads its composer only once its TUI is up.
-            if !crate::launch::prompt_in_argv(agent) {
+            if pasted_prefill {
                 self.deliver_first_prompt(info.id, brief.clone(), None, false);
             } else if let Err(e) = self.write_stdin(info.id, &bracketed_paste(&brief)) {
                 tracing::warn!("prefilling task brief into pane {}: {e:#}", info.id);
