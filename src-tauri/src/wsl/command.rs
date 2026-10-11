@@ -43,16 +43,12 @@ impl Runner for WslExe {
     fn run(&self, argv: &[String], stdin: Stdin<'_>) -> io::Result<RunOutput> {
         let mut cmd = houston_core::spawn::command(WSL_EXE);
         cmd.args(argv).env("WSL_UTF8", "1");
-        let output = match stdin {
-            Stdin::Null => {
-                houston_core::spawn::output_within(cmd, RUN_TIMEOUT)?.ok_or_else(timed_out)?
-            }
-            Stdin::File(path) => cmd
-                .stdin(std::fs::File::open(path)?)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .output()?,
+        let stdin = match stdin {
+            Stdin::Null => std::process::Stdio::null(),
+            Stdin::File(path) => std::process::Stdio::from(std::fs::File::open(path)?),
         };
+        let output = houston_core::spawn::output_within_with_stdin(cmd, RUN_TIMEOUT, stdin)?
+            .ok_or_else(timed_out)?;
         Ok(RunOutput {
             code: output.status.code(),
             stdout: output.stdout,
