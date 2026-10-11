@@ -39,7 +39,7 @@ pub fn output_within(
 }
 
 /// Capture with caller-owned stdin and an 8 MiB combined output limit.
-/// Linux retains process-group ownership through cleanup; other platforms refuse.
+/// Linux owns a process group; Windows owns a job. Other platforms refuse.
 /// See docs/internals/daemon.md for cancellation boundaries.
 pub fn output_within_with_stdin(
     mut cmd: std::process::Command,
@@ -51,12 +51,16 @@ pub fn output_within_with_stdin(
     {
         bounded_linux::capture(cmd, timeout)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        bounded_windows::capture(cmd, timeout)
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = (cmd, timeout);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            format!("bounded subprocess capture is unsupported on {}; expected Linux process-group ownership", std::env::consts::OS),
+            format!("bounded subprocess capture is unsupported on {}; expected Linux or Windows process ownership", std::env::consts::OS),
         ))
     }
 }
@@ -200,6 +204,155 @@ mod bounded_linux {
     }
 }
 
+#[cfg(windows)]
+mod bounded_windows {
+    use std::io::{self, Read};
+    use std::os::windows::io::AsRawHandle;
+    use std::os::windows::process::CommandExt;
+    use std::process::{Child, Command, Output, Stdio};
+    use std::time::{Duration, Instant};
+    use windows_sys::Win32::Foundation::ERROR_BROKEN_PIPE;
+    use windows_sys::Win32::System::Pipes::PeekNamedPipe;
+    use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
+
+    // Match Linux's bound for background metadata and diagnostics.
+    const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
+
+    struct OwnedChild {
+        child: Child,
+        job: crate::pid::OwnedJob,
+        assigned: bool,
+        finished: bool,
+    }
+
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            if !self.finished {
+                if !self.assigned || self.job.terminate().is_err() {
+                    let _ = crate::pid::terminate_owned_child(&self.child);
+                }
+                let _ = self.child.wait();
+            }
+            // Closing the non-inherited job also cancels descendants on unwind.
+        }
+    }
+
+    fn read_pipe(
+        pipe: &mut (impl Read + AsRawHandle),
+        bytes: &mut Vec<u8>,
+        total: &mut usize,
+    ) -> io::Result<(bool, bool)> {
+        let mut available = 0;
+        // SAFETY: the retained pipe handle and writable availability count are valid.
+        let ok = unsafe {
+            PeekNamedPipe(
+                pipe.as_raw_handle(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                &mut available,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            let error = io::Error::last_os_error();
+            return if error.raw_os_error() == Some(ERROR_BROKEN_PIPE as i32) {
+                Ok((true, false))
+            } else {
+                Err(error)
+            };
+        }
+        if available == 0 {
+            return Ok((false, false));
+        }
+        let mut buf = [0; 8192];
+        let length = (available as usize).min(buf.len());
+        // Only this collector reads the pipe; available bytes cannot be consumed
+        // by another reader between PeekNamedPipe and this bounded read.
+        let n = pipe.read(&mut buf[..length])?;
+        *total += n;
+        if *total > OUTPUT_LIMIT {
+            return Err(io::Error::other(format!(
+                "subprocess capture requested {total} bytes; combined output limit is {OUTPUT_LIMIT} bytes"
+            )));
+        }
+        bytes.extend_from_slice(&buf[..n]);
+        Ok((n == 0, n != 0))
+    }
+
+    pub(super) fn capture(mut cmd: Command, timeout: Duration) -> io::Result<Option<Output>> {
+        let start = Instant::now();
+        let job = crate::pid::OwnedJob::new()?;
+        // CommandExt replaces flags rather than adding them, so retain window policy.
+        cmd.creation_flags(super::CREATE_NO_WINDOW | CREATE_SUSPENDED)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = OwnedChild {
+            child: cmd.spawn()?,
+            job,
+            assigned: false,
+            finished: false,
+        };
+        child.job.assign(&child.child)?;
+        child.assigned = true;
+        if start.elapsed() >= timeout {
+            return Ok(None);
+        }
+        if let Err(error) = crate::pid::resume_owned_child(&child.child, start, timeout) {
+            return if error.kind() == io::ErrorKind::TimedOut {
+                Ok(None)
+            } else {
+                Err(error)
+            };
+        }
+        let mut stdout = child.child.stdout.take().expect("stdout was piped");
+        let mut stderr = child.child.stderr.take().expect("stderr was piped");
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let (mut out_done, mut err_done) = (false, false);
+        let mut total = 0;
+        let mut status = None;
+        loop {
+            if start.elapsed() >= timeout {
+                return Ok(None);
+            }
+            let mut progress = false;
+            if !out_done {
+                let read = read_pipe(&mut stdout, &mut out, &mut total)?;
+                out_done = read.0;
+                progress |= read.1;
+            }
+            if !err_done {
+                let read = read_pipe(&mut stderr, &mut err, &mut total)?;
+                err_done = read.0;
+                progress |= read.1;
+            }
+            if status.is_none() {
+                status = child.child.try_wait()?;
+            }
+            if out_done && err_done {
+                if let Some(status) = status {
+                    // Child retains its process handle after wait; the job owns descendants.
+                    child.job.terminate()?;
+                    child.finished = true;
+                    return Ok(Some(Output {
+                        status,
+                        stdout: out,
+                        stderr: err,
+                    }));
+                }
+            }
+            if !progress {
+                // Poll at most every 5 ms without delaying a continuously readable pipe.
+                std::thread::sleep(
+                    timeout
+                        .saturating_sub(start.elapsed())
+                        .min(Duration::from_millis(5)),
+                );
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,7 +376,7 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&out.stderr), "err\n");
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", windows)))]
     #[test]
     fn unsupported_capture_refuses_before_spawning() {
         let error = output_within(
@@ -233,6 +386,30 @@ mod tests {
         .unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
         assert!(error.to_string().contains(std::env::consts::OS));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn expired_deadline_never_resumes_the_child() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cmd = command("cmd");
+        cmd.args(["/d", "/c", "echo unexpected > marker"])
+            .current_dir(dir.path());
+        assert!(output_within(cmd, std::time::Duration::ZERO)
+            .unwrap()
+            .is_none());
+        assert!(!dir.path().join("marker").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn bounded_capture_preserves_spawn_errors() {
+        let error = output_within(
+            command("houston-nonexistent-fixture"),
+            std::time::Duration::from_secs(1),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
     }
 
     #[cfg(windows)]

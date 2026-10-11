@@ -42,7 +42,7 @@ else
   echo "ok: no nix::sys::signal or direct syscall( route around the guard"
 fi
 
-offenders="$(grep -rn 'OpenProcess(\|TerminateProcess(\|taskkill' core/ src-tauri/ ui/ \
+offenders="$(grep -rn 'OpenProcess(\|TerminateProcess(\|TerminateJobObject(\|taskkill' core/ src-tauri/ ui/ \
   --include='*.rs' \
   | grep -v '^core/houston-core/src/pid\.rs:' \
   | grep -vE ':[[:space:]]*(//|\*)' \
@@ -50,7 +50,7 @@ offenders="$(grep -rn 'OpenProcess(\|TerminateProcess(\|taskkill' core/ src-taur
 if [ -n "$offenders" ]; then
   echo "FAIL: raw Win32 process call found outside core/houston-core/src/pid.rs:" >&2
   echo "$offenders" >&2
-  echo "      OpenProcess/TerminateProcess/taskkill are this platform's kill(2)." >&2
+  echo "      OpenProcess/TerminateProcess/TerminateJobObject/taskkill are this platform's kill(2)." >&2
   echo "      Route through houston_core::pid instead -- see pid.rs's module doc" >&2
   echo "     : a recycled or broadcast-equivalent value" >&2
   echo "      must hit the checked_pid gate before any OS call does." >&2
