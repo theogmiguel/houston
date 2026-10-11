@@ -206,7 +206,9 @@ pub fn recv_fds(sock: RawFd, max_fds: usize) -> Result<Vec<OwnedFd>> {
 }
 
 pub struct RawMasterPty {
+    // Terminal control must never wait for a writer blocked by unread stdin.
     file: std::sync::Mutex<Option<File>>,
+    writer: std::sync::Mutex<Option<File>>,
     child_pid: Option<i32>,
     child_creation: Option<u64>,
     interrupt: crate::daemon::WriteInterrupt,
@@ -218,9 +220,11 @@ impl RawMasterPty {
         let reader_half = file
             .try_clone()
             .context("cloning the reconstructed PTY master fd for the reader thread")?;
+        let writer_half = file.try_clone().context("cloning adopted PTY writer fd")?;
         Ok((
             RawMasterPty {
                 file: std::sync::Mutex::new(Some(file)),
+                writer: std::sync::Mutex::new(Some(writer_half)),
                 child_pid,
                 child_creation: child_pid
                     .and_then(|pid| u32::try_from(pid).ok())
@@ -232,14 +236,25 @@ impl RawMasterPty {
     }
 
     pub fn write_all(&self, data: &[u8]) -> Result<()> {
-        let mut guard = self.file.lock().expect("raw pty file lock");
+        self.write_all_counting(data).map_err(|(_, error)| error)
+    }
+
+    pub fn write_all_counting(
+        &self,
+        data: &[u8],
+    ) -> std::result::Result<(), (usize, anyhow::Error)> {
+        let mut guard = self.writer.lock().expect("raw pty writer lock");
         let Some(f) = guard.as_mut() else {
-            bail!("adopted session has no live pty (already killed)");
+            return Err((
+                0,
+                anyhow!("adopted session has no live pty (already killed)"),
+            ));
         };
         let _writing = self.interrupt.start();
         crate::daemon::write_all_counting(f, data, || self.interrupt.cancelled())
-            .map_err(|(_, error)| error)?;
-        f.flush()?;
+            .map_err(|(written, error)| (written, anyhow::Error::new(error)))?;
+        f.flush()
+            .map_err(|error| (data.len(), anyhow::Error::new(error)))?;
         Ok(())
     }
 
@@ -311,8 +326,14 @@ impl RawMasterPty {
         result.map_err(anyhow::Error::msg)
     }
 
+    #[doc(hidden)]
+    pub fn writer_active_for_test(&self) -> bool {
+        self.interrupt.active_for_test()
+    }
+
     pub fn release(&self) {
-        crate::daemon::cancel_pty_writer(&self.file, &self.interrupt);
+        crate::daemon::cancel_pty_writer(&self.writer, &self.interrupt);
+        *self.file.lock().expect("raw pty file lock") = None;
     }
 
     pub fn as_raw_fd(&self) -> Option<RawFd> {

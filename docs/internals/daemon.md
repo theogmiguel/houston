@@ -218,7 +218,9 @@ pins the byte cap near the measured 258 KiB/12-session number this forbids blowi
 reconstructs each session on `adoption::RawMasterPty` (`portable_pty::MasterPty` has no
 `from_raw_fd` counterpart to its own `as_raw_fd`) and acks **prepared**; a refusal or failure up
 to this point is fully reversible — O un-parks every session and keeps serving, C exits having
-touched nothing durable.
+touched nothing durable. Adopted PTYs keep separate descriptors and mutexes for writes
+and terminal control. Termination can therefore signal the foreground process group while
+stdin is blocked, then interrupt the writer without losing the control descriptor.
 
 O then sends **commit**; C writes the commit record into `daemon.json` (`{pid, pid_creation,
 build, generation}`, atomic rename) *before* acking, so a lost acknowledgement still leaves O
@@ -255,12 +257,24 @@ panes, the banner sniffer, the roster activity tick, the ACP decoder. It encodes
 `proto::encode_output_frame(id, offset, chunk)` once and offers the same `Arc` to each
 per-connection tap (`FrameRegistry::offer`, `frame_queue.rs`). A hidden session
 short-circuits into `handoff_output` before any of that. Backpressure is per-connection, not a
-shared broadcast: each tap queues up to `FRAME_QUEUE_DEPTH` (4096) items or `FRAME_QUEUE_BYTES`
+shared broadcast. Hiding a session unregisters its tap and clears queued output; showing it
+creates a fresh tap while preserving the live session's attach attempt count. Session
+removal reclaims connection-owned taps, attempt counters and visibility votes. Invalid
+session IDs do not allocate attachment state. Each tap queues up to `FRAME_QUEUE_DEPTH` (4096) items or `FRAME_QUEUE_BYTES`
 (4 MiB) before it drops, and the drop becomes a `Queued::Gap` the connection loop turns into a
 gap frame — the renderer answers a gap with one fresh attach instead of the client being
 disconnected; it never stalls the PTY. `OUTBOUND_CAPACITY`'s 4096-slot `tokio::broadcast` is a
 separate channel for control messages only: a client that lags on it gets a `control_lag` error
 and is disconnected so its reconnect resyncs full state (`server.rs`).
+
+Terminal input shares one FIFO writer per session across renderer frames, daemon callers and
+emulator replies. Admission bounds active plus queued input to 4 MiB and 128 jobs; a refusal
+names both limits, their current values and the requested write. Renderer admission never
+waits for PTY delivery, and terminal replies do not block the output reader. Accepted jobs
+continue after client disconnect; session termination interrupts active PTY delivery and
+returns explicit outcomes for queued jobs. PTY failures report the bytes already written.
+Handoff refuses while stdin delivery or its completion handling remains in flight, because
+queued input is not part of the adoption manifest.
 
 ## The emulator
 
