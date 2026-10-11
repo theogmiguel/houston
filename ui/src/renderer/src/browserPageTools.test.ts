@@ -24,7 +24,7 @@ function runOp(op: Record<string, unknown>): Envelope {
 }
 
 function snapshot(startSeq = 0): Envelope {
-  return runOp({ kind: 'snapshot', startSeq })
+  return runOp({ kind: 'snapshot', startSeq, cleanupIdentity: 'test-snapshot-cleanup' })
 }
 
 type Locator = { path: number[]; tags: string[]; documentIdentity: string; elementIdentity: string }
@@ -530,8 +530,7 @@ describe('consent identity', () => {
     const old = snapshot()
     const ref = elements(old)[0].ref
     const oldAction = opFor(old, ref, 'click')
-    const locator = (old.result!.locators as Record<string, Locator>)[ref]
-    const fresh = runOp({ kind: 'snapshot', previousDocumentIdentity: locator.documentIdentity })
+    const fresh = snapshot()
     expect(runOp(oldAction).ok).toBe(false)
     expect(runOp(opFor(fresh, elements(fresh)[0].ref, 'click')).ok).toBe(true)
   })

@@ -169,11 +169,19 @@
     return { path, tags }
   }
 
-  const snapshot = (startSeq, previousDocumentIdentity) => {
-    if (typeof previousDocumentIdentity === 'string') {
-      document.documentElement.dispatchEvent(new Event(previousDocumentIdentity))
-    }
+  const snapshot = (startSeq, cleanupIdentity) => {
+    const root = document.documentElement
+    if (typeof cleanupIdentity === 'string') root.dispatchEvent(new Event(cleanupIdentity))
     const owned = []
+    if (typeof cleanupIdentity === 'string') {
+      const cleanup = (event) => {
+        if (event.target !== root) return
+        for (const [target, name, callback] of owned) target.removeEventListener(name, callback)
+        owned.length = 0
+      }
+      root.addEventListener(cleanupIdentity, cleanup)
+      owned.push([root, cleanupIdentity, cleanup])
+    }
     let documentIdentity = null
     let seq = typeof startSeq === 'number' && startSeq >= 0 ? startSeq : 0
     const seen = new Set()
@@ -390,7 +398,7 @@
   try {
     const op = __TR_TOOLS_OP__
     let result
-    if (op.kind === 'snapshot') result = snapshot(op.startSeq, op.previousDocumentIdentity)
+    if (op.kind === 'snapshot') result = snapshot(op.startSeq, op.cleanupIdentity)
     else if (op.kind === 'describe') result = describe_(op)
     else if (op.kind === 'click') result = click(op)
     else if (op.kind === 'type') result = type(op)

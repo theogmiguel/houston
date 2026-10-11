@@ -12,11 +12,21 @@ pub struct Locator {
     pub element_identity: String,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct RefStore {
     seq: u64,
-    document_identity: Option<String>,
+    cleanup_identity: String,
     map: HashMap<String, Locator>,
+}
+
+impl Default for RefStore {
+    fn default() -> Self {
+        Self {
+            seq: 0,
+            map: HashMap::new(),
+            cleanup_identity: format!("houston-cleanup-{}", uuid::Uuid::new_v4()),
+        }
+    }
 }
 
 impl RefStore {
@@ -24,15 +34,11 @@ impl RefStore {
         self.seq
     }
 
-    pub fn document_identity(&self) -> Option<&str> {
-        self.document_identity.as_deref()
+    pub fn cleanup_identity(&self) -> &str {
+        &self.cleanup_identity
     }
 
     pub fn replace(&mut self, entries: HashMap<String, Locator>, minted: u64) {
-        self.document_identity = entries
-            .values()
-            .next()
-            .map(|locator| locator.document_identity.clone());
         self.map = entries;
         self.seq += minted;
     }

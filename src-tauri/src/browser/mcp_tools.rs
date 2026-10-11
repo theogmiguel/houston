@@ -654,7 +654,7 @@ async fn snapshot(app: &AppHandle, surface: &str) -> Result<ToolOutput, ToolErro
         app,
         surface,
         json!({ "kind": "snapshot", "startSeq": start_seq,
-            "previousDocumentIdentity": super::tool_refs_document_identity(app, surface) }),
+            "cleanupIdentity": super::tool_refs_cleanup_identity(app, surface) }),
     )
     .await?;
     let Some(mut result) = out.structured else {

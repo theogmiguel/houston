@@ -368,15 +368,17 @@ pub(crate) fn tool_refs_start(app: &AppHandle, id: &str) -> Option<u64> {
     Some(state.children.get(id)?.tool_refs.start_seq())
 }
 
-pub(crate) fn tool_refs_document_identity(app: &AppHandle, id: &str) -> Option<String> {
+pub(crate) fn tool_refs_cleanup_identity(app: &AppHandle, id: &str) -> Option<String> {
     let registry = app.state::<BrowserRegistry>();
     let state = registry.0.lock().ok()?;
-    state
-        .children
-        .get(id)?
-        .tool_refs
-        .document_identity()
-        .map(str::to_string)
+    Some(
+        state
+            .children
+            .get(id)?
+            .tool_refs
+            .cleanup_identity()
+            .to_string(),
+    )
 }
 
 pub(crate) fn tool_refs_replace(
