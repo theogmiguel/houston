@@ -1,5 +1,5 @@
 // A paste is one atomic PTY write. This allows a large code excerpt while bounding
-// UTF-8/WASM/frame copies to at most 192 KiB each; use files for larger material.
+// text UTF-8 to 192 KiB before paste/framing markers; use files for larger material.
 export const MAX_PASTE_CODE_UNITS = 64 * 1024
 export function assertPasteBudget(text: string): void {
   if (text.length > MAX_PASTE_CODE_UNITS) throw new Error(
