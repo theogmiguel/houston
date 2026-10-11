@@ -890,7 +890,9 @@ impl futures_util::Sink<Message> for ReplySink {
             .store(true, std::sync::atomic::Ordering::Release);
         self.wake.notify_one();
         Err(std::io::Error::other(format!(
-            "control reply limits: {CONTROL_REPLY_QUEUE} items, {CONTROL_REPLY_BYTES} bytes; requested {size} bytes; reconnect to resync"
+            "control reply limits: {CONTROL_REPLY_QUEUE} items, {CONTROL_REPLY_BYTES} bytes; actual {} items, {} bytes; requested 1 reply of {size} bytes; reconnect to resync",
+            CONTROL_REPLY_QUEUE - self.tx.capacity(),
+            CONTROL_REPLY_BYTES - self.bytes.available_permits(),
         )))
     }
 
