@@ -15,6 +15,7 @@ use houston_core::wsl_ensure::{EnsureReport, EnsureState};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
@@ -118,6 +119,8 @@ pub struct Options {
 struct Inner {
     opts: Options,
     ops: tokio::sync::Mutex<()>,
+    stopping: AtomicBool,
+    generation: AtomicU64,
     envs: Mutex<BTreeMap<String, Env>>,
 }
 
@@ -284,6 +287,15 @@ fn check_capabilities(distro: &str, out: &RunOutput) -> Result<(), String> {
 }
 
 impl Inner {
+    fn start_gate(&self, generation: u64) -> Result<(), String> {
+        if self.stopping.load(Ordering::SeqCst)
+            || generation != self.generation.load(Ordering::SeqCst)
+        {
+            return Err("WSL startup was cancelled by Stop daemons; enable the environment manually after keeping Houston open".into());
+        }
+        Ok(())
+    }
+
     fn gate(&self) -> Result<(), String> {
         if self.opts.supported {
             Ok(())
@@ -387,6 +399,9 @@ impl Inner {
         let relay = relay::Relay::start(backend, self.opts.retry_delay)
             .await
             .map_err(|e| format!("opening the loopback relay for {distro}: {e}"))?;
+        if self.stopping.load(Ordering::SeqCst) {
+            relay.close();
+        }
         self.update_env(distro, |env| {
             env.relay = Some(relay);
             env.state = EnvState::Ready;
@@ -411,6 +426,9 @@ impl Inner {
     }
 
     async fn reensure(self: Arc<Self>, distro: String) -> Result<(), String> {
+        let generation = self.generation.load(Ordering::SeqCst);
+        let _ops = self.ops.lock().await;
+        self.start_gate(generation)?;
         let install_dir = self
             .envs
             .lock()
@@ -504,6 +522,8 @@ impl WslManager {
             inner: Arc::new(Inner {
                 opts,
                 ops: tokio::sync::Mutex::new(()),
+                stopping: AtomicBool::new(false),
+                generation: AtomicU64::new(0),
                 envs: Mutex::new(BTreeMap::new()),
             }),
         }
@@ -591,7 +611,9 @@ impl WslManager {
                 distros::UTILITY.join(", ")
             ));
         }
+        let generation = inner.generation.load(Ordering::SeqCst);
         let _ops = inner.ops.lock().await;
+        inner.start_gate(generation)?;
         let mut config = config::load(&inner.opts.state_dir)?;
         if let Some(env) = inner.envs.lock().expect("wsl envs lock").get(&name) {
             if env.state == EnvState::Ready && config.is_enabled(&name) {
@@ -696,6 +718,39 @@ impl WslManager {
         Ok(Disabled { name })
     }
 
+    /// Pause all restart owners before snapshotting. A running blocking provision job
+    /// cannot be aborted truthfully; failure to drain therefore refuses confirmation.
+    pub async fn pause_for_stop(&self) -> Result<Vec<EnvEntry>, String> {
+        let inner = &self.inner;
+        inner.stopping.store(true, Ordering::SeqCst);
+        inner.generation.fetch_add(1, Ordering::SeqCst);
+        self.close_relays();
+        let _ops = tokio::time::timeout(Duration::from_secs(20), inner.ops.lock())
+            .await.map_err(|_| "WSL: could not settle startup/reensure ownership within 20s; daemons cannot be confirmed stopped".to_string())?;
+        // An in-flight startup may have published a relay while we drained it.
+        self.close_relays();
+        Ok(self.wsl_envs())
+    }
+
+    fn close_relays(&self) {
+        for env in self.inner.envs.lock().expect("wsl envs lock").values() {
+            if let Some(relay) = &env.relay {
+                relay.close();
+            }
+        }
+    }
+
+    /// Keep-open permits new explicit management requests, never automatic restarts.
+    pub fn keep_open_after_stop(&self) {
+        self.close_relays();
+        for env in self.inner.envs.lock().expect("wsl envs lock").values_mut() {
+            env.state = EnvState::Error;
+            env.reason = Some("Automatic restart paused by Stop daemons; enable this environment manually to reconnect".into());
+        }
+        self.inner.stopping.store(false, Ordering::SeqCst);
+        self.inner.notify();
+    }
+
     pub fn wsl_envs(&self) -> Vec<EnvEntry> {
         self.inner
             .envs
@@ -730,8 +785,12 @@ impl WslManager {
         };
         for entry in config.distros.into_iter().filter(|d| d.enabled) {
             let inner = Arc::clone(inner);
+            let generation = inner.generation.load(Ordering::SeqCst);
             tokio::spawn(async move {
                 let _ops = inner.ops.lock().await;
+                if inner.start_gate(generation).is_err() {
+                    return;
+                }
                 let still_enabled = config::load(&inner.opts.state_dir)
                     .is_ok_and(|config| config.is_enabled(&entry.name));
                 if !still_enabled {
@@ -922,6 +981,42 @@ mod tests {
             retry_delay: relay::RETRY_DELAY,
             notify: Box::new(|| {}),
         })
+    }
+
+    #[tokio::test]
+    async fn stop_drains_owners_and_rejects_queued_enable_and_reensure() {
+        let temp = tempfile::tempdir().unwrap();
+        let (fake, _daemons) = FakeWsl::new(ListReply::Missing);
+        let fake = Arc::new(fake);
+        let manager = manager(fake.clone(), temp.path(), temp.path(), true);
+        let owner = manager.inner.ops.lock().await;
+        let enable = {
+            let manager = manager.clone();
+            tokio::spawn(async move { manager.enable("Ubuntu".into()).await })
+        };
+        let ensure = {
+            let inner = manager.inner.clone();
+            tokio::spawn(async move { inner.reensure("Ubuntu".into()).await })
+        };
+        tokio::task::yield_now().await;
+        let pause = {
+            let manager = manager.clone();
+            tokio::spawn(async move { manager.pause_for_stop().await })
+        };
+        while !manager.inner.stopping.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !pause.is_finished(),
+            "must drain current startup owner before snapshot"
+        );
+        drop(owner);
+        assert!(enable.await.unwrap().unwrap_err().contains("cancelled"));
+        assert!(ensure.await.unwrap().unwrap_err().contains("cancelled"));
+        assert!(pause.await.unwrap().unwrap().is_empty());
+        manager.keep_open_after_stop();
+        assert!(fake.calls().is_empty(), "Keep-open must not start a daemon");
+        assert!(!manager.inner.stopping.load(Ordering::SeqCst));
     }
 
     fn list_text(rows: &str) -> ListReply {

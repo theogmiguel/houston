@@ -105,3 +105,8 @@ reports it before offering to close anyway.
 Enabling a distro sends nothing over the network: Houston copies the daemon bundled in
 its installer into the distro on this machine and talks to it through `wsl.exe`. Agent
 CLIs inside the distro contact their own services as they would anywhere else.
+
+After **Quit and stop daemons**, choosing **Keep Houston open** leaves WSL automatic
+restart paused. Enable each environment manually to reconnect. Startup and reconnect
+work queued before the stop request is cancelled. If running WSL work cannot settle
+within 20 seconds, Houston reports that those daemons cannot be confirmed stopped.
