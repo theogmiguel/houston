@@ -2358,3 +2358,108 @@ fn legacy_native_input_without_snapshot(status: proto::AgentStatus, pending_sour
     let count = master.read(&mut buffer).unwrap();
     assert!(String::from_utf8_lossy(&buffer[..count]).contains("old-owner-alive"));
 }
+
+#[cfg(target_os = "linux")]
+fn read_syscalls(pid: u32) -> u64 {
+    let io = std::fs::read_to_string(format!("/proc/{pid}/io")).expect("reading /proc/<pid>/io");
+    io.lines()
+        .find_map(|line| line.strip_prefix("syscr: "))
+        .and_then(|value| value.trim().parse().ok())
+        .expect("syscr line in /proc/<pid>/io")
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn an_adopted_session_in_a_git_checkout_leaves_the_head_watcher_idle() {
+    let git = |dir: &std::path::Path, args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}: {output:?}");
+    };
+    let home = tempfile::tempdir().unwrap();
+    let channel_dir = home.path().join(".houston-dev");
+    let _channel_guard = ChannelGuard(channel_dir.clone());
+    let mut guard = spawn_supervised_daemon(home.path(), &channel_dir);
+    let project = tempfile::tempdir().unwrap();
+    git(project.path(), &["init", "-b", "main"]);
+    git(
+        project.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(project.path(), &["config", "user.name", "Test"]);
+    git(
+        project.path(),
+        &["commit", "--allow-empty", "-m", "initial"],
+    );
+    let cfg_path = channel_dir.join("daemon.json");
+    let (before, session_id, ws) = supervised_daemon_with_session(
+        home.path(),
+        &channel_dir,
+        project.path(),
+        vec!["sh", "-c", "cat"],
+    )
+    .await;
+    drop(ws);
+
+    let result = daemon_handoff(before.port, &before.token).await;
+    assert!(result.accepted, "handoff must be accepted: {result:?}");
+    let generation = result
+        .generation
+        .expect("accepted handoff names a generation");
+    let after = poll_until(POLL_TIMEOUT, || {
+        let f = read_daemon_json(&cfg_path)?;
+        (f.pid != before.pid && f.generation == Some(generation)).then_some(f)
+    });
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
+    let mut ws = connect_when_ready(addr, &after.token).await;
+    match common::next_control(&mut ws).await {
+        proto::ServerMsg::HelloOk { sessions, .. } => {
+            let adopted = sessions.iter().find(|s| s.id == session_id).unwrap();
+            let checkout = adopted
+                .checkout
+                .as_ref()
+                .expect("adopted checkout metadata");
+            assert_eq!(checkout.branch.as_deref(), Some("main"));
+        }
+        other => panic!("expected HelloOk, got {other:?}"),
+    }
+
+    // Each HEAD read used to wake the watcher again, so an adopted pane drove
+    // tens of thousands of reads per second; a settled watcher wakes once a second.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let window = Duration::from_secs(3);
+    let start = read_syscalls(after.pid);
+    tokio::time::sleep(window).await;
+    let reads = read_syscalls(after.pid) - start;
+    assert!(
+        reads < 3_000,
+        "adopted daemon issued {reads} read syscalls in {window:?}; expected fewer than 3000"
+    );
+
+    git(project.path(), &["switch", "-c", "x"]);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let proto::ServerMsg::SessionCheckout { id, checkout } =
+                common::next_control(&mut ws).await
+            {
+                if id == session_id
+                    && checkout.as_ref().and_then(|c| c.branch.as_deref()) == Some("x")
+                {
+                    return;
+                }
+            }
+        }
+    })
+    .await
+    .expect("a branch switch in the adopted checkout must broadcast SessionCheckout");
+    drop(ws);
+
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
+}
