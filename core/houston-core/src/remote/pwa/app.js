@@ -679,6 +679,9 @@
       if (e.type === "turn_end") {
         finishTurn(e, root); continue;
       }
+      // The daemon follows a turn summary with a compatibility status event.
+      var previous = S.entries[S.shown - 2];
+      if (e.type === "status" && e.status === "finished" && previous && previous.type === "turn_end") continue;
       if (e.type === "step") {
         if (S.tailSteps) {
           S.tailSteps.push(e);
@@ -830,12 +833,13 @@
       var key = String(S.tailSteps[0].seq);
       S.expanded[key] = false; S.turns[key] = e;
       var group = stepGroup(S.tailSteps); S.tailNode.replaceWith(group);
-    } else root.appendChild(el("div", "tdiv", e.outcome === "stopped" ? "Stopped" : e.outcome === "failed" ? "Failed" : "Turn finished"));
+    }
     if (e.files && e.files.length) {
       var files = el("div", "tfiles"); files.dataset.feedSeq = e.seq; files.appendChild(el("b", "tfh", "Changed " + e.files.length + " files"));
       e.files.forEach(function (path) { files.appendChild(el("div", "tfr", path)); }); root.appendChild(files);
     }
-    if (e.outcome === "stopped") root.appendChild(el("div", "tdiv", "Turn stopped"));
+    var label = e.outcome === "stopped" ? "Stopped" : e.outcome === "failed" ? "Failed" : "Finished";
+    root.appendChild(el("div", "tdiv", label + " · " + clock(e.at)));
     S.tailSteps = null; S.tailNode = null;
   }
 

@@ -157,10 +157,11 @@ requests from Codex, Cursor, Grok, OpenCode and Antigravity, show a waiting card
 
 Each pane shows user messages, agent replies and a work log. Claude tool calls that fail
 remain in the log with a **failed** label and count toward the turn summary;
-listed edit paths include attempted
-edits even when the tool failed. When the computer reports a
-turn end, the log folds into a summary with its duration and changed files. Tap the summary
-to reopen it. Older computers show the tool steps without a duration or changed-file card.
+listed edit paths include attempted edits even when the tool failed. When the computer
+reports a turn end, a log with steps folds into a summary with its duration and changed
+files. Tap the summary to reopen it. Each turn ends with one timestamped divider, including
+turns with no tool steps. Older computers show the tool steps without a duration or
+changed-file card.
 Child panes appear together
 when the computer reports their relationship, and a child that needs you has an **Open**
 band. Quick replies appear while idle after a finished turn and fill the message box without sending.
