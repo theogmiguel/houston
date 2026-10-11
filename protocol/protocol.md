@@ -1200,6 +1200,10 @@ lock that source out of token checks and pairing for 60 s; loopback callers
 locked out. The listener holds at most 64 connections and closes one that is
 idle for 30 s.
 
+ntfy publishes set the `Click` header to `<listener URL>#session=<id>`, using the
+configured public origin or the HTTP bind origin. Notification bodies contain no terminal
+content; optional pane titles pass through the feed masker.
+
 ## Versioning rules
 
 - `PROTOCOL_VERSION` is bumped **once per wire-touching batch**, not once per

@@ -163,7 +163,7 @@ async fn a_sustained_needs_input_sends_one_generic_notification() {
     assert_eq!(post.header("Priority"), Some("high"));
     assert_eq!(
         post.header("Click"),
-        Some(format!("https://box.tail1.ts.net/#session={}", info.id).as_str())
+        Some(format!("https://box.tail1.ts.net#session={}", info.id).as_str())
     );
     assert_eq!(post.body, "An agent needs your input");
     let dir_text = dir.path().to_string_lossy();
@@ -288,4 +288,26 @@ async fn an_invalid_ntfy_url_is_refused_without_echoing_it() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("601") && err.contains("600"), "{err}");
+}
+
+#[tokio::test]
+async fn finished_notification_click_opens_the_session_fragment() {
+    let (ntfy, inbox) = fixture_ntfy().await;
+    let (daemon, _state) = notifying_daemon(ntfy, 0, ConfigPatch {
+        notify_finished: Some(true),
+        ..Default::default()
+    }).await;
+    let (info, _dir) = pane(&daemon);
+    daemon.handle_hook(info.id, "UserPromptSubmit", None);
+    daemon.handle_hook(info.id, "Stop", None);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if !inbox.lock().unwrap().is_empty() { break; }
+        assert!(tokio::time::Instant::now() < deadline, "no finished notification");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let posts = inbox.lock().unwrap().clone();
+    assert_eq!(posts[0].body, "An agent finished its turn");
+    assert_eq!(posts[0].header("Click"), Some(format!("https://box.tail1.ts.net#session={}", info.id).as_str()));
+    daemon.kill(info.id).unwrap();
 }

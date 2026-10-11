@@ -145,7 +145,7 @@ adds a notification when a working agent settles at idle.
 While remote access is on and a topic URL is set, Houston posts to the ntfy server you
 chose: the title "Houston", the message "An agent needs your input" (or, with **Include
 the pane name**, the pane's title, which a program can set), and a link to your remote
-access address. Terminal content, commands and file paths are never sent. With the public
+access address with the pane id in its fragment (`#session=<id>`). Terminal content, commands and file paths are never sent. With the public
 ntfy.sh server, ntfy's operator can read these messages; a self-hosted ntfy server keeps
 them on your server.
 
