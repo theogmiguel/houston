@@ -43,6 +43,7 @@ impl Drop for Home {
 const DESCENDANT: &str = r#"
 import os, signal, time
 signal.signal(signal.SIGHUP, signal.SIG_IGN)
+with open('root', 'w') as f: f.write(str(os.getpid()))
 child = os.fork()
 if child == 0:
     with open('descendant', 'w') as f: f.write(str(os.getpid()))
@@ -61,9 +62,12 @@ struct Descendant {
 }
 impl Descendant {
     fn capture(dir: &Path) -> Self {
+        Self::capture_file(dir, "descendant")
+    }
+    fn capture_file(dir: &Path, name: &str) -> Self {
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
-            if let Ok(text) = std::fs::read_to_string(dir.join("descendant")) {
+            if let Ok(text) = std::fs::read_to_string(dir.join(name)) {
                 if let Ok(pid) = text.parse() {
                     return Self {
                         pid,
@@ -121,15 +125,15 @@ impl Drop for Pane {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exited_root_close_drains_reader_and_terminates_exact_quiet_descendant() {
-    exited_root_close(false).await;
+    exited_root_cleanup(false, false).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exited_root_close_survives_scope_stop_failure() {
-    exited_root_close(true).await;
+    exited_root_cleanup(true, false).await;
 }
 
-async fn exited_root_close(fail_scope: bool) {
+async fn exited_root_cleanup(fail_scope: bool, respawn: bool) {
     let _home = Home::new();
     let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
     let mut socket = common::connect_and_hello(addr, common::TOKEN).await;
@@ -147,6 +151,7 @@ async fn exited_root_close(fail_scope: bool) {
         id,
     };
     let descendant = Descendant::capture(dir.path());
+    let root = Descendant::capture_file(dir.path(), "root");
     common::attach_and_collect_output_until(&mut socket, id, "READY").await;
     assert!(daemon.pty_reader_active_for_test(id));
     std::fs::write(dir.path().join("exit-root"), "").unwrap();
@@ -179,8 +184,31 @@ async fn exited_root_close(fail_scope: bool) {
     }
     houston_core::session_isolation::fail_scope_termination_for_test(fail_scope);
     let _scope = ScopeReset;
-    daemon.close(id).unwrap();
-    assert!(completed(), "close owns reader completion before removal");
+    let replacement_dir = tempfile::tempdir().unwrap();
+    let replacement = if respawn {
+        Some(
+            daemon
+                .respawn(id, false, Some(replacement_dir.path().into()), None, false)
+                .unwrap(),
+        )
+    } else {
+        daemon.close(id).unwrap();
+        None
+    };
+    let _replacement = replacement.as_ref().map(|info| Pane {
+        daemon: daemon.clone(),
+        id: info.id,
+    });
+    let _replacement_child = replacement
+        .as_ref()
+        .map(|_| Descendant::capture(replacement_dir.path()));
+    assert!(completed(), "cleanup owns reader completion before removal");
+    assert_ne!(
+        houston_core::pid::process_creation_token(root.pid),
+        Some(root.creation),
+        "old root reaped before removal"
+    );
+    assert!(!daemon.list().iter().any(|info| info.id == id));
     descendant.require_exit();
 }
 
@@ -232,4 +260,151 @@ fn startup_rollback_terminates_descendant_before_reaping_owned_root() {
     );
     child.require_exit();
     assert!(daemon.list().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn exited_respawn_cleans_quiet_descendant_before_replacing_registered_ownership() {
+    exited_root_cleanup(false, true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn failed_wake_cleans_quiet_descendant_before_restoring_sleeping_placeholder() {
+    let _home = Home::new();
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut socket = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut socket).await;
+    let script = DESCENDANT.strip_suffix("os._exit(0)\n").unwrap().to_owned() + "os._exit(1)\n";
+    socket
+        .send(Message::text(common::create_custom_msg(
+            vec!["python3", "-u", "-c", &script],
+            dir.path(),
+        )))
+        .await
+        .unwrap();
+    let id = common::expect_created(&mut socket).await.id;
+    let _pane = Pane {
+        daemon: daemon.clone(),
+        id,
+    };
+    let descendant = Descendant::capture(dir.path());
+    let root = Descendant::capture_file(dir.path(), "root");
+    common::attach_and_collect_output_until(&mut socket, id, "READY").await;
+    let completed = daemon.pty_reader_completion_for_test(id).unwrap();
+    // Install the same launch receipt Wake records, without invoking an agent provider.
+    daemon.mark_wake_launch_for_test(id);
+    std::fs::write(dir.path().join("exit-root"), "").unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while daemon
+            .list()
+            .iter()
+            .find(|info| info.id == id)
+            .unwrap()
+            .state
+            != proto::SessionState::Sleeping
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        completed(),
+        "Sleep placeholder cannot discard a live reader"
+    );
+    assert_ne!(
+        houston_core::pid::process_creation_token(root.pid),
+        Some(root.creation),
+        "failed Wake root reaped before rollback"
+    );
+    descendant.require_exit();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn first_close_drains_reader_paused_before_osc7501_reply_admission() {
+    query_close(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reader_drain_timeout_preserves_registered_ownership_for_close_retry() {
+    query_close(true).await;
+}
+
+async fn query_close(force_timeout: bool) {
+    let _home = Home::new();
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut socket = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut socket).await;
+    let barrier = tempfile::tempdir().unwrap();
+    struct BarrierReset(Option<std::ffi::OsString>, std::path::PathBuf);
+    impl Drop for BarrierReset {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(self.1.join("armed"));
+            if let Some(previous) = &self.0 {
+                std::env::set_var("HOUSTON_TEST_BARRIER_DIR", previous);
+            } else {
+                std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+            }
+        }
+    }
+    let _barrier_reset = BarrierReset(
+        std::env::var_os("HOUSTON_TEST_BARRIER_DIR"),
+        barrier.path().into(),
+    );
+    std::env::set_var("HOUSTON_TEST_BARRIER_DIR", barrier.path());
+    std::fs::write(barrier.path().join("armed"), "terminal-query").unwrap();
+    socket.send(Message::text(common::create_custom_msg(
+        vec!["python3", "-u", "-c", "import os,time; print('READY',flush=True);\nwhile not os.path.exists('query'): time.sleep(.005)\nprint('\\x1b]7501;?\\x07',flush=True); time.sleep(30)"], dir.path(),
+    ))).await.unwrap();
+    let id = common::expect_created(&mut socket).await.id;
+    let _pane = Pane {
+        daemon: daemon.clone(),
+        id,
+    };
+    common::attach_and_collect_output_until(&mut socket, id, "READY").await;
+    let completed = daemon.pty_reader_completion_for_test(id).unwrap();
+    std::fs::write(dir.path().join("query"), "").unwrap();
+    let receipt = format!("terminal-query {id}");
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while std::fs::read_to_string(barrier.path().join("reached"))
+            .ok()
+            .as_deref()
+            != Some(receipt.as_str())
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let closing = daemon.clone();
+    let close = tokio::task::spawn_blocking(move || closing.session_close_checked(id, true));
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while !daemon.pty_cleanup_started_for_test(id) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // Cancellation is published under the lifecycle lock immediately before its
+    // reader-completion wait. Release query admission only after that receipt.
+    if force_timeout {
+        let error = close.await.unwrap().unwrap_err();
+        assert!(error.to_string().contains("cleanup drain limit 1000 ms"));
+        assert!(daemon.list().iter().any(|info| info.id == id));
+        assert!(
+            !completed(),
+            "timed-out reader remains owned by the registered pane"
+        );
+        std::fs::remove_file(barrier.path().join("armed")).unwrap();
+        daemon
+            .session_close_checked(id, true)
+            .expect("Close retry drains the retained ownership");
+    } else {
+        std::fs::remove_file(barrier.path().join("armed")).unwrap();
+        close
+            .await
+            .unwrap()
+            .expect("first Close succeeds without a timeout retry");
+    }
+    assert!(completed());
+    assert!(!daemon.list().iter().any(|info| info.id == id));
 }
