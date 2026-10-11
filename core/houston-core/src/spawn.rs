@@ -29,56 +29,180 @@ pub fn tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::C
     cmd
 }
 
-/// `Command::output` with a deadline, for a background job that must finish: past
-/// `timeout` the child is killed and `Ok(None)` returned. Stdin is closed, so a child
-/// that would prompt reads EOF instead of waiting for an answer nobody can give.
+/// Capture a background command with closed stdin. The deadline covers both
+/// child exit and pipe completion; timeout returns `Ok(None)`.
 pub fn output_within(
-    mut cmd: std::process::Command,
+    cmd: std::process::Command,
     timeout: std::time::Duration,
 ) -> std::io::Result<Option<std::process::Output>> {
-    use std::io::Read;
-    use std::process::Stdio;
-    let mut child = cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let drain = |pipe: Option<Box<dyn Read + Send>>| {
-        std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            if let Some(mut pipe) = pipe {
-                let _ = pipe.read_to_end(&mut buf);
+    output_within_with_stdin(cmd, timeout, std::process::Stdio::null())
+}
+
+/// Capture with caller-owned stdin (for example `Stdio::from(File)`). No copying
+/// thread is created. Combined stdout/stderr is limited to 8 MiB; exceeding it
+/// fails explicitly. Linux owns a process group until cleanup and root reap.
+/// Other platforms refuse before spawning until equivalent ownership exists.
+pub fn output_within_with_stdin(
+    mut cmd: std::process::Command,
+    timeout: std::time::Duration,
+    stdin: std::process::Stdio,
+) -> std::io::Result<Option<std::process::Output>> {
+    cmd.stdin(stdin);
+    #[cfg(target_os = "linux")]
+    {
+        bounded_linux::capture(cmd, timeout)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (cmd, timeout);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            format!("bounded subprocess capture is unsupported on {}; expected Linux process-group ownership", std::env::consts::OS),
+        ))
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod bounded_linux {
+    use std::io::{self, Read};
+    use std::os::fd::{AsRawFd, RawFd};
+    use std::os::unix::process::CommandExt;
+    use std::process::{Child, Command, Output, Stdio};
+    use std::time::{Duration, Instant};
+
+    // Background metadata/diagnostics must not allocate without a bound.
+    const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
+
+    struct OwnedChild {
+        child: Child,
+        reaped: bool,
+    }
+
+    impl OwnedChild {
+        fn terminate(&mut self) -> io::Result<()> {
+            // No wait/try_wait has reaped this child: its PID still anchors the
+            // group even when it is a zombie. Identity is released only after kill.
+            crate::pid::signal_unreaped_child_group(&self.child, crate::pid::Signal::Kill)
+                .map_err(io::Error::other)
+        }
+    }
+
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            if !self.reaped {
+                if self.terminate().is_err() {
+                    let _ = self.child.kill();
+                }
+                let _ = self.child.wait();
             }
-            buf
-        })
-    };
-    let stdout = drain(child.stdout.take().map(|p| Box::new(p) as _));
-    let stderr = drain(child.stderr.take().map(|p| Box::new(p) as _));
-    let start = std::time::Instant::now();
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
         }
-        if start.elapsed() >= timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            // A grandchild may still hold the pipes; the readers end when it does.
-            return Ok(None);
+    }
+
+    fn nonblocking(fd: RawFd) -> io::Result<()> {
+        // SAFETY: fd belongs to an open pipe retained by the caller.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+            return Err(io::Error::last_os_error());
         }
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    };
-    Ok(Some(std::process::Output {
-        status,
-        stdout: stdout.join().unwrap_or_default(),
-        stderr: stderr.join().unwrap_or_default(),
-    }))
+        Ok(())
+    }
+
+    fn read_pipe(pipe: &mut impl Read, bytes: &mut Vec<u8>, total: &mut usize) -> io::Result<bool> {
+        let mut buf = [0; 8192];
+        // One chunk per pass keeps a busy stdout from starving stderr/deadline.
+        match pipe.read(&mut buf) {
+            Ok(0) => Ok(true),
+            Ok(n) => {
+                *total += n;
+                if *total > OUTPUT_LIMIT {
+                    return Err(io::Error::other(format!(
+                        "subprocess capture requested {total} bytes; combined output limit is {OUTPUT_LIMIT} bytes"
+                    )));
+                }
+                bytes.extend_from_slice(&buf[..n]);
+                Ok(false)
+            }
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    pub(super) fn capture(mut cmd: Command, timeout: Duration) -> io::Result<Option<Output>> {
+        let start = Instant::now();
+        cmd.process_group(0)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = OwnedChild {
+            child: cmd.spawn()?,
+            reaped: false,
+        };
+        let mut stdout = child.child.stdout.take().expect("stdout was piped");
+        let mut stderr = child.child.stderr.take().expect("stderr was piped");
+        nonblocking(stdout.as_raw_fd())?;
+        nonblocking(stderr.as_raw_fd())?;
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let mut total = 0;
+        let mut out_done = false;
+        let mut err_done = false;
+        loop {
+            if start.elapsed() >= timeout {
+                return Ok(None);
+            }
+            if !out_done {
+                out_done = read_pipe(&mut stdout, &mut out, &mut total)?;
+            }
+            if !err_done {
+                err_done = read_pipe(&mut stderr, &mut err, &mut total)?;
+            }
+            if out_done && err_done && crate::pid::unreaped_child_exited(&child.child)? {
+                child.terminate()?;
+                let status = child.child.wait()?;
+                // Drop must never signal the now-reaped identity.
+                child.reaped = true;
+                return Ok(Some(Output {
+                    status,
+                    stdout: out,
+                    stderr: err,
+                }));
+            }
+            let remaining = timeout.saturating_sub(start.elapsed());
+            let mut pipes = [
+                libc::pollfd {
+                    fd: if out_done { -1 } else { stdout.as_raw_fd() },
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: if err_done { -1 } else { stderr.as_raw_fd() },
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+            ];
+            let millis = remaining.as_millis().min(5) as i32;
+            // SAFETY: pipes is a valid two-element array for the whole call.
+            if unsafe { libc::poll(pipes.as_mut_ptr(), 2, millis) } < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() != io::ErrorKind::Interrupted {
+                    return Err(error);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn output_within_kills_a_child_past_its_deadline() {
         let start = std::time::Instant::now();
@@ -95,6 +219,18 @@ mod tests {
             .expect("a closed stdin ends the read at once");
         assert_eq!(String::from_utf8_lossy(&out.stdout), "out\n");
         assert_eq!(String::from_utf8_lossy(&out.stderr), "err\n");
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn unsupported_capture_refuses_before_spawning() {
+        let error = output_within(
+            command("houston-nonexistent-fixture"),
+            std::time::Duration::from_secs(1),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+        assert!(error.to_string().contains(std::env::consts::OS));
     }
 
     #[cfg(windows)]

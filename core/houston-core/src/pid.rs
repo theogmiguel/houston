@@ -181,6 +181,46 @@ pub fn signal_owned_process_group(
     Ok(SignalOutcome::Delivered)
 }
 
+/// Observe an owned child without reaping it, retaining its process-group identity.
+#[cfg(target_os = "linux")]
+pub(crate) fn unreaped_child_exited(child: &std::process::Child) -> std::io::Result<bool> {
+    let raw = checked_pid(child.id()).map_err(std::io::Error::other)?;
+    // SAFETY: info is initialized and waitid writes only this out-parameter.
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    if unsafe {
+        libc::waitid(
+            libc::P_PID,
+            raw as libc::id_t,
+            &mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    } < 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: waitid populated siginfo's child-status variant (or left si_pid zero).
+    Ok(unsafe { info.si_pid() } == raw)
+}
+
+/// Caller must retain this direct child without wait/try_wait until after delivery.
+#[cfg(target_os = "linux")]
+pub(crate) fn signal_unreaped_child_group(
+    child: &std::process::Child,
+    sig: Signal,
+) -> Result<(), SignalError> {
+    let raw = checked_pid(child.id()).map_err(SignalError::InvalidPid)?;
+    // The unreaped direct child anchors identity; verify our session and group.
+    if unsafe { libc::getpgid(raw) } != raw
+        || unsafe { libc::getsid(raw) } != unsafe { libc::getsid(0) }
+    {
+        return Err(SignalError::Os(std::io::Error::other(format!(
+            "child pid {} is not an owned process group in the caller session",
+            child.id()
+        ))));
+    }
+    signal_process_group_checked(child.id(), sig)
+}
+
 #[cfg(unix)]
 fn signal_process_group_checked(pid: u32, sig: Signal) -> Result<(), SignalError> {
     if pid == 1 {
@@ -498,6 +538,32 @@ pub fn process_comm(pid: u32) -> Option<String> {
 mod tests {
     #![allow(clippy::disallowed_methods)]
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn exited_child_retains_group_identity_until_cleanup() {
+        use std::os::unix::process::CommandExt;
+        let mut cmd = crate::spawn::command("sh");
+        cmd.args(["-c", "sleep 1 & exit 0"]).process_group(0);
+        let mut child = cmd.spawn().unwrap();
+        let token = process_creation_token(child.id());
+        let start = std::time::Instant::now();
+        while !unreaped_child_exited(&child).unwrap() {
+            if start.elapsed() > std::time::Duration::from_secs(2) {
+                let _ = signal_unreaped_child_group(&child, Signal::Kill);
+                let _ = child.wait();
+                panic!("fixture root did not exit");
+            }
+            std::thread::yield_now();
+        }
+        let retained = process_creation_token(child.id());
+        let cleanup = signal_unreaped_child_group(&child, Signal::Kill);
+        let status = child.wait().unwrap();
+        assert!(token.is_some());
+        assert_eq!(retained, token);
+        cleanup.unwrap();
+        assert!(status.success());
+    }
 
     const BROADCAST_VALUES: [(u32, &str); 3] = [
         (

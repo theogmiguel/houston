@@ -17,6 +17,10 @@ labelled **Experimental**.
 - An x86_64 distro with glibc 2.35 or newer (for example Ubuntu 22.04 or Debian 12).
 - WSL environments exist only on Windows; other platforms do not show the section.
 
+Windows currently refuses WSL command runs with `bounded subprocess capture is
+unsupported on windows`. Listing, enabling and provisioning distros cannot complete
+until Windows supports owned subprocess cleanup. Existing distro state is retained.
+
 ## Enabling a distro
 
 Open **Settings → WSL**. It lists every installed distro with its state and WSL version,

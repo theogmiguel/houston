@@ -424,7 +424,15 @@ dialog was drawn is not removed unseen. A workspace mid-pass refuses a second on
 claim is released on drop so a panicking pass cannot block later ones. Removal deletes the
 recorded branch, so a tree whose checkout moved to another branch is kept: its PR lookup
 and ancestry check would describe a different branch. Each `git` and `gh` call in a pass is
-bounded by a timeout and runs without a terminal prompt.
+bounded by a timeout and runs without a terminal prompt. Bounded capture on Linux
+includes stdout/stderr EOF in that deadline and limits combined output to 8 MiB,
+returning an error above the limit. The child owns a separate process group and
+remains unreaped until group cleanup, including after a successful root exit.
+No reader or stdin-copy threads survive capture. Descendants that leave the owned
+process group are outside its cancellation boundary; closing the capture pipes
+still bounds the caller's wait. Other platforms explicitly refuse bounded capture
+before spawning until equivalent process ownership is available. This refusal also
+applies to Windows WSL command runs, including file installation stdin.
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then
 a `plan/events/` GC sweep gated to `SWARM_MAIL_GC_SWEEP_INTERVAL_MS`. Mail delivery uses
 `pane_inbox` `Mail` rows and the shared inbox delivery paths. The loop lists the legacy
