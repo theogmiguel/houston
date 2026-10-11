@@ -408,3 +408,107 @@ async fn query_close(force_timeout: bool) {
     assert!(completed());
     assert!(!daemon.list().iter().any(|info| info.id == id));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn quiet_live_pty_blocks_without_periodic_wakes_and_parks_promptly() {
+    quiet_live_reader(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancellation_releases_parked_reader_with_live_pty() {
+    quiet_live_reader(true).await;
+}
+
+async fn quiet_live_reader(cancel_while_parked: bool) {
+    let _home = Home::new();
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut socket = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut socket).await;
+    socket
+        .send(Message::text(common::create_custom_msg(
+            vec![
+                "python3",
+                "-u",
+                "-c",
+                "import time; print('READY', flush=True); time.sleep(30)",
+            ],
+            dir.path(),
+        )))
+        .await
+        .unwrap();
+    let id = common::expect_created(&mut socket).await.id;
+    let _pane = Pane {
+        daemon: daemon.clone(),
+        id,
+    };
+    common::attach_and_collect_output_until(&mut socket, id, "READY").await;
+    // Settle the READY read before observing the quiet, still-live PTY.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let before = daemon.pty_reader_poll_returns_for_test(id).unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        daemon.pty_reader_poll_returns_for_test(id).unwrap(),
+        before,
+        "quiet live PTY must not wake periodically"
+    );
+    let park_daemon = daemon.clone();
+    let parked = tokio::task::spawn_blocking(move || {
+        park_daemon
+            .park_pty_reader_for_test(id, Duration::from_millis(500))
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    assert!(parked, "park must wake an indefinitely blocked reader");
+    let parked_returns = daemon.pty_reader_poll_returns_for_test(id).unwrap();
+    daemon.resume_pty_reader_for_test(id).unwrap();
+    tokio::time::timeout(Duration::from_millis(500), async {
+        while daemon.pty_reader_poll_returns_for_test(id).unwrap() == parked_returns {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("resume notification must survive parking");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let resumed_returns = daemon.pty_reader_poll_returns_for_test(id).unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        daemon.pty_reader_poll_returns_for_test(id).unwrap(),
+        resumed_returns,
+        "resumed quiet PTY must return to indefinite blocking"
+    );
+    let completed = daemon.pty_reader_completion_for_test(id).unwrap();
+    // Keep the process live: cancellation must wake poll or release the park
+    // condvar without PTY EOF or a periodic timer providing the wake.
+    if cancel_while_parked {
+        let park_daemon = daemon.clone();
+        assert!(tokio::task::spawn_blocking(move || {
+            park_daemon
+                .park_pty_reader_for_test(id, Duration::from_millis(500))
+                .unwrap()
+        })
+        .await
+        .unwrap());
+    }
+    daemon.cancel_pty_reader_for_test(id).unwrap();
+    tokio::time::timeout(Duration::from_millis(500), async {
+        while !completed() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("cancellation must wake the reader with a live PTY");
+    let close_daemon = daemon.clone();
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        tokio::task::spawn_blocking(move || close_daemon.close(id)),
+    )
+    .await
+    .expect("quiet reader cancellation must wake promptly")
+    .unwrap()
+    .unwrap();
+    assert!(
+        completed(),
+        "Close must retain reader ownership through completion"
+    );
+}

@@ -250,14 +250,16 @@ since a headless VT parser has not landed — there is no parser to have partial
 ## The read loop
 
 One OS thread per session, named `pty-read-<id>`, loops on `reader.read(&mut buf)` with a
-fixed `PTY_READ_BUF` of 16 KiB. Unix polls a retained descriptor at 50 ms intervals to
-observe cancellation without relying on a signal to interrupt an unentered read. Close,
-respawn and failed-Wake rollback share ownership cleanup: a final drain of available bytes
-for at most 100 ms, up to one second for reader completion and a separate one-second root
-reap wait. Cleanup joins the reader before removing the registered pane; timeout or failure
+fixed `PTY_READ_BUF` of 16 KiB. All Unix targets block indefinitely on the retained PTY
+and an owned nonblocking Unix socket pair. Park and cancellation queue a bounded wake
+that remains readable across the state-check-to-poll race; a full socket coalesces wakes.
+Windows retains its blocking reader and master-release cancellation path. Close,
+respawn and failed-Wake rollback share ownership cleanup. Unix drains available bytes for
+at most 100 ms; cleanup allows up to one second for reader completion and a separate
+one-second root reap wait. Cleanup joins the reader before removing the registered pane; timeout or failure
 preserves registration for a retry. Replacement callbacks run after root reaping so they
-cannot wait on their own waiter. Reader thread identities are cleared before thread exit. Shutdown includes Exited panes with retained readers; generation handoff
-refuses those panes until they are closed because the live-session manifest cannot carry
+cannot wait on their own waiter. Reader wake registration is cleared before thread exit.
+Shutdown includes Exited panes with retained readers; generation handoff refuses those panes until they are closed because the live-session manifest cannot carry
 this ownership. There is no output coalescing: one frame per read.
 
 `process_chunk` fans one chunk out, in order: scrollback push (returning the stream offset)

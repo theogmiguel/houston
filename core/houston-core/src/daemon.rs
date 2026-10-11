@@ -619,12 +619,14 @@ pub struct Session {
 struct ParkState {
     inner: Mutex<ParkInner>,
     cond: std::sync::Condvar,
+    #[cfg(all(unix, feature = "test-barriers"))]
+    poll_returns: AtomicU64,
 }
 
 #[derive(Default)]
 struct ParkInner {
     #[cfg(unix)]
-    reader_tid: Option<u64>,
+    reader_wake: Option<Arc<ReaderWake>>,
     requested: bool,
     parked: bool,
     generation: u64,
@@ -636,16 +638,9 @@ impl ParkState {
         let mut guard = self.inner.lock().expect("park lock");
         guard.requested = true;
         guard.generation = guard.generation.wrapping_add(1);
-        #[cfg(unix)]
-        if let Some(tid) = guard.reader_tid {
-            // SAFETY: the reader clears its identity under this lock before exiting.
-            // Holding the lock through delivery excludes pthread ID reuse; SIGUSR1
-            // has the process-wide noop handler installed below.
-            unsafe {
-                libc::pthread_kill(tid as libc::pthread_t, libc::SIGUSR1);
-            }
-        }
-        if guard.reader_tid.is_none() {
+        if let Some(wake) = &guard.reader_wake {
+            wake.notify();
+        } else {
             return true;
         }
         let deadline = std::time::Instant::now() + timeout;
@@ -685,11 +680,56 @@ impl ParkState {
         guard.requested = false;
         guard.generation = guard.generation.wrapping_add(1);
         self.cond.notify_all();
+        if let Some(wake) = &guard.reader_wake {
+            wake.notify();
+        }
+    }
+}
+
+// All Unix targets use owned socket descriptors: queued bytes survive the state-check
+// to poll race, without process-wide signals or periodic idle wakeups.
+#[cfg(unix)]
+struct ReaderWake {
+    read: std::os::unix::net::UnixStream,
+    write: std::os::unix::net::UnixStream,
+}
+
+#[cfg(unix)]
+impl ReaderWake {
+    fn new() -> std::io::Result<Self> {
+        let (read, write) = std::os::unix::net::UnixStream::pair()?;
+        read.set_nonblocking(true)?;
+        write.set_nonblocking(true)?;
+        Ok(Self { read, write })
     }
 
-    #[cfg(unix)]
-    fn set_reader_tid(&self, tid: libc::pthread_t) {
-        self.inner.lock().expect("park lock").reader_tid = Some(tid);
+    fn notify(&self) {
+        let mut writer = &self.write;
+        loop {
+            match writer.write(&[1]) {
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                // A full socket already holds a wake; notifications may coalesce.
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => tracing::warn!("PTY reader wake failed: {error}"),
+                Ok(_) => {}
+            }
+            break;
+        }
+    }
+
+    fn consume(&self) {
+        let mut reader = &self.read;
+        let mut bytes = [0; 256];
+        // One bounded read suffices; leftover notifications stay readable.
+        match reader.read(&mut bytes) {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(error) => tracing::warn!("PTY reader wake consumption failed: {error}"),
+            Ok(_) => {}
+        }
     }
 }
 
@@ -787,9 +827,6 @@ impl Drop for WriteThread<'_> {
     }
 }
 
-// Idle polling bounds cancellation without a signal racing entry into read(2).
-#[cfg(unix)]
-const PTY_READER_POLL_MS: i32 = 50;
 // Allow final output while bounding teardown of descendants that continue writing.
 #[cfg(unix)]
 const PTY_READER_FINAL_DRAIN: Duration = Duration::from_millis(100);
@@ -911,6 +948,12 @@ struct StdinQueue {
 }
 
 impl Session {
+    fn cancel_pty_reader(&self) {
+        self.reader_cancel.store(true, Ordering::Release);
+        #[cfg(unix)]
+        self.park.resume();
+    }
+
     fn has_retained_reader(&self) -> bool {
         matches!(self.backend, Backend::Pty { .. })
             && !*self.reader_done.0.lock().expect("reader done lock")
@@ -4498,6 +4541,7 @@ impl Daemon {
             {
                 parked.push(*id);
             } else {
+                session.park.resume();
                 abort_reason = Some(format!(
                     "session {id} did not quiesce within {}ms",
                     adoption::QUIESCE_PARK_TIMEOUT_MS
@@ -9962,6 +10006,32 @@ impl Daemon {
             .is_ok_and(|session| session.reader_cancel.load(Ordering::Acquire))
     }
 
+    #[cfg(all(unix, feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn cancel_pty_reader_for_test(&self, id: u32) -> Result<()> {
+        self.get(id)?.cancel_pty_reader();
+        Ok(())
+    }
+
+    #[cfg(all(unix, feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn pty_reader_poll_returns_for_test(&self, id: u32) -> Result<u64> {
+        Ok(self.get(id)?.park.poll_returns.load(Ordering::Relaxed))
+    }
+
+    #[cfg(all(unix, feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn park_pty_reader_for_test(&self, id: u32, timeout: Duration) -> Result<bool> {
+        Ok(self.get(id)?.park.request_and_wait(timeout))
+    }
+
+    #[cfg(all(unix, feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn resume_pty_reader_for_test(&self, id: u32) -> Result<()> {
+        self.get(id)?.park.resume();
+        Ok(())
+    }
+
     #[cfg(feature = "test-barriers")]
     #[doc(hidden)]
     pub fn mark_wake_launch_for_test(&self, id: u32) {
@@ -9991,7 +10061,7 @@ impl Daemon {
         gate: Option<Arc<StartupGate>>,
     ) -> std::io::Result<std::thread::JoinHandle<()>> {
         #[cfg(unix)]
-        ensure_quiesce_signal_installed();
+        let wake = Arc::new(ReaderWake::new()?);
         #[cfg(unix)]
         let poll_fd = session
             .backend
@@ -10000,7 +10070,12 @@ impl Daemon {
                 // SAFETY: the backend retains its master throughout reader preparation.
                 unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()
             })
-            .transpose()?;
+            .transpose()?
+            .ok_or_else(|| {
+                std::io::Error::other(format!(
+                    "session {id}: Unix PTY reader requires a pollable master descriptor"
+                ))
+            })?;
         let daemon = Arc::clone(self);
         let reader_session = Arc::clone(session);
         std::thread::Builder::new()
@@ -10010,18 +10085,25 @@ impl Daemon {
                     return;
                 }
                 #[cfg(unix)]
-                // SAFETY: `pthread_self` takes no arguments and has no preconditions.
-                reader_session
-                    .park
-                    .set_reader_tid(unsafe { libc::pthread_self() });
+                {
+                    reader_session
+                        .park
+                        .inner
+                        .lock()
+                        .expect("park lock")
+                        .reader_wake = Some(Arc::clone(&wake));
+                }
                 let mut reader = reader;
                 let mut buf = vec![0u8; PTY_READ_BUF];
                 #[cfg(unix)]
                 let mut drain_started = None;
                 loop {
                     #[cfg(unix)]
-                    if let Some(fd) = &poll_fd {
+                    reader_session.park.check_and_wait_if_requested();
+                    #[cfg(unix)]
+                    {
                         use std::os::fd::AsRawFd;
+                        let fd = &poll_fd;
                         let cancelling = reader_session.reader_cancel.load(Ordering::Acquire);
                         if cancelling && drain_started.is_none() {
                             drain_started = Some(Instant::now());
@@ -10031,24 +10113,48 @@ impl Daemon {
                         {
                             break;
                         }
-                        let mut poll = libc::pollfd {
-                            fd: fd.as_raw_fd(),
-                            events: libc::POLLIN,
-                            revents: 0,
-                        };
-                        // SAFETY: poll points to one valid entry and its descriptor is retained.
+                        let mut polls = [
+                            libc::pollfd {
+                                fd: fd.as_raw_fd(),
+                                events: libc::POLLIN,
+                                revents: 0,
+                            },
+                            libc::pollfd {
+                                fd: wake.read.as_raw_fd(),
+                                events: libc::POLLIN,
+                                revents: 0,
+                            },
+                        ];
+                        // SAFETY: both entries and their owned descriptors remain valid throughout poll.
                         let ready = unsafe {
                             libc::poll(
-                                &mut poll,
-                                1,
-                                if cancelling { 0 } else { PTY_READER_POLL_MS },
+                                polls.as_mut_ptr(),
+                                polls.len() as libc::nfds_t,
+                                if cancelling { 0 } else { -1 },
                             )
                         };
+                        #[cfg(feature = "test-barriers")]
+                        reader_session
+                            .park
+                            .poll_returns
+                            .fetch_add(1, Ordering::Relaxed);
                         if ready == 0 && cancelling {
                             break;
                         }
-                        if ready <= 0 {
-                            reader_session.park.check_and_wait_if_requested();
+                        if ready < 0 {
+                            if std::io::Error::last_os_error().kind()
+                                == std::io::ErrorKind::Interrupted
+                            {
+                                continue;
+                            }
+                            break;
+                        }
+                        if polls[1].revents != 0 {
+                            wake.consume();
+                            // Recheck park/cancel before consuming PTY bytes.
+                            continue;
+                        }
+                        if polls[0].revents == 0 {
                             continue;
                         }
                     }
@@ -10068,7 +10174,7 @@ impl Daemon {
                         .inner
                         .lock()
                         .expect("park lock")
-                        .reader_tid = None;
+                        .reader_wake = None;
                 }
                 daemon.flush_shell_token_redactor(id, &reader_session);
                 let is_hidden = daemon
@@ -12065,9 +12171,7 @@ impl Daemon {
         session
             .backend
             .kill(id, session.pid, self.channel.as_deref())?;
-        session.reader_cancel.store(true, Ordering::Release);
-        #[cfg(unix)]
-        session.park.resume();
+        session.cancel_pty_reader();
         session.remove_shell_token_file();
         self.operator_ended
             .lock()
@@ -12483,9 +12587,7 @@ impl Daemon {
                 .backend
                 .kill(id, session.pid, self.channel.as_deref())?;
         }
-        session.reader_cancel.store(true, Ordering::Release);
-        #[cfg(unix)]
-        session.park.resume();
+        session.cancel_pty_reader();
         #[cfg(windows)]
         session.backend.release_pty();
         if matches!(&session.backend, Backend::Pty { .. }) {
@@ -24460,5 +24562,42 @@ mod transcript_link_tests {
             Some((Some("/t/b.jsonl".into()), Some("abc".into())))
         );
         assert_eq!(transcript_link_update(None, None, None), None);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod reader_wake_tests {
+    use super::*;
+    use std::os::fd::AsRawFd;
+
+    #[test]
+    fn wake_queued_before_poll_stays_readable_and_coalesces_when_full() {
+        let wake = ReaderWake::new().unwrap();
+        wake.notify();
+        let mut poll = libc::pollfd {
+            fd: wake.read.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: the single entry and its owned descriptor are valid.
+        assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 1);
+        wake.consume();
+        wake.consume(); // Coalesced or already-consumed wakes may return WouldBlock.
+                        // SAFETY: the single entry and its owned descriptor are valid.
+        assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 0);
+        let mut writer = &wake.write;
+        let bytes = [1; 4096];
+        loop {
+            match writer.write(&bytes) {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("filling reader wake: {error}"),
+            }
+        }
+        wake.notify();
+        // SAFETY: the single entry and its owned descriptor are valid.
+        assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 1);
+        wake.consume();
     }
 }
