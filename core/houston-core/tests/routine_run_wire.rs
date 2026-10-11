@@ -420,10 +420,9 @@ async fn a_run_left_in_flight_by_a_dead_daemon_reads_failed_on_boot() {
     assert!(runs[0].ended_at_ms.is_some(), "a closed run is dated");
 }
 
-/// ZCode's edit mode stops at every shell command for an approval, so an unattended
-/// accept-edits routine is refused by name; an isolated full-access one runs, with
-/// its prompt pasted once the TUI's composer has focus. The paste is read from the raw
-/// scrollback, which every platform keeps (Windows builds have no screen emulator).
+/// ZCode's edit mode stops at every shell command for an approval, so accept edits is
+/// refused by name; isolated full access runs, its prompt pasted once the composer has
+/// focus and read from the raw scrollback, which Windows builds keep too.
 #[tokio::test]
 async fn a_zcode_routine_runs_with_isolated_full_access_and_refuses_accept_edits() {
     let (_addr, state, daemon) = start_daemon_with_handle().await;

@@ -1,8 +1,6 @@
-//! Whether a TUI's composer takes input, from the DEC private modes the CLI sets on its
-//! own terminal: bracketed paste (2004) enabled, and after it the text cursor (25)
-//! shown. ZCode's TUI enables bracketed paste when it takes the terminal and shows its
-//! cursor only once its input box has focus; input written between the two is dropped.
-//! A cursor shown before bracketed paste (ConPTY draws its own at startup) does not count.
+//! Whether a TUI's composer takes input: bracketed paste (2004) enabled, then the cursor
+//! (25) shown. A cursor shown before bracketed paste (ConPTY draws one at startup) does
+//! not count. See invariants, carve-out 4, for why ZCode's paste waits for both.
 
 // Longest `ESC [ ? params` prefix carried across a chunk boundary; past it the bytes
 // are not a mode sequence this scanner tracks.
