@@ -48,6 +48,12 @@ const LIMITER_SOURCES_MAX: usize = 1024;
 pub const MAX_CONNECTIONS: usize = 64;
 pub const CONNECTION_IDLE: Duration = Duration::from_secs(30);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// Remote dictation takes 16 kHz mono PCM16, little-endian, up to this long per recording.
+pub const DICTATE_MAX_SECS: usize = 120;
+pub const DICTATE_BODY_LIMIT: usize =
+    DICTATE_MAX_SECS * crate::voice::capture::TARGET_SAMPLE_RATE as usize * 2;
+// The upload plus CPU whisper on a full-length recording; Groq alone may take 30 s.
+pub const DICTATE_TIMEOUT: Duration = Duration::from_secs(180);
 // A phone and a desktop browser or two; each stream holds a connection slot.
 pub const EVENT_STREAMS_MAX: usize = 8;
 // Under `CONNECTION_IDLE`, so an idle stream is never cut by the idle timeout.
@@ -385,6 +391,35 @@ pub fn keys_to_bytes(keys: &[String]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+pub fn dictation_too_long(bytes: usize) -> ApiError {
+    ApiError::TooLarge(format!(
+        "the recording is {bytes} bytes ({:.1} s of 16 kHz mono PCM16); remote dictation takes at \
+         most {DICTATE_BODY_LIMIT} bytes ({DICTATE_MAX_SECS} s) per recording: record a shorter \
+         message",
+        bytes as f32 / (crate::voice::capture::TARGET_SAMPLE_RATE as f32 * 2.0)
+    ))
+}
+
+/// A device's recording as samples in [-1, 1).
+pub fn dictation_samples(body: &[u8]) -> Result<Vec<f32>, ApiError> {
+    if body.len() > DICTATE_BODY_LIMIT {
+        return Err(dictation_too_long(body.len()));
+    }
+    if body.is_empty() || !body.len().is_multiple_of(2) {
+        return Err(ApiError::BadRequest(format!(
+            "the recording is {} bytes: expected a non-empty body of 16-bit little-endian samples \
+             (an even number of bytes), 16 kHz mono",
+            body.len()
+        )));
+    }
+    Ok(body
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| f32::from(i16::from_le_bytes(*b)) / 32768.0)
+        .collect())
+}
+
 /// Free text from a device: `\r\n` and `\r` become `\n`, and every other control
 /// character (Tab included) is refused so text cannot end a paste or forge a key.
 pub fn validate_input_text(raw: &str) -> Result<String, String> {
@@ -439,8 +474,11 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 pub enum ApiError {
     BadRequest(String),
     Unauthorized(String),
+    Forbidden(String),
     NotFound(String),
     Conflict(String),
+    TooLarge(String),
+    Unprocessable(String),
     Internal(String),
 }
 
@@ -449,8 +487,11 @@ impl std::fmt::Display for ApiError {
         match self {
             ApiError::BadRequest(m)
             | ApiError::Unauthorized(m)
+            | ApiError::Forbidden(m)
             | ApiError::NotFound(m)
             | ApiError::Conflict(m)
+            | ApiError::TooLarge(m)
+            | ApiError::Unprocessable(m)
             | ApiError::Internal(m) => f.write_str(m),
         }
     }
@@ -1057,5 +1098,39 @@ mod tests {
         ];
         v.sort();
         assert_eq!(v, [0, 1, 2, 5]);
+    }
+
+    #[test]
+    fn a_recording_is_little_endian_pcm16() {
+        let body = [0x00, 0x80, 0xff, 0x7f, 0x00, 0x00];
+        assert_eq!(
+            dictation_samples(&body).unwrap(),
+            vec![-1.0, 32767.0 / 32768.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn an_odd_or_empty_recording_names_its_size() {
+        let odd = dictation_samples(&[1, 2, 3]).unwrap_err();
+        assert!(
+            matches!(&odd, ApiError::BadRequest(m) if m.contains("3 bytes")),
+            "{odd}"
+        );
+        assert!(matches!(
+            dictation_samples(&[]),
+            Err(ApiError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn two_minutes_is_the_limit_and_the_refusal_names_both_values() {
+        assert_eq!(DICTATE_BODY_LIMIT, 3_840_000);
+        assert!(dictation_samples(&vec![0u8; DICTATE_BODY_LIMIT]).is_ok());
+        let over = dictation_samples(&vec![0u8; DICTATE_BODY_LIMIT + 2]).unwrap_err();
+        let ApiError::TooLarge(m) = &over else {
+            panic!("expected TooLarge, got {over:?}");
+        };
+        assert!(m.contains("3840002 bytes") && m.contains("120.0 s"), "{m}");
+        assert!(m.contains("3840000 bytes (120 s)"), "{m}");
     }
 }

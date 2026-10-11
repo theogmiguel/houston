@@ -62,6 +62,48 @@ pub struct RemoteSession {
     pub last_step: Option<String>,
 }
 
+/// A device's recording, transcribed and assembled as the desktop would insert it.
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteDictation {
+    pub text: String,
+    pub engine: String,
+    pub translated: bool,
+}
+
+/// A voice failure as a device reads it; the desktop shows the same facts.
+fn dictation_refusal(failure: proto::VoiceFailure) -> ApiError {
+    use proto::VoiceFailure as F;
+    match failure {
+        F::NoModel { model_id } => ApiError::Conflict(format!(
+            "no speech model is installed ({model_id}): download it in Settings > Dictation on the \
+             computer running Houston, or switch to Groq there"
+        )),
+        F::MissingKey { .. } => ApiError::Conflict(
+            "no Groq API key is stored: add one in Settings > Dictation on the computer running \
+             Houston, or switch to the local engine there"
+                .to_string(),
+        ),
+        F::TooQuiet { rms, floor } => ApiError::Unprocessable(format!(
+            "the recording is too quiet to transcribe: measured RMS {rms:.4}, the floor is \
+             {floor:.4}; speak closer to the microphone"
+        )),
+        F::TooShort { seconds, minimum } => ApiError::Unprocessable(format!(
+            "the recording is too short to transcribe: {seconds:.2} s, the minimum is {minimum:.2} s"
+        )),
+        F::NoSpeech => ApiError::Unprocessable("no speech was recognised".to_string()),
+        F::TargetGone { session } => {
+            ApiError::NotFound(format!("pane {session} closed before the transcript arrived"))
+        }
+        F::Engine { message } => ApiError::Internal(format!("transcription failed: {message}")),
+        F::DeviceUnavailable { device } => {
+            ApiError::Internal(format!("transcription failed: {device}"))
+        }
+        F::RingBufferOverrun { dropped } => {
+            ApiError::Internal(format!("transcription failed: {dropped} samples were lost"))
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RemoteFeed {
     pub id: u32,
@@ -604,6 +646,80 @@ impl Daemon {
             write(&key_bytes)?;
         }
         Ok(())
+    }
+
+    /// Refusals that need no audio, checked before a recording is read. Returns
+    /// the voice settings the transcription uses.
+    pub(crate) fn remote_dictate_check(&self, id: u32) -> Result<proto::VoiceSettings, ApiError> {
+        if !self.remote_config().dictation {
+            return Err(ApiError::Forbidden(
+                "dictation from paired devices is off: turn on Allow dictation from paired \
+                 devices in Settings > Remote access on the computer running Houston"
+                    .to_string(),
+            ));
+        }
+        let s = self.remote_target(id)?;
+        if !s.state.lock().expect("state lock").is_live() {
+            return Err(ApiError::Conflict(format!(
+                "pane {id} is not running: dictation needs a live pane"
+            )));
+        }
+        let settings = self.voice_settings();
+        let local = matches!(settings.engine, proto::VoiceEngine::Local { .. });
+        if local && cfg!(not(unix)) {
+            return Err(ApiError::Conflict(format!(
+                "{}: choose Groq in Settings > Dictation for remote dictation on this computer",
+                crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE
+            )));
+        }
+        match self.voice_engine_refusal(&settings) {
+            Some(proto::VoiceFailure::Engine { message }) => Err(ApiError::Conflict(message)),
+            Some(failure) => Err(dictation_refusal(failure)),
+            None => Ok(settings),
+        }
+    }
+
+    /// Transcribes one recording from a device. It never opens this computer's
+    /// microphone, changes the desktop's dictation state or broadcasts the
+    /// transcript; the text goes back to the device only. Blocking.
+    pub(crate) fn remote_dictate(
+        &self,
+        id: u32,
+        settings: &proto::VoiceSettings,
+        samples: Vec<f32>,
+    ) -> Result<RemoteDictation, ApiError> {
+        let _engine = self.voice.claim_engine_remote().map_err(|busy| {
+            ApiError::Conflict(match busy {
+                crate::voice::runtime::EngineBusy::Desktop => {
+                    "the desktop is transcribing a dictation and the engine runs one at a time: \
+                     send the recording again in a moment"
+                        .to_string()
+                }
+                crate::voice::runtime::EngineBusy::Remote => {
+                    "another device's recording is being transcribed; remote dictation \
+                     transcribes one recording at a time: send it again when that finishes"
+                        .to_string()
+                }
+            })
+        })?;
+        let audio = crate::voice::AudioBuffer {
+            samples,
+            sample_rate: crate::voice::capture::TARGET_SAMPLE_RATE,
+        };
+        let t = self
+            .voice_transcribe(&audio, settings)
+            .map_err(dictation_refusal)?;
+        let text =
+            self.voice
+                .dictation_text(id, &t.text, settings.output_mode, settings.agent_preamble);
+        if text.is_empty() {
+            return Err(dictation_refusal(proto::VoiceFailure::NoSpeech));
+        }
+        Ok(RemoteDictation {
+            text,
+            engine: t.engine,
+            translated: t.translated,
+        })
     }
 
     pub(crate) fn remote_note_status(&self, id: u32, status: proto::AgentStatus) {

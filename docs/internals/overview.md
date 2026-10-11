@@ -184,6 +184,8 @@ Trust model:
   decision that the per-provider table in `remote/feed.rs` turns into the CLI's own keys.
   Writing to any pane, shell panes included, makes a device equivalent to a shell as the
   user; it cannot pair, configure, spawn or kill. One input request per pane runs at a time.
+  With the separate dictation setting on, a device may also post a recording (16 kHz mono
+  PCM16) that the voice engine transcribes; the text returns to that device only.
   A decision names the feed epoch and entry it answers, so a stale tap is refused, and it
   consumes the card under the feed lock, so two devices cannot both answer it.
 - **Feed and events.** The feed is filled from applied hook drops and status transitions
@@ -201,7 +203,10 @@ Trust model:
   be the public URL or `http://<allowed host>:<port>` (403). Wrong tokens and pairing codes
   lock their source out for 60 s after ten in a minute; loopback callers share one source and
   a valid token is never locked out. Bodies, connections (64), idle time (30 s) and request
-  time (20 s) are bounded.
+  time (20 s) are bounded. The dictation route has its own bounds: a recording of at most
+  two minutes, read only after the refusals that need no audio, 180 s per request, and an
+  idle hold on its connection while the engine runs, since hyper reads the socket to detect
+  a closed peer and a CPU transcription can outlast the idle timeout.
 - **Notifications.** ntfy is an outbound POST with a generic body and a link, never terminal
   content. The topic URL is a bearer secret kept in the keychain under a per-state-directory
   service; the database holds only the server origin.

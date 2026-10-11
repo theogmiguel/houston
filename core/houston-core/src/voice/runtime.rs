@@ -291,15 +291,14 @@ impl Runtime {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LocalEngineUnavailableError;
 
+pub const LOCAL_ENGINE_UNAVAILABLE: &str = "the local whisper engine is not built on this \
+     platform (voice dictation is Linux-only in this build; the local engine is \
+     `cfg(unix)`-gated)";
+
 #[cfg(not(unix))]
 impl std::fmt::Display for LocalEngineUnavailableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "the local whisper engine is not built on this platform (voice \
-             dictation is Linux-only in this build; the local engine is \
-             `cfg(unix)`-gated)"
-        )
+        f.write_str(LOCAL_ENGINE_UNAVAILABLE)
     }
 }
 

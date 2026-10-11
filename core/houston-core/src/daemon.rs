@@ -14974,6 +14974,14 @@ impl Daemon {
         if !self.voice_session_alive(session) {
             return Some(proto::VoiceFailure::TargetGone { session });
         }
+        self.voice_engine_refusal(settings)
+    }
+
+    /// Why the configured engine cannot transcribe now: no model, or no readable key.
+    pub(crate) fn voice_engine_refusal(
+        &self,
+        settings: &proto::VoiceSettings,
+    ) -> Option<proto::VoiceFailure> {
         match &settings.engine {
             proto::VoiceEngine::Local { model_id } => {
                 if !matches!(
