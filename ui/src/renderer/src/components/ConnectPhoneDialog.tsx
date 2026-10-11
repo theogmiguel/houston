@@ -51,6 +51,162 @@ function hostOf(url: string | null | undefined): string {
   }
 }
 
+function portOf(remote: { bind: string } | null): string {
+  return remote?.bind.match(/:(\d+)$/)?.[1] ?? ''
+}
+
+function addressError(route: Route, port: string, url: string, valid: boolean): string | undefined {
+  if (url === '' || valid) return undefined
+  const shape = route === 'tailscale'
+    ? 'an HTTPS origin without credentials, a path, query, or fragment.'
+    : `a reachable HTTP origin at port ${port}, without credentials, a path, query, or fragment.`
+  return `Address ${JSON.stringify(url)} must be ${shape}`
+}
+
+type RemoteRoute = { bind: string; public_url?: string | null; enabled: boolean; listening: boolean }
+
+function routeLive(remote: RemoteRoute | null, settings: { bind: string; public_url: string } | null): boolean {
+  if (!remote || !settings || !remote.enabled || !remote.listening) return false
+  return remote.bind === settings.bind && remote.public_url?.replace(/\/$/, '') === settings.public_url
+}
+
+function countdownOf(expiresAt: number | undefined, now: number): string {
+  const seconds = Math.max(0, Math.ceil(((expiresAt ?? now) - now) / 1000))
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+function headingOf(confirmed: string | null, view: View | null): string {
+  if (confirmed) return `${confirmed} is connected`
+  return view === 'scan' ? 'Scan with your phone' : 'Connect a phone'
+}
+
+type CopyProps = { copyState: ReturnType<typeof useCopyFeedback>['copyState']; copyTarget: 'command' | 'link'; copyText: (target: 'command' | 'link', text: string) => void }
+
+function ConnectedStep({ heading }: { heading: string }): React.JSX.Element {
+  return (
+    <Stack gap={3} align="center">
+      <IconTile tone="success" size="lg" radius="medium" icon={<Icon glyph={IconCheck} role="ui" />} />
+      <Text as="h2" size="subhead" tone="primary" flush center id="connect-phone-title">{heading}</Text>
+      <Text as="p" size="base" tone="secondary" flush center>It can follow and answer every pane. Manage it in Settings ▸ Remote access.</Text>
+    </Stack>
+  )
+}
+
+function RouteStep({ route, port, url, fieldError, onRoute, onUrl, copyState, copyTarget, copyText }: {
+  route: Route
+  port: string
+  url: string
+  fieldError: string | undefined
+  onRoute: (route: Route) => void
+  onUrl: (url: string) => void
+} & CopyProps): React.JSX.Element {
+  const command = `tailscale serve --bg ${port}`
+  const tailscale = route === 'tailscale'
+  const noteId = 'connect-phone-address-note'
+  return <>
+    <DialogDescription>Follow and answer your panes when you are away from this computer.</DialogDescription>
+    <FormGrid>
+      <FormGridLabel>Route</FormGridLabel>
+      <Select aria-label="Route" width="full" value={route} options={ROUTES} onChange={(value) => onRoute(value as Route)} />
+      <Text as="p" size="small" tone="muted" flush className="col-start-2">{ROUTE_HINT[route]}</Text>
+      {tailscale && <>
+        <FormGridLabel htmlFor="connect-phone-command">Command</FormGridLabel>
+        <Inline gap="small">
+          <TextInput variant="form" id="connect-phone-command" font="mono" readOnly value={command} onFocus={(event) => event.currentTarget.select()} />
+          <Button size="sm" onClick={() => copyText('command', command)}>{copyState === 'success' && copyTarget === 'command' ? 'Copied' : 'Copy'}</Button>
+        </Inline>
+      </>}
+      <FormGridLabel htmlFor="connect-phone-address">Address</FormGridLabel>
+      <TextInput variant="form" id="connect-phone-address" type="url" font="mono" value={url} placeholder={tailscale ? 'https://machine.tailnet.ts.net' : `http://192.168.1.20:${port}`} autoComplete="off" spellCheck={false} aria-invalid={!!fieldError} aria-describedby={noteId} onChange={(event) => onUrl(event.target.value)} />
+      {fieldError
+        ? <Text as="p" size="small" tone="danger" flush role="alert" id={noteId} className="col-start-2">{fieldError}</Text>
+        : <Text as="p" size="small" tone="muted" flush id={noteId} className="col-start-2">{tailscale ? 'Paste the HTTPS address the command prints.' : `The computer's LAN address with port ${port}, as the phone reaches it.`}</Text>}
+    </FormGrid>
+    {!tailscale && <WarningLine>{HTTP_WARNING}</WarningLine>}
+    <WarningLine>{SECURITY}</WarningLine>
+    {copyState === 'error' && <Text as="p" size="small" tone="warn" flush role="status">Could not copy. Select the command and copy it manually.</Text>}
+  </>
+}
+
+function PairingCode({ shown, expired, countdown, copyState, copyTarget, copyText }: { shown: RemotePairing; expired: boolean; countdown: string } & CopyProps): React.JSX.Element {
+  return <>
+    <QrImage svg={shown.qrSvg} label="Pairing code" dimmed={expired} />
+    <Inline gap="small">
+      <Text size="small" tone="muted">{expired ? 'Code expired' : `Single use · expires in ${countdown} ·`}</Text>
+      {!expired && <Button variant="link" onClick={() => copyText('link', shown.url)}>{copyState === 'success' && copyTarget === 'link' ? 'Copied' : 'Copy link'}</Button>}
+    </Inline>
+    {copyState === 'error' && copyTarget === 'link' && <TextInput aria-label="Pairing link" readOnly value={shown.url} width="full" onFocus={(event) => event.currentTarget.select()} />}
+  </>
+}
+
+function ScanStep({ shown, expired, countdown, waiting, loading, fieldError, ...copy }: {
+  shown: RemotePairing | null
+  expired: boolean
+  countdown: string
+  waiting: boolean
+  /** The loading line, or null when an error replaces it. */
+  loading: string | null
+  fieldError: string | undefined
+} & CopyProps): React.JSX.Element {
+  return <>
+    <DialogDescription>Open the camera and point it at the code.</DialogDescription>
+    <Stack gap={2} align="center">
+      {shown
+        ? <PairingCode shown={shown} expired={expired} countdown={countdown} {...copy} />
+        : loading && <Inline gap="small"><Spinner label="Loading" /><Text size="small" tone="muted">{loading}</Text></Inline>}
+    </Stack>
+    {waiting && <Inline gap="small" className="justify-center"><Spinner label="Waiting" /><Text size="small" tone="muted">Waiting for the phone to confirm…</Text></Inline>}
+    {fieldError && <Text as="p" size="small" tone="danger" flush role="alert">{fieldError}</Text>}
+  </>
+}
+
+function ConnectPhoneActions({ confirmed, view, expired, routeSummary, submitLabel, canSubmit, dismiss, onClose, onAnother, onChangeRoute, onRetry, onSubmit }: {
+  confirmed: boolean
+  view: View | null
+  expired: boolean
+  routeSummary: string
+  submitLabel: string
+  canSubmit: boolean
+  dismiss: React.RefObject<HTMLButtonElement | null>
+  onClose: () => void
+  onAnother: () => void
+  onChangeRoute: () => void
+  onRetry: () => void
+  onSubmit: () => void
+}): React.JSX.Element {
+  if (confirmed) return <>
+    <Button onClick={onAnother}>Connect another</Button>
+    <span className="flex-1" />
+    <Button ref={dismiss} variant="primary" onClick={onClose}>Done</Button>
+  </>
+  if (view === 'scan') return <>
+    <Button variant="ghost" onClick={onChangeRoute}>{routeSummary}</Button>
+    <span className="flex-1" />
+    {expired
+      ? <Button ref={dismiss} variant="primary" onClick={onRetry}>Get a new code</Button>
+      : <Button ref={dismiss} variant="primary" onClick={onClose}>Close</Button>}
+  </>
+  return <>
+    <Button ref={dismiss} variant="secondary" onClick={onClose}>Cancel</Button>
+    <span className="flex-1" />
+    <Button variant="primary" disabled={!canSubmit} onClick={onSubmit}>{submitLabel}</Button>
+  </>
+}
+
+function scanLoading(remoteError: string | undefined, pending: boolean, live: boolean): string | null {
+  if (remoteError) return null
+  return pending || !live ? 'Starting remote access…' : 'Creating a single-use code…'
+}
+
+function routeSummaryOf(route: Route, publicUrl: string | null | undefined): string {
+  return `${route === 'tailscale' ? 'Tailscale' : 'Same Wi-Fi'} · ${hostOf(publicUrl)} · Change`
+}
+
+function submitLabelOf(pending: boolean, live: boolean): string {
+  if (pending) return 'Turning on…'
+  return live ? 'Show code' : 'Turn on and show code'
+}
+
 /** `initialStep` forces the route step (`'route'`) or the code step (`'scan'`); without it the dialog opens on the code step when remote access is already on with a public URL. */
 export function ConnectPhoneDialog({ client, onClose, initialStep }: { client: HoustonClient | null; onClose: () => void; initialStep?: ConnectPhoneStep }): React.JSX.Element {
   const { remote, pairing, error, configure, pairStart, pairCancel } = useRemote(client)
@@ -71,15 +227,11 @@ export function ConnectPhoneDialog({ client, onClose, initialStep }: { client: H
   const trapFocus = useFocusTrap(root, ':is(button, input, [tabindex="0"]):not([disabled])')
   useNativeOverlaySuppression('modal', true, root)
   const { copy, copyState } = useCopyFeedback()
-  const port = remote?.bind.match(/:(\d+)$/)?.[1] ?? ''
+  const port = portOf(remote)
   const settings = routeSettings(route, port, url)
-  const urlError = url !== '' && !settings
-    ? `Address ${JSON.stringify(url)} must be ${route === 'tailscale' ? 'an HTTPS origin without credentials, a path, query, or fragment.' : `a reachable HTTP origin at port ${port}, without credentials, a path, query, or fragment.`}`
-    : undefined
-  const fieldError = urlError ?? error ?? remote?.error ?? undefined
-  const applied = !!remote && !!settings && remote.bind === settings.bind && remote.public_url?.replace(/\/$/, '') === settings.public_url
-  const live = applied && !!remote?.enabled && !!remote.listening
-  const command = `tailscale serve --bg ${port}`
+  const remoteError = error ?? remote?.error ?? undefined
+  const fieldError = addressError(route, port, url, !!settings) ?? remoteError
+  const live = routeLive(remote, settings)
   const shown = pairing ?? issued
   const expired = view === 'scan' && !pairing && !!issued
 
@@ -178,90 +330,45 @@ export function ConnectPhoneDialog({ client, onClose, initialStep }: { client: H
     setCopyTarget(target)
     copy(text)
   }
-  const seconds = Math.max(0, Math.ceil(((shown?.expiresAt ?? now) - now) / 1000))
-  const countdown = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
-  const routeSummary = `${route === 'tailscale' ? 'Tailscale' : 'Same Wi-Fi'} · ${hostOf(remote?.public_url)} · Change`
-  const heading = confirmed ? `${confirmed} is connected` : view === 'scan' ? 'Scan with your phone' : 'Connect a phone'
+  const heading = headingOf(confirmed, view)
+  const copyProps = { copyState, copyTarget, copyText }
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === 'Escape') { event.stopPropagation(); onClose() }
+    if (event.key === 'Enter' && view === 'route' && event.target instanceof HTMLInputElement && !event.target.readOnly) {
+      event.preventDefault()
+      if (!event.nativeEvent.isComposing) submit()
+    }
+    if (event.key === 'Tab') {
+      event.stopPropagation()
+      trapFocus(event)
+    }
+  }
+  let body: React.JSX.Element
+  if (confirmed) body = <ConnectedStep heading={heading} />
+  else if (!remote || !view) body = <Inline gap="small"><Spinner label="Loading" /><Text size="small" tone="muted">Asking the daemon for its remote access settings…</Text></Inline>
+  else if (view === 'route') body = <RouteStep route={route} port={port} url={url} fieldError={fieldError} onRoute={(value) => { resetPairing(); setRoute(value); setUrl('') }} onUrl={(value) => { resetPairing(); setUrl(value) }} {...copyProps} />
+  else body = <ScanStep shown={shown} expired={expired} countdown={countdownOf(shown?.expiresAt, now)} waiting={!!pairing && !expired} loading={scanLoading(remoteError, pending, live)} fieldError={fieldError} {...copyProps} />
 
   return createPortal(
     <DialogBackdrop onMouseDown={onClose}>
-      <DialogPanel size="wide" ref={root} role="dialog" aria-modal="true" aria-labelledby="connect-phone-title" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => {
-        if (event.key === 'Escape') { event.stopPropagation(); onClose() }
-        if (event.key === 'Enter' && view === 'route' && event.target instanceof HTMLInputElement && !event.target.readOnly) {
-          event.preventDefault()
-          if (!event.nativeEvent.isComposing) submit()
-        }
-        if (event.key === 'Tab') {
-          event.stopPropagation()
-          trapFocus(event)
-        }
-      }}>
+      <DialogPanel size="wide" ref={root} role="dialog" aria-modal="true" aria-labelledby="connect-phone-title" onMouseDown={(event) => event.stopPropagation()} onKeyDown={onKeyDown}>
         {confirmed ? null : <DialogTitle id="connect-phone-title">{heading}</DialogTitle>}
-        <DialogBody variant="stacked">
-          {confirmed ? (
-            <Stack gap={3} align="center">
-              <IconTile tone="success" size="lg" radius="medium" icon={<Icon glyph={IconCheck} role="ui" />} />
-              <Text as="h2" size="subhead" tone="primary" flush center id="connect-phone-title">{heading}</Text>
-              <Text as="p" size="base" tone="secondary" flush center>It can follow and answer every pane. Manage it in Settings ▸ Remote access.</Text>
-            </Stack>
-          ) : !remote || !view ? (
-            <Inline gap="small"><Spinner label="Loading" /><Text size="small" tone="muted">Asking the daemon for its remote access settings…</Text></Inline>
-          ) : view === 'route' ? <>
-            <DialogDescription>Follow and answer your panes when you are away from this computer.</DialogDescription>
-            <FormGrid>
-              <FormGridLabel>Route</FormGridLabel>
-              <Select aria-label="Route" width="full" value={route} options={ROUTES} onChange={(value) => { resetPairing(); setRoute(value as Route); setUrl('') }} />
-              <Text as="p" size="small" tone="muted" flush className="col-start-2">{ROUTE_HINT[route]}</Text>
-              {route === 'tailscale' && <>
-                <FormGridLabel htmlFor="connect-phone-command">Command</FormGridLabel>
-                <Inline gap="small">
-                  <TextInput variant="form" id="connect-phone-command" font="mono" readOnly value={command} onFocus={(event) => event.currentTarget.select()} />
-                  <Button size="sm" onClick={() => copyText('command', command)}>{copyState === 'success' && copyTarget === 'command' ? 'Copied' : 'Copy'}</Button>
-                </Inline>
-              </>}
-              <FormGridLabel htmlFor="connect-phone-address">Address</FormGridLabel>
-              <TextInput variant="form" id="connect-phone-address" type="url" font="mono" value={url} placeholder={route === 'tailscale' ? 'https://machine.tailnet.ts.net' : `http://192.168.1.20:${port}`} autoComplete="off" spellCheck={false} aria-invalid={!!fieldError} aria-describedby="connect-phone-address-note" onChange={(event) => { resetPairing(); setUrl(event.target.value) }} />
-              {fieldError
-                ? <Text as="p" size="small" tone="danger" flush role="alert" id="connect-phone-address-note" className="col-start-2">{fieldError}</Text>
-                : <Text as="p" size="small" tone="muted" flush id="connect-phone-address-note" className="col-start-2">{route === 'tailscale' ? 'Paste the HTTPS address the command prints.' : `The computer's LAN address with port ${port}, as the phone reaches it.`}</Text>}
-            </FormGrid>
-            {route === 'wifi' && <WarningLine>{HTTP_WARNING}</WarningLine>}
-            <WarningLine>{SECURITY}</WarningLine>
-            {copyState === 'error' && <Text as="p" size="small" tone="warn" flush role="status">Could not copy. Select the command and copy it manually.</Text>}
-          </> : <>
-            <DialogDescription>Open the camera and point it at the code.</DialogDescription>
-            <Stack gap={2} align="center">
-              {shown
-                ? <>
-                  <QrImage svg={shown.qrSvg} label="Pairing code" dimmed={expired} />
-                  <Inline gap="small">
-                    <Text size="small" tone="muted">{expired ? 'Code expired' : `Single use · expires in ${countdown} ·`}</Text>
-                    {!expired && <Button variant="link" onClick={() => copyText('link', shown.url)}>{copyState === 'success' && copyTarget === 'link' ? 'Copied' : 'Copy link'}</Button>}
-                  </Inline>
-                  {copyState === 'error' && copyTarget === 'link' && <TextInput aria-label="Pairing link" readOnly value={shown.url} width="full" onFocus={(event) => event.currentTarget.select()} />}
-                </>
-                : !error && !remote.error && <Inline gap="small"><Spinner label="Loading" /><Text size="small" tone="muted">{pending || !live ? 'Starting remote access…' : 'Creating a single-use code…'}</Text></Inline>}
-            </Stack>
-            {pairing && !expired && <Inline gap="small" className="justify-center"><Spinner label="Waiting" /><Text size="small" tone="muted">Waiting for the phone to confirm…</Text></Inline>}
-            {fieldError && <Text as="p" size="small" tone="danger" flush role="alert">{fieldError}</Text>}
-          </>}
-        </DialogBody>
+        <DialogBody variant="stacked">{body}</DialogBody>
         <DialogActions variant="row">
-          {confirmed ? <>
-            <Button onClick={() => { resetPairing(); setConfirmed(null) }}>Connect another</Button>
-            <span className="flex-1" />
-            <Button ref={dismiss} variant="primary" onClick={onClose}>Done</Button>
-          </> : view === 'scan' ? <>
-            <Button variant="ghost" onClick={() => { resetPairing(); setView('route') }}>{routeSummary}</Button>
-            <span className="flex-1" />
-            {expired
-              ? <Button ref={dismiss} variant="primary" onClick={retry}>Get a new code</Button>
-              : <Button ref={dismiss} variant="primary" onClick={onClose}>Close</Button>}
-          </> : <>
-            <Button ref={dismiss} variant="secondary" onClick={onClose}>Cancel</Button>
-            <span className="flex-1" />
-            <Button variant="primary" disabled={!settings || pending || !client || !remote} onClick={submit}>{pending ? 'Turning on…' : live ? 'Show code' : 'Turn on and show code'}</Button>
-          </>}
+          <ConnectPhoneActions
+            confirmed={!!confirmed}
+            view={view}
+            expired={expired}
+            routeSummary={routeSummaryOf(route, remote?.public_url)}
+            submitLabel={submitLabelOf(pending, live)}
+            canSubmit={[settings, client, remote].every(Boolean) && !pending}
+            dismiss={dismiss}
+            onClose={onClose}
+            onAnother={() => { resetPairing(); setConfirmed(null) }}
+            onChangeRoute={() => { resetPairing(); setView('route') }}
+            onRetry={retry}
+            onSubmit={submit}
+          />
         </DialogActions>
       </DialogPanel>
     </DialogBackdrop>, document.body

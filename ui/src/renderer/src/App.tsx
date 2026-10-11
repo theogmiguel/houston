@@ -1740,7 +1740,7 @@ export function App(): React.JSX.Element {
       bootClient?.close();
     };
   }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
-  useRemoteGridPublish(conn.kind === "ready" ? conn.client : null);
+  useRemoteGridPublish(readyClient(conn));
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
     return registerOwned(outputHandlers.current, id, sink);
