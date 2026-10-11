@@ -970,10 +970,19 @@ mod linux {
         id: &str,
         op: &str,
     ) -> Result<String, String> {
+        eval_tools_with_timeout(webview, id, op, TOOLS_EVAL_TIMEOUT).await
+    }
+
+    pub async fn eval_tools_with_timeout(
+        webview: &tauri::webview::Webview,
+        id: &str,
+        op: &str,
+        timeout: std::time::Duration,
+    ) -> Result<String, String> {
         const TEMPLATE: &str = include_str!("tools.js");
         let source = TEMPLATE.replace("__TR_TOOLS_OP__", op);
 
-        let operation = super::super::operation::Operation::new(TOOLS_EVAL_TIMEOUT);
+        let operation = super::super::operation::Operation::new(timeout);
         let dispatch = operation.dispatch();
         let cancellable = gtk::gio::Cancellable::new();
         let _cancel = CancelEvaluation(cancellable.clone());
@@ -1022,7 +1031,7 @@ mod linux {
                      id {id:?}: {err}"
                 )
             })?;
-        match tokio::time::timeout(TOOLS_EVAL_TIMEOUT, rx).await {
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(answer)) => answer,
             Ok(Err(_)) => Err(format!(
                 "browser: the page-operation callback for id {id:?} was dropped without \
@@ -1030,7 +1039,7 @@ mod linux {
             )),
             Err(_) => Err(format!(
                 "browser: a page operation on id {id:?} did not complete within \
-                 {TOOLS_EVAL_TIMEOUT:?}; queued work cancelled, an already executing action has unknown outcome; do not automatically retry"
+                 {timeout:?}; queued work cancelled, an already executing action has unknown outcome; do not automatically retry"
             )),
         }
     }
@@ -1186,6 +1195,9 @@ mod linux {
         })?
     }
 }
+
+#[cfg(target_os = "linux")]
+pub(crate) use linux::eval_tools_with_timeout;
 
 #[cfg(target_os = "linux")]
 pub use linux::{

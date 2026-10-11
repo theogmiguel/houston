@@ -575,6 +575,46 @@ fn consent_identity(
         )?;
         settled()?;
     }
+    // The same production eval path, with an already-expired queued deadline.
+    // A subsequent native read and fresh evaluation observe the real page after dispatch.
+    let child = app
+        .get_webview(&id::derive_label(surface))
+        .ok_or_else(|| "missing consent child".to_string())?;
+    let snapshot =
+        tauri::async_runtime::block_on(tools.call(&scope, "browser_snapshot", &json!({})))
+            .map_err(|e| e.0)?;
+    let reference = snapshot
+        .structured
+        .as_ref()
+        .and_then(|value| value["elements"][0]["ref"].as_str())
+        .ok_or_else(|| "missing queued action ref".to_string())?;
+    let locator = super::tool_ref_get(app, surface, reference)
+        .ok_or_else(|| "missing queued locator".to_string())?;
+    let op = json!({ "kind": "click", "ref": reference, "path": locator.path, "tags": locator.tags,
+        "documentIdentity": locator.document_identity, "elementIdentity": locator.element_identity });
+    let result = tauri::async_runtime::block_on(super::webkit::eval_tools_with_timeout(
+        &child,
+        surface,
+        &op.to_string(),
+        Duration::ZERO,
+    ));
+    report(
+        "expired-native-eval-refuses",
+        result.is_err(),
+        "deadline must expire before queued dispatch",
+    );
+    gtk_host::read_allocation(app, gtk_host::HOST_WINDOW, &id::derive_label(surface))?;
+    let observed =
+        tauri::async_runtime::block_on(tools.call(&scope, "browser_snapshot", &json!({})))
+            .map_err(|e| e.0)?;
+    report(
+        "expired-native-eval-has-zero-effects",
+        observed
+            .structured
+            .as_ref()
+            .is_some_and(|value| value["title"] != "ACTION-FIRED"),
+        "real page action counter after native queue receipt",
+    );
     app.unlisten(listener);
     browser_destroy(app.clone(), registry.clone(), surface.into())?;
     Ok(())
