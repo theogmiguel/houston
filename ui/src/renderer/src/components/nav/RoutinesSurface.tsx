@@ -12,6 +12,7 @@ import type {
   RoutineWorkspaceOption
 } from '../../houston/routineTypes'
 import { ROUTINE_RUNS_CONCURRENT } from '../../houston/generated/DEFAULTS'
+import type { RoutineEngineRefusal } from '../../houston/generated/RoutineEngineRefusal'
 
 const RoutineDetail = lazy(() => import('../ui/RoutineDetail').then((module) => ({ default: module.RoutineDetail })))
 
@@ -34,6 +35,8 @@ function routineStatus(routine: Routine, running: boolean, waiting: boolean, now
 export function RoutinesSurface(props: {
   routines: Routine[]
   running: number[]
+  /** Engine and access pairs the daemon refuses; their choices are shown disabled. */
+  engineRefusals?: RoutineEngineRefusal[]
   runs: Record<number, RoutineRun[]>
   runsLoading: number | null
   workspaces: RoutineWorkspaceOption[]
@@ -52,7 +55,7 @@ export function RoutinesSurface(props: {
   showLimitNotice?: boolean
 }): React.JSX.Element {
   const {
-    routines, running, runs, runsLoading, workspaces, error, onDismissError, onCreate,
+    routines, running, engineRefusals = [], runs, runsLoading, workspaces, error, onDismissError, onCreate,
     onUpdate, onDelete, onRunNow, onLoadRuns, onOpenSession, onRequest, now,
     selectedRoutineId, onRoutineSelect, showLimitNotice = true
   } = props
@@ -144,6 +147,7 @@ export function RoutinesSurface(props: {
           <RoutineEditor
             mode={panel.mode}
             workspaces={workspaces}
+            engineRefusals={engineRefusals}
             error={error ? formatRoutineError(error) : null}
             initial={panel.mode === 'edit' ? {
               engine: panel.routine.engine,
@@ -186,6 +190,7 @@ export function RoutinesSurface(props: {
             <Suspense fallback={<p role="status">Loading routine details…</p>}>
               <RoutineDetail
                 routine={routine}
+                engineRefusals={engineRefusals}
                 runs={runs[routine.id]}
                 runsLoading={runsLoading === routine.id}
                 now={now}

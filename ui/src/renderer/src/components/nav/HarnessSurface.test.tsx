@@ -6,7 +6,7 @@ import type { HarnessFinding } from '../../houston/generated/HarnessFinding'
 import type { HarnessReview } from '../../houston/generated/HarnessReview'
 import type { Routine } from '../../houston/generated/Routine'
 import type { HarnessState } from '../../houston/useHarness'
-import { pickOption, selectOptionLabels } from '../../test/selectHarness'
+import { closeSelect, openSelect, pickOption, selectOptionLabels, selectValue } from '../../test/selectHarness'
 import { HarnessSurface, type HarnessSurfaceProps } from './HarnessSurface'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -90,6 +90,7 @@ function harnessState(overrides: Partial<HarnessState> = {}): HarnessState {
       finding({ key: 'stale-rule', title: 'A rule that never loads', state: 'dismissed', phase: 'dismissed', decided_at_ms: 1 })
     ],
     providerCoverage: [],
+    engineRefusals: [],
     ...overrides
   }
 }
@@ -154,6 +155,32 @@ describe('HarnessSurface', () => {
     expect(container.querySelector('[data-testid="harness-run"]')).toBeNull()
     pickOption(container, 'harness-workspace', '/home/dev/other')
     expect(props.onWorkspace).toHaveBeenCalledWith('/home/dev/other')
+  })
+
+  it('first use shows ZCode and OpenCode unavailable, with why, because a review starts with accept edits', () => {
+    const reason = 'its edit mode waits for approval on every shell command, and nobody gives it'
+    render({
+      state: harnessState({
+        routine: null,
+        reviews: [],
+        findings: [],
+        engineRefusals: [
+          { engine: 'opencode', permission_mode: 'accept_edits', reason: 'its only unattended mode approves every action, as full access does' },
+          { engine: 'zcode', permission_mode: 'accept_edits', reason },
+          { engine: 'codex', permission_mode: 'bypass_permissions', reason: 'a refusal under another access level' }
+        ]
+      })
+    })
+    const rows = openSelect(container, 'harness-provider')
+    const disabled = rows.filter((r) => r.getAttribute('aria-disabled') === 'true').map((r) => r.dataset.value)
+    expect(disabled).toEqual(['opencode', 'zcode'])
+    const zcode = rows.find((r) => r.dataset.value === 'zcode')!
+    expect(zcode.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toBe(
+      `ZCode needs isolated full access: ${reason}. A review starts with accept edits: start it with another provider, then change its access in Routines.`
+    )
+    act(() => zcode.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 })))
+    closeSelect(container, 'harness-provider')
+    expect(selectValue(container, 'harness-provider')).toBe('Claude Code')
   })
 
   it('first use shows what a run sends, creates the routine and runs it once it exists', () => {

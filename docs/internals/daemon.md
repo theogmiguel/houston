@@ -467,7 +467,8 @@ pane is observed through its `RoutineRun` row and can be opened from the routine
   refusal lands in the run's `error` and in `Routine.last_error`.
 - `model`, supported per-run `effort`, and the permission mode are launch arguments, not
   display-only metadata. Accept-edits uses the provider's bounded unattended mode; a provider
-  without one is refused by name. Full access is only valid with an isolated worktree.
+  without one is refused by name. `routine_access_refusal` is the one rule: `routine_argv`
+  refuses with it, and `routines` and `harness_state` list it so pickers disable the choice. Full access is only valid with an isolated worktree.
 - A provider or launch combination that cannot open a pane is refused by name before a session
   is made (`EngineRefused`).
 

@@ -258,7 +258,8 @@ describe('SkillsSurface — the librarian, no Run', () => {
         reviews: [{ id: 1, status: 'published', run_dir: '/p/.houston/harness/r1' } as never],
         findings: [],
         models: [],
-        providerCoverage: []
+        providerCoverage: [],
+        engineRefusals: []
       },
       report: null,
       reportError: null,

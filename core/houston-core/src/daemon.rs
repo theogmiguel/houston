@@ -5574,6 +5574,7 @@ impl Daemon {
         proto::ServerMsg::Routines {
             routines,
             running: self.routine_runs_in_flight(),
+            engine_refusals: crate::launch::routine_engine_refusals(),
         }
     }
 

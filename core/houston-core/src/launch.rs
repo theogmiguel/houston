@@ -426,6 +426,49 @@ pub(crate) fn effort_args(
     }
 }
 
+/// Why `agent` cannot run an unattended routine with `permission_mode`, whatever its
+/// model and effort. `routine_argv` refuses exactly these; routine and Harness state
+/// carry them so a picker disables the choice before it is made.
+pub fn routine_access_refusal(
+    agent: proto::AgentKind,
+    permission_mode: proto::ChatPermissionMode,
+) -> Option<&'static str> {
+    if permission_mode != proto::ChatPermissionMode::AcceptEdits {
+        return None;
+    }
+    match agent {
+        // OpenCode's `--auto` is its only unattended mode, the same flag as full access.
+        proto::AgentKind::Opencode => {
+            Some("its only unattended mode approves every action, as full access does")
+        }
+        // `--mode edit` approves workspace file edits only; every other command asks,
+        // and its TUI waits on an unanswered approval without a timeout.
+        proto::AgentKind::Zcode => {
+            Some("its edit mode waits for approval on every shell command, and nobody gives it")
+        }
+        _ => None,
+    }
+}
+
+/// Every access refusal `routine_access_refusal` makes, for the routine pickers.
+pub fn routine_engine_refusals() -> Vec<proto::RoutineEngineRefusal> {
+    use proto::AgentKind::*;
+    use proto::ChatPermissionMode::*;
+    [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode]
+        .into_iter()
+        .flat_map(|engine| [AcceptEdits, BypassPermissions].map(|mode| (engine, mode)))
+        .filter_map(|(engine, permission_mode)| {
+            routine_access_refusal(engine, permission_mode).map(|reason| {
+                proto::RoutineEngineRefusal {
+                    engine,
+                    permission_mode,
+                    reason: reason.to_string(),
+                }
+            })
+        })
+        .collect()
+}
+
 pub fn routine_argv(
     agent: proto::AgentKind,
     model: Option<&str>,
@@ -436,22 +479,13 @@ pub fn routine_argv(
         proto::ChatPermissionMode::AcceptEdits => ApprovalMode::Auto,
         proto::ChatPermissionMode::BypassPermissions => ApprovalMode::Bypass,
     };
+    if let Some(reason) = routine_access_refusal(agent, permission_mode) {
+        bail!(
+            "agent {agent:?} has no bounded accept-edits mode for an unattended run: {reason}; \
+             use an isolated full-access routine or choose another provider"
+        );
+    }
     if approval == ApprovalMode::Auto {
-        if agent == proto::AgentKind::Opencode {
-            bail!(
-                "agent Opencode has no bounded accept-edits mode for an unattended run; use \
-                 an isolated full-access routine or choose another provider"
-            );
-        }
-        // `--mode edit` approves workspace file edits only; every other command asks,
-        // and its TUI waits on an unanswered approval without a timeout.
-        if agent == proto::AgentKind::Zcode {
-            bail!(
-                "agent Zcode has no bounded accept-edits mode for an unattended run: its edit \
-                 mode stops at every shell command for an approval nobody gives; use an \
-                 isolated full-access routine or choose another provider"
-            );
-        }
         if let Some(model) = model {
             if model_blocks_auto_mode(agent, model) {
                 bail!(
@@ -777,6 +811,30 @@ mod tests {
                 .contains("agent Zcode has no bounded accept-edits mode"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn the_listed_engine_refusals_are_exactly_what_routine_argv_refuses() {
+        use proto::AgentKind::*;
+        use proto::ChatPermissionMode::*;
+        let listed: Vec<_> = routine_engine_refusals()
+            .into_iter()
+            .map(|r| (r.engine, r.permission_mode, r.reason))
+            .collect();
+        let pairs: Vec<_> = listed.iter().map(|(e, m, _)| (*e, *m)).collect();
+        assert_eq!(pairs, [(Opencode, AcceptEdits), (Zcode, AcceptEdits)]);
+        for engine in [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode] {
+            for mode in [AcceptEdits, BypassPermissions] {
+                let refused = routine_argv(engine, None, None, mode).err();
+                match listed.iter().find(|(e, m, _)| (*e, *m) == (engine, mode)) {
+                    Some((_, _, reason)) => {
+                        let err = refused.expect("a listed pair is refused").to_string();
+                        assert!(err.contains(reason.as_str()), "{err}");
+                    }
+                    None => assert!(refused.is_none(), "{engine:?} {mode:?}: {refused:?}"),
+                }
+            }
+        }
     }
 
     #[test]
