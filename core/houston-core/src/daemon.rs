@@ -1454,6 +1454,8 @@ impl Drop for SpawnReservation<'_> {
 }
 
 pub struct Daemon {
+    #[cfg(feature = "test-barriers")]
+    startup_test: Mutex<StartupTest>,
     pub token: String,
     pub mcp_creds: crate::mcp_creds::Registry,
     pub mcp_notify: crate::mcp_server::NotifierRegistry,
@@ -2176,6 +2178,126 @@ struct CliTitleState {
     last_applied_ms: u64,
     pending: Option<String>,
     flush_scheduled: bool,
+}
+
+#[derive(Default)]
+struct StartupGate {
+    // None is preparing, Some(false) aborts, Some(true) releases both workers.
+    state: Mutex<Option<bool>>,
+    changed: std::sync::Condvar,
+}
+
+impl StartupGate {
+    fn wait(&self) -> bool {
+        let mut state = self.state.lock().expect("startup gate lock");
+        while state.is_none() {
+            state = self.changed.wait(state).expect("startup gate lock");
+        }
+        state.unwrap_or(false)
+    }
+
+    fn finish(&self, committed: bool) {
+        *self.state.lock().expect("startup gate lock") = Some(committed);
+        self.changed.notify_all();
+    }
+}
+
+struct SessionStartup {
+    daemon: Arc<Daemon>,
+    id: u32,
+    child: Arc<Mutex<Option<Box<dyn portable_pty::Child + Send + Sync>>>>,
+    gate: Arc<StartupGate>,
+    workers: Vec<std::thread::JoinHandle<()>>,
+    session: Option<Arc<Session>>,
+    previous_credential: Option<(String, crate::mcp_creds::McpScope, std::time::Duration)>,
+    previous_settings: Option<Vec<u8>>,
+    committed: bool,
+}
+
+impl SessionStartup {
+    fn new(daemon: &Arc<Daemon>, id: u32) -> Result<Self> {
+        let previous_settings = match std::fs::read(daemon.claude_settings_path(id)) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        Ok(Self {
+            daemon: Arc::clone(daemon),
+            id,
+            child: Arc::new(Mutex::new(None)),
+            gate: Arc::new(StartupGate::default()),
+            workers: Vec::new(),
+            session: None,
+            previous_credential: daemon.mcp_creds.export_for_session(id),
+            previous_settings,
+            committed: false,
+        })
+    }
+}
+
+impl Drop for SessionStartup {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        self.gate.finish(false);
+        if let Some(mut child) = self.child.lock().expect("startup child lock").take() {
+            #[cfg(unix)]
+            let killed = match child.process_id() {
+                // The gated waiter has not reaped this child, so its PID cannot be recycled.
+                Some(pid) => crate::pid::signal_process_checked(pid, crate::pid::Signal::Kill)
+                    .map(|_| ())
+                    .map_err(std::io::Error::other),
+                None => child.kill(),
+            };
+            #[cfg(not(unix))]
+            let killed = child.kill();
+            if let Err(error) = killed {
+                tracing::warn!(
+                    "killing owned startup process for session {}: {error}",
+                    self.id
+                );
+            }
+            if let Err(error) = child.wait() {
+                tracing::warn!(
+                    "reaping owned startup process for session {}: {error}",
+                    self.id
+                );
+            }
+        }
+        if let Some(session) = &self.session {
+            session.backend.release_pty();
+        }
+        for worker in self.workers.drain(..) {
+            let _ = worker.join();
+        }
+        let settings = self.daemon.claude_settings_path(self.id);
+        let cleanup = match &self.previous_settings {
+            Some(bytes) => crate::agent_hooks::atomic_config_write(&settings, bytes),
+            None => match std::fs::remove_file(&settings) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.into()),
+            },
+        };
+        if let Err(error) = cleanup {
+            tracing::warn!(
+                "restoring startup settings for session {}: {error:#}",
+                self.id
+            );
+        }
+        self.daemon.mcp_creds.revoke_session(self.id);
+        if let Some((hash, scope, remaining)) = self.previous_credential.take() {
+            self.daemon.mcp_creds.import_hashed(hash, scope, remaining);
+        }
+    }
+}
+
+#[cfg(feature = "test-barriers")]
+#[derive(Default)]
+struct StartupTest {
+    fault: Option<&'static str>,
+    spawned: Option<Box<dyn Fn(u32, u32) + Send + Sync>>,
 }
 
 struct SpawnParams {
@@ -2940,6 +3062,8 @@ impl Daemon {
             tags: Mutex::new(tag_registry),
             dead: Mutex::new(dead),
             dead_geometry: Mutex::new(HashMap::new()),
+            #[cfg(feature = "test-barriers")]
+            startup_test: Mutex::new(StartupTest::default()),
             respawned_as: Mutex::new(HashMap::new()),
             workspace_membership: Mutex::new(()),
             session_lifecycle_lock: Mutex::new(()),
@@ -9740,6 +9864,17 @@ impl Daemon {
         session: &Arc<Session>,
         reader: Box<dyn Read + Send>,
     ) {
+        self.prepare_pty_reader_thread(id, session, reader, None)
+            .expect("spawn pty reader thread");
+    }
+
+    fn prepare_pty_reader_thread(
+        self: &Arc<Self>,
+        id: u32,
+        session: &Arc<Session>,
+        reader: Box<dyn Read + Send>,
+        gate: Option<Arc<StartupGate>>,
+    ) -> std::io::Result<std::thread::JoinHandle<()>> {
         #[cfg(unix)]
         ensure_quiesce_signal_installed();
         let daemon = Arc::clone(self);
@@ -9747,6 +9882,9 @@ impl Daemon {
         std::thread::Builder::new()
             .name(format!("pty-read-{id}"))
             .spawn(move || {
+                if gate.is_some_and(|gate| !gate.wait()) {
+                    return;
+                }
                 #[cfg(unix)]
                 // SAFETY: `pthread_self` takes no arguments and has no preconditions.
                 reader_session
@@ -9778,7 +9916,28 @@ impl Daemon {
                     daemon.note_backend_eof_for_supervisor(id);
                 }
             })
-            .expect("spawn pty reader thread");
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn set_startup_test(
+        &self,
+        fault: Option<&'static str>,
+        spawned: Box<dyn Fn(u32, u32) + Send + Sync>,
+    ) {
+        *self.startup_test.lock().expect("startup test lock") = StartupTest {
+            fault,
+            spawned: Some(spawned),
+        };
+    }
+
+    #[cfg(feature = "test-barriers")]
+    fn startup_fault(&self, point: &str) -> Result<()> {
+        anyhow::ensure!(
+            self.startup_test.lock().expect("startup test lock").fault != Some(point),
+            "injected startup failure at {point}"
+        );
+        Ok(())
     }
 
     fn spawn_session(self: &Arc<Self>, p: SpawnParams) -> Result<proto::SessionInfo> {
@@ -9973,6 +10132,7 @@ impl Daemon {
         if let Some(conversation) = &preassigned {
             cmd.args(["--session-id", conversation]);
         }
+        let mut startup = SessionStartup::new(self, id)?;
         let mcp = self.mint_mcp_launch(id, agent, &project_dir);
         for a in &mcp.args {
             cmd.arg(a);
@@ -10107,6 +10267,28 @@ impl Daemon {
                 id,
             );
         }
+        #[cfg(feature = "test-barriers")]
+        self.startup_fault("reader-handle")?;
+        let reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| anyhow!("cloning PTY reader: {e}"))?;
+        #[cfg(unix)]
+        let writer: Box<dyn Write + Send> = {
+            let fd = pair
+                .master
+                .as_raw_fd()
+                .ok_or_else(|| anyhow!("session {id}: PTY master requires a file descriptor"))?;
+            // SAFETY: pair.master owns fd throughout duplication; the resulting File closes without a blocking EOF write.
+            let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()?;
+            Box::new(std::fs::File::from(owned))
+        };
+        #[cfg(not(unix))]
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| anyhow!("taking PTY writer: {e}"))?;
+
         #[cfg(windows)]
         let shell_spawn_fallbacks = if agent == proto::AgentKind::Shell && injected_shell.is_none()
         {
@@ -10117,44 +10299,31 @@ impl Daemon {
             Vec::new()
         };
         #[cfg(windows)]
-        let mut child = spawn_with_shell_fallback(&*pair.slave, cmd, shell_spawn_fallbacks, id)?;
+        let child = spawn_with_shell_fallback(&*pair.slave, cmd, shell_spawn_fallbacks, id)?;
         #[cfg(not(windows))]
-        let mut child = pair
+        let child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| anyhow!("spawning agent for session {id} failed: {e}"))?;
-        #[cfg(target_os = "linux")]
-        if let Some(directory) = codex_runtime_dir {
-            let _ = directory.keep();
-        }
         drop(pair.slave);
-
         let pid = child.process_id();
         let killer = child.clone_killer();
-        let reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| anyhow!("cloning PTY reader: {e}"))
-            .context(orchestrate::MutationMayHaveActed)?;
-        #[cfg(unix)]
-        let writer: Box<dyn Write + Send> = {
-            let fd = pair
-                .master
-                .as_raw_fd()
-                .ok_or_else(|| anyhow!("session {id}: PTY master requires a file descriptor"))
-                .context(orchestrate::MutationMayHaveActed)?;
-            // SAFETY: pair.master owns fd throughout duplication; the resulting File closes without a blocking EOF write.
-            let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }
-                .try_clone_to_owned()
-                .context(orchestrate::MutationMayHaveActed)?;
-            Box::new(std::fs::File::from(owned))
-        };
-        #[cfg(not(unix))]
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| anyhow!("taking PTY writer: {e}"))
-            .context(orchestrate::MutationMayHaveActed)?;
+        *startup.child.lock().expect("startup child lock") = Some(child);
+        #[cfg(feature = "test-barriers")]
+        {
+            if let (Some(pid), Some(spawned)) = (
+                pid,
+                self.startup_test
+                    .lock()
+                    .expect("startup test lock")
+                    .spawned
+                    .as_ref(),
+            ) {
+                spawned(id, pid);
+            }
+        }
+        #[cfg(feature = "test-barriers")]
+        self.startup_fault("after-spawn")?;
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
         let unavailable_cause = (!hidden && agent == proto::AgentKind::Codex && acp.is_none())
@@ -10286,6 +10455,85 @@ impl Daemon {
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
         });
+        startup.session = Some(Arc::clone(&session));
+        let prepare = || -> Result<()> {
+            #[cfg(feature = "test-barriers")]
+            self.startup_fault("reader-thread")?;
+            let worker = self
+                .prepare_pty_reader_thread(id, &session, reader, Some(Arc::clone(&startup.gate)))
+                .context("starting PTY reader worker")?;
+            startup.workers.push(worker);
+            let daemon = Arc::clone(self);
+            let child = Arc::clone(&startup.child);
+            let gate = Arc::clone(&startup.gate);
+            #[cfg(feature = "test-barriers")]
+            self.startup_fault("wait-thread")?;
+            let worker = std::thread::Builder::new()
+                .name(format!("pty-wait-{id}"))
+                .spawn(move || {
+                    if !gate.wait() {
+                        return;
+                    }
+                    let mut child = child
+                        .lock()
+                        .expect("startup child lock")
+                        .take()
+                        .expect("owned startup child");
+                    #[cfg(target_os = "linux")]
+                    let _reap = {
+                        if let Some(pid) = pid {
+                            use nix::sys::wait::{waitid, Id, WaitPidFlag};
+                            // Observe exit without consuming it: a committed handoff leaves
+                            // the zombie for the supervisor to reap and report to its new owner.
+                            while let Err(nix::errno::Errno::EINTR) = waitid(
+                                Id::Pid(nix::unistd::Pid::from_raw(pid as i32)),
+                                WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
+                            ) {}
+                        }
+                        let guard = daemon.handoff_reap.lock().expect("handoff reap lock");
+                        if daemon.has_handed_off() {
+                            return;
+                        }
+                        guard
+                    };
+                    let status = child.wait();
+                    if let Some(s) = daemon.sessions.lock().expect("sessions lock").get(&id) {
+                        s.backend.release_pty();
+                    }
+                    let exit_code = status.as_ref().ok().map(|s| s.exit_code() as i32);
+                    if hidden {
+                        daemon.handoff_exit(id, exit_code);
+                        return;
+                    }
+                    let parent = daemon.parent_of(id);
+                    let state = daemon.finish_session(id, exit_code);
+                    daemon.broadcast_control(&proto::ServerMsg::SessionState {
+                        session: id,
+                        state,
+                        exit_code,
+                    });
+                    if let Some(parent) = parent {
+                        daemon.broadcast_live_children(parent);
+                    }
+                    daemon.delegation_child_exited(id);
+                    daemon.routine_pane_exited(id);
+                    daemon.resume_exited(id, exit_code);
+                })
+                .context("starting PTY wait worker")?;
+            startup.workers.push(worker);
+            Ok(())
+        };
+        if hidden {
+            prepare()?;
+        } else {
+            self.db.insert_session_for_startup(
+                &info,
+                title_source.as_str(),
+                Self::agent_profile_config_dir(agent, &extra_env),
+                prepare,
+            )?;
+        }
+        // No fallible setup remains. Publish before releasing output/exit workers.
         self.sessions
             .lock()
             .expect("sessions lock")
@@ -10293,19 +10541,19 @@ impl Daemon {
         self.write_run_state();
         self.reap_reevaluate();
         if !hidden {
-            self.db
-                .insert_session_with_title_source(&info, Some(title_source.as_str()))
-                .context(orchestrate::MutationMayHaveActed)?;
-            self.db
-                .set_session_profile_config_dir(
-                    id,
-                    Self::agent_profile_config_dir(agent, &extra_env),
-                )
-                .context(orchestrate::MutationMayHaveActed)?;
             self.record_launch_conversation(id, resumed, preassigned, resume_handle);
             let mut created = info.clone();
             created.compactions = self.compactions_of(&created);
             self.broadcast_control(&proto::ServerMsg::SessionCreated { info: created });
+        }
+        if let Some(token_file) = shellint_token_file {
+            token_file.disarm();
+        }
+        startup.committed = true;
+        startup.gate.finish(true);
+        #[cfg(target_os = "linux")]
+        if let Some(directory) = codex_runtime_dir {
+            let _ = directory.keep();
         }
 
         if let Some(parent) = spawned_by {
@@ -10319,54 +10567,6 @@ impl Daemon {
                 );
             }
         }
-        self.spawn_pty_reader_thread(id, &session, reader);
-
-        let daemon = Arc::clone(self);
-        std::thread::Builder::new()
-            .name(format!("pty-wait-{id}"))
-            .spawn(move || {
-                #[cfg(target_os = "linux")]
-                let _reap = {
-                    if let Some(pid) = pid {
-                        use nix::sys::wait::{waitid, Id, WaitPidFlag};
-                        // Observe exit without consuming it: a committed handoff leaves
-                        // the zombie for the supervisor to reap and report to its new owner.
-                        while let Err(nix::errno::Errno::EINTR) = waitid(
-                            Id::Pid(nix::unistd::Pid::from_raw(pid as i32)),
-                            WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
-                        ) {}
-                    }
-                    let guard = daemon.handoff_reap.lock().expect("handoff reap lock");
-                    if daemon.has_handed_off() {
-                        return;
-                    }
-                    guard
-                };
-                let status = child.wait();
-                if let Some(s) = daemon.sessions.lock().expect("sessions lock").get(&id) {
-                    s.backend.release_pty();
-                }
-                let exit_code = status.as_ref().ok().map(|s| s.exit_code() as i32);
-                if hidden {
-                    daemon.handoff_exit(id, exit_code);
-                    return;
-                }
-                let parent = daemon.parent_of(id);
-                let state = daemon.finish_session(id, exit_code);
-                daemon.broadcast_control(&proto::ServerMsg::SessionState {
-                    session: id,
-                    state,
-                    exit_code,
-                });
-                if let Some(parent) = parent {
-                    daemon.broadcast_live_children(parent);
-                }
-                daemon.delegation_child_exited(id);
-                daemon.routine_pane_exited(id);
-                daemon.resume_exited(id, exit_code);
-            })
-            .expect("spawn pty wait thread");
-
         if let Some((code, cause)) = unavailable_cause {
             self.note_codex_status_unavailable(id, code, cause);
         }
@@ -10378,10 +10578,6 @@ impl Daemon {
                     daemon.expire_spawn_grace(id);
                 });
             }
-        }
-
-        if let Some(token_file) = shellint_token_file {
-            token_file.disarm();
         }
 
         Ok(info)
@@ -12955,6 +13151,7 @@ impl Daemon {
     fn apply_hook_drop(
         self: &Arc<Self>,
         d: &crate::hook_drop::HookDrop,
+        receipt: Option<(&str, u64)>,
     ) -> crate::hook_drop::DropVerdict {
         if self.ensure_not_sleeping(d.session).is_err() {
             return crate::hook_drop::DropVerdict::Retry;
@@ -13130,7 +13327,9 @@ impl Daemon {
                 && d.subagent_type.is_none()
                 && d.agent_id.is_none()
             {
-                self.note_compaction(d.session);
+                if !self.note_compaction(d.session, receipt) {
+                    return crate::hook_drop::DropVerdict::Retry;
+                }
             }
         }
         if !d.internal_prompt
@@ -14348,13 +14547,28 @@ impl Daemon {
         let (mut applied, mut all_listed) = (0usize, true);
         for dir in &dirs {
             let state = states.entry(dir.clone()).or_default();
-            let out = crate::hook_drop::run_pass(dir, state, now, pass, |d| {
-                let verdict = self.apply_hook_drop(d);
-                if verdict == crate::hook_drop::DropVerdict::Applied {
-                    self.remote_feed_hook(d);
-                }
-                verdict
-            });
+            let out = crate::hook_drop::run_pass_with_io(
+                dir,
+                state,
+                now,
+                pass,
+                |d, identity, event_ms| {
+                    match self.db.hook_compaction_seen(identity) {
+                        Ok(true) => return crate::hook_drop::DropVerdict::Applied,
+                        Ok(false) => {}
+                        Err(error) => {
+                            tracing::warn!("checking hook compaction receipt: {error:#}");
+                            return crate::hook_drop::DropVerdict::Retry;
+                        }
+                    }
+                    let verdict = self.apply_hook_drop(d, Some((identity, event_ms)));
+                    if verdict == crate::hook_drop::DropVerdict::Applied {
+                        self.remote_feed_hook(d);
+                    }
+                    verdict
+                },
+                |path| std::fs::remove_file(path),
+            );
             applied += out.applied;
             all_listed &= out.listed_ok;
             if out.collected > 0 {
@@ -21040,12 +21254,22 @@ impl Daemon {
         }
     }
 
-    fn note_compaction(self: &Arc<Self>, session: u32) {
-        let compactions = match self.db.session_note_compaction(session) {
-            Ok(n) => n,
+    fn note_compaction(self: &Arc<Self>, session: u32, receipt: Option<(&str, u64)>) -> bool {
+        let result = match receipt {
+            Some((identity, event_ms)) => self.db.session_note_compaction_once(
+                session,
+                identity,
+                event_ms,
+                crate::hook_drop::now_ms(),
+            ),
+            None => self.db.session_note_compaction(session).map(Some),
+        };
+        let compactions = match result {
+            Ok(Some(n)) => n,
+            Ok(None) => return true,
             Err(e) => {
                 tracing::warn!("counting a compaction for session {session}: {e:#}");
-                return;
+                return false;
             }
         };
         self.broadcast_control(&proto::ServerMsg::CompactionsChanged {
@@ -21060,7 +21284,7 @@ impl Daemon {
                 .delegations_for_parent(session)
                 .map_or(true, |children| children.is_empty())
         {
-            return;
+            return true;
         }
         let workspace = self.current_workspace(session).unwrap_or_default();
         if let Err(e) = self.inbox_write(
@@ -21079,6 +21303,7 @@ impl Daemon {
         ) {
             tracing::warn!("offering a handoff to pane {session}: {e:#}");
         }
+        true
     }
 
     fn compactions_of(&self, info: &proto::SessionInfo) -> Option<u32> {
