@@ -894,6 +894,20 @@ mod tests {
         Bytes(Vec<u8>),
     }
 
+    struct EnsureBarrier {
+        entered: tokio::sync::mpsc::UnboundedSender<()>,
+        release: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    }
+
+    struct ReleaseEnsure(Arc<(Mutex<bool>, std::sync::Condvar)>);
+    impl Drop for ReleaseEnsure {
+        fn drop(&mut self) {
+            let (released, wake) = &*self.0;
+            *released.lock().unwrap() = true;
+            wake.notify_all();
+        }
+    }
+
     struct FakeWsl {
         list: ListReply,
         probes: HashMap<String, String>,
@@ -902,6 +916,7 @@ mod tests {
         /// What `daemon_stopped` answers; a stopped daemon by default.
         stopped: Option<RunOutput>,
         ensure: String,
+        ensure_barrier: Mutex<Option<EnsureBarrier>>,
         calls: Mutex<Vec<Vec<String>>>,
         daemons: tokio::sync::mpsc::UnboundedSender<DuplexStream>,
     }
@@ -914,6 +929,7 @@ mod tests {
                 probes: HashMap::new(),
                 probe_replies: Mutex::new(Default::default()),
                 stopped: None,
+                ensure_barrier: Mutex::new(None),
                 ensure: format!(
                     r#"{{"state":"spawned","port":40001,"token":"{TOKEN}","build":"{BUILD}","protocol":131}}"#
                 ),
@@ -970,6 +986,15 @@ mod tests {
                 return ok("/home/u\n");
             }
             if argv.get(4).map(String::as_str) == Some("wsl-ensure") {
+                if let Some(barrier) = self.ensure_barrier.lock().unwrap().take() {
+                    let _ = barrier.entered.send(());
+                    let (released, wake) = &*barrier.release;
+                    let mut released = released.lock().unwrap();
+                    while !*released {
+                        released = wake.wait(released).unwrap();
+                    }
+                }
+
                 let code = if self.ensure.contains(r#""refused""#) {
                     3
                 } else {
@@ -1286,6 +1311,46 @@ mod tests {
         assert!(fake.calls().is_empty(), "nothing runs off Windows");
         wsl.start_enabled();
         assert!(wsl.wsl_envs().is_empty());
+    }
+
+    #[tokio::test]
+    async fn snapshot_waits_for_an_already_dispatched_ensure_receipt() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let (mut fake, _daemons) = FakeWsl::new(list_text("* Ubuntu  Running  2\n"));
+        fake.probes
+            .insert("Ubuntu".into(), "x86_64\nglibc 2.39\n".into());
+        let fake = Arc::new(fake);
+        let manager = manager(fake.clone(), state.path(), bundle.path(), true);
+        manager.enable("Ubuntu".into()).await.unwrap();
+        let release = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let release_guard = ReleaseEnsure(release.clone());
+        let (entered, mut receipt) = tokio::sync::mpsc::unbounded_channel();
+        *fake.ensure_barrier.lock().unwrap() = Some(EnsureBarrier { entered, release });
+        let ensure = {
+            let inner = manager.inner.clone();
+            tokio::spawn(async move { inner.reensure("Ubuntu".into()).await })
+        };
+        tokio::time::timeout(Duration::from_secs(10), receipt.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let pause = {
+            let manager = manager.clone();
+            tokio::spawn(async move { manager.pause_for_stop().await })
+        };
+        while !manager.inner.stopping.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !pause.is_finished(),
+            "must drain the actual dispatched blocking ensure"
+        );
+        drop(release_guard);
+        ensure.await.unwrap().unwrap();
+        let targets = pause.await.unwrap().unwrap();
+        assert_eq!(targets[0].token, TOKEN);
+        assert_ne!(targets[0].port, 0);
     }
 
     #[tokio::test]
