@@ -115,6 +115,7 @@ pub(crate) const KEY_PUBLIC_URL: &str = "remote_public_url";
 pub(crate) const KEY_NOTIFY_DELAY: &str = "remote_notify_delay_secs";
 pub(crate) const KEY_NOTIFY_DETAIL: &str = "remote_notify_detail";
 pub(crate) const KEY_NOTIFY_FINISHED: &str = "remote_notify_finished";
+pub(crate) const KEY_DICTATION: &str = "remote_dictation";
 /// The ntfy server origin while the keychain holds a topic URL; empty when off.
 pub(crate) const KEY_NTFY_SERVER: &str = "remote_ntfy_server";
 
@@ -154,6 +155,7 @@ pub struct Config {
     pub notify_finished: bool,
     /// Set while notifications are on; the topic URL itself is in the keychain.
     pub ntfy_server: Option<String>,
+    pub dictation: bool,
 }
 
 impl Default for Config {
@@ -166,6 +168,7 @@ impl Default for Config {
             notify_detail: NotifyDetail::Generic,
             notify_finished: false,
             ntfy_server: None,
+            dictation: false,
         }
     }
 }
@@ -243,6 +246,7 @@ pub struct ConfigPatch {
     pub notify_delay_secs: Option<u32>,
     pub notify_detail: Option<String>,
     pub notify_finished: Option<bool>,
+    pub dictation: Option<bool>,
 }
 
 pub fn parse_bind(raw: &str) -> Result<SocketAddr, String> {

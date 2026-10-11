@@ -25,6 +25,7 @@ function info(overrides: Partial<RemoteInfo> = {}): RemoteInfo {
     notify_delay_secs: 30,
     notify_detail: 'generic',
     notify_finished: false,
+    dictation: false,
     devices: [],
     ...overrides
   }
@@ -62,7 +63,7 @@ describe('RemoteSection', () => {
     expect(screen.getByText(/Asking the daemon/)).toBeTruthy()
     emit({ type: 'remote_state', remote: info({ devices: [{ id: 7, name: 'Laptop', created_at: 1, last_seen_at: null }] }) })
     expect(screen.getByTestId('settings-remote-status').textContent).toBe('Off. Nothing listens and nothing is sent.')
-    for (const id of ['settings-remote-connect-phone', 'settings-remote-revoke-7', 'settings-remote-ntfy-edit', 'settings-remote-delay', 'settings-remote-detail', 'settings-remote-finished']) {
+    for (const id of ['settings-remote-connect-phone', 'settings-remote-revoke-7', 'settings-remote-ntfy-edit', 'settings-remote-delay', 'settings-remote-detail', 'settings-remote-finished', 'settings-remote-dictation']) {
       expect((screen.getByTestId(id) as HTMLButtonElement).disabled).toBe(true)
     }
     expect(screen.getByText('Connect a phone').closest('[data-testid="settings-row"]')?.textContent).toContain('Turn on remote access first.')
@@ -121,6 +122,19 @@ describe('RemoteSection', () => {
     expect(opened).toHaveBeenCalledOnce()
     expect(client.remotePairStart).not.toHaveBeenCalled()
     window.removeEventListener(CONNECT_PHONE_EVENT, opened)
+  })
+
+  it('shows dictation from devices off by default, with what it sends, and turns it on', () => {
+    const { client, emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
+    const toggle = screen.getByTestId('settings-remote-dictation')
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByTestId('settings-remote-dictation-disclosure').textContent).toContain('sent to Groq')
+    fireEvent.click(toggle)
+    expect(client.remoteConfigure).toHaveBeenCalledWith({ dictation: true })
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, dictation: true }) })
+    expect(screen.getByTestId('settings-remote-dictation').getAttribute('aria-checked')).toBe('true')
   })
 
   it('lists devices and revokes only after confirmation', () => {

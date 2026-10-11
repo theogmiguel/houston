@@ -110,6 +110,7 @@ impl Daemon {
                 .unwrap_or(default.notify_detail),
             notify_finished: get(remote::KEY_NOTIFY_FINISHED).as_deref() == Some("1"),
             ntfy_server: get(remote::KEY_NTFY_SERVER).filter(|v| !v.is_empty()),
+            dictation: get(remote::KEY_DICTATION).as_deref() == Some("1"),
         }
     }
 
@@ -133,6 +134,9 @@ impl Daemon {
         }
         if let Some(finished) = patch.notify_finished {
             next.notify_finished = finished;
+        }
+        if let Some(dictation) = patch.dictation {
+            next.dictation = dictation;
         }
         if next.bind.ip().is_unspecified() && next.public_url.is_none() {
             anyhow::bail!(
@@ -169,6 +173,7 @@ impl Daemon {
             (remote::KEY_NOTIFY_DELAY, &delay),
             (remote::KEY_NOTIFY_DETAIL, next.notify_detail.as_str()),
             (remote::KEY_NOTIFY_FINISHED, flag(next.notify_finished)),
+            (remote::KEY_DICTATION, flag(next.dictation)),
             (
                 remote::KEY_NTFY_SERVER,
                 next.ntfy_server.as_deref().unwrap_or(""),
@@ -219,6 +224,7 @@ impl Daemon {
                     NotifyDetail::PaneName => proto::RemoteNotifyDetail::PaneName,
                 },
                 notify_finished: cfg.notify_finished,
+                dictation: cfg.dictation,
                 devices,
             },
         }

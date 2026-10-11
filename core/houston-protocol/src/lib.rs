@@ -3244,6 +3244,9 @@ pub struct RemoteInfo {
     pub notify_delay_secs: u32,
     pub notify_detail: RemoteNotifyDetail,
     pub notify_finished: bool,
+    /// Paired devices may send recordings for the voice engine to transcribe.
+    /// Independent of `VoiceSettings.enabled`, which opens this computer's microphone.
+    pub dictation: bool,
     pub devices: Vec<RemoteDevice>,
 }
 
@@ -4478,6 +4481,9 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         notify_finished: Option<bool>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        dictation: Option<bool>,
     },
     RemotePairStart,
     RemoteDeviceRevoke {

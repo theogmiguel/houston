@@ -13,4 +13,9 @@ url: string, listening: boolean, error?: string | null,
 /**
  * Origin of the ntfy server; the topic URL stays in the OS keychain.
  */
-ntfy_server?: string | null, notify_delay_secs: number, notify_detail: RemoteNotifyDetail, notify_finished: boolean, devices: Array<RemoteDevice>, };
+ntfy_server?: string | null, notify_delay_secs: number, notify_detail: RemoteNotifyDetail, notify_finished: boolean,
+/**
+ * Paired devices may send recordings for the voice engine to transcribe.
+ * Independent of `VoiceSettings.enabled`, which opens this computer's microphone.
+ */
+dictation: boolean, devices: Array<RemoteDevice>, };

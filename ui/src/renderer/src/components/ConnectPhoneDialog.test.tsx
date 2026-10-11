@@ -8,7 +8,7 @@ import { openConnectPhone, openConnectPhoneRoute } from '../connectPhone'
 import { ConnectPhoneDialog, ConnectPhoneHost, routeSettings } from './ConnectPhoneDialog'
 
 function info(overrides: Partial<RemoteInfo> = {}): RemoteInfo {
-  return { enabled: false, bind: '127.0.0.1:47823', public_url: null, url: 'http://127.0.0.1:47823', listening: false, error: null, ntfy_server: null, notify_delay_secs: 30, notify_detail: 'generic', notify_finished: false, devices: [], ...overrides }
+  return { enabled: false, bind: '127.0.0.1:47823', public_url: null, url: 'http://127.0.0.1:47823', listening: false, error: null, ntfy_server: null, notify_delay_secs: 30, notify_detail: 'generic', notify_finished: false, dictation: false, devices: [], ...overrides }
 }
 function setup(host = false, initialStep?: 'route' | 'scan') {
   const handlers = new Map<string, Set<(message: ServerMsg) => void>>()

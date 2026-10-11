@@ -427,6 +427,29 @@ function RemoteGroups({
         </Row>
       </SettingsList>
 
+      <SubHead>Dictation</SubHead>
+      <SettingsList>
+        <Row
+          title="Allow dictation from paired devices"
+          desc={
+            remote.enabled
+              ? "A paired device records speech and this computer transcribes it with the engine in Settings ▸ Dictation. This computer's microphone is not used, and desktop dictation does not need to be on."
+              : `Off. ${OFF_REASON}`
+          }
+        >
+          <Toggle
+            on={remote.dictation}
+            disabled={!remote.enabled}
+            onChange={(dictation) => onConfigure({ dictation })}
+            aria-label="Allow dictation from paired devices"
+            data-testid="settings-remote-dictation"
+          />
+        </Row>
+      </SettingsList>
+      <Text as="p" size="small" tone="muted" data-testid="settings-remote-dictation-disclosure">
+        With the local engine, each recording goes from the device to this computer only and is discarded after transcription. With Groq, each recording is also sent to Groq.
+      </Text>
+
       <SubHead>Phone notifications</SubHead>
       <SettingsList>
         <Row
