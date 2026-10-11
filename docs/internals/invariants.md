@@ -262,7 +262,11 @@ The conversation a paired remote-access device reads (`remote/feed.rs`) is built
 hook payload fields: the prompt, the turn's last message, `AskUserQuestion`'s questions and
 answers, and a permission request's or finished tool call's name and one target (a command,
 path, URL or pattern). It never reads a transcript or the screen. Its decision card follows
-status transitions; it never sets one. No hook reports that a permission was granted, so the
+status transitions; it never sets one. Claude's `PostToolUseFailure` marks a failed tool
+step using the same masked target and bounds as a successful call; failed
+`AskUserQuestion` calls produce neither steps nor answers. Turn counts include failed
+steps, and edited paths record attempts rather than confirmed filesystem changes.
+No hook reports that a permission was granted, so the
 pane keeps needing input until the approved tool finishes: a card a device answered stays
 consumed until the status changes or a new card replaces it, and an operator keystroke into
 the pane marks an open card as answered in the terminal.

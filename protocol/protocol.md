@@ -1163,12 +1163,18 @@ A 401 for a known revoked token adds `"reason": "revoked"`; the daemon remembers
 `FeedEntry` is `{seq, at (epoch ms), type, …}` with `type` one of `prompt {text}`,
 `reply {text}` (markdown, ≤ 16 KiB), `question {questions: [{header, question, options:
 [{label, description}], multi_select, previews}], answers?}`, `answer {answers}`,
-`permission {tool, target, always, truncated, outcome?, diff?}`, `step {tool, target}` and
+`permission {tool, target, always, truncated, outcome?, diff?}`, `step {tool, target, failed?: boolean}` and
 `status {status: finished | exited}`, and
 `turn_end {duration_ms, outcome: done | stopped | failed, counts: {read, search, edit, run,
 other}, files: string[]}`. Turn duration starts at the prompt (0 when no prompt was seen).
-Counts come from completed steps and survive feed eviction; files contain at most 32 distinct
-masked edited paths, each at most 300 characters. Supported failure/interruption hooks select
+Claude `PostToolUseFailure` produces a step with `failed: true`; successful steps use
+`failed: false` (older daemons may omit it). Failed `AskUserQuestion` calls produce no step
+or answer. Counts include successful and failed steps and survive feed eviction; files contain at most 32 distinct
+masked edited paths, each at most 300 characters, including paths from failed edit calls.
+These paths describe attempted edits, not confirmation that a file changed. Codex, Cursor,
+Grok, OpenCode and Antigravity have no installed per-tool failure hook mapped to failed
+steps; `PostToolUseFailure` is ignored for these providers. Grok `StopFailure` and OpenCode
+`session.error` report turn failures rather than tool steps. Supported failure/interruption hooks select
 `failed`/`stopped`; unknown outcomes use `done`. Text is masked by the credential redactor before it
 leaves the hook client; a permission `target` keeps its line breaks, loses invisible
 formatting characters, and is `truncated` when it was cut or had such characters removed.

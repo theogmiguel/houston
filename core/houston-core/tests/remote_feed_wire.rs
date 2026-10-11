@@ -907,6 +907,113 @@ async fn turn_end_counts_steps_and_distinct_edited_paths_from_the_prompt() {
     daemon.kill(info.id).unwrap();
 }
 
+#[tokio::test]
+async fn failed_tool_hook_drops_produce_steps_and_turn_counts() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["sleep", "30"]);
+    apply(
+        state.path(),
+        &hook(
+            None,
+            "UserPromptSubmit",
+            info.id,
+            &serde_json::json!({"prompt":"try the tools"}),
+        ),
+    )
+    .await;
+    for (tool, input) in [
+        (
+            "Bash",
+            serde_json::json!({"command":format!("echo {TOKEN_IN_PROMPT}; exit 1")}),
+        ),
+        (
+            "Edit",
+            serde_json::json!({"file_path":"/work/main.rs","old_string":"missing","new_string":"replacement"}),
+        ),
+        ("AskUserQuestion", question_payload(2)["tool_input"].clone()),
+    ] {
+        apply(
+            state.path(),
+            &hook(None, "PostToolUseFailure", info.id, &serde_json::json!({
+                "tool_name":tool, "tool_input":input, "error":"tool failed", "is_interrupt":false
+            })),
+        )
+        .await;
+    }
+    apply(
+        state.path(),
+        &hook(
+            None,
+            "PostToolUse",
+            info.id,
+            &serde_json::json!({"tool_name":"Read","tool_input":{"file_path":"/work/main.rs"}}),
+        ),
+    )
+    .await;
+    apply(
+        state.path(),
+        &hook(
+            None,
+            "Stop",
+            info.id,
+            &fixture("claude-2.1.263-05-Stop.json"),
+        ),
+    )
+    .await;
+    let page = feed(addr, &token, info.id, 0).await;
+    let entries = page["entries"].as_array().unwrap();
+    let steps: Vec<_> = entries.iter().filter(|e| e["type"] == "step").collect();
+    assert_eq!(
+        steps.len(),
+        3,
+        "failed Bash and Edit calls must remain in the work log"
+    );
+    assert_eq!(steps[0]["tool"], "Bash");
+    assert_eq!(steps[0]["failed"], true);
+    assert_eq!(steps[1]["tool"], "Edit");
+    assert_eq!(steps[1]["failed"], true);
+    assert_eq!(steps[2]["tool"], "Read");
+    assert_eq!(steps[2]["failed"], false);
+    assert!(!page.to_string().contains(TOKEN_IN_PROMPT));
+    assert!(!entries
+        .iter()
+        .any(|e| e["type"] == "answer" || e["type"] == "question"));
+    let end = entries.iter().find(|e| e["type"] == "turn_end").unwrap();
+    assert_eq!(
+        end["counts"],
+        serde_json::json!({"read":1,"search":0,"edit":1,"run":1,"other":0})
+    );
+    assert_eq!(end["files"], serde_json::json!(["/work/main.rs"]));
+    assert_eq!(end["outcome"], "done");
+    daemon.kill(info.id).unwrap();
+}
+
+#[test]
+fn tool_failure_steps_are_claude_only_and_old_hook_drops_default_to_success() {
+    let payload =
+        serde_json::json!({"tool_name":"Bash","tool_input":{"command":"exit 1"}}).to_string();
+    for provider in [
+        proto::AgentKind::Codex,
+        proto::AgentKind::Grok,
+        proto::AgentKind::Opencode,
+        proto::AgentKind::Cursor,
+        proto::AgentKind::Antigravity,
+    ] {
+        assert!(
+            from_hook(provider, "PostToolUseFailure", &payload, None).is_none(),
+            "{provider:?} does not install a PostToolUseFailure hook"
+        );
+    }
+    let step: houston_core::remote::feed::HookFeed = serde_json::from_value(
+        serde_json::json!({"kind":"step","tool":"Read","target":"/work/main.rs"}),
+    )
+    .unwrap();
+    assert_eq!(serde_json::to_value(step).unwrap()["failed"], false);
+}
+
 #[test]
 fn turn_summary_survives_eviction_and_bounds_edited_paths() {
     use houston_core::remote::feed::{
@@ -919,6 +1026,7 @@ fn turn_summary_survives_eviction_and_bounds_edited_paths() {
         store.push(
             1,
             FeedItem::Step {
+                failed: false,
                 tool: "Edit".into(),
                 target: "path".into(),
             },

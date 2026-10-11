@@ -155,7 +155,9 @@ single questions with one answer. Questions with several parts or several answer
 requests from Codex, Cursor, Grok, OpenCode and Antigravity, show a waiting card with
 **View screen** and the key row; replies and status still appear in their conversation.
 
-Each pane shows user messages, agent replies and a work log. When the computer reports a
+Each pane shows user messages, agent replies and a work log. Claude tool calls that fail
+remain in the log and count toward the turn summary; listed edit paths include attempted
+edits even when the tool failed. When the computer reports a
 turn end, the log folds into a summary with its duration and changed files. Tap the summary
 to reopen it. Older computers show the tool steps without a duration or changed-file card.
 Child panes appear together

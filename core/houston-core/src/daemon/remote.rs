@@ -736,6 +736,7 @@ impl Daemon {
                 tool,
                 target,
                 edited_path,
+                failed,
             }) => {
                 if let Some(path) = edited_path {
                     self.remote.feed.note_edited_path(id, path);
@@ -743,6 +744,7 @@ impl Daemon {
                 self.remote_push(
                     id,
                     FeedItem::Step {
+                        failed: *failed,
                         tool: tool.clone(),
                         target: target.clone(),
                     },
