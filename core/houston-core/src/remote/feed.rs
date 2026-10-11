@@ -27,6 +27,130 @@ const OPTIONS_MAX: usize = 9;
 // key event rather than one pasted chunk.
 const SETTLE_MS: u64 = 120;
 
+// A review card stays readable on a phone without retaining an entire file.
+pub const DIFF_MAX_LINES: usize = 200;
+// Long generated lines must not dominate the card or its memory allocation.
+pub const DIFF_LINE_MAX_CHARS: usize = 500;
+// Bound UTF-8 and JSON escaping overhead independently of the line count.
+pub const DIFF_MAX_BYTES: usize = 32 * 1024;
+
+// A turn can touch a repository; retain a useful sample without a growing path set.
+pub const TURN_FILES_MAX: usize = 32;
+// Match permission paths while bounding each path independently of the file count.
+pub const TURN_PATH_MAX_CHARS: usize = 300;
+
+// Several days of ordinary pane transitions fit without an unbounded cross-session log.
+pub const ACTIVITY_MAX_ENTRIES: usize = 500;
+// Titles match permission summaries; excerpts match the existing reply excerpts.
+pub const ACTIVITY_TITLE_MAX_CHARS: usize = 300;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ActivityEntry {
+    pub seq: u64,
+    pub at: u64,
+    pub session: u32,
+    pub kind: &'static str,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub excerpt: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ActivityPage {
+    pub epoch: String,
+    pub entries: Vec<ActivityEntry>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TurnCounts {
+    pub read: u64,
+    pub search: u64,
+    pub edit: u64,
+    pub run: u64,
+    pub other: u64,
+}
+
+fn step_category(tool: &str) -> &'static str {
+    match tool {
+        "Read" | "read_file" | "read" => "read",
+        "Grep" | "Glob" | "WebSearch" | "search" | "grep" | "glob" => "search",
+        "Edit" | "MultiEdit" | "Write" | "NotebookEdit" | "edit" | "write" | "edit_file" | "write_file" | "apply_patch" => "edit",
+        "Bash" | "Shell" | "shell" | "run_command" | "exec_command" => "run",
+        _ => "other",
+    }
+}
+
+#[derive(Default)]
+struct Turn {
+    prompted_at: Option<u64>,
+    counts: TurnCounts,
+    files: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiffLine {
+    pub op: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditDiff {
+    pub path: String,
+    pub lines: Vec<DiffLine>,
+    pub truncated: bool,
+}
+
+fn edit_diff(tool: &str, input: Option<&serde_json::Value>) -> Option<EditDiff> {
+    let input = input?;
+    if !matches!(tool, "Edit" | "MultiEdit" | "Write") {
+        return None;
+    }
+    let raw_path = str_at(input, "file_path")?;
+    let (path, hidden) = plain(&mask(raw_path), false);
+    let mut diff = EditDiff {
+        truncated: hidden || path.chars().count() > SUMMARY_MAX_CHARS,
+        path: cut_chars(&path, SUMMARY_MAX_CHARS),
+        lines: Vec::new(),
+    };
+    let mut bytes = serde_json::to_vec(&diff).ok()?.len();
+    let edits: &[serde_json::Value] = if tool == "MultiEdit" {
+        input.get("edits")?.as_array()?
+    } else {
+        std::slice::from_ref(input)
+    };
+    'edits: for edit in edits {
+        let parts = if tool == "Write" {
+            vec![("+", str_at(edit, "content")?)]
+        } else {
+            vec![("-", str_at(edit, "old_string")?), ("+", str_at(edit, "new_string")?)]
+        };
+        for (op, text) in parts {
+            for raw in text.lines() {
+                if diff.lines.len() >= DIFF_MAX_LINES {
+                    diff.truncated = true;
+                    break 'edits;
+                }
+                let hidden = raw.chars().any(is_format_char);
+                let clean: String = raw.chars()
+                    .filter(|c| (!c.is_control() || *c == '\t') && !is_format_char(*c))
+                    .collect();
+                let masked = mask(&clean);
+                diff.truncated |= hidden || masked.chars().count() > DIFF_LINE_MAX_CHARS;
+                let line = DiffLine { op: op.into(), text: cut_chars(&masked, DIFF_LINE_MAX_CHARS) };
+                let weight = serde_json::to_vec(&line).ok()?.len() + 1;
+                if bytes + weight > DIFF_MAX_BYTES {
+                    diff.truncated = true;
+                    break 'edits;
+                }
+                bytes += weight;
+                diff.lines.push(line);
+            }
+        }
+    }
+    Some(diff)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuestionOption {
     pub label: String,
@@ -74,10 +198,14 @@ pub enum HookFeed {
         /// formatting characters were removed from it.
         #[serde(default)]
         truncated: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        diff: Option<EditDiff>,
     },
     Step {
         tool: String,
         target: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        edited_path: Option<String>,
     },
 }
 
@@ -155,7 +283,7 @@ fn str_at<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
 }
 
 /// The one value that says what a tool acts on: a command, a path, a URL or a
-/// pattern. Anything else in the tool input stays out of the feed. The flag
+/// pattern. Edit previews are lifted separately for permission cards. The flag
 /// reports that the result is not exactly the tool's input (see `HookFeed::Permission`).
 fn tool_target(
     input: Option<&serde_json::Value>,
@@ -318,6 +446,11 @@ pub fn from_hook(
         "PermissionRequest" => {
             let (target, truncated) = tool_target(tool_input(&v), SUMMARY_MAX_CHARS, true);
             Some(HookFeed::Permission {
+                diff: if provider == proto::AgentKind::Claude {
+                    name.as_deref().and_then(|tool| edit_diff(tool, tool_input(&v)))
+                } else {
+                    None
+                },
                 tool: name.unwrap_or_else(|| "tool".to_string()),
                 target,
                 always: v
@@ -329,6 +462,10 @@ pub fn from_hook(
         }
         "PostToolUse" => Some(HookFeed::Step {
             target: tool_target(tool_input(&v), STEP_MAX_CHARS, false).0,
+            edited_path: name.as_deref().filter(|tool| step_category(tool) == "edit")
+                .and_then(|_| tool_input(&v))
+                .and_then(|input| str_at(input, "file_path").or_else(|| str_at(input, "path")).or_else(|| str_at(input, "notebook_path")))
+                .map(|path| cut_chars(&mask_text(path), TURN_PATH_MAX_CHARS)),
             tool: name?,
         }),
         _ => None,
@@ -373,6 +510,8 @@ pub enum FeedItem {
         truncated: bool,
         /// `resolved` once the agent moved on; which choice was made is not reported.
         outcome: Option<&'static str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        diff: Option<EditDiff>,
     },
     Step {
         tool: String,
@@ -380,6 +519,12 @@ pub enum FeedItem {
     },
     Status {
         status: &'static str,
+    },
+    TurnEnd {
+        duration_ms: u64,
+        outcome: &'static str,
+        counts: TurnCounts,
+        files: Vec<String>,
     },
 }
 
@@ -406,10 +551,14 @@ impl FeedItem {
                         .map_or(0, |a| a.iter().map(String::len).sum())
             }
             FeedItem::Answer { answers } => answers.iter().map(String::len).sum(),
-            FeedItem::Permission { tool, target, .. } | FeedItem::Step { tool, target } => {
-                tool.len() + target.len()
+            FeedItem::Permission { tool, target, diff, .. } => {
+                tool.len() + target.len() + diff.as_ref().map_or(0, |d| {
+                    d.path.len() + d.lines.iter().map(|l| l.op.len() + l.text.len() + 32).sum::<usize>()
+                })
             }
+            FeedItem::Step { tool, target } => tool.len() + target.len(),
             FeedItem::Status { .. } => 0,
+            FeedItem::TurnEnd { files, .. } => 64 + files.iter().map(String::len).sum::<usize>(),
         }
     }
 }
@@ -455,6 +604,7 @@ pub struct Pending {
     pub detail: String,
     /// `detail` is not exactly what the tool runs (see `HookFeed::Permission`).
     pub truncated: bool,
+    pub diff: Option<EditDiff>,
     pub provider: proto::AgentKind,
     pub since_ms: u64,
     /// Set once answered; the card stays consumed until the pane's status
@@ -474,6 +624,8 @@ pub struct PendingView {
     pub title: String,
     pub detail: String,
     pub truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff: Option<EditDiff>,
     pub since: u64,
     /// Houston knows the keys this provider's prompt takes for this card.
     pub decidable: bool,
@@ -494,6 +646,7 @@ impl Pending {
             title: self.title.clone(),
             detail: self.detail.clone(),
             truncated: self.truncated,
+            diff: self.diff.clone(),
             since: self.since_ms,
             decidable: decision_support(self.provider, &self.card).is_ok(),
             sent: self.answered == Some(Answered::Sent),
@@ -510,6 +663,7 @@ struct SessionFeed {
     pending: Option<Pending>,
     last_reply_excerpt: Option<String>,
     last_step: Option<String>,
+    turn: Turn,
 }
 
 impl SessionFeed {
@@ -560,6 +714,7 @@ pub enum Refusal {
     Unsupported(String),
     /// Approving a target the device could not see in full.
     Partial,
+    PartialDiff { lines: usize, line_chars: usize, bytes: usize },
     /// The choice does not answer this card.
     Choice(String),
 }
@@ -578,6 +733,8 @@ impl Default for Store {
                 bytes: 0,
                 collecting: false,
                 epoch: new_epoch(),
+                activity: VecDeque::new(),
+                activity_seq: 0,
             }),
         }
     }
@@ -588,6 +745,8 @@ struct StoreInner {
     bytes: usize,
     collecting: bool,
     epoch: String,
+    activity: VecDeque<ActivityEntry>,
+    activity_seq: u64,
 }
 
 fn new_epoch() -> String {
@@ -611,6 +770,8 @@ impl Store {
             }
             inner.collecting = on;
             inner.sessions.clear();
+            inner.activity.clear();
+            inner.activity_seq = 0;
             inner.bytes = 0;
             inner.epoch = new_epoch();
         })
@@ -633,6 +794,14 @@ impl Store {
                     feed.last_reply_excerpt = Some(cut_chars(&one_line(text), EXCERPT_MAX_CHARS));
                 }
                 FeedItem::Step { tool, target } => {
+                    let count = match step_category(tool) {
+                        "read" => &mut feed.turn.counts.read,
+                        "search" => &mut feed.turn.counts.search,
+                        "edit" => &mut feed.turn.counts.edit,
+                        "run" => &mut feed.turn.counts.run,
+                        _ => &mut feed.turn.counts.other,
+                    };
+                    *count = count.saturating_add(1);
                     feed.last_step = Some(cut_chars(
                         &if target.is_empty() {
                             tool.clone()
@@ -642,7 +811,10 @@ impl Store {
                         STEP_MAX_CHARS,
                     ));
                 }
-                FeedItem::Prompt { .. } => feed.last_step = None,
+                FeedItem::Prompt { .. } => {
+                    feed.last_step = None;
+                    feed.turn = Turn { prompted_at: Some(now_ms), ..Default::default() };
+                }
                 _ => {}
             }
             feed.next_seq += 1;
@@ -674,6 +846,56 @@ impl Store {
                 inner.bytes -= w;
             }
             Some(seq)
+        })
+    }
+
+    pub fn activity_push(&self, session: u32, kind: &'static str, title: &str, excerpt: Option<&str>, now_ms: u64) {
+        self.with(|inner| {
+            if !inner.collecting { return; }
+            inner.activity_seq += 1;
+            inner.activity.push_back(ActivityEntry {
+                seq: inner.activity_seq,
+                at: now_ms,
+                session,
+                kind,
+                title: cut_chars(&mask_text(title), ACTIVITY_TITLE_MAX_CHARS),
+                excerpt: excerpt.map(|s| cut_chars(&mask_text(s), EXCERPT_MAX_CHARS)),
+            });
+            while inner.activity.len() > ACTIVITY_MAX_ENTRIES {
+                inner.activity.pop_front();
+            }
+        })
+    }
+
+    pub fn activity_page(&self, after: u64) -> ActivityPage {
+        self.with(|inner| ActivityPage {
+            epoch: inner.epoch.clone(),
+            entries: inner.activity.iter().filter(|e| e.seq > after).cloned().collect(),
+            truncated: inner.activity.front().is_some_and(|e| after.saturating_add(1) < e.seq && after < inner.activity_seq),
+        })
+    }
+
+    pub fn note_edited_path(&self, session: u32, path: &str) {
+        self.with(|inner| {
+            if !inner.collecting { return; }
+            let files = &mut inner.sessions.entry(session).or_default().turn.files;
+            let path = cut_chars(&mask_text(path), TURN_PATH_MAX_CHARS);
+            if !path.is_empty() && files.len() < TURN_FILES_MAX && !files.contains(&path) {
+                files.push(path);
+            }
+        })
+    }
+
+    pub fn end_turn(&self, session: u32, outcome: &'static str, now_ms: u64) -> Option<FeedItem> {
+        self.with(|inner| {
+            if !inner.collecting { return None; }
+            let turn = std::mem::take(&mut inner.sessions.entry(session).or_default().turn);
+            Some(FeedItem::TurnEnd {
+                duration_ms: turn.prompted_at.map_or(0, |at| now_ms.saturating_sub(at)),
+                outcome,
+                counts: turn.counts,
+                files: turn.files,
+            })
         })
     }
 
@@ -803,8 +1025,17 @@ impl Store {
                 return Err(Refusal::Answered(answered));
             }
             decision_support(p.provider, &p.card).map_err(Refusal::Unsupported)?;
-            if p.truncated && matches!(choice, Choice::Approve | Choice::Always) {
-                return Err(Refusal::Partial);
+            if matches!(choice, Choice::Approve | Choice::Always) {
+                if let Some(diff) = p.diff.as_ref().filter(|d| d.truncated) {
+                    return Err(Refusal::PartialDiff {
+                        lines: diff.lines.len(),
+                        line_chars: diff.lines.iter().map(|l| l.text.chars().count()).max().unwrap_or(0),
+                        bytes: serde_json::to_vec(diff).map_or(0, |v| v.len()),
+                    });
+                }
+                if p.truncated {
+                    return Err(Refusal::Partial);
+                }
             }
             let plan = decision_keys(p.provider, &p.card, choice).map_err(Refusal::Choice)?;
             p.answered = Some(Answered::Sent);
@@ -836,6 +1067,18 @@ impl Store {
                 .and_then(|f| f.pending.as_mut())
             {
                 Some(p) if p.seq != 0 && p.answered.is_none() => {
+                    p.answered = Some(Answered::Elsewhere);
+                    true
+                }
+                _ => false,
+            }
+        })
+    }
+
+    pub fn note_input_answer(&self, session: u32) -> bool {
+        self.with(|inner| {
+            match inner.sessions.get_mut(&session).and_then(|f| f.pending.as_mut()) {
+                Some(p) if matches!(p.card, Card::Input) && p.answered.is_none() => {
                     p.answered = Some(Answered::Elsewhere);
                     true
                 }
@@ -1238,6 +1481,7 @@ mod tests {
             card: Card::Permission { always: false },
             title: "Bash".into(),
             detail: "npm test".into(),
+            diff: None,
             truncated,
             provider: CLAUDE,
             since_ms: 0,

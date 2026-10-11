@@ -31,7 +31,10 @@ dictation. The security-sensitive surfaces include:
   per-device bearer tokens (only their SHA-256 is stored), the Host and Origin checks and
   the authentication lockout. A paired device can read and type into every pane, which is
   equivalent to a shell as the user; a way to obtain that access without pairing, or to
-  reach the control endpoint through this listener, is in scope.
+  reach the control endpoint through this listener, is in scope. Hook drops carry bounded,
+  masked tool targets and Claude edit previews as an exception to digest-only tool inputs.
+  The daemon retains these previews only in memory while remote access is on; incomplete
+  previews cannot be approved remotely.
 - **Writes into another CLI's own config** — the managed-marker blocks Houston installs
   into an agent CLI's hooks or MCP configuration.
 

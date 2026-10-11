@@ -1144,30 +1144,44 @@ paired devices. It is not `/ws`: it never serves `/ws`, `/mcp`, `/orchestrate`,
 `/task`, `/inbox`, `/harness` or `/manage`, and it carries no PTY byte stream.
 Bodies are JSON (`Content-Type: application/json`), at most `BODY_LIMIT` bytes.
 Errors are `{"error": "<message naming the value and the expected shape>"}`.
+A 401 for a known revoked token adds `"reason": "revoked"`; the daemon remembers the last
+256 revoked token hashes in memory, so an older revocation or daemon restart can omit it.
 
 | Route | Auth | Body / query | Reply |
 |---|---|---|---|
 | `GET /`, `/app.js`, `/app.css`, `/manifest.webmanifest`, `/icon.svg` | none | — | the embedded web client; `/` carries a CSP that admits scripts and styles only from this listener and no inline code |
 | `POST /api/pair` | pairing code | `{code, device_name}` (1–64 printable characters) | `{token, device_id}`. The token (256 bits, hex) is returned once; the daemon stores its SHA-256 |
-| `GET /api/me` | device | — | `{device_id, name}` |
-| `GET /api/sessions` | device | — | `{sessions: [{id, title, workspace: {name, path}, kind: AgentKind, state: SessionState, status: AgentStatus?, reason: null, status_since?, pending?: Pending, waiting_since?, last_reply_excerpt? (≤ 160 characters), last_step? (≤ 120)}]}`, needs-input first, then working, idle, others, and panes that are not running. `pending` and `waiting_since` are set only while the pane needs input |
+| `GET /api/activity` | device | `?after=` a global sequence number, default 0 | `{epoch, entries: [{seq, at (epoch ms), session, kind: finished | needs_you | answered, title, excerpt?}], truncated}`. A 500-entry memory ring; paging and epoch semantics match `/feed`. Titles are masked and capped at 300 characters, excerpts at 160. `answered` excerpts identify `from this phone` or `in the terminal` |
+| `GET /api/me` | device | — | `{device_id, name, host: {name, version}, connection: {url, https}}`. Host name is masked and capped at 128 characters; version is the daemon package version; URL is the configured public origin or HTTP bind origin, with `https` indicating its scheme |
+| `GET /api/sessions` | device | — | `{sessions: [{id, title, parent: number | null, role: string | null, workspace: {name, path}, kind: AgentKind, state: SessionState, status: AgentStatus?, reason: null, status_since?, pending?: Pending, waiting_since?, last_reply_excerpt? (≤ 160 characters), last_step? (≤ 120)}]}`, needs-input first, then working, idle, others, and panes that are not running. `pending` and `waiting_since` are set only while the pane needs input. `parent` and masked `role` come from daemon orchestration state |
 | `GET /api/sessions/{id}/feed` | device | `?after=` a sequence number, default 0 | `{id, epoch, entries: FeedEntry[], first_seq, last_seq, truncated, pending?: Pending}`: the entries after `after` still held. `truncated` means some entries after `after` were already evicted. Sequence numbers start at 1 per pane and restart with each `epoch` (a 16-digit hex string that changes when the daemon starts or remote access is turned back on) |
 | `POST /api/sessions/{id}/decide` | device | `{epoch, entry_seq, choice, text?}`; `choice` is `approve`, `always` or `deny` for a permission, an option number (`"1"`…) or `other` with `text` for a question (`other` is refused, 400, when the question has `previews`) | `{ok: true}` once the provider's keys for that choice were written to the PTY. 409 when `epoch` is not the current one, `entry_seq` is not the pane's pending card, the card was already answered from a device or in the terminal, the permission's target is `truncated` and the choice approves it, or Houston has no key mapping for the provider or the card's shape (the message names which); 400 for a choice the card does not offer |
-| `GET /api/events` | device | — | `text/event-stream`: `ready` once, then `session` `{id}` when a pane's status or card changes, `feed` `{id, seq}` when its feed grows, and `resync` when this reader fell behind; a comment every 15 s. The stream ends when remote access is turned off, its address changes, or the device is revoked. At most `EVENT_STREAMS_MAX` (8) streams at once, else 503 |
+| `GET /api/events` | device | — | `text/event-stream`: `ready` once, then `session` `{id}` when a pane's status or card changes, `feed` `{id, seq}` when its feed grows, and `resync` when this reader fell behind; a comment every 15 s. Before closing on revocation or disabling, the stream sends `ended` `{"reason":"revoked"}` or `{"reason":"disabled"}`. Address changes close it without an `ended` reason. At most `EVENT_STREAMS_MAX` (8) streams at once, else 503 |
 | `GET /api/sessions/{id}/screen` | device | `?lines=` 1–200, default 60 | `{id, lines: string[], source}`. `source: "screen"` is the same text extraction as `pane_read`; where the build has no terminal emulator (Windows) it is `"scrollback"`, the raw output tail with escape sequences removed. It never attaches or resizes |
 | `POST /api/sessions/{id}/input` | device | `{text?: string (≤ 4096 characters, no control characters but newline), keys?: string[] (≤ 16)}` | `{ok: true}`. Text is written first, then keys after a short settle, through the desktop's stdin path. Multi-line text is sent as a bracketed paste only when the pane's program enabled paste mode (2004), else refused with 409. One request per pane at a time; a concurrent one gets 409. Keys: `esc enter up down tab ctrl+c y n left right backspace space` |
 
 `FeedEntry` is `{seq, at (epoch ms), type, …}` with `type` one of `prompt {text}`,
 `reply {text}` (markdown, ≤ 16 KiB), `question {questions: [{header, question, options:
 [{label, description}], multi_select, previews}], answers?}`, `answer {answers}`,
-`permission {tool, target, always, truncated, outcome?}`, `step {tool, target}` and
-`status {status: finished | exited}`. Text is masked by the credential redactor before it
+`permission {tool, target, always, truncated, outcome?, diff?}`, `step {tool, target}` and
+`status {status: finished | exited}`, and
+`turn_end {duration_ms, outcome: done | stopped | failed, counts: {read, search, edit, run,
+other}, files: string[]}`. Turn duration starts at the prompt (0 when no prompt was seen).
+Counts come from completed steps and survive feed eviction; files contain at most 32 distinct
+masked edited paths, each at most 300 characters. Supported failure/interruption hooks select
+`failed`/`stopped`; unknown outcomes use `done`. Text is masked by the credential redactor before it
 leaves the hook client; a permission `target` keeps its line breaks, loses invisible
 formatting characters, and is `truncated` when it was cut or had such characters removed.
-`Pending` is `{epoch, seq, type: question | permission | input, title, detail, truncated,
+`Pending` is `{epoch, seq, type: question | permission | input, title, detail, truncated, diff?,
 since, decidable, sent, answered_elsewhere}`; `sent` and `answered_elsewhere` stay set until
 the pane's status changes or a new card replaces it. `input` is a pane waiting without a
 structured request, which a device answers through `input`.
+
+For Claude Edit, MultiEdit and Write permissions, `diff` is
+`{path: string, lines: [{op: " " | "+" | "-", text: string}], truncated: bool}`.
+The preview shows removed then added lines from the hook input, with every line masked.
+It is bounded to 200 lines, 500 characters per line and 32 KiB of serialized JSON.
+A truncated preview refuses approval with 409; denial remains available.
 
 Device auth is `Authorization: Bearer <token>`. Every request's `Host` must name
 an allowed host (`localhost`, `127.0.0.1`, `[::1]`, the bind IP, the public URL's
@@ -1185,6 +1199,10 @@ lock that source out of token checks and pairing for 60 s; loopback callers
 (everything behind `tailscale serve`) are one source; a valid token is never
 locked out. The listener holds at most 64 connections and closes one that is
 idle for 30 s.
+
+ntfy publishes set the `Click` header to `<listener URL>#session=<id>`, using the
+configured public origin or the HTTP bind origin. Notification bodies contain no terminal
+content; optional pane titles pass through the feed masker.
 
 ## Versioning rules
 

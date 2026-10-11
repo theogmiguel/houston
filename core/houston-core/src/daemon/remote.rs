@@ -46,6 +46,8 @@ pub struct RemoteWorkspace {
 pub struct RemoteSession {
     pub id: u32,
     pub title: String,
+    pub parent: Option<u32>,
+    pub role: Option<String>,
     pub workspace: RemoteWorkspace,
     pub kind: proto::AgentKind,
     pub state: proto::SessionState,
@@ -175,7 +177,7 @@ impl Daemon {
         *self.remote.config.lock().expect("remote config lock") = Some(next);
         self.remote.feed.set_collecting(enabled);
         if !enabled {
-            self.remote.stop_streams();
+            self.remote.stop_streams(Some("disabled"));
         }
         self.remote.reconfigured.send_modify(|n| *n += 1);
         self.remote_broadcast_state();
@@ -272,6 +274,7 @@ impl Daemon {
     }
 
     pub fn remote_device_revoke(&self, id: i64) -> Result<()> {
+        let hash = self.db.remote_device_hash(id)?;
         if !self.db.remote_device_delete(id)? {
             anyhow::bail!("no paired device has id {id}: expected an id from the device list");
         }
@@ -280,9 +283,20 @@ impl Daemon {
             .lock()
             .expect("remote last-seen lock")
             .remove(&id);
+        if let Some(hash) = hash {
+            self.remote.remember_revoked(hash);
+        }
         self.remote.stop_device_streams(id);
         self.remote_broadcast_state();
         Ok(())
+    }
+
+    pub(crate) fn remote_check_stream_device(&self, id: i64) {
+        if !self.remote_config().enabled {
+            self.remote.stop_streams(Some("disabled"));
+        } else if matches!(self.db.remote_device_hash(id), Ok(None)) {
+            self.remote.stop_device_streams(id);
+        }
     }
 
     /// `Err` is a database failure, which is neither a wrong token nor a revocation.
@@ -381,6 +395,8 @@ impl Daemon {
                 RemoteSession {
                     id: info.id,
                     title: info.title.clone(),
+                    parent: info.spawned_by,
+                    role: self.delegation_of(info.id).and_then(|d| d.role).map(|role| feed::mask(&role)),
                     workspace,
                     kind: info.detected_agent.unwrap_or(info.agent),
                     state: info.state,
@@ -493,6 +509,7 @@ impl Daemon {
             }
         }
         let write = |bytes: &[u8]| -> Result<(), ApiError> {
+            self.remote_note_keystroke_from(id, "from this phone");
             self.note_operator_keystroke(id, bytes);
             self.write_stdin_from_renderer(id, bytes)
                 .map_err(|e| ApiError::Conflict(format!("writing to pane {id}: {e}")))
@@ -515,7 +532,7 @@ impl Daemon {
 
     pub(crate) fn remote_note_status(&self, id: u32, status: proto::AgentStatus) {
         let now = now_ms();
-        self.remote.note_status(id, status, now);
+        let from = self.remote.note_status(id, status, now);
         {
             let mut seen = self.remote.seen.lock().expect("remote seen lock");
             if seen.len() > remote::SEEN_PRUNE_AT {
@@ -526,12 +543,19 @@ impl Daemon {
         // Every transition retires the card, even with remote access off, so a
         // card can never outlive the request it was built from.
         if status != proto::AgentStatus::NeedsInput {
+            if status == proto::AgentStatus::Working
+                && self.remote.feed.pending(id).is_some_and(|p| p.answered.is_none()) {
+                self.remote_activity(id, "answered", Some("in the terminal"));
+            }
             self.remote.feed.resolve_pending(id);
         }
         if !self.remote_config().enabled {
             return;
         }
         if status == proto::AgentStatus::NeedsInput {
+            if from != Some(status) {
+                self.remote_activity(id, "needs_you", None);
+            }
             self.remote.feed.set_pending(
                 id,
                 Pending {
@@ -539,6 +563,7 @@ impl Daemon {
                     card: Card::Input,
                     title: feed::card_title(&Card::Input, None),
                     detail: String::new(),
+                    diff: None,
                     provider: self.remote_provider(id),
                     truncated: false,
                     since_ms: now,
@@ -552,8 +577,20 @@ impl Daemon {
     /// A keystroke reached pane `id` from the desktop or a device: a card still
     /// open was answered there, so a device can no longer answer it with a tap.
     pub(crate) fn remote_note_keystroke(&self, id: u32) {
-        if self.remote.feed.note_keystroke(id) {
+        self.remote_note_keystroke_from(id, "in the terminal");
+    }
+
+    fn remote_note_keystroke_from(&self, id: u32, origin: &'static str) {
+        if self.remote.feed.note_keystroke(id) || self.remote.feed.note_input_answer(id) {
+            self.remote_activity(id, "answered", Some(origin));
             self.remote_emit(id, Change::Session(id));
+        }
+    }
+
+    fn remote_activity(&self, id: u32, kind: &'static str, excerpt: Option<&str>) {
+        if let Ok(session) = self.remote_target(id) {
+            let title = session.title.lock().expect("title lock").clone();
+            self.remote.feed.activity_push(id, kind, &title, excerpt, now_ms());
         }
     }
 
@@ -621,6 +658,7 @@ impl Daemon {
                         title: feed::card_title(&card, None),
                         card,
                         detail: String::new(),
+                        diff: None,
                         truncated: false,
                         provider,
                         since_ms: now,
@@ -652,6 +690,7 @@ impl Daemon {
                 target,
                 always,
                 truncated,
+                diff,
             }) => {
                 let Some(seq) = self.remote_push(
                     id,
@@ -661,6 +700,7 @@ impl Daemon {
                         always: *always,
                         truncated: *truncated,
                         outcome: None,
+                        diff: diff.clone(),
                     },
                     now,
                 ) else {
@@ -674,6 +714,7 @@ impl Daemon {
                         title: feed::card_title(&card, Some(tool)),
                         card,
                         detail: target.clone(),
+                        diff: diff.clone(),
                         truncated: *truncated,
                         provider,
                         since_ms: now,
@@ -681,7 +722,10 @@ impl Daemon {
                     },
                 );
             }
-            Some(HookFeed::Step { tool, target }) => {
+            Some(HookFeed::Step { tool, target, edited_path }) => {
+                if let Some(path) = edited_path {
+                    self.remote.feed.note_edited_path(id, path);
+                }
                 self.remote_push(
                     id,
                     FeedItem::Step {
@@ -694,7 +738,8 @@ impl Daemon {
             Some(HookFeed::Prompt { .. }) | None => {}
         }
         let event = crate::agent_events::AgentEvent::from_provider(provider, &d.event);
-        let turn_ended = event == Some(crate::agent_events::AgentEvent::TurnEnded)
+        use crate::agent_events::AgentEvent;
+        let turn_ended = matches!(event, Some(AgentEvent::TurnEnded | AgentEvent::TurnFailed | AgentEvent::TurnInterrupted))
             && d.fully_idle != Some(false)
             && d.subagent_type.is_none()
             && d.agent_id.is_none();
@@ -711,7 +756,17 @@ impl Daemon {
             }
         }
         if turn_ended {
+            let outcome = match event {
+                Some(AgentEvent::TurnFailed) => "failed",
+                Some(AgentEvent::TurnInterrupted) => "stopped",
+                _ => "done",
+            };
+            if let Some(summary) = self.remote.feed.end_turn(id, outcome, now) {
+                self.remote_push(id, summary, now);
+            }
             self.remote_push(id, FeedItem::Status { status: "finished" }, now);
+            let excerpt = d.last_message.as_deref().map(feed::reply_text);
+            self.remote_activity(id, "finished", excerpt.as_deref());
         }
         if self.remote.feed.session_count() > remote::SEEN_PRUNE_AT {
             let live: std::collections::HashSet<u32> = self
@@ -797,6 +852,7 @@ impl Daemon {
                 return Err(ApiError::Conflict(format!("writing to pane {id}: {e}")));
             }
         }
+        self.remote_activity(id, "answered", Some("from this phone"));
         self.remote_emit(id, Change::Session(id));
         Ok(())
     }
@@ -856,7 +912,7 @@ impl Daemon {
                         }
                         // Event streams never end on their own; graceful shutdown
                         // waits for every connection, so they are ended here.
-                        this.remote.stop_streams();
+                        this.remote.stop_streams(if this.remote_config().enabled { None } else { Some("disabled") });
                         let _ = stopping.send(());
                     };
                     let drained = async {
@@ -1035,12 +1091,19 @@ fn decision_refused(id: u32, entry_seq: u64, refusal: Refusal) -> ApiError {
         )),
         Refusal::Answered(Answered::Elsewhere) => ApiError::Conflict(format!(
             "entry {entry_seq} was answered in pane {id}'s terminal: a key reached the pane after \
-             the request arrived; check the Terminal tab"
+             the request arrived; use View screen"
         )),
         Refusal::Unsupported(why) => ApiError::Conflict(why),
         Refusal::Partial => ApiError::Conflict(format!(
             "entry {entry_seq} shows only part of what the tool runs (it was cut, or invisible \
              characters were removed): read it in pane {id}'s terminal and approve there, or deny"
+        )),
+        Refusal::PartialDiff { lines, line_chars, bytes } => ApiError::Conflict(format!(
+            "approval of entry {entry_seq} for pane {id} refused: its edit preview is incomplete; \
+             retained {lines} lines (DIFF_MAX_LINES={}), longest retained line {line_chars} characters \
+             (DIFF_LINE_MAX_CHARS={}), serialized preview {bytes} bytes (DIFF_MAX_BYTES={}); \
+             read the full request in the pane's terminal and approve there, or deny",
+            feed::DIFF_MAX_LINES, feed::DIFF_LINE_MAX_CHARS, feed::DIFF_MAX_BYTES
         )),
         Refusal::Choice(why) => ApiError::BadRequest(why),
     }

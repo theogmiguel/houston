@@ -73,7 +73,7 @@ pub fn compose(
     open_url: &str,
     session: u32,
 ) -> Message {
-    let name: String = pane_name
+    let name: String = super::feed::mask(pane_name)
         .chars()
         .filter(|c| !c.is_control())
         .take(PANE_NAME_MAX)
@@ -88,7 +88,7 @@ pub fn compose(
     };
     Message {
         body,
-        click: format!("{open_url}/#session={session}"),
+        click: format!("{}#session={session}", open_url.trim_end_matches('/')),
         priority: match kind {
             Kind::NeedsInput => "high",
             Kind::Finished => "default",
@@ -131,7 +131,7 @@ mod tests {
             7,
         );
         assert_eq!(m.body, "An agent needs your input");
-        assert_eq!(m.click, "https://box.ts.net/#session=7");
+        assert_eq!(m.click, "https://box.ts.net#session=7");
         assert_eq!(m.priority, "high");
     }
 
