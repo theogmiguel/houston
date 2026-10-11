@@ -27,7 +27,7 @@ function snapshot(startSeq = 0): Envelope {
   return runOp({ kind: 'snapshot', startSeq })
 }
 
-type Locator = { path: number[]; tags: string[] }
+type Locator = { path: number[]; tags: string[]; documentIdentity: string; elementIdentity: string }
 
 function opFor(
   snap: Envelope,
@@ -525,6 +525,17 @@ describe('reveal', () => {
 
 
 describe('consent identity', () => {
+  it('cleans the old snapshot listeners and rejects an in-flight old locator', () => {
+    document.body.innerHTML = '<button>Send</button>'
+    const old = snapshot()
+    const ref = elements(old)[0].ref
+    const oldAction = opFor(old, ref, 'click')
+    const locator = (old.result!.locators as Record<string, Locator>)[ref]
+    const fresh = runOp({ kind: 'snapshot', previousDocumentIdentity: locator.documentIdentity })
+    expect(runOp(oldAction).ok).toBe(false)
+    expect(runOp(opFor(fresh, elements(fresh)[0].ref, 'click')).ok).toBe(true)
+  })
+
   it('rejects identical replacement markup even when identity attributes are cloned', () => {
     document.body.innerHTML = '<button>Send</button>'
     const snap = snapshot()
