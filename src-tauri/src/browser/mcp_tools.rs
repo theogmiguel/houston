@@ -580,7 +580,11 @@ async fn gate(
         screenshot,
     )
     .await
-    .map_err(ToolError)
+    .map_err(ToolError)?;
+    if super::tool_ref_get(app, surface, element_ref).as_ref() != Some(locator) {
+        return Err(unknown_ref_error(element_ref));
+    }
+    Ok(())
 }
 
 fn required_ref(args: &Value, tool: &str) -> Result<String, ToolError> {
@@ -629,6 +633,8 @@ fn locator_op(
         "ref": element_ref,
         "path": locator.path,
         "tags": locator.tags,
+        "documentIdentity": locator.document_identity,
+        "elementIdentity": locator.element_identity,
     });
     if let Value::Object(extra) = extra {
         for (k, v) in extra {
@@ -647,7 +653,8 @@ async fn snapshot(app: &AppHandle, surface: &str) -> Result<ToolOutput, ToolErro
     let out = page_op(
         app,
         surface,
-        json!({ "kind": "snapshot", "startSeq": start_seq }),
+        json!({ "kind": "snapshot", "startSeq": start_seq,
+            "cleanupIdentity": super::tool_refs_cleanup_identity(app, surface) }),
     )
     .await?;
     let Some(mut result) = out.structured else {
@@ -691,7 +698,10 @@ fn parse_locators(
             (Some(path), Some(tags)) if path.len() == tags.len() => {
                 out.insert(
                     element_ref.clone(),
-                    super::tool_refs::Locator { path, tags },
+                    super::tool_refs::Locator { path, tags,
+                        document_identity: locator.get("documentIdentity").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or_else(|| ToolError(format!("missing document identity in locator {locator}")))?.into(),
+                        element_identity: locator.get("elementIdentity").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or_else(|| ToolError(format!("missing element identity in locator {locator}")))?.into(),
+                    },
                 );
             }
             _ => {
@@ -844,13 +854,15 @@ mod tests {
     #[test]
     fn snapshot_locators_parse_into_the_store_shape() {
         let raw = json!({
-            "e1": { "path": [1, 0], "tags": ["body", "button"] },
-            "e2": { "path": [], "tags": [] }
+            "e1": { "documentIdentity": "document", "elementIdentity": "element", "path": [1, 0], "tags": ["body", "button"] },
+            "e2": { "documentIdentity": "document", "elementIdentity": "element", "path": [], "tags": [] }
         });
         let parsed = parse_locators(&raw).unwrap();
         assert_eq!(
             parsed.get("e1"),
             Some(&super::super::tool_refs::Locator {
+                document_identity: "document".into(),
+                element_identity: "element".into(),
                 path: vec![1, 0],
                 tags: vec!["body".into(), "button".into()],
             })
@@ -860,7 +872,7 @@ mod tests {
 
     #[test]
     fn a_malformed_locator_is_refused_and_named() {
-        let raw = json!({ "e3": { "path": [0], "tags": ["body", "button"] } });
+        let raw = json!({ "e3": { "documentIdentity": "document", "elementIdentity": "element", "path": [0], "tags": ["body", "button"] } });
         let err = parse_locators(&raw).unwrap_err().0;
         assert!(err.contains("\"e3\""), "{err}");
         assert!(err.contains("malformed"), "{err}");
@@ -941,6 +953,8 @@ mod tests {
     #[test]
     fn the_page_op_carries_the_locator_beside_the_ref() {
         let locator = super::super::tool_refs::Locator {
+            document_identity: "document".into(),
+            element_identity: "element".into(),
             path: vec![1, 0],
             tags: vec!["body".into(), "input".into()],
         };

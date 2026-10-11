@@ -17,11 +17,18 @@ where
 {
     use std::sync::mpsc::channel;
 
+    let operation = if verb == "commit a rect" {
+        super::operation::Operation::latest(format!("layout:{id}"), VIEW_HOP_TIMEOUT)
+    } else {
+        super::operation::Operation::new(VIEW_HOP_TIMEOUT)
+    };
+    let dispatch = operation.dispatch();
     let (tx, rx) = channel();
     let id_owned = id.to_string();
     let verb_owned = verb.to_string();
     webview
         .with_webview(move |platform| {
+            if !dispatch.is_live() { return; }
             let _ = tx.send(f(&platform));
         })
         .map_err(|err| {
@@ -29,7 +36,7 @@ where
         })?;
     rx.recv_timeout(VIEW_HOP_TIMEOUT).map_err(|err| {
         format!(
-            "browser: {verb} for child {id:?} did not report back within {}s: {err}",
+            "browser: {verb} for child {id:?} did not report back within {}s; queued work cancelled, an already executing operation has unknown outcome: {err}",
             VIEW_HOP_TIMEOUT.as_secs()
         )
     })?

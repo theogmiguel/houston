@@ -388,12 +388,44 @@ behind the `bench` feature.
 The invoke handler wraps that list with a security gate: **any command invoked from a
 content-only browser webview label is refused** — browser panes hold no app authority.
 
+Browser consent binds the current document and the actual DOM node. WebKit toolkit
+worlds are ephemeral, so globals cannot hold that identity. Private node-owned event
+listeners prove identity across evaluations without putting reusable proof keys in
+page markup. A new snapshot removes the previous snapshot's listeners; navigation
+and surface destruction also invalidate native refs and pending consent.
+
+Browser relay requests belong to their connection and have bounded concurrency and
+absolute expiry. Disconnect drains cancelled owners before reconnecting. Confirmation
+cleanup dismisses the prompt and removes its temporary capture even when the waiting
+future is cancelled. Queued native operations check cancellation and expiry before
+execution; geometry generations discard superseded positions. A timeout after native
+execution begins reports an unknown outcome rather than promising no side effect.
+
 ## The paint-freeze watchdog
 
 Two tiers. Tier 1 is Rust (`src-tauri/src/watchdog/`): a pure transition function
 (`machine.rs`), a three-clock classifier (`clocks.rs`, the only file there allowed to read
 `SystemTime`), and a liveness probe (`probe.rs`) that is an `eval` round trip whose
 *absence* is the signal. Tier 2 is `ui/src/renderer/src/watchdog.ts`.
+
+Native recovery is opt-in through `HOUSTON_WATCHDOG_RECOVER=1`. A valid, current probe
+nonce and timestamps establish JavaScript liveness; empty native evaluation callbacks do
+not. Completed navigation reopens verification after a failed renderer, without resetting
+the reload budget. Automatic escalation rechecks visibility, inspector and wake grace
+at each attempt. Cooldown delays a pending reload, not the decision to stop trying after
+the ladder is exhausted.
+
+The native tray can quit independently of JavaScript. Confirmed shutdown contacts local
+and WSL daemons concurrently with bounded requests; failures require a native decision
+before the client exits. Closing a detected failed main window exits the client even if
+other windows are open. Client exit leaves sessions running unless daemon shutdown was
+explicitly confirmed.
+
+Recovery remains experimental: JavaScript liveness does not prove that painting or React
+initialization recovered, and native prompt results are not yet tagged by incident.
+Linux supports native recovery confirmation and forced web-process termination. Other
+platforms explicitly withhold focused recovery when native confirmation is unavailable;
+forced termination reports its lack of support and the ladder retries reload only.
 
 | Tier 2 constant | Value |
 |---|---|

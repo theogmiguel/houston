@@ -91,6 +91,9 @@ async fn accept_loop(listener: TcpListener, shared: Arc<Shared>) {
 
 async fn ensure_gate(shared: &Shared) -> bool {
     let mut last = shared.last_attempt.lock().await;
+    if shared.closing.load(Ordering::SeqCst) {
+        return false;
+    }
     if !shared.needs_ensure.load(Ordering::SeqCst) {
         return true;
     }
@@ -99,6 +102,9 @@ async fn ensure_gate(shared: &Shared) -> bool {
     }
     if let Some(at) = *last {
         tokio::time::sleep_until(at + shared.retry_delay).await;
+    }
+    if shared.closing.load(Ordering::SeqCst) {
+        return false;
     }
     *last = Some(Instant::now());
     match shared.backend.ensure().await {
@@ -216,6 +222,28 @@ mod tests {
             .expect("the relay closes the client")
             .unwrap();
         buf
+    }
+
+    #[tokio::test]
+    async fn close_cancels_an_ensure_already_waiting_out_retry_delay() {
+        let (backend, _daemons) = fake(vec![Ok(())]);
+        let relay = Relay::start(backend.clone(), Duration::from_millis(50))
+            .await
+            .unwrap();
+        relay.shared.needs_ensure.store(true, Ordering::SeqCst);
+        *relay.shared.last_attempt.lock().await = Some(Instant::now());
+        let shared = relay.shared.clone();
+        let gate = tokio::spawn(async move { ensure_gate(&shared).await });
+        // Receipt: the gate has acquired last_attempt and is waiting on retry time.
+        loop {
+            if relay.shared.last_attempt.try_lock().is_err() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        relay.close();
+        assert!(!gate.await.unwrap());
+        assert!(backend.ensures.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

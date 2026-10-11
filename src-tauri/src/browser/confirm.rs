@@ -60,6 +60,8 @@ pub enum Verdict {
 }
 
 struct Waiting {
+    deadline: std::time::Instant,
+    surface_id: String,
     tx: oneshot::Sender<Verdict>,
     screenshot: Option<std::path::PathBuf>,
 }
@@ -114,11 +116,20 @@ impl ConfirmRegistry {
         &self,
         tx: oneshot::Sender<Verdict>,
         screenshot: Option<std::path::PathBuf>,
+        surface_id: String,
     ) -> String {
         let mut state = self.0.lock().expect("confirm registry lock");
         state.next += 1;
         let id = format!("act-{}", state.next);
-        state.pending.insert(id.clone(), Waiting { tx, screenshot });
+        state.pending.insert(
+            id.clone(),
+            Waiting {
+                deadline: super::operation::deadline_after(DECISION_TIMEOUT),
+                tx,
+                screenshot,
+                surface_id,
+            },
+        );
         id
     }
 
@@ -128,6 +139,20 @@ impl ConfirmRegistry {
             .expect("confirm registry lock")
             .pending
             .remove(id)
+    }
+
+    pub fn cancel_surface(&self, surface: &str) -> Vec<String> {
+        let mut state = self.0.lock().expect("confirm registry lock");
+        let ids: Vec<_> = state
+            .pending
+            .iter()
+            .filter(|(_, waiting)| waiting.surface_id == surface)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &ids {
+            state.pending.remove(id);
+        }
+        ids
     }
 
     pub fn screenshot_for(&self, id: &str) -> Option<std::path::PathBuf> {
@@ -161,6 +186,9 @@ impl ConfirmRegistry {
                 DECISION_TIMEOUT.as_secs()
             ));
         };
+        if std::time::Instant::now() >= waiting.deadline {
+            return Err(format!("browser: action {id:?} expired; nothing was performed and workspace trust was not changed"));
+        }
         if approved && trust_workspace {
             self.trust(workspace_id);
         }
@@ -179,6 +207,23 @@ impl ConfirmRegistry {
     }
 }
 
+struct PendingGuard<'a> {
+    registry: &'a ConfirmRegistry,
+    id: String,
+    screenshot: Option<std::path::PathBuf>,
+    resolved: Box<dyn Fn(&str) + Send + 'a>,
+}
+
+impl Drop for PendingGuard<'_> {
+    fn drop(&mut self) {
+        self.registry.take(&self.id);
+        (self.resolved)(&self.id);
+        if let Some(path) = &self.screenshot {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 pub async fn await_decision(
     app: &AppHandle,
     registry: &ConfirmRegistry,
@@ -186,10 +231,21 @@ pub async fn await_decision(
     screenshot: Option<std::path::PathBuf>,
 ) -> Result<(), String> {
     if registry.is_trusted(&request.workspace_id) {
+        if let Some(path) = screenshot {
+            let _ = std::fs::remove_file(path);
+        }
         return Ok(());
     }
     let (tx, rx) = oneshot::channel();
-    let id = registry.register(tx, screenshot);
+    let id = registry.register(tx, screenshot.clone(), request.surface_id.clone());
+    let _guard = PendingGuard {
+        registry,
+        id: id.clone(),
+        screenshot,
+        resolved: Box::new(|id| {
+            let _ = app.emit(RESOLVED_EVENT, &serde_json::json!({ "id": id }));
+        }),
+    };
     let verb = request.kind.verb();
     let request = ConfirmRequest {
         id: id.clone(),
@@ -205,8 +261,6 @@ pub async fn await_decision(
     }
 
     let outcome = tokio::time::timeout(DECISION_TIMEOUT, rx).await;
-    registry.take(&id);
-    let _ = app.emit(RESOLVED_EVENT, &serde_json::json!({ "id": id }));
 
     match outcome {
         Ok(Ok(Verdict::Approved)) | Ok(Ok(Verdict::ApprovedAndTrusted)) => Ok(()),
@@ -235,6 +289,60 @@ mod tests {
         ConfirmRegistry::new()
     }
 
+    #[tokio::test]
+    async fn cancelling_the_wait_removes_prompt_and_temporary_capture() {
+        let reg = std::sync::Arc::new(registry());
+        let temp = tempfile::tempdir().unwrap();
+        let shot = temp.path().join("consent.png");
+        std::fs::write(&shot, b"capture").unwrap();
+        let (tx, rx) = oneshot::channel();
+        let id = reg.register(tx, Some(shot.clone()), "surface".into());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let resolved = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let task = {
+            let reg = reg.clone();
+            let id = id.clone();
+            let shot = shot.clone();
+            let resolved = resolved.clone();
+            tokio::spawn(async move {
+                let _guard = PendingGuard {
+                    registry: &reg,
+                    id,
+                    screenshot: Some(shot),
+                    resolved: Box::new(move |_| {
+                        resolved.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }),
+                };
+                let _ = ready_tx.send(());
+                let _ = rx.await;
+            })
+        };
+        ready_rx.await.unwrap();
+        task.abort();
+        let _ = task.await;
+        assert_eq!(reg.pending_count(), 0);
+        assert!(!shot.exists());
+        assert!(resolved.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(reg.respond(&id, true, false, "/w").is_err());
+    }
+
+    #[tokio::test]
+    async fn expired_request_cannot_accept_a_late_answer_or_trust_grant() {
+        let reg = registry();
+        let (tx, rx) = oneshot::channel();
+        let id = super::super::operation::within_request(std::time::Instant::now(), async {
+            reg.register(tx, None, "surface".into())
+        })
+        .await;
+        assert!(reg
+            .respond(&id, true, true, "/fixture")
+            .unwrap_err()
+            .contains("expired"));
+        assert!(!reg.is_trusted("/fixture"));
+        assert!(rx.await.is_err());
+        assert_eq!(reg.pending_count(), 0);
+    }
+
     #[test]
     fn a_workspace_is_untrusted_until_someone_says_otherwise() {
         let reg = registry();
@@ -245,7 +353,7 @@ mod tests {
     async fn approving_with_trust_skips_the_gate_for_that_workspace_only() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         reg.respond(&id, true, true, "/home/dev/proj").unwrap();
 
         assert!(reg.is_trusted("/home/dev/proj"));
@@ -259,7 +367,7 @@ mod tests {
     async fn denying_never_trusts_even_if_the_box_was_ticked() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         reg.respond(&id, false, true, "/home/dev/proj").unwrap();
         assert!(
             !reg.is_trusted("/home/dev/proj"),
@@ -283,7 +391,7 @@ mod tests {
     async fn a_request_can_only_be_answered_once() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         assert!(reg.respond(&id, true, false, "/w").is_ok());
         assert!(
             reg.respond(&id, true, false, "/w").is_err(),
@@ -296,7 +404,7 @@ mod tests {
         let reg = registry();
         let shot = std::path::PathBuf::from("/tmp/tr-capture.png");
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, Some(shot.clone()));
+        let id = reg.register(tx, Some(shot.clone()), "surface".into());
 
         assert_eq!(reg.screenshot_for(&id), Some(shot));
         reg.respond(&id, false, false, "/w").unwrap();
@@ -312,7 +420,7 @@ mod tests {
     async fn a_request_with_no_capture_reports_none_rather_than_a_stale_path() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         assert_eq!(reg.screenshot_for(&id), None);
     }
 
@@ -346,7 +454,7 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for _ in 0..50 {
             let (tx, _rx) = oneshot::channel();
-            let id = reg.register(tx, None);
+            let id = reg.register(tx, None, "surface".into());
             assert!(seen.insert(id.clone()), "id {id} was handed out twice");
             reg.take(&id);
         }
@@ -356,7 +464,7 @@ mod tests {
     fn the_pending_set_empties_as_requests_are_answered() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         assert_eq!(reg.pending_count(), 1);
         reg.respond(&id, false, false, "/w").unwrap();
         assert_eq!(reg.pending_count(), 0);

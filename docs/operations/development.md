@@ -229,6 +229,11 @@ build-dir = "{cargo-cache-home}/build-dir/{workspace-path-hash}"
 | `HOUSTON_DISABLE_AUTO_RESTORE=1` | Skips the normal boot-restore policy; every session comes back as a deferred husk instead of respawning its PTY. |
 | `HOUSTON_RESTORE_BUDGET=<n>` | How many sessions boot at once at startup; the rest come back deferred. `0` is valid (defers every husk). Capped at `RESTORE_BUDGET_MAX` (500) — a value above the cap is rejected, naming the cap and what was asked for. |
 | `HOUSTON_SHELL_INTEGRATION=0` | Kill-switch for the daemon's shell-integration injection. |
+| `HOUSTON_WATCHDOG=1` | Enables native renderer health probes in debug builds; release builds always install them. |
+| `HOUSTON_WATCHDOG_RECOVER=1` | Opts into automatic renderer recovery. The default only detects failures; native quit remains available. Recovery is experimental and subject to visibility, inspector, wake grace, cooldown and attempt limits. |
+| `HOUSTON_WATCHDOG_SELFTEST_TERMINATE_MS=<ms>` | Debug-only Linux fault injection: terminates the main renderer once through WebKit after the delay. Use only on an isolated test channel. |
+| `HOUSTON_WATCHDOG_SELFTEST_WEDGE_MS=<ms>` | Debug-only fault injection: blocks the renderer's JavaScript thread after the delay. Use only on an isolated test channel. |
+| `HOUSTON_EXIT_SELFTEST=<mode>` | Debug-only Linux native lifecycle fixture. Modes: `close-crashed`, `close-wedged`, `close-healthy`, `quit-crashed`, `stop-crashed`. Requires `HOUSTON_EXIT_SELFTEST_DIR` under the temporary directory, `HOME` at its `home` child and an explicit `exit-selftest-*` channel. An external harness must create a fixture PTY, write the `go` marker after `ready`, and verify process exit and daemon/session survival independently of cleanup. |
 | `HOUSTON_DEVTOOLS=1` | Opens the webview devtools on launch (`src-tauri/src/main.rs`). |
 | `RUST_LOG` | Standard `tracing`/`env_logger`-style filter, read by the daemon's logging setup. |
 | `TR_DEBUG_PTY_DUMP=<dir>` | Resolved once; when set, dumps raw PTY bytes to that directory for debugging. |
@@ -236,6 +241,24 @@ build-dir = "{cargo-cache-home}/build-dir/{workspace-path-hash}"
 | `HOUSTON_DAEMON_BIN_DIR=<dir>` | Where connect-or-spawn looks for `houston-core` (and, on Linux, `houston-supervisor`) instead of beside the app's own binary. Set by `dev.sh` to `core/target/debug`; unset in a packaged install, where the sidecars are frozen copies beside `houston`. |
 | `HOUSTON_UPDATE_MANIFEST_URL=<url>` | Replaces the update-manifest URL (`latest.json`) the daemon checks. |
 | `HOUSTON_MODEL_CATALOG_URL=<url>` | Replaces the model-catalog download URL. |
+
+The watchdog accepts `TR_WATCHDOG`, `TR_WATCHDOG_RECOVER` and
+`TR_WATCHDOG_SELFTEST_WEDGE_MS` for compatibility.
+When both names are set, the `HOUSTON_*` value wins, including `0` to disable.
+
+On an isolated X11 test display, run `scripts/test-native-exit.sh DEBUG_APP
+FRESH_CORE_BIN_DIR MODE REPO_ROOT` with `DISPLAY` and `HOUSTON_EXIT_TEST_DISPLAY`
+set to that display. Run each native exit mode separately. The wrapper provides a
+private test Secret Service and temporary home/channel, creates a real shell PTY, and
+checks client exit, daemon/session continuity and shutdown of the shell and supervisor
+from outside the client. It retains
+its evidence directory and stops only the daemon it created. Supply freshly built
+debug binaries, including `houston-core` and `houston-supervisor` in the core directory.
+The `close-wedged` case can produce an Ubuntu crash-report dialog after the client
+exits: WebKitGTK 2.50.4 deliberately crashes a blocked WebProcess ten seconds after
+its UI connection closes. Match the report's working directory to the retained
+fixture directory and the log message about the closed UI connection before
+attributing that report to the injected hang.
 
 `.cargo/config.toml` sets both URLs to a refused loopback port for every `cargo test` and
 `cargo run`, so a test daemon never reaches the real endpoints: an anonymous GitHub client is

@@ -15,6 +15,7 @@ use houston_core::wsl_ensure::{EnsureReport, EnsureState};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
@@ -118,6 +119,8 @@ pub struct Options {
 struct Inner {
     opts: Options,
     ops: tokio::sync::Mutex<()>,
+    stopping: AtomicBool,
+    generation: AtomicU64,
     envs: Mutex<BTreeMap<String, Env>>,
 }
 
@@ -284,6 +287,15 @@ fn check_capabilities(distro: &str, out: &RunOutput) -> Result<(), String> {
 }
 
 impl Inner {
+    fn start_gate(&self, generation: u64) -> Result<(), String> {
+        if self.stopping.load(Ordering::SeqCst)
+            || generation != self.generation.load(Ordering::SeqCst)
+        {
+            return Err("WSL startup was cancelled by Stop daemons; enable the environment manually after keeping Houston open".into());
+        }
+        Ok(())
+    }
+
     fn gate(&self) -> Result<(), String> {
         if self.opts.supported {
             Ok(())
@@ -348,7 +360,13 @@ impl Inner {
         outcome.and_then(|report| accept_report(distro, report))
     }
 
-    async fn start_env(self: &Arc<Self>, distro: &str, slot: u8) -> Result<(), String> {
+    async fn start_env(
+        self: &Arc<Self>,
+        distro: &str,
+        slot: u8,
+        generation: u64,
+    ) -> Result<(), String> {
+        self.start_gate(generation)?;
         self.envs.lock().expect("wsl envs lock").insert(
             distro.to_string(),
             Env {
@@ -375,6 +393,7 @@ impl Inner {
                 installed.install_dir
             );
         }
+        self.start_gate(generation)?;
         let report = self.ensure(distro, &installed.install_dir).await?;
         self.update_env(distro, |env| {
             env.install_dir = Some(installed.install_dir.clone());
@@ -387,9 +406,21 @@ impl Inner {
         let relay = relay::Relay::start(backend, self.opts.retry_delay)
             .await
             .map_err(|e| format!("opening the loopback relay for {distro}: {e}"))?;
+        let interrupted = self.start_gate(generation).is_err();
+        if interrupted {
+            relay.close();
+        }
         self.update_env(distro, |env| {
             env.relay = Some(relay);
-            env.state = EnvState::Ready;
+            env.state = if interrupted {
+                EnvState::Error
+            } else {
+                EnvState::Ready
+            };
+            if interrupted {
+                env.reason =
+                    Some("Startup crossed Stop daemons; enable manually to reconnect".into());
+            }
         });
         self.notify();
         Ok(())
@@ -411,6 +442,10 @@ impl Inner {
     }
 
     async fn reensure(self: Arc<Self>, distro: String) -> Result<(), String> {
+        let generation = self.generation.load(Ordering::SeqCst);
+        self.start_gate(generation)?;
+        let _ops = self.ops.lock().await;
+        self.start_gate(generation)?;
         let install_dir = self
             .envs
             .lock()
@@ -419,10 +454,16 @@ impl Inner {
             .and_then(|env| env.install_dir.clone())
             .ok_or_else(|| format!("{distro} has no recorded install directory"))?;
         let outcome = self.ensure(&distro, &install_dir).await;
+        let interrupted = self.start_gate(generation).is_err();
         match &outcome {
             Ok(report) => self.update_env(&distro, |env| {
-                env.state = EnvState::Ready;
-                env.reason = None;
+                env.state = if interrupted {
+                    EnvState::Error
+                } else {
+                    EnvState::Ready
+                };
+                env.reason = interrupted
+                    .then(|| "Reensure crossed Stop daemons; enable manually to reconnect".into());
                 env.token = report.token.clone();
             }),
             Err(e) => self.update_env(&distro, |env| {
@@ -504,6 +545,8 @@ impl WslManager {
             inner: Arc::new(Inner {
                 opts,
                 ops: tokio::sync::Mutex::new(()),
+                stopping: AtomicBool::new(false),
+                generation: AtomicU64::new(0),
                 envs: Mutex::new(BTreeMap::new()),
             }),
         }
@@ -583,6 +626,8 @@ impl WslManager {
     pub async fn enable(&self, name: String) -> Result<Enabled, String> {
         let inner = &self.inner;
         inner.gate()?;
+        let generation = inner.generation.load(Ordering::SeqCst);
+        inner.start_gate(generation)?;
         // Logged so the app log shows which request a state change answered.
         eprintln!("houston-tauri: wsl {name}: enable requested");
         if distros::is_utility(&name) {
@@ -592,6 +637,7 @@ impl WslManager {
             ));
         }
         let _ops = inner.ops.lock().await;
+        inner.start_gate(generation)?;
         let mut config = config::load(&inner.opts.state_dir)?;
         if let Some(env) = inner.envs.lock().expect("wsl envs lock").get(&name) {
             if env.state == EnvState::Ready && config.is_enabled(&name) {
@@ -620,7 +666,7 @@ impl WslManager {
         check_capabilities(&name, &inner.probe(&name).await?)?;
         let slot = config.enable(&name)?;
         config::save(&inner.opts.state_dir, &config)?;
-        if let Err(e) = inner.start_env(&name, slot).await {
+        if let Err(e) = inner.start_env(&name, slot, generation).await {
             inner.envs.lock().expect("wsl envs lock").remove(&name);
             if let Err(undo) = config
                 .disable(&name)
@@ -696,6 +742,47 @@ impl WslManager {
         Ok(Disabled { name })
     }
 
+    /// Pause all restart owners before snapshotting. A running blocking provision job
+    /// cannot be aborted truthfully; failure to drain therefore refuses confirmation.
+    pub async fn pause_for_stop(&self) -> Result<Vec<EnvEntry>, String> {
+        self.pause_for_stop_with_timeout(Duration::from_secs(20))
+            .await
+    }
+
+    async fn pause_for_stop_with_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<Vec<EnvEntry>, String> {
+        let inner = &self.inner;
+        inner.stopping.store(true, Ordering::SeqCst);
+        inner.generation.fetch_add(1, Ordering::SeqCst);
+        self.close_relays();
+        let _ops = tokio::time::timeout(timeout, inner.ops.lock())
+            .await.map_err(|_| format!("WSL: could not settle startup/reensure ownership within {timeout:?}; daemons cannot be confirmed stopped"))?;
+        // An in-flight startup may have published a relay while we drained it.
+        self.close_relays();
+        Ok(self.wsl_envs())
+    }
+
+    fn close_relays(&self) {
+        for env in self.inner.envs.lock().expect("wsl envs lock").values() {
+            if let Some(relay) = &env.relay {
+                relay.close();
+            }
+        }
+    }
+
+    /// Keep-open permits new explicit management requests, never automatic restarts.
+    pub fn keep_open_after_stop(&self) {
+        self.close_relays();
+        for env in self.inner.envs.lock().expect("wsl envs lock").values_mut() {
+            env.state = EnvState::Error;
+            env.reason = Some("Automatic restart paused by Stop daemons; enable this environment manually to reconnect".into());
+        }
+        self.inner.stopping.store(false, Ordering::SeqCst);
+        self.inner.notify();
+    }
+
     pub fn wsl_envs(&self) -> Vec<EnvEntry> {
         self.inner
             .envs
@@ -718,7 +805,8 @@ impl WslManager {
     /// Brings up every enabled distro in the background; a failure marks only that one.
     pub fn start_enabled(&self) {
         let inner = &self.inner;
-        if !inner.opts.supported {
+        let generation = inner.generation.load(Ordering::SeqCst);
+        if !inner.opts.supported || inner.start_gate(generation).is_err() {
             return;
         }
         let config = match config::load(&inner.opts.state_dir) {
@@ -732,12 +820,15 @@ impl WslManager {
             let inner = Arc::clone(inner);
             tokio::spawn(async move {
                 let _ops = inner.ops.lock().await;
+                if inner.start_gate(generation).is_err() {
+                    return;
+                }
                 let still_enabled = config::load(&inner.opts.state_dir)
                     .is_ok_and(|config| config.is_enabled(&entry.name));
                 if !still_enabled {
                     return;
                 }
-                if let Err(e) = inner.start_env(&entry.name, entry.slot).await {
+                if let Err(e) = inner.start_env(&entry.name, entry.slot, generation).await {
                     eprintln!("houston-tauri: wsl {}: not started: {e}", entry.name);
                     inner.mark_error(&entry.name, entry.slot, e);
                 }
@@ -803,6 +894,20 @@ mod tests {
         Bytes(Vec<u8>),
     }
 
+    struct EnsureBarrier {
+        entered: tokio::sync::mpsc::UnboundedSender<()>,
+        release: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    }
+
+    struct ReleaseEnsure(Arc<(Mutex<bool>, std::sync::Condvar)>);
+    impl Drop for ReleaseEnsure {
+        fn drop(&mut self) {
+            let (released, wake) = &*self.0;
+            *released.lock().unwrap() = true;
+            wake.notify_all();
+        }
+    }
+
     struct FakeWsl {
         list: ListReply,
         probes: HashMap<String, String>,
@@ -811,6 +916,7 @@ mod tests {
         /// What `daemon_stopped` answers; a stopped daemon by default.
         stopped: Option<RunOutput>,
         ensure: String,
+        ensure_barrier: Mutex<Option<EnsureBarrier>>,
         calls: Mutex<Vec<Vec<String>>>,
         daemons: tokio::sync::mpsc::UnboundedSender<DuplexStream>,
     }
@@ -823,6 +929,7 @@ mod tests {
                 probes: HashMap::new(),
                 probe_replies: Mutex::new(Default::default()),
                 stopped: None,
+                ensure_barrier: Mutex::new(None),
                 ensure: format!(
                     r#"{{"state":"spawned","port":40001,"token":"{TOKEN}","build":"{BUILD}","protocol":131}}"#
                 ),
@@ -879,6 +986,15 @@ mod tests {
                 return ok("/home/u\n");
             }
             if argv.get(4).map(String::as_str) == Some("wsl-ensure") {
+                if let Some(barrier) = self.ensure_barrier.lock().unwrap().take() {
+                    let _ = barrier.entered.send(());
+                    let (released, wake) = &*barrier.release;
+                    let mut released = released.lock().unwrap();
+                    while !*released {
+                        released = wake.wait(released).unwrap();
+                    }
+                }
+
                 let code = if self.ensure.contains(r#""refused""#) {
                     3
                 } else {
@@ -922,6 +1038,85 @@ mod tests {
             retry_delay: relay::RETRY_DELAY,
             notify: Box::new(|| {}),
         })
+    }
+
+    #[tokio::test]
+    async fn stop_drains_owners_and_rejects_queued_enable_and_reensure() {
+        let temp = tempfile::tempdir().unwrap();
+        let (fake, _daemons) = FakeWsl::new(ListReply::Missing);
+        let fake = Arc::new(fake);
+        let manager = manager(fake.clone(), temp.path(), temp.path(), true);
+        let owner = manager.inner.ops.lock().await;
+        let enable = {
+            let manager = manager.clone();
+            tokio::spawn(async move { manager.enable("Ubuntu".into()).await })
+        };
+        let ensure = {
+            let inner = manager.inner.clone();
+            tokio::spawn(async move { inner.reensure("Ubuntu".into()).await })
+        };
+        tokio::task::yield_now().await;
+        let pause = {
+            let manager = manager.clone();
+            tokio::spawn(async move { manager.pause_for_stop().await })
+        };
+        while !manager.inner.stopping.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !pause.is_finished(),
+            "must drain current startup owner before snapshot"
+        );
+        drop(owner);
+        assert!(enable.await.unwrap().unwrap_err().contains("cancelled"));
+        assert!(ensure.await.unwrap().unwrap_err().contains("cancelled"));
+        assert!(pause.await.unwrap().unwrap().is_empty());
+        manager.keep_open_after_stop();
+        assert!(fake.calls().is_empty(), "Keep-open must not start a daemon");
+        assert!(!manager.inner.stopping.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn unsettled_stop_refuses_and_keep_open_does_not_release_old_startup_work() {
+        let temp = tempfile::tempdir().unwrap();
+        let (fake, _daemons) = FakeWsl::new(ListReply::Missing);
+        let fake = Arc::new(fake);
+        let manager = manager(fake.clone(), temp.path(), temp.path(), true);
+        let mut config = config::load(temp.path()).unwrap();
+        config.enable("Ubuntu").unwrap();
+        config::save(temp.path(), &config).unwrap();
+        let owner = manager.inner.ops.lock().await;
+        let mut enable = Box::pin(manager.enable("Ubuntu".into()));
+        let mut ensure = Box::pin(manager.inner.clone().reensure("Ubuntu".into()));
+        assert!(futures_util::poll!(&mut enable).is_pending());
+        assert!(futures_util::poll!(&mut ensure).is_pending());
+        manager.start_enabled(); // Captures its generation before entering the task queue.
+        let refusal = manager
+            .pause_for_stop_with_timeout(Duration::ZERO)
+            .await
+            .unwrap_err();
+        assert!(refusal.contains("cannot be confirmed stopped"));
+        assert!(manager
+            .enable("Ubuntu".into())
+            .await
+            .unwrap_err()
+            .contains("cancelled"));
+        assert!(manager
+            .inner
+            .clone()
+            .reensure("Ubuntu".into())
+            .await
+            .unwrap_err()
+            .contains("cancelled"));
+        manager.start_enabled(); // Admission while paused must not queue a new generation.
+        manager.keep_open_after_stop();
+        drop(owner);
+        assert!(enable.await.unwrap_err().contains("cancelled"));
+        assert!(ensure.await.unwrap_err().contains("cancelled"));
+        // Receipt: queued startup has left ops before we inspect backend side effects.
+        let _drained = manager.inner.ops.lock().await;
+        assert!(fake.calls().is_empty());
+        assert!(manager.wsl_envs().is_empty());
     }
 
     fn list_text(rows: &str) -> ListReply {
@@ -1116,6 +1311,103 @@ mod tests {
         assert!(fake.calls().is_empty(), "nothing runs off Windows");
         wsl.start_enabled();
         assert!(wsl.wsl_envs().is_empty());
+    }
+
+    #[tokio::test]
+    async fn snapshot_waits_for_an_already_dispatched_ensure_receipt() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let (mut fake, _daemons) = FakeWsl::new(list_text("* Ubuntu  Running  2\n"));
+        fake.probes
+            .insert("Ubuntu".into(), "x86_64\nglibc 2.39\n".into());
+        let fake = Arc::new(fake);
+        let manager = manager(fake.clone(), state.path(), bundle.path(), true);
+        manager.enable("Ubuntu".into()).await.unwrap();
+        let release = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let release_guard = ReleaseEnsure(release.clone());
+        let (entered, mut receipt) = tokio::sync::mpsc::unbounded_channel();
+        *fake.ensure_barrier.lock().unwrap() = Some(EnsureBarrier { entered, release });
+        let ensure = {
+            let inner = manager.inner.clone();
+            tokio::spawn(async move { inner.reensure("Ubuntu".into()).await })
+        };
+        tokio::time::timeout(Duration::from_secs(10), receipt.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let pause = {
+            let manager = manager.clone();
+            tokio::spawn(async move { manager.pause_for_stop().await })
+        };
+        while !manager.inner.stopping.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !pause.is_finished(),
+            "must drain the actual dispatched blocking ensure"
+        );
+        drop(release_guard);
+        ensure.await.unwrap().unwrap();
+        let targets = pause.await.unwrap().unwrap();
+        assert_eq!(targets[0].token, TOKEN);
+        assert_ne!(targets[0].port, 0);
+    }
+
+    #[tokio::test]
+    async fn successful_stop_does_not_reensure_on_reconnect_or_keep_open() {
+        let state = tempfile::tempdir().unwrap();
+        let bundle = provision::tests::bundle_dir();
+        let (mut fake, mut daemons) = FakeWsl::new(list_text("* Ubuntu  Running  2\n"));
+        fake.probes
+            .insert("Ubuntu".into(), "x86_64\nglibc 2.39\n".into());
+        let fake = Arc::new(fake);
+        let manager = manager(fake.clone(), state.path(), bundle.path(), true);
+        manager.enable("Ubuntu".into()).await.unwrap();
+        let targets = manager.pause_for_stop().await.unwrap();
+        let target = &targets[0];
+        let server = tokio::spawn(async move { serve_manage(daemons.recv().await.unwrap()).await });
+        let client = crate::daemon_host::manage_http_client();
+        let (_, answer) = crate::daemon_host::manage_post(
+            &client,
+            target.port,
+            &target.token,
+            houston_protocol::ManageVerb::DaemonShutdown,
+        )
+        .await
+        .unwrap();
+        assert_eq!(answer["ok"], true);
+        assert!(server.await.unwrap().contains("daemon_shutdown"));
+        // Another target's refusal dialog keeps the app and renderer connected.
+        for keep_open in [false, true] {
+            if keep_open {
+                manager.keep_open_after_stop();
+            }
+            let mut reconnect = tokio::net::TcpStream::connect(("127.0.0.1", target.port))
+                .await
+                .unwrap();
+            let mut bytes = Vec::new();
+            tokio::time::timeout(Duration::from_secs(5), reconnect.read_to_end(&mut bytes))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(bytes.is_empty());
+        }
+        let ensures = fake
+            .calls()
+            .into_iter()
+            .filter(|argv| argv.get(4).map(String::as_str) == Some("wsl-ensure"))
+            .count();
+        assert_eq!(
+            ensures, 1,
+            "only the original explicit enable may ensure a daemon"
+        );
+        assert!(manager.wsl_envs()[0]
+            .reason
+            .as_ref()
+            .unwrap()
+            .contains("manually"));
+        manager.enable("Ubuntu".into()).await.unwrap();
+        assert_eq!(manager.wsl_envs()[0].state, "ready");
     }
 
     #[tokio::test]

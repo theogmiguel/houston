@@ -17,7 +17,21 @@ for bin in dbus-run-session gnome-keyring-daemon; do
 done
 
 kr="$(mktemp -d "${TMPDIR:-/tmp}/houston-test-keyring.XXXXXX")"
-trap 'rm -rf -- "$kr"' EXIT
+cleanup() {
+  local status=$?
+  trap - EXIT
+  # Desktop services unmount their private FUSE mounts after the bus exits.
+  # Never traverse those mounts while waiting for their asynchronous teardown.
+  for _ in {1..30}; do
+    if rm -rf --one-file-system -- "$kr" 2>/dev/null; then
+      exit "$status"
+    fi
+    sleep 0.1
+  done
+  echo "[with-test-keyring] could not clean temporary state: $kr" >&2
+  exit 1
+}
+trap cleanup EXIT
 
 # An unencrypted, pre-created default keyring: the daemon never needs a
 # password, so it never prompts and never touches the host's keyrings.

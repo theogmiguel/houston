@@ -94,9 +94,18 @@ path.
 
 ## Quitting
 
-Closing the window leaves every environment's daemon and its sessions running. **Quit**
-from the tray, or **Quit and stop daemon** from the command palette, stops the Windows
-daemon and every enabled distro's daemon before Houston exits.
+Closing the window or choosing **Quit and keep sessions** in the tray leaves every
+environment's daemon and its sessions running. **Quit and stop daemons…** in the tray,
+or **Quit and stop daemon** in the command palette, requests shutdown of the Windows
+daemon and the WSL daemons. If an environment cannot be confirmed stopped, Houston
+reports it before offering to close anyway.
+
+After **Quit and stop daemons**, choosing **Keep Houston open** leaves WSL automatic
+restart paused. Use **Settings → WSL → Retry** for each environment you want to
+reconnect. Startup and reconnect
+work queued before the stop request is cancelled. If running WSL work cannot settle
+within 20 seconds, Houston reports that those daemons cannot be confirmed stopped.
+
 
 ## What it transmits
 

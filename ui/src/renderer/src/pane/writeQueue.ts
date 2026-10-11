@@ -270,7 +270,7 @@ export class PaneWriteQueue {
     if (data.byteLength < data.buffer.byteLength / 2) data = data.slice()
     this.queue.push({ data, isWarning, exempt })
     this.queuedBytes += data.length
-    if (isWarning || this.queuedBytes <= this.maxQueuedBytes) return
+    if (isWarning || exempt || this.queuedBytes <= this.maxQueuedBytes) return
     if (this.resyncOnOverflow()) {
       writeQueueStats.overflowResyncs += 1
       this.queue = []
