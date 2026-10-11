@@ -14,6 +14,13 @@ pub(crate) async fn within_request<F: std::future::Future>(
     REQUEST_DEADLINE.scope(deadline, future).await
 }
 
+pub(crate) fn deadline_after(timeout: Duration) -> Instant {
+    let deadline = Instant::now() + timeout;
+    REQUEST_DEADLINE
+        .try_with(|request| deadline.min(*request))
+        .unwrap_or(deadline)
+}
+
 #[derive(Clone)]
 pub(crate) struct Dispatch {
     deadline: Instant,
@@ -25,10 +32,7 @@ pub(crate) struct Operation(Dispatch);
 
 impl Operation {
     pub(crate) fn new(timeout: Duration) -> Self {
-        let deadline = Instant::now() + timeout;
-        let deadline = REQUEST_DEADLINE
-            .try_with(|request| deadline.min(*request))
-            .unwrap_or(deadline);
+        let deadline = deadline_after(timeout);
         Self(Dispatch {
             deadline,
             cancelled: Arc::new(AtomicBool::new(false)),

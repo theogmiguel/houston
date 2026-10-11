@@ -60,6 +60,7 @@ pub enum Verdict {
 }
 
 struct Waiting {
+    deadline: std::time::Instant,
     surface_id: String,
     tx: oneshot::Sender<Verdict>,
     screenshot: Option<std::path::PathBuf>,
@@ -123,6 +124,7 @@ impl ConfirmRegistry {
         state.pending.insert(
             id.clone(),
             Waiting {
+                deadline: super::operation::deadline_after(DECISION_TIMEOUT),
                 tx,
                 screenshot,
                 surface_id,
@@ -184,6 +186,9 @@ impl ConfirmRegistry {
                 DECISION_TIMEOUT.as_secs()
             ));
         };
+        if std::time::Instant::now() >= waiting.deadline {
+            return Err(format!("browser: action {id:?} expired; nothing was performed and workspace trust was not changed"));
+        }
         if approved && trust_workspace {
             self.trust(workspace_id);
         }
@@ -319,6 +324,23 @@ mod tests {
         assert!(!shot.exists());
         assert!(resolved.load(std::sync::atomic::Ordering::SeqCst));
         assert!(reg.respond(&id, true, false, "/w").is_err());
+    }
+
+    #[tokio::test]
+    async fn expired_request_cannot_accept_a_late_answer_or_trust_grant() {
+        let reg = registry();
+        let (tx, rx) = oneshot::channel();
+        let id = super::super::operation::within_request(std::time::Instant::now(), async {
+            reg.register(tx, None, "surface".into())
+        })
+        .await;
+        assert!(reg
+            .respond(&id, true, true, "/fixture")
+            .unwrap_err()
+            .contains("expired"));
+        assert!(!reg.is_trusted("/fixture"));
+        assert!(rx.await.is_err());
+        assert_eq!(reg.pending_count(), 0);
     }
 
     #[test]
