@@ -30,7 +30,11 @@ function setup(host = false, initialStep?: 'route' | 'scan') {
   return { client, onClose, emit, ...view }
 }
 const ready = { enabled: true, listening: true, public_url: 'https://box.ts.net', url: 'https://box.ts.net' }
-const code = (): ServerMsg => ({ type: 'remote_pairing', url: 'https://box.ts.net/#pair=abc', qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>', expires_at: Date.now() + 600_00describe('ConnectPhoneDialog', () => {
+const code = (): ServerMsg => ({ type: 'remote_pairing', url: 'https://box.ts.net/#pair=abc', qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>', expires_at: Date.now() + 600_000 })
+
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
+
+describe('ConnectPhoneDialog', () => {
   it('opens from the shared entry point and closes on Escape', () => {
     const { client } = setup(true)
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -163,8 +167,10 @@ const code = (): ServerMsg => ({ type: 'remote_pairing', url: 'https://box.ts.ne
     expect(address.getAttribute('aria-invalid')).toBe('true')
     expect(screen.getByRole('alert').textContent).toMatch(/cannot listen/)
     const cancel = screen.getByRole('button', { name: 'Cancel' })
+    fireEvent.change(address, { target: { value: 'https://box.ts.net' } })
     const turnOn = screen.getByRole('button', { name: 'Turn on and show code' })
     turnOn.focus()
+    expect(document.activeElement).toBe(turnOn)
     fireEvent.keyDown(turnOn, { key: 'Tab' })
     expect(document.activeElement).toBe(screen.getByRole('combobox'))
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Tab', shiftKey: true })
@@ -173,10 +179,6 @@ const code = (): ServerMsg => ({ type: 'remote_pairing', url: 'https://box.ts.ne
   })
 })
 
-'Tab', shiftKey: true })
-    expect(document.activeElement).toBe(close)
-  })
-})
 
 describe('routeSettings', () => {
   it('keeps Tailscale on loopback and maps Wi-Fi to all interfaces', () => {
