@@ -15674,15 +15674,17 @@ impl Daemon {
             });
             return;
         }
-        if self.voice.download_in_flight(&model_id) {
-            self.broadcast_control(&proto::ServerMsg::VoiceModelState {
-                model: self.voice_model_state(&model_id),
-            });
-            return;
-        }
+        let lease = match self.voice.claim_download(&model_id) {
+            Ok(lease) => lease,
+            Err(_) => {
+                self.broadcast_control(&proto::ServerMsg::VoiceModelState {
+                    model: self.voice_model_state(&model_id),
+                });
+                return;
+            }
+        };
         let me = self.clone();
         tokio::spawn(async move {
-            me.voice.download_begin(&model_id);
             me.broadcast_control(&proto::ServerMsg::VoiceModelState {
                 model: me.voice_model_state(&model_id),
             });
@@ -15692,8 +15694,7 @@ impl Daemon {
             {
                 Ok(c) => c,
                 Err(e) => {
-                    me.voice
-                        .download_end(&model_id, Some(format!("building the HTTP client: {e}")));
+                    lease.finish(Some(format!("building the HTTP client: {e}")));
                     me.broadcast_control(&proto::ServerMsg::VoiceModelState {
                         model: me.voice_model_state(&model_id),
                     });
@@ -15711,7 +15712,7 @@ impl Daemon {
                     } else {
                         done as f32 / total as f32
                     };
-                    me.voice.download_progress(&model_id, progress);
+                    lease.progress(progress);
                     if last_broadcast.elapsed() >= VOICE_DOWNLOAD_PROGRESS_INTERVAL {
                         last_broadcast = std::time::Instant::now();
                         me.broadcast_control(&proto::ServerMsg::VoiceModelState {
@@ -15723,11 +15724,11 @@ impl Daemon {
             match result {
                 Ok(path) => {
                     tracing::info!(model = %model_id, path = %path.display(), "voice: model downloaded and verified");
-                    me.voice.download_end(&model_id, None);
+                    lease.finish(None);
                 }
                 Err(e) => {
                     tracing::warn!(model = %model_id, "voice: model download failed: {e}");
-                    me.voice.download_end(&model_id, Some(e.to_string()));
+                    lease.finish(Some(e.to_string()));
                 }
             }
             me.broadcast_control(&proto::ServerMsg::VoiceModelState {
@@ -15738,17 +15739,18 @@ impl Daemon {
     }
 
     pub fn voice_model_delete(&self, model_id: &str) -> proto::ServerMsg {
-        match crate::voice::models::delete(&self.voice_models_dir(), model_id) {
-            Ok(freed) => {
-                tracing::info!(model = %model_id, freed_bytes = freed, "voice: model deleted");
-                self.voice.download_forget(model_id);
-                self.voice.forget_engine();
-            }
+        let freed = match self.voice.delete_model(&self.voice_models_dir(), model_id) {
+            Ok(freed) => freed,
             Err(e) => {
                 tracing::warn!(model = %model_id, "voice: model delete failed: {e}");
-                self.voice.download_end(model_id, Some(e.to_string()));
+                let mut model = self.voice_model_state(model_id);
+                model.status = proto::VoiceModelStatus::Failed {
+                    reason: e.to_string(),
+                };
+                return proto::ServerMsg::VoiceModelState { model };
             }
-        }
+        };
+        tracing::info!(model = %model_id, freed_bytes = freed, "voice: model deleted");
         proto::ServerMsg::VoiceModelState {
             model: self.voice_model_state(model_id),
         }

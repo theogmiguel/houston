@@ -18,6 +18,22 @@ Nothing is recorded and no microphone is opened while dictation is off, for eith
 engine — the mic only opens according to the activation and microphone settings below,
 and only once dictation is turned on.
 
+## Local model downloads
+
+In **Settings → Dictation**, download the local model before selecting the local
+engine. Downloads contact Hugging Face and its download hosts to retrieve the model;
+they do not send microphone audio. Houston checks the catalog's exact byte count and
+SHA-256 digest before installing a model.
+
+Each model has one active download. Repeated requests use the existing download;
+deletion is refused until it finishes. A failed or interrupted transfer removes its
+partial file and can be retried. Downloads stop after 30 seconds without response
+headers or new body bytes, or after 30 minutes overall. After three consecutive
+failures, retries pause for five minutes, including across daemon restarts.
+
+Deleting a downloaded model frees its disk space. Download it again before using the
+local engine.
+
 ## The API key, and where it is stored
 
 The cloud engine needs a Groq API key, entered in its own row in this settings section.
