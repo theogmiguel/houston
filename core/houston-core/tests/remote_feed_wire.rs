@@ -1292,7 +1292,13 @@ async fn repeated_respawns_release_old_feeds_and_pending_notifications() {
             404
         );
         // A late hook and the old backend waiter cannot recreate removed state.
-        apply(state.path(), &drop).await;
+        hook_drop::write_drop(
+            &hook_drop::drop_dir(state.path()),
+            &drop,
+            hook_drop::now_ms(),
+        )
+        .unwrap();
+        daemon.hook_drop_tick_for_test();
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(daemon.remote_feed_session_count_for_test(), 0);
         assert_eq!(daemon.remote_pending_notifications_for_test(), 0);
