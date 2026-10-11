@@ -74,9 +74,21 @@ type RelayWriter =
     std::sync::Arc<tokio::sync::Mutex<futures_util::stream::SplitSink<RelaySocket, Message>>>;
 
 async fn serve_calls<F>(
+    read: futures_util::stream::SplitStream<RelaySocket>,
+    write: RelayWriter,
+    answer: impl Fn(u64, String, Value, u32, String) -> F + Send + Sync,
+) -> anyhow::Result<()>
+where
+    F: std::future::Future<Output = proto::ClientMsg> + Send + 'static,
+{
+    serve_calls_with_timeout(read, write, answer, CALL_TIMEOUT).await
+}
+
+async fn serve_calls_with_timeout<F>(
     mut read: futures_util::stream::SplitStream<RelaySocket>,
     write: RelayWriter,
     answer: impl Fn(u64, String, Value, u32, String) -> F + Send + Sync,
+    timeout: std::time::Duration,
 ) -> anyhow::Result<()>
 where
     F: std::future::Future<Output = proto::ClientMsg> + Send + 'static,
@@ -129,7 +141,7 @@ where
         // confirmation and queued-native guards then clean up before any late dispatch.
         let answer = answer(request_id, tool, args, session_id, workspace_id);
         calls.spawn(async move {
-            let reply = match tokio::time::timeout(CALL_TIMEOUT,
+            let reply = match tokio::time::timeout(timeout,
                 answer).await {
                 Ok(reply) => reply,
                 Err(_) => proto::ClientMsg::BrowserToolResult { request_id, ok: false, output: None,
@@ -186,6 +198,72 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
         Arc,
     };
+
+    #[tokio::test]
+    async fn expired_request_drops_approval_before_late_acceptance() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            tokio_tungstenite::accept_async(socket).await.unwrap()
+        });
+        let (client, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+        let mut server = server.await.unwrap();
+        let (write, read) = client.split();
+        let (approval, receiver) = tokio::sync::oneshot::channel();
+        let receiver = Arc::new(std::sync::Mutex::new(Some(receiver)));
+        let effects = Arc::new(AtomicUsize::new(0));
+        let task = {
+            let effects = effects.clone();
+            tokio::spawn(serve_calls_with_timeout(
+                read,
+                Arc::new(tokio::sync::Mutex::new(write)),
+                move |id, _, _, _, _| {
+                    let receiver = receiver.lock().unwrap().take().unwrap();
+                    let effects = effects.clone();
+                    async move {
+                        if receiver.await.is_ok() {
+                            effects.fetch_add(1, Ordering::SeqCst);
+                        }
+                        proto::ClientMsg::BrowserToolResult {
+                            request_id: id,
+                            ok: true,
+                            output: None,
+                            error: None,
+                        }
+                    }
+                },
+                std::time::Duration::from_millis(1),
+            ))
+        };
+        let call = proto::ServerMsg::BrowserToolCall {
+            request_id: 1,
+            tool: "browser_click".into(),
+            args: serde_json::json!({}),
+            session_id: 1,
+            workspace_id: "/fixture".into(),
+        };
+        server
+            .send(Message::Text(serde_json::to_string(&call).unwrap().into()))
+            .await
+            .unwrap();
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(5), server.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let Message::Text(reply) = frame else {
+            panic!("expected expiry result")
+        };
+        assert!(reply.contains("request expired"));
+        assert!(
+            approval.send(()).is_err(),
+            "expired approval receiver must be gone"
+        );
+        assert_eq!(effects.load(Ordering::SeqCst), 0);
+        server.close(None).await.unwrap();
+        assert!(task.await.unwrap().is_err());
+    }
 
     #[tokio::test]
     async fn disconnect_cancels_owned_calls_and_limit_refuses_excess() {
