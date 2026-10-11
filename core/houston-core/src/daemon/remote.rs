@@ -1,6 +1,7 @@
 //! The daemon's side of remote access: persisted settings, the listener loop,
 //! pairing, and the observe-and-answer operations the HTTP API exposes.
 use std::collections::HashSet;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use serde::Serialize;
 use super::{now_ms, Daemon};
 use crate::db::RemoteDeviceRow;
 use crate::remote::feed::{self, Answered, Card, Change, FeedItem, HookFeed, Pending, Refusal};
-use crate::remote::{self, ApiError, Config, ConfigPatch, ListenState, NotifyDetail};
+use crate::remote::{self, tls, ApiError, Config, ConfigPatch, ListenState, NotifyDetail};
 
 const BIND_BACKOFF_START: Duration = Duration::from_secs(1);
 // A retiring generation releases the port within seconds; 30 s bounds the
@@ -136,7 +137,7 @@ impl Daemon {
             bind: remote::default_bind(self.channel()),
             ..Config::default()
         };
-        Config {
+        let mut cfg = Config {
             enabled: get(remote::KEY_ENABLED).as_deref() == Some("1"),
             bind: get(remote::KEY_BIND)
                 .and_then(|v| remote::parse_bind(&v).ok())
@@ -153,7 +154,9 @@ impl Daemon {
             notify_finished: get(remote::KEY_NOTIFY_FINISHED).as_deref() == Some("1"),
             ntfy_server: get(remote::KEY_NTFY_SERVER).filter(|v| !v.is_empty()),
             dictation: get(remote::KEY_DICTATION).as_deref() == Some("1"),
-        }
+        };
+        cfg.upgrade_public_scheme();
+        cfg
     }
 
     /// Validates every field before persisting any, so a refused patch changes nothing.
@@ -184,10 +187,13 @@ impl Daemon {
             anyhow::bail!(
                 "remote bind {} listens on every interface, so there is no single address to \
                  pair devices with: set the public URL to the address devices open (for example \
-                 http://192.168.1.20:{}), or bind one address",
+                 https://192.168.1.20:{}), or bind one address",
                 next.bind,
                 next.bind.port()
             );
+        }
+        if let Some(refusal) = next.tls_refusal() {
+            anyhow::bail!(refusal);
         }
         let ntfy = match &patch.ntfy_url {
             Some(raw) => Some(remote::parse_ntfy_url(raw).map_err(|e| anyhow!(e))?),
@@ -267,6 +273,8 @@ impl Daemon {
                 },
                 notify_finished: cfg.notify_finished,
                 dictation: cfg.dictation,
+                tls: cfg.serves_tls(),
+                ca_fingerprint: self.remote_authority_fingerprint(),
                 devices,
             },
         }
@@ -1096,8 +1104,38 @@ impl Daemon {
                 }
                 continue;
             }
-            match tokio::net::TcpListener::bind(cfg.bind).await {
-                Ok(listener) => {
+            let https = cfg.serves_tls();
+            let mut hosts = cfg.allowed_hosts();
+            let mut generation = self.remote.authority_generation.load(Ordering::Acquire);
+            let key = if https {
+                self.remote_server_key(hosts.clone()).await.map(Some)
+            } else {
+                Ok(None)
+            };
+            let prepared = match key {
+                Ok(key) => tokio::net::TcpListener::bind(cfg.bind)
+                    .await
+                    .map(|listener| (listener, key.map(tls::ServerCert::new)))
+                    .map_err(|e| format!("cannot listen on {}: {e}", cfg.bind)),
+                Err(e) => Err(format!("cannot serve HTTPS on {}: {e:#}", cfg.bind)),
+            };
+            match prepared {
+                Ok((listener, cert)) => {
+                    let tls = match cert
+                        .as_ref()
+                        .map(tls::ServerCert::server_config)
+                        .transpose()
+                    {
+                        Ok(tls) => tls,
+                        Err(e) => {
+                            self.remote_set_listen(ListenState {
+                                listening: None,
+                                error: Some(format!("cannot serve HTTPS: {e:#}")),
+                            });
+                            tokio::time::sleep(backoff).await;
+                            continue;
+                        }
+                    };
                     backoff = BIND_BACKOFF_START;
                     self.remote_set_listen(ListenState {
                         listening: listener.local_addr().ok(),
@@ -1113,8 +1151,22 @@ impl Daemon {
                                 std::future::pending::<()>().await;
                             }
                             let now = this.remote_config();
-                            if !now.enabled || now.bind != bind {
+                            if !now.enabled || now.bind != bind || now.serves_tls() != https {
                                 break;
+                            }
+                            let Some(cert) = cert.as_ref() else {
+                                continue;
+                            };
+                            let current = this.remote.authority_generation.load(Ordering::Acquire);
+                            if now.allowed_hosts() != hosts || current != generation {
+                                hosts = now.allowed_hosts();
+                                generation = current;
+                                match this.remote_server_key(hosts.clone()).await {
+                                    Ok(key) => cert.set(key),
+                                    Err(e) => tracing::warn!(
+                                        "remote access: keeping the previous certificate: {e:#}"
+                                    ),
+                                }
                             }
                         }
                         // Event streams never end on their own; graceful shutdown
@@ -1133,7 +1185,7 @@ impl Daemon {
                         }
                     };
                     let served = tokio::select! {
-                        served = remote::http::serve(Arc::clone(&self), listener, shutdown) => served,
+                        served = remote::http::serve(Arc::clone(&self), listener, tls, shutdown) => served,
                         () = drained => {
                             tracing::warn!(
                                 "remote access: requests on {bind} were still open {} s after the \
@@ -1151,10 +1203,10 @@ impl Daemon {
                         tokio::time::sleep(backoff).await;
                     }
                 }
-                Err(e) => {
+                Err(error) => {
                     self.remote_set_listen(ListenState {
                         listening: None,
-                        error: Some(format!("cannot listen on {}: {e}", cfg.bind)),
+                        error: Some(error),
                     });
                     tokio::select! {
                         changed = changes.changed() => {
@@ -1170,6 +1222,97 @@ impl Daemon {
                 }
             }
         }
+    }
+
+    /// A server certificate for `hosts`, signed by the local authority; the
+    /// keychain is read off the async runtime.
+    async fn remote_server_key(
+        self: &Arc<Self>,
+        hosts: Vec<String>,
+    ) -> Result<Arc<tokio_rustls::rustls::sign::CertifiedKey>> {
+        let this = Arc::clone(self);
+        tokio::task::spawn_blocking(move || this.remote_authority()?.server_key(&hosts))
+            .await
+            .map_err(|e| anyhow!("preparing the certificate panicked: {e}"))?
+    }
+
+    /// The local certificate authority, from settings and the keychain, or a new
+    /// one stored there on first use. A lost key makes a new authority, which
+    /// devices have to trust again.
+    pub fn remote_authority(&self) -> Result<Arc<tls::Authority>> {
+        let mut slot = self.remote.authority.lock().expect("remote authority lock");
+        if let Some(authority) = slot.as_ref() {
+            return Ok(Arc::clone(authority));
+        }
+        let get = |key: &str| {
+            self.db
+                .get_setting(key)
+                .ok()
+                .flatten()
+                .filter(|v| !v.is_empty())
+        };
+        let stored = match (get(tls::KEY_CA_NAME), get(tls::KEY_CA_CERT)) {
+            (Some(name), Some(cert)) => match tls::load_key(&self.state_dir)? {
+                Some(key) => Some(tls::Authority::from_parts(&name, &cert, &key)?),
+                None => {
+                    tracing::warn!(
+                        "remote access: the keychain holds no key for the stored certificate \
+                         authority; creating a new one, which paired devices must trust again"
+                    );
+                    None
+                }
+            },
+            _ => None,
+        };
+        let authority = Arc::new(match stored {
+            Some(authority) => authority,
+            None => self.remote_new_authority()?,
+        });
+        *slot = Some(Arc::clone(&authority));
+        Ok(authority)
+    }
+
+    fn remote_new_authority(&self) -> Result<tls::Authority> {
+        let authority = tls::Authority::generate(&remote::host_name())?;
+        tls::store_key(&self.state_dir, &authority.key_pem())?;
+        self.db.set_settings_atomic(&[
+            (tls::KEY_CA_NAME, authority.name()),
+            (tls::KEY_CA_CERT, authority.cert_pem()),
+        ])?;
+        tracing::info!(
+            "remote access: created certificate authority {} ({})",
+            authority.name(),
+            authority.fingerprint()
+        );
+        Ok(authority)
+    }
+
+    /// Replaces the authority; the listener's next handshakes use a certificate
+    /// from the new one, and every device must trust it again.
+    pub fn remote_regenerate_authority(&self) -> Result<()> {
+        let authority = Arc::new(self.remote_new_authority()?);
+        *self.remote.authority.lock().expect("remote authority lock") = Some(authority);
+        self.remote
+            .authority_generation
+            .fetch_add(1, Ordering::AcqRel);
+        self.remote.reconfigured.send_modify(|n| *n += 1);
+        self.remote_broadcast_state();
+        Ok(())
+    }
+
+    /// The certificate authority's fingerprint once it exists, without reading
+    /// the keychain.
+    fn remote_authority_fingerprint(&self) -> Option<String> {
+        self.remote
+            .authority
+            .lock()
+            .expect("remote authority lock")
+            .as_ref()
+            .map(|a| a.fingerprint())
+            .or_else(|| {
+                let pem = self.db.get_setting(tls::KEY_CA_CERT).ok().flatten()?;
+                tls::fingerprint_of_pem(&pem)
+            })
     }
 
     /// The topic URL from the in-memory cache, else the keychain. Only called

@@ -21,7 +21,7 @@ const DETAIL_OPTIONS: SelectOption[] = [
 const OFF_REASON = 'Turn on remote access first.'
 
 const HTTP_WARNING =
-  'Devices reach this address over plain HTTP, so their token and the pane text they read cross the network unencrypted. Use tailscale serve and an https public URL.'
+  'Devices reach this address over plain HTTP, so their token and the pane text they read cross the network unencrypted. Use the Tailscale route, or a private network address, where Houston serves HTTPS itself.'
 
 function relative(ms: number | null | undefined): string {
   if (!ms) return 'never'
@@ -40,18 +40,24 @@ function shortDate(ms: number): string {
 type RouteKind = 'Tailscale' | 'Same Wi-Fi' | 'Custom'
 
 /// Mirrors the Connect phone dialog's two routes: Tailscale is loopback behind an
-/// https URL, Same Wi-Fi is every interface behind an http URL. Anything else is Custom.
-export function routeKind(remote: Pick<RemoteInfo, 'bind' | 'public_url'>): RouteKind {
+/// https URL, Same Wi-Fi is every interface behind a private address that Houston
+/// serves over its own HTTPS (plain HTTP before it could). Anything else is Custom.
+export function routeKind(remote: Pick<RemoteInfo, 'bind' | 'public_url' | 'tls'>): RouteKind {
   const host = remote.bind.replace(/:\d+$/, '')
   const url = remote.public_url ?? ''
   if (host === '127.0.0.1' && url.startsWith('https://')) return 'Tailscale'
-  if (host === '0.0.0.0' && url.startsWith('http://')) return 'Same Wi-Fi'
+  if (host === '0.0.0.0' && (remote.tls || url.startsWith('http://'))) return 'Same Wi-Fi'
   return 'Custom'
 }
 
 function routeDescription(remote: RemoteInfo, kind: RouteKind): string {
   if (kind === 'Tailscale') return 'Tailscale serves Houston over HTTPS to your own devices.'
-  if (kind === 'Same Wi-Fi') return 'Devices on this network open Houston over plain HTTP.'
+  if (kind === 'Same Wi-Fi') {
+    return remote.tls
+      ? "Devices on this network open Houston over HTTPS, with this computer's certificate."
+      : 'Devices on this network open Houston over plain HTTP.'
+  }
+  if (remote.tls) return `Devices open ${remote.url} over HTTPS, with this computer's certificate.`
   return remote.public_url ? `Devices open ${remote.public_url}.` : 'No public URL: devices open the listen address.'
 }
 
@@ -100,7 +106,7 @@ function BindDialog({
           <DialogTitle id="remote-bind-title">Listen address</DialogTitle>
           <DialogBody>
             <DialogDescription>
-              Where Houston listens on this computer. Keep 127.0.0.1 and publish it with tailscale serve for HTTPS on your tailnet.
+              Where Houston listens on this computer. Keep 127.0.0.1 and publish it with tailscale serve for HTTPS on your tailnet, or use this computer's private network address and Houston serves HTTPS itself.
             </DialogDescription>
             <Field label="IP:PORT" error={error ?? undefined}>
               <TextInput
@@ -276,7 +282,8 @@ export function RemoteSection({
   client: HoustonClient | null
   onChangeRoute: () => void
 }): React.JSX.Element {
-  const { remote, error, configure, revoke } = useRemote(client)
+  const { remote, error, configure, revoke, regenerateCertificate } = useRemote(client)
+  const [regenerating, setRegenerating] = useState(false)
   const [editingBind, setEditingBind] = useState(false)
   const [editingNtfy, setEditingNtfy] = useState(false)
   const [revoking, setRevoking] = useState<RemoteDevice | null>(null)
@@ -301,6 +308,7 @@ export function RemoteSection({
           onEditBind={() => setEditingBind(true)}
           onEditNtfy={() => setEditingNtfy(true)}
           onRevoke={setRevoking}
+          onRegenerate={() => setRegenerating(true)}
         />
       )}
       {remote && editingBind && (
@@ -313,6 +321,21 @@ export function RemoteSection({
           onRemove={() => configure({ ntfy_url: '' })}
           onClose={() => setEditingNtfy(false)}
         />
+      )}
+      {regenerating && (
+        <ConfirmDialog
+          title="Regenerate the certificate?"
+          confirmLabel="Regenerate"
+          onCancel={() => setRegenerating(false)}
+          onConfirm={() => {
+            regenerateCertificate()
+            setRegenerating(false)
+          }}
+        >
+          <Text size="small" tone="secondary">
+            Every paired device must trust the new certificate from the pairing page before it can connect again.
+          </Text>
+        </ConfirmDialog>
       )}
       {revoking && (
         <ConfirmDialog
@@ -339,7 +362,8 @@ function RemoteGroups({
   onChangeRoute,
   onEditBind,
   onEditNtfy,
-  onRevoke
+  onRevoke,
+  onRegenerate
 }: {
   remote: RemoteInfo
   onConfigure: ReturnType<typeof useRemote>['configure']
@@ -347,6 +371,7 @@ function RemoteGroups({
   onEditBind: () => void
   onEditNtfy: () => void
   onRevoke: (device: RemoteDevice) => void
+  onRegenerate: () => void
 }): React.JSX.Element {
   const kind = routeKind(remote)
   const plainHttp = remote.enabled && plainHttpOffLoopback(remote)
@@ -405,6 +430,33 @@ function RemoteGroups({
           </div>
         </Row>
       </SettingsList>
+
+      {(remote.tls || remote.ca_fingerprint) && (
+        <>
+          <SubHead>Certificate</SubHead>
+          <SettingsList>
+            <Row
+              title="Fingerprint"
+              desc={
+                <span data-testid="settings-remote-ca-fingerprint">
+                  {remote.ca_fingerprint ?? 'Created when Houston first serves HTTPS on this network.'}
+                </span>
+              }
+            />
+            <Row
+              title="Regenerate certificate"
+              desc="Makes a new certificate authority. Every device must trust the new one; remove the old one from each device."
+            >
+              <Button variant="ghost" size="sm" data-testid="settings-remote-ca-regenerate" onClick={onRegenerate}>
+                Regenerate…
+              </Button>
+            </Row>
+          </SettingsList>
+          <Text as="p" size="small" tone="muted">
+            On a private network address Houston serves HTTPS with a certificate authority this computer creates. Its private key stays in the system keychain, and it can certify only private network addresses and .local names. A device trusts it once, from the pairing page.
+          </Text>
+        </>
+      )}
 
       <SubHead>Devices</SubHead>
       <SettingsList>

@@ -3247,6 +3247,15 @@ pub struct RemoteInfo {
     /// Paired devices may send recordings for the voice engine to transcribe.
     /// Independent of `VoiceSettings.enabled`, which opens this computer's microphone.
     pub dictation: bool,
+    /// The listener serves HTTPS itself with the local certificate authority:
+    /// devices reach it directly on a private address. False on loopback, where
+    /// a proxy such as `tailscale serve` terminates HTTPS.
+    pub tls: bool,
+    /// SHA-256 of the listener's certificate authority, as a device shows it;
+    /// absent until Houston first serves its own HTTPS.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub ca_fingerprint: Option<String>,
     pub devices: Vec<RemoteDevice>,
 }
 
@@ -4486,6 +4495,8 @@ pub enum ClientMsg {
         dictation: Option<bool>,
     },
     RemotePairStart,
+    /// Replaces the listener's certificate authority; devices must trust the new one.
+    RemoteCaRegenerate,
     RemoteDeviceRevoke {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,

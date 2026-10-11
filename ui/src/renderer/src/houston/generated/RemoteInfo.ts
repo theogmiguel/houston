@@ -18,4 +18,15 @@ ntfy_server?: string | null, notify_delay_secs: number, notify_detail: RemoteNot
  * Paired devices may send recordings for the voice engine to transcribe.
  * Independent of `VoiceSettings.enabled`, which opens this computer's microphone.
  */
-dictation: boolean, devices: Array<RemoteDevice>, };
+dictation: boolean,
+/**
+ * The listener serves HTTPS itself with the local certificate authority:
+ * devices reach it directly on a private address. False on loopback, where
+ * a proxy such as `tailscale serve` terminates HTTPS.
+ */
+tls: boolean,
+/**
+ * SHA-256 of the listener's certificate authority, as a device shows it;
+ * absent until Houston first serves its own HTTPS.
+ */
+ca_fingerprint?: string | null, devices: Array<RemoteDevice>, };

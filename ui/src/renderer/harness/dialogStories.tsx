@@ -130,7 +130,7 @@ export function LegacyBrowserActStory(): React.JSX.Element {
 type ConnectPhoneScenario = 'route' | 'scan' | 'expired' | 'connected'
 
 const QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1z" fill="#000"/></svg>'
-const PHONE_REMOTE: RemoteInfo = { enabled: true, bind: '127.0.0.1:47823', public_url: 'https://workstation.tail1234.ts.net', url: 'https://workstation.tail1234.ts.net', listening: true, error: null, ntfy_server: null, notify_delay_secs: 30, notify_detail: 'generic', notify_finished: false, dictation: false, devices: [] }
+const PHONE_REMOTE: RemoteInfo = { enabled: true, bind: '127.0.0.1:47823', public_url: 'https://workstation.tail1234.ts.net', url: 'https://workstation.tail1234.ts.net', listening: true, error: null, ntfy_server: null, notify_delay_secs: 30, notify_detail: 'generic', notify_finished: false, dictation: false, tls: false, ca_fingerprint: null, devices: [] }
 
 /** A daemon stand-in that answers the dialog's `/ws` requests so each step renders without a daemon. */
 function connectPhoneClient(scenario: ConnectPhoneScenario): HoustonClient {

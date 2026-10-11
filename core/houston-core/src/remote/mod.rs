@@ -13,6 +13,7 @@ pub mod feed;
 pub mod http;
 pub mod ntfy;
 pub mod qr;
+pub mod tls;
 
 /// A fixed port, so `tailscale serve --bg 47823` stays valid across restarts.
 pub const DEFAULT_BIND: &str = "127.0.0.1:47823";
@@ -180,24 +181,54 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Whether the listener serves HTTPS itself: devices reach it directly on an
+    /// address the local authority can certify. A loopback bind stays plain HTTP
+    /// for a proxy that terminates HTTPS, such as `tailscale serve`.
+    pub fn serves_tls(&self) -> bool {
+        let ip = self.bind.ip();
+        if ip.is_loopback() {
+            return false;
+        }
+        if !ip.is_unspecified() {
+            return tls::covers(&ip.to_string());
+        }
+        self.public_host().is_some_and(|h| tls::covers(&h))
+    }
+
+    fn scheme(&self) -> &'static str {
+        if self.serves_tls() {
+            "https"
+        } else {
+            "http"
+        }
+    }
+
+    fn public_host(&self) -> Option<String> {
+        self.public_url
+            .as_deref()
+            .and_then(|u| reqwest::Url::parse(u).ok())
+            .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+    }
+
     /// The URL a device opens: the configured public URL, else the bind address.
     pub fn effective_url(&self) -> String {
         match &self.public_url {
             Some(url) => url.clone(),
-            None => format!("http://{}", self.bind),
+            None => format!("{}://{}", self.scheme(), self.bind),
         }
     }
 
     /// Origins whose pages may send state-changing requests: the public URL, and
-    /// `http://<host>:<port>` for each loopback name and the bind address.
+    /// `<scheme>://<host>:<port>` for each loopback name and the bind address.
     pub fn allowed_origins(&self) -> Vec<String> {
         let port = self.bind.port();
+        let scheme = self.scheme();
         let mut origins: Vec<String> = ["localhost", "127.0.0.1", "[::1]"]
             .iter()
-            .map(|h| format!("http://{h}:{port}"))
+            .map(|h| format!("{scheme}://{h}:{port}"))
             .collect();
         if !self.bind.ip().is_unspecified() {
-            origins.push(format!("http://{}", self.bind));
+            origins.push(format!("{scheme}://{}", self.bind));
         }
         if let Some(url) = &self.public_url {
             origins.push(url.clone());
@@ -206,13 +237,54 @@ impl Config {
     }
 
     /// Whether a device's token would cross the network without TLS: the bind is
-    /// off loopback and no https public URL fronts it.
+    /// off loopback, the listener does not serve HTTPS itself, and no https public
+    /// URL fronts it.
     pub fn plain_http_off_loopback(&self) -> bool {
         !self.bind.ip().is_loopback()
+            && !self.serves_tls()
             && !self
                 .public_url
                 .as_deref()
                 .is_some_and(|u| u.starts_with("https://"))
+    }
+
+    /// Settings stored before the listener served HTTPS name an `http://` public
+    /// URL on a private address; that address is now served over HTTPS.
+    pub fn upgrade_public_scheme(&mut self) {
+        if self.serves_tls() {
+            if let Some(rest) = self
+                .public_url
+                .as_deref()
+                .and_then(|u| u.strip_prefix("http://"))
+            {
+                self.public_url = Some(format!("https://{rest}"));
+            }
+        }
+    }
+
+    /// Why this listener cannot serve the public URL over its own HTTPS, if it cannot.
+    pub fn tls_refusal(&self) -> Option<String> {
+        if !self.serves_tls() {
+            return None;
+        }
+        let url = self.public_url.as_deref()?;
+        if url.starts_with("http://") {
+            return Some(format!(
+                "public URL {url:?} uses http, but Houston serves HTTPS itself on {}, a private \
+                 address: use https://{}",
+                self.bind,
+                url.trim_start_matches("http://")
+            ));
+        }
+        let host = self.public_host().unwrap_or_default();
+        (!tls::covers(&host)).then(|| {
+            format!(
+                "public URL {url:?} names {host:?}, which this computer's certificate cannot \
+                 cover: with a bind on {}, Houston serves HTTPS itself and certifies only \
+                 private and loopback addresses and .local names",
+                self.bind
+            )
+        })
     }
 
     /// Host names a request may carry in `Host`. Anything else is a
@@ -675,6 +747,9 @@ pub struct Runtime {
     /// The renderer's grids, held in memory: the renderer publishes them again
     /// whenever it connects.
     pub(crate) grids: Mutex<Vec<proto::RemoteGrid>>,
+    pub(crate) authority: Mutex<Option<Arc<tls::Authority>>>,
+    /// Bumped when the authority is regenerated, so the listener restarts with it.
+    pub(crate) authority_generation: std::sync::atomic::AtomicU64,
 }
 
 impl Default for Runtime {
@@ -705,6 +780,8 @@ impl Runtime {
             streams: Arc::new(Mutex::new(StreamRegistry::default())),
             revoked_hashes: Mutex::new(VecDeque::new()),
             grids: Mutex::new(Vec::new()),
+            authority: Mutex::new(None),
+            authority_generation: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -1053,6 +1130,55 @@ mod tests {
             rt.auth_failed("127.0.0.1".parse().unwrap(), now);
         }
         assert!(rt.auth_check("::1".parse().unwrap(), now).is_err());
+    }
+
+    #[test]
+    fn only_a_listener_devices_reach_directly_on_a_private_address_serves_https() {
+        let cfg = |bind: &str, url: Option<&str>| Config {
+            bind: bind.parse().unwrap(),
+            public_url: url.map(str::to_string),
+            ..Config::default()
+        };
+        let tailscale = cfg("127.0.0.1:47823", Some("https://box.tail1.ts.net"));
+        assert!(!tailscale.serves_tls(), "tailscale serve terminates HTTPS");
+        assert_eq!(tailscale.effective_url(), "https://box.tail1.ts.net");
+        assert!(tailscale
+            .allowed_origins()
+            .contains(&"http://127.0.0.1:47823".to_string()));
+        assert_eq!(tailscale.tls_refusal(), None);
+        assert_eq!(
+            cfg("127.0.0.1:47823", None).effective_url(),
+            "http://127.0.0.1:47823"
+        );
+
+        let wifi = cfg("0.0.0.0:47823", Some("https://192.168.1.20:47823"));
+        assert!(wifi.serves_tls());
+        assert_eq!(wifi.tls_refusal(), None);
+        let lan = cfg("192.168.1.20:47823", None);
+        assert!(lan.serves_tls());
+        assert_eq!(lan.effective_url(), "https://192.168.1.20:47823");
+        assert!(lan
+            .allowed_origins()
+            .contains(&"https://192.168.1.20:47823".to_string()));
+
+        let tailnet_ip = cfg("100.64.0.2:47823", None);
+        assert!(!tailnet_ip.serves_tls(), "the authority cannot certify it");
+        assert!(tailnet_ip.plain_http_off_loopback());
+
+        let plain = cfg("0.0.0.0:47823", Some("http://192.168.1.20:47823"));
+        let refusal = plain.tls_refusal().unwrap();
+        assert!(
+            refusal.contains("use https://192.168.1.20:47823"),
+            "{refusal}"
+        );
+        let mut stored = plain.clone();
+        stored.upgrade_public_scheme();
+        assert_eq!(
+            stored.public_url.as_deref(),
+            Some("https://192.168.1.20:47823")
+        );
+        let foreign = cfg("192.168.1.20:47823", Some("https://box.example"));
+        assert!(foreign.tls_refusal().unwrap().contains("cannot cover"));
     }
 
     #[test]

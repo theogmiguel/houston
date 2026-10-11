@@ -70,22 +70,105 @@ const FONTS: [(&str, &[u8]); 6] = [
 const PCM_WORKLET_JS: &str = include_str!("pwa/pcm-worklet.js");
 
 /// Serves `router` on `listener` with the connection cap and idle timeout,
-/// until `shutdown` resolves.
+/// until `shutdown` resolves: over HTTPS with `tls`, else plain HTTP for a
+/// loopback bind behind a proxy that terminates HTTPS.
 pub async fn serve(
     daemon: Arc<Daemon>,
     listener: tokio::net::TcpListener,
+    tls: Option<Arc<tokio_rustls::rustls::ServerConfig>>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    let listener = LimitedListener {
-        inner: listener,
-        permits: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+    let Some(tls) = tls else {
+        let listener = LimitedListener {
+            inner: listener,
+            permits: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+        };
+        return axum::serve(
+            listener,
+            router(daemon).into_make_service_with_connect_info::<Peer>(),
+        )
+        .with_graceful_shutdown(shutdown)
+        .await;
     };
-    axum::serve(
+    let local = listener.local_addr()?;
+    let (tx, rx) = tokio::sync::mpsc::channel(MAX_CONNECTIONS);
+    let handshakes = tokio::spawn(accept_tls(
         listener,
+        tokio_rustls::TlsAcceptor::from(tls),
+        Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+        tx,
+    ));
+    let served = axum::serve(
+        TlsListener { rx, local },
         router(daemon).into_make_service_with_connect_info::<Peer>(),
     )
     .with_graceful_shutdown(shutdown)
-    .await
+    .await;
+    handshakes.abort();
+    served
+}
+
+type TlsConnection = tokio_rustls::server::TlsStream<IdleTimeoutStream>;
+
+/// Holds at most `MAX_CONNECTIONS` at once (further clients wait in the kernel
+/// backlog) and runs each TLS handshake on its own task, so a slow client never
+/// holds up the next one.
+async fn accept_tls(
+    listener: tokio::net::TcpListener,
+    acceptor: tokio_rustls::TlsAcceptor,
+    permits: Arc<Semaphore>,
+    ready: tokio::sync::mpsc::Sender<(TlsConnection, SocketAddr)>,
+) {
+    loop {
+        let permit = Arc::clone(&permits)
+            .acquire_owned()
+            .await
+            .expect("the connection semaphore is never closed");
+        let (stream, addr) = match listener.accept().await {
+            Ok(accepted) => accepted,
+            Err(e) => {
+                tracing::debug!("remote access: accept failed: {e}");
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                continue;
+            }
+        };
+        let _ = stream.set_nodelay(true);
+        let acceptor = acceptor.clone();
+        let ready = ready.clone();
+        tokio::spawn(async move {
+            match acceptor
+                .accept(IdleTimeoutStream::new(stream, permit))
+                .await
+            {
+                Ok(tls) => {
+                    let _ = ready.send((tls, addr)).await;
+                }
+                Err(e) => tracing::debug!("remote access: TLS handshake with {addr} failed: {e}"),
+            }
+        });
+    }
+}
+
+/// Connections whose TLS handshake finished.
+pub struct TlsListener {
+    rx: tokio::sync::mpsc::Receiver<(TlsConnection, SocketAddr)>,
+    local: SocketAddr,
+}
+
+impl axum::serve::Listener for TlsListener {
+    type Io = TlsConnection;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        match self.rx.recv().await {
+            Some(connection) => connection,
+            None => std::future::pending().await,
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        Ok(self.local)
+    }
 }
 
 /// The remote peer's address, for the per-source authentication lockout, and
@@ -148,6 +231,15 @@ impl axum::serve::Listener for LimitedListener {
 
     fn local_addr(&self) -> std::io::Result<SocketAddr> {
         self.inner.local_addr()
+    }
+}
+
+impl Connected<axum::serve::IncomingStream<'_, TlsListener>> for Peer {
+    fn connect_info(stream: axum::serve::IncomingStream<'_, TlsListener>) -> Self {
+        Peer(
+            *stream.remote_addr(),
+            Arc::clone(&stream.io().get_ref().0.holds),
+        )
     }
 }
 
@@ -248,6 +340,9 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/app.js", get(app_js))
         .route("/app.css", get(app_css))
         .route("/pcm-worklet.js", get(pcm_worklet_js))
+        .route("/houston-ca.crt", get(ca_crt))
+        .route("/houston-ca.mobileconfig", get(ca_mobileconfig))
+        .route("/api/ca", get(ca_info))
         .route("/api/pair", post(pair))
         .route("/api/me", get(me))
         .route("/api/activity", get(activity))
@@ -402,6 +497,67 @@ async fn pcm_worklet_js() -> Response {
         PCM_WORKLET_JS,
     )
         .into_response()
+}
+
+/// The certificate authority devices trust; public, so served without a token.
+/// A listener behind a proxy that terminates HTTPS has none to offer.
+async fn authority(daemon: Arc<Daemon>) -> Result<Arc<super::tls::Authority>, Refused> {
+    blocking(move || {
+        if !daemon.remote_config().serves_tls() {
+            return Err(Refused::from(ApiError::NotFound(
+                "this listener does not serve HTTPS itself, so there is no certificate to \
+                 trust: Houston serves its own HTTPS only on a private network address"
+                    .to_string(),
+            )));
+        }
+        daemon
+            .remote_authority()
+            .map_err(|e| Refused::from(ApiError::Internal(format!("{e:#}"))))
+    })
+    .await
+}
+
+async fn ca_crt(State(daemon): State<Arc<Daemon>>) -> Response {
+    match authority(daemon).await {
+        Ok(ca) => (
+            [
+                (header::CONTENT_TYPE, "application/x-x509-ca-cert"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"houston-ca.crt\"",
+                ),
+            ],
+            ca.cert_der().to_vec(),
+        )
+            .into_response(),
+        Err(refused) => refused.into_response(),
+    }
+}
+
+async fn ca_mobileconfig(State(daemon): State<Arc<Daemon>>) -> Response {
+    match authority(daemon).await {
+        Ok(ca) => (
+            [
+                (header::CONTENT_TYPE, "application/x-apple-aspen-config"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"houston-ca.mobileconfig\"",
+                ),
+            ],
+            ca.mobileconfig(),
+        )
+            .into_response(),
+        Err(refused) => refused.into_response(),
+    }
+}
+
+async fn ca_info(State(daemon): State<Arc<Daemon>>) -> Response {
+    match authority(daemon).await {
+        Ok(ca) => {
+            Json(json!({ "name": ca.name(), "fingerprint": ca.fingerprint() })).into_response()
+        }
+        Err(refused) => refused.into_response(),
+    }
 }
 
 async fn app_css() -> Response {

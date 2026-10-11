@@ -3417,6 +3417,18 @@ async fn dispatch(
             remote_reply(sink, result).await;
             Ok(())
         }
+        proto::ClientMsg::RemoteCaRegenerate => {
+            let d = Arc::clone(daemon);
+            let result = tokio::task::spawn_blocking(move || d.remote_regenerate_authority())
+                .await
+                .unwrap_or_else(|e| {
+                    Err(anyhow::anyhow!(
+                        "regenerating the certificate panicked: {e}"
+                    ))
+                });
+            remote_reply(sink, result).await;
+            Ok(())
+        }
         proto::ClientMsg::RemotePairStart => {
             let d = Arc::clone(daemon);
             let result = tokio::task::spawn_blocking(move || d.remote_pairing_msg())

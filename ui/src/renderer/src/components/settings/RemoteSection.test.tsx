@@ -26,6 +26,8 @@ function info(overrides: Partial<RemoteInfo> = {}): RemoteInfo {
     notify_detail: 'generic',
     notify_finished: false,
     dictation: false,
+    tls: false,
+    ca_fingerprint: null,
     devices: [],
     ...overrides
   }
@@ -43,6 +45,7 @@ function fakeClient() {
     remoteGet: vi.fn(),
     remoteConfigure: vi.fn(),
     remotePairStart: vi.fn(),
+    remoteCaRegenerate: vi.fn(),
     remoteDeviceRevoke: vi.fn()
   }
   const emit = (msg: ServerMsg): void => {
@@ -81,10 +84,11 @@ describe('RemoteSection', () => {
   })
 
   it('derives the route and hands Change… to the caller', () => {
-    expect(routeKind({ bind: '127.0.0.1:47823', public_url: 'https://box.ts.net' })).toBe('Tailscale')
-    expect(routeKind({ bind: '0.0.0.0:47823', public_url: 'http://192.168.1.20:47823' })).toBe('Same Wi-Fi')
-    expect(routeKind({ bind: '127.0.0.1:47823', public_url: null })).toBe('Custom')
-    expect(routeKind({ bind: '100.64.0.2:47823', public_url: 'https://box.ts.net' })).toBe('Custom')
+    expect(routeKind({ bind: '127.0.0.1:47823', public_url: 'https://box.ts.net', tls: false })).toBe('Tailscale')
+    expect(routeKind({ bind: '0.0.0.0:47823', public_url: 'https://192.168.1.20:47823', tls: true })).toBe('Same Wi-Fi')
+    expect(routeKind({ bind: '0.0.0.0:47823', public_url: 'http://192.168.1.20:47823', tls: false })).toBe('Same Wi-Fi')
+    expect(routeKind({ bind: '127.0.0.1:47823', public_url: null, tls: false })).toBe('Custom')
+    expect(routeKind({ bind: '100.64.0.2:47823', public_url: 'https://box.ts.net', tls: false })).toBe('Custom')
     const { emit, asClient } = fakeClient()
     const onChangeRoute = renderSection(asClient)
     emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, public_url: 'https://box.ts.net' }) })
@@ -183,8 +187,33 @@ describe('RemoteSection', () => {
     emit({ type: 'remote_state', remote: info({ enabled: true, bind: '0.0.0.0:47823', public_url: 'http://192.168.1.20:47823' }) })
     expect(screen.getByTestId('settings-remote-plain-http').textContent).toContain('plain HTTP')
     expect(screen.getByTestId('settings-remote-route').textContent).toBe('Same Wi-Fi')
-    expect(plainHttpOffLoopback({ bind: '127.0.0.1:47823', public_url: null })).toBe(false)
-    expect(plainHttpOffLoopback({ bind: '100.64.0.2:47823', public_url: 'https://box.ts.net' })).toBe(false)
-    expect(plainHttpOffLoopback({ bind: '[::1]:47823', public_url: null })).toBe(false)
+    expect(plainHttpOffLoopback({ bind: '127.0.0.1:47823', public_url: null, tls: false })).toBe(false)
+    expect(plainHttpOffLoopback({ bind: '100.64.0.2:47823', public_url: 'https://box.ts.net', tls: false })).toBe(false)
+    expect(plainHttpOffLoopback({ bind: '[::1]:47823', public_url: null, tls: false })).toBe(false)
+    expect(plainHttpOffLoopback({ bind: '192.168.1.20:47823', public_url: null, tls: true })).toBe(false)
+  })
+
+  it('describes the Same Wi-Fi route over HTTPS with no plain-HTTP warning', () => {
+    const { emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, bind: '0.0.0.0:47823', public_url: 'https://192.168.1.20:47823', url: 'https://192.168.1.20:47823', tls: true, ca_fingerprint: 'AB:CD' }) })
+    expect(screen.getByTestId('settings-remote-route').textContent).toBe('Same Wi-Fi')
+    expect(screen.queryByTestId('settings-remote-plain-http')).toBeNull()
+    expect(screen.getByText(/over HTTPS, with this computer's certificate/)).toBeTruthy()
+  })
+
+  it('shows the certificate fingerprint and regenerates only after confirmation', () => {
+    const { client, emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, public_url: 'https://box.ts.net' }) })
+    expect(screen.queryByTestId('settings-remote-ca-fingerprint')).toBeNull()
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, bind: '192.168.1.20:47823', tls: true }) })
+    expect(screen.getByTestId('settings-remote-ca-fingerprint').textContent).toContain('first serves HTTPS')
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, bind: '192.168.1.20:47823', tls: true, ca_fingerprint: 'AB:CD' }) })
+    expect(screen.getByTestId('settings-remote-ca-fingerprint').textContent).toBe('AB:CD')
+    fireEvent.click(screen.getByTestId('settings-remote-ca-regenerate'))
+    expect(client.remoteCaRegenerate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('Regenerate', { selector: 'button *' }))
+    expect(client.remoteCaRegenerate).toHaveBeenCalledOnce()
   })
 })

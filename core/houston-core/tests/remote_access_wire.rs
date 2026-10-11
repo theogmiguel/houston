@@ -560,7 +560,7 @@ async fn binding_every_interface_needs_a_public_url() {
     daemon
         .remote_configure(ConfigPatch {
             bind: Some("0.0.0.0:47999".into()),
-            public_url: Some("http://192.168.1.20:47999".into()),
+            public_url: Some("https://192.168.1.20:47999".into()),
             ..Default::default()
         })
         .unwrap();

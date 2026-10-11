@@ -371,8 +371,9 @@ every refusal names the setting.
 | Message | Fields | Reply |
 |---|---|---|
 | `remote_get` | — | `remote_state` (direct) |
-| `remote_configure` | `enabled?`, `bind?` (`IP:PORT`, port not 0), `public_url?` (an http(s) origin; `""` clears), `ntfy_url?` (an http(s) topic URL, stored in the OS keychain; `""` turns notifications off), `notify_delay_secs?` (`0..=REMOTE_NOTIFY_DELAY_MAX_SECS`), `notify_detail?: RemoteNotifyDetail`, `notify_finished?`, `dictation?` | `remote_state` (bcast). Every field is validated before any is stored, so a refusal changes nothing; it is an `error` with `context: "remote"` naming the value and the expected shape (an ntfy refusal never echoes the URL) |
+| `remote_configure` | `enabled?`, `bind?` (`IP:PORT`, port not 0), `public_url?` (an http(s) origin; `""` clears; an https origin the certificate authority can certify while `RemoteInfo.tls` would be true), `ntfy_url?` (an http(s) topic URL, stored in the OS keychain; `""` turns notifications off), `notify_delay_secs?` (`0..=REMOTE_NOTIFY_DELAY_MAX_SECS`), `notify_detail?: RemoteNotifyDetail`, `notify_finished?`, `dictation?` | `remote_state` (bcast). Every field is validated before any is stored, so a refusal changes nothing; it is an `error` with `context: "remote"` naming the value and the expected shape (an ntfy refusal never echoes the URL) |
 | `remote_pair_start` | — | `remote_pairing` (direct). Replaces any earlier code |
+| `remote_ca_regenerate` | — | `remote_state` (bcast) with the new `ca_fingerprint`. Replaces the listener's certificate authority; the next handshakes use a certificate from the new one, so every device must trust it again. A keychain failure is an `error` with `context: "remote"` |
 | `remote_device_revoke` | `id` | `remote_state` (bcast); an unknown id is an `error` with `context: "remote"` |
 | `remote_grids_publish` | `grids: RemoteGrid[]` (`{workspace, id, name, sessions: u32[]}`, sessions in the grid's reading order) | none. The renderer sends its saved grids on connect and after a layout save; the daemon keeps them in memory for paired devices and announces a change with the `grids` event. More than `REMOTE_GRIDS_MAX` (256) grids, more than `REMOTE_GRID_SESSIONS_MAX` (64) panes in a grid, a name over `REMOTE_GRID_NAME_MAX` (120) characters or an empty id is an `error` with `context: "remote"` naming the limit and the value, and stores nothing |
 
@@ -857,11 +858,14 @@ WorktreeKeep       stale{idle_days} | branch_changed{current?} | dirty{files} | 
 
 RemoteNotifyDetail generic | pane_name
 RemoteDevice       id, name, created_at (epoch ms), last_seen_at? (epoch ms)
-RemoteInfo         enabled, bind ("IP:PORT"), public_url?, url (public_url, else http://<bind>), listening,
+RemoteInfo         enabled, bind ("IP:PORT"), public_url?, url (public_url, else http(s)://<bind>), listening,
                    error? (the last bind or serve failure), ntfy_server? (origin only; the topic URL is in the
                    OS keychain and never on the wire), notify_delay_secs, notify_detail: RemoteNotifyDetail,
                    notify_finished, dictation (paired devices may send recordings to transcribe; default
-                   false, independent of VoiceSettings.enabled), devices: RemoteDevice[]
+                   false, independent of VoiceSettings.enabled), tls (the listener serves HTTPS itself: a
+                   bind off loopback on an address the local certificate authority can certify),
+                   ca_fingerprint? (SHA-256 of that authority as uppercase hex pairs; absent until Houston
+                   first serves its own HTTPS), devices: RemoteDevice[]
 
 UsageProvider      claude | codex
 UsageTokenTotals   uncached_input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_tokens
@@ -1201,9 +1205,15 @@ resolve or consume the durable inbox rows.
 
 A separate, opt-in listener (`RemoteInfo.bind`, default `127.0.0.1:47823`, or
 `127.0.0.1:47824` on the dev channel so the two never share a web origin) serves
-paired devices. It is not `/ws`: it never serves `/ws`, `/mcp`, `/orchestrate`,
-`/task`, `/inbox`, `/harness` or `/manage`, and it carries no PTY byte stream.
-Bodies are JSON (`Content-Type: application/json`), at most `BODY_LIMIT` bytes.
+paired devices. On a loopback bind it speaks plain HTTP, for a proxy on this
+computer that terminates HTTPS, such as `tailscale serve`. Off loopback, on a
+private, loopback or IPv6 unique-local address, or on every interface behind a
+public URL on such an address or a `.local` name (`RemoteInfo.tls`), it serves
+HTTPS only, with a server certificate signed by the daemon's local certificate
+authority (see the `/houston-ca.*` routes). Any other bind stays plain HTTP. It
+is not `/ws`: it never serves `/ws`, `/mcp`, `/orchestrate`, `/task`, `/inbox`,
+`/harness` or `/manage`, and it carries no PTY byte stream. Bodies are JSON
+(`Content-Type: application/json`), at most `BODY_LIMIT` bytes, except dictation's.
 Errors are `{"error": "<message naming the value and the expected shape>"}`.
 A 401 for a known revoked token adds `"reason": "revoked"`; the daemon remembers the last
 256 revoked token hashes in memory, so an older revocation or daemon restart can omit it.
@@ -1211,6 +1221,8 @@ A 401 for a known revoked token adds `"reason": "revoked"`; the daemon remembers
 | Route | Auth | Body / query | Reply |
 |---|---|---|---|
 | `GET /`, `/app.js`, `/app.css`, `/pcm-worklet.js`, `/manifest.webmanifest`, `/icon-192.png`, `/apple-touch-icon.png`, `/fonts/{name}` | none | — | the embedded web client; `/` carries a CSP that admits scripts and styles only from this listener and no inline code |
+| `GET /houston-ca.crt`, `/houston-ca.mobileconfig` | none | — | the listener's certificate authority, as DER (`application/x-x509-ca-cert`) for Android and as an iOS configuration profile (`application/x-apple-aspen-config`); 404 while `RemoteInfo.tls` is false |
+| `GET /api/ca` | none | — | `{name, fingerprint}` of the certificate authority, to compare with Settings before trusting it; 404 while `RemoteInfo.tls` is false |
 | `POST /api/pair` | pairing code | `{code, device_name}` (1–64 printable characters) | `{token, device_id}`. The token (256 bits, hex) is returned once; the daemon stores its SHA-256 |
 | `GET /api/activity` | device | `?after=` a global sequence number, default 0 | `{epoch, entries: [{seq, at (epoch ms), session, kind: finished | needs_you | answered, title, excerpt?}], truncated}`. A 500-entry memory ring; paging and epoch semantics match `/feed`. Titles are masked and capped at 300 characters, excerpts at 160. `answered` excerpts identify `from this phone` or `in the terminal` |
 | `GET /api/me` | device | — | `{device_id, name, dictation, host: {name, version}, connection: {url, https}}`. `dictation` is `RemoteInfo.dictation`. Host name is masked and capped at 128 characters; version is the daemon package version; URL is the configured public origin or HTTP bind origin, with `https` indicating its scheme |
@@ -1254,7 +1266,8 @@ A truncated preview refuses approval with 409; denial remains available.
 Device auth is `Authorization: Bearer <token>`. Every request's `Host` must name
 an allowed host (`localhost`, `127.0.0.1`, `[::1]`, the bind IP, the public URL's
 host), else 421; a non-GET request whose `Origin` is not the public URL or
-`http://<allowed host>:<bind port>` (scheme, host and port compared) gets 403.
+`<scheme>://<allowed host>:<bind port>` (scheme, host and port compared; `https`
+while `RemoteInfo.tls`) gets 403.
 Neither refusal lists the allowed names. A bind on every interface (`0.0.0.0`,
 `::`) is refused unless a public URL is set.
 
@@ -1293,7 +1306,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 135 | **The daemon assembles dictated text.** `voice_transcript` gains `insert`, the text the renderer puts in the prompt; the agent preamble and its once-per-pane rule moved from the renderer to the daemon, so desktop and remote dictation share them. `RemoteInfo.dictation` and `remote_configure.dictation?` turn on dictation from paired devices (`POST /api/sessions/{id}/dictate`) |
+| 135 | **The daemon assembles dictated text.** `voice_transcript` gains `insert`, the text the renderer puts in the prompt; the agent preamble and its once-per-pane rule moved from the renderer to the daemon, so desktop and remote dictation share them. `RemoteInfo.dictation` and `remote_configure.dictation?` turn on dictation from paired devices (`POST /api/sessions/{id}/dictate`). The remote listener serves HTTPS itself with a local certificate authority when devices reach it directly on a private address: `RemoteInfo.tls`, `RemoteInfo.ca_fingerprint` and `remote_ca_regenerate`; `url` and allowed origins use `https://` then, and `public_url` must be an https origin the authority can certify. A loopback bind (the Tailscale route) is unchanged |
 | 134 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`, and `remote_grids_publish` with `RemoteGrid`, so paired devices group panes by desktop grid. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |
 | 133 | **Children ask the orchestrator before alerting the user, retain instruction queues and expose full results after close.** `InboxKind` gains progress/question/blocked/reply and `InboxRow.reply_to?`. `DelegationState.asked_orchestrator` and `DelegationInfo.input_request?` type input ownership, stable identity, bounded redacted provider permission evidence and escalation reasons. Every actual permission is parent-first; parents deny or escalate and only the operator may approve; only user-owned asks count in `children_waiting`. MCP/CLI gain report, reply, deny, escalate and instruction list/get/cancel/resume. Typed instruction snapshots, acceptance and detail record queued/held/delivered/cancelled/uncertain states. Result previews gain stable message/request identity and readiness; result pagination and scoped full-result detail/refusal support archived children. All new `/ws` messages and payloads are defined above. |
 | 132 | **Claude panes use the fullscreen TUI by default.** `SessionPolicy.claude_fullscreen` defaults to true and can be changed through `session_policy_set`; the launcher sets the fullscreen environment flag when enabled. |
