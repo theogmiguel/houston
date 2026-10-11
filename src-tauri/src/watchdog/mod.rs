@@ -372,6 +372,7 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
         );
         let mut probes = ProbeTable::new();
         let mut next_probe_ms = u64::MAX;
+        let mut capacity_deadline_ms = None;
         let mut next_tick_ms = start.mono_ms + t.clock_tick_ms;
 
         eprintln!(
@@ -521,8 +522,12 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
             if self.page_loaded.load(Ordering::SeqCst) && now.mono_ms >= next_probe_ms {
                 next_probe_ms = now.mono_ms + machine.probe_period_ms();
                 if !self.issue_probe(&mut probes, now.mono_ms) {
-                    let actions = machine.on_event(Event::ProbeFailed, now.mono_ms);
-                    self.apply(&mut machine, &mut probes, actions, now);
+                    if capacity_failed(&mut capacity_deadline_ms, now.mono_ms, t.hang_ms) {
+                        let actions = machine.on_event(Event::ProbeFailed, now.mono_ms);
+                        self.apply(&mut machine, &mut probes, actions, now);
+                    }
+                } else {
+                    capacity_deadline_ms = None;
                 }
             }
         }
@@ -864,6 +869,15 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
     }
 }
 
+fn capacity_failed(deadline: &mut Option<u64>, now_ms: u64, hang_ms: u64) -> bool {
+    let next = deadline.get_or_insert(now_ms.saturating_add(hang_ms));
+    if now_ms < *next {
+        return false;
+    }
+    *next = now_ms.saturating_add(hang_ms);
+    true
+}
+
 struct NativeToken {
     health: Arc<RendererHealth>,
     stop: Arc<AtomicBool>,
@@ -983,6 +997,13 @@ fn native_prompt_with_driver(
     );
     dialog.add_button("Wait", gtk::ResponseType::Cancel);
     dialog.add_button("Reload the interface", gtk::ResponseType::Accept);
+    if let Some(outcome) = prompt_preflight(deadline_ms, cancel, SystemClocks.sample().mono_ms) {
+        // SAFETY: the undisplayed dialog has no callbacks or other owners yet.
+        unsafe {
+            dialog.destroy();
+        }
+        return outcome;
+    }
     dialog.show_all();
 
     const POLL_MS: u64 = 250;
@@ -1251,6 +1272,17 @@ mod source_lifecycle_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn physical_capacity_pressure_does_not_shorten_the_hang_deadline() {
+        let mut deadline = None;
+        for now in [4_000, 6_000, 8_000, 10_000, 12_000] {
+            assert!(!capacity_failed(&mut deadline, now, 10_000));
+        }
+        assert!(capacity_failed(&mut deadline, 14_000, 10_000));
+        assert!(!capacity_failed(&mut deadline, 16_000, 10_000));
+        assert!(capacity_failed(&mut deadline, 24_000, 10_000));
+    }
 
     #[test]
     fn held_native_executor_and_unanswered_callbacks_have_physical_bounds() {
