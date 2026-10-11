@@ -158,6 +158,22 @@ export function WorkspaceDefaultsSection({
           />
         </Row>
       </SettingsList>
+      <SubHead>Claude Code</SubHead>
+      <SettingsList>
+        <Row
+          title="Start Claude in fullscreen"
+          desc={globalDescription('Claude panes use Claude Code\'s fullscreen renderer, so resizing the window redraws the pane instead of repeating its output in scrollback. Scroll with the mouse wheel inside Claude. Off leaves the choice to Claude Code\'s /tui command. Applies to Claude panes started or restarted after the change.')}
+        >
+          <Toggle
+            on={sessionPolicy?.claude_fullscreen ?? true}
+            disabled={sessionPolicy === null}
+            onChange={(on) =>
+              sessionPolicy && onSessionPolicy({ ...sessionPolicy, claude_fullscreen: on })
+            }
+            data-testid="claude-fullscreen-switch"
+          />
+        </Row>
+      </SettingsList>
       <SubHead>Browser</SubHead>
       <SettingsList>
         <Row

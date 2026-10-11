@@ -190,7 +190,7 @@ split across the cutoff is not lost. A client that does not advertise the snapsh
 version, or a build without the emulator, falls back to the byte replay by name. So does a
 pane whose own grid is not the one the container was captured at: a container carries its
 geometry and importing applies it, and a pane's first attach goes out before its first
-resize reaches the daemon, so a session still at its 80×24 spawn size would otherwise pin
+resize reaches the daemon, so a session still at an 80×24 default size would otherwise pin
 the renderer's terminal to 80 columns with nothing to put it back. The pane's measurement
 is the authority; a foreign grid is refused and replayed as bytes.
 

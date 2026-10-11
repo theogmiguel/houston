@@ -260,8 +260,16 @@ export class GhosttyPaneTerminal implements PaneTerminal {
   /** False when the measured box cannot hold a cell — a collapsed viewport.
    * The pane must then not report a size: the engine kept its last real grid
    * and the PTY must keep its last real size. */
-  fit(): boolean {
-    return this.surface?.fit() ?? false
+  fit(deferGrid = false): boolean {
+    return this.surface?.fit(deferGrid) ?? false
+  }
+
+  mountBox(): { width: number; height: number } | null {
+    return this.surface?.mountBox() ?? null
+  }
+
+  gridForBox(width: number, height: number): { cols: number; rows: number } | null {
+    return this.surface?.gridForBox(width, height) ?? null
   }
 
   onResize(listener: (cols: number, rows: number) => void): void {

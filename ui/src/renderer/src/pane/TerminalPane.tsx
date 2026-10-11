@@ -2,6 +2,7 @@ import { TERMINAL_FOCUS_EVENT, openSideTasks } from '../sidePanel'
 import { FILE_REFERENCE_MIME, fileReference } from '../components/files/fileActions'
 import { claimVisibility } from './registration'
 import { registerTerminalSelection } from './terminalSelection'
+import { registerTerminalSizer } from './newPaneSize'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import {
   GhosttyPaneTerminal,
@@ -394,6 +395,11 @@ export function TerminalPane({
     })
     const ghostty = ghosttyTerm
     const fitTerminal = (): boolean => ghostty.fit()
+    const unregisterSizer = registerTerminalSizer(info.id, {
+      host,
+      mountBox: () => ghostty.mountBox(),
+      gridForBox: (width, height) => ghostty.gridForBox(width, height)
+    })
     searchRef.current = createGhosttyFinder({
       cols: ghostty.cols,
       bufferRowCount: () => ghostty.bufferRowCount(),
@@ -1173,7 +1179,9 @@ export function TerminalPane({
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
       resizeFrame = requestAnimationFrame(() => {
         resizeFrame = undefined
-        syncSize()
+        // A layout change reaches the PTY through the surface's debounced
+        // `onResize`, so an animation sends one size instead of one per frame.
+        if (host.offsetWidth && host.offsetHeight && ghostty.attached) ghostty.fit(true)
       })
     })
     observer.observe(host)
@@ -1214,6 +1222,7 @@ export function TerminalPane({
       webLinkProviderDisposable.dispose()
       taskLinkProviderDisposable.dispose()
       unregisterBenchProbe()
+      unregisterSizer()
       writeQueue.dispose()
       term.dispose()
       termRef.current = null

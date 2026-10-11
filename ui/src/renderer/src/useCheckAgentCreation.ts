@@ -2,7 +2,8 @@ import { useCallback } from 'react'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import type { AgentKind, HoustonClient, SessionInfo } from './houston/client'
 import type { CheckAgentTarget } from './components/prs/ChecksList'
-import type { PaneKey } from './layout/tree'
+import type { LayoutNode, PaneKey } from './layout/tree'
+import { newPaneSize } from './pane/newPaneSize'
 
 export interface CheckAgentSplitIntent {
   anchor: number
@@ -24,6 +25,7 @@ interface UseCheckAgentCreationOptions {
   setSelectedWorkspace: Dispatch<SetStateAction<string>>
   setExpandedId: Dispatch<SetStateAction<PaneKey | null>>
   splitIntents: MutableRefObject<CheckAgentSplitIntent[]>
+  currentTreeRef?: { current: LayoutNode | null }
 }
 
 export function useCheckAgentCreation({
@@ -37,6 +39,7 @@ export function useCheckAgentCreation({
   setSelectedWorkspace,
   setExpandedId,
   splitIntents,
+  currentTreeRef
 }: UseCheckAgentCreationOptions): (provider: string, text: string) => Promise<number | null> {
   return useCallback((provider, text) => {
     const agents: Record<string, AgentKind> = {
@@ -67,7 +70,10 @@ export function useCheckAgentCreation({
         resolve(message.info.id)
       })
     })
-    client.createSession({ agent, project_dir: workspace, cwd_from: anchor ?? undefined, shell_integration: shellIntegration, prompt: text })
+    // Another workspace's grid is not on screen to measure; its pane starts at the default.
+    const tree = selectedWorkspace === workspace ? currentTreeRef?.current ?? null : null
+    const size = tree ? newPaneSize(tree, tree, anchor !== null ? { anchor, side: 'right' } : null) : {}
+    client.createSession({ ...size, agent, project_dir: workspace, cwd_from: anchor ?? undefined, shell_integration: shellIntegration, prompt: text })
     return createdSession
-  }, [activeIdRef, client, panelWorkspace, selectedWorkspace, sessionsRef, setExpandedId, setSelectedWorkspace, shellIntegration, splitIntents, targets])
+  }, [activeIdRef, client, currentTreeRef, panelWorkspace, selectedWorkspace, sessionsRef, setExpandedId, setSelectedWorkspace, shellIntegration, splitIntents, targets])
 }

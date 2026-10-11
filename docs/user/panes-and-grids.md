@@ -143,6 +143,13 @@ configurable in Settings ▸ Terminal ▸ Scrollback; raising it keeps more hist
 cost of memory. Settings ▸ Terminal ▸ Shell integration is a separate toggle for shell
 prompt/command tracking in plain-shell panes.
 
+Claude panes start in Claude Code's fullscreen renderer. Claude Code keeps the
+conversation on the alternate screen and scrolls it itself with the mouse wheel, so
+resizing the window redraws the pane instead of leaving repeated or rewrapped output in
+the terminal's scrollback. To use Claude Code's inline renderer, turn off
+Settings ▸ Workspaces ▸ Start Claude in fullscreen; Claude Code's `/tui` command then
+decides. The setting applies to Claude panes started or restarted after the change.
+
 ## Closing the window
 
 Closing the window leaves the daemon and its sessions running. Settings ▸ Daemon ▸

@@ -50,7 +50,7 @@ export interface GhosttySurfaceMock {
   importSnapshotSucceeds: boolean
   snapshotFormatVersion: number
   readonly pasteSpy: Mock<(data: string) => void>
-  readonly fitSpy: Mock<() => void>
+  readonly fitSpy: Mock<(deferGrid?: boolean) => void>
   readonly focusSpy: Mock<() => void>
   readonly blurSpy: Mock<() => void>
   readonly themeSpy: Mock<(theme: unknown) => void>
@@ -80,7 +80,7 @@ const spies = {
   resetSpy: vi.fn<() => void>(),
   importSnapshotSpy: vi.fn<(state: Uint8Array) => void>(),
   pasteSpy: vi.fn<(data: string) => void>(),
-  fitSpy: vi.fn<() => void>(),
+  fitSpy: vi.fn<(deferGrid?: boolean) => void>(),
   focusSpy: vi.fn<() => void>(),
   blurSpy: vi.fn<() => void>(),
   themeSpy: vi.fn<(theme: unknown) => void>(),
@@ -253,8 +253,12 @@ export function ghosttySurfaceMockModule(): {
           blur: () => {
             ghosttyMock.blurSpy()
           },
-          fit: () => {
-            ghosttyMock.fitSpy()
+          // No measurable box: a pane mounted under the mock sizes no new pane.
+          mountBox: () => ({ width: 0, height: 0 }),
+          gridForBox: () => null,
+          // A deferred fit notifies here too, standing in for the debounce firing.
+          fit: (deferGrid = false) => {
+            ghosttyMock.fitSpy(deferGrid)
             if (!ghosttyMock.fitOk) return false
             if (
               lastReported !== null &&
