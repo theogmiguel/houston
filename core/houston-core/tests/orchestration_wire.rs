@@ -277,7 +277,7 @@ fn shim_dir() -> PathBuf {
                 let path = dir.join(name);
                 std::fs::write(
                     &path,
-                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
+                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_BLOCK_STDIN\" ]; then stty raw -echo; echo FIXTURE-READY; exec sleep 60; fi\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
                 )
                 .unwrap();
                 use std::os::unix::fs::PermissionsExt;
@@ -14841,4 +14841,333 @@ async fn input_policy_permission_tool_hint_uses_deny_and_escalate() {
         "{hint}"
     );
     assert!(!hint.contains("pane_send_keys"), "{hint}");
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test]
+async fn orchestrated_live_child_first_close_drains_and_reaps_exact_root() {
+    let _guard = serial().await;
+    let r = rig("close-admission").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let (status, spawned) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    assert_eq!(status, 200, "{spawned}");
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+    let (pid, creation) = r.daemon.pty_root_identity_for_test(child).unwrap();
+    let completed = r.daemon.pty_reader_completion_for_test(child).unwrap();
+    assert!(r
+        .daemon
+        .list()
+        .iter()
+        .any(|pane| pane.id == child && pane.state.is_live()));
+    let closing = r.daemon.clone();
+    tokio::task::spawn_blocking(move || closing.orchestrate_kill(parent.id, child, false))
+        .await
+        .unwrap()
+        .expect("first orchestrated Close must complete without timeout retry");
+    assert!(completed(), "Close must join the reader before returning");
+    assert_ne!(
+        houston_core::pid::process_creation_token(pid),
+        Some(creation),
+        "exact root must be reaped"
+    );
+    assert!(!r.daemon.list().iter().any(|pane| pane.id == child));
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    assert!(db.session_is_closed(child).unwrap());
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn retention_first_close_allows_unfinished_root_waiter_to_publish_and_reap() {
+    let _guard = serial().await;
+    let r = rig("retention-close-admission").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(&token, serde_json::json!({"kind":"codex","prompt":"work"}))
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+    let root = r.daemon.pty_root_identity_for_test(child).unwrap();
+    let completed = r.daemon.pty_reader_completion_for_test(child).unwrap();
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+    let barrier = tempfile::tempdir().unwrap();
+    struct Reset(Option<std::ffi::OsString>, PathBuf);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(self.1.join("armed"));
+            if let Some(value) = &self.0 {
+                std::env::set_var("HOUSTON_TEST_BARRIER_DIR", value);
+            } else {
+                std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+            }
+        }
+    }
+    let _reset = Reset(
+        std::env::var_os("HOUSTON_TEST_BARRIER_DIR"),
+        barrier.path().into(),
+    );
+    std::env::set_var("HOUSTON_TEST_BARRIER_DIR", barrier.path());
+    std::fs::write(barrier.path().join("armed"), "pty-exit-observed").unwrap();
+    r.daemon
+        .orchestrate_submit(child, "Completed work".to_string().into())
+        .unwrap();
+    apply_codex_hook_event(r._state.path(), child, "Stop").await;
+    let received = mcp_call(
+        r.addr,
+        &token,
+        "pane_wait",
+        serde_json::json!({"session":child,"timeout_ms":100}),
+    )
+    .await;
+    assert_eq!(received["isError"], false, "{received}");
+    r.daemon
+        .delegation_watch_tick_at(houston_core::hook_drop::now_ms() + 60_000);
+    assert!(r.daemon.delegation_of(child).unwrap().settled_at.is_some());
+    assert_eq!(
+        r.daemon
+            .list()
+            .iter()
+            .find(|pane| pane.id == child)
+            .unwrap()
+            .state,
+        proto::SessionState::Exited
+    );
+    let receipt = format!("pty-exit-observed {child}");
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while std::fs::read_to_string(barrier.path().join("reached"))
+            .ok()
+            .as_deref()
+            != Some(receipt.as_str())
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        houston_core::pid::process_creation_token(root.0),
+        Some(root.1)
+    );
+    let closing = r.daemon.clone();
+    let tick = tokio::task::spawn_blocking(move || {
+        closing.delegation_watch_tick_with_clocks_for_test(0, u64::MAX / 2)
+    });
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while !r.daemon.pty_cleanup_started_for_test(child) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    std::fs::remove_file(barrier.path().join("armed")).unwrap();
+    tick.await.unwrap();
+    assert!(completed());
+    assert_ne!(
+        houston_core::pid::process_creation_token(root.0),
+        Some(root.1)
+    );
+    assert!(
+        !r.daemon.list().iter().any(|pane| pane.id == child),
+        "first expiry pass must remove the retained child"
+    );
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    assert!(db.session_is_closed(child).unwrap());
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn orchestrated_input_receipts_do_not_prevent_close_of_a_blocked_pty_writer() {
+    let _guard = serial().await;
+    for prompt in [false, true] {
+        let r = rig("blocked-orchestration-input").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        std::env::set_var("HOUSTON_TEST_BLOCK_STDIN", "1");
+        let spawned = r
+            .post_spawn(
+                &r.token_for(parent.id),
+                serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+            )
+            .await;
+        std::env::remove_var("HOUSTON_TEST_BLOCK_STDIN");
+        assert_eq!(spawned.0, 200, "{}", spawned.1);
+        let child = spawned.1["session_id"].as_u64().unwrap() as u32;
+        await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+        apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+        let root = r.daemon.pty_root_identity_for_test(child).unwrap();
+        let completed = r.daemon.pty_reader_completion_for_test(child).unwrap();
+        let filling = r.daemon.clone();
+        let fill = tokio::task::spawn_blocking(move || {
+            filling.write_stdin_counting(child, &vec![b'x'; 1024 * 1024])
+        });
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while r.daemon.stdin_jobs_for_test(child).unwrap() != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let writing = r.daemon.clone();
+        let parent_id = parent.id;
+        let operation = tokio::task::spawn_blocking(move || {
+            if prompt {
+                writing
+                    .orchestrate_instruction_request(parent_id, child, "next", None, Some("steer"))
+                    .map(|_| ())
+            } else {
+                writing.orchestrate_send_keys(parent_id, child, &["enter".into()])
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while r.daemon.stdin_jobs_for_test(child).unwrap() != 2 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(
+            !operation.is_finished(),
+            "orchestration must still await its queued write receipt"
+        );
+        let closing = r.daemon.clone();
+        let mut close =
+            tokio::task::spawn_blocking(move || closing.orchestrate_kill(parent_id, child, false));
+        let first = tokio::time::timeout(Duration::from_secs(3), &mut close).await;
+        let admitted = first.is_ok();
+        let closed = match first {
+            Ok(result) => result.unwrap(),
+            Err(_) => {
+                // Unwind the pre-fix lock cycle using only this fixture's exact root.
+                houston_core::pid::signal_process_checked_identity(
+                    root.0,
+                    houston_core::pid::Signal::Kill,
+                    Some(root.1),
+                )
+                .unwrap();
+                close.await.unwrap()
+            }
+        };
+        let fill = fill.await.unwrap().unwrap_err();
+        let result = operation.await.unwrap();
+        assert!(
+            fill.written.is_some(),
+            "cancelled filler retains byte-count evidence"
+        );
+        if !prompt {
+            assert!(
+                result.is_err(),
+                "cancelled send_keys returns its real write failure"
+            );
+        }
+        closed.expect("first Close must cancel the writer and finish ownership cleanup");
+        assert!(
+            admitted,
+            "Close must admit while the orchestration call awaits its PTY receipt"
+        );
+        assert!(completed());
+        assert_ne!(
+            houston_core::pid::process_creation_token(root.0),
+            Some(root.1)
+        );
+        assert!(!r.daemon.list().iter().any(|pane| pane.id == child));
+        if prompt {
+            let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+            let rows = db.instruction_rows(child).unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].info.state, proto::InstructionState::HeldAfterRecovery,
+                "zero-byte cancellation must retain the untouched intent without reopening the closed target");
+            assert!(!rows[0].touched);
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn instruction_start_and_end_before_enter_receipt_are_retained() {
+    let _guard = serial().await;
+    let r = rig("early-instruction-evidence").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, spawned) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+    let barrier = tempfile::tempdir().unwrap();
+    struct Reset(Option<std::ffi::OsString>, PathBuf);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(self.1.join("armed"));
+            if let Some(value) = &self.0 {
+                std::env::set_var("HOUSTON_TEST_BARRIER_DIR", value);
+            } else {
+                std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+            }
+        }
+    }
+    let _reset = Reset(
+        std::env::var_os("HOUSTON_TEST_BARRIER_DIR"),
+        barrier.path().into(),
+    );
+    std::env::set_var("HOUSTON_TEST_BARRIER_DIR", barrier.path());
+    std::fs::write(barrier.path().join("armed"), "stdin-enter-receipt").unwrap();
+    let writing = r.daemon.clone();
+    let parent_id = parent.id;
+    let instruction = tokio::task::spawn_blocking(move || {
+        writing.orchestrate_instruction_request(parent_id, child, "followup", None, Some("steer"))
+    });
+    let receipt = format!("stdin-enter-receipt {child}");
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while std::fs::read_to_string(barrier.path().join("reached"))
+            .ok()
+            .as_deref()
+            != Some(receipt.as_str())
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // Enter reached the real PTY; its caller has not received the write receipt yet.
+    for event in ["UserPromptSubmit", "Stop"] {
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some("codex".into()),
+                event: event.into(),
+                prompt_id: Some("early-followup".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+    std::fs::remove_file(barrier.path().join("armed")).unwrap();
+    let accepted = instruction.await.unwrap().unwrap().0;
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    let row = db
+        .instruction_row(&accepted.instruction_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.info.state, proto::InstructionState::Delivered);
+    assert!(
+        row.adopted && row.completed,
+        "supported events during the receipt wait must finish the exact claimed instruction"
+    );
 }

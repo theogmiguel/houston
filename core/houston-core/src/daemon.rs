@@ -933,7 +933,9 @@ const STDIN_QUEUE_BYTES: usize = 4 * 1024 * 1024;
 // Also bounds tiny writes, callbacks and completion receivers.
 const STDIN_QUEUE_JOBS: usize = 128;
 
-type StdinCompletion = Box<dyn FnOnce(std::result::Result<(), StdinWriteError>) + Send>;
+type StdinOutcome = std::result::Result<(), StdinWriteError>;
+type StdinReceipt = std::sync::mpsc::Receiver<StdinOutcome>;
+type StdinCompletion = Box<dyn FnOnce(StdinOutcome) + Send>;
 struct StdinJob {
     data: Vec<u8>,
     partial_after: Option<usize>,
@@ -998,6 +1000,10 @@ impl Session {
                         } else {
                             session.backend.write_stdin_counting(id, &job.data)
                         };
+                        #[cfg(feature = "test-barriers")]
+                        if job.data == b"\r" {
+                            crate::test_barriers::pause("stdin-enter-receipt", id);
+                        }
                         let bytes = job.data.len();
                         drop(job.data);
                         {
@@ -1515,6 +1521,47 @@ impl Drop for SpawnReservation<'_> {
     }
 }
 
+#[derive(Default, Clone)]
+struct InstructionWriteEvidence {
+    instruction_id: String,
+    started: bool,
+    ended: bool,
+    restart_ready: bool,
+}
+
+struct InstructionWriteReservation<'a> {
+    daemon: &'a Daemon,
+    target: u32,
+}
+impl Drop for InstructionWriteReservation<'_> {
+    fn drop(&mut self) {
+        self.daemon
+            .instruction_writes
+            .lock()
+            .expect("instruction writes lock")
+            .remove(&self.target);
+    }
+}
+
+struct CloseReservation<'a> {
+    daemon: &'a Daemon,
+    // Postorder, with one entry per registered session; never pending spawn IDs.
+    ids: Vec<u32>,
+}
+
+impl Drop for CloseReservation<'_> {
+    fn drop(&mut self) {
+        let mut closing = self
+            .daemon
+            .closing_sessions
+            .lock()
+            .expect("closing sessions lock");
+        for id in &self.ids {
+            closing.remove(id);
+        }
+    }
+}
+
 pub struct Daemon {
     #[cfg(feature = "test-barriers")]
     startup_test: Mutex<StartupTest>,
@@ -1594,6 +1641,7 @@ pub struct Daemon {
     composer_occupied: Mutex<HashMap<u32, ComposerKeystroke>>,
     orchestration_retry_lock: Mutex<()>,
     instruction_dispatch_lock: Mutex<()>,
+    instruction_writes: Mutex<HashMap<u32, InstructionWriteEvidence>>,
     instruction_wake_active: Mutex<HashSet<u32>>,
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
     turn_start_round: Mutex<HashMap<u32, u32>>,
@@ -1607,6 +1655,7 @@ pub struct Daemon {
     inbox_waiting: Mutex<HashMap<u32, Arc<InboxWaitState>>>,
     inbox_delivering: Mutex<HashMap<String, u32>>,
     temporary_cleanup_lock: Mutex<()>,
+    closing_sessions: Mutex<HashSet<u32>>,
     spawn_reservations: Mutex<HashMap<u32, (u32, Option<String>)>>,
     worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
     pending_cleanup_cancellations: Mutex<HashSet<u32>>,
@@ -3206,6 +3255,7 @@ impl Daemon {
             inbox_waiting: Mutex::new(HashMap::new()),
             inbox_delivering: Mutex::new(HashMap::new()),
             temporary_cleanup_lock: Mutex::new(()),
+            closing_sessions: Mutex::new(HashSet::new()),
             spawn_reservations: Mutex::new(HashMap::new()),
             worktree_branch_reservations: Mutex::new(HashMap::new()),
             pending_cleanup_cancellations: Mutex::new(HashSet::new()),
@@ -3218,6 +3268,7 @@ impl Daemon {
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),
             instruction_dispatch_lock: Mutex::new(()),
+            instruction_writes: Mutex::new(HashMap::new()),
             instruction_wake_active: Mutex::new(HashSet::new()),
             paste_confirmations: Mutex::new(HashMap::new()),
             turn_start_round: Mutex::new(HashMap::new()),
@@ -7679,6 +7730,13 @@ impl Daemon {
         event: &str,
         cwd: Option<&str>,
     ) -> bool {
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        if self.ensure_not_closing(id, "hook").is_err() {
+            return false;
+        }
         let sessions = self.sessions.lock().expect("sessions lock");
         let Some(s) = sessions.get(&id) else {
             return false;
@@ -7720,10 +7778,17 @@ impl Daemon {
         deliver_delegation: bool,
         prompt_id: Option<&str>,
     ) {
+        #[cfg(feature = "test-barriers")]
+        if event == "ACP" {
+            crate::test_barriers::pause("acp-event", id);
+        }
         let input_guard = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        if self.ensure_not_closing(id, "agent event").is_err() {
+            return;
+        }
         if ev == crate::agent_events::AgentEvent::NeedsInput {
             let episodes = self
                 .permission_episodes
@@ -7826,6 +7891,13 @@ impl Daemon {
             }
         }
         if ev.status() == proto::AgentStatus::Idle {
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            if self.ensure_not_closing(id, "retain delegation").is_err() {
+                return;
+            }
             if let Some(row) = self
                 .delegation_of(id)
                 .filter(|r| r.state == "done" && r.reusable)
@@ -8812,6 +8884,7 @@ impl Daemon {
         force: bool,
         conversation: RespawnConversation,
     ) -> Result<proto::SessionInfo> {
+        self.ensure_not_closing(old_id, "respawn")?;
         if let Some(dir) = &cwd_override {
             if !dir.is_dir() {
                 bail!(
@@ -8880,6 +8953,7 @@ impl Daemon {
             .expect("sessions lock")
             .get(&old_id)
             .cloned();
+        let mut ownership = None;
         #[allow(clippy::type_complexity)]
         let (
             agent,
@@ -8915,6 +8989,7 @@ impl Daemon {
                 );
                 }
             }
+            ownership = Some(self.reserve_ownership_replacement(old_id)?);
             self.cleanup_session_ownership(old_id, old)?;
             (
                 old.info.agent,
@@ -9254,6 +9329,7 @@ impl Daemon {
         if let Some(parent) = spawned.spawned_by {
             self.broadcast_live_children(parent);
         }
+        drop(ownership);
         Ok(spawned)
     }
 
@@ -9466,8 +9542,10 @@ impl Daemon {
             .session_lifecycle_lock
             .lock()
             .expect("session lifecycle lock");
+        self.ensure_not_closing(id, "restore Wake placeholder")?;
         self.ensure_not_sleeping(id)?;
         let session = self.get(id)?;
+        let _ownership = self.reserve_ownership_replacement(id)?;
         self.cleanup_session_ownership(id, &session)?;
         self.persist_scrollback_result(id)?;
         *session.state.lock().expect("state lock") = proto::SessionState::Sleeping;
@@ -9859,8 +9937,8 @@ impl Daemon {
         }
         #[cfg(feature = "test-barriers")]
         crate::test_barriers::pause("terminal-query", id);
-        // The reader must never wait for lifecycle admission: Close owns that lock
-        // while draining it. The same bounded FIFO still serializes all PTY writes;
+        // Reader replies bypass lifecycle admission so ownership transitions can
+        // drain them. The same bounded FIFO still serializes all PTY writes;
         // termination interrupts its writer, including replies admitted concurrently.
         if self.refusing_mutations()
             || session.reader_cancel.load(Ordering::Acquire)
@@ -9998,6 +10076,26 @@ impl Daemon {
     ) -> Result<Box<dyn Fn() -> bool + Send + Sync>> {
         let done = Arc::clone(&self.get(id)?.reader_done);
         Ok(Box::new(move || *done.0.lock().expect("reader done lock")))
+    }
+
+    #[cfg(all(target_os = "linux", feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn pty_root_identity_for_test(&self, id: u32) -> Result<(u32, u64)> {
+        let pid = self
+            .get(id)?
+            .pid
+            .ok_or_else(|| anyhow!("session {id}: no PTY root"))?;
+        let creation = crate::pid::process_creation_token(pid)
+            .ok_or_else(|| anyhow!("session {id}: PTY root {pid} missing"))?;
+        Ok((pid, creation))
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn stdin_jobs_for_test(&self, id: u32) -> Result<usize> {
+        let session = self.get(id)?;
+        let jobs = session.stdin_queue.lock().expect("stdin queue lock").jobs;
+        Ok(jobs)
     }
 
     #[cfg(feature = "test-barriers")]
@@ -10812,6 +10910,8 @@ impl Daemon {
                     #[cfg(not(target_os = "linux"))]
                     let exit_code = child.wait().ok().map(|status| status.exit_code() as i32);
 
+                    #[cfg(all(target_os = "linux", feature = "test-barriers"))]
+                    crate::test_barriers::pause("pty-exit-observed", id);
                     let exited_at = Instant::now();
                     if hidden {
                         daemon.handoff_exit(id, exit_code);
@@ -10956,8 +11056,7 @@ impl Daemon {
         if let Some(session) = self.sessions.lock().expect("sessions lock").get(&id) {
             session.remove_shell_token_file();
             if session.removed.load(Ordering::Acquire) {
-                // Temporary cleanup marks the session before closing its durable row. Do not let
-                // a concurrent PTY/supervisor completion overwrite that closed state with exited.
+                // A removed pane has already committed its durable close.
                 return proto::SessionState::Exited;
             }
         }
@@ -11961,6 +12060,24 @@ impl Daemon {
             .session_lifecycle_lock
             .lock()
             .expect("session lifecycle lock");
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.enqueue_stdin_admitted(id, data, completion, prepare)
+    }
+
+    // The caller owns cleanup admission. Never take lifecycle from inside cleanup:
+    // hooks and ownership replacement acquire those locks in the opposite order.
+    fn enqueue_stdin_admitted(
+        &self,
+        id: u32,
+        data: &[u8],
+        completion: StdinCompletion,
+        prepare: Option<Box<dyn FnOnce() + Send>>,
+    ) -> std::result::Result<(), StdinWriteError> {
+        self.ensure_not_closing(id, "stdin")
+            .map_err(StdinWriteError::nothing)?;
         if self.refusing_mutations() {
             return Err(StdinWriteError::nothing(anyhow!(
                 "session {id} stdin admission refused while daemon is handing off or shutting down"
@@ -11990,6 +12107,34 @@ impl Daemon {
             None,
         )?;
         rx.recv().unwrap_or_else(|error| {
+            Err(StdinWriteError::unknown(anyhow!(
+                "session {id} stdin completion unavailable: {error}"
+            )))
+        })
+    }
+
+    fn admit_stdin_counting(
+        &self,
+        id: u32,
+        data: &[u8],
+    ) -> std::result::Result<StdinReceipt, StdinWriteError> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.enqueue_stdin_admitted(
+            id,
+            data,
+            Box::new(move |result| {
+                let _ = tx.send(result);
+            }),
+            None,
+        )?;
+        Ok(rx)
+    }
+
+    fn wait_stdin_receipt(
+        id: u32,
+        receipt: std::result::Result<StdinReceipt, StdinWriteError>,
+    ) -> std::result::Result<(), StdinWriteError> {
+        receipt?.recv().unwrap_or_else(|error| {
             Err(StdinWriteError::unknown(anyhow!(
                 "session {id} stdin completion unavailable: {error}"
             )))
@@ -12166,6 +12311,7 @@ impl Daemon {
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
+        self.ensure_not_closing(id, "kill")?;
         self.ensure_not_sleeping(id)?;
         self.ensure_not_shell_restoring(id)?;
         let session = self.get(id)?;
@@ -12555,13 +12701,93 @@ impl Daemon {
     }
 
     pub fn close(&self, id: u32) -> Result<()> {
-        let _lifecycle = self
-            .session_lifecycle_lock
+        let reservation = {
+            let _lifecycle = self
+                .session_lifecycle_lock
+                .lock()
+                .expect("session lifecycle lock");
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            self.reserve_close_locked(id)?
+        };
+        self.close_reserved(&reservation)
+    }
+
+    fn ensure_not_closing(&self, id: u32, operation: &str) -> Result<()> {
+        if self
+            .closing_sessions
             .lock()
-            .expect("session lifecycle lock");
-        self.ensure_not_sleeping(id)?;
-        self.ensure_not_shell_restoring(id)?;
-        self.close_unlocked(id)
+            .expect("closing sessions lock")
+            .contains(&id)
+        {
+            bail!("{operation} refused: session {id} is closing");
+        }
+        Ok(())
+    }
+
+    // Callers take lifecycle before cleanup. Only admission uses these locks: reader
+    // callbacks and early exit publication must run while physical cleanup waits.
+    fn reserve_close_locked(&self, id: u32) -> Result<CloseReservation<'_>> {
+        let root = id;
+        let mut pending = vec![(id, false)];
+        let mut seen = HashSet::new();
+        let mut ids = Vec::new();
+        while let Some((id, visited)) = pending.pop() {
+            if visited {
+                ids.push(id);
+                continue;
+            }
+            if !seen.insert(id) {
+                continue;
+            }
+            self.ensure_not_closing(id, "close")?;
+            self.ensure_not_sleeping(id)?;
+            self.ensure_not_shell_restoring(id)?;
+            let known = self
+                .sessions
+                .lock()
+                .expect("sessions lock")
+                .contains_key(&id)
+                || self.dead.lock().expect("dead lock").contains_key(&id);
+            if !known {
+                if id == root {
+                    bail!("unknown session id {id} (expected an active or restored session)");
+                }
+                continue;
+            }
+            pending.push((id, true));
+            for row in self.db.delegations_for_parent(id)? {
+                if row.child_session != id {
+                    pending.push((row.child_session, false));
+                }
+            }
+        }
+        self.closing_sessions
+            .lock()
+            .expect("closing sessions lock")
+            .extend(ids.iter().copied());
+        Ok(CloseReservation { daemon: self, ids })
+    }
+
+    fn close_reserved(&self, reservation: &CloseReservation<'_>) -> Result<()> {
+        #[cfg(feature = "test-barriers")]
+        if let Some(id) = reservation.ids.last() {
+            crate::test_barriers::pause("close-admitted", *id);
+        }
+        for &id in &reservation.ids {
+            self.close_one_reserved(id)?;
+        }
+        Ok(())
+    }
+
+    fn reserve_ownership_replacement(&self, id: u32) -> Result<CloseReservation<'_>> {
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.reserve_close_locked(id)
     }
 
     fn drain_session_reader(&self, id: u32, session: &Session) -> Result<()> {
@@ -12630,22 +12856,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn close_unlocked(&self, id: u32) -> Result<()> {
-        self.ensure_not_sleeping(id)?;
-        self.ensure_not_shell_restoring(id)?;
-        self.escalate_child_inputs_locked(id, proto::ChildInputEscalationReason::ParentUnavailable);
-        for row in self.db.delegations_for_parent(id)? {
-            if row.child_session != id
-                && (self.get(row.child_session).is_ok()
-                    || self
-                        .dead
-                        .lock()
-                        .expect("dead lock")
-                        .contains_key(&row.child_session))
-            {
-                self.close_unlocked(row.child_session)?;
-            }
-        }
+    fn close_one_reserved(&self, id: u32) -> Result<()> {
         let session = self
             .sessions
             .lock()
@@ -12658,9 +12869,14 @@ impl Daemon {
         if session.is_none() && !self.dead.lock().expect("dead lock").contains_key(&id) {
             bail!("unknown session id {id} (expected an active or restored session)");
         }
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         // Keep the pane available for a retry if storage refuses the close.
         // A late waiter cannot overwrite this durable state (update_session_state guards it).
         self.db.mark_closed(id)?;
+        self.escalate_child_inputs_locked(id, proto::ChildInputEscalationReason::ParentUnavailable);
         self.operator_ended
             .lock()
             .expect("operator_ended lock")
@@ -13441,6 +13657,11 @@ impl Daemon {
             .session_lifecycle_lock
             .lock()
             .expect("session lifecycle lock");
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.ensure_not_closing(id, "Sleep")?;
         let session = self.get(id)?;
         self.ensure_not_shell_restoring(id)?;
         if session.stdin_writes_in_flight.load(Ordering::Acquire) != 0 {
@@ -13614,6 +13835,9 @@ impl Daemon {
         if self.ensure_not_shell_restoring(d.session).is_err() {
             return crate::hook_drop::DropVerdict::Retry;
         }
+        if self.ensure_not_closing(d.session, "hook").is_err() {
+            return crate::hook_drop::DropVerdict::Retry;
+        }
         let provider = match d.agent.as_deref() {
             None => proto::AgentKind::Claude,
             Some(slug) => match crate::agent_hooks::provider_from_slug(slug) {
@@ -13761,6 +13985,9 @@ impl Daemon {
                     }
                     Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
                 });
+                if self.ensure_not_closing(d.session, "hook").is_err() {
+                    return crate::hook_drop::DropVerdict::Retry;
+                }
                 if self.ensure_not_sleeping(d.session).is_err() {
                     return crate::hook_drop::DropVerdict::Retry;
                 }
@@ -13814,9 +14041,8 @@ impl Daemon {
                 }
             }
         }
-        // Native correlation and status effects acquire the cleanup guard. Release
-        // lifecycle admission first, matching send_keys' cleanup -> stdin lock order.
-        drop(lifecycle.take());
+        // Keep hook correlation inside lifecycle admission. Cleanup-held input uses
+        // admitted helpers, so no callback acquires lifecycle in reverse order.
         if let Some(verdict) = self.correlate_hook_drop(d, provider) {
             return verdict;
         }
@@ -16286,6 +16512,13 @@ impl Daemon {
                 crate::acp::AcpDecodeOutcome::Message(msg) => {
                     if let Some(event) = crate::acp::event_for_message(&msg) {
                         if event == crate::agent_events::AgentEvent::NeedsInput {
+                            let _cleanup = self
+                                .temporary_cleanup_lock
+                                .lock()
+                                .expect("temporary cleanup lock");
+                            if self.ensure_not_closing(id, "ACP permission").is_err() {
+                                continue;
+                            }
                             let request_id = msg
                                 .get("id")
                                 .and_then(|id| serde_json::to_string(id).ok())
@@ -17758,13 +17991,13 @@ impl Daemon {
                 );
             }
         }
-        // Cleanup and registration share the parent/child live roster. Keep the parent alive
-        // through the whole spawn so a completed temporary parent cannot disappear between the
-        // cap check and its durable delegation row.
+        // Cleanup and registration share admission. Reserve the pending child before
+        // worktree preparation, then recheck its parent before publishing a delegation.
         let _cleanup_guard = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        self.ensure_spawn_parent_locked(caller)?;
         if kind == proto::AgentKind::Custom {
             bail!(
                 "spawn refused: kind `custom` cannot be spawned as a child — a custom command \
@@ -17982,6 +18215,15 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        if let Err(error) = self.ensure_spawn_parent_locked(caller) {
+            drop(_cleanup_guard);
+            if created_here {
+                if let Some(created) = &created {
+                    self.discard_spawn_worktree(created);
+                }
+            }
+            return Err(error);
+        }
         let cwd = created.as_ref().map(|c| c.path.clone()).unwrap_or(cwd);
         if let Some(created) = &created {
             match crate::launch::prepare_worktree_trust(kind, &cwd)
@@ -18073,9 +18315,11 @@ impl Daemon {
         let info = match spawned {
             Ok(info) => info,
             Err(e) => {
+                drop(_cleanup_guard);
                 if self.get(sid).is_ok() {
                     if let Err(rollback) = self.rollback_spawned_child(sid) {
-                        tracing::warn!("rolling back failed spawn {sid}: {rollback}");
+                        return Err(e).context(format!("rollback of session {sid} failed; ownership and worktree retained for Close retry: {rollback}"))
+                            .context(orchestrate::MutationMayHaveActed);
                     }
                 }
                 if !handoff {
@@ -18103,8 +18347,9 @@ impl Daemon {
             return Ok(info);
         }
         if let Err(parent_error) = self.get(caller) {
+            drop(_cleanup_guard);
             let rollback = self.rollback_spawned_child(sid);
-            if created_here {
+            if created_here && rollback.is_ok() {
                 if let Some(c) = &created {
                     self.discard_spawn_worktree(c);
                 }
@@ -18286,25 +18531,23 @@ impl Daemon {
         }
     }
 
-    fn rollback_spawned_child(&self, child: u32) -> Result<()> {
-        let first_close = self.db.mark_closed(child);
-        let close_result = self.close(child);
-        let final_close = self.db.mark_closed(child);
-        if let Err(e) = close_result {
-            return Err(e).context(format!("closing rolled-back child {child}"));
-        }
-        if let Err(e) = final_close {
-            return Err(e).context(format!(
-                "persisting the closed state for rolled-back child {child}"
-            ));
-        }
-        if let Err(e) = first_close {
-            tracing::warn!(
-                "the first durable close for rolled-back child {child} failed, but the retry \
-                 succeeded: {e}"
-            );
-        }
+    fn ensure_spawn_parent_locked(&self, caller: u32) -> Result<()> {
+        self.ensure_not_closing(caller, "spawn")?;
+        self.ensure_not_sleeping(caller)?;
+        self.ensure_not_shell_restoring(caller)?;
+        let parent = self
+            .get(caller)
+            .context(format!("spawn refused for parent session {caller}"))?;
+        anyhow::ensure!(
+            parent.state.lock().expect("state lock").is_live(),
+            "spawn refused: parent session {caller} is no longer live"
+        );
         Ok(())
+    }
+
+    fn rollback_spawned_child(&self, child: u32) -> Result<()> {
+        self.close(child)
+            .with_context(|| format!("closing rolled-back child {child}"))
     }
 
     pub fn orchestrate_list(&self, caller: u32) -> Result<Vec<serde_json::Value>> {
@@ -18817,10 +19060,15 @@ impl Daemon {
 
     pub fn orchestrate_send_keys(&self, caller: u32, target: u32, keys: &[String]) -> Result<()> {
         let _native_input = self.native_input_mutation_guard()?;
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
         let _cleanup_guard = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        self.ensure_not_closing(target, "send_keys")?;
         self.assert_orchestration_target(caller, target)?;
         if let Some(episode) = self.pending_permission_episode(target)? {
             bail!("send_keys refused for child {target}, permission episode {episode}: use pane_deny or pane_escalate; only the operator may approve");
@@ -18832,7 +19080,17 @@ impl Daemon {
         self.assert_no_operator_input_intervention(target, None)?;
         self.cancel_temporary_cleanup_locked(target);
         let bytes = orchestrate::keys_to_bytes(keys).map_err(|e| anyhow!("{e}"))?;
-        self.write_stdin(target, &bytes)?;
+        let receipt = self.admit_stdin_counting(target, &bytes);
+        drop(_cleanup_guard);
+        drop(_lifecycle);
+        drop(_native_input);
+        Self::wait_stdin_receipt(target, receipt).map_err(|error| anyhow!("{error}"))?;
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.ensure_not_closing(target, "send_keys completion")?;
+        self.get(target)?;
         if let Err(e) = self
             .db
             .delegation_set_no_handback(target, false, 0, now_ms())
@@ -18902,13 +19160,21 @@ impl Daemon {
         target: u32,
         confirm_children: bool,
     ) -> Result<()> {
-        let _cleanup_guard = self
-            .temporary_cleanup_lock
-            .lock()
-            .expect("temporary cleanup lock");
-        self.assert_orchestration_target(caller, target)?;
-        self.child_guard(target, confirm_children)?;
-        self.close(target)
+        let reservation = {
+            let _lifecycle = self
+                .session_lifecycle_lock
+                .lock()
+                .expect("session lifecycle lock");
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            self.ensure_not_closing(target, "orchestrate_kill")?;
+            self.assert_orchestration_target(caller, target)?;
+            self.child_guard(target, confirm_children)?;
+            self.reserve_close_locked(target)?
+        };
+        self.close_reserved(&reservation)
     }
 
     fn cancel_delegation(&self, child: u32) {
@@ -18997,14 +19263,23 @@ impl Daemon {
     }
 
     pub fn session_close_checked(self: &Arc<Self>, id: u32, confirm_children: bool) -> Result<()> {
-        let _lifecycle = self
-            .session_lifecycle_lock
-            .lock()
-            .expect("session lifecycle lock");
-        self.ensure_not_sleeping(id)?;
-        self.child_guard(id, confirm_children)?;
-        let notice = self.operator_ended_notice_facts(id);
-        self.close_unlocked(id)?;
+        let (reservation, notice) = {
+            let _lifecycle = self
+                .session_lifecycle_lock
+                .lock()
+                .expect("session lifecycle lock");
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            self.ensure_not_closing(id, "close")?;
+            self.child_guard(id, confirm_children)?;
+            (
+                self.reserve_close_locked(id)?,
+                self.operator_ended_notice_facts(id),
+            )
+        };
+        self.close_reserved(&reservation)?;
         if let Some((parent, label)) = notice {
             self.write_operator_ended_notice(id, parent, label);
         }
@@ -19802,6 +20077,12 @@ impl Daemon {
                 .temporary_cleanup_lock
                 .lock()
                 .expect("temporary cleanup lock");
+            if self
+                .ensure_not_closing(child, "arm temporary cleanup")
+                .is_err()
+            {
+                return;
+            }
             let Ok(Some(row)) = self.db.delegation_for_child(child) else {
                 return;
             };
@@ -19859,6 +20140,12 @@ impl Daemon {
         now: u64,
     ) -> Option<u32> {
         if self
+            .ensure_not_closing(row.child_session, "temporary cleanup")
+            .is_err()
+        {
+            return None;
+        }
+        if self
             .pending_cleanup_cancellations
             .lock()
             .expect("pending cleanup lock")
@@ -19902,12 +20189,10 @@ impl Daemon {
                     return None;
                 }
             }
-            session.removed.store(true, Ordering::Release);
             if let Err(e) = self
                 .db
                 .update_session_state(child, proto::SessionState::Exited, None)
             {
-                session.removed.store(false, Ordering::Release);
                 tracing::warn!("ending settled child {child}: {e}");
                 return None;
             }
@@ -20018,6 +20303,9 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        if self.ensure_not_closing(child, "delegation event").is_err() {
+            return;
+        }
         // Exit can win after apply_agent_event checks liveness. This lock also
         // protects finish_session, so a delayed hook cannot reopen an ended pane.
         if self
@@ -20958,6 +21246,16 @@ impl Daemon {
             if since.is_some_and(|since| {
                 now.saturating_sub(since) >= orchestrate::NO_HANDBACK_SETTLE_MS
             }) {
+                let _cleanup = self
+                    .temporary_cleanup_lock
+                    .lock()
+                    .expect("temporary cleanup lock");
+                if self
+                    .ensure_not_closing(child, "retain no-handback child")
+                    .is_err()
+                {
+                    continue;
+                }
                 let timestamp = now_ms();
                 if let Err(e) = self.db.delegation_finish(
                     child,
@@ -21039,22 +21337,51 @@ impl Daemon {
             self.delegation_settle_pass(row, &s, busy, now);
         }
         for row in self.db.delegations_retained().unwrap_or_default() {
-            let _guard = self
-                .temporary_cleanup_lock
-                .lock()
-                .expect("temporary cleanup lock");
-            let Some(row) = self.delegation_of(row.child_session) else {
-                continue;
+            let reservation = {
+                let _lifecycle = self
+                    .session_lifecycle_lock
+                    .lock()
+                    .expect("session lifecycle lock");
+                let _cleanup = self
+                    .temporary_cleanup_lock
+                    .lock()
+                    .expect("temporary cleanup lock");
+                let Some(row) = self.delegation_of(row.child_session) else {
+                    continue;
+                };
+                if row.retained_until.is_none_or(|at| at > cleanup_now)
+                    || !self.temporary_cleanup_safe(row.child_session, cleanup_now)
+                    || self
+                        .pending_cleanup_cancellations
+                        .lock()
+                        .expect("pending cleanup lock")
+                        .contains(&row.child_session)
+                {
+                    continue;
+                }
+                self.reserve_close_locked(row.child_session)
             };
-            if row.retained_until.is_some_and(|at| at <= cleanup_now)
-                && self.temporary_cleanup_safe(row.child_session, cleanup_now)
-            {
-                if let Err(e) = self.close(row.child_session) {
-                    tracing::warn!("closing expired settled child {}: {e}", row.child_session);
+            match reservation.and_then(|reservation| self.close_reserved(&reservation)) {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::warn!("closing expired settled child {}: {e}", row.child_session)
                 }
             }
         }
         for row in self.db.delegations_done().unwrap_or_default() {
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            if self
+                .ensure_not_closing(row.child_session, "retain delegation")
+                .is_err()
+            {
+                continue;
+            }
+            let Some(row) = self.delegation_of(row.child_session) else {
+                continue;
+            };
             if row.reusable
                 && row.state == "done"
                 && self.session_status(row.child_session).ok().flatten()
@@ -21431,6 +21758,9 @@ impl Daemon {
 
     pub fn note_operator_keystroke(&self, session: u32, payload: &[u8]) {
         if is_terminal_report_only(payload) {
+            return;
+        }
+        if self.ensure_not_closing(session, "operator input").is_err() {
             return;
         }
         self.remote_note_keystroke(session);

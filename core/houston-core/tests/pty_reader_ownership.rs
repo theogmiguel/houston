@@ -512,3 +512,285 @@ async fn quiet_live_reader(cancel_while_parked: bool) {
         "Close must retain reader ownership through completion"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn failed_durable_close_keeps_drained_pty_and_final_bytes_for_retry() {
+    let _home = Home::new();
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut socket = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut socket).await;
+    socket
+        .send(Message::text(common::create_custom_msg(
+            vec!["python3", "-u", "-c", DESCENDANT],
+            dir.path(),
+        )))
+        .await
+        .unwrap();
+    let id = common::expect_created(&mut socket).await.id;
+    let _pane = Pane {
+        daemon: daemon.clone(),
+        id,
+    };
+    let descendant = Descendant::capture(dir.path());
+    let root = Descendant::capture_file(dir.path(), "root");
+    common::attach_and_collect_output_until(&mut socket, id, "READY").await;
+    std::fs::write(dir.path().join("exit-root"), "").unwrap();
+    common::attach_and_collect_output_until(&mut socket, id, "FINAL_BYTES").await;
+    let completed = daemon.pty_reader_completion_for_test(id).unwrap();
+    let conn = rusqlite::Connection::open(dir.path().join("test.db")).unwrap();
+    conn.execute_batch("CREATE TRIGGER refuse_close BEFORE UPDATE OF state ON sessions WHEN NEW.state = 'closed' BEGIN SELECT RAISE(FAIL, 'injected close failure'); END;").unwrap();
+    let closing = daemon.clone();
+    let error = tokio::task::spawn_blocking(move || closing.close(id))
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("injected close failure"));
+    assert!(completed());
+    assert_ne!(
+        houston_core::pid::process_creation_token(root.pid),
+        Some(root.creation)
+    );
+    descendant.require_exit();
+    assert!(
+        daemon.list().iter().any(|pane| pane.id == id),
+        "failed durable close must retain retry target"
+    );
+    assert!(
+        String::from_utf8_lossy(&daemon.scrollback(id, None).unwrap().data).contains("FINAL_BYTES")
+    );
+    conn.execute_batch("DROP TRIGGER refuse_close").unwrap();
+    daemon
+        .close(id)
+        .expect("retry commits after reservation release");
+    assert!(!daemon.list().iter().any(|pane| pane.id == id));
+    let db = houston_core::db::Db::open(&dir.path().join("test.db")).unwrap();
+    assert!(db.session_is_closed(id).unwrap());
+}
+
+struct AdmissionBarrier {
+    dir: tempfile::TempDir,
+    previous: Option<std::ffi::OsString>,
+}
+impl AdmissionBarrier {
+    fn arm(point: &str) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("HOUSTON_TEST_BARRIER_DIR");
+        std::env::set_var("HOUSTON_TEST_BARRIER_DIR", dir.path());
+        std::fs::write(dir.path().join("armed"), point).unwrap();
+        Self { dir, previous }
+    }
+    async fn reached(&self, point: &str, id: u32) {
+        let receipt = format!("{point} {id}");
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while std::fs::read_to_string(self.dir.path().join("reached"))
+                .ok()
+                .as_deref()
+                != Some(receipt.as_str())
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+    fn release(&self) {
+        let _ = std::fs::remove_file(self.dir.path().join("armed"));
+    }
+}
+impl Drop for AdmissionBarrier {
+    fn drop(&mut self) {
+        self.release();
+        if let Some(previous) = &self.previous {
+            std::env::set_var("HOUSTON_TEST_BARRIER_DIR", previous);
+        } else {
+            std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn acp_event_in_reader_does_not_block_first_close_or_lose_drain_bytes() {
+    let _home = Home::new();
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut socket = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut socket).await;
+    let shim = dir.path().join("opencode");
+    std::fs::write(&shim, "#!/usr/bin/env python3\nimport os,time\nprint('READY',flush=True)\nwhile not os.path.exists('acp-go'): time.sleep(.005)\nprint('FINAL_ACP_BYTES',flush=True)\nprint('{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"session/request_permission\",\"params\":{}}',flush=True)\ntime.sleep(30)\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    struct PathReset(std::ffi::OsString);
+    impl Drop for PathReset {
+        fn drop(&mut self) {
+            std::env::set_var("PATH", &self.0);
+        }
+    }
+    let old_path = std::env::var_os("PATH").unwrap();
+    std::env::set_var(
+        "PATH",
+        format!("{}:{}", dir.path().display(), old_path.to_string_lossy()),
+    );
+    let _path = PathReset(old_path);
+    let barrier = AdmissionBarrier::arm("acp-event");
+    let info = daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Opencode,
+            project_dir: dir.path().into(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: Some("acp-opencode".into()),
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let id = info.id;
+    let _pane = Pane {
+        daemon: daemon.clone(),
+        id,
+    };
+    common::attach_and_collect_output_until(&mut socket, id, "READY").await;
+    let root = daemon.pty_root_identity_for_test(id).unwrap();
+    let completed = daemon.pty_reader_completion_for_test(id).unwrap();
+    std::fs::write(dir.path().join("acp-go"), "").unwrap();
+    barrier.reached("acp-event", id).await;
+    assert!(
+        String::from_utf8_lossy(&daemon.scrollback(id, None).unwrap().data)
+            .contains("FINAL_ACP_BYTES")
+    );
+    let closing = daemon.clone();
+    let close = tokio::task::spawn_blocking(move || closing.session_close_checked(id, true));
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while !daemon.pty_cleanup_started_for_test(id) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    barrier.release();
+    close
+        .await
+        .unwrap()
+        .expect("first Close must allow ACP callback, drain and exact root reap");
+    assert!(completed());
+    assert_ne!(
+        houston_core::pid::process_creation_token(root.0),
+        Some(root.1)
+    );
+    assert!(!daemon.list().iter().any(|pane| pane.id == id));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn quiet_descendant_reports_exited_before_orchestrated_close_with_scope_fallback() {
+    let _home = Home::new();
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut socket = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut socket).await;
+    let shim = dir.path().join("codex");
+    std::fs::write(&shim, format!("#!/usr/bin/env python3\n{DESCENDANT}")).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    struct ResetPath(std::ffi::OsString);
+    impl Drop for ResetPath {
+        fn drop(&mut self) {
+            std::env::set_var("PATH", &self.0);
+        }
+    }
+    let previous = std::env::var_os("PATH").unwrap();
+    std::env::set_var(
+        "PATH",
+        format!("{}:{}", dir.path().display(), previous.to_string_lossy()),
+    );
+    let _path = ResetPath(previous);
+    let parent = daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: dir.path().into(),
+            cmd: Some(vec!["sh".into(), "-c".into(), "exec cat".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let _parent = Pane {
+        daemon: daemon.clone(),
+        id: parent.id,
+    };
+    daemon.orchestration_set(true).unwrap();
+    let info = daemon
+        .orchestrate_spawn(
+            parent.id,
+            proto::AgentKind::Codex,
+            None,
+            None,
+            "work".to_string().into(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let id = info.id;
+    let _pane = Pane {
+        daemon: daemon.clone(),
+        id,
+    };
+    let descendant = Descendant::capture(dir.path());
+    let root = Descendant::capture_file(dir.path(), "root");
+    common::attach_and_collect_output_until(&mut socket, id, "READY").await;
+    std::fs::write(dir.path().join("exit-root"), "").unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while daemon
+            .list()
+            .iter()
+            .find(|pane| pane.id == id)
+            .unwrap()
+            .state
+            != proto::SessionState::Exited
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!descendant.exited());
+    assert!(daemon.pty_reader_active_for_test(id));
+    assert_eq!(
+        houston_core::pid::process_creation_token(root.pid),
+        Some(root.creation),
+        "Exited must retain root identity until reader drain"
+    );
+    common::attach_and_collect_output_until(&mut socket, id, "FINAL_BYTES").await;
+    let completed = daemon.pty_reader_completion_for_test(id).unwrap();
+    struct ResetScope;
+    impl Drop for ResetScope {
+        fn drop(&mut self) {
+            houston_core::session_isolation::fail_scope_termination_for_test(false);
+        }
+    }
+    houston_core::session_isolation::fail_scope_termination_for_test(true);
+    let _scope = ResetScope;
+    let closing = daemon.clone();
+    tokio::task::spawn_blocking(move || closing.orchestrate_kill(parent.id, id, false))
+        .await
+        .unwrap()
+        .expect(
+            "first orchestrated Close uses retained root identity when scope termination fails",
+        );
+    assert!(completed());
+    assert_ne!(
+        houston_core::pid::process_creation_token(root.pid),
+        Some(root.creation)
+    );
+    descendant.require_exit();
+}

@@ -17,6 +17,21 @@ group through a retained master descriptor, then reaps the direct child before p
 a pane. Windows rollback uses the owned child handle.
 Respawn allocates a new ID, so failed startup leaves the previous durable pane available.
 
+Close reserves every registered session in the recursive delegation subtree before releasing
+admission locks. Admission takes lifecycle before temporary cleanup; physical termination,
+reader drain and root reap run without either lock. Both spawn phases, hook and ACP admission,
+and stdin refuse reserved sessions. Worktree preparation between spawn phases cannot publish
+into a closing parent; a refused spawn removes only the worktree it created.
+The reservation is bounded by registered sessions and releases on failure, leaving ownership
+and final output available for a Close retry. Registry removal follows reader completion,
+root reap and a successful durable close. On Linux, exit observation retains the root with
+`WEXITED | WNOWAIT` until drain, so quiet descendants can be terminated using the same process
+identity while the pane already reports `Exited`.
+PTY input is admitted to the bounded FIFO under the relevant authorization guards. Receipt
+waits release global admission locks so Close can cancel a blocked writer. Instruction delivery
+claims the durable intent before writing, rechecks cancellation when committing each receipt,
+and retains bounded authoritative lifecycle evidence that arrives during the write.
+
 What makes it an *agent* is
 that its own lifecycle events reach the daemon — through hooks it installed, or through a
 documented JSON-RPC stream. Everything on this page hangs off that: status is
