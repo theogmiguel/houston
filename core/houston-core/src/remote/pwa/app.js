@@ -14,6 +14,7 @@
   // exhaust the stack.
   var MD_DEPTH_MAX = 6;
   var STATUS = { "needs-input": "Needs you", working: "Working", idle: "Idle", spawning: "Starting", unavailable: "No status" };
+  var STATES = { sleeping: "Sleeping", exited: "Exited", killed: "Killed", interrupted: "Interrupted" };
   var KINDS = { claude: "Claude", codex: "Codex", antigravity: "Antigravity", opencode: "OpenCode", cursor: "Cursor", grok: "Grok", custom: "Shell" };
   var KEYS = [
     ["Esc", ["esc"]], ["↑", ["up"]], ["↓", ["down"]], ["←", ["left"]], ["→", ["right"]], ["Tab", ["tab"]], ["Enter", ["enter"]], ["Ctrl+C", ["ctrl+c"], true]
@@ -72,8 +73,21 @@
 
   function statusOf(s) {
     if (!s) return { cls: "", label: "" };
-    if (s.state !== "running") return { cls: "exited", label: "Exited" };
+    if (s.state !== "running") return { cls: "exited", label: STATES[s.state] || "No status" };
     return { cls: s.status || "", label: STATUS[s.status] || "No status" };
+  }
+
+  function excerpt(text) {
+    var node = el("span"); inline(node, text || "");
+    return node.textContent.replace(/\s+/g, " ").trim();
+  }
+
+  function dayLabel(at) {
+    var date = new Date(at), today = new Date(), yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (date.toDateString() === today.toDateString()) return "Today";
+    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
   }
 
   function session(id) {
@@ -358,7 +372,7 @@
     b.appendChild(el("span", "kind " + s.kind));
     var main = el("span", "row-main");
     main.appendChild(el("span", "row-title", s.title || ("Pane " + s.id)));
-    main.appendChild(el("span", "row-sub" + (mono ? " mono" : ""), sub));
+    main.appendChild(el("span", "row-sub" + (mono ? " mono" : ""), excerpt(sub)));
     b.appendChild(main);
     var st = statusOf(s);
     b.appendChild(el("span", "status " + st.cls, st.label));
@@ -381,12 +395,12 @@
     var visible = S.sessions.filter(function (s) { return !S.filter || s.workspace.path === S.filter; });
     var order = { "needs-input": 0, working: 1, idle: 2 };
     visible.sort(function (a, b) { return (a.state === "running" ? order[a.status] ?? 3 : 4) - (b.state === "running" ? order[b.status] ?? 3 : 4); });
-    root.appendChild(el("p", "pane-count", visible.length + " panes · " + visible.filter(function (s) { return s.state === "running" && s.status === "needs-input"; }).length + " need you"));
+    root.appendChild(el("p", "pane-count", visible.length + (visible.length === 1 ? " pane · " : " panes · ") + visible.filter(function (s) { return s.state === "running" && s.status === "needs-input"; }).length + " need you"));
     var tiles = el("div", "g2");
     visible.forEach(function (s) {
       var tile = button("mt" + (s.status === "needs-input" ? " need" : ""), null, function () { openPane(s.id); });
       tile.appendChild(avatar(s)); tile.appendChild(el("b", null, s.title || "Pane " + s.id));
-      tile.appendChild(el("small", null, s.pending ? pendingWhat(s.pending) : s.last_step || s.last_reply_excerpt || s.workspace.name));
+      tile.appendChild(el("small", null, excerpt(s.pending ? pendingWhat(s.pending) : s.last_step || s.last_reply_excerpt || s.workspace.name)));
       var st = statusOf(s); tile.appendChild(el("span", "status " + st.cls, st.label + (s.status === "needs-input" ? " · " + ago(s.waiting_since || s.status_since) : ""))); tiles.appendChild(tile);
     });
     root.appendChild(tiles);
@@ -443,7 +457,7 @@
   }
 
   function loadMe() {
-    return api("GET", "/api/me").then(function (d) { S.me = d; if (S.view === "list" && S.home === "computer") renderList(); });
+    return api("GET", "/api/me").then(function (d) { S.me = d; setLive(S.live); if (S.view === "list" && S.home === "computer") renderList(); });
   }
 
   function loadActivity() {
@@ -472,11 +486,11 @@
     var day = "", visible = S.activity.filter(function (e) { return S.activityFilter === "all" || (S.activityFilter === "decisions" ? e.kind !== "finished" : e.kind === "finished"); });
     if (!visible.length) root.appendChild(el("p", "empty", "No activity in this filter."));
     visible.slice().reverse().forEach(function (e) {
-      var date = new Date(e.at).toLocaleDateString();
+      var date = dayLabel(e.at);
       if (date !== day) { day = date; root.appendChild(el("h2", "section-head", date)); }
       var b = button("act-item", null, function () { openPane(e.session); S.activityAt = e.at; });
       b.appendChild(el("span", "activity-time", clock(e.at))); var body = el("span", "row-main");
-      body.appendChild(el("b", null, e.title)); if (e.excerpt) body.appendChild(el("small", null, e.excerpt)); b.appendChild(body); b.appendChild(el("span", "activity-kind " + e.kind, e.kind === "needs_you" ? "?" : "✓")); root.appendChild(b);
+      body.appendChild(el("b", null, excerpt(e.title))); if (e.excerpt) body.appendChild(el("small", null, excerpt(e.excerpt))); b.appendChild(body); b.appendChild(el("span", "activity-kind " + e.kind, e.kind === "needs_you" ? "?" : "✓")); root.appendChild(b);
     });
   }
 
@@ -853,7 +867,7 @@
     if (root === $("card") && S.epoch !== p.epoch) src = null;
     var kicker = function (t) { root.appendChild(el("div", "decision-kicker", t)); };
     if (p.type === "permission") {
-      if (s && s.last_reply_excerpt && root !== $("card")) root.appendChild(el("p", "decision-note", "Last said: " + s.last_reply_excerpt));
+      if (s && s.last_reply_excerpt && root !== $("card")) root.appendChild(el("p", "decision-note", "Last said: " + excerpt(s.last_reply_excerpt)));
       kicker("Permission · " + ago(s && (s.waiting_since || s.status_since)));
       root.appendChild(el("div", "decision-title", "Allow " + p.title + "?"));
       var target = (src && src.target) || p.detail;
@@ -1295,6 +1309,7 @@
       store(TOKEN_KEY, S.token);
       S.pendingPair = null;
       S.me.name = name;
+      loadMe().catch(function () {});
       $("pair-form").classList.add("hidden"); $("pair-steps").classList.add("hidden");
       $("pair-title").textContent = "You're connected"; $("pair-lede").textContent = "Houston is ready on this phone.";
       $("install-help").textContent = installHelp(); $("pair-connected").classList.remove("hidden");
