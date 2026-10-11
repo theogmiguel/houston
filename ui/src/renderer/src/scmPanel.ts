@@ -1,3 +1,4 @@
+import { loadTabs } from './components/browserTabs'
 import { useSyncExternalStore } from "react";
 
 const WIDTH_KEY = "tr-scm-width";
@@ -124,13 +125,44 @@ export function scmWorkspace(
 
 export type ScmTab = "changes" | "pull-request";
 
-export type SurfaceKind = 'browser' | 'files' | 'diff' | 'pull-request' | 'linked-pull-requests'
+export type SurfaceKind = `browser:${string}` | 'browser' | 'files' | 'diff' | 'pull-request' | 'linked-pull-requests'
 export interface InspectorTabsState { openTabs: SurfaceKind[]; active: SurfaceKind | null }
 const INSPECTOR_TABS_PREFIX = 'tr-inspector-tabs:'
 const LEGACY_INSPECTOR_TAB_PREFIX = 'tr-inspector-tab:'
 const SURFACES: SurfaceKind[] = ['browser', 'files', 'diff', 'pull-request', 'linked-pull-requests']
 
+export function isBrowserSurface(value: unknown): value is `browser:${string}` {
+  return typeof value === 'string' && value.startsWith('browser:') && value.length > 8
+}
+
+export function browserTabUrl(workspace: string, id: string): string {
+  return localStorage.getItem(`tr-inspector-browser-url:${workspace}:${id}`) ?? ''
+}
+
+export function saveBrowserTabUrl(workspace: string, id: string, url: string): void {
+  localStorage.setItem(`tr-inspector-browser-url:${workspace}:${id}`, url)
+}
+
 export function loadInspectorTabs(workspace: string): InspectorTabsState {
+  const state = readInspectorTabs(workspace)
+  let legacy
+  try { legacy = JSON.parse(localStorage.getItem(`tr-side:${workspace}`) ?? 'null') } catch { return state }
+  const legacyTabs = Array.isArray(legacy?.tabs) ? legacy.tabs : []
+  for (const tab of legacyTabs) {
+    if (tab?.kind !== 'browser' || typeof tab.id !== 'string' || typeof tab.url !== 'string') continue
+    const surface: SurfaceKind = `browser:${tab.id}`
+    if (!state.openTabs.includes(surface)) state.openTabs.push(surface)
+    saveBrowserTabUrl(workspace, tab.id, tab.url)
+    if (legacy.tabs[legacy.active] === tab) state.active = surface
+  }
+  if (legacyTabs.some((tab: {kind?: string} | null) => tab?.kind === 'browser')) {
+    saveInspectorTabs(workspace, state)
+    localStorage.setItem(`tr-side:${workspace}`, JSON.stringify({ ...legacy, tabs: legacyTabs.filter((tab: {kind?: string} | null) => tab?.kind !== 'browser'), active: 0 }))
+  }
+  return state
+}
+
+function readInspectorTabs(workspace: string): InspectorTabsState {
   const fallback: InspectorTabsState = { openTabs: [], active: null }
   try {
     const raw = localStorage.getItem(INSPECTOR_TABS_PREFIX + workspace)
@@ -139,11 +171,28 @@ export function loadInspectorTabs(workspace: string): InspectorTabsState {
       if (!Array.isArray(parsed.openTabs)) return fallback
       const openTabs = parsed.openTabs.filter(
         (tab, index, all): tab is SurfaceKind =>
-          SURFACES.includes(tab as SurfaceKind) && all.indexOf(tab) === index,
+          (SURFACES.includes(tab as SurfaceKind) || isBrowserSurface(tab)) && all.indexOf(tab) === index,
       )
-      const active = SURFACES.includes(parsed.active as SurfaceKind) && openTabs.includes(parsed.active as SurfaceKind)
+      const active = (SURFACES.includes(parsed.active as SurfaceKind) || isBrowserSurface(parsed.active)) && openTabs.includes(parsed.active as SurfaceKind)
         ? parsed.active as SurfaceKind
         : openTabs.at(-1) ?? null
+      const legacyBrowser = openTabs.indexOf('browser')
+      if (legacyBrowser >= 0) {
+        const restored = loadTabs('tr-browser-tabs.leaf.inspector')
+        const browserTabs: SurfaceKind[] = []
+        let selected: SurfaceKind | null = null
+        for (const tab of restored.tabs) {
+          const id = `inspector-${crypto.randomUUID()}`
+          const surface: SurfaceKind = `browser:${id}`
+          browserTabs.push(surface)
+          saveBrowserTabUrl(workspace, id, tab.url ?? '')
+          if (tab.id === restored.activeTabId) selected = surface
+        }
+        openTabs.splice(legacyBrowser, 1, ...browserTabs)
+        const migrated = {openTabs, active: active === 'browser' ? selected : active}
+        saveInspectorTabs(workspace, migrated)
+        return migrated
+      }
       return { openTabs, active }
     }
     const legacy = localStorage.getItem(LEGACY_INSPECTOR_TAB_PREFIX + workspace)

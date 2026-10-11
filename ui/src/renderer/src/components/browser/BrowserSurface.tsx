@@ -14,10 +14,25 @@ import {
   IconMonitor,
   IconRefresh,
   IconSearch,
+  IconPhone,
+  IconTablet,
+  IconTarget,
+  IconExpand,
 } from '../icons'
-import { useBrowserTabs, TabWebview, loadTabs, toNavUrl, type BrowserTab } from '../browserTabs'
-import { useBrowserNav } from '../browserNav'
-import { tabsStorageKey } from '../browserTabsKey'
+import { popupTabDecision, toNavUrl } from '../browserTabs'
+import { useBrowserNav, type BrowserPageState } from '../browserNav'
+import { saveBrowserTabUrl } from '../../scmPanel'
+import { openSideBrowser } from '../../sidePanel'
+import { useBrowserOpenUrl } from '../../houston/browserState'
+import { BrowserActConfirm } from '../BrowserActConfirm'
+import { useBrowserConfirm } from '../../houston/browserConfirm'
+import { BrowserFullscreen } from '../BrowserFullscreen'
+import { PickerStrip, usePickerController } from '../BrowserPicker'
+import { browserSecurity, useBrowserDevice, type BrowserDevice } from '../browserDevices'
+import { BrowserHeadButton, BrowserCaption, BrowserDeviceRow, BrowserDeviceGroup, DevicePresetButton, BrowserSecurityBadge, BrowserStage, BrowserStatusBand } from '../ui/BrowserSurface'
+import { BrowserPaneStageState } from '../ui/BrowserPaneStates'
+import { isTauri } from '../../houston/host'
+import { nativeCommandErrorMessage } from '../../houston/browserHost'
 import { useBrowserPaneLocalServers } from '../browserPaneLocalServers'
 import '../ui/browserSurface.css'
 
@@ -31,6 +46,9 @@ const RECENT_LIMIT = 5
 
 export interface BrowserSurfaceProps {
   workspace: string
+  initialUrl?: string
+  onNativeError?: (text: string) => void
+  onSendToTerminal?: (text: string) => void
   tabId: string
   active: boolean
   onTitleChange(title: string, faviconUrl: string | null): void
@@ -74,6 +92,9 @@ function addressDisplayUrl(url: string): string {
 
 export function BrowserSurface({
   workspace,
+  initialUrl = '',
+  onSendToTerminal,
+  onNativeError,
   tabId,
   active: isActive,
   onTitleChange,
@@ -83,29 +104,60 @@ export function BrowserSurface({
   const hostRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<BrowserViewportHandle>(null)
   const addressRef = useRef<HTMLInputElement>(null)
-  const tabsKey = tabsStorageKey(tabId)
-  const [restored] = useState(() => loadTabs(tabsKey))
-  const [urlInput, setUrlInput] = useState(
-    () => restored.tabs.find((tab) => tab.id === restored.activeTabId)?.url ?? '',
-  )
-  const [addressFocused, setAddressFocused] = useState(false)
+  const [active, setPage] = useState<BrowserPageState>(() => ({url: initialUrl || null}))
+  const [urlInput, setUrlInput] = useState(initialUrl)
   const [failMsg, setFailMsg] = useState<string | null>(null)
   const [recents, setRecents] = useState<RecentEntry[]>(() => readRecents(workspace))
-  const [serversMenu, setServersMenu] = useState(false)
-  const tabs = useBrowserTabs(tabId, tabsKey, restored, {
-    hiddenByExpand: !isActive,
-    onNativeError: undefined,
-    setUrlInput,
-    setFailMsg,
-  })
-  const { tabs: openTabs, active, patchTab } = tabs
+  const patchPage = (patch: Partial<BrowserPageState>): void => setPage((page) => ({...page, ...patch}))
   const localServers = useBrowserPaneLocalServers(client, workspace, true, !isActive, false)
-  const nav = useBrowserNav(tabId, hostRef, openTabs, active, patchTab, setUrlInput, setFailMsg, () => {})
-  const title = active.title?.trim() || (active.url ? new URL(active.url).hostname : 'New tab')
-
+  const nav = useBrowserNav(tabId, active, patchPage, setUrlInput, setFailMsg, () => {})
+  const [fullscreen, setFullscreen] = useState(false)
+  const [details, setDetails] = useState(false)
+  const [attempts, setAttempts] = useState(0)
+  const [lastFailureAt, setLastFailureAt] = useState<number | null>(null)
+  const [mountFailed, setMountFailed] = useState(false)
+  const [retry, setRetry] = useState(0)
+  const [stage, setStage] = useState({width: 0, height: 0})
+  const stageRef = useRef<HTMLDivElement>(null)
+  const {device, setDevice, size, zoom, deviceRefusal, nativeReady, onReady} = useBrowserDevice(tabId, stage)
+  const pendingAct = useBrowserConfirm()
+  const confirmingHere = pendingAct?.surfaceId === tabId
+  const picker = usePickerController(tabId, !isActive || !active.url || !onSendToTerminal, onSendToTerminal)
+  useBrowserOpenUrl(tabId, (url) => {
+    const decision = popupTabDecision(isActive, 0, url)
+    if ('refused' in decision) { setFailMsg(decision.refused); return }
+    openSideBrowser(`browser-${crypto.randomUUID()}`, decision.url, workspace)
+  })
   useEffect(() => {
-    onTitleChange(title, active.favicon ?? null)
-  }, [active.favicon, onTitleChange, title])
+    if (active.url) saveBrowserTabUrl(workspace, tabId, active.url)
+  }, [active.url, workspace, tabId])
+  useEffect(() => {
+    if (nav.browserState?.error) {
+      setAttempts((value) => value + 1)
+      setLastFailureAt(Date.now())
+    }
+    if (nav.browserState?.mountFailed) setMountFailed(true)
+  }, [nav.browserState])
+  useEffect(() => {
+    if (!isActive || failMsg || mountFailed) setFullscreen(false)
+    viewportRef.current?.remeasure()
+  }, [isActive, fullscreen, failMsg, mountFailed])
+  useEffect(() => {
+    const node = stageRef.current
+    if (!node || typeof ResizeObserver === 'undefined') return
+    const measure = (): void => setStage({width: node.clientWidth, height: node.clientHeight})
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  const title = pageTitle(active)
+
+  const titleCallback = useRef(onTitleChange)
+  titleCallback.current = onTitleChange
+  useEffect(() => {
+    titleCallback.current(title, active.favicon ?? null)
+  }, [active.favicon, title])
 
   useEffect(() => {
     if (active.url === null) return
@@ -140,7 +192,6 @@ export function BrowserSurface({
   }, [isActive])
 
   const loading = Boolean(active.loading)
-  const favicon = active.favicon
   const recentRows = useMemo(() => recents.slice(0, RECENT_LIMIT), [recents])
 
   const navigate = (value: string): void => {
@@ -150,114 +201,71 @@ export function BrowserSurface({
 
   return (
     <ShellBrowserRoot ref={hostRef} data-active={isActive || undefined}>
-      <ShellElement as="div" shellRole="browser-toolbar">
-        <Tooltip label="Back"><button aria-label="Back" disabled={!isActive || !active.canGoBack} onClick={nav.goBack}>
-          <Icon glyph={IconChevronLeft} role="ui" />
-        </button></Tooltip>
-        <Tooltip label="Forward"><button aria-label="Forward" disabled={!isActive || !active.canGoForward} onClick={nav.goForward}>
-          <Icon glyph={IconChevronRight} role="ui" />
-        </button></Tooltip>
-        <Tooltip label="Reload"><button aria-label="Reload" disabled={!isActive || !active.url} onClick={() => nav.reload()}>
-          <Icon glyph={IconRefresh} role="ui" />
-        </button></Tooltip>
-        <ShellElement as="label" shellRole="browser-address">
-          {favicon ? (
-            <img src={favicon} alt="" />
-          ) : active.url ? (
-            <ShellElement as="span" shellRole="browser-favicon">{title.slice(0, 1).toUpperCase()}</ShellElement>
-          ) : (
-            <Icon glyph={IconSearch} role="label" />
-          )}
-          <input
-            ref={addressRef}
-            aria-label="Address"
-            placeholder="Search or enter URL"
-            value={addressFocused ? urlInput : addressDisplayUrl(urlInput)}
-            disabled={!isActive}
-            spellCheck={false}
-            onFocus={() => setAddressFocused(true)}
-            onBlur={() => setAddressFocused(false)}
-            onChange={(event) => setUrlInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') navigate(urlInput)
-            }}
-          />
-        </ShellElement>
-        <ShellElement as="div" shellRole="browser-server-menu">
-          <Tooltip label="Local servers">
-          <ShellElement
-            as="button"
-            shellRole="browser-server-button"
-            aria-label="Local servers"
-            aria-expanded={serversMenu}
-            disabled={!isActive}
-            onClick={() => setServersMenu((open) => !open)}
-          >
-            <Icon glyph={IconMonitor} role="ui" />
-            <ShellElement as="span" shellRole="browser-count">{localServers.servers.length}</ShellElement>
-          </ShellElement>
-          </Tooltip>
-          {serversMenu && (
-            <ShellElement as="div" shellRole="browser-menu" role="menu">
-              <ShellElement as="div" shellRole="browser-menu-label">Local servers</ShellElement>
-              {localServers.servers.map((server) => (
-                <button
-                  key={`${server.session}:${server.port}`}
-                  role="menuitem"
-                  onClick={() => {
-                    navigate(serverUrl(server.port))
-                    setServersMenu(false)
-                  }}
-                >
-                  <ShellElement as="span" shellRole="browser-favicon">{server.pane_title.slice(0, 1).toUpperCase()}</ShellElement>
-                  <ShellElement as="span" shellRole="browser-menu-url">localhost:{server.port}</ShellElement>
-                  <ShellElement as="span" shellRole="browser-process">{server.process}</ShellElement>
-                </button>
-              ))}
-              {localServers.unsupported && <ShellElement as="div" shellRole="browser-menu-empty">{localServers.unsupported}</ShellElement>}
-            </ShellElement>
-          )}
-        </ShellElement>
-        <Tooltip label="Open in system browser"><button
-          aria-label="Open in system browser"
-          disabled={!isActive || !active.url}
-          onClick={() =>
-            active.url &&
-            void openExternal(active.url).catch((error: unknown) => console.warn('houston: openExternal failed', error))
-          }
-        >
-          <Icon glyph={IconExternal} role="ui" />
-        </button></Tooltip>
-      </ShellElement>
+      <BrowserToolbar active={active} isActive={isActive} nav={nav} pageLabel={title} urlInput={urlInput} setUrlInput={setUrlInput} addressRef={addressRef} localServers={localServers} navigate={navigate} picker={picker} tabId={tabId} onSendToTerminal={onSendToTerminal} onFullscreen={() => setFullscreen(true)} />
+      <BrowserDeviceControls device={device} setDevice={setDevice} size={size} zoom={zoom} deviceRefusal={deviceRefusal} nativeReady={nativeReady} url={active.url} />
+      <PickerStrip id={tabId} controller={picker} />
       <ShellElement as="div" shellRole="browser-load">{loading && <span />}</ShellElement>
+      <BrowserStage ref={stageRef}>
       {active.url ? (
-        <BrowserViewport
-          ref={viewportRef}
-          id={tabId}
-          url={active.url}
-          workspaceDir={workspace}
-          hidden={!isActive}
-          noActiveTab={active.url === null}
-        >
-          {openTabs
-            .filter((tab) => tab.url !== null)
-            .map((tab: BrowserTab) => (
-              <TabWebview
-                key={tab.id}
-                url={tab.url as string}
-                visible={tab.id === active.id}
-                onNavigate={(url, canGoBack, canGoForward) => {
-                  patchTab(tab.id, { url, canGoBack, canGoForward })
-                  if (tab.id === active.id) setUrlInput(url)
-                }}
-                onMeta={(meta) => patchTab(tab.id, meta)}
-                onLoading={(isLoading) => patchTab(tab.id, { loading: isLoading })}
-                onFail={setFailMsg}
-              />
-            ))}
-        </BrowserViewport>
+        <>
+        {mountFailed && (
+          <BrowserStatusBand data-testid="browser-pane-mount-recovery" tone="danger" edge="bottom" action={{label: 'Retry', onClick: () => {setMountFailed(false); setFailMsg(null); setRetry((value) => value + 1)}}}>{failMsg ?? 'Browser webview failed to mount. Retry to recreate it.'}</BrowserStatusBand>
+        )}
+        {!mountFailed && <BrowserFullscreen active={fullscreen} onExit={() => setFullscreen(false)} hostDevice={device} hostStyle={failMsg ? {display: 'none'} : size ? {width: size.width * zoom, height: size.height * zoom, flex: 'none'} : undefined} urlLabel={active.url} canGoBack={Boolean(active.canGoBack)} canGoForward={Boolean(active.canGoForward)} loading={loading} onBack={nav.goBack} onForward={nav.goForward} onReload={() => nav.reload()} onNavigate={navigate}>
+          <BrowserViewport
+            key={retry}
+            ref={viewportRef}
+            id={tabId}
+            url={active.url}
+            workspaceDir={workspace}
+            hidden={!isActive || Boolean(failMsg)}
+            fullscreen={fullscreen}
+            dropzoneActive={confirmingHere}
+            overlay={confirmingHere && pendingAct ? <BrowserActConfirm request={pendingAct} onDone={() => {}} /> : undefined}
+            exemptFromReason={fullscreen ? 'modal' : undefined}
+            onReady={onReady}
+            style={!fullscreen && size ? {width: size.width, height: size.height, flex: 'none', transform: `scale(${zoom})`, transformOrigin: 'top left'} : undefined}
+            onMountFailure={() => setMountFailed(true)}
+            onError={(context, id, error) => {
+              const text = nativeCommandErrorMessage(context, id, error)
+              console.error(text)
+              setFailMsg(text)
+              onNativeError?.(text)
+              setAttempts((value) => value + 1)
+              setLastFailureAt(Date.now())
+              setDetails(true)
+            }}
+          >
+            {null}
+          </BrowserViewport>
+        </BrowserFullscreen>}
+        <BrowserPaneStageState fresh={false} failMsg={failMsg} url={active.url} attempts={attempts} lastFailureAt={lastFailureAt} details={details} recents={[]} setRecents={() => {}} {...localServers} urlRef={addressRef} setFailMsg={setFailMsg} setDetails={setDetails} reload={() => {setFailMsg(null); setAttempts((value) => value + 1); nav.reload()}} openUrl={navigate} />
+        </>
       ) : (
-        <ShellElement as="div" shellRole="browser-empty">
+        <BrowserStartScreen localServers={localServers} recentRows={recentRows} onFocusPane={onFocusPane} navigate={navigate} failMsg={failMsg} onRemoveRecent={(url) => {
+          const next = recents.filter((row) => row.url !== url)
+          setRecents(next)
+          localStorage.setItem(localRecentKey(workspace), JSON.stringify(next))
+        }} />
+      )}
+      </BrowserStage>
+    </ShellBrowserRoot>
+  )
+}
+
+function BrowserDeviceControls({device, setDevice, size, zoom, deviceRefusal, nativeReady, url}: Omit<ReturnType<typeof useBrowserDevice>, 'onReady'> & {url: string | null}): React.JSX.Element {
+  return (<BrowserDeviceRow><BrowserDeviceGroup>{(['desktop', 'phone', 'tablet'] as BrowserDevice[]).map((value) => <Tooltip key={value} label={value !== 'desktop' && deviceRefusal ? deviceRefusal : value}><DevicePresetButton aria-label={value === 'phone' ? 'Phone 393 × 852' : value === 'tablet' ? 'Tablet 820 × 1180' : 'Desktop'} aria-pressed={device === value} disabled={value !== 'desktop' && (deviceRefusal != null || (isTauri() && !nativeReady))} onClick={() => setDevice(value)}><Icon glyph={value === 'phone' ? IconPhone : value === 'tablet' ? IconTablet : IconMonitor} role="label" /></DevicePresetButton></Tooltip>)}</BrowserDeviceGroup><BrowserCaption>{size ? `${size.width} × ${size.height} · ${Math.round(zoom * 100)}%` : 'fit · 100%'}</BrowserCaption>{url && <BrowserSecurityBadge insecure={browserSecurity(url) === 'not secure'}>{browserSecurity(url)}</BrowserSecurityBadge>}</BrowserDeviceRow>)
+}
+
+function BrowserStartScreen({localServers, recentRows, onFocusPane, navigate, failMsg, onRemoveRecent}: {
+  localServers: ReturnType<typeof useBrowserPaneLocalServers>
+  recentRows: RecentEntry[]
+  onFocusPane?: (session: number) => void
+  navigate: (url: string) => void
+  failMsg: string | null
+  onRemoveRecent: (url: string) => void
+}): React.JSX.Element {
+  return (<ShellElement as="div" shellRole="browser-empty">
           <ShellElement as="div" shellRole="browser-content">
             <ShellElement as="section" shellRole="browser-section">
               <h2>
@@ -325,11 +333,7 @@ export function BrowserSurface({
                     as="button"
                     shellRole="browser-remove"
                     aria-label={`Remove ${entry.url} from recent`}
-                    onClick={() => {
-                      const next = recents.filter((row) => row.url !== entry.url)
-                      setRecents(next)
-                      localStorage.setItem(localRecentKey(workspace), JSON.stringify(next))
-                    }}
+                    onClick={() => onRemoveRecent(entry.url)}
                   >
                     <Icon glyph={IconClose} role="label" />
                   </ShellElement></Tooltip>
@@ -342,8 +346,110 @@ export function BrowserSurface({
               </ShellElement>
             )}
           </ShellElement>
+        </ShellElement>)
+}
+
+function BrowserToolbar({active, isActive, nav, pageLabel, urlInput, setUrlInput, addressRef, localServers, navigate, picker, tabId, onSendToTerminal, onFullscreen}: {
+  active: BrowserPageState
+  isActive: boolean
+  nav: ReturnType<typeof useBrowserNav>
+  pageLabel: string
+  urlInput: string
+  setUrlInput: (value: string) => void
+  addressRef: React.RefObject<HTMLInputElement | null>
+  localServers: ReturnType<typeof useBrowserPaneLocalServers>
+  navigate: (url: string) => void
+  picker: ReturnType<typeof usePickerController>
+  tabId: string
+  onSendToTerminal?: (text: string) => void
+  onFullscreen: () => void
+}): React.JSX.Element {
+  const [addressFocused, setAddressFocused] = useState(false)
+  const [serversMenu, setServersMenu] = useState(false)
+  const favicon = active.favicon
+  return (<ShellElement as="div" shellRole="browser-toolbar">
+        <Tooltip label="Back"><BrowserHeadButton aria-label="Back" disabled={!isActive || !active.canGoBack} onClick={nav.goBack}>
+          <Icon glyph={IconChevronLeft} role="ui" />
+        </BrowserHeadButton></Tooltip>
+        <Tooltip label="Forward"><BrowserHeadButton aria-label="Forward" disabled={!isActive || !active.canGoForward} onClick={nav.goForward}>
+          <Icon glyph={IconChevronRight} role="ui" />
+        </BrowserHeadButton></Tooltip>
+        <Tooltip label="Reload — Shift+Click bypasses the cache"><BrowserHeadButton aria-label="Reload" disabled={!isActive || !active.url} onClick={(event) => nav.reload(event.shiftKey)}>
+          <Icon glyph={IconRefresh} role="ui" />
+        </BrowserHeadButton></Tooltip>
+        <ShellElement as="label" shellRole="browser-address">
+          {favicon ? (
+            <img src={favicon} alt="" />
+          ) : active.url ? (
+            <ShellElement as="span" shellRole="browser-favicon">{pageLabel.slice(0, 1).toUpperCase()}</ShellElement>
+          ) : (
+            <Icon glyph={IconSearch} role="label" />
+          )}
+          <input
+            ref={addressRef}
+            aria-label="Address"
+            placeholder="Search or enter URL"
+            value={addressFocused ? urlInput : addressDisplayUrl(urlInput)}
+            disabled={!isActive}
+            spellCheck={false}
+            onFocus={() => setAddressFocused(true)}
+            onBlur={() => setAddressFocused(false)}
+            onChange={(event) => setUrlInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') navigate(urlInput)
+            }}
+          />
         </ShellElement>
-      )}
-    </ShellBrowserRoot>
-  )
+        <ShellElement as="div" shellRole="browser-server-menu">
+          <Tooltip label="Local servers">
+          <ShellElement
+            as="button"
+            shellRole="browser-server-button"
+            aria-label="Local servers"
+            aria-expanded={serversMenu}
+            disabled={!isActive}
+            onClick={() => setServersMenu((open) => !open)}
+          >
+            <Icon glyph={IconMonitor} role="ui" />
+            <ShellElement as="span" shellRole="browser-count">{localServers.servers.length}</ShellElement>
+          </ShellElement>
+          </Tooltip>
+          {serversMenu && (
+            <ShellElement as="div" shellRole="browser-menu" role="menu">
+              <ShellElement as="div" shellRole="browser-menu-label">Local servers</ShellElement>
+              {localServers.servers.map((server) => (
+                <button
+                  key={`${server.session}:${server.port}`}
+                  role="menuitem"
+                  onClick={() => {
+                    navigate(serverUrl(server.port))
+                    setServersMenu(false)
+                  }}
+                >
+                  <ShellElement as="span" shellRole="browser-favicon">{server.pane_title.slice(0, 1).toUpperCase()}</ShellElement>
+                  <ShellElement as="span" shellRole="browser-menu-url">localhost:{server.port}</ShellElement>
+                  <ShellElement as="span" shellRole="browser-process">{server.process}</ShellElement>
+                </button>
+              ))}
+              {localServers.unsupported && <ShellElement as="div" shellRole="browser-menu-empty">{localServers.unsupported}</ShellElement>}
+            </ShellElement>
+          )}
+        </ShellElement>
+        <Tooltip label="Open in system browser"><BrowserHeadButton
+          aria-label="Open in system browser"
+          disabled={!isActive || !active.url}
+          onClick={() =>
+            active.url &&
+            void openExternal(active.url).catch((error: unknown) => console.warn('houston: openExternal failed', error))
+          }
+        >
+          <Icon glyph={IconExternal} role="ui" />
+        </BrowserHeadButton></Tooltip>
+        <Tooltip label={!onSendToTerminal ? 'Select element — focus a live agent pane first' : 'Select element'}><BrowserHeadButton aria-label="Select element" data-testid={`browser-picker-toggle-${tabId}`} disabled={!isActive || !active.url || !onSendToTerminal} aria-pressed={picker.enabled} onClick={picker.toggle}><Icon glyph={IconTarget} role="ui" /></BrowserHeadButton></Tooltip>
+        <Tooltip label="Full screen"><BrowserHeadButton aria-label="Full screen" disabled={!isActive || !active.url} onClick={() => onFullscreen()}><Icon glyph={IconExpand} role="ui" /></BrowserHeadButton></Tooltip>
+      </ShellElement>)
+}
+
+function pageTitle(page: BrowserPageState): string {
+  return page.title?.trim() || (page.url ? page.url.replace(/^https?:\/\//, '').split('/')[0] : 'New tab')
 }

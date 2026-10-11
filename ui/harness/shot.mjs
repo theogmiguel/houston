@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import net from 'node:net'
-import { webkit } from 'playwright'
+import { chromium, webkit } from 'playwright'
 
 const args = process.argv.slice(2)
 const positional = args.filter((a) => !a.startsWith('--'))
@@ -62,7 +62,9 @@ if (!ready) {
 }
 
 try {
-  const browser = await webkit.launch()
+  const browser = opt('browser', 'webkit') === 'chromium'
+    ? await chromium.launch({ executablePath: opt('executable', '/usr/bin/google-chrome') })
+    : await webkit.launch()
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale })
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))

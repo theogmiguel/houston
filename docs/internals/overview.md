@@ -411,7 +411,8 @@ channel shares it. Off Windows the commands refuse by name and Settings lists no
   delivery compares the creation token first.
 - **Browser panes hold no authority.** The invoke handler refuses any Tauri command coming
   from a content-only webview label. Destructive agent actions in the browser
-  (`browser_click`, `browser_type`) pass a human confirmation gate.
+  (`browser_click`, `browser_type`, `browser_hover`, `browser_press_key`,
+  `browser_select_option`) pass a human confirmation gate.
 - **Secrets never touch the DB.** SSH passwords, passphrases, the Groq key and the ntfy topic
   URL live in the OS keychain (Secret Service via zbus); the DB holds a reference. `sanitize.rs` redacts
   known secret shapes from anything persisted or shown to another agent.

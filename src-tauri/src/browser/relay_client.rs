@@ -51,6 +51,14 @@ async fn connect_and_serve(app: &AppHandle, port: u16, token: &str) -> anyhow::R
         None => anyhow::bail!("connection closed before hello_ok"),
     }
 
+    write
+        .lock()
+        .await
+        .send(Message::Text(
+            serde_json::to_string(&proto::ClientMsg::BrowserRelayRegister {})?.into(),
+        ))
+        .await?;
+
     loop {
         let Some(frame) = read.next().await else {
             anyhow::bail!("connection closed");

@@ -5,7 +5,7 @@ import type { HoustonClient } from '../src/houston/client'
 import type { SessionInfo } from '../src/houston/client'
 
 type Theme = 'graphite' | 'paper'
-type Board = 'changes' | 'pr' | 'pr-failing' | 'files' | 'children' | 'launcher' | 'diff' | 'browser-empty' | 'browser-page'
+type Board = 'changes' | 'pr' | 'pr-failing' | 'files' | 'children' | 'launcher' | 'diff' | 'browser-empty' | 'browser-page' | 'browser-tabs'
 
 const repo = '/repo'
 const sessionId = 1009
@@ -193,6 +193,11 @@ function Frame({ theme, board, width = 470 }: { theme: Theme; board: Board; widt
       { url: 'http://localhost:4321/docs', title: 'Houston docs', favicon: null },
       { url: 'https://vite.dev/guide/', title: 'Getting Started | Vite', favicon: null }
     ]))
+    if (board === 'browser-tabs') {
+      localStorage.setItem(`tr-inspector-tabs:${repo}`, JSON.stringify({openTabs:['browser:story-one','browser:story-two'],active:'browser:story-two'}))
+      localStorage.setItem(`tr-inspector-browser-url:${repo}:story-one`, 'http://localhost:5173/')
+      localStorage.setItem(`tr-inspector-browser-url:${repo}:story-two`, 'https://example.test/')
+    }
     if (board === 'browser-page') localStorage.setItem('tr-browser-tabs.leaf.inspector', JSON.stringify({ tabs: [{ id: 1, url: 'http://localhost:5173' }], activeTabId: 1 }))
     return true
   })
@@ -272,3 +277,5 @@ export const SurfaceWidth600 = (): React.JSX.Element => <Frame theme="paper" boa
 export const SurfaceWidth732 = (): React.JSX.Element => <Frame theme="paper" board="launcher" width={732} />
 
 export const InspectorOverviewStory = (): React.JSX.Element => <><style>{'.agent-dot{animation:none!important}'}</style><OverviewTab parentId={orchestratorId} sessions={sessions} client={client} onClose={() => {}} onReview={() => {}} /></>
+
+export const SurfaceBrowserTabs = (): React.JSX.Element => <Frame board="browser-tabs" theme="graphite" width={470} />

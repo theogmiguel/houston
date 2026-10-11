@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type AppHarness, renderReadyApp, resetHarness } from './test/appTestHarness'
+import { browserTabUrl, loadInspectorTabs } from './scmPanel'
 import { DEFAULT_GRID_ID, gridStorageKey } from './layout/tree'
 
 const WS = '/tmp/project'
@@ -40,7 +41,9 @@ describe('saved browser leaves migrate to the side panel', () => {
 
     const layout = JSON.parse(localStorage.getItem(`tr-layout:${LAYOUT_KEY}`) ?? 'null')
     expect(layout.tree).toEqual({ kind: 'leaf', session: 1, id: 'p1' })
-    expect(localStorage.getItem(`tr-side:${WS}`)).toContain('https://example.test/')
+    const browsers = loadInspectorTabs(WS).openTabs.filter((tab) => tab.startsWith('browser:'))
+    expect(browsers).toHaveLength(1)
+    expect(browserTabUrl(WS, browsers[0].slice(8))).toBe('https://example.test/')
     expect(harness.container.querySelector('.pane.browser')).toBeNull()
   })
 })

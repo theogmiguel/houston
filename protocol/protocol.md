@@ -1,4 +1,4 @@
-# Wire protocol v136
+# Wire protocol v137
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -388,7 +388,8 @@ every refusal names the setting.
 | `worktree_cleanup_set` | `enabled`, `grace_hours` (`1..=WORKTREE_CLEANUP_GRACE_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
 | `usage_summary_get` | `since_ms` (inclusive), `until_ms` (exclusive), `refresh_pricing?`, `workspace?` (registered path) | `usage_summary` (direct), never a broadcast. A half-open instant range. Refused when `until_ms <= since_ms` or the span exceeds `USAGE_MAX_WINDOW_DAYS` |
 | `usage_activity_summary_get` | `since_ms` (inclusive), `until_ms` (exclusive), `workspace?` | `usage_activity_summary` (direct) with at most `USAGE_ACTIVITY_MAX_DAYS` local-day rows; reads the durable daily rollup and does not scan transcripts |
-| `browser_tool_result` | `request_id`, `ok`, `output?: JSON`, `error?` | reply to a `browser_tool_call` this connection received — the browser-tool relay's app-to-daemon half (v93, Detach). Ignored if the daemon is no longer waiting on `request_id` |
+| `browser_relay_register` | — | register this authenticated connection as the browser relay; latest registration wins (v137). Calls go only to the registered relay; without one they fail immediately. Disconnect fails only that connection's pending calls |
+| `browser_tool_result` | `request_id`, `ok`, `output?: JSON`, `error?` | reply to a `browser_tool_call` this connection received — the browser-tool relay's app-to-daemon half (v93, Detach). Ignored if the daemon is no longer waiting on `request_id`, or it belongs to another connection |
 
 ## Server → client
 
@@ -526,7 +527,7 @@ every refusal names the setting.
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only |
-| `browser_tool_call` | `request_id`, `tool`, `args: JSON`, `session_id`, `workspace_id` | daemon-initiated, to the one connection owning the current window — the browser-tool relay (v93, Detach) |
+| `browser_tool_call` | `request_id`, `tool`, `args: JSON`, `session_id`, `workspace_id` | daemon-initiated, to the explicitly registered browser relay connection — the browser-tool relay (v93, Detach) |
 
 ## Shared shapes
 
@@ -1309,6 +1310,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 137 | Browser relay explicitly registers its authenticated connection; replies are scoped to the connection owning each pending call. |
 | 136 | **ZCode is a spawnable provider.** `AgentKind` gains `zcode`, accepted wherever a spawnable kind is (`session_create`, `pane_spawn`, `task_start`, task start and review settings, routine engines, `agent_hooks_set`, hook rows). ZCode panes launch `zcode` with `--mode` for auto and bypass approval, resume by `--resume <session id>` from the SessionStart hook, receive their first prompt as a paste once ZCode's composer reports focus (bracketed paste enabled, then the cursor shown; pasted regardless after 60 s), confirmed by ZCode's UserPromptSubmit hook, and refuse a non-empty `model` naming the limit. Its hooks live in ZCode's settings file, which also lists the orchestration plugin kept in the channel's state dir. Routines refuse ZCode in accept-edits access by name, and `routines` and `harness_state` gain `engine_refusals: RoutineEngineRefusal[]`, the engine and access pairs routines refuse (OpenCode and ZCode with accept edits) with the reason, so pickers show them disabled. `task_plan_start` refuses ZCode, which has no read-only launch mode, and `task_domain_state` gains `planning_refusals: PlanningRefusal[]` so the planning control shows it disabled. `HarnessProviderCoverage` counts ZCode sessions. Outside `/ws`, the task tools' `id` and `pane_pr_watch`'s `pr` are advertised as strings (an integer is still accepted). |
 | 135 | **The daemon assembles dictated text.** `voice_transcript` gains `insert`, the text the renderer puts in the prompt; the agent preamble and its once-per-pane rule moved from the renderer to the daemon, so desktop and remote dictation share them. `RemoteInfo.dictation` and `remote_configure.dictation?` turn on dictation from paired devices (`POST /api/sessions/{id}/dictate`). The remote listener serves HTTPS itself with a local certificate authority when devices reach it directly on a private address: `RemoteInfo.tls`, `RemoteInfo.ca_fingerprint` and `remote_ca_regenerate`; `url` and allowed origins use `https://` then, and `public_url` must be an https origin the authority can certify. A loopback bind (the Tailscale route) is unchanged |
 | 134 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`, and `remote_grids_publish` with `RemoteGrid`, so paired devices group panes by desktop grid. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |

@@ -2,21 +2,27 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { isLive, type SessionInfo } from './houston/client'
 import { SIDE_OPEN_EVENT, SIDE_SELECT_EVENT, type SideOpen } from './sidePanel'
 
-export function useSidePanelState(selectedWorkspace: string, activeId: number | null, sessions: ReadonlyMap<number, SessionInfo>, scmOpen: boolean, setScmOpen: Dispatch<SetStateAction<boolean>>, _revealWorkspace: (workspace: string) => void) {
+export function useSidePanelState(selectedWorkspace: string, activeId: number | null, sessions: ReadonlyMap<number, SessionInfo>, scmOpen: boolean, setScmOpen: Dispatch<SetStateAction<boolean>>, revealWorkspace: (workspace: string) => void) {
   const [sideRequest, setSideRequest] = useState<SideOpen | null>(null);
   const [activeSurface, setActiveSurface] = useState<"grid" | "side">("grid");
   const sideWorkspaceRef = useRef<string>("all");
   if (activeId !== null && sessions.get(activeId)?.project_dir) sideWorkspaceRef.current = sessions.get(activeId)!.project_dir;
   const sideWorkspace = selectedWorkspace === "all" ? sideWorkspaceRef.current : selectedWorkspace;
   const pickerTarget = useRef<number | null>(null);
-  if (activeId !== null && isLive(sessions.get(activeId)?.state ?? "exited") && sessions.get(activeId)?.agent !== "shell") pickerTarget.current = activeId;
+  if (activeId !== null) {
+    const session = sessions.get(activeId)
+    pickerTarget.current = session && isLive(session.state) && session.agent !== 'shell' ? activeId : null
+  } else if (pickerTarget.current !== null && !isLive(sessions.get(pickerTarget.current)?.state ?? 'exited')) pickerTarget.current = null;
   const [sideReview, setSideReview] = useState<SessionInfo | null>(null);
+  const revealWorkspaceRef = useRef(revealWorkspace);
+  revealWorkspaceRef.current = revealWorkspace;
   useEffect(() => {
     const open = (event: Event): void => {
       const request = (event as CustomEvent<SideOpen>).detail;
+      if (request.kind === 'browser' && request.action !== 'close') revealWorkspaceRef.current(request.workspace);
       setSideRequest(request);
-      setScmOpen(true);
-      setActiveSurface("side");
+      if (request.kind !== 'browser' || request.action !== 'close') setScmOpen(true);
+      if (request.kind !== 'browser' || request.action !== 'close') setActiveSurface('side');
     };
     const select = (): void => setActiveSurface("grid");
     window.addEventListener(SIDE_OPEN_EVENT, open);

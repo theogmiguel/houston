@@ -1,31 +1,36 @@
+import { loadInspectorTabs, saveInspectorTabs, saveBrowserTabUrl } from './scmPanel'
 /// A task the palette already assembled from a terminal selection.
 export interface TaskDraft { title: string; description: string }
 
-export type SideTab =
-  | { kind: 'scm' }
-  | { kind: 'files'; root?: string }
-  | { kind: 'overview'; orchestrator: number }
-  | { kind: 'browser'; id: string; url: string }
-
-export interface SideState { tabs: SideTab[]; active: number }
 export const SIDE_OPEN_EVENT = 'houston:side-open'
 export const TASKS_OPEN_EVENT = 'houston:tasks-open'
 export const TERMINAL_FOCUS_EVENT = 'houston:terminal-focus'
-export const SIDE_BROWSER_MOVE_EVENT = 'houston:side-browser-move'
 export const SIDE_SELECT_EVENT = 'houston:side-select'
-export type SideOpen = { kind: 'overview'; orchestrator: number } | { kind: 'files'; root: string; path: string; line?: number; col?: number } | { kind: 'browser'; id: string; url: string; workspace: string; revealOnly?: boolean }
+export type SideOpen = { kind: 'overview'; orchestrator: number } | { kind: 'files'; root: string; path: string; line?: number; col?: number } | { kind: 'browser'; id: string; url: string; workspace: string; action?: 'open' | 'reveal' | 'close' }
 
-export function openSideBrowser(id: string, url: string, workspace: string, revealOnly = false): void {
-  window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'browser', id, url, workspace, ...(revealOnly ? { revealOnly: true } : {}) } }))
+export function openSideBrowser(id: string, url: string, workspace: string, action: 'open' | 'reveal' | 'close' = 'open'): void {
+  updateSideBrowser(id, url, workspace, action)
+  window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'browser', id, url, workspace, action } }))
+}
+
+export function updateSideBrowser(id: string, url: string, workspace: string, action: 'open' | 'reveal' | 'close'): void {
+  const state = loadInspectorTabs(workspace)
+  const surface = `browser:${id}` as const
+  if (action === 'close') {
+    state.openTabs = state.openTabs.filter((tab) => tab !== surface)
+    if (state.active === surface) state.active = state.openTabs.at(-1) ?? null
+    localStorage.removeItem(`tr-inspector-browser-url:${workspace}:${id}`)
+  } else if (action === 'open') {
+    saveBrowserTabUrl(workspace, id, url)
+    if (!state.openTabs.includes(surface)) state.openTabs.push(surface)
+    state.active = surface
+  } else if (state.openTabs.includes(surface)) state.active = surface
+  saveInspectorTabs(workspace, state)
 }
 
 // Opens the Tasks page, optionally focused on a task or a task draft.
 export function openSideTasks(compose = false, openId?: number, create?: TaskDraft): void {
   window.dispatchEvent(new CustomEvent(TASKS_OPEN_EVENT, { detail: { compose, ...(openId !== undefined ? { openId } : {}), ...(create !== undefined ? { create } : {}) } }))
-}
-
-export function moveBrowserToGrid(id: string, url: string, workspace: string): void {
-  window.dispatchEvent(new CustomEvent(SIDE_BROWSER_MOVE_EVENT, { detail: { id, url, workspace } }))
 }
 
 export function openSideOverview(orchestrator: number): void {
@@ -35,24 +40,6 @@ export function openSideOverview(orchestrator: number): void {
 export function selectOverviewChild(parent: number, child: number | null): void {
   window.dispatchEvent(new CustomEvent(SIDE_SELECT_EVENT, { detail: { parent, child } }))
   window.dispatchEvent(new CustomEvent(TERMINAL_FOCUS_EVENT, { detail: { session: child ?? parent } }))
-}
-
-export function loadSideState(workspace: string): SideState {
-  const fallback: SideState = { tabs: [{ kind: 'scm' }, { kind: 'files' }], active: 0 }
-  try {
-    const value = JSON.parse(localStorage.getItem(`tr-side:${workspace}`) ?? 'null') as SideState | null
-    if (!value || !Array.isArray(value.tabs)) return fallback
-    const tabs: SideTab[] = [{ kind: 'scm' }, { kind: 'files', root: value.tabs.find((tab) => tab?.kind === 'files')?.root }]
-    for (const tab of value.tabs) {
-      if (tab?.kind === 'browser' && typeof tab.id === 'string' && typeof tab.url === 'string' && !tabs.some((item) => item.kind === 'browser' && item.id === tab.id)) tabs.push(tab)
-      if (tab?.kind === 'overview' && Number.isSafeInteger(tab.orchestrator) && !tabs.some((item) => item.kind === 'overview' && item.orchestrator === tab.orchestrator)) tabs.push(tab)
-    }
-    return { tabs, active: Number.isInteger(value.active) && value.active >= 0 && value.active < tabs.length ? value.active : 0 }
-  } catch { return fallback }
-}
-
-export function saveSideState(workspace: string, state: SideState): void {
-  localStorage.setItem(`tr-side:${workspace}`, JSON.stringify(state))
 }
 
 export function reviewCheckoutDir(child: { project_dir: string; worktree?: { path: string } | null } | null): string | undefined {
