@@ -6,6 +6,7 @@ import type { Workspace } from '../houston/generated/Workspace'
 
 function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
   return {
+    openConnectPhone: vi.fn(),
     newTerminal: vi.fn(),
     splitPane: vi.fn(),
     newGrid: vi.fn(),
