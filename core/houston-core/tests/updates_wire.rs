@@ -122,6 +122,31 @@ async fn update_policy_set_off_is_broadcast_as_disabled() {
     }
 }
 
+// `.cargo/config.toml` points both endpoints at a dead port for every test process, and
+// `hermetic_command` clears the environment. Losing the forwarding would let a spawned
+// daemon reach the real manifest and catalog.
+#[test]
+fn hermetic_command_forwards_the_offline_endpoints() {
+    let home = tempfile::tempdir().unwrap();
+    let cmd = hermetic_command("true", home.path());
+    for name in [
+        houston_core::updates::UPDATE_MANIFEST_URL_ENV,
+        houston_core::model_catalog::CATALOG_URL_ENV,
+    ] {
+        let expected = std::env::var_os(name)
+            .unwrap_or_else(|| panic!("{name} is unset in the test process; expected the offline endpoint from .cargo/config.toml"));
+        let forwarded = cmd
+            .get_envs()
+            .find(|(key, _)| *key == std::ffi::OsStr::new(name))
+            .and_then(|(_, value)| value);
+        assert_eq!(
+            forwarded,
+            Some(expected.as_os_str()),
+            "{name} not forwarded"
+        );
+    }
+}
+
 // The daemon boots one update check and one catalog refresh. Pointing both at a local
 // listener proves the override reaches a spawned binary: without it the paths below never
 // arrive here. Unix only, like the other spawned-daemon suites: `hermetic_command` drops
