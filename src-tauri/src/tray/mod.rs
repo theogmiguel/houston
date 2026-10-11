@@ -1,6 +1,9 @@
 pub mod model;
 mod probe;
+#[cfg(debug_assertions)]
+pub mod selftest;
 mod settings;
+mod shutdown;
 
 use model::{TrayIconState, TrayItem, TrayPayload};
 pub use probe::{probe, TrayAvailability};
@@ -21,6 +24,7 @@ macro_rules! tray_png {
 }
 
 const MENU_ID_OPEN: &str = "tray:open";
+const MENU_ID_QUIT: &str = "tray:quit";
 const MENU_ID_STOP: &str = "tray:stop";
 const MENU_ID_HEADER: &str = "tray:header";
 const MENU_ID_OVERFLOW: &str = "tray:overflow";
@@ -29,7 +33,6 @@ const MENU_ID_GROUP_PREFIX: &str = "tray:group:";
 const MENU_ID_SESSION_PREFIX: &str = "tray:session:";
 
 pub const EVENT_FOCUS_PANE: &str = "tray://focus-pane";
-pub const EVENT_STOP_DAEMON: &str = "tray://stop-daemon";
 
 static QUITTING: AtomicBool = AtomicBool::new(false);
 
@@ -225,10 +228,17 @@ fn build_items(
                     &sub_refs,
                 )?)
             }
+            TrayItem::Quit => Box::new(MenuItem::with_id(
+                app,
+                MENU_ID_QUIT,
+                "Quit and keep sessions",
+                true,
+                None::<&str>,
+            )?),
             TrayItem::StopDaemon => Box::new(MenuItem::with_id(
                 app,
                 MENU_ID_STOP,
-                "Quit Houston…",
+                "Quit and stop daemons…",
                 true,
                 None::<&str>,
             )?),
@@ -242,6 +252,7 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     let id = event.id().as_ref();
     match id {
         MENU_ID_OPEN => show_main_window(app),
+        MENU_ID_QUIT => quit(app),
         MENU_ID_STOP => confirm_and_stop(app),
         MENU_ID_HEADER | MENU_ID_AGENTS => {}
         _ if id.starts_with(MENU_ID_OVERFLOW) || id.starts_with(MENU_ID_GROUP_PREFIX) => {}
@@ -278,21 +289,59 @@ fn confirm_and_stop(app: &AppHandle) {
         .title("Quit Houston")
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancelCustom(
-            "Quit and stop daemon".into(),
+            "Quit and stop daemons".into(),
             "Cancel".into(),
         ))
         .show(move |confirmed| {
             if !confirmed {
                 return;
             }
-            if let Err(err) = handle.emit(EVENT_STOP_DAEMON, ()) {
-                eprintln!(
-                    "houston-tauri: could not ask the renderer to stop the daemon ({err}); \
-                     quitting without stopping it, same as an ordinary quit"
-                );
-                quit(&handle);
-            }
+            stop_daemons_and_quit(&handle);
         });
+}
+
+static STOPPING: AtomicBool = AtomicBool::new(false);
+
+fn stop_daemons_and_quit(app: &AppHandle) {
+    if STOPPING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let local = app.state::<crate::host::ConnectionCell>().current();
+    let environments = app.state::<crate::wsl::WslManager>().wsl_envs();
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let failures = shutdown::stop_all(local, environments).await;
+        if failures.is_empty() {
+            quit(&handle);
+            return;
+        }
+        let message = format!(
+            "Some daemons could not be confirmed stopped:\n\n{}\n\nClose Houston anyway? Sessions in those environments may still be running.",
+            failures.join("\n")
+        );
+        eprintln!("houston-tauri: {message}");
+        let exit_handle = handle.clone();
+        handle
+            .dialog()
+            .message(message)
+            .title("Could not stop all daemons")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Close Houston anyway".into(),
+                "Keep Houston open".into(),
+            ))
+            .show(move |confirmed| {
+                STOPPING.store(false, Ordering::SeqCst);
+                if confirmed {
+                    quit(&exit_handle);
+                }
+            });
+    });
+}
+
+#[tauri::command]
+pub fn app_stop_daemons_and_quit(app: AppHandle) {
+    stop_daemons_and_quit(&app);
 }
 
 pub fn install(app: &AppHandle, host: &Arc<TrayHost>) {

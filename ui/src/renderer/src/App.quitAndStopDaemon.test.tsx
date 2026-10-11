@@ -3,25 +3,18 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type AppHarness, renderReadyApp, resetHarness } from './test/appTestHarness'
 
-const { daemonStatusMock, daemonShutdownMock } = vi.hoisted(() => ({
-  daemonStatusMock: vi.fn(),
-  daemonShutdownMock: vi.fn()
-}))
+const { daemonStatusMock } = vi.hoisted(() => ({ daemonStatusMock: vi.fn() }))
 vi.mock('./houston/manage', async () => {
   const actual = await vi.importActual<typeof import('./houston/manage')>('./houston/manage')
-  return { ...actual, daemonStatus: daemonStatusMock, daemonShutdown: daemonShutdownMock }
+  return { ...actual, daemonStatus: daemonStatusMock }
 })
 
-const { listEnvironmentsMock } = vi.hoisted(() => ({ listEnvironmentsMock: vi.fn() }))
-vi.mock('./houston/environments', async () => {
-  const actual = await vi.importActual<typeof import('./houston/environments')>('./houston/environments')
-  return { ...actual, listEnvironments: listEnvironmentsMock }
-})
-
-const { appQuitMock } = vi.hoisted(() => ({ appQuitMock: vi.fn(async () => {}) }))
+const { appStopDaemonsAndQuitMock } = vi.hoisted(() => ({
+  appStopDaemonsAndQuitMock: vi.fn(async () => {})
+}))
 vi.mock('./houston/tray', async () => {
   const actual = await vi.importActual<typeof import('./houston/tray')>('./houston/tray')
-  return { ...actual, appQuit: appQuitMock }
+  return { ...actual, appStopDaemonsAndQuit: appStopDaemonsAndQuitMock }
 })
 
 function pressCtrlK(): void {
@@ -60,10 +53,7 @@ describe('Quit and stop daemon (D6, from the command palette)', () => {
     resetHarness()
     localStorage.clear()
     daemonStatusMock.mockReset()
-    daemonShutdownMock.mockReset()
-    appQuitMock.mockClear()
-    listEnvironmentsMock.mockReset()
-    listEnvironmentsMock.mockRejectedValue(new Error('env_list needs the Tauri host'))
+    appStopDaemonsAndQuitMock.mockReset()
   })
 
   afterEach(() => {
@@ -71,7 +61,7 @@ describe('Quit and stop daemon (D6, from the command palette)', () => {
     harness = null
   })
 
-  it('fetches daemon_status and confirms with the exact live-session and routine counts before doing anything', async () => {
+  it('shows local status and invokes native all-environment shutdown only after confirmation', async () => {
     daemonStatusMock.mockResolvedValue({
       manage_version: 1,
       protocol_version: 92,
@@ -90,68 +80,66 @@ describe('Quit and stop daemon (D6, from the command palette)', () => {
 
     await openAndRunQuit(harness)
     expect(daemonStatusMock).toHaveBeenCalledTimes(1)
-    expect(daemonShutdownMock).not.toHaveBeenCalled()
+    expect(appStopDaemonsAndQuitMock).not.toHaveBeenCalled()
     expect(windowControl).not.toHaveBeenCalled()
-    expect(appQuitMock).not.toHaveBeenCalled()
 
     const dialog = harness.container.querySelector('[role="alertdialog"]')
     expect(dialog).not.toBeNull()
-    expect(dialog!.textContent).toContain('This ends 3 live sessions and disarms 2 routines.')
+    expect(dialog!.textContent).toContain('stops daemons in all environments')
+    expect(dialog!.textContent).toContain('Local daemon status: 3 live sessions and 2 enabled routines.')
+    expect(dialog!.textContent).toContain('Counts for other environments are not available here.')
 
     const confirm = dialog!.querySelector<HTMLButtonElement>('button.btn:last-of-type')!
-    daemonShutdownMock.mockResolvedValue({ ok: true, stopped_sessions: 3, disarmed_routines: 2 })
     await act(async () => {
       confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
-    expect(daemonShutdownMock).toHaveBeenCalledTimes(1)
-    expect(appQuitMock).toHaveBeenCalledTimes(1)
+    expect(appStopDaemonsAndQuitMock).toHaveBeenCalledTimes(1)
     expect(windowControl).not.toHaveBeenCalledWith('close')
   })
 
-  it('still opens the confirm — with unknown counts — and still lets the user proceed when the status fetch fails', async () => {
-    daemonStatusMock.mockRejectedValue(new Error('network error'))
-    daemonShutdownMock.mockResolvedValue({ ok: true, stopped_sessions: 0, disarmed_routines: 0 })
-    harness = await renderReadyApp()
-
-    await openAndRunQuit(harness)
-    const dialog = harness.container.querySelector('[role="alertdialog"]')
-    expect(dialog).not.toBeNull()
-    expect(dialog!.textContent).toContain('unknown number of live sessions')
-
-    const confirm = dialog!.querySelector<HTMLButtonElement>('button.btn:last-of-type')!
-    await act(async () => {
-      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-    expect(daemonShutdownMock).toHaveBeenCalledTimes(1)
-    expect(appQuitMock).toHaveBeenCalledTimes(1)
-  })
-
-  it("stops every environment's daemon before quitting", async () => {
-    const wsl = { id: 'wsl:Ubuntu', kind: 'wsl', distro: 'Ubuntu', slot: 1, port: 5001, token: 'ubuntu-token', state: 'ready' }
-    listEnvironmentsMock.mockResolvedValue([
-      { id: 'local', kind: 'local', slot: 0, port: 4000, token: 'local-token', state: 'ready' },
-      wsl
-    ])
-    daemonStatusMock.mockRejectedValue(new Error('network error'))
-    const quitAfter: number[] = []
-    daemonShutdownMock.mockImplementation(async () => {
-      quitAfter.push(appQuitMock.mock.calls.length)
-      return { ok: true, stopped_sessions: 0, disarmed_routines: 0 }
+  it('keeps WSL shutdown scope clear when local status reports zero sessions', async () => {
+    daemonStatusMock.mockResolvedValue({
+      manage_version: 1,
+      protocol_version: 92,
+      build: 'abc1234',
+      pid: 1,
+      started_at: new Date().toISOString(),
+      live_sessions: { count: 0, ids: [] },
+      routines_enabled: 0,
+      clients_connected: 1,
+      handoff: { supported: true, reason: '' },
+      reap: { armed: false, deadline_ms: null }
     })
     harness = await renderReadyApp()
 
     await openAndRunQuit(harness)
     const dialog = harness.container.querySelector('[role="alertdialog"]')!
-    const confirm = dialog.querySelector<HTMLButtonElement>('button.btn:last-of-type')!
+    expect(dialog.textContent).toContain('stops daemons in all environments, including WSL')
+    expect(dialog.textContent).toContain('Local daemon status: 0 live sessions and 0 enabled routines.')
+    expect(dialog.textContent).toContain('Counts for other environments are not available here.')
+    expect(appStopDaemonsAndQuitMock).not.toHaveBeenCalled()
+  })
+
+  it('shows safe all-environment copy and allows proceeding when the local status fetch fails', async () => {
+    daemonStatusMock.mockRejectedValue(new Error('network error'))
+    harness = await renderReadyApp()
+
+    await openAndRunQuit(harness)
+    const dialog = harness.container.querySelector('[role="alertdialog"]')
+    expect(dialog).not.toBeNull()
+    expect(dialog!.textContent).toContain('stops daemons in all environments')
+    expect(dialog!.textContent).toContain('local daemon did not answer a status check')
+    expect(dialog!.textContent).toContain('counts are unknown')
+    expect(dialog!.textContent).not.toContain('0 live sessions')
+    expect(appStopDaemonsAndQuitMock).not.toHaveBeenCalled()
+
+    const confirm = dialog!.querySelector<HTMLButtonElement>('button.btn:last-of-type')!
     await act(async () => {
       confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
-    await vi.waitFor(() => expect(appQuitMock).toHaveBeenCalledTimes(1))
-    expect(daemonShutdownMock.mock.calls).toEqual([[undefined], [wsl]])
-    expect(quitAfter).toEqual([0, 0])
+    expect(appStopDaemonsAndQuitMock).toHaveBeenCalledTimes(1)
   })
 
   it('cancelling the confirm quits nothing and stops nothing', async () => {
@@ -183,8 +171,7 @@ describe('Quit and stop daemon (D6, from the command palette)', () => {
     } finally {
       vi.useRealTimers()
     }
-    expect(daemonShutdownMock).not.toHaveBeenCalled()
+    expect(appStopDaemonsAndQuitMock).not.toHaveBeenCalled()
     expect(windowControl).not.toHaveBeenCalled()
-    expect(appQuitMock).not.toHaveBeenCalled()
   })
 })

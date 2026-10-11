@@ -1,72 +1,45 @@
 // @vitest-environment jsdom
 import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { EnvironmentEntry } from './environments'
 
 const handlers = vi.hoisted(() => new Map<string, (payload: unknown) => void>())
-const appQuit = vi.hoisted(() => vi.fn(async () => {}))
-
-vi.mock('./tray', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./tray')>()
-  return {
-    ...actual,
-    appQuit,
-    syncTray: vi.fn(async () => {}),
-    onTrayEvent: vi.fn(async (event: string, handler: (payload: unknown) => void) => {
-      handlers.set(event, handler)
-      return () => handlers.delete(event)
-    })
-  }
-})
-vi.mock('./host', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./host')>()
-  return { ...actual, getHostConfig: vi.fn(async () => ({ port: 4000, token: 'local-token' })) }
-})
-vi.mock('./environments', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./environments')>()
-  const entries: EnvironmentEntry[] = [
-    { id: 'local', kind: 'local', slot: 0, port: 4000, token: 'local-token', state: 'ready' },
-    { id: 'wsl:Ubuntu', kind: 'wsl', distro: 'Ubuntu', slot: 1, port: 5001, token: 'ubuntu-token', state: 'ready' }
-  ]
-  return { ...actual, listEnvironments: vi.fn(async () => entries) }
-})
-
-import { useTrayBridge } from './useTray'
-import { TRAY_EVENT_STOP_DAEMON } from './tray'
+const nativeStop = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('./tray', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./tray')>(),
+  appStopDaemonsAndQuit: nativeStop,
+  syncTray: vi.fn(async () => {}),
+  onTrayEvent: vi.fn(async (event: string, handler: (payload: unknown) => void) => {
+    handlers.set(event, handler)
+    return () => handlers.delete(event)
+  })
+}))
+import { stopDaemonThenQuit, useTrayBridge } from './useTray'
+import { TRAY_EVENT_FOCUS_PANE } from './tray'
 
 afterEach(() => {
-  vi.unstubAllGlobals()
   handlers.clear()
-  appQuit.mockClear()
+  nativeStop.mockClear()
 })
 
 describe('useTray', () => {
-  it("stops every environment's daemon", async () => {
-    const calls: Array<{ url: string; auth: string; verb: string; quitAlready: boolean }> = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init: RequestInit) => {
-        calls.push({
-          url,
-          auth: (init.headers as Record<string, string>).Authorization,
-          verb: JSON.parse(init.body as string).verb,
-          quitAlready: appQuit.mock.calls.length > 0
-        })
-        return new Response(JSON.stringify({ ok: true, stopped_sessions: 0, disarmed_routines: 0 }), { status: 200 })
-      })
-    )
-    renderHook(() =>
-      useTrayBridge({ connection: 'ready', sessions: new Map(), workspaces: [], onFocusPane: () => {} })
-    )
-    await waitFor(() => expect(handlers.has(TRAY_EVENT_STOP_DAEMON)).toBe(true))
+  it('hands confirmed shutdown to the native host without waiting for a renderer fetch', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('unexpected renderer fetch'))
+    stopDaemonThenQuit()
+    await waitFor(() => expect(nativeStop).toHaveBeenCalledTimes(1))
+    expect(fetch).not.toHaveBeenCalled()
+    fetch.mockRestore()
+  })
 
-    handlers.get(TRAY_EVENT_STOP_DAEMON)!(null)
-
-    await waitFor(() => expect(appQuit).toHaveBeenCalledTimes(1))
-    expect(calls.map(({ url, auth, verb }) => ({ url, auth, verb })).sort((a, b) => a.url.localeCompare(b.url))).toEqual([
-      { url: 'http://127.0.0.1:4000/manage', auth: 'Bearer local-token', verb: 'daemon_shutdown' },
-      { url: 'http://127.0.0.1:5001/manage', auth: 'Bearer ubuntu-token', verb: 'daemon_shutdown' }
-    ])
-    expect(calls.every((c) => !c.quitAlready)).toBe(true)
+  it('keeps pane focus events and needs no renderer shutdown subscription', async () => {
+    const focus = vi.fn()
+    const { unmount } = renderHook(() => useTrayBridge({
+      connection: 'ready', sessions: new Map(), workspaces: [], onFocusPane: focus
+    }))
+    await waitFor(() => expect(handlers.has(TRAY_EVENT_FOCUS_PANE)).toBe(true))
+    handlers.get(TRAY_EVENT_FOCUS_PANE)!(42)
+    expect(focus).toHaveBeenCalledWith(42)
+    expect(handlers.has('tray://stop-daemon')).toBe(false)
+    unmount()
+    expect(handlers.size).toBe(0)
   })
 })

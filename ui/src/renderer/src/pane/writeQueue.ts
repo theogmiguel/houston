@@ -268,7 +268,7 @@ export class PaneWriteQueue {
   private push(data: Uint8Array, isWarning = false, exempt = false): void {
     this.queue.push({ data, isWarning, exempt })
     this.queuedBytes += data.length
-    if (isWarning || this.queuedBytes <= this.maxQueuedBytes) return
+    if (isWarning || exempt || this.queuedBytes <= this.maxQueuedBytes) return
     if (this.resyncOnOverflow()) {
       writeQueueStats.overflowResyncs += 1
       this.queue = []
