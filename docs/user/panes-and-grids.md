@@ -58,6 +58,11 @@ write cannot be admitted; retry that input after the program resumes reading. Te
 the session cancels pending input and reports delivery failures, including any bytes
 already written. Input already admitted continues after disconnecting the client.
 
+On Linux, closing an Exited pane also stops descendants still holding its terminal open
+and completes the output reader. On other platforms, that close is refused until the
+terminal reaches EOF. A daemon handoff asks you to close Exited panes that still retain
+output readers.
+
 ## Splitting and stacking
 
 Split a cell to place two panes side by side, or stack several panes into one cell as a

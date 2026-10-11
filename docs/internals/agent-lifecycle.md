@@ -12,7 +12,9 @@ A hook without a pane identity exits silently and writes nothing: global provide
 fire in sessions Houston did not launch.
 
 PTY startup owns the child until the session row, profile directory and gated reader/wait
-workers are ready. Failure rolls back the row and reaps that child before publishing a pane.
+workers are ready. Failure rolls back the row, terminates the owned terminal process group and foreground
+group through a retained master descriptor, then reaps the direct child before publishing
+a pane. Windows rollback uses the owned child handle.
 Respawn allocates a new ID, so failed startup leaves the previous durable pane available.
 
 What makes it an *agent* is
