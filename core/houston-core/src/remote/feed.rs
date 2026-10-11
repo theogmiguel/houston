@@ -323,6 +323,7 @@ fn tool_target(
             "pattern",
             "query",
             "description",
+            "skill",
         ]
         .iter()
         .find_map(|k| str_at(input, k).map(str::to_string))
@@ -1433,6 +1434,22 @@ mod tests {
         };
         assert!(!target.contains('\n'));
         assert_eq!(target.chars().count(), STEP_MAX_CHARS);
+    }
+
+    #[test]
+    fn a_skill_step_names_the_skill() {
+        let payload = serde_json::json!({
+            "tool_name": "Skill",
+            "tool_input": {"skill": "houston-pane", "args": "spawn a child"}
+        })
+        .to_string();
+        let Some(HookFeed::Step { tool, target, .. }) =
+            from_hook(CLAUDE, "PostToolUse", &payload, None)
+        else {
+            panic!("a step");
+        };
+        assert_eq!(tool, "Skill");
+        assert_eq!(target, "houston-pane");
     }
 
     #[test]
