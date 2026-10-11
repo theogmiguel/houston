@@ -37,11 +37,11 @@ activity is kept only in memory while remote access is on and clears when it is 
 ## Turn it on
 
 Choose **Connect phone** from the rail footer or command palette, or open
-**Settings ▸ Remote access ▸ Connect phone**. The dialog explains the access a paired
+**Settings ▸ Remote access ▸ Devices ▸ Connect phone…**. The dialog explains the access a paired
 device receives. Choose a route, enter its public URL, then choose **Enable remote access**.
 You can also turn on **Allow remote access** directly in Settings ▸ Remote access. By default, Houston listens on
 `127.0.0.1:47823` (`127.0.0.1:47824` for a development build), which only this computer can
-reach. The **Status** row shows the address devices open, or why Houston could not listen.
+reach. Under **Allow remote access**, Settings shows the address devices open, or why Houston could not listen.
 
 ### Reach it from your phone with Tailscale (recommended)
 
@@ -53,7 +53,7 @@ devices can open, without opening a port to the internet:
 2. On this computer, run `tailscale serve --bg 47823`. Tailscale prints an address such as
    `https://machine.tailnet.ts.net`. On Linux, running it without root needs
    `sudo tailscale set --operator=$USER` once.
-3. Paste that address into **Public URL** in Settings ▸ Remote access.
+3. Paste that address into the public URL field of **Settings ▸ Remote access ▸ Route ▸ Change…**.
 
 The machine name becomes part of a public certificate log; rename the machine in Tailscale
 first if its name is sensitive. Do not use `tailscale funnel`: it would publish the
@@ -61,10 +61,10 @@ listener to the whole internet.
 
 ### Other addresses
 
-**Settings ▸ Remote access ▸ Advanced ▸ Listen address** accepts another `IP:PORT`, such
-as this computer's Tailscale or LAN address. Listening on every interface (`0.0.0.0`) requires a **Public URL** that names the
-address devices open. Without HTTPS in front, a device's token and the pane text it reads
-cross the network unencrypted, and Settings shows a warning.
+**Settings ▸ Remote access ▸ Listen address ▸ Edit…** accepts another `IP:PORT`, such
+as this computer's Tailscale or LAN address. Listening on every interface (`0.0.0.0`) requires a public URL, set under **Route**, that names the
+address devices open. The **Route** row reads Tailscale, Same Wi-Fi or Custom. Without HTTPS in front, a device's token and the pane text it reads
+cross the network unencrypted, and the **Route** row shows a warning.
 
 ### Choose the route in Connect phone
 
@@ -83,15 +83,15 @@ The QR code appears once Houston reports that the listener is ready at the selec
 address. Scan it with the phone camera, or choose **Copy link**. It works once and the
 countdown shows when it expires; choose **Get a new code** after expiry. Confirm on the
 phone to see **<device> is connected** on the desktop. Choose **Connect another** for
-another code or **Done** to close. Closing the dialog keeps remote access on. Listen
-address and public URL remain available under **Settings ▸ Remote access ▸ Advanced**.
+another code or **Done** to close. Closing the dialog keeps remote access on. The route
+and listen address remain available under **Settings ▸ Remote access ▸ Route** and **Listen address**.
 
 The paired device can show this computer's name and Houston version, together with the
 remote access address and whether that address uses HTTPS.
 
 ## Pair a device
 
-1. In Settings ▸ Remote access, choose **Pair a device**. Houston shows a QR code and a
+1. In Settings ▸ Remote access ▸ Devices, choose **Connect phone…**. Houston shows a QR code and a
    link that work once and expire after 10 minutes.
 2. Scan the code with the phone's camera, or open the link on the other computer.
 3. Confirm the suggested device name or enter another, then choose **Connect this phone**.
@@ -181,9 +181,10 @@ computer are available from the desktop application.
 
 1. Install the ntfy app on your phone and subscribe to a topic with a long, unguessable
    name. Anyone who knows the topic name can read its messages.
-2. Paste the topic URL, such as `https://ntfy.sh/<topic>`, into **ntfy topic URL** in
-   Settings ▸ Remote access and choose **Save**. The URL is kept in the OS keychain; the
-   settings show only the server.
+2. Paste the topic URL, such as `https://ntfy.sh/<topic>`, in
+   **Settings ▸ Remote access ▸ Phone notifications ▸ ntfy topic ▸ Set up…** and choose **Save**.
+   The URL is kept in the OS keychain; the settings show only the server. **Change…** replaces
+   it and **Remove** turns notifications off.
 3. Adjust **Delay** (30 seconds by default, up to 600). A pane must keep waiting for that
    long before the notification goes out; if you answer on the desktop sooner, nothing is
    sent. Each time a pane starts waiting, at most one notification is sent.
@@ -206,9 +207,9 @@ them on your server.
 
 **Computer ▸ Disconnect this device** forgets this browser's token and clears its displayed
 conversations. It does not revoke the token on the computer: use **Settings ▸ Remote
-access ▸ Devices ▸ Revoke** there to revoke access. Pair again to reconnect this browser.
+access ▸ Devices ▸ Revoke…** there to revoke access. Pair again to reconnect this browser.
 
-Choose **Revoke** next to a device (and confirm) to end its access immediately, including a
+Choose **Revoke…** next to a device (and confirm) to end its access immediately, including a
 page it has open. A connected phone receives an explicit reason when its device is revoked
 or remote access is disabled. Turning off **Allow remote access** stops the listener, closes open pages'
 live updates, clears the conversations and stops notifications; paired devices stay listed
