@@ -991,6 +991,7 @@ mod linux {
         webview
             .with_webview(move |platform| {
                 if !dispatch.is_live() || tx.is_closed() {
+                    let _ = tx.send(Err("browser: page operation expired or was cancelled before native dispatch; nothing was performed".into()));
                     return;
                 }
                 use javascriptcore::ValueExt;
