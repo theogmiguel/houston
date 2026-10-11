@@ -16,13 +16,14 @@ use transcripts::UsageRecord;
 
 /// The base [`untracked_agents`] subtracts the covered providers from, so the
 /// section's "not tracked" list stays derived rather than hand-copied.
-pub const TOKEN_SPENDING_AGENTS: [proto::AgentKind; 6] = [
+pub const TOKEN_SPENDING_AGENTS: [proto::AgentKind; 7] = [
     proto::AgentKind::Claude,
     proto::AgentKind::Codex,
     proto::AgentKind::Antigravity,
     proto::AgentKind::Opencode,
     proto::AgentKind::Cursor,
     proto::AgentKind::Grok,
+    proto::AgentKind::Zcode,
 ];
 
 /// Named on the wire so the section can say "not tracked" for these instead of
@@ -618,7 +619,8 @@ mod tests {
         assert!(untracked.contains(&proto::AgentKind::Opencode));
         assert!(untracked.contains(&proto::AgentKind::Cursor));
         assert!(untracked.contains(&proto::AgentKind::Grok));
-        assert_eq!(untracked.len(), 4);
+        assert!(untracked.contains(&proto::AgentKind::Zcode));
+        assert_eq!(untracked.len(), 5);
         assert!(!untracked.contains(&proto::AgentKind::Shell));
         assert!(!untracked.contains(&proto::AgentKind::Ssh));
     }

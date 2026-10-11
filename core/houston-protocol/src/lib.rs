@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 135;
+pub const PROTOCOL_VERSION: u32 = 136;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -98,6 +98,7 @@ pub enum AgentKind {
     Opencode,
     Cursor,
     Grok,
+    Zcode,
     Droid,
     Copilot,
     Aider,
@@ -1701,7 +1702,8 @@ impl Default for VoiceSettings {
                 model_id: "ggml-small".to_string(),
             },
             output_mode: VoiceOutputMode::Original,
-            input_language: None,
+            // Auto-detect costs whisper a full-window encode before transcribing.
+            input_language: Some("pt".to_string()),
             capture_mode: CaptureMode::Hold,
             input_device: None,
             insert_mode: InsertMode::Direct,
@@ -3244,6 +3246,18 @@ pub struct RemoteInfo {
     pub notify_delay_secs: u32,
     pub notify_detail: RemoteNotifyDetail,
     pub notify_finished: bool,
+    /// Paired devices may send recordings for the voice engine to transcribe.
+    /// Independent of `VoiceSettings.enabled`, which opens this computer's microphone.
+    pub dictation: bool,
+    /// The listener serves HTTPS itself with the local certificate authority:
+    /// devices reach it directly on a private address. False on loopback, where
+    /// a proxy such as `tailscale serve` terminates HTTPS.
+    pub tls: bool,
+    /// SHA-256 of the listener's certificate authority, as a device shows it;
+    /// absent until Houston first serves its own HTTPS.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub ca_fingerprint: Option<String>,
     pub devices: Vec<RemoteDevice>,
 }
 
@@ -3267,6 +3281,25 @@ pub struct RemoteGrid {
 pub const REMOTE_GRIDS_MAX: usize = 256;
 pub const REMOTE_GRID_SESSIONS_MAX: usize = 64;
 pub const REMOTE_GRID_NAME_MAX: usize = 120;
+
+/// A provider refused for read-only task planning. The planning control shows it
+/// disabled with `reason`; `task_plan_start` still refuses it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PlanningRefusal {
+    pub agent: AgentKind,
+    pub reason: String,
+}
+
+/// A routine engine refused under one access level, whatever its model. Pickers
+/// show it disabled with `reason`; `routine_create`/`routine_update` still refuse it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct RoutineEngineRefusal {
+    pub engine: AgentKind,
+    pub permission_mode: ChatPermissionMode,
+    pub reason: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
@@ -4481,8 +4514,13 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         notify_finished: Option<bool>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        dictation: Option<bool>,
     },
     RemotePairStart,
+    /// Replaces the listener's certificate authority; devices must trust the new one.
+    RemoteCaRegenerate,
     RemoteDeviceRevoke {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
@@ -5086,6 +5124,8 @@ pub enum ServerMsg {
         routines: Vec<Routine>,
         #[cfg_attr(feature = "ts-gen", ts(type = "number[]"))]
         running: Vec<u32>,
+        #[serde(default)]
+        engine_refusals: Vec<RoutineEngineRefusal>,
     },
     RoutineRefused {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
@@ -5114,6 +5154,8 @@ pub enum ServerMsg {
         findings: Vec<HarnessFinding>,
         models: Vec<HarnessModelOption>,
         provider_coverage: Vec<HarnessProviderCoverage>,
+        #[serde(default)]
+        engine_refusals: Vec<RoutineEngineRefusal>,
     },
     HarnessOverview {
         rows: Vec<HarnessAttention>,
@@ -5163,6 +5205,8 @@ pub enum ServerMsg {
     },
     TaskDomainState {
         domain: TaskDomain,
+        #[serde(default)]
+        planning_refusals: Vec<PlanningRefusal>,
     },
     TaskPlanChanged {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -5261,6 +5305,10 @@ pub enum ServerMsg {
     VoiceTranscript {
         session: u32,
         text: String,
+        /// What to insert into the pane's prompt, assembled by the daemon: the
+        /// trimmed text, the agent preamble on the pane's first English-output
+        /// dictation, a trailing space. Empty when there is nothing to insert.
+        insert: String,
         engine: String,
         translated: bool,
     },
@@ -5720,6 +5768,14 @@ pub struct ManageErrorBody {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dictation_defaults_to_portuguese_rather_than_auto_detect() {
+        assert_eq!(
+            VoiceSettings::default().input_language.as_deref(),
+            Some("pt")
+        );
+    }
 
     #[test]
     fn output_frame_roundtrip() {

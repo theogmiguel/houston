@@ -636,6 +636,96 @@ async fn a_task_key_that_does_not_exist_is_refused_naming_the_key() {
     );
 }
 
+/// Every type array in `schema` that names more than one value type besides null.
+/// A `type` naming more than one value type besides null, or a `oneOf`/`anyOf` whose
+/// branches offer a string beside another scalar.
+fn value_unions(path: &str, schema: &Value, found: &mut Vec<String>) {
+    match schema {
+        Value::Object(map) => {
+            if let Some(Value::Array(types)) = map.get("type") {
+                if types.iter().filter(|t| *t != "null").count() > 1 {
+                    found.push(format!("{path}: {}", map["type"]));
+                }
+            }
+            for key in ["oneOf", "anyOf"] {
+                let Some(Value::Array(branches)) = map.get(key) else {
+                    continue;
+                };
+                let types: Vec<&str> = branches
+                    .iter()
+                    .filter_map(|b| b.get("type").and_then(Value::as_str))
+                    .collect();
+                let scalar = |t: &&str| matches!(*t, "integer" | "number" | "boolean");
+                if types.contains(&"string") && types.iter().any(scalar) {
+                    found.push(format!("{path}.{key}: {types:?}"));
+                }
+            }
+            for (key, value) in map {
+                value_unions(&format!("{path}.{key}"), value, found);
+            }
+        }
+        Value::Array(items) => {
+            for (i, item) in items.iter().enumerate() {
+                value_unions(&format!("{path}[{i}]"), item, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// GLM writes a string unquoted when a property's type is a union such as integer or
+/// string, so ZCode cannot parse the call and drops the argument. No advertised tool
+/// carries one; a task id is a string, and an integer or numeric string still works.
+#[tokio::test]
+async fn no_tool_property_unions_a_string_with_a_scalar_and_a_task_id_reads_in_every_form() {
+    let r = rig().await;
+    r.daemon.orchestration_set(true).unwrap();
+    let pane = r.pane();
+    let token = r.token_for(pane);
+    let tools = mcp(r.addr, &token, "tools/list", json!({})).await["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    for name in [
+        "task_get",
+        "task_handback",
+        "task_check",
+        "pane_pr_watch",
+        "pane_spawn",
+    ] {
+        assert!(names.contains(&name), "{name} is advertised: {names:?}");
+    }
+    let mut found = Vec::new();
+    for tool in &tools {
+        value_unions(
+            tool["name"].as_str().unwrap(),
+            &tool["inputSchema"],
+            &mut found,
+        );
+    }
+    assert!(found.is_empty(), "union-typed properties: {found:?}");
+    let mut probe = Vec::new();
+    value_unions(
+        "probe",
+        &json!({"oneOf": [{"type": "string"}, {"type": "integer"}]}),
+        &mut probe,
+    );
+    assert_eq!(probe.len(), 1, "a oneOf of string and integer is caught");
+
+    ok_call(
+        r.addr,
+        &token,
+        "task_create",
+        json!({ "title": "Typed id" }),
+    )
+    .await;
+    for id in [json!("HOU-1"), json!("1"), json!(1)] {
+        let detail = ok_call(r.addr, &token, "task_get", json!({ "id": id })).await;
+        assert_eq!(detail["task"]["key"], "HOU-1", "id {id}: {detail}");
+    }
+}
+
 /// Global keys stay distinct while agent access follows the configured scope.
 #[tokio::test]
 async fn task_tools_read_globally_and_write_only_own_workspace() {

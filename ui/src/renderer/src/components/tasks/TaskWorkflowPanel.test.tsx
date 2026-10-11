@@ -40,7 +40,7 @@ describe('task workflow panel', () => {
     const onStartRequested = vi.fn()
     render(<TaskWorkflowPanel client={client} detail={DETAIL} onOpenSession={onOpenSession} onStartRequested={onStartRequested} />)
 
-    const domainState: ServerMsg = { type: 'task_domain_state', domain: DOMAIN }
+    const domainState: ServerMsg = { type: 'task_domain_state', domain: DOMAIN, planning_refusals: [] }
     act(() => handlers.forEach((handler) => handler(domainState)))
     expect(await screen.findByText('Blocked by HOU-13')).toBeTruthy()
 
@@ -55,6 +55,33 @@ describe('task workflow panel', () => {
     expect(onOpenSession).toHaveBeenCalledWith(91)
   })
 
+  it('disables Generate plan with the reason while a refused agent is chosen, and keeps it for Start', () => {
+    const handlers = new Set<(message: ServerMsg) => void>()
+    const sent: ClientMsg[] = []
+    const client = {
+      subscribeAll: (handler: (message: ServerMsg) => void) => { handlers.add(handler); return () => handlers.delete(handler) },
+      taskSnapshot: () => {},
+      taskSave: () => {},
+      send: (message: ClientMsg) => sent.push(message)
+    }
+    render(<TaskWorkflowPanel client={client} detail={DETAIL} onOpenSession={() => {}} />)
+    const reason = 'its command line has no read-only planning mode; planning is switched on only inside ZCode, with /plan'
+    act(() => handlers.forEach((handler) => handler({ type: 'task_domain_state', domain: DOMAIN, planning_refusals: [{ agent: 'zcode', reason }] })))
+    const generate = (): HTMLButtonElement => screen.getByRole('button', { name: 'Generate plan' }) as HTMLButtonElement
+    expect(generate().disabled).toBe(false)
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Planning and implementation agent' }))
+    fireEvent.mouseUp(screen.getByRole('option', { name: 'zcode' }))
+    expect(generate().disabled).toBe(true)
+    expect(generate().closest('[data-tooltip]')?.getAttribute('data-tooltip'))
+      .toBe(`ZCode cannot generate a plan: ${reason}. Choose another agent to plan; ZCode can still start the task.`)
+    fireEvent.click(generate())
+    expect(sent.some((message) => message.type === 'task_plan_start')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start anyway' }))
+    expect(sent.at(-1)).toMatchObject({ type: 'task_start', id: 42, agent: 'zcode' })
+  })
+
   it('names the current parent in the Delivery select even when it is not a delivery of this project', () => {
     const handlers = new Set<(message: ServerMsg) => void>()
     const client = {
@@ -67,7 +94,7 @@ describe('task workflow panel', () => {
     render(<TaskWorkflowPanel client={client} detail={detail} onOpenSession={() => {}} />)
     const parent = { ...DETAIL.task, id: 7, number: 7, key: 'HOU-7', title: 'Parent work', parent_id: null, acceptance_checked: 0, acceptance_total: 0 }
     act(() => handlers.forEach((handler) => {
-      handler({ type: 'task_domain_state', domain: DOMAIN })
+      handler({ type: 'task_domain_state', domain: DOMAIN, planning_refusals: [] })
       handler({ type: 'task_snapshot', scope: '/work/app', tasks: [parent], counts: { ready: 0, backlog: 0, todo: 1, in_progress: 0, in_review: 0, done: 0, canceled: 0 } })
     }))
     expect(screen.getByRole('combobox', { name: 'Delivery' }).textContent).toBe('HOU-7 — Parent work')
@@ -93,7 +120,7 @@ describe('task workflow panel', () => {
         approved_revision: 7
       }
     }
-    const state: ServerMsg = { type: 'task_domain_state', domain: planDomain }
+    const state: ServerMsg = { type: 'task_domain_state', domain: planDomain, planning_refusals: [] }
     act(() => handlers.forEach((handler) => handler(state)))
 
     expect(screen.getByText('This approval is stale. Review and approve the current task revision.')).toBeTruthy()
@@ -111,7 +138,7 @@ describe('task workflow panel', () => {
     }
     render(<TaskWorkflowPanel client={client} detail={DETAIL} onOpenSession={vi.fn()} />)
     const emit = (message: ServerMsg): void => handlers.forEach((handler) => handler(message))
-    act(() => emit({ type: 'task_domain_state', domain: DOMAIN }))
+    act(() => emit({ type: 'task_domain_state', domain: DOMAIN, planning_refusals: [] }))
     act(() => emit({ type: 'task_refused', id: 42, kind: 'invalid', message: 'a Slice must reference its parent Delivery through parent_id' }))
     expect(screen.queryByText(/must reference its parent Delivery/)).toBeNull()
   })

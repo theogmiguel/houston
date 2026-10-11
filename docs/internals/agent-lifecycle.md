@@ -97,6 +97,7 @@ Per-provider event names:
 | OpenCode | `session.created`, root `message.updated`, `session.status` (`busy`/`retry`), `permission.asked`/legacy `permission.updated`, `permission.replied`, `question.*` and `question.v2.*`, `session.idle`, `session.error`; replies resume `Working`, while errors settle with error attention |
 | Cursor | `sessionStart`, `beforeSubmitPrompt`, `stop` — **no `NeedsInput`** — plus `subagentStart`/`subagentStop` and `afterAgentResponse` (last message only, documented not live-verified) |
 | Grok | reuses Claude's PascalCase names verbatim, plus `SubagentStart`/`SubagentStop` (documented, not live-verified) |
+| ZCode | `SessionStart` (once per process, inside the first turn or on resume), `UserPromptSubmit`, `Stop` (successful turns only), `PermissionRequest`; matched `PreToolUse(AskUserQuestion)` reports a question and the `PostToolUse` with its `tool_use_id` resumes the turn; an interrupt cancels ZCode's hooks, so it reports no turn end |
 | Antigravity | `SessionStart`, `PreInvocation`, `Stop`, `PreToolUse` → all four (`PreToolUse` gated by tool name, see below); the matching `PostToolUse` resumes `Working` once no permission episode remains (`PostInvocation` maps to nothing: it fires per step, not per turn) |
 | Droid, Copilot, Aider | **no mapping at all** — identity only, via banner sniffing |
 
@@ -110,7 +111,8 @@ nothing can read.
 The correlation events — installed so the daemon has *evidence*, never unconditional
 transitions — are Claude's `SubagentStart`/`SubagentStop` and matched
 `PreToolUse`/`PostToolUse`/`PostToolUseFailure`; Codex's
-`SubagentStart`/`SubagentStop`/`SessionEnd` and matched `PreToolUse`/`PostToolUse`; Grok's and Cursor's
+`SubagentStart`/`SubagentStop`/`SessionEnd` and matched `PreToolUse`/`PostToolUse`; ZCode's
+`PreToolUse`/`PostToolUse`/`PostToolUseFailure`; Grok's and Cursor's
 `subagentStart`/`subagentStop`; Cursor's `afterAgentResponse` (last-message
 only); Antigravity's `PostToolUse` (correlation evidence that conditionally clears a
 block); and the OpenCode plugin's synthesized
@@ -196,6 +198,7 @@ the other providers use `agent_hooks.rs`:
 | OpenCode | `<config dir>/opencode/plugins/houston-notify.js` |
 | Grok | `~/.grok/hooks/houston.json` |
 | Antigravity | `~/.gemini/config/hooks.json` |
+| ZCode | `~/.zcode/cli/setting.json` and/or `~/.zcode/cli/config.json`, each one present (also `hooks.enabled` and Houston's plugin directory in `plugins.dirs`) |
 
 Every install is reversible through a managed-marker scheme: a trailing sentinel token
 `--houston-managed[=<channel>]` inside the command string, matched **per whitespace
@@ -225,7 +228,8 @@ boot — an app upgrade moves the real binary. Claude's `hook_command()` builds
 `if [ -z "${TR_SESSION:-}" ]; then exit 0; fi; if [ -x '<launcher>' ]; then exec '<launcher>' hook <event> <sentinel>; fi`.
 The first guard makes the global entry a silent no-op outside Houston before the helper runs.
 The other providers guard executable availability with `--agent <provider>` added — except
-Codex's Windows arm, which builds its own argv directly and has no shell to guard through.
+Codex's Windows arm and ZCode's Windows `process` entries, which pass an argv directly and have
+no shell to guard through.
 
 One managed group per channel also means one event runs both channels' helpers, and each
 helper resolves its drop root from the pane's own `HOUSTON_CHANNEL`, not from where it was

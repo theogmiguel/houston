@@ -44,9 +44,9 @@ See `docs/operations/development.md` for building and running Houston from the r
 
 ## Providers
 
-Houston hosts nine agent CLIs. Six are spawnable — you can open a pane running them
+Houston hosts ten agent CLIs. Seven are spawnable — you can open a pane running them
 directly from Houston: **Claude Code**, **Codex**, **Antigravity**, **OpenCode**,
-**Cursor**, and **Grok**. Three more are identity-only — Houston recognizes them from
+**Cursor**, **Grok** and **ZCode**. Three more are identity-only — Houston recognizes them from
 their own startup banner if you run them yourself in a shell pane, but cannot spawn or
 drive them: **Droid**, **Copilot**, **Aider**.
 
@@ -125,6 +125,83 @@ off removes Houston's marked entries and deletes the file if nothing is left in 
 
 Houston also registers an MCP server under `[mcp_servers.houston]` in
 `~/.grok/config.toml`. There is no automatic removal for this entry yet.
+
+### ZCode
+
+ZCode is Z.ai's coding agent for GLM models. Houston runs its terminal interface, the
+`zcode` command. Z.ai publishes no installer for that command: build it from the official
+source repository (`zai-org/ZCode`, `pnpm build:zcode`), or install the community package
+with `npm install -g zcode-app-cli`. The runtime bundled with the ZCode desktop app has no
+terminal interface (it stops with `Cannot find package '@zcode/tui'`) and cannot run in a
+pane.
+
+Sign in with ZCode itself: `zcode login zai` for the international Z.ai service, or
+`zcode login bigmodel` for BigModel in mainland China. ZCode has no command-line model
+option, so Houston refuses a model named for a ZCode pane, for example in `pane_spawn`;
+choose the model inside ZCode with `/model`. ZCode takes no prompt on its command line
+either: Houston pastes a pane's first prompt into ZCode's input once that input is ready
+to take it, which on a cold start can be several seconds after the pane opens (after a
+minute it pastes regardless), and counts it delivered only when ZCode's prompt hook
+reports it. Without that
+report Houston presses Enter once more, never pastes the prompt a second time, and then
+tells the pane's parent (or shows an error) to check the pane; the message never repeats
+the prompt. Without the hook toggle on, nothing can confirm the paste.
+ZCode has no read-only mode on its command line (it turns planning on only inside its own
+interface, with `/plan`), so Houston does not use it to plan a task; see
+[Tasks](tasks.md#planning-a-task).
+ZCode loads a skill with `/skill <name>`, so a skill used in a ZCode pane is sent that way,
+and Skills shows and copies it that way while a ZCode pane is focused. ZCode finds skills
+in `~/.zcode/skills`, `~/.agents/skills` and the same folders in the project, not in
+`~/.claude/skills`; Houston's skill push copies your Claude skills into `~/.zcode/skills`,
+as it does for Codex, and agent spawning installs its `houston-pane` skill there.
+
+What is transmitted: ZCode sends prompts, code and tool results to the service you signed
+in to — Z.ai, which processes data in Singapore, or BigModel, in China. For GLM Coding Plan
+requests ZCode routes the call, credential included, through its own gateway at
+`zcode.z.ai`. ZCode also attaches device and session identifiers to those calls, makes
+automatic auxiliary calls of its own (titles, compaction, memory, goal checks), fetches
+its catalog and configuration from `cdn-zcode.z.ai` in the background, and keeps local
+logs of model input and output by default. None of this traffic passes through Houston,
+and Houston sends nothing to Z.ai. The official command has no update check of its own;
+Houston panes set `ZCODE_DISABLE_UPDATE_CHECK=1`, which turns off the one in the
+`zcode-app-cli` package.
+
+Turning the hook toggle on (Settings ▸ Agent setup ▸ ZCode) edits ZCode's settings file.
+The `zcode-app-cli` package reads `~/.zcode/cli/setting.json`; the upstream command reads
+`~/.zcode/cli/config.json`. Houston edits each of the two that exists, and creates
+`config.json` when neither does (the package copies it into `setting.json` on its first
+start). The edit adds:
+
+- one hook entry per lifecycle event, each carrying the `--houston-managed` marker;
+- `hooks.enabled` set to `true`. ZCode runs no hook without it, and the switch covers every
+  hook in the file: hooks of your own that were switched off run while Houston's are
+  installed. Houston records the previous value and restores it once no Houston channel
+  has entries left;
+- the path of a plugin directory Houston owns (`~/.houston/zcode-plugin`) in
+  `plugins.dirs`. The plugin gives ZCode Houston's pane tools. Its address and token come
+  from variables Houston sets only in its own panes, so no token is written to disk and,
+  outside a Houston pane, the plugin's server stays unregistered. There, `zcode plugins
+  list` shows a `plugin_variable_missing` error for Houston's plugin; that is expected.
+  In a pane, ZCode names the tools `mcp__plugin_houston_houston__pane_*` (the `dev`
+  channel's are `mcp__plugin_houston-dev_houston__pane_*`) and asks for approval before
+  each call unless the pane runs in yolo mode.
+
+Turning the toggle off removes only Houston's entries and its plugin directory; a command
+of yours in the same hook group stays. ZCode accepts strict JSON only; if the file does not
+parse, Houston refuses and names the problem without changing it. Houston replaces the file
+whole, so ZCode never reads a partly written one, and the keys come back in alphabetical
+order. Edits from Houston's installed and development channels take turns through a lock
+file, `config.json.houston-lock`, beside the settings file. If the file changes while
+Houston edits it, Houston reads it again rather than overwriting the change, and refuses
+with nothing written if it keeps changing. If you later set `hooks.enabled` to `false`
+yourself, Houston keeps it when it refreshes its entries at startup. On Windows, where
+ZCode runs a shell command hook through `cmd.exe`, each entry instead names Houston's hook
+helper, `claude-hook.exe` in the channel's state directory (for example
+`%USERPROFILE%\.houston\bin`), which ZCode starts directly. Outside a Houston pane the
+helper exits at once without doing anything. Turn the toggle off before you uninstall
+Houston or delete its state directory: once the helper is gone, every ZCode session, in a
+Houston pane or not, reports `Hook process failed` until Houston's entries are removed from
+the settings file.
 
 ### Droid, Copilot, Aider
 

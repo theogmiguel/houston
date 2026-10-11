@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Routine } from '../../houston/routineTypes'
 import { RoutinesSurface } from './RoutinesSurface'
+import { openSelect } from '../../test/selectHarness'
+import type { RoutineEngineRefusal } from '../../houston/generated/RoutineEngineRefusal'
 
 const NOW = 10_000
 
@@ -48,7 +50,39 @@ function surface(overrides: Partial<React.ComponentProps<typeof RoutinesSurface>
   />
 }
 
+const ZCODE_REFUSAL: RoutineEngineRefusal = {
+  engine: 'zcode',
+  permission_mode: 'accept_edits',
+  reason: 'its edit mode waits for approval on every shell command, and nobody gives it'
+}
+
+function disabledEngines(container: HTMLElement, testId: string): (string | undefined)[] {
+  return openSelect(container, testId)
+    .filter((row) => row.getAttribute('aria-disabled') === 'true')
+    .map((row) => row.dataset.value)
+}
+
 describe('Routines page', () => {
+  it("Runs on disables an engine the routine's access refuses and offers it once the access allows it", async () => {
+    const isolated = { ...routine(2), permission_mode: 'bypass_permissions' as const, isolate: true }
+    const { container, rerender } = render(surface({ routines: [routine(1)], engineRefusals: [ZCODE_REFUSAL] }))
+    await screen.findByRole('heading', { name: 'Routine 1' })
+    expect(disabledEngines(container, 'routine-detail-engine')).toEqual(['zcode'])
+    const zcode = openSelect(container, 'routine-detail-engine').find((row) => row.dataset.value === 'zcode')!
+    expect(zcode.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toBe(
+      `ZCode needs isolated full access: ${ZCODE_REFUSAL.reason}. Change the routine's access with Edit first.`
+    )
+    rerender(surface({ routines: [isolated], engineRefusals: [ZCODE_REFUSAL] }))
+    await screen.findByRole('heading', { name: 'Routine 2' })
+    expect(disabledEngines(container, 'routine-detail-engine')).toEqual([])
+  })
+
+  it('the new-routine editor receives the same refusals', async () => {
+    const { container } = render(surface({ engineRefusals: [ZCODE_REFUSAL] }))
+    fireEvent.click(screen.getByTestId('routine-create'))
+    expect(disabledEngines(container, 'routine-engine')).toEqual(['zcode'])
+  })
+
   it('uses the page title and opens the first selected routine in the list-detail view', async () => {
     render(surface())
     expect(screen.getByRole('heading', { name: 'Routines' })).toBeTruthy()

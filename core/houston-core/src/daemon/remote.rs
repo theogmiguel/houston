@@ -1,6 +1,7 @@
 //! The daemon's side of remote access: persisted settings, the listener loop,
 //! pairing, and the observe-and-answer operations the HTTP API exposes.
 use std::collections::HashSet;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use serde::Serialize;
 use super::{now_ms, Daemon};
 use crate::db::RemoteDeviceRow;
 use crate::remote::feed::{self, Answered, Card, Change, FeedItem, HookFeed, Pending, Refusal};
-use crate::remote::{self, ApiError, Config, ConfigPatch, ListenState, NotifyDetail};
+use crate::remote::{self, tls, ApiError, Config, ConfigPatch, ListenState, NotifyDetail};
 
 const BIND_BACKOFF_START: Duration = Duration::from_secs(1);
 // A retiring generation releases the port within seconds; 30 s bounds the
@@ -62,6 +63,48 @@ pub struct RemoteSession {
     pub last_step: Option<String>,
 }
 
+/// A device's recording, transcribed and assembled as the desktop would insert it.
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteDictation {
+    pub text: String,
+    pub engine: String,
+    pub translated: bool,
+}
+
+/// A voice failure as a device reads it; the desktop shows the same facts.
+fn dictation_refusal(failure: proto::VoiceFailure) -> ApiError {
+    use proto::VoiceFailure as F;
+    match failure {
+        F::NoModel { model_id } => ApiError::Conflict(format!(
+            "no speech model is installed ({model_id}): download it in Settings > Dictation on the \
+             computer running Houston, or switch to Groq there"
+        )),
+        F::MissingKey { .. } => ApiError::Conflict(
+            "no Groq API key is stored: add one in Settings > Dictation on the computer running \
+             Houston, or switch to the local engine there"
+                .to_string(),
+        ),
+        F::TooQuiet { rms, floor } => ApiError::Unprocessable(format!(
+            "the recording is too quiet to transcribe: measured RMS {rms:.4}, the floor is \
+             {floor:.4}; speak closer to the microphone"
+        )),
+        F::TooShort { seconds, minimum } => ApiError::Unprocessable(format!(
+            "the recording is too short to transcribe: {seconds:.2} s, the minimum is {minimum:.2} s"
+        )),
+        F::NoSpeech => ApiError::Unprocessable("no speech was recognised".to_string()),
+        F::TargetGone { session } => {
+            ApiError::NotFound(format!("pane {session} closed before the transcript arrived"))
+        }
+        F::Engine { message } => ApiError::Internal(format!("transcription failed: {message}")),
+        F::DeviceUnavailable { device } => {
+            ApiError::Internal(format!("transcription failed: {device}"))
+        }
+        F::RingBufferOverrun { dropped } => {
+            ApiError::Internal(format!("transcription failed: {dropped} samples were lost"))
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RemoteFeed {
     pub id: u32,
@@ -94,7 +137,7 @@ impl Daemon {
             bind: remote::default_bind(self.channel()),
             ..Config::default()
         };
-        Config {
+        let mut cfg = Config {
             enabled: get(remote::KEY_ENABLED).as_deref() == Some("1"),
             bind: get(remote::KEY_BIND)
                 .and_then(|v| remote::parse_bind(&v).ok())
@@ -110,7 +153,10 @@ impl Daemon {
                 .unwrap_or(default.notify_detail),
             notify_finished: get(remote::KEY_NOTIFY_FINISHED).as_deref() == Some("1"),
             ntfy_server: get(remote::KEY_NTFY_SERVER).filter(|v| !v.is_empty()),
-        }
+            dictation: get(remote::KEY_DICTATION).as_deref() == Some("1"),
+        };
+        cfg.upgrade_public_scheme();
+        cfg
     }
 
     /// Validates every field before persisting any, so a refused patch changes nothing.
@@ -134,14 +180,20 @@ impl Daemon {
         if let Some(finished) = patch.notify_finished {
             next.notify_finished = finished;
         }
+        if let Some(dictation) = patch.dictation {
+            next.dictation = dictation;
+        }
         if next.bind.ip().is_unspecified() && next.public_url.is_none() {
             anyhow::bail!(
                 "remote bind {} listens on every interface, so there is no single address to \
                  pair devices with: set the public URL to the address devices open (for example \
-                 http://192.168.1.20:{}), or bind one address",
+                 https://192.168.1.20:{}), or bind one address",
                 next.bind,
                 next.bind.port()
             );
+        }
+        if let Some(refusal) = next.tls_refusal() {
+            anyhow::bail!(refusal);
         }
         let ntfy = match &patch.ntfy_url {
             Some(raw) => Some(remote::parse_ntfy_url(raw).map_err(|e| anyhow!(e))?),
@@ -172,6 +224,7 @@ impl Daemon {
             (remote::KEY_NOTIFY_DELAY, &delay),
             (remote::KEY_NOTIFY_DETAIL, next.notify_detail.as_str()),
             (remote::KEY_NOTIFY_FINISHED, flag(next.notify_finished)),
+            (remote::KEY_DICTATION, flag(next.dictation)),
             (
                 remote::KEY_NTFY_SERVER,
                 next.ntfy_server.as_deref().unwrap_or(""),
@@ -223,6 +276,9 @@ impl Daemon {
                     NotifyDetail::PaneName => proto::RemoteNotifyDetail::PaneName,
                 },
                 notify_finished: cfg.notify_finished,
+                dictation: cfg.dictation,
+                tls: cfg.serves_tls(),
+                ca_fingerprint: self.remote_authority_fingerprint(),
                 devices,
             },
         }
@@ -602,6 +658,80 @@ impl Daemon {
             write(&key_bytes)?;
         }
         Ok(())
+    }
+
+    /// Refusals that need no audio, checked before a recording is read. Returns
+    /// the voice settings the transcription uses.
+    pub(crate) fn remote_dictate_check(&self, id: u32) -> Result<proto::VoiceSettings, ApiError> {
+        if !self.remote_config().dictation {
+            return Err(ApiError::Forbidden(
+                "dictation from paired devices is off: turn on Allow dictation from paired \
+                 devices in Settings > Remote access on the computer running Houston"
+                    .to_string(),
+            ));
+        }
+        let s = self.remote_target(id)?;
+        if !s.state.lock().expect("state lock").is_live() {
+            return Err(ApiError::Conflict(format!(
+                "pane {id} is not running: dictation needs a live pane"
+            )));
+        }
+        let settings = self.voice_settings();
+        let local = matches!(settings.engine, proto::VoiceEngine::Local { .. });
+        if local && cfg!(not(unix)) {
+            return Err(ApiError::Conflict(format!(
+                "{}: choose Groq in Settings > Dictation for remote dictation on this computer",
+                crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE
+            )));
+        }
+        match self.voice_engine_refusal(&settings) {
+            Some(proto::VoiceFailure::Engine { message }) => Err(ApiError::Conflict(message)),
+            Some(failure) => Err(dictation_refusal(failure)),
+            None => Ok(settings),
+        }
+    }
+
+    /// Transcribes one recording from a device. It never opens this computer's
+    /// microphone, changes the desktop's dictation state or broadcasts the
+    /// transcript; the text goes back to the device only. Blocking.
+    pub(crate) fn remote_dictate(
+        &self,
+        id: u32,
+        settings: &proto::VoiceSettings,
+        samples: Vec<f32>,
+    ) -> Result<RemoteDictation, ApiError> {
+        let _engine = self.voice.claim_engine_remote().map_err(|busy| {
+            ApiError::Conflict(match busy {
+                crate::voice::runtime::EngineBusy::Desktop => {
+                    "the desktop is transcribing a dictation and the engine runs one at a time: \
+                     send the recording again in a moment"
+                        .to_string()
+                }
+                crate::voice::runtime::EngineBusy::Remote => {
+                    "another device's recording is being transcribed; remote dictation \
+                     transcribes one recording at a time: send it again when that finishes"
+                        .to_string()
+                }
+            })
+        })?;
+        let audio = crate::voice::AudioBuffer {
+            samples,
+            sample_rate: crate::voice::capture::TARGET_SAMPLE_RATE,
+        };
+        let t = self
+            .voice_transcribe(&audio, settings)
+            .map_err(dictation_refusal)?;
+        let text =
+            self.voice
+                .dictation_text(id, &t.text, settings.output_mode, settings.agent_preamble);
+        if text.is_empty() {
+            return Err(dictation_refusal(proto::VoiceFailure::NoSpeech));
+        }
+        Ok(RemoteDictation {
+            text,
+            engine: t.engine,
+            translated: t.translated,
+        })
     }
 
     pub(crate) fn remote_note_status(&self, id: u32, status: proto::AgentStatus) {
@@ -1018,8 +1148,38 @@ impl Daemon {
                 }
                 continue;
             }
-            match tokio::net::TcpListener::bind(cfg.bind).await {
-                Ok(listener) => {
+            let https = cfg.serves_tls();
+            let mut hosts = cfg.allowed_hosts();
+            let mut generation = self.remote.authority_generation.load(Ordering::Acquire);
+            let key = if https {
+                self.remote_server_key(hosts.clone()).await.map(Some)
+            } else {
+                Ok(None)
+            };
+            let prepared = match key {
+                Ok(key) => tokio::net::TcpListener::bind(cfg.bind)
+                    .await
+                    .map(|listener| (listener, key.map(tls::ServerCert::new)))
+                    .map_err(|e| format!("cannot listen on {}: {e}", cfg.bind)),
+                Err(e) => Err(format!("cannot serve HTTPS on {}: {e:#}", cfg.bind)),
+            };
+            match prepared {
+                Ok((listener, cert)) => {
+                    let tls = match cert
+                        .as_ref()
+                        .map(tls::ServerCert::server_config)
+                        .transpose()
+                    {
+                        Ok(tls) => tls,
+                        Err(e) => {
+                            self.remote_set_listen(ListenState {
+                                listening: None,
+                                error: Some(format!("cannot serve HTTPS: {e:#}")),
+                            });
+                            tokio::time::sleep(backoff).await;
+                            continue;
+                        }
+                    };
                     backoff = BIND_BACKOFF_START;
                     self.remote_set_listen(ListenState {
                         listening: listener.local_addr().ok(),
@@ -1035,8 +1195,22 @@ impl Daemon {
                                 std::future::pending::<()>().await;
                             }
                             let now = this.remote_config();
-                            if !now.enabled || now.bind != bind {
+                            if !now.enabled || now.bind != bind || now.serves_tls() != https {
                                 break;
+                            }
+                            let Some(cert) = cert.as_ref() else {
+                                continue;
+                            };
+                            let current = this.remote.authority_generation.load(Ordering::Acquire);
+                            if now.allowed_hosts() != hosts || current != generation {
+                                hosts = now.allowed_hosts();
+                                generation = current;
+                                match this.remote_server_key(hosts.clone()).await {
+                                    Ok(key) => cert.set(key),
+                                    Err(e) => tracing::warn!(
+                                        "remote access: keeping the previous certificate: {e:#}"
+                                    ),
+                                }
                             }
                         }
                         // Event streams never end on their own; graceful shutdown
@@ -1055,7 +1229,7 @@ impl Daemon {
                         }
                     };
                     let served = tokio::select! {
-                        served = remote::http::serve(Arc::clone(&self), listener, shutdown) => served,
+                        served = remote::http::serve(Arc::clone(&self), listener, tls, shutdown) => served,
                         () = drained => {
                             tracing::warn!(
                                 "remote access: requests on {bind} were still open {} s after the \
@@ -1073,10 +1247,10 @@ impl Daemon {
                         tokio::time::sleep(backoff).await;
                     }
                 }
-                Err(e) => {
+                Err(error) => {
                     self.remote_set_listen(ListenState {
                         listening: None,
-                        error: Some(format!("cannot listen on {}: {e}", cfg.bind)),
+                        error: Some(error),
                     });
                     tokio::select! {
                         changed = changes.changed() => {
@@ -1092,6 +1266,97 @@ impl Daemon {
                 }
             }
         }
+    }
+
+    /// A server certificate for `hosts`, signed by the local authority; the
+    /// keychain is read off the async runtime.
+    async fn remote_server_key(
+        self: &Arc<Self>,
+        hosts: Vec<String>,
+    ) -> Result<Arc<tokio_rustls::rustls::sign::CertifiedKey>> {
+        let this = Arc::clone(self);
+        tokio::task::spawn_blocking(move || this.remote_authority()?.server_key(&hosts))
+            .await
+            .map_err(|e| anyhow!("preparing the certificate panicked: {e}"))?
+    }
+
+    /// The local certificate authority, from settings and the keychain, or a new
+    /// one stored there on first use. A lost key makes a new authority, which
+    /// devices have to trust again.
+    pub fn remote_authority(&self) -> Result<Arc<tls::Authority>> {
+        let mut slot = self.remote.authority.lock().expect("remote authority lock");
+        if let Some(authority) = slot.as_ref() {
+            return Ok(Arc::clone(authority));
+        }
+        let get = |key: &str| {
+            self.db
+                .get_setting(key)
+                .ok()
+                .flatten()
+                .filter(|v| !v.is_empty())
+        };
+        let stored = match (get(tls::KEY_CA_NAME), get(tls::KEY_CA_CERT)) {
+            (Some(name), Some(cert)) => match tls::load_key(&self.state_dir)? {
+                Some(key) => Some(tls::Authority::from_parts(&name, &cert, &key)?),
+                None => {
+                    tracing::warn!(
+                        "remote access: the keychain holds no key for the stored certificate \
+                         authority; creating a new one, which paired devices must trust again"
+                    );
+                    None
+                }
+            },
+            _ => None,
+        };
+        let authority = Arc::new(match stored {
+            Some(authority) => authority,
+            None => self.remote_new_authority()?,
+        });
+        *slot = Some(Arc::clone(&authority));
+        Ok(authority)
+    }
+
+    fn remote_new_authority(&self) -> Result<tls::Authority> {
+        let authority = tls::Authority::generate(&remote::host_name())?;
+        tls::store_key(&self.state_dir, &authority.key_pem())?;
+        self.db.set_settings_atomic(&[
+            (tls::KEY_CA_NAME, authority.name()),
+            (tls::KEY_CA_CERT, authority.cert_pem()),
+        ])?;
+        tracing::info!(
+            "remote access: created certificate authority {} ({})",
+            authority.name(),
+            authority.fingerprint()
+        );
+        Ok(authority)
+    }
+
+    /// Replaces the authority; the listener's next handshakes use a certificate
+    /// from the new one, and every device must trust it again.
+    pub fn remote_regenerate_authority(&self) -> Result<()> {
+        let authority = Arc::new(self.remote_new_authority()?);
+        *self.remote.authority.lock().expect("remote authority lock") = Some(authority);
+        self.remote
+            .authority_generation
+            .fetch_add(1, Ordering::AcqRel);
+        self.remote.reconfigured.send_modify(|n| *n += 1);
+        self.remote_broadcast_state();
+        Ok(())
+    }
+
+    /// The certificate authority's fingerprint once it exists, without reading
+    /// the keychain.
+    fn remote_authority_fingerprint(&self) -> Option<String> {
+        self.remote
+            .authority
+            .lock()
+            .expect("remote authority lock")
+            .as_ref()
+            .map(|a| a.fingerprint())
+            .or_else(|| {
+                let pem = self.db.get_setting(tls::KEY_CA_CERT).ok().flatten()?;
+                tls::fingerprint_of_pem(&pem)
+            })
     }
 
     /// The topic URL from the in-memory cache, else the keychain. Only called

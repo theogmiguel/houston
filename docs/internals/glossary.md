@@ -36,9 +36,9 @@ named.
 
 | Term | Meaning | Code |
 |---|---|---|
-| **agent** | A coding agent Houston hosts in a pane (Claude Code, Codex, Antigravity, OpenCode, Cursor, Grok). | `proto::AgentKind` |
+| **agent** | A coding agent Houston hosts in a pane (Claude Code, Codex, Antigravity, OpenCode, Cursor, Grok, ZCode). | `proto::AgentKind` |
 | **Program Status Protocol** | Explicit program state reports over OSC 7501, consumed as a fallback when hooks and ACP do not own status. Never inferred from rendered terminal text. | `vt.rs`, `daemon.rs` |
-| **provider / CLI** | The agent runtime Houston launches and talks to. Each has a launch shape (`launch.rs`) and, for six of them, a hook installer. | `launch.rs`, `agent_events.rs` |
+| **provider / CLI** | The agent runtime Houston launches and talks to. Each has a launch shape (`launch.rs`) and, for seven of them, a hook installer. | `launch.rs`, `agent_events.rs` |
 | **session** | One PTY (or SSH channel) running an agent CLI or a shell in a project directory. Has a process `state` and, orthogonally, an agent `status`. | `daemon.rs::Session` |
 | **pane** | A session's cell in the grid. Its identity (`LeafNode.id`) outlives the session in it. | `layout/tree.ts` |
 | **workspace** | A project directory the daemon knows. Sessions belong to one; hooks are installed per workspace. `workspace_id` on the wire and in `pane_inbox` is the workspace's own path — Houston's only workspace key, so no separate id table can drift from it. | `db.rs::workspaces` |
@@ -52,6 +52,7 @@ named.
 | **remote feed** | A pane's conversation for paired devices: prompts, replies, questions, permission requests, tool steps and turn ends, built from hook payloads into a bounded in-memory ring while remote access is on. Never persisted. | `remote/feed.rs` |
 | **decision card** | The request a pane waits on, as a device shows it: a permission, a question, or `input` when the CLI reported none. A device answers it with `decide`, which types the provider's keys into the PTY; once answered, from a device or the terminal, it takes no further tap until the pane moves on. | `remote::feed::Pending` |
 | **feed epoch** | A random identifier of one generation of the remote feed. It changes when the daemon starts or remote access is turned back on, when sequence numbers restart; a decision must name the current one. | `remote::feed::Store::epoch` |
+| **local certificate authority** | The remote listener's own CA: an ECDSA key in the OS keychain and a certificate in settings, name-constrained to private and loopback addresses and `.local`. It signs the server certificate while the listener serves its own HTTPS (a direct route on a private address), at each listener start and whenever the listener's names change; a device trusts it once. | `remote/tls.rs` |
 | **pairing code** | A single-use, ten-minute, 128-bit code carried in a pairing link's URL fragment. Starting a new pairing invalidates the previous code. | `remote::Runtime::start_pairing` |
 | **codename** | A pane's auto-generated name, from a fixed pool, replaced by a better name as one arrives. | `pane_name.rs` |
 | **title source** | Where a pane's current name came from — codename, first prompt, the CLI's own window title, or the user. A weaker source never overwrites a stronger one. | `daemon.rs`, `osc_title.rs` |

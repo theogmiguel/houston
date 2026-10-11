@@ -319,6 +319,9 @@ const remoteFixture: RemoteInfo = {
   notify_delay_secs: 30,
   notify_detail: 'generic',
   notify_finished: false,
+  dictation: true,
+  tls: false,
+  ca_fingerprint: null,
   devices: [
     { id: 1, name: 'Pixel 8 · Chrome', created_at: Date.now() - 4 * 86_400_000, last_seen_at: Date.now() - 2 * 60_000 },
     { id: 2, name: 'MacBook · Safari', created_at: Date.now() - 6 * 86_400_000, last_seen_at: Date.now() - 26 * 3_600_000 }

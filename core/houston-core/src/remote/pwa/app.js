@@ -272,9 +272,9 @@
   }
 
   function api(method, path, body, request) {
-    var token = S.token, auth = S.authGeneration, code = S.pendingPair;
+    var raw = body instanceof Uint8Array, token = S.token, auth = S.authGeneration, code = S.pendingPair;
     var ctrl = request ? request.ctrl : new AbortController();
-    var headers = { "Content-Type": "application/json" };
+    var headers = { "Content-Type": raw ? "application/octet-stream" : "application/json" };
     if (token) headers.Authorization = "Bearer " + token;
     var current = function () { return auth === S.authGeneration && token === S.token && (path !== "/api/pair" || code === S.pendingPair) && (!request || request.current()); };
     var timer, onAbort;
@@ -287,7 +287,7 @@
         ctrl.abort();
       }, REQUEST_MS);
     });
-    var response = fetch(path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined, cache: "no-store", signal: ctrl.signal })
+    var response = fetch(path, { method: method, headers: headers, body: raw ? body : body ? JSON.stringify(body) : undefined, cache: "no-store", signal: ctrl.signal })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (data) {
           if (!current() || ctrl.signal.aborted) throw staleRequest();
@@ -463,6 +463,43 @@
     else mark.appendChild(icon({ ok: "check", warn: "clock", danger: "unlink", device: "phone" }[kind] || "phone"));
   }
 
+  // Android installs the authority as a CA certificate; iOS installs a profile, then needs full trust turned on.
+  var TRUST_STEPS = [
+    ["Android", "Settings ▸ Security ▸ Encryption & credentials ▸ Install a certificate ▸ CA certificate, then pick houston-ca.crt."],
+    ["iPhone or iPad", "Settings ▸ Profile Downloaded ▸ Install, then Settings ▸ General ▸ About ▸ Certificate Trust Settings and turn on full trust for it."]
+  ];
+
+  // This computer's certificate authority, when the listener serves its own HTTPS;
+  // behind a proxy such as tailscale serve there is none (404).
+  function loadCa() {
+    return api("GET", "/api/ca").then(function (d) { S.ca = d; }, function () { S.ca = null; }).then(function () {
+      renderTrust();
+      if (S.view === "list" && S.home === "computer") renderList();
+    });
+  }
+
+  function trustLinks(root) {
+    var a = el("a", "btn block", "Android: download certificate"); a.href = "houston-ca.crt"; a.setAttribute("download", "houston-ca.crt");
+    var i = el("a", "btn block", "iPhone or iPad: download profile"); i.href = "houston-ca.mobileconfig";
+    root.appendChild(a); root.appendChild(i);
+  }
+
+  function renderTrust() {
+    var root = $("trust"), show = !!S.ca && !$("pair-form").classList.contains("hidden");
+    root.classList.toggle("hidden", !show);
+    if (!show) return;
+    root.replaceChildren();
+    root.appendChild(el("b", null, "Trust this computer"));
+    root.appendChild(el("span", null, "Houston serves this page over HTTPS with a certificate from the computer itself. If the browser warned about this site, install the certificate once; the microphone and the home-screen app need it."));
+    var actions = el("div", "trust-actions"); trustLinks(actions); root.appendChild(actions);
+    var ol = el("ol", "mini-steps");
+    TRUST_STEPS.forEach(function (t) { var li = el("li"); li.appendChild(el("b", null, t[0] + ": ")); li.appendChild(document.createTextNode(t[1])); ol.appendChild(li); });
+    root.appendChild(ol);
+    var fp = el("span", "trust-fp", "Before trusting it, check that this fingerprint matches Settings ▸ Remote access on the computer: ");
+    fp.appendChild(el("code", null, S.ca.fingerprint));
+    root.appendChild(fp);
+  }
+
   function pairFacts() {
     var root = $("pair-facts"), https = location.protocol === "https:";
     root.replaceChildren();
@@ -472,7 +509,7 @@
   }
 
   function showPair(ending, detail) {
-    resetAuthRequests();
+    cancelDictation(); resetAuthRequests();
     $("pair-submit").disabled = false; $("pair-submit").textContent = "Connect";
     stopTimers(); disconnect(); resetKeys();
     S.pane = null;
@@ -485,6 +522,8 @@
     $("pair-facts").classList.toggle("hidden", !confirm);
     if (confirm) pairFacts();
     $("pair-form").classList.toggle("hidden", !confirm);
+    renderTrust();
+    if (confirm) loadCa();
     $("route-warning").classList.toggle("hidden", !confirm || location.protocol === "https:");
     $("pair-submit").classList.toggle("hidden", !confirm);
     $("pair-connected").classList.add("hidden");
@@ -597,7 +636,7 @@
     window.scrollTo(0, 0);
     renderList();
     if (tab === "activity") loadActivity();
-    if (tab === "computer") loadMe().catch(function (e) { if (!e.stale) toast(e.message, true); });
+    if (tab === "computer") { loadMe().catch(function (e) { if (!e.stale) toast(e.message, true); }); loadCa(); }
   }
 
   function renderTabs() {
@@ -888,7 +927,7 @@
 
   function loadMe() {
     var request = beginRequest("me", false);
-    return api("GET", "/api/me", null, request).then(function (d) { if (!request.current()) return; S.me = d; setLive(S.live); if (S.view === "list" && S.home === "computer") renderList(); });
+    return api("GET", "/api/me", null, request).then(function (d) { if (!request.current()) return; S.me = d; setLive(S.live); renderMic(); if (S.view === "list" && S.home === "computer") renderList(); });
   }
 
   function loadActivity() {
@@ -1013,6 +1052,14 @@
     pref(tools, "Quick replies", count, openReplies);
     root.appendChild(tools);
 
+    if (S.ca) {
+      var trust = el("div", "card howto");
+      trust.appendChild(el("b", null, "This computer's certificate"));
+      trust.appendChild(el("span", null, "Install it once so the microphone and the home-screen app work. Fingerprint: " + S.ca.fingerprint));
+      var links = el("div", "trust-actions"); trustLinks(links); trust.appendChild(links);
+      root.appendChild(trust);
+      trust.style.marginBottom = "var(--s3)";
+    }
     if (!standalone()) {
       var app = el("div", "card howto");
       installHelp(app);
@@ -1125,6 +1172,7 @@
   }
 
   function openList() {
+    cancelDictation();
     S.pane = null;
     S.other = null; S.deepLink = false; S.inboxFeed = {};
     selectTab("conv");
@@ -1161,7 +1209,7 @@
   function openPane(id, tab, deepLink) {
     S.deepLink = !!deepLink;
     if (S.pane !== id) {
-      resetPaneRequests();
+      cancelDictation(); resetPaneRequests();
       S.stopArmed = false; S.selection = {}; S.feedBusy = false; resetKeys(); toggleKeys(false); clearTimeout(S.timers["stop-arm"]);
       S.entries = []; S.last = 0; S.epoch = null; S.pending = null; S.expanded = {}; S.turns = {}; S.other = null;
       renderFeed(true);
@@ -1182,8 +1230,10 @@
     renderChildren();
     renderQuickReplies();
     renderCard();
+    renderMic();
     loadFeed(true);
     loadSessions();
+    loadMe().catch(function () { /* the mic keeps its last state */ });
     connect();
     schedulePoll();
   }
@@ -1764,6 +1814,163 @@
     });
   }
 
+  // ---- Dictation ----
+
+  // The daemon refuses longer recordings; recording stops here first.
+  var DICTATE_MAX_SECS = 120, DICTATE_RATE = 16000;
+  var D = { state: "idle", ctx: null, stream: null, source: null, node: null, chunks: [], samples: 0, started: 0, tick: null, pane: null, then: null, flushed: null };
+
+  // Why the page cannot dictate, or null when it can.
+  function micBlocked() {
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return "The microphone needs a trusted HTTPS connection: trust this computer's certificate (Computer tab), or use your keyboard's microphone in the message box.";
+    }
+    if (!window.AudioWorkletNode) return "This browser cannot record audio for dictation. Your keyboard's microphone still works in the message box.";
+    if (S.me.dictation === false) return "Dictation is off. Turn on Allow dictation from paired devices in Houston's Settings ▸ Remote access.";
+    return null;
+  }
+
+  function clockOf(secs) {
+    var s = Math.max(0, Math.floor(secs));
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+
+  function renderMic() {
+    var why = D.state === "idle" ? micBlocked() : null;
+    $("mic").classList.toggle("hidden", !!why || S.me.dictation == null);
+    $("mic-note").textContent = why || "";
+    $("mic-note").classList.toggle("hidden", !why);
+    var recording = D.state === "recording";
+    $("mic").classList.toggle("recording", recording);
+    $("mic").setAttribute("aria-pressed", String(recording));
+    $("mic").setAttribute("aria-label", recording ? "Stop and put the text in the message box" : "Dictate");
+    $("mic").disabled = D.state === "transcribing";
+    $("rec").classList.toggle("hidden", D.state === "idle");
+    $("rec-send").disabled = !recording;
+    $("rec-cancel").disabled = D.state === "transcribing";
+    if (D.state === "transcribing") $("rec-time").textContent = "Transcribing…";
+    else if (D.state === "starting") $("rec-time").textContent = "Starting the microphone…";
+    else if (recording) $("rec-time").textContent = clockOf((Date.now() - D.started) / 1000) + " / " + clockOf(DICTATE_MAX_SECS);
+  }
+
+  function releaseMic() {
+    clearInterval(D.tick);
+    if (D.stream) D.stream.getTracks().forEach(function (t) { t.stop(); });
+    try { if (D.source) D.source.disconnect(); if (D.node) D.node.disconnect(); } catch (e) { /* already gone */ }
+    if (D.ctx) D.ctx.close().catch(function () {});
+    D.ctx = D.stream = D.source = D.node = D.tick = D.flushed = null;
+  }
+
+  function micError(e) {
+    if (e && e.name === "NotAllowedError") return "Microphone access was denied. Allow it in this site's browser settings, then tap the microphone again.";
+    if (e && e.name === "NotFoundError") return "No microphone was found on this device.";
+    return "The microphone could not start: " + ((e && e.message) || e);
+  }
+
+  function startDictation() {
+    if (D.state !== "idle" || S.pane == null || micBlocked()) return;
+    var Ctx = window.AudioContext || window.webkitAudioContext, ctx;
+    // Created inside the tap, so iOS lets it run.
+    try { ctx = new Ctx(); } catch (e) { toast(micError(e), true); return; }
+    D.state = "starting"; D.ctx = ctx; D.chunks = []; D.samples = 0; D.pane = S.pane; D.then = null;
+    setDockStatus("");
+    renderMic();
+    navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      .then(function (stream) {
+        if (D.ctx !== ctx) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+        D.stream = stream;
+        return ctx.audioWorklet.addModule("pcm-worklet.js").then(function () {
+          if (D.ctx !== ctx) return;
+          D.source = ctx.createMediaStreamSource(stream);
+          // Connected to the output (it writes silence) so every browser keeps pulling it.
+          D.node = new AudioWorkletNode(ctx, "pcm-capture", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+          D.node.port.onmessage = onPcm;
+          D.source.connect(D.node);
+          D.node.connect(ctx.destination);
+          return ctx.resume();
+        }).then(function () {
+          if (D.ctx !== ctx) return;
+          D.state = "recording";
+          D.started = Date.now();
+          D.tick = setInterval(renderMic, 250);
+          renderMic();
+        });
+      })
+      .catch(function (e) {
+        if (D.ctx !== ctx) return;
+        releaseMic();
+        D.state = "idle";
+        renderMic();
+        toast(micError(e), true);
+      });
+  }
+
+  function onPcm(ev) {
+    if (ev.data && ev.data.done) { if (D.flushed) D.flushed(); return; }
+    if (!(ev.data instanceof Int16Array) || D.state !== "recording" && D.state !== "transcribing") return;
+    var room = DICTATE_MAX_SECS * DICTATE_RATE - D.samples;
+    if (room <= 0) return;
+    var chunk = ev.data.length > room ? ev.data.subarray(0, room) : ev.data;
+    D.chunks.push(chunk);
+    D.samples += chunk.length;
+    if (D.samples >= DICTATE_MAX_SECS * DICTATE_RATE && D.state === "recording") {
+      stopDictation(null, "Recording stopped at the " + clockOf(DICTATE_MAX_SECS) + " limit.");
+    }
+  }
+
+  // `then` is "send" to send the transcript at once; otherwise it lands in the box.
+  function stopDictation(then, note) {
+    if (D.state !== "recording") return;
+    D.state = "transcribing";
+    D.then = then;
+    renderMic();
+    if (note) setDockStatus(note);
+    var finished = false;
+    var finish = function () {
+      if (finished) return;
+      finished = true;
+      releaseMic();
+      upload();
+    };
+    D.flushed = finish;
+    D.node.port.postMessage("flush");
+    // The worklet answers within a render quantum; this only guards a stalled context.
+    later("dictate-flush", finish, 1000);
+  }
+
+  function cancelDictation() {
+    if (D.state === "idle" || D.state === "transcribing") return;
+    releaseMic();
+    D.state = "idle";
+    D.chunks = [];
+    D.samples = 0;
+    renderMic();
+    setDockStatus("Recording discarded.");
+  }
+
+  function upload() {
+    var pane = D.pane, then = D.then;
+    var pcm = new Uint8Array(D.samples * 2), view = new DataView(pcm.buffer), off = 0;
+    D.chunks.forEach(function (c) {
+      for (var i = 0; i < c.length; i++, off += 2) view.setInt16(off, c[i], true);
+    });
+    D.chunks = [];
+    D.samples = 0;
+    var done = function () { D.state = "idle"; renderMic(); };
+    if (pcm.length === 0) { done(); toast("Nothing was recorded.", true); return; }
+    api("POST", "/api/sessions/" + pane + "/dictate", pcm).then(function (d) {
+      done();
+      if (S.pane !== pane) return;
+      var t = $("text"), cur = t.value;
+      t.value = cur && !/\s$/.test(cur) ? cur + " " + d.text : cur + d.text;
+      grow();
+      if (then === "send") send(); else setDockStatus("Edit the text if needed, then send.");
+    }).catch(function (e) {
+      done();
+      if (S.pane === pane) toast(e.message, true);
+    });
+  }
+
   // ---- Sheets ----
 
   function openSheet(d) {
@@ -2018,7 +2225,7 @@
       setMark("ok");
       $("pair-title").textContent = "You're connected";
       $("pair-lede").textContent = "Houston is ready on this phone.";
-      ["pair-form", "pair-facts", "pair-submit"].forEach(function (id) { $(id).classList.add("hidden"); });
+      ["pair-form", "pair-facts", "pair-submit", "trust"].forEach(function (id) { $(id).classList.add("hidden"); });
       installHelp($("install-help"));
       $("install-help").classList.toggle("hidden", standalone());
       $("pair-connected").classList.remove("hidden");
@@ -2071,6 +2278,13 @@
   sheetGestures($("replies-sheet"), function () { if (S.view === "list" && S.home === "computer") renderList(); });
   sheetGestures($("screen-sheet"), function () { S.tab = "conv"; clearTimeout(S.timers.screen); });
   $("send").addEventListener("click", send);
+  $("mic").addEventListener("click", function () {
+    if (D.state === "idle") startDictation();
+    else if (D.state === "recording") stopDictation(null);
+    else if (D.state === "starting") cancelDictation();
+  });
+  $("rec-send").addEventListener("click", function () { stopDictation("send"); });
+  $("rec-cancel").addEventListener("click", cancelDictation);
   $("more").addEventListener("click", function () { toggleKeys(); });
   $("other-cancel").addEventListener("click", function () { setOther(null); });
   $("jump").addEventListener("click", function () { toBottom(true); });
@@ -2211,7 +2425,7 @@
   fitKeyboard();
 
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) { S.stopArmed = false; stopTimers(); disconnect(); setReachable(false); resetKeys(); return; }
+    if (document.hidden) { cancelDictation(); S.stopArmed = false; stopTimers(); disconnect(); setReachable(false); resetKeys(); return; }
     if (!S.token || S.view === "pair") return;
     S.retry = 1000;
     refreshAll();

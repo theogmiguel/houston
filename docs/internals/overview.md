@@ -32,7 +32,7 @@ modals) uses `backdrop-filter`.
 │  │  webviews)           │    │                         ┌─────────────▼──────────────────┐
 │  └─────────────────────┘    │                         │ agent CLIs: claude, codex,       │
 │  src-tauri: daemon_host      │                         │ antigravity, opencode,           │
-│  (connect-or-spawn), fs,     │  spawns detached, Linux │ cursor-agent, grok, shell        │
+│  (connect-or-spawn), fs,     │  spawns detached, Linux │ cursor-agent, grok, zcode, shell │
 │  browser/, watchdog/         │  via houston-supervisor │  hooks → drop files              │
 └──────────────────────────────┘                         │  MCP → POST /mcp (per-pane token)│
                                                           └──────────────────────────────────┘
@@ -184,6 +184,8 @@ Trust model:
   decision that the per-provider table in `remote/feed.rs` turns into the CLI's own keys.
   Writing to any pane, shell panes included, makes a device equivalent to a shell as the
   user; it cannot pair, configure, spawn or kill. One input request per pane runs at a time.
+  With the separate dictation setting on, a device may also post a recording (16 kHz mono
+  PCM16) that the voice engine transcribes; the text returns to that device only.
   A decision names the feed epoch and entry it answers, so a stale tap is refused, and it
   consumes the card under the feed lock, so two devices cannot both answer it.
 - **Feed and events.** The feed is filled from applied hook drops and status transitions
@@ -194,14 +196,28 @@ Trust model:
   graceful shutdown waits for every connection, so the daemon ends them itself when the
   listener stops or their device is revoked, and stops waiting for other requests after a
   few seconds.
-- **Transport.** TLS is delegated to `tailscale serve` in front of the loopback bind. A bind
-  on every interface needs a public URL; Settings warns when a token would cross the network
-  over plain HTTP.
+- **Transport.** On a loopback bind, TLS is delegated to `tailscale serve` (the Tailscale
+  route) and the listener speaks plain HTTP. When devices reach the listener directly on an
+  address its local certificate authority can certify (Same Wi-Fi, or a private bind), it
+  serves HTTPS only (rustls). The authority is created the first time it is needed; its
+  private key stays in the OS keychain under a per-state-directory service and its
+  certificate, public, in settings. Its name constraints permit only RFC 1918, loopback and
+  IPv6 unique-local addresses and `.local` names, so a leaked key cannot certify a public site
+  to a device that trusts it. The server key is generated in memory at each listener start and
+  reissued, through a certificate resolver and without a restart, when the listener's names
+  change or the authority is regenerated; a change between the two transports restarts the
+  listener. Devices download the authority unauthenticated (`/houston-ca.crt`,
+  `/houston-ca.mobileconfig`) and compare its fingerprint with Settings. A bind on every
+  interface needs a public URL. Any other bind off loopback stays plain HTTP, and Settings
+  warns that a token would cross the network unencrypted.
 - **Defences.** `Host` must be an allowed name (DNS rebinding, 421); a write's `Origin` must
-  be the public URL or `http://<allowed host>:<port>` (403). Wrong tokens and pairing codes
+  be the public URL or `<scheme>://<allowed host>:<port>` (403). Wrong tokens and pairing codes
   lock their source out for 60 s after ten in a minute; loopback callers share one source and
   a valid token is never locked out. Bodies, connections (64), idle time (30 s) and request
-  time (20 s) are bounded.
+  time (20 s) are bounded. The dictation route has its own bounds: a recording of at most
+  two minutes, read only after the refusals that need no audio, 180 s per request, and an
+  idle hold on its connection while the engine runs, since hyper reads the socket to detect
+  a closed peer and a CPU transcription can outlast the idle timeout.
 - **Notifications.** ntfy is an outbound POST with a generic body and a link, never terminal
   content. The topic URL is a bearer secret kept in the keychain under a per-state-directory
   service; the database holds only the server origin.

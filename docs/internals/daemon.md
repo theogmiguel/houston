@@ -28,6 +28,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | | `agents.rs` | Ambient agent identity: banner sniffing on PTY output |
 | | `pane_name.rs` | Panes are named from their first prompt |
 | | `osc_title.rs` | OSC 0/2 window titles — what a CLI calls its own session |
+| | `composer_ready.rs` | Whether a TUI's composer takes input, from the DEC private modes it sets |
 | | `login_path.rs`, `env_hygiene.rs` | Login-shell `PATH` recovery; inherited-marker scrub |
 | persistence | `db.rs` | SQLite persistence (WAL); writes only on rare control-plane events |
 | | `paths.rs`, `home_dir.rs` | Channel-scoped state paths; the home dir, resolved per platform |
@@ -133,11 +134,13 @@ directory clears it before creating the new
 row. Codex uses `resume <id>` with the ID and transcript path supplied by native hooks.
 The resolved profile directory is recorded at launch; hooks cannot move that session's
 conversation into an edited or recreated profile's account namespace.
-Shell panes can retain a root Claude or Codex conversation reported by lifecycle hooks.
-Restart validates that provider's exact handle and launches the CLI from the restored
-POSIX shell with shell-quoted argv while keeping the pane classified as a shell. Children
-restore only after the parent conversation resumes; unsupported shell dialects and invalid
-parent conversations leave children deferred.
+Shell panes can retain a root Claude, Codex or ZCode conversation reported by lifecycle
+hooks. Restart validates that provider's exact handle and launches the CLI from the restored
+POSIX shell with shell-quoted argv while keeping the pane classified as a shell. The shell
+is matched by file name (`sh`, `bash`, `zsh`, `dash`, `ksh`), so every Windows shell,
+including a Git Bash `bash.exe`, is refused by name. Children restore only after the parent
+conversation resumes; unsupported shell dialects and invalid parent conversations leave
+children deferred.
 Clean shutdown and crash both apply the same restore policy and budget, preserving the
 previous crash in the recovery summary.
 A Restart or a Wake starts the CLI at the pane's last PTY size, which sleep records in
@@ -519,7 +522,8 @@ pane is observed through its `RoutineRun` row and can be opened from the routine
   refusal lands in the run's `error` and in `Routine.last_error`.
 - `model`, supported per-run `effort`, and the permission mode are launch arguments, not
   display-only metadata. Accept-edits uses the provider's bounded unattended mode; a provider
-  without one is refused by name. Full access is only valid with an isolated worktree.
+  without one is refused by name. `routine_access_refusal` is the one rule: `routine_argv`
+  refuses with it, and `routines` and `harness_state` list it so pickers disable the choice. Full access is only valid with an isolated worktree.
 - A provider or launch combination that cannot open a pane is refused by name before a session
   is made (`EngineRefused`).
 
@@ -612,6 +616,16 @@ the crate is `cfg(unix)`-gated and the Windows local engine is a named refusal.
 under `groq-api-key`; `voice/models.rs` carries the catalog, verified download, delete and
 disk usage. The runtime is constructed at boot but **opens no device** —
 `VoiceSettings::enabled` defaults false, and the mic opens only when that turns on.
+
+`Daemon::voice_transcribe` (speech gate, then the configured engine) is the one transcription
+path for the desktop microphone and for paired devices; callers run it off the async runtime.
+The text a dictation inserts is assembled in the daemon (`voice/dictation.rs`): the agent
+preamble leads only a pane's first English-output dictation, counted across the desktop and
+devices and forgotten when the pane is removed, so a renderer never keeps that rule.
+Remote dictation never opens the host microphone, never sets `VoiceState` and never broadcasts
+`voice_transcript`, because the desktop renderer pastes that into the pane. The runtime counts
+transcriptions in progress: desktop ones are never refused, and a remote one is refused while
+any other transcription runs.
 
 ## Usage
 

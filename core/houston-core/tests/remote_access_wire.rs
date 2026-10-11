@@ -32,6 +32,17 @@ async fn request(
     headers: &[(&str, &str)],
     body: Option<&str>,
 ) -> Reply {
+    let body = body.map(|b| ("application/json", b.as_bytes()));
+    exchange(addr, method, path, headers, body).await
+}
+
+async fn exchange(
+    addr: SocketAddr,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<(&str, &[u8])>,
+) -> Reply {
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let mut req = format!("{method} {path} HTTP/1.1\r\nConnection: close\r\n");
     if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")) {
@@ -41,17 +52,21 @@ async fn request(
     for (k, v) in headers.iter().filter(|(_, v)| !v.is_empty()) {
         req.push_str(&format!("{k}: {v}\r\n"));
     }
-    if let Some(body) = body {
-        req.push_str(&format!(
-            "Content-Type: application/json\r\nContent-Length: {}\r\n",
-            body.len()
-        ));
+    let declared = headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("content-length"));
+    if let Some((content_type, body)) = body {
+        req.push_str(&format!("Content-Type: {content_type}\r\n"));
+        if !declared {
+            req.push_str(&format!("Content-Length: {}\r\n", body.len()));
+        }
     }
     req.push_str("\r\n");
-    if let Some(body) = body {
-        req.push_str(body);
+    let mut raw_req = req.into_bytes();
+    if let Some((_, body)) = body {
+        raw_req.extend_from_slice(body);
     }
-    stream.write_all(req.as_bytes()).await.unwrap();
+    stream.write_all(&raw_req).await.unwrap();
     let mut raw = Vec::new();
     tokio::time::timeout(Duration::from_secs(10), stream.read_to_end(&mut raw))
         .await
@@ -545,7 +560,7 @@ async fn binding_every_interface_needs_a_public_url() {
     daemon
         .remote_configure(ConfigPatch {
             bind: Some("0.0.0.0:47999".into()),
-            public_url: Some("http://192.168.1.20:47999".into()),
+            public_url: Some("https://192.168.1.20:47999".into()),
             ..Default::default()
         })
         .unwrap();
@@ -809,4 +824,199 @@ async fn sessions_carry_the_published_grids_restricted_to_listed_panes() {
     for info in [first, second] {
         daemon.kill(info.id).ok();
     }
+}
+
+/// `secs` of a 440 Hz tone at `amplitude`, as the dictation route takes it.
+fn pcm16(secs: f32, amplitude: f32) -> Vec<u8> {
+    let n = (secs * 16_000.0) as usize;
+    (0..n)
+        .flat_map(|i| {
+            let t = i as f32 / 16_000.0;
+            let v = (t * 440.0 * std::f32::consts::TAU).sin() * amplitude;
+            ((v * 32767.0) as i16).to_le_bytes()
+        })
+        .collect()
+}
+
+async fn dictate(addr: SocketAddr, token: &str, id: u32, pcm: &[u8]) -> Reply {
+    let auth = format!("Bearer {token}");
+    exchange(
+        addr,
+        "POST",
+        &format!("/api/sessions/{id}/dictate"),
+        &[("Authorization", &auth)],
+        Some(("application/octet-stream", pcm)),
+    )
+    .await
+}
+
+fn allow_dictation(daemon: &Daemon) {
+    daemon
+        .remote_configure(ConfigPatch {
+            dictation: Some(true),
+            ..Default::default()
+        })
+        .unwrap();
+}
+
+/// The settings check only asks that a model file is on disk; it is never loaded
+/// by these tests, which stop at a refusal or the speech gate.
+fn install_placeholder_model(daemon: &Daemon) {
+    let dir = daemon.voice_models_dir();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("ggml-small.bin"), vec![7u8; 4096]).unwrap();
+}
+
+#[tokio::test]
+async fn dictation_is_refused_until_the_operator_allows_it() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let (token, _) = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["cat"]);
+    let auth = format!("Bearer {token}");
+
+    let me = request(addr, "GET", "/api/me", &[("Authorization", &auth)], None).await;
+    assert_eq!(me.json()["dictation"], false, "{}", me.body);
+    let reply = dictate(addr, &token, info.id, &pcm16(1.0, 0.5)).await;
+    assert_eq!(reply.status, 403, "{}", reply.body);
+    assert!(
+        reply.body.contains("Allow dictation from paired devices"),
+        "the refusal names the setting: {}",
+        reply.body
+    );
+
+    allow_dictation(&daemon);
+    let me = request(addr, "GET", "/api/me", &[("Authorization", &auth)], None).await;
+    assert_eq!(me.json()["dictation"], true, "{}", me.body);
+
+    let unpaired = exchange(
+        addr,
+        "POST",
+        &format!("/api/sessions/{}/dictate", info.id),
+        &[],
+        Some(("application/octet-stream", &pcm16(1.0, 0.5))),
+    )
+    .await;
+    assert_eq!(unpaired.status, 401, "{}", unpaired.body);
+    let missing = dictate(addr, &token, 999_999, &pcm16(1.0, 0.5)).await;
+    assert_eq!(missing.status, 404, "{}", missing.body);
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn dictation_names_a_missing_model_or_key() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let (token, _) = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["cat"]);
+    allow_dictation(&daemon);
+
+    let reply = dictate(addr, &token, info.id, &pcm16(1.0, 0.5)).await;
+    assert_eq!(reply.status, 409, "{}", reply.body);
+    assert!(reply.body.contains("ggml-small"), "{}", reply.body);
+
+    daemon
+        .voice_settings_set(&proto::VoiceSettings {
+            engine: proto::VoiceEngine::Cloud {
+                provider: proto::CloudStt::Groq,
+            },
+            mic_policy: proto::MicPolicy::OnKeypress,
+            ..proto::VoiceSettings::default()
+        })
+        .unwrap();
+    let reply = dictate(addr, &token, info.id, &pcm16(1.0, 0.5)).await;
+    assert_eq!(reply.status, 409, "{}", reply.body);
+    assert!(reply.body.contains("no Groq API key"), "{}", reply.body);
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn dictation_refuses_a_recording_over_two_minutes_before_reading_it() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let (token, _) = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["cat"]);
+    allow_dictation(&daemon);
+    install_placeholder_model(&daemon);
+
+    let auth = format!("Bearer {token}");
+    let declared = (120 * 16_000 * 2 + 2).to_string();
+    let reply = exchange(
+        addr,
+        "POST",
+        &format!("/api/sessions/{}/dictate", info.id),
+        &[("Authorization", &auth), ("Content-Length", &declared)],
+        Some(("application/octet-stream", &[])),
+    )
+    .await;
+    assert_eq!(reply.status, 413, "{}", reply.body);
+    assert!(
+        reply.body.contains("3840002 bytes") && reply.body.contains("120 s"),
+        "the refusal names the value and the limit: {}",
+        reply.body
+    );
+
+    let odd = dictate(addr, &token, info.id, &[1, 2, 3]).await;
+    assert_eq!(odd.status, 400, "{}", odd.body);
+    assert!(odd.body.contains("3 bytes"), "{}", odd.body);
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn a_silent_recording_stops_at_the_speech_gate_without_the_host_microphone() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let (token, _) = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["cat"]);
+    allow_dictation(&daemon);
+    install_placeholder_model(&daemon);
+
+    let quiet = dictate(addr, &token, info.id, &pcm16(1.0, 0.0)).await;
+    assert_eq!(quiet.status, 422, "{}", quiet.body);
+    assert!(quiet.body.contains("too quiet"), "{}", quiet.body);
+    let short = dictate(addr, &token, info.id, &pcm16(0.1, 0.5)).await;
+    assert_eq!(short.status, 422, "{}", short.body);
+    assert!(short.body.contains("too short"), "{}", short.body);
+
+    assert!(
+        !daemon.voice.is_open(),
+        "remote dictation never opens this computer's microphone"
+    );
+    assert_eq!(daemon.voice.listening_for(), None);
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn a_remote_recording_waits_while_the_desktop_transcribes() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let (token, _) = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["cat"]);
+    allow_dictation(&daemon);
+    install_placeholder_model(&daemon);
+
+    let desktop = daemon.voice.claim_engine_desktop();
+    let reply = dictate(addr, &token, info.id, &pcm16(1.0, 0.5)).await;
+    assert_eq!(reply.status, 409, "{}", reply.body);
+    assert!(
+        reply.body.contains("desktop is transcribing"),
+        "{}",
+        reply.body
+    );
+    drop(desktop);
+
+    let reply = dictate(addr, &token, info.id, &pcm16(1.0, 0.0)).await;
+    assert_eq!(
+        reply.status, 422,
+        "with the engine free the recording reaches the gate: {}",
+        reply.body
+    );
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn the_recorder_worklet_is_served_from_the_listener() {
+    let (_daemon, addr, _state) = remote_daemon().await;
+    let reply = request(addr, "GET", "/pcm-worklet.js", &[], None).await;
+    assert_eq!(reply.status, 200);
+    assert!(reply
+        .headers
+        .to_ascii_lowercase()
+        .contains("content-type: text/javascript"));
+    assert!(reply.body.contains("registerProcessor(\"pcm-capture\""));
 }

@@ -20,15 +20,28 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "opencode", "cursor-agent"] {
+        for name in [
+            "grok",
+            "codex",
+            "claude",
+            "agy",
+            "opencode",
+            "cursor-agent",
+            "zcode",
+        ] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
                 "#!/bin/sh\n# Raw input like a real agent TUI: canonical mode would hold the paste's\n\
-                 # unterminated last line inside the tty until a newline.\n\
+                 # unterminated last line inside the tty until a newline. Bracketed paste\n\
+                 # on, then the cursor shown, is how a TUI's composer reports focus; like\n\
+                 # ZCode, input that arrives while FIXTURE_BOOT_SECS boot runs is dropped.\n\
                  stty -echo -icanon 2>/dev/null\nprintf 'CWD:%s\\n' \"$PWD\"\n\
                  printf 'TASK:%s\\n' \"$HOUSTON_TASK\"\nprintf 'ARG:%s\\n' \"$@\"\n\
-                 echo FIXTURE-READY\nexec cat\n",
+                 printf '\\033[?2004h\\033[?25l'\n\
+                 if [ -n \"$FIXTURE_BOOT_SECS\" ]; then \
+                 timeout --foreground \"$FIXTURE_BOOT_SECS\" cat > /dev/null; fi\n\
+                 echo FIXTURE-READY\nprintf '\\033[?25h'\nexec cat\n",
             )
             .unwrap();
             use std::os::unix::fs::PermissionsExt;
@@ -584,6 +597,148 @@ async fn prefill_places_the_brief_in_the_input_box_without_submitting_it() {
         "the launched argv does not carry the brief: {out:?}"
     );
     assert_eq!(r.task_status(id), "in_progress");
+}
+
+/// ZCode takes no prompt in argv: a Start launches it in the task worktree and pastes
+/// the brief once its TUI is up; a prefilled brief is pasted the same way without Enter.
+#[tokio::test]
+async fn a_zcode_start_pastes_the_brief_into_its_tui_and_prefill_leaves_it_unsent() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("start-zcode").await;
+    let id = r.create_task("Zcode task", "ZCODE-BRIEF-BODY for the task.", &["one"]);
+    r.daemon
+        .task_start(id, proto::AgentKind::Zcode, None)
+        .unwrap();
+    let run = r.runs().pop().unwrap();
+    assert_eq!(
+        (run.state.as_str(), run.provider.as_str()),
+        ("running", "zcode")
+    );
+    let session = run.session_id.unwrap();
+    let out = r.await_output(session, "ZCODE-BRIEF-BODY").await;
+    let fixture = out.find("FIXTURE-READY").expect("the TUI drew first");
+    let argv_report = &out[out.find("CWD:").unwrap()..fixture];
+    assert!(
+        !argv_report.contains("ZCODE-BRIEF-BODY"),
+        "the brief does not ride argv: {out:?}"
+    );
+    assert!(
+        out.find("ZCODE-BRIEF-BODY").unwrap() > fixture,
+        "the brief is pasted after the TUI drew: {out:?}"
+    );
+    assert_eq!(r.task_status(id), "in_progress");
+
+    let prefilled = r.create_task("Zcode prefill", "ZCODE-PREFILL-BODY here.", &["one"]);
+    r.daemon
+        .tasks_start_settings_set(
+            &r.workspace(),
+            proto::AgentKind::Zcode,
+            proto::TaskPromptDelivery::Prefill,
+        )
+        .unwrap();
+    r.daemon
+        .task_start(prefilled, proto::AgentKind::Zcode, None)
+        .unwrap();
+    let session = r.runs().pop().unwrap().session_id.unwrap();
+    let end = "\u{1b}[201~";
+    let out = r.await_output(session, end).await;
+    let fixture = out.find("FIXTURE-READY").expect("the TUI drew first");
+    let paste = out
+        .find("ZCODE-PREFILL-BODY")
+        .expect("the brief is prefilled");
+    assert!(paste > fixture, "{out:?}");
+    let paste_end = out.find(end).unwrap();
+    assert!(
+        !out[paste_end + end.len()..].starts_with('\r'),
+        "prefill must not submit with Enter: {out:?}"
+    );
+}
+
+/// A ZCode that starts slowly drops input until its composer has focus. A started brief
+/// and a prefilled one both wait for that focus; a prefill has no prompt hook to say it
+/// was lost, so arriving early would lose it silently.
+#[tokio::test]
+async fn a_slow_starting_zcode_gets_its_started_and_prefilled_brief_once_it_takes_input() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("start-zcode-slow").await;
+    let started = r.create_task("Zcode slow", "SLOW-START-BODY for the task.", &["one"]);
+    std::env::set_var("FIXTURE_BOOT_SECS", "3");
+    let start = r.daemon.task_start(started, proto::AgentKind::Zcode, None);
+    std::env::remove_var("FIXTURE_BOOT_SECS");
+    start.unwrap();
+    let session = r.runs().pop().unwrap().session_id.unwrap();
+    let out = r.await_output(session, "SLOW-START-BODY").await;
+    assert!(
+        out.find("SLOW-START-BODY").unwrap() > out.find("FIXTURE-READY").unwrap(),
+        "the brief waits for the composer: {out:?}"
+    );
+
+    r.daemon
+        .tasks_start_settings_set(
+            &r.workspace(),
+            proto::AgentKind::Zcode,
+            proto::TaskPromptDelivery::Prefill,
+        )
+        .unwrap();
+    let prefilled = r.create_task("Zcode slow prefill", "SLOW-PREFILL-BODY here.", &["one"]);
+    std::env::set_var("FIXTURE_BOOT_SECS", "3");
+    let start = r
+        .daemon
+        .task_start(prefilled, proto::AgentKind::Zcode, None);
+    std::env::remove_var("FIXTURE_BOOT_SECS");
+    start.unwrap();
+    let session = r.runs().pop().unwrap().session_id.unwrap();
+    let out = r.await_output(session, "SLOW-PREFILL-BODY").await;
+    assert!(
+        out.find("SLOW-PREFILL-BODY").unwrap() > out.find("FIXTURE-READY").unwrap(),
+        "the prefill waits for the composer: {out:?}"
+    );
+}
+
+/// ZCode 3.14.4 exits on `--mode plan` and turns planning on only inside its TUI, so
+/// planning refuses it by name before opening a pane, and the task's domain state lists
+/// the refusal for the planning control.
+#[tokio::test]
+async fn zcode_planning_is_refused_by_name_without_opening_a_pane() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("plan-zcode").await;
+    let id = r.create_task("Zcode plan", "Plan the parser rework.", &["one"]);
+    let revision = match r.daemon.task_get(id).unwrap() {
+        proto::ServerMsg::TaskDetail { task, .. } => task.revision,
+        other => panic!("expected TaskDetail, got {other:?}"),
+    };
+    let reply = r
+        .daemon
+        .task_plan_start(id, revision, proto::AgentKind::Zcode)
+        .unwrap();
+    let proto::ServerMsg::TaskRefused { message, .. } = reply else {
+        panic!("ZCode planning must be refused: {reply:?}");
+    };
+    assert!(
+        message.contains("Zcode") && message.contains("read-only planning"),
+        "{message}"
+    );
+    assert!(
+        r.daemon.list().is_empty(),
+        "no planning pane opens: {:?}",
+        r.daemon.list()
+    );
+    let proto::ServerMsg::TaskDomainState {
+        domain,
+        planning_refusals,
+    } = r.daemon.task_domain_state(id).unwrap()
+    else {
+        panic!("expected TaskDomainState");
+    };
+    assert_eq!(domain.planning_session_id, None);
+    assert_eq!(
+        planning_refusals
+            .iter()
+            .map(|refusal| refusal.agent)
+            .collect::<Vec<_>>(),
+        [proto::AgentKind::Zcode]
+    );
+    assert!(message.contains(&planning_refusals[0].reason), "{message}");
 }
 
 #[tokio::test]

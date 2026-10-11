@@ -152,4 +152,44 @@ describe('voice failure surfacing (v56)', () => {
     const elsewhere = (harness!.container.textContent ?? '').replace(toast.textContent ?? '', '')
     expect(elsewhere).not.toContain('Too quiet')
   })
+
+  it('a transcript offers the text the daemon assembled, unchanged', async () => {
+    harness = await renderReadyApp()
+    act(() => {
+      deliverControl({
+        type: 'voice_settings',
+        settings: voiceSettings({ insert_mode: 'confirm_first', output_mode: 'english', agent_preamble: true }),
+        cloud_key_present: true,
+        keyring_error: null,
+        models: []
+      })
+    })
+    act(() => {
+      deliverControl({
+        type: 'voice_transcript',
+        session: 1,
+        text: 'run the tests',
+        insert: 'Preamble from the daemon. run the tests ',
+        engine: 'groq',
+        translated: true
+      })
+    })
+    expect(voiceIndicatorFor(1)).toEqual({ kind: 'pending', text: 'Preamble from the daemon. run the tests ' })
+  })
+
+  it('an empty assembled text inserts nothing and says so', async () => {
+    harness = await renderReadyApp()
+    act(() => {
+      deliverControl({
+        type: 'voice_transcript',
+        session: 1,
+        text: '   ',
+        insert: '',
+        engine: 'groq',
+        translated: false
+      })
+    })
+    expect(voiceIndicatorFor(1)).toBeNull()
+    expect(harness.container.textContent).toContain('The transcript was empty')
+  })
 })

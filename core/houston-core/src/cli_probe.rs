@@ -7,7 +7,7 @@ use houston_protocol as proto;
 
 // Measured warm on this machine: claude 0.01s, codex 0.10s, grok 0.08s, agy
 // 0.33s, opencode 0.68s, cursor-agent 0.85s. 4s covers a cold disk spin-up
-// while still bounding the six-provider sweep to a few seconds worst case.
+// while still bounding the provider sweep to a few seconds worst case.
 const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
@@ -26,6 +26,7 @@ pub fn binary_name(kind: proto::AgentKind) -> Option<&'static str> {
         proto::AgentKind::Opencode => Some("opencode"),
         proto::AgentKind::Cursor => Some("cursor-agent"),
         proto::AgentKind::Grok => Some("grok"),
+        proto::AgentKind::Zcode => Some("zcode"),
         proto::AgentKind::Shell
         | proto::AgentKind::Ssh
         | proto::AgentKind::Custom
@@ -169,6 +170,12 @@ const LOCAL_MODEL_MAX: usize = 64;
 const LOCAL_MODEL_ID_MAX_BYTES: usize = 128;
 
 pub fn local_models(provider: proto::AgentKind) -> (Option<Vec<String>>, &'static str) {
+    if provider == proto::AgentKind::Zcode {
+        return (
+            None,
+            "none: ZCode has no model flag and refuses a model; choose it in ZCode with /model",
+        );
+    }
     if provider != proto::AgentKind::Codex {
         return (None, "unknown: no verified local model list");
     }

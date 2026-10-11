@@ -1581,6 +1581,10 @@ export class HoustonClient {
     this.send({ type: 'remote_pair_start' })
   }
 
+  remoteCaRegenerate(): void {
+    this.send({ type: 'remote_ca_regenerate' })
+  }
+
   remoteDeviceRevoke(id: number): void {
     this.send({ type: 'remote_device_revoke', id })
   }

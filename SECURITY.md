@@ -29,9 +29,12 @@ dictation. The security-sensitive surfaces include:
   dictation, which can transmit user-selected content to external services.
 - **Remote access** — the opt-in listener for paired phones and computers: pairing codes,
   per-device bearer tokens (only their SHA-256 is stored), the Host and Origin checks and
-  the authentication lockout. A paired device can read and type into every pane, which is
-  equivalent to a shell as the user; a way to obtain that access without pairing, or to
-  reach the control endpoint through this listener, is in scope. Hook drops carry bounded,
+  the authentication lockout, and the HTTPS it serves on a private address: a local
+  certificate authority whose key is in the OS keychain and whose name constraints limit it
+  to private addresses and `.local` names. A paired device can read and type into every
+  pane, which is equivalent to a shell as the user; a way to obtain that access without
+  pairing, to reach the control endpoint through this listener, or to make the authority
+  certify a name outside its constraints, is in scope. Hook drops carry bounded,
   masked tool targets and Claude edit previews as an exception to digest-only tool inputs.
   The daemon retains these previews only in memory while remote access is on; incomplete
   previews cannot be approved remotely.

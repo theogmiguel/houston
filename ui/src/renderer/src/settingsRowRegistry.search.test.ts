@@ -21,4 +21,11 @@ describe('settings row search', () => {
       title: 'Position'
     })
   })
+
+  it('finds ZCode under Agents', () => {
+    expect(searchSettingsRows('zcode')).toContainEqual({
+      section: expect.objectContaining({ id: 'agents' }),
+      title: 'ZCode'
+    })
+  })
 })

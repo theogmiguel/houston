@@ -70,7 +70,7 @@ import {
   PaneViewTextArea
 } from './ui/PaneView'
 import { ConfirmDialog } from './ui/ConfirmDialog'
-import { skillCliRelations, skillRelationLines, skillUsageLine } from '../houston/skillSurface'
+import { skillCliRelations, skillInvocationFor, skillRelationLines, skillUsageLine } from '../houston/skillSurface'
 
 const AGENT_LABEL: Record<Skill['agent'], string> = {
   claude: 'Claude Code',
@@ -239,6 +239,7 @@ function SkillInvocationActions({
   onRun,
   runLabel,
   runDisabledReason,
+  invocationAgent,
   labelledCopy,
   includePath = false
 }: {
@@ -246,15 +247,17 @@ function SkillInvocationActions({
   onRun?: (invoke: string) => void
   runLabel?: string
   runDisabledReason?: string | null
+  invocationAgent?: AgentKind | null
   labelledCopy: boolean
   includePath?: boolean
 }): React.JSX.Element {
   const { copyState, copy } = useCopyFeedback()
   const runActionLabel = runLabel ? `Use in ${runLabel}` : 'Use in selected terminal'
+  const invocation = skillInvocationFor(invocationAgent, skill.invoke)
   return (
     <Card tone="block" shape="md" padding="invocation" className="flex items-center gap-[var(--space-2-5)]">
       <Text as="code" size="ui" tone="primary" mono className="flex-1 min-w-0 truncate">
-        {skill.invoke}
+        {invocation}
       </Text>
       {(onRun || runDisabledReason) && (
         <Tooltip label={runDisabledReason ?? runActionLabel}>
@@ -270,13 +273,13 @@ function SkillInvocationActions({
         </Tooltip>
       )}
       {labelledCopy ? (
-        <Button variant="secondary" onClick={() => copy(skill.invoke)}>
+        <Button variant="secondary" onClick={() => copy(invocation)}>
           <Icon glyph={copyState === 'success' ? IconCheck : IconCopy} role="small" />
           {copyState === 'success' ? 'Copied' : 'Copy invocation'}
         </Button>
       ) : (
         <Tooltip label="Copy invocation">
-          <PanelIconButton aria-label="Copy invocation" onClick={() => copy(skill.invoke)}>
+          <PanelIconButton aria-label="Copy invocation" onClick={() => copy(invocation)}>
             <Icon glyph={copyState === 'success' ? IconCheck : IconCopy} role="small" />
           </PanelIconButton>
         </Tooltip>
@@ -324,6 +327,7 @@ function SkillDetail({
   onRun,
   runLabel,
   runDisabledReason,
+  invocationAgent,
   scopeLabel,
   usageLine,
   usageDigest,
@@ -342,6 +346,7 @@ function SkillDetail({
   onRun?: (invoke: string) => void
   runLabel?: string
   runDisabledReason?: string | null
+  invocationAgent?: AgentKind | null
   scopeLabel?: string
   usageLine?: string
   usageDigest?: string | null
@@ -410,6 +415,7 @@ function SkillDetail({
           skill={skill}
           onRun={onRun}
           runLabel={runLabel}
+          invocationAgent={invocationAgent}
           runDisabledReason={runDisabledReason}
           labelledCopy
         />
@@ -653,6 +659,7 @@ function SkillEmbeddedDetail({
   onRun,
   runLabel,
   runDisabledReason,
+  invocationAgent,
   scopeLabel,
   usageLine,
   usageDigest,
@@ -669,6 +676,7 @@ function SkillEmbeddedDetail({
   onRun?: (invoke: string) => void
   runLabel?: string
   runDisabledReason?: string | null
+  invocationAgent?: AgentKind | null
   scopeLabel?: string
   usageLine?: string
   usageDigest?: string | null
@@ -714,6 +722,7 @@ function SkillEmbeddedDetail({
         skill={skill}
         onRun={showAgentRelations ? onRun : undefined}
         runLabel={runLabel}
+        invocationAgent={invocationAgent}
         runDisabledReason={showAgentRelations ? runDisabledReason : null}
         labelledCopy={showAgentRelations}
         includePath={!showAgentRelations}
@@ -955,6 +964,7 @@ export function SkillsView({
   onRun,
   runLabel,
   runDisabledReason,
+  invocationAgent,
   scopeLabel,
   usageLines,
   usageDigest,
@@ -971,6 +981,8 @@ export function SkillsView({
   onRun?: (invoke: string) => void
   runLabel?: string
   runDisabledReason?: string | null
+  /** The agent of the pane a run or a pasted copy reaches; it decides the spelling. */
+  invocationAgent?: AgentKind | null
   scopeLabel?: string
   usageLines?: Record<string, string>
   usageDigest?: string | null
@@ -1180,6 +1192,7 @@ export function SkillsView({
                   skill={skill}
                   onRun={onRun}
                   runLabel={runLabel}
+                  invocationAgent={invocationAgent}
                   runDisabledReason={runDisabledReason}
                   scopeLabel={scopeLabel}
                   usageLine={usageLines?.[skill.name]}
@@ -1215,6 +1228,7 @@ export function SkillsView({
           dir={dir}
           onRun={onRun}
           runLabel={runLabel}
+          invocationAgent={invocationAgent}
           runDisabledReason={runDisabledReason}
           scopeLabel={scopeLabel}
           usageLine={usageLines?.[selected.name]}

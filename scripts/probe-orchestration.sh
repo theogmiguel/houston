@@ -34,7 +34,7 @@ usage: scripts/probe-orchestration.sh [options]
                      launches `cursor-agent`), or it is refused by name.
   --submit           stub mode: the stub calls `hs-pane submit`, i.e. the good
                      path, for comparison against the default.
-  --kind <kind>      claude|codex|gemini|opencode|cursor|grok (default: claude)
+  --kind <kind>      claude|codex|gemini|opencode|cursor|grok|zcode (default: claude)
   --model <model>    model for the child (default: sonnet; "" for the CLI's own)
   --prompt <text>    the child's brief (default: a trivial arithmetic question)
   --watch <secs>     keep listening this long after the first wake (default 45)
@@ -126,7 +126,7 @@ if [ "$MODE" = stub ]; then
   if [ "$arms" != 1 ]; then
     echo "[probe] refusing --stub --kind $KIND: found $arms spawn arms for" >&2
     echo "        proto::AgentKind::$ARM in $SPAWN_MATCH, expected exactly 1. Either" >&2
-    echo "        '$KIND' is not one of claude|codex|gemini|opencode|cursor|grok, or that" >&2
+    echo "        '$KIND' is not one of claude|codex|gemini|opencode|cursor|grok|zcode, or that" >&2
     echo "        match changed shape and this probe has to be taught the new one." >&2
     exit 1
   fi

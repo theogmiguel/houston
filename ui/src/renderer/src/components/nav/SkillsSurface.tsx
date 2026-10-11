@@ -24,7 +24,10 @@ export function SkillsSurface(props: {
   client?: HoustonClient | null
   workspace?: string | null
   focusedPaneName?: string | null
-  canRunSkillInFocusedPane?: boolean
+  /** The focused pane's CLI; a ZCode pane spells a skill `/skill <name>`. */
+  focusedPaneAgent?: AgentKind | null
+  /** Why the focused pane cannot take a skill, or null when it can. */
+  runBlockedReason?: string | null
   onRunSkill?: (invoke: string) => void
   tools: SkillToolState[] | null
   pushes: SkillPushRecord[]
@@ -39,7 +42,8 @@ export function SkillsSurface(props: {
     client = null,
     workspace = null,
     focusedPaneName = null,
-    canRunSkillInFocusedPane = false,
+    focusedPaneAgent = null,
+    runBlockedReason = 'Focus a live agent pane to use this skill',
     onRunSkill,
     tools,
     pushes,
@@ -65,9 +69,6 @@ export function SkillsSurface(props: {
     return () => { cancelled = true }
   }, [latestReview?.id, latestReview?.run_dir])
 
-  const runDisabledReason = canRunSkillInFocusedPane
-    ? null
-    : 'Focus a live agent pane to use this skill'
   return (
     <NavSurfaceFrame>
       <PageFrame width="wide" className="flex-1 min-w-0">
@@ -80,9 +81,10 @@ export function SkillsSurface(props: {
             pushes={pushes}
             onPush={onPush}
             onPushUndo={onPushUndo}
-            onRun={canRunSkillInFocusedPane ? onRunSkill : undefined}
+            onRun={runBlockedReason === null ? onRunSkill : undefined}
             runLabel={focusedPaneName ?? undefined}
-            runDisabledReason={runDisabledReason}
+            runDisabledReason={runBlockedReason}
+            invocationAgent={focusedPaneAgent}
             scopeLabel={skillScopeLabel(workspace !== null)}
             usageDigest={usageDigest}
             hasHarnessReview={latestReview !== null}

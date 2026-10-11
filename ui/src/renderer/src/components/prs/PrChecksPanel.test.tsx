@@ -121,4 +121,15 @@ describe('PR checks state', () => {
     expect(onCreateAgent).toHaveBeenCalledWith('Codex', expect.stringContaining('Pull request: #42'))
     expect(onOpenPane).toHaveBeenCalledWith(117)
   })
+
+  it('fixes a failed check with a new ZCode pane', async () => {
+    const { client } = fakeClient()
+    const onCreateAgent = vi.fn().mockResolvedValue(118)
+    render(<SharedChecks client={client} onCreateAgent={onCreateAgent} />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Fix with agent' })[0])
+    const picker = screen.getAllByTestId('pr-check-picker-12')[0]
+    fireEvent.click(within(picker).getByRole('button', { name: 'New ZCode pane' }))
+    await screen.findAllByRole('button', { name: 'Open pane' })
+    expect(onCreateAgent).toHaveBeenCalledWith('ZCode', expect.stringContaining('Pull request: #42'))
+  })
 })

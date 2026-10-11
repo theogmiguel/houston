@@ -81,6 +81,64 @@ async fn a_fresh_channel_has_no_routines() {
     ));
 }
 
+/// The pickers disable what these lists name; each one is a combination the daemon
+/// itself refuses, with the same reason.
+#[tokio::test]
+async fn routine_and_harness_state_name_the_engines_accept_edits_refuses() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let proto::ServerMsg::Routines {
+        engine_refusals, ..
+    } = daemon.routine_list()
+    else {
+        panic!("routine_list answers Routines");
+    };
+    let refused: Vec<_> = engine_refusals
+        .iter()
+        .map(|r| (r.engine, r.permission_mode))
+        .collect();
+    assert_eq!(
+        refused,
+        [
+            (
+                proto::AgentKind::Opencode,
+                proto::ChatPermissionMode::AcceptEdits
+            ),
+            (
+                proto::AgentKind::Zcode,
+                proto::ChatPermissionMode::AcceptEdits
+            ),
+        ]
+    );
+    let ws = state.path().join("refusal-ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    let proto::ServerMsg::HarnessState {
+        engine_refusals: harness_refusals,
+        ..
+    } = daemon.harness_state(&ws.display().to_string()).unwrap()
+    else {
+        panic!("harness_state answers HarnessState");
+    };
+    assert_eq!(harness_refusals, engine_refusals);
+    for refusal in &engine_refusals {
+        let err = daemon
+            .routine_create_full(
+                "Refused pair",
+                "run the sweep",
+                interval(900),
+                Some(ws.display().to_string()),
+                Some(refusal.engine),
+                None,
+                None,
+                Some(refusal.permission_mode),
+                None,
+            )
+            .expect_err("a listed pair is refused at create")
+            .to_string();
+        assert!(err.contains(&refusal.reason), "{err}");
+    }
+    assert!(routines_of(daemon.routine_list()).is_empty());
+}
+
 #[tokio::test]
 async fn creating_a_routine_fills_the_record() {
     let (_addr, state, daemon) = start_daemon_with_handle().await;
