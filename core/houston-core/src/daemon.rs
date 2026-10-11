@@ -637,9 +637,9 @@ impl ParkState {
         guard.generation = guard.generation.wrapping_add(1);
         #[cfg(unix)]
         if let Some(tid) = guard.reader_tid {
-            // SAFETY: `tid` is this session's own PTY-reader thread, which outlives the
-            // session and is never joined or reused; SIGUSR1 has a process-wide noop
-            // handler installed below, so a signal that misses its target is harmless.
+            // SAFETY: the reader clears its identity under this lock before exiting.
+            // Holding the lock through delivery excludes pthread ID reuse; SIGUSR1
+            // has the process-wide noop handler installed below.
             unsafe {
                 libc::pthread_kill(tid as libc::pthread_t, libc::SIGUSR1);
             }
