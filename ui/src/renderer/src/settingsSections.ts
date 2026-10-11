@@ -52,7 +52,7 @@ const ALL_SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'privacy', label: 'Privacy & data', icon: 'database', keywords: ['telemetry', 'history', 'ignore patterns', 'browsing data', 'session database', 'transcripts', 'clear'] },
   { id: 'daemon', label: 'Daemon', icon: 'server', keywords: ['diagnostics', 'channel', 'state directory', 'pid', 'port', 'protocol version', 'uptime', 'logs', 'stop daemon', 'live sessions'] },
   { id: 'wsl', label: 'WSL', icon: 'server', keywords: ['wsl', 'linux', 'distro', 'ubuntu', 'environment', 'experimental'] },
-  { id: 'remote', label: 'Remote access', icon: 'phone', keywords: ['phone', 'mobile', 'remote', 'pair', 'device', 'tailscale', 'ntfy', 'push', 'qr', 'revoke', 'another computer'] },
+  { id: 'remote', label: 'Remote access', icon: 'phone', keywords: ['phone', 'mobile', 'remote', 'pair', 'device', 'tailscale', 'ntfy', 'push', 'qr', 'revoke', 'another computer', 'certificate', 'https', 'dictation'] },
   { id: 'about', label: 'About', icon: 'info', keywords: ['version', 'build', 'third-party notices', 'release notes', 'licences'] }
 ] as const
 

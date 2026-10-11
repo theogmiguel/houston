@@ -16,6 +16,7 @@ export interface UseRemote {
   pairStart: () => void
   pairCancel: () => void
   revoke: (id: number) => void
+  regenerateCertificate: () => void
 }
 
 /// Settings ▸ Remote access state. The daemon's `remote_state` drives every
@@ -97,13 +98,19 @@ export function useRemote(client: HoustonClient | null): UseRemote {
     [client]
   )
 
-  return { remote, pairing, error, configure, pairStart, pairCancel, revoke }
+  const regenerateCertificate = useCallback(() => {
+    setError(null)
+    client?.remoteCaRegenerate()
+  }, [client])
+
+  return { remote, pairing, error, configure, pairStart, pairCancel, revoke, regenerateCertificate }
 }
 
 /// True when a device's token and the pane text it reads would cross the
-/// network without TLS: the bind is off loopback and no https URL fronts it.
-export function plainHttpOffLoopback(remote: Pick<RemoteInfo, 'bind' | 'public_url'>): boolean {
+/// network without TLS: the bind is off loopback, the listener does not serve
+/// its own HTTPS, and no https URL fronts it.
+export function plainHttpOffLoopback(remote: Pick<RemoteInfo, 'bind' | 'public_url' | 'tls'>): boolean {
   const host = remote.bind.replace(/:\d+$/, '').replace(/^\[|\]$/g, '')
   const loopback = host === '::1' || host.startsWith('127.')
-  return !loopback && !(remote.public_url ?? '').startsWith('https://')
+  return !loopback && !remote.tls && !(remote.public_url ?? '').startsWith('https://')
 }

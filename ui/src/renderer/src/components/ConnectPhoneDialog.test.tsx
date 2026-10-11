@@ -8,7 +8,7 @@ import { openConnectPhone, openConnectPhoneRoute } from '../connectPhone'
 import { ConnectPhoneDialog, ConnectPhoneHost, routeSettings } from './ConnectPhoneDialog'
 
 function info(overrides: Partial<RemoteInfo> = {}): RemoteInfo {
-  return { enabled: false, bind: '127.0.0.1:47823', public_url: null, url: 'http://127.0.0.1:47823', listening: false, error: null, ntfy_server: null, notify_delay_secs: 30, notify_detail: 'generic', notify_finished: false, devices: [], ...overrides }
+  return { enabled: false, bind: '127.0.0.1:47823', public_url: null, url: 'http://127.0.0.1:47823', listening: false, error: null, ntfy_server: null, notify_delay_secs: 30, notify_detail: 'generic', notify_finished: false, dictation: false, tls: false, ca_fingerprint: null, devices: [], ...overrides }
 }
 function setup(host = false, initialStep?: 'route' | 'scan') {
   const handlers = new Map<string, Set<(message: ServerMsg) => void>>()
@@ -128,16 +128,32 @@ describe('ConnectPhoneDialog', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('applies the Wi-Fi route with the unencrypted-traffic warning and preserves the configured port', () => {
+  it('applies the Wi-Fi route over HTTPS with the certificate note and preserves the configured port', () => {
     const { client, emit } = setup()
     emit({ type: 'remote_state', remote: info({ bind: '127.0.0.1:47824' }) })
     const route = screen.getByRole('combobox')
     fireEvent.keyDown(route, { key: 's' })
-    expect(screen.getByText(/unencrypted/)).toBeTruthy()
+    expect(screen.getByText(/trusts this computer's certificate once/)).toBeTruthy()
+    expect(screen.queryByText(/unencrypted/)).toBeNull()
     expect(screen.queryByDisplayValue(/tailscale serve/)).toBeNull()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Address' }), { target: { value: 'http://192.168.1.20:47824' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Address' }), { target: { value: 'https://192.168.1.20:47824' } })
     fireEvent.click(screen.getByRole('button', { name: 'Turn on and show code' }))
-    expect(client.remoteConfigure).toHaveBeenCalledWith({ bind: '0.0.0.0:47824', public_url: 'http://192.168.1.20:47824', enabled: true })
+    expect(client.remoteConfigure).toHaveBeenCalledWith({ bind: '0.0.0.0:47824', public_url: 'https://192.168.1.20:47824', enabled: true })
+  })
+
+  it('shows the certificate trust step and fingerprint beside a Wi-Fi code only', () => {
+    const { emit } = setup()
+    const wifi = { enabled: true, listening: true, bind: '0.0.0.0:47823', public_url: 'https://192.168.1.20:47823', url: 'https://192.168.1.20:47823', tls: true, ca_fingerprint: 'AB:CD' }
+    emit({ type: 'remote_state', remote: info(wifi) })
+    emit({ type: 'remote_pairing', url: 'https://192.168.1.20:47823/#pair=abc', qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>', expires_at: Date.now() + 600_000 })
+    expect(screen.getByText(/connection is not private/)).toBeTruthy()
+    expect(screen.getByTestId('connect-phone-fingerprint').textContent).toContain('AB:CD')
+    expect(screen.getByRole('button', { name: 'Same Wi-Fi · 192.168.1.20:47823 · Change' })).toBeTruthy()
+    cleanup()
+    const tailnet = setup()
+    tailnet.emit({ type: 'remote_state', remote: info(ready) })
+    tailnet.emit(code())
+    expect(screen.queryByText(/connection is not private/)).toBeNull()
   })
 
   it('restores focus to the opener when unmounted', () => {
@@ -184,13 +200,16 @@ describe('ConnectPhoneDialog', () => {
 describe('routeSettings', () => {
   it('keeps Tailscale on loopback and maps Wi-Fi to all interfaces', () => {
     expect(routeSettings('tailscale', '47824', 'https://box.ts.net/')).toEqual({ bind: '127.0.0.1:47824', public_url: 'https://box.ts.net' })
-    expect(routeSettings('wifi', '47824', 'http://192.168.1.20:47824')).toEqual({ bind: '0.0.0.0:47824', public_url: 'http://192.168.1.20:47824' })
+    expect(routeSettings('wifi', '47824', 'https://192.168.1.20:47824')).toEqual({ bind: '0.0.0.0:47824', public_url: 'https://192.168.1.20:47824' })
+    expect(routeSettings('wifi', '47824', 'https://box.local:47824')).toEqual({ bind: '0.0.0.0:47824', public_url: 'https://box.local:47824' })
   })
   it('refuses the wrong protocol, wildcard URLs, credentials, and paths', () => {
     expect(routeSettings('tailscale', '47823', 'http://box.ts.net')).toBeNull()
-    expect(routeSettings('wifi', '47823', 'http://0.0.0.0:47823')).toBeNull()
-    expect(routeSettings('wifi', '47823', 'http://127.0.0.1:47823')).toBeNull()
-    expect(routeSettings('wifi', '47823', 'http://192.168.1.20:47824')).toBeNull()
+    expect(routeSettings('wifi', '47823', 'http://192.168.1.20:47823')).toBeNull()
+    expect(routeSettings('wifi', '47823', 'https://0.0.0.0:47823')).toBeNull()
+    expect(routeSettings('wifi', '47823', 'https://127.0.0.1:47823')).toBeNull()
+    expect(routeSettings('wifi', '47823', 'https://192.168.1.20:47824')).toBeNull()
+    expect(routeSettings('wifi', '47823', 'https://100.64.0.2:47823')).toBeNull()
     expect(routeSettings('tailscale', '47823', 'https://user:pass@box.ts.net')).toBeNull()
     expect(routeSettings('tailscale', '47823', 'https://box.ts.net/path')).toBeNull()
   })

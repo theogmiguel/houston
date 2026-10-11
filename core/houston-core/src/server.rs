@@ -3395,6 +3395,7 @@ async fn dispatch(
             notify_delay_secs,
             notify_detail,
             notify_finished,
+            dictation,
         } => {
             let d = Arc::clone(daemon);
             let patch = crate::remote::ConfigPatch {
@@ -3408,10 +3409,23 @@ async fn dispatch(
                     proto::RemoteNotifyDetail::PaneName => "pane_name".to_string(),
                 }),
                 notify_finished,
+                dictation,
             };
             let result = tokio::task::spawn_blocking(move || d.remote_configure(patch))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("remote configure panicked: {e}")));
+            remote_reply(sink, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::RemoteCaRegenerate => {
+            let d = Arc::clone(daemon);
+            let result = tokio::task::spawn_blocking(move || d.remote_regenerate_authority())
+                .await
+                .unwrap_or_else(|e| {
+                    Err(anyhow::anyhow!(
+                        "regenerating the certificate panicked: {e}"
+                    ))
+                });
             remote_reply(sink, result).await;
             Ok(())
         }

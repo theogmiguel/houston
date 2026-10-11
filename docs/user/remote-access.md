@@ -63,8 +63,12 @@ listener to the whole internet.
 
 **Settings ▸ Remote access ▸ Listen address ▸ Edit…** accepts another `IP:PORT`, such
 as this computer's Tailscale or LAN address. Listening on every interface (`0.0.0.0`) requires a public URL, set under **Route**, that names the
-address devices open. The **Route** row reads Tailscale, Same Wi-Fi or Custom. Without HTTPS in front, a device's token and the pane text it reads
-cross the network unencrypted, and the **Route** row shows a warning.
+address devices open. The **Route** row reads Tailscale, Same Wi-Fi or Custom. On a private
+address (`10.x`, `172.16–31.x`, `192.168.x`, or a `.local` name for a listener on every
+interface), Houston serves HTTPS itself with this computer's certificate (see
+[The certificate](#the-certificate)). On any other address without HTTPS in front, a device's
+token and the pane text it reads cross the network unencrypted, and the **Route** row shows a
+warning.
 
 ### Connect phone
 
@@ -77,11 +81,12 @@ When remote access is already on with a public URL, the dialog opens on the code
   **Copy**, run the shown `tailscale serve --bg <port>` command on this computer, and
   paste the HTTPS address it prints into **Address**. Houston does not detect or install
   Tailscale. Both devices must be on the same tailnet.
-- **Same Wi-Fi · plain HTTP** sets the listen address to `0.0.0.0` at the configured
-  port. Enter this computer's LAN address and that port in **Address**, such as
-  `http://192.168.1.20:47823`. Use a trusted network: device tokens and pane text cross it
-  unencrypted. Your phone must be able to reach this computer; the dialog cannot discover
-  its LAN address.
+- **Same Wi-Fi · HTTPS** sets the listen address to `0.0.0.0` at the configured port.
+  Enter this computer's LAN address and that port in **Address**, such as
+  `https://192.168.1.20:47823`; it must be a private address or a `.local` name. Houston
+  serves HTTPS with its own certificate, which the phone trusts once (see
+  [The certificate](#the-certificate)). Your phone must be able to reach this computer; the
+  dialog cannot discover its LAN address.
 
 Choose **Turn on and show code**, or **Show code** when remote access is already on with
 that route. If Houston cannot listen or the address is not valid, the reason appears under
@@ -91,7 +96,9 @@ that route. If Houston cannot listen or the address is not valid, the reason app
 ready at the selected address. Scan it with the phone camera, or choose **Copy link**. It
 works once and the countdown shows when it expires; after expiry the code is dimmed and
 **Get a new code** replaces it. The bottom-left button shows the current route and host;
-choose it to change the route.
+choose it to change the route. With **Same Wi-Fi**, the dialog also shows the certificate's
+fingerprint: the first time, the phone warns that the connection is not private; continue to
+the page and follow **Trust this computer** there.
 
 **Connected.** Confirm on the phone to see **<device> is connected** on the desktop.
 Choose **Connect another** for another code or **Done** to close. Closing the dialog keeps
@@ -100,6 +107,41 @@ Route** and **Listen address**.
 
 The paired device can show this computer's name and Houston version, together with the
 remote access address and whether that address uses HTTPS.
+
+### The certificate
+
+When devices reach Houston directly on a private address, as with **Same Wi-Fi**, Houston
+serves remote access over HTTPS only, with a certificate signed by a certificate authority it
+creates the first time it is needed. The authority's private key stays in the OS keychain. It
+can certify only private network addresses (`10.x`, `172.16–31.x`, `192.168.x`, loopback and
+IPv6 unique-local) and `.local` names, so it cannot be used to impersonate a public website.
+Its fingerprint is shown under **Settings ▸ Remote access ▸ Certificate**. With the Tailscale
+route, Tailscale provides the HTTPS certificate and none of this applies.
+
+A device trusts the authority once; when the listen address changes, Houston issues a new
+certificate from the same authority and the device keeps trusting it. Until a device trusts
+it, the browser warns about the site: you can continue past the warning to pair and download
+the certificate, but the microphone and the home-screen app need it trusted.
+
+On the pairing page, compare the fingerprint it shows with Settings, then:
+
+- **Android:** tap **Android: download certificate**. Open **Settings ▸ Security ▸
+  Encryption & credentials ▸ Install a certificate ▸ CA certificate** (the path varies by
+  maker; search Settings for "CA certificate"), confirm, and pick `houston-ca.crt`.
+- **iPhone or iPad:** tap **iPhone or iPad: download profile** and allow the download. Open
+  **Settings ▸ Profile Downloaded ▸ Install**. Then open **Settings ▸ General ▸ About ▸
+  Certificate Trust Settings** and turn on full trust for the Houston local CA.
+
+The same downloads are in the phone's **Computer** tab.
+
+**Settings ▸ Remote access ▸ Certificate ▸ Regenerate…** replaces the authority: every
+device must trust the new one, and the old one stops working. To remove a trusted authority
+from a device:
+
+- **Android:** **Settings ▸ Security ▸ Encryption & credentials ▸ User credentials** (or
+  **Trusted credentials ▸ User**), select the Houston local CA and remove it.
+- **iPhone or iPad:** **Settings ▸ General ▸ VPN & Device Management**, select the Houston
+  profile and choose **Remove Profile**.
 
 ## Pair a device
 
@@ -195,6 +237,42 @@ Messages typed while working go directly to the pane. The phone does not queue o
 messages. For a permission request, choose **Deny** first and then send your explanation;
 the computer cannot attach a typed reason to a denial. Pane renaming and focusing on the
 computer are available from the desktop application.
+
+## Dictate instead of typing
+
+A paired device can record what you say and have Houston turn it into text for the message
+box. Houston transcribes with the engine chosen in **Settings ▸ Dictation** (see
+[Dictation](voice.md)), using its language, vocabulary and English output settings, and
+returns the text to the device; nothing reaches the pane until you send it.
+
+1. In **Settings ▸ Remote access ▸ Dictation**, turn on **Allow dictation from paired
+   devices**. It is off by default and does not depend on desktop dictation being on: the
+   computer's own microphone is never opened for it. With the local engine, download its
+   model in Settings ▸ Dictation first; with Groq, store the API key there.
+2. In a pane, tap the microphone next to the message box and speak. Tap it again to stop,
+   then edit the text and send it, or tap **Insert and send** to send it as soon as it is
+   transcribed. **Cancel** discards the recording. A recording stops by itself at 2 minutes.
+
+The microphone button needs a trusted HTTPS address: the Tailscale route, or a device that
+trusts this computer's certificate (see [The certificate](#the-certificate)). Otherwise the
+browser may offer no microphone, and the page hides the button and says why. Your phone
+keyboard's own microphone works in the message box either way, with the keyboard maker's
+speech recognition instead of Houston's.
+
+Houston transcribes one recording from a device at a time and refuses a new one while
+another, or a desktop dictation, is being transcribed. A refusal names the reason: dictation
+turned off, no model, no Groq key, the local engine on Windows (use Groq there), or a
+recording over the limit.
+
+### What is transmitted
+
+- **Local engine:** the recording travels from the device to this computer and stays on
+  your devices. Houston keeps it in memory only while it transcribes and then discards it;
+  nothing is written to disk or logged.
+- **Groq:** each recording is also sent to Groq's API for transcription, as desktop
+  dictation with Groq does.
+- **Keyboard microphone:** the phone's keyboard follows its maker's rules (Apple or
+  Google); Houston only receives the typed text.
 
 ## Notifications with ntfy
 

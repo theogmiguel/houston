@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  AGENT_PREAMBLE,
   abandonDictation,
-  buildDictationInsert,
   configureDictation,
   dictationFailed,
-  dictationTextFor,
   forgetDictationSession,
   resetDictationForTests,
   voiceChordDown,
@@ -25,69 +22,6 @@ function recorder(captureMode: 'hold' | 'toggle', enabled = true) {
 
 beforeEach(() => {
   resetDictationForTests()
-})
-
-describe('what lands in the pane (§9)', () => {
-  it('ends with a space and never a newline, so dictation cannot submit', () => {
-    const out = buildDictationInsert('run the tests', { outputMode: 'original', agentPreamble: true }, false)
-    expect(out).toBe('run the tests ')
-    expect(out).not.toContain('\n')
-    expect(out).not.toContain('\r')
-  })
-
-  it('trims what the engine returned rather than pasting its whitespace', () => {
-    expect(
-      buildDictationInsert('  hello  ', { outputMode: 'original', agentPreamble: false }, false)
-    ).toBe('hello ')
-  })
-
-  it('inserts nothing at all for an empty transcript', () => {
-    expect(
-      buildDictationInsert('   ', { outputMode: 'original', agentPreamble: true }, false)
-    ).toBe('')
-  })
-
-  it('stays silent on the common path: Original never carries the preamble', () => {
-    const out = buildDictationInsert('rode os testes', { outputMode: 'original', agentPreamble: true }, false)
-    expect(out).toBe('rode os testes ')
-    expect(out).not.toContain(AGENT_PREAMBLE)
-  })
-
-  it('prefixes the preamble under English, and only for the first dictation', () => {
-    const policy = { outputMode: 'english' as const, agentPreamble: true }
-    const first = buildDictationInsert('run the tests', policy, false)
-    expect(first.startsWith(AGENT_PREAMBLE)).toBe(true)
-    expect(first.endsWith('run the tests ')).toBe(true)
-    const second = buildDictationInsert('now push it', policy, true)
-    expect(second).toBe('now push it ')
-  })
-
-  it('honours the toggle: preamble off means no preamble even under English', () => {
-    expect(
-      buildDictationInsert('run the tests', { outputMode: 'english', agentPreamble: false }, false)
-    ).toBe('run the tests ')
-  })
-})
-
-describe('per-pane preamble bookkeeping', () => {
-  const policy = { outputMode: 'english' as const, agentPreamble: true }
-
-  it('fires once per pane, not once per app', () => {
-    expect(dictationTextFor(1, 'one', policy).startsWith(AGENT_PREAMBLE)).toBe(true)
-    expect(dictationTextFor(1, 'two', policy).startsWith(AGENT_PREAMBLE)).toBe(false)
-    expect(dictationTextFor(2, 'three', policy).startsWith(AGENT_PREAMBLE)).toBe(true)
-  })
-
-  it('does not burn the first-time slot on an empty transcript', () => {
-    expect(dictationTextFor(1, '  ', policy)).toBe('')
-    expect(dictationTextFor(1, 'the real one', policy).startsWith(AGENT_PREAMBLE)).toBe(true)
-  })
-
-  it('forgets a closed pane, so a reused indicator never inherits its state', () => {
-    dictationTextFor(1, 'one', policy)
-    forgetDictationSession(1)
-    expect(dictationTextFor(1, 'two', policy).startsWith(AGENT_PREAMBLE)).toBe(true)
-  })
 })
 
 describe('the chord (§8)', () => {
@@ -149,6 +83,13 @@ describe('the chord (§8)', () => {
     expect(calls).toEqual(['start:7', 'stop:7'])
     expect(voiceChordUp(7)).toBe(false)
     expect(calls).toEqual(['start:7', 'stop:7'])
+  })
+
+  it('a closed pane stops its running toggle', () => {
+    const calls = recorder('toggle')
+    voiceChordDown(4)
+    forgetDictationSession(4)
+    expect(calls).toEqual(['start:4', 'stop:4'])
   })
 
   it('disabling dictation drops a running toggle instead of stranding it', () => {

@@ -49,9 +49,10 @@ unavailable rather than silently substituted.
 ## Spoken language, insertion, and vocabulary
 
 Spoken language biases what the engine expects to hear — it does not translate the
-output. Leave it on auto-detect, or pin one of a short list of languages (Portuguese,
-English, Spanish, French, German, Italian, Japanese, Chinese) if you dictate mostly in
-one language and want faster, more confident recognition on short utterances.
+output. It starts as Portuguese; change it to another of the listed languages (English,
+Spanish, French, German, Italian, Japanese, Chinese) or to Auto-detect. On the local engine,
+Auto-detect adds a detection pass to every dictation, so a set language is noticeably
+faster and more confident on short utterances.
 
 Insertion controls what happens to the transcribed text: Direct pastes it straight into
 the focused terminal's prompt (Enter is still yours to press), or Confirm first, which

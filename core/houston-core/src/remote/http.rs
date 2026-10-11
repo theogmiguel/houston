@@ -4,6 +4,7 @@
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -26,8 +27,9 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 
 use super::feed::Change;
 use super::{
-    ApiError, BODY_LIMIT, CONNECTION_IDLE, EVENT_HEARTBEAT, EVENT_STREAMS_MAX, MAX_CONNECTIONS,
-    REQUEST_TIMEOUT, SCREEN_LINES_DEFAULT, SCREEN_LINES_MAX,
+    ApiError, BODY_LIMIT, CONNECTION_IDLE, DICTATE_BODY_LIMIT, DICTATE_MAX_SECS, DICTATE_TIMEOUT,
+    EVENT_HEARTBEAT, EVENT_STREAMS_MAX, MAX_CONNECTIONS, REQUEST_TIMEOUT, SCREEN_LINES_DEFAULT,
+    SCREEN_LINES_MAX,
 };
 use crate::daemon::Daemon;
 use crate::db::RemoteDeviceRow;
@@ -65,33 +67,135 @@ const FONTS: [(&str, &[u8]); 6] = [
         include_bytes!("pwa/fonts/jetbrains-mono-latin-500-normal.woff2"),
     ),
 ];
+const PCM_WORKLET_JS: &str = include_str!("pwa/pcm-worklet.js");
 
 /// Serves `router` on `listener` with the connection cap and idle timeout,
-/// until `shutdown` resolves.
+/// until `shutdown` resolves: over HTTPS with `tls`, else plain HTTP for a
+/// loopback bind behind a proxy that terminates HTTPS.
 pub async fn serve(
     daemon: Arc<Daemon>,
     listener: tokio::net::TcpListener,
+    tls: Option<Arc<tokio_rustls::rustls::ServerConfig>>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    let listener = LimitedListener {
-        inner: listener,
-        permits: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+    let Some(tls) = tls else {
+        let listener = LimitedListener {
+            inner: listener,
+            permits: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+        };
+        return axum::serve(
+            listener,
+            router(daemon).into_make_service_with_connect_info::<Peer>(),
+        )
+        .with_graceful_shutdown(shutdown)
+        .await;
     };
-    axum::serve(
+    let local = listener.local_addr()?;
+    let (tx, rx) = tokio::sync::mpsc::channel(MAX_CONNECTIONS);
+    let handshakes = tokio::spawn(accept_tls(
         listener,
+        tokio_rustls::TlsAcceptor::from(tls),
+        Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+        tx,
+    ));
+    let served = axum::serve(
+        TlsListener { rx, local },
         router(daemon).into_make_service_with_connect_info::<Peer>(),
     )
     .with_graceful_shutdown(shutdown)
-    .await
+    .await;
+    handshakes.abort();
+    served
 }
 
-/// The remote peer's address, for the per-source authentication lockout.
-#[derive(Debug, Clone, Copy)]
-pub struct Peer(pub SocketAddr);
+type TlsConnection = tokio_rustls::server::TlsStream<IdleTimeoutStream>;
+
+/// Holds at most `MAX_CONNECTIONS` at once (further clients wait in the kernel
+/// backlog) and runs each TLS handshake on its own task, so a slow client never
+/// holds up the next one.
+async fn accept_tls(
+    listener: tokio::net::TcpListener,
+    acceptor: tokio_rustls::TlsAcceptor,
+    permits: Arc<Semaphore>,
+    ready: tokio::sync::mpsc::Sender<(TlsConnection, SocketAddr)>,
+) {
+    loop {
+        let permit = Arc::clone(&permits)
+            .acquire_owned()
+            .await
+            .expect("the connection semaphore is never closed");
+        let (stream, addr) = match listener.accept().await {
+            Ok(accepted) => accepted,
+            Err(e) => {
+                tracing::debug!("remote access: accept failed: {e}");
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                continue;
+            }
+        };
+        let _ = stream.set_nodelay(true);
+        let acceptor = acceptor.clone();
+        let ready = ready.clone();
+        tokio::spawn(async move {
+            match acceptor
+                .accept(IdleTimeoutStream::new(stream, permit))
+                .await
+            {
+                Ok(tls) => {
+                    let _ = ready.send((tls, addr)).await;
+                }
+                Err(e) => tracing::debug!("remote access: TLS handshake with {addr} failed: {e}"),
+            }
+        });
+    }
+}
+
+/// Connections whose TLS handshake finished.
+pub struct TlsListener {
+    rx: tokio::sync::mpsc::Receiver<(TlsConnection, SocketAddr)>,
+    local: SocketAddr,
+}
+
+impl axum::serve::Listener for TlsListener {
+    type Io = TlsConnection;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        match self.rx.recv().await {
+            Some(connection) => connection,
+            None => std::future::pending().await,
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        Ok(self.local)
+    }
+}
+
+/// The remote peer's address, for the per-source authentication lockout, and
+/// its connection's idle hold.
+#[derive(Debug, Clone)]
+pub struct Peer(pub SocketAddr, Arc<AtomicUsize>);
+
+impl Peer {
+    /// Keeps the connection open past `CONNECTION_IDLE` while the guard lives,
+    /// for a request that computes longer than that before it answers.
+    fn hold(&self) -> IdleHold {
+        self.1.fetch_add(1, Ordering::AcqRel);
+        IdleHold(Arc::clone(&self.1))
+    }
+}
+
+struct IdleHold(Arc<AtomicUsize>);
+
+impl Drop for IdleHold {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 impl Connected<axum::serve::IncomingStream<'_, LimitedListener>> for Peer {
     fn connect_info(stream: axum::serve::IncomingStream<'_, LimitedListener>) -> Self {
-        Peer(*stream.remote_addr())
+        Peer(*stream.remote_addr(), Arc::clone(&stream.io().holds))
     }
 }
 
@@ -130,11 +234,21 @@ impl axum::serve::Listener for LimitedListener {
     }
 }
 
+impl Connected<axum::serve::IncomingStream<'_, TlsListener>> for Peer {
+    fn connect_info(stream: axum::serve::IncomingStream<'_, TlsListener>) -> Self {
+        Peer(
+            *stream.remote_addr(),
+            Arc::clone(&stream.io().get_ref().0.holds),
+        )
+    }
+}
+
 /// A connection that fails once it has neither read nor written for
 /// `CONNECTION_IDLE`, so a silent client cannot hold a slot forever.
 pub struct IdleTimeoutStream {
     inner: tokio::net::TcpStream,
     deadline: Pin<Box<tokio::time::Sleep>>,
+    holds: Arc<AtomicUsize>,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -143,6 +257,7 @@ impl IdleTimeoutStream {
         Self {
             inner,
             deadline: Box::pin(tokio::time::sleep(CONNECTION_IDLE)),
+            holds: Arc::new(AtomicUsize::new(0)),
             _permit: permit,
         }
     }
@@ -154,7 +269,15 @@ impl IdleTimeoutStream {
     }
 
     fn expired(&mut self, cx: &mut Context<'_>) -> bool {
-        self.deadline.as_mut().poll(cx).is_ready()
+        if self.deadline.as_mut().poll(cx).is_pending() {
+            return false;
+        }
+        if self.holds.load(Ordering::Acquire) == 0 {
+            return true;
+        }
+        self.touch();
+        let _ = self.deadline.as_mut().poll(cx);
+        false
     }
 }
 
@@ -216,6 +339,10 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/fonts/{name}", get(font))
         .route("/app.js", get(app_js))
         .route("/app.css", get(app_css))
+        .route("/pcm-worklet.js", get(pcm_worklet_js))
+        .route("/houston-ca.crt", get(ca_crt))
+        .route("/houston-ca.mobileconfig", get(ca_mobileconfig))
+        .route("/api/ca", get(ca_info))
         .route("/api/pair", post(pair))
         .route("/api/me", get(me))
         .route("/api/activity", get(activity))
@@ -224,6 +351,7 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/api/sessions/{id}/input", post(input))
         .route("/api/sessions/{id}/feed", get(feed))
         .route("/api/sessions/{id}/decide", post(decide))
+        .route("/api/sessions/{id}/dictate", post(dictate))
         .route("/api/events", get(events))
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
@@ -240,8 +368,11 @@ impl IntoResponse for ApiError {
         let status = match &self {
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
             ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            ApiError::Forbidden(_) => StatusCode::FORBIDDEN,
             ApiError::NotFound(_) => StatusCode::NOT_FOUND,
             ApiError::Conflict(_) => StatusCode::CONFLICT,
+            ApiError::TooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
+            ApiError::Unprocessable(_) => StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         error(status, self.to_string())
@@ -304,13 +435,19 @@ async fn guard(State(daemon): State<Arc<Daemon>>, req: Request, next: Next) -> R
             }
         }
     }
-    let mut resp = match tokio::time::timeout(REQUEST_TIMEOUT, next.run(req)).await {
+    let dictation = req.method() == Method::POST && req.uri().path().ends_with("/dictate");
+    let limit = if dictation {
+        DICTATE_TIMEOUT
+    } else {
+        REQUEST_TIMEOUT
+    };
+    let mut resp = match tokio::time::timeout(limit, next.run(req)).await {
         Ok(resp) => resp,
         Err(_) => error(
             StatusCode::REQUEST_TIMEOUT,
             format!(
                 "the request took longer than {} s and was abandoned",
-                REQUEST_TIMEOUT.as_secs()
+                limit.as_secs()
             ),
         ),
     };
@@ -352,6 +489,75 @@ async fn app_js() -> Response {
         APP_JS,
     )
         .into_response()
+}
+
+async fn pcm_worklet_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        PCM_WORKLET_JS,
+    )
+        .into_response()
+}
+
+/// The certificate authority devices trust; public, so served without a token.
+/// A listener behind a proxy that terminates HTTPS has none to offer.
+async fn authority(daemon: Arc<Daemon>) -> Result<Arc<super::tls::Authority>, Refused> {
+    blocking(move || {
+        if !daemon.remote_config().serves_tls() {
+            return Err(Refused::from(ApiError::NotFound(
+                "this listener does not serve HTTPS itself, so there is no certificate to \
+                 trust: Houston serves its own HTTPS only on a private network address"
+                    .to_string(),
+            )));
+        }
+        daemon
+            .remote_authority()
+            .map_err(|e| Refused::from(ApiError::Internal(format!("{e:#}"))))
+    })
+    .await
+}
+
+async fn ca_crt(State(daemon): State<Arc<Daemon>>) -> Response {
+    match authority(daemon).await {
+        Ok(ca) => (
+            [
+                (header::CONTENT_TYPE, "application/x-x509-ca-cert"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"houston-ca.crt\"",
+                ),
+            ],
+            ca.cert_der().to_vec(),
+        )
+            .into_response(),
+        Err(refused) => refused.into_response(),
+    }
+}
+
+async fn ca_mobileconfig(State(daemon): State<Arc<Daemon>>) -> Response {
+    match authority(daemon).await {
+        Ok(ca) => (
+            [
+                (header::CONTENT_TYPE, "application/x-apple-aspen-config"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"houston-ca.mobileconfig\"",
+                ),
+            ],
+            ca.mobileconfig(),
+        )
+            .into_response(),
+        Err(refused) => refused.into_response(),
+    }
+}
+
+async fn ca_info(State(daemon): State<Arc<Daemon>>) -> Response {
+    match authority(daemon).await {
+        Ok(ca) => {
+            Json(json!({ "name": ca.name(), "fingerprint": ca.fingerprint() })).into_response()
+        }
+        Err(refused) => refused.into_response(),
+    }
 }
 
 async fn app_css() -> Response {
@@ -528,10 +734,12 @@ async fn me(
 ) -> Response {
     let result = blocking(move || {
         let device = authenticate(&daemon, &headers, peer.0.ip())?;
-        let url = daemon.remote_config().effective_url();
+        let config = daemon.remote_config();
+        let url = config.effective_url();
         Ok(json!({
             "device_id": device.id,
             "name": device.name,
+            "dictation": config.dictation,
             "host": {"name": super::host_name(), "version": env!("CARGO_PKG_VERSION")},
             "connection": {"url": super::feed::mask(&url), "https": url.starts_with("https://")},
         }))
@@ -630,6 +838,78 @@ async fn input(
     .await;
     match result {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(refused) => refused.into_response(),
+    }
+}
+
+/// A recording from the device: 16 kHz mono PCM16, little-endian, as the body.
+/// It is read only after the refusals that need no audio, and is held in
+/// memory only until it is transcribed.
+async fn dictate(
+    State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    Path(id): Path<u32>,
+    headers: HeaderMap,
+    body: axum::body::Body,
+) -> Response {
+    let _hold = peer.hold();
+    let declared = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<usize>().ok());
+    let checked = {
+        let daemon = Arc::clone(&daemon);
+        let source = peer.0.ip();
+        blocking(move || {
+            authenticate(&daemon, &headers, source)?;
+            daemon.remote_dictate_check(id).map_err(Refused::from)
+        })
+        .await
+    };
+    let settings = match checked {
+        Ok(settings) => settings,
+        Err(refused) => return refused.into_response(),
+    };
+    if let Some(bytes) = declared.filter(|&b| b > DICTATE_BODY_LIMIT) {
+        return super::dictation_too_long(bytes).into_response();
+    }
+    let mut pcm = Vec::with_capacity(declared.unwrap_or(0));
+    let mut chunks = body.into_data_stream();
+    while let Some(chunk) = futures_util::StreamExt::next(&mut chunks).await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(e) => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    format!("reading the recording failed: {e}"),
+                )
+            }
+        };
+        if pcm.len() + chunk.len() > DICTATE_BODY_LIMIT {
+            return error(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                format!(
+                    "the recording is more than {DICTATE_BODY_LIMIT} bytes; remote dictation \
+                     takes at most {DICTATE_MAX_SECS} s of 16 kHz mono PCM16 per recording: \
+                     record a shorter message"
+                ),
+            );
+        }
+        pcm.extend_from_slice(&chunk);
+    }
+    let samples = match super::dictation_samples(&pcm) {
+        Ok(samples) => samples,
+        Err(e) => return e.into_response(),
+    };
+    drop(pcm);
+    match blocking(move || {
+        daemon
+            .remote_dictate(id, &settings, samples)
+            .map_err(Refused::from)
+    })
+    .await
+    {
+        Ok(dictation) => Json(dictation).into_response(),
         Err(refused) => refused.into_response(),
     }
 }
