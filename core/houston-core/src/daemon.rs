@@ -588,6 +588,7 @@ pub struct Session {
     removed: AtomicBool,
     backend_exited: AtomicBool,
     stdin_writes_in_flight: AtomicU32,
+    stdin_queue: Mutex<StdinQueue>,
     lifecycle_hook_seen: AtomicBool,
     #[cfg(unix)]
     native_input_recovery: Option<adoption::NativeInputSnapshot>,
@@ -877,11 +878,109 @@ pub(crate) fn write_all_counting(
     Ok(())
 }
 
-impl Backend {
-    fn write_stdin(&self, id: u32, data: &[u8]) -> Result<()> {
-        self.write_stdin_counting(id, data).map_err(|e| e.error)
-    }
+// Includes active delivery, so an unread PTY cannot hide bytes outside the queue budget.
+const STDIN_QUEUE_BYTES: usize = 4 * 1024 * 1024;
+// Also bounds tiny writes, callbacks and completion receivers.
+const STDIN_QUEUE_JOBS: usize = 128;
 
+type StdinCompletion = Box<dyn FnOnce(std::result::Result<(), StdinWriteError>) + Send>;
+struct StdinJob {
+    data: Vec<u8>,
+    partial_after: Option<usize>,
+    completion: StdinCompletion,
+    prepare: Option<Box<dyn FnOnce() + Send>>,
+    admission: StdinWriteAdmission,
+}
+#[derive(Default)]
+struct StdinQueue {
+    sender: Option<std::sync::mpsc::SyncSender<StdinJob>>,
+    bytes: usize,
+    jobs: usize,
+}
+
+impl Session {
+    fn enqueue_stdin(
+        self: &Arc<Self>,
+        id: u32,
+        data: &[u8],
+        partial_after: Option<usize>,
+        completion: StdinCompletion,
+        prepare: Option<Box<dyn FnOnce() + Send>>,
+    ) -> std::result::Result<(), StdinWriteError> {
+        let mut queue = self.stdin_queue.lock().expect("stdin queue lock");
+        if data.len() > STDIN_QUEUE_BYTES.saturating_sub(queue.bytes)
+            || queue.jobs >= STDIN_QUEUE_JOBS
+        {
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} stdin admission refused: byte limit {STDIN_QUEUE_BYTES}, actual {}, requested {}; job limit {STDIN_QUEUE_JOBS}, actual {}, requested 1",
+                queue.bytes, data.len(), queue.jobs
+            )));
+        }
+        if queue.sender.is_none() {
+            let (sender, receiver) = std::sync::mpsc::sync_channel::<StdinJob>(STDIN_QUEUE_JOBS);
+            let session = Arc::downgrade(self);
+            std::thread::Builder::new()
+                .name(format!("stdin-{id}"))
+                .spawn(move || {
+                    while let Ok(job) = receiver.recv() {
+                        let Some(session) = session.upgrade() else {
+                            break;
+                        };
+                        if let Some(prepare) = job.prepare {
+                            prepare();
+                        }
+                        let result = if let Some(cap) = job.partial_after {
+                            let head = cap.min(job.data.len());
+                            match session.backend.write_stdin_counting(id, &job.data[..head]) {
+                                Ok(()) => Err(StdinWriteError {
+                                    written: Some(head),
+                                    error: anyhow!("injected partial write for session {id}"),
+                                }),
+                                Err(error) => Err(error),
+                            }
+                        } else {
+                            session.backend.write_stdin_counting(id, &job.data)
+                        };
+                        let bytes = job.data.len();
+                        drop(job.data);
+                        {
+                            let mut queue = session.stdin_queue.lock().expect("stdin queue lock");
+                            queue.bytes -= bytes;
+                            queue.jobs -= 1;
+                        }
+                        (job.completion)(result);
+                        drop(job.admission);
+                    }
+                })
+                .map_err(|error| {
+                    StdinWriteError::nothing(anyhow!(
+                        "session {id}: starting stdin writer: {error}"
+                    ))
+                })?;
+            queue.sender = Some(sender);
+        }
+        self.stdin_writes_in_flight.fetch_add(1, Ordering::AcqRel);
+        queue.bytes += data.len();
+        queue.jobs += 1;
+        let job = StdinJob {
+            data: data.to_vec(),
+            partial_after,
+            completion,
+            prepare,
+            admission: StdinWriteAdmission(Arc::clone(self)),
+        };
+        if let Err(error) = queue.sender.as_ref().expect("stdin sender").try_send(job) {
+            queue.bytes -= data.len();
+            queue.jobs -= 1;
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} stdin writer unavailable: {error}"
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl Backend {
     fn write_stdin_counting(
         &self,
         id: u32,
@@ -4450,6 +4549,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(
                 m.native_input
                     .as_ref()
@@ -4540,6 +4640,11 @@ impl Daemon {
             else {
                 continue;
             };
+            if s.stdin_writes_in_flight.load(Ordering::Acquire) != 0 {
+                return Err(format!(
+                    "handoff refused for session {id}: stdin delivery is still in progress"
+                ));
+            }
             let (cols, rows) = s.geometry();
             let mcp_cred =
                 self.mcp_creds
@@ -9512,12 +9617,31 @@ impl Daemon {
         true
     }
 
-    fn answer_terminal_queries(&self, id: u32, session: &Session, replies: &[u8]) {
+    fn answer_terminal_queries(&self, id: u32, _session: &Session, replies: &[u8]) {
         if replies.is_empty() {
             return;
         }
-        if let Err(e) = session.backend.write_stdin(id, replies) {
-            tracing::debug!("session {id}: answering a terminal query failed: {e}");
+        let tx = self.tx.clone();
+        let result = self.enqueue_stdin(
+            id,
+            replies,
+            Box::new(move |result| {
+                if let Err(error) = result {
+                    let msg = proto::ServerMsg::Error {
+                        message: format!("session {id} terminal reply delivery failed: {error}"),
+                        context: Some("stdin".into()),
+                    };
+                    let json = serde_json::to_string(&msg).expect("ServerMsg serializes");
+                    let _ = tx.send(Outbound::Control(Arc::new(json)));
+                }
+            }),
+            None,
+        );
+        if let Err(error) = result {
+            self.broadcast_control(&proto::ServerMsg::Error {
+                message: format!("session {id} terminal reply admission failed: {error}"),
+                context: Some("stdin".into()),
+            });
         }
     }
 
@@ -10132,6 +10256,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(false),
             #[cfg(unix)]
             native_input_recovery: None,
@@ -10557,6 +10682,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(false),
             #[cfg(unix)]
             native_input_recovery: None,
@@ -11228,7 +11354,51 @@ impl Daemon {
     }
 
     pub fn write_stdin(&self, id: u32, data: &[u8]) -> Result<()> {
-        self.write_stdin_counting(id, data).map_err(|e| e.error)
+        self.write_stdin_counting(id, data)
+            .map_err(|error| anyhow!("{error}"))
+    }
+
+    fn stdin_session(&self, id: u32) -> std::result::Result<Arc<Session>, StdinWriteError> {
+        self.ensure_not_sleeping(id)
+            .map_err(StdinWriteError::nothing)?;
+        if self.dead.lock().expect("dead lock").contains_key(&id) {
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} is not running (restored after a daemon restart) — respawn it"
+            )));
+        }
+        let session = self.get(id).map_err(StdinWriteError::nothing)?;
+        let state = *session.state.lock().expect("state lock");
+        if !state.is_live() {
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} is {state:?}; stdin requires a live session"
+            )));
+        }
+        Ok(session)
+    }
+
+    fn enqueue_stdin(
+        &self,
+        id: u32,
+        data: &[u8],
+        completion: StdinCompletion,
+        prepare: Option<Box<dyn FnOnce() + Send>>,
+    ) -> std::result::Result<(), StdinWriteError> {
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
+        if self.refusing_mutations() {
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} stdin admission refused while daemon is handing off or shutting down"
+            )));
+        }
+        let session = self.stdin_session(id)?;
+        let cap = self
+            .stdin_partial_after
+            .lock()
+            .expect("stdin partial lock")
+            .remove(&id);
+        session.enqueue_stdin(id, data, cap, completion, prepare)
     }
 
     pub fn write_stdin_counting(
@@ -11236,50 +11406,96 @@ impl Daemon {
         id: u32,
         data: &[u8],
     ) -> std::result::Result<(), StdinWriteError> {
-        let session = {
-            let _lifecycle = self
-                .session_lifecycle_lock
-                .lock()
-                .expect("session lifecycle lock");
-            self.ensure_not_sleeping(id)
-                .map_err(StdinWriteError::nothing)?;
-            if self.dead.lock().expect("dead lock").contains_key(&id) {
-                return Err(StdinWriteError::nothing(anyhow!(
-                    "session {id} is not running (restored after a daemon restart) — respawn it"
-                )));
-            }
-            let session = self.get(id).map_err(StdinWriteError::nothing)?;
-            let state = *session.state.lock().expect("state lock");
-            if !state.is_live() {
-                return Err(StdinWriteError::nothing(anyhow!(
-                    "session {id} is {state:?}; stdin requires a live session"
-                )));
-            }
-            session
-                .stdin_writes_in_flight
-                .fetch_add(1, Ordering::AcqRel);
-            session
-        };
-        let _admission = StdinWriteAdmission(Arc::clone(&session));
-        if let Some(cap) = self
-            .stdin_partial_after
-            .lock()
-            .expect("stdin partial lock")
-            .remove(&id)
-        {
-            let head = cap.min(data.len());
-            let _ = session.backend.write_stdin(id, &data[..head]);
-            return Err(StdinWriteError {
-                written: Some(head),
-                error: anyhow!("injected partial write for session {id}"),
-            });
-        }
-        session.backend.write_stdin_counting(id, data)
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.enqueue_stdin(
+            id,
+            data,
+            Box::new(move |result| {
+                let _ = tx.send(result);
+            }),
+            None,
+        )?;
+        rx.recv().unwrap_or_else(|error| {
+            Err(StdinWriteError::unknown(anyhow!(
+                "session {id} stdin completion unavailable: {error}"
+            )))
+        })
+    }
+
+    fn enqueue_renderer_stdin(
+        self: &Arc<Self>,
+        id: u32,
+        data: &[u8],
+        completion: StdinCompletion,
+    ) -> Result<()> {
+        let session = self.get(id)?;
+        let operator_input = !data.is_empty() && !is_terminal_report_only(data);
+        let _native_input = operator_input
+            .then(|| self.native_input_mutation_guard())
+            .transpose()?;
+        let marked = Arc::new(AtomicBool::new(false));
+        let prepare_marked = Arc::clone(&marked);
+        let prepare_daemon = Arc::clone(self);
+        let prepare = operator_input.then(|| {
+            Box::new(move || {
+                let _native_input = prepare_daemon
+                    .native_input_handoff
+                    .lock()
+                    .expect("native input handoff lock");
+                prepare_marked.store(
+                    prepare_daemon.note_input_intervention(id),
+                    Ordering::Release,
+                );
+            }) as Box<dyn FnOnce() + Send>
+        });
+        let result = self.enqueue_stdin(
+            id,
+            data,
+            Box::new(move |result| {
+                if marked.load(Ordering::Acquire)
+                    && result.as_ref().is_err_and(StdinWriteError::nothing_written)
+                {
+                    session.input_intervention.store(false, Ordering::Release);
+                    session
+                        .input_intervention_id
+                        .lock()
+                        .expect("intervention input lock")
+                        .take();
+                }
+                completion(result);
+            }),
+            prepare,
+        );
+        result.map_err(|error| anyhow!("{error}"))
+    }
+
+    pub fn enqueue_stdin_from_renderer(
+        self: &Arc<Self>,
+        id: u32,
+        data: &[u8],
+        conn: u64,
+    ) -> Result<()> {
+        let daemon = Arc::clone(self);
+        self.enqueue_renderer_stdin(
+            id,
+            data,
+            Box::new(move |result| {
+                if let Err(error) = result {
+                    tracing::warn!(session_id = id, %error, "stdin delivery failed");
+                    daemon.send_control_to(
+                        conn,
+                        &proto::ServerMsg::Error {
+                            message: format!("session {id} stdin delivery failed: {error}"),
+                            context: Some("stdin".into()),
+                        },
+                    );
+                }
+            }),
+        )
     }
 
     pub fn write_stdin_from_renderer(&self, id: u32, data: &[u8]) -> Result<()> {
         let Ok(session) = self.get(id) else {
-            // Bytes the renderer had in flight when the operator closed the pane.
             if self.db.session_is_closed(id)? {
                 return Ok(());
             }
@@ -11288,20 +11504,19 @@ impl Daemon {
         if !session.state.lock().expect("state lock").is_live() {
             return Ok(());
         }
-        let operator_input = !data.is_empty() && !is_terminal_report_only(data);
-        let _native_input = operator_input
-            .then(|| self.native_input_mutation_guard())
-            .transpose()?;
-        let marked = operator_input && self.note_input_intervention(id);
-        let result = self.write_stdin_counting(id, data);
-        if marked && result.as_ref().is_err_and(StdinWriteError::nothing_written) {
-            session.input_intervention.store(false, Ordering::Release);
-            session
-                .input_intervention_id
-                .lock()
-                .expect("intervention input lock")
-                .take();
-        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.self_arc()
+            .expect("daemon owns itself weakly")
+            .enqueue_renderer_stdin(
+                id,
+                data,
+                Box::new(move |result| {
+                    let _ = tx.send(result);
+                }),
+            )?;
+        let result = rx
+            .recv()
+            .map_err(|error| anyhow!("session {id} stdin completion unavailable: {error}"))?;
         if !session.state.lock().expect("state lock").is_live() {
             return Ok(());
         }

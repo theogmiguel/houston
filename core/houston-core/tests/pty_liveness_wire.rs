@@ -1,7 +1,7 @@
 #![cfg(target_os = "linux")]
 #![allow(clippy::disallowed_methods)]
 
-use futures_util::SinkExt;
+use futures_util::{SinkExt, StreamExt};
 use houston_core::{
     adoption,
     daemon::{Daemon, DaemonConfig},
@@ -109,6 +109,12 @@ async fn wait_writer(active: &(dyn Fn() -> bool + Send + Sync)) {
     .await
     .expect("stdin admission receipt");
 }
+async fn control(ws: &mut common::WsStream, msg: proto::ClientMsg) {
+    ws.send(Message::text(serde_json::to_string(&msg).unwrap()))
+        .await
+        .unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn adopted_fallback_kill_survives_blocked_stdin() {
     adopted_blocked_writer(true).await;
@@ -228,4 +234,282 @@ async fn adopted_blocked_writer(fail_scope: bool) {
     .unwrap();
     assert!(!houston_core::pid::process_is_alive(pid));
     drop(cleanup);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn same_socket_resize_and_sibling_output_survive_blocked_stdin() {
+    let _home = TestHome::new();
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut cleanup = Cleanup {
+        daemon: daemon.clone(),
+        ids: vec![],
+    };
+    let mut ws = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut ws).await;
+    ws.send(Message::text(common::create_custom_msg(
+        vec!["sh", "-c", "stty raw -echo; printf READY; exec sleep 60"],
+        dir.path(),
+    )))
+    .await
+    .unwrap();
+    let blocked = common::expect_created(&mut ws).await.id;
+    cleanup.ids.push(blocked);
+    common::attach_and_collect_output_until(&mut ws, blocked, "READY").await;
+    ws.send(Message::text(common::create_custom_msg(
+        vec!["sh", "-c", "cat"],
+        dir.path(),
+    )))
+    .await
+    .unwrap();
+    let sibling = common::expect_created(&mut ws).await.id;
+    cleanup.ids.push(sibling);
+    let unblock = daemon.stdin_cleanup_for_test(blocked).unwrap();
+    let active = daemon.stdin_writer_receipt_for_test(blocked).unwrap();
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(blocked, &vec![b'x'; 1024 * 1024]).into(),
+    ))
+    .await
+    .unwrap();
+    wait_writer(active.as_ref()).await;
+    control(
+        &mut ws,
+        proto::ClientMsg::SessionResize {
+            session: blocked,
+            cols: 91,
+            rows: 31,
+        },
+    )
+    .await;
+    let resize = wall_timeout(Duration::from_secs(15), async {
+        loop {
+            let Message::Text(text) = ws.next().await.unwrap().unwrap() else {
+                continue;
+            };
+            if let proto::ServerMsg::SessionResized {
+                session,
+                cols,
+                rows,
+            } = serde_json::from_str(&text).unwrap()
+            {
+                if session == blocked {
+                    assert_eq!((cols, rows), (91, 31));
+                    break;
+                }
+            }
+        }
+    })
+    .await;
+    // Independent cleanup must unblock the original socket on the red implementation.
+    if resize.is_err() {
+        unblock();
+        daemon.kill(blocked).unwrap();
+    }
+    assert!(
+        resize.is_ok(),
+        "same /ws socket must receive resize while stdin remains blocked"
+    );
+    assert!(
+        daemon.stdin_write_in_progress_for_test(blocked),
+        "resize must precede delivery completion"
+    );
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(sibling, b"SIBLING\n").into(),
+    ))
+    .await
+    .unwrap();
+    common::attach_and_collect_output_until(&mut ws, sibling, "SIBLING").await;
+    control(
+        &mut ws,
+        proto::ClientMsg::SessionKill {
+            session: blocked,
+            confirm_children: None,
+        },
+    )
+    .await;
+    wall_timeout(Duration::from_secs(15), async {
+        while daemon.stdin_write_in_progress_for_test(blocked) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("same-socket kill must cancel admitted delivery");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn admitted_input_and_terminal_replies_keep_order_after_disconnect() {
+    let _home = TestHome::new();
+    assert!(
+        houston_core::vt::available(),
+        "this regression requires real libghostty-vt replies"
+    );
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut cleanup = Cleanup {
+        daemon: daemon.clone(),
+        ids: vec![],
+    };
+    let script = r#"
+import os, tty, time
+tty.setraw(0)
+print('READY', flush=True)
+while not os.path.exists('query'): time.sleep(.01)
+os.write(1, b'\x1b]7501;?\x07AFTER_QUERY')
+while not os.path.exists('consume'): time.sleep(.01)
+expected = b'x' * 1048576 + b'FIRST' + b'\x1b]7501;?\x07' + b'SECOND'
+data = b''
+while len(data) < len(expected): data += os.read(0, len(expected) - len(data))
+print('ORDERED' if data == expected else 'BAD_ORDER', flush=True)
+time.sleep(60)"#;
+    let mut ws = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut ws).await;
+    ws.send(Message::text(common::create_custom_msg(
+        vec!["python3", "-u", "-c", &script],
+        dir.path(),
+    )))
+    .await
+    .unwrap();
+    let id = common::expect_created(&mut ws).await.id;
+    cleanup.ids.push(id);
+    common::attach_and_collect_output_until(&mut ws, id, "READY").await;
+    let active = daemon.stdin_writer_receipt_for_test(id).unwrap();
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(id, &vec![b'x'; 1024 * 1024]).into(),
+    ))
+    .await
+    .unwrap();
+    wait_writer(active.as_ref()).await;
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(id, b"FIRST").into(),
+    ))
+    .await
+    .unwrap();
+    control(&mut ws, proto::ClientMsg::SessionList).await;
+    loop {
+        if matches!(
+            common::next_control(&mut ws).await,
+            proto::ServerMsg::SessionList { .. }
+        ) {
+            break;
+        }
+    }
+    std::fs::write(dir.path().join("query"), "").unwrap();
+    common::collect_output_until(&mut ws, id, "AFTER_QUERY").await;
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(id, b"SECOND").into(),
+    ))
+    .await
+    .unwrap();
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(id, &vec![b'x'; 5 * 1024 * 1024]).into(),
+    ))
+    .await
+    .unwrap();
+    loop {
+        if let proto::ServerMsg::Error { message, context } = common::next_control(&mut ws).await {
+            assert_eq!(context.as_deref(), Some("stdin"));
+            assert!(message.contains("byte limit 4194304"), "{message}");
+            assert!(message.contains("requested 5242880"), "{message}");
+            break;
+        }
+    }
+    assert!(daemon.stdin_write_in_progress_for_test(id));
+    ws.close(None).await.unwrap();
+    drop(ws);
+    std::fs::write(dir.path().join("consume"), "").unwrap();
+    let mut ws = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut ws).await;
+    common::attach_and_collect_output_until(&mut ws, id, "ORDERED").await;
+    wall_timeout(Duration::from_secs(15), async {
+        while daemon.stdin_write_in_progress_for_test(id) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("all admitted input outcomes must finish");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn stdin_job_limit_refuses_admission_and_reports_every_cancelled_job() {
+    let _home = TestHome::new();
+    let (addr, dir, daemon) = common::start_daemon_without_mail_loop().await;
+    let mut cleanup = Cleanup {
+        daemon: daemon.clone(),
+        ids: vec![],
+    };
+    let mut ws = common::connect_and_hello(addr, common::TOKEN).await;
+    let _ = common::next_control(&mut ws).await;
+    ws.send(Message::text(common::create_custom_msg(
+        vec!["sh", "-c", "stty raw -echo; printf READY; exec sleep 60"],
+        dir.path(),
+    )))
+    .await
+    .unwrap();
+    let id = common::expect_created(&mut ws).await.id;
+    cleanup.ids.push(id);
+    common::attach_and_collect_output_until(&mut ws, id, "READY").await;
+    let active = daemon.stdin_writer_receipt_for_test(id).unwrap();
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(id, &vec![b'x'; 1024 * 1024]).into(),
+    ))
+    .await
+    .unwrap();
+    wait_writer(active.as_ref()).await;
+    for _ in 0..128 {
+        ws.send(Message::Binary(proto::encode_stdin_frame(id, b"j").into()))
+            .await
+            .unwrap();
+    }
+    loop {
+        if let proto::ServerMsg::Error { message, .. } = common::next_control(&mut ws).await {
+            assert!(
+                message.contains("job limit 128, actual 128, requested 1"),
+                "{message}"
+            );
+            assert!(message.contains("nothing was written"), "{message}");
+            break;
+        }
+    }
+    let refused = daemon.write_stdin_counting(id, b"direct").unwrap_err();
+    assert!(refused.nothing_written());
+    assert!(refused
+        .to_string()
+        .contains("job limit 128, actual 128, requested 1"));
+    control(
+        &mut ws,
+        proto::ClientMsg::SessionKill {
+            session: id,
+            confirm_children: None,
+        },
+    )
+    .await;
+    let mut cancellations = 0;
+    let mut partial = false;
+    wall_timeout(Duration::from_secs(15), async {
+        while cancellations < 128 {
+            let Some(Ok(Message::Text(text))) = ws.next().await else {
+                continue;
+            };
+            if let proto::ServerMsg::Error { message, context } =
+                serde_json::from_str(&text).unwrap()
+            {
+                assert_eq!(context.as_deref(), Some("stdin"));
+                assert!(message.contains("stdin delivery failed"), "{message}");
+                assert!(!message.contains("cannot say how much"), "{message}");
+                partial |= message.contains("byte(s) had already been written");
+                cancellations += 1;
+            }
+        }
+    })
+    .await
+    .expect("every accepted job must receive an explicit cancellation result");
+    assert!(
+        partial,
+        "the active delivery must report the bytes accepted before cancellation"
+    );
+    wall_timeout(Duration::from_secs(15), async {
+        while daemon.stdin_write_in_progress_for_test(id) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("all admitted input outcomes must finish");
 }

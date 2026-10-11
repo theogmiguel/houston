@@ -42,6 +42,15 @@ from the command palette's **Run** group; Houston opens a real shell pane and su
 command there. Edit or delete an action from its More actions menu. Deleting asks for
 confirmation.
 
+## Terminal input
+
+Input is delivered in order even when a program temporarily stops reading it. Other panes
+and resize or termination requests remain available. Each session can admit up to 4 MiB
+and 128 pending input writes, including the active write. An error names the limit if a
+write cannot be admitted; retry that input after the program resumes reading. Terminating
+the session cancels pending input and reports delivery failures, including any bytes
+already written. Input already admitted continues after disconnecting the client.
+
 ## Splitting and stacking
 
 Split a cell to place two panes side by side, or stack several panes into one cell as a

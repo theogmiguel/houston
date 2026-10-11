@@ -264,6 +264,15 @@ disconnected; it never stalls the PTY. `OUTBOUND_CAPACITY`'s 4096-slot `tokio::b
 separate channel for control messages only: a client that lags on it gets a `control_lag` error
 and is disconnected so its reconnect resyncs full state (`server.rs`).
 
+Terminal input shares one FIFO writer per session across renderer frames, daemon callers and
+emulator replies. Admission bounds active plus queued input to 4 MiB and 128 jobs; a refusal
+names both limits, their current values and the requested write. Renderer admission never
+waits for PTY delivery, and terminal replies do not block the output reader. Accepted jobs
+continue after client disconnect; session termination interrupts active PTY delivery and
+returns explicit outcomes for queued jobs. PTY failures report the bytes already written.
+Handoff refuses while stdin delivery or its completion handling remains in flight, because
+queued input is not part of the adoption manifest.
+
 ## The emulator
 
 Each session owns one libghostty-vt terminal (`vt.rs`), built natively into the daemon from the
