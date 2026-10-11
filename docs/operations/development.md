@@ -378,9 +378,8 @@ out to `oxlint` (pinned exactly in `package.json`, one rule armed via `-A all
 `ui/complexity-baseline.json` — one pin per file, holding its over-ceiling
 function count and its worst function's score, both only ever falling. A file
 absent from the baseline must have zero. **Scope is `.tsx` only**: the same
-scan over `.ts` flags `writeQueue.ts`'s `findSafeSplit` (a VT
-escape-sequence state machine) and `tree.ts`'s `isNode` (a
-discriminated-union validator), which score high by being correct — the metric
+scan over `.ts` flags `tree.ts`'s `isNode` (a discriminated-union validator),
+which scores high by being correct — the metric
 cannot tell irreducible states from accidental ones, and component bodies are
 where the accidental branches land. `--baseline` prints a fresh block.
 ~0.1 s over 109 files, so it belongs in the per-item loop too.

@@ -80,10 +80,13 @@ remain in the roster keep their readiness suppression until removal.
 `write`. It is not queued — a keystroke goes straight out.
 
 `PaneWriteQueue` (`pane/writeQueue.ts`) is the **inbound** pipeline, between arriving frames
-and the engine's synchronous `term.write`. It owns escape-safe chunking (`findSafeSplit`
-never manufactures a cut inside a CSI, OSC/DCS/PM/APC/SOS, a bare two-byte escape, or a
-multi-byte UTF-8 codepoint), a single-write-in-flight gate, a stalled-write watchdog, and
-the overflow policy. When the queue passes its cap, a synced pane whose daemon has an
+and the engine's synchronous `term.write`. It owns a hard byte chunk ceiling,
+a single-write-in-flight gate, a stalled-write watchdog, and
+the overflow policy. The persistent libghostty WASM parser retains control-sequence
+and UTF-8 state across writes; chunks can end inside either. Real-WASM regressions
+compare whole and fragmented streams, including long OSC/DCS, modes and replies.
+The byte ceiling does not establish a wall-clock responsiveness bound.
+When the queue passes its cap, a synced pane whose daemon has an
 emulator discards the backlog and reattaches from a snapshot. The daemon has parsed every
 byte, so the screen comes back exact, and stdin stays live while the snapshot is in flight.
 Without a snapshot path, the queue drops its oldest bytes and says so in the pane.
@@ -92,7 +95,7 @@ queueing, so a small overlap tail does not retain the entire replay while waitin
 
 | Constant | Value | Reason |
 |---|---|---|
-| `DEFAULT_CHUNK_BYTES` | 256 KiB | ~8 ms of blocking parse — half a 60 Hz frame — with a yield between chunks |
+| `DEFAULT_CHUNK_BYTES` | 256 KiB | hard ceiling for synchronous parsing, with a yield between chunks |
 | `DEFAULT_MAX_QUEUED_BYTES` | 2 MiB | queue cap |
 | `DEFAULT_DROP_TARGET_FRACTION` | 0.75 | evict to 75 % of the cap so an episode is one hole, not per-frame thrash |
 | `DEFAULT_BATCH_WINDOW_MS` | 4 | a quarter-frame of write batching; small writes bypass it |

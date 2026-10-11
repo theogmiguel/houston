@@ -1,91 +1,3 @@
-export function findSafeSplit(data: Uint8Array, maxLen: number): number {
-  if (data.length <= maxLen) return data.length
-
-  const ESC = 0x1b
-  type State = 'ground' | 'esc' | 'csi' | 'osc' | 'str' | 'utf8'
-  let state: State = 'ground'
-  let utf8Remaining = 0
-  let lastSafe = 0
-  let i = 0
-
-  while (i < maxLen) {
-    const b = data[i]
-    switch (state) {
-      case 'ground':
-        i++
-        if (b === ESC) {
-          state = 'esc'
-        } else if (b >= 0xc2 && b <= 0xdf) {
-          state = 'utf8'
-          utf8Remaining = 1
-        } else if (b >= 0xe0 && b <= 0xef) {
-          state = 'utf8'
-          utf8Remaining = 2
-        } else if (b >= 0xf0 && b <= 0xf4) {
-          state = 'utf8'
-          utf8Remaining = 3
-        } else {
-          lastSafe = i
-        }
-        break
-      case 'utf8':
-        if ((b & 0xc0) === 0x80) {
-          i++
-          utf8Remaining--
-          if (utf8Remaining === 0) {
-            state = 'ground'
-            lastSafe = i
-          }
-        } else {
-          state = 'ground'
-        }
-        break
-      case 'esc':
-        i++
-        if (b === 0x5b) state = 'csi'
-        else if (b === 0x5d) state = 'osc'
-        else if (b === 0x50 || b === 0x58 || b === 0x5e || b === 0x5f) {
-          state = 'str'
-        } else {
-          state = 'ground'
-          lastSafe = i
-        }
-        break
-      case 'csi':
-        i++
-        if (b >= 0x40 && b <= 0x7e) {
-          state = 'ground'
-          lastSafe = i
-        }
-        break
-      case 'osc':
-        if (b === 0x07) {
-          i++
-          state = 'ground'
-          lastSafe = i
-        } else if (b === ESC && data[i + 1] === 0x5c && i + 2 <= maxLen) {
-          i += 2
-          state = 'ground'
-          lastSafe = i
-        } else {
-          i++
-        }
-        break
-      case 'str':
-        if (b === ESC && data[i + 1] === 0x5c && i + 2 <= maxLen) {
-          i += 2
-          state = 'ground'
-          lastSafe = i
-        } else {
-          i++
-        }
-        break
-    }
-  }
-
-  return lastSafe === 0 ? data.length : lastSafe
-}
-
 export function findResyncStart(data: Uint8Array): number {
   const end = Math.min(data.length, RESYNC_WINDOW_BYTES)
   for (let i = 0; i < end; i++) {
@@ -145,9 +57,8 @@ export interface WriteQueueOptions {
   dropTargetFraction?: number
 }
 
-// 256 KiB is a responsiveness budget, not a memory one: ghostty parses
-// synchronously at ~32 ms/MiB, so a chunk is ~8 ms of blocking, half a 60 Hz
-// frame, with the queue yielding between chunks. Larger trades latency for throughput.
+// Bound each synchronous parser call and yield between calls. The persistent
+// WASM parser owns control-sequence and UTF-8 state across write boundaries.
 const DEFAULT_CHUNK_BYTES = 256 * 1024
 const DEFAULT_MAX_QUEUED_BYTES = 2 * 1024 * 1024
 const DEFAULT_WATCHDOG_MS = 10_000
@@ -208,6 +119,9 @@ export class PaneWriteQueue {
   constructor(opts: WriteQueueOptions) {
     this.write = opts.write
     this.chunkBytes = opts.chunkBytes ?? DEFAULT_CHUNK_BYTES
+    if (!Number.isSafeInteger(this.chunkBytes) || this.chunkBytes <= 0) {
+      throw new Error(`Parser chunk budget ${this.chunkBytes}: expected a positive safe integer`)
+    }
     this.maxQueuedBytes = opts.maxQueuedBytes ?? DEFAULT_MAX_QUEUED_BYTES
     this.watchdogMs = opts.watchdogMs ?? DEFAULT_WATCHDOG_MS
     this.smallWriteBytes = opts.smallWriteBytes ?? DEFAULT_SMALL_WRITE_BYTES
@@ -231,7 +145,7 @@ export class PaneWriteQueue {
 
   enqueue(data: Uint8Array, exempt = false): void {
     if (this.disposed || data.length === 0) return
-    if (data.length <= this.smallWriteBytes && this.queue.length === 0 && !this.inFlight) {
+    if (data.length <= this.smallWriteBytes && data.length <= this.chunkBytes && this.queue.length === 0 && !this.inFlight) {
       this.startWrite(data)
       return
     }
@@ -383,7 +297,7 @@ export class PaneWriteQueue {
       total += piece.data.length
     }
     const merged = concatBytes(pieces.map((p) => p.data))
-    const splitAt = findSafeSplit(merged, this.chunkBytes)
+    const splitAt = Math.min(merged.length, this.chunkBytes)
     if (splitAt >= merged.length) return merged
 
     let restIsWarning = false
