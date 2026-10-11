@@ -611,6 +611,7 @@ pub struct Session {
     park: Arc<ParkState>,
     reader_done: Arc<(Mutex<bool>, std::sync::Condvar)>,
     reader_cancel: AtomicBool,
+    reader_worker: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 #[derive(Default)]
@@ -2295,6 +2296,14 @@ impl Drop for SessionStartup {
         }
         if let Some(session) = &self.session {
             session.backend.release_pty();
+            if let Some(worker) = session
+                .reader_worker
+                .lock()
+                .expect("reader worker lock")
+                .take()
+            {
+                let _ = worker.join();
+            }
         }
         for worker in self.workers.drain(..) {
             let _ = worker.join();
@@ -4757,6 +4766,7 @@ impl Daemon {
             park: Arc::new(ParkState::default()),
             reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
             reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
         })
     }
 
@@ -9934,8 +9944,10 @@ impl Daemon {
         session: &Arc<Session>,
         reader: Box<dyn Read + Send>,
     ) {
-        self.prepare_pty_reader_thread(id, session, reader, None)
+        let worker = self
+            .prepare_pty_reader_thread(id, session, reader, None)
             .expect("spawn pty reader thread");
+        *session.reader_worker.lock().expect("reader worker lock") = Some(worker);
     }
 
     fn prepare_pty_reader_thread(
@@ -10036,6 +10048,9 @@ impl Daemon {
                     daemon.persist_scrollback(id);
                     daemon.note_backend_eof_for_supervisor(id);
                 }
+                drop(reader);
+                #[cfg(unix)]
+                drop(poll_fd);
                 let (done, changed) = &*reader_session.reader_done;
                 *done.lock().expect("reader done lock") = true;
                 changed.notify_all();
@@ -10591,6 +10606,7 @@ impl Daemon {
             park: Arc::new(ParkState::default()),
             reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
             reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
         });
         startup.session = Some(Arc::clone(&session));
         let prepare = || -> Result<()> {
@@ -10599,7 +10615,7 @@ impl Daemon {
             let worker = self
                 .prepare_pty_reader_thread(id, &session, reader, Some(Arc::clone(&startup.gate)))
                 .context("starting PTY reader worker")?;
-            startup.workers.push(worker);
+            *session.reader_worker.lock().expect("reader worker lock") = Some(worker);
             let daemon = Arc::clone(self);
             let child = Arc::clone(&startup.child);
             let owned_session = Arc::clone(&session);
@@ -11078,6 +11094,7 @@ impl Daemon {
             park: Arc::new(ParkState::default()),
             reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
             reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
         });
         self.sessions
             .lock()
@@ -12426,6 +12443,17 @@ impl Daemon {
                     .expect("reader close wait");
                 if result.timed_out() {
                     bail!("session {id}: PTY reader exceeded close drain limit 1000 ms");
+                }
+                drop(_done);
+                if let Some(worker) = session
+                    .reader_worker
+                    .lock()
+                    .expect("reader worker lock")
+                    .take()
+                {
+                    worker
+                        .join()
+                        .map_err(|_| anyhow!("session {id}: PTY reader panicked during close"))?;
                 }
             }
         }

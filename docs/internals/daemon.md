@@ -252,7 +252,7 @@ One OS thread per session, named `pty-read-<id>`, loops on `reader.read(&mut buf
 fixed `PTY_READ_BUF` of 16 KiB. Unix polls a retained descriptor at 50 ms intervals to
 observe cancellation without relying on a signal to interrupt an unentered read. Close
 allows a final drain of available bytes for at most 100 ms and waits up to one second for
-reader completion before removing the pane. Reader thread identities are cleared before
+reader completion and joins its owned worker before removing the pane. Reader thread identities are cleared before
 thread exit. Shutdown includes Exited panes with retained readers; generation handoff
 refuses those panes until they are closed because the live-session manifest cannot carry
 this ownership. There is no output coalescing: one frame per read.
