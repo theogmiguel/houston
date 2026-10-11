@@ -721,6 +721,10 @@ impl WriteInterrupt {
         WriteThread(self)
     }
 
+    pub(crate) fn active_for_test(&self) -> bool {
+        self.thread.lock().expect("write thread lock").is_some()
+    }
+
     pub(crate) fn cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
     }
@@ -919,11 +923,13 @@ impl Backend {
                 StdinWriteError::unknown(e.context(format!("writing stdin to ssh session {id}")))
             }),
             #[cfg(unix)]
-            Backend::AdoptedPty(raw) => raw.write_all(data).map_err(|e| {
-                StdinWriteError::unknown(
-                    e.context(format!("writing stdin to adopted session {id}")),
-                )
-            }),
+            Backend::AdoptedPty(raw) => {
+                raw.write_all_counting(data)
+                    .map_err(|(written, error)| StdinWriteError {
+                        written: Some(written),
+                        error: error.context(format!("writing stdin to adopted session {id}")),
+                    })
+            }
         }
     }
 
@@ -11316,6 +11322,26 @@ impl Daemon {
             Ok(session) => session.stdin_writes_in_flight.load(Ordering::Acquire) != 0,
             Err(_) => false,
         }
+    }
+
+    #[doc(hidden)]
+    #[cfg(unix)]
+    pub fn stdin_writer_receipt_for_test(
+        &self,
+        id: u32,
+    ) -> Result<Box<dyn Fn() -> bool + Send + Sync>> {
+        let session = self.get(id)?;
+        Ok(Box::new(move || match &session.backend {
+            Backend::Pty { interrupt, .. } => interrupt.active_for_test(),
+            Backend::AdoptedPty(raw) => raw.writer_active_for_test(),
+            Backend::Ssh(_) => false,
+        }))
+    }
+
+    #[doc(hidden)]
+    pub fn stdin_cleanup_for_test(&self, id: u32) -> Result<Box<dyn FnOnce() + Send>> {
+        let session = self.get(id)?;
+        Ok(Box::new(move || session.backend.release_pty()))
     }
 
     pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(u16, u16)> {

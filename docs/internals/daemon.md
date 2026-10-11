@@ -218,7 +218,9 @@ pins the byte cap near the measured 258 KiB/12-session number this forbids blowi
 reconstructs each session on `adoption::RawMasterPty` (`portable_pty::MasterPty` has no
 `from_raw_fd` counterpart to its own `as_raw_fd`) and acks **prepared**; a refusal or failure up
 to this point is fully reversible — O un-parks every session and keeps serving, C exits having
-touched nothing durable.
+touched nothing durable. Adopted PTYs keep separate descriptors and mutexes for writes
+and terminal control. Termination can therefore signal the foreground process group while
+stdin is blocked, then interrupt the writer without losing the control descriptor.
 
 O then sends **commit**; C writes the commit record into `daemon.json` (`{pid, pid_creation,
 build, generation}`, atomic rename) *before* acking, so a lost acknowledgement still leaves O
