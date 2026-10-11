@@ -1,7 +1,13 @@
 # Usage
 
-The Usage page shows token totals and estimated costs for transcripts Houston can read. Open it from the rail or press **Ctrl+U** (**⌘+U** on macOS).
-Use the workspace, metric and time range controls in the page header to change the totals. The activity calendar keeps daily totals for up to 365 days, including days whose source transcripts have since been removed. Selecting a day filters the breakdown when detailed records are available.
+The Usage page shows token totals and estimated costs for transcripts Houston can read.
+Open it from the rail or press **Ctrl+U**. Filter by workspace, metric and time range.
+Costs are broken down by input, output, cache reads and cache writes, and by speed tier
+when the provider reports it. The chart shows hourly or daily totals for the selected range.
+
+The activity calendar keeps daily totals for up to 365 days, including days whose source
+transcripts have since been removed. Selecting a day filters the breakdown when detailed
+records are available.
 
 ## What it covers
 

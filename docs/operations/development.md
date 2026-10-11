@@ -8,6 +8,8 @@ what each OS's build produces. Production launch is `scripts/start.sh`
 
 ## First checkout
 
+### Linux prerequisites
+
 Prerequisites, installed once on a bare Debian/Ubuntu machine (another
 distribution's package names will differ):
 
@@ -71,6 +73,28 @@ focuses the running instance instead of loading the rebuilt renderer.
 
 Development state lives in `~/.houston-dev`; see the next section for why
 that matters before you run anything else.
+
+### Windows prerequisites
+
+Use Windows 10 or 11 on x86_64 with the Rust MSVC toolchain, Visual Studio C++
+build tools and a Windows SDK. Install Git for Windows, Bun, a current Node.js
+release, Google Chrome for the renderer gates, and the same pinned Tauri CLI
+listed above. The app uses WebView2; install its runtime if it is missing.
+
+From PowerShell, run `bun install --frozen-lockfile` in `ui`, then return to the
+repository root:
+
+```powershell
+$env:CARGO_BUILD_JOBS = '3'
+./scripts/dev.ps1
+./scripts/dev.ps1 --fresh
+```
+
+The script builds the renderer, debug daemon and hook helper, stages the native
+sidecars and starts the debug app on the `dev` channel. `--fresh` builds first,
+then requests a daemon restart, and refuses to restart the channel hosting its
+own pane. State lives in `%USERPROFILE%\.houston-dev`. WSL resources are required
+for a packaged Windows installer; see [Windows artifacts](#windows).
 
 ## Dev channel vs release channel
 

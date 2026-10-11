@@ -1,22 +1,28 @@
 # Dictation
 
-Dictation lets you speak into a pane instead of typing. In Settings, this section is
-labelled **Dictation** even though its internal id is `voice` — if you're searching
-settings source or exported config for it, look for `voice`.
+Dictation lets you speak into a pane instead of typing. Configure its engine, microphone
+and activation key in **Settings ▸ Dictation**.
 
-## The one fact that matters most: what leaves your machine
+## Engines and network use
 
 Dictation has two engines, and they differ in exactly this:
 
 - **Local (whisper.cpp, offline)** — audio never leaves your machine. Transcription
   runs against a downloaded model file on your own disk.
 - **Cloud (Groq whisper-large-v3)** — your recorded audio is sent to Groq's API for
-  transcription. Cloud is described as better at Brazilian Portuguese, but that quality
-  trade comes with sending audio off the machine.
+  transcription.
 
-Nothing is recorded and no microphone is opened while dictation is off, for either
-engine — the mic only opens according to the activation and microphone settings below,
-and only once dictation is turned on.
+Linux supports both engines. On Windows, use Groq: the local Whisper engine is not
+available, and selecting it reports that platform limit.
+
+Paired phones and other devices can also dictate through Houston when you enable
+**Settings ▸ Remote access ▸ Dictation ▸ Allow dictation from paired devices**. They use
+this computer's selected engine and need trusted HTTPS for microphone access; see
+[Remote access](remote-access.md#dictate-instead-of-typing).
+
+Desktop dictation records nothing and never opens this computer's microphone while it
+is off. Once enabled, it follows the activation and microphone settings below. The
+paired-device setting controls uploaded recordings independently of desktop dictation.
 
 ## The API key, and where it is stored
 

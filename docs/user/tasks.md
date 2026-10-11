@@ -1,14 +1,8 @@
 # Tasks
 
-Tasks are one global local backlog, visible from every workspace. **All** is the default
-view; **This workspace** filters to the current workspace, and each viewer remembers its
-choice. In All, rows show the workspace folder name or **No workspace**; hover over the
-workspace name to see its full path. Open the **Tasks** tab in the side
-panel beside **Source control** and **Files**. The list is grouped by status with a count
-per group: **In progress**, **In review**, **Todo**, **Backlog**, **Done** and **Canceled**.
-Each row carries a priority glyph, the task key (`HOU-1`), its title and the time since it
-last changed. The **Done** and **Canceled** groups start collapsed; click a group header to
-fold or unfold it. **Archived** tasks sit in a final collapsed group.
+Tasks are one global local backlog, visible from every workspace. Open **Tasks** from the
+rail. Select a workspace to see its tasks, or **All workspaces** for the full backlog,
+including unassigned tasks. A task keeps its key and history when its workspace changes.
 
 ## Tasks page
 
@@ -21,18 +15,18 @@ the agent's question when Houston has received one. Select a task to open its de
 the list. The detail header offers the queue's next step, such as **Answer** or **Review
 changes**, keeps acceptance items toggleable, and its **…** menu includes **Open session**
 and task actions. Search by title or key, or filter the list to one project or to tasks
-without a project. The Tasks side panel remains available as a shortcut.
+without a project. **By project** groups deliveries and their slices instead of queue state.
 
 ## Creating and editing
 
-Ctrl/Cmd-click a task key (`HOU-3`) in a terminal to open that task in the Tasks tab. The
+Ctrl-click a task key (`HOU-3`) in a terminal to open that task on the Tasks page. The
 key links only when the loaded list knows it. With text selected in a terminal, the command
 palette's **New task from terminal selection** creates a task whose description is that
 selection and whose title is its first line, then opens the task.
 
-Choose **New task** in the tab header, or the plus on a group header to create straight into
-that status. A task has a title, a description, a status, a priority and an optional parent
-task, and an optional workspace. New tasks use the current workspace when one is selected;
+Choose **New task** on the Tasks page. A task has a title, a description, a status, a
+priority, an optional parent task and an optional workspace. New tasks use the current
+workspace when one is selected;
 otherwise they are unassigned. The **Workspace** property assigns a registered workspace
 or clears it with **No workspace**. A task keeps its globally unique `HOU-<n>` key when its
 workspace changes; the fixed prefix is always `HOU` and numbers are never reused.
@@ -149,9 +143,10 @@ to review.
 
 ## Agent access
 
-Settings ▸ Tasks controls whether agents running in a workspace may read and write the backlog. **Off** withholds them entirely, **Read only** lets them look but not change, and
-**Read and write** allows both. The current value is shown on the settings row and in the
-Tasks tab's menu, and a write that the setting refuses names the setting that has to change.
+Settings ▸ Tasks controls whether agents running in a workspace may read and write the
+backlog. **Off** withholds them entirely, **Read only** lets them look but not change, and
+**Read and write** allows both. The settings show the current value, and a refused write
+names the setting that has to change.
 Changing access applies to the workspace selected in the sidebar, and open agent sessions
 learn about the change immediately: the tools appear or disappear from their list.
 

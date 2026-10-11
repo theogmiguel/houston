@@ -71,16 +71,16 @@ body:
     attributes:
       label: Houston version
       description: Settings ▸ About shows the installed version.
-      placeholder: e.g. 0.4.2
+      placeholder: e.g. 0.17.4
     validations:
       required: true
 
   - type: input
     id: os
     attributes:
-      label: OS and desktop environment
-      description: On Linux, your window manager/compositor matters — Houston is a GTK/WebKit app.
-      placeholder: e.g. Fedora 40, GNOME 46 on Wayland
+      label: OS and environment
+      description: On Linux, include the distribution, desktop and Wayland or X11. On Windows, include the Windows version/build and the WSL distro if affected.
+      placeholder: e.g. Ubuntu 24.04, GNOME on Wayland; or Windows 11, build 26100, WSL 2 Ubuntu 24.04
     validations:
       required: true
 
@@ -89,6 +89,6 @@ body:
     attributes:
       label: Logs
       description: |
-        Settings ▸ Diagnostics ▸ Copy diagnostics gives the useful block. Please check it
+        Settings ▸ Daemon ▸ Copy diagnostics gives the useful block. Please check it
         for anything private (paths, project names, pasted secrets) before pasting here.
       render: shell

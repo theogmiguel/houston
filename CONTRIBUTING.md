@@ -8,8 +8,8 @@ things at once.
 
 - Keep a change scoped to one user-facing improvement, bug fix or refactor. If your PR
   description needs the word "also", it is probably two PRs.
-- Linux is the lead platform, and Windows must keep compiling. Behaviour behind a `cfg`
-  needs a named twin on the other platform, or a named refusal — never a silent gap.
+- Linux and Windows are supported release platforms. Behaviour behind a `cfg` needs an
+  equivalent on the other platform, or an explicit refusal that names the platform.
 - Anything that touches an agent CLI stays provider-neutral: a provider Houston doesn't
   support for that feature is refused **by name**, never silently ignored.
 - UI work follows [`docs/internals/styleguide.md`](docs/internals/styleguide.md) — tokens
@@ -22,9 +22,18 @@ things at once.
 Prerequisites and the exact install commands are in the "First checkout" section of
 [`docs/operations/development.md`](docs/operations/development.md).
 
-```
+Linux:
+
+```sh
 ./scripts/dev.sh                 # dev channel, build + run
 ./scripts/dev.sh --fresh         # stop+restart the daemon fresh
+```
+
+Windows, from PowerShell:
+
+```powershell
+./scripts/dev.ps1                # dev channel, build + run
+./scripts/dev.ps1 --fresh        # stop+restart the daemon fresh
 ```
 
 Full setup, the dev/release channel split, and every environment knob:
@@ -54,8 +63,9 @@ Run the gates for whatever you touched.
   own and touched test binaries.
 - `ui`: `bun run typecheck` plus the item's own and touched test files.
 
-**Before every push, and at the end of a work block** — the full suites, inside
-`scripts/oom-shield.sh`:
+**Before every push, and at the end of a work block** — the full suites. On Linux,
+run them inside `scripts/oom-shield.sh`. On Windows, set `$env:CARGO_BUILD_JOBS = '3'`
+in PowerShell. Never run concurrent Cargo workloads.
 
 **`core/`**:
 

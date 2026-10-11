@@ -1,6 +1,10 @@
 # Houston docs
 
-Two halves. The first is for using Houston; the second is for working on it.
+Documentation for using and contributing to Houston on Linux and Windows.
+
+Documentation on `main` follows the current source, including changes awaiting a release.
+For an installed build, use the documentation at its version tag from the
+[releases page](https://github.com/theogmiguel/houston/releases).
 
 ## Using Houston
 
@@ -8,13 +12,15 @@ Two halves. The first is for using Houston; the second is for working on it.
   installs into each agent CLI (and how to undo it)
 - [Panes and grids](user/panes-and-grids.md) — workspaces, sessions, splits, scrollback
 - [Agent status](user/agent-status.md) — how Houston knows what an agent is doing, and
-  Settings ▸ Agent setup
+  Settings ▸ Agents
 - [Context](user/context.md) — the pane-header indicator that shows context use, which
   providers it covers, and how to hide it
 - [Orchestration](user/orchestration.md) — letting an agent open and drive other panes
 - [Routines](user/routines.md) — scheduling repeatable work in an agent pane
-- [Tasks](user/tasks.md) — a local backlog per workspace and the access agents get to it
+- [Tasks](user/tasks.md) — a global local backlog, workspace access, execution and review
 - [Slack requests](user/slack.md) — filing a Slack mention as a task the owner starts, and what that sends
+- [Harness review](user/harness-review.md) — session findings, linked fix tasks and verification
+- [Connections](user/connections.md) — MCP configuration, connection checks and Slack setup
 - [Changes](user/changes.md) — the git surface
 - [Files, editor and browser panes](user/files-editor-browser.md) — the three non-terminal
   pane types, and the browser pane's consent model
@@ -26,6 +32,7 @@ Two halves. The first is for using Houston; the second is for working on it.
 - [Usage](user/usage.md) — token and cost figures, and what they do not cover
 - [Keybindings](user/keybindings.md) — what is rebindable, and passing keys through
 - [Appearance](user/appearance.md) — themes, the window background, terminal settings
+- [Notifications](user/notifications.md) — turn completion and input notices, sound and platform limits
 - [Updating Houston](user/updating.md) — the update check, and the signed click that installs
 
 ## Working on Houston

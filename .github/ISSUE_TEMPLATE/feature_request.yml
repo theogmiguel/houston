@@ -42,5 +42,5 @@ body:
       value: |
         If this feature touches how Houston talks to an agent CLI, it needs to work for
         every provider Houston hosts (Claude Code, Codex, Antigravity, OpenCode, Cursor,
-        Grok) — or explicitly refuse by name for the ones it doesn't support. Please
+        Grok and ZCode) — or explicitly refuse by name for the ones it doesn't support. Please
         note which providers you've thought through, if any.
