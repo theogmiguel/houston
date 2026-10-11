@@ -9,13 +9,17 @@ use crate::daemon::Daemon;
 const UPDATES_CHECK_KEY: &str = "updates_check";
 // Check frequently enough to surface new releases and models within the working day.
 pub(crate) const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
-// The repository the four manifests name. One constant, so a rename moves one line.
-const RELEASES_LATEST_URL: &str =
-    "https://api.github.com/repos/theogmiguel/houston/releases/latest";
-// GitHub refuses a request with no User-Agent. This one names the product and
-// nothing else: no version, no OS, no identifier.
+// The Tauri updater manifest the desktop app also reads. Unlike the REST API it has no
+// 60-requests-per-hour anonymous quota shared by everyone behind one public IP. One
+// constant, so a repository rename moves one line.
+const UPDATE_MANIFEST_URL: &str =
+    "https://github.com/theogmiguel/houston/releases/latest/download/latest.json";
+// Release page for a version; the manifest carries notes but not a page URL.
+const RELEASE_PAGE_PREFIX: &str = "https://github.com/theogmiguel/houston/releases/tag/v";
 /// Replaces the manifest URL. Tests set it so no daemon reaches the real endpoint.
 pub const UPDATE_MANIFEST_URL_ENV: &str = "HOUSTON_UPDATE_MANIFEST_URL";
+// GitHub refuses a request with no User-Agent. This one names the product and
+// nothing else: no version, no OS, no identifier.
 const USER_AGENT: &str = "houston";
 // A check that outlives this is a hung request, not a slow release.
 const REQUEST_TIMEOUT_SECS: u64 = 10;
@@ -24,14 +28,6 @@ const REQUEST_TIMEOUT_SECS: u64 = 10;
 pub(crate) struct ReleaseCache {
     etag: Option<String>,
     release: Option<Option<proto::UpdateRelease>>,
-}
-
-/// Resolves an endpoint: the environment override when set and non-empty, else `default`.
-pub(crate) fn endpoint(var: &str, default: &str) -> String {
-    match std::env::var(var) {
-        Ok(url) if !url.trim().is_empty() => url.trim().to_string(),
-        _ => default.to_string(),
-    }
 }
 
 /// Compares two `MAJOR.MINOR.PATCH` strings, tolerating a leading `v` and ignoring
@@ -82,50 +78,52 @@ fn first_chars(s: &str) -> String {
     s.chars().take(200).collect()
 }
 
-/// Reads a release body, rejecting a draft and a prerelease unconditionally: an
-/// rc must never reach a stable install, and a candidate is installed by hand.
-/// An error names the missing field and the body's first 200 characters.
+/// Resolves an endpoint: the environment override when set and non-empty, else `default`.
+pub(crate) fn endpoint(var: &str, default: &str) -> String {
+    match std::env::var(var) {
+        Ok(url) if !url.trim().is_empty() => url.trim().to_string(),
+        _ => default.to_string(),
+    }
+}
+
+/// Reads the `latest.json` updater manifest. A prerelease version is refused
+/// unconditionally: an rc must never reach a stable install, and a candidate is installed
+/// by hand. An error names the missing field and the body's first 200 characters.
 fn parse_latest_release(body: &str) -> anyhow::Result<Option<proto::UpdateRelease>> {
     let v: serde_json::Value = serde_json::from_str(body).map_err(|e| {
         anyhow!(
-            "releases/latest body is not JSON ({e}); body starts: {}",
+            "latest.json body is not JSON ({e}); body starts: {}",
             first_chars(body)
         )
     })?;
-    let draft = v.get("draft").and_then(serde_json::Value::as_bool) == Some(true);
-    let prerelease = v.get("prerelease").and_then(serde_json::Value::as_bool) == Some(true);
-    if draft || prerelease {
+    let raw = v
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            anyhow!(
+                "latest.json payload has no string `version` (expected `version`, optional `notes`); body starts: {}",
+                first_chars(body)
+            )
+        })?;
+    let version = trim_version(raw);
+    if parse_semver(version).is_none() {
+        return Err(anyhow!(
+            "latest.json `version` is {raw:?}; expected MAJOR.MINOR.PATCH with an optional leading v"
+        ));
+    }
+    if version.contains('-') {
         return Ok(None);
     }
-    let tag = v
-        .get("tag_name")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| {
-            anyhow!(
-                "releases/latest payload has no string `tag_name`; body starts: {}",
-                first_chars(body)
-            )
-        })?;
-    let notes_url = v
-        .get("html_url")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| {
-            anyhow!(
-                "releases/latest payload has no string `html_url`; body starts: {}",
-                first_chars(body)
-            )
-        })?;
-    // `body` is null on a release with no description, which is a normal state
-    // and reads as no notes rather than a failed check.
+    // `notes` is absent or null on a release with no description, which is a normal
+    // state and reads as no notes rather than a failed check.
     let notes = v
-        .get("body")
+        .get("notes")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
-    let version = tag.strip_prefix('v').unwrap_or(tag).to_string();
     Ok(Some(proto::UpdateRelease {
-        version,
+        version: version.to_string(),
         notes: notes.to_string(),
-        notes_url: notes_url.to_string(),
+        notes_url: format!("{RELEASE_PAGE_PREFIX}{version}"),
     }))
 }
 
@@ -181,7 +179,7 @@ impl Daemon {
         self.broadcast_control(&self.update_snapshot());
 
         let state = match self
-            .fetch_latest(&endpoint(UPDATE_MANIFEST_URL_ENV, RELEASES_LATEST_URL))
+            .fetch_latest(&endpoint(UPDATE_MANIFEST_URL_ENV, UPDATE_MANIFEST_URL))
             .await
         {
             Ok(Some(release)) => {
@@ -230,13 +228,13 @@ impl Daemon {
         if response.status() == reqwest::StatusCode::NOT_MODIFIED {
             if cache.etag.is_none() {
                 return Err(anyhow!(
-                    "releases/latest returned 304 without a cached validator"
+                    "latest.json returned 304 without a cached validator"
                 ));
             }
             let release = cache
                 .release
                 .clone()
-                .ok_or_else(|| anyhow!("releases/latest returned 304 without a cached release"))?;
+                .ok_or_else(|| anyhow!("latest.json returned 304 without a cached release"))?;
             if let Some(etag) = response
                 .headers()
                 .get(reqwest::header::ETAG)
@@ -301,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn release_etag_reuses_the_last_good_payload_across_304_and_failure() {
-        let payload = r#"{"tag_name":"v99.0.0","html_url":"https://example.com/r"}"#;
+        let payload = r#"{"version":"99.0.0","notes":"n"}"#;
         let ok = format!(
             "HTTP/1.1 200 OK\r\nETag: \"release-1\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             payload.len(),
@@ -401,11 +399,8 @@ mod tests {
     }
 
     #[test]
-    fn draft_and_prerelease_are_refused_unconditionally() {
-        let draft =
-            r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r","draft":true,"assets":[]}"#;
-        assert!(parse_latest_release(draft).unwrap().is_none());
-        let pre = r#"{"tag_name":"v1.3.0-rc.1","name":"Houston 1.3.0-rc.1","html_url":"https://example.com/r","prerelease":true,"assets":[]}"#;
+    fn a_prerelease_version_is_refused_unconditionally() {
+        let pre = r#"{"version":"1.3.0-rc.1","notes":"n","pub_date":"2026-01-01T00:00:00Z","platforms":{}}"#;
         assert!(
             parse_latest_release(pre).unwrap().is_none(),
             "a release candidate must never be offered to a stable install"
@@ -420,22 +415,18 @@ mod tests {
     }
 
     #[test]
-    fn realistic_payload_picks_version_notes_and_release_page() {
+    fn realistic_manifest_picks_version_notes_and_builds_the_release_page() {
         let body = r###"{
-          "tag_name": "v1.2.3",
-          "html_url": "https://github.com/theogmiguel/houston/releases/tag/v1.2.3",
-          "body": "## What changed\n\n- a fix\n- a feature",
-          "draft": false,
-          "prerelease": false,
-          "assets": [
-            {"name":"Houston_1.2.3_amd64.AppImage","browser_download_url":"https://example.com/Houston.AppImage"}
-          ]
+          "version": "v1.2.3",
+          "notes": "## What changed\n\n- a fix\n- a feature",
+          "pub_date": "2026-01-01T00:00:00Z",
+          "platforms": {"linux-x86_64": {"signature": "s", "url": "https://example.com/Houston.AppImage"}}
         }"###;
         let release = parse_latest_release(body).unwrap().expect("a release");
         assert_eq!(release.version, "1.2.3", "the leading v is stripped");
         assert_eq!(
             release.notes, "## What changed\n\n- a fix\n- a feature",
-            "the release body rides through verbatim"
+            "the notes ride through verbatim"
         );
         assert_eq!(
             release.notes_url,
@@ -444,21 +435,31 @@ mod tests {
     }
 
     #[test]
-    fn a_release_with_no_body_carries_empty_notes() {
-        let body = r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r","body":null}"#;
-        let release = parse_latest_release(body).unwrap().expect("a release");
+    fn a_manifest_with_no_notes_carries_empty_notes() {
+        let release = parse_latest_release(r#"{"version":"1.2.3","notes":null}"#)
+            .unwrap()
+            .expect("a release");
         assert_eq!(release.notes, "");
-
-        let body = r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r"}"#;
-        let release = parse_latest_release(body).unwrap().expect("a release");
+        let release = parse_latest_release(r#"{"version":"1.2.3"}"#)
+            .unwrap()
+            .expect("a release");
         assert_eq!(release.notes, "");
     }
 
     #[test]
-    fn missing_tag_name_error_names_the_field() {
-        let body = r#"{"html_url":"https://example.com/r","assets":[]}"#;
-        let err = parse_latest_release(body).unwrap_err();
-        assert!(err.to_string().contains("tag_name"), "{err}");
+    fn missing_version_error_names_the_field() {
+        let err = parse_latest_release(r#"{"notes":"n"}"#).unwrap_err();
+        assert!(err.to_string().contains("`version`"), "{err}");
+    }
+
+    #[test]
+    fn unparseable_version_error_names_the_value_and_shape() {
+        let err = parse_latest_release(r#"{"version":"latest"}"#).unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("\"latest\"") && text.contains("MAJOR.MINOR.PATCH"),
+            "{text}"
+        );
     }
 
     // Switching the check off must not leave a standing "0.11.0 is available" over a
@@ -487,12 +488,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(daemon.update_state(), proto::UpdateState::Disabled);
-    }
-
-    #[test]
-    fn missing_html_url_error_names_the_field() {
-        let body = r#"{"tag_name":"v1.2.3","assets":[]}"#;
-        let err = parse_latest_release(body).unwrap_err();
-        assert!(err.to_string().contains("html_url"), "{err}");
     }
 }
