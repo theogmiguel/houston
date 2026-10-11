@@ -169,7 +169,8 @@ impl SshHandle {
             })
             .map_err(|_| {
                 anyhow!(
-                    "SSH command item limit {SSH_INPUT_ITEMS}; upload queue full or driver stopped"
+                    "SSH command item limit {SSH_INPUT_ITEMS}, actual {}, requested 1 upload item; queue full or driver stopped",
+                    SSH_INPUT_ITEMS - self.tx.capacity()
                 )
             })?;
         Ok(rx)
