@@ -498,15 +498,25 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
     let mut frames_wanted = AttachSet::new(Arc::clone(&daemon), Arc::clone(&wake));
     let conn_id = daemon.conn_register();
 
-    let (reply_tx, mut reply_rx) = futures_channel::mpsc::channel::<Message>(CONTROL_REPLY_QUEUE);
+    let (reply_tx, mut reply_rx) = tokio::sync::mpsc::channel::<ControlReply>(CONTROL_REPLY_QUEUE);
+    let replies = ReplySink {
+        tx: reply_tx,
+        bytes: Arc::new(tokio::sync::Semaphore::new(CONTROL_REPLY_BYTES)),
+        failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        wake: Arc::clone(&wake),
+    };
+    let handlers = Arc::new(tokio::sync::Semaphore::new(CONTROL_HANDLERS_PER_CONNECTION));
     loop {
         tokio::select! {
-            Some(reply) = reply_rx.next() => {
-                if sink.send(reply).await.is_err() {
+            Some(reply) = reply_rx.recv() => {
+                if sink.send(reply.message).await.is_err() {
                     break;
                 }
             }
             _ = wake.notified() => {
+                if replies.failed.load(std::sync::atomic::Ordering::Acquire) {
+                    break;
+                }
                 if !flush_frames(&mut sink, &frames_wanted).await {
                     break;
                 }
@@ -551,7 +561,7 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
             },
             incoming = stream.next() => match incoming {
                 Some(Ok(Message::Text(text))) => {
-                    handle_control(&daemon, &mut sink, &reply_tx, &text, &mut frames_wanted, conn_id)
+                    handle_control(&daemon, &mut sink, &replies, &handlers, &text, &mut frames_wanted, conn_id)
                         .await;
                 }
                 Some(Ok(Message::Binary(buf))) => {
@@ -760,10 +770,146 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
     )
 }
 
-// How many replies one connection's off-task handlers may queue before
-// they wait on the socket: a reconnect burst is a few dozen, so 256 leaves
-// headroom without letting a stalled socket hoard memory behind it.
+// Finite reconnect bursts fit while stalled clients cannot retain arbitrary work.
 const CONTROL_REPLY_QUEUE: usize = 256;
+const CONTROL_REPLY_BYTES: usize = 8 * 1024 * 1024;
+const CONTROL_HANDLERS_PER_CONNECTION: usize = 16;
+const CONTROL_HANDLERS_PROCESS: usize = 64;
+
+fn control_handlers() -> &'static Arc<tokio::sync::Semaphore> {
+    static LIMIT: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    LIMIT.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(CONTROL_HANDLERS_PROCESS)))
+}
+
+fn control_tasks() -> &'static std::sync::Mutex<tokio::task::JoinSet<()>> {
+    static TASKS: std::sync::OnceLock<std::sync::Mutex<tokio::task::JoinSet<()>>> =
+        std::sync::OnceLock::new();
+    TASKS.get_or_init(|| std::sync::Mutex::new(tokio::task::JoinSet::new()))
+}
+
+#[cfg(feature = "test-barriers")]
+pub struct ControlTestGate {
+    pub started: std::sync::atomic::AtomicUsize,
+    pub finished: std::sync::atomic::AtomicUsize,
+    pub release: tokio::sync::Semaphore,
+}
+
+#[cfg(feature = "test-barriers")]
+impl Default for ControlTestGate {
+    fn default() -> Self {
+        Self {
+            started: std::sync::atomic::AtomicUsize::new(0),
+            finished: std::sync::atomic::AtomicUsize::new(0),
+            release: tokio::sync::Semaphore::new(0),
+        }
+    }
+}
+
+#[cfg(feature = "test-barriers")]
+type ControlFixture = Option<(std::sync::Weak<Daemon>, Arc<ControlTestGate>)>;
+#[cfg(feature = "test-barriers")]
+static CONTROL_FIXTURE: std::sync::Mutex<ControlFixture> = std::sync::Mutex::new(None);
+
+#[cfg(feature = "test-barriers")]
+#[doc(hidden)]
+pub fn active_control_handlers_for_test() -> usize {
+    CONTROL_HANDLERS_PROCESS - control_handlers().available_permits()
+}
+
+#[cfg(feature = "test-barriers")]
+#[doc(hidden)]
+pub fn set_control_test(daemon: &Arc<Daemon>, fixture: Arc<ControlTestGate>) {
+    *CONTROL_FIXTURE.lock().expect("control fixture lock") =
+        Some((Arc::downgrade(daemon), fixture));
+}
+
+#[cfg(feature = "test-barriers")]
+fn control_fixture(daemon: &Daemon, msg: &proto::ClientMsg) -> Option<Arc<ControlTestGate>> {
+    if !matches!(msg, proto::ClientMsg::SessionList) {
+        return None;
+    }
+    CONTROL_FIXTURE
+        .lock()
+        .expect("control fixture lock")
+        .as_ref()
+        .and_then(|(owner, fixture)| {
+            owner
+                .upgrade()
+                .filter(|owner| std::ptr::eq(owner.as_ref(), daemon))
+                .map(|_| Arc::clone(fixture))
+        })
+}
+
+struct ControlReply {
+    message: Message,
+    _bytes: tokio::sync::OwnedSemaphorePermit,
+}
+
+#[derive(Clone)]
+struct ReplySink {
+    tx: tokio::sync::mpsc::Sender<ControlReply>,
+    bytes: Arc<tokio::sync::Semaphore>,
+    failed: Arc<std::sync::atomic::AtomicBool>,
+    wake: Arc<Notify>,
+}
+
+impl futures_util::Sink<Message> for ReplySink {
+    type Error = std::io::Error;
+
+    fn poll_ready(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: std::pin::Pin<&mut Self>, message: Message) -> Result<(), Self::Error> {
+        let size = match &message {
+            Message::Text(text) => text.len(),
+            Message::Binary(bytes) | Message::Ping(bytes) | Message::Pong(bytes) => bytes.len(),
+            Message::Close(Some(frame)) => frame.reason.len() + 2,
+            Message::Close(None) => 2,
+        }
+        .max(1);
+        let permit = u32::try_from(size)
+            .ok()
+            .and_then(|size| Arc::clone(&self.bytes).try_acquire_many_owned(size).ok());
+        if let Some(permit) = permit {
+            if self
+                .tx
+                .try_send(ControlReply {
+                    message,
+                    _bytes: permit,
+                })
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+        self.failed
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.wake.notify_one();
+        Err(std::io::Error::other(format!(
+            "control reply limits: {CONTROL_REPLY_QUEUE} items, {CONTROL_REPLY_BYTES} bytes; actual {} items, {} bytes; requested 1 reply of {size} bytes; reconnect to resync",
+            CONTROL_REPLY_QUEUE - self.tx.capacity(),
+            CONTROL_REPLY_BYTES - self.bytes.available_permits(),
+        )))
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.poll_flush(cx)
+    }
+}
 
 // Attach-family messages run on the connection task because they mutate its
 // own `AttachSet`; everything else runs off-task. An awaited handler would
@@ -782,7 +928,8 @@ fn runs_on_connection_task(msg: &proto::ClientMsg) -> bool {
 async fn handle_control(
     daemon: &Arc<Daemon>,
     sink: &mut (impl SinkExt<Message> + Unpin),
-    reply_tx: &futures_channel::mpsc::Sender<Message>,
+    reply_tx: &ReplySink,
+    handlers: &Arc<tokio::sync::Semaphore>,
     text: &str,
     frames_wanted: &mut AttachSet,
     conn_id: u64,
@@ -833,9 +980,44 @@ async fn handle_control(
         report(sink, result).await;
         return;
     }
+    let local = Arc::clone(handlers).try_acquire_owned();
+    let global = Arc::clone(control_handlers()).try_acquire_owned();
+    let (Ok(local), Ok(global)) = (local, global) else {
+        send_error(sink, format!(
+            "control handler limits: connection {CONTROL_HANDLERS_PER_CONNECTION}, process {CONTROL_HANDLERS_PROCESS}; active connection {}, process {}; refused control request",
+            CONTROL_HANDLERS_PER_CONNECTION - handlers.available_permits(),
+            CONTROL_HANDLERS_PROCESS - control_handlers().available_permits(),
+        ), Some("control_admission".into())).await;
+        return;
+    };
     let daemon = Arc::clone(daemon);
     let mut tx = reply_tx.clone();
-    tokio::spawn(async move {
+    let mut tasks = control_tasks().lock().expect("control task lock");
+    while let Some(result) = tasks.try_join_next() {
+        if let Err(error) = result {
+            tracing::warn!("control handler failed: {error}");
+        }
+    }
+    // Admitted operations finish even on disconnect. Retain permits through blocking
+    // mutations and subprocess cleanup; aborting their async wrapper is not cancellation.
+    #[cfg(feature = "test-barriers")]
+    let fixture = control_fixture(daemon.as_ref(), &msg);
+    tasks.spawn(async move {
+        let _permits = (local, global);
+        #[cfg(feature = "test-barriers")]
+        if let Some(fixture) = fixture {
+            fixture
+                .started
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let _ = fixture
+                .release
+                .acquire()
+                .await
+                .map(|permit| permit.forget());
+            fixture
+                .finished
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
         let result = dispatch(&daemon, &mut tx, msg, None, conn_id).await;
         report(&mut tx, result).await;
     });
@@ -5850,5 +6032,60 @@ mod pr_surface_tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("32") && error.contains("33") && error.contains("request"));
+    }
+}
+
+#[cfg(test)]
+mod reply_admission_tests {
+    use super::*;
+
+    fn sink(items: usize, bytes: usize) -> (ReplySink, tokio::sync::mpsc::Receiver<ControlReply>) {
+        let (tx, rx) = tokio::sync::mpsc::channel(items);
+        (
+            ReplySink {
+                tx,
+                bytes: Arc::new(tokio::sync::Semaphore::new(bytes)),
+                failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                wake: Arc::new(Notify::new()),
+            },
+            rx,
+        )
+    }
+
+    #[tokio::test]
+    async fn cloned_reply_senders_cannot_expand_item_or_byte_admission() {
+        let (sink, mut rx) = sink(2, 10);
+        sink.clone()
+            .send(Message::Text("12345".into()))
+            .await
+            .unwrap();
+        sink.clone()
+            .send(Message::Text("12345".into()))
+            .await
+            .unwrap();
+        for _ in 0..1000 {
+            assert!(sink.clone().send(Message::Text("x".into())).await.is_err());
+        }
+        assert_eq!(rx.len(), 2);
+        assert_eq!(sink.bytes.available_permits(), 0);
+        let active = rx.recv().await.unwrap();
+        assert_eq!(
+            sink.bytes.available_permits(),
+            0,
+            "socket-active reply remains byte admitted"
+        );
+        drop(active);
+        assert_eq!(sink.bytes.available_permits(), 5);
+        sink.clone()
+            .send(Message::Text("12345".into()))
+            .await
+            .unwrap();
+        assert!(sink
+            .clone()
+            .send(Message::Text("123456".into()))
+            .await
+            .is_err());
+        drop(rx);
+        assert_eq!(sink.bytes.available_permits(), 10);
     }
 }

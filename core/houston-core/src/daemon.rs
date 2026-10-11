@@ -609,6 +609,9 @@ pub struct Session {
     backend: Backend,
     supervisor_wait: Mutex<SupervisorWaitState>,
     park: Arc<ParkState>,
+    reader_done: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    reader_cancel: AtomicBool,
+    reader_worker: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 #[derive(Default)]
@@ -634,9 +637,9 @@ impl ParkState {
         guard.generation = guard.generation.wrapping_add(1);
         #[cfg(unix)]
         if let Some(tid) = guard.reader_tid {
-            // SAFETY: `tid` is this session's own PTY-reader thread, which outlives the
-            // session and is never joined or reused; SIGUSR1 has a process-wide noop
-            // handler installed below, so a signal that misses its target is harmless.
+            // SAFETY: the reader clears its identity under this lock before exiting.
+            // Holding the lock through delivery excludes pthread ID reuse; SIGUSR1
+            // has the process-wide noop handler installed below.
             unsafe {
                 libc::pthread_kill(tid as libc::pthread_t, libc::SIGUSR1);
             }
@@ -783,6 +786,15 @@ impl Drop for WriteThread<'_> {
     }
 }
 
+// Idle polling bounds cancellation without a signal racing entry into read(2).
+#[cfg(unix)]
+const PTY_READER_POLL_MS: i32 = 50;
+// Allow final output while bounding teardown of descendants that continue writing.
+#[cfg(unix)]
+const PTY_READER_FINAL_DRAIN: Duration = Duration::from_millis(100);
+// Includes scrollback persistence and a cold reader scheduling turn.
+const PTY_READER_CLOSE_WAIT: Duration = Duration::from_secs(1);
+
 #[derive(Default)]
 struct SupervisorWaitState {
     eof: bool,
@@ -898,6 +910,11 @@ struct StdinQueue {
 }
 
 impl Session {
+    fn has_retained_reader(&self) -> bool {
+        matches!(self.backend, Backend::Pty { .. })
+            && !*self.reader_done.0.lock().expect("reader done lock")
+    }
+
     fn enqueue_stdin(
         self: &Arc<Self>,
         id: u32,
@@ -1016,9 +1033,7 @@ impl Backend {
                 w.flush().ok();
                 Ok(())
             }
-            Backend::Ssh(h) => h.write_stdin(data).map_err(|e| {
-                StdinWriteError::unknown(e.context(format!("writing stdin to ssh session {id}")))
-            }),
+            Backend::Ssh(h) => h.write_stdin(data),
             #[cfg(unix)]
             Backend::AdoptedPty(raw) => {
                 raw.write_all_counting(data)
@@ -1103,6 +1118,9 @@ impl Backend {
                         let _ = &killer;
                         let master = master.lock().expect("master lock");
                         let fd = master.as_ref().and_then(|master| master.as_raw_fd());
+                        if fd.is_none() {
+                            return Ok(());
+                        }
                         match pid {
                             Some(pid) => {
                                 let by_pty = || {
@@ -2212,6 +2230,8 @@ struct SessionStartup {
     previous_credential: Option<(String, crate::mcp_creds::McpScope, std::time::Duration)>,
     previous_settings: Option<Vec<u8>>,
     committed: bool,
+    #[cfg(unix)]
+    master: Option<std::os::fd::OwnedFd>,
 }
 
 impl SessionStartup {
@@ -2231,6 +2251,8 @@ impl SessionStartup {
             previous_credential: daemon.mcp_creds.export_for_session(id),
             previous_settings,
             committed: false,
+            #[cfg(unix)]
+            master: None,
         })
     }
 }
@@ -2245,14 +2267,21 @@ impl Drop for SessionStartup {
             #[cfg(unix)]
             let killed = match child.process_id() {
                 // The gated waiter has not reaped this child, so its PID cannot be recycled.
-                Some(pid) => crate::pid::signal_process_checked(pid, crate::pid::Signal::Kill)
-                    .map(|_| ())
-                    .map_err(std::io::Error::other),
+                Some(pid) => crate::pid::terminate_pty_session(
+                    pid,
+                    self.master.as_ref().map(std::os::fd::AsRawFd::as_raw_fd),
+                    crate::pid::process_creation_token(pid),
+                )
+                .map_err(std::io::Error::other),
                 None => child.kill(),
             };
             #[cfg(not(unix))]
             let killed = child.kill();
             if let Err(error) = killed {
+                #[cfg(unix)]
+                if let Some(pid) = child.process_id() {
+                    let _ = crate::pid::signal_process_checked(pid, crate::pid::Signal::Kill);
+                }
                 tracing::warn!(
                     "killing owned startup process for session {}: {error}",
                     self.id
@@ -2267,6 +2296,14 @@ impl Drop for SessionStartup {
         }
         if let Some(session) = &self.session {
             session.backend.release_pty();
+            if let Some(worker) = session
+                .reader_worker
+                .lock()
+                .expect("reader worker lock")
+                .take()
+            {
+                let _ = worker.join();
+            }
         }
         for worker in self.workers.drain(..) {
             let _ = worker.join();
@@ -3905,6 +3942,19 @@ impl Daemon {
         }
     }
 
+    fn retained_exited_readers(&self) -> Vec<u32> {
+        self.sessions
+            .lock()
+            .expect("sessions lock")
+            .iter()
+            .filter(|(_, session)| {
+                !session.state.lock().expect("state lock").is_live()
+                    && session.has_retained_reader()
+            })
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     fn handoff_support_summary(&self) -> proto::ManageHandoffInfo {
         #[cfg(unix)]
         {
@@ -3933,6 +3983,10 @@ impl Daemon {
                     reason: "this daemon was not started with a transferable listener/lock"
                         .to_string(),
                 };
+            }
+            let pending = self.retained_exited_readers();
+            if !pending.is_empty() {
+                return proto::ManageHandoffInfo { supported: false, reason: format!("exited PTY session(s) {pending:?} retain output readers; close them before handoff") };
             }
             let live_ssh: Vec<u32> = self
                 .sessions
@@ -3970,7 +4024,7 @@ impl Daemon {
             remaining.retain(|id| {
                 let sessions = self.sessions.lock().expect("sessions lock");
                 match sessions.get(id) {
-                    Some(s) => !s.backend_exited.load(Ordering::Acquire),
+                    Some(s) => !s.backend_exited.load(Ordering::Acquire) || s.has_retained_reader(),
                     None => false,
                 }
             });
@@ -4020,7 +4074,9 @@ impl Daemon {
             .lock()
             .expect("sessions lock")
             .iter()
-            .filter(|(_, s)| s.state.lock().expect("state lock").is_live())
+            .filter(|(_, s)| {
+                s.state.lock().expect("state lock").is_live() || s.has_retained_reader()
+            })
             .map(|(id, _)| *id)
             .collect();
         match guard {
@@ -4268,6 +4324,10 @@ impl Daemon {
         let _reap = self.handoff_reap.lock().expect("handoff reap lock");
 
         let candidate = handoff_binary(candidate_bin)?;
+        let pending = self.retained_exited_readers();
+        if !pending.is_empty() {
+            return Err(format!("exited PTY session(s) {pending:?} retain output readers; close them before handoff"));
+        }
 
         let live_ssh: Vec<u32> = {
             let sessions = self.sessions.lock().expect("sessions lock");
@@ -4704,6 +4764,9 @@ impl Daemon {
             backend,
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
         })
     }
 
@@ -9858,14 +9921,33 @@ impl Daemon {
         }
     }
 
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn pty_reader_active_for_test(&self, id: u32) -> bool {
+        self.get(id)
+            .is_ok_and(|session| session.has_retained_reader())
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn pty_reader_completion_for_test(
+        &self,
+        id: u32,
+    ) -> Result<Box<dyn Fn() -> bool + Send + Sync>> {
+        let done = Arc::clone(&self.get(id)?.reader_done);
+        Ok(Box::new(move || *done.0.lock().expect("reader done lock")))
+    }
+
     fn spawn_pty_reader_thread(
         self: &Arc<Self>,
         id: u32,
         session: &Arc<Session>,
         reader: Box<dyn Read + Send>,
     ) {
-        self.prepare_pty_reader_thread(id, session, reader, None)
+        let worker = self
+            .prepare_pty_reader_thread(id, session, reader, None)
             .expect("spawn pty reader thread");
+        *session.reader_worker.lock().expect("reader worker lock") = Some(worker);
     }
 
     fn prepare_pty_reader_thread(
@@ -9877,6 +9959,15 @@ impl Daemon {
     ) -> std::io::Result<std::thread::JoinHandle<()>> {
         #[cfg(unix)]
         ensure_quiesce_signal_installed();
+        #[cfg(unix)]
+        let poll_fd = session
+            .backend
+            .adoption_master_fd()
+            .map(|fd| {
+                // SAFETY: the backend retains its master throughout reader preparation.
+                unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()
+            })
+            .transpose()?;
         let daemon = Arc::clone(self);
         let reader_session = Arc::clone(session);
         std::thread::Builder::new()
@@ -9892,7 +9983,42 @@ impl Daemon {
                     .set_reader_tid(unsafe { libc::pthread_self() });
                 let mut reader = reader;
                 let mut buf = vec![0u8; PTY_READ_BUF];
+                #[cfg(unix)]
+                let mut drain_started = None;
                 loop {
+                    #[cfg(unix)]
+                    if let Some(fd) = &poll_fd {
+                        use std::os::fd::AsRawFd;
+                        let cancelling = reader_session.reader_cancel.load(Ordering::Acquire);
+                        if cancelling && drain_started.is_none() {
+                            drain_started = Some(Instant::now());
+                        }
+                        if drain_started
+                            .is_some_and(|start: Instant| start.elapsed() >= PTY_READER_FINAL_DRAIN)
+                        {
+                            break;
+                        }
+                        let mut poll = libc::pollfd {
+                            fd: fd.as_raw_fd(),
+                            events: libc::POLLIN,
+                            revents: 0,
+                        };
+                        // SAFETY: poll points to one valid entry and its descriptor is retained.
+                        let ready = unsafe {
+                            libc::poll(
+                                &mut poll,
+                                1,
+                                if cancelling { 0 } else { PTY_READER_POLL_MS },
+                            )
+                        };
+                        if ready == 0 && cancelling {
+                            break;
+                        }
+                        if ready <= 0 {
+                            reader_session.park.check_and_wait_if_requested();
+                            continue;
+                        }
+                    }
                     match reader.read(&mut buf) {
                         Ok(0) => break,
                         Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
@@ -9902,6 +10028,13 @@ impl Daemon {
                     }
                     reader_session.park.check_and_wait_if_requested();
                 }
+                #[cfg(unix)]
+                reader_session
+                    .park
+                    .inner
+                    .lock()
+                    .expect("park lock")
+                    .reader_tid = None;
                 daemon.flush_shell_token_redactor(id, &reader_session);
                 let is_hidden = daemon
                     .sessions
@@ -9915,6 +10048,12 @@ impl Daemon {
                     daemon.persist_scrollback(id);
                     daemon.note_backend_eof_for_supervisor(id);
                 }
+                drop(reader);
+                #[cfg(unix)]
+                drop(poll_fd);
+                let (done, changed) = &*reader_session.reader_done;
+                *done.lock().expect("reader done lock") = true;
+                changed.notify_all();
             })
     }
 
@@ -10289,6 +10428,17 @@ impl Daemon {
             .take_writer()
             .map_err(|e| anyhow!("taking PTY writer: {e}"))?;
 
+        #[cfg(unix)]
+        {
+            let fd = pair
+                .master
+                .as_raw_fd()
+                .ok_or_else(|| anyhow!("session {id}: missing startup PTY descriptor"))?;
+            // SAFETY: pair.master retains the descriptor during duplication.
+            startup.master =
+                Some(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()?);
+        }
+
         #[cfg(windows)]
         let shell_spawn_fallbacks = if agent == proto::AgentKind::Shell && injected_shell.is_none()
         {
@@ -10454,6 +10604,9 @@ impl Daemon {
             },
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
         });
         startup.session = Some(Arc::clone(&session));
         let prepare = || -> Result<()> {
@@ -10462,9 +10615,10 @@ impl Daemon {
             let worker = self
                 .prepare_pty_reader_thread(id, &session, reader, Some(Arc::clone(&startup.gate)))
                 .context("starting PTY reader worker")?;
-            startup.workers.push(worker);
+            *session.reader_worker.lock().expect("reader worker lock") = Some(worker);
             let daemon = Arc::clone(self);
             let child = Arc::clone(&startup.child);
+            let owned_session = Arc::clone(&session);
             let gate = Arc::clone(&startup.gate);
             #[cfg(feature = "test-barriers")]
             self.startup_fault("wait-thread")?;
@@ -10480,44 +10634,83 @@ impl Daemon {
                         .take()
                         .expect("owned startup child");
                     #[cfg(target_os = "linux")]
-                    let _reap = {
+                    let observed = {
+                        use nix::sys::wait::{waitid, Id, WaitPidFlag};
                         if let Some(pid) = pid {
-                            use nix::sys::wait::{waitid, Id, WaitPidFlag};
-                            // Observe exit without consuming it: a committed handoff leaves
-                            // the zombie for the supervisor to reap and report to its new owner.
-                            while let Err(nix::errno::Errno::EINTR) = waitid(
-                                Id::Pid(nix::unistd::Pid::from_raw(pid as i32)),
-                                WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
-                            ) {}
+                            loop {
+                                match waitid(
+                                    Id::Pid(nix::unistd::Pid::from_raw(pid as i32)),
+                                    WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
+                                ) {
+                                    Err(nix::errno::Errno::EINTR) => continue,
+                                    status => break status,
+                                }
+                            }
+                        } else {
+                            Err(nix::errno::Errno::ECHILD)
                         }
+                    };
+                    #[cfg(target_os = "linux")]
+                    let _reap = {
                         let guard = daemon.handoff_reap.lock().expect("handoff reap lock");
                         if daemon.has_handed_off() {
                             return;
                         }
                         guard
                     };
-                    let status = child.wait();
-                    if let Some(s) = daemon.sessions.lock().expect("sessions lock").get(&id) {
-                        s.backend.release_pty();
-                    }
-                    let exit_code = status.as_ref().ok().map(|s| s.exit_code() as i32);
+                    #[cfg(target_os = "linux")]
+                    let exit_code = match observed {
+                        Ok(nix::sys::wait::WaitStatus::Exited(_, code)) => Some(code),
+                        Ok(nix::sys::wait::WaitStatus::Signaled(_, signal, _)) => {
+                            Some(128 + signal as i32)
+                        }
+                        _ => None,
+                    };
+                    #[cfg(not(target_os = "linux"))]
+                    let exit_code = child.wait().ok().map(|status| status.exit_code() as i32);
+
                     if hidden {
                         daemon.handoff_exit(id, exit_code);
-                        return;
+                    } else {
+                        let parent = daemon.parent_of(id);
+                        let state = daemon.finish_session(id, exit_code);
+                        daemon.broadcast_control(&proto::ServerMsg::SessionState {
+                            session: id,
+                            state,
+                            exit_code,
+                        });
+                        if let Some(parent) = parent {
+                            daemon.broadcast_live_children(parent);
+                        }
+                        daemon.delegation_child_exited(id);
+                        daemon.routine_pane_exited(id);
+                        daemon.resume_exited(id, exit_code);
                     }
-                    let parent = daemon.parent_of(id);
-                    let state = daemon.finish_session(id, exit_code);
-                    daemon.broadcast_control(&proto::ServerMsg::SessionState {
-                        session: id,
-                        state,
-                        exit_code,
-                    });
-                    if let Some(parent) = parent {
-                        daemon.broadcast_live_children(parent);
+                    #[cfg(target_os = "linux")]
+                    drop(_reap);
+                    {
+                        let session = owned_session;
+                        #[cfg(target_os = "linux")]
+                        {
+                            let (done, changed) = &*session.reader_done;
+                            let mut done = done.lock().expect("reader done lock");
+                            while !*done {
+                                done = changed.wait(done).expect("reader done wait");
+                            }
+                            drop(done);
+                            let _reap = daemon.handoff_reap.lock().expect("handoff reap lock");
+                            if daemon.has_handed_off() {
+                                return;
+                            }
+                            // Holding master excludes close/kill while the root anchor is reaped.
+                            if let Backend::Pty { master, .. } = &session.backend {
+                                let mut master = master.lock().expect("master lock");
+                                *master = None;
+                                let _ = child.wait();
+                            }
+                        }
+                        session.backend.release_pty();
                     }
-                    daemon.delegation_child_exited(id);
-                    daemon.routine_pane_exited(id);
-                    daemon.resume_exited(id, exit_code);
                 })
                 .context("starting PTY wait worker")?;
             startup.workers.push(worker);
@@ -10899,6 +11092,9 @@ impl Daemon {
             backend: Backend::Ssh(handle),
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
         });
         self.sessions
             .lock()
@@ -10935,7 +11131,16 @@ impl Daemon {
             crate::ssh::post_connect_directory(params.default_dir.as_deref())
         };
         for line in lines {
-            if let Err(e) = self.write_stdin(id, line.as_bytes()) {
+            if let Err(e) = self.enqueue_stdin(
+                id,
+                line.as_bytes(),
+                Box::new(move |result| {
+                    if let Err(error) = result {
+                        tracing::warn!("SSH post-connect delivery failed on session {id}: {error}");
+                    }
+                }),
+                None,
+            ) {
                 tracing::warn!("SSH post-connect line failed on session {id}: {e}");
                 break;
             }
@@ -11794,6 +11999,9 @@ impl Daemon {
         session
             .backend
             .kill(id, session.pid, self.channel.as_deref())?;
+        session.reader_cancel.store(true, Ordering::Release);
+        #[cfg(unix)]
+        session.park.resume();
         session.remove_shell_token_file();
         self.operator_ended
             .lock()
@@ -12209,10 +12417,44 @@ impl Daemon {
             .cloned();
         if let Some(session) = session.as_ref() {
             let live = session.state.lock().expect("state lock").is_live();
-            if live {
+            #[cfg(not(target_os = "linux"))]
+            if !live && session.has_retained_reader() {
+                bail!("close refused for exited session {id}: descendant PTY cleanup after root reap is unsupported on this platform; wait for PTY EOF");
+            }
+            #[cfg(target_os = "linux")]
+            let retained = matches!(&session.backend, Backend::Pty { master, .. } if master.lock().expect("master lock").is_some());
+            #[cfg(not(target_os = "linux"))]
+            let retained = false;
+            if live || retained {
                 session
                     .backend
                     .kill(id, session.pid, self.channel.as_deref())?;
+            }
+            session.reader_cancel.store(true, Ordering::Release);
+            #[cfg(unix)]
+            session.park.resume();
+            #[cfg(windows)]
+            session.backend.release_pty();
+            if matches!(&session.backend, Backend::Pty { .. }) {
+                let (done, changed) = &*session.reader_done;
+                let done = done.lock().expect("reader done lock");
+                let (_done, result) = changed
+                    .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
+                    .expect("reader close wait");
+                if result.timed_out() {
+                    bail!("session {id}: PTY reader exceeded close drain limit 1000 ms");
+                }
+                drop(_done);
+                if let Some(worker) = session
+                    .reader_worker
+                    .lock()
+                    .expect("reader worker lock")
+                    .take()
+                {
+                    worker
+                        .join()
+                        .map_err(|_| anyhow!("session {id}: PTY reader panicked during close"))?;
+                }
             }
         }
         if session.is_none() && !self.dead.lock().expect("dead lock").contains_key(&id) {

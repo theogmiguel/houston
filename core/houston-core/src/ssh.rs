@@ -1,3 +1,4 @@
+use crate::daemon::StdinWriteError;
 use anyhow::{anyhow, bail, Context, Result};
 use russh::client::{self, Handle};
 #[cfg(unix)]
@@ -6,7 +7,7 @@ use russh::keys::{load_secret_key, HashAlg, PublicKey};
 use russh::ChannelMsg;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch, Semaphore};
 
 use houston_protocol as proto;
 
@@ -15,16 +16,16 @@ use houston_protocol as proto;
 // auto-reconnect.
 
 pub enum SshCmd {
-    Data(Vec<u8>),
-    Resize {
-        cols: u16,
-        rows: u16,
+    Data {
+        bytes: Vec<u8>,
+        reply: std::sync::mpsc::Sender<std::result::Result<(), StdinWriteError>>,
+        _budget: tokio::sync::OwnedSemaphorePermit,
     },
-    Close,
     Upload {
         local_path: PathBuf,
         remote_name: String,
         reply: oneshot::Sender<Result<UploadOutcome, String>>,
+        _slot: tokio::sync::OwnedSemaphorePermit,
     },
 }
 
@@ -33,29 +34,114 @@ pub struct UploadOutcome {
     pub bytes: u64,
 }
 
+// Includes active transfer bytes and bounds tiny writes and upload requests separately.
+const SSH_INPUT_BYTES: usize = 4 * 1024 * 1024;
+const SSH_INPUT_ITEMS: usize = 128;
+const SSH_UPLOADS: usize = 4;
+// Closing must complete locally even when the peer never acknowledges channel teardown.
+const SSH_CLOSE_WAIT: std::time::Duration = std::time::Duration::from_millis(200);
+
+pub type SshWriteReceipt = std::sync::mpsc::Receiver<std::result::Result<(), StdinWriteError>>;
+type SshQueue = (
+    SshHandle,
+    mpsc::Receiver<SshCmd>,
+    watch::Receiver<bool>,
+    watch::Receiver<(u16, u16)>,
+);
+
 pub struct SshHandle {
-    tx: mpsc::UnboundedSender<SshCmd>,
+    tx: mpsc::Sender<SshCmd>,
+    bytes: Arc<Semaphore>,
+    transferring: Arc<std::sync::atomic::AtomicBool>,
+    uploads: Arc<Semaphore>,
+    cancel: watch::Sender<bool>,
+    resize: watch::Sender<(u16, u16)>,
 }
 
 impl SshHandle {
-    #[cfg(all(test, unix))]
-    pub(crate) fn stub() -> Self {
-        let (tx, _rx) = mpsc::unbounded_channel();
-        Self { tx }
+    fn queue(cols: u16, rows: u16) -> SshQueue {
+        let (tx, rx) = mpsc::channel(SSH_INPUT_ITEMS);
+        let (cancel, cancelled) = watch::channel(false);
+        let (resize, resized) = watch::channel((cols, rows));
+        (
+            Self {
+                tx,
+                bytes: Arc::new(Semaphore::new(SSH_INPUT_BYTES)),
+                transferring: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                uploads: Arc::new(Semaphore::new(SSH_UPLOADS)),
+                cancel,
+                resize,
+            },
+            rx,
+            cancelled,
+            resized,
+        )
     }
 
-    pub fn write_stdin(&self, data: &[u8]) -> Result<()> {
-        self.tx
-            .send(SshCmd::Data(data.to_vec()))
-            .map_err(|_| anyhow!("ssh session driver has stopped"))
+    #[cfg(all(test, unix))]
+    pub(crate) fn stub() -> Self {
+        Self::queue(80, 24).0
     }
+
+    pub fn enqueue_stdin(
+        &self,
+        data: &[u8],
+    ) -> std::result::Result<SshWriteReceipt, StdinWriteError> {
+        let refusal = |error| StdinWriteError {
+            written: Some(0),
+            error,
+        };
+        if *self.cancel.borrow() || self.tx.is_closed() {
+            return Err(refusal(anyhow!(
+                "SSH input refused: session driver is stopping"
+            )));
+        }
+        let budget = u32::try_from(data.len().max(1))
+            .ok()
+            .and_then(|size| Arc::clone(&self.bytes).try_acquire_many_owned(size).ok())
+            .ok_or_else(|| {
+                refusal(anyhow!(
+                    "SSH input byte limit {SSH_INPUT_BYTES}, actual {}, requested {} bytes",
+                    SSH_INPUT_BYTES - self.bytes.available_permits(),
+                    data.len()
+                ))
+            })?;
+        let (reply, receipt) = std::sync::mpsc::channel();
+        self.tx.try_send(SshCmd::Data { bytes: data.to_vec(), reply, _budget: budget }).map_err(|_| refusal(anyhow!(
+            "SSH input item limit {SSH_INPUT_ITEMS}, actual {}, requested 1 item; queue full or driver stopped",
+            SSH_INPUT_ITEMS - self.tx.capacity()
+        )))?;
+        Ok(receipt)
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn transfer_active_for_test(&self) -> bool {
+        self.transferring.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn write_stdin(&self, data: &[u8]) -> std::result::Result<(), StdinWriteError> {
+        self.enqueue_stdin(data)?.recv().unwrap_or_else(|_| {
+            Err(StdinWriteError {
+                written: None,
+                error: anyhow!(
+                    "SSH driver stopped before delivery receipt; partial delivery is unknown"
+                ),
+            })
+        })
+    }
+
     pub fn resize(&self, cols: u16, rows: u16) -> Result<()> {
-        self.tx
-            .send(SshCmd::Resize { cols, rows })
-            .map_err(|_| anyhow!("ssh session driver has stopped"))
+        if *self.cancel.borrow() {
+            bail!("SSH resize refused: driver is stopping");
+        }
+        self.resize
+            .send((cols, rows))
+            .map_err(|_| anyhow!("SSH session driver has stopped"))
     }
+
     pub fn kill(&self) -> Result<()> {
-        let _ = self.tx.send(SshCmd::Close);
+        self.cancel.send_replace(true);
         Ok(())
     }
 
@@ -64,14 +150,29 @@ impl SshHandle {
         local_path: PathBuf,
         remote_name: String,
     ) -> Result<oneshot::Receiver<Result<UploadOutcome, String>>> {
+        if *self.cancel.borrow() {
+            bail!("SSH upload refused: driver is stopping");
+        }
+        let slot = Arc::clone(&self.uploads).try_acquire_owned().map_err(|_| {
+            anyhow!(
+                "SSH upload limit {SSH_UPLOADS}, actual {}, requested 1 upload",
+                SSH_UPLOADS - self.uploads.available_permits()
+            )
+        })?;
         let (reply, rx) = oneshot::channel();
         self.tx
-            .send(SshCmd::Upload {
+            .try_send(SshCmd::Upload {
                 local_path,
                 remote_name,
                 reply,
+                _slot: slot,
             })
-            .map_err(|_| anyhow!("ssh session driver has stopped"))?;
+            .map_err(|_| {
+                anyhow!(
+                    "SSH command item limit {SSH_INPUT_ITEMS}, actual {}, requested 1 upload item; queue full or driver stopped",
+                    SSH_INPUT_ITEMS - self.tx.capacity()
+                )
+            })?;
         Ok(rx)
     }
 }
@@ -412,7 +513,10 @@ fn record_known_host(path: &PathBuf, host: &str, port: u16, line: &str) -> Resul
 pub struct Connected {
     session: Arc<Handle<Client>>,
     channel: russh::Channel<client::Msg>,
-    cmds: mpsc::UnboundedReceiver<SshCmd>,
+    cmds: mpsc::Receiver<SshCmd>,
+    cancel: watch::Receiver<bool>,
+    transferring: Arc<std::sync::atomic::AtomicBool>,
+    resize: watch::Receiver<(u16, u16)>,
 }
 
 pub fn apply_ssh_config(params: &mut SshParams) {
@@ -595,13 +699,17 @@ pub async fn connect(
         .await
         .context("requesting remote shell")?;
 
-    let (tx, cmds) = mpsc::unbounded_channel();
+    let (handle, cmds, cancel, resize) = SshHandle::queue(params.cols, params.rows);
+    let transferring = Arc::clone(&handle.transferring);
     Ok((
-        SshHandle { tx },
+        handle,
         Connected {
             session: Arc::new(session),
             channel,
             cmds,
+            cancel,
+            transferring,
+            resize,
         },
     ))
 }
@@ -648,57 +756,125 @@ pub struct SshOutcome {
     pub exit_code: Option<i32>,
 }
 
-pub async fn run(mut connected: Connected, mut on_output: impl FnMut(&[u8])) -> SshOutcome {
-    let mut exit_code: Option<i32> = None;
-    loop {
+pub async fn run(connected: Connected, mut on_output: impl FnMut(&[u8])) -> SshOutcome {
+    let Connected {
+        session,
+        channel,
+        mut cmds,
+        mut cancel,
+        transferring,
+        mut resize,
+    } = connected;
+    let (mut reader, writer) = channel.split();
+    let mut exit_code = None;
+    let mut uploads = tokio::task::JoinSet::new();
+    let (upload_stop, upload_cancel) = watch::channel(false);
+    'driver: loop {
+        if *cancel.borrow() {
+            break;
+        }
         tokio::select! {
-            msg = connected.channel.wait() => match msg {
-                Some(ChannelMsg::Data { data }) => on_output(&data),
-                Some(ChannelMsg::ExtendedData { data, .. }) => on_output(&data),
-                Some(ChannelMsg::ExitStatus { exit_status }) => {
-                    exit_code = Some(exit_status as i32);
-                }
-                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                Some(_) => {}
+            biased;
+            _ = cancel.changed() => break,
+            Some(_) = uploads.join_next(), if !uploads.is_empty() => {},
+            msg = reader.wait() => {
+                if !ssh_output(msg, &mut on_output, &mut exit_code) { break; }
             },
-            cmd = connected.cmds.recv() => match cmd {
-                Some(SshCmd::Data(bytes)) => {
-                    if connected.channel.data(&bytes[..]).await.is_err() {
-                        break;
-                    }
+            changed = resize.changed() => {
+                if changed.is_err() { break; }
+                let (cols, rows) = *resize.borrow_and_update();
+                tokio::select! {
+                    _ = cancel.changed() => break,
+                    _ = writer.window_change(cols as u32, rows as u32, 0, 0) => {},
                 }
-                Some(SshCmd::Resize { cols, rows }) => {
-                    let _ = connected
-                        .channel
-                        .window_change(cols as u32, rows as u32, 0, 0)
-                        .await;
-                }
-                Some(SshCmd::Upload { local_path, remote_name, reply }) => {
-                    let session = Arc::clone(&connected.session);
-                    tokio::spawn(async move {
-                        let out = upload_file(&session, &local_path, &remote_name)
-                            .await
-                            .map_err(|e| format!("{e:#}"));
-                        if reply.send(out).is_err() {
-                            tracing::debug!(
-                                "ssh upload of {} finished with nobody listening",
-                                local_path.display()
-                            );
+            },
+            cmd = cmds.recv() => match cmd {
+                Some(SshCmd::Data { bytes, reply, _budget }) => {
+                    transferring.store(true, std::sync::atomic::Ordering::Release);
+                    let delivery = writer.data(&bytes[..]);
+                    tokio::pin!(delivery);
+                    let result = loop {
+                        tokio::select! {
+                            biased;
+                            _ = cancel.changed() => break Err(StdinWriteError { written: None, error: anyhow!("SSH transfer cancelled; partial delivery is unknown") }),
+                            result = &mut delivery => break result.map_err(|error| StdinWriteError { written: None, error: anyhow!(error).context("SSH transfer failed; partial delivery is unknown") }),
+                            msg = reader.wait() => {
+                                if !ssh_output(msg, &mut on_output, &mut exit_code) {
+                                    break Err(StdinWriteError { written: None, error: anyhow!("SSH channel closed during delivery; partial delivery is unknown") });
+                                }
+                            },
+                            changed = resize.changed() => {
+                                if changed.is_err() { break Err(StdinWriteError { written: None, error: anyhow!("SSH handle dropped during delivery") }); }
+                                let (cols, rows) = *resize.borrow_and_update();
+                                tokio::select! {
+                                    _ = cancel.changed() => break Err(StdinWriteError { written: None, error: anyhow!("SSH transfer cancelled; partial delivery is unknown") }),
+                                    _ = writer.window_change(cols as u32, rows as u32, 0, 0) => {},
+                                }
+                            }
                         }
+                    };
+                    transferring.store(false, std::sync::atomic::Ordering::Release);
+                    let stopped = result.is_err();
+                    let _ = reply.send(result);
+                    drop(_budget);
+                    if stopped { break 'driver; }
+                },
+                Some(SshCmd::Upload { local_path, remote_name, reply, _slot }) => {
+                    let session = Arc::clone(&session);
+                    let mut cancel = upload_cancel.clone();
+                    uploads.spawn(async move {
+                        let _slot = _slot;
+                        let out = tokio::select! {
+                            biased;
+                            _ = cancel.changed() => Err("SSH upload cancelled; a partial remote file may remain".into()),
+                            out = upload_file(&session, &local_path, &remote_name) => out.map_err(|error| format!("{error:#}; a partial remote file may remain")),
+                        };
+                        let _ = reply.send(out);
                     });
-                }
-                Some(SshCmd::Close) | None => {
-                    let _ = connected.channel.close().await;
-                    break;
-                }
-            },
+                },
+                None => break,
+            }
         }
     }
-    let _ = connected
-        .session
-        .disconnect(russh::Disconnect::ByApplication, "", "")
-        .await;
+    cmds.close();
+    while let Some(cmd) = cmds.recv().await {
+        match cmd {
+            SshCmd::Data { reply, .. } => {
+                let _ = reply.send(Err(StdinWriteError {
+                    written: Some(0),
+                    error: anyhow!("SSH queued input cancelled before transfer"),
+                }));
+            }
+            SshCmd::Upload { reply, .. } => {
+                let _ = reply.send(Err("SSH queued upload cancelled before transfer".into()));
+            }
+        }
+    }
+    upload_stop.send_replace(true);
+    while uploads.join_next().await.is_some() {}
+    let _ = tokio::time::timeout(SSH_CLOSE_WAIT, writer.close()).await;
+    let _ = tokio::time::timeout(
+        SSH_CLOSE_WAIT,
+        session.disconnect(russh::Disconnect::ByApplication, "", ""),
+    )
+    .await;
     SshOutcome { exit_code }
+}
+
+fn ssh_output(
+    msg: Option<ChannelMsg>,
+    on_output: &mut impl FnMut(&[u8]),
+    exit_code: &mut Option<i32>,
+) -> bool {
+    match msg {
+        Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+            on_output(&data)
+        }
+        Some(ChannelMsg::ExitStatus { exit_status }) => *exit_code = Some(exit_status as i32),
+        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => return false,
+        Some(_) => {}
+    }
+    true
 }
 
 #[cfg(test)]
@@ -905,4 +1081,50 @@ mod tests {
         let lines = post_connect_lines(&profile(None, Some("source .venv/bin/activate && cd src")));
         assert_eq!(lines, vec!["source .venv/bin/activate && cd src\n"]);
     }
+}
+
+#[cfg(feature = "test-barriers")]
+#[doc(hidden)]
+pub async fn connect_stream_for_test(
+    stream: tokio::io::DuplexStream,
+    known_hosts: PathBuf,
+) -> Result<(SshHandle, Connected)> {
+    let (prompt_tx, _prompts) = mpsc::unbounded_channel();
+    let mut session = client::connect_stream(
+        Arc::new(client::Config::default()),
+        stream,
+        Client {
+            known_hosts,
+            host: "fixture".into(),
+            port: 22,
+            prompt_tx,
+        },
+    )
+    .await?;
+    anyhow::ensure!(
+        session
+            .authenticate_password("fixture", "fixture")
+            .await?
+            .success(),
+        "fixture authentication refused"
+    );
+    let channel = session.channel_open_session().await?;
+    channel.request_shell(true).await?;
+    anyhow::ensure!(
+        channel.writable_packet_size().await == 0,
+        "fixture requires an initial zero receive window"
+    );
+    let (handle, cmds, cancel, resize) = SshHandle::queue(80, 24);
+    let transferring = Arc::clone(&handle.transferring);
+    Ok((
+        handle,
+        Connected {
+            session: Arc::new(session),
+            channel,
+            cmds,
+            cancel,
+            transferring,
+            resize,
+        },
+    ))
 }

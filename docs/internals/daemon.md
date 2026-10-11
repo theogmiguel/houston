@@ -81,12 +81,15 @@ enum Backend {
 }
 ```
 
-`writer` and `master` are `Option` because **a kill releases the PTY**. On Windows conhost's
-death does not propagate pipe-close, so an open master parks the reader thread in `read()`
-forever, holding a daemon `Arc` with it; dropping both at kill time is what lets the reader
-see EOF, persist its ring and exit. Unix gets that from slave-side EOF. `Backend::resize`
-returns the dimensions actually applied — an ack that only says "no error" cannot drive a
-retry ladder.
+The backend keeps writer and master ownership separate. Unix termination signals the owned
+PTY process groups before interrupting input delivery. Linux keeps the unreaped direct
+child as an identity anchor until output-reader completion; an Exited state therefore does
+not imply that descendants or the reader have finished. Close still terminates that owned
+terminal session. Reaping and master release share the same lock as termination, so a
+recycled root PID cannot be signalled through an old backend. On other platforms, closing
+an Exited pane whose reader remains open is explicitly refused until PTY EOF. Windows
+close releases the master because conhost exit alone need not close the reader pipe.
+`Backend::resize` returns the dimensions actually applied.
 
 ## Spawning a session
 
@@ -246,8 +249,13 @@ since a headless VT parser has not landed — there is no parser to have partial
 ## The read loop
 
 One OS thread per session, named `pty-read-<id>`, loops on `reader.read(&mut buf)` with a
-fixed `PTY_READ_BUF` of 16 KiB. **There is no coalescing** — one frame per read, an accepted
-simplification recorded in the module doc.
+fixed `PTY_READ_BUF` of 16 KiB. Unix polls a retained descriptor at 50 ms intervals to
+observe cancellation without relying on a signal to interrupt an unentered read. Close
+allows a final drain of available bytes for at most 100 ms and waits up to one second for
+reader completion and joins its owned worker before removing the pane. Reader thread
+identities are cleared before thread exit. Shutdown includes Exited panes with retained readers; generation handoff
+refuses those panes until they are closed because the live-session manifest cannot carry
+this ownership. There is no output coalescing: one frame per read.
 
 `process_chunk` fans one chunk out, in order: scrollback push (returning the stream offset)
 and the session's terminal emulator, both under one hold of the scrollback lock; the
@@ -275,6 +283,15 @@ continue after client disconnect; session termination interrupts active PTY deli
 returns explicit outcomes for queued jobs. PTY failures report the bytes already written.
 Handoff refuses while stdin delivery or its completion handling remains in flight, because
 queued input is not part of the adoption manifest.
+
+Off-connection control handlers use immediate admission: at most 16 per connection and
+64 per process, with no semaphore waiters. A process-owned task set retains admitted
+handlers through completion, including after disconnect; this preserves partially applied
+mutations and subprocess cleanup. Completed handles are collected at the next admission.
+Replies use a fixed 256-item queue and an 8 MiB byte budget, including the reply being sent.
+Cloning senders adds no capacity. Admission refusal names the limits and current counts.
+Reply overflow closes the connection for a full state resync; mutations already admitted
+still finish. These limits apply to off-connection handlers, not the attach-family path.
 
 ## The emulator
 
@@ -540,11 +557,20 @@ The developer-relevant subset.
 
 ## SSH
 
-`ssh.rs` runs **russh in-process**: no `ssh` binary, no subprocess, no argv. One tokio task
-per session, driven through an mpsc `SshCmd` queue (`Data`, `Resize`, `Close`, `Upload`).
-Scope is agent and identity-file auth with TOFU host-key verification against
-`<state dir>/known_hosts`; there is no auto-reconnect. A host-key prompt parks the handshake
-inside `check_server_key` on a `oneshot::Sender<HostKeyVerdict>` held in
+`ssh.rs` runs russh in-process without an SSH subprocess. Each session has a FIFO command
+queue bounded to 128 items and a 4 MiB input budget covering active and queued transfers.
+The session writer waits for delivery receipts outside the WebSocket task. Admission
+refuses before accepting bytes; cancellation reports zero for queued input and unknown
+partial delivery for an active channel write. Cancellation has its own watch signal,
+polled during stalled writes, and resize hints use a separate latest-value watch channel.
+The driver continues receiving output while waiting for channel window space. Up to four
+uploads are admitted, owned by the driver and cancelled with explicit outcomes; a cancelled
+active upload may leave a partial remote file. Channel close and disconnect each have a
+200 ms teardown bound. This path is shared by supported SSH platforms.
+
+Authentication supports an agent, identity file or password, with TOFU host-key verification
+against `<state dir>/known_hosts`; there is no auto-reconnect. A host-key prompt parks the
+handshake inside `check_server_key` on a `oneshot::Sender<HostKeyVerdict>` held in
 `Daemon::ssh_prompts`, keyed by request id.
 
 Passwords and passphrases live in the OS keychain (Secret Service via zbus, pure Rust) and
