@@ -2044,29 +2044,31 @@
   // keyboard. The decision card folds to its title meanwhile.
   var touch = !!window.visualViewport && !!window.matchMedia && matchMedia("(pointer: coarse)").matches;
 
-  // iOS reports the keyboard only once it has finished sliding in, so the
-  // height it covered last time (per width and display mode) is remembered and
-  // the frame shrinks with the keyboard instead of jumping after it.
-  var kb = { base: 0, guess: 0 };
+  // Safari scrolls the whole page up when the box it focuses sits where the
+  // keyboard will appear, and only comes back once the keyboard has settled.
+  // So the frame takes its keyboard-open size on the tap itself, before the
+  // focus, using the height the keyboard covered last time (per width and
+  // display mode); the box is then already clear of the keyboard.
+  var kb = { base: 0, guess: 0, pending: false };
   // A shrink smaller than this is the browser's toolbar, not a keyboard.
   var KEYBOARD_MIN_PX = 120;
+  // Before the first measurement on a phone: an iPhone keyboard with its
+  // suggestion and form bars covers about 44% of a portrait screen.
+  var KEYBOARD_FIRST_GUESS = 0.44, PHONE_WIDTH_MAX = 600;
   function keyboardSlot() { return window.innerWidth + (standalone() ? "-app" : "-tab"); }
 
   function fitKeyboard() {
     var vv = window.visualViewport, body = document.body, root = document.documentElement;
     var typing = document.activeElement === $("text");
-    $("dock").classList.toggle("composing", typing);
-    var frame = touch && typing && S.view === "pane";
+    $("dock").classList.toggle("composing", typing || kb.pending);
+    var frame = touch && (typing || kb.pending) && S.view === "pane";
     if (frame && !body.classList.contains("composing")) {
       var stick = pinned(), at = window.scrollY;
       kb.base = vv.height;
-      kb.guess = storedJson(KEYBOARD_KEY, {})[keyboardSlot()] || 0;
-      root.style.setProperty("--vv-top", Math.round(vv.offsetTop) + "px");
-      root.style.setProperty("--vv-h", Math.round(vv.height) + "px");
+      kb.guess = storedJson(KEYBOARD_KEY, {})[keyboardSlot()] || (window.innerWidth <= PHONE_WIDTH_MAX ? Math.round(vv.height * KEYBOARD_FIRST_GUESS) : 0);
       body.classList.add("composing");
       var conv = $("conv");
       conv.scrollTop = stick ? conv.scrollHeight : at;
-      void body.offsetHeight; // commit the full height so the shrink below animates
     } else if (!frame && body.classList.contains("composing")) {
       var inner = $("conv"), bottom = inner.scrollTop + inner.clientHeight >= inner.scrollHeight - 120, top = inner.scrollTop;
       body.classList.remove("composing");
@@ -2079,6 +2081,21 @@
       root.style.setProperty("--vv-h", Math.round(waiting ? kb.base - kb.guess : vv.height) + "px");
     }
   }
+  (function () {
+    var x0 = 0, y0 = 0;
+    $("text").addEventListener("touchstart", function (ev) { x0 = ev.touches[0].clientX; y0 = ev.touches[0].clientY; }, { passive: true });
+    $("text").addEventListener("touchend", function (ev) {
+      var t = ev.changedTouches[0];
+      if (document.activeElement === $("text") || Math.abs(t.clientX - x0) > 10 || Math.abs(t.clientY - y0) > 10) return;
+      // The box moves before the focus, so the tap is not left for the browser
+      // to resolve at a point the box has just left.
+      ev.preventDefault();
+      kb.pending = true;
+      fitKeyboard();
+      $("text").focus({ preventScroll: true });
+      if (document.activeElement !== $("text")) { kb.pending = false; fitKeyboard(); }
+    });
+  })();
   // iOS pans the page to the focused box after the keyboard has opened and
   // does not always report the final position, so the frame follows the
   // visible area every frame until the keyboard has settled. 1 s covers the
@@ -2108,7 +2125,7 @@
     window.visualViewport.addEventListener("resize", settleKeyboard);
     window.visualViewport.addEventListener("scroll", fitKeyboard);
   }
-  $("text").addEventListener("focus", settleKeyboard);
+  $("text").addEventListener("focus", function () { kb.pending = false; clearTimeout(S.timers["blur-fit"]); settleKeyboard(); });
   // A blur that a tap on the dock causes is followed by a refocus; waiting a
   // moment keeps the frame from jumping in between.
   $("text").addEventListener("blur", function () { later("blur-fit", fitKeyboard, 120); });
