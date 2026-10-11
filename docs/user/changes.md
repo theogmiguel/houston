@@ -32,6 +32,12 @@ containing tabs or non-ASCII characters, and to both names of a renamed file.
 Patches whose file names cannot be safely identified are excluded from review and
 checkpoint inspection.
 
+Each patch retains at most 512 KiB. Combined untracked-file previews stop after
+1,024 files or the patch size limit. A Git command that produces more than 8 MiB
+of output is refused with an error, and commands have a two-minute deadline.
+If a commit, push or other mutation times out, inspect the repository and remote
+before retrying: part of the operation may already have completed.
+
 Review with agent opens a picker with the six engines Houston can spawn — Claude Code,
 Codex, Cursor Agent, Antigravity, OpenCode or Grok — and starts the one you choose in a
 new pane, with the prepared diff as its brief. Nothing is sent until you press Start

@@ -3,6 +3,43 @@ use houston_protocol as proto;
 use std::path::{Path, PathBuf};
 
 const PATCH_CAP_BYTES: usize = 512 * 1024;
+// Empty or excluded files still cost a subprocess; bound those independently.
+const MAX_UNTRACKED_DIFF_FILES: usize = 1024;
+
+// A stuck helper must not retain a background worker indefinitely. Capture also
+// enforces the subprocess collector's 8 MiB combined stdout/stderr limit.
+const GIT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+fn git_output(
+    mut command: std::process::Command,
+    timeout: std::time::Duration,
+) -> Result<std::process::Output> {
+    command.env("GIT_TERMINAL_PROMPT", "0");
+    let operation = command
+        .get_args()
+        .map(|s| s.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let incomplete = || {
+        format!(
+        "git {operation}: command completion was not confirmed; a mutation may already have taken effect. Inspect repository and remote state before retrying"
+    )
+    };
+    crate::spawn::output_within(command, timeout)
+        .with_context(incomplete)?
+        .with_context(|| format!("{} (deadline {} ms)", incomplete(), timeout.as_millis()))
+}
+
+fn append_patch(patch: &mut String, addition: &str) -> bool {
+    let remaining = PATCH_CAP_BYTES.saturating_sub(patch.len());
+    let mut end = remaining.min(addition.len());
+    while !addition.is_char_boundary(end) {
+        end -= 1;
+    }
+    patch.push_str(&addition[..end]);
+    end < addition.len()
+}
+
 /// Five hundred entries bound a commit-list reply while covering long-lived branches.
 pub const GIT_BRANCH_COMMITS_CAP: usize = 500;
 
@@ -116,38 +153,39 @@ pub fn diff(dir: &Path, path: Option<&str>, base: Option<&str>) -> Result<DiffRe
     let untracked = list_untracked(dir)?;
 
     let mut patch = String::new();
+    let mut truncated = false;
     if let Some(b) = base {
         let mb = merge_base(dir, b)?;
         let range = format!("{mb}..HEAD");
-        match path {
-            Some(p) => patch.push_str(&run_git(dir, &["diff", &range, "--", p])?),
-            None => patch.push_str(&run_git(dir, &["diff", &range])?),
-        }
+        let raw = match path {
+            Some(p) => run_git(dir, &["diff", &range, "--", p])?,
+            None => run_git(dir, &["diff", &range])?,
+        };
+        truncated |= append_patch(&mut patch, &raw);
     }
-    match path {
-        Some(p) => {
-            if untracked.iter().any(|u| u == p) {
-                patch.push_str(&untracked_diff(dir, p)?);
-            } else {
-                patch.push_str(&run_git(dir, &["diff", "HEAD", "--", p])?);
+    if !truncated {
+        match path {
+            Some(p) => {
+                let raw = if untracked.iter().any(|u| u == p) {
+                    untracked_diff(dir, p)?
+                } else {
+                    run_git(dir, &["diff", "HEAD", "--", p])?
+                };
+                truncated |= append_patch(&mut patch, &raw);
             }
-        }
-        None => {
-            patch.push_str(&run_git(dir, &["diff", "HEAD"])?);
-            for p in &untracked {
-                patch.push_str(&untracked_diff(dir, p)?);
+            None => {
+                truncated |= append_patch(&mut patch, &run_git(dir, &["diff", "HEAD"])?);
+                for (index, p) in untracked.iter().enumerate() {
+                    if truncated || index >= MAX_UNTRACKED_DIFF_FILES {
+                        truncated = true;
+                        break;
+                    }
+                    truncated |= append_patch(&mut patch, &untracked_diff(dir, p)?);
+                }
             }
         }
     }
 
-    let truncated = patch.len() > PATCH_CAP_BYTES;
-    if truncated {
-        let mut cut = PATCH_CAP_BYTES;
-        while !patch.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        patch.truncate(cut);
-    }
     Ok(DiffResult { patch, truncated })
 }
 
@@ -381,14 +419,20 @@ pub fn review_diffs(dir: &Path) -> Result<ReviewDiffs> {
 
     let untracked = list_untracked(dir)?;
     let mut untracked_raw = String::new();
-    for p in &untracked {
+    for (index, p) in untracked.iter().enumerate() {
+        if index >= MAX_UNTRACKED_DIFF_FILES {
+            truncated = true;
+            break;
+        }
         if is_sensitive_path(p) {
             continue;
         }
-        untracked_raw.push_str(&untracked_diff(dir, p)?);
+        if append_patch(&mut untracked_raw, &untracked_diff(dir, p)?) {
+            truncated = true;
+            break;
+        }
     }
-    let (untracked_patch, t) = cap_patch(untracked_raw);
-    truncated |= t;
+    let untracked_patch = untracked_raw;
     let (untracked_patch, r) = redact_review_patch(&untracked_patch);
     redacted |= r;
     if !untracked_patch.is_empty() {
@@ -457,17 +501,17 @@ fn facts_uncached(dir: &Path) -> CheckoutFacts {
                 .map(str::to_string)
                 .filter(|b| !b.is_empty())
         });
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
-        .args([
+    let out = {
+        let mut command = crate::spawn::command("git");
+        command.arg("-C").arg(dir).args([
             "rev-parse",
             "--show-toplevel",
             "--path-format=absolute",
             "--git-common-dir",
-        ])
-        .output()
-        .ok();
+        ]);
+        git_output(command, GIT_COMMAND_TIMEOUT)
+    }
+    .ok();
     let Some(out) = out else {
         return CheckoutFacts::default();
     };
@@ -742,13 +786,16 @@ pub fn push(dir: &Path) -> Result<String> {
     }
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
 
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
-        .args(&args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .with_context(|| format!("spawning git push in {}", dir.display()))?;
+    let out = {
+        let mut command = crate::spawn::command("git");
+        command
+            .arg("-C")
+            .arg(dir)
+            .args(&args)
+            .env("GIT_TERMINAL_PROMPT", "0");
+        git_output(command, GIT_COMMAND_TIMEOUT)
+    }
+    .with_context(|| format!("spawning git push in {}", dir.display()))?;
     let stderr = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
         bail!(
@@ -974,13 +1021,12 @@ pub fn is_git_repo(dir: &Path) -> bool {
 pub fn probe_repo(dir: &Path) -> Result<bool> {
     const ARGS: &[&str] = &["rev-parse", "--is-inside-work-tree"];
 
-    let out = crate::spawn::command("git")
-        .env("LC_ALL", "C")
-        .arg("-C")
-        .arg(dir)
-        .args(ARGS)
-        .output()
-        .with_context(|| format!("spawning git {ARGS:?}"))?;
+    let out = {
+        let mut command = crate::spawn::command("git");
+        command.env("LC_ALL", "C").arg("-C").arg(dir).args(ARGS);
+        git_output(command, GIT_COMMAND_TIMEOUT)
+    }
+    .with_context(|| format!("spawning git {ARGS:?}"))?;
     let stderr = String::from_utf8_lossy(&out.stderr);
     if out.status.success() {
         return Ok(true);
@@ -1204,11 +1250,13 @@ pub fn validate_branch_name(name: &str) -> Result<()> {
     if trimmed.starts_with('-') {
         bail!("branch name {name:?} starts with '-'; expected a name git will not read as a flag");
     }
-    let ok = crate::spawn::command("git")
-        .args(["check-ref-format", "--branch", trimmed])
-        .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false);
+    let ok = {
+        let mut command = crate::spawn::command("git");
+        command.args(["check-ref-format", "--branch", trimmed]);
+        git_output(command, GIT_COMMAND_TIMEOUT)
+    }
+    .map(|out| out.status.success())
+    .unwrap_or(false);
     if !ok {
         bail!("branch name {name:?} is not a valid git branch name (see git check-ref-format)");
     }
@@ -1400,13 +1448,16 @@ pub fn pull(dir: &Path) -> Result<PullOutcome> {
 }
 
 fn pull_ff_only(dir: &Path) -> Result<String> {
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["pull", "--ff-only"])
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .with_context(|| format!("spawning git pull in {}", dir.display()))?;
+    let out = {
+        let mut command = crate::spawn::command("git");
+        command
+            .arg("-C")
+            .arg(dir)
+            .args(["pull", "--ff-only"])
+            .env("GIT_TERMINAL_PROMPT", "0");
+        git_output(command, GIT_COMMAND_TIMEOUT)
+    }
+    .with_context(|| format!("spawning git pull in {}", dir.display()))?;
     if !out.status.success() {
         bail!(
             "git pull in {} failed (exit {:?}): {}",
@@ -1426,13 +1477,16 @@ pub fn fetch(dir: &Path) -> Result<String> {
             dir.display()
         );
     };
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["fetch", "--prune", &remote])
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .with_context(|| format!("spawning git fetch in {}", dir.display()))?;
+    let out = {
+        let mut command = crate::spawn::command("git");
+        command
+            .arg("-C")
+            .arg(dir)
+            .args(["fetch", "--prune", &remote])
+            .env("GIT_TERMINAL_PROMPT", "0");
+        git_output(command, GIT_COMMAND_TIMEOUT)
+    }
+    .with_context(|| format!("spawning git fetch in {}", dir.display()))?;
     let stderr = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
         bail!(
@@ -1497,12 +1551,12 @@ fn run_git(dir: &Path, args: &[&str]) -> Result<String> {
 }
 
 fn run_git_status_ok(dir: &Path, args: &[&str], ok_codes: &[i32]) -> Result<String> {
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .with_context(|| format!("spawning git {args:?}"))?;
+    let out = {
+        let mut command = crate::spawn::command("git");
+        command.arg("-C").arg(dir).args(args);
+        git_output(command, GIT_COMMAND_TIMEOUT)
+    }
+    .with_context(|| format!("spawning git {args:?}"))?;
     let code = out.status.code();
     if !code.is_some_and(|c| ok_codes.contains(&c)) {
         bail!(
@@ -1523,6 +1577,70 @@ mod tests {
     use super::*;
     use std::fs;
     use std::process::Command;
+
+    #[test]
+    fn oversized_git_capture_refuses_before_returning_a_partial_patch() {
+        let repo = tempfile::tempdir().unwrap();
+        init_repo(repo.path());
+        fs::write(
+            repo.path().join("huge.txt"),
+            "content line\n".repeat(800_000),
+        )
+        .unwrap();
+        let error = diff(repo.path(), Some("huge.txt"), None)
+            .err()
+            .expect("capture limit");
+        assert!(
+            format!("{error:#}").contains("combined output limit"),
+            "{error:#}"
+        );
+        assert!(
+            status(repo.path()).is_ok(),
+            "a refused diff must leave Git usable"
+        );
+    }
+
+    #[test]
+    fn truncated_untracked_sections_stop_before_collecting_later_files() {
+        let repo = tempfile::tempdir().unwrap();
+        init_repo(repo.path());
+        fs::write(repo.path().join("a.txt"), "first line\n".repeat(60_000)).unwrap();
+        fs::write(repo.path().join("z.txt"), "later line\n".repeat(900_000)).unwrap();
+        let patch = diff(repo.path(), None, None).unwrap();
+        assert!(patch.truncated);
+        assert!(patch.patch.len() <= PATCH_CAP_BYTES);
+        let review = review_diffs(repo.path()).unwrap();
+        assert!(review.truncated);
+        assert!(review
+            .sections
+            .iter()
+            .all(|s| s.patch.len() <= PATCH_CAP_BYTES));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_hook_deadline_reports_unknown_mutation_outcome_without_retry() {
+        use std::os::unix::fs::PermissionsExt;
+        let repo = tempfile::tempdir().unwrap();
+        init_repo(repo.path());
+        let hook = repo.path().join(".git/hooks/pre-commit");
+        fs::write(&hook, "#!/bin/sh\nprintf x >> hook-runs\nexec sleep 5\n").unwrap();
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut command = crate::spawn::command("git");
+        command
+            .arg("-C")
+            .arg(repo.path())
+            .args(["commit", "--allow-empty", "-m", "fixture"]);
+        let result = git_output(command, std::time::Duration::from_secs(2));
+        let error = result
+            .err()
+            .expect("the hook must exceed the deadline")
+            .to_string();
+        assert!(error.contains("completion was not confirmed"), "{error}");
+        assert!(error.contains("deadline 2000 ms"), "{error}");
+        assert_eq!(fs::read(repo.path().join("hook-runs")).unwrap(), b"x");
+        assert!(status(repo.path()).is_ok());
+    }
 
     fn head_path(name: &str) -> std::path::PathBuf {
         std::path::PathBuf::from(format!("/houston-test/{name}/.git/HEAD"))
