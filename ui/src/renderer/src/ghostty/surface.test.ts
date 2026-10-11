@@ -728,7 +728,7 @@ describe('surface fit scheduling', () => {
     }
   })
 
-  it('reflows an observed resize only when the PTY is told, in the same tick', () => {
+  it('reflows an observed resize animation once, when the PTY is told, in the same tick', () => {
     vi.useFakeTimers()
     vi.stubGlobal('window', {
       devicePixelRatio: 1,
@@ -759,14 +759,16 @@ describe('surface fit scheduling', () => {
         requestRender: vi.fn()
       })
 
-      box.width = 80
-      surface.fit(true)
-      box.width = 120
-      surface.fit(true)
+      // Frames of a layout animation: each lands within the debounce of the last.
+      for (const width of [80, 96, 104, 112, 120]) {
+        box.width = width
+        surface.fit(true)
+        vi.advanceTimersByTime(200)
+      }
       expect(calls).toEqual([])
       expect([surface.cols, surface.rows]).toEqual([19, 5])
 
-      vi.advanceTimersByTime(150)
+      vi.advanceTimersByTime(250)
       expect(calls).toEqual(['reflow 14x5', 'pty 14x5'])
 
       box.width = 160

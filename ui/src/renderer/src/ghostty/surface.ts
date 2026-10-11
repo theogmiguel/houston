@@ -29,7 +29,9 @@ export const SCROLLBACK_BYTES_PER_CELL_ESTIMATE = 16
 const CONTENT_PADDING = 4
 const MIN_SCROLLBAR_THUMB_HEIGHT = 18
 const CURSOR_BLINK_INTERVAL_MS = 500
-const RESIZE_NOTIFY_DEBOUNCE_MS = 150
+// Long enough that a maximize or split animation reaches the PTY as one size:
+// each size change makes a TUI reprint its screen, and a reprint lands in history.
+const RESIZE_NOTIFY_DEBOUNCE_MS = 450
 const SELECTION_AUTOSCROLL_INTERVAL_MS = 80
 const COMPOSITION_SUPPRESSION_MS = 100
 const TERMINAL_FONT_LOAD_TEXT = 'iMW0@# .'

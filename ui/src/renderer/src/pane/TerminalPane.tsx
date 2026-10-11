@@ -1173,7 +1173,9 @@ export function TerminalPane({
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
       resizeFrame = requestAnimationFrame(() => {
         resizeFrame = undefined
-        syncSize()
+        // A layout change reaches the PTY through the surface's debounced
+        // `onResize`, so an animation sends one size instead of one per frame.
+        if (host.offsetWidth && host.offsetHeight && ghostty.attached) ghostty.fit(true)
       })
     })
     observer.observe(host)
