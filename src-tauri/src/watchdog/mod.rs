@@ -958,6 +958,16 @@ fn native_prompt(
     parent: Option<&gtk::ApplicationWindow>,
     cancel: &Arc<AtomicBool>,
 ) -> PromptOutcome {
+    native_prompt_with_driver(deadline_ms, parent, cancel, |_| {})
+}
+
+#[cfg(target_os = "linux")]
+fn native_prompt_with_driver(
+    deadline_ms: u64,
+    parent: Option<&gtk::ApplicationWindow>,
+    cancel: &Arc<AtomicBool>,
+    shown: impl FnOnce(&gtk::MessageDialog),
+) -> PromptOutcome {
     use gtk::prelude::*;
 
     if let Some(outcome) = prompt_preflight(deadline_ms, cancel, SystemClocks.sample().mono_ms) {
@@ -978,7 +988,7 @@ fn native_prompt(
     const POLL_MS: u64 = 250;
     let verdict = std::rc::Rc::new(std::cell::Cell::new(None::<PromptOutcome>));
     let slot = verdict.clone();
-    let cancel = cancel.clone();
+    let poll_cancel = cancel.clone();
     let weak = dialog.downgrade();
     let armed = std::rc::Rc::new(std::cell::Cell::new(true));
     let closure_armed = armed.clone();
@@ -987,7 +997,8 @@ fn native_prompt(
             closure_armed.set(false);
             return glib::ControlFlow::Break;
         };
-        let Some(outcome) = prompt_preflight(deadline_ms, &cancel, SystemClocks.sample().mono_ms)
+        let Some(outcome) =
+            prompt_preflight(deadline_ms, &poll_cancel, SystemClocks.sample().mono_ms)
         else {
             return glib::ControlFlow::Continue;
         };
@@ -997,6 +1008,7 @@ fn native_prompt(
         glib::ControlFlow::Break
     });
 
+    shown(&dialog);
     let response = dialog.run();
     remove_if_armed(source, &armed);
     // SAFETY: `dialog.run()` has returned, so no other code still holds it.
@@ -1151,6 +1163,49 @@ mod source_lifecycle_tests {
         let outcome =
             super::native_prompt(super::SystemClocks.sample().mono_ms + 300, None, &cancel);
         assert_eq!(outcome, super::PromptOutcome::TimedOut);
+    }
+
+    #[test]
+    fn expired_native_prompt_entry_never_constructs_a_dialog() {
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let outcome = super::native_prompt_with_driver(0, None, &cancel, |_| {
+            panic!("expired prompt was displayed")
+        });
+        assert_eq!(outcome, super::PromptOutcome::TimedOut);
+    }
+
+    #[test]
+    #[ignore = "needs an isolated unlocked display; select this test alone"]
+    fn native_wait_close_and_answer_deadline_use_the_issued_deadline() {
+        use super::{native_prompt_with_driver, PromptOutcome, SystemClocks};
+        use gtk::prelude::*;
+        use std::sync::{atomic::AtomicBool, Arc};
+        assert!(gtk::init().is_ok(), "isolated display required");
+        for response in [gtk::ResponseType::Cancel, gtk::ResponseType::DeleteEvent] {
+            let cancel = Arc::new(AtomicBool::new(false));
+            let result = native_prompt_with_driver(
+                SystemClocks.sample().mono_ms + 10_000,
+                None,
+                &cancel,
+                |dialog| {
+                    let dialog = dialog.clone();
+                    glib::timeout_add_local_once(Duration::from_millis(1), move || {
+                        dialog.response(response)
+                    });
+                },
+            );
+            assert_eq!(result, PromptOutcome::Decline);
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        let deadline = SystemClocks.sample().mono_ms + 100;
+        let result = native_prompt_with_driver(deadline, None, &cancel, |dialog| {
+            let dialog = dialog.clone();
+            // Return Wait after expiry but before the 250 ms dialog poll.
+            glib::timeout_add_local_once(Duration::from_millis(150), move || {
+                dialog.response(gtk::ResponseType::Cancel)
+            });
+        });
+        assert_eq!(result, PromptOutcome::TimedOut);
     }
 
     #[test]
