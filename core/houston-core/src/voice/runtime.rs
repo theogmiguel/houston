@@ -40,7 +40,7 @@ pub enum MonitorTransition {
 
 #[derive(Default)]
 pub struct Runtime {
-    inner: Mutex<Inner>,
+    inner: Arc<Mutex<Inner>>,
     pub models: models::Manager,
 }
 
@@ -169,37 +169,42 @@ impl Runtime {
         )
     }
 
-    pub fn download_begin(&self, id: &str) {
-        self.lock()
+    pub fn claim_download(&self, id: &str) -> Result<DownloadLease, models::ModelError> {
+        models::find(id).ok_or_else(|| models::ModelError::UnknownModel { id: id.to_string() })?;
+        let mut inner = self.lock();
+        if matches!(
+            inner.downloads.get(id),
+            Some(DownloadState::InFlight { .. })
+        ) {
+            return Err(models::ModelError::DownloadActive { id: id.to_string() });
+        }
+        inner
             .downloads
             .insert(id.to_string(), DownloadState::InFlight { progress: 0.0 });
+        Ok(DownloadLease {
+            inner: self.inner.clone(),
+            id: id.to_string(),
+            finished: false,
+        })
     }
 
-    pub fn download_progress(&self, id: &str, progress: f32) {
-        self.lock().downloads.insert(
-            id.to_string(),
-            DownloadState::InFlight {
-                progress: progress.clamp(0.0, 1.0),
-            },
-        );
-    }
-
-    pub fn download_end(&self, id: &str, failure: Option<String>) {
+    pub fn delete_model(&self, models_dir: &Path, id: &str) -> Result<u64, models::ModelError> {
+        models::find(id).ok_or_else(|| models::ModelError::UnknownModel { id: id.to_string() })?;
+        // Hold admission through deletion; an active lease owns publication until it ends.
         let mut inner = self.lock();
-        match failure {
-            Some(reason) => {
-                inner
-                    .downloads
-                    .insert(id.to_string(), DownloadState::Failed { reason });
-            }
-            None => {
-                inner.downloads.remove(id);
-            }
+        if matches!(
+            inner.downloads.get(id),
+            Some(DownloadState::InFlight { .. })
+        ) {
+            return Err(models::ModelError::DownloadActive { id: id.to_string() });
         }
-    }
-
-    pub fn download_forget(&self, id: &str) {
-        self.lock().downloads.remove(id);
+        let freed = models::delete(models_dir, id)?;
+        inner.downloads.remove(id);
+        #[cfg(unix)]
+        {
+            inner.engine = None;
+        }
+        Ok(freed)
     }
 
     pub fn download_state(&self, id: &str) -> Option<DownloadState> {
@@ -208,6 +213,54 @@ impl Runtime {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().expect("voice runtime lock")
+    }
+}
+
+pub struct DownloadLease {
+    inner: Arc<Mutex<Inner>>,
+    id: String,
+    finished: bool,
+}
+
+impl DownloadLease {
+    pub fn progress(&self, progress: f32) {
+        let mut inner = self.inner.lock().expect("voice runtime lock");
+        inner.downloads.insert(
+            self.id.clone(),
+            DownloadState::InFlight {
+                progress: progress.clamp(0.0, 1.0),
+            },
+        );
+    }
+
+    pub fn finish(mut self, failure: Option<String>) {
+        self.end(failure);
+        self.finished = true;
+    }
+
+    fn end(&self, failure: Option<String>) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        match failure {
+            Some(reason) => {
+                inner
+                    .downloads
+                    .insert(self.id.clone(), DownloadState::Failed { reason });
+            }
+            None => {
+                inner.downloads.remove(&self.id);
+            }
+        }
+    }
+}
+
+impl Drop for DownloadLease {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.end(Some(format!(
+                "model {:?} download was interrupted; retry the download",
+                self.id
+            )));
+        }
     }
 }
 
@@ -290,15 +343,15 @@ mod tests {
         assert_eq!(rt.download_state("ggml-small"), None);
         assert!(!rt.download_in_flight("ggml-small"));
 
-        rt.download_begin("ggml-small");
+        let lease = rt.claim_download("ggml-small").unwrap();
         assert!(rt.download_in_flight("ggml-small"));
-        rt.download_progress("ggml-small", 0.5);
+        lease.progress(0.5);
         assert_eq!(
             rt.download_state("ggml-small"),
             Some(DownloadState::InFlight { progress: 0.5 })
         );
 
-        rt.download_end("ggml-small", Some("sha-256 mismatch".to_string()));
+        lease.finish(Some("sha-256 mismatch".to_string()));
         assert_eq!(
             rt.download_state("ggml-small"),
             Some(DownloadState::Failed {
@@ -307,12 +360,12 @@ mod tests {
         );
         assert!(!rt.download_in_flight("ggml-small"));
 
-        rt.download_begin("ggml-small");
+        let lease = rt.claim_download("ggml-small").unwrap();
         assert_eq!(
             rt.download_state("ggml-small"),
             Some(DownloadState::InFlight { progress: 0.0 })
         );
-        rt.download_end("ggml-small", None);
+        lease.finish(None);
         assert_eq!(
             rt.download_state("ggml-small"),
             None,
@@ -323,16 +376,73 @@ mod tests {
     #[test]
     fn download_progress_is_clamped_to_the_zero_to_one_range() {
         let rt = Runtime::new();
-        rt.download_progress("ggml-small", 4.2);
+        let lease = rt.claim_download("ggml-small").unwrap();
+        lease.progress(4.2);
         assert_eq!(
             rt.download_state("ggml-small"),
             Some(DownloadState::InFlight { progress: 1.0 })
         );
-        rt.download_progress("ggml-small", -1.0);
+        lease.progress(-1.0);
         assert_eq!(
             rt.download_state("ggml-small"),
             Some(DownloadState::InFlight { progress: 0.0 })
         );
+    }
+
+    #[test]
+    fn admission_is_atomic_and_delete_cannot_clear_an_active_lease() {
+        let rt = Arc::new(Runtime::new());
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let threads: Vec<_> = (0..2)
+            .map(|_| {
+                let rt = rt.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    rt.claim_download("ggml-small")
+                })
+            })
+            .collect();
+        barrier.wait();
+        let claims: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+        assert_eq!(claims.iter().filter(|c| c.is_ok()).count(), 1);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ggml-small.bin");
+        std::fs::write(&path, b"installed").unwrap();
+        assert!(matches!(
+            rt.delete_model(dir.path(), "ggml-small"),
+            Err(models::ModelError::DownloadActive { .. })
+        ));
+        assert!(rt.download_in_flight("ggml-small"));
+        assert!(path.exists());
+        drop(claims);
+        assert!(!rt.download_in_flight("ggml-small"));
+        assert_eq!(rt.delete_model(dir.path(), "ggml-small").unwrap(), 9);
+    }
+
+    #[tokio::test]
+    async fn abort_before_poll_and_panic_release_admission_and_report_failure() {
+        let rt = Runtime::new();
+        let lease = rt.claim_download("ggml-small").unwrap();
+        let task = tokio::spawn(async move {
+            let _lease = lease;
+            std::future::pending::<()>().await;
+        });
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(!rt.download_in_flight("ggml-small"));
+        assert!(matches!(
+            rt.download_state("ggml-small"),
+            Some(DownloadState::Failed { .. })
+        ));
+        let lease = rt.claim_download("ggml-small").unwrap();
+        let task = tokio::spawn(async move {
+            let _lease = lease;
+            panic!("synthetic download worker panic");
+        });
+        assert!(task.await.unwrap_err().is_panic());
+        assert!(!rt.download_in_flight("ggml-small"));
+        assert!(rt.claim_download("ggml-small").is_ok());
     }
 
     #[cfg(unix)]
