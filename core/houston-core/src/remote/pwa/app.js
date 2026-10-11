@@ -761,7 +761,8 @@
         var li = el("li", "twr");
         li.appendChild(el("span", "step-tool", st.tool));
         if (st.target) li.appendChild(el("span", "step-target", st.target));
-        if (st.result) li.appendChild(el("span", "step-result", st.result));
+        if (st.failed === true) li.appendChild(el("span", "step-result failed", "failed"));
+        else if (st.result) li.appendChild(el("span", "step-result", st.result));
         ul.appendChild(li);
       });
       wrap.appendChild(ul);
