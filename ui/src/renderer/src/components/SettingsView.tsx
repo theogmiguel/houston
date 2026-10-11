@@ -26,6 +26,7 @@ import { MascotSettings } from './settings/MascotSettings'
 import { TerminalSection } from './settings/TerminalSection'
 import { DiagnosticsSection } from './settings/DiagnosticsSection'
 import { DaemonSection } from './settings/DaemonSection'
+import { WslSection } from './settings/WslSection'
 import { AgentStatusSection } from './settings/AgentStatusSection'
 import { PrivacySection } from './settings/PrivacySection'
 import { VoiceSection } from './settings/VoiceSection'
@@ -421,6 +422,7 @@ function SectionDispatch({
           </>
         )}
 
+        {section === 'wsl' && <WslSection />}
         {section === 'remote' && <RemoteSection client={daemonClient ?? null} onChangeRoute={openConnectPhoneRoute} />}
     </>
   )

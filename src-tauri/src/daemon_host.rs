@@ -487,7 +487,7 @@ const PRECHECK_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 // minute covers a full grid. A hang here is a bug, not a slow handoff.
 pub(crate) const HANDOFF_HTTP_TIMEOUT: Duration = Duration::from_secs(60);
 
-fn manage_http_client() -> reqwest::Client {
+pub(crate) fn manage_http_client() -> reqwest::Client {
     manage_http_client_with(MANAGE_HTTP_TIMEOUT)
 }
 
@@ -599,6 +599,7 @@ async fn retire_daemon_for_update_with(
         verb,
         candidate_bin: None,
         expected_sessions,
+        path: None,
     };
     let (http_status, json) =
         match manage_post_request(&client, fields.port, &fields.token, &request).await {
@@ -702,6 +703,7 @@ pub(crate) async fn request_candidate_handoff(
         verb: houston_protocol::ManageVerb::DaemonHandoff,
         candidate_bin: candidate.map(|p| p.to_string_lossy().into_owned()),
         expected_sessions: None,
+        path: None,
     };
     let (status, json) = manage_post_request(&client, fields.port, &fields.token, &request).await?;
     if !status.is_success() {
@@ -714,7 +716,7 @@ pub(crate) async fn request_candidate_handoff(
     })
 }
 
-async fn manage_post(
+pub(crate) async fn manage_post(
     client: &reqwest::Client,
     port: u16,
     token: &str,
@@ -725,6 +727,7 @@ async fn manage_post(
         verb,
         candidate_bin: None,
         expected_sessions: None,
+        path: None,
     };
     manage_post_request(client, port, token, &body).await
 }

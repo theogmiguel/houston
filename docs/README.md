@@ -21,6 +21,7 @@ Two halves. The first is for using Houston; the second is for working on it.
 - [SSH](user/ssh.md) — a remote shell in a pane, and what that does not cover
 - [Remote access](user/remote-access.md) — following and answering panes from a phone or
   another computer, pairing, ntfy notifications, and what they transmit
+- [WSL](user/wsl.md) — workspaces inside WSL distros on Windows, and what they do not cover
 - [Dictation](user/voice.md) — local and cloud engines, and what leaves the machine
 - [Usage](user/usage.md) — token and cost figures, and what they do not cover
 - [Keybindings](user/keybindings.md) — what is rebindable, and passing keys through

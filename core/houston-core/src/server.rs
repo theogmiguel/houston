@@ -304,8 +304,18 @@ async fn manage_post(
              ids the caller confirmed (an empty array confirms that none are live)",
         );
     }
+    if request.path.is_some() && request.verb != proto::ManageVerb::WorkspaceOpen {
+        return manage_error(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "path is only meaningful with workspace_open, not {:?}",
+                request.verb
+            ),
+        );
+    }
     match request.verb {
         proto::ManageVerb::DaemonStatus => manage_json(StatusCode::OK, &daemon.manage_status()),
+        proto::ManageVerb::WorkspaceOpen => manage_workspace_open(daemon, request.path).await,
         proto::ManageVerb::DaemonHandoff => {
             let candidate_bin = request.candidate_bin.clone();
             let for_handoff = Arc::clone(&daemon);
@@ -366,6 +376,41 @@ async fn manage_post(
                 ),
             }
         }
+    }
+}
+
+async fn manage_workspace_open(daemon: Arc<Daemon>, path: Option<String>) -> Response {
+    let Some(path) = path else {
+        return manage_error(
+            StatusCode::BAD_REQUEST,
+            "workspace_open requires path: an absolute directory path",
+        );
+    };
+    let p = std::path::Path::new(&path);
+    if !p.is_absolute() || !p.is_dir() {
+        return manage_error(
+            StatusCode::BAD_REQUEST,
+            format!("workspace_open path {path:?} is not an existing absolute directory; expected an absolute directory path"),
+        );
+    }
+    let daemon_bg = Arc::clone(&daemon);
+    let added = path.clone();
+    let result = tokio::task::spawn_blocking(move || daemon_bg.workspace_add(&added))
+        .await
+        .unwrap_or_else(|e| Err(anyhow::anyhow!("workspace add task panicked: {e}")));
+    match result {
+        Ok(workspaces) => {
+            daemon.broadcast_control(&proto::ServerMsg::WorkspaceList { workspaces });
+            daemon.broadcast_control(&proto::ServerMsg::WorkspaceFocus { path: path.clone() });
+            manage_json(
+                StatusCode::OK,
+                &proto::ManageWorkspaceOpenOk { ok: true, path },
+            )
+        }
+        Err(e) => manage_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("workspace_open {path:?} failed: {e:#}"),
+        ),
     }
 }
 

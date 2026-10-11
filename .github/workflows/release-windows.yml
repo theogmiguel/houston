@@ -211,8 +211,17 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: ui
 
+      # The caller runs the Linux bundle workflow first; its x86_64 job uploads these.
+      - name: Download the Linux daemon for WSL distros
+        uses: actions/download-artifact@v7
+        with:
+          name: wsl-linux-x86_64-${{ inputs.version }}
+          path: ${{ runner.temp }}/wsl-linux
+
       - name: Check renderer and build application without bundling
         shell: pwsh
+        env:
+          HOUSTON_WSL_LINUX_BIN_DIR: ${{ runner.temp }}/wsl-linux
         run: ./scripts/build-app.ps1
 
       - name: Assert the Windows sidecars were staged

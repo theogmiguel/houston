@@ -32,6 +32,9 @@ Download a release from the project's GitHub releases page. Each tagged release 
 
 There is no AUR package and no winget entry — install one of the artifacts above directly.
 
+The Windows installer also carries the Linux daemon that Houston copies into a WSL distro
+when you enable one; see [WSL](wsl.md).
+
 A release is a draft until the maintainer smoke-tests it; each release's notes list what
 changed.
 
