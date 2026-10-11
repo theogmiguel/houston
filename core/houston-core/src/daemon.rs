@@ -13664,10 +13664,9 @@ impl Daemon {
             if crate::agent_events::compaction_event(provider) == Some(d.event.as_str())
                 && d.subagent_type.is_none()
                 && d.agent_id.is_none()
+                && !self.note_compaction(d.session, receipt)
             {
-                if !self.note_compaction(d.session, receipt) {
-                    return crate::hook_drop::DropVerdict::Retry;
-                }
+                return crate::hook_drop::DropVerdict::Retry;
             }
         }
         if !d.internal_prompt

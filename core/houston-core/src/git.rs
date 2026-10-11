@@ -1633,8 +1633,7 @@ mod tests {
             .args(["commit", "--allow-empty", "-m", "fixture"]);
         let result = git_output(command, std::time::Duration::from_secs(2));
         let error = result
-            .err()
-            .expect("the hook must exceed the deadline")
+            .expect_err("the hook must exceed the deadline")
             .to_string();
         assert!(error.contains("completion was not confirmed"), "{error}");
         assert!(error.contains("deadline 2000 ms"), "{error}");

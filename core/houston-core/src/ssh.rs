@@ -877,6 +877,52 @@ fn ssh_output(
     true
 }
 
+#[cfg(feature = "test-barriers")]
+#[doc(hidden)]
+pub async fn connect_stream_for_test(
+    stream: tokio::io::DuplexStream,
+    known_hosts: PathBuf,
+) -> Result<(SshHandle, Connected)> {
+    let (prompt_tx, _prompts) = mpsc::unbounded_channel();
+    let mut session = client::connect_stream(
+        Arc::new(client::Config::default()),
+        stream,
+        Client {
+            known_hosts,
+            host: "fixture".into(),
+            port: 22,
+            prompt_tx,
+        },
+    )
+    .await?;
+    anyhow::ensure!(
+        session
+            .authenticate_password("fixture", "fixture")
+            .await?
+            .success(),
+        "fixture authentication refused"
+    );
+    let channel = session.channel_open_session().await?;
+    channel.request_shell(true).await?;
+    anyhow::ensure!(
+        channel.writable_packet_size().await == 0,
+        "fixture requires an initial zero receive window"
+    );
+    let (handle, cmds, cancel, resize) = SshHandle::queue(80, 24);
+    let transferring = Arc::clone(&handle.transferring);
+    Ok((
+        handle,
+        Connected {
+            session: Arc::new(session),
+            channel,
+            cmds,
+            cancel,
+            transferring,
+            resize,
+        },
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1081,50 +1127,4 @@ mod tests {
         let lines = post_connect_lines(&profile(None, Some("source .venv/bin/activate && cd src")));
         assert_eq!(lines, vec!["source .venv/bin/activate && cd src\n"]);
     }
-}
-
-#[cfg(feature = "test-barriers")]
-#[doc(hidden)]
-pub async fn connect_stream_for_test(
-    stream: tokio::io::DuplexStream,
-    known_hosts: PathBuf,
-) -> Result<(SshHandle, Connected)> {
-    let (prompt_tx, _prompts) = mpsc::unbounded_channel();
-    let mut session = client::connect_stream(
-        Arc::new(client::Config::default()),
-        stream,
-        Client {
-            known_hosts,
-            host: "fixture".into(),
-            port: 22,
-            prompt_tx,
-        },
-    )
-    .await?;
-    anyhow::ensure!(
-        session
-            .authenticate_password("fixture", "fixture")
-            .await?
-            .success(),
-        "fixture authentication refused"
-    );
-    let channel = session.channel_open_session().await?;
-    channel.request_shell(true).await?;
-    anyhow::ensure!(
-        channel.writable_packet_size().await == 0,
-        "fixture requires an initial zero receive window"
-    );
-    let (handle, cmds, cancel, resize) = SshHandle::queue(80, 24);
-    let transferring = Arc::clone(&handle.transferring);
-    Ok((
-        handle,
-        Connected {
-            session: Arc::new(session),
-            channel,
-            cmds,
-            cancel,
-            transferring,
-            resize,
-        },
-    ))
 }
