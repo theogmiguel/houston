@@ -5,6 +5,15 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+tokio::task_local! { static REQUEST_DEADLINE: Instant; }
+
+pub(crate) async fn within_request<F: std::future::Future>(
+    deadline: Instant,
+    future: F,
+) -> F::Output {
+    REQUEST_DEADLINE.scope(deadline, future).await
+}
+
 #[derive(Clone)]
 pub(crate) struct Dispatch {
     deadline: Instant,
@@ -16,8 +25,12 @@ pub(crate) struct Operation(Dispatch);
 
 impl Operation {
     pub(crate) fn new(timeout: Duration) -> Self {
+        let deadline = Instant::now() + timeout;
+        let deadline = REQUEST_DEADLINE
+            .try_with(|request| deadline.min(*request))
+            .unwrap_or(deadline);
         Self(Dispatch {
-            deadline: Instant::now() + timeout,
+            deadline,
             cancelled: Arc::new(AtomicBool::new(false)),
             latest: None,
         })
@@ -105,6 +118,15 @@ mod tests {
         let newer = Operation::latest("fixture-layout".into(), Duration::from_secs(60));
         assert!(!queued.is_live());
         assert!(newer.dispatch().is_live());
+    }
+
+    #[tokio::test]
+    async fn native_dispatch_cannot_outlive_the_absolute_request_deadline() {
+        within_request(Instant::now(), async {
+            let operation = Operation::new(Duration::from_secs(60));
+            assert!(!operation.dispatch().is_live());
+        })
+        .await;
     }
 
     #[test]

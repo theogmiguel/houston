@@ -9,7 +9,8 @@ use super::mcp_tools::BrowserTools;
 // Not a tight loop: a daemon that just restarted needs a moment to rebind, and a
 // tool call in flight during the gap times out on the daemon's own relay timeout
 // and is retried by the agent.
-// Bounded across all workspaces on one authenticated relay connection. A call
+// Two slots per each of the eight native browser surfaces bound work across
+// workspaces while allowing an action and a read concurrently. A call
 // expires before the daemon's 130s response deadline; writes cannot pin a slot.
 const MAX_OUTSTANDING_CALLS: usize = 16;
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(125);
@@ -139,13 +140,17 @@ where
         }
         // JoinSet owns every call. Disconnect drops it and aborts requests, whose
         // confirmation and queued-native guards then clean up before any late dispatch.
+        let deadline = std::time::Instant::now() + timeout;
         let answer = answer(request_id, tool, args, session_id, workspace_id);
         calls.spawn(async move {
-            let reply = match tokio::time::timeout(timeout,
-                answer).await {
+            let expired = || proto::ClientMsg::BrowserToolResult { request_id, ok: false, output: None,
+                error: Some("browser relay request expired; an operation already executing has unknown outcome; do not automatically retry".into()) };
+            let reply = match tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), async {
+                if std::time::Instant::now() >= deadline { return expired(); }
+                super::operation::within_request(deadline, answer).await
+            }).await {
                 Ok(reply) => reply,
-                Err(_) => proto::ClientMsg::BrowserToolResult { request_id, ok: false, output: None,
-                    error: Some("browser relay request expired; an operation already executing has unknown outcome; do not automatically retry".into()) },
+                Err(_) => expired(),
             };
             let Ok(text) = serde_json::to_string(&reply) else {
                 return;
