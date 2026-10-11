@@ -11,6 +11,10 @@ because their environment carries the pane bearer token, and they do not rewrite
 A hook without a pane identity exits silently and writes nothing: global provider hooks also
 fire in sessions Houston did not launch.
 
+PTY startup owns the child until the session row, profile directory and gated reader/wait
+workers are ready. Failure rolls back the row and reaps that child before publishing a pane.
+Respawn allocates a new ID, so failed startup leaves the previous durable pane available.
+
 What makes it an *agent* is
 that its own lifecycle events reach the daemon — through hooks it installed, or through a
 documented JSON-RPC stream. Everything on this page hangs off that: status is
@@ -170,7 +174,7 @@ the other providers use `agent_hooks.rs`:
 | Provider | Config |
 |---|---|
 | Claude | `~/.claude/settings.json`, overridden by `CLAUDE_CONFIG_DIR`; registered Houston account profiles also receive `settings.json` entries |
-| Codex | `~/.codex/hooks.json`, plus `~/.codex/config.toml` (parks a leftover `notify` line from before this file existed; never rewritten otherwise) |
+| Codex | `~/.codex/hooks.json`, plus `~/.codex/config.toml` (parks legacy `notify` and manages scoped hook trust) |
 | Cursor | `~/.cursor/hooks.json` |
 | OpenCode | `<config dir>/opencode/plugins/houston-notify.js` |
 | Grok | `~/.grok/hooks/houston.json` |
@@ -188,6 +192,15 @@ removes marked commands from the user config and registered account profile conf
 persists across boot refreshes. Previously written user and profile config paths are
 recorded in daemon settings so profile edits, deletions and config-directory changes
 remove obsolete marked entries too. Houston never rewrites `~/.claude.json`.
+
+Provider config updates replace a same-directory temporary file after writing it completely.
+Existing permissions and symlinks are preserved by replacing the resolved target. This
+prevents truncation on write failure; it does not serialize installers from other channels.
+
+Applied hook identities remain in memory while deletion is retried. Compaction counters
+commit with a durable receipt keyed by the drop path, so restart after application cannot
+count the same drop again. Receipts expire with the ten-minute drop window. Both receipt
+sets cap at 4096 entries; saturation defers new effects rather than evicting live identities.
 
 The registered command never names the binary. It names a channel-stable launcher at
 `<state dir>/bin/claude-hook`, which the daemon repoints at its own current binary on every
@@ -231,7 +244,9 @@ Codex's `hooks.json` is the same per-event array shape Cursor and Grok's files u
 both channels' entries coexist there the same way. `config.toml`'s old `notify` key
 cannot multiplex, but Houston no longer writes one: install parks an active `notify` line
 (or, if it carries Houston's own sentinel from before `hooks.json` existed, removes it
-outright) and uninstall wakes a parked one again.
+outright) and uninstall restores it only when no active replacement exists. A replacement
+keeps precedence; Houston preserves the parked original and reports the restoration conflict.
+Proposed restoration is validated as TOML before replacement.
 
 Houston installs Codex hooks with scoped trust in a reversible `[hooks.state]` block.
 The trust check verifies every Houston definition's key, hash and enabled state;

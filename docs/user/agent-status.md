@@ -109,7 +109,10 @@ it off removes exactly what Houston added:
   on Windows because these commands require POSIX `sh`.
 - **Codex** — writes `~/.codex/hooks.json`, one entry per lifecycle event. An existing
   `notify` line in your `config.toml` is parked (commented out) rather than overwritten,
-  and restored when you turn the hook off. Houston also writes a reversible managed
+  and restored when you turn the hook off. If you add a replacement `notify` while
+  hooks are on, turning them off keeps your replacement and the parked original,
+  and reports a restoration conflict. Remove the replacement before retrying if you
+  want to restore the original. Houston also writes a reversible managed
   block of `[hooks.state]` entries in `~/.codex/config.toml`, trusting only its own
   installed commands so Codex runs them without a `/hooks` review prompt. Other hooks
   and trust entries stay unchanged. Houston checks the saved trust against its installed
