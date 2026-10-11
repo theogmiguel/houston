@@ -305,7 +305,10 @@ pub(crate) fn write_drop_with(
     use std::sync::atomic::{AtomicU64, Ordering};
     static N: AtomicU64 = AtomicU64::new(0);
     ensure_dir(dir)?;
-    let bytes = serde_json::to_vec(drop).context("serializing the hook drop payload")?;
+    // Draining can reuse a filename in the same millisecond; each write needs its own identity.
+    let mut payload = serde_json::to_value(drop).context("serializing the hook drop payload")?;
+    payload["_houston_drop_id"] = uuid::Uuid::new_v4().to_string().into();
+    let bytes = serde_json::to_vec(&payload).context("serializing the hook drop payload")?;
     let tmp = dir.join(format!(
         "hook{TMP_INFIX}{}.{}",
         std::process::id(),
@@ -526,6 +529,13 @@ pub fn run_pass_with_io(
         }
         // Bound receipts without evicting identities whose drops can still be replayed.
         if state.applied.len() >= 4096 {
+            let count = state.applied.len();
+            warn_once(state, &mut present, &name, || {
+                tracing::warn!(
+                    "hook receipt limit 4096 reached (actual {count}); deferring application of {}",
+                    path.display()
+                );
+            });
             out.kept += 1;
             continue;
         }
@@ -562,10 +572,12 @@ pub fn run_pass_with_io(
             }
         };
         use sha2::Digest;
-        let identity = format!(
-            "{:x}",
-            sha2::Sha256::digest(path.as_os_str().as_encoded_bytes())
-        );
+        let mut digest = sha2::Sha256::new();
+        let path_bytes = path.as_os_str().as_encoded_bytes();
+        digest.update((path_bytes.len() as u64).to_be_bytes());
+        digest.update(path_bytes);
+        digest.update(&bytes);
+        let identity = format!("{:x}", digest.finalize());
         match apply(&drop, &identity, parsed.ms) {
             DropVerdict::Applied => {
                 state.applied.insert(name.clone());

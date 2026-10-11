@@ -67,6 +67,25 @@ fn failed_reap_and_restart_do_not_recount_a_compaction() {
     );
     assert_eq!(db.session_compactions(7).unwrap(), 1);
     assert!(!path.exists());
+    // The writer can reuse a drained filename within one millisecond.
+    let next = hook_drop::write_drop(&dir, &event, now).unwrap();
+    assert_eq!(path, next);
+    hook_drop::run_pass_with_io(
+        &dir,
+        &mut DropDirState::new(),
+        now + 3,
+        Pass::Steady,
+        |drop, identity, ms| {
+            assert_eq!(
+                db.session_note_compaction_once(drop.session, identity, ms, now + 3)
+                    .unwrap(),
+                Some(2)
+            );
+            DropVerdict::Applied
+        },
+        |path| std::fs::remove_file(path),
+    );
+    assert_eq!(db.session_compactions(7).unwrap(), 2);
 }
 
 #[test]
@@ -75,10 +94,12 @@ fn failed_counter_update_does_not_commit_a_receipt() {
     let database = temp.path().join("test.db");
     let db = Db::open(&database).unwrap();
     let now = hook_drop::now_ms();
+    let conn = rusqlite::Connection::open(database).unwrap();
+    conn.execute("INSERT INTO sessions (id, agent, project_dir, cwd, state, title, codename, created_at) VALUES (7, 'claude', '/tmp', '/tmp', 'running', 'test', 'test', unixepoch())", []).unwrap();
+    conn.execute_batch("CREATE TRIGGER counter_failure BEFORE UPDATE OF compactions ON sessions BEGIN SELECT RAISE(ABORT, 'injected counter failure'); END").unwrap();
     assert!(db
         .session_note_compaction_once(7, "fixture", now, now)
         .is_err());
-    let conn = rusqlite::Connection::open(database).unwrap();
     assert_eq!(
         conn.query_row("SELECT COUNT(*) FROM hook_compaction_receipts", [], |row| {
             row.get::<_, u32>(0)

@@ -198,7 +198,7 @@ Existing permissions and symlinks are preserved by replacing the resolved target
 prevents truncation on write failure; it does not serialize installers from other channels.
 
 Applied hook identities remain in memory while deletion is retried. Compaction counters
-commit with a durable receipt keyed by the drop path, so restart after application cannot
+commit with a durable receipt keyed by the drop path and payload, so restart after application cannot
 count the same drop again. Receipts expire with the ten-minute drop window. Both receipt
 sets cap at 4096 entries; saturation defers new effects rather than evicting live identities.
 
