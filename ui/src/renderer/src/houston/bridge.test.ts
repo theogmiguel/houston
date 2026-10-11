@@ -8,6 +8,7 @@ const { invokeMock } = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
 
 import * as bridge from './bridge'
+import { wslWorkspaces } from './environments'
 
 function setTauriPresent(present: boolean): void {
   const win = window as unknown as { __TAURI_INTERNALS__?: unknown }
@@ -618,3 +619,49 @@ describe('Files mutation bridge', () => {
     expect(invokeMock).toHaveBeenLastCalledWith('fs_delete', { targetPath: '/ws/new' })
   })
 })
+
+describe('WSL workspace paths', () => {
+  const UNC_ROOT = String.raw`\\wsl.localhost\Ubuntu\home\u\p`
+
+  beforeEach(() => {
+    setTauriPresent(true)
+    wslWorkspaces.set('/home/u/p', 'Ubuntu')
+  })
+  afterEach(() => wslWorkspaces.clear())
+
+  it('translates wsl workspace paths for fs commands', async () => {
+    invokeMock.mockResolvedValueOnce([
+      { name: 'a.txt', path: String.raw`\\?\UNC\wsl.localhost\Ubuntu\home\u\p\a.txt`, dir: false, ignored: false }
+    ])
+    const entries = await bridge.readDir('/home/u/p')
+    expect(invokeMock).toHaveBeenLastCalledWith('fs_read_directory', { dirPath: UNC_ROOT })
+    expect(entries).toEqual([{ name: 'a.txt', path: '/home/u/p/a.txt', dir: false, ignored: false }])
+
+    invokeMock.mockResolvedValueOnce([{ name: 'b.txt', path: String.raw`C:\w\b.txt`, dir: false, ignored: false }])
+    expect(await bridge.readDir(String.raw`C:\w`)).toEqual([
+      { name: 'b.txt', path: String.raw`C:\w\b.txt`, dir: false, ignored: false }
+    ])
+    expect(invokeMock).toHaveBeenLastCalledWith('fs_read_directory', { dirPath: String.raw`C:\w` })
+  })
+
+  it('registers the UNC root, opens the editor on the UNC path and leaves file contents alone', async () => {
+    invokeMock.mockResolvedValue(undefined)
+    await bridge.setAllowedRoots(['/home/u/p', String.raw`C:\w`])
+    expect(invokeMock).toHaveBeenLastCalledWith('fs_set_allowed_roots', { roots: [UNC_ROOT, String.raw`C:\w`] })
+    await bridge.openInEditor('code', '/home/u/p/src/a.rs', 3)
+    expect(invokeMock).toHaveBeenLastCalledWith('shell_open_in_editor', {
+      editor: 'code',
+      path: String.raw`\\wsl.localhost\Ubuntu\home\u\p\src\a.rs`,
+      line: 3,
+      col: undefined
+    })
+    await bridge.writeFile('/home/u/p/a.txt', '/home/u/p is my home')
+    expect(invokeMock).toHaveBeenLastCalledWith('fs_write_file', {
+      filePath: String.raw`\\wsl.localhost\Ubuntu\home\u\p\a.txt`,
+      content: '/home/u/p is my home'
+    })
+    invokeMock.mockResolvedValueOnce(String.raw`\\wsl.localhost\Ubuntu\x`)
+    expect(await bridge.readFile('/home/u/p/a.txt')).toBe(String.raw`\\wsl.localhost\Ubuntu\x`)
+  })
+})
+

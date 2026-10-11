@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { daemonShutdown } from './manage'
+import { listEnvironments } from './environments'
 import type { SessionInfo } from './generated/SessionInfo'
 import type { Workspace } from './generated/Workspace'
 import {
@@ -17,14 +18,28 @@ import {
   type TraySyncer
 } from './tray'
 
-function stopDaemonThenQuit(): void {
-  void daemonShutdown()
-    .catch((err: unknown) => {
+// Stops the local daemon and each WSL environment's (through its relay port) at
+// once; a failure is logged and never keeps the others running or the app open.
+async function stopEveryDaemon(): Promise<void> {
+  const environments = await listEnvironments().catch((err: unknown) => {
+    console.warn('houston: env_list failed, stopping only the local daemon', err)
+    return []
+  })
+  const targets = [undefined, ...environments.filter((e) => e.kind === 'wsl' && e.token !== '')]
+  const results = await Promise.allSettled(targets.map((target) => daemonShutdown(target)))
+  results.forEach((result, i) => {
+    if (result.status === 'rejected') {
       console.warn(
-        'houston: daemon_shutdown from the tray failed, quitting without stopping it',
-        err
+        `houston: daemon_shutdown before quitting failed for ${targets[i]?.id ?? 'local'}, quitting without stopping it`,
+        result.reason
       )
-    })
+    }
+  })
+}
+
+/** The tray's and the command palette's "stop daemon and quit". */
+export function stopDaemonThenQuit(): void {
+  void stopEveryDaemon()
     .finally(() => {
       void appQuit().catch((err: unknown) => {
         console.warn('houston: app_quit failed', err)

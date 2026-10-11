@@ -557,6 +557,22 @@ export function IconServer(p: IconProps): React.JSX.Element {
   )
 }
 
+// Tux, the Linux mark; Lucide has no equivalent, so it is drawn in the same stroke style.
+export function IconTux(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M12 2.5c-2.2 0-3.5 1.8-3.5 4v1.4c0 1.1-.4 2-1.1 2.9C6.2 12.4 5 14.4 5 16.8c0 1.6 1 2.9 2.6 3.7" />
+      <path d="M12 2.5c2.2 0 3.5 1.8 3.5 4v1.4c0 1.1.4 2 1.1 2.9 1.2 1.6 2.4 3.6 2.4 6 0 1.6-1 2.9-2.6 3.7" />
+      <path d="M9.7 11.6C8.8 12.9 8.3 14.3 8.3 15.9c0 2 1.6 3.4 3.7 3.4s3.7-1.4 3.7-3.4c0-1.6-.5-3-1.4-4.3" />
+      <path d="M10.5 6.2h.01" />
+      <path d="M13.5 6.2h.01" />
+      <path d="m10.8 8.6 1.2.9 1.2-.9" />
+      <path d="M5.5 21.5h4l-1-2" />
+      <path d="M18.5 21.5h-4l1-2" />
+    </Svg>
+  )
+}
+
 export function IconPlug(p: IconProps): React.JSX.Element {
   return (
     <Svg {...p}>

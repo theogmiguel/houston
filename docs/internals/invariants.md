@@ -45,6 +45,16 @@ interpreter over a URL or path an agent's browser tools or the Files pane handed
 an injection surface; `xdg-open`/`ShellExecuteW` take the target as a value, the same
 primitive a double-click uses.
 
+### In-distro commands use `wsl.exe --exec`, never `--`
+
+Every command the app runs inside a WSL distro is `wsl.exe -d <distro> --exec <argv...>`,
+built in `src-tauri/src/wsl/command.rs`. **Enforced by** that module's
+`every_distro_command_uses_exec` test.
+
+**Why.** After `--`, `wsl.exe` hands the argv to the distro's login shell, which parses it
+a second time: on WSL 2.6.1 that expanded `$HOME` inside single quotes. `--exec` passes each
+argument through unchanged, so scripts are written once and their arguments stay values.
+
 ### Filesystem commands are allowlist-gated
 
 Every disk-touching Tauri command (`fs_read_file`, `fs_write_file`, `fs_delete`, …) passes
@@ -71,9 +81,15 @@ again, the release-build moratorium returns with it.
 
 ### One daemon per state dir
 
+A channel has one state dir, and so one daemon and one SQLite database, in each
+environment: the app's own machine, and each enabled WSL distro, whose daemon uses the
+distro user's `~/.houston[-<channel>]`. The app never opens a distro's database; it
+reaches that daemon only through `wsl-ensure` and the relay.
+
 **Enforced by** `daemon.lock` (`flock`, `LOCK_EX|LOCK_NB`), taken by the daemon only,
 released by the kernel on any death. A contended lock refuses the second daemon; the app
-holds no lock at all and never has one to leak.
+holds no lock at all and never has one to leak. Inside a distro, `wsl-ensure` attaches to,
+hands off or refuses a live daemon before it would start a second one.
 
 **Why.** Whichever daemon writes `daemon.json` last captures every hook and helper, and both
 write the same SQLite file. `--daemon-fresh`/`--fresh` are the sanctioned restart: an orderly
@@ -143,7 +159,9 @@ commands, including user commands within a managed group. Its former `workspace_
 ownership records identify workspace files to migrate to global installation.
 Codex's `notify` is a single key, so a second channel parks the displaced line as a
 sentinel-carrying comment rather than clobbering it. User-initiated writes into a CLI's
-skill directories (`writeSkill`, skill push with backup) are fine.
+skill directories (`writeSkill`, skill push with backup) are fine. The `houston` launcher
+that `wsl-ensure` writes at `~/.local/bin/houston` in a distro carries `# houston-wsl-managed`
+on its second line; a file without it is never rewritten or removed.
 
 ### Measured values yes, class strings never
 

@@ -1,4 +1,4 @@
-# Wire protocol v130
+# Wire protocol v131
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -409,6 +409,7 @@ every refusal names the setting.
 | `keymap` | `overrides: KeymapOverrides` | direct reply to `keymap_get`; bcast after a set |
 | `slack` | `info: SlackInfo`, `refusal?` | direct reply to `slack_get` or a refused change; bcast after an applied change and on every move of the connection |
 | `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename |
+| `workspace_focus` | `path` | bcast after `/manage workspace_open` added `path`; clients select that workspace |
 | `workspace_actions` | `workspace`, `actions: WorkspaceAction[]` | direct reply to `workspace_actions_get`; bcast after a saved action is changed |
 | `workspace_action_refused` | `workspace`, `reason`, `limit`, `actual`, `requested` | direct refusal when command length or per-workspace action count exceeds its limit |
 | `workspace_local_servers` | `workspace: string`, `servers: LocalServer[]`, `unsupported: string | null`, `truncated: boolean` | direct reply; Linux reads local TCP listeners owned by live workspace session process trees; other platforms name their refusal |
@@ -995,9 +996,10 @@ one of those.
   additive: only the updater sends them, and older daemons refuse the unknown
   verb instead of changing an existing caller's response shape.
   `ManageRequest::expected_sessions` is optional and absent for every other
-  verb.
+  verb. `workspace_open` and `ManageRequest::path` are additive the same
+  way: only the `houston <dir>` launcher sends them.
 - **Request**: `POST /manage` with
-  `{"manage_version":1,"verb":"daemon_status"|"daemon_shutdown"|"daemon_shutdown_if_idle"|"daemon_shutdown_if_sessions"|"daemon_handoff","candidate_bin"?:"/absolute/path","expected_sessions"?:[1,2]}`.
+  `{"manage_version":1,"verb":"daemon_status"|"daemon_shutdown"|"daemon_shutdown_if_idle"|"daemon_shutdown_if_sessions"|"daemon_handoff"|"workspace_open","candidate_bin"?:"/absolute/path","expected_sessions"?:[1,2],"path"?:"/absolute/dir"}`.
   This exact shape — and every response shape below — is pinned by the
   renderer's own hand-written client and its tests
   (`ui/src/renderer/src/houston/manage.ts`, `manage.test.ts`); it is
@@ -1075,6 +1077,13 @@ one of those.
     from `daemon_status.handoff` (`ManageHandoffInfo`, `{supported,
     reason}`), which is a cheap static readiness check, not a per-attempt
     result.
+  - `workspace_open` (`houston-core open <dir>`, the `houston` command a WSL
+    distro gets) → requires `path`, an existing absolute directory; any
+    other verb carrying `path` gets `400` naming the field. It adds the
+    workspace exactly as `/ws` `workspace_add` does, broadcasts
+    `workspace_list` and then `workspace_focus{path}`, and answers
+    `200 {"ok":true,"path":"…"}`. A missing, relative or non-directory
+    path gets `400` naming it; nothing is added.
 - **CORS**: the renderer's Settings → Daemon section calls `/manage` with a
   plain `fetch` from the webview's own origin, which the webview treats as
   cross-origin and preflights with `OPTIONS` before the real `POST`. The two
@@ -1138,6 +1147,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 131 | **A folder opened from a WSL shell is focused in the app.** New `workspace_focus{path}` server message, broadcast after the new `/manage` verb `workspace_open` (`ManageRequest.path?`, `ManageWorkspaceOpenOk`) adds a workspace; `MANAGE_VERSION` stays 1 |
 | 129 | **Checkout, activity and pull-request surfaces gain their wire data.** `SessionInfo.checkout?` (`SessionCheckout`, `CheckoutKind`) and `SessionInfo.activity?` (`SessionActivity`) have matching `session_checkout` and `session_activity` broadcasts. `PrInfo` and `PrListItem` gain title, branch, diffstat, creation, comment, review-request and mergeability details; `pr_list` gains `PrSort`; `pr_status_batch` requests one existing `pr_status` reply per directory. `PrCheck.run_id` and `pr_check_log` expose a tail capped at 40 lines and 16 KiB. Tag colors accept any six-digit hexadecimal `#rrggbb`, stored lowercase; `TAG_PALETTE` remains the preset list. `session_attach` gains `from_offset?` and `generation?`, so a client that already holds a session's output asks only for the bytes after it |
 | 128 | Manual Sleep/Wake adds `SessionState.sleeping`, retained hook-fed cues and context, `session_sleep`, `session_wake`, `session_memory_get`, `session_updated` and `session_memory`. Sleeping panes do not auto-restore. Task Projects, Delivery/Slice metadata, blockers, readiness, revision-bound read-only Plan and per-workspace GitHub Issues/Notion connectors add the corresponding `task_project_*`, `task_domain_*`, `task_plan_*` and `task_tracker_*` messages and shared shapes above. Manual `task_start` gains `override_readiness`; automatic starts never bypass readiness. External snapshots preserve both conflicting values until an explicit resolution. |
 | 127 | Managed worktree entries carry their recorded `base_branch` and a `status` (`ready`, `stale`, `kept`). `WorktreeKeep.not_integrated { count, base }` means `git cherry` found `count` commits on a branch with no PR that have no patch-equivalent in `base` (the recorded base, or the default branch for rows recorded without one); with none, the worktree is integrated and removable after the grace. `WorktreeKeep.stale` carries `idle_days` and `removal_in_days`; a worktree becomes stale at half the idle removal threshold, which defaults to 30 days and is reported by `host_info.worktree_idle_removal_days`. When automatic removal is enabled, a qualifying worktree is removed at the threshold and its branch is kept. Manual stale removal also keeps the branch. |

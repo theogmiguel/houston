@@ -30,12 +30,14 @@ lands the work, per [`docs/operations/development.md`](development.md).
 
 **`build-installers.yml`** is the manual dry run: by default it builds both Linux
 architectures and the Windows NSIS installer from any ref you name. Set `platform`
-to `windows` or `linux` to validate that platform alone. It files nothing.
+to `windows` or `linux` to validate that platform alone; `windows` still builds the
+Linux bundles, because the installer carries their x86_64 daemon for WSL distros
+(artifact `wsl-linux-x86_64-<version>`). It files nothing.
 Since `ci.yml` never builds an installer, it is the only way to
 exercise the bundle pipeline without cutting a version.
 
-**`release-publish.yml`** refuses a bundle set that is missing an artifact or
-its `.sig`, generates the release notes once and reuses them, and writes
+**`release-publish.yml`** reads only the `houston-*` artifacts. It refuses a
+bundle set that is missing an artifact or its `.sig`, generates the release notes once and reuses them, and writes
 `latest.json` with each signature embedded. It files a draft, never a public
 release.
 
@@ -503,6 +505,20 @@ requirement before promoting or handing anything out, local release or not:
 install the artifact and run it (`./scripts/linux-vm.sh app` on the testbed)
 first. The graphical test is Linux only while cuts are Linux only; it extends
 to Windows on the first cut that ships a Windows installer.
+
+A Windows installer also gets a WSL pass, because no CI job reaches a real distro.
+Install it, then on a test channel (for example `houston.exe --channel wslt`, so
+neither the release state nor the distro's `~/.houston` is touched):
+
+1. Settings → WSL → **Enable** an x86_64 WSL 2 distro; its row reaches the running state.
+2. **Workspaces → + → Local folder…** → a folder under `\\wsl.localhost\<distro>\home\…`;
+   the rail shows it with `WSL: <distro>`.
+3. Open a shell pane there; `uname -s` prints `Linux` and `pwd` the POSIX path.
+4. In that pane, `houston .` from another folder selects it in the Windows app.
+5. Quit from the tray; the distro's `~/.houston-wslt/daemon.json` is gone afterwards.
+
+The `wsl_live` tests in [`development.md`](development.md#wsl_live) cover the daemon,
+relay and session path of that pass against the same distro without the installer.
 
 ### 4. Publish
 

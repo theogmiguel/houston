@@ -105,6 +105,11 @@ restarting `dev`) is allowed and is the normal way to work.
 `flock`-based advisory lock) both live in the channel's state dir. The daemon
 refuses to boot when another process holds the target channel's lock, naming it.
 
+A Windows app with a WSL distro enabled starts that distro's daemon on the app's channel,
+in the distro user's own `~/.houston-<channel>`. A Linux Houston inside that distro on the
+same channel shares it, so test WSL environments on a channel nothing else in the distro
+uses, such as `wslt`.
+
 `HOUSTON_SESSION` is set inside a Houston pane; it's what the `--fresh`
 refusal above uses to detect "this shell is itself running inside a pane on
 the channel I'm about to restart."
@@ -227,6 +232,7 @@ build-dir = "{cargo-cache-home}/build-dir/{workspace-path-hash}"
 | `HOUSTON_DEVTOOLS=1` | Opens the webview devtools on launch (`src-tauri/src/main.rs`). |
 | `RUST_LOG` | Standard `tracing`/`env_logger`-style filter, read by the daemon's logging setup. |
 | `TR_DEBUG_PTY_DUMP=<dir>` | Resolved once; when set, dumps raw PTY bytes to that directory for debugging. |
+| `HOUSTON_WSL_BIN_DIR=<dir>` | Where WSL environments read the Linux `houston-core`, `tr-helper` and `houston-supervisor` they install into a distro, instead of the bundled `wsl/` resources. A development build has no bundle; point it at a Linux build of `core/target/<profile>`. |
 | `HOUSTON_DAEMON_BIN_DIR=<dir>` | Where connect-or-spawn looks for `houston-core` (and, on Linux, `houston-supervisor`) instead of beside the app's own binary. Set by `dev.sh` to `core/target/debug`; unset in a packaged install, where the sidecars are frozen copies beside `houston`. |
 
 `HOUSTON_DISABLE_SWARM_AUTOLAUNCH`, `TR_BENCH_RESULTS_PATH`, and
@@ -380,6 +386,7 @@ committed inventory and runs in its own `licence-inventory` job.
 | `check-loop-spawn-sync.sh` | both daemon hosts (`houston-core/src/main.rs`, `src-tauri/src/daemon_host.rs`) call the single `spawn_background_loops` helper | Text search for the helper's definition and each call site — deliberately not a real parser |
 | `check-title-tooltip-guard.sh` | native `title=` DOM tooltips vs. component `title` props (visible headings) are not confused, and the remaining native `title=` only ever shrink toward `Tooltip` | Scan over `.tsx` for capitalised JSX tags carrying `title=`, checked against an explicit component-props allowlist; a third check counts native lowercase-element `title=` per file against a ratchet |
 | `check-spawn-window.sh` | every production spawn goes through `houston_core::spawn` (`CREATE_NO_WINDOW` on Windows) | Checks `clippy.toml` disallows raw `Command::new`; checks `spawn.rs` sets the flag; asserts it's **not** applied to the PTY's `portable_pty::CommandBuilder` |
+| `check-wsl-bundle.sh` | the Windows installer bundles the Linux daemon for WSL distros | Checks `tauri.windows.conf.json`'s `bundle.resources`, then that `src-tauri/wsl/` holds only `houston-core`, `tr-helper` and `houston-supervisor`, each an x86-64 ELF; with nothing staged it passes unless `HOUSTON_WSL_BUNDLE_REQUIRED=1` |
 | `check-icon-imports.sh` | raw `lucide-react` imports live only in `components/icons.tsx` | `grep` over `ui/src` excluding tests and `icons.tsx`, checked against an allowlist |
 | `check-native-select.sh` | no native `<select>` in the renderer (its popup is an unstyled GTK window on Linux/WebKitGTK) | `grep` over `ui/src` excluding tests and `Select.tsx`, comments stripped first |
 | `check-native-input.sh` | no native `<input type="checkbox">`/`<input type="radio">` in the renderer (its box is drawn by the OS theme, never ours) | `grep` over `ui/src` excluding tests, comments stripped first; no exemptions — `Toggle`/`Segmented` cover both shapes |
@@ -465,6 +472,28 @@ number from a busy box is no evidence either way. Linux-only, and run locally
 
 Sibling test `memory_perf_smoke` gates the memory write-path floor the same
 way, also `--ignored`, also run locally.
+
+### `wsl_live`
+
+`src-tauri/tests/wsl_live.rs`, Windows only and `#[ignore]` by default, runs against a
+real WSL 2 distro. Build the Linux binaries inside the distro first
+(`cargo build --release --bin houston-core --bin tr-helper --bin houston-supervisor` in
+`core/`), then from Git Bash on Windows:
+
+```
+cd src-tauri
+MSYS_NO_PATHCONV=1 HOUSTON_TEST_WSL_DISTRO=Ubuntu HOUSTON_TEST_WSL_CHANNEL=wslt \
+  HOUSTON_TEST_WSL_LINUX_BIN=<in-distro path of core/target/release> \
+  cargo test --test wsl_live -- --ignored --test-threads=1 --nocapture
+```
+
+Without `HOUSTON_TEST_WSL_DISTRO` every test prints `SKIPPED` and passes.
+`MSYS_NO_PATHCONV=1` stops Git Bash from rewriting the POSIX path into a Windows one.
+Each test copies the binaries into a throwaway `/tmp/houston-live-*` HOME inside the
+distro, runs every in-distro command under that HOME, and stops its daemon through
+`wsl-proxy` and `/manage daemon_shutdown` before removing the HOME, also on failure.
+`live_relay_throughput_and_echo_latency` prints PTY throughput and keystroke echo latency
+through the relay; like `perf_smoke`, read it only from an idle machine.
 
 ### `idle_loops_wire`
 
@@ -688,10 +717,20 @@ head exports selected by `srcSet` for 1x/2x/3x displays.
 ### Windows
 
 ```
+$env:HOUSTON_WSL_LINUX_BIN_DIR = '<Linux core/target/release>'
 ./scripts/build-app.ps1
 cd src-tauri
 cargo tauri bundle --bundles nsis --ci --no-sign
 ```
+
+The installer carries `houston-core`, `tr-helper` and `houston-supervisor` built
+for `x86_64-unknown-linux-gnu` at the same commit, as the `wsl/` resources that WSL
+environments install into a distro. Build them inside WSL with
+`cargo build --release --bin houston-core --bin tr-helper --bin houston-supervisor`
+in `core/`; `build-app.ps1` refuses to run without `HOUSTON_WSL_LINUX_BIN_DIR`,
+stages them in `src-tauri/wsl/` and runs `check-wsl-bundle.sh` with
+`HOUSTON_WSL_BUNDLE_REQUIRED=1`. Other Windows builds compile with that directory
+empty.
 
 `build-app.ps1` runs the full renderer gate (`typecheck`, `test`, `build`,
 `check:css`), the same `check-renderer-fresh.sh` via Git Bash, stages

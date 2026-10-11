@@ -1,0 +1,212 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { listEnvironments } from '../../houston/environments'
+import {
+  onEnvironmentsChanged,
+  wslDisable,
+  wslEnable,
+  wslList,
+  type WslDistro,
+  type WslList
+} from '../../houston/wslDistros'
+import { Button, Stack, Text } from '../ui'
+import { Chip } from '../ui/Chip'
+import { ConfirmModal } from '../ConfirmModal'
+import { Group, Row } from './shared'
+
+type Action = 'enable' | 'disable'
+
+// Enable and Disable share the row's button slot, so the replacement appears under a
+// pointer or focus aimed at the one it replaced; it stays inert this long after the
+// re-read that swapped them lands.
+export const SETTLE_MS = 800
+
+function message(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+function facts(distro: WslDistro): string {
+  return [distro.state, `WSL ${distro.version}`, ...(distro.default ? ['default'] : [])].join(' · ')
+}
+
+function statusCopy(distro: WslDistro): string | null {
+  if (distro.status === 'starting') return `Starting Houston in ${distro.name}…`
+  if (distro.status === 'ready') return `Houston is running in ${distro.name}.`
+  return null
+}
+
+function DistroRow({
+  distro,
+  reason,
+  pending,
+  onEnable,
+  onDisable
+}: {
+  distro: WslDistro
+  reason: string | null
+  pending: Action | null
+  onEnable: () => void
+  onDisable: () => void
+}): React.JSX.Element {
+  const status = statusCopy(distro)
+  return (
+    <Row
+      title={distro.name}
+      desc={
+        <Stack gap={1}>
+          <span data-testid="wsl-distro-facts">{facts(distro)}</span>
+          {status && <span>{status}</span>}
+          <span>Agent CLIs and their logins come from inside {distro.name}, not from Windows.</span>
+          {reason && (
+            <Text data-testid="wsl-distro-error" as="div" size="small" tone="danger">{reason}</Text>
+          )}
+        </Stack>
+      }
+    >
+      <Stack gap={2} axis="horizontal" align="center">
+        {(!distro.enabled || distro.status === 'error') && (
+          <Button type="button" variant="secondary" disabled={pending !== null} onClick={onEnable} data-testid="wsl-distro-enable">
+            {pending === 'enable' ? 'Enabling…' : distro.enabled ? 'Retry' : 'Enable'}
+          </Button>
+        )}
+        {distro.enabled && (
+          <Button type="button" variant="danger" disabled={pending !== null} onClick={onDisable} data-testid="wsl-distro-disable">
+            Disable
+          </Button>
+        )}
+      </Stack>
+    </Row>
+  )
+}
+
+function DistroList({
+  list,
+  loadError,
+  onRetry,
+  row
+}: {
+  list: WslList | null
+  loadError: string | null
+  onRetry: () => void
+  row: (distro: WslDistro) => React.JSX.Element
+}): React.JSX.Element {
+  if (loadError !== null) {
+    return (
+      <Stack align="start" gap={3}>
+        <Text data-testid="wsl-section-error" as="div" tone="danger" size="ui">{loadError}</Text>
+        <Button type="button" variant="legacy-ghost" onClick={onRetry} data-testid="wsl-section-retry">
+          Retry
+        </Button>
+      </Stack>
+    )
+  }
+  if (list === null) {
+    return <Text data-testid="wsl-section-loading" as="div" tone="muted" size="ui">Asking WSL for its distros…</Text>
+  }
+  if (!list.available) {
+    return (
+      <Text data-testid="wsl-section-unavailable" as="div" tone="danger" size="ui">
+        {list.reason ?? 'WSL is not available on this machine.'}
+      </Text>
+    )
+  }
+  if (list.distros.length === 0) {
+    return <Text data-testid="wsl-section-no-distros" as="div" tone="muted" size="ui">WSL reports no installed distros.</Text>
+  }
+  return <Group heading="Distros">{list.distros.map(row)}</Group>
+}
+
+export function WslSection(): React.JSX.Element {
+  const [list, setList] = useState<WslList | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [envReasons, setEnvReasons] = useState<Record<string, string>>({})
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
+  const [pending, setPending] = useState<{ name: string; action: Action } | null>(null)
+  const busy = useRef(false)
+  const [confirming, setConfirming] = useState<string | null>(null)
+
+  const load = useCallback((): Promise<void> => {
+    return Promise.all([wslList(), listEnvironments().catch(() => [])]).then(
+      ([next, environments]) => {
+        setList(next)
+        setLoadError(null)
+        const reasons: Record<string, string> = {}
+        for (const e of environments) if (e.kind === 'wsl' && e.distro && e.reason) reasons[e.distro] = e.reason
+        setEnvReasons(reasons)
+      },
+      (err: unknown) => setLoadError(message(err))
+    )
+  }, [])
+
+  useEffect(() => {
+    void load()
+    let off: (() => void) | null = null
+    let disposed = false
+    void onEnvironmentsChanged(() => void load()).then(
+      (unlisten) => (disposed ? unlisten() : (off = unlisten)),
+      (err: unknown) => console.warn('houston: could not watch WSL environments', err)
+    )
+    return () => {
+      disposed = true
+      off?.()
+    }
+  }, [load])
+
+  const run = (name: string, action: Action, invoke: () => Promise<unknown>): void => {
+    if (busy.current) return
+    busy.current = true
+    setPending({ name, action })
+    setActionErrors((prev) => {
+      const next = { ...prev }
+      delete next[name]
+      return next
+    })
+    // A failed attempt may still have booted the distro, so its state is re-read too.
+    void invoke()
+      .catch((err: unknown) => setActionErrors((prev) => ({ ...prev, [name]: message(err) })))
+      .then(load)
+      .finally(() => {
+        setTimeout(() => {
+          busy.current = false
+          setPending(null)
+        }, SETTLE_MS)
+      })
+  }
+
+  const row = (distro: WslDistro): React.JSX.Element => (
+    <DistroRow
+      key={distro.name}
+      distro={distro}
+      reason={actionErrors[distro.name] ?? (distro.status === 'error' ? envReasons[distro.name] ?? null : null)}
+      pending={pending?.name === distro.name ? pending.action : null}
+      onEnable={() => run(distro.name, 'enable', () => wslEnable(distro.name))}
+      onDisable={() => setConfirming(distro.name)}
+    />
+  )
+
+  return (
+    <>
+      <Group>
+        <Row
+          title="WSL environments"
+          desc="Open folders from a WSL distro as workspaces beside Windows ones. Houston runs its own Linux daemon inside each distro you enable."
+        >
+          <Chip variant="state" tone="warning" label="Experimental" />
+        </Row>
+      </Group>
+      <DistroList list={list} loadError={loadError} onRetry={() => void load()} row={row} />
+      {confirming !== null && (
+        <ConfirmModal
+          title="DISABLE DISTRO"
+          message={`Disabling ${confirming} stops Houston's daemon inside it and ends every session that daemon owns. Its workspaces leave the rail until you enable it again.`}
+          confirmLabel="Disable"
+          onConfirm={() => {
+            const name = confirming
+            setConfirming(null)
+            run(name, 'disable', () => wslDisable(name))
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+    </>
+  )
+}

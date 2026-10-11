@@ -124,7 +124,11 @@
     "renderer job, the larger of the two builds) at the same ~3%: a pane's",
     "write-queue overflow resync, the hidden signal for undisplayed stack tabs",
     "and the hidden-pane policy run inside every mounted pane, and the bench",
-    "probe registers from the pane's mount effect."
+    "probe registers from the pane's mount effect.",
+    "",
+    "The update install modal joined them behind one `lazy()` in UpdateInstallHost:",
+    "it renders only while an update installs, and the headroom it gave back pays",
+    "for the WSL environment wiring that must sit on the boot path."
   ],
   "maxBootBytes": 986641,
   "forbiddenBootPackages": [
@@ -171,6 +175,7 @@
     "src/renderer/src/components/ui/MascotRig.tsx",
     "src/renderer/src/components/ui/MascotIntro.tsx",
     "src/renderer/src/components/ui/MascotGame.tsx",
-    "src/renderer/src/components/ui/mascotPixel.js"
+    "src/renderer/src/components/ui/mascotPixel.js",
+    "src/renderer/src/components/UpdateInstallModal.tsx"
   ]
 }

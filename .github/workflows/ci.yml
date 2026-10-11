@@ -63,6 +63,8 @@ jobs:
         run: bash scripts/check-title-tooltip-guard.sh
       - name: check-spawn-window.sh (CREATE_NO_WINDOW lint config still armed)
         run: bash scripts/check-spawn-window.sh
+      - name: check-wsl-bundle.sh (the Windows installer bundles the Linux daemon for WSL)
+        run: bash scripts/check-wsl-bundle.sh
       - name: check-icon-imports.sh (raw lucide-react imports outside components/icons.tsx)
         run: bash scripts/check-icon-imports.sh
       - name: check-native-select.sh (no native <select> — its popup is a GTK window)
@@ -301,7 +303,7 @@ jobs:
         run: |
           cargo test --locked -p houston-core --lib -- --test-threads=3
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked -p houston-core --test env_hygiene_wire --test nonascii_longpath_wire --test checkpoints_wire --test git_discard_wire --test git_tools_wire --test git_wire --test manage_wire --test shutdown_drain_wire --test tasks_wire --test windows_orchestration_wire -- --test-threads=3
+          cargo test --locked -p houston-core --test env_hygiene_wire --test nonascii_longpath_wire --test checkpoints_wire --test git_discard_wire --test git_tools_wire --test git_wire --test manage_wire --test shutdown_drain_wire --test tasks_wire --test windows_orchestration_wire --test wsl_wire -- --test-threads=3
           exit $LASTEXITCODE
       - name: Stage debug sidecars
         run: |

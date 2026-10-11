@@ -1,0 +1,5 @@
+{
+  "bundle": {
+    "resources": ["resources/third-party-licenses.json", "wsl/"]
+  }
+}
