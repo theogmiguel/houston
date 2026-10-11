@@ -576,7 +576,7 @@
       grow();
     }
     S.pane = id;
-    if (location.hash !== "#session=" + id) history.replaceState(null, "", "#session=" + id);
+    if (location.hash !== "#pane=" + id) history.replaceState(null, "", "#pane=" + id);
     show("pane");
     selectTab("conv");
     if (tab === "term") selectTab("term");
@@ -954,6 +954,7 @@
       .then(function () {
         // Held until the server's card changes: the daemon keeps it consumed.
         S.sent[key] = true;
+        if (S.pane === id) S.deepLink = false;
         notice("");
         if (choice === "other") setOther(null);
         return true;
@@ -1253,7 +1254,7 @@
       return;
     }
     if (!S.token) { showPair(""); return; }
-    if ((m = /^session=(\d+)$/.exec(h))) { openPane(Number(m[1]), null, true); return; }
+    if ((m = /^(session|pane)=(\d+)$/.exec(h))) { openPane(Number(m[2]), null, m[1] === "session"); return; }
     openList();
   }
 
@@ -1327,8 +1328,9 @@
   window.addEventListener("hashchange", function () {
     var h = location.hash;
     if (/^#pair=/.test(h)) { route(); return; }
-    var m = /^#session=(\d+)$/.exec(h);
-    if (S.token && m && Number(m[1]) !== S.pane) openPane(Number(m[1]), null, true);
+    var m = /^#pane=(\d+)$/.exec(h);
+    if (S.token && m) openPane(Number(m[1]));
+    else if (S.token && !h) openList();
   });
 
   $("device-name").value = /iPhone/.test(navigator.userAgent) ? "iPhone" : (/iPad/.test(navigator.userAgent) || navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ? "iPad"
