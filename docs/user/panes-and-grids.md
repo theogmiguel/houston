@@ -221,8 +221,11 @@ Start fresh, Kill and Close each forget it. If its transcript is gone, its folde
 its agent profile was deleted, another pane already has it open, or the resumed CLI exits
 with an error within 10 seconds, the pane starts fresh and says why. Changing the folder
 or changing its profile's configuration directory discards the old conversation handle.
-Losing the profile also discards it. A shell pane with a validated Claude or Codex
+Losing the profile also discards it. A shell pane with a validated Claude, Codex or ZCode
 conversation can relaunch that conversation inside its shell; orchestration children stay
-deferred when the parent's conversation cannot resume. Other agents, shells without a
-validated conversation and routine runs start fresh. Sessions beyond the restore budget
-remain available for manual restart.
+deferred when the parent's conversation cannot resume. The relaunch needs a POSIX shell
+(sh, bash, zsh, dash or ksh), so Windows shell panes cannot relaunch a conversation: there
+Resume conversation is refused naming the shell, Start fresh starts the shell without the
+conversation, and at startup the pane waits for a manual restart. Other agents, shells
+without a validated conversation and routine runs start fresh. Sessions beyond the restore
+budget remain available for manual restart.

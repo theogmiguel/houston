@@ -130,11 +130,13 @@ directory clears it before creating the new
 row. Codex uses `resume <id>` with the ID and transcript path supplied by native hooks.
 The resolved profile directory is recorded at launch; hooks cannot move that session's
 conversation into an edited or recreated profile's account namespace.
-Shell panes can retain a root Claude or Codex conversation reported by lifecycle hooks.
-Restart validates that provider's exact handle and launches the CLI from the restored
-POSIX shell with shell-quoted argv while keeping the pane classified as a shell. Children
-restore only after the parent conversation resumes; unsupported shell dialects and invalid
-parent conversations leave children deferred.
+Shell panes can retain a root Claude, Codex or ZCode conversation reported by lifecycle
+hooks. Restart validates that provider's exact handle and launches the CLI from the restored
+POSIX shell with shell-quoted argv while keeping the pane classified as a shell. The shell
+is matched by file name (`sh`, `bash`, `zsh`, `dash`, `ksh`), so every Windows shell,
+including a Git Bash `bash.exe`, is refused by name. Children restore only after the parent
+conversation resumes; unsupported shell dialects and invalid parent conversations leave
+children deferred.
 Clean shutdown and crash both apply the same restore policy and budget, preserving the
 previous crash in the recovery summary.
 A Restart or a Wake starts the CLI at the pane's last PTY size, which sleep records in
