@@ -82,6 +82,8 @@ mod linux {
         host_label: &str,
         webview: &tauri::webview::Webview,
     ) -> Result<(), String> {
+        let operation = super::super::operation::Operation::new(std::time::Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_owned = app.clone();
         let id_owned = id.to_string();
@@ -89,6 +91,9 @@ mod linux {
         let id_for_err = id.to_string();
         webview
             .with_webview(move |platform| {
+                if !dispatch.is_live() {
+                    return;
+                }
                 wire_signals_on_main(&app_owned, &id_owned, &host_owned, &platform.inner());
                 let _ = tx.send(());
             })
@@ -953,6 +958,13 @@ mod linux {
         }
     }
 
+    struct CancelEvaluation(gtk::gio::Cancellable);
+    impl Drop for CancelEvaluation {
+        fn drop(&mut self) {
+            use gtk::gio::prelude::CancellableExt;
+            self.0.cancel();
+        }
+    }
     pub async fn eval_tools(
         webview: &tauri::webview::Webview,
         id: &str,
@@ -961,17 +973,24 @@ mod linux {
         const TEMPLATE: &str = include_str!("tools.js");
         let source = TEMPLATE.replace("__TR_TOOLS_OP__", op);
 
+        let operation = super::super::operation::Operation::new(TOOLS_EVAL_TIMEOUT);
+        let dispatch = operation.dispatch();
+        let cancellable = gtk::gio::Cancellable::new();
+        let _cancel = CancelEvaluation(cancellable.clone());
         let (tx, rx) = tokio::sync::oneshot::channel();
         let id_owned = id.to_string();
         webview
             .with_webview(move |platform| {
+                if !dispatch.is_live() || tx.is_closed() {
+                    return;
+                }
                 use javascriptcore::ValueExt;
                 let view = platform.inner();
                 view.evaluate_javascript(
                     &source,
                     Some(TOOLS_WORLD),
                     None,
-                    None::<&gtk::gio::Cancellable>,
+                    Some(&cancellable),
                     move |result| {
                         let answer = match result {
                             Ok(value) => {
@@ -1011,7 +1030,7 @@ mod linux {
             )),
             Err(_) => Err(format!(
                 "browser: a page operation on id {id:?} did not complete within \
-                 {TOOLS_EVAL_TIMEOUT:?}"
+                 {TOOLS_EVAL_TIMEOUT:?}; queued work cancelled, an already executing action has unknown outcome; do not automatically retry"
             )),
         }
     }
@@ -1020,16 +1039,26 @@ mod linux {
         webview: &tauri::webview::Webview,
         id: &str,
     ) -> Result<Capture, String> {
+        let operation = super::super::operation::Operation::new(CAPTURE_TIMEOUT);
+        let dispatch = operation.dispatch();
+        let cancellable = gtk::gio::Cancellable::new();
+        let _cancel = CancelEvaluation(cancellable.clone());
         let (tx, rx) = tokio::sync::oneshot::channel();
         let id_owned = id.to_string();
         webview
             .with_webview(move |platform| {
+                if !dispatch.is_live() || tx.is_closed() {
+                    return;
+                }
                 let view = platform.inner();
                 view.snapshot(
                     webkit2gtk::SnapshotRegion::Visible,
                     webkit2gtk::SnapshotOptions::NONE,
-                    None::<&gtk::gio::Cancellable>,
+                    Some(&cancellable),
                     move |result| {
+                        if tx.is_closed() {
+                            return;
+                        }
                         let capture = result
                             .map_err(|err| {
                                 format!(
@@ -1139,9 +1168,14 @@ mod linux {
         what: &str,
         op: impl FnOnce(&webkit2gtk::WebView) -> Result<(), String> + Send + 'static,
     ) -> Result<(), String> {
+        let operation = super::super::operation::Operation::new(std::time::Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         webview
             .with_webview(move |platform| {
+                if !dispatch.is_live() {
+                    return;
+                }
                 let _ = tx.send(op(&platform.inner()));
             })
             .map_err(|err| {

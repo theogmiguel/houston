@@ -372,6 +372,19 @@ behind the `bench` feature.
 The invoke handler wraps that list with a security gate: **any command invoked from a
 content-only browser webview label is refused** — browser panes hold no app authority.
 
+Browser consent binds the current document and the actual DOM node. WebKit toolkit
+worlds are ephemeral, so globals cannot hold that identity. Private node-owned event
+listeners prove identity across evaluations without putting reusable proof keys in
+page markup. A new snapshot removes the previous snapshot's listeners; navigation
+and surface destruction also invalidate native refs and pending consent.
+
+Browser relay requests belong to their connection and have bounded concurrency and
+absolute expiry. Disconnect drains cancelled owners before reconnecting. Confirmation
+cleanup dismisses the prompt and removes its temporary capture even when the waiting
+future is cancelled. Queued native operations check cancellation and expiry before
+execution; geometry generations discard superseded positions. A timeout after native
+execution begins reports an unknown outcome rather than promising no side effect.
+
 ## The paint-freeze watchdog
 
 Two tiers. Tier 1 is Rust (`src-tauri/src/watchdog/`): a pure transition function

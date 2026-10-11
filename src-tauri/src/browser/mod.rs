@@ -22,6 +22,7 @@ pub(crate) mod webview2_host;
 #[cfg(windows)]
 pub(crate) mod ipc_transport;
 
+mod operation;
 pub mod selftest;
 pub(crate) mod tool_refs;
 
