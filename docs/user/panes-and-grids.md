@@ -1,5 +1,11 @@
 # Panes and grids
 
+Text pastes are limited to 65,536 UTF-16 code units (a supplementary Unicode
+character counts as two). Use a file for larger content. Houston refuses input
+when the connection's outgoing backlog would exceed 1 MiB and reports the current
+backlog, requested size and limit. Retry after the connection drains. An accepted
+paste remains one transaction, including its bracketed-paste markers.
+
 ## The model
 
 A **session** is one PTY running an agent CLI — Claude Code, Codex, Antigravity,

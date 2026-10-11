@@ -60,3 +60,60 @@ describe('dirtyBufferPaths', () => {
     dropWorkspaceBuffers('/tmp/ws-b')
   })
 })
+
+it('invalidates a pending read when its workspace is removed', async () => {
+  let resolve!: (content: string) => void
+  window.houston.readFile = () => new Promise<string>(r => { resolve = r })
+  const pending = ensureBuffer('/tmp/removed', '/tmp/removed/a.txt', () => {})
+  dropWorkspaceBuffers('/tmp/removed')
+  resolve('late')
+  await expect(pending).rejects.toThrow('closed')
+  expect(getBuffer('/tmp/removed', '/tmp/removed/a.txt')).toBeUndefined()
+})
+
+it('final-owner release discards edits and reopening reads disk again', async () => {
+  window.houston.readFile = async () => 'disk'
+  const { retainBuffer, noteUpdate } = await import('./bufferStore')
+  const release = retainBuffer('/tmp/close', '/tmp/close/a.txt')
+  const buf = await ensureBuffer('/tmp/close', '/tmp/close/a.txt', () => {})
+  noteUpdate('/tmp/close', '/tmp/close/a.txt', buf.state.update({ changes: { from: 0, to: buf.state.doc.length, insert: 'abandoned' } }).state, true)
+  release()
+  await Promise.resolve()
+  expect(getBuffer('/tmp/close', '/tmp/close/a.txt')).toBeUndefined()
+  const reopened = await ensureBuffer('/tmp/close', '/tmp/close/a.txt', () => {})
+  expect(reopened.state.doc.toString()).toBe('disk')
+  dropWorkspaceBuffers('/tmp/close')
+})
+
+it('reload preserves edits entered while its disk read was pending', async () => {
+  window.houston.readFile = async () => 'disk'
+  const { reloadBuffer } = await import('./buffers')
+  const { noteUpdate } = await import('./bufferStore')
+  const buf = await ensureBuffer('/tmp/reload', '/tmp/reload/a.txt', () => {})
+  let resolve!: (content: string) => void
+  window.houston.readFile = () => new Promise<string>(r => { resolve = r })
+  const pending = reloadBuffer('/tmp/reload', '/tmp/reload/a.txt')
+  noteUpdate('/tmp/reload', '/tmp/reload/a.txt', buf.state.update({ changes: { from: 0, insert: 'fresh ' } }).state, true)
+  resolve('new disk')
+  await expect(pending).rejects.toThrow('edited')
+  expect(getBuffer('/tmp/reload', '/tmp/reload/a.txt')?.state.doc.toString()).toBe('fresh disk')
+  expect(getBuffer('/tmp/reload', '/tmp/reload/a.txt')?.conflict).toBe(true)
+  dropWorkspaceBuffers('/tmp/reload')
+})
+
+it('a final close invalidates its pending read without deleting the reopened load', async () => {
+  const { retainBuffer } = await import('./bufferStore')
+  const release = retainBuffer('/tmp/pending-close', '/tmp/pending-close/a.txt')
+  let resolve!: (content: string) => void
+  window.houston.readFile = () => new Promise<string>(r => { resolve = r })
+  const pending = ensureBuffer('/tmp/pending-close', '/tmp/pending-close/a.txt', () => {})
+  const rejected = expect(pending).rejects.toThrow('closed')
+  release()
+  await Promise.resolve()
+  window.houston.readFile = async () => 'reopened'
+  const reopened = await ensureBuffer('/tmp/pending-close', '/tmp/pending-close/a.txt', () => {})
+  resolve('abandoned read')
+  await rejected
+  expect(getBuffer('/tmp/pending-close', '/tmp/pending-close/a.txt')?.state).toBe(reopened.state)
+  dropWorkspaceBuffers('/tmp/pending-close')
+})

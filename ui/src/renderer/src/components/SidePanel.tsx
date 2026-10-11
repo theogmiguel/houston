@@ -381,7 +381,9 @@ function PanelContent({
       <ShellElement as="div" shellRole="panel-surface" hidden={!visible}>
         <Suspense fallback={<div className="flex-1" />}>
           <FilesSurface
+            key={filesRoot}
             workspaceRoot={filesRoot}
+            documentOwnerId={`side:${props.workspace}`}
             panelWidth={panelWidth}
             client={props.client}
             onActiveFileChange={onFilesTabTitleChange}

@@ -1,3 +1,4 @@
+import { DOCUMENT_TABS_EVENT } from './editor/bufferStore'
 import { useSyncExternalStore } from "react";
 
 const WIDTH_KEY = "tr-scm-width";
@@ -157,7 +158,14 @@ export function loadInspectorTabs(workspace: string): InspectorTabsState {
 }
 
 export function saveInspectorTabs(workspace: string, state: InspectorTabsState): void {
-  try { localStorage.setItem(INSPECTOR_TABS_PREFIX + workspace, JSON.stringify(state)) } catch { }
+  try {
+    const key = INSPECTOR_TABS_PREFIX + workspace
+    const encoded = JSON.stringify(state)
+    if (localStorage.getItem(key) === encoded) return
+    localStorage.setItem(key, encoded)
+    window.dispatchEvent(new Event(DOCUMENT_TABS_EVENT))
+  } catch { }
+
 }
 
 export function inspectorTabsKey(workspace: string): string { return INSPECTOR_TABS_PREFIX + workspace }

@@ -502,3 +502,18 @@ it('removes attach/generation metadata and waiters, rejecting late replays for r
   await resizeRejected
   transport.dispose()
 })
+
+it('refuses saturated input before allocation, preserves reply reserve and whole paste ordering', () => {
+  const sent: ArrayBuffer[] = []
+  const socket = { readyState: WebSocket.OPEN, bufferedAmount: 1024 * 1024, send: (data: ArrayBuffer) => { sent.push(data); socket.bufferedAmount += data.byteLength } }
+  const transport = new WsTerminalTransport(socket as unknown as WebSocket)
+  expect(() => transport.write(7, 'paste')).toThrow(/current socket backlog 1048576.*requested.*limit 1048576/)
+  expect(sent).toHaveLength(0)
+  expect(transport.write(7, '\x1b[1;1R', true)).toBe(true)
+  socket.bufferedAmount = 0
+  expect(transport.write(7, '\x1b[200~é🙂\x1b[201~')).toBe(true)
+  expect(transport.write(7, 'next')).toBe(true)
+  expect(sent.map(frame => new TextDecoder().decode(new Uint8Array(frame).subarray(5)))).toEqual(['\x1b[1;1R', '\x1b[200~é🙂\x1b[201~', 'next'])
+  socket.bufferedAmount = 1024 * 1024 + 64 * 1024
+  expect(() => transport.write(7, '\x1b[1;1R', true)).toThrow(/Input refused/)
+})

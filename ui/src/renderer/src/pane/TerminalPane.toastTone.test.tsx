@@ -121,6 +121,17 @@ describe('TerminalPane toast tone', () => {
     expect(toast.className).toContain('color-mix(in_srgb,var(--danger)_42%,transparent)')
   })
 
+  it('renders an engine paste refusal with its requested size and limit', () => {
+    const refused = ghosttyMock.createOptions?.onInputRefused as (message: string) => void
+    act(() => refused('Paste refused: current 0; requested 65537 code units; limit 65536'))
+    const toast = container.querySelector('[data-notice]')!
+    expect(toast.textContent).toContain('Input refused')
+    expect(toast.textContent).toContain('requested 65537')
+    expect(toast.textContent).toContain('limit 65536')
+    expect(toast.getAttribute('data-kind')).toBe('error')
+    expect(fakeClient.sendStdin).not.toHaveBeenCalled()
+  })
+
   it('a "copy output" toast renders the success affordance', () => {
     act(() => actionsRef.current!.copyOutput('all'))
     const toast = container.querySelector('[data-notice]')!
