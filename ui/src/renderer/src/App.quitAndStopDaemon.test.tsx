@@ -12,6 +12,12 @@ vi.mock('./houston/manage', async () => {
   return { ...actual, daemonStatus: daemonStatusMock, daemonShutdown: daemonShutdownMock }
 })
 
+const { listEnvironmentsMock } = vi.hoisted(() => ({ listEnvironmentsMock: vi.fn() }))
+vi.mock('./houston/environments', async () => {
+  const actual = await vi.importActual<typeof import('./houston/environments')>('./houston/environments')
+  return { ...actual, listEnvironments: listEnvironmentsMock }
+})
+
 const { appQuitMock } = vi.hoisted(() => ({ appQuitMock: vi.fn(async () => {}) }))
 vi.mock('./houston/tray', async () => {
   const actual = await vi.importActual<typeof import('./houston/tray')>('./houston/tray')
@@ -56,6 +62,8 @@ describe('Quit and stop daemon (D6, from the command palette)', () => {
     daemonStatusMock.mockReset()
     daemonShutdownMock.mockReset()
     appQuitMock.mockClear()
+    listEnvironmentsMock.mockReset()
+    listEnvironmentsMock.mockRejectedValue(new Error('env_list needs the Tauri host'))
   })
 
   afterEach(() => {
@@ -118,6 +126,32 @@ describe('Quit and stop daemon (D6, from the command palette)', () => {
     })
     expect(daemonShutdownMock).toHaveBeenCalledTimes(1)
     expect(appQuitMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("stops every environment's daemon before quitting", async () => {
+    const wsl = { id: 'wsl:Ubuntu', kind: 'wsl', distro: 'Ubuntu', slot: 1, port: 5001, token: 'ubuntu-token', state: 'ready' }
+    listEnvironmentsMock.mockResolvedValue([
+      { id: 'local', kind: 'local', slot: 0, port: 4000, token: 'local-token', state: 'ready' },
+      wsl
+    ])
+    daemonStatusMock.mockRejectedValue(new Error('network error'))
+    const quitAfter: number[] = []
+    daemonShutdownMock.mockImplementation(async () => {
+      quitAfter.push(appQuitMock.mock.calls.length)
+      return { ok: true, stopped_sessions: 0, disarmed_routines: 0 }
+    })
+    harness = await renderReadyApp()
+
+    await openAndRunQuit(harness)
+    const dialog = harness.container.querySelector('[role="alertdialog"]')!
+    const confirm = dialog.querySelector<HTMLButtonElement>('button.btn:last-of-type')!
+    await act(async () => {
+      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await vi.waitFor(() => expect(appQuitMock).toHaveBeenCalledTimes(1))
+    expect(daemonShutdownMock.mock.calls).toEqual([[undefined], [wsl]])
+    expect(quitAfter).toEqual([0, 0])
   })
 
   it('cancelling the confirm quits nothing and stops nothing', async () => {

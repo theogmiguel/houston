@@ -12,6 +12,10 @@ import type { VoiceSettings } from '../houston/generated/VoiceSettings'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
 
+// Settings → WSL is listed only on Windows; present that platform so every
+// registered section, the WSL one included, can be navigated to and rendered.
+vi.hoisted(() => Object.defineProperty(navigator, 'platform', { value: 'Win32', configurable: true }))
+
 const { daemonStatusMock } = vi.hoisted(() => ({ daemonStatusMock: vi.fn() }))
 vi.mock('../houston/manage', async () => {
   const actual = await vi.importActual<typeof import('../houston/manage')>('../houston/manage')

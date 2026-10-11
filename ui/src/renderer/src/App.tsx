@@ -72,9 +72,8 @@ import {
 import { USAGE_WINDOW_REFUSED } from "./houston/generated/DEFAULTS";
 import type { UsageSummaryMsg } from "./components/UsageSection";
 import type { UsageActivityDay } from "./houston/generated/UsageActivityDay";
-import { daemonShutdown, daemonStatus } from "./houston/manage";
-import { appQuit } from "./houston/tray";
-import { useTrayBridge } from "./houston/useTray";
+import { daemonStatus } from "./houston/manage";
+import { stopDaemonThenQuit, useTrayBridge } from "./houston/useTray";
 import { stopConfirmCopy } from "./components/daemonStopConfirmCopy";
 import { QuitAndStopDaemonConfirm } from "./components/QuitAndStopDaemonConfirm";
 import { useBrowserFocus } from "./houston/browserFocus";
@@ -515,6 +514,30 @@ function patchRosterIfNeeded(
 ): boolean {
   if (!isRosterPatch(msg)) return false;
   setSessions((prev) => patchRosterFields(prev, msg));
+  return true;
+}
+
+// `workspace_list` replaces the rail and keeps the selection while it survives;
+// `workspace_focus` (`houston .` in a WSL shell) selects the named workspace.
+function handleWorkspaceWireMessage(
+  msg: ServerMsg,
+  setWorkspaces: Dispatch<SetStateAction<Workspace[]>>,
+  setSelectedWs: Dispatch<SetStateAction<string>>,
+  setShowLauncher: Dispatch<SetStateAction<boolean>>,
+): boolean {
+  if (msg.type === "workspace_focus") {
+    setSelectedWs(msg.path);
+    setShowLauncher(false);
+    return true;
+  }
+  if (msg.type !== "workspace_list") return false;
+  setWorkspaces(msg.workspaces);
+  if (msg.workspaces.length > 0)
+    setSelectedWs((cur) =>
+      msg.workspaces.some((w) => w.path === cur)
+        ? cur
+        : msg.workspaces[0].path,
+    );
   return true;
 }
 
@@ -1266,6 +1289,7 @@ export function App(): React.JSX.Element {
         if (msg.type === "tag_deleted") dropDeletedTagFromGrids(msg.tag);
         checkout.handleMessage(msg);
         if (handlePullRequestWireMessage(msg, prScreen.handleMessage)) return;
+        if (handleWorkspaceWireMessage(msg, setWorkspaces, setSelectedWs, setShowLauncher)) return;
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1364,15 +1388,6 @@ export function App(): React.JSX.Element {
             setActiveId((cur) => (cur === msg.session ? null : cur));
             forgetDictationSession(msg.session);
             setVoiceIndicator(msg.session, null);
-            break;
-          case "workspace_list":
-            setWorkspaces(msg.workspaces);
-            if (msg.workspaces.length > 0)
-              setSelectedWs((cur) =>
-                msg.workspaces.some((w) => w.path === cur)
-                  ? cur
-                  : msg.workspaces[0].path,
-              );
             break;
           case "agent_detected":
             setSessions((prev) => {
@@ -1692,13 +1707,23 @@ export function App(): React.JSX.Element {
       if (picked === null || picked.length === 0) return;
       const refusals: string[] = [];
       const accepted: string[] = [];
-      for (const path of picked) {
-        const refusal = workspaceRefusal(path);
+      for (const pick of picked) {
+        // A `\\wsl.localhost` pick is added as its POSIX path in that distro.
+        const resolved = pick.startsWith("\\\\")
+          ? await (await import("./houston/workspacePick")).resolveWorkspacePick(pick)
+          : { wire: pick, path: pick };
+        if ("refusal" in resolved) {
+          pushError(resolved.refusal);
+          continue;
+        }
+        const refusal = workspaceRefusal(resolved.path);
         if (refusal !== null) refusals.push(refusal);
-        else if (!accepted.includes(path)) accepted.push(path);
+        else if (!accepted.includes(resolved.path)) {
+          accepted.push(resolved.path);
+          conn.client.addWorkspace(resolved.wire);
+        }
       }
       setWorkspaceRefusals(refusals);
-      for (const path of accepted) conn.client.addWorkspace(path);
       if (accepted.length > 0) {
         setSelectedWs(accepted[accepted.length - 1]);
         setShowLauncher(false);
@@ -1711,7 +1736,7 @@ export function App(): React.JSX.Element {
     } finally {
       setPickingWorkspace(false);
     }
-  }, [conn]);
+  }, [conn, pushError]);
 
   const replacedSessions = useMemo(
     () => respawnedSessions(sessions.values()),
@@ -2745,18 +2770,7 @@ export function App(): React.JSX.Element {
 
   const confirmQuitAndStopDaemon = useCallback(() => {
     setQuitAndStopDaemonConfirm(null);
-    void daemonShutdown()
-      .catch((err: unknown) => {
-        console.warn(
-          "houston: daemon_shutdown before quit failed, quitting without stopping it",
-          err,
-        );
-      })
-      .finally(() => {
-        void appQuit().catch((err: unknown) => {
-          console.warn("houston: app_quit failed", err);
-        });
-      });
+    stopDaemonThenQuit();
   }, []);
 
   const handleDetach = useCallback(

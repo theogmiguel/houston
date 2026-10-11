@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 130;
+pub const PROTOCOL_VERSION: u32 = 131;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -4269,6 +4269,10 @@ pub enum ServerMsg {
     WorkspaceList {
         workspaces: Vec<Workspace>,
     },
+    /// Broadcast after `/manage workspace_open`: clients select this workspace.
+    WorkspaceFocus {
+        path: String,
+    },
     WorkspaceLocalServers {
         workspace: String,
         servers: Vec<LocalServer>,
@@ -5269,6 +5273,9 @@ pub enum ManageVerb {
     /// `expected_sessions`: the update modal's verb, so a session the user
     /// never saw is never stopped. An older daemon refuses it by name.
     DaemonShutdownIfSessions,
+    /// Adds `path` as a workspace and broadcasts `workspace_focus`: the
+    /// `houston <dir>` launcher's verb. An older daemon refuses it by name.
+    WorkspaceOpen,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5287,6 +5294,10 @@ pub struct ManageRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<number> | null"))]
     pub expected_sessions: Option<Vec<u32>>,
+    /// `workspace_open` only, and required there: an absolute directory path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5348,6 +5359,13 @@ pub struct ManageDaemonShutdownFailed {
     pub ok: bool,
     pub error: String,
     pub unterminated: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct ManageWorkspaceOpenOk {
+    pub ok: bool,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -6149,6 +6167,7 @@ mod tests {
             verb: ManageVerb::DaemonHandoff,
             candidate_bin: Some("/usr/bin/houston-core".to_string()),
             expected_sessions: None,
+            path: None,
         };
         let json = serde_json::to_string(&with_candidate).unwrap();
         assert!(
@@ -6161,6 +6180,7 @@ mod tests {
             verb: ManageVerb::DaemonStatus,
             candidate_bin: None,
             expected_sessions: None,
+            path: None,
         };
         let json = serde_json::to_string(&without).unwrap();
         assert!(
@@ -6188,8 +6208,29 @@ mod tests {
             verb: ManageVerb::DaemonShutdown,
             candidate_bin: None,
             expected_sessions: None,
+            path: None,
         })
         .unwrap();
         assert!(!json.contains("expected_sessions"), "{json}");
+    }
+
+    #[test]
+    fn manage_request_path_is_additive() {
+        let legacy: ManageRequest =
+            serde_json::from_str(r#"{"manage_version":1,"verb":"daemon_status"}"#).unwrap();
+        assert_eq!(legacy.path, None);
+
+        let open: ManageRequest = serde_json::from_str(
+            r#"{"manage_version":1,"verb":"workspace_open","path":"/home/u/p"}"#,
+        )
+        .unwrap();
+        assert_eq!(open.verb, ManageVerb::WorkspaceOpen);
+        assert_eq!(open.path.as_deref(), Some("/home/u/p"));
+
+        let focus = serde_json::to_string(&ServerMsg::WorkspaceFocus {
+            path: "/home/u/p".to_string(),
+        })
+        .unwrap();
+        assert_eq!(focus, r#"{"type":"workspace_focus","path":"/home/u/p"}"#);
     }
 }
