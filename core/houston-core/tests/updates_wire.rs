@@ -121,3 +121,98 @@ async fn update_policy_set_off_is_broadcast_as_disabled() {
         }
     }
 }
+
+// `.cargo/config.toml` points both endpoints at a dead port for every test process, and
+// `hermetic_command` clears the environment. Losing the forwarding would let a spawned
+// daemon reach the real manifest and catalog.
+#[test]
+fn hermetic_command_forwards_the_offline_endpoints() {
+    let home = tempfile::tempdir().unwrap();
+    let cmd = hermetic_command("true", home.path());
+    for name in [
+        houston_core::updates::UPDATE_MANIFEST_URL_ENV,
+        houston_core::model_catalog::CATALOG_URL_ENV,
+    ] {
+        let expected = std::env::var_os(name)
+            .unwrap_or_else(|| panic!("{name} is unset in the test process; expected the offline endpoint from .cargo/config.toml"));
+        let forwarded = cmd
+            .get_envs()
+            .find(|(key, _)| *key == std::ffi::OsStr::new(name))
+            .and_then(|(_, value)| value);
+        assert_eq!(
+            forwarded,
+            Some(expected.as_os_str()),
+            "{name} not forwarded"
+        );
+    }
+}
+
+// A booted daemon makes one update check and one catalog refresh; a local listener proves
+// the overrides reach the spawned binary. Unix only, like the other spawned-daemon suites:
+// `hermetic_command` drops `SystemRoot` on Windows, so Winsock fails to initialise.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_spawned_daemon_requests_both_configured_endpoints() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let (paths_tx, mut paths_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let paths_tx = paths_tx.clone();
+            tokio::spawn(async move {
+                let mut request = vec![0; 4096];
+                let read = stream.read(&mut request).await.unwrap_or(0);
+                let text = String::from_utf8_lossy(&request[..read]).into_owned();
+                let path = text
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or_default()
+                    .to_owned();
+                let _ = paths_tx.send(path);
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    )
+                    .await;
+            });
+        }
+    });
+
+    let home = tempfile::tempdir().unwrap();
+    let mut cmd = hermetic_command(env!("CARGO_BIN_EXE_houston-core"), home.path());
+    cmd.env("HOUSTON_CHANNEL", "dev")
+        .env(
+            houston_core::updates::UPDATE_MANIFEST_URL_ENV,
+            format!("{base}/manifest/latest.json"),
+        )
+        .env(
+            houston_core::model_catalog::CATALOG_URL_ENV,
+            format!("{base}/catalog/prices.json"),
+        )
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut child = cmd.spawn().expect("spawn houston-core");
+
+    let mut seen = Vec::new();
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        while !(seen.contains(&"/manifest/latest.json".to_string())
+            && seen.contains(&"/catalog/prices.json".to_string()))
+        {
+            seen.push(paths_rx.recv().await.expect("listener closed"));
+        }
+    })
+    .await;
+
+    houston_core::pid::signal_process(child.id(), houston_core::pid::Signal::Term)
+        .expect("signalling the spawned daemon");
+    let _ = child.wait();
+    assert!(
+        outcome.is_ok(),
+        "the daemon never asked both configured endpoints; requests seen: {seen:?}"
+    );
+}

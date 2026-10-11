@@ -1,0 +1,8 @@
+# Tests must never reach the real update manifest or model catalog: an unauthenticated
+# GitHub client is throttled per public IP, and every daemon a test boots checks once.
+# Port 9 on loopback refuses at once, so the check fails fast and offline. Cargo does
+# not override a variable already set in the environment, so a test that points these
+# at a scripted server wins. `cargo run` also reads this section.
+[env]
+HOUSTON_UPDATE_MANIFEST_URL = "http://127.0.0.1:9/latest.json"
+HOUSTON_MODEL_CATALOG_URL = "http://127.0.0.1:9/model-prices.json"
