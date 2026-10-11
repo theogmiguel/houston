@@ -33,6 +33,9 @@ A reported failure or interruption is shown when the agent's hooks identify it; 
 the turn is marked done. A turn already underway when remote access starts has no known
 duration until a new prompt is reported.
 
+Spawned panes expose their parent and assigned orchestration role so the phone can identify
+which agent owns delegated work.
+
 Activity lists recent finished turns, requests that need you and answers across panes.
 Answers identify whether they came from the phone or the terminal. Like conversations,
 activity is kept only in memory while remote access is on and clears when it is turned off.

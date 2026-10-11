@@ -46,6 +46,8 @@ pub struct RemoteWorkspace {
 pub struct RemoteSession {
     pub id: u32,
     pub title: String,
+    pub parent: Option<u32>,
+    pub role: Option<String>,
     pub workspace: RemoteWorkspace,
     pub kind: proto::AgentKind,
     pub state: proto::SessionState,
@@ -393,6 +395,8 @@ impl Daemon {
                 RemoteSession {
                     id: info.id,
                     title: info.title.clone(),
+                    parent: info.spawned_by,
+                    role: self.delegation_of(info.id).and_then(|d| d.role).map(|role| feed::mask(&role)),
                     workspace,
                     kind: info.detected_agent.unwrap_or(info.agent),
                     state: info.state,
