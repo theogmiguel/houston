@@ -106,6 +106,7 @@ all supported events. Every PTY additionally reports process exit independently.
 | OpenCode | User messages; busy status is activity | Permission/question events | session.idle; session.error is failure | Permission/question requests | PTY exit | 600 s with managed launch timeout | session.error | Unsupported: interrupt-to-idle contract unverified |
 | Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s | Unsupported in hooks | Refused: no verified key |
 | Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout | StopFailure | Ctrl+C with empty composer |
+| ZCode | UserPromptSubmit | AskUserQuestion PreToolUse; the PostToolUse/Failure with the same tool_use_id (a denial fires no hook) | Stop (successful turns only); an interrupt cancels ZCode's hooks and reports nothing | PermissionRequest, AskUserQuestion | PTY exit | 600 s with the plugin's 630 s tool timeout | Unsupported: a failed turn fires no hook and stays Working | Refused: an interrupt reports no idle |
 
 Wait budgets belong to the calling parent, regardless of its children's providers. Requests
 above the cap are clamped and report the provider, requested value and cap. Claude's cap
@@ -228,7 +229,7 @@ untrusted page content, bounded to 256 entries of 4096 characters per surface. M
 capture includes console calls, uncaught errors and unhandled rejections on Linux;
 `browser_console_messages` refuses other platforms by name.
 
-`pane_spawn` takes `kind` (`claude | codex | antigravity | opencode | cursor | grok`), `prompt`,
+`pane_spawn` takes `kind` (`claude | codex | antigravity | opencode | cursor | grok | zcode`), `prompt`,
 and optional `model`, `cwd`, `target_workspace`, `worktree`, `branch`, `reusable`, `handoff`, `state_doc`, `effort`,
 `auto_approve`, `profile`, `role`, `output_format`, `boundaries`. `target_workspace` must match a registered
 workspace after canonicalization, and `cwd` must remain under that root. `reusable` defaults
@@ -421,6 +422,15 @@ Grok's entry uses. Placeholder expansion remains unverified.
 `google-antigravity/antigravity-cli` issue #25 reports the
 `headers.Authorization` bearer is accepted by the schema but silently ignored by the
 CLI's own HTTP MCP transport at runtime. Live authentication remains unverified.
+ZCode has no MCP command or per-launch flag, and its user `mcp.servers` entries expand no
+variables. Its plugins do (`packages/adapters/src/plugins/mcp.ts`): a URL expands only
+`${ZCODE_*}` names, headers expand any variable. Houston therefore owns a plugin directory
+in the channel's state dir, named `houston` or `houston-<channel>`, whose one HTTP server
+reads `${ZCODE_HOUSTON_MCP_URL[_<CHANNEL>]}` and `Bearer ${HOUSTON_MCP_TOKEN}`, and lists
+that directory in `plugins.dirs` of ZCode's settings file alongside the hook entries.
+A ZCode pane, or a shell pane that may run ZCode, receives only its own channel's URL variable, so another channel's plugin
+fails variable resolution there and registers nothing; no port or token reaches disk. The
+plugin is written and listed with the ZCode hook toggle and removed with it.
 
 ## `hs-pane`
 
@@ -642,8 +652,10 @@ CLI splices the text into the same turn instead of ending it. `POST /inbox/deliv
 just lets the reservation expire, leaving the row eligible again.
 `orchestrate::door2_continue_json(provider, text)` is the one place that shape lives,
 `None` for a provider door 2 does not serve — Grok, OpenCode and Cursor stay on door 3.
-Claude and Codex print `{"decision":"block","reason"}` (Codex's `~/.codex/hooks.json`
-`Stop` hook takes the exact same shape, verified live on 0.153.4); Antigravity prints
+Claude, Codex and ZCode print `{"decision":"block","reason"}` (Codex's `~/.codex/hooks.json`
+`Stop` hook takes the exact same shape, verified live on 0.153.4; ZCode's is read from its
+`hooks/output.ts`, which also caps continuations at three, matching
+`STOP_BLOCKS_PER_TURN_MAX`); Antigravity prints
 `{"decision":"continue","reason"}`, and its re-fired `Stop` carries `executionNum: 1`.
 
 For this to work the `Stop` hook must run **synchronously**, so `tr_hook_group` marks every
@@ -1155,6 +1167,16 @@ directly in `tools/list` by its own name and schema instead of behind
 `call_tool`, so a Codex caller spends no approval round-trip on it; a gated
 tool named directly is refused, naming `call_tool` as the way to reach it.
 
+**No string beside another scalar type.** A tool property's `type` names one value type,
+plus `null` where null means something, and no `oneOf` or `anyOf` offers a string beside
+an integer, number or boolean. GLM, which ZCode drives, writes a string argument unquoted
+when the property's type is a union such as integer or string; ZCode cannot parse that
+call and drops the argument before validating it. A task `id` and `pane_pr_watch`'s `pr`
+are therefore strings, and the daemon still accepts an integer for either. `pane_spawn`'s
+`state_doc` is text or an object; how GLM fills that union has not been observed.
+`no_tool_property_unions_a_string_with_a_scalar_and_a_task_id_reads_in_every_form` checks
+every advertised schema.
+
 **Depth-aware advertisement.** `pane_spawn` is in a pane's tool list exactly
 when that pane could use it: orchestration is on, it has a free child slot, and
 the child would fit under the depth cap. The default depth is **1** —
@@ -1312,6 +1334,42 @@ What changes per provider, beyond the shared inbox:
   camelCase twin, for Grok alone. Grok also reads Claude-format workspace hooks. A remaining
   Claude-path entry could deliver the same event twice; the helper exits without writing a
   drop when `--agent` is absent and `GROK_SESSION_ID` is set, so only the Grok-side drop lands.
+- **ZCode.** Hooks run only from ZCode's settings file (`setting.json` in the community
+  package, `config.json` upstream) and only with `hooks.enabled`, so the installer parks
+  the previous value (see invariants). The stdin carries Claude's snake_case aliases next
+  to ZCode's camelCase fields; its `transcript_path` is a temporary file ZCode deletes after
+  the hook, so it is never recorded. `SessionStart` fires inside the first turn rather than
+  at launch, so neither status nor first-prompt delivery can wait for it: the first prompt
+  is pasted once ZCode's composer reports focus (bracketed paste enabled, then the cursor
+  shown; after `FIRST_PROMPT_DEADLINE` it is pasted regardless), and counts as delivered
+  when a `UserPromptSubmit` that begins like it arrives (invariants, carve-out 4). The
+  Claude correlation rules apply: `AskUserQuestion` blocks through `PreToolUse`, and a
+  `PostToolUse`/`PostToolUseFailure` resolves the episode with its own `tool_use_id`, which
+  ZCode passes unchanged through every hook of one call. A denied or dismissed permission
+  fires no hook, so it stays open until `Stop` or the next prompt. A `SessionStart` that
+  arrives with the first turn also exempts ZCode from the spawn-grace expiry to Unavailable.
+  `Stop` runs only after a successful turn, never after an API, quota or network failure.
+  An interrupt aborts ZCode's hook runner with the turn, so it reports nothing; an
+  `is_interrupt` failure that does arrive names one cancelled tool in a running turn and is
+  handled like any other tool result. Resume is by exact `--resume <session id>` without a
+  transcript check, since ZCode keeps sessions in its own database; a resumed process fires
+  `SessionStart` with source `resume`, which releases a shell pane's deferred children.
+  ZCode's `--mode` accepts only build, edit and yolo; `/plan` inside its TUI is read-only
+  (subagents inherit it, non-destructive MCP tools stay allowed), but no flag, setting or
+  hook payload lets the daemon set or confirm it, so task planning refuses ZCode by name.
+  Handoff generation runs `zcode --mode build -p`, because `-p` defaults to yolo and its
+  build mode denies every call that would ask for approval. Routines
+  run only with isolated full access: `--mode edit` approves workspace file edits alone and
+  waits on every other command's approval without a timeout. On Windows ZCode runs a
+  `command` hook through `ComSpec`, where the POSIX guard cannot run, so each entry is a
+  `process` hook: `command` names `<state dir>\bin\claude-hook.exe` and `args` carry the
+  event and sentinel, and ZCode starts it without a shell. ZCode resolves that file only
+  with its extension (an extension-less path is spawned as is, which Windows refuses), so
+  the daemon places the `.exe` copy beside the plain launcher and points it before
+  installing. Nothing guards a missing file or an empty `TR_SESSION` before the start; the
+  helper itself exits 0 for both an absent session and another channel's launcher, and
+  ZCode ignores the closed stdin pipe. Ownership checks read the sentinel from `args`.
+  Evidence is ZCode's source, not a live authenticated probe.
 - **OpenCode.** No native hook contract at all — its plugin bus fires JS callbacks, not a
   shell command with its own stdin — so `houston-notify.js` is the hook contract: it builds
   the JSON `parse_hook_payload` expects itself and pipes it into the same

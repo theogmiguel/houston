@@ -22,6 +22,7 @@ import type { McpSyncResult } from '../src/houston/generated/McpSyncResult'
 import type { McpToolState } from '../src/houston/generated/McpToolState'
 import type { Routine } from '../src/houston/routineTypes'
 import type { RoutineRun } from '../src/houston/generated/RoutineRun'
+import type { RoutineEngineRefusal } from '../src/houston/generated/RoutineEngineRefusal'
 import type { SkillToolState } from '../src/houston/generated/SkillToolState'
 import type { Skill } from '../src/env'
 import type { HoustonClient } from '../src/houston/client'
@@ -90,6 +91,7 @@ export function NavRoutines(): React.JSX.Element {
       <RoutinesSurface
         routines={routines}
         running={[1, 91, 92]}
+        engineRefusals={ENGINE_REFUSALS}
         runs={{ 2: runHistory }}
         runsLoading={null}
         workspaces={[{ id: '/home/dev/code/houston', name: 'houston' }]}
@@ -110,12 +112,19 @@ export function NavRoutines(): React.JSX.Element {
   )
 }
 
+/** What the daemon's `routine_engine_refusals` sends. */
+const ENGINE_REFUSALS: RoutineEngineRefusal[] = [
+  { engine: 'opencode', permission_mode: 'accept_edits', reason: 'its only unattended mode approves every action, as full access does' },
+  { engine: 'zcode', permission_mode: 'accept_edits', reason: 'its edit mode waits for approval on every shell command, and nobody gives it' }
+]
+
 export function NavRoutineEditor(): React.JSX.Element {
   return (
     <Frame active="Routines">
       <RoutineEditor
         mode="create"
         workspaces={[{ id: '/home/dev/code/houston', name: 'houston' }]}
+        engineRefusals={ENGINE_REFUSALS}
         initial={{
           engine: 'claude',
           model: null,
@@ -231,7 +240,8 @@ export function NavSkills(): React.JSX.Element {
       reviews: [{ id: 13, workspace: '/home/dev/code/auth-refactor', routine_id: 1, run_id: 13, status: 'published', started_at_ms: 1, run_dir: '/home/dev/code/auth-refactor/.houston/harness/r13', finding_count: 0 }],
       findings: [],
       models: [],
-      providerCoverage: []
+      providerCoverage: [],
+      engineRefusals: []
     }
     return {
       subscribe(kind: string, handler: (message: never) => void) {
@@ -246,7 +256,8 @@ export function NavSkills(): React.JSX.Element {
           reviews: state.reviews,
           findings: state.findings,
           models: state.models,
-          provider_coverage: state.providerCoverage
+          provider_coverage: state.providerCoverage,
+          engine_refusals: state.engineRefusals
         }))
       }
     } as unknown as HoustonClient
@@ -265,7 +276,7 @@ export function NavSkills(): React.JSX.Element {
           client={client}
           workspace="/home/dev/code/auth-refactor"
           focusedPaneName="auth-refactor"
-          canRunSkillInFocusedPane
+          runBlockedReason={null}
           onRunSkill={noop}
           pushes={[]}
           autoPushEnabled={false}
@@ -391,7 +402,8 @@ export function NavHooks(): React.JSX.Element {
             scope: 'global',
             error: 'hooks.json is not valid JSON — Houston refused to rewrite it.'
           }),
-          hook({ provider: 'grok', path: '~/.grok/hooks/houston.json', scope: 'global' })
+          hook({ provider: 'grok', path: '~/.grok/hooks/houston.json', scope: 'global' }),
+          hook({ provider: 'zcode', path: '~/.zcode/cli/config.json', scope: 'global' })
         ]}
         onSet={noop}
         onRefresh={noop}
@@ -493,7 +505,8 @@ export function HarnessPageStory({ firstRun = false, noReviews = false }: { firs
     reviews,
     findings,
     models: [],
-    providerCoverage: [{ agent: 'opencode', sessions: 4 }]
+    providerCoverage: [{ agent: 'opencode', sessions: 4 }],
+    engineRefusals: ENGINE_REFUSALS
   }
   const shown: HarnessState = firstRun || noReviews ? { ...state, routine: firstRun ? null : state.routine, reviews: [], findings: [], providerCoverage: [] } : state
 

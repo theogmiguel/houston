@@ -95,7 +95,7 @@ const PANE_ROUTING: &str = concat!(
      work or `pane_wait`: it blocks at zero token cost until your inbox has a result, a \
      question, or an exit. Use diagnostics only after a wait timeout, for help, or when the \
      operator asks; do not sit in a diagnostic loop. ",
-    "Its signature: `pane_spawn{kind: claude|codex|antigravity|opencode|cursor|grok, prompt, model?, cwd?, ",
+    "Its signature: `pane_spawn{kind: claude|codex|antigravity|opencode|cursor|grok|zcode, prompt, model?, cwd?, ",
     "auto_approve?, profile?, role?, target_workspace?, worktree?, branch?, reusable?, handoff?, state_doc?, effort?, \
      output_format?, boundaries?}` — `role` is your own short name ",
     "for that child, unique among your live children, and it is how every wake from it identifies ",
@@ -830,7 +830,7 @@ impl OrchestrationTools {
                 name: "pane_pr_watch".into(),
                 title: "Watch a PR".into(),
                 description: "Watch PR checks/reviews/comments/conflicts. Call last; end your turn, do not poll.".into(),
-                input_schema: json!({"type":"object","properties":{"pr":{"type":["string","integer"]}},"required":["pr"],"additionalProperties":false}),
+                input_schema: json!({"type":"object","properties":{"pr":{"type":"string","description":"PR URL or number"}},"required":["pr"],"additionalProperties":false}),
                 annotations: local(Annotations::local_write()),
             },
             ToolSpec {
@@ -850,7 +850,7 @@ impl OrchestrationTools {
                         "client_request_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$" },
                         "kind": {
                             "type": "string",
-                            "enum": ["claude", "codex", "antigravity", "opencode", "cursor", "grok"],
+                            "enum": ["claude", "codex", "antigravity", "opencode", "cursor", "grok", "zcode"],
                         },
                         "prompt": {
                             "type": "string",

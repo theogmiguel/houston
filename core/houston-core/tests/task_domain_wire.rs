@@ -83,7 +83,9 @@ async fn project_state(ws: &mut common::WsStream, id: i64) -> proto::TaskProject
 async fn domain_state(ws: &mut common::WsStream, id: i64) -> proto::TaskDomain {
     loop {
         match common::next_control(ws).await {
-            proto::ServerMsg::TaskDomainState { domain } if domain.task_id == id => return domain,
+            proto::ServerMsg::TaskDomainState { domain, .. } if domain.task_id == id => {
+                return domain
+            }
             proto::ServerMsg::TaskRefused { message, .. } => {
                 panic!("task {id} domain query refused: {message}")
             }

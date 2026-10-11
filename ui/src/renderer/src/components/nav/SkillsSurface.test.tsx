@@ -88,7 +88,6 @@ describe('SkillsSurface — the librarian, no Run', () => {
           client={null}
           workspace={null}
           focusedPaneName={null}
-          canRunSkillInFocusedPane={false}
           {...props}
         />
       )
@@ -160,7 +159,7 @@ describe('SkillsSurface — the librarian, no Run', () => {
     render({
       workspace: '/p',
       focusedPaneName: 'auth-refactor',
-      canRunSkillInFocusedPane: true,
+      runBlockedReason: null,
       onRunSkill: onRun
     })
     await openDeploy()
@@ -171,6 +170,48 @@ describe('SkillsSurface — the librarian, no Run', () => {
     act(() => use!.click())
     expect(onRun).toHaveBeenCalledWith('/deploy')
     expect(container.textContent).toContain('User · This workspace')
+  })
+
+  it('spells the invocation for a focused ZCode pane in the card and the copy, not in the run', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const onRun = vi.fn()
+    render({
+      workspace: '/p',
+      focusedPaneName: 'zcode-cli',
+      focusedPaneAgent: 'zcode',
+      runBlockedReason: null,
+      onRunSkill: onRun
+    })
+    await openDeploy()
+    const shown = Array.from(container.querySelectorAll('code')).map((c) => c.textContent)
+    expect(shown).toContain('/skill deploy')
+    const copy = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Copy invocation')
+    )
+    act(() => copy!.click())
+    expect(writeText).toHaveBeenCalledWith('/skill deploy')
+    const use = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Use in zcode-cli')
+    )
+    act(() => use!.click())
+    // The run path spells it for the pane it reaches; passing `/skill deploy` would double it.
+    expect(onRun).toHaveBeenCalledWith('/deploy')
+  })
+
+  it('names why a focused ZCode pane in another workspace cannot take it, and still copies its spelling', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const reason = 'The focused pane belongs to another workspace; select its workspace or focus a pane in this one'
+    render({ workspace: '/p', focusedPaneAgent: 'zcode', runBlockedReason: reason })
+    await openDeploy()
+    const use = container.querySelector<HTMLButtonElement>(`button[aria-label="${reason}"]`)
+    expect(use?.disabled).toBe(true)
+    const copy = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Copy invocation')
+    )
+    act(() => copy!.click())
+    expect(writeText).toHaveBeenCalledWith('/skill deploy')
   })
 
   it('lists only user skills and names that scope without a selected workspace', async () => {
@@ -217,7 +258,8 @@ describe('SkillsSurface — the librarian, no Run', () => {
         reviews: [{ id: 1, status: 'published', run_dir: '/p/.houston/harness/r1' } as never],
         findings: [],
         models: [],
-        providerCoverage: []
+        providerCoverage: [],
+        engineRefusals: []
       },
       report: null,
       reportError: null,

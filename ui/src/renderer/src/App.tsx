@@ -117,13 +117,14 @@ import {
 import { MANAGE_TAGS_EVENT, Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
-import { canUseSkillInFocusedPane } from "./houston/skillSurface";
+import { focusedSkillAgent, paneSkillAgent, skillInvocationFor, skillRunBlocker } from "./houston/skillSurface";
 import { McpSurface } from "./components/nav/McpSurface";
 import { setSettingsSection, settingsSectionLabel, shouldIgnoreInputKey, useSettingsSection } from "./settingsNav";
 import { RoutinesSurface } from "./components/nav/RoutinesSurface";
 import { HarnessView, useHarnessActions } from "./components/nav/HarnessView";
 import { useHarnessSignals } from "./houston/useHarnessSignals";
 import type { Routine, RoutineRefusal, RoutineRun } from "./houston/routineTypes";
+import type { RoutineEngineRefusal } from "./houston/generated/RoutineEngineRefusal";
 import { engineLabel } from "./components/engineLabel";
 import { LayoutView } from "./components/LayoutView";
 import { AddPanePopover } from "./components/AddPanePopover";
@@ -829,6 +830,9 @@ export function App(): React.JSX.Element {
   }, [settings]);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesRunning, setRoutinesRunning] = useState<number[]>([]);
+  const [routineEngineRefusals, setRoutineEngineRefusals] = useState<
+    RoutineEngineRefusal[]
+  >([]);
   const [routineRefusal, setRoutineRefusal] = useState<RoutineRefusal | null>(
     null,
   );
@@ -1500,6 +1504,7 @@ export function App(): React.JSX.Element {
           case "routines":
             setRoutines(msg.routines);
             setRoutinesRunning(msg.running);
+            setRoutineEngineRefusals(msg.engine_refusals ?? []);
             setRoutineRefusal(null);
             break;
           case "routine_runs": {
@@ -2446,7 +2451,8 @@ export function App(): React.JSX.Element {
         return;
       }
       setActiveId(target);
-      if (!cur.client.sendStdin(target, invoke)) {
+      const agent = paneSkillAgent(sessionsRef.current.get(target));
+      if (!cur.client.sendStdin(target, skillInvocationFor(agent, invoke))) {
         pushError("connection lost — skill invocation was not delivered");
       }
     },
@@ -4057,12 +4063,8 @@ export function App(): React.JSX.Element {
                       client={conn.kind === "ready" ? conn.client : null}
                       workspace={selectedWs === "all" ? null : selectedWs}
                       focusedPaneName={activeId === null ? null : sessions.get(activeId)?.title ?? null}
-                      canRunSkillInFocusedPane={canUseSkillInFocusedPane(
-                        sessions,
-                        activeId,
-                        selectedWs,
-                        conn.kind
-                      )}
+                      focusedPaneAgent={focusedSkillAgent(sessions, activeId)}
+                      runBlockedReason={skillRunBlocker(sessions, activeId, selectedWs, conn.kind)}
                       onRunSkill={runSkill}
                       tools={skills}
                       pushes={skillPushes}
@@ -4119,6 +4121,7 @@ export function App(): React.JSX.Element {
                     <RoutinesSurface
                       routines={routines}
                       running={routinesRunning}
+                      engineRefusals={routineEngineRefusals}
                       runs={routineRuns}
                       runsLoading={routineRunsLoading}
                       workspaces={workspaces.map((w) => ({

@@ -10,6 +10,7 @@ export const SKILL_CLI_ORDER: readonly AgentKind[] = [
   'opencode',
   'cursor',
   'grok',
+  'zcode',
   'antigravity'
 ]
 
@@ -20,6 +21,7 @@ const SKILL_CLI_LABEL: Record<AgentKind, string> = {
   cursor: 'Cursor',
   grok: 'Grok',
   antigravity: 'Antigravity',
+  zcode: 'ZCode',
   shell: 'Shell',
   custom: 'Custom',
   droid: 'Droid',
@@ -28,8 +30,41 @@ const SKILL_CLI_LABEL: Record<AgentKind, string> = {
   ssh: 'SSH'
 }
 
+/** The text that runs a skill in a pane: ZCode loads skills through `/skill <name>`; its `/<name>` is a custom command. */
+export function skillInvocationFor(agent: AgentKind | null | undefined, invoke: string): string {
+  return agent === 'zcode' ? `/skill ${invoke.replace(/^\//, '')}` : invoke
+}
+
 export function skillScopeLabel(workspaceSelected: boolean): string {
   return workspaceSelected ? 'User · This workspace' : 'User skills only'
+}
+
+/** The CLI a skill invocation reaches in this pane: a shell pane's running CLI first. */
+export function paneSkillAgent(pane: SessionInfo | undefined): AgentKind | null {
+  return pane?.running_agent ?? pane?.detected_agent ?? pane?.agent ?? null
+}
+
+export function focusedSkillAgent(
+  sessions: ReadonlyMap<number, SessionInfo>,
+  activeId: number | null
+): AgentKind | null {
+  return activeId === null ? null : paneSkillAgent(sessions.get(activeId))
+}
+
+/** Why the focused pane cannot take a skill now, or null when it can. */
+export function skillRunBlocker(
+  sessions: ReadonlyMap<number, SessionInfo>,
+  activeId: number | null,
+  workspace: string,
+  connection: 'connecting' | 'ready' | 'reconnecting' | 'failed'
+): string | null {
+  const pane = activeId === null ? undefined : sessions.get(activeId)
+  if (connection !== 'ready' || !pane || !isLive(pane.state)) return 'Focus a live agent pane to use this skill'
+  if (pane.agent === 'shell') return 'The focused pane is a shell; focus an agent pane to use this skill'
+  if (workspace !== 'all' && pane.project_dir !== workspace) {
+    return 'The focused pane belongs to another workspace; select its workspace or focus a pane in this one'
+  }
+  return null
 }
 
 export function canUseSkillInFocusedPane(
@@ -38,11 +73,7 @@ export function canUseSkillInFocusedPane(
   workspace: string,
   connection: 'connecting' | 'ready' | 'reconnecting' | 'failed'
 ): boolean {
-  const pane = activeId === null ? undefined : sessions.get(activeId)
-  return Boolean(
-    connection === 'ready' && pane && pane.agent !== 'shell' && isLive(pane.state) &&
-    (workspace === 'all' || pane.project_dir === workspace)
-  )
+  return skillRunBlocker(sessions, activeId, workspace, connection) === null
 }
 
 export type SkillCliRelation = {

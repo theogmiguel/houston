@@ -144,7 +144,7 @@ Every provider Houston can spawn has a brand token, in two tiers. **Chromatic** 
 carry a colour as part of the trademark — `--claude`, `--antigravity`
 hold the same hex in both themes, because a brand mark is not a themed
 surface. **Monochrome** marks are black-on-light / white-on-dark by design, so
-`--codex`, `--opencode`, `--cursor`, `--grok` resolve to `var(--text-primary)`:
+`--codex`, `--opencode`, `--cursor`, `--grok`, `--zcode` resolve to `var(--text-primary)`:
 following the theme *is* brand fidelity for them, and freezing a hex instead is
 how `--codex` spent releases near-invisible on Paper. Tokens are opt-in via the
 `brand` prop on an icon; everything else stays `currentColor`. `--text-muted` is

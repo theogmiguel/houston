@@ -293,7 +293,7 @@ impl Daemon {
     }
 
     fn task_readiness_refusal(&self, id: i64, operation: &str) -> Result<Option<proto::ServerMsg>> {
-        let proto::ServerMsg::TaskDomainState { domain } = self.task_domain_state(id)? else {
+        let proto::ServerMsg::TaskDomainState { domain, .. } = self.task_domain_state(id)? else {
             anyhow::bail!("task_domain_get did not return domain state");
         };
         if domain.readiness.ready {
@@ -937,7 +937,10 @@ impl Daemon {
             plan,
             unresolved_tracker_conflicts,
         };
-        Ok(proto::ServerMsg::TaskDomainState { domain })
+        Ok(proto::ServerMsg::TaskDomainState {
+            domain,
+            planning_refusals: crate::launch::planning_refusals(),
+        })
     }
 
     pub fn task_domain_save(
@@ -1233,7 +1236,7 @@ impl Daemon {
             ));
         };
         if !Self::task_agent_spawnable(agent) {
-            return Ok(Self::task_invalid(Some(id), operation, format!("provider {agent:?} cannot start planning; expected claude, codex, antigravity, opencode, cursor or grok")));
+            return Ok(Self::task_invalid(Some(id), operation, format!("provider {agent:?} cannot start planning; expected claude, codex, antigravity, opencode, cursor, grok or zcode")));
         }
         let project_dir = PathBuf::from(workspace);
         if !project_dir.is_dir() {
@@ -1768,8 +1771,12 @@ impl Daemon {
         let id = match value {
             serde_json::Value::Number(number) => number.as_i64().filter(|id| *id > 0)
                 .ok_or_else(|| anyhow::anyhow!("{operation} refused: id must be a positive task id or a key like HOU-1; got {value}"))?,
-            serde_json::Value::String(key) => self.task_id_for_key(workspace, key)?
-                .ok_or_else(|| anyhow::anyhow!("{operation} refused: no task with key {key:?} (expected an existing HOU-<number> or integer id)"))?,
+            // The MCP schema types `id` as a string, so an integer id may arrive as "7".
+            serde_json::Value::String(key) => match key.trim().parse::<i64>() {
+                Ok(id) if id > 0 => id,
+                _ => self.task_id_for_key(workspace, key)?
+                    .ok_or_else(|| anyhow::anyhow!("{operation} refused: no task with key {key:?} (expected an existing HOU-<number> or integer id)"))?,
+            },
             _ => bail!("{operation} refused: id must be an integer task id or a key like HOU-1; got {value}"),
         };
         if self.db.task(id)?.is_none() {
@@ -2664,6 +2671,14 @@ impl Daemon {
 
     // ---- Start, runs and the PR watch ----
 
+    /// Why `agent` cannot run a task: the providers that can.
+    fn task_agent_refusal(none_allowed: bool) -> String {
+        format!(
+            "expected claude, codex, antigravity, opencode, cursor, grok or zcode{}",
+            if none_allowed { ", or none" } else { "" }
+        )
+    }
+
     /// Providers a Start can launch unattended; the rest are refused by name.
     fn task_agent_spawnable(agent: proto::AgentKind) -> bool {
         matches!(
@@ -2674,6 +2689,7 @@ impl Daemon {
                 | proto::AgentKind::Opencode
                 | proto::AgentKind::Cursor
                 | proto::AgentKind::Grok
+                | proto::AgentKind::Zcode
         )
     }
 
@@ -2739,8 +2755,7 @@ impl Daemon {
                 None,
                 None,
                 format!(
-                    "task_start_settings_set refused: provider {agent:?} cannot be started by \
-                     Houston (expected claude, codex, antigravity, opencode, cursor or grok)"
+                    "task_start_settings_set refused: provider {agent:?} cannot be started by Houston: {}", Self::task_agent_refusal(false)
                 ),
             ));
         }
@@ -2830,9 +2845,7 @@ impl Daemon {
                     None,
                     None,
                     format!(
-                        "task_review_settings_set refused: reviewer provider {reviewer:?} cannot \
-                         be started by Houston (expected claude, codex, antigravity, opencode, \
-                         cursor or grok, or none)"
+                        "task_review_settings_set refused: reviewer provider {reviewer:?} cannot be started by Houston: {}", Self::task_agent_refusal(true)
                     ),
                 ));
             }
@@ -2866,7 +2879,8 @@ impl Daemon {
         &self,
         row: &TaskRow,
     ) -> Result<(String, Option<i64>, Option<i64>)> {
-        let proto::ServerMsg::TaskDomainState { domain } = self.task_domain_state(row.id)? else {
+        let proto::ServerMsg::TaskDomainState { domain, .. } = self.task_domain_state(row.id)?
+        else {
             anyhow::bail!("task {} disappeared while building its context", row.id);
         };
         let project = domain
@@ -3261,7 +3275,7 @@ impl Daemon {
             None => {
                 let reason = format!(
                     "provider {agent:?} has no unattended launch mode, so a task cannot start \
-                     with it (expected claude, codex, antigravity, opencode, cursor or grok)"
+                     with it (expected claude, codex, antigravity, opencode, cursor, grok or zcode)"
                 );
                 self.db.task_run_set_state(
                     run.id,
@@ -3276,6 +3290,8 @@ impl Daemon {
         }
         let delivery = self.tasks_prompt_delivery(row.workspace.as_deref().unwrap_or(""));
         let prompt = matches!(delivery, proto::TaskPromptDelivery::Send).then(|| brief.clone());
+        let pasted_prefill = matches!(delivery, proto::TaskPromptDelivery::Prefill)
+            && !crate::launch::prompt_in_argv(agent);
         let label = format!("task-{}-attempt-{}", key.to_lowercase(), run.attempt);
         let spawned = self.create_session_with_env(
             super::CreateParams {
@@ -3299,6 +3315,7 @@ impl Daemon {
             Some(created.path.clone()),
             false,
             None,
+            pasted_prefill,
         );
         let info = match spawned {
             Ok(info) => info,
@@ -3322,8 +3339,11 @@ impl Daemon {
         self.record_approval_mode(info.id, mode);
         if matches!(delivery, proto::TaskPromptDelivery::Prefill) {
             // Prefill types the brief into the CLI's input box without the
-            // submitting Enter; the user reviews and sends it.
-            if let Err(e) = self.write_stdin(info.id, &bracketed_paste(&brief)) {
+            // submitting Enter; the user reviews and sends it. A CLI that takes
+            // no prompt in argv reads its composer only once its TUI is up.
+            if pasted_prefill {
+                self.deliver_first_prompt(info.id, brief.clone(), None, false);
+            } else if let Err(e) = self.write_stdin(info.id, &bracketed_paste(&brief)) {
                 tracing::warn!("prefilling task brief into pane {}: {e:#}", info.id);
             }
         }
@@ -3489,8 +3509,8 @@ impl Daemon {
                 Some(id),
                 operation,
                 format!(
-                    "provider {agent:?} cannot be started by Houston (expected claude, codex, \
-                     antigravity, opencode, cursor or grok)"
+                    "provider {agent:?} cannot be started by Houston: {}",
+                    Self::task_agent_refusal(false)
                 ),
             ));
         }
@@ -4065,8 +4085,8 @@ impl Daemon {
                 Some(id),
                 operation,
                 format!(
-                    "provider {agent:?} cannot be started by Houston (expected claude, codex, \
-                     antigravity, opencode, cursor or grok)"
+                    "provider {agent:?} cannot be started by Houston: {}",
+                    Self::task_agent_refusal(false)
                 ),
             ));
         }
@@ -4076,8 +4096,8 @@ impl Daemon {
                     Some(id),
                     operation,
                     format!(
-                        "reviewer provider {reviewer:?} cannot be started by Houston (expected \
-                         claude, codex, antigravity, opencode, cursor or grok)"
+                        "reviewer provider {reviewer:?} cannot be started by Houston: {}",
+                        Self::task_agent_refusal(false)
                     ),
                 ));
             }
@@ -4374,8 +4394,8 @@ impl Daemon {
                 Some(row.id),
                 operation,
                 format!(
-                    "reviewer provider {agent:?} cannot be started by Houston (expected claude, \
-                     codex, antigravity, opencode, cursor or grok)"
+                    "reviewer provider {agent:?} cannot be started by Houston: {}",
+                    Self::task_agent_refusal(false)
                 ),
             ));
         }
@@ -4665,8 +4685,8 @@ impl Daemon {
                 None,
                 operation,
                 format!(
-                    "provider {agent:?} cannot be started by Houston (expected claude, codex, \
-                     antigravity, opencode, cursor or grok)"
+                    "provider {agent:?} cannot be started by Houston: {}",
+                    Self::task_agent_refusal(false)
                 ),
             ));
         }

@@ -154,7 +154,7 @@ pub fn worktree_trust_args(agent: proto::AgentKind, cwd: &Path) -> Result<Vec<St
         }
         Cursor => Ok(vec!["--trust".into()]),
         Grok => Ok(Vec::new()),
-        Claude | Antigravity | Opencode => Ok(Vec::new()),
+        Claude | Antigravity | Opencode | Zcode => Ok(Vec::new()),
         other => {
             bail!("worktree spawn refused for provider {other:?}: expected a spawnable provider")
         }
@@ -226,15 +226,22 @@ fn executable(agent: proto::AgentKind) -> Result<&'static str> {
         proto::AgentKind::Opencode => Ok("opencode"),
         proto::AgentKind::Cursor => Ok("cursor-agent"),
         proto::AgentKind::Grok => Ok("grok"),
+        proto::AgentKind::Zcode => Ok("zcode"),
         other => bail!(
             "agent kind {other:?} cannot run a routine in a pane (expected claude, codex, \
-             antigravity, opencode, cursor or grok)"
+             antigravity, opencode, cursor, grok or zcode)"
         ),
     }
 }
 
 fn prompt_outgrows_argv(prompt: &str) -> bool {
     prompt.len() > PROMPT_FILE_THRESHOLD || (cfg!(windows) && prompt.contains(['\r', '\n']))
+}
+
+/// ZCode reads its first positional as a subcommand and has no prompt flag for its
+/// TUI, so its first prompt is pasted once its composer takes input (`composer_ready.rs`).
+pub fn prompt_in_argv(agent: proto::AgentKind) -> bool {
+    agent != proto::AgentKind::Zcode
 }
 
 pub fn launch_args(
@@ -249,8 +256,41 @@ pub fn launch_args(
     if prompt.trim().is_empty() {
         return Ok((flags_only(agent, auto_approve, plan_mode, model)?, None));
     }
+    if !prompt_in_argv(agent) {
+        bail!(
+            "agent kind {agent:?} takes no prompt in argv; deliver it with prompt_text after \
+             the TUI starts"
+        );
+    }
+    let (prompt_arg, prompt_file) = prompt_text(prompt, prompt_file_dir, label)?;
+
+    let mut args = match agent {
+        proto::AgentKind::Claude => vec![prompt_arg],
+        proto::AgentKind::Codex => vec![prompt_arg],
+        proto::AgentKind::Antigravity => vec!["-i".into(), prompt_arg],
+        proto::AgentKind::Opencode => vec!["--prompt".into(), prompt_arg],
+        proto::AgentKind::Cursor | proto::AgentKind::Grok => vec![prompt_arg],
+        proto::AgentKind::Custom => return Ok((Vec::new(), None)),
+        other => {
+            bail!(
+                "agent kind {other:?} is not spawnable (expected claude, codex, antigravity, \
+                 opencode, cursor or grok)"
+            )
+        }
+    };
+    args.extend(flags_only(agent, auto_approve, plan_mode, model)?);
+    Ok((args, prompt_file))
+}
+
+/// The text that carries `prompt` to the agent: the prompt itself, or for one that
+/// outgrows argv, a pointer to the file (returned for the caller to write) holding it.
+pub fn prompt_text(
+    prompt: &str,
+    prompt_file_dir: Option<&Path>,
+    label: &str,
+) -> Result<(String, Option<(PathBuf, String)>)> {
     let mut prompt_file = None;
-    let prompt_arg = if prompt_outgrows_argv(prompt) {
+    let text = if prompt_outgrows_argv(prompt) {
         let Some(dir) = prompt_file_dir else {
             bail!(
                 "prompt is {} bytes, over the argv-safe limit for inline launch ({} bytes, \
@@ -282,22 +322,7 @@ pub fn launch_args(
         prompt.to_string()
     };
 
-    let mut args = match agent {
-        proto::AgentKind::Claude => vec![prompt_arg],
-        proto::AgentKind::Codex => vec![prompt_arg],
-        proto::AgentKind::Antigravity => vec!["-i".into(), prompt_arg],
-        proto::AgentKind::Opencode => vec!["--prompt".into(), prompt_arg],
-        proto::AgentKind::Cursor | proto::AgentKind::Grok => vec![prompt_arg],
-        proto::AgentKind::Custom => return Ok((Vec::new(), None)),
-        other => {
-            bail!(
-                "agent kind {other:?} is not spawnable (expected claude, codex, antigravity, \
-                 opencode, cursor or grok)"
-            )
-        }
-    };
-    args.extend(flags_only(agent, auto_approve, plan_mode, model)?);
-    Ok((args, prompt_file))
+    Ok((text, prompt_file))
 }
 
 pub(crate) fn flags_only(
@@ -313,16 +338,29 @@ pub(crate) fn flags_only(
         | proto::AgentKind::Antigravity
         | proto::AgentKind::Opencode
         | proto::AgentKind::Cursor
-        | proto::AgentKind::Grok => {}
+        | proto::AgentKind::Grok
+        | proto::AgentKind::Zcode => {}
         proto::AgentKind::Custom => return Ok(args),
         other => {
             bail!(
                 "agent kind {other:?} is not spawnable (expected claude, codex, antigravity, \
-                 opencode, cursor or grok)"
+                 opencode, cursor, grok or zcode)"
             )
         }
     }
+    if agent == proto::AgentKind::Zcode {
+        if let Some(model) = model.filter(|m| !m.trim().is_empty()) {
+            bail!(
+                "model {:?} refused for ZCode: it has no model flag and rejects unknown \
+                 flags; leave model empty and choose the model in ZCode with /model",
+                model.trim()
+            );
+        }
+    }
     if plan_mode {
+        if let Some(reason) = planning_refusal(agent) {
+            bail!("agent {agent:?} refused for read-only planning: {reason}");
+        }
         match agent {
             proto::AgentKind::Claude => {
                 args.push("--permission-mode".into());
@@ -360,7 +398,7 @@ pub(crate) fn flags_only(
             proto::AgentKind::Codex | proto::AgentKind::Opencode | proto::AgentKind::Grok => {
                 args.push("-m".into())
             }
-            _ => unreachable!("filtered above"),
+            _ => unreachable!("filtered above; ZCode's model is refused"),
         }
         args.push(model.trim().into());
     }
@@ -387,6 +425,77 @@ pub(crate) fn effort_args(
     }
 }
 
+/// Why `agent` cannot start in an enforced read-only planning mode. `flags_only` refuses
+/// exactly these; task domain state carries them so the planning control is disabled.
+pub fn planning_refusal(agent: proto::AgentKind) -> Option<&'static str> {
+    match agent {
+        // `--mode` takes build, edit or yolo only. `/plan` inside the TUI is read-only,
+        // but no flag, setting or hook payload lets Houston set or confirm it.
+        proto::AgentKind::Zcode => Some(
+            "its command line has no read-only planning mode; planning is switched on only \
+             inside ZCode, with /plan",
+        ),
+        _ => None,
+    }
+}
+
+/// Every refusal `planning_refusal` makes, for the planning control.
+pub fn planning_refusals() -> Vec<proto::PlanningRefusal> {
+    use proto::AgentKind::*;
+    [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode]
+        .into_iter()
+        .filter_map(|agent| {
+            planning_refusal(agent).map(|reason| proto::PlanningRefusal {
+                agent,
+                reason: reason.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Why `agent` cannot run an unattended routine with `permission_mode`, whatever its
+/// model and effort. `routine_argv` refuses exactly these; routine and Harness state
+/// carry them so a picker disables the choice before it is made.
+pub fn routine_access_refusal(
+    agent: proto::AgentKind,
+    permission_mode: proto::ChatPermissionMode,
+) -> Option<&'static str> {
+    if permission_mode != proto::ChatPermissionMode::AcceptEdits {
+        return None;
+    }
+    match agent {
+        // OpenCode's `--auto` is its only unattended mode, the same flag as full access.
+        proto::AgentKind::Opencode => {
+            Some("its only unattended mode approves every action, as full access does")
+        }
+        // `--mode edit` approves workspace file edits only; every other command asks,
+        // and its TUI waits on an unanswered approval without a timeout.
+        proto::AgentKind::Zcode => {
+            Some("its edit mode waits for approval on every shell command, and nobody gives it")
+        }
+        _ => None,
+    }
+}
+
+/// Every access refusal `routine_access_refusal` makes, for the routine pickers.
+pub fn routine_engine_refusals() -> Vec<proto::RoutineEngineRefusal> {
+    use proto::AgentKind::*;
+    use proto::ChatPermissionMode::*;
+    [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode]
+        .into_iter()
+        .flat_map(|engine| [AcceptEdits, BypassPermissions].map(|mode| (engine, mode)))
+        .filter_map(|(engine, permission_mode)| {
+            routine_access_refusal(engine, permission_mode).map(|reason| {
+                proto::RoutineEngineRefusal {
+                    engine,
+                    permission_mode,
+                    reason: reason.to_string(),
+                }
+            })
+        })
+        .collect()
+}
+
 pub fn routine_argv(
     agent: proto::AgentKind,
     model: Option<&str>,
@@ -397,13 +506,13 @@ pub fn routine_argv(
         proto::ChatPermissionMode::AcceptEdits => ApprovalMode::Auto,
         proto::ChatPermissionMode::BypassPermissions => ApprovalMode::Bypass,
     };
+    if let Some(reason) = routine_access_refusal(agent, permission_mode) {
+        bail!(
+            "agent {agent:?} has no bounded accept-edits mode for an unattended run: {reason}; \
+             use an isolated full-access routine or choose another provider"
+        );
+    }
     if approval == ApprovalMode::Auto {
-        if agent == proto::AgentKind::Opencode {
-            bail!(
-                "agent Opencode has no bounded accept-edits mode for an unattended run; use \
-                 an isolated full-access routine or choose another provider"
-            );
-        }
         if let Some(model) = model {
             if model_blocks_auto_mode(agent, model) {
                 bail!(
@@ -438,6 +547,7 @@ pub fn auto_approve_args(agent: proto::AgentKind) -> Option<Vec<String>> {
         proto::AgentKind::Opencode => Some(vec!["--auto".to_string()]),
         proto::AgentKind::Cursor => Some(vec!["--yolo".to_string()]),
         proto::AgentKind::Grok => Some(vec!["--always-approve".to_string()]),
+        proto::AgentKind::Zcode => Some(vec!["--mode".to_string(), "yolo".to_string()]),
         _ => None,
     }
 }
@@ -449,11 +559,26 @@ pub fn resume_args(agent: proto::AgentKind, id: &str) -> Result<Vec<String>> {
     match agent {
         proto::AgentKind::Claude => Ok(vec!["--resume".to_string(), id.to_string()]),
         proto::AgentKind::Codex => Ok(vec!["resume".to_string(), id.to_string()]),
+        proto::AgentKind::Zcode => Ok(vec!["--resume".to_string(), id.to_string()]),
         other => bail!(
-            "resuming a conversation is not supported for {other:?} (only Claude and Codex); \
-             conversation {id:?} stays unresumed"
+            "resuming a conversation is not supported for {other:?} (only Claude, Codex and \
+             ZCode); conversation {id:?} stays unresumed"
         ),
     }
+}
+
+/// Providers whose conversation Houston records from hooks and resumes by exact id.
+pub fn resumes_conversations(agent: proto::AgentKind) -> bool {
+    matches!(
+        agent,
+        proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Zcode
+    )
+}
+
+/// Whether resuming is checked against a transcript file. ZCode keeps its sessions
+/// in its own database, so a missing one surfaces as ZCode's error in the pane.
+pub fn resume_needs_transcript(agent: proto::AgentKind) -> bool {
+    agent != proto::AgentKind::Zcode
 }
 
 pub fn auto_mode_args(agent: proto::AgentKind) -> Option<Vec<String>> {
@@ -467,6 +592,7 @@ pub fn auto_mode_args(agent: proto::AgentKind) -> Option<Vec<String>> {
         proto::AgentKind::Antigravity => {
             Some(vec!["--mode".to_string(), "accept-edits".to_string()])
         }
+        proto::AgentKind::Zcode => Some(vec!["--mode".to_string(), "edit".to_string()]),
         _ => None,
     }
 }
@@ -650,6 +776,129 @@ mod tests {
             let err = resume_args(kind, "c-1").unwrap_err().to_string();
             assert!(err.contains(&format!("{kind:?}")), "{kind:?}: {err}");
         }
+    }
+
+    #[test]
+    fn zcode_takes_modes_and_resume_but_no_model_and_no_prompt_in_argv() {
+        use proto::AgentKind::Zcode;
+        assert_eq!(
+            flags_only(Zcode, false, false, None).unwrap(),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            flags_only(Zcode, true, false, None).unwrap(),
+            ["--mode", "yolo"]
+        );
+        assert_eq!(auto_mode_args(Zcode).unwrap(), ["--mode", "edit"]);
+        assert_eq!(
+            ApprovalMode::Bypass.args(Zcode).unwrap(),
+            ["--mode", "yolo"]
+        );
+        assert_eq!(
+            resume_args(Zcode, "sess_01").unwrap(),
+            ["--resume".to_string(), "sess_01".to_string()]
+        );
+        assert!(!resume_needs_transcript(Zcode));
+        assert!(flags_only(Zcode, false, false, Some("  "))
+            .unwrap()
+            .is_empty());
+        let err = flags_only(Zcode, true, false, Some("glm-5.3"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("\"glm-5.3\"") && err.contains("/model") && err.contains("ZCode"),
+            "{err}"
+        );
+        assert!(!prompt_in_argv(Zcode));
+        let err = launch_args(Zcode, false, false, None, "fix it", None, "x").unwrap_err();
+        assert!(err.to_string().contains("no prompt in argv"), "{err}");
+        assert!(effort_args(Zcode, proto::ChatEffort::High).is_err());
+    }
+
+    /// ZCode 3.14.4 exits on `--mode plan` ("Supported modes: build, edit, yolo").
+    #[test]
+    fn zcode_planning_is_refused_by_name_and_listed_for_the_planning_control() {
+        use proto::AgentKind::*;
+        let err = flags_only(Zcode, false, true, None)
+            .expect_err("ZCode has no read-only planning flag")
+            .to_string();
+        assert!(
+            err.contains("Zcode") && err.contains("read-only planning") && err.contains("/plan"),
+            "{err}"
+        );
+        let listed: Vec<_> = planning_refusals()
+            .into_iter()
+            .map(|r| (r.agent, r.reason))
+            .collect();
+        assert_eq!(listed.iter().map(|(a, _)| *a).collect::<Vec<_>>(), [Zcode]);
+        for agent in [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode] {
+            let refused = flags_only(agent, false, true, None).err();
+            match listed.iter().find(|(a, _)| *a == agent) {
+                Some((_, reason)) => {
+                    let err = refused.expect("a listed agent is refused").to_string();
+                    assert!(err.contains(reason.as_str()), "{err}");
+                }
+                None => assert!(refused.is_none(), "{agent:?}: {refused:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_zcode_routine_runs_with_full_access_and_refuses_accept_edits_by_name() {
+        use proto::AgentKind::Zcode;
+        let (argv, approval) = routine_argv(
+            Zcode,
+            None,
+            None,
+            proto::ChatPermissionMode::BypassPermissions,
+        )
+        .expect("an isolated full-access routine runs ZCode");
+        assert_eq!(argv, ["zcode", "--mode", "yolo"]);
+        assert_eq!(approval, ApprovalMode::Bypass);
+        let err = routine_argv(Zcode, None, None, proto::ChatPermissionMode::AcceptEdits)
+            .expect_err("edit mode blocks on shell approvals");
+        assert!(
+            err.to_string()
+                .contains("agent Zcode has no bounded accept-edits mode"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_listed_engine_refusals_are_exactly_what_routine_argv_refuses() {
+        use proto::AgentKind::*;
+        use proto::ChatPermissionMode::*;
+        let listed: Vec<_> = routine_engine_refusals()
+            .into_iter()
+            .map(|r| (r.engine, r.permission_mode, r.reason))
+            .collect();
+        let pairs: Vec<_> = listed.iter().map(|(e, m, _)| (*e, *m)).collect();
+        assert_eq!(pairs, [(Opencode, AcceptEdits), (Zcode, AcceptEdits)]);
+        for engine in [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode] {
+            for mode in [AcceptEdits, BypassPermissions] {
+                let refused = routine_argv(engine, None, None, mode).err();
+                match listed.iter().find(|(e, m, _)| (*e, *m) == (engine, mode)) {
+                    Some((_, _, reason)) => {
+                        let err = refused.expect("a listed pair is refused").to_string();
+                        assert!(err.contains(reason.as_str()), "{err}");
+                    }
+                    None => assert!(refused.is_none(), "{engine:?} {mode:?}: {refused:?}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn prompt_text_points_at_a_file_once_the_prompt_outgrows_argv() {
+        let dir = tempfile::tempdir().unwrap();
+        let (text, file) = prompt_text("short", Some(dir.path()), "a b").unwrap();
+        assert_eq!((text.as_str(), file), ("short", None));
+        let long = "x".repeat(PROMPT_FILE_THRESHOLD + 1);
+        let (text, file) = prompt_text(&long, Some(dir.path()), "a b").unwrap();
+        let (path, contents) = file.expect("a file for a long prompt");
+        assert_eq!(path, dir.path().join("prompt-a-b.md"));
+        assert_eq!(contents, long);
+        assert!(text.contains(&path.display().to_string()), "{text}");
     }
 
     #[test]

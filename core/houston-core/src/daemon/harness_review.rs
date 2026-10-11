@@ -51,6 +51,7 @@ impl Daemon {
             findings: self.harness_findings(workspace)?,
             models: self.model_catalog.model_options(),
             provider_coverage: self.harness_provider_coverage(workspace)?,
+            engine_refusals: crate::launch::routine_engine_refusals(),
         })
     }
 

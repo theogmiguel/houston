@@ -3,7 +3,8 @@ import { ActionMenu } from './ActionMenu'
 import { Toggle } from './settingsPrimitives'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { Routine, RoutineRun } from '../../houston/routineTypes'
-import { ENGINE_ORDER, engineLabel } from '../engineLabel'
+import type { RoutineEngineRefusal } from '../../houston/generated/RoutineEngineRefusal'
+import { routineEngineOptions } from '../nav/routineEngines'
 import { formatCadence, formatRunTime } from '../nav/routineFormat'
 
 type ScheduleChoice = 'manual' | 'daily' | 'weekly'
@@ -49,6 +50,7 @@ function runRows(runs: RoutineRun[] | undefined, now: number): RunRow[] {
 
 export function RoutineDetail({
   routine,
+  engineRefusals = [],
   runs,
   runsLoading,
   now,
@@ -64,6 +66,7 @@ export function RoutineDetail({
   onOpenSession
 }: {
   routine: Routine
+  engineRefusals?: readonly RoutineEngineRefusal[]
   runs?: RoutineRun[]
   runsLoading: boolean
   now: number
@@ -112,8 +115,9 @@ export function RoutineDetail({
         <Field label="Runs on" hint="Only agents that can run unattended are listed.">
           <Select
             aria-label="Runs on"
+            data-testid="routine-detail-engine"
             value={routine.engine}
-            options={ENGINE_ORDER.filter((engine) => ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'].includes(engine)).map((engine) => ({ value: engine, label: engineLabel(engine) }))}
+            options={routineEngineOptions(engineRefusals, routine.permission_mode, "Change the routine's access with Edit first.")}
             onChange={(value) => onUpdateEngine(value as AgentKind)}
             width="full"
           />

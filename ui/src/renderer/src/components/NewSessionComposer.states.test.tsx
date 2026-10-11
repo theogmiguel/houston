@@ -109,7 +109,7 @@ describe('NewSessionComposer — state matrix', () => {
     const trigger = q<HTMLButtonElement>('[aria-label="Default agent"]')
     act(() => trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
     expect(Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).map((option) => option.textContent?.trim())).toEqual([
-      'Claude Code', 'Codex', 'Cursor Agent', 'Antigravity', 'OpenCode', 'Grok Build', 'Terminal'
+      'Claude Code', 'Codex', 'Cursor Agent', 'Antigravity', 'OpenCode', 'Grok Build', 'ZCode', 'Terminal'
     ])
     const shell = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((option) => option.textContent?.trim() === 'Terminal')
     act(() => shell?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })))

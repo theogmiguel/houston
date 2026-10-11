@@ -32,6 +32,11 @@ const SPAWN_GRACE: Duration = Duration::from_secs(20);
 const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
+// Covers a cold Node start on a loaded machine; past it the paste goes in regardless.
+const FIRST_PROMPT_DEADLINE: Duration = Duration::from_secs(60);
+// A submitted prompt's UserPromptSubmit drop lands within a hook-drain tick or two;
+// the margin covers a CLI still finishing its startup when the paste arrived.
+const FIRST_PROMPT_CONFIRM: Duration = Duration::from_secs(20);
 const SWARM_WAKE_LANE_MAX: usize = 16;
 // Back off composer checks while retaining sub-second responsiveness to a cleared hold.
 const SWARM_WAKE_BACKOFF_MAX: Duration = Duration::from_millis(640);
@@ -572,6 +577,10 @@ pub struct Session {
     osc_cwd: Mutex<Option<PathBuf>>,
     osc52: Mutex<crate::osc52::Osc52Scanner>,
     osc_title: Option<Mutex<crate::osc_title::OscTitleScanner>>,
+    // Only while a pasted first prompt is pending (see `Daemon::first_prompt_wait_ready`);
+    // `composer_watch` stops the feed once its delivery ends.
+    composer_ready: Option<Mutex<crate::composer_ready::ComposerReady>>,
+    composer_watch: AtomicBool,
     cli_title: Mutex<CliTitleState>,
     title_source: Mutex<TitleSource>,
     tags: Mutex<Vec<u32>>,
@@ -1429,6 +1438,8 @@ pub struct Daemon {
     instruction_dispatch_lock: Mutex<()>,
     instruction_wake_active: Mutex<HashSet<u32>>,
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
+    first_prompts: Mutex<HashMap<u32, FirstPrompt>>,
+    first_prompt_confirm_ms: AtomicU64,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
     prompt_awaiting_hook: Mutex<HashSet<u32>>,
@@ -1970,8 +1981,9 @@ fn restore_priority(agent: proto::AgentKind) -> u8 {
         proto::AgentKind::Opencode => 3,
         proto::AgentKind::Cursor => 4,
         proto::AgentKind::Grok => 5,
-        proto::AgentKind::Shell => 6,
-        _ => 7,
+        proto::AgentKind::Zcode => 6,
+        proto::AgentKind::Shell => 7,
+        _ => 8,
     }
 }
 
@@ -2104,6 +2116,9 @@ struct SpawnParams {
     resume_handle: Option<ResumeHandle>,
     resume_notice: Option<String>,
     scrollback_seed: Option<Scrollback>,
+    /// A first prompt will be pasted once the composer takes input, so its output is
+    /// watched for that until the delivery ends.
+    pastes_first_prompt: bool,
 }
 
 /// A conversation id and the transcript path the CLI reported with it.
@@ -2912,6 +2927,8 @@ impl Daemon {
             instruction_dispatch_lock: Mutex::new(()),
             instruction_wake_active: Mutex::new(HashSet::new()),
             paste_confirmations: Mutex::new(HashMap::new()),
+            first_prompts: Mutex::new(HashMap::new()),
+            first_prompt_confirm_ms: AtomicU64::new(FIRST_PROMPT_CONFIRM.as_millis() as u64),
             turn_start_round: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new({
                 #[cfg(unix)]
@@ -3284,10 +3301,7 @@ impl Daemon {
                 }
                 continue;
             }
-            let result = if !matches!(
-                child.agent,
-                proto::AgentKind::Claude | proto::AgentKind::Codex
-            ) {
+            let result = if !crate::launch::resumes_conversations(child.agent) {
                 Err(anyhow!("provider without resume"))
             } else {
                 match self.db.session_resume_handle(child.id) {
@@ -4428,6 +4442,8 @@ impl Daemon {
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             osc_title: (m.agent != proto::AgentKind::Shell)
                 .then(|| Mutex::new(crate::osc_title::OscTitleScanner::new())),
+            composer_ready: None,
+            composer_watch: AtomicBool::new(false),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(TitleSource::Codename),
             tags: Mutex::new(m.tags.clone()),
@@ -5565,6 +5581,7 @@ impl Daemon {
         proto::ServerMsg::Routines {
             routines,
             running: self.routine_runs_in_flight(),
+            engine_refusals: crate::launch::routine_engine_refusals(),
         }
     }
 
@@ -5608,7 +5625,7 @@ impl Daemon {
         let Some(engine) = engine else {
             bail!(
                 "a routine needs its own engine: pass engine (one of claude, codex, \
-                 antigravity, opencode, cursor, grok)"
+                 antigravity, opencode, cursor, grok, zcode)"
             );
         };
         self.routine_create_impl(
@@ -6239,6 +6256,7 @@ impl Daemon {
             None,
             false,
             None,
+            false,
         );
         let session = match spawned {
             Ok(info) => info,
@@ -6957,9 +6975,46 @@ impl Daemon {
         let sentinel = self.hook_sentinel();
         if enabled {
             let launcher = crate::claude_hooks::launcher_path(&self.state_dir);
-            crate::agent_hooks::install(provider, &home, &launcher, &sentinel)?;
+            self.install_agent_hooks(provider, &home, &launcher, &sentinel)?;
         } else {
             crate::agent_hooks::uninstall(provider, &home, &sentinel)?;
+            if provider == proto::AgentKind::Zcode {
+                crate::zcode_config::remove_plugin(&self.state_dir)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// ZCode's entry names the plugin directory that carries Houston's MCP server, so
+    /// the plugin is written first.
+    fn install_agent_hooks(
+        &self,
+        provider: proto::AgentKind,
+        home: &crate::agent_hooks::ConfigHome,
+        launcher: &Path,
+        sentinel: &str,
+    ) -> Result<PathBuf> {
+        if provider == proto::AgentKind::Zcode {
+            self.prepare_zcode_hooks()?;
+        }
+        crate::agent_hooks::install(provider, home, launcher, sentinel)
+    }
+
+    /// On Windows ZCode starts the launcher itself, with no guard for a missing file, so
+    /// the launcher is pointed here rather than only alongside Claude's hooks.
+    fn prepare_zcode_hooks(&self) -> Result<()> {
+        crate::zcode_config::write_plugin(&self.state_dir, self.channel.as_deref())?;
+        if cfg!(windows) && self.hook_launcher().is_none() {
+            let program = crate::claude_hooks::executable_launcher(
+                &crate::claude_hooks::launcher_path(&self.state_dir),
+            );
+            if !program.is_file() {
+                bail!(
+                    "ZCode's hooks start {}, which Houston could not create (the daemon log \
+                     names the cause)",
+                    program.display()
+                );
+            }
         }
         Ok(())
     }
@@ -6975,7 +7030,14 @@ impl Daemon {
             if !self.hook_consent(provider) {
                 continue;
             }
-            if let Err(e) = crate::agent_hooks::install(provider, &home, &launcher, &sentinel) {
+            let refreshed = if provider == proto::AgentKind::Zcode {
+                self.prepare_zcode_hooks().and_then(|()| {
+                    crate::agent_hooks::refresh(provider, &home, &launcher, &sentinel)
+                })
+            } else {
+                self.install_agent_hooks(provider, &home, &launcher, &sentinel)
+            };
+            if let Err(e) = refreshed {
                 tracing::warn!("refreshing {provider:?} hooks: {e:#}");
             }
         }
@@ -7120,6 +7182,13 @@ impl Daemon {
     }
 
     fn expire_spawn_grace(&self, id: u32) {
+        // A CLI that reports its start only with its first turn is silent until prompted.
+        if self
+            .get(id)
+            .is_ok_and(|s| !crate::agent_events::reports_start_at_launch(s.info.agent))
+        {
+            return;
+        }
         if !self.replace_live_status(
             id,
             Some(proto::AgentStatus::Spawning),
@@ -7963,7 +8032,7 @@ impl Daemon {
     }
 
     pub fn create_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
-        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false, None)
+        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false, None, false)
     }
 
     pub(crate) fn create_task_plan_session(
@@ -7980,12 +8049,13 @@ impl Daemon {
             None,
             true,
             Some((task_id, expected_revision)),
+            false,
         )
     }
 
-    /// `env` adds to the profile's environment, `spawn_args` follow the provider's
-    /// own, `prompt_label` names the prompt file (default: the session id) and `cwd`
-    /// starts the process elsewhere while the session stays in `project_dir`.
+    /// `env` adds to the profile's environment, `spawn_args` follow the provider's own,
+    /// `prompt_label` names the prompt file, `cwd` starts the process outside `project_dir`
+    /// and `prefill_follows` says the caller pastes a prompt once the session is up.
     #[allow(clippy::too_many_arguments)]
     fn create_session_with_env(
         self: &Arc<Self>,
@@ -7996,6 +8066,7 @@ impl Daemon {
         cwd: Option<PathBuf>,
         plan_mode: bool,
         plan_binding: Option<(i64, i64)>,
+        prefill_follows: bool,
     ) -> Result<proto::SessionInfo> {
         if self.refusing_mutations() {
             bail!("refused: daemon is shutting down");
@@ -8016,12 +8087,14 @@ impl Daemon {
         if p.auto_approve && crate::launch::auto_approve_args(p.agent).is_none() {
             bail!(
                 "agent {:?} has no approval-bypass flag, so auto_approve cannot be honoured \
-                 (expected claude, codex, antigravity, opencode, cursor or grok)",
+                 (expected claude, codex, antigravity, opencode, cursor, grok or zcode)",
                 p.agent
             );
         }
         // A bare session (shell or agent with nothing to pass) takes no launch arguments;
         // `launch_args` refuses kinds that are not agent CLIs.
+        let mut first_prompt = None;
+        let mut pasted_prompt_file = None;
         let bare = prompt.trim().is_empty() && p.model.is_none() && !p.auto_approve && !plan_mode;
         let (mut extra_args, prompt_file) = if bare {
             (Vec::new(), None)
@@ -8036,17 +8109,28 @@ impl Daemon {
             } else {
                 Some(init_prompts_dir(&p.project_dir)?)
             };
+            // A CLI that takes no prompt in argv gets it pasted once its TUI accepts input.
+            let argv_prompt = if crate::launch::prompt_in_argv(p.agent) || prompt.trim().is_empty()
+            {
+                prompt
+            } else {
+                let (text, file) =
+                    crate::launch::prompt_text(prompt, prompts_dir.as_deref(), &prompt_label)?;
+                first_prompt = Some(text);
+                pasted_prompt_file = file;
+                ""
+            };
             crate::launch::launch_args(
                 p.agent,
                 p.auto_approve,
                 plan_mode,
                 p.model.as_deref(),
-                prompt,
+                argv_prompt,
                 prompts_dir.as_deref(),
                 &prompt_label,
             )?
         };
-        if let Some((path, contents)) = prompt_file {
+        if let Some((path, contents)) = prompt_file.or(pasted_prompt_file) {
             std::fs::write(&path, contents)
                 .with_context(|| format!("writing prompt file {}", path.display()))?;
         }
@@ -8117,6 +8201,7 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
+            pastes_first_prompt: first_prompt.is_some() || prefill_follows,
         });
         let info = match spawned {
             Ok(info) => info,
@@ -8128,6 +8213,9 @@ impl Daemon {
             }
         };
         self.record_approval_mode(info.id, approval);
+        if let Some(text) = first_prompt {
+            self.deliver_first_prompt(info.id, text, None, true);
+        }
         Ok(info)
     }
 
@@ -8397,8 +8485,8 @@ impl Daemon {
         {
             let provider = parent.detected_agent.unwrap_or(proto::AgentKind::Shell);
             let handle = self.db.session_resume_handle(parent.id).ok().flatten();
-            if let Some((conversation, _)) = handle
-                .filter(|_| matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex))
+            if let Some((conversation, _)) =
+                handle.filter(|_| crate::launch::resumes_conversations(provider))
             {
                 parent.resume_notice = Some(format!(
                     "Shell is interactive; child recovery is deferred until a root {provider:?} hook confirms conversation {conversation}."
@@ -8590,9 +8678,10 @@ impl Daemon {
                 self.db.session_profile_label(old_id)?,
                 old.tags.lock().expect("tags lock").clone(),
                 false,
-                old.detected.lock().expect("detected lock").filter(|kind| {
-                    matches!(kind, proto::AgentKind::Claude | proto::AgentKind::Codex)
-                }),
+                old.detected
+                    .lock()
+                    .expect("detected lock")
+                    .filter(|kind| crate::launch::resumes_conversations(*kind)),
             )
         } else if let Some(info) = self.dead.lock().expect("dead lock").get(&old_id).cloned() {
             let stored_title_source = self.db.session_title_source(old_id)?;
@@ -8622,9 +8711,8 @@ impl Daemon {
                 info.profile_label.clone(),
                 info.tags.clone(),
                 true,
-                info.detected_agent.filter(|kind| {
-                    matches!(kind, proto::AgentKind::Claude | proto::AgentKind::Codex)
-                }),
+                info.detected_agent
+                    .filter(|kind| crate::launch::resumes_conversations(*kind)),
             )
         } else {
             bail!("unknown session id {old_id} (expected an active or restored session)");
@@ -8648,8 +8736,8 @@ impl Daemon {
         };
 
         if let Some(parent) = spawned_by {
-            if !matches!(agent, proto::AgentKind::Claude | proto::AgentKind::Codex) {
-                bail!("continue refused: child {old_id} of parent {parent}, provider {agent:?}, cannot resume its mission; expected Claude or Codex");
+            if !crate::launch::resumes_conversations(agent) {
+                bail!("continue refused: child {old_id} of parent {parent}, provider {agent:?}, cannot resume its mission; expected Claude, Codex or ZCode");
             }
             if handle.is_none() {
                 bail!("continue refused: child {old_id} of parent {parent}, provider {agent:?}, has no resume handle for its mission");
@@ -8783,12 +8871,13 @@ impl Daemon {
         let shell_startup = if agent == proto::AgentKind::Shell && !extra_args.is_empty() {
             let provider = resume_agent.ok_or_else(|| {
                 anyhow!(
-                    "shell session {old_id} has resume arguments without a validated Claude/Codex provider"
+                    "shell session {old_id} has resume arguments without a validated Claude, Codex or ZCode provider"
                 )
             })?;
             let mut argv = vec![match provider {
                 proto::AgentKind::Claude => "claude".to_string(),
                 proto::AgentKind::Codex => "codex".to_string(),
+                proto::AgentKind::Zcode => "zcode".to_string(),
                 _ => bail!("shell session {old_id} cannot resume provider {provider:?}"),
             }];
             argv.extend(extra_args.iter().cloned());
@@ -8796,9 +8885,8 @@ impl Daemon {
         } else {
             None
         };
-        let detected_agent = resume_agent.or_else(|| {
-            matches!(agent, proto::AgentKind::Claude | proto::AgentKind::Codex).then_some(agent)
-        });
+        let detected_agent =
+            resume_agent.or_else(|| crate::launch::resumes_conversations(agent).then_some(agent));
         if strict_resume {
             self.wake_launches
                 .lock()
@@ -8833,6 +8921,7 @@ impl Daemon {
             resume_handle,
             resume_notice,
             scrollback_seed,
+            pastes_first_prompt: false,
         }) {
             Ok(spawned) => spawned,
             Err(error) => {
@@ -8973,15 +9062,17 @@ impl Daemon {
                 cwd.display()
             ));
         }
-        let Some(transcript) = transcript else {
-            return Err(format!(
-                "no transcript was reported for conversation {conversation}"
-            ));
-        };
-        match std::fs::metadata(transcript) {
-            Err(_) => return Err(format!("transcript {transcript} is missing")),
-            Ok(m) if m.len() == 0 => return Err(format!("transcript {transcript} is empty")),
-            Ok(_) => {}
+        if crate::launch::resume_needs_transcript(agent) {
+            let Some(transcript) = transcript else {
+                return Err(format!(
+                    "no transcript was reported for conversation {conversation}"
+                ));
+            };
+            match std::fs::metadata(transcript) {
+                Err(_) => return Err(format!("transcript {transcript} is missing")),
+                Ok(m) if m.len() == 0 => return Err(format!("transcript {transcript} is empty")),
+                Ok(_) => {}
+            }
         }
         let holders = self
             .db
@@ -9180,10 +9271,11 @@ impl Daemon {
         {
             return;
         }
-        if let Some(evidence) = d.resume_evidence.as_ref() {
-            let Ok(slug) = Self::agent_profile_slug(provider) else {
-                return;
-            };
+        // ZCode's evidence carries no profile; it has no profiles to attribute.
+        if let (Some(evidence), Ok(slug)) = (
+            d.resume_evidence.as_ref(),
+            Self::agent_profile_slug(provider),
+        ) {
             let profile_dir = evidence
                 .profile_dir
                 .as_deref()
@@ -9221,10 +9313,8 @@ impl Daemon {
         } else {
             (session.info.agent == provider).then_some(provider)
         };
-        if !matches!(
-            resumable_agent,
-            Some(proto::AgentKind::Claude | proto::AgentKind::Codex)
-        ) || crate::launch::resume_args(provider, conversation).is_err()
+        if !resumable_agent.is_some_and(crate::launch::resumes_conversations)
+            || crate::launch::resume_args(provider, conversation).is_err()
         {
             return;
         }
@@ -9295,7 +9385,7 @@ impl Daemon {
             return None;
         }
         let provider_resume = match provider {
-            proto::AgentKind::Claude => {
+            proto::AgentKind::Claude | proto::AgentKind::Zcode => {
                 d.resume_evidence
                     .as_ref()
                     .and_then(|evidence| evidence.source.as_deref())
@@ -9479,6 +9569,11 @@ impl Daemon {
         }
         for text in session.osc52.lock().expect("osc52 lock").feed(chunk) {
             self.broadcast_control(&proto::ServerMsg::ClipboardSet { session: id, text });
+        }
+        if let Some(scanner) = &session.composer_ready {
+            if session.composer_watch.load(Ordering::Relaxed) {
+                scanner.lock().expect("composer ready lock").feed(chunk);
+            }
         }
         if let Some(scanner) = &session.osc_title {
             let raw = scanner.lock().expect("osc title lock").feed(chunk);
@@ -9681,6 +9776,7 @@ impl Daemon {
             resume_handle,
             resume_notice,
             scrollback_seed,
+            pastes_first_prompt,
         } = p;
         let pty = native_pty_system();
         let pair = pty
@@ -9777,6 +9873,7 @@ impl Daemon {
                 (proto::AgentKind::Opencode, _) => ("opencode".to_string(), Vec::new()),
                 (proto::AgentKind::Cursor, _) => ("cursor-agent".to_string(), Vec::new()),
                 (proto::AgentKind::Grok, _) => ("grok".to_string(), Vec::new()),
+                (proto::AgentKind::Zcode, _) => ("zcode".to_string(), Vec::new()),
                 (proto::AgentKind::Custom, _) => {
                     bail!("agent \"custom\" requires a non-empty cmd argv")
                 }
@@ -9827,6 +9924,7 @@ impl Daemon {
             match agent {
                 proto::AgentKind::Claude => extra_args.iter().any(|a| a == "--resume"),
                 proto::AgentKind::Codex => extra_args.first().is_some_and(|a| a == "resume"),
+                proto::AgentKind::Zcode => extra_args.iter().any(|a| a == "--resume"),
                 _ => false,
             }
         };
@@ -9860,6 +9958,18 @@ impl Daemon {
         cmd.env("COLORTERM", "truecolor");
         // A launcher may disable its own log colours; each pane is a new colour-capable terminal.
         cmd.env_remove("NO_COLOR");
+        if agent == proto::AgentKind::Zcode {
+            // Updates require an explicit user action, never a CLI's own check.
+            cmd.env("ZCODE_DISABLE_UPDATE_CHECK", "1");
+            // An inherited URL of another channel would resolve that channel's plugin here.
+            let own = crate::zcode_config::url_env(self.channel.as_deref());
+            for (name, _) in std::env::vars_os() {
+                let name = name.to_string_lossy();
+                if name.starts_with(crate::zcode_config::URL_ENV_PREFIX) && name != own {
+                    cmd.env_remove(name.as_ref());
+                }
+            }
+        }
         for (k, v) in &extra_env {
             cmd.env(k, v);
         }
@@ -10109,6 +10219,9 @@ impl Daemon {
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             osc_title: (agent != proto::AgentKind::Shell)
                 .then(|| Mutex::new(crate::osc_title::OscTitleScanner::new())),
+            composer_ready: pastes_first_prompt
+                .then(|| Mutex::new(crate::composer_ready::ComposerReady::new())),
+            composer_watch: AtomicBool::new(pastes_first_prompt),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(title_source),
             tags: Mutex::new(p_tags),
@@ -10535,6 +10648,8 @@ impl Daemon {
             shell: None,
             osc_cwd: Mutex::new(None),
             osc_title: None,
+            composer_ready: None,
+            composer_watch: AtomicBool::new(false),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(TitleSource::Codename),
             tags: Mutex::new(Vec::new()),
@@ -12183,11 +12298,23 @@ impl Daemon {
                 ],
                 "grok".into(),
             ),
+            // `-p` defaults to yolo and refuses `--mode plan`. In build mode `-p` denies
+            // every call that would ask (edits, shell, MCP), so the summary stays read-only.
+            (proto::AgentKind::Zcode, _) => (
+                vec![
+                    "sh".into(),
+                    "-c".into(),
+                    r#"exec "$0" --mode build -p "$(cat "$1")""#.into(),
+                    "zcode".into(),
+                    path_arg,
+                ],
+                "zcode".into(),
+            ),
             (other, _) => {
                 let _ = std::fs::remove_file(&prompt_path);
                 bail!(
                     "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode, \
-                     cursor or grok"
+                     cursor, grok or zcode"
                 )
             }
         };
@@ -12231,11 +12358,21 @@ impl Daemon {
                     vec!["grok".into(), "-p".into(), read_the_file(&path_arg)],
                     "grok".into(),
                 ),
+                (proto::AgentKind::Zcode, _) => (
+                    vec![
+                        "zcode".into(),
+                        "--mode".into(),
+                        "build".into(),
+                        "-p".into(),
+                        read_the_file(&path_arg),
+                    ],
+                    "zcode".into(),
+                ),
                 (other, _) => {
                     let _ = std::fs::remove_file(&prompt_path);
                     bail!(
                         "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode, \
-                         cursor or grok"
+                         cursor, grok or zcode"
                     )
                 }
             }
@@ -12285,6 +12422,7 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
+            pastes_first_prompt: false,
         });
         if let Err(e) = spawned {
             self.handoff_jobs
@@ -12627,7 +12765,15 @@ impl Daemon {
             session_id: id,
             workspace_id: project_dir.to_string_lossy().into_owned(),
         });
-        crate::mcp_launch::launch_for(agent, &endpoint, &token)
+        let mut launch = crate::mcp_launch::launch_for(agent, &endpoint, &token);
+        // A shell pane can host ZCode too; the URL resolves its plugin to this pane's token.
+        if matches!(agent, proto::AgentKind::Zcode | proto::AgentKind::Shell) {
+            launch.env.push((
+                crate::zcode_config::url_env(self.channel.as_deref()),
+                endpoint,
+            ));
+        }
+        launch
     }
 
     pub fn bound_port(&self) -> Option<u16> {
@@ -13006,7 +13152,10 @@ impl Daemon {
         provider: proto::AgentKind,
     ) -> Option<crate::hook_drop::DropVerdict> {
         let ev = crate::agent_events::AgentEvent::from_provider(provider, &d.event);
-        let correlates = matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex);
+        let correlates = matches!(
+            provider,
+            proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Zcode
+        );
         let now = crate::hook_drop::now_ms();
 
         if ev == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
@@ -13174,6 +13323,7 @@ impl Daemon {
                     .as_deref()
                     .is_some_and(|name| Self::CLAUDE_INTERACTIVE_TOOLS.contains(&name)),
                 proto::AgentKind::Codex => d.tool_name.as_deref() == Some("request_user_input"),
+                proto::AgentKind::Zcode => d.tool_name.as_deref() == Some("AskUserQuestion"),
                 _ => false,
             };
             if !blocks {
@@ -13213,6 +13363,16 @@ impl Daemon {
             if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
+            // ZCode cancels its own hook runner with the turn, so an `is_interrupt` failure
+            // that does arrive names one cancelled tool in a turn still running.
+            if d.interrupted {
+                tracing::debug!(
+                    "session {}: {provider:?} reports tool {:?} cancelled",
+                    d.session,
+                    d.tool_use_id
+                );
+            }
+            // Tools run in parallel: a result closes only the request with its own id.
             let resumed = self.resolve_permission_episodes(
                 d.session,
                 &orchestrate::EpisodeEnd::PostToolUse {
@@ -13239,6 +13399,9 @@ impl Daemon {
         if ev == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
             self.clear_composer_occupied(d.session);
             self.confirm_paste_from_prompt(d.session, d.prompt.as_deref());
+            if !d.internal_prompt {
+                self.confirm_first_prompt(d.session, d.prompt.as_deref());
+            }
         }
 
         if correlates && ev == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
@@ -15949,6 +16112,251 @@ impl Daemon {
         }
         Ok(true)
     }
+
+    /// Pastes the first prompt of a CLI that takes none in argv once its composer takes
+    /// input. Readiness only times the paste; delivery counts when the CLI's own
+    /// UserPromptSubmit hook reports it. The text never reaches a log or a notice.
+    pub(crate) fn deliver_first_prompt(
+        self: &Arc<Self>,
+        session: u32,
+        text: String,
+        sender: Option<u32>,
+        submit: bool,
+    ) {
+        let daemon = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name(format!("first-prompt-{session}"))
+            .spawn(move || {
+                let outcome = daemon.first_prompt_deliver(session, &text, submit);
+                if let Ok(s) = daemon.get(session) {
+                    s.composer_watch.store(false, Ordering::Relaxed);
+                }
+                daemon
+                    .first_prompts
+                    .lock()
+                    .expect("first prompts lock")
+                    .remove(&session);
+                let why = match outcome {
+                    Ok(FirstPromptOutcome::Confirmed) => return,
+                    Ok(FirstPromptOutcome::Unconfirmable(why)) => {
+                        tracing::info!("first prompt for pane {session}: {why}");
+                        return;
+                    }
+                    Err(why) => format!(
+                        "first prompt for pane {session} is not confirmed as submitted: {why:#}"
+                    ),
+                };
+                daemon.first_prompt_failed(session, sender, why);
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("starting first-prompt delivery for pane {session}: {e}");
+        }
+    }
+
+    fn first_prompt_failed(self: &Arc<Self>, session: u32, sender: Option<u32>, why: String) {
+        tracing::warn!("{why}");
+        // A routine run whose prompt never landed has failed; its pane stays to be read.
+        let run = {
+            let mut runs = self.routine_runs.lock().expect("routine run lock");
+            let found = runs
+                .iter()
+                .find(|(_, run)| run.session_id == Some(session))
+                .map(|(routine, run)| (*routine, run.run_id));
+            if let Some((routine, _)) = found {
+                runs.remove(&routine);
+            }
+            found
+        };
+        if let Some((routine, run_id)) = run {
+            self.settle_run(
+                run_id,
+                routine,
+                proto::RoutineOutcome::Failed,
+                Some(why.clone()),
+            );
+        }
+        match sender {
+            Some(sender) => self.note_to_sender(session, sender, "prompt_failed", &why),
+            None => self.broadcast_control(&proto::ServerMsg::Error {
+                message: why,
+                context: Some(format!("first prompt for session {session}")),
+            }),
+        }
+    }
+
+    /// Waits until the CLI's composer takes input (see `composer_ready.rs`), or `deadline`
+    /// passes with output. Drawn output alone is not enough: ConPTY draws before the CLI
+    /// has started, and ZCode drops what arrives before its input box has focus.
+    fn first_prompt_wait_ready(&self, session: u32, deadline: Instant) -> Result<()> {
+        loop {
+            let Ok(s) = self.get(session) else {
+                bail!("the pane closed first");
+            };
+            if !s.state.lock().expect("state lock").is_live() {
+                bail!("the pane's process exited first");
+            }
+            let drawn = s.raw_output_bytes.load(Ordering::Relaxed) > 0;
+            let ready = s
+                .composer_ready
+                .as_ref()
+                .is_some_and(|c| c.lock().expect("composer ready lock").ready());
+            drop(s);
+            let late = Instant::now() >= deadline;
+            let held = self.immediate_paste_hold_reason(session);
+            if drawn && held.is_none() && (ready || late) {
+                if !ready {
+                    tracing::info!(
+                        "pane {session}: its composer reported no focus by the deadline; \
+                         pasting regardless"
+                    );
+                }
+                return Ok(());
+            }
+            if late {
+                bail!(
+                    "{} within {} s",
+                    held.unwrap_or_else(|| "the CLI drew nothing".to_string()),
+                    FIRST_PROMPT_DEADLINE.as_secs()
+                );
+            }
+            std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
+        }
+    }
+
+    fn first_prompt_confirmed_within(&self, session: u32, wait: Duration) -> bool {
+        let deadline = Instant::now() + wait;
+        loop {
+            let confirmed = self
+                .first_prompts
+                .lock()
+                .expect("first prompts lock")
+                .get(&session)
+                .is_some_and(|pending| pending.confirmed);
+            if confirmed || Instant::now() >= deadline || self.get(session).is_err() {
+                return confirmed;
+            }
+            std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
+        }
+    }
+
+    /// One paste, then Enter. Unconfirmed, Enter is sent once more: it submits a text
+    /// left in the composer and does nothing in an empty one. The text is never pasted
+    /// twice, since a second paste into a composer that kept the first would duplicate it.
+    fn first_prompt_deliver(
+        self: &Arc<Self>,
+        session: u32,
+        text: &str,
+        submit: bool,
+    ) -> Result<FirstPromptOutcome> {
+        self.first_prompt_wait_ready(session, Instant::now() + FIRST_PROMPT_DEADLINE)?;
+        let agent = self.get(session).map(|s| s.info.agent)?;
+        // Only hooks ZCode will run can confirm; without them one paste is all that is safe.
+        let confirmable = submit
+            && self.hook_consent(agent)
+            && self.hook_config_home().is_ok_and(|home| {
+                crate::agent_hooks::is_installed(agent, &home, &self.hook_sentinel())
+            });
+        if confirmable {
+            self.first_prompts
+                .lock()
+                .expect("first prompts lock")
+                .insert(
+                    session,
+                    FirstPrompt {
+                        head: prompt_head(text),
+                        confirmed: false,
+                    },
+                );
+        }
+        self.write_stdin_counting(session, &bracketed_paste(text))
+            .map_err(|e| anyhow!("pasting: {e}"))?;
+        if !submit {
+            return Ok(FirstPromptOutcome::Unconfirmable(
+                "prefilled; the operator submits it".into(),
+            ));
+        }
+        std::thread::sleep(SWARM_WAKE_SETTLE);
+        self.write_stdin_counting(session, b"\r")
+            .map_err(|e| anyhow!("submitting Enter: {e}; the text remains in its composer"))?;
+        if !confirmable {
+            return Ok(FirstPromptOutcome::Unconfirmable(format!(
+                "pasted unconfirmed: {agent:?} status hooks are off, so no UserPromptSubmit \
+                 can confirm it"
+            )));
+        }
+        let wait = Duration::from_millis(self.first_prompt_confirm_ms.load(Ordering::Relaxed));
+        if self.first_prompt_confirmed_within(session, wait) {
+            return Ok(FirstPromptOutcome::Confirmed);
+        }
+        self.first_prompt_wait_ready(session, Instant::now() + wait)?;
+        self.write_stdin_counting(session, b"\r")
+            .map_err(|e| anyhow!("resubmitting Enter: {e}"))?;
+        if self.first_prompt_confirmed_within(session, wait) {
+            return Ok(FirstPromptOutcome::Confirmed);
+        }
+        bail!(
+            "the CLI reported no UserPromptSubmit within {} ms of the paste and of one more \
+             Enter; it was not pasted again, to avoid a duplicate. Read the pane: the prompt \
+             may still be in its composer, or the CLI refused it",
+            2 * wait.as_millis()
+        )
+    }
+
+    /// A submitted prompt confirms a pending first prompt when it begins like it.
+    fn confirm_first_prompt(&self, session: u32, prompt: Option<&str>) {
+        let mut pending = self.first_prompts.lock().expect("first prompts lock");
+        if let Some(first) = pending.get_mut(&session) {
+            first.confirmed |= prompt.is_none_or(|p| prompt_head(p).starts_with(&first.head));
+        }
+    }
+
+    /// `Some(true)` while a first prompt waits for its confirming hook.
+    #[doc(hidden)]
+    pub fn first_prompt_pending_for_test(&self, session: u32) -> Option<bool> {
+        self.first_prompts
+            .lock()
+            .expect("first prompts lock")
+            .get(&session)
+            .map(|pending| !pending.confirmed)
+    }
+
+    /// `None` without a composer scanner, else whether output still feeds it.
+    #[doc(hidden)]
+    pub fn composer_watched_for_test(&self, session: u32) -> Option<bool> {
+        let s = self.get(session).ok()?;
+        s.composer_ready
+            .as_ref()
+            .map(|_| s.composer_watch.load(Ordering::Relaxed))
+    }
+
+    #[doc(hidden)]
+    pub fn set_first_prompt_confirm_for_test(&self, wait: Duration) {
+        self.first_prompt_confirm_ms
+            .store(wait.as_millis() as u64, Ordering::Relaxed);
+    }
+}
+
+enum FirstPromptOutcome {
+    Confirmed,
+    Unconfirmable(String),
+}
+
+struct FirstPrompt {
+    head: String,
+    confirmed: bool,
+}
+
+// Enough of a prompt to tell it from another; whitespace is normalised because a
+// TUI may trim or rewrap what was pasted.
+const FIRST_PROMPT_HEAD_CHARS: usize = 48;
+
+fn prompt_head(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(FIRST_PROMPT_HEAD_CHARS)
+        .collect()
 }
 
 struct WakeLane {
@@ -16356,7 +16764,7 @@ impl Daemon {
 
     fn orchestration_provider_catalog(&self) -> Vec<serde_json::Value> {
         use proto::AgentKind::*;
-        [Claude, Codex, Antigravity, Opencode, Cursor, Grok].into_iter().map(|provider| {
+        [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode].into_iter().map(|provider| {
             let binary = crate::cli_probe::binary_name(provider).expect("spawnable provider binary");
             let cli = self.cli_probes.lock().expect("cli probe cache").cached_presence(binary);
             let caps = orchestrate::provider_capabilities(provider);
@@ -16862,7 +17270,7 @@ impl Daemon {
             bail!(
                 "spawn refused: kind `custom` cannot be spawned as a child — a custom command \
                  has no hooks, so Houston could never tell its parent when it finished; pick \
-                 one of claude, codex, opencode, cursor, grok, antigravity"
+                 one of claude, codex, opencode, cursor, grok, antigravity, zcode"
             );
         }
         let role = match role.as_deref() {
@@ -16975,15 +17383,22 @@ impl Daemon {
             bail!("{msg}");
         }
         let mode_args = requested_mode.args(kind).unwrap_or_default();
-        let (mut extra_args, prompt_file) = crate::launch::launch_args(
+        let (argv_prompt, first_prompt, prompt_file) = if crate::launch::prompt_in_argv(kind) {
+            (prompt.as_str(), None, None)
+        } else {
+            let (text, file) = crate::launch::prompt_text(&prompt, Some(&prompts_dir), "spawned")?;
+            ("", Some(text), file)
+        };
+        let (mut extra_args, argv_prompt_file) = crate::launch::launch_args(
             kind,
             false,
             false,
             model.as_deref(),
-            &prompt,
+            argv_prompt,
             Some(&prompts_dir),
             "spawned",
         )?;
+        let prompt_file = prompt_file.or(argv_prompt_file);
         extra_args.extend(mode_args);
         if !handoff {
             extra_args.extend(crate::launch::dialogue_permission_args(kind));
@@ -17162,6 +17577,7 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
+            pastes_first_prompt: first_prompt.is_some(),
         });
         let info = match spawned {
             Ok(info) => info,
@@ -17189,6 +17605,9 @@ impl Daemon {
             }
         };
         self.record_approval_mode(sid, requested_mode);
+        if let Some(text) = first_prompt {
+            self.deliver_first_prompt(sid, text, Some(caller), true);
+        }
         if handoff {
             if let Err(e) = self.db.session_mark_handed_off(caller, now_ms()) {
                 tracing::warn!("recording that pane {caller} handed off to {sid}: {e:#}");

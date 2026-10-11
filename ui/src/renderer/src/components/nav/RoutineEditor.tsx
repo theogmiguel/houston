@@ -23,7 +23,8 @@ import type { Cadence, RoutineWorkspaceOption } from '../../houston/routineTypes
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { ChatEffort } from '../../houston/generated/ChatEffort'
 import type { ChatPermissionMode } from '../../houston/generated/ChatPermissionMode'
-import { ENGINE_ORDER, engineLabel } from '../engineLabel'
+import type { RoutineEngineRefusal } from '../../houston/generated/RoutineEngineRefusal'
+import { engineRefusalNote, routineEngineOptions } from './routineEngines'
 import { CHAT_EFFORTS } from '../agentOptions'
 
 export type RoutineFormValue = {
@@ -211,11 +212,12 @@ export function RoutineEditor(props: {
   mode: 'create' | 'edit'
   workspaces: RoutineWorkspaceOption[]
   initial?: RoutineFormValue
+  engineRefusals?: readonly RoutineEngineRefusal[]
   error?: string | null
   onSubmit: (value: RoutineFormValue) => void
   onCancel: () => void
 }): React.JSX.Element {
-  const { mode, workspaces, initial, error, onSubmit, onCancel } = props
+  const { mode, workspaces, initial, engineRefusals = [], error, onSubmit, onCancel } = props
   const initialState = initialFormState(initial)
   const [engine, setEngine] = useState<AgentKind>(initialState.engine)
   const [model, setModel] = useState<string | null>(initialState.model)
@@ -230,6 +232,10 @@ export function RoutineEditor(props: {
   const [isolate, setIsolate] = useState(initialState.isolate)
   const [customOpen, setCustomOpen] = useState(initialState.customOpen)
   const selectedPreset = customOpen ? -1 : presetIndexFor(cadence)
+  const acceptEditsRefusal = engineRefusalNote(engineRefusals, engine, 'accept_edits')
+  const fullAccessRefusal = engineRefusalNote(engineRefusals, engine, 'bypass_permissions')
+  // Turning isolation off drops full access to accept edits, which this engine refuses.
+  const isolationLocked = isolate && permissionMode === 'bypass_permissions' && acceptEditsRefusal !== null
 
   const trimmedName = name.trim()
   const canSubmit = trimmedName.length > 0 && trimmedName.length <= 160
@@ -319,8 +325,15 @@ export function RoutineEditor(props: {
         <FormField label="Runs on">
           <FormSelect
             aria-label="Engine"
+            data-testid="routine-engine"
             value={engine}
-            options={ENGINE_ORDER.map((k) => ({ value: k, label: engineLabel(k) }))}
+            options={routineEngineOptions(
+              engineRefusals,
+              permissionMode,
+              permissionMode === 'accept_edits'
+                ? 'Choose Full access under Access first; it needs isolation.'
+                : 'Choose Accept edits under Access first.'
+            )}
             onChange={(v) => {
               setEngine(v as AgentKind)
               setModel(null)
@@ -356,12 +369,18 @@ export function RoutineEditor(props: {
         <FormField label="Access">
           <FormSelect
             aria-label="Access"
+            data-testid="routine-access"
             value={permissionMode}
             options={[
-              { value: 'accept_edits', label: 'Accept edits — everything else is denied' },
+              {
+                value: 'accept_edits',
+                label: 'Accept edits — everything else is denied',
+                ...(acceptEditsRefusal && { disabled: true, title: acceptEditsRefusal })
+              },
               {
                 value: 'bypass_permissions',
-                label: 'Full access — the run never asks (needs isolation)'
+                label: 'Full access — the run never asks (needs isolation)',
+                ...(fullAccessRefusal && { disabled: true, title: fullAccessRefusal })
               }
             ]}
             onChange={(v) => setPermissionMode(v as ChatPermissionMode)}
@@ -377,7 +396,7 @@ export function RoutineEditor(props: {
             <Toggle
               data-testid="routine-isolate"
               on={isolate}
-              disabled={workspaceId === null}
+              disabled={workspaceId === null || isolationLocked}
               onChange={(v) => {
                 setIsolate(v)
                 if (!v && permissionMode === 'bypass_permissions') {
@@ -389,7 +408,9 @@ export function RoutineEditor(props: {
           <FormHint>
             {workspaceId === null
               ? 'Pick a working directory first — a worktree needs a git repository to branch from.'
-              : 'Houston makes the worktree and lists it under the run; it never merges. Full access requires this, so a run that never asks cannot land in the tree you are editing.'}
+              : isolationLocked
+                ? `${acceptEditsRefusal} Turning isolation off would switch this routine to accept edits.`
+                : 'Houston makes the worktree and lists it under the run; it never merges. Full access requires this, so a run that never asks cannot land in the tree you are editing.'}
           </FormHint>
         </FormField>
 

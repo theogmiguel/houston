@@ -5,12 +5,13 @@ use std::path::{Path, PathBuf};
 
 use crate::agent_hooks::ConfigHome;
 
-pub const SKILL_TOOLS: [proto::AgentKind; 5] = [
+pub const SKILL_TOOLS: [proto::AgentKind; 6] = [
     proto::AgentKind::Claude,
     proto::AgentKind::Codex,
     proto::AgentKind::Opencode,
     proto::AgentKind::Cursor,
     proto::AgentKind::Grok,
+    proto::AgentKind::Zcode,
 ];
 
 pub fn skills_dir(tool: proto::AgentKind, home: &ConfigHome) -> Option<PathBuf> {
@@ -20,6 +21,8 @@ pub fn skills_dir(tool: proto::AgentKind, home: &ConfigHome) -> Option<PathBuf> 
         proto::AgentKind::Opencode => Some(home.config_dir().join("opencode").join("skills")),
         proto::AgentKind::Cursor => Some(home.home.join(".cursor").join("skills")),
         proto::AgentKind::Grok => Some(home.home.join(".grok").join("skills")),
+        // ZCode also reads `~/.agents/skills`, shared with other CLIs; its own is this one.
+        proto::AgentKind::Zcode => Some(home.home.join(".zcode").join("skills")),
         _ => None,
     }
 }
