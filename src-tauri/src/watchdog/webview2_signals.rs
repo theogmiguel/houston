@@ -1,6 +1,7 @@
 use super::ingress::EventSender;
+use super::machine::Event;
 #[cfg(windows)]
-use super::machine::{Event, TerminationReason};
+use super::machine::TerminationReason;
 use super::RendererHealth;
 use std::sync::Arc;
 use tauri::webview::PlatformWebview;

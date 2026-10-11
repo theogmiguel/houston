@@ -909,12 +909,19 @@ impl WorkGate {
         }
     }
     fn acquire(&self) -> Option<WorkPermit> {
-        self.count
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
-                (count < self.limit).then_some(count + 1)
-            })
-            .ok()?;
-        Some(WorkPermit(self.count.clone()))
+        let mut count = self.count.load(Ordering::SeqCst);
+        while count < self.limit {
+            match self.count.compare_exchange_weak(
+                count,
+                count + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return Some(WorkPermit(self.count.clone())),
+                Err(actual) => count = actual,
+            }
+        }
+        None
     }
 }
 struct WorkPermit(Arc<std::sync::atomic::AtomicUsize>);
