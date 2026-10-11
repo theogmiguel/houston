@@ -1,0 +1,110 @@
+diff --color -ru a/AGENTS.md b/AGENTS.md
+--- a/AGENTS.md	2026-10-10 21:44:09.074749353 -0300
++++ b/AGENTS.md	2026-10-10 21:44:24.506263714 -0300
+@@ -11,9 +11,12 @@
+ 
+ ## Invariants
+ 
+-- **Terminal fidelity:** panes are real PTYs rendered with libghostty-vt. Preserve input
+-  delivery; do not replace terminal interaction with chat wrappers or transcript scraping.
+-- **Reported status:** use CLI lifecycle hooks or supported ACP streams for agent status.
++- **Terminal fidelity:** terminal panes are real PTYs rendered with libghostty-vt.
++  Preserve input delivery; never scrape transcripts or screen text. A thread pane is a
++  separate surface driven by a provider's structured protocol; it never wraps or parses a
++  terminal, and its conversation can always be reopened in a terminal pane.
++- **Reported status:** use CLI lifecycle hooks or supported structured provider streams
++  (ACP, Agent SDK, Codex app-server) for agent status.
+   Do not infer status from terminal pixels or text. Exceptions are explicitly documented
+   in [invariants](docs/internals/invariants.md).
+ - **Local state:** one user, one machine, one SQLite database per channel. Houston has no
+@@ -22,6 +25,7 @@
+   explicit user action. Store secrets in the OS keychain, never in the database or logs.
+ - **Bounded work:** use binary PTY frames and bounded buffers. Keep JSON and continuous
+   animation off the terminal rendering hot path; verify performance with measurements.
++  Thread events use their own coalesced channel and never share the PTY frame path.
+ - **External configuration:** changes to agent CLI configuration must use reversible
+   managed-marker blocks. Never manually rewrite `~/.claude.json`.
+ 
+diff --color -ru a/docs/internals/agent-lifecycle.md b/docs/internals/agent-lifecycle.md
+--- a/docs/internals/agent-lifecycle.md	2026-10-10 21:44:09.102750261 -0300
++++ b/docs/internals/agent-lifecycle.md	2026-10-10 21:58:32.976741908 -0300
+@@ -373,8 +373,11 @@
+ 
+ **ACP.** `acp.rs` decodes line-delimited JSON-RPC over stdio — a documented spec, the same
+ category as a hook event, not a reading of terminal content — and sends its events through
+-the same status, delegation and routine path as hooks. It deliberately does **not**
+-answer `session/request_permission`: that surfaces as `NeedsInput` for the human.
++the same status, delegation and routine path as hooks. In a terminal pane it deliberately
++does **not** answer `session/request_permission`: that surfaces as `NeedsInput` for the
++human. In a thread pane the request is rendered and answered only with a decision someone
++made; a parent may deny but never approve what a child's auto mode blocked (see
++[invariants](invariants.md#surfaces)).
+ 
+ **OS liveness.** `has_child_procs` scans `/proc/{pid}/task/*/children` across all threads —
+ pure procfs, no `pgrep`, no `ps`. A sibling `has_running_procs` walks the whole descendant
+diff --color -ru a/docs/internals/glossary.md b/docs/internals/glossary.md
+--- a/docs/internals/glossary.md	2026-10-10 21:44:09.093749969 -0300
++++ b/docs/internals/glossary.md	2026-10-10 21:58:32.976741908 -0300
+@@ -112,7 +112,7 @@
+ | **Sleep** | A manual graceful stop of an idle top-level Claude or Codex pane that retains its conversation, slot, scrollback and hook-fed cues. It remains asleep across restart until explicitly woken or closed. | `SessionState::Sleeping` |
+ | **Wake** | An explicit relaunch of a sleeping pane with its exact resume handle. Failed validation keeps the placeholder and offers a separate fresh start. | `daemon.rs::wake_session` |
+ | **resume handle** | The root conversation ID and transcript path reported by Claude or Codex hooks after a turn. Carried to the respawned row for exact-ID resume; cleared by Kill, Close, Start fresh, a changed folder or a deleted profile. | `sessions.resume_session_id`, `sessions.resume_transcript_path` |
+-| **ACP** | Agent Client Protocol: line-delimited JSON-RPC on the PTY, a second lawful status source. In a pane Houston never answers its permission requests. | `acp.rs` |
++| **ACP** | Agent Client Protocol: line-delimited JSON-RPC, a second lawful status source. In a terminal pane Houston never answers its permission requests; in a thread pane it forwards the decision someone made (see [invariants](invariants.md#houston-never-decides-a-permission-request)). | `acp.rs` |
+ | **liveness** | A kernel fact from procfs: does the session's pid have children. Gates the reaper and the close confirmation, never a status. | `has_child_procs` |
+ | **ring** | A session's capped byte buffer of everything its PTY ever wrote, minus what has been trimmed off the front. The replay and restore path; not text. | `scrollback.rs` |
+ | **tail** | The ring split on newlines, ANSI-stripped, each line collapsed to what a bare carriage return left showing. Right for a CLI that prints lines; on one that repaints it is one line. | `Scrollback::tail_lines` |
+diff --color -ru a/docs/internals/invariants.md b/docs/internals/invariants.md
+--- a/docs/internals/invariants.md	2026-10-10 21:44:09.083749645 -0300
++++ b/docs/internals/invariants.md	2026-10-10 21:58:32.975741886 -0300
+@@ -320,6 +320,50 @@
+ `launch::resume_args`. There is no transcript scan or history ledger; the handle lives
+ on the session row and metadata validation never drives status.
+ 
++## Surfaces
++
++### Terminal panes stay PTYs; thread panes never wrap one
++
++A terminal pane is the agent CLI on a real PTY, rendered by libghostty-vt, with input
++delivered unchanged. A thread pane runs the same provider through its structured protocol
++(Agent SDK, Codex app-server, ACP or the provider's SDK server) and renders typed events.
++A thread pane never reads, parses or re-renders terminal output, and no terminal pane is
++replaced by a chat view. Reopening a conversation in the other surface resumes the
++provider's session by exact id; one conversation is never open in both surfaces at once.
++
++**Why.** Terminal fidelity is what makes a pane trustworthy: every key reaches the CLI and
++every byte the CLI writes is shown. Mixing the two would make neither surface faithful.
++**Enforced by** review.
++
++### Thread traffic never shares the terminal byte path
++
++Thread events travel as typed control messages, coalesced per pane and sent only to
++clients that show the pane. They never pass through `frame_queue`, `vt.rs` or the
++scrollback ring. Text deltas are persisted when an item completes, not per token.
++
++**Why.** The frame queue and scrollback ring are sized for terminal bytes (4 MiB each) and
++the frame queue may drop bytes under pressure. A terminal recovers by repainting; a thread
++cannot recover a lost event, and a talkative agent must not evict terminal history.
++**Enforced by** `perf_smoke`: terminal throughput and latency with threads streaming stay
++within the noise of the terminal-only baseline.
++
++### Houston never decides a permission request
++
++Houston carries a decision; it never makes one. In a terminal pane the CLI's own prompt
++takes the answer and Houston only reports `NeedsInput`. In a thread pane the CLI hands the
++request to Houston, which renders it and sends exactly the decision someone made. Each
++request is keyed by the provider's request id and answered once; a stale or duplicate
++answer is refused. No timer, default or Houston policy answers on anyone's behalf.
++
++A parent orchestrator's authority is asymmetric. It may approve or deny routine requests
++from a child spawned with `--ask`. When a child's auto mode blocks an action as dangerous,
++the parent may deny it or escalate it with a recommendation, but only the user may
++approve it, in either surface.
++
++**Why.** An approval is consent. An answer nobody chose would approve actions the user
++never saw, and an agent approving what the CLI's safety check refused would turn that
++check into a suggestion. **Enforced by** review.
++
+ ## Wire
+ 
+ - Daemon and UI ship wire changes in the same commit; one `PROTOCOL_VERSION` bump per
