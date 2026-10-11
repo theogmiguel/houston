@@ -536,8 +536,11 @@
 
   function loadSessions() {
     if (!S.token) return Promise.resolve();
+    // Polls and stream events share a refresh until it settles in this generation.
+    var pending = S.requests.sessions;
+    if (pending && pending.current() && pending.promise) return pending.promise;
     var request = beginRequest("sessions", false);
-    return api("GET", "/api/sessions", null, request).then(function (d) {
+    request.promise = api("GET", "/api/sessions", null, request).then(function (d) {
       if (!request.current()) return;
       S.sessions = d.sessions || [];
       S.grids = d.grids || [];
@@ -565,7 +568,8 @@
         $("list-error").textContent = e.message;
         $("list-error").classList.remove("hidden");
       }
-    });
+    }).finally(function () { request.promise = null; });
+    return request.promise;
   }
 
   // ---- Home ----
@@ -1810,8 +1814,10 @@
     var id = S.pane;
     clearTimeout(S.timers.screen);
     if (id == null || S.tab !== "term" || document.hidden) return;
+    var pending = S.requests.screen;
+    if (pending && pending.current() && pending.promise) return pending.promise;
     var request = beginRequest("screen");
-    api("GET", "/api/sessions/" + id + "/screen?lines=" + SCREEN_LINES, null, request).then(function (d) {
+    request.promise = api("GET", "/api/sessions/" + id + "/screen?lines=" + SCREEN_LINES, null, request).then(function (d) {
       if (!request.current()) return;
       var pre = $("screen"), stick = !pre.textContent || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 40;
       fitScreen();
@@ -1823,7 +1829,8 @@
     }).catch(function (e) { if (request.current() && !e.stale) setDockStatus(e.message, true); })
       .then(function () {
         if (request.current() && S.tab === "term") S.timers.screen = setTimeout(loadScreen, SCREEN_MS);
-      });
+      }).finally(function () { request.promise = null; });
+    return request.promise;
   }
 
   // ---- Markdown: a small renderer that builds nodes, never markup ----
