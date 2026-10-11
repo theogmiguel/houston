@@ -98,7 +98,8 @@ pane, reuses the same branch and worktree as the next attempt; nothing is force-
 Settings ▸ Tasks carries the workspace's defaults: the agent a Start uses, and how the
 brief is delivered. **Send** (the default) submits the brief as the pane's first prompt.
 **Prefill** types it into the input box without sending it, so you can review and press
-Enter yourself.
+Enter yourself. ZCode takes no prompt on its command line, so for ZCode both are typed
+once its input box is ready, which can take several seconds on a cold start.
 
 The brief includes the task's key, title, description, acceptance list, source links and
 project context. Imported project descriptions are labelled unverified; local decisions

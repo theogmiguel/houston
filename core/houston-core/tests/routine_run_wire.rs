@@ -422,7 +422,8 @@ async fn a_run_left_in_flight_by_a_dead_daemon_reads_failed_on_boot() {
 
 /// ZCode's edit mode stops at every shell command for an approval, so an unattended
 /// accept-edits routine is refused by name; an isolated full-access one runs, with
-/// its prompt pasted once the TUI has drawn.
+/// its prompt pasted once the TUI's composer has focus. The paste is read from the raw
+/// scrollback, which every platform keeps (Windows builds have no screen emulator).
 #[tokio::test]
 async fn a_zcode_routine_runs_with_isolated_full_access_and_refuses_accept_edits() {
     let (_addr, state, daemon) = start_daemon_with_handle().await;
@@ -493,7 +494,9 @@ async fn a_zcode_routine_runs_with_isolated_full_access_and_refuses_accept_edits
     daemon.set_routine_pane_cmd_for_test(vec![
         "sh".into(),
         "-c".into(),
-        "echo ZCODE-TUI-READY; stty -echo; exec cat".into(),
+        "printf '\\033[?2004h\\033[?25l'; echo ZCODE-TUI-BOOTING; sleep 1; \
+         printf '\\033[?25h'; stty -echo; exec cat"
+            .into(),
     ]);
     daemon.routine_run_now(routine).expect("run now");
     let session = routine_of(&daemon, routine)
@@ -501,9 +504,8 @@ async fn a_zcode_routine_runs_with_isolated_full_access_and_refuses_accept_edits
         .expect("the run opened a pane");
     let d = daemon.clone();
     wait_until("the routine prompt to be pasted", move || {
-        d.session_screen_for_test(session)
-            .iter()
-            .any(|line| line.contains("ZCODE-ROUTINE-PROMPT"))
+        let replay = d.scrollback(session, None).expect("scrollback");
+        String::from_utf8_lossy(&replay.data).contains("ZCODE-ROUTINE-PROMPT")
     })
     .await;
     daemon.close(session).expect("the pane closes");

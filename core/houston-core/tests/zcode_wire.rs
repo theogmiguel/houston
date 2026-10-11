@@ -20,16 +20,22 @@ use std::time::Duration;
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static SHIM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// Records its argv and the MCP URL variable per pane, then draws a line and
-/// echoes whatever is typed or pasted into it.
+/// Records its argv and the MCP URL variable per pane, then starts like ZCode's TUI:
+/// bracketed paste on and the cursor hidden, input dropped for `ZCODE_FAKE_BOOT_SECS`
+/// while it boots, the cursor shown once its composer has focus. Then it echoes
+/// whatever is typed or pasted into it.
 const FAKE_ZCODE: &str = r#"#!/bin/sh
 out="$ZCODE_ARGV_DIR/$HOUSTON_SESSION"
 : > "$out.tmp"
 for a in "$@"; do printf '%s\n' "$a" >> "$out.tmp"; done
 env | grep -e '^ZCODE_HOUSTON_MCP_URL' -e '^ZCODE_DISABLE_UPDATE_CHECK' | sed 's/^/env:/' >> "$out.tmp"
 mv "$out.tmp" "$out"
+echo FAKE-ZCODE-BOOTING
+stty -echo -icanon 2>/dev/null
+printf '\033[?2004h\033[?25l'
+if [ -n "$ZCODE_FAKE_BOOT_SECS" ]; then timeout --foreground "$ZCODE_FAKE_BOOT_SECS" cat > /dev/null; fi
 echo FAKE-ZCODE-READY
-stty -echo 2>/dev/null
+printf '\033[?25h'
 exec cat
 "#;
 
@@ -62,6 +68,7 @@ async fn setup() -> Env {
         "HOUSTON_RESTORE_BUDGET",
         "HOUSTON_SAFE_MODE",
         "HOUSTON_DISABLE_AUTO_RESTORE",
+        "ZCODE_FAKE_BOOT_SECS",
     ] {
         std::env::remove_var(var);
     }
@@ -490,6 +497,45 @@ async fn an_unconfirmed_first_prompt_gets_one_more_enter_never_a_second_paste() 
         1,
         "pasted once: {screen}"
     );
+}
+
+/// A cold Windows start leaves ZCode silent for seconds after the PTY has drawn, and
+/// ZCode drops what arrives before its composer has focus: the first prompt waits for
+/// that focus, lands once and is confirmed by its own prompt hook.
+#[tokio::test]
+async fn a_late_starting_zcode_gets_its_first_prompt_once_its_composer_has_focus() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let _hooks = zcode_hooks_on(&daemon);
+    let dir = tempfile::tempdir().unwrap();
+    let marker = "LATE-START-MARKER count the files";
+    std::env::set_var("ZCODE_FAKE_BOOT_SECS", "3");
+    let id = zcode_pane(&daemon, dir.path(), Some(marker)).id;
+    std::env::remove_var("ZCODE_FAKE_BOOT_SECS");
+
+    let screen = screen_shows(&daemon, id, "LATE-START-MARKER")
+        .await
+        .join("\n");
+    let ready = screen
+        .find("FAKE-ZCODE-READY")
+        .expect("the composer took focus");
+    assert!(
+        ready < screen.find("LATE-START-MARKER").unwrap(),
+        "pasted only once the composer had focus: {screen}"
+    );
+    let cwd = daemon.list().into_iter().find(|s| s.id == id).unwrap().cwd;
+    let mut own: serde_json::Value =
+        serde_json::from_str(&fixture("zcode-3.14.3-src-02-UserPromptSubmit.json")).unwrap();
+    own["cwd"] = cwd.into();
+    own["prompt"] = marker.into();
+    let drop = run_hook("UserPromptSubmit", id, own.to_string()).await;
+    apply(env.state.path(), &daemon, &drop).await;
+    wait_for("the delivery to settle", || {
+        daemon.first_prompt_pending_for_test(id).is_none()
+    })
+    .await;
+    let screen = daemon.session_screen_for_test(id).join("\n");
+    assert_eq!(screen.matches("LATE-START-MARKER").count(), 1, "{screen}");
 }
 
 #[tokio::test]

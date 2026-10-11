@@ -28,6 +28,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | | `agents.rs` | Ambient agent identity: banner sniffing on PTY output |
 | | `pane_name.rs` | Panes are named from their first prompt |
 | | `osc_title.rs` | OSC 0/2 window titles — what a CLI calls its own session |
+| | `composer_ready.rs` | Whether a TUI's composer takes input, from the DEC private modes it sets |
 | | `login_path.rs`, `env_hygiene.rs` | Login-shell `PATH` recovery; inherited-marker scrub |
 | persistence | `db.rs` | SQLite persistence (WAL); writes only on rare control-plane events |
 | | `paths.rs`, `home_dir.rs` | Channel-scoped state paths; the home dir, resolved per platform |

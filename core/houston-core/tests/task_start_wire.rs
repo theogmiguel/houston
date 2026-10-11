@@ -33,10 +33,15 @@ fn shim_dir() -> PathBuf {
             std::fs::write(
                 &path,
                 "#!/bin/sh\n# Raw input like a real agent TUI: canonical mode would hold the paste's\n\
-                 # unterminated last line inside the tty until a newline.\n\
+                 # unterminated last line inside the tty until a newline. Bracketed paste\n\
+                 # on, then the cursor shown, is how a TUI's composer reports focus; like\n\
+                 # ZCode, input that arrives while FIXTURE_BOOT_SECS boot runs is dropped.\n\
                  stty -echo -icanon 2>/dev/null\nprintf 'CWD:%s\\n' \"$PWD\"\n\
                  printf 'TASK:%s\\n' \"$HOUSTON_TASK\"\nprintf 'ARG:%s\\n' \"$@\"\n\
-                 echo FIXTURE-READY\nexec cat\n",
+                 printf '\\033[?2004h\\033[?25l'\n\
+                 if [ -n \"$FIXTURE_BOOT_SECS\" ]; then \
+                 timeout --foreground \"$FIXTURE_BOOT_SECS\" cat > /dev/null; fi\n\
+                 echo FIXTURE-READY\nprintf '\\033[?25h'\nexec cat\n",
             )
             .unwrap();
             use std::os::unix::fs::PermissionsExt;
@@ -646,6 +651,47 @@ async fn a_zcode_start_pastes_the_brief_into_its_tui_and_prefill_leaves_it_unsen
     assert!(
         !out[paste_end + end.len()..].starts_with('\r'),
         "prefill must not submit with Enter: {out:?}"
+    );
+}
+
+/// A ZCode that starts slowly drops input until its composer has focus. A started brief
+/// and a prefilled one both wait for that focus; a prefill has no prompt hook to say it
+/// was lost, so arriving early would lose it silently.
+#[tokio::test]
+async fn a_slow_starting_zcode_gets_its_started_and_prefilled_brief_once_it_takes_input() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("start-zcode-slow").await;
+    let started = r.create_task("Zcode slow", "SLOW-START-BODY for the task.", &["one"]);
+    std::env::set_var("FIXTURE_BOOT_SECS", "3");
+    let start = r.daemon.task_start(started, proto::AgentKind::Zcode, None);
+    std::env::remove_var("FIXTURE_BOOT_SECS");
+    start.unwrap();
+    let session = r.runs().pop().unwrap().session_id.unwrap();
+    let out = r.await_output(session, "SLOW-START-BODY").await;
+    assert!(
+        out.find("SLOW-START-BODY").unwrap() > out.find("FIXTURE-READY").unwrap(),
+        "the brief waits for the composer: {out:?}"
+    );
+
+    r.daemon
+        .tasks_start_settings_set(
+            &r.workspace(),
+            proto::AgentKind::Zcode,
+            proto::TaskPromptDelivery::Prefill,
+        )
+        .unwrap();
+    let prefilled = r.create_task("Zcode slow prefill", "SLOW-PREFILL-BODY here.", &["one"]);
+    std::env::set_var("FIXTURE_BOOT_SECS", "3");
+    let start = r
+        .daemon
+        .task_start(prefilled, proto::AgentKind::Zcode, None);
+    std::env::remove_var("FIXTURE_BOOT_SECS");
+    start.unwrap();
+    let session = r.runs().pop().unwrap().session_id.unwrap();
+    let out = r.await_output(session, "SLOW-PREFILL-BODY").await;
+    assert!(
+        out.find("SLOW-PREFILL-BODY").unwrap() > out.find("FIXTURE-READY").unwrap(),
+        "the prefill waits for the composer: {out:?}"
     );
 }
 

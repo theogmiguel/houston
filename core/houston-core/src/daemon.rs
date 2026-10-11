@@ -32,8 +32,6 @@ const SPAWN_GRACE: Duration = Duration::from_secs(20);
 const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
-// A TUI that has drawn and then stayed quiet this long is reading its composer.
-const FIRST_PROMPT_QUIET_MS: u64 = 1_000;
 // Covers a cold Node start on a loaded machine; past it the paste goes in regardless.
 const FIRST_PROMPT_DEADLINE: Duration = Duration::from_secs(60);
 // A submitted prompt's UserPromptSubmit drop lands within a hook-drain tick or two;
@@ -579,6 +577,8 @@ pub struct Session {
     osc_cwd: Mutex<Option<PathBuf>>,
     osc52: Mutex<crate::osc52::Osc52Scanner>,
     osc_title: Option<Mutex<crate::osc_title::OscTitleScanner>>,
+    // Only a CLI whose first prompt is pasted (see `Daemon::first_prompt_wait_ready`).
+    composer_ready: Option<Mutex<crate::composer_ready::ComposerReady>>,
     cli_title: Mutex<CliTitleState>,
     title_source: Mutex<TitleSource>,
     tags: Mutex<Vec<u32>>,
@@ -4437,6 +4437,7 @@ impl Daemon {
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             osc_title: (m.agent != proto::AgentKind::Shell)
                 .then(|| Mutex::new(crate::osc_title::OscTitleScanner::new())),
+            composer_ready: None,
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(TitleSource::Codename),
             tags: Mutex::new(m.tags.clone()),
@@ -9557,6 +9558,9 @@ impl Daemon {
         for text in session.osc52.lock().expect("osc52 lock").feed(chunk) {
             self.broadcast_control(&proto::ServerMsg::ClipboardSet { session: id, text });
         }
+        if let Some(scanner) = &session.composer_ready {
+            scanner.lock().expect("composer ready lock").feed(chunk);
+        }
         if let Some(scanner) = &session.osc_title {
             let raw = scanner.lock().expect("osc title lock").feed(chunk);
             if let Some(raw) = raw {
@@ -10200,6 +10204,8 @@ impl Daemon {
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             osc_title: (agent != proto::AgentKind::Shell)
                 .then(|| Mutex::new(crate::osc_title::OscTitleScanner::new())),
+            composer_ready: (!crate::launch::prompt_in_argv(agent))
+                .then(|| Mutex::new(crate::composer_ready::ComposerReady::new())),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(title_source),
             tags: Mutex::new(p_tags),
@@ -10626,6 +10632,7 @@ impl Daemon {
             shell: None,
             osc_cwd: Mutex::new(None),
             osc_title: None,
+            composer_ready: None,
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(TitleSource::Codename),
             tags: Mutex::new(Vec::new()),
@@ -16067,8 +16074,8 @@ impl Daemon {
         Ok(true)
     }
 
-    /// Pastes the first prompt of a CLI that takes none in argv once its TUI has drawn
-    /// and gone quiet. Quiet only times the paste; delivery counts when the CLI's own
+    /// Pastes the first prompt of a CLI that takes none in argv once its composer takes
+    /// input. Readiness only times the paste; delivery counts when the CLI's own
     /// UserPromptSubmit hook reports it. The text never reaches a log or a notice.
     pub(crate) fn deliver_first_prompt(
         self: &Arc<Self>,
@@ -16135,7 +16142,9 @@ impl Daemon {
         }
     }
 
-    /// Waits until the pane has drawn and stayed quiet, or `deadline` passes with output.
+    /// Waits until the CLI's composer takes input (see `composer_ready.rs`), or `deadline`
+    /// passes with output. Drawn output alone is not enough: ConPTY draws before the CLI
+    /// has started, and ZCode drops what arrives before its input box has focus.
     fn first_prompt_wait_ready(&self, session: u32, deadline: Instant) -> Result<()> {
         loop {
             let Ok(s) = self.get(session) else {
@@ -16145,12 +16154,20 @@ impl Daemon {
                 bail!("the pane's process exited first");
             }
             let drawn = s.raw_output_bytes.load(Ordering::Relaxed) > 0;
-            let now = self.started.elapsed().as_millis() as u64;
-            let quiet = now.saturating_sub(s.last_output.load(Ordering::Relaxed));
+            let ready = s
+                .composer_ready
+                .as_ref()
+                .is_some_and(|c| c.lock().expect("composer ready lock").ready());
             drop(s);
             let late = Instant::now() >= deadline;
             let held = self.immediate_paste_hold_reason(session);
-            if drawn && held.is_none() && (quiet >= FIRST_PROMPT_QUIET_MS || late) {
+            if drawn && held.is_none() && (ready || late) {
+                if !ready {
+                    tracing::info!(
+                        "pane {session}: its composer reported no focus by the deadline; \
+                         pasting regardless"
+                    );
+                }
                 return Ok(());
             }
             if late {

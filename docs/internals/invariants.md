@@ -270,14 +270,17 @@ they are never inferred from terminal text.
    the tail IS the payload of a no-handback notice, and it is labelled as the child's
    screen in the subject line and again in the body.
 4. **First-prompt paste timing.** A CLI that takes no prompt in argv (ZCode) gets its
-   first prompt pasted once the PTY has produced output and then stayed quiet for
-   `FIRST_PROMPT_QUIET_MS` (`Daemon::first_prompt_deliver`, deadline
-   `FIRST_PROMPT_DEADLINE`). It reads byte counters, never text, runs once per spawn and
+   first prompt pasted once its composer reports focus through the terminal modes it
+   sets: bracketed paste enabled, then the cursor shown (`composer_ready.rs`,
+   `Daemon::first_prompt_deliver`, deadline `FIRST_PROMPT_DEADLINE`). Output alone is no
+   signal: ConPTY draws before the CLI has started, and ZCode starts its TUI seconds
+   before it focuses the input box, dropping keys that arrive in between. The scanner
+   reads DEC private mode sequences, never text, and the VT binding exposes no modes. It
    decides only when input is written — never an `AgentStatus`, and never whether the
-   prompt arrived: that is the CLI's own `UserPromptSubmit` hook. Unconfirmed, the paste is
-   followed by one more Enter and never repeated, because a composer that kept the first
-   paste would submit it twice. The emulator's bracketed-paste mode would be a sharper
-   readiness signal but is not exposed by the VT binding.
+   prompt arrived: that is the CLI's own `UserPromptSubmit` hook, because ZCode fires
+   SessionStart only inside its first turn. Unconfirmed, the paste is followed by one more
+   Enter and never repeated, because a composer that kept the first paste would submit it
+   twice.
 
 **One turn end per provider.** A provider's `agent_events.rs` table carries at most one
 `AgentEvent::TurnEnded` row, and that row is the CLI's loop-termination event — never a

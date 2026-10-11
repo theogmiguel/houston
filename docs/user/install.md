@@ -139,8 +139,10 @@ Sign in with ZCode itself: `zcode login zai` for the international Z.ai service,
 `zcode login bigmodel` for BigModel in mainland China. ZCode has no command-line model
 option, so Houston refuses a model named for a ZCode pane, for example in `pane_spawn`;
 choose the model inside ZCode with `/model`. ZCode takes no prompt on its command line
-either: Houston pastes a pane's first prompt into ZCode's input once its interface has
-drawn, and counts it delivered only when ZCode's prompt hook reports it. Without that
+either: Houston pastes a pane's first prompt into ZCode's input once that input is ready
+to take it, which on a cold start can be several seconds after the pane opens (after a
+minute it pastes regardless), and counts it delivered only when ZCode's prompt hook
+reports it. Without that
 report Houston presses Enter once more, never pastes the prompt a second time, and then
 tells the pane's parent (or shows an error) to check the pane; the message never repeats
 the prompt. Without the hook toggle on, nothing can confirm the paste.
