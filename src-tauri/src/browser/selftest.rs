@@ -456,9 +456,21 @@ fn consent_identity(
     use houston_core::mcp_server::ToolProvider;
     use serde_json::json;
     let surface = "st-consent";
+    let scope = houston_core::mcp_creds::McpScope {
+        session_id: 0,
+        workspace_id: "/browser-selftest-consent".into(),
+    };
     let events = Events::install(app)?;
     let fixture = data_url("<!doctype html><title>consent-ready</title><button onclick=\"document.title='ACTION-FIRED'\">Send</button>");
-    mount(app, registry, surface, rect(0.0, 0.0, 300.0, 200.0))?;
+    browser_mount(
+        app.clone(),
+        registry.clone(),
+        surface.into(),
+        FIXTURE_URL.into(),
+        false,
+        rect(0.0, 0.0, 300.0, 200.0),
+        Some(scope.workspace_id.clone()),
+    )?;
     browser_navigate(
         app.clone(),
         registry.clone(),
@@ -472,10 +484,6 @@ fn consent_identity(
         })
     };
     settled()?;
-    let scope = houston_core::mcp_creds::McpScope {
-        session_id: 0,
-        workspace_id: "/browser-selftest-consent".into(),
-    };
     let tools = super::mcp_tools::BrowserTools::new(app.clone());
     let (prompt_tx, prompt_rx) = std::sync::mpsc::channel();
     let listener = app.listen(super::confirm::REQUEST_EVENT, move |event| {
