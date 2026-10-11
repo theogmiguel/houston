@@ -18,6 +18,9 @@ not your operating system, not any identifier — and nothing comes back except 
 own public details. A prerelease is ignored: a release candidate is cut as a tag and
 installed by hand, never offered as an update.
 
+If GitHub refuses the check because of a rate limit, the panel names the limit, how much of
+it was used and when it resets, when GitHub reports them.
+
 **Switching it off.** Settings ▸ About ▸ *Check for updates*. Off means the request is
 never made, and the panel says so rather than going quiet. The current value is always on
 screen; nothing about this lives only in a file.

@@ -127,6 +127,49 @@ fn parse_latest_release(body: &str) -> anyhow::Result<Option<proto::UpdateReleas
     }))
 }
 
+/// Names the limit when GitHub throttles the check, instead of reqwest's bare status text.
+fn status_error(url: &str, response: &reqwest::Response) -> anyhow::Error {
+    let status = response.status();
+    if status != reqwest::StatusCode::FORBIDDEN && status != reqwest::StatusCode::TOO_MANY_REQUESTS
+    {
+        return anyhow!("update check got HTTP {status} from {url}");
+    }
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned)
+    };
+    let mut details = Vec::new();
+    let limit = header("x-ratelimit-limit");
+    let remaining = header("x-ratelimit-remaining");
+    if let Some(limit) = &limit {
+        details.push(format!("limit {limit} requests"));
+    }
+    if let (Some(Ok(limit)), Some(Ok(remaining))) = (
+        limit.as_deref().map(str::parse::<u64>),
+        remaining.as_deref().map(str::parse::<u64>),
+    ) {
+        details.push(format!("used {}", limit.saturating_sub(remaining)));
+    }
+    if let Some(remaining) = &remaining {
+        details.push(format!("remaining {remaining}"));
+    }
+    if let Some(reset) = header("x-ratelimit-reset") {
+        details.push(format!("resets at unix time {reset}"));
+    }
+    if let Some(retry) = header("retry-after") {
+        details.push(format!("retry after {retry}s"));
+    }
+    let details = if details.is_empty() {
+        "the server reported no rate-limit headers".to_string()
+    } else {
+        details.join(", ")
+    };
+    anyhow!("update check rate limited (HTTP {status}) by {url}: {details}")
+}
+
 impl Daemon {
     pub fn update_policy(&self) -> proto::UpdatePolicy {
         let check = match self.db().get_setting(UPDATES_CHECK_KEY) {
@@ -244,7 +287,9 @@ impl Daemon {
             }
             return Ok(release);
         }
-        let response = response.error_for_status()?;
+        if !response.status().is_success() {
+            return Err(status_error(url, &response));
+        }
         let etag = response
             .headers()
             .get(reqwest::header::ETAG)
@@ -460,6 +505,45 @@ mod tests {
             text.contains("\"latest\"") && text.contains("MAJOR.MINOR.PATCH"),
             "{text}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_rate_limited_check_names_the_limit_the_usage_the_reset_and_the_url() {
+        let responses = vec![
+            "HTTP/1.1 403 Forbidden\r\nx-ratelimit-limit: 60\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: 1760000000\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .to_string(),
+            "HTTP/1.1 429 Too Many Requests\r\nretry-after: 120\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .to_string(),
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .to_string(),
+        ];
+        let (url, _requests) = scripted_release_server(responses).await;
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig {
+            token: "test-token-0000-0000-000000000000".to_string(),
+            db_path: dir.path().join("test.db"),
+        })
+        .unwrap();
+
+        let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+        for want in [
+            "rate limited",
+            "403",
+            "limit 60",
+            "used 60",
+            "remaining 0",
+            "1760000000",
+            &url,
+        ] {
+            assert!(text.contains(want), "{want:?} missing from: {text}");
+        }
+        let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+        for want in ["rate limited", "429", "retry after 120s", &url] {
+            assert!(text.contains(want), "{want:?} missing from: {text}");
+        }
+        let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+        assert!(text.contains("500") && text.contains(&url), "{text}");
+        assert!(!text.contains("rate limited"), "{text}");
     }
 
     // Switching the check off must not leave a standing "0.11.0 is available" over a
