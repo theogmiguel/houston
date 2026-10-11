@@ -105,6 +105,7 @@ describe('ConnectPhoneDialog', () => {
     expect(screen.getByText('Code expired')).toBeTruthy()
     expect(screen.getByAltText('Pairing code').className).toContain('opacity-35')
     expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Get a new code' }))
     expect(client.remotePairStart).toHaveBeenCalledTimes(2)
   })

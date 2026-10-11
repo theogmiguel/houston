@@ -197,7 +197,7 @@ export function ConnectPhoneDialog({ client, onClose, initialStep }: { client: H
         }
       }}>
         {confirmed ? null : <DialogTitle id="connect-phone-title">{heading}</DialogTitle>}
-        <DialogBody>
+        <DialogBody variant="stacked">
           {confirmed ? (
             <Stack gap={3} align="center">
               <IconTile tone="success" size="lg" radius="medium" icon={<Icon glyph={IconCheck} role="ui" />} />
@@ -254,8 +254,9 @@ export function ConnectPhoneDialog({ client, onClose, initialStep }: { client: H
           </> : view === 'scan' ? <>
             <Button variant="ghost" onClick={() => { resetPairing(); setView('route') }}>{routeSummary}</Button>
             <span className="flex-1" />
-            <Button ref={dismiss} variant={expired ? 'secondary' : 'primary'} onClick={onClose}>Close</Button>
-            {expired && <Button variant="primary" onClick={retry}>Get a new code</Button>}
+            {expired
+              ? <Button ref={dismiss} variant="primary" onClick={retry}>Get a new code</Button>
+              : <Button ref={dismiss} variant="primary" onClick={onClose}>Close</Button>}
           </> : <>
             <Button ref={dismiss} variant="secondary" onClick={onClose}>Cancel</Button>
             <span className="flex-1" />

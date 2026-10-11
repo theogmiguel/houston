@@ -11,7 +11,7 @@ export type NumberFieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type
 export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
   function NumberField({ width, className = '', ...props }, ref): React.JSX.Element {
     const widthClass = width === 'compact' ? 'w-[var(--w-settings-number)]' : 'w-[var(--w-settings-number-wide)]'
-    return <input {...props} ref={ref} type="number" className={`bg-[var(--content-bg)] border border-[var(--border)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-style:inherit] [font-variant:inherit] [font-weight:inherit] [font-stretch:inherit] [line-height:inherit] [font-family:inherit] [font-size:var(--tr-text-small-size)] py-[var(--space-settings-number-y)] px-2 text-right ${widthClass} ${className}`} />
+    return <input {...props} ref={ref} type="number" className={`bg-[var(--content-bg)] border border-[var(--border)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-style:inherit] [font-variant:inherit] [font-weight:inherit] [font-stretch:inherit] [line-height:inherit] [font-family:inherit] [font-size:var(--tr-text-small-size)] py-[var(--space-settings-number-y)] px-2 text-right disabled:opacity-45 disabled:cursor-not-allowed ${widthClass} ${className}`} />
   }
 )
 
