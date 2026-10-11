@@ -136,7 +136,9 @@ The phone has four tabs:
   settings are configured on the computer.
 
 The page title counts waiting panes. Android can vibrate for a new request while Houston
-is open. When the connection drops, the last state is dimmed and answers are disabled.
+is open. When the connection drops, the last state is dimmed and answers are disabled. Requests time out after 15 seconds so a stalled
+request cannot keep answers blocked indefinitely. An input timeout does not confirm
+whether the agent received it; check the pane before sending the same answer again.
 After about 30 seconds, the page offers **Retry** and suggests checking whether the
 computer is asleep. Live updates use a stream, with polling when the stream is unavailable.
 

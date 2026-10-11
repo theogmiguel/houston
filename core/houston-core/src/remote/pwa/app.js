@@ -57,7 +57,8 @@
     shown: 0, tailSteps: null, tailNode: null,
     live: false, stream: null, retry: 1000, timers: {}, busy: false, other: null,
     sent: {}, seenPending: {}, selection: {}, activityFilter: "all", activityAt: null, feedBusy: false, activityBusy: false,
-    swapIn: null, inboxDir: null
+    swapIn: null, inboxDir: null,
+    authGeneration: 0, paneGeneration: 0, requests: {}, httpRequests: new Set()
   };
 
   // Storage can be blocked (private mode); the page works without it.
@@ -242,14 +243,55 @@
 
   // ---- HTTP ----
 
-  function api(method, path, body) {
-    var token = S.token, headers = { "Content-Type": "application/json" };
-    if (S.token) headers.Authorization = "Bearer " + S.token;
-    return fetch(path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined, cache: "no-store" })
+  // Allow the server's ten-second input deadline plus network overhead.
+  var REQUEST_MS = 15000;
+
+  function staleRequest() {
+    var err = new Error("Ignored an older request."); err.stale = true; return err;
+  }
+
+  function beginRequest(name, paneScoped) {
+    if (S.requests[name]) S.requests[name].ctrl.abort();
+    var request = { ctrl: new AbortController(), auth: S.authGeneration, pane: paneScoped === false ? null : S.paneGeneration };
+    S.requests[name] = request;
+    request.current = function () { return S.requests[name] === request && request.auth === S.authGeneration && (request.pane == null || request.pane === S.paneGeneration); };
+    return request;
+  }
+
+  function resetPaneRequests() {
+    S.paneGeneration++;
+    ["feed", "input", "screen"].forEach(function (name) { if (S.requests[name]) S.requests[name].ctrl.abort(); delete S.requests[name]; });
+    S.feedBusy = false; S.busy = false;
+  }
+
+  function resetAuthRequests() {
+    S.authGeneration++;
+    S.httpRequests.forEach(function (ctrl) { ctrl.abort(); });
+    S.requests = {}; S.activityBusy = false;
+    resetPaneRequests();
+  }
+
+  function api(method, path, body, request) {
+    var token = S.token, auth = S.authGeneration, code = S.pendingPair;
+    var ctrl = request ? request.ctrl : new AbortController();
+    var headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = "Bearer " + token;
+    var current = function () { return auth === S.authGeneration && token === S.token && (path !== "/api/pair" || code === S.pendingPair) && (!request || request.current()); };
+    var timer, onAbort;
+    S.httpRequests.add(ctrl);
+    var deadline = new Promise(function (_, reject) {
+      onAbort = function () { reject(current() ? new Error("Request cancelled.") : staleRequest()); };
+      ctrl.signal.addEventListener("abort", onAbort, { once: true });
+      timer = setTimeout(function () {
+        reject(new Error(method === "POST" && /\/(input|decide)$/.test(path) ? "Request timed out; the input may already have reached the pane." : "Request timed out. Try again."));
+        ctrl.abort();
+      }, REQUEST_MS);
+    });
+    var response = fetch(path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined, cache: "no-store", signal: ctrl.signal })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (data) {
-          if (token !== S.token && path !== "/api/pair") throw new Error("Pairing changed; ignored an older response.");
-          if (r.status === 401 && S.token && path !== "/api/pair") unpair(data.reason === "revoked" ? "revoked" : "invalid");
+          if (!current() || ctrl.signal.aborted) throw staleRequest();
+          if (r.status === 401 && token && path !== "/api/pair") unpair(data.reason === "revoked" ? "revoked" : "invalid");
           if (!r.ok) {
             var err = new Error(data.error || ("Request failed with status " + r.status));
             err.status = r.status; err.reason = data.reason; err.retry = Number(r.headers.get("Retry-After")) || 0;
@@ -258,6 +300,9 @@
           return data;
         });
       });
+    return Promise.race([response, deadline]).finally(function () {
+      clearTimeout(timer); ctrl.signal.removeEventListener("abort", onAbort); S.httpRequests.delete(ctrl);
+    });
   }
 
   function later(name, fn, ms) {
@@ -377,6 +422,7 @@
 
   function show(view) {
     var from = S.view;
+    if (from === "pane" && view !== "pane") resetPaneRequests();
     S.view = view;
     ["pair", "list", "pane"].forEach(function (v) { $("view-" + v).classList.toggle("hidden", v !== view); });
     $("back").classList.toggle("hidden", view !== "pane");
@@ -426,6 +472,8 @@
   }
 
   function showPair(ending, detail) {
+    resetAuthRequests();
+    $("pair-submit").disabled = false; $("pair-submit").textContent = "Connect";
     stopTimers(); disconnect(); resetKeys();
     S.pane = null;
     $("reconnect").classList.add("hidden");
@@ -450,6 +498,7 @@
   }
 
   function unpair(ending) {
+    resetAuthRequests();
     S.token = null;
     S.sessions = []; S.grids = []; S.entries = []; S.pending = null; S.inboxFeed = {}; S.activity = []; S.activityLast = 0; S.activityEpoch = null; S.activityLoaded = false; S.me = {}; S.sent = {}; S.seenPending = {}; S.pendingPair = null; S.deepLink = false; S.reachable = false; S.loaded = false; S.selection = {}; S.busy = false; S.feedBusy = false; S.activityBusy = false; S.stopArmed = false; S.activityAt = null;
     $("text").value = ""; setOther(null); toggleKeys(false);
@@ -487,7 +536,9 @@
 
   function loadSessions() {
     if (!S.token) return Promise.resolve();
-    return api("GET", "/api/sessions").then(function (d) {
+    var request = beginRequest("sessions", false);
+    return api("GET", "/api/sessions", null, request).then(function (d) {
+      if (!request.current()) return;
       S.sessions = d.sessions || [];
       S.grids = d.grids || [];
       // Refresh decision identities before re-enabling any offline controls.
@@ -508,6 +559,7 @@
         renderWorking();
       }
     }).catch(function (e) {
+      if (!request.current() || e.stale) return;
       if (S.token && (!e.status || e.status >= 500)) setReachable(false);
       if (S.view === "list" && S.token) {
         $("list-error").textContent = e.message;
@@ -541,7 +593,7 @@
     window.scrollTo(0, 0);
     renderList();
     if (tab === "activity") loadActivity();
-    if (tab === "computer") loadMe().catch(function (e) { toast(e.message, true); });
+    if (tab === "computer") loadMe().catch(function (e) { if (!e.stale) toast(e.message, true); });
   }
 
   function renderTabs() {
@@ -831,14 +883,16 @@
   // ---- Activity ----
 
   function loadMe() {
-    return api("GET", "/api/me").then(function (d) { S.me = d; setLive(S.live); if (S.view === "list" && S.home === "computer") renderList(); });
+    var request = beginRequest("me", false);
+    return api("GET", "/api/me", null, request).then(function (d) { if (!request.current()) return; S.me = d; setLive(S.live); if (S.view === "list" && S.home === "computer") renderList(); });
   }
 
   function loadActivity() {
     if (!S.token || S.activityBusy) return;
     S.activityBusy = true;
-    var after = S.activityLast;
-    return api("GET", "/api/activity?after=" + S.activityLast).then(function (d) {
+    var request = beginRequest("activity", false), after = S.activityLast;
+    return api("GET", "/api/activity?after=" + S.activityLast, null, request).then(function (d) {
+      if (!request.current()) return;
       if (S.activityEpoch !== d.epoch || d.truncated) {
         S.activity = []; S.activityLast = 0;
         if (after && S.activityEpoch !== d.epoch) { S.activityEpoch = d.epoch; S.activityBusy = false; return loadActivity(); }
@@ -849,7 +903,7 @@
       // A long-lived phone retains at most 200 activity rows.
       S.activity = S.activity.slice(-ACTIVITY_ENTRIES); S.activityUnavailable = false; S.activityError = ""; S.activityLoaded = true;
       if (S.view === "list" && S.home === "activity") renderList();
-    }).catch(function (e) { S.activityLoaded = true; S.activityUnavailable = e.status === 404; S.activityError = S.activityUnavailable ? "" : e.message; if (S.view === "list" && S.home === "activity") renderList(); }).then(function () { S.activityBusy = false; });
+    }).catch(function (e) { if (!request.current() || e.stale) return; S.activityLoaded = true; S.activityUnavailable = e.status === 404; S.activityError = S.activityUnavailable ? "" : e.message; if (S.view === "list" && S.home === "activity") renderList(); }).then(function () { if (request.current()) S.activityBusy = false; });
   }
 
   function activityWords(e) {
@@ -1103,6 +1157,7 @@
   function openPane(id, tab, deepLink) {
     S.deepLink = !!deepLink;
     if (S.pane !== id) {
+      resetPaneRequests();
       S.stopArmed = false; S.selection = {}; S.feedBusy = false; resetKeys(); toggleKeys(false); clearTimeout(S.timers["stop-arm"]);
       S.entries = []; S.last = 0; S.epoch = null; S.pending = null; S.expanded = {}; S.turns = {}; S.other = null;
       renderFeed(true);
@@ -1157,8 +1212,9 @@
     var id = S.pane;
     if (id == null || !S.token || S.feedBusy) return Promise.resolve();
     S.feedBusy = true;
-    return api("GET", "/api/sessions/" + id + "/feed?after=" + S.last).then(function (d) {
-      if (S.pane !== id) return;
+    var request = beginRequest("feed");
+    return api("GET", "/api/sessions/" + id + "/feed?after=" + S.last, null, request).then(function (d) {
+      if (!request.current()) return;
       // Another epoch (a daemon restart, or remote access turned off and on)
       // numbers its entries afresh, so everything shown so far is dropped.
       var reset = (S.epoch != null && d.epoch !== S.epoch) || d.last_seq < S.last || d.truncated;
@@ -1188,8 +1244,8 @@
         S.activityAt = null;
       } else if (stick && S.tab === "conv") toBottom();
       else if (S.entries.length > before) $("jump").classList.remove("hidden");
-    }).catch(function (e) { if (S.pane === id && S.token) { if (!e.status || e.status >= 500) setReachable(false); setDockStatus(e.message, true); } })
-      .then(function () { if (S.pane === id) S.feedBusy = false; });
+    }).catch(function (e) { if (request.current() && S.token && !e.stale) { if (!e.status || e.status >= 500) setReachable(false); setDockStatus(e.message, true); } })
+      .then(function () { if (request.current()) S.feedBusy = false; });
   }
 
   // Appends entries not yet shown; `reset` starts over. Existing nodes are
@@ -1536,7 +1592,7 @@
     if (s && s.kind !== "claude" && s.status === "needs-input") {
       var pre = el("pre", "tscreen", "Loading screen…"); root.appendChild(pre);
       if (S.view === "pane") toggleKeys(true);
-      api("GET", "/api/sessions/" + id + "/screen?lines=12").then(function (d) { pre.textContent = (d.lines || []).join("\n"); }).catch(function (e) { pre.textContent = e.message; });
+      api("GET", "/api/sessions/" + id + "/screen?lines=12").then(function (d) { pre.textContent = (d.lines || []).join("\n"); }).catch(function (e) { if (!e.stale) pre.textContent = e.message; });
     }
   }
 
@@ -1564,13 +1620,15 @@
     if (pending.truncated && (choice === "approve" || choice === "always")) { notice("Only part of this command is shown. Read the full request in the terminal.", true); return Promise.resolve(false); }
     if (!S.reachable) { notice("Answers are paused until the connection is back.", true); return Promise.resolve(false); }
     if (S.busy) { notice("Wait for the previous send to finish, then tap again.", true); return Promise.resolve(false); }
+    var request = beginRequest("input");
     S.busy = true;
     notice("Sending…");
     var key = id + ":" + epoch + ":" + seq;
     document.querySelectorAll("[data-decision]").forEach(function (b) { b.disabled = true; });
     updateSend();
-    return api("POST", "/api/sessions/" + id + "/decide", { epoch: epoch, entry_seq: seq, choice: choice, text: text })
+    return api("POST", "/api/sessions/" + id + "/decide", { epoch: epoch, entry_seq: seq, choice: choice, text: text }, request)
       .then(function () {
+        if (!request.current()) return false;
         // Held until the server's card changes: the daemon keeps it consumed.
         S.sent[key] = true;
         if (S.pane === id) S.deepLink = false;
@@ -1580,8 +1638,9 @@
         if (choice === "other") setOther(null);
         return true;
       })
-      .catch(function (e) { notice(e.message, true); return false; })
+      .catch(function (e) { if (request.current() && !e.stale) notice(e.message, true); return false; })
       .then(function (ok) {
+        if (!request.current()) return false;
         S.busy = false;
         updateSend();
         renderCard();
@@ -1635,32 +1694,34 @@
   function input(body, what) {
     var id = S.pane;
     if (S.busy || id == null || !S.reachable) return Promise.resolve(false);
+    var request = beginRequest("input");
     S.busy = true;
     updateSend();
     setDockStatus("Sending…");
-    return api("POST", "/api/sessions/" + id + "/input", body).then(function () {
+    return api("POST", "/api/sessions/" + id + "/input", body, request).then(function () {
+      if (!request.current()) return false;
       setDockStatus(what ? "Sent " + what : "");
-      later("clear-status", function () { setDockStatus(""); }, 2500);
+      later("clear-status", function () { if (request.current()) setDockStatus(""); }, 2500);
       if (S.tab === "term") later("screen", loadScreen, 250);
       return true;
-    }).catch(function (e) { setDockStatus(e.message, true); return false; })
-      .then(function (ok) { S.busy = false; updateSend(); return ok; });
+    }).catch(function (e) { if (request.current() && !e.stale) setDockStatus(e.message, true); return false; })
+      .then(function (ok) { if (request.current()) { S.busy = false; updateSend(); } return ok; });
   }
 
   function send() {
-    var text = $("text").value, id = S.pane;
+    var text = $("text").value, id = S.pane, generation = S.paneGeneration;
     if (!text.trim()) {
       var s = session(S.pane); if (!s || s.status !== "working" || !S.reachable) return;
       if (!S.stopArmed) { S.stopArmed = true; updateSend(); later("stop-arm", function () { S.stopArmed = false; updateSend(); }, 2500); return; }
       S.stopArmed = false;
       input({ keys: ["esc"] }, "Esc").then(function (ok) {
-        if (!ok || S.pane !== id) return;
+        if (!ok || S.pane !== id || generation !== S.paneGeneration) return;
         var d = el("div", "tdiv warn arrive"); d.appendChild(icon("square")); d.appendChild(document.createTextNode("Stop requested from this phone"));
         $("feed").appendChild(d);
       });
       updateSend(); return;
     }
-    var done = function (ok) { if (ok && S.pane === id && $("text").value === text) { $("text").value = ""; grow(); renderQuickReplies(); toBottom(true); } };
+    var done = function (ok) { if (ok && S.pane === id && generation === S.paneGeneration && $("text").value === text) { $("text").value = ""; grow(); renderQuickReplies(); toBottom(true); } };
     if (S.pending && S.pending.type === "permission" && S.pending.decidable && !cardState(S.pane, S.pending)) { setDockStatus("Deny the request first, then send your instruction.", true); return; }
     if (S.other) { decide(S.pane, S.other.seq, "other", text.trim(), S.other.epoch).then(done); return; }
     input({ text: text, keys: ["enter"] }, "").then(done);
@@ -1749,8 +1810,9 @@
     var id = S.pane;
     clearTimeout(S.timers.screen);
     if (id == null || S.tab !== "term" || document.hidden) return;
-    api("GET", "/api/sessions/" + id + "/screen?lines=" + SCREEN_LINES).then(function (d) {
-      if (S.pane !== id) return;
+    var request = beginRequest("screen");
+    api("GET", "/api/sessions/" + id + "/screen?lines=" + SCREEN_LINES, null, request).then(function (d) {
+      if (!request.current()) return;
       var pre = $("screen"), stick = !pre.textContent || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 40;
       fitScreen();
       pre.textContent = (d.lines || []).join("\n");
@@ -1758,9 +1820,9 @@
       $("screen-note").textContent = raw ? "Raw output: this build has no terminal emulator." : "";
       $("screen-note").classList.toggle("hidden", !raw);
       if (stick) pre.scrollTop = pre.scrollHeight;
-    }).catch(function (e) { if (S.pane === id) setDockStatus(e.message, true); })
+    }).catch(function (e) { if (request.current() && !e.stale) setDockStatus(e.message, true); })
       .then(function () {
-        if (S.pane === id && S.tab === "term") S.timers.screen = setTimeout(loadScreen, SCREEN_MS);
+        if (request.current() && S.tab === "term") S.timers.screen = setTimeout(loadScreen, SCREEN_MS);
       });
   }
 
@@ -1937,7 +1999,11 @@
     $("pair-submit").disabled = true;
     $("pair-submit").replaceChildren(el("span", "spinner"), document.createTextNode("Connecting…"));
     $("pair-error").classList.add("hidden");
+    var pairingGeneration = S.authGeneration;
     api("POST", "/api/pair", { code: S.pendingPair, device_name: name }).then(function (d) {
+      if (pairingGeneration !== S.authGeneration) return;
+      resetAuthRequests();
+      pairingGeneration = S.authGeneration;
       S.token = d.token;
       store(TOKEN_KEY, S.token);
       S.pendingPair = null;
@@ -1956,6 +2022,7 @@
         if (S.view === "pair") $("pair-lede").textContent = hostName() + " · " + plural(n, "pane", "panes");
       }).catch(function () { /* the lede stays generic */ });
     }).catch(function (e) {
+      if (e.stale || pairingGeneration !== S.authGeneration) return;
       if (e.status === 410 || /expired|already used|not valid/i.test(e.message)) {
         S.pendingPair = null;
         showPair(/used/i.test(e.message) ? "used" : "expired");
@@ -1963,7 +2030,7 @@
       }
       $("pair-error").textContent = e.message + (e.retry ? " Try again in " + e.retry + " seconds." : "");
       $("pair-error").classList.remove("hidden");
-    }).then(function () { $("pair-submit").disabled = false; $("pair-submit").textContent = "Connect"; });
+    }).then(function () { if (pairingGeneration !== S.authGeneration) return; $("pair-submit").disabled = false; $("pair-submit").textContent = "Connect"; });
   });
 
   $("back").addEventListener("click", openList);
@@ -2161,7 +2228,7 @@
   S.token = stored(TOKEN_KEY);
   if (S.token && !/^#pair=/.test(location.hash)) {
     api("GET", "/api/me").then(function (d) { S.me = d; route(); }).catch(function (e) {
-      if (e.status !== 401) {
+      if (!e.stale && e.status !== 401) {
         route();
         toast(e.message, true);
       }
