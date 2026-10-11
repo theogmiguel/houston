@@ -1091,12 +1091,19 @@ fn decision_refused(id: u32, entry_seq: u64, refusal: Refusal) -> ApiError {
         )),
         Refusal::Answered(Answered::Elsewhere) => ApiError::Conflict(format!(
             "entry {entry_seq} was answered in pane {id}'s terminal: a key reached the pane after \
-             the request arrived; check the Terminal tab"
+             the request arrived; use View screen"
         )),
         Refusal::Unsupported(why) => ApiError::Conflict(why),
         Refusal::Partial => ApiError::Conflict(format!(
             "entry {entry_seq} shows only part of what the tool runs (it was cut, or invisible \
              characters were removed): read it in pane {id}'s terminal and approve there, or deny"
+        )),
+        Refusal::PartialDiff { lines, line_chars, bytes } => ApiError::Conflict(format!(
+            "approval of entry {entry_seq} for pane {id} refused: its edit preview is incomplete; \
+             retained {lines} lines (DIFF_MAX_LINES={}), longest retained line {line_chars} characters \
+             (DIFF_LINE_MAX_CHARS={}), serialized preview {bytes} bytes (DIFF_MAX_BYTES={}); \
+             read the full request in the pane's terminal and approve there, or deny",
+            feed::DIFF_MAX_LINES, feed::DIFF_LINE_MAX_CHARS, feed::DIFF_MAX_BYTES
         )),
         Refusal::Choice(why) => ApiError::BadRequest(why),
     }

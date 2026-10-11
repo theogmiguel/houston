@@ -283,7 +283,7 @@ fn str_at<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
 }
 
 /// The one value that says what a tool acts on: a command, a path, a URL or a
-/// pattern. Anything else in the tool input stays out of the feed. The flag
+/// pattern. Edit previews are lifted separately for permission cards. The flag
 /// reports that the result is not exactly the tool's input (see `HookFeed::Permission`).
 fn tool_target(
     input: Option<&serde_json::Value>,
@@ -714,6 +714,7 @@ pub enum Refusal {
     Unsupported(String),
     /// Approving a target the device could not see in full.
     Partial,
+    PartialDiff { lines: usize, line_chars: usize, bytes: usize },
     /// The choice does not answer this card.
     Choice(String),
 }
@@ -1024,9 +1025,17 @@ impl Store {
                 return Err(Refusal::Answered(answered));
             }
             decision_support(p.provider, &p.card).map_err(Refusal::Unsupported)?;
-            if (p.truncated || p.diff.as_ref().is_some_and(|d| d.truncated))
-                && matches!(choice, Choice::Approve | Choice::Always) {
-                return Err(Refusal::Partial);
+            if matches!(choice, Choice::Approve | Choice::Always) {
+                if let Some(diff) = p.diff.as_ref().filter(|d| d.truncated) {
+                    return Err(Refusal::PartialDiff {
+                        lines: diff.lines.len(),
+                        line_chars: diff.lines.iter().map(|l| l.text.chars().count()).max().unwrap_or(0),
+                        bytes: serde_json::to_vec(diff).map_or(0, |v| v.len()),
+                    });
+                }
+                if p.truncated {
+                    return Err(Refusal::Partial);
+                }
             }
             let plan = decision_keys(p.provider, &p.card, choice).map_err(Refusal::Choice)?;
             p.answered = Some(Answered::Sent);

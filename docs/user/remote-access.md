@@ -3,8 +3,8 @@
 Remote access lets you follow and answer your panes from a phone or another computer. A
 paired device lists every pane with its reported status, panes that need you first, and
 shows each pane as a conversation: your prompts, the agent's replies, its tool steps, and
-the questions and permission requests it is waiting on, which you answer with a tap. A
-Terminal tab shows the pane's screen, and you can type a message or press keys such as
+the questions and permission requests it is waiting on, which you answer with a tap. The
+pane menu's **View screen** opens a read-only snapshot, and you can type a message or press keys such as
 Enter, Esc, the arrow keys, Tab and Ctrl+C. Optionally, Houston sends a push notification
 through [ntfy](https://ntfy.sh) when an agent has been waiting for input for a while.
 
@@ -17,8 +17,8 @@ panes. That is as much access as a shell on this computer as your user: treat a 
 device, and the link it was paired with, like an unlocked terminal. A device cannot pair
 other devices, change settings, open or close panes. Revoke a device you lose straight away.
 
-The Terminal tab is a text snapshot that refreshes while the tab is open; it is not an
-interactive terminal, and it never resizes or takes over the pane on your desktop.
+**View screen** is a read-only text snapshot. It never resizes or takes over the pane on
+your desktop; use the composer's key row to send keys.
 
 The conversation comes only from what each agent CLI reports through its hooks while remote
 access is on: prompts, final replies, questions and their options, and for each permission
@@ -26,7 +26,7 @@ request or tool step the tool's name and one target (a command, file path, URL o
 Secrets that match Houston's credential patterns are masked, long text is shortened, and
 nothing of it is saved: it is kept in memory and is gone when the daemon stops. Turning remote
 access off clears it, and nothing is collected while it is off, so activity from before
-remote access was last turned on is only in the Terminal tab.
+remote access was last turned on is available only through **View screen**.
 
 Each completed turn shows its duration, tool counts and a bounded list of edited paths.
 A reported failure or interruption is shown when the agent's hooks identify it; otherwise
@@ -95,7 +95,7 @@ next to the title shows whether updates are live or reconnecting.
 A permission request in **Needs you** shows the tool and its whole target with **Approve**
 and **Deny**, so you can answer without opening the pane. When Houston can show only part of
 the command, because it is very long or contains invisible formatting characters, the
-request offers **Open terminal** instead: read and approve it there. Inside a pane, the
+request offers **View screen** and the key row instead: read and approve it there. Inside a pane, the
 request waiting on you is a card above the message box:
 
 - **Permission:** **Approve**, **Deny**, and **Always** when the CLI offers to stop asking
@@ -108,7 +108,7 @@ After a tap the card shows **Sent** and takes no further tap until the agent mov
 for an approved command can be when the command finishes. Houston answers by typing the same
 keys you would press in the terminal; when a key reaches the pane from the desktop or the key
 row after the request arrived, the card shows **Answered in the terminal** and offers only
-**Open terminal**. If the request changed before your tap arrived, or remote access was
+**View screen** and the key row. If the request changed before your tap arrived, or remote access was
 turned off and on since the page loaded, Houston refuses the tap instead of answering the
 wrong request.
 
@@ -119,10 +119,10 @@ reviewing the full request, or deny from the phone.
 Cards you can answer with a tap are available for Claude Code permission requests and
 single questions with one answer. Questions with several parts or several answers, and
 requests from Codex, Cursor, Grok, OpenCode and Antigravity, show a **Needs you** card with
-**Open terminal** and the key row; replies and status still appear in their conversation.
+**View screen** and the key row; replies and status still appear in their conversation.
 
 The message box sends your text and presses Enter. Multi-line text works only when the
-program in the pane accepts pasted text; otherwise send one line at a time. **+** shows the
+program in the pane accepts pasted text; otherwise send one line at a time. The composer's keys button shows the
 key row: **Esc**, the arrow keys, **Tab**, **Enter**, and **Ctrl+C**, which asks for a second
 tap before it interrupts the agent.
 
