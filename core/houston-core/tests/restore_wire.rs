@@ -127,6 +127,61 @@ fn boot_and_list(
 }
 
 #[test]
+fn a_refused_durable_close_keeps_the_restored_pane_retryable() {
+    let _env = env_lock();
+    let state = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed(state.path(), &[project.path()], true);
+    let path = state.path().join("test.db");
+    let daemon = Daemon::new_with_safe_mode_flags_for_test(
+        DaemonConfig {
+            token: TOKEN.to_string(),
+            db_path: path.clone(),
+        },
+        SafeModeFlags {
+            disable_auto_restore: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(daemon.list().iter().any(|s| s.id == 1));
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TRIGGER refuse_close BEFORE UPDATE OF state ON sessions
+         WHEN NEW.state = 'closed' BEGIN SELECT RAISE(ABORT, 'injected close failure'); END;",
+    )
+    .unwrap();
+    assert!(daemon
+        .close(1)
+        .unwrap_err()
+        .to_string()
+        .contains("injected close failure"));
+    assert!(
+        daemon.list().iter().any(|s| s.id == 1),
+        "a refused close must keep its retry target"
+    );
+    conn.execute_batch("DROP TRIGGER refuse_close;").unwrap();
+    daemon.close(1).unwrap();
+    assert!(!daemon.list().iter().any(|s| s.id == 1));
+    drop(daemon);
+    let reopened = Daemon::new_with_safe_mode_flags_for_test(
+        DaemonConfig {
+            token: TOKEN.to_string(),
+            db_path: path,
+        },
+        SafeModeFlags {
+            disable_auto_restore: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        !reopened.list().iter().any(|s| s.id == 1),
+        "a successful retry stays closed after restart"
+    );
+}
+
+#[test]
 fn clean_shutdown_respawns_within_budget_and_defers_the_rest() {
     let _env = env_lock();
     std::env::set_var("SHELL", "/bin/sh");

@@ -11762,7 +11762,7 @@ impl Daemon {
             .expect("sessions lock")
             .get(&id)
             .cloned();
-        if let Some(session) = session {
+        if let Some(session) = session.as_ref() {
             let live = session.state.lock().expect("state lock").is_live();
             if live {
                 session
@@ -11770,6 +11770,12 @@ impl Daemon {
                     .kill(id, session.pid, self.channel.as_deref())?;
             }
         }
+        if session.is_none() && !self.dead.lock().expect("dead lock").contains_key(&id) {
+            bail!("unknown session id {id} (expected an active or restored session)");
+        }
+        // Keep the pane available for a retry if storage refuses the close.
+        // A late waiter cannot overwrite this durable state (update_session_state guards it).
+        self.db.mark_closed(id)?;
         self.operator_ended
             .lock()
             .expect("operator_ended lock")
@@ -11781,7 +11787,6 @@ impl Daemon {
         if let Some(session) = removed {
             session.remove_shell_token_file();
             session.removed.store(true, Ordering::Release);
-            self.db.mark_closed(id)?;
             worktree_pass::queue_closed_session(self, id);
             self.write_run_state();
             self.mcp_creds.revoke_session(id);
@@ -11800,7 +11805,6 @@ impl Daemon {
                 .lock()
                 .expect("dead geometry lock")
                 .remove(&id);
-            self.db.mark_closed(id)?;
             worktree_pass::queue_closed_session(self, id);
             self.remove_persisted_scrollback(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
