@@ -15027,6 +15027,60 @@ impl Daemon {
         self.broadcast_voice_state(proto::VoiceState::Listening { session });
     }
 
+    /// The transcription half of dictation, shared by the desktop microphone and
+    /// paired devices: the speech gate, then the configured engine. Blocking; run
+    /// it off the async runtime. `audio` is mono at `capture::TARGET_SAMPLE_RATE`.
+    pub fn voice_transcribe(
+        &self,
+        audio: &crate::voice::AudioBuffer,
+        settings: &proto::VoiceSettings,
+    ) -> Result<crate::voice::Transcribed, proto::VoiceFailure> {
+        crate::voice::capture::gate(&audio.samples, audio.sample_rate, settings.rms_floor)
+            .map_err(|e| voice_capture_failure(&e))?;
+        let engine_failure = |message: String| proto::VoiceFailure::Engine { message };
+        let request = crate::voice::TranscribeRequest {
+            language: settings.input_language.as_deref(),
+            translate: settings.output_mode == proto::VoiceOutputMode::English,
+            prompt: &settings.vocabulary,
+        };
+        match &settings.engine {
+            proto::VoiceEngine::Local { model_id } => {
+                let path = self.voice_models_dir().join(format!("{model_id}.bin"));
+                let transcriber = self
+                    .voice
+                    .local_engine(&path)
+                    .map_err(|e| engine_failure(e.to_string()))?;
+                let t = crate::voice::Transcriber::transcribe(&*transcriber, audio, &request)
+                    .map_err(|e| engine_failure(e.to_string()))?;
+                Ok(crate::voice::Transcribed {
+                    text: t.text,
+                    engine: format!("local:{model_id}"),
+                    translated: t.translated,
+                })
+            }
+            proto::VoiceEngine::Cloud { provider } => {
+                let proto::CloudStt::Groq = provider;
+                let key = crate::voice::cloud::load_key()
+                    .map_err(|e| engine_failure(e.to_string()))?
+                    .ok_or_else(|| {
+                        engine_failure(
+                            "no Groq API key is stored (Settings → Voice → Groq API key)"
+                                .to_string(),
+                        )
+                    })?;
+                let transcriber = crate::voice::cloud::GroqTranscriber::new(key)
+                    .map_err(|e| engine_failure(e.to_string()))?;
+                let t = crate::voice::Transcriber::transcribe(&transcriber, audio, &request)
+                    .map_err(|e| engine_failure(e.to_string()))?;
+                Ok(crate::voice::Transcribed {
+                    text: t.text,
+                    engine: "groq".to_string(),
+                    translated: t.translated,
+                })
+            }
+        }
+    }
+
     pub async fn voice_stop(self: &Arc<Self>, session: u32) {
         let settings = self.voice_settings();
         if self.voice.listening_for().is_none() {
@@ -15064,16 +15118,6 @@ impl Daemon {
             });
             return;
         }
-        if let Err(e) = crate::voice::capture::gate(
-            &captured.samples,
-            crate::voice::capture::TARGET_SAMPLE_RATE,
-            settings.rms_floor,
-        ) {
-            self.broadcast_voice_state(proto::VoiceState::Error {
-                failure: voice_capture_failure(&e),
-            });
-            return;
-        }
         if !self.voice_session_alive(target) {
             self.broadcast_voice_state(proto::VoiceState::Error {
                 failure: proto::VoiceFailure::TargetGone { session: target },
@@ -15085,54 +15129,21 @@ impl Daemon {
             samples: captured.samples,
             sample_rate: crate::voice::capture::TARGET_SAMPLE_RATE,
         };
-        let translate = settings.output_mode == proto::VoiceOutputMode::English;
-        let language = settings.input_language.clone();
-        let prompt = settings.vocabulary.clone();
-        let engine = settings.engine.clone();
-        let models_dir = self.voice_models_dir();
         let me = self.clone();
-        let outcome =
-            tokio::task::spawn_blocking(move || -> Result<(String, String, bool), String> {
-                let request = crate::voice::TranscribeRequest {
-                    language: language.as_deref(),
-                    translate,
-                    prompt: &prompt,
-                };
-                match &engine {
-                    proto::VoiceEngine::Local { model_id } => {
-                        let path = models_dir.join(format!("{model_id}.bin"));
-                        let transcriber =
-                            me.voice.local_engine(&path).map_err(|e| e.to_string())?;
-                        let t =
-                            crate::voice::Transcriber::transcribe(&*transcriber, &audio, &request)
-                                .map_err(|e| e.to_string())?;
-                        Ok((t.text, format!("local:{model_id}"), t.translated))
-                    }
-                    proto::VoiceEngine::Cloud { provider } => {
-                        let proto::CloudStt::Groq = provider;
-                        let key = crate::voice::cloud::load_key()
-                            .map_err(|e| e.to_string())?
-                            .ok_or_else(|| {
-                                "no Groq API key is stored (Settings → Voice → Groq API key)"
-                                    .to_string()
-                            })?;
-                        let transcriber = crate::voice::cloud::GroqTranscriber::new(key)
-                            .map_err(|e| e.to_string())?;
-                        let t =
-                            crate::voice::Transcriber::transcribe(&transcriber, &audio, &request)
-                                .map_err(|e| e.to_string())?;
-                        Ok((t.text, "groq".to_string(), t.translated))
-                    }
-                }
-            })
-            .await;
+        let outcome = tokio::task::spawn_blocking(move || {
+            let _engine = me.voice.claim_engine_desktop();
+            me.voice_transcribe(&audio, &settings)
+        })
+        .await;
 
-        let (text, engine_label, translated) = match outcome {
+        let crate::voice::Transcribed {
+            text,
+            engine: engine_label,
+            translated,
+        } = match outcome {
             Ok(Ok(v)) => v,
-            Ok(Err(message)) => {
-                self.broadcast_voice_state(proto::VoiceState::Error {
-                    failure: proto::VoiceFailure::Engine { message },
-                });
+            Ok(Err(failure)) => {
+                self.broadcast_voice_state(proto::VoiceState::Error { failure });
                 return;
             }
             Err(join) => {

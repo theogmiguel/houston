@@ -29,6 +29,32 @@ struct Inner {
     engine: Option<CachedEngine>,
     downloads: std::collections::HashMap<String, DownloadState>,
     monitors: std::collections::HashSet<u64>,
+    desktop_transcribing: usize,
+    remote_transcribing: bool,
+}
+
+/// Who already holds the engine when a paired device asks for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineBusy {
+    Desktop,
+    Remote,
+}
+
+/// Marks a transcription in progress until dropped.
+pub struct EngineClaim<'a> {
+    runtime: &'a Runtime,
+    remote: bool,
+}
+
+impl Drop for EngineClaim<'_> {
+    fn drop(&mut self) {
+        let mut inner = self.runtime.lock();
+        if self.remote {
+            inner.remote_transcribing = false;
+        } else {
+            inner.desktop_transcribing = inner.desktop_transcribing.saturating_sub(1);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,6 +151,32 @@ impl Runtime {
         let capture = inner.capture.as_ref().ok_or(CaptureError::NoInputDevice)?;
         let captured = capture.disarm()?;
         Ok((inner.listening.take(), captured))
+    }
+
+    /// The desktop's transcriptions are never refused; they are counted so a
+    /// paired device can be.
+    pub fn claim_engine_desktop(&self) -> EngineClaim<'_> {
+        self.lock().desktop_transcribing += 1;
+        EngineClaim {
+            runtime: self,
+            remote: false,
+        }
+    }
+
+    /// One remote transcription at a time, and none while the desktop transcribes.
+    pub fn claim_engine_remote(&self) -> Result<EngineClaim<'_>, EngineBusy> {
+        let mut inner = self.lock();
+        if inner.desktop_transcribing > 0 {
+            return Err(EngineBusy::Desktop);
+        }
+        if inner.remote_transcribing {
+            return Err(EngineBusy::Remote);
+        }
+        inner.remote_transcribing = true;
+        Ok(EngineClaim {
+            runtime: self,
+            remote: true,
+        })
     }
 
     #[cfg(unix)]
@@ -396,6 +448,23 @@ mod tests {
         assert_eq!(rt.release_monitor(3), MonitorTransition::Stopped);
         assert!(!rt.is_monitoring());
         assert_eq!(rt.release_monitor(99), MonitorTransition::Unchanged);
+    }
+
+    #[test]
+    fn a_remote_transcription_waits_for_the_desktop_and_for_another_remote_one() {
+        let rt = Runtime::new();
+        let desktop = rt.claim_engine_desktop();
+        assert_eq!(rt.claim_engine_remote().err(), Some(EngineBusy::Desktop));
+        drop(desktop);
+        let remote = rt.claim_engine_remote().expect("the engine is free");
+        assert_eq!(rt.claim_engine_remote().err(), Some(EngineBusy::Remote));
+        let _desktop = rt.claim_engine_desktop();
+        drop(remote);
+        assert_eq!(
+            rt.claim_engine_remote().err(),
+            Some(EngineBusy::Desktop),
+            "the desktop is never refused, and still blocks the next remote claim"
+        );
     }
 
     #[test]

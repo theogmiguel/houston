@@ -24,6 +24,14 @@ pub struct Transcript {
     pub translated: bool,
 }
 
+/// One utterance's transcript and the engine that produced it, `local:<model_id>` or `groq`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Transcribed {
+    pub text: String,
+    pub engine: String,
+    pub translated: bool,
+}
+
 pub trait Transcriber {
     type Error: std::error::Error;
 
