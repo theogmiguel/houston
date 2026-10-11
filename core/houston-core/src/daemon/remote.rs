@@ -509,6 +509,7 @@ impl Daemon {
             }
         }
         let write = |bytes: &[u8]| -> Result<(), ApiError> {
+            self.remote_note_keystroke_from(id, "from this phone");
             self.note_operator_keystroke(id, bytes);
             self.write_stdin_from_renderer(id, bytes)
                 .map_err(|e| ApiError::Conflict(format!("writing to pane {id}: {e}")))
@@ -576,9 +577,12 @@ impl Daemon {
     /// A keystroke reached pane `id` from the desktop or a device: a card still
     /// open was answered there, so a device can no longer answer it with a tap.
     pub(crate) fn remote_note_keystroke(&self, id: u32) {
+        self.remote_note_keystroke_from(id, "in the terminal");
+    }
+
+    fn remote_note_keystroke_from(&self, id: u32, origin: &'static str) {
         if self.remote.feed.note_keystroke(id) {
-            let where_answered = if self.remote.input_claimed(id) { "from this phone" } else { "in the terminal" };
-            self.remote_activity(id, "answered", Some(where_answered));
+            self.remote_activity(id, "answered", Some(origin));
             self.remote_emit(id, Change::Session(id));
         }
     }

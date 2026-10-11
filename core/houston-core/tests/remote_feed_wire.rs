@@ -854,6 +854,7 @@ async fn activity_pages_cross_sessions_and_identify_phone_and_terminal_answers()
     assert!(request(addr, "GET", &format!("/api/activity?after={last}"), Some(&token), None).await.json()["entries"].as_array().unwrap().is_empty());
     assert_eq!(request(addr, "GET", "/api/activity", None, None).await.status, 401);
     daemon.remote_configure(ConfigPatch { enabled: Some(false), ..Default::default() }).unwrap();
+    listening(&daemon, false).await;
     let addr = enable(&daemon).await;
     let cleared = request(addr, "GET", "/api/activity", Some(&token), None).await.json();
     assert_ne!(cleared["epoch"], page["epoch"]);
