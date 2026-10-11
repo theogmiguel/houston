@@ -91,7 +91,7 @@ function hasChildren(session: SessionInfo | undefined, sessions: ReadonlyMap<num
 
 function gridCheckAgents(sessions: ReadonlyMap<number, SessionInfo>, workspace: string): CheckAgentTarget[] {
   const providers: Partial<Record<SessionInfo['agent'], string>> = {
-    claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity', opencode: 'OpenCode', cursor: 'Cursor', grok: 'Grok'
+    claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity', opencode: 'OpenCode', cursor: 'Cursor', grok: 'Grok', zcode: 'ZCode'
   }
   return [...sessions.values()].flatMap((session) => {
     if (session.project_dir !== workspace && session.checkout_root !== workspace && session.worktree?.repo_common_dir !== workspace) return []

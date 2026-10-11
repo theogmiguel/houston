@@ -110,6 +110,9 @@ pub struct HookDrop {
     // digest rule above, read only by the in-memory feed.
     #[serde(default)]
     pub feed: Option<crate::remote::feed::HookFeed>,
+    // ZCode's PostToolUseFailure.is_interrupt: the operator aborted the turn mid-tool.
+    #[serde(default)]
+    pub interrupted: bool,
 }
 
 impl Default for HookDrop {
@@ -146,6 +149,7 @@ impl Default for HookDrop {
             permission_block_reason: None,
             resume_evidence: None,
             feed: None,
+            interrupted: false,
         }
     }
 }

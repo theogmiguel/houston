@@ -127,6 +127,40 @@ async fn undo_restores_a_drifted_copy_that_push_overwrote() {
 }
 
 #[tokio::test]
+async fn zcode_gets_its_copy_in_its_own_skills_directory_and_undo_takes_it_back() {
+    let _guard = SERIAL.lock().await;
+    let home = set_test_home();
+    let (_addr, _state, daemon) = start_daemon_with_handle().await;
+
+    write_skill(home.path(), ".claude", "triage", "canonical body\n");
+    let (tools, _, _) = skill_sync(daemon.skill_sync_state());
+    let zcode = tools
+        .iter()
+        .find(|c| c.tool == proto::AgentKind::Zcode)
+        .expect("a ZCode column");
+    assert!(
+        !zcode.inherits_claude,
+        "ZCode does not read ~/.claude/skills"
+    );
+    assert!(
+        !zcode.skills.iter().any(|s| s.name == "triage"),
+        "{zcode:?}"
+    );
+
+    let (_, pushes, _) =
+        skill_sync(daemon.skill_push(Some(proto::AgentKind::Zcode), Some("triage".to_string())));
+    assert!(
+        pushes.iter().any(|p| p.tool == proto::AgentKind::Zcode),
+        "{pushes:?}"
+    );
+    let copy = home.path().join(".zcode/skills/triage/SKILL.md");
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), "canonical body\n");
+
+    skill_sync(daemon.skill_push_undo(proto::AgentKind::Zcode, "triage".to_string()));
+    assert!(!home.path().join(".zcode/skills/triage").exists());
+}
+
+#[tokio::test]
 async fn undo_of_a_tr_created_file_removes_it() {
     let _guard = SERIAL.lock().await;
     let home = set_test_home();

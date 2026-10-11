@@ -5,15 +5,17 @@ import type { HarnessFindingState } from '../../houston/generated/HarnessFinding
 import type { HarnessModelOption } from '../../houston/generated/HarnessModelOption'
 import type { Routine } from '../../houston/generated/Routine'
 import type { HarnessAttention } from '../../houston/generated/HarnessAttention'
+import type { RoutineEngineRefusal } from '../../houston/generated/RoutineEngineRefusal'
+import type { ChatPermissionMode } from '../../houston/generated/ChatPermissionMode'
 import type { HarnessReport, HarnessReportError, HarnessState } from '../../houston/useHarness'
 import { Select } from '../ui/Select'
 import { BarSparkline, Button, Caption, Card, Field, NavSurfaceFrame, Notice, PageFrame, PageHeader, Segmented, TextInput } from '../ui'
 import { BulletList, FieldGrid, SectionTitle } from '../ui/navText'
 import { engineLabel } from '../engineLabel'
+import { routineEngineOptions } from './routineEngines'
 import { HarnessFindings } from './HarnessFindings'
 import { HarnessReviewHistory } from './HarnessReviewHistory'
 import {
-  HARNESS_ENGINES,
   SCHEDULE_OPTIONS,
   scheduleFields,
   type HarnessSchedule
@@ -127,7 +129,7 @@ function HarnessWorkspaceContent({
   }
   if (!state) return <p role="status" aria-busy="true">Reading this workspace&apos;s reviews…</p>
   if (!state.routine) {
-    return <FirstRun models={state.models} onStart={(value) => { pendingRun.current = workspace; props.onCreateRoutine(value) }} />
+    return <FirstRun models={state.models} engineRefusals={state.engineRefusals} onStart={(value) => { pendingRun.current = workspace; props.onCreateRoutine(value) }} />
   }
   const published = state.reviews.filter((review) => review.status === 'published')
   const trend = props.trendValues ?? published.slice(0, 4).reverse().map((review) =>
@@ -138,13 +140,18 @@ function HarnessWorkspaceContent({
 }
 
 const FIRST_RUN_FORM_ID = 'harness-first-run-form'
+/** The daemon's review preset starts with accept edits. */
+const REVIEW_ACCESS: ChatPermissionMode = 'accept_edits'
+const REVIEW_ACCESS_REMEDY = 'A review starts with accept edits: start it with another provider, then change its access in Routines.'
 
 function FirstRun({
   onStart,
-  models
+  models,
+  engineRefusals
 }: {
   onStart: (setup: HarnessSetupValue) => void
   models: HarnessModelOption[]
+  engineRefusals: readonly RoutineEngineRefusal[]
 }): React.JSX.Element {
   return (
     <div className="grid gap-[var(--space-3)]" data-testid="harness-first-run">
@@ -156,7 +163,7 @@ function FirstRun({
             rules, skills and settings, and lists what to change. It never edits them.
           </Caption>
         </div>
-        <SetupFields models={models} onSubmit={onStart} />
+        <SetupFields models={models} engineRefusals={engineRefusals} onSubmit={onStart} />
       </Card>
       <WhatARunSends />
     </div>
@@ -187,9 +194,11 @@ function WhatARunSends(): React.JSX.Element {
 
 function SetupFields({
   models,
+  engineRefusals,
   onSubmit
 }: {
   models: HarnessModelOption[]
+  engineRefusals: readonly RoutineEngineRefusal[]
   onSubmit: (value: HarnessSetupValue) => void
 }): React.JSX.Element {
   const [engine, setEngine] = useState<AgentKind>('claude')
@@ -216,7 +225,7 @@ function SetupFields({
             data-testid="harness-provider"
             className="w-full"
             value={engine}
-            options={HARNESS_ENGINES.map((k) => ({ value: k, label: engineLabel(k) }))}
+            options={routineEngineOptions(engineRefusals, REVIEW_ACCESS, REVIEW_ACCESS_REMEDY)}
             onChange={(v) => {
               setEngine(v as AgentKind)
               setModel('')

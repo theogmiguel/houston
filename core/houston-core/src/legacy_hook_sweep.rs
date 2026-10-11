@@ -47,6 +47,8 @@ fn sweep_with(db: &crate::db::Db, cfg: &crate::agent_hooks::ConfigHome) {
                     delete_if_legacy(&p);
                 }
             }
+            // ZCode's entries have only ever lived in config.json, under one name.
+            proto::AgentKind::Zcode => {}
             other => tracing::warn!(
                 "legacy hook sweep: {other:?} has an installer but no sweep rule — \
                  residue from a superseded name would outlive every boot there"

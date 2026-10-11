@@ -14,14 +14,19 @@ instructions, then choose:
 - whether every run gets an isolated worktree.
 
 Reasoning effort appears only when the selected provider exposes it for an individual run.
-An unsupported provider or access combination is refused with the setting that needs to
-change.
+A provider that the selected access does not support is listed as unavailable, with the
+reason and the access it needs. Any other unsupported combination is refused with the setting
+that needs to change.
 
 ## Access and isolation
 
-**Accept edits** uses the provider's bounded unattended mode. **Full access** never asks for
-approval and is therefore available only with isolation enabled in a Git working directory.
-The isolated worktree keeps that run away from the tree you are editing.
+**Accept edits** uses the provider's bounded unattended mode. OpenCode and ZCode have none:
+ZCode's edit mode stops at every shell command for an approval nobody gives, so both run
+only with full access, and they are unavailable in the provider list until you choose it.
+While one of them is selected, **Accept edits** is unavailable and isolation cannot be turned
+off. **Full access** never asks for approval and is therefore available
+only with isolation enabled in a Git working directory. The isolated worktree keeps that
+run away from the tree you are editing.
 
 ## Running and reviewing
 

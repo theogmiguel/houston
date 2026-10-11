@@ -66,8 +66,10 @@ fn local_write(name: &str, title: &str, description: &str, schema: Value) -> Too
     }
 }
 
+// One value type: GLM writes a string unquoted under an integer-or-string union, so
+// ZCode cannot parse the call and drops `id`. The daemon still accepts an integer.
 fn id_property() -> Value {
-    json!({ "type": ["integer", "string"], "description": "Task id or key (HOU-42)" })
+    json!({ "type": "string", "description": "Task key (\"HOU-42\") or id (\"7\")" })
 }
 
 fn id_schema() -> Value {
@@ -371,15 +373,16 @@ fn plan_submit_spec() -> ToolSpec {
     )
 }
 
-/// The providers a task child or reviewer can be launched as; the same six
+/// The providers a task child or reviewer can be launched as; the same seven
 /// `pane_spawn` accepts.
-const SPAWNABLE_AGENTS: [&str; 6] = [
+const SPAWNABLE_AGENTS: [&str; 7] = [
     "claude",
     "codex",
     "antigravity",
     "opencode",
     "cursor",
     "grok",
+    "zcode",
 ];
 
 fn read_specs() -> Vec<ToolSpec> {
@@ -578,7 +581,7 @@ fn dispatch(
         "task_domain_get" => {
             require_domain_access(daemon, workspace, false)?;
             let id = task_ref(daemon, workspace, args, name)?;
-            let proto::ServerMsg::TaskDomainState { domain } =
+            let proto::ServerMsg::TaskDomainState { domain, .. } =
                 succeed(daemon.task_domain_state(id)?)?
             else {
                 unreachable!()

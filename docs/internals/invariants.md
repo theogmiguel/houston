@@ -152,13 +152,22 @@ Seven recorded carve-outs stand. Further exceptions need the same recorded treat
 ### App-initiated config writes use reversible managed markers
 
 Hook entries in `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.cursor/hooks.json`,
-`~/.grok/hooks/…` and the OpenCode plugin carry `--houston-managed[=<channel>]`
-matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
+`~/.grok/hooks/…`, ZCode's settings file and the OpenCode plugin carry
+`--houston-managed[=<channel>]` matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
 matching would let one channel evict the other. Claude preserves unrelated settings and hook
 commands, including user commands within a managed group. Its former `workspace_hooks`
 ownership records identify workspace files to migrate to global installation.
 Codex's `notify` is a single key, so a second channel parks the displaced line as a
-sentinel-carrying comment rather than clobbering it. User-initiated writes into a CLI's
+sentinel-carrying comment rather than clobbering it. ZCode builds read different files
+(`setting.json` in the community package, `config.json` upstream); Houston keeps each one
+present in step. Its `hooks.enabled` is a single switch shared by every hook in the file:
+the value Houston replaced is parked in a top-level `houstonParkedHooksEnabled` key and
+restored once no channel's sentinel remains. Its `plugins.dirs` entry is a path inside the
+channel's own state dir. Every channel edits the same file, so an edit holds
+`config.json.houston-lock` beside it and replaces the file only if its bytes are still
+the ones read; removal drops Houston's command entries, never a user command sharing
+their group.
+User-initiated writes into a CLI's
 skill directories (`writeSkill`, skill push with backup) are fine. The `houston` launcher
 that `wsl-ensure` writes at `~/.local/bin/houston` in a distro carries `# houston-wsl-managed`
 on its second line; a file without it is never rewritten or removed.
@@ -200,7 +209,7 @@ queries retain their existing renderer/daemon ownership. No configuration is wri
 and no external service receives report content. Support replies use the session's
 existing terminal connection, including SSH for remote sessions.
 
-Three inference exceptions are named below; further exceptions must be recorded here.
+Four inference exceptions are named below; further exceptions must be recorded here.
 Session activity previews are separate display metadata delivered from provider hooks;
 they are never inferred from terminal text.
 
@@ -260,6 +269,19 @@ they are never inferred from terminal text.
    read of #2 it shares with the reported path —
    the tail IS the payload of a no-handback notice, and it is labelled as the child's
    screen in the subject line and again in the body.
+4. **First-prompt paste timing.** A CLI that takes no prompt in argv (ZCode) gets its
+   first prompt pasted once its composer reports focus through the terminal modes it
+   sets: bracketed paste enabled, then the cursor shown (`composer_ready.rs`,
+   `Daemon::first_prompt_deliver`, deadline `FIRST_PROMPT_DEADLINE`). Output alone is no
+   signal: ConPTY draws before the CLI has started, and ZCode starts its TUI seconds
+   before it focuses the input box, dropping keys that arrive in between. The scanner
+   reads DEC private mode sequences, never text, and the VT binding exposes no modes. It
+   exists only for a pane with a pasted first prompt pending and stops reading output
+   once that delivery ends. It decides only when input is written — never an `AgentStatus`, and never whether the
+   prompt arrived: that is the CLI's own `UserPromptSubmit` hook, because ZCode fires
+   SessionStart only inside its first turn. Unconfirmed, the paste is followed by one more
+   Enter and never repeated, because a composer that kept the first paste would submit it
+   twice.
 
 **One turn end per provider.** A provider's `agent_events.rs` table carries at most one
 `AgentEvent::TurnEnded` row, and that row is the CLI's loop-termination event — never a

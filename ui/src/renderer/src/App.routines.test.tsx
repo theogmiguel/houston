@@ -83,7 +83,7 @@ describe('App — Routines wiring', () => {
     const { container } = harness
     const { act } = await import('react')
     await openRoutines(container)
-    act(() => deliverControl({ type: 'routines', running: [], routines: [routine()] }))
+    act(() => deliverControl({ type: 'routines', running: [], routines: [routine()], engine_refusals: [] }))
     await waitFor(() => container.querySelector('[data-testid="routine-run-now"]') !== null)
     expect(container.textContent).toContain('Inbox triage')
     expect(container.querySelector('[data-testid="routine-create"]')).toBeTruthy()
@@ -95,7 +95,7 @@ describe('App — Routines wiring', () => {
     const { container } = harness
     const { act } = await import('react')
     await openRoutines(container)
-    act(() => deliverControl({ type: 'routines', running: [1], routines: [routine()] }))
+    act(() => deliverControl({ type: 'routines', running: [1], routines: [routine()], engine_refusals: [] }))
     await waitFor(() => container.textContent?.includes('Working') ?? false)
     expect(container.textContent).toContain('Working')
   })
@@ -105,7 +105,7 @@ describe('App — Routines wiring', () => {
     const { container } = harness
     const { act } = await import('react')
     await openRoutines(container)
-    act(() => deliverControl({ type: 'routines', running: [], routines: [routine()] }))
+    act(() => deliverControl({ type: 'routines', running: [], routines: [routine()], engine_refusals: [] }))
     await waitFor(() => container.textContent?.includes('Loading runs…') ?? false)
     expect(currentClient().routineRuns).toHaveBeenCalledWith(1)
     act(() => deliverControl({ type: 'routine_runs', runs: [run()] }))
@@ -118,7 +118,7 @@ describe('App — Routines wiring', () => {
     const { container } = harness
     const { act } = await import('react')
     await openRoutines(container)
-    act(() => deliverControl({ type: 'routines', running: [], routines: [routine()] }))
+    act(() => deliverControl({ type: 'routines', running: [], routines: [routine()], engine_refusals: [] }))
     await waitFor(() => container.textContent?.includes('Loading runs…') ?? false)
     act(() => deliverControl({ type: 'routine_runs', runs: [] }))
     await waitFor(() => container.textContent?.includes('No runs yet') ?? false)

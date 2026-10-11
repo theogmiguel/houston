@@ -6,7 +6,7 @@ import { ICON_ROLE_CLS } from './Icon'
 
 const AGENT_NAMES: Record<string, string> = {
   claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor', antigravity: 'Antigravity',
-  opencode: 'OpenCode', grok: 'Grok', shell: 'Terminal'
+  opencode: 'OpenCode', grok: 'Grok', zcode: 'ZCode', shell: 'Terminal'
 }
 
 function slotGeometry(rect: { x: number; y: number; w: number; h: number }): React.CSSProperties {

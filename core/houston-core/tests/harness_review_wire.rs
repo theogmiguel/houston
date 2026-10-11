@@ -236,6 +236,76 @@ fn reopening_the_daemon_fails_interrupted_harness_reviews_and_keeps_published_on
     assert!(published.error.is_none());
 }
 
+/// A review reads Claude and Codex transcripts only; every other provider's pane in
+/// its window is counted as unread, so the view never claims it read everything.
+#[tokio::test]
+async fn sessions_a_review_could_not_read_are_counted_per_provider() {
+    let (_addr, state_dir, daemon) = start_daemon_with_handle().await;
+    let ws = workspace(state_dir.path());
+    for agent in [
+        proto::AgentKind::Zcode,
+        proto::AgentKind::Zcode,
+        proto::AgentKind::Opencode,
+        proto::AgentKind::Claude,
+    ] {
+        daemon
+            .create_session(CreateParams {
+                agent,
+                project_dir: ws.clone(),
+                cmd: Some(sleeper()),
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+                model: None,
+                effort: None,
+            })
+            .unwrap();
+    }
+    let db = houston_core::db::Db::open(&state_dir.path().join("test.db")).unwrap();
+    let review = db
+        .create_harness_review(&ws.display().to_string(), 1, 201, "/tmp/harness/r201", 1)
+        .unwrap();
+    db.publish_harness_review(
+        review,
+        &houston_core::db::HarnessPublication {
+            window: Some(("2020-01-01", "2099-12-31")),
+            sessions: Some(1),
+            prompts: None,
+            cost_usd: None,
+            summary: "read the Claude session",
+            findings: &[],
+            verifications: &[],
+        },
+        2,
+    )
+    .unwrap();
+
+    let proto::ServerMsg::HarnessState {
+        provider_coverage, ..
+    } = daemon.harness_state(&ws.display().to_string()).unwrap()
+    else {
+        panic!("harness_state answers HarnessState");
+    };
+    assert_eq!(
+        provider_coverage,
+        vec![
+            proto::HarnessProviderCoverage {
+                agent: proto::AgentKind::Opencode,
+                sessions: 1,
+            },
+            proto::HarnessProviderCoverage {
+                agent: proto::AgentKind::Zcode,
+                sessions: 2,
+            },
+        ]
+    );
+}
+
 fn plain_pane(daemon: &Arc<Daemon>, ws: &Path) -> u32 {
     daemon
         .create_session(CreateParams {

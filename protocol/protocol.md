@@ -1,4 +1,4 @@
-# Wire protocol v135
+# Wire protocol v136
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -310,7 +310,7 @@ every refusal names the setting.
 | `task_project_archive` | `id`, `archived`, `expected_revision` | `task_project_changed` |
 | `task_domain_get` | `id` | `task_domain_state`, with Delivery/Slice assignment, progress, blockers, Plan and readiness reasons |
 | `task_domain_save` | `id`, `expected_revision`, `kind?`, `project_id?`, `blocked_by?` | `task_changed`; refuses dependency cycles or incompatible Project/Delivery assignments |
-| `task_plan_start` | `id`, `expected_revision`, `agent` | `task_plan_started`; reserves a task-scoped read-only planning capability before launching the provider; creates no worktree |
+| `task_plan_start` | `id`, `expected_revision`, `agent` | `task_plan_started`; reserves a task-scoped read-only planning capability before launching the provider; creates no worktree. A provider with no enforced read-only launch (ZCode) gets `task_refused` |
 | `task_plan_answer` | `id`, `expected_revision`, `question`, `answer` | `task_plan_changed` |
 | `task_plan_approve` | `id`, `expected_revision`, `plan_revision` | `task_plan_changed` and `task_changed`; applies the proposal only after every question has an answer and the task, plan and captured Project revisions match |
 | `task_tracker_settings_get` | `workspace` | `task_tracker_settings` |
@@ -487,11 +487,11 @@ every refusal names the setting.
 | `mcp_state` | `source: McpServer[]`, `source_path`, `tools: McpToolState[]`, `results: McpSyncResult[]`, `checks: [string, McpConnectionCheck][]` | direct reply to `mcp_state`; bcast after sync/import/enable/upsert/remove/test |
 | `agent_hooks` | `providers: AgentHookState[]` | direct reply to `agent_hooks`; bcast after `agent_hooks_set` |
 | `agent_profile_state` | `profiles: AgentProfile[]`, `active: AgentProfileActive[]` | direct reply to `agent_profile_list`; bcast after any profile change |
-| `routines` | `routines: Routine[]`, `running: u32[]` (routine ids whose run is in flight) | direct reply to `routine_list`; bcast after any routine mutation and on every run start/end |
+| `routines` | `routines: Routine[]`, `running: u32[]` (routine ids whose run is in flight), `engine_refusals: RoutineEngineRefusal[]` | direct reply to `routine_list`; bcast after any routine mutation and on every run start/end |
 | `routine_refused` | `id?` (`null` for a refused create), `kind: RoutineErrorKind`, `limit?`, `requested?` | direct reply only; nothing changed |
 | `routine_runs` | `runs: RoutineRun[]` | direct reply to `routine_runs` |
 | `routine_run_event` | `run: RoutineRun` | bcast — one run changed state: opened, refused before it spawned, or ended with an outcome |
-| `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability), `provider_coverage: HarnessProviderCoverage[]` | direct reply to `harness_state` |
+| `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability), `provider_coverage: HarnessProviderCoverage[]`, `engine_refusals: RoutineEngineRefusal[]` | direct reply to `harness_state` |
 | `harness_overview` | `rows: HarnessAttention[]` | direct reply to `harness_overview_get` |
 | `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
 | `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, a finding decision or task link changed, or the seen cursor advanced; clients refresh Harness state and overview |
@@ -499,7 +499,7 @@ every refusal names the setting.
 | `task_projects_state` | `workspace`, `projects: TaskProject[]` | reply to `task_projects_list` |
 | `task_project_state` | `project?: TaskProject` | reply to `task_project_get` |
 | `task_project_changed` | `workspace`, `id`, `revision` | Project mutation; refresh the Project list and details |
-| `task_domain_state` | `domain: TaskDomain` | reply to `task_domain_get` |
+| `task_domain_state` | `domain: TaskDomain`, `planning_refusals: PlanningRefusal[]` (each provider `task_plan_start` refuses, with the reason) | reply to `task_domain_get` |
 | `task_plan_started` | `id`, `session_id`, `revision` | a read-only planning pane was reserved and launched |
 | `task_plan_changed` | `id`, `revision` | proposal submission, answer or approval; refresh task/domain details |
 | `task_tracker_settings` | `settings: TaskTrackerWorkspaceSettings[]`, `refusal?` | current per-workspace connector settings; contains credential presence, never its value |
@@ -534,7 +534,7 @@ Enum values are `snake_case` on the wire unless marked otherwise. Enums with
 data are internally tagged; the tag field is named in each entry below.
 
 ```
-AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | droid | copilot | aider | ssh
+AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | zcode | droid | copilot | aider | ssh
 SessionState       running | exited | killed | interrupted
 AgentStatus        kebab: spawning | working | idle | needs-input | unavailable
 ContextState       snake: unknown | idle | working | near_limit | reset
@@ -733,6 +733,9 @@ RoutineOutcome     ok | denied | killed_at_cap | engine_refused | failed
 Cadence            tag "type": interval{seconds >= ROUTINE_MIN_INTERVAL_SECS} | clock{hour, minute, weekdays?}
                    — weekdays absent = daily; 1 = Sunday … 7 = Saturday; an empty list is refused
 RoutineErrorKind   conflict | duplicate_name | limit | not_found | already_running
+RoutineEngineRefusal engine: AgentKind, permission_mode: ChatPermissionMode, reason
+                   (a pair `routine_create`/`routine_update` refuse whatever the model;
+                   pickers show the engine disabled with `reason`)
 HarnessReview      id, workspace, routine_id, run_id, session_id?, status: HarnessReviewStatus,
                    started_at_ms, ended_at_ms?, run_dir (`<dir>/.houston/harness/r<run_id>`),
                    window?: [since, until], sessions?, prompts?, cost_usd?, finding_count,
@@ -1306,6 +1309,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 136 | **ZCode is a spawnable provider.** `AgentKind` gains `zcode`, accepted wherever a spawnable kind is (`session_create`, `pane_spawn`, `task_start`, task start and review settings, routine engines, `agent_hooks_set`, hook rows). ZCode panes launch `zcode` with `--mode` for auto and bypass approval, resume by `--resume <session id>` from the SessionStart hook, receive their first prompt as a paste once ZCode's composer reports focus (bracketed paste enabled, then the cursor shown; pasted regardless after 60 s), confirmed by ZCode's UserPromptSubmit hook, and refuse a non-empty `model` naming the limit. Its hooks live in ZCode's settings file, which also lists the orchestration plugin kept in the channel's state dir. Routines refuse ZCode in accept-edits access by name, and `routines` and `harness_state` gain `engine_refusals: RoutineEngineRefusal[]`, the engine and access pairs routines refuse (OpenCode and ZCode with accept edits) with the reason, so pickers show them disabled. `task_plan_start` refuses ZCode, which has no read-only launch mode, and `task_domain_state` gains `planning_refusals: PlanningRefusal[]` so the planning control shows it disabled. `HarnessProviderCoverage` counts ZCode sessions. Outside `/ws`, the task tools' `id` and `pane_pr_watch`'s `pr` are advertised as strings (an integer is still accepted). |
 | 135 | **The daemon assembles dictated text.** `voice_transcript` gains `insert`, the text the renderer puts in the prompt; the agent preamble and its once-per-pane rule moved from the renderer to the daemon, so desktop and remote dictation share them. `RemoteInfo.dictation` and `remote_configure.dictation?` turn on dictation from paired devices (`POST /api/sessions/{id}/dictate`). The remote listener serves HTTPS itself with a local certificate authority when devices reach it directly on a private address: `RemoteInfo.tls`, `RemoteInfo.ca_fingerprint` and `remote_ca_regenerate`; `url` and allowed origins use `https://` then, and `public_url` must be an https origin the authority can certify. A loopback bind (the Tailscale route) is unchanged |
 | 134 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`, and `remote_grids_publish` with `RemoteGrid`, so paired devices group panes by desktop grid. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |
 | 133 | **Children ask the orchestrator before alerting the user, retain instruction queues and expose full results after close.** `InboxKind` gains progress/question/blocked/reply and `InboxRow.reply_to?`. `DelegationState.asked_orchestrator` and `DelegationInfo.input_request?` type input ownership, stable identity, bounded redacted provider permission evidence and escalation reasons. Every actual permission is parent-first; parents deny or escalate and only the operator may approve; only user-owned asks count in `children_waiting`. MCP/CLI gain report, reply, deny, escalate and instruction list/get/cancel/resume. Typed instruction snapshots, acceptance and detail record queued/held/delivered/cancelled/uncertain states. Result previews gain stable message/request identity and readiness; result pagination and scoped full-result detail/refusal support archived children. All new `/ws` messages and payloads are defined above. |

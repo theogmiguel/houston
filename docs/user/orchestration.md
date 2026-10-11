@@ -73,7 +73,7 @@ Routine status checks and terminal reads are unnecessary; reserve them for a rep
 blocker, a timeout, or an explicit request to inspect the child.
 
 Waits are capped by the parent provider: Claude uses 90 seconds; Cursor and Antigravity
-use 30 seconds; Codex and Houston-configured OpenCode use ten minutes. Grok uses up to
+use 30 seconds; Codex, Houston-configured OpenCode and ZCode use ten minutes. Grok uses up to
 ten minutes, shortened by its effective per-tool timeout. Requests above the cap are
 clamped and the response names the requested value and cap. A timeout asks the parent
 to wait again. Starting another wait replaces the previous one;
@@ -199,7 +199,7 @@ and artifacts, then promptly close the child with `pane_kill` or `hs-pane kill`;
 accumulate completed panes. Keep a reusable child only when you intentionally plan more
 assigned work. Do not close a child that is still working, or confirm closing live
 descendants unless their work is also complete and preserved. Closing a settled child or
-its parent removes it; retention expires after 24 hours by default. Claude and Codex conversations can be
+its parent removes it; retention expires after 24 hours by default. Claude, Codex and ZCode conversations can be
 continued when a valid resume handle is available. Other providers cannot continue an
 ended conversation. A reusable child remains available for follow-up prompts until close
 or retention expiry.
@@ -209,9 +209,10 @@ output when no further task is planned. A reusable flag alone is not a reason to
 keep a completed pane. Questions, blockers, progress and provisional or late results
 do not carry this cleanup instruction because they do not establish completion.
 
-After a daemon restart, open Claude and Codex children resume with their parent when
-valid conversation handles are available. A Claude or Codex conversation detected inside
-a shell pane resumes inside that shell, which remains a shell pane. Houston restores its
+After a daemon restart, open Claude, Codex and ZCode children resume with their parent when
+valid conversation handles are available. A Claude, Codex or ZCode conversation detected
+inside a POSIX shell pane resumes inside that shell, which remains a shell pane; a Windows
+shell pane cannot relaunch it. Houston restores its
 children only after the parent's exact conversation resumes; otherwise the children stay
 deferred until the parent can resume. The parent receives one restored notice naming which
 children resumed. Other children remain ended and are named in that notice.
@@ -223,8 +224,17 @@ on the new generation. Pending results remain available for that wait.
 Claude and Grok children receive launch-only permission rules for exactly Houston's
 `pane_submit`, `pane_report`, `pane_reply`, `pane_deny`, `pane_escalate` and `pane_wait` tools, including when
 automatic approval is disabled. Other tools keep the selected approval mode.
-Codex, Antigravity, OpenCode and Cursor have no equivalent launch rule; their
-selected approval mode still applies to these tools.
+Codex, Antigravity, OpenCode, Cursor and ZCode have no equivalent launch rule; their
+selected approval mode still applies to these tools. Outside yolo mode ZCode asks for
+approval before every Houston tool call, so a ZCode parent also asks before each
+`pane_spawn` and `pane_wait`.
+
+A ZCode child whose turn fails — an API error, an exhausted Coding Plan quota, a network
+failure — or is interrupted reports no turn end: its parent's wait times out instead of
+returning, and the child shows Working until it is prompted again. A ZCode child's brief
+is pasted into its interface; if ZCode does not report it as submitted, the parent gets a
+`prompt_failed` note and can resend it with `pane_prompt`.
+Inspect it with `pane_read` when a wait on a ZCode child keeps timing out.
 
 ## Handing work off to a new pane
 
@@ -276,7 +286,7 @@ parent transcript; temporary review panes clean up after their final handback.
 Steer writes into the PTY immediately, including during a working turn; the CLI
 controls how it uses that input. Restart interrupts a working turn and delivers
 the prompt after the child reports idle. It supports Codex with its default Escape
-binding and Grok with Ctrl+C. Claude, OpenCode, Cursor and Antigravity are refused
+binding and Grok with Ctrl+C. Claude, OpenCode, Cursor, Antigravity and ZCode are refused
 by name because a reliable interrupt-to-idle path is not verified. Keep the
 supported provider's default interrupt binding.
 
@@ -365,7 +375,7 @@ its saved transcript read-only, with when it ended and how long it is kept. Cont
 Close sit under the transcript. A live resumed child stays in Working or Needs you even
 if its previous delegation was marked unknown. Close settled counts only ended children
 and offers five seconds to Undo; a child that resumes during that interval is preserved.
-Continue resumes a retained Claude or Codex conversation with its earlier transcript.
+Continue resumes a retained Claude, Codex or ZCode conversation with its earlier transcript.
 Set **Settled retention** in Settings ▸ Orchestration to change the default 24-hour horizon.
 
 When a parent ends, pending messages go to its nearest running ancestor. If none remains, they appear under **Addressed to you** in the overview.

@@ -88,7 +88,7 @@ function fixtureClient(): HoustonClient {
     },
     send: (message: ClientMsg) => {
       if (message.type === 'task_projects_list') emit('task_projects_state', { type: 'task_projects_state', workspace: message.workspace, projects: PROJECTS })
-      if (message.type === 'task_domain_get') emit('task_domain_state', { type: 'task_domain_state', domain: domain(message.id) })
+      if (message.type === 'task_domain_get') emit('task_domain_state', { type: 'task_domain_state', domain: domain(message.id), planning_refusals: [] })
     },
     subscribe: (kind: string, handler: (msg: ServerMsg) => void) => {
       const set = handlers.get(kind) ?? new Set()

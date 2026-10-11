@@ -93,7 +93,7 @@ describe('HarnessView', () => {
       routine: null,
       reviews: [],
       findings: [],
-      provider_coverage: []
+      provider_coverage: [], engine_refusals: []
     })
     expect(container.querySelector('[data-testid="harness-first-run"]')).not.toBeNull()
     act(() =>
@@ -115,7 +115,7 @@ describe('HarnessView', () => {
     render(asClient)
     emit({
       type: 'harness_state', workspace: WS, routine: null, reviews: [], findings: [],
-      models: [{ provider: 'codex', id: 'gpt-catalog-model' }], provider_coverage: []
+      models: [{ provider: 'codex', id: 'gpt-catalog-model' }], provider_coverage: [], engine_refusals: []
     })
     pickOption(container, 'harness-provider', 'codex')
     pickOption(container, 'harness-model', 'gpt-catalog-model')
@@ -167,7 +167,7 @@ describe('HarnessView', () => {
           last_seen_review_id: 1
         }
       ],
-      provider_coverage: []
+      provider_coverage: [], engine_refusals: []
     })
     act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Dismiss')!.click())
     expect(client.harnessDecide).toHaveBeenCalledWith(WS, 'denied-push', 'dismissed')
@@ -192,7 +192,7 @@ describe('HarnessView', () => {
       findings: [{
         review_id: 1, key: 'HOU-12', title: 'Repeated mistake', category: '', confidence: '', sessions: [], count: 2, quotes: [], recommendation_kind: '', target: '', recommendation: '', apply_prompt: 'Fix this safely.', state: 'open', recurred: false, phase: 'open', last_seen_review_id: 1
       }],
-      provider_coverage: []
+      provider_coverage: [], engine_refusals: []
     })
     act(() => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Create task')!.click())
     expect(client.harnessFixTask).toHaveBeenCalledWith(WS, 'HOU-12', 'claude', 'Fix this safely.')
@@ -202,7 +202,7 @@ describe('HarnessView', () => {
     const { client, emit, asClient } = fakeClient()
     render(asClient)
     emit({
-      type: 'harness_state', workspace: WS, routine: null, reviews: [{ id: 2, workspace: WS, routine_id: 1, run_id: 2, status: 'published', started_at_ms: 1, run_dir: WS, finding_count: 1, sessions: 3 }], findings: [], models: [], provider_coverage: []
+      type: 'harness_state', workspace: WS, routine: null, reviews: [{ id: 2, workspace: WS, routine_id: 1, run_id: 2, status: 'published', started_at_ms: 1, run_dir: WS, finding_count: 1, sessions: 3 }], findings: [], models: [], provider_coverage: [], engine_refusals: []
     })
     act(() => root.render(
       <HarnessView client={asClient} workspaces={[{ id: WS, name: 'proj' }]} selectedWorkspace={WS} routinesRunning={[]} attentionRows={[{

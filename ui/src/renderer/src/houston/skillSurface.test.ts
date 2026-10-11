@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Skill } from '../env'
 import type { SkillToolState } from './generated/SkillToolState'
-import { canUseSkillInFocusedPane, skillCliRelations, skillRelationLines, skillScopeLabel, skillUsageLine } from './skillSurface'
+import { canUseSkillInFocusedPane, focusedSkillAgent, paneSkillAgent, skillCliRelations, skillInvocationFor, skillRelationLines, skillRunBlocker, skillScopeLabel, skillUsageLine } from './skillSurface'
 import type { SessionInfo } from './generated/SessionInfo'
 
 const skill: Skill = {
@@ -51,7 +51,8 @@ describe('skill surface helpers', () => {
       tool('codex', { skills: [{ name: skill.name, path: '/codex/ui-tokens', digest: 'same' }] }),
       tool('opencode', { inherits_claude: true }),
       tool('cursor', { inherits_claude: true }),
-      tool('grok', { inherits_claude: true })
+      tool('grok', { inherits_claude: true }),
+      tool('zcode', { skills: [{ name: skill.name, path: '/zcode/ui-tokens', digest: 'old' }] })
     ])
 
     expect(rows.map(({ label, relation }) => [label, relation])).toEqual([
@@ -60,8 +61,10 @@ describe('skill surface helpers', () => {
       ['OpenCode', 'reads Claude Code’s copy'],
       ['Cursor', 'reads Claude Code’s copy'],
       ['Grok', 'reads Claude Code’s copy'],
+      ['ZCode', 'copy differs'],
       ['Antigravity', 'not managed here']
     ])
+    expect(skillCliRelations(skill, [tool('zcode')]).find((r) => r.tool === 'zcode')?.relation).toBe('no copy')
   })
 
   it('counts sessions from the last Harness digest and names missing reviews', () => {
@@ -94,5 +97,35 @@ describe('skillRelationLines', () => {
       'OpenCode, Cursor, Grok · reads Claude Code’s copy',
       'Antigravity · not managed here'
     ])
+  })
+})
+
+describe('skillInvocationFor', () => {
+  it('runs a skill in ZCode through /skill and leaves other agents on /<name>', () => {
+    expect(skillInvocationFor('zcode', '/ui-tokens')).toBe('/skill ui-tokens')
+    expect(skillInvocationFor('zcode', '/git:commit')).toBe('/skill git:commit')
+    expect(skillInvocationFor('claude', '/ui-tokens')).toBe('/ui-tokens')
+    expect(skillInvocationFor(null, '/ui-tokens')).toBe('/ui-tokens')
+  })
+
+  it('takes the agent from the CLI a shell pane runs, then the detected one, then the pane kind', () => {
+    const pane = { agent: 'zcode', state: 'running', project_dir: '/p' } as SessionInfo
+    expect(paneSkillAgent(pane)).toBe('zcode')
+    expect(paneSkillAgent({ ...pane, agent: 'shell', running_agent: 'zcode' })).toBe('zcode')
+    expect(paneSkillAgent({ ...pane, agent: 'shell', detected_agent: 'claude' })).toBe('claude')
+    expect(paneSkillAgent(undefined)).toBeNull()
+    expect(focusedSkillAgent(new Map([[1, pane]]), 1)).toBe('zcode')
+    expect(focusedSkillAgent(new Map([[1, pane]]), null)).toBeNull()
+  })
+})
+
+describe('skillRunBlocker', () => {
+  it('names why the focused pane cannot take a skill', () => {
+    const pane = { agent: 'zcode', state: 'running', project_dir: '/p' } as SessionInfo
+    const one = (p: SessionInfo): Map<number, SessionInfo> => new Map([[1, p]])
+    expect(skillRunBlocker(one(pane), 1, '/p', 'ready')).toBeNull()
+    expect(skillRunBlocker(one(pane), 1, '/other', 'ready')).toContain('another workspace')
+    expect(skillRunBlocker(one({ ...pane, agent: 'shell' }), 1, '/p', 'ready')).toContain('a shell')
+    expect(skillRunBlocker(one(pane), null, '/p', 'ready')).toBe('Focus a live agent pane to use this skill')
   })
 })

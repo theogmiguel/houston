@@ -104,7 +104,9 @@ async fn domain(ws: &mut WsStream, id: i64) -> proto::TaskDomain {
     send(ws, &proto::ClientMsg::TaskDomainGet { id }).await;
     loop {
         match common::next_control(ws).await {
-            proto::ServerMsg::TaskDomainState { domain } if domain.task_id == id => return domain,
+            proto::ServerMsg::TaskDomainState { domain, .. } if domain.task_id == id => {
+                return domain
+            }
             proto::ServerMsg::TaskRefused { message, .. } => {
                 panic!("task domain query refused: {message}")
             }
@@ -1213,7 +1215,7 @@ async fn reopening_daemon_settles_active_planning_state_and_preserves_retry() {
     assert!(reopened.has_task_planning_capability(old_session).unwrap());
     let state = reopened.task_domain_state(task_id).unwrap();
     assert!(
-        matches!(state, proto::ServerMsg::TaskDomainState { domain } if domain.planning_session_id.is_none())
+        matches!(state, proto::ServerMsg::TaskDomainState { domain, .. } if domain.planning_session_id.is_none())
     );
     let retry = reopened
         .task_plan_start(task_id, task.revision, proto::AgentKind::Claude)

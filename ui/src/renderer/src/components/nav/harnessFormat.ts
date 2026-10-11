@@ -1,13 +1,9 @@
-import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { Cadence } from '../../houston/generated/Cadence'
 import type { HarnessFinding } from '../../houston/generated/HarnessFinding'
 import type { HarnessFindingState } from '../../houston/generated/HarnessFindingState'
 import type { HarnessReviewStatus } from '../../houston/generated/HarnessReviewStatus'
 import type { Routine } from '../../houston/generated/Routine'
 import { formatCadence } from './routineFormat'
-
-/** The providers Houston can launch a review run with. */
-export const HARNESS_ENGINES: AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok']
 
 export type HarnessSchedule = 'off' | 'weekly' | 'daily' | 'custom'
 

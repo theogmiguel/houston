@@ -15,7 +15,7 @@ pub fn hook_events() -> Vec<&'static str> {
         .collect()
 }
 
-const SENTINEL: &str = "--houston-managed";
+pub(crate) const SENTINEL: &str = "--houston-managed";
 
 /// The sentinel is tagged per channel: untagged, a dev daemon and the installed
 /// one would evict each other's group on every boot. Matching is per
@@ -74,9 +74,17 @@ pub fn launcher_path(state_dir: &Path) -> PathBuf {
     launcher_dir(state_dir).join(LAUNCHER_NAME)
 }
 
+/// The launcher a CLI starts without a shell. Windows starts only a file with an
+/// extension, so `point_launcher` places this `.exe` copy beside the plain one there.
+pub fn executable_launcher(launcher: &Path) -> PathBuf {
+    if cfg!(windows) {
+        launcher.with_extension("exe")
+    } else {
+        launcher.to_path_buf()
+    }
+}
+
 pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
     let exe = crate::exe_path::agent_helper_exe(exe);
     let dir = launcher_dir(state_dir);
     let path = launcher_path(state_dir);
@@ -117,6 +125,16 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
         }
     }
     sweep_stale_tmp(&dir);
+    place_launcher(&dir, &exe, &path)?;
+    if cfg!(windows) {
+        place_launcher(&dir, &exe, &executable_launcher(&path))?;
+    }
+    Ok(path)
+}
+
+fn place_launcher(dir: &Path, exe: &Path, path: &Path) -> Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let tmp = dir.join(format!(
         "{LAUNCHER_NAME}.tr-tmp.{}.{}",
         std::process::id(),
@@ -124,7 +142,7 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
     ));
     let _ = std::fs::remove_file(&tmp);
     #[cfg(unix)]
-    std::os::unix::fs::symlink(&exe, &tmp).with_context(|| {
+    std::os::unix::fs::symlink(exe, &tmp).with_context(|| {
         format!(
             "linking {} -> {} (expected a writable directory)",
             tmp.display(),
@@ -133,11 +151,11 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
     })?;
     #[cfg(windows)]
     {
-        if std::fs::hard_link(&exe, &tmp)
+        if std::fs::hard_link(exe, &tmp)
             .with_context(|| format!("hard-linking {} -> {}", exe.display(), tmp.display()))
             .is_err()
         {
-            std::fs::copy(&exe, &tmp).with_context(|| {
+            std::fs::copy(exe, &tmp).with_context(|| {
                 format!(
                     "copying {} -> {} (hardlink failed - different volume?)",
                     exe.display(),
@@ -146,11 +164,11 @@ pub fn point_launcher(state_dir: &Path, exe: &Path) -> Result<PathBuf> {
             })?;
         }
     }
-    if let Err(e) = std::fs::rename(&tmp, &path) {
+    if let Err(e) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
         return Err(e).with_context(|| format!("renaming {} to {}", tmp.display(), path.display()));
     }
-    Ok(path)
+    Ok(())
 }
 
 fn sweep_stale_tmp(dir: &Path) {
@@ -498,20 +516,24 @@ pub fn run_hook_client(args: &[String]) {
         tool_input_fingerprint: payload.tool_input_fingerprint,
         permission_command: payload.permission_command,
         permission_block_reason: payload.permission_block_reason,
+        interrupted: payload.interrupted,
         request_id: payload.request_id,
-        resume_evidence: if matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
-            && matches!(
-                event.as_str(),
-                "SessionStart" | "UserPromptSubmit" | "Stop" | "notify"
-            ) {
+        resume_evidence: if matches!(
+            provider,
+            proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Zcode
+        ) && matches!(
+            event.as_str(),
+            "SessionStart" | "UserPromptSubmit" | "Stop" | "notify"
+        ) {
+            // ZCode has no profile directory; its evidence is the start source alone.
             let profile_dir = match provider {
-                proto::AgentKind::Claude => "CLAUDE_CONFIG_DIR",
-                proto::AgentKind::Codex => "CODEX_HOME",
-                _ => unreachable!(),
+                proto::AgentKind::Claude => Some("CLAUDE_CONFIG_DIR"),
+                proto::AgentKind::Codex => Some("CODEX_HOME"),
+                _ => None,
             };
             Some(crate::hook_drop::ResumeHookEvidence {
                 source: payload.source.clone(),
-                profile_dir: std::env::var_os(profile_dir).and_then(|value| {
+                profile_dir: profile_dir.and_then(std::env::var_os).and_then(|value| {
                     let value = match value.into_string() {
                         Ok(value) => value,
                         Err(_) => {
@@ -735,6 +757,7 @@ pub(crate) struct HookPayload {
     pub permission_command: Option<String>,
     pub permission_block_reason: Option<String>,
     pub transcript_path: Option<String>,
+    pub interrupted: bool,
 }
 
 const TASK_NOTIFICATION_TAG: &str = "<task-notification>";
@@ -939,11 +962,14 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
         tool_input_fingerprint,
         permission_command,
         permission_block_reason,
-        transcript_path: if provider == proto::AgentKind::Antigravity {
-            field("transcriptPath")
-        } else {
-            field("transcript_path")
+        // ZCode's transcript_path is a per-hook temporary file it deletes afterwards.
+        transcript_path: match provider {
+            proto::AgentKind::Antigravity => field("transcriptPath"),
+            proto::AgentKind::Zcode => None,
+            _ => field("transcript_path"),
         },
+        interrupted: provider == proto::AgentKind::Zcode
+            && field_bool("is_interrupt").unwrap_or(false),
         prompt: clean(prompt),
     }
 }
@@ -1585,6 +1611,25 @@ mod tests {
         assert_eq!(mode, 0o700, "launcher dir mode");
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_places_an_exe_launcher_a_cli_starts_without_a_shell() {
+        let state = tempfile::tempdir().unwrap();
+        let cmd = PathBuf::from(std::env::var("ComSpec").expect("ComSpec names cmd.exe"));
+        let launcher = point_launcher(state.path(), &cmd).unwrap();
+        let program = executable_launcher(&launcher);
+        assert_eq!(program, launcher_dir(state.path()).join("claude-hook.exe"));
+        assert!(
+            launcher.is_file(),
+            "the plain launcher stays for shell commands"
+        );
+        let out = std::process::Command::new(&program)
+            .args(["/C", "echo", "launched"])
+            .output()
+            .unwrap_or_else(|e| panic!("starting {}: {e}", program.display()));
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "launched");
+    }
+
     #[cfg(unix)]
     #[test]
     fn point_launcher_refuses_to_chmod_through_a_symlinked_bin_dir() {
@@ -1952,6 +1997,58 @@ mod tests {
         );
         assert_eq!(p.last_message, None);
         assert!(!p.stop_hook_active);
+    }
+
+    fn zcode_fixture(name: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/hooks/zcode")
+            .join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("reading the fixture {}: {e}", path.display()))
+    }
+
+    #[test]
+    fn zcode_payloads_keep_ids_and_drop_the_temporary_transcript() {
+        let z = proto::AgentKind::Zcode;
+        let start = parse_hook_payload(&zcode_fixture("zcode-3.14.3-src-01-SessionStart.json"), z);
+        assert_eq!(
+            start.session_id.as_deref(),
+            Some("sess_01J9ZCDEMO0000000000000000")
+        );
+        assert_eq!(
+            start.transcript_path, None,
+            "ZCode deletes it after the hook"
+        );
+        let stop = parse_hook_payload(&zcode_fixture("zcode-3.14.3-src-03-Stop.json"), z);
+        assert_eq!(
+            stop.last_message.as_deref(),
+            Some("Added the regression test; cargo test passes.")
+        );
+        let ask = parse_hook_payload(
+            &zcode_fixture("zcode-3.14.3-src-04-PreToolUse-AskUserQuestion.json"),
+            z,
+        );
+        assert_eq!(ask.tool_name.as_deref(), Some("AskUserQuestion"));
+        assert_eq!(ask.tool_use_id.as_deref(), Some("call_ask_01"));
+        let aborted = parse_hook_payload(
+            &zcode_fixture("zcode-3.14.3-src-08-PostToolUseFailure-interrupt.json"),
+            z,
+        );
+        assert!(aborted.interrupted);
+        assert_eq!(
+            aborted.error.as_deref(),
+            Some("Tool execution aborted by user")
+        );
+        let plain = parse_hook_payload(
+            &zcode_fixture("zcode-3.14.3-src-07-PostToolUse-Bash.json"),
+            z,
+        );
+        assert!(!plain.interrupted);
+        let claude = parse_hook_payload(
+            &zcode_fixture("zcode-3.14.3-src-08-PostToolUseFailure-interrupt.json"),
+            proto::AgentKind::Claude,
+        );
+        assert!(!claude.interrupted, "is_interrupt is read for ZCode only");
     }
 
     #[test]

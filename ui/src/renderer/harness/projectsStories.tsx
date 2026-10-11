@@ -99,7 +99,7 @@ function projectClient(includePlan: boolean, includeConflict: boolean, empty = f
       if (message.type === 'task_projects_list') emit({ type: 'task_projects_state', workspace: WORKSPACE, projects: empty ? [] : [PROJECT, { ...PROJECT, id: 10, name: 'Archived project', archived_at_ms: NOW - 1000 }] })
       if (message.type === 'task_domain_get' && message.id != null) {
         const row = message.id === 40 ? domain(40, 'delivery', 9) : message.id === 41 ? domain(41, 'slice', 9) : message.id === 42 ? domain(42, 'slice', 9, includePlan ? PLAN : null, includeConflict) : domain(44, 'delivery', null)
-        emit({ type: 'task_domain_state', domain: row })
+        emit({ type: 'task_domain_state', domain: row, planning_refusals: [] })
       }
       if (message.type === 'task_tracker_settings_get') emit({ type: 'task_tracker_settings', settings: [trackerSettings()], refusal: null })
       if (message.type === 'task_tracker_links_get' && message.task_id != null) emit({ type: 'task_tracker_links', task_id: message.task_id, links: [link(message.task_id, includeConflict && message.task_id === 42)] })
