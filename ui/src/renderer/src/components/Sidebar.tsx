@@ -1,4 +1,3 @@
-import { openConnectPhone } from '../connectPhone';
 import { MascotMount } from '../mascot/MascotMount'
 import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore';
 import type { TagInfo } from "../houston/generated/TagInfo";
@@ -2984,12 +2983,6 @@ export function Sidebar({
 
       <MascotMount existingUser={workspaces.length > 0} firstRun={mascotFirstRun} workspacesEmpty={mascotWorkspacesEmpty} />
       <NavigationRailFooter>
-        <Tooltip label="Connect phone">
-          <Button variant="subtle-icon" aria-label="Connect phone" onClick={openConnectPhone}>
-            <Icon glyph={IconPhone} role="ui" />
-          </Button>
-        </Tooltip>
-        {}
         <Tooltip label="Settings">
           <Button
             variant="subtle-icon"

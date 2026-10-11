@@ -3,7 +3,6 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Sidebar } from './Sidebar'
-import { CONNECT_PHONE_EVENT } from '../connectPhone'
 import { isSettingsOpen, setSettingsNavForTests } from '../settingsNav'
 import { closeUpdateModal, isUpdateModalOpen } from '../updateModal'
 import { resetUpdateInstall, setUpdateInstallForTests } from '../updateInstall'
@@ -66,10 +65,11 @@ describe('Sidebar railfoot — navigation actions', () => {
     return container.querySelector('.railfoot') as HTMLElement
   }
 
-  it('renders Connect phone, Settings, Pull requests, Usage and Theme without a hide control', () => {
+  it('renders Settings, Pull requests, Usage and Theme without a hide control or a Connect phone button', () => {
     render()
     const buttons = foot().querySelectorAll('button')
-    expect(buttons).toHaveLength(5)
+    expect(buttons).toHaveLength(4)
+    expect(foot().querySelector('button[aria-label="Connect phone"]')).toBeNull()
     expect(foot().textContent).not.toContain('Settings')
     expect(foot().querySelector('button[aria-label="Hide sidebar"]')).toBeNull()
     expect(foot().querySelector('[data-testid="rail-footer-pull-requests"]')).not.toBeNull()
@@ -93,16 +93,6 @@ describe('Sidebar railfoot — navigation actions', () => {
   it('the foot draws no rule above itself', () => {
     render()
     expect(foot().className).not.toContain('border-t')
-  })
-
-  it('opens Connect phone from the footer', () => {
-    const opened = vi.fn()
-    window.addEventListener(CONNECT_PHONE_EVENT, opened)
-    render()
-    const button = foot().querySelector('button[aria-label="Connect phone"]') as HTMLButtonElement
-    act(() => button.click())
-    expect(opened).toHaveBeenCalledOnce()
-    window.removeEventListener(CONNECT_PHONE_EVENT, opened)
   })
 
   it('clicking the gear button calls onOpenSettings', () => {
@@ -135,7 +125,8 @@ describe('Sidebar railfoot — navigation actions', () => {
   it('renders nothing for an update nobody offered -- no third button, no reserved space', () => {
     render()
     expect(foot().querySelector('[data-testid="rail-update-available"]')).toBeNull()
-    expect(foot().querySelectorAll('button')).toHaveLength(5)
+    expect(foot().querySelectorAll('button')).toHaveLength(4)
+    expect(foot().querySelector('button[aria-label="Connect phone"]')).toBeNull()
   })
 
   it('offers one worded chip carrying the glyph and the version, pushed to the far end', () => {
