@@ -136,6 +136,9 @@ restore only after the parent conversation resumes; unsupported shell dialects a
 parent conversations leave children deferred.
 Clean shutdown and crash both apply the same restore policy and budget, preserving the
 previous crash in the recovery summary.
+A Restart or a Wake starts the CLI at the pane's last PTY size, which sleep records in
+memory, so it draws its first frame at the width it keeps. A session restored by a boot has
+no recorded size and starts at 80×24 until its pane's first resize.
 
 `mint_mcp_launch` (`mcp_launch.rs`) adds the per-pane MCP argv and env; `shellint::injection`
 adds the rcfile args and env when shell integration is on. `env_hygiene::scrub()` has already

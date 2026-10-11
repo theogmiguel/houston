@@ -22,7 +22,7 @@ use tokio_tungstenite::tungstenite::Message;
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static SHIM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// Records its argv (and the profile env) per pane, then waits like a CLI; with
+/// Records its argv (and the profile env and PTY size) per pane, then waits like a CLI; with
 /// `RESUME_FAKE_EXIT` set, a `--resume` launch exits with that code instead.
 const FAKE_CLI: &str = r#"#!/bin/sh
 if [ "$RESUME_IGNORE_TERM" = "1" ]; then trap '' TERM; fi
@@ -33,6 +33,7 @@ out="$RESUME_ARGV_DIR/$HOUSTON_SESSION"
 for a in "$@"; do printf '%s\n' "$a" >> "$out.tmp"; done
 printf 'env:CLAUDE_CONFIG_DIR=%s\n' "$CLAUDE_CONFIG_DIR" >> "$out.tmp"
 printf 'env:CODEX_HOME=%s\n' "$CODEX_HOME" >> "$out.tmp"
+printf 'tty:%s\n' "$(stty size 2>/dev/null)" >> "$out.tmp"
 mv "$out.tmp" "$out"
 case " $* " in
   *" --resume "*) [ -n "$RESUME_FAKE_EXIT" ] && exit "$RESUME_FAKE_EXIT" ;;
@@ -1647,6 +1648,38 @@ async fn restart_over_the_wire_resumes_by_default() {
         Some(conversation),
         "the forced kill does not clear the handle it carries"
     );
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn a_wake_and_a_restart_start_the_cli_at_the_size_the_pane_last_had() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "pane-size");
+    let (pane, _, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    let tty = |argv: Vec<String>| argv.into_iter().find(|line| line.starts_with("tty:"));
+    assert_eq!(
+        tty(argv_of(&env, pane.id).await).as_deref(),
+        Some("tty:24 80")
+    );
+
+    daemon.resize(pane.id, 132, 41).unwrap();
+    daemon.sleep_session(pane.id).unwrap();
+    let awake = daemon.wake_session(pane.id).unwrap();
+    assert_eq!(
+        tty(argv_of(&env, awake.id).await).as_deref(),
+        Some("tty:41 132"),
+        "a woken CLI draws its first frame at the slept pane's size"
+    );
+
+    daemon.resize(awake.id, 100, 30).unwrap();
+    let restarted = daemon.respawn(awake.id, false, None, None, true).unwrap();
+    assert_eq!(
+        tty(argv_of(&env, restarted.id).await).as_deref(),
+        Some("tty:30 100"),
+        "a restarted CLI draws its first frame at the live pane's size"
+    );
+    daemon.kill(restarted.id).ok();
 }
 
 #[tokio::test]
