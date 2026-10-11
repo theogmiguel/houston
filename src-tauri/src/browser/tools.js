@@ -127,20 +127,25 @@
     return entry
   }
 
-  const IDENTITY_ATTRIBUTE = 'data-houston-tool-identity'
   const provesIdentity = (node, identity) => {
     if (!node || typeof identity !== 'string' || !identity) return false
-    const event = new Event(identity, { cancelable: true })
-    return !node.dispatchEvent(event)
+    return !node.dispatchEvent(new Event(identity, { cancelable: true }))
   }
-  const identityOf = (node) => {
-    const previous = node.getAttribute(IDENTITY_ATTRIBUTE)
-    if (provesIdentity(node, previous)) return previous
-    const identity = `houston-identity-${crypto.randomUUID()}`
-    node.addEventListener(identity, (event) => {
-      if (event.target === node) event.preventDefault()
-    })
-    node.setAttribute(IDENTITY_ATTRIBUTE, identity)
+  const identityOf = (node, owned) => {
+    // The event name is private to the isolated toolkit and Rust's locator store.
+    // Page markup receives no token it could clone or use to forge a listener.
+    const bytes = crypto.getRandomValues(new Uint32Array(4))
+    const identity = `houston-identity-${Array.from(bytes, n => n.toString(16)).join('-')}`
+    const listener = (event) => {
+      if (event.target !== node) return
+      if (event.cancelable) event.preventDefault()
+      else {
+        for (const [target, name, callback] of owned) target.removeEventListener(name, callback)
+        owned.length = 0
+      }
+    }
+    owned.push([node, identity, listener])
+    node.addEventListener(identity, listener)
     return identity
   }
 
@@ -161,10 +166,15 @@
     if (node !== document.documentElement) return null
     path.reverse()
     tags.reverse()
-    return { path, tags, documentIdentity: identityOf(document.documentElement), elementIdentity: identityOf(el) }
+    return { path, tags }
   }
 
-  const snapshot = (startSeq) => {
+  const snapshot = (startSeq, previousDocumentIdentity) => {
+    if (typeof previousDocumentIdentity === 'string') {
+      document.documentElement.dispatchEvent(new Event(previousDocumentIdentity))
+    }
+    const owned = []
+    let documentIdentity = null
     let seq = typeof startSeq === 'number' && startSeq >= 0 ? startSeq : 0
     const seen = new Set()
     const elements = []
@@ -183,6 +193,9 @@
         if (!locator) continue
         seen.add(el)
         const ref = `e${++seq}`
+        if (!documentIdentity) documentIdentity = identityOf(document.documentElement, owned)
+        locator.documentIdentity = documentIdentity
+        locator.elementIdentity = identityOf(el, owned)
         locators[ref] = locator
         const entry = describe(el, ref, kind)
         entry.kind = kind
@@ -377,7 +390,7 @@
   try {
     const op = __TR_TOOLS_OP__
     let result
-    if (op.kind === 'snapshot') result = snapshot(op.startSeq)
+    if (op.kind === 'snapshot') result = snapshot(op.startSeq, op.previousDocumentIdentity)
     else if (op.kind === 'describe') result = describe_(op)
     else if (op.kind === 'click') result = click(op)
     else if (op.kind === 'type') result = type(op)

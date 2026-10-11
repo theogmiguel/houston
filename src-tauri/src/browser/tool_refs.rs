@@ -15,6 +15,7 @@ pub struct Locator {
 #[derive(Debug, Default, Clone)]
 pub struct RefStore {
     seq: u64,
+    document_identity: Option<String>,
     map: HashMap<String, Locator>,
 }
 
@@ -23,7 +24,15 @@ impl RefStore {
         self.seq
     }
 
+    pub fn document_identity(&self) -> Option<&str> {
+        self.document_identity.as_deref()
+    }
+
     pub fn replace(&mut self, entries: HashMap<String, Locator>, minted: u64) {
+        self.document_identity = entries
+            .values()
+            .next()
+            .map(|locator| locator.document_identity.clone());
         self.map = entries;
         self.seq += minted;
     }
