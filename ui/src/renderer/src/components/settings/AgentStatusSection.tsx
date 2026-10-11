@@ -45,7 +45,7 @@ export const HOOK_COPY: Record<string, { label: string; writes: string }> = {
   zcode: {
     label: 'ZCode',
     writes:
-      'Adds one entry per lifecycle event to `~/.zcode/cli/config.json`, sets `hooks.enabled` (which also runs hooks of yours that were switched off) and lists Houston’s plugin for the pane tools. Turning this off removes only Houston’s entries and restores `hooks.enabled` once no channel’s entry remains.'
+      'Adds one entry per lifecycle event to each ZCode settings file in `~/.zcode/cli/` — `setting.json` (read by the `zcode-app-cli` package) and `config.json` — creating `config.json` only when neither exists. Sets `hooks.enabled` (which also runs hooks of yours that were switched off) and lists Houston’s plugin for the pane tools. Turning this off removes only Houston’s entries and restores `hooks.enabled` once no channel’s entry remains.'
   }
 }
 
