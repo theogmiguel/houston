@@ -16,6 +16,8 @@ pub struct CornerShapeReport {
     pub has_native: bool,
     pub paint: crate::browser::corner::CornerPaint,
     pub paints_applied: u64,
+    // Sampled with the paint update on the GTK thread, before its queued draw.
+    pub paints_at_commit: u64,
 }
 
 pub const HOST_WIDGET_NAME: &str = "tr-browser-host";
@@ -622,6 +624,7 @@ mod linux {
                     has_native: widget.window().is_some_and(|w| w.has_native()),
                     paint: state.paint,
                     paints_applied: state.paints_applied,
+                    paints_at_commit: state.paints_at_commit,
                 }))
             })();
             let _ = tx.send(result);
@@ -736,6 +739,7 @@ mod linux {
     struct CornerState {
         paint: CornerPaint,
         paints_applied: u64,
+        paints_at_commit: u64,
     }
 
     thread_local! {
@@ -744,11 +748,10 @@ mod linux {
 
     fn set_corner_paint(child_label: &str, paint: CornerPaint) {
         CORNERS.with(|corners| {
-            corners
-                .borrow_mut()
-                .entry(child_label.to_string())
-                .or_default()
-                .paint = paint;
+            let mut corners = corners.borrow_mut();
+            let state = corners.entry(child_label.to_string()).or_default();
+            state.paint = paint;
+            state.paints_at_commit = state.paints_applied;
         });
     }
 

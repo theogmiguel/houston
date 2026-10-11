@@ -8,6 +8,8 @@ pub mod mcp_tools;
 mod picker;
 mod rect;
 pub mod relay_client;
+#[cfg(target_os = "linux")]
+mod signal_receiver;
 mod state;
 mod suppress;
 mod webkit;

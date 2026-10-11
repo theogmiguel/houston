@@ -265,7 +265,6 @@ fn body(app: &AppHandle) -> Result<(), String> {
             ),
         );
 
-        let paints_before = rounded.map(|r| r.paints_applied).unwrap_or(0);
         browser_resize(
             app.clone(),
             registry.clone(),
@@ -277,8 +276,8 @@ fn body(app: &AppHandle) -> Result<(), String> {
         println!("BROWSER-SELFTEST corner clip (squared) = {squared:?}");
         report(
             "a-zero-radius-stops-the-paint-rather-than-leaving-it",
-            squared.is_some_and(|r| r.paint.is_noop() && r.paints_applied == paints_before),
-            &format!("after radius 0: {squared:?} (was {paints_before} paints)"),
+            squared.is_some_and(|r| r.paint.is_noop() && r.paints_applied == r.paints_at_commit),
+            &format!("after radius 0: {squared:?}; no paints since the main-thread commit"),
         );
 
         if let Ok(hold) = std::env::var("HOUSTON_BROWSER_CORNER_HOLD_MS") {

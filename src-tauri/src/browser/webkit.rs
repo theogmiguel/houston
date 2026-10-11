@@ -585,8 +585,8 @@ mod linux {
                     set.borrow_mut().remove(&id_owned);
                 });
                 eprintln!(
-                    "browser: child {id_owned:?} mounted, but g_signal_handlers_block_matched \
-                     matched 0 unfiltered \"script-message-received\" handlers on its \
+                    "browser: child {id_owned:?} mounted, but signal receiver defence found 0 unfiltered \
+                     \"script-message-received\" handlers on its \
                      UserContentManager (expected at least 1 with wry \
                      {WRY_VERSION_THIS_DEFENCE_MATCHES}); the picker will refuse to enable on \
                      this surface (P4-X1)"
@@ -619,7 +619,6 @@ mod linux {
     // panics (aborting the process) on a data:/file:/blob: page.
     fn block_wrys_unfiltered_receiver(manager: &webkit2gtk::UserContentManager) -> u32 {
         use gtk::glib::gobject_ffi;
-        use gtk::glib::object::ObjectType;
         use gtk::glib::translate::IntoGlib;
         use gtk::glib::StaticType;
 
@@ -634,20 +633,7 @@ mod linux {
         if signal_id == 0 {
             return 0;
         }
-        let instance = manager.as_ptr() as *mut gobject_ffi::GObject;
-        // SAFETY: `instance` is a live `WebKitUserContentManager`, which is a
-        // valid GObject for as long as `manager` is borrowed here.
-        unsafe {
-            gobject_ffi::g_signal_handlers_block_matched(
-                instance,
-                gobject_ffi::G_SIGNAL_MATCH_ID | gobject_ffi::G_SIGNAL_MATCH_DETAIL,
-                signal_id,
-                0,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        }
+        super::super::signal_receiver::block_unfiltered_receiver(manager, signal_id)
     }
 
     pub fn picker_defence_is_armed(
@@ -704,7 +690,7 @@ mod linux {
             return Err(format!(
                 "browser: refusing to enable the picker for surface {id:?}: wry's unfiltered \
                  \"script-message-received\" handler was not blocked on this child's \
-                 UserContentManager at mount (g_signal_handlers_block_matched matched 0 handlers \
+                 UserContentManager at mount (signal receiver defence found 0 handlers \
                  with detail 0; at least 1 expected with wry \
                  {WRY_VERSION_THIS_DEFENCE_MATCHES}). With it live, the first picker message from \
                  a page whose URI does not parse as an http::Uri -- every data:, file: and blob: \
