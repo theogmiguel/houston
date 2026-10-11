@@ -147,10 +147,9 @@ fn hermetic_command_forwards_the_offline_endpoints() {
     }
 }
 
-// The daemon boots one update check and one catalog refresh. Pointing both at a local
-// listener proves the override reaches a spawned binary: without it the paths below never
-// arrive here. Unix only, like the other spawned-daemon suites: `hermetic_command` drops
-// `SystemRoot` on Windows and the child's Winsock then fails to initialise.
+// A booted daemon makes one update check and one catalog refresh; a local listener proves
+// the overrides reach the spawned binary. Unix only, like the other spawned-daemon suites:
+// `hermetic_command` drops `SystemRoot` on Windows, so Winsock fails to initialise.
 #[cfg(unix)]
 #[tokio::test]
 async fn a_spawned_daemon_requests_both_configured_endpoints() {
