@@ -1094,7 +1094,8 @@ mod tests {
         let refusal = manager
             .pause_for_stop_with_timeout(Duration::ZERO)
             .await
-            .unwrap_err();
+            .err()
+            .expect("unsettled startup must refuse stop confirmation");
         assert!(refusal.contains("cannot be confirmed stopped"));
         assert!(manager
             .enable("Ubuntu".into())
