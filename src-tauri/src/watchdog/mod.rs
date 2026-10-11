@@ -394,6 +394,7 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
 
             match self.rx.recv_timeout(Duration::from_millis(sleep_ms)) {
                 Ok(Msg::Event(Event::PageLoaded)) => {
+                    capacity_deadline_ms = None;
                     let now = self.clocks.sample();
                     self.page_loaded.store(true, Ordering::SeqCst);
                     if let Some(generation) = self
@@ -415,6 +416,9 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                 Ok(Msg::Event(event)) => {
                     let now = self.clocks.sample();
                     let terminated = matches!(event, Event::WebProcessTerminated { .. });
+                    if terminated {
+                        capacity_deadline_ms = None;
+                    }
                     let actions = machine.on_event(event, now.mono_ms);
                     self.apply(&mut machine, &mut probes, actions, now);
                     // Navigation may finish before the supervisor consumes native process loss.
