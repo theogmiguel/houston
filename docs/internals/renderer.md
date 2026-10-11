@@ -111,17 +111,29 @@ Both engines are built from the pinned source with `core/houston-core/ghostty-pa
 applied in order; `build.rs` and `scripts/build-ghostty-vt-wasm.sh` stamp the extracted tree
 with the series' text and re-extract it when the series changes. Besides the snapshot
 exports, one patch changes behaviour: a full erase-line (`ESC [ 2 K`) ends the soft-wrap
-link into the erased row. Agent CLIs repaint by erasing and rewriting rows, and without the
-patch a reflow joins a row in history with the new content side by side.
+link from the row above into the erased row; upstream already ends the erased row's link
+onto the next one. Agent CLIs repaint by erasing and rewriting rows, and without the patch
+a reflow joins a row in history with the new content side by side.
 
 Each engine is constructed with `OSC 133;A;redraw=1` to turn on `shell_redraws_prompt`,
 followed at once by `OSC 133;C`. The flag survives the close; left open, every row a program
 without OSC 133 integration prints is a prompt row, and each resize erases it from the screen
 and history. The renderer and `vt.rs` must send identical bytes so a snapshot paints the same.
 
-A size change the `ResizeObserver` reports is held until the PTY is told (`surface.ts`): the
-grid reflows and the PTY resize goes out in the same tick. Reflowing first would let the
-program draw for the old width into the new grid for the debounce and the round trip.
+A size change a `ResizeObserver` reports, the surface's or the pane's, is held until the PTY
+is told (`surface.ts`): the grid reflows and the PTY resize goes out in the same tick.
+Reflowing first would let the program draw for the old width into the new grid for the
+debounce and the round trip. The debounce outlasts a layout animation, so a maximize reaches
+the PTY as one size: an agent CLI reprints its screen on every size change, and each
+reprint taller than the pane lands in history. Explicit fits (a font change, a reveal, a
+side-panel commit) apply at once. A fit measures the canvas's layout box, not its client
+rect, because a new pane grows in under a transform that fires no observer when it ends.
+
+A new pane's PTY starts at the size the pane will have (`pane/newPaneSize.ts`): the caller
+predicts the slot from the split tree the way `session_created` will place it, and converts
+it with the gutter, chrome and cell metrics of a terminal pane on screen. A CLI otherwise
+draws its first frame at 80 columns and reprints it at the pane's width. With no terminal on
+screen to measure, the daemon's default applies and the pane's first fit corrects it.
 
 Terminal palettes are applied **to the engine, not to CSS**: `theme.ts` holds
 `TERMINAL_PALETTES`, and `ghosttyThemeFromCss` converts a palette's hex values to the
