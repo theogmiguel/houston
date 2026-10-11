@@ -245,6 +245,8 @@
 
   // Allow the server's ten-second input deadline plus network overhead.
   var REQUEST_MS = 15000;
+  // Allow the server's 180-second transcription deadline plus upload/response overhead.
+  var DICTATE_REQUEST_MS = 190000;
 
   function staleRequest() {
     var err = new Error("Ignored an older request."); err.stale = true; return err;
@@ -260,7 +262,7 @@
 
   function resetPaneRequests() {
     S.paneGeneration++;
-    ["feed", "input", "screen"].forEach(function (name) { if (S.requests[name]) S.requests[name].ctrl.abort(); delete S.requests[name]; });
+    ["feed", "input", "screen", "dictate"].forEach(function (name) { if (S.requests[name]) S.requests[name].ctrl.abort(); delete S.requests[name]; });
     S.feedBusy = false; S.busy = false;
   }
 
@@ -285,7 +287,7 @@
       timer = setTimeout(function () {
         reject(new Error(method === "POST" && /\/(input|decide)$/.test(path) ? "Request timed out; the input may already have reached the pane." : "Request timed out. Try again."));
         ctrl.abort();
-      }, REQUEST_MS);
+      }, method === "POST" && /\/dictate$/.test(path) ? DICTATE_REQUEST_MS : REQUEST_MS);
     });
     var response = fetch(path, { method: method, headers: headers, body: raw ? body : body ? JSON.stringify(body) : undefined, cache: "no-store", signal: ctrl.signal })
       .then(function (r) {
@@ -1818,7 +1820,7 @@
 
   // The daemon refuses longer recordings; recording stops here first.
   var DICTATE_MAX_SECS = 120, DICTATE_RATE = 16000;
-  var D = { state: "idle", ctx: null, stream: null, source: null, node: null, chunks: [], samples: 0, started: 0, tick: null, pane: null, then: null, flushed: null };
+  var D = { state: "idle", ctx: null, stream: null, source: null, node: null, chunks: [], samples: 0, started: 0, tick: null, pane: null, then: null, flushed: null, request: null };
 
   // Why the page cannot dictate, or null when it can.
   function micBlocked() {
@@ -1847,7 +1849,7 @@
     $("mic").disabled = D.state === "transcribing";
     $("rec").classList.toggle("hidden", D.state === "idle");
     $("rec-send").disabled = !recording;
-    $("rec-cancel").disabled = D.state === "transcribing";
+    $("rec-cancel").disabled = false;
     if (D.state === "transcribing") $("rec-time").textContent = "Transcribing…";
     else if (D.state === "starting") $("rec-time").textContent = "Starting the microphone…";
     else if (recording) $("rec-time").textContent = clockOf((Date.now() - D.started) / 1000) + " / " + clockOf(DICTATE_MAX_SECS);
@@ -1872,7 +1874,7 @@
     var Ctx = window.AudioContext || window.webkitAudioContext, ctx;
     // Created inside the tap, so iOS lets it run.
     try { ctx = new Ctx(); } catch (e) { toast(micError(e), true); return; }
-    D.state = "starting"; D.ctx = ctx; D.chunks = []; D.samples = 0; D.pane = S.pane; D.then = null;
+    D.state = "starting"; D.ctx = ctx; D.chunks = []; D.samples = 0; D.pane = S.pane; D.then = null; D.request = beginRequest("dictate");
     setDockStatus("");
     renderMic();
     navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
@@ -1884,7 +1886,8 @@
           D.source = ctx.createMediaStreamSource(stream);
           // Connected to the output (it writes silence) so every browser keeps pulling it.
           D.node = new AudioWorkletNode(ctx, "pcm-capture", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
-          D.node.port.onmessage = onPcm;
+          var node = D.node;
+          node.port.onmessage = function (ev) { if (D.node === node) onPcm(ev); };
           D.source.connect(D.node);
           D.node.connect(ctx.destination);
           return ctx.resume();
@@ -1925,9 +1928,9 @@
     D.then = then;
     renderMic();
     if (note) setDockStatus(note);
-    var finished = false;
+    var finished = false, request = D.request;
     var finish = function () {
-      if (finished) return;
+      if (finished || D.request !== request || !request.current()) return;
       finished = true;
       releaseMic();
       upload();
@@ -1939,35 +1942,43 @@
   }
 
   function cancelDictation() {
-    if (D.state === "idle" || D.state === "transcribing") return;
+    if (D.state === "idle") return;
+    var request = D.request;
+    D.request = null;
+    if (S.requests.dictate === request) delete S.requests.dictate;
+    if (request) request.ctrl.abort();
+    clearTimeout(S.timers["dictate-flush"]);
     releaseMic();
     D.state = "idle";
     D.chunks = [];
     D.samples = 0;
     renderMic();
-    setDockStatus("Recording discarded.");
+    setDockStatus("Dictation discarded.");
   }
 
   function upload() {
-    var pane = D.pane, then = D.then;
+    var pane = D.pane, then = D.then, request = D.request;
+    if (!request || !request.current()) return;
     var pcm = new Uint8Array(D.samples * 2), view = new DataView(pcm.buffer), off = 0;
     D.chunks.forEach(function (c) {
       for (var i = 0; i < c.length; i++, off += 2) view.setInt16(off, c[i], true);
     });
     D.chunks = [];
     D.samples = 0;
-    var done = function () { D.state = "idle"; renderMic(); };
+    var current = function () { return D.request === request && request.current(); };
+    var done = function () { if (!current()) return; D.request = null; D.state = "idle"; renderMic(); };
     if (pcm.length === 0) { done(); toast("Nothing was recorded.", true); return; }
-    api("POST", "/api/sessions/" + pane + "/dictate", pcm).then(function (d) {
+    api("POST", "/api/sessions/" + pane + "/dictate", pcm, request).then(function (d) {
+      if (!current()) return;
       done();
-      if (S.pane !== pane) return;
       var t = $("text"), cur = t.value;
       t.value = cur && !/\s$/.test(cur) ? cur + " " + d.text : cur + d.text;
       grow();
       if (then === "send") send(); else setDockStatus("Edit the text if needed, then send.");
     }).catch(function (e) {
+      if (!current()) return;
       done();
-      if (S.pane === pane) toast(e.message, true);
+      if (!e.stale) toast(e.message, true);
     });
   }
 

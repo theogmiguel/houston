@@ -255,7 +255,9 @@ returns the text to the device; nothing reaches the pane until you send it.
    model in Settings ▸ Dictation first; with Groq, store the API key there.
 2. In a pane, tap the microphone next to the message box and speak. Tap it again to stop,
    then edit the text and send it, or tap **Insert and send** to send it as soon as it is
-   transcribed. **Cancel** discards the recording. A recording stops by itself at 2 minutes.
+   transcribed. **Cancel** discards the recording or pending transcript. Leaving the pane,
+   signing out, or hiding the page discards pending dictation too. A recording stops by
+   itself at 2 minutes.
 
 The microphone button needs a trusted HTTPS address: the Tailscale route, or a device that
 trusts this computer's certificate (see [The certificate](#the-certificate)). Otherwise the

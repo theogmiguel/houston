@@ -27,7 +27,7 @@ function harness() {
     S, Promise, AbortController, FEED_ENTRIES: 256, SCREEN_LINES: 80, SCREEN_MS: 1000, ACTIVITY_ENTRIES: 200, REQUEST_MS: 15000,
     fetch: (path, options) => new Promise(resolve => requests.push({ path, options, resolve })),
     setTimeout: (fn, ms) => { const id = ++nextTimer; timers.set(id, { fn, ms }); return id; }, clearTimeout: id => timers.delete(id),
-    renderFeed: noop, renderCard: noop, renderQuickReplies: noop, renderLateLink: noop, renderChildren: noop, renderBar: noop, renderList: noop, renderTabs: noop,
+    renderFeed: noop, renderCard: noop, renderQuickReplies: noop, renderLateLink: noop, renderChildren: noop, renderBar: noop, renderList: noop, renderTabs: noop, renderMic: noop, cancelDictation: noop, loadMe: () => Promise.resolve(),
     resetKeys: noop, toggleKeys: noop, grow: noop, show: noop, selectTab: noop, connect: noop, schedulePoll: noop, toBottom: noop, pinned: () => false,
     setReachable: value => { S.reachable = value; }, setDockStatus: value => status.push(value), updateSend: noop, later: noop, fitScreen: noop,
     session: () => ({ status: 'working' }), notice: value => status.push(value), toast: value => status.push(value), pendingFor: () => null,
@@ -36,6 +36,8 @@ function harness() {
     unpair: () => { ctx.resetAuthRequests(); S.token = null; },
   };
   vm.createContext(ctx);
+  const dictationDeadline = source.match(/  var DICTATE_REQUEST_MS =[^\n]+/);
+  if (dictationDeadline) vm.runInContext(dictationDeadline[0], ctx);
   vm.runInContext(functions.map(production).join('\n'), ctx);
   ctx.loadSessions = noop;
   return { ctx, S, node, requests, status, timers };
@@ -297,3 +299,147 @@ for (const honorAbort of [true, false]) {
     assert.equal(S.httpRequests.size, 0);
   });
 }
+
+function dictationHarness(honorAbort) {
+  const h = pollingHarness(honorAbort), { ctx, S } = h;
+  S.pane = 1;
+  Object.assign(ctx, { Uint8Array, Int16Array, DataView, clearInterval: () => {}, micBlocked: () => null });
+  vm.runInContext(source.match(/  var DICTATE_MAX_SECS =[^\n]+/)[0], ctx);
+  const deadline = source.match(/  var DICTATE_REQUEST_MS =[^\n]+/);
+  if (deadline) vm.runInContext(deadline[0], ctx);
+  vm.runInContext(source.match(/  var D =[^\n]+/)[0], ctx);
+  vm.runInContext(['releaseMic', 'cancelDictation', 'stopDictation', 'upload'].map(production).join('\n'), ctx);
+  h.record = (then = null) => {
+    ctx.D.state = 'recording'; ctx.D.pane = S.pane; ctx.D.then = then;
+    ctx.D.request = ctx.beginRequest('dictate');
+    ctx.D.chunks = [new Int16Array([1, 2])]; ctx.D.samples = 2;
+    ctx.D.node = { port: { postMessage: () => {} }, disconnect: () => {} };
+  };
+  h.upload = (then = null) => { h.record(then); ctx.D.state = 'transcribing'; ctx.upload(); };
+  return h;
+}
+
+for (const honorAbort of [true, false]) {
+  const transport = honorAbort ? 'abort-honoring' : 'abort-ignoring';
+  test(`dictation survives 15 seconds and sends a valid late transcript once (${transport})`, async () => {
+    const h = dictationHarness(honorAbort), { ctx, requests, node } = h;
+    h.upload('send');
+    await h.advance(180000);
+    assert.equal(requests[0].options.signal.aborted, false);
+    assert.equal(ctx.D.state, 'transcribing');
+    requests[0].resolve(reply({ text: 'transcript' })); await flush();
+    assert.equal(ctx.D.state, 'idle'); assert.equal(node('text').value, 'transcript');
+    assert.equal(requests.filter(r => r.path.endsWith('/input')).length, 1);
+    requests[1].resolve(reply({})); await flush();
+    assert.equal(node('text').value, '');
+    await h.advance(10000);
+    assert.equal(requests.filter(r => r.path.endsWith('/input')).length, 1);
+  });
+
+  test(`dictation deadline is bounded and late success cannot send (${transport})`, async () => {
+    const h = dictationHarness(honorAbort), { ctx, requests, node, status } = h;
+    h.upload('send'); await h.advance(189999);
+    assert.equal(ctx.D.state, 'transcribing');
+    await h.advance(1);
+    assert.equal(ctx.D.state, 'idle'); assert.equal(requests[0].options.signal.aborted, true);
+    assert.match(status.at(-1), /timed out/);
+    requests[0].resolve(reply({ text: 'too late' })); await flush();
+    assert.equal(node('text').value, ''); assert.equal(requests.length, 1);
+  });
+
+  for (const logout of [false, true]) {
+    test(`dictation ignores stale success/error/JSON after ${logout ? 'logout' : 'A → B → A'} and keeps newer recorder (${transport})`, async () => {
+      for (const outcome of ['success', 'error', 'json']) {
+        const h = dictationHarness(honorAbort), { ctx, S, requests, node, status } = h;
+        h.upload('send');
+        let json;
+        if (outcome === 'json') {
+          requests[0].resolve({ ...reply({}), json: () => new Promise(resolve => { json = resolve; }) }); await flush();
+        }
+        if (logout) { ctx.cancelDictation(); ctx.resetAuthRequests(); S.token = 'new'; }
+        else { ctx.openPane(2); ctx.openPane(1); }
+        h.record(); node('text').value = 'new composer';
+        const before = status.length;
+        if (outcome === 'json') json({ text: 'old' });
+        else requests[0].resolve(reply(outcome === 'error' ? { error: 'old error' } : { text: 'old' }, outcome === 'error' ? 500 : 200));
+        await flush();
+        assert.equal(node('text').value, 'new composer'); assert.equal(ctx.D.state, 'recording');
+        assert.equal(ctx.D.samples, 2); assert.equal(status.length, before);
+        assert.equal(requests.filter(r => r.path.endsWith('/input')).length, 0);
+        assert.equal(requests[0].options.signal.aborted, true);
+      }
+    });
+  }
+}
+
+test('cancelled flush callback cannot upload or release a newer recorder', async () => {
+  const h = dictationHarness(false), { ctx, requests } = h;
+  h.record(); ctx.stopDictation('send');
+  const oldFinish = ctx.D.flushed;
+  ctx.cancelDictation(); h.record();
+  oldFinish(); await h.advance(1000);
+  assert.equal(requests.length, 0); assert.equal(ctx.D.state, 'recording'); assert.equal(ctx.D.samples, 2);
+});
+
+test('insert-and-send retains transcript and visible uncertain delivery without retry', async () => {
+  const h = dictationHarness(false), { ctx, requests, node, status } = h;
+  h.upload('send'); requests[0].resolve(reply({ text: 'keep this' })); await flush();
+  await h.advance(15000);
+  assert.equal(node('text').value, 'keep this'); assert.equal(ctx.S.busy, false);
+  assert.match(status.at(-1), /may already have reached/);
+  requests[1].resolve(reply({})); await flush();
+  assert.equal(node('text').value, 'keep this'); assert.equal(requests.length, 2);
+});
+
+test('production microphone lifecycle owns its request and ignores queued messages from an older worklet', async () => {
+  const h = dictationHarness(false), { ctx, requests, node, status } = h;
+  const noop = () => {};
+  ctx.window.AudioContext = class {
+    audioWorklet = { addModule: () => Promise.resolve() };
+    createMediaStreamSource() { return { connect: noop, disconnect: noop }; }
+    resume() { return Promise.resolve(); }
+    close() { return Promise.resolve(); }
+  };
+  ctx.AudioWorkletNode = class {
+    port = { postMessage: noop };
+    connect() {}
+    disconnect() {}
+  };
+  ctx.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve({ getTracks: () => [{ stop: noop }] }) } };
+  ctx.setInterval = () => 1;
+  vm.runInContext(['startDictation', 'onPcm', 'micError'].map(production).join('\n'), ctx);
+  ctx.startDictation(); await flush();
+  assert.equal(ctx.D.state, 'recording');
+  assert.equal(ctx.D.request, ctx.S.requests.dictate);
+  const oldMessage = ctx.D.node.port.onmessage;
+  oldMessage({ data: new Int16Array([7, 8]) }); ctx.stopDictation('send');
+  const oldFinish = ctx.D.flushed;
+  ctx.cancelDictation(); ctx.startDictation(); await flush();
+  const message = ctx.D.node.port.onmessage;
+  message({ data: new Int16Array([1, 2]) }); ctx.stopDictation(null);
+  oldMessage({ data: new Int16Array([3]) }); oldMessage({ data: { done: true } }); oldFinish();
+  assert.equal(requests.length, 0); assert.equal(ctx.D.samples, 2);
+  message({ data: { done: true } }); message({ data: { done: true } });
+  assert.equal(requests.length, 1);
+  assert.deepEqual([...requests[0].options.body], [1, 0, 2, 0]);
+  node('text').value = 'existing'; requests[0].resolve(reply({ text: 'transcript' })); await flush();
+  assert.equal(ctx.D.state, 'idle'); assert.equal(node('text').value, 'existing transcript');
+  assert.match(status.at(-1), /Edit the text/);
+  assert.equal(requests.length, 1, 'edit mode never sends automatically');
+  await h.advance(1000); assert.equal(requests.length, 1);
+});
+
+test('stale upload callbacks cannot reset a newer transcription even if API cancellation is ignored', async () => {
+  for (const fails of [false, true]) {
+    const h = dictationHarness(false), { ctx, node, status } = h, uploads = [];
+    ctx.api = () => new Promise((resolve, reject) => uploads.push({ resolve, reject }));
+    h.upload('send'); ctx.cancelDictation(); h.upload(null);
+    node('text').value = 'current'; const before = status.length;
+    if (fails) uploads[0].reject(new Error('old failure')); else uploads[0].resolve({ text: 'old' });
+    await flush();
+    assert.equal(ctx.D.state, 'transcribing'); assert.equal(node('text').value, 'current');
+    assert.equal(status.length, before); assert.equal(uploads.length, 2);
+    uploads[1].resolve({ text: 'new' }); await flush();
+    assert.equal(ctx.D.state, 'idle'); assert.equal(node('text').value, 'current new');
+  }
+});
