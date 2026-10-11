@@ -593,6 +593,7 @@ fn main() {
             browser::browser_set_picker_mode,
             browser::browser_clear_picker_selection,
             browser::browser_submit_picker_prompt,
+            watchdog::wd_paint_generation,
             watchdog::wd_paint_report,
             watchdog::wd_request_reload,
             watchdog::wd_report_wake,

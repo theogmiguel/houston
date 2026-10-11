@@ -89,7 +89,15 @@ impl RendererHealth {
 
 enum Msg {
     Event(Event),
-    ProbeReply { payload: String, generation: u64 },
+    ProbeReply {
+        payload: String,
+        generation: u64,
+    },
+    Paint {
+        ok: bool,
+        raf_gap_ms: u64,
+        generation: u64,
+    },
 }
 
 pub struct WatchdogHandle {
@@ -351,6 +359,17 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                 Ok(Msg::Event(Event::PageLoaded)) => {
                     let now = self.clocks.sample();
                     self.page_loaded.store(true, Ordering::SeqCst);
+                    if let Some(generation) = self
+                        .window
+                        .app_handle()
+                        .state::<Arc<RendererHealth>>()
+                        .probe_generation()
+                    {
+                        let _ = self.window.emit(
+                            "wd:paint-generation",
+                            serde_json::json!({ "generation": generation }),
+                        );
+                    }
                     self.prompt_cancel.store(true, Ordering::SeqCst);
                     let actions = machine.on_event(Event::PageLoaded, now.mono_ms);
                     self.apply(&mut machine, &mut probes, actions, now);
@@ -373,6 +392,22 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                         self.prompt_cancel.store(true, Ordering::SeqCst);
                         let actions = machine.on_event(Event::PageLoaded, now.mono_ms);
                         self.apply(&mut machine, &mut probes, actions, now);
+                    }
+                }
+                Ok(Msg::Paint {
+                    ok,
+                    raf_gap_ms,
+                    generation,
+                }) => {
+                    let health = self.window.app_handle().state::<Arc<RendererHealth>>();
+                    if health.probe_generation() == Some(generation) {
+                        let now = self.clocks.sample();
+                        let actions =
+                            machine.on_event(Event::PaintReport { ok, raf_gap_ms }, now.mono_ms);
+                        self.apply(&mut machine, &mut probes, actions, now);
+                        if machine.state() == machine::State::Healthy {
+                            health.recover(generation);
+                        }
                     }
                 }
                 Ok(Msg::ProbeReply {
@@ -533,6 +568,10 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                 Action::Reload => {
                     let now_ms = self.clocks.sample().mono_ms;
                     machine.note_reload_issued(now_ms);
+                    self.window
+                        .app_handle()
+                        .state::<Arc<RendererHealth>>()
+                        .record_termination();
                     self.page_loaded.store(false, Ordering::SeqCst);
                     probes.discard_all();
                     if let Err(err) = self.window.reload() {
@@ -715,16 +754,26 @@ const RECORD_RELOAD_JS: &str = r#"
 "#;
 
 #[tauri::command]
+pub fn wd_paint_generation(health: tauri::State<'_, Arc<RendererHealth>>) -> Option<u64> {
+    health.probe_generation()
+}
+
+#[tauri::command]
 pub fn wd_paint_report(
     handle: tauri::State<'_, WatchdogHandle>,
     ok: bool,
     raf_gap_ms: u64,
+    generation: u64,
     visibility: Option<String>,
 ) {
     if visibility.as_deref() == Some("hidden") {
         return;
     }
-    handle.send(Event::PaintReport { ok, raf_gap_ms });
+    let _ = handle.tx.send(Msg::Paint {
+        ok,
+        raf_gap_ms,
+        generation,
+    });
 }
 
 #[tauri::command]

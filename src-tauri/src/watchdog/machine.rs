@@ -315,6 +315,7 @@ impl Machine {
                 let crossed = (rtt_ms >= self.thresholds.warn_ms)
                     .then(|| ThresholdCrossed::new("T_warn", self.thresholds.warn_ms, rtt_ms));
                 match self.state {
+                    State::Recovering if self.paint_incident() => {}
                     State::Booting | State::Suspect | State::Recovering | State::Unresponsive => {
                         self.state = State::Healthy;
                         self.close_incident();
@@ -452,7 +453,7 @@ impl Machine {
             }
 
             Event::PaintReport { ok, raf_gap_ms } => {
-                if !self.window_visible {
+                if !self.window_visible || self.navigation_required {
                     return actions;
                 }
                 match (ok, self.state) {
@@ -470,7 +471,7 @@ impl Machine {
                         ));
                         self.maybe_recover(now_ms, &mut actions);
                     }
-                    (true, State::PaintStalled) => {
+                    (true, State::PaintStalled | State::Recovering) if self.paint_incident() => {
                         self.state = State::Healthy;
                         self.close_incident();
                         actions.push(self.log(prev, Trigger::PaintReport { ok, raf_gap_ms }, None));
@@ -596,6 +597,12 @@ impl Machine {
             expecting_api_termination: false,
             prompt_deadline_ms: None,
         });
+    }
+
+    fn paint_incident(&self) -> bool {
+        self.incident
+            .as_ref()
+            .is_some_and(|i| i.reason == "compositor-stall")
     }
 
     fn prompt_outstanding(&self) -> bool {
@@ -760,6 +767,7 @@ impl Machine {
     }
 
     pub fn note_reload_issued(&mut self, now_ms: u64) {
+        self.navigation_required = true;
         self.booting_since_ms = now_ms;
     }
 }
@@ -1735,6 +1743,67 @@ mod tests {
                 raf_gap_ms: 16,
             },
             6_000,
+        );
+        assert_eq!(m.state(), State::Healthy);
+    }
+
+    #[test]
+    fn js_reply_during_paint_recovery_preserves_incident_and_prompt() {
+        let mut m = healthy(true);
+        m.on_event(
+            Event::PaintReport {
+                ok: false,
+                raf_gap_ms: 9_000,
+            },
+            5_000,
+        );
+        assert_eq!(m.state(), State::Recovering);
+        let incident = m.incident.as_ref().unwrap().id;
+        let actions = m.on_event(Event::ProbeReturned { rtt_ms: 5 }, 6_000);
+        assert_eq!(m.state(), State::Recovering);
+        assert_eq!(m.incident.as_ref().unwrap().id, incident);
+        assert!(m.prompt_outstanding());
+        assert!(!has(&actions, &Action::SetTitle(TitleState::Normal)));
+        m.on_event(
+            Event::PaintReport {
+                ok: true,
+                raf_gap_ms: 16,
+            },
+            6_001,
+        );
+        assert_eq!(m.state(), State::Healthy);
+        assert!(!m.prompt_outstanding());
+    }
+
+    #[test]
+    fn reloaded_paint_incident_requires_new_page_paint() {
+        let mut m = healthy(true);
+        m.on_event(Event::WindowFocused(false), 0);
+        m.on_event(
+            Event::PaintReport {
+                ok: false,
+                raf_gap_ms: 9_000,
+            },
+            5_000,
+        );
+        m.note_reload_issued(5_000);
+        m.on_event(
+            Event::PaintReport {
+                ok: true,
+                raf_gap_ms: 16,
+            },
+            5_001,
+        );
+        assert_eq!(m.state(), State::Recovering);
+        m.on_event(Event::PageLoaded, 5_002);
+        m.on_event(Event::ProbeReturned { rtt_ms: 5 }, 5_003);
+        assert_eq!(m.state(), State::Recovering);
+        m.on_event(
+            Event::PaintReport {
+                ok: true,
+                raf_gap_ms: 16,
+            },
+            5_004,
         );
         assert_eq!(m.state(), State::Healthy);
     }

@@ -96,6 +96,7 @@ beforeEach(() => {
   installFakeMatchMedia()
   setVisibility('visible')
   document.hasFocus = vi.fn().mockReturnValue(true)
+  invokeMock.mockImplementation((command: string) => Promise.resolve(command === "wd_paint_generation" ? 7 : undefined))
   invokeMock.mockClear()
   listenMock.mockClear()
   listenHandlers.clear()
@@ -139,7 +140,8 @@ describe('installWatchdog paint probe, under Tauri', () => {
     expect(invokeMock).toHaveBeenCalledWith('wd_paint_report', {
       ok: false,
       rafGapMs: 5000,
-      visibility: 'visible'
+      visibility: 'visible',
+      generation: 7
     })
     const call = invokeMock.mock.calls.find((c) => c[0] === 'wd_paint_report')
     expect(call?.[1]).toHaveProperty('rafGapMs')
@@ -268,7 +270,8 @@ describe('installWatchdog wd:wake / wd:dpr / wd:reload-imminent, under Tauri', (
     expect(invokeMock).toHaveBeenCalledWith('wd_paint_report', {
       ok: false,
       rafGapMs: 10_000,
-      visibility: 'visible'
+      visibility: 'visible',
+      generation: 7
     })
 
     dispose()
@@ -285,7 +288,7 @@ describe('installWatchdog wd:wake / wd:dpr / wd:reload-imminent, under Tauri', (
     handler?.({ payload: { reason: 'test', in_ms: 5000 } })
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('reload imminent'))
-    expect(invokeMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalledWith('wd_request_reload', expect.anything())
 
     warnSpy.mockRestore()
     dispose()
@@ -402,7 +405,8 @@ describe('installWatchdog reports the measured gap, not the armed timeout (spec 
     expect(invokeMock).toHaveBeenCalledWith('wd_paint_report', {
       ok: false,
       rafGapMs: 8000,
-      visibility: 'visible'
+      visibility: 'visible',
+      generation: 7
     })
 
     nowSpy.mockRestore()
