@@ -196,6 +196,41 @@ messages. For a permission request, choose **Deny** first and then send your exp
 the computer cannot attach a typed reason to a denial. Pane renaming and focusing on the
 computer are available from the desktop application.
 
+## Dictate instead of typing
+
+A paired device can record what you say and have Houston turn it into text for the message
+box. Houston transcribes with the engine chosen in **Settings ▸ Dictation** (see
+[Dictation](voice.md)), using its language, vocabulary and English output settings, and
+returns the text to the device; nothing reaches the pane until you send it.
+
+1. In **Settings ▸ Remote access ▸ Dictation**, turn on **Allow dictation from paired
+   devices**. It is off by default and does not depend on desktop dictation being on: the
+   computer's own microphone is never opened for it. With the local engine, download its
+   model in Settings ▸ Dictation first; with Groq, store the API key there.
+2. In a pane, tap the microphone next to the message box and speak. Tap it again to stop,
+   then edit the text and send it, or tap **Insert and send** to send it as soon as it is
+   transcribed. **Cancel** discards the recording. A recording stops by itself at 2 minutes.
+
+The microphone button needs an HTTPS address; over plain HTTP the browser offers no
+microphone, so the button is hidden and the page says why. Your phone keyboard's own
+microphone works in the message box over any address, with the keyboard maker's
+speech recognition instead of Houston's.
+
+Houston transcribes one recording from a device at a time and refuses a new one while
+another, or a desktop dictation, is being transcribed. A refusal names the reason: dictation
+turned off, no model, no Groq key, the local engine on Windows (use Groq there), or a
+recording over the limit.
+
+### What is transmitted
+
+- **Local engine:** the recording travels from the device to this computer and stays on
+  your devices. Houston keeps it in memory only while it transcribes and then discards it;
+  nothing is written to disk or logged.
+- **Groq:** each recording is also sent to Groq's API for transcription, as desktop
+  dictation with Groq does.
+- **Keyboard microphone:** the phone's keyboard follows its maker's rules (Apple or
+  Google); Houston only receives the typed text.
+
 ## Notifications with ntfy
 
 1. Install the ntfy app on your phone and subscribe to a topic with a long, unguessable
