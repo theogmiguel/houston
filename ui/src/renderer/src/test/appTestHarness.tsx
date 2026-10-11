@@ -129,7 +129,7 @@ vi.mock('../houston/client', async (importOriginal) => {
 
 const { App } = await import('../App')
 await import('../components/SettingsView')
-await import('../components/BrowserPane')
+await import('../components/browser/BrowserSurface')
 await import('../components/browser/BrowserSurface')
 await import('../components/ChangesPane')
 await import('../components/files/QuickOpen')

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { Workspace } from "./houston/client";
-import { loadSideState, saveSideState } from "./sidePanel";
+import { browserTabUrl, loadInspectorTabs, saveInspectorTabs, saveBrowserTabUrl, isBrowserSurface, type SurfaceKind } from "./scmPanel";
 import type { LayoutState } from "./layout/tree";
 
 export function useBrowserLayoutMigration(
@@ -13,19 +13,17 @@ export function useBrowserLayoutMigration(
         .filter(([key, layout]) => key.startsWith(`${workspace.path}::`) && layout.browserUrls?.length)
         .flatMap(([, layout]) => layout.browserUrls ?? []);
       if (urls.length === 0) continue;
-      const state = loadSideState(workspace.path);
-      let active = state.active;
-      let nextId = 0;
+      const state = loadInspectorTabs(workspace.path);
       for (const url of new Set(urls)) {
-        const existing = state.tabs.findIndex((tab) => tab.kind === "browser" && tab.url === url);
-        if (existing >= 0) {
-          active = existing;
-          continue;
-        }
-        state.tabs.push({ kind: "browser", id: `layout-migration-${Date.now()}-${nextId++}`, url });
-        active = state.tabs.length - 1;
+        if (state.openTabs.some((tab) => isBrowserSurface(tab) && browserTabUrl(workspace.path, tab.slice(8)) === url)) continue;
+        const id = `layout-migration-${crypto.randomUUID()}`;
+        const surface: SurfaceKind = `browser:${id}`;
+        saveBrowserTabUrl(workspace.path, id, url);
+        state.openTabs.push(surface);
+        state.active = surface;
       }
-      if (active !== state.active) saveSideState(workspace.path, { ...state, active });
+      saveInspectorTabs(workspace.path, state);
+      window.dispatchEvent(new Event('houston:inspector-restore'));
     }
   }, [workspaces, warmLayouts]);
 }

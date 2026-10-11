@@ -29,11 +29,6 @@
       "worst": 83,
       "over": 3
     },
-    "src/renderer/src/components/BrowserPane.tsx": {
-      "total": 108,
-      "worst": 26,
-      "over": 1
-    },
     "src/renderer/src/components/EditorSurface.tsx": {
       "total": 31,
       "worst": 21,
@@ -45,8 +40,8 @@
       "over": 1
     },
     "src/renderer/src/components/LayoutView.tsx": {
-      "total": 179,
-      "worst": 27,
+      "total": 171,
+      "worst": 26,
       "over": 1
     },
     "src/renderer/src/components/QuestionCard.tsx": {

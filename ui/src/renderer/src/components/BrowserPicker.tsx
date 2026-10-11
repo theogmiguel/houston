@@ -15,7 +15,7 @@ export const PICKER_AGENTS: { id: string; name: string; description: string }[] 
   {
     id: 'terminal',
     name: 'Terminal',
-    description: 'the active session, or the first live one in this workspace'
+    description: 'the focused live agent'
   }
 ]
 const DEFAULT_AGENT_ID = PICKER_AGENTS[0].id

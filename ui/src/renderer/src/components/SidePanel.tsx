@@ -1,7 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SessionInfo, PullRequestLink } from '../houston/client'
-import { clampScmWidth, defaultScmWidth, loadInspectorTabs, saveInspectorTabs, scmWidthMax, type SurfaceKind } from '../scmPanel'
-import { selectOverviewChild, type SideOpen } from '../sidePanel'
+import { browserTabUrl, isBrowserSurface, clampScmWidth, defaultScmWidth, loadInspectorTabs, saveInspectorTabs, scmWidthMax, type SurfaceKind } from '../scmPanel'
+import { isTauri } from '../houston/host'
+import { tauriBrowserInvoke } from './browserTabs'
+import { selectOverviewChild, updateSideBrowser, type SideOpen } from '../sidePanel'
 import { requestReveal } from '../editor/bufferStore'
 import { formatCheckout } from './checkout/formatCheckout'
 import type { CheckAgentTarget } from './prs/ChecksList'
@@ -21,20 +23,13 @@ const BrowserSurface = lazy(() => import('./browser/BrowserSurface').then((modul
 const FilesSurface = lazy(() => import('./files/FilesSurface').then((module) => ({ default: module.FilesSurface })))
 const OverviewTab = lazy(() => import('./OverviewTab').then((module) => ({ default: module.OverviewTab })))
 
-function useSidePanelRequest(request: SidePanelProps['request'], activeSessionId: number | null | undefined, isOrchestrator: boolean, setOverviewTarget: React.Dispatch<React.SetStateAction<number | null>>, setFilesRoot: React.Dispatch<React.SetStateAction<string>>, setBrowserId: React.Dispatch<React.SetStateAction<string>>, setBrowserWorkspace: React.Dispatch<React.SetStateAction<string>>, setBrowserTitle: React.Dispatch<React.SetStateAction<string>>, setFaviconUrl: React.Dispatch<React.SetStateAction<string | null>>, openSurface: (surface: SurfaceKind) => void): void {
+function useSidePanelRequest(request: SidePanelProps['request'], activeSessionId: number | null | undefined, isOrchestrator: boolean, setOverviewTarget: React.Dispatch<React.SetStateAction<number | null>>, setFilesRoot: React.Dispatch<React.SetStateAction<string>>, openSurface: (surface: SurfaceKind) => void): void {
   useEffect(() => {
     if (request?.kind === 'overview' && request.orchestrator === activeSessionId && isOrchestrator) setOverviewTarget(request.orchestrator)
     if (request?.kind === 'files') {
       setFilesRoot(request.root)
       requestReveal(request.root, request.path, request.line ?? 1, request.col)
       openSurface('files')
-    }
-    if (request?.kind === 'browser') {
-      setBrowserId(request.id)
-      setBrowserWorkspace(request.workspace)
-      setBrowserTitle('')
-      setFaviconUrl(null)
-      openSurface('browser')
     }
   }, [request, activeSessionId, isOrchestrator])
 }
@@ -69,6 +64,7 @@ type SidePanelProps = Omit<SourceControlPanelProps, 'onCreateCheckAgent' | 'requ
   sessions: ReadonlyMap<number, SessionInfo>
   activeSessionId?: number | null
   request: SideOpen | null
+  onBrowserRequestHandled?: (request: SideOpen) => void
   onReviewChild: (child: SessionInfo) => void
   onMoveFile: (root: string, path: string) => void
   onFocusSide: () => void
@@ -119,10 +115,10 @@ function PanelLinkIcon(): React.JSX.Element {
 }
 
 function titleForSurface(surface: SurfaceKind, browserTitle: string, faviconUrl: string | null, prNumber: number | null, prTone: string | null, fileTitle: string): { title: string; icon: React.ReactNode } {
-  if (surface === 'browser') return { title: browserTitle || 'New tab', icon: faviconUrl ? <img src={faviconUrl} alt="" className="h-3.5 w-3.5" /> : browserTitle && browserTitle !== 'New tab' ? <ShellElement as="span" shellRole="browser-tab-favicon">{browserTitle.slice(0, 1).toUpperCase()}</ShellElement> : SURFACE_META.browser.icon }
+  if (isBrowserSurface(surface) || surface === 'browser') return { title: browserTitle || 'New tab', icon: faviconUrl ? <img src={faviconUrl} alt="" className="h-3.5 w-3.5" /> : browserTitle && browserTitle !== 'New tab' ? <ShellElement as="span" shellRole="browser-tab-favicon">{browserTitle.slice(0, 1).toUpperCase()}</ShellElement> : SURFACE_META.browser.icon }
   if (surface === 'files') return { title: fileTitle || SURFACE_META.files.label, icon: <PanelFilesIcon /> }
-  if (surface === 'pull-request') return { title: prNumber === null ? SURFACE_META[surface].label : `#${prNumber}`, icon: <ShellElement as="span" shellRole="panel-pr-icon" state={prTone === 'stop' || prTone === 'warn' || prTone === 'ok' ? prTone : undefined}><Icon glyph={IconGitPullRequest} role="label" /></ShellElement> }
-  return { title: SURFACE_META[surface].label, icon: SURFACE_META[surface].icon }
+  if (surface === 'pull-request') return { title: prNumber === null ? SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label : `#${prNumber}`, icon: <ShellElement as="span" shellRole="panel-pr-icon" state={prTone === 'stop' || prTone === 'warn' || prTone === 'ok' ? prTone : undefined}><Icon glyph={IconGitPullRequest} role="label" /></ShellElement> }
+  return { title: SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label, icon: SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].icon }
 }
 
 function surfaceDisabledReason(
@@ -338,8 +334,6 @@ function PanelContent({
   filesRoot,
   setSurface,
   panelWidth,
-  browserTabId,
-  browserWorkspace,
   onBrowserTitleChange,
   onFilesTabTitleChange,
   checkAgentTargets,
@@ -352,23 +346,23 @@ function PanelContent({
   filesRoot: string
   setSurface: (surface: SurfaceKind) => void
   panelWidth: number
-  browserTabId: string
-  browserWorkspace: string
-  onBrowserTitleChange: (title: string, favicon: string | null) => void
+  onBrowserTitleChange: (id: string, title: string, favicon: string | null) => void
   onFilesTabTitleChange: (name: string | null) => void
   checkAgentTargets: CheckAgentTarget[]
   requestedPrForTab: { number: number; nonce: number } | null
 }): React.JSX.Element {
   const visible = Boolean(active && props.open !== false && !props.hiddenByOverlay && props.openTabs?.includes(surface))
-  if (surface === 'browser') {
+  if (isBrowserSurface(surface) || surface === 'browser') {
     return (
       <ShellElement as="div" shellRole="panel-surface" hidden={!visible}>
         <Suspense fallback={<div className="flex-1" />}>
           <BrowserSurface
-            workspace={browserWorkspace}
-            tabId={browserTabId}
+            workspace={props.workspace}
+            tabId={surface.slice(8)}
+            initialUrl={browserTabUrl(props.workspace, surface.slice(8))}
+            onSendToTerminal={props.onSendToTerminal}
             active={visible}
-            onTitleChange={onBrowserTitleChange}
+            onTitleChange={(title, favicon) => onBrowserTitleChange(surface, title, favicon)}
             client={props.client ?? undefined}
             onFocusPane={props.onFocusPane}
           />
@@ -477,8 +471,6 @@ function SidePanelBody({
   filesRoot,
   setSurface,
   panelWidth,
-  browserTabId,
-  browserWorkspace,
   onBrowserTitleChange,
   onFilesTabTitleChange,
   checkAgentTargets,
@@ -496,9 +488,7 @@ function SidePanelBody({
   filesRoot: string
   setSurface: (surface: SurfaceKind) => void
   panelWidth: number
-  browserTabId: string
-  browserWorkspace: string
-  onBrowserTitleChange: (title: string, favicon: string | null) => void
+  onBrowserTitleChange: (id: string, title: string, favicon: string | null) => void
   onFilesTabTitleChange: (name: string | null) => void
   checkAgentTargets: CheckAgentTarget[]
   requestedPrForTab: { number: number; nonce: number } | null
@@ -520,8 +510,6 @@ function SidePanelBody({
             filesRoot={filesRoot}
             setSurface={setSurface}
             panelWidth={panelWidth}
-            browserTabId={browserTabId}
-            browserWorkspace={browserWorkspace}
             onBrowserTitleChange={onBrowserTitleChange}
             onFilesTabTitleChange={onFilesTabTitleChange}
             checkAgentTargets={checkAgentTargets}
@@ -549,7 +537,7 @@ function SidePanelBody({
   )
 }
 
-function SidePanelFrame({ open, entering, mounted, props, openTabs, active, tabsRef, overflowing, dragTab, metaFor, selectSurface, closeSurface, reorderSurface, addOpen, setAddOpen, links, openSurface, icons, rendered, requested, hostWidth, finishExit, onKeyDown, isOrchestrator, filesRoot, browserId, browserWorkspace, onTitleChange, onFilesTabTitleChange, checkAgentTargets, requestedPrForTab, overviewTarget, setOverviewTarget, setEntering, maximized, onToggleMaximize }: {
+function SidePanelFrame({ open, entering, mounted, props, openTabs, active, tabsRef, overflowing, dragTab, metaFor, selectSurface, closeSurface, reorderSurface, addOpen, setAddOpen, links, openSurface, icons, rendered, requested, hostWidth, finishExit, onKeyDown, isOrchestrator, filesRoot, onTitleChange, onFilesTabTitleChange, checkAgentTargets, requestedPrForTab, overviewTarget, setOverviewTarget, setEntering, maximized, onToggleMaximize }: {
   open: boolean
   entering: boolean
   mounted: boolean
@@ -575,9 +563,7 @@ function SidePanelFrame({ open, entering, mounted, props, openTabs, active, tabs
   onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void
   isOrchestrator: boolean
   filesRoot: string
-  browserId: string
-  browserWorkspace: string
-  onTitleChange: (title: string, favicon: string | null) => void
+  onTitleChange: (id: string, title: string, favicon: string | null) => void
   onFilesTabTitleChange: (name: string | null) => void
   checkAgentTargets: CheckAgentTarget[]
   requestedPrForTab: { number: number; nonce: number } | null
@@ -611,7 +597,7 @@ function SidePanelFrame({ open, entering, mounted, props, openTabs, active, tabs
     >
       <ScmResizeHandle requested={requested} rendered={rendered} hostWidth={hostWidth} onWidth={props.onWidth} onReset={props.onResetWidth} />
       <SidePanelHeader openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} props={props} links={links} openSurface={openSurface} icons={icons} maximized={maximized} onToggleMaximize={onToggleMaximize} />
-      <SidePanelBody openTabs={openTabs} active={active} props={props} links={links} icons={icons} openSurface={openSurface} isOrchestrator={isOrchestrator} filesRoot={filesRoot} setSurface={selectSurface} panelWidth={rendered} browserTabId={browserId} browserWorkspace={browserWorkspace} onBrowserTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} />
+      <SidePanelBody openTabs={openTabs} active={active} props={props} links={links} icons={icons} openSurface={openSurface} isOrchestrator={isOrchestrator} filesRoot={filesRoot} setSurface={selectSurface} panelWidth={rendered} onBrowserTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} />
     </InspectorSurface>
   )
 }
@@ -635,11 +621,8 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
   const [filesRoot, setFilesRoot] = useState(props.dir ?? props.workspace)
   const [hostWidth, setHostWidth] = useState(0)
   const [overflowing, setOverflowing] = useState(false)
-  const [browserTitle, setBrowserTitle] = useState('')
-  const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
+  const [browserMeta, setBrowserMeta] = useState<Record<string, {title: string; favicon: string | null}>>({})
   const [filesTabTitle, setFilesTabTitle] = useState('')
-  const [browserId, setBrowserId] = useState(props.browserTabId ?? 'inspector')
-  const [browserWorkspace, setBrowserWorkspace] = useState(props.workspace)
   const [addOpen, setAddOpen] = useState(false)
   const [overviewTarget, setOverviewTarget] = useState<number | null>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
@@ -672,7 +655,12 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
   )
 
   useEffect(() => { saveInspectorTabs(props.workspace, tabs) }, [props.workspace, tabs])
-  useEffect(() => { setTabs(loadInspectorTabs(props.workspace)) }, [props.workspace])
+  useEffect(() => {
+    const restore = (): void => setTabs(loadInspectorTabs(props.workspace))
+    restore()
+    window.addEventListener('houston:inspector-restore', restore)
+    return () => window.removeEventListener('houston:inspector-restore', restore)
+  }, [props.workspace])
   useEffect(() => { setFilesRoot(props.dir ?? props.workspace) }, [props.dir, props.workspace])
   useEffect(() => {
     const host = document.querySelector<HTMLElement>('[data-testid="side-panel-row"]')
@@ -691,17 +679,29 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
     observer?.observe(node)
     return () => observer?.disconnect()
-  }, [openTabs, active, browserTitle, hostWidth])
+  }, [openTabs, active, browserMeta, hostWidth])
   const recordAction = (): void => {
     actionCount.current += 1
     props.onUserActionCounterChange?.(actionCount.current)
   }
-  const openSurface = (surface: SurfaceKind): void => {
+  const openSurface = (requested: SurfaceKind): void => {
+    const surface: SurfaceKind = requested === 'browser' ? `browser:browser-${crypto.randomUUID()}` : requested
     setTabs((current) => ({ openTabs: current.openTabs.includes(surface) ? current.openTabs : [...current.openTabs, surface], active: surface }))
     recordAction()
   }
-  useSidePanelRequest(props.request, props.activeSessionId, isOrchestrator, setOverviewTarget, setFilesRoot, setBrowserId, setBrowserWorkspace, setBrowserTitle, setFaviconUrl, openSurface)
+  useSidePanelRequest(props.request?.kind === 'browser' ? null : props.request, props.activeSessionId, isOrchestrator, setOverviewTarget, setFilesRoot, openSurface)
+  useEffect(() => {
+    const request = props.request
+    if (request?.kind !== 'browser' || request.workspace !== props.workspace) return
+    updateSideBrowser(request.id, request.url, props.workspace, request.action ?? 'open')
+    setTabs(loadInspectorTabs(props.workspace))
+    props.onBrowserRequestHandled?.(request)
+  }, [props.request])
+  useEffect(() => {
+    if (isTauri() && isBrowserSurface(active)) void tauriBrowserInvoke('browser_set_active', {id: active.slice(8), workspaceId: props.workspace})
+  }, [active, props.workspace])
   const closeSurface = (surface: SurfaceKind): void => {
+    if (isBrowserSurface(surface)) localStorage.removeItem(`tr-inspector-browser-url:${props.workspace}:${surface.slice(8)}`)
     setTabs((current) => {
       const next = current.openTabs.filter((item) => item !== surface)
       return { openTabs: next, active: current.active === surface ? (next.at(-1) ?? null) : current.active }
@@ -732,11 +732,11 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
       }
     }
   }
-  const onTitleChange = useCallback((title: string, favicon: string | null): void => { setBrowserTitle(title); setFaviconUrl(favicon) }, [])
+  const onTitleChange = useCallback((id: string, title: string, favicon: string | null): void => { setBrowserMeta((current) => ({...current, [id]: {title, favicon}})) }, [])
   const onFilesTabTitleChange = useCallback((name: string | null): void => setFilesTabTitle(name ?? ''), [])
   const prLink = props.requestedPr ?? props.linkedPullRequests?.[0]
   const prTone = pullRequestTone(prLink)
-  const metaFor = (surface: SurfaceKind): { title: string; icon: React.ReactNode } => titleForSurface(surface, browserTitle, faviconUrl, prLink?.number ?? null, prTone, filesTabTitle)
+  const metaFor = (surface: SurfaceKind): { title: string; icon: React.ReactNode } => titleForSurface(surface, browserMeta[surface]?.title ?? '', browserMeta[surface]?.favicon ?? null, prLink?.number ?? null, prTone, filesTabTitle)
   const icons = useMemo(() => ({ ...SURFACE_META }), [])
   const handledProactiveDiff = useRef<number | null>(null)
   useEffect(() => {
@@ -748,8 +748,8 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
     }
   }, [props.proactiveDiffEnabled, props.proactiveDiffRequest, props.onUserActionCounterChange])
 
-  if (!mounted && !props.keepMounted && !openTabs.includes('browser')) return null
-  return <SidePanelFrame open={open} entering={entering} mounted={mounted} props={props} openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} links={links} openSurface={openSurface} icons={icons} rendered={rendered} requested={requested} hostWidth={hostWidth} finishExit={finishExit} onKeyDown={onKeyDown} isOrchestrator={isOrchestrator} filesRoot={filesRoot} browserId={browserId} browserWorkspace={browserWorkspace} onTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} setEntering={setEntering} maximized={maximized} onToggleMaximize={onToggleMaximize} />
+  if (!mounted && !props.keepMounted && !openTabs.some(isBrowserSurface)) return null
+  return <SidePanelFrame open={open} entering={entering} mounted={mounted} props={props} openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} links={links} openSurface={openSurface} icons={icons} rendered={rendered} requested={requested} hostWidth={hostWidth} finishExit={finishExit} onKeyDown={onKeyDown} isOrchestrator={isOrchestrator} filesRoot={filesRoot} onTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} setEntering={setEntering} maximized={maximized} onToggleMaximize={onToggleMaximize} />
 }
 
 export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: sessionsProp, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: Omit<SourceControlPanelProps, 'onCreateCheckAgent' | 'requestedPr'> & {
@@ -766,6 +766,7 @@ export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: se
   activeId: number | null
   sessions: ReadonlyMap<number, SessionInfo>
   request: SideOpen | null
+  onBrowserRequestHandled?: (request: SideOpen) => void
   reviewChild: SessionInfo | null
   onSurface: (surface: 'grid' | 'side') => void
   onFocusPane: (id: number) => void
@@ -810,5 +811,34 @@ export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: se
         onSurface('grid')
       }}
     />
+  )
+}
+
+// Hidden workspace browsers retain their native surface identity until their tab closes.
+export function SidePanelWorkspaces(props: Parameters<typeof SidePanelIntegration>[0]): React.JSX.Element {
+  const workspaces = Array.from(new Set([props.selectedWorkspace, ...(props.workspaces ?? []).map((workspace) => workspace.path)]))
+    .filter((workspace) => workspace === props.selectedWorkspace || loadInspectorTabs(workspace).openTabs.some(isBrowserSurface))
+  return <>{workspaces.map((workspace) => <WorkspaceSidePanel key={workspace} workspace={workspace} {...props} />)}</>
+}
+
+function WorkspaceSidePanel({ workspace, ...props }: Parameters<typeof SidePanelIntegration>[0] & {workspace: string}): React.JSX.Element {
+  const selected = workspace === props.selectedWorkspace
+  const request = props.request?.kind === 'browser'
+    ? (props.request.workspace === workspace ? props.request : null)
+    : (selected ? props.request : null)
+  return (
+    <div className={selected ? 'flex min-w-0' : 'hidden'}>
+      <SidePanelIntegration {...props}
+        selectedWorkspace={workspace}
+        proactiveDiffEnabled={selected && props.proactiveDiffEnabled}
+        focused={selected && props.focused}
+        open={selected && props.open !== false}
+        keepMounted={loadInspectorTabs(workspace).openTabs.some(isBrowserSurface)}
+        request={request}
+        reviewChild={selected ? props.reviewChild : null}
+        dir={selected ? props.dir : workspace}
+        hiddenByOverlay={!selected || props.hiddenByOverlay}
+      />
+    </div>
   )
 }

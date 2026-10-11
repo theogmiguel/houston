@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   type AppHarness,
   deliverControl,
+  makeWorkspace,
   renderReadyApp,
   resetHarness,
   settleLazySurface
 } from './test/appTestHarness'
+import { openSideBrowser } from './sidePanel'
 import { DEFAULT_GRID_ID, gridStorageKey } from './layout/tree'
 
 beforeEach(() => {
@@ -57,7 +59,7 @@ describe('the browser pane shortcut', () => {
     expect(harness!.container.querySelector('[data-testid="side-panel"]')).not.toBeNull()
   })
 
-  it('opens the existing Browser surface when the shortcut is used again', async () => {
+  it('opens a new Browser tab when the shortcut is used again', async () => {
     harness = await renderReadyApp()
     pressB()
     pressB()
@@ -67,7 +69,19 @@ describe('the browser pane shortcut', () => {
       () => harness!.container.querySelector('.browser-surface') !== null,
       'BrowserSurface'
     )
-    expect(harness.container.querySelectorAll('.browser-surface')).toHaveLength(1)
+    expect(harness.container.querySelectorAll('.browser-surface')).toHaveLength(2)
+  })
+
+  it('keeps another workspace browser surface mounted while selecting a new workspace', async () => {
+    harness = await renderReadyApp({ workspaces: [makeWorkspace(), makeWorkspace({ path: '/tmp/other', name: 'other' })] })
+    act(() => openSideBrowser('first-workspace', 'https://first.test/', '/tmp/project'))
+    await settleLazySurface(() => harness!.container.querySelector('.browser-surface[data-active="true"]') !== null, 'first workspace browser')
+    const first = harness.container.querySelector('.browser-surface')!
+    act(() => openSideBrowser('second-workspace', 'https://second.test/', '/tmp/other'))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    expect(first.isConnected).toBe(true)
+    expect(harness.container.querySelectorAll('.browser-surface')).toHaveLength(2)
+    expect(first.getAttribute('data-active')).not.toBe('true')
   })
 
   it('stays inert on step 1’s screen, which can sit over a live workspace', async () => {

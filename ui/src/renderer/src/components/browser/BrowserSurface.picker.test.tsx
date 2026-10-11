@@ -2,10 +2,10 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { HIT_TARGET_28 } from './hitTarget'
+import { HIT_TARGET_28 } from '../hitTarget'
 
 const { isTauriMock } = vi.hoisted(() => ({ isTauriMock: vi.fn(() => true) }))
-vi.mock('../houston/host', () => ({ isTauri: () => isTauriMock() }))
+vi.mock('../../houston/host', () => ({ isTauri: () => isTauriMock() }))
 
 const { listenMock } = vi.hoisted(() => ({ listenMock: vi.fn() }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: listenMock }))
@@ -13,9 +13,9 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: listenMock }))
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
 
-const { BrowserPane } = await import('./BrowserPane')
-const { __resetNativeSuppressionForTests, setSuppressionSink } = await import('../layout/nativeSuppression')
-const { __resetBrowserSurfaceRegistryForTests } = await import('../houston/browserSurfaceRegistry')
+const { BrowserSurface } = await import('./BrowserSurface')
+const { __resetNativeSuppressionForTests, setSuppressionSink } = await import('../../layout/nativeSuppression')
+const { __resetBrowserSurfaceRegistryForTests } = await import('../../houston/browserSurfaceRegistry')
 
 const RECT = { x: 0, y: 0, width: 400, height: 300 }
 const LEAF_ID = 'leaf-picker'
@@ -75,12 +75,9 @@ async function flush(): Promise<void> {
 function render(onSendToTerminal: ((text: string) => void) | undefined = vi.fn()): void {
   act(() => {
     root.render(
-      <BrowserPane
-        node={{ kind: 'browser', id: LEAF_ID, url: 'https://example.test/' }}
-        workspaceDir="/tmp/tr-test-ws"
-        onNavigate={() => {}}
-        onClose={() => {}}
-        onHeaderPointerDown={() => {}}
+      <BrowserSurface
+        tabId={LEAF_ID} initialUrl="https://example.test/" active onTitleChange={() => {}}
+        workspace="/tmp/tr-test-ws"
         onSendToTerminal={onSendToTerminal}
       />
     )
@@ -118,7 +115,7 @@ function elementSelectedPayload(overrides: Record<string, unknown> = {}): Record
 
 describe('BrowserPane element picker (C11)', () => {
   it('disables selection without a focused agent target and explains the reason', async () => {
-    act(() => root.render(<BrowserPane node={{ kind: 'browser', id: LEAF_ID, url: 'https://example.test/' }} workspaceDir="/tmp/tr-test-ws" onNavigate={() => {}} onClose={() => {}} onHeaderPointerDown={() => {}} />))
+    act(() => root.render(<BrowserSurface tabId={LEAF_ID} initialUrl="https://example.test/" active onTitleChange={() => {}} workspace="/tmp/tr-test-ws" />))
     await flush()
     expect(toggleButton().disabled).toBe(true)
     const wrap = toggleButton().parentElement!
@@ -279,11 +276,11 @@ describe('BrowserPane element picker (C11)', () => {
     expect(invokeMock).toHaveBeenCalledWith('browser_clear_picker_selection', { id: LEAF_ID })
   })
 
-  it('the picker toggle is absent under Electron (D4) rather than a dead button', async () => {
+  it('the picker does not invoke native commands outside Tauri', async () => {
     isTauriMock.mockReturnValue(false)
     render()
     await flush()
-
-    expect(container.querySelector(`[data-testid="browser-picker-toggle-${LEAF_ID}"]`)).toBeNull()
+    act(() => toggleButton().click())
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 })

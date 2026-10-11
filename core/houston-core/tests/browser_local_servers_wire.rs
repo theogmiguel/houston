@@ -103,6 +103,28 @@ async fn reports_only_listeners_from_live_sessions_in_the_requested_workspace() 
         "another workspace's listener leaked into the reply"
     );
 
+    let provider = houston_core::browser_relay::BrowserRelayTools::new(&daemon);
+    let scope = houston_core::mcp_creds::McpScope {
+        session_id: local.id,
+        workspace_id: workspace.path().to_string_lossy().into_owned(),
+    };
+    use houston_core::mcp_server::ToolProvider;
+    let output = provider
+        .call(&scope, "browser_local_servers", &serde_json::json!({}))
+        .await
+        .unwrap();
+    let rows = output.structured.unwrap();
+    assert!(rows["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["port"] == port));
+    assert!(!rows["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["port"] == other_port));
+
     daemon.kill(local.id).unwrap();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     loop {

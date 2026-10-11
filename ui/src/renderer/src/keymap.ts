@@ -141,7 +141,7 @@ export const openFileShortcut: ShortcutEntry = {
 }
 
 export const openBrowserSurface: ShortcutEntry = {
-  id: 'open-browser-surface', keyLabel: 'B', description: 'open the Browser panel tab',
+  id: 'open-browser-surface', keyLabel: 'B', description: 'open a new Browser panel tab',
   category: 'global', layer: 'prefix', match: (e) => NO_MODS(e) && e.key.toLowerCase() === 'b'
 }
 

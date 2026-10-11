@@ -58,7 +58,7 @@ describe('source control persistence', () => {
   })
 
   it('persists ordered open surfaces and the active surface per workspace', () => {
-    const state = { openTabs: ['files', 'browser', 'diff'] as ('files' | 'browser' | 'diff')[], active: 'browser' as const }
+    const state = { openTabs: ['files', 'browser:tab-one', 'diff'] as ('files' | 'browser:tab-one' | 'diff')[], active: 'browser:tab-one' as const }
     saveInspectorTabs('/repo', state)
     expect(localStorage.getItem(inspectorTabsKey('/repo'))).toBe(JSON.stringify(state))
     expect(loadInspectorTabs('/repo')).toEqual(state)

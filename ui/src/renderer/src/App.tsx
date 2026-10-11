@@ -238,7 +238,7 @@ import {
 import { preloadable } from "./preloadable";
 import { useExitAnimation } from "./components/ui/AnimOut";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
-import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, TERMINAL_FOCUS_EVENT, selectOverviewChild, openSideBrowser, openSideTasks } from "./sidePanel";
+import { reviewCheckoutDir, TASKS_OPEN_EVENT, TERMINAL_FOCUS_EVENT, selectOverviewChild, openSideBrowser, openSideTasks } from "./sidePanel";
 import { terminalSelection } from "./pane/terminalSelection";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
@@ -671,7 +671,7 @@ function SessionEffects({
   return null;
 }
 
-const sidePanelIntegration = preloadable(() => import("./components/SidePanel").then((module) => module.SidePanelIntegration));
+const sidePanelIntegration = preloadable(() => import("./components/SidePanel").then((module) => module.SidePanelWorkspaces));
 export const preloadSidePanel = sidePanelIntegration.preload;
 const SidePanelIntegration = sidePanelIntegration.Slot;
 
@@ -845,7 +845,7 @@ export function App(): React.JSX.Element {
   const prListDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   const prScreen = usePullRequestsScreen(readyClient(conn), prListDir, railView === 'prs');
   const [requestedPr, setRequestedPr] = useState<PullRequestLink | null>(null);
-  const browserRelaySequence = useRef(0);
+
   const [taskSurfaceRequest, setTaskSurfaceRequest] = useState<{ openId?: number; compose?: boolean; create?: { title: string; description: string } } | null>(null);
   useEffect(() => {
     const open = (event: Event): void => {
@@ -1011,9 +1011,8 @@ export function App(): React.JSX.Element {
     window.dispatchEvent(new Event(TERMINAL_SYNC_FIT_EVENT));
   }, [sidePanelPresent]);
   const [scmTab, setScmTab] = useState<ScmTab>("changes");
-  const [panelMountEpoch, setPanelMountEpoch] = useState(0);
   const scmWidth = useScmWidth();
-  const { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspace, pickerTarget, sideReview, setSideReview } = useSidePanelState(selectedWs, activeId, sessions, scmOpen, setScmOpen, (workspace) => revealWorkspace(workspace));
+  const { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspace, pickerTarget, sideReview, setSideReview } = useSidePanelState(selectedWs, activeId, sessions, scmOpen, setScmOpen, (workspace) => setSelectedWs(workspace));
   const gridSurfaceHidden = gridHidden;
   const [wsRenaming, setWsRenaming] = useState<string | null>(null);
   // Keyed by `gridStorageKey(path, gridId)` for a real workspace, never the
@@ -2491,20 +2490,6 @@ export function App(): React.JSX.Element {
     },
     [],
   );
-  useEffect(() => {
-    const move = (event: Event): void => {
-      const { id, url, workspace } = (event as CustomEvent<{ id: string; url: string; workspace: string }>).detail;
-      const key = keyForRef(workspace);
-      setLayouts((prev) => {
-        const cur = prev.get(key) ?? loadLayout(key);
-        return new Map(prev).set(key, { ...cur, tree: insertPaneAt(cur.tree, { kind: "browser", id, url }, null) });
-      });
-      setActiveSurface("grid");
-      setActiveLeaf(id);
-    };
-    window.addEventListener(SIDE_BROWSER_MOVE_EVENT, move);
-    return () => window.removeEventListener(SIDE_BROWSER_MOVE_EVENT, move);
-  }, [setActiveLeaf]);
   const sendPickerToAgent = useCallback((text: string): void => {
     const target = pickerTarget.current;
     const cur = connForSkillRef.current;
@@ -2645,7 +2630,6 @@ export function App(): React.JSX.Element {
     sideWorkspace,
     setScmOpen,
     setActiveSurface,
-    setPanelMountEpoch,
   });
   useEffect(() => {
     setSideReview((current) => current?.id === activeId ? current : null);
@@ -3093,33 +3077,10 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener("pointerdown", onDown, true);
   }, []);
 
-  useBrowserFocus((id) => {
-    setActiveSurface("grid");
-    setActiveId(null);
-    const tree = currentTreeRef.current;
-    setActiveLeaf(tree && findPane(tree, id) ? id : null);
-  });
-  const revealGridBrowser = (workspace: string, surfaceId: string): boolean => {
-    for (const grid of gridsByWsRef.current.get(workspace) ?? loadGrids(workspace)) {
-      const key = gridStorageKey(workspace, grid.id);
-      const layout = layoutsRef.current.get(key) ?? loadLayout(key);
-      const tree = layout.tree;
-      if (!tree || findPane(tree, surfaceId)?.kind !== "browser") continue;
-      handleSelectGrid(workspace, grid.id);
-      const stack = findStackContaining(tree, surfaceId);
-      if (stack) setLayouts((current) => new Map(current).set(key, { ...layout, tree: setActiveStackTab(tree, stack.id, surfaceId) }));
-      setExpandedId(null);
-      setActiveLeaf(surfaceId);
-      setActiveSurface("grid");
-      return true;
-    }
-    return false;
-  };
-  useBrowserOpenRequest((workspaceDir, url, surfaceId) => {
-    if (!workspacesRef.current.some((w) => w.path === workspaceDir)) return;
-    routeBrowserOpenRequest(workspaceDir, url, surfaceId, revealGridBrowser, (workspace, requestedUrl) => {
-      openSideBrowser(`relay-${Date.now()}-${++browserRelaySequence.current}`, requestedUrl, workspace);
-    });
+  useBrowserFocus(() => setActiveSurface('side'));
+  useBrowserOpenRequest((request) => {
+    if (!workspacesRef.current.some((w) => w.path === request.workspaceId)) return;
+    routeBrowserOpenRequest(request, setSelectedWs);
   });
 
   const voiceClient = conn.kind === "ready" ? conn.client : null;
@@ -3998,13 +3959,11 @@ export function App(): React.JSX.Element {
                 onLaunch={launchSessions}
                 onClose={() => { setComposer(null); setLaunchPreview(null) }}
               />
-              <SidePanelIntegration
-                  key={`${sideWorkspace}:${panelMountEpoch}`}
+                <SidePanelIntegration
                   proactiveDiffEnabled={openDiffOnAgentStop}
                   proactiveDiffRequest={proactiveDiff.request}
                   focused={activeSurface === "side"}
                   open={scmOpen}
-                  keepMounted={loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")}
                   onExitAnimationEnd={finishSidePanelExit}
                   onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
                   sendToTerminalLabel={pickerTargetLabel}
@@ -4012,6 +3971,7 @@ export function App(): React.JSX.Element {
                   activeId={activeId}
                   sessions={sessions}
                   request={sideRequest}
+                  onBrowserRequestHandled={(request) => setSideRequest((current) => current === request ? null : current)}
                   reviewChild={sideReview}
                   onSurface={setActiveSurface}
                   onFocusPane={(session) => focusAndFlashPane(session, focusPane)}

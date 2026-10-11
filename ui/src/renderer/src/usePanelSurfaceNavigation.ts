@@ -1,3 +1,4 @@
+import { openSideBrowser } from './sidePanel'
 import { useCallback } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { SessionInfo } from './houston/client'
@@ -10,7 +11,6 @@ interface UsePanelSurfaceNavigationOptions {
   sideWorkspace: string
   setScmOpen: Dispatch<SetStateAction<boolean>>
   setActiveSurface: (surface: 'grid' | 'side') => void
-  setPanelMountEpoch: Dispatch<SetStateAction<number>>
 }
 
 export function usePanelSurfaceNavigation({
@@ -19,18 +19,21 @@ export function usePanelSurfaceNavigation({
   sideWorkspace,
   setScmOpen,
   setActiveSurface,
-  setPanelMountEpoch,
 }: UsePanelSurfaceNavigationOptions) {
   const openPanelSurface = useCallback((surface: SurfaceKind): void => {
     const workspace = sideWorkspace === 'all' ? sessions.get(activeId ?? -1)?.project_dir ?? 'all' : sideWorkspace
     if (!workspace) return
+    if (surface === 'browser') {
+      openSideBrowser(`browser-${crypto.randomUUID()}`, '', workspace)
+      return
+    }
     const current = loadInspectorTabs(workspace)
     const openTabs = current.openTabs.includes(surface) ? current.openTabs : [...current.openTabs, surface]
     saveInspectorTabs(workspace, { openTabs, active: surface })
     setScmOpen(true)
     setActiveSurface('side')
-    setPanelMountEpoch((epoch) => epoch + 1)
-  }, [activeId, sessions, setActiveSurface, setPanelMountEpoch, setScmOpen, sideWorkspace])
+    window.dispatchEvent(new Event('houston:inspector-restore'))
+  }, [activeId, sessions, setActiveSurface, setScmOpen, sideWorkspace])
 
   return { openPanelSurface }
 }

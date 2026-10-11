@@ -198,11 +198,35 @@ spelling, or a verb that is CLI-only).
 | `browser_click`, `_type`, `_hover`, `_press_key`, `_select_option` | `mcp_tools.rs` | — | act on an element by `ref` |
 | `browser_go_back`, `_go_forward` | `mcp_tools.rs` | — | history navigation |
 | `browser_wait_for` | `mcp_tools.rs` | — | poll until text is visible, or time out |
+| `browser_tabs` | `mcp_tools.rs` | — | list live workspace tabs and active tab |
+| `browser_new_tab`, `_select_tab`, `_close_tab` | `mcp_tools.rs` | — | open or select a workspace tab; close only tabs this session opened |
+| `browser_reload`, `_scroll` | `mcp_tools.rs` | — | reload with optional cache bypass, or scroll the page or a referenced element |
+| `browser_console_messages` | `mcp_tools.rs` | — | bounded, filtered console messages labelled untrusted |
+| `browser_local_servers` | `core/houston-core/src/browser_relay.rs` | — | discover local servers belonging to live workspace sessions on Linux |
 
-The browser tools live in the Tauri crate rather than `core/` because they need the
-in-process `BrowserRegistry`; the Tauri shell registers them into the daemon's tool registry
-during setup. This is the one place `core/` gains a capability it cannot see itself.
-`browser_click` and `browser_type` pass a human confirmation gate before acting.
+Browser schemas and relay routing live in the daemon. The native page operations run in
+Tauri against the credential workspace's live surfaces. The app explicitly registers its
+relay connection after authentication; ordinary renderer connections receive no tool calls.
+Only pending calls belonging to a disconnected connection fail. With no registered relay,
+page operations fail immediately. Local server discovery runs directly in the Linux daemon.
+
+Page tools accept an optional `tabId`. Explicit ids must be live in the caller's workspace;
+refusals list its available tab ids and URLs. Without an id, the active live tab wins, then
+the most recently registered live surface. Capture, tab selection and the five confirmation-gated
+acts reveal the target. Reads (current page, snapshot, console messages, wait and tab listing),
+navigation, history, reload and scroll on existing surfaces preserve the selected workspace
+and panel, including when the target is hidden.
+Opening a tab uses a host-selected id and waits for that exact surface to register.
+
+All five element acts (`browser_click`, `browser_type`, `browser_hover`,
+`browser_press_key`, `browser_select_option`) pass the human confirmation gate. Read tools
+are ungated. Reload, scroll, new, select and close follow the ungated navigation policy:
+they do not address form controls or insert text. Close is restricted to tabs opened by the
+calling session, so it cannot discard the user's existing tabs. Reload can repeat a page
+request; agents must use it only when the user's task requires it. Console messages are
+untrusted page content, bounded to 256 entries of 4096 characters per surface. Main-world
+capture includes console calls, uncaught errors and unhandled rejections on Linux;
+`browser_console_messages` refuses other platforms by name.
 
 `pane_spawn` takes `kind` (`claude | codex | antigravity | opencode | cursor | grok`), `prompt`,
 and optional `model`, `cwd`, `target_workspace`, `worktree`, `branch`, `reusable`, `handoff`, `state_doc`, `effort`,
@@ -1502,8 +1526,7 @@ remain mounted while their tabs or panel are hidden, with id-scoped native suppr
 closing a browser tab destroys its surface and frees a native-webview slot. Popovers,
 menus, modals and resize drags assert shared suppression reasons because native children
 paint above the renderer DOM. Tooltips never suppress: they sit over chrome rows, and a
-global hide on every hover blanks the page. Moving a browser between panel and grid preserves its
-surface identity and saved tab state, while remounting the surface at its new placement.
+global hide on every hover blanks the page.
 
 Worktree spawning passes Codex a session-local inline `projects` trust table for the
 child checkout and the repository's main checkout,

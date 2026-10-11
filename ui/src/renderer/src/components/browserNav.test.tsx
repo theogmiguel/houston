@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { act, renderHook } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import type { BrowserState } from '../houston/browserState'
-import type { BrowserTab } from './browserTabs'
+import type { BrowserPageState } from './browserNav'
 import { useBrowserNav } from './browserNav'
 
 const native = vi.hoisted(() => ({ state: null as BrowserState | null }))
@@ -18,12 +18,12 @@ it('keeps requested navigation until native loading finishes and then accepts re
     error: null, mountFailed: false
   }
   const hook = renderHook(() => {
-    const [tab, setTab] = useState<BrowserTab>({ id: 1, url: oldUrl })
+    const [tab, setTab] = useState<BrowserPageState>({ url: oldUrl })
     const [input, setInput] = useState(oldUrl)
     const [, setError] = useState<string | null>(null)
     const [, setRecents] = useState<string[]>([])
-    const nav = useBrowserNav('test', useRef(null), [tab], tab,
-      (_id, patch) => setTab((prev) => ({ ...prev, ...patch })),
+    const nav = useBrowserNav('test', tab,
+      (patch) => setTab((prev) => ({ ...prev, ...patch })),
       setInput, setError, setRecents)
     return { tab, input, nav }
   })

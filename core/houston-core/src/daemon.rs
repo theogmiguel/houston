@@ -14670,15 +14670,6 @@ impl Daemon {
         total
     }
 
-    pub fn any_live_conn(&self) -> Option<u64> {
-        self.visibility
-            .lock()
-            .expect("visibility lock")
-            .keys()
-            .next()
-            .copied()
-    }
-
     pub fn conn_register(&self) -> u64 {
         let id = self.next_conn_id.fetch_add(1, Ordering::Relaxed);
         self.visibility
@@ -14696,7 +14687,7 @@ impl Daemon {
             map.len()
         };
         self.voice_release_monitor(conn);
-        self.browser_relay.fail_all_pending();
+        self.browser_relay.forget(conn);
         if remaining == 0 {
             if let Err(e) = self.checkpoint_scrollback() {
                 tracing::warn!("checkpoint on last client detach: {e:#}");

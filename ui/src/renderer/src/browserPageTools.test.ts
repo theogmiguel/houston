@@ -521,3 +521,15 @@ describe('reveal', () => {
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
   })
 })
+
+
+describe('hidden native document operations', () => {
+  it('snapshots and checks wait text without needing a visible document', () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    document.body.innerHTML = '<main><h1>Ready to continue</h1><button>Continue</button></main>'
+    expect(document.hidden).toBe(true)
+    expect(elements(snapshot()).map(element => element.name)).toContain('Continue')
+    expect(runOp({ kind: 'exists', text: 'Ready to continue' }).result!.found).toBe(true)
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
+  })
+})

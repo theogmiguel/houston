@@ -104,8 +104,8 @@ describe('App keymap remap seam (P4 #16)', () => {
     dispatchChord({ key: ' ', code: 'Space', ctrlKey: true })
     dispatchChord({ key: 'b', code: 'KeyB' })
     expect(JSON.parse(localStorage.getItem('tr-inspector-tabs:/tmp/project') ?? 'null')).toEqual({
-      openTabs: ['browser'],
-      active: 'browser'
+      openTabs: [expect.stringMatching(/^browser:/)],
+      active: expect.stringMatching(/^browser:/)
     })
   })
 

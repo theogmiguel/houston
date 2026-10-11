@@ -209,7 +209,7 @@ describe('LayoutView expand-in-place (PERF-AUDIT §2)', () => {
     expect(slotFor(2).style.contain).toBe('')
   })
 
-  it('scopes content-visibility/contain to session leaves only, not browser/editor leaves', () => {
+  it('scopes content-visibility to sessions, leaves editors uncontained, and omits retired browser leaves', () => {
     const tree: LayoutNode = {
       kind: 'split',
       dir: 'row',
@@ -258,7 +258,7 @@ describe('LayoutView expand-in-place (PERF-AUDIT §2)', () => {
     })
 
     const slots = container.querySelectorAll<HTMLElement>('.pane-slot')
-    expect(slots.length).toBe(3)
+    expect(slots.length).toBe(2)
     for (const slot of slots) {
       expect(slot.style.visibility).toBe('hidden')
     }
