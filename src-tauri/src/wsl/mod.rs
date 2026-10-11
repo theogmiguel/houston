@@ -743,12 +743,20 @@ impl WslManager {
     /// Pause all restart owners before snapshotting. A running blocking provision job
     /// cannot be aborted truthfully; failure to drain therefore refuses confirmation.
     pub async fn pause_for_stop(&self) -> Result<Vec<EnvEntry>, String> {
+        self.pause_for_stop_with_timeout(Duration::from_secs(20))
+            .await
+    }
+
+    async fn pause_for_stop_with_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<Vec<EnvEntry>, String> {
         let inner = &self.inner;
         inner.stopping.store(true, Ordering::SeqCst);
         inner.generation.fetch_add(1, Ordering::SeqCst);
         self.close_relays();
-        let _ops = tokio::time::timeout(Duration::from_secs(20), inner.ops.lock())
-            .await.map_err(|_| "WSL: could not settle startup/reensure ownership within 20s; daemons cannot be confirmed stopped".to_string())?;
+        let _ops = tokio::time::timeout(timeout, inner.ops.lock())
+            .await.map_err(|_| format!("WSL: could not settle startup/reensure ownership within {timeout:?}; daemons cannot be confirmed stopped"))?;
         // An in-flight startup may have published a relay while we drained it.
         self.close_relays();
         Ok(self.wsl_envs())
@@ -1039,6 +1047,36 @@ mod tests {
         manager.keep_open_after_stop();
         assert!(fake.calls().is_empty(), "Keep-open must not start a daemon");
         assert!(!manager.inner.stopping.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn unsettled_stop_refuses_and_keep_open_does_not_release_old_startup_work() {
+        let temp = tempfile::tempdir().unwrap();
+        let (fake, _daemons) = FakeWsl::new(ListReply::Missing);
+        let fake = Arc::new(fake);
+        let manager = manager(fake.clone(), temp.path(), temp.path(), true);
+        let mut config = config::load(temp.path()).unwrap();
+        config.enable("Ubuntu").unwrap();
+        config::save(temp.path(), &config).unwrap();
+        let owner = manager.inner.ops.lock().await;
+        let mut enable = Box::pin(manager.enable("Ubuntu".into()));
+        let mut ensure = Box::pin(manager.inner.clone().reensure("Ubuntu".into()));
+        assert!(futures_util::poll!(&mut enable).is_pending());
+        assert!(futures_util::poll!(&mut ensure).is_pending());
+        manager.start_enabled(); // Captures its generation before entering the task queue.
+        let refusal = manager
+            .pause_for_stop_with_timeout(Duration::ZERO)
+            .await
+            .unwrap_err();
+        assert!(refusal.contains("cannot be confirmed stopped"));
+        manager.keep_open_after_stop();
+        drop(owner);
+        assert!(enable.await.unwrap_err().contains("cancelled"));
+        assert!(ensure.await.unwrap_err().contains("cancelled"));
+        // Receipt: queued startup has left ops before we inspect backend side effects.
+        let _drained = manager.inner.ops.lock().await;
+        assert!(fake.calls().is_empty());
+        assert!(manager.wsl_envs().is_empty());
     }
 
     fn list_text(rows: &str) -> ListReply {
