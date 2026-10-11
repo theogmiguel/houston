@@ -130,8 +130,8 @@ pub enum Event {
     WindowFocused(bool),
     PaintReport { ok: bool, raf_gap_ms: u64 },
     ReloadRequested { reason: String },
-    RecoveryConfirmed { timed_out: bool },
-    RecoveryDeclined,
+    RecoveryConfirmed { incident_id: u64, timed_out: bool },
+    RecoveryDeclined { incident_id: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -142,7 +142,7 @@ pub enum Action {
     Reload,
     TerminateWebProcess,
     RecordReloadInPage,
-    PromptThenRecover { timeout_ms: u64 },
+    PromptThenRecover { incident_id: u64, deadline_ms: u64 },
     SetTitle(TitleState),
 }
 
@@ -489,11 +489,18 @@ impl Machine {
                 self.issue_rung(now_ms, &mut actions, false);
             }
 
-            Event::RecoveryConfirmed { timed_out } => {
-                if !self.prompt_outstanding() {
+            Event::RecoveryConfirmed {
+                incident_id,
+                timed_out,
+            } => {
+                if self.prompt_identity().map(|(id, _)| id) != Some(incident_id) {
                     actions.push(self.log(prev, Trigger::PromptStale, None));
                     return actions;
                 }
+                let timed_out = timed_out
+                    || self
+                        .prompt_identity()
+                        .is_some_and(|(_, deadline)| now_ms >= deadline);
                 if let Some(incident) = self.incident.as_mut() {
                     incident.prompt_deadline_ms = None;
                 }
@@ -501,10 +508,22 @@ impl Machine {
                 self.issue_rung(now_ms, &mut actions, true);
             }
 
-            Event::RecoveryDeclined => {
-                if !self.prompt_outstanding() {
+            Event::RecoveryDeclined { incident_id } => {
+                if self.prompt_identity().map(|(id, _)| id) != Some(incident_id) {
                     actions.push(self.log(prev, Trigger::PromptStale, None));
                     return actions;
+                }
+                if self
+                    .prompt_identity()
+                    .is_some_and(|(_, deadline)| now_ms >= deadline)
+                {
+                    return self.on_event(
+                        Event::RecoveryConfirmed {
+                            incident_id,
+                            timed_out: true,
+                        },
+                        now_ms,
+                    );
                 }
                 if let Some(incident) = self.incident.as_mut() {
                     incident.prompt_deadline_ms = None;
@@ -605,6 +624,13 @@ impl Machine {
             .is_some_and(|i| i.reason == "compositor-stall")
     }
 
+    pub fn prompt_identity(&self) -> Option<(u64, u64)> {
+        self.incident
+            .as_ref()
+            .and_then(|i| i.prompt_deadline_ms.map(|deadline| (i.id, deadline)))
+    }
+
+    #[cfg(test)]
     fn prompt_outstanding(&self) -> bool {
         self.incident
             .as_ref()
@@ -656,7 +682,8 @@ impl Machine {
             self.state = State::Recovering;
             actions.push(self.log(prev, Trigger::PromptIssued, None));
             actions.push(Action::PromptThenRecover {
-                timeout_ms: self.thresholds.prompt_timeout_ms,
+                incident_id: self.incident.as_ref().expect("recovery incident").id,
+                deadline_ms: deadline,
             });
             return;
         }
@@ -912,7 +939,13 @@ mod tests {
         m.on_event(Event::PageLoaded, 12_000);
         assert_eq!(m.state(), State::Booting);
         assert!(!m.prompt_outstanding());
-        let a = m.on_event(Event::RecoveryConfirmed { timed_out: true }, 20_000);
+        let a = m.on_event(
+            Event::RecoveryConfirmed {
+                incident_id: 1,
+                timed_out: true,
+            },
+            20_000,
+        );
         assert!(logs(&a).iter().any(|l| l.trigger == Trigger::PromptStale));
         assert!(!has(&a, &Action::Reload));
         assert_eq!(m.state(), State::Booting);
@@ -1034,7 +1067,10 @@ mod tests {
             let mut m = healthy(true);
             assert!(has(
                 &fail_to_unresponsive(&mut m, 10_000),
-                &Action::PromptThenRecover { timeout_ms: 10_000 }
+                &Action::PromptThenRecover {
+                    incident_id: 1,
+                    deadline_ms: 20_000
+                }
             ));
             m.on_event(suppress.clone(), 19_000);
             let a = m.on_event(Event::Tick, 20_000);
@@ -1054,7 +1090,13 @@ mod tests {
         let mut m = healthy(true);
         fail_to_unresponsive(&mut m, 10_000);
         m.on_event(Event::WindowVisible(false), 19_000);
-        let a = m.on_event(Event::RecoveryConfirmed { timed_out: true }, 20_000);
+        let a = m.on_event(
+            Event::RecoveryConfirmed {
+                incident_id: 1,
+                timed_out: true,
+            },
+            20_000,
+        );
         assert!(!has(&a, &Action::Reload), "{a:?}");
         m.on_event(Event::WindowVisible(true), 21_000);
         assert!(has(&m.on_event(Event::Tick, 21_000), &Action::Reload));
@@ -1064,7 +1106,7 @@ mod tests {
     fn a_new_crash_does_not_rearm_a_declined_recovery() {
         let mut m = healthy(true);
         fail_to_unresponsive(&mut m, 10_000);
-        m.on_event(Event::RecoveryDeclined, 11_000);
+        m.on_event(Event::RecoveryDeclined { incident_id: 1 }, 11_000);
         let a = m.on_event(
             Event::WebProcessTerminated {
                 reason: TerminationReason::Crashed,
@@ -1359,7 +1401,7 @@ mod tests {
         m.on_event(Event::ProbeReturned { rtt_ms: 12 }, 11_000);
         assert_eq!(m.state(), State::Healthy);
 
-        let a = m.on_event(Event::RecoveryDeclined, 12_000);
+        let a = m.on_event(Event::RecoveryDeclined { incident_id: 1 }, 12_000);
         assert_eq!(
             m.state(),
             State::Healthy,
@@ -1378,12 +1420,41 @@ mod tests {
     }
 
     #[test]
+    fn an_old_prompt_answer_cannot_resolve_a_new_incident() {
+        let mut m = healthy(true);
+        fail_to_unresponsive(&mut m, 10_000);
+        let old = m.prompt_identity().unwrap().0;
+        m.on_event(Event::ProbeReturned { rtt_ms: 5 }, 11_000);
+        fail_to_unresponsive(&mut m, 12_000);
+        let current = m.prompt_identity().unwrap();
+        assert_ne!(old, current.0);
+        for event in [
+            Event::RecoveryDeclined { incident_id: old },
+            Event::RecoveryConfirmed {
+                incident_id: old,
+                timed_out: false,
+            },
+        ] {
+            let actions = m.on_event(event, 12_001);
+            assert_eq!(m.prompt_identity(), Some(current));
+            assert_eq!(m.state(), State::Recovering);
+            assert!(!has(&actions, &Action::Reload));
+        }
+    }
+
+    #[test]
     fn a_stale_confirm_cannot_trigger_a_reload() {
         let mut m = healthy(true);
         m.on_event(Event::WindowFocused(true), 0);
         fail_to_unresponsive(&mut m, 10_000);
         m.on_event(Event::ProbeReturned { rtt_ms: 12 }, 11_000);
-        let a = m.on_event(Event::RecoveryConfirmed { timed_out: false }, 12_000);
+        let a = m.on_event(
+            Event::RecoveryConfirmed {
+                incident_id: 1,
+                timed_out: false,
+            },
+            12_000,
+        );
         assert!(
             !has(&a, &Action::Reload),
             "a recovered renderer must not be reloaded by a stale answer: {a:?}"
@@ -1445,7 +1516,7 @@ mod tests {
         let mut m = healthy(true);
         m.on_event(Event::WindowFocused(true), 0);
         fail_to_unresponsive(&mut m, 10_000);
-        let a = m.on_event(Event::RecoveryDeclined, 11_000);
+        let a = m.on_event(Event::RecoveryDeclined { incident_id: 1 }, 11_000);
         assert_eq!(m.state(), State::Halted);
         assert!(!has(&a, &Action::Reload), "{a:?}");
         let a = m.on_event(Event::Tick, 999_000);

@@ -93,6 +93,11 @@ enum Msg {
         payload: String,
         generation: u64,
     },
+    PromptAnswer {
+        incident_id: u64,
+        generation: u64,
+        outcome: PromptOutcome,
+    },
     Paint {
         ok: bool,
         raf_gap_ms: u64,
@@ -218,8 +223,7 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, label: &str, config: Config) -> b
         sessions,
         page_loaded: page_loaded.clone(),
         last_scale: Arc::new(std::sync::Mutex::new(None)),
-        prompt_open: Arc::new(AtomicBool::new(false)),
-        prompt_cancel: Arc::new(AtomicBool::new(false)),
+        prompt: Arc::new(std::sync::Mutex::new(None)),
         clocks: SystemClocks,
     };
 
@@ -319,8 +323,7 @@ struct Supervisor<R: Runtime, C: Clocks> {
     sessions: SessionSource,
     page_loaded: Arc<AtomicBool>,
     last_scale: Arc<std::sync::Mutex<Option<f64>>>,
-    prompt_open: Arc<AtomicBool>,
-    prompt_cancel: Arc<AtomicBool>,
+    prompt: Arc<std::sync::Mutex<Option<PromptLease>>>,
     clocks: C,
 }
 
@@ -370,7 +373,7 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                             serde_json::json!({ "generation": generation }),
                         );
                     }
-                    self.prompt_cancel.store(true, Ordering::SeqCst);
+                    self.cancel_prompt();
                     let actions = machine.on_event(Event::PageLoaded, now.mono_ms);
                     self.apply(&mut machine, &mut probes, actions, now);
                     next_probe_ms = now.mono_ms;
@@ -389,9 +392,40 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                             .probe_generation()
                             .is_some()
                     {
-                        self.prompt_cancel.store(true, Ordering::SeqCst);
+                        self.cancel_prompt();
                         let actions = machine.on_event(Event::PageLoaded, now.mono_ms);
                         self.apply(&mut machine, &mut probes, actions, now);
+                    }
+                }
+                Ok(Msg::PromptAnswer {
+                    incident_id,
+                    generation,
+                    outcome,
+                }) => {
+                    if self
+                        .window
+                        .app_handle()
+                        .state::<Arc<RendererHealth>>()
+                        .probe_generation()
+                        == Some(generation)
+                    {
+                        let event = match outcome {
+                            PromptOutcome::Reload => Some(Event::RecoveryConfirmed {
+                                incident_id,
+                                timed_out: false,
+                            }),
+                            PromptOutcome::Decline => Some(Event::RecoveryDeclined { incident_id }),
+                            PromptOutcome::TimedOut => Some(Event::RecoveryConfirmed {
+                                incident_id,
+                                timed_out: true,
+                            }),
+                            PromptOutcome::Cancelled => None,
+                        };
+                        if let Some(event) = event {
+                            let now = self.clocks.sample();
+                            let actions = machine.on_event(event, now.mono_ms);
+                            self.apply(&mut machine, &mut probes, actions, now);
+                        }
                     }
                 }
                 Ok(Msg::Paint {
@@ -549,6 +583,16 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
         if let Some(health) = self.window.app_handle().try_state::<Arc<RendererHealth>>() {
             health.record_state(machine.state());
         }
+        {
+            let mut slot = self.prompt.lock().unwrap_or_else(|p| p.into_inner());
+            if slot.as_ref().is_some_and(|lease| {
+                machine.prompt_identity() != Some((lease.incident_id, lease.deadline_ms))
+            }) {
+                if let Some(lease) = slot.take() {
+                    lease.cancel.store(true, Ordering::SeqCst);
+                }
+            }
+        }
         for action in actions {
             match action {
                 Action::Log(transition) => self.write(transition, now),
@@ -586,12 +630,15 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                     #[cfg(not(target_os = "linux"))]
                     eprintln!("houston-tauri: forced renderer termination is unsupported on this platform; trying reload only");
                 }
-                Action::PromptThenRecover { timeout_ms } => {
-                    self.prompt(timeout_ms);
+                Action::PromptThenRecover {
+                    incident_id,
+                    deadline_ms,
+                } => {
+                    self.prompt(incident_id, deadline_ms);
                 }
                 Action::SetTitle(title) => {
                     if title == TitleState::Normal {
-                        self.prompt_cancel.store(true, Ordering::SeqCst);
+                        self.cancel_prompt();
                     }
                     let _ = self.window.set_title(match title {
                         TitleState::Normal => "Houston",
@@ -602,31 +649,53 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
         }
     }
 
-    fn prompt(&self, timeout_ms: u64) {
-        if self.prompt_open.swap(true, Ordering::SeqCst) {
-            eprintln!(
-                "houston-tauri: watchdog prompt already on screen; refusing to stack another"
-            );
-            return;
+    fn cancel_prompt(&self) {
+        if let Some(lease) = self.prompt.lock().unwrap_or_else(|p| p.into_inner()).take() {
+            lease.cancel.store(true, Ordering::SeqCst);
         }
-        self.prompt_cancel.store(false, Ordering::SeqCst);
+    }
+
+    fn prompt(&self, incident_id: u64, deadline_ms: u64) {
+        let health = self
+            .window
+            .app_handle()
+            .state::<Arc<RendererHealth>>()
+            .inner()
+            .clone();
+        let Some(generation) = health.probe_generation() else {
+            return;
+        };
+        let lease = PromptLease {
+            incident_id,
+            deadline_ms,
+            cancel: Arc::new(AtomicBool::new(false)),
+        };
+        self.cancel_prompt();
+        *self.prompt.lock().unwrap_or_else(|p| p.into_inner()) = Some(lease.clone());
         let tx = self.tx.clone();
         let window = self.window.clone();
-        let open = self.prompt_open.clone();
-        let cancel = self.prompt_cancel.clone();
-        let _ = self.window.run_on_main_thread(move || {
-            let outcome = native_prompt(timeout_ms, prompt_parent(&window).as_ref(), &cancel);
-            open.store(false, Ordering::SeqCst);
-            let event = match outcome {
-                PromptOutcome::Reload => Some(Event::RecoveryConfirmed { timed_out: false }),
-                PromptOutcome::Decline => Some(Event::RecoveryDeclined),
-                PromptOutcome::TimedOut => Some(Event::RecoveryConfirmed { timed_out: true }),
-                PromptOutcome::Cancelled => None,
+        let slot = self.prompt.clone();
+        let dispatch_lease = lease.clone();
+        if let Err(err) = self.window.run_on_main_thread(move || {
+            let outcome = if health.probe_generation() != Some(generation) {
+                PromptOutcome::Cancelled
+            } else {
+                native_prompt(
+                    dispatch_lease.deadline_ms,
+                    prompt_parent(&window).as_ref(),
+                    &dispatch_lease.cancel,
+                )
             };
-            if let Some(event) = event {
-                let _ = tx.send(Msg::Event(event));
-            }
-        });
+            release_prompt(&slot, &dispatch_lease);
+            let _ = tx.send(Msg::PromptAnswer {
+                incident_id,
+                generation,
+                outcome,
+            });
+        }) {
+            release_prompt(&self.prompt, &lease);
+            eprintln!("houston-tauri: watchdog prompt dispatch failed: {err}");
+        }
     }
 
     fn write(&self, transition: TransitionLog, now: clocks::ClockSample) {
@@ -638,6 +707,34 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
             transition,
             session_ids: (self.sessions)(),
         });
+    }
+}
+
+#[derive(Clone)]
+struct PromptLease {
+    incident_id: u64,
+    deadline_ms: u64,
+    cancel: Arc<AtomicBool>,
+}
+
+fn release_prompt(slot: &std::sync::Mutex<Option<PromptLease>>, lease: &PromptLease) {
+    let mut slot = slot.lock().unwrap_or_else(|p| p.into_inner());
+    if slot
+        .as_ref()
+        .is_some_and(|current| Arc::ptr_eq(&current.cancel, &lease.cancel))
+    {
+        *slot = None;
+    }
+    lease.cancel.store(true, Ordering::SeqCst);
+}
+
+fn prompt_preflight(deadline_ms: u64, cancel: &AtomicBool, now_ms: u64) -> Option<PromptOutcome> {
+    if cancel.load(Ordering::SeqCst) {
+        Some(PromptOutcome::Cancelled)
+    } else if now_ms >= deadline_ms {
+        Some(PromptOutcome::TimedOut)
+    } else {
+        None
     }
 }
 
@@ -661,12 +758,15 @@ fn prompt_parent<R: Runtime>(_window: &WebviewWindow<R>) -> Option<()> {
 
 #[cfg(target_os = "linux")]
 fn native_prompt(
-    timeout_ms: u64,
+    deadline_ms: u64,
     parent: Option<&gtk::ApplicationWindow>,
     cancel: &Arc<AtomicBool>,
 ) -> PromptOutcome {
     use gtk::prelude::*;
 
+    if let Some(outcome) = prompt_preflight(deadline_ms, cancel, SystemClocks.sample().mono_ms) {
+        return outcome;
+    }
     let dialog = gtk::MessageDialog::new(
         parent,
         gtk::DialogFlags::MODAL | gtk::DialogFlags::DESTROY_WITH_PARENT,
@@ -684,7 +784,6 @@ fn native_prompt(
     let slot = verdict.clone();
     let cancel = cancel.clone();
     let weak = dialog.downgrade();
-    let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     let armed = std::rc::Rc::new(std::cell::Cell::new(true));
     let closure_armed = armed.clone();
     let source = glib::timeout_add_local(Duration::from_millis(POLL_MS), move || {
@@ -692,11 +791,8 @@ fn native_prompt(
             closure_armed.set(false);
             return glib::ControlFlow::Break;
         };
-        let outcome = if cancel.load(Ordering::SeqCst) {
-            PromptOutcome::Cancelled
-        } else if std::time::Instant::now() >= deadline {
-            PromptOutcome::TimedOut
-        } else {
+        let Some(outcome) = prompt_preflight(deadline_ms, &cancel, SystemClocks.sample().mono_ms)
+        else {
             return glib::ControlFlow::Continue;
         };
         slot.set(Some(outcome));
@@ -715,6 +811,9 @@ fn native_prompt(
     if let Some(outcome) = verdict.get() {
         return outcome;
     }
+    if let Some(outcome) = prompt_preflight(deadline_ms, cancel, SystemClocks.sample().mono_ms) {
+        return outcome;
+    }
     match response {
         gtk::ResponseType::Accept => PromptOutcome::Reload,
         gtk::ResponseType::Cancel => PromptOutcome::Decline,
@@ -731,7 +830,7 @@ fn remove_if_armed(source: glib::SourceId, armed: &std::cell::Cell<bool>) {
 
 #[cfg(not(target_os = "linux"))]
 fn native_prompt(
-    _timeout_ms: u64,
+    _deadline_ms: u64,
     _parent: Option<&()>,
     _cancel: &Arc<AtomicBool>,
 ) -> PromptOutcome {
@@ -804,6 +903,7 @@ pub fn wd_debug_wedge(window: tauri::WebviewWindow, ms: Option<u64>) {
 
 #[cfg(all(test, target_os = "linux"))]
 mod source_lifecycle_tests {
+    use super::Clocks;
     use std::cell::Cell;
     use std::panic::{self, AssertUnwindSafe};
     use std::rc::Rc;
@@ -835,7 +935,8 @@ mod source_lifecycle_tests {
 
         assert!(gtk::init().is_ok(), "no display; this test cannot run here");
         let cancel = Arc::new(AtomicBool::new(false));
-        let outcome = super::native_prompt(300, None, &cancel);
+        let outcome =
+            super::native_prompt(super::SystemClocks.sample().mono_ms + 300, None, &cancel);
         assert_eq!(outcome, super::PromptOutcome::TimedOut);
     }
 
@@ -882,6 +983,42 @@ mod source_lifecycle_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn held_prompt_dispatch_expires_without_opening_a_dialog() {
+        let cancel = AtomicBool::new(false);
+        assert_eq!(prompt_preflight(100, &cancel, 99), None);
+        assert_eq!(
+            prompt_preflight(100, &cancel, 100),
+            Some(PromptOutcome::TimedOut)
+        );
+        cancel.store(true, Ordering::SeqCst);
+        assert_eq!(
+            prompt_preflight(100, &cancel, 101),
+            Some(PromptOutcome::Cancelled)
+        );
+    }
+
+    #[test]
+    fn old_prompt_completion_cannot_release_or_cancel_its_replacement() {
+        let old = PromptLease {
+            incident_id: 1,
+            deadline_ms: 100,
+            cancel: Arc::new(AtomicBool::new(false)),
+        };
+        let new = PromptLease {
+            incident_id: 2,
+            deadline_ms: 200,
+            cancel: Arc::new(AtomicBool::new(false)),
+        };
+        let slot = std::sync::Mutex::new(Some(new.clone()));
+        release_prompt(&slot, &old);
+        assert_eq!(slot.lock().unwrap().as_ref().unwrap().incident_id, 2);
+        assert!(!new.cancel.load(Ordering::SeqCst));
+        release_prompt(&slot, &new);
+        assert!(slot.lock().unwrap().is_none());
+        assert!(new.cancel.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn the_halted_title_tells_the_user_not_to_kill_the_app() {
