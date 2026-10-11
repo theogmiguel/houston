@@ -301,6 +301,18 @@ describe('environmentMux', () => {
     expect(sockets.get('Debian')!.json()).toEqual(commands)
   })
 
+  it('retags successful create results while keeping request identities and refusals intact', () => {
+    const r = rig()
+    const sockets = connect(r, [{ entry: wslEntry('Ubuntu', 1) }])
+    const info = session(5)
+    sockets.get('Ubuntu')!.receive({ type: 'session_create_result', request: 7, info, error: null })
+    sockets.get('Ubuntu')!.receive({ type: 'session_create_result', request: 8, info: null, error: 'spawn refused' })
+    expect(r.deliveredJson().slice(-2)).toEqual([
+      { type: 'session_create_result', request: 7, info: { ...info, id: tagSession(1, 5) }, error: null },
+      { type: 'session_create_result', request: 8, info: null, error: 'spawn refused' }
+    ])
+  })
+
   it('retags nested archived result and instruction replies without changing task identities', () => {
     const r = rig()
     const sockets = connect(r, [{ entry: wslEntry('Ubuntu', 1) }, { entry: wslEntry('Debian', 2) }])

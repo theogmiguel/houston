@@ -39,7 +39,8 @@ environment; restart an affected session after updating Houston.
 From an empty grid or the new pane menu, choose **Add action** and enter a name, command
 and optional shortcut. Houston saves actions per workspace. Run one from either list or
 from the command palette's **Run** group; Houston opens a real shell pane and submits the
-command there. Edit or delete an action from its More actions menu. Deleting asks for
+command there only after that creation succeeds. A refused or disconnected creation
+reports an error without sending the command to another pane. Edit or delete an action from its More actions menu. Deleting asks for
 confirmation.
 
 ## Splitting and stacking

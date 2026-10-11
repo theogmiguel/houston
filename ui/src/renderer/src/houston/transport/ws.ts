@@ -53,10 +53,12 @@ export class WsTerminalTransport implements TerminalTransport {
       timer: ReturnType<typeof setTimeout>
     }
   >()
-  private createQueue: {
+  private nextCreateRequest = 0
+  private createWaiters = new Map<number, {
     resolve: (info: SessionInfo) => void
+    reject: (error: Error) => void
     timer: ReturnType<typeof setTimeout>
-  }[] = []
+  }>()
   private attachesSent = new Map<number, number>()
   // The run each session's last replay or snapshot described; an offset attach names it
   // so the daemon can refuse an offset from an earlier run.
@@ -81,13 +83,23 @@ export class WsTerminalTransport implements TerminalTransport {
   }
 
   create(params: CreateSessionParams): Promise<SessionInfo> {
-    return new Promise((resolve) => {
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('session_create refused — socket is not open'))
+    }
+    const request = ++this.nextCreateRequest
+    return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        const i = this.createQueue.findIndex((e) => e.resolve === resolve)
-        if (i !== -1) this.createQueue.splice(i, 1)
+        this.createWaiters.delete(request)
+        reject(new Error(`session_create request ${request} timed out after ${CREATE_REPLY_TIMEOUT_MS}ms`))
       }, CREATE_REPLY_TIMEOUT_MS)
-      this.createQueue.push({ resolve, timer })
-      this.send({ type: 'session_create', ...params })
+      this.createWaiters.set(request, { resolve, reject, timer })
+      try {
+        this.send({ type: 'session_create', ...params, request })
+      } catch (error) {
+        clearTimeout(timer)
+        this.createWaiters.delete(request)
+        reject(error)
+      }
     })
   }
 
@@ -248,12 +260,14 @@ export class WsTerminalTransport implements TerminalTransport {
       }
       return
     }
-    if (msg.type === 'session_created') {
-      const m = msg as unknown as { info: SessionInfo }
-      const entry = this.createQueue.shift()
+    if (msg.type === 'session_create_result') {
+      const m = msg as unknown as { request: number; info: SessionInfo | null; error: string | null }
+      const entry = this.createWaiters.get(m.request)
       if (entry) {
         clearTimeout(entry.timer)
-        entry.resolve(m.info)
+        this.createWaiters.delete(m.request)
+        if (m.info && !m.error) entry.resolve(m.info)
+        else entry.reject(new Error(m.error ?? `session_create request ${m.request} returned no session`))
       }
       return
     }
@@ -299,8 +313,11 @@ export class WsTerminalTransport implements TerminalTransport {
       )
     }
     this.resizeWaiters.clear()
-    for (const e of this.createQueue) clearTimeout(e.timer)
-    this.createQueue.length = 0
+    for (const e of this.createWaiters.values()) {
+      clearTimeout(e.timer)
+      e.reject(new Error('session_create abandoned — transport disposed'))
+    }
+    this.createWaiters.clear()
     this.attachesSent.clear()
     this.generations.clear()
   }

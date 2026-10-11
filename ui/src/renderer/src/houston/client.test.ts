@@ -1307,3 +1307,28 @@ describe('HoustonClient usage filters', () => {
     client.close()
   })
 })
+
+describe('workspace action targeting', () => {
+  it('sends only to the correlated shell and reports a refusal without sending to a foreign pane', async () => {
+    const { client, ws } = await connectFakeClient()
+    const action = { id: 'build', name: 'Build', command: 'make deploy', shortcut: null }
+    const write = vi.spyOn(getTransport(client), 'write').mockReturnValue(true)
+    const run = client.runWorkspaceAction(action, '/project', true)
+    const create = JSON.parse(ws.sent.at(-1) as string)
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_created', info: { id: 999, agent: 'shell', project_dir: '/project' } }) })
+    await Promise.resolve()
+    expect(write).not.toHaveBeenCalled()
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_create_result', request: create.request, info: { id: 42 }, error: null }) })
+    await run
+    expect(write).toHaveBeenCalledExactlyOnceWith(42, 'make deploy\r')
+    write.mockClear()
+    const failed = client.runWorkspaceAction(action, '/missing', true)
+    const refusal = expect(failed).rejects.toThrow('missing workspace')
+    const request = JSON.parse(ws.sent.at(-1) as string).request
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_create_result', request, info: null, error: 'missing workspace' }) })
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_created', info: { id: 1000 } }) })
+    await refusal
+    expect(write).not.toHaveBeenCalled()
+    client.close()
+  })
+})

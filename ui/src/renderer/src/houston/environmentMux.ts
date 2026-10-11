@@ -312,6 +312,7 @@ export type ServerRoute = 'drop' | 'forward' | 'list' | 'hello' | Retag
 
 export const SERVER_ROUTES: Record<ServerMsg['type'], ServerRoute> = {
   hello_ok: 'hello',
+  session_create_result: (msg, tag) => { if (msg.info) INFO(msg, tag) },
   session_created: INFO,
   session_state: SESSION_FIELD,
   session_updated: INFO,

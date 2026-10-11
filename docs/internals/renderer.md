@@ -62,6 +62,11 @@ checks against its own count before honouring it. The daemon sends frames only f
 this socket asked about, through a bounded per-session queue; a gap frame (kind 3) means that
 queue dropped, and the pane answers with one re-attach.
 
+Create promises use connection-local request numbers and direct `session_create_result`
+replies, including refusals. Roster broadcasts never acknowledge creation. A workspace
+action sends its command only to the session in its matching successful result. Closing
+the transport or exceeding the reply deadline rejects outstanding creates.
+
 `sendStdin` is the outbound path: `term.onData` → `client.sendStdin` → the transport's
 `write`. It is not queued — a keystroke goes straight out.
 
@@ -73,6 +78,7 @@ the overflow policy. When the queue passes its cap, a synced pane whose daemon h
 emulator discards the backlog and reattaches from a snapshot. The daemon has parsed every
 byte, so the screen comes back exact, and stdin stays live while the snapshot is in flight.
 Without a snapshot path, the queue drops its oldest bytes and says so in the pane.
+
 
 | Constant | Value | Reason |
 |---|---|---|

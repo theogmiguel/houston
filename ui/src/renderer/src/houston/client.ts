@@ -425,7 +425,10 @@ export class HoustonClient {
         wsTransport.handleBinaryMessage(ev.data as ArrayBuffer)
       }
     }
-    ws.onclose = () => client.onClose()
+    ws.onclose = () => {
+      wsTransport.dispose()
+      client.onClose()
+    }
 
     client.send({ type: 'hello', token: cfg.token, protocol: PROTOCOL_VERSION })
     if (isTauri() && navigator.platform.startsWith('Win')) {
