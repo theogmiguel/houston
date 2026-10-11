@@ -1,4 +1,5 @@
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
+import { openConnectPhone } from './connectPhone';
 import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
@@ -3364,6 +3365,7 @@ export function App(): React.JSX.Element {
   };
 
   const paletteActions: PaletteActions = {
+    openConnectPhone,
     mascotAction: (action) => { setSidebarRail(false); requestMascotAction(action) },
     workspaceActions,
     openManageTags: () => window.dispatchEvent(new Event(MANAGE_TAGS_EVENT)),

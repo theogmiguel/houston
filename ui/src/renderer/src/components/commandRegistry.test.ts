@@ -1,4 +1,3 @@
-import { CONNECT_PHONE_EVENT } from '../connectPhone'
 import { RAIL_POSITION, getMascotPosition, setMascotPosition } from '../mascot/mascotPosition'
 import { DEFAULT_PREFS, setMascotPrefsForTests } from '../mascot/mascotPrefs'
 // @vitest-environment node
@@ -18,6 +17,7 @@ import { gridNext, gridPrev, wsLast, wsNext, wsPrev } from '../keymap'
 
 function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
   return {
+    openConnectPhone: vi.fn(),
     newTerminal: vi.fn(),
     splitPane: vi.fn(),
     newGrid: vi.fn(),
@@ -540,15 +540,10 @@ it('offers Return mascot to rail only while floating and enabled, and reverses t
 
 
 it('offers Connect phone without a workspace and dispatches the shared entry point', () => {
-  const dispatch = vi.fn()
-  vi.stubGlobal('window', { dispatchEvent: dispatch })
-  try {
-    const command = buildCommands({ actions: makeActions(), hasWorkspace: false, workspaces: [] }).find((command) => command.id === 'remote.connect-phone')!
-    expect(command.enabled).toBe(true)
-    expect(command.title).toBe('Connect phone')
-    command.run()
-    expect(dispatch.mock.calls[0][0].type).toBe(CONNECT_PHONE_EVENT)
-  } finally {
-    vi.unstubAllGlobals()
-  }
+  const openConnectPhone = vi.fn()
+  const command = buildCommands({ actions: makeActions({ openConnectPhone }), hasWorkspace: false, workspaces: [] }).find((command) => command.id === 'remote.connect-phone')!
+  expect(command.enabled).toBe(true)
+  expect(command.title).toBe('Connect phone')
+  command.run()
+  expect(openConnectPhone).toHaveBeenCalledOnce()
 })
