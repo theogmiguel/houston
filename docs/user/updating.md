@@ -11,7 +11,7 @@ The same schedule checks the model catalog used by Usage and the context indicat
 Checks reuse cached responses when the server confirms nothing changed.
 
 The request fetches the public `latest.json` update manifest from the project's GitHub
-releases — the same file the installer reads — and asks one question: what is the latest
+releases — the same file the in-app updater reads — and asks one question: what is the latest
 release. It is not a GitHub API call, so it does not draw on the anonymous API quota shared
 by everyone behind your public IP address. It carries nothing about you — not your version,
 not your operating system, not any identifier — and nothing comes back except the release's
