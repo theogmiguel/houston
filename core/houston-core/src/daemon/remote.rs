@@ -175,7 +175,7 @@ impl Daemon {
         *self.remote.config.lock().expect("remote config lock") = Some(next);
         self.remote.feed.set_collecting(enabled);
         if !enabled {
-            self.remote.stop_streams();
+            self.remote.stop_streams(Some("disabled"));
         }
         self.remote.reconfigured.send_modify(|n| *n += 1);
         self.remote_broadcast_state();
@@ -272,6 +272,7 @@ impl Daemon {
     }
 
     pub fn remote_device_revoke(&self, id: i64) -> Result<()> {
+        let hash = self.db.remote_device_hash(id)?;
         if !self.db.remote_device_delete(id)? {
             anyhow::bail!("no paired device has id {id}: expected an id from the device list");
         }
@@ -280,9 +281,20 @@ impl Daemon {
             .lock()
             .expect("remote last-seen lock")
             .remove(&id);
+        if let Some(hash) = hash {
+            self.remote.remember_revoked(hash);
+        }
         self.remote.stop_device_streams(id);
         self.remote_broadcast_state();
         Ok(())
+    }
+
+    pub(crate) fn remote_check_stream_device(&self, id: i64) {
+        if !self.remote_config().enabled {
+            self.remote.stop_streams(Some("disabled"));
+        } else if matches!(self.db.remote_device_hash(id), Ok(None)) {
+            self.remote.stop_device_streams(id);
+        }
     }
 
     /// `Err` is a database failure, which is neither a wrong token nor a revocation.
@@ -892,7 +904,7 @@ impl Daemon {
                         }
                         // Event streams never end on their own; graceful shutdown
                         // waits for every connection, so they are ended here.
-                        this.remote.stop_streams();
+                        this.remote.stop_streams(if this.remote_config().enabled { None } else { Some("disabled") });
                         let _ = stopping.send(());
                     };
                     let drained = async {

@@ -54,6 +54,8 @@ pub const EVENT_STREAMS_MAX: usize = 8;
 pub const EVENT_HEARTBEAT: Duration = Duration::from_secs(15);
 // Events are a few per turn per pane; a reader this far behind resynchronises.
 const EVENT_QUEUE: usize = 256;
+// Keep recent revocation explanations without retaining an unbounded history of token hashes.
+const REVOKED_HASHES_MAX: usize = 256;
 
 // Hostnames are labels, so cap display length even when a platform returns arbitrary text.
 const HOST_NAME_MAX_CHARS: usize = 128;
@@ -547,7 +549,7 @@ impl Drop for InputClaim<'_> {
 #[derive(Default)]
 struct StreamRegistry {
     next: u64,
-    open: HashMap<u64, (i64, tokio::sync::oneshot::Sender<()>)>,
+    open: HashMap<u64, (i64, tokio::sync::oneshot::Sender<Option<&'static str>>)>,
 }
 
 /// Held by one event stream; dropping it unregisters the stream.
@@ -618,6 +620,7 @@ pub struct Runtime {
     events: tokio::sync::broadcast::Sender<feed::Change>,
     pub(crate) event_streams: std::sync::Arc<tokio::sync::Semaphore>,
     streams: Arc<Mutex<StreamRegistry>>,
+    revoked_hashes: Mutex<VecDeque<String>>,
 }
 
 impl Default for Runtime {
@@ -646,6 +649,7 @@ impl Runtime {
             events: tokio::sync::broadcast::Sender::new(EVENT_QUEUE),
             event_streams: std::sync::Arc::new(tokio::sync::Semaphore::new(EVENT_STREAMS_MAX)),
             streams: Arc::new(Mutex::new(StreamRegistry::default())),
+            revoked_hashes: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -741,7 +745,7 @@ impl Runtime {
     pub(crate) fn open_stream(
         &self,
         device: i64,
-    ) -> (StreamTicket, tokio::sync::oneshot::Receiver<()>) {
+    ) -> (StreamTicket, tokio::sync::oneshot::Receiver<Option<&'static str>>) {
         let (stop, stopped) = tokio::sync::oneshot::channel();
         let mut registry = self
             .streams
@@ -757,22 +761,33 @@ impl Runtime {
         (ticket, stopped)
     }
 
-    /// Ends every event stream.
-    pub(crate) fn stop_streams(&self) {
-        self.streams
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .open
-            .clear();
+    /// Ends every event stream; an address change carries no revocation reason.
+    pub(crate) fn stop_streams(&self, reason: Option<&'static str>) {
+        let mut streams = self.streams.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (_, (_, stop)) in streams.open.drain() {
+            let _ = stop.send(reason);
+        }
     }
 
     /// Ends the event streams of a revoked device.
     pub(crate) fn stop_device_streams(&self, device: i64) {
-        self.streams
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .open
-            .retain(|_, (d, _)| *d != device);
+        let mut streams = self.streams.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let ids: Vec<u64> = streams.open.iter().filter(|(_, (d, _))| *d == device).map(|(id, _)| *id).collect();
+        for id in ids {
+            if let Some((_, stop)) = streams.open.remove(&id) {
+                let _ = stop.send(Some("revoked"));
+            }
+        }
+    }
+
+    pub(crate) fn remember_revoked(&self, hash: String) {
+        let mut hashes = self.revoked_hashes.lock().expect("remote revoked hash lock");
+        hashes.push_back(hash);
+        while hashes.len() > REVOKED_HASHES_MAX { hashes.pop_front(); }
+    }
+
+    pub(crate) fn was_revoked(&self, token: &str) -> bool {
+        self.revoked_hashes.lock().expect("remote revoked hash lock").contains(&hash_secret(token))
     }
 
     pub(crate) fn note_status(

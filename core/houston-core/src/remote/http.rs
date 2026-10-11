@@ -387,10 +387,11 @@ fn authenticate(
                 return Err(too_many(secs).into());
             }
             daemon.remote.auth_failed(source, now);
-            Err(Refused::from(error(
-                StatusCode::UNAUTHORIZED,
-                "device token is not valid: it was revoked or never issued; pair this device again",
-            )))
+            let mut body = json!({"error": "device token is not valid: it was revoked or never issued; pair this device again"});
+            if daemon.remote.was_revoked(token) {
+                body["reason"] = json!("revoked");
+            }
+            Err(Refused::from((StatusCode::UNAUTHORIZED, Json(body)).into_response()))
         }
         Err(e) => Err(Refused::from(error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -708,31 +709,40 @@ async fn events(
     };
     let rx = daemon.remote.subscribe();
     let (ticket, stopped) = daemon.remote.open_stream(device.id);
+    // Registration precedes this check so a revocation during authentication cannot leave a live stream.
+    let this = Arc::clone(&daemon);
+    let device_id = device.id;
+    let _ = blocking(move || {
+        this.remote_check_stream_device(device_id);
+        Ok(())
+    }).await;
     let ready =
         futures_util::stream::once(async { Ok(Event::default().event("ready").data("{}")) });
-    let state = (rx, permit, ticket);
-    let changes = futures_util::stream::unfold(state, |(mut rx, permit, ticket)| async move {
-        let event = match rx.recv().await {
-            Ok(Change::Session(id)) => Event::default()
-                .event("session")
-                .data(json!({ "id": id }).to_string()),
-            Ok(Change::Feed(id, seq)) => Event::default()
-                .event("feed")
-                .data(json!({ "id": id, "seq": seq }).to_string()),
-            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                Event::default().event("resync").data("{}")
+    let state = Some((rx, permit, ticket, stopped));
+    let changes = futures_util::stream::unfold(state, |state| async move {
+        let (mut rx, permit, ticket, mut stopped) = state?;
+        let event = tokio::select! {
+            biased;
+            reason = &mut stopped => {
+                return reason.ok().flatten().map(|reason| (
+                    Ok::<_, std::convert::Infallible>(Event::default().event("ended").data(json!({"reason": reason}).to_string())),
+                    None,
+                ));
             }
-            Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            change = rx.recv() => match change {
+                Ok(Change::Session(id)) => Event::default()
+                    .event("session")
+                    .data(json!({ "id": id }).to_string()),
+                Ok(Change::Feed(id, seq)) => Event::default()
+                    .event("feed")
+                    .data(json!({ "id": id, "seq": seq }).to_string()),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Event::default().event("resync").data("{}"),
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            },
         };
-        Some((
-            Ok::<_, std::convert::Infallible>(event),
-            (rx, permit, ticket),
-        ))
+        Some((Ok::<_, std::convert::Infallible>(event), Some((rx, permit, ticket, stopped))))
     });
-    let stream = futures_util::StreamExt::take_until(
-        futures_util::StreamExt::chain(ready, changes),
-        stopped,
-    );
+    let stream = futures_util::StreamExt::chain(ready, changes);
     let mut resp = Sse::new(stream)
         .keep_alive(KeepAlive::new().interval(EVENT_HEARTBEAT))
         .into_response();

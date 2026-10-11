@@ -674,6 +674,7 @@ async fn turning_remote_access_off_ends_streams_rebinds_and_forgets_the_feed() {
         })
         .unwrap();
     read_to_end(&mut stream, &mut seen).await;
+    assert!(seen.contains("event: ended\ndata: {\"reason\":\"disabled\"}"), "{seen}");
     listening(&daemon, false).await;
 
     // A hook applied while off is not collected.
@@ -703,6 +704,15 @@ async fn revoking_a_device_ends_its_event_stream() {
     read_until(&mut stream, &mut seen, "event: ready").await;
     daemon.remote_device_revoke(device).unwrap();
     read_to_end(&mut stream, &mut seen).await;
+    assert!(seen.contains("event: ended\ndata: {\"reason\":\"revoked\"}"), "{seen}");
+    for path in ["/api/me", "/api/activity", "/api/events", "/api/sessions"] {
+        let response = request(addr, "GET", path, Some(&token), None).await;
+        assert_eq!(response.status, 401);
+        assert_eq!(response.json()["reason"], "revoked");
+    }
+    let unknown = request(addr, "GET", "/api/me", Some("never-issued"), None).await;
+    assert_eq!(unknown.status, 401);
+    assert!(unknown.json().get("reason").is_none());
 }
 
 #[tokio::test]

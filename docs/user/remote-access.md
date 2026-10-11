@@ -149,7 +149,8 @@ them on your server.
 ## Revoke a device or turn it off
 
 Choose **Revoke** next to a device (and confirm) to end its access immediately, including a
-page it has open. Turning off **Allow remote access** stops the listener, closes open pages'
+page it has open. A connected phone receives an explicit reason when its device is revoked
+or remote access is disabled. Turning off **Allow remote access** stops the listener, closes open pages'
 live updates, clears the conversations and stops notifications; paired devices stay listed
 and work again when you turn it back on. To stop notifications only, choose **Turn off**
 next to the topic URL.
