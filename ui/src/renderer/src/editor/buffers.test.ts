@@ -85,6 +85,22 @@ it('final-owner release discards edits and reopening reads disk again', async ()
   dropWorkspaceBuffers('/tmp/close')
 })
 
+it('reload preserves edits entered while its disk read was pending', async () => {
+  window.houston.readFile = async () => 'disk'
+  const { reloadBuffer } = await import('./buffers')
+  const { noteUpdate } = await import('./bufferStore')
+  const buf = await ensureBuffer('/tmp/reload', '/tmp/reload/a.txt', () => {})
+  let resolve!: (content: string) => void
+  window.houston.readFile = () => new Promise<string>(r => { resolve = r })
+  const pending = reloadBuffer('/tmp/reload', '/tmp/reload/a.txt')
+  noteUpdate('/tmp/reload', '/tmp/reload/a.txt', buf.state.update({ changes: { from: 0, insert: 'fresh ' } }).state, true)
+  resolve('new disk')
+  await expect(pending).rejects.toThrow('edited')
+  expect(getBuffer('/tmp/reload', '/tmp/reload/a.txt')?.state.doc.toString()).toBe('fresh disk')
+  expect(getBuffer('/tmp/reload', '/tmp/reload/a.txt')?.conflict).toBe(true)
+  dropWorkspaceBuffers('/tmp/reload')
+})
+
 it('a final close invalidates its pending read without deleting the reopened load', async () => {
   const { retainBuffer } = await import('./bufferStore')
   const release = retainBuffer('/tmp/pending-close', '/tmp/pending-close/a.txt')

@@ -51,7 +51,8 @@ with spaces are quoted.
 
 Saves check the file's content revision atomically. When another process changes an
 unsaved file, Houston keeps your edits and offers Reload or Overwrite. Returning focus
-to the window also checks for external changes.
+to the window also checks for external changes. If you edit or save while Reload is
+reading the file, Houston keeps the current document and asks you to review and retry.
 
 ## Editor pane
 

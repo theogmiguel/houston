@@ -227,11 +227,19 @@ export async function reloadBuffer(workspaceDir: string, path: string): Promise<
   const key = bufferKey(workspaceDir, path)
   const e = store.get(key)
   if (!e) throw new Error(`reloadBuffer: no buffer loaded for ${path}`)
+  const document = e.buf.state.doc
+  const revision = e.revision
   const [content, stat] = await Promise.all([
     readFile(path),
     statFile(path)
   ])
   const sha256 = await contentHash(content)
+  if (store.get(key) !== e) throw new Error(`Reload closed: ${path}`)
+  if (e.buf.state.doc !== document || e.revision !== revision) {
+    e.buf = { ...e.buf, conflict: true }
+    notify(key)
+    throw new Error(`Reload refused: ${path} was edited or saved while reading disk; review the current edits and retry`)
+  }
   e.revision = Promise.resolve(sha256)
   const wrap = e.buf.wrap
   const fresh = EditorState.create({ doc: content, extensions: e.extensions })
