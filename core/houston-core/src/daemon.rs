@@ -1366,6 +1366,9 @@ pub struct Daemon {
     sessions: Mutex<HashMap<u32, Arc<Session>>>,
     tags: Mutex<BTreeMap<u32, proto::TagInfo>>,
     dead: Mutex<HashMap<u32, proto::SessionInfo>>,
+    // The PTY size a session had when it went to sleep, so its wake starts at that
+    // size; a program that draws its first frame at the wrong width reprints it.
+    dead_geometry: Mutex<HashMap<u32, (u16, u16)>>,
     respawned_as: Mutex<HashMap<u32, u32>>,
     workspace_membership: Mutex<()>,
     session_lifecycle_lock: Mutex<()>,
@@ -1527,6 +1530,8 @@ impl Drop for SleepReservation<'_> {
 
 const SESSION_IDLE_REAP_ENABLED_KEY: &str = "session_idle_reap_enabled";
 const SESSION_IDLE_REAP_MINUTES_KEY: &str = "session_idle_reap_minutes";
+const CLAUDE_FULLSCREEN_KEY: &str = "claude_fullscreen";
+const CLAUDE_FULLSCREEN_ENV: &str = "CLAUDE_CODE_NO_FLICKER";
 
 const SESSION_IDLE_REAP_MINUTES_MAX: u32 = 40_000;
 
@@ -2825,6 +2830,7 @@ impl Daemon {
             sessions: Mutex::new(HashMap::new()),
             tags: Mutex::new(tag_registry),
             dead: Mutex::new(dead),
+            dead_geometry: Mutex::new(HashMap::new()),
             respawned_as: Mutex::new(HashMap::new()),
             workspace_membership: Mutex::new(()),
             session_lifecycle_lock: Mutex::new(()),
@@ -8616,6 +8622,18 @@ impl Daemon {
                 "reopen-with-shell only applies to shell sessions; session {old_id} is {agent:?}"
             );
         }
+        // The pane keeps its size across a restart or wake. Only a session restored
+        // by a daemon boot has none recorded and starts at the default.
+        let (cols, rows) = match from_live.as_ref() {
+            Some(old) => old.geometry(),
+            None => self
+                .dead_geometry
+                .lock()
+                .expect("dead geometry lock")
+                .get(&old_id)
+                .copied()
+                .unwrap_or((80, 24)),
+        };
 
         if let Some(parent) = spawned_by {
             if !matches!(agent, proto::AgentKind::Claude | proto::AgentKind::Codex) {
@@ -8782,8 +8800,8 @@ impl Daemon {
             project_dir: PathBuf::from(&project_dir),
             cwd,
             custom_cmd,
-            cols: 80,
-            rows: 24,
+            cols,
+            rows,
             title,
             title_source,
             codename,
@@ -8855,6 +8873,10 @@ impl Daemon {
         }
         if was_dead {
             self.dead.lock().expect("dead lock").remove(&old_id);
+            self.dead_geometry
+                .lock()
+                .expect("dead geometry lock")
+                .remove(&old_id);
             if let Err(e) = self.db.mark_closed(old_id) {
                 tracing::warn!("marking respawned session {old_id} closed: {e}");
             }
@@ -9096,6 +9118,10 @@ impl Daemon {
         self.db.mark_session_sleeping(id, slept_at)?;
         let info = session.snapshot_info();
         self.sessions.lock().expect("sessions lock").remove(&id);
+        self.dead_geometry
+            .lock()
+            .expect("dead geometry lock")
+            .insert(id, session.geometry());
         self.dead
             .lock()
             .expect("dead lock")
@@ -9874,6 +9900,10 @@ impl Daemon {
                 crate::paths::CHANNEL_ENV,
                 self.channel.as_deref().unwrap_or("release"),
             );
+            // Off leaves the renderer to Claude Code's own `/tui` choice.
+            if !hidden && self.session_policy().claude_fullscreen {
+                cmd.env(CLAUDE_FULLSCREEN_ENV, "1");
+            }
             if !shell_claude_resume {
                 cmd.args(crate::launch::claude_pane_env_args(
                     &cmd,
@@ -11471,6 +11501,10 @@ impl Daemon {
                 info.slept_at_ms = Some(slept_at);
                 *session.slept_at_ms.lock().expect("slept-at lock") = Some(slept_at);
                 self.sessions.lock().expect("sessions lock").remove(&id);
+                self.dead_geometry
+                    .lock()
+                    .expect("dead geometry lock")
+                    .insert(id, session.geometry());
                 self.dead
                     .lock()
                     .expect("dead lock")
@@ -11749,6 +11783,10 @@ impl Daemon {
             return Ok(());
         }
         if self.dead.lock().expect("dead lock").remove(&id).is_some() {
+            self.dead_geometry
+                .lock()
+                .expect("dead geometry lock")
+                .remove(&id);
             self.db.mark_closed(id)?;
             worktree_pass::queue_closed_session(self, id);
             self.remove_persisted_scrollback(id);
@@ -15230,9 +15268,14 @@ impl Daemon {
             Ok(Some(v)) => v.parse().unwrap_or(d.idle_reap_minutes),
             _ => d.idle_reap_minutes,
         };
+        let claude_fullscreen = match self.db.get_setting(CLAUDE_FULLSCREEN_KEY) {
+            Ok(Some(v)) => v == "1",
+            _ => d.claude_fullscreen,
+        };
         proto::SessionPolicy {
             idle_reap_enabled,
             idle_reap_minutes,
+            claude_fullscreen,
         }
     }
 
@@ -15251,6 +15294,10 @@ impl Daemon {
         self.db.set_setting(
             SESSION_IDLE_REAP_MINUTES_KEY,
             &policy.idle_reap_minutes.to_string(),
+        )?;
+        self.db.set_setting(
+            CLAUDE_FULLSCREEN_KEY,
+            if policy.claude_fullscreen { "1" } else { "0" },
         )?;
         Ok(self.session_policy())
     }

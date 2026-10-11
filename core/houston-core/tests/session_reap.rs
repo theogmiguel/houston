@@ -235,6 +235,7 @@ fn the_sweep_does_nothing_while_the_policy_is_off() {
     d.session_policy_set(proto::SessionPolicy {
         idle_reap_enabled: true,
         idle_reap_minutes: 40_000,
+        ..d.session_policy()
     })
     .unwrap();
     d.session_reap_sweep_for_test();

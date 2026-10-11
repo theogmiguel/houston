@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 132;
+pub const PROTOCOL_VERSION: u32 = 133;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1280,6 +1280,9 @@ pub enum SwarmMsgKind {
 pub struct SessionPolicy {
     pub idle_reap_enabled: bool,
     pub idle_reap_minutes: u32,
+    /// Claude panes start in Claude Code's fullscreen renderer, which draws on the
+    /// alternate screen: a resize redraws it instead of repainting into scrollback.
+    pub claude_fullscreen: bool,
 }
 
 impl Default for SessionPolicy {
@@ -1287,6 +1290,7 @@ impl Default for SessionPolicy {
         SessionPolicy {
             idle_reap_enabled: false,
             idle_reap_minutes: 15,
+            claude_fullscreen: true,
         }
     }
 }

@@ -12,9 +12,15 @@ import {
 
 vi.mock('../ghostty/surface', () => ghosttySurfaceMockModule())
 
+const observers = new Set<() => void>()
 class FakeResizeObserver {
-  observe(): void {}
-  disconnect(): void {}
+  constructor(private readonly callback: () => void) {}
+  observe(): void {
+    observers.add(this.callback)
+  }
+  disconnect(): void {
+    observers.delete(this.callback)
+  }
 }
 ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = FakeResizeObserver
 
@@ -121,6 +127,28 @@ describe('TerminalPane settled-size reporting', () => {
 
     expect(resizeSession).toHaveBeenCalledTimes(1)
     expect(resizeSession).toHaveBeenLastCalledWith(1, 200, 60)
+  })
+
+  it('leaves an observed layout change to the surface, which tells the PTY once it settles', async () => {
+    render()
+    await act(async () => {
+      await flushGhosttyAttach()
+    })
+    ghosttyMock.fitSpy.mockClear()
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      cb(0)
+      return 0
+    })
+    try {
+      act(() => {
+        for (const observe of observers) observe()
+      })
+    } finally {
+      raf.mockRestore()
+    }
+
+    expect(ghosttyMock.fitSpy).toHaveBeenCalledTimes(1)
+    expect(ghosttyMock.fitSpy).toHaveBeenCalledWith(true)
   })
 
   it('fits synchronously when a side-panel layout change is committed', async () => {

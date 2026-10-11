@@ -1,4 +1,4 @@
-# Wire protocol v132
+# Wire protocol v133
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -606,10 +606,10 @@ InboxRow           v96: id, to_session, original_to?, workspace, from_session?, 
                    reason?, created_at, ready_at?, resolved_at?, delivered_at?, delivered_via?:
                    InboxDeliveredVia, confirmed_at?, attempts (delivery attempts by any door),
                    from_codename?, from_role? (bounded sender identity snapshots),
-                   reply_to?: i64 (v132: stable original question id for a reply). The renderer's copy of a `pane_inbox` row —
+                   reply_to?: i64 (v133: stable original question id for a reply). The renderer's copy of a `pane_inbox` row —
                    drops `reserved_at`/`delivery_id` (door internals)
 InboxKind          snake: restored | result | no_handback | needs_input | exited | stalled | operator_note | mail
-                   | progress | question | blocked | reply (v132)
+                   | progress | question | blocked | reply (v133)
 InboxDeliveredVia  snake: wait | stop_hook | paste | operator
 RoleRoute          pattern (1..128 bytes), model (1..128 bytes), effort?: ChatEffort
 Workspace          path, name
@@ -618,7 +618,7 @@ TagInfo            v100: id, name (trimmed, non-empty, ≤ MAX_TAG_NAME_LEN (32)
                    fixed, because the chrome's 4.5:1 ink/ground gate can only clear colors
                    somebody measured). One registry row; sessions reference it by id
 RecoverySummary    respawned, deferred, crashed
-SessionPolicy      idle_reap_enabled (default false), idle_reap_minutes (default 15)
+SessionPolicy      idle_reap_enabled (default false), idle_reap_minutes (default 15), claude_fullscreen (default true; v132)
 UpdatePolicy       check (default true) — off means no request is ever made, and the one
                    request carries no version, OS or identifier
 UpdateRelease      version, notes (GitHub's release body verbatim; empty when the release
@@ -1197,7 +1197,8 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 132 | **Children ask the orchestrator before alerting the user, retain instruction queues and expose full results after close.** `InboxKind` gains progress/question/blocked/reply and `InboxRow.reply_to?`. `DelegationState.asked_orchestrator` and `DelegationInfo.input_request?` type input ownership, stable identity, bounded redacted provider permission evidence and escalation reasons. Every actual permission is parent-first; parents deny or escalate and only the operator may approve; only user-owned asks count in `children_waiting`. MCP/CLI gain report, reply, deny, escalate and instruction list/get/cancel/resume. Typed instruction snapshots, acceptance and detail record queued/held/delivered/cancelled/uncertain states. Result previews gain stable message/request identity and readiness; result pagination and scoped full-result detail/refusal support archived children. All new `/ws` messages and payloads are defined above. |
+| 133 | **Children ask the orchestrator before alerting the user, retain instruction queues and expose full results after close.** `InboxKind` gains progress/question/blocked/reply and `InboxRow.reply_to?`. `DelegationState.asked_orchestrator` and `DelegationInfo.input_request?` type input ownership, stable identity, bounded redacted provider permission evidence and escalation reasons. Every actual permission is parent-first; parents deny or escalate and only the operator may approve; only user-owned asks count in `children_waiting`. MCP/CLI gain report, reply, deny, escalate and instruction list/get/cancel/resume. Typed instruction snapshots, acceptance and detail record queued/held/delivered/cancelled/uncertain states. Result previews gain stable message/request identity and readiness; result pagination and scoped full-result detail/refusal support archived children. All new `/ws` messages and payloads are defined above. |
+| 132 | **Claude panes use the fullscreen TUI by default.** `SessionPolicy.claude_fullscreen` defaults to true and can be changed through `session_policy_set`; the launcher sets the fullscreen environment flag when enabled. |
 | 131 | **A folder opened from a WSL shell is focused in the app.** New `workspace_focus{path}` server message, broadcast after the new `/manage` verb `workspace_open` (`ManageRequest.path?`, `ManageWorkspaceOpenOk`) adds a workspace; `MANAGE_VERSION` stays 1 |
 | 129 | **Checkout, activity and pull-request surfaces gain their wire data.** `SessionInfo.checkout?` (`SessionCheckout`, `CheckoutKind`) and `SessionInfo.activity?` (`SessionActivity`) have matching `session_checkout` and `session_activity` broadcasts. `PrInfo` and `PrListItem` gain title, branch, diffstat, creation, comment, review-request and mergeability details; `pr_list` gains `PrSort`; `pr_status_batch` requests one existing `pr_status` reply per directory. `PrCheck.run_id` and `pr_check_log` expose a tail capped at 40 lines and 16 KiB. Tag colors accept any six-digit hexadecimal `#rrggbb`, stored lowercase; `TAG_PALETTE` remains the preset list. `session_attach` gains `from_offset?` and `generation?`, so a client that already holds a session's output asks only for the bytes after it |
 | 128 | Manual Sleep/Wake adds `SessionState.sleeping`, retained hook-fed cues and context, `session_sleep`, `session_wake`, `session_memory_get`, `session_updated` and `session_memory`. Sleeping panes do not auto-restore. Task Projects, Delivery/Slice metadata, blockers, readiness, revision-bound read-only Plan and per-workspace GitHub Issues/Notion connectors add the corresponding `task_project_*`, `task_domain_*`, `task_plan_*` and `task_tracker_*` messages and shared shapes above. Manual `task_start` gains `override_readiness`; automatic starts never bypass readiness. External snapshots preserve both conflicting values until an explicit resolution. |
