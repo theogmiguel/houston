@@ -440,6 +440,25 @@ describe('PaneWriteQueue', () => {
     expect(residualChunk.buffer.byteLength).toBe(residualChunk.byteLength)
   })
 
+  it('does not replace an exempt recovery batch with another overflow resync', () => {
+    const parsed: Uint8Array[] = []
+    const completions: Array<() => void> = []
+    const resync = vi.fn(() => true)
+    const q = new PaneWriteQueue({
+      batchWindowMs: 0,
+      maxQueuedBytes: 64,
+      chunkBytes: 256,
+      resyncOnOverflow: resync,
+      write: (payload, done) => { parsed.push(payload); completions.push(done) }
+    })
+    q.enqueue(bytes('seed'))
+    q.enqueue(bytes('R'.repeat(128)), true)
+    expect(resync).not.toHaveBeenCalled()
+    completions.shift()!()
+    expect(dec.decode(concat(parsed))).toBe('seed' + 'R'.repeat(128))
+    q.dispose()
+  })
+
   it('delivers a >2 MiB exempt replay whole, with zero drops (attach-time catch-up bypasses the cap)', () => {
     const calls: Uint8Array[] = []
     const q = new PaneWriteQueue({
