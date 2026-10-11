@@ -617,6 +617,7 @@ pub struct Runtime {
     limiter: Mutex<HashMap<Option<IpAddr>, FailureLimiter>>,
     input_busy: Mutex<HashSet<u32>>,
     pub(crate) seen: Mutex<HashMap<u32, SeenStatus>>,
+    pub(crate) retention: Mutex<()>,
     pub(crate) last_seen_written: Mutex<HashMap<i64, u64>>,
     status_tx: tokio::sync::mpsc::Sender<StatusEvent>,
     /// Taken by the notifier loop; transitions before it starts wait in the channel.
@@ -650,6 +651,7 @@ impl Runtime {
             limiter: Mutex::new(HashMap::new()),
             input_busy: Mutex::new(HashSet::new()),
             seen: Mutex::new(HashMap::new()),
+            retention: Mutex::new(()),
             last_seen_written: Mutex::new(HashMap::new()),
             status_tx,
             status_rx: Mutex::new(Some(status_rx)),

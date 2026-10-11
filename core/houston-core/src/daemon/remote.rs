@@ -601,6 +601,10 @@ impl Daemon {
     }
 
     pub(crate) fn remote_note_status(&self, id: u32, status: proto::AgentStatus) {
+        let _retention = self.remote.retention.lock().expect("remote retention lock");
+        if self.get(id).is_err() {
+            return;
+        }
         let now = now_ms();
         let from = self.remote.note_status(id, status, now);
         {
@@ -693,6 +697,7 @@ impl Daemon {
     /// Feeds an applied hook drop into the pane's activity feed. Only while
     /// remote access is on: nothing is collected for a listener that is off.
     pub(crate) fn remote_feed_hook(&self, d: &crate::hook_drop::HookDrop) {
+        let _retention = self.remote.retention.lock().expect("remote retention lock");
         if !self.remote_config().enabled || self.get(d.session).is_err() {
             return;
         }
@@ -873,12 +878,32 @@ impl Daemon {
     }
 
     pub(crate) fn remote_note_exit(&self, id: u32) {
+        let _retention = self.remote.retention.lock().expect("remote retention lock");
+        if self.get(id).is_err() {
+            return;
+        }
         if !self.remote_config().enabled {
             return;
         }
         self.remote.feed.resolve_pending(id);
         self.remote_push(id, FeedItem::Status { status: "exited" }, now_ms());
         self.remote_emit(id, Change::Session(id));
+    }
+
+    pub(crate) fn remote_forget_session(&self, id: u32) {
+        // Serialize against a waiter or hook that obtained the pane before close.
+        let _retention = self.remote.retention.lock().expect("remote retention lock");
+        self.remote.feed.forget(id);
+        self.remote
+            .seen
+            .lock()
+            .expect("remote seen lock")
+            .remove(&id);
+    }
+
+    #[doc(hidden)]
+    pub fn remote_feed_session_count_for_test(&self) -> usize {
+        self.remote.feed.session_count()
     }
 
     pub fn remote_feed(&self, id: u32, after: u64) -> Result<RemoteFeed, ApiError> {

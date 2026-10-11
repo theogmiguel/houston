@@ -1199,3 +1199,42 @@ async fn activity_identifies_phone_keys_for_an_unstructured_request() {
     assert_eq!(answers[0]["excerpt"], "from this phone");
     daemon.kill(info.id).unwrap();
 }
+
+#[tokio::test]
+async fn hookless_exited_panes_keep_their_feed_until_closed() {
+    let (_addr, _state, daemon) = start_daemon_with_handle().await;
+    daemon
+        .remote_configure(ConfigPatch {
+            enabled: Some(true),
+            ..Default::default()
+        })
+        .unwrap();
+    for _ in 0..8 {
+        let (info, _dir) = pane(&daemon, &["sh", "-c", "exit 0"]);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let page = daemon.remote_feed(info.id, 0).unwrap();
+            if page
+                .entries
+                .iter()
+                .any(|e| serde_json::to_value(e).unwrap()["status"] == "exited")
+            {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "no exit feed for {}",
+                info.id
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(daemon.remote_feed_session_count_for_test(), 1);
+        daemon.close(info.id).unwrap();
+        assert_eq!(daemon.remote_feed_session_count_for_test(), 0);
+    }
+    // Closing a live pane also races its real backend waiter, without hook drops.
+    let (info, _dir) = pane(&daemon, &["sleep", "30"]);
+    daemon.close(info.id).unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(daemon.remote_feed_session_count_for_test(), 0);
+}

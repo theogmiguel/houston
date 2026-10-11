@@ -11784,6 +11784,7 @@ impl Daemon {
         self.cancel_delegation(id);
         self.db.delegation_forget_retention(id)?;
         let removed = self.sessions.lock().expect("sessions lock").remove(&id);
+        self.remote_forget_session(id);
         if let Some(session) = removed {
             session.remove_shell_token_file();
             session.removed.store(true, Ordering::Release);
