@@ -239,7 +239,7 @@ fn prompt_outgrows_argv(prompt: &str) -> bool {
 }
 
 /// ZCode reads its first positional as a subcommand and has no prompt flag for its
-/// TUI, so its first prompt is pasted into the composer once the TUI has drawn.
+/// TUI, so its first prompt is pasted once its composer takes input (`composer_ready.rs`).
 pub fn prompt_in_argv(agent: proto::AgentKind) -> bool {
     agent != proto::AgentKind::Zcode
 }

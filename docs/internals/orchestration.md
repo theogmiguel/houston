@@ -1314,7 +1314,8 @@ What changes per provider, beyond the shared inbox:
   to ZCode's camelCase fields; its `transcript_path` is a temporary file ZCode deletes after
   the hook, so it is never recorded. `SessionStart` fires inside the first turn rather than
   at launch, so neither status nor first-prompt delivery can wait for it: the first prompt
-  is pasted once the TUI has drawn and stayed quiet for a second, and counts as delivered
+  is pasted once ZCode's composer reports focus (bracketed paste enabled, then the cursor
+  shown; after `FIRST_PROMPT_DEADLINE` it is pasted regardless), and counts as delivered
   when a `UserPromptSubmit` that begins like it arrives (invariants, carve-out 4). The
   Claude correlation rules apply: `AskUserQuestion` blocks through `PreToolUse`, and a
   `PostToolUse`/`PostToolUseFailure` resolves the episode with its own `tool_use_id`, which
