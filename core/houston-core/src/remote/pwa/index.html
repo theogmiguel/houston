@@ -64,6 +64,7 @@
       <p class="callout warn">This phone will be able to read and type into every pane, as much access as a terminal on that computer.</p>
       <p id="route-warning" class="callout warn hidden">Not encrypted: this address uses plain HTTP. Use it only on a network you trust.</p>
     </form>
+    <div id="trust" class="card howto trust hidden" aria-label="Trust this computer"></div>
     <div id="pair-connected" class="pair-stack hidden">
       <div id="install-help" class="card howto"></div>
       <div class="card howto"><b>Want a ping when an agent waits?</b><span>Turn on phone notifications on the computer, in Settings ▸ Remote access.</span></div>
@@ -107,6 +108,12 @@
     <div id="keys" class="keys hidden" role="toolbar" aria-label="Keys"></div>
     <div id="card" class="decision hidden" aria-live="assertive"></div>
     <div id="other" class="other hidden"><span id="other-label"></span><button id="other-cancel" class="link-btn" type="button">Cancel</button></div>
+    <div id="rec" class="rec hidden" role="status">
+      <span class="rec-dot" aria-hidden="true"></span>
+      <span id="rec-time" class="rec-time">0:00 / 2:00</span>
+      <button id="rec-cancel" class="link-btn" type="button">Cancel</button>
+      <button id="rec-send" class="btn primary" type="button">Insert and send</button>
+    </div>
     <div class="composer" id="composer">
       <textarea id="text" rows="1" placeholder="Message" aria-label="Message to the pane" enterkeyhint="send"></textarea>
       <div class="composer-row">
@@ -114,9 +121,13 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>
         </button>
         <p id="dock-status" class="dock-status" role="status"></p>
+        <button id="mic" class="icon-btn sm mic hidden" type="button" aria-label="Dictate" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3zM6 11a6 6 0 0 0 12 0M12 17v3"/></svg>
+        </button>
         <button id="send" class="send" type="button" aria-label="Send" disabled></button>
       </div>
     </div>
+    <p id="mic-note" class="mic-note hidden"></p>
   </div>
 </main>
 

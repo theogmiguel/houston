@@ -55,7 +55,6 @@ import { VoiceMicChip } from "./voice/VoiceMicChip";
 import {
   configureDictation,
   dictationFailed,
-  dictationTextFor,
   forgetDictationSession,
 } from "./voice/dictation";
 import type {
@@ -1599,11 +1598,7 @@ export function App(): React.JSX.Element {
             break;
           }
           case "voice_transcript": {
-            const policy = {
-              outputMode: voiceSettingsRef.current?.output_mode ?? "original",
-              agentPreamble: voiceSettingsRef.current?.agent_preamble ?? false,
-            };
-            const text = dictationTextFor(msg.session, msg.text, policy);
+            const text = msg.insert;
             if (text === "") {
               if (
                 !showVoiceNotice(

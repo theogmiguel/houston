@@ -44,6 +44,7 @@ async fn settings_read_configure_pair_and_revoke_over_ws() {
     assert_eq!(state.ntfy_server, None);
     assert_eq!(state.notify_delay_secs, 30);
     assert_eq!(state.notify_detail, proto::RemoteNotifyDetail::Generic);
+    assert!(!state.dictation, "dictation from devices is off by default");
     assert!(state.devices.is_empty());
 
     send(
@@ -56,6 +57,7 @@ async fn settings_read_configure_pair_and_revoke_over_ws() {
             notify_delay_secs: None,
             notify_detail: None,
             notify_finished: None,
+            dictation: None,
         },
     )
     .await;
@@ -82,6 +84,7 @@ async fn settings_read_configure_pair_and_revoke_over_ws() {
             notify_delay_secs: Some(5),
             notify_detail: Some(proto::RemoteNotifyDetail::PaneName),
             notify_finished: None,
+            dictation: Some(true),
         },
     )
     .await;
@@ -93,6 +96,10 @@ async fn settings_read_configure_pair_and_revoke_over_ws() {
     assert_eq!(listening.bind, format!("127.0.0.1:{port}"));
     assert_eq!(listening.notify_delay_secs, 5);
     assert_eq!(listening.notify_detail, proto::RemoteNotifyDetail::PaneName);
+    assert!(
+        listening.dictation,
+        "the toggle round-trips and shows its value"
+    );
 
     send(&mut ws, proto::ClientMsg::RemotePairStart).await;
     let (url, qr_svg, expires_at) = next_matching(&mut ws, |m| match m {

@@ -376,7 +376,7 @@ function VoiceCaptureGroup({
       </Row>
       <Row
         title="Spoken language"
-        desc="Auto-detect works; pinning a language is better for short utterances."
+        desc="A set language transcribes faster than Auto-detect, which adds a detection pass to every dictation."
       >
         <Select
           width="medium"

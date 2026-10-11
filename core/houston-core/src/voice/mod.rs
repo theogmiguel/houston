@@ -1,5 +1,6 @@
 pub mod capture;
 pub mod cloud;
+pub mod dictation;
 pub mod models;
 pub mod runtime;
 #[cfg(unix)]
@@ -21,6 +22,14 @@ pub struct TranscribeRequest<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Transcript {
     pub text: String,
+    pub translated: bool,
+}
+
+/// One utterance's transcript and the engine that produced it, `local:<model_id>` or `groq`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Transcribed {
+    pub text: String,
+    pub engine: String,
     pub translated: bool,
 }
 

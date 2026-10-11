@@ -13,6 +13,7 @@ pub mod feed;
 pub mod http;
 pub mod ntfy;
 pub mod qr;
+pub mod tls;
 
 /// A fixed port, so `tailscale serve --bg 47823` stays valid across restarts.
 pub const DEFAULT_BIND: &str = "127.0.0.1:47823";
@@ -48,6 +49,12 @@ const LIMITER_SOURCES_MAX: usize = 1024;
 pub const MAX_CONNECTIONS: usize = 64;
 pub const CONNECTION_IDLE: Duration = Duration::from_secs(30);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// Remote dictation takes 16 kHz mono PCM16, little-endian, up to this long per recording.
+pub const DICTATE_MAX_SECS: usize = 120;
+pub const DICTATE_BODY_LIMIT: usize =
+    DICTATE_MAX_SECS * crate::voice::capture::TARGET_SAMPLE_RATE as usize * 2;
+// The upload plus CPU whisper on a full-length recording; Groq alone may take 30 s.
+pub const DICTATE_TIMEOUT: Duration = Duration::from_secs(180);
 // A phone and a desktop browser or two; each stream holds a connection slot.
 pub const EVENT_STREAMS_MAX: usize = 8;
 // Under `CONNECTION_IDLE`, so an idle stream is never cut by the idle timeout.
@@ -115,6 +122,7 @@ pub(crate) const KEY_PUBLIC_URL: &str = "remote_public_url";
 pub(crate) const KEY_NOTIFY_DELAY: &str = "remote_notify_delay_secs";
 pub(crate) const KEY_NOTIFY_DETAIL: &str = "remote_notify_detail";
 pub(crate) const KEY_NOTIFY_FINISHED: &str = "remote_notify_finished";
+pub(crate) const KEY_DICTATION: &str = "remote_dictation";
 /// The ntfy server origin while the keychain holds a topic URL; empty when off.
 pub(crate) const KEY_NTFY_SERVER: &str = "remote_ntfy_server";
 
@@ -154,6 +162,7 @@ pub struct Config {
     pub notify_finished: bool,
     /// Set while notifications are on; the topic URL itself is in the keychain.
     pub ntfy_server: Option<String>,
+    pub dictation: bool,
 }
 
 impl Default for Config {
@@ -166,29 +175,60 @@ impl Default for Config {
             notify_detail: NotifyDetail::Generic,
             notify_finished: false,
             ntfy_server: None,
+            dictation: false,
         }
     }
 }
 
 impl Config {
+    /// Whether the listener serves HTTPS itself: devices reach it directly on an
+    /// address the local authority can certify. A loopback bind stays plain HTTP
+    /// for a proxy that terminates HTTPS, such as `tailscale serve`.
+    pub fn serves_tls(&self) -> bool {
+        let ip = self.bind.ip();
+        if ip.is_loopback() {
+            return false;
+        }
+        if !ip.is_unspecified() {
+            return tls::covers(&ip.to_string());
+        }
+        self.public_host().is_some_and(|h| tls::covers(&h))
+    }
+
+    fn scheme(&self) -> &'static str {
+        if self.serves_tls() {
+            "https"
+        } else {
+            "http"
+        }
+    }
+
+    fn public_host(&self) -> Option<String> {
+        self.public_url
+            .as_deref()
+            .and_then(|u| reqwest::Url::parse(u).ok())
+            .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+    }
+
     /// The URL a device opens: the configured public URL, else the bind address.
     pub fn effective_url(&self) -> String {
         match &self.public_url {
             Some(url) => url.clone(),
-            None => format!("http://{}", self.bind),
+            None => format!("{}://{}", self.scheme(), self.bind),
         }
     }
 
     /// Origins whose pages may send state-changing requests: the public URL, and
-    /// `http://<host>:<port>` for each loopback name and the bind address.
+    /// `<scheme>://<host>:<port>` for each loopback name and the bind address.
     pub fn allowed_origins(&self) -> Vec<String> {
         let port = self.bind.port();
+        let scheme = self.scheme();
         let mut origins: Vec<String> = ["localhost", "127.0.0.1", "[::1]"]
             .iter()
-            .map(|h| format!("http://{h}:{port}"))
+            .map(|h| format!("{scheme}://{h}:{port}"))
             .collect();
         if !self.bind.ip().is_unspecified() {
-            origins.push(format!("http://{}", self.bind));
+            origins.push(format!("{scheme}://{}", self.bind));
         }
         if let Some(url) = &self.public_url {
             origins.push(url.clone());
@@ -197,13 +237,54 @@ impl Config {
     }
 
     /// Whether a device's token would cross the network without TLS: the bind is
-    /// off loopback and no https public URL fronts it.
+    /// off loopback, the listener does not serve HTTPS itself, and no https public
+    /// URL fronts it.
     pub fn plain_http_off_loopback(&self) -> bool {
         !self.bind.ip().is_loopback()
+            && !self.serves_tls()
             && !self
                 .public_url
                 .as_deref()
                 .is_some_and(|u| u.starts_with("https://"))
+    }
+
+    /// Settings stored before the listener served HTTPS name an `http://` public
+    /// URL on a private address; that address is now served over HTTPS.
+    pub fn upgrade_public_scheme(&mut self) {
+        if self.serves_tls() {
+            if let Some(rest) = self
+                .public_url
+                .as_deref()
+                .and_then(|u| u.strip_prefix("http://"))
+            {
+                self.public_url = Some(format!("https://{rest}"));
+            }
+        }
+    }
+
+    /// Why this listener cannot serve the public URL over its own HTTPS, if it cannot.
+    pub fn tls_refusal(&self) -> Option<String> {
+        if !self.serves_tls() {
+            return None;
+        }
+        let url = self.public_url.as_deref()?;
+        if url.starts_with("http://") {
+            return Some(format!(
+                "public URL {url:?} uses http, but Houston serves HTTPS itself on {}, a private \
+                 address: use https://{}",
+                self.bind,
+                url.trim_start_matches("http://")
+            ));
+        }
+        let host = self.public_host().unwrap_or_default();
+        (!tls::covers(&host)).then(|| {
+            format!(
+                "public URL {url:?} names {host:?}, which this computer's certificate cannot \
+                 cover: with a bind on {}, Houston serves HTTPS itself and certifies only \
+                 private and loopback addresses and .local names",
+                self.bind
+            )
+        })
     }
 
     /// Host names a request may carry in `Host`. Anything else is a
@@ -243,6 +324,7 @@ pub struct ConfigPatch {
     pub notify_delay_secs: Option<u32>,
     pub notify_detail: Option<String>,
     pub notify_finished: Option<bool>,
+    pub dictation: Option<bool>,
 }
 
 pub fn parse_bind(raw: &str) -> Result<SocketAddr, String> {
@@ -381,6 +463,35 @@ pub fn keys_to_bytes(keys: &[String]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+pub fn dictation_too_long(bytes: usize) -> ApiError {
+    ApiError::TooLarge(format!(
+        "the recording is {bytes} bytes ({:.1} s of 16 kHz mono PCM16); remote dictation takes at \
+         most {DICTATE_BODY_LIMIT} bytes ({DICTATE_MAX_SECS} s) per recording: record a shorter \
+         message",
+        bytes as f32 / (crate::voice::capture::TARGET_SAMPLE_RATE as f32 * 2.0)
+    ))
+}
+
+/// A device's recording as samples in [-1, 1).
+pub fn dictation_samples(body: &[u8]) -> Result<Vec<f32>, ApiError> {
+    if body.len() > DICTATE_BODY_LIMIT {
+        return Err(dictation_too_long(body.len()));
+    }
+    if body.is_empty() || !body.len().is_multiple_of(2) {
+        return Err(ApiError::BadRequest(format!(
+            "the recording is {} bytes: expected a non-empty body of 16-bit little-endian samples \
+             (an even number of bytes), 16 kHz mono",
+            body.len()
+        )));
+    }
+    Ok(body
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| f32::from(i16::from_le_bytes(*b)) / 32768.0)
+        .collect())
+}
+
 /// Free text from a device: `\r\n` and `\r` become `\n`, and every other control
 /// character (Tab included) is refused so text cannot end a paste or forge a key.
 pub fn validate_input_text(raw: &str) -> Result<String, String> {
@@ -435,8 +546,11 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 pub enum ApiError {
     BadRequest(String),
     Unauthorized(String),
+    Forbidden(String),
     NotFound(String),
     Conflict(String),
+    TooLarge(String),
+    Unprocessable(String),
     Internal(String),
 }
 
@@ -445,8 +559,11 @@ impl std::fmt::Display for ApiError {
         match self {
             ApiError::BadRequest(m)
             | ApiError::Unauthorized(m)
+            | ApiError::Forbidden(m)
             | ApiError::NotFound(m)
             | ApiError::Conflict(m)
+            | ApiError::TooLarge(m)
+            | ApiError::Unprocessable(m)
             | ApiError::Internal(m) => f.write_str(m),
         }
     }
@@ -630,6 +747,9 @@ pub struct Runtime {
     /// The renderer's grids, held in memory: the renderer publishes them again
     /// whenever it connects.
     pub(crate) grids: Mutex<Vec<proto::RemoteGrid>>,
+    pub(crate) authority: Mutex<Option<Arc<tls::Authority>>>,
+    /// Bumped when the authority is regenerated, so the listener restarts with it.
+    pub(crate) authority_generation: std::sync::atomic::AtomicU64,
 }
 
 impl Default for Runtime {
@@ -660,6 +780,8 @@ impl Runtime {
             streams: Arc::new(Mutex::new(StreamRegistry::default())),
             revoked_hashes: Mutex::new(VecDeque::new()),
             grids: Mutex::new(Vec::new()),
+            authority: Mutex::new(None),
+            authority_generation: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -1011,6 +1133,55 @@ mod tests {
     }
 
     #[test]
+    fn only_a_listener_devices_reach_directly_on_a_private_address_serves_https() {
+        let cfg = |bind: &str, url: Option<&str>| Config {
+            bind: bind.parse().unwrap(),
+            public_url: url.map(str::to_string),
+            ..Config::default()
+        };
+        let tailscale = cfg("127.0.0.1:47823", Some("https://box.tail1.ts.net"));
+        assert!(!tailscale.serves_tls(), "tailscale serve terminates HTTPS");
+        assert_eq!(tailscale.effective_url(), "https://box.tail1.ts.net");
+        assert!(tailscale
+            .allowed_origins()
+            .contains(&"http://127.0.0.1:47823".to_string()));
+        assert_eq!(tailscale.tls_refusal(), None);
+        assert_eq!(
+            cfg("127.0.0.1:47823", None).effective_url(),
+            "http://127.0.0.1:47823"
+        );
+
+        let wifi = cfg("0.0.0.0:47823", Some("https://192.168.1.20:47823"));
+        assert!(wifi.serves_tls());
+        assert_eq!(wifi.tls_refusal(), None);
+        let lan = cfg("192.168.1.20:47823", None);
+        assert!(lan.serves_tls());
+        assert_eq!(lan.effective_url(), "https://192.168.1.20:47823");
+        assert!(lan
+            .allowed_origins()
+            .contains(&"https://192.168.1.20:47823".to_string()));
+
+        let tailnet_ip = cfg("100.64.0.2:47823", None);
+        assert!(!tailnet_ip.serves_tls(), "the authority cannot certify it");
+        assert!(tailnet_ip.plain_http_off_loopback());
+
+        let plain = cfg("0.0.0.0:47823", Some("http://192.168.1.20:47823"));
+        let refusal = plain.tls_refusal().unwrap();
+        assert!(
+            refusal.contains("use https://192.168.1.20:47823"),
+            "{refusal}"
+        );
+        let mut stored = plain.clone();
+        stored.upgrade_public_scheme();
+        assert_eq!(
+            stored.public_url.as_deref(),
+            Some("https://192.168.1.20:47823")
+        );
+        let foreign = cfg("192.168.1.20:47823", Some("https://box.example"));
+        assert!(foreign.tls_refusal().unwrap().contains("cannot cover"));
+    }
+
+    #[test]
     fn origins_carry_scheme_host_and_port() {
         let cfg = Config {
             public_url: Some("https://box.tail1.ts.net".to_string()),
@@ -1053,5 +1224,39 @@ mod tests {
         ];
         v.sort();
         assert_eq!(v, [0, 1, 2, 5]);
+    }
+
+    #[test]
+    fn a_recording_is_little_endian_pcm16() {
+        let body = [0x00, 0x80, 0xff, 0x7f, 0x00, 0x00];
+        assert_eq!(
+            dictation_samples(&body).unwrap(),
+            vec![-1.0, 32767.0 / 32768.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn an_odd_or_empty_recording_names_its_size() {
+        let odd = dictation_samples(&[1, 2, 3]).unwrap_err();
+        assert!(
+            matches!(&odd, ApiError::BadRequest(m) if m.contains("3 bytes")),
+            "{odd}"
+        );
+        assert!(matches!(
+            dictation_samples(&[]),
+            Err(ApiError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn two_minutes_is_the_limit_and_the_refusal_names_both_values() {
+        assert_eq!(DICTATE_BODY_LIMIT, 3_840_000);
+        assert!(dictation_samples(&vec![0u8; DICTATE_BODY_LIMIT]).is_ok());
+        let over = dictation_samples(&vec![0u8; DICTATE_BODY_LIMIT + 2]).unwrap_err();
+        let ApiError::TooLarge(m) = &over else {
+            panic!("expected TooLarge, got {over:?}");
+        };
+        assert!(m.contains("3840002 bytes") && m.contains("120.0 s"), "{m}");
+        assert!(m.contains("3840000 bytes (120 s)"), "{m}");
     }
 }

@@ -556,6 +556,16 @@ under `groq-api-key`; `voice/models.rs` carries the catalog, verified download, 
 disk usage. The runtime is constructed at boot but **opens no device** —
 `VoiceSettings::enabled` defaults false, and the mic opens only when that turns on.
 
+`Daemon::voice_transcribe` (speech gate, then the configured engine) is the one transcription
+path for the desktop microphone and for paired devices; callers run it off the async runtime.
+The text a dictation inserts is assembled in the daemon (`voice/dictation.rs`): the agent
+preamble leads only a pane's first English-output dictation, counted across the desktop and
+devices and forgotten when the pane is removed, so a renderer never keeps that rule.
+Remote dictation never opens the host microphone, never sets `VoiceState` and never broadcasts
+`voice_transcript`, because the desktop renderer pastes that into the pane. The runtime counts
+transcriptions in progress: desktop ones are never refused, and a remote one is refused while
+any other transcription runs.
+
 ## Usage
 
 `usage/` streams agent CLI session transcripts to produce token counts, under four
