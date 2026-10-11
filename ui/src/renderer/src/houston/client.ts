@@ -433,7 +433,7 @@ export class HoustonClient {
     client.send({ type: 'hello', token: cfg.token, protocol: PROTOCOL_VERSION })
     if (isTauri() && navigator.platform.startsWith('Win')) {
       void import('./environmentMux')
-        .then((m) => m.watchEnvironments(ws))
+        .then((m) => { if (ws.readyState === WebSocket.OPEN) m.watchEnvironments(ws) })
         .catch((err: unknown) => console.warn('houston: WSL environments are unavailable', err))
     }
     return client

@@ -67,6 +67,11 @@ replies, including refusals. Roster broadcasts never acknowledge creation. A wor
 action sends its command only to the session in its matching successful result. Closing
 the transport or exceeding the reply deadline rejects outstanding creates.
 
+The App connection effect owns one pending connection and one active client. Repeated
+retries share the pending attempt; replacement closes the prior client. Cleanup closes
+the active client and any late successful connection, and obsolete callbacks cannot mutate
+renderer state or start a retry.
+
 `sendStdin` is the outbound path: `term.onData` → `client.sendStdin` → the transport's
 `write`. It is not queued — a keystroke goes straight out.
 
