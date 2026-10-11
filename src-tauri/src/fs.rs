@@ -1092,7 +1092,7 @@ async fn count_entries_under(real: &Path, cap: u64) -> Result<EntryCount, String
 fn save_path_for(state_dir: &Path, dir_name: &str, ext: &str, millis: u128) -> PathBuf {
     let dir = state_dir.join(dir_name);
     let safe_ext = sanitize_ext(ext);
-    dir.join(format!("{millis}.{safe_ext}"))
+    dir.join(format!("{millis}-{}.{safe_ext}", uuid::Uuid::new_v4()))
 }
 
 async fn save_bytes_under_base(
@@ -1114,11 +1114,35 @@ async fn save_bytes_under_base(
         .await
         .map_err(|e| format!("cannot create directory {path}: {e}", path = dir.display()))?;
     set_dir_mode_0700(&dir).await?;
-    tokio::fs::write(&file, bytes)
-        .await
-        .map_err(|e| format!("cannot write file {path}: {e}", path = file.display()))?;
-    set_file_mode_0600(&file).await?;
+    write_new_saved_file(&file, bytes).await?;
     Ok(file.to_string_lossy().into_owned())
+}
+
+async fn write_new_saved_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
+        .open(path)
+        .await
+        .map_err(|e| format!("cannot create new file {}: {e}", path.display()))?;
+    // Once creation succeeds, a failed or cancelled write owns only this file.
+    let temporary = tempfile::TempPath::try_from_path(path)
+        .map_err(|e| format!("cannot track new file {}: {e}", path.display()))?;
+    file.write_all(bytes)
+        .await
+        .map_err(|e| format!("cannot write file {}: {e}", path.display()))?;
+    file.flush()
+        .await
+        .map_err(|e| format!("cannot finish writing file {}: {e}", path.display()))?;
+    drop(file);
+    temporary
+        .keep()
+        .map_err(|e| format!("cannot keep saved file {}: {e}", path.display()))?;
+    Ok(())
 }
 
 const MAX_CAPTURE_BYTES: u64 = 32 * 1024 * 1024;
@@ -3317,6 +3341,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn captures_saved_in_the_same_clock_tick_keep_independent_contents() {
+        let state_dir = tempdir().unwrap();
+        let directory = state_dir.path().join("pastes");
+        tokio::fs::create_dir_all(&directory).await.unwrap();
+        let first = save_path_for(state_dir.path(), "pastes", "png", 42);
+        let second = save_path_for(state_dir.path(), "pastes", "png", 42);
+        assert_ne!(
+            first, second,
+            "separate captures must never share a filename"
+        );
+        let (a, b) = tokio::join!(
+            write_new_saved_file(&first, b"first capture"),
+            write_new_saved_file(&second, b"second capture"),
+        );
+        a.unwrap();
+        b.unwrap();
+        tokio::fs::remove_file(first).await.unwrap();
+        assert_eq!(tokio::fs::read(second).await.unwrap(), b"second capture");
+    }
+
+    #[tokio::test]
+    async fn a_saved_file_collision_preserves_the_previous_contents() {
+        let state_dir = tempdir().unwrap();
+        let path = state_dir.path().join("existing.png");
+        tokio::fs::write(&path, b"previous capture").await.unwrap();
+        let error = write_new_saved_file(&path, b"replacement")
+            .await
+            .unwrap_err();
+        assert!(error.contains("cannot create new file"), "{error}");
+        assert_eq!(tokio::fs::read(path).await.unwrap(), b"previous capture");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_saved_file_refuses_a_preexisting_symlink() {
+        let state_dir = tempdir().unwrap();
+        let target = state_dir.path().join("target");
+        let path = state_dir.path().join("capture.png");
+        tokio::fs::write(&target, b"untouched").await.unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        assert!(write_new_saved_file(&path, b"capture").await.is_err());
+        assert_eq!(tokio::fs::read(target).await.unwrap(), b"untouched");
+        assert!(tokio::fs::symlink_metadata(path)
+            .await
+            .unwrap()
+            .is_symlink());
+    }
+
+    #[tokio::test]
     async fn save_bytes_under_base_writes_inside_the_given_state_dir() {
         let state_dir = tempdir().unwrap();
         let returned = save_bytes_under_base(state_dir.path(), "pastes", "png", &[1, 2, 3])
@@ -3336,6 +3409,18 @@ mod tests {
         );
         let content = tokio::fs::read(&returned_path).await.unwrap();
         assert_eq!(content, vec![1, 2, 3]);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&returned_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
     }
 
     #[cfg(unix)]
