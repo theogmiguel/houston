@@ -170,6 +170,43 @@ struct IndexedPath {
 struct PathIndexCache {
     generations: HashMap<PathBuf, u64>,
     indexes: HashMap<PathBuf, (u64, Vec<IndexedPath>)>,
+    recent: std::collections::VecDeque<PathBuf>,
+    next_generation: u64,
+}
+
+// Keep several active projects warm without retaining every project ever opened.
+const MAX_CACHED_ROOTS: usize = 8;
+
+impl PathIndexCache {
+    fn touch(&mut self, root: &Path) -> u64 {
+        self.recent.retain(|path| path != root);
+        self.recent.push_back(root.to_path_buf());
+        while self.recent.len() > MAX_CACHED_ROOTS {
+            let oldest = self.recent.pop_front().expect("nonempty cache");
+            self.generations.remove(&oldest);
+            self.indexes.remove(&oldest);
+        }
+        if !self.generations.contains_key(root) {
+            self.next_generation = self.next_generation.wrapping_add(1);
+            self.generations
+                .insert(root.to_path_buf(), self.next_generation);
+        }
+        self.generations[root]
+    }
+
+    fn invalidate(&mut self, root: &Path) {
+        if let Some(generation) = self.generations.get_mut(root) {
+            self.next_generation = self.next_generation.wrapping_add(1);
+            *generation = self.next_generation;
+        }
+        self.indexes.remove(root);
+    }
+
+    fn forget(&mut self, root: &Path) {
+        self.generations.remove(root);
+        self.indexes.remove(root);
+        self.recent.retain(|path| path != root);
+    }
 }
 
 static PATH_INDEX: OnceLock<Mutex<PathIndexCache>> = OnceLock::new();
@@ -424,10 +461,10 @@ where
     F: FnOnce(PathBuf) -> Result<Vec<IndexedPath>, String> + Send + 'static,
 {
     let generation = {
-        let cache = path_index()
+        let mut cache = path_index()
             .lock()
             .map_err(|_| "path index lock poisoned".to_string())?;
-        let generation = *cache.generations.get(&real_root).unwrap_or(&0);
+        let generation = cache.touch(&real_root);
         if let Some((cached_generation, index)) = cache.indexes.get(&real_root) {
             if *cached_generation == generation {
                 return Ok(index.clone());
@@ -442,7 +479,7 @@ where
     let mut cache = path_index()
         .lock()
         .map_err(|_| "path index lock poisoned".to_string())?;
-    if *cache.generations.get(&real_root).unwrap_or(&0) == generation {
+    if cache.generations.get(&real_root) == Some(&generation) {
         cache.indexes.insert(real_root, (generation, index.clone()));
     }
     // Return the completed snapshot; a changed generation must not cache it.
@@ -558,11 +595,7 @@ pub async fn fs_watch_dirs(
             let mut paths = changed.paths.into_iter().collect::<Vec<_>>();
             paths.sort();
             if let Ok(mut cache) = path_index().lock() {
-                *cache
-                    .generations
-                    .entry(root_for_events.clone())
-                    .or_insert(0) += 1;
-                cache.indexes.remove(&root_for_events);
+                cache.invalidate(&root_for_events);
             }
             let _ = app.emit(
                 "fs://changed",
@@ -618,6 +651,10 @@ pub async fn fs_unwatch(root: String, state: State<'_, AllowedRoots>) -> Result<
         }
         if watcher.leases.is_empty() {
             watchers.remove(&real_root);
+            path_index()
+                .lock()
+                .map_err(|_| "path index lock poisoned".to_string())?
+                .forget(&real_root);
         }
     }
     Ok(())
@@ -1858,7 +1895,7 @@ mod tests {
                 let paths = super::build_path_index(&root)?;
                 // The watcher's invalidation arrives after this scan and before publication.
                 let mut cache = super::path_index().lock().unwrap();
-                *cache.generations.entry(root).or_default() += 1;
+                cache.invalidate(&root);
                 Ok(paths)
             }
         };
@@ -1877,11 +1914,43 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(calls.load(Ordering::Relaxed), 2);
-        super::path_index()
-            .lock()
-            .unwrap()
-            .generations
-            .remove(root.path());
+        super::path_index().lock().unwrap().forget(root.path());
+    }
+
+    #[test]
+    fn path_index_cache_releases_old_roots_and_rejects_evicted_build_generations() {
+        let mut cache = super::PathIndexCache::default();
+        let first = std::path::PathBuf::from("first-project");
+        let original = cache.touch(&first);
+        for n in 0..super::MAX_CACHED_ROOTS * 3 {
+            let path = std::path::PathBuf::from(format!("project-{n}"));
+            let generation = cache.touch(&path);
+            cache.indexes.insert(
+                path,
+                (
+                    generation,
+                    vec![super::IndexedPath {
+                        relative: "file.txt".into(),
+                        is_dir: false,
+                    }],
+                ),
+            );
+            assert!(cache.indexes.len() <= super::MAX_CACHED_ROOTS);
+            assert!(cache.generations.len() <= super::MAX_CACHED_ROOTS);
+        }
+        assert!(!cache.generations.contains_key(&first));
+        assert_ne!(
+            cache.touch(&first),
+            original,
+            "an evicted build cannot publish into a new lease"
+        );
+        cache.forget(&first);
+        cache.invalidate(&first);
+        assert!(
+            !cache.generations.contains_key(&first),
+            "a late watcher must not recreate a forgotten root"
+        );
+        assert!(!cache.recent.contains(&first));
     }
 
     #[test]
