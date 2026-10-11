@@ -557,11 +557,20 @@ The developer-relevant subset.
 
 ## SSH
 
-`ssh.rs` runs **russh in-process**: no `ssh` binary, no subprocess, no argv. One tokio task
-per session, driven through an mpsc `SshCmd` queue (`Data`, `Resize`, `Close`, `Upload`).
-Scope is agent and identity-file auth with TOFU host-key verification against
-`<state dir>/known_hosts`; there is no auto-reconnect. A host-key prompt parks the handshake
-inside `check_server_key` on a `oneshot::Sender<HostKeyVerdict>` held in
+`ssh.rs` runs russh in-process without an SSH subprocess. Each session has a FIFO command
+queue bounded to 128 items and a 4 MiB input budget covering active and queued transfers.
+The session writer waits for delivery receipts outside the WebSocket task. Admission
+refuses before accepting bytes; cancellation reports zero for queued input and unknown
+partial delivery for an active channel write. Cancellation has its own watch signal,
+polled during stalled writes, and resize hints use a separate latest-value watch channel.
+The driver continues receiving output while waiting for channel window space. Up to four
+uploads are admitted, owned by the driver and cancelled with explicit outcomes; a cancelled
+active upload may leave a partial remote file. Channel close and disconnect each have a
+200 ms teardown bound. This path is shared by supported SSH platforms.
+
+Authentication supports an agent, identity file or password, with TOFU host-key verification
+against `<state dir>/known_hosts`; there is no auto-reconnect. A host-key prompt parks the
+handshake inside `check_server_key` on a `oneshot::Sender<HostKeyVerdict>` held in
 `Daemon::ssh_prompts`, keyed by request id.
 
 Passwords and passphrases live in the OS keychain (Secret Service via zbus, pure Rust) and

@@ -1032,9 +1032,7 @@ impl Backend {
                 w.flush().ok();
                 Ok(())
             }
-            Backend::Ssh(h) => h.write_stdin(data).map_err(|e| {
-                StdinWriteError::unknown(e.context(format!("writing stdin to ssh session {id}")))
-            }),
+            Backend::Ssh(h) => h.write_stdin(data),
             #[cfg(unix)]
             Backend::AdoptedPty(raw) => {
                 raw.write_all_counting(data)
@@ -11116,7 +11114,16 @@ impl Daemon {
             crate::ssh::post_connect_directory(params.default_dir.as_deref())
         };
         for line in lines {
-            if let Err(e) = self.write_stdin(id, line.as_bytes()) {
+            if let Err(e) = self.enqueue_stdin(
+                id,
+                line.as_bytes(),
+                Box::new(move |result| {
+                    if let Err(error) = result {
+                        tracing::warn!("SSH post-connect delivery failed on session {id}: {error}");
+                    }
+                }),
+                None,
+            ) {
                 tracing::warn!("SSH post-connect line failed on session {id}: {e}");
                 break;
             }

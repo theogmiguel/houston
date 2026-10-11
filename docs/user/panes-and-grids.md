@@ -56,7 +56,10 @@ and resize or termination requests remain available. Each session can admit up t
 and 128 pending input writes, including the active write. An error names the limit if a
 write cannot be admitted; retry that input after the program resumes reading. Terminating
 the session cancels pending input and reports delivery failures, including any bytes
-already written. Input already admitted continues after disconnecting the client.
+already written. Input already admitted continues after disconnecting the client. SSH input follows the
+same ordering and admission rules. Cancelling an active SSH write reports that its partial
+delivery is unknown; queued writes report that nothing was transferred. Cancelling an
+upload may leave a partial file on the remote host; at most four uploads can be pending.
 
 On Linux, closing an Exited pane also stops descendants still holding its terminal open
 and completes the output reader. On other platforms, that close is refused until the
