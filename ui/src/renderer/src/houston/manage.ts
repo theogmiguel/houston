@@ -40,8 +40,14 @@ export class ManageError extends Error {}
 
 type Verb = 'daemon_status' | 'daemon_shutdown'
 
-async function manageRequest<T>(verb: Verb): Promise<T> {
-  const { port, token } = await getHostConfig()
+/** The daemon to manage; absent means the local daemon from `host_config`. */
+export interface ManageTarget {
+  port: number
+  token: string
+}
+
+async function manageRequest<T>(verb: Verb, target?: ManageTarget): Promise<T> {
+  const { port, token } = target ?? (await getHostConfig())
   let res: Response
   try {
     res = await fetch(`http://127.0.0.1:${port}/manage`, {
@@ -73,10 +79,10 @@ async function manageRequest<T>(verb: Verb): Promise<T> {
   return body as T
 }
 
-export function daemonStatus(): Promise<DaemonStatus> {
-  return manageRequest<DaemonStatus>('daemon_status')
+export function daemonStatus(target?: ManageTarget): Promise<DaemonStatus> {
+  return manageRequest<DaemonStatus>('daemon_status', target)
 }
 
-export function daemonShutdown(): Promise<DaemonShutdownOk> {
-  return manageRequest<DaemonShutdownOk>('daemon_shutdown')
+export function daemonShutdown(target?: ManageTarget): Promise<DaemonShutdownOk> {
+  return manageRequest<DaemonShutdownOk>('daemon_shutdown', target)
 }

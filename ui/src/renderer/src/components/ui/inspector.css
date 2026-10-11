@@ -309,7 +309,7 @@
 .pr-branch-people [data-testid="pr-reviewers"] [data-testid="pr-reviewers-manage"],.pr-branch-people [data-testid="pr-labels"] [data-testid="pr-labels-manage"]{width:26px;min-width:26px;height:26px;padding:0;color:var(--text-muted)}
 .pr-branch-people [data-testid="pr-reviewers"] [data-testid="pr-reviewers-manage"] svg,.pr-branch-people [data-testid="pr-labels"] [data-testid="pr-labels-manage"] svg{width:14px;height:14px}
 .pr-branch-summary [data-testid="disclosure"]{border:0;border-radius:0;background:transparent}
-.pr-branch-summary [data-testid="disclosure"]>div:last-child>div{position:relative;padding:var(--space-1) 0 var(--space-2-5);border:0}
+.pr-branch-summary [data-testid="disclosure-content"]{position:relative;padding:var(--space-1) 0 var(--space-2-5);border:0}
 .pr-branch-description-action{position:absolute;top:0;right:0;display:flex;justify-content:flex-end;opacity:0;pointer-events:none}
 .pr-branch-summary [data-testid="disclosure"]:hover .pr-branch-description-action,.pr-branch-summary [data-testid="disclosure"]:focus-within .pr-branch-description-action{opacity:1;pointer-events:auto}
 .pr-branch-description-action [data-testid="pr-edit-open"]{height:24px;padding:0 var(--space-1-5);font-size:var(--tr-text-xs)}

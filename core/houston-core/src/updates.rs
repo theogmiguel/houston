@@ -9,9 +9,20 @@ use crate::daemon::Daemon;
 const UPDATES_CHECK_KEY: &str = "updates_check";
 // Check frequently enough to surface new releases and models within the working day.
 pub(crate) const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
-// The repository the four manifests name. One constant, so a rename moves one line.
-const RELEASES_LATEST_URL: &str =
-    "https://api.github.com/repos/theogmiguel/houston/releases/latest";
+// The repository's releases page. Both URLs below derive from it, so a repository rename
+// moves one line.
+macro_rules! releases_url {
+    () => {
+        "https://github.com/theogmiguel/houston/releases"
+    };
+}
+// The Tauri updater manifest the desktop app also reads. Unlike the REST API it has no
+// 60-requests-per-hour anonymous quota shared by everyone behind one public IP.
+const UPDATE_MANIFEST_URL: &str = concat!(releases_url!(), "/latest/download/latest.json");
+// Release page for a version; the manifest carries notes but not a page URL.
+const RELEASE_PAGE_PREFIX: &str = concat!(releases_url!(), "/tag/v");
+/// Replaces the manifest URL. Tests set it so no daemon reaches the real endpoint.
+pub const UPDATE_MANIFEST_URL_ENV: &str = "HOUSTON_UPDATE_MANIFEST_URL";
 // GitHub refuses a request with no User-Agent. This one names the product and
 // nothing else: no version, no OS, no identifier.
 const USER_AGENT: &str = "houston";
@@ -72,51 +83,113 @@ fn first_chars(s: &str) -> String {
     s.chars().take(200).collect()
 }
 
-/// Reads a release body, rejecting a draft and a prerelease unconditionally: an
-/// rc must never reach a stable install, and a candidate is installed by hand.
-/// An error names the missing field and the body's first 200 characters.
+/// Resolves an endpoint: the environment override when set and non-empty, else `default`.
+pub(crate) fn endpoint(var: &str, default: &str) -> String {
+    match std::env::var(var) {
+        Ok(url) if !url.trim().is_empty() => url.trim().to_string(),
+        _ => default.to_string(),
+    }
+}
+
+/// Reads the `latest.json` updater manifest. A prerelease version is refused
+/// unconditionally: an rc must never reach a stable install, and a candidate is installed
+/// by hand. An error names the missing field and the body's first 200 characters.
 fn parse_latest_release(body: &str) -> anyhow::Result<Option<proto::UpdateRelease>> {
     let v: serde_json::Value = serde_json::from_str(body).map_err(|e| {
         anyhow!(
-            "releases/latest body is not JSON ({e}); body starts: {}",
+            "latest.json body is not JSON ({e}); body starts: {}",
             first_chars(body)
         )
     })?;
-    let draft = v.get("draft").and_then(serde_json::Value::as_bool) == Some(true);
-    let prerelease = v.get("prerelease").and_then(serde_json::Value::as_bool) == Some(true);
-    if draft || prerelease {
+    let raw = v
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            anyhow!(
+                "latest.json payload has no string `version` (expected `version`, optional `notes`); body starts: {}",
+                first_chars(body)
+            )
+        })?;
+    let version = trim_version(raw);
+    if parse_semver(version).is_none() {
+        return Err(anyhow!(
+            "latest.json `version` is {raw:?}; expected MAJOR.MINOR.PATCH with an optional leading v"
+        ));
+    }
+    if version.contains('-') {
         return Ok(None);
     }
-    let tag = v
-        .get("tag_name")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| {
-            anyhow!(
-                "releases/latest payload has no string `tag_name`; body starts: {}",
-                first_chars(body)
-            )
-        })?;
-    let notes_url = v
-        .get("html_url")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| {
-            anyhow!(
-                "releases/latest payload has no string `html_url`; body starts: {}",
-                first_chars(body)
-            )
-        })?;
-    // `body` is null on a release with no description, which is a normal state
-    // and reads as no notes rather than a failed check.
+    // `notes` is absent or null on a release with no description, which is a normal
+    // state and reads as no notes rather than a failed check.
     let notes = v
-        .get("body")
+        .get("notes")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
-    let version = tag.strip_prefix('v').unwrap_or(tag).to_string();
     Ok(Some(proto::UpdateRelease {
-        version,
+        version: version.to_string(),
         notes: notes.to_string(),
-        notes_url: notes_url.to_string(),
+        notes_url: format!("{RELEASE_PAGE_PREFIX}{version}"),
     }))
+}
+
+/// `x-ratelimit-reset` is an epoch second; the reader wants how long to wait.
+fn reset_in(reset_epoch_secs: u64, now_epoch_secs: u64) -> String {
+    match reset_epoch_secs.checked_sub(now_epoch_secs) {
+        None | Some(0) => "resets now".to_string(),
+        Some(secs) if secs < 90 => format!("resets in {secs}s"),
+        Some(secs) => format!("resets in about {} min", secs.div_ceil(60)),
+    }
+}
+
+/// Names the limit when GitHub throttles the check, instead of reqwest's bare status text.
+/// A 403 is only a rate limit when it says so (`x-ratelimit-remaining: 0` or `retry-after`);
+/// any other 403 is an ordinary refusal and keeps the generic message.
+fn status_error(url: &str, response: &reqwest::Response) -> anyhow::Error {
+    let status = response.status();
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned)
+    };
+    let remaining = header("x-ratelimit-remaining");
+    let retry = header("retry-after");
+    let rate_limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || (status == reqwest::StatusCode::FORBIDDEN
+            && (remaining.as_deref().map(str::trim) == Some("0") || retry.is_some()));
+    if !rate_limited {
+        return anyhow!("update check got HTTP {status} from {url}");
+    }
+    let mut details = Vec::new();
+    let limit = header("x-ratelimit-limit");
+    if let Some(limit) = &limit {
+        details.push(format!("limit {limit} requests"));
+    }
+    if let (Some(Ok(limit)), Some(Ok(remaining))) = (
+        limit.as_deref().map(str::parse::<u64>),
+        remaining.as_deref().map(str::parse::<u64>),
+    ) {
+        details.push(format!("used {}", limit.saturating_sub(remaining)));
+    }
+    if let Some(remaining) = &remaining {
+        details.push(format!("remaining {remaining}"));
+    }
+    if let Some(Ok(reset)) = header("x-ratelimit-reset").map(|v| v.parse::<u64>()) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        details.push(reset_in(reset, now));
+    }
+    if let Some(retry) = retry {
+        details.push(format!("retry after {retry}s"));
+    }
+    let details = if details.is_empty() {
+        "the server reported no rate-limit headers".to_string()
+    } else {
+        details.join(", ")
+    };
+    anyhow!("update check rate limited (HTTP {status}) by {url}: {details}")
 }
 
 impl Daemon {
@@ -170,7 +243,10 @@ impl Daemon {
         *self.update_state.lock().expect("update_state lock") = proto::UpdateState::Checking;
         self.broadcast_control(&self.update_snapshot());
 
-        let state = match self.fetch_latest(RELEASES_LATEST_URL).await {
+        let state = match self
+            .fetch_latest(&endpoint(UPDATE_MANIFEST_URL_ENV, UPDATE_MANIFEST_URL))
+            .await
+        {
             Ok(Some(release)) => {
                 let checked_at_ms = crate::daemon::now_ms();
                 if is_newer(&release.version, env!("CARGO_PKG_VERSION")) {
@@ -217,13 +293,13 @@ impl Daemon {
         if response.status() == reqwest::StatusCode::NOT_MODIFIED {
             if cache.etag.is_none() {
                 return Err(anyhow!(
-                    "releases/latest returned 304 without a cached validator"
+                    "latest.json returned 304 without a cached validator"
                 ));
             }
             let release = cache
                 .release
                 .clone()
-                .ok_or_else(|| anyhow!("releases/latest returned 304 without a cached release"))?;
+                .ok_or_else(|| anyhow!("latest.json returned 304 without a cached release"))?;
             if let Some(etag) = response
                 .headers()
                 .get(reqwest::header::ETAG)
@@ -233,7 +309,9 @@ impl Daemon {
             }
             return Ok(release);
         }
-        let response = response.error_for_status()?;
+        if !response.status().is_success() {
+            return Err(status_error(url, &response));
+        }
         let etag = response
             .headers()
             .get(reqwest::header::ETAG)
@@ -288,7 +366,7 @@ mod tests {
 
     #[tokio::test]
     async fn release_etag_reuses_the_last_good_payload_across_304_and_failure() {
-        let payload = r#"{"tag_name":"v99.0.0","html_url":"https://example.com/r"}"#;
+        let payload = r#"{"version":"99.0.0","notes":"n"}"#;
         let ok = format!(
             "HTTP/1.1 200 OK\r\nETag: \"release-1\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             payload.len(),
@@ -388,11 +466,8 @@ mod tests {
     }
 
     #[test]
-    fn draft_and_prerelease_are_refused_unconditionally() {
-        let draft =
-            r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r","draft":true,"assets":[]}"#;
-        assert!(parse_latest_release(draft).unwrap().is_none());
-        let pre = r#"{"tag_name":"v1.3.0-rc.1","name":"Houston 1.3.0-rc.1","html_url":"https://example.com/r","prerelease":true,"assets":[]}"#;
+    fn a_prerelease_version_is_refused_unconditionally() {
+        let pre = r#"{"version":"1.3.0-rc.1","notes":"n","pub_date":"2026-01-01T00:00:00Z","platforms":{}}"#;
         assert!(
             parse_latest_release(pre).unwrap().is_none(),
             "a release candidate must never be offered to a stable install"
@@ -407,22 +482,18 @@ mod tests {
     }
 
     #[test]
-    fn realistic_payload_picks_version_notes_and_release_page() {
+    fn realistic_manifest_picks_version_notes_and_builds_the_release_page() {
         let body = r###"{
-          "tag_name": "v1.2.3",
-          "html_url": "https://github.com/theogmiguel/houston/releases/tag/v1.2.3",
-          "body": "## What changed\n\n- a fix\n- a feature",
-          "draft": false,
-          "prerelease": false,
-          "assets": [
-            {"name":"Houston_1.2.3_amd64.AppImage","browser_download_url":"https://example.com/Houston.AppImage"}
-          ]
+          "version": "v1.2.3",
+          "notes": "## What changed\n\n- a fix\n- a feature",
+          "pub_date": "2026-01-01T00:00:00Z",
+          "platforms": {"linux-x86_64": {"signature": "s", "url": "https://example.com/Houston.AppImage"}}
         }"###;
         let release = parse_latest_release(body).unwrap().expect("a release");
         assert_eq!(release.version, "1.2.3", "the leading v is stripped");
         assert_eq!(
             release.notes, "## What changed\n\n- a fix\n- a feature",
-            "the release body rides through verbatim"
+            "the notes ride through verbatim"
         );
         assert_eq!(
             release.notes_url,
@@ -431,21 +502,96 @@ mod tests {
     }
 
     #[test]
-    fn a_release_with_no_body_carries_empty_notes() {
-        let body = r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r","body":null}"#;
-        let release = parse_latest_release(body).unwrap().expect("a release");
+    fn a_manifest_with_no_notes_carries_empty_notes() {
+        let release = parse_latest_release(r#"{"version":"1.2.3","notes":null}"#)
+            .unwrap()
+            .expect("a release");
         assert_eq!(release.notes, "");
-
-        let body = r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r"}"#;
-        let release = parse_latest_release(body).unwrap().expect("a release");
+        let release = parse_latest_release(r#"{"version":"1.2.3"}"#)
+            .unwrap()
+            .expect("a release");
         assert_eq!(release.notes, "");
     }
 
     #[test]
-    fn missing_tag_name_error_names_the_field() {
-        let body = r#"{"html_url":"https://example.com/r","assets":[]}"#;
-        let err = parse_latest_release(body).unwrap_err();
-        assert!(err.to_string().contains("tag_name"), "{err}");
+    fn missing_version_error_names_the_field() {
+        let err = parse_latest_release(r#"{"notes":"n"}"#).unwrap_err();
+        assert!(err.to_string().contains("`version`"), "{err}");
+    }
+
+    #[test]
+    fn unparseable_version_error_names_the_value_and_shape() {
+        let err = parse_latest_release(r#"{"version":"latest"}"#).unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("\"latest\"") && text.contains("MAJOR.MINOR.PATCH"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_reset_is_shown_as_a_wait_not_an_epoch() {
+        assert_eq!(reset_in(1_000, 1_000), "resets now");
+        assert_eq!(reset_in(900, 1_000), "resets now");
+        assert_eq!(reset_in(1_045, 1_000), "resets in 45s");
+        assert_eq!(reset_in(1_000 + 1_500, 1_000), "resets in about 25 min");
+    }
+
+    #[tokio::test]
+    async fn only_a_throttle_is_called_rate_limited_and_it_names_the_limit_and_the_url() {
+        let reset = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 1_500;
+        let responses = vec![
+            format!("HTTP/1.1 403 Forbidden\r\nx-ratelimit-limit: 60\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: {reset}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+            "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+            "HTTP/1.1 403 Forbidden\r\nx-ratelimit-limit: 60\r\nx-ratelimit-remaining: 12\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+            "HTTP/1.1 429 Too Many Requests\r\nretry-after: 120\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+        ];
+        let (url, _requests) = scripted_release_server(responses).await;
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig {
+            token: "test-token-0000-0000-000000000000".to_string(),
+            db_path: dir.path().join("test.db"),
+        })
+        .unwrap();
+
+        let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+        for want in [
+            "rate limited",
+            "403",
+            "limit 60",
+            "used 60",
+            "remaining 0",
+            "resets in about 25 min",
+            &url,
+        ] {
+            assert!(text.contains(want), "{want:?} missing from: {text}");
+        }
+        assert!(
+            !text.contains(&reset.to_string()),
+            "raw epoch leaked: {text}"
+        );
+
+        // A 403 with no rate-limit headers, or with quota left, is an ordinary refusal.
+        for _ in 0..2 {
+            let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+            assert_eq!(
+                text,
+                format!("update check got HTTP 403 Forbidden from {url}")
+            );
+        }
+
+        let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+        for want in ["rate limited", "429", "retry after 120s", &url] {
+            assert!(text.contains(want), "{want:?} missing from: {text}");
+        }
+        let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+        assert!(text.contains("500") && text.contains(&url), "{text}");
+        assert!(!text.contains("rate limited"), "{text}");
     }
 
     // Switching the check off must not leave a standing "0.11.0 is available" over a
@@ -474,12 +620,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(daemon.update_state(), proto::UpdateState::Disabled);
-    }
-
-    #[test]
-    fn missing_html_url_error_names_the_field() {
-        let body = r#"{"tag_name":"v1.2.3","assets":[]}"#;
-        let err = parse_latest_release(body).unwrap_err();
-        assert!(err.to_string().contains("html_url"), "{err}");
     }
 }

@@ -16,7 +16,8 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 - **Reported status:** use CLI lifecycle hooks or supported ACP streams for agent status.
   Do not infer status from terminal pixels or text. Exceptions are explicitly documented
   in [invariants](docs/internals/invariants.md).
-- **Local state:** one user, one machine, one SQLite database per channel. Houston has no
+- **Local state:** one user, one machine, one SQLite database per channel in each
+  environment (the app's own machine, and each enabled WSL distro). Houston has no
   telemetry service. Local-first does not mean offline: hosted agent CLIs and optional
   network-backed features must state what they transmit and when. Updates require an
   explicit user action. Store secrets in the OS keychain, never in the database or logs.
@@ -80,6 +81,8 @@ Before completing a change, identify which of these checks apply:
   and requested operation.
 - **Platforms:** Linux is the primary platform; Windows uses ConPTY and NSIS. Every
   platform-specific behaviour needs an equivalent or an explicit refusal elsewhere.
+  WSL environments are Windows-only and refuse by name elsewhere; in-distro commands use
+  `wsl.exe --exec`, never `--`.
 - **Documentation:** describe user-visible behaviour in the PR title used for release
   notes. Update the relevant `docs/user/` page when usage changes.
 
