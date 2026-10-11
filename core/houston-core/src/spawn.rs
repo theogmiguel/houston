@@ -90,7 +90,10 @@ mod bounded_linux {
         fn drop(&mut self) {
             if !self.reaped {
                 if self.terminate().is_err() {
-                    let _ = self.child.kill();
+                    let _ = crate::pid::signal_process_checked(
+                        self.child.id(),
+                        crate::pid::Signal::Kill,
+                    );
                 }
                 let _ = self.child.wait();
             }
