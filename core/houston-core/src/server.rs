@@ -812,6 +812,12 @@ static CONTROL_FIXTURE: std::sync::Mutex<ControlFixture> = std::sync::Mutex::new
 
 #[cfg(feature = "test-barriers")]
 #[doc(hidden)]
+pub fn active_control_handlers_for_test() -> usize {
+    CONTROL_HANDLERS_PROCESS - control_handlers().available_permits()
+}
+
+#[cfg(feature = "test-barriers")]
+#[doc(hidden)]
 pub fn set_control_test(daemon: &Arc<Daemon>, fixture: Arc<ControlTestGate>) {
     *CONTROL_FIXTURE.lock().expect("control fixture lock") =
         Some((Arc::downgrade(daemon), fixture));

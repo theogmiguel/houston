@@ -91,7 +91,9 @@ async fn slow_control_bursts_bound_admission_across_disconnected_connections() {
     assert_eq!(fixture.finished.load(Ordering::SeqCst), 0);
     fixture.release.add_permits(64);
     tokio::time::timeout(Duration::from_secs(15), async {
-        while fixture.finished.load(Ordering::SeqCst) != 64 {
+        while fixture.finished.load(Ordering::SeqCst) != 64
+            || server::active_control_handlers_for_test() != 0
+        {
             tokio::task::yield_now().await;
         }
     })
