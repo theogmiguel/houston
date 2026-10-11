@@ -1,4 +1,5 @@
-use std::sync::mpsc::Sender;
+use super::RendererHealth;
+use std::sync::{mpsc::Sender, Arc};
 
 use tauri::webview::PlatformWebview;
 
@@ -28,16 +29,17 @@ pub fn termination_log_line(reason: TerminationReason) -> String {
 }
 
 #[cfg(target_os = "linux")]
-pub fn install_termination_logger(platform: &PlatformWebview) {
+pub fn install_termination_logger(platform: &PlatformWebview, health: Arc<RendererHealth>) {
     platform
         .inner()
         .connect_web_process_terminated(move |_, reason| {
+            health.record_termination();
             eprintln!("{}", termination_log_line(map_reason(reason)));
         });
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn install_termination_logger(_platform: &PlatformWebview) {}
+pub fn install_termination_logger(_platform: &PlatformWebview, _health: Arc<RendererHealth>) {}
 
 #[cfg(target_os = "linux")]
 pub fn install(platform: &PlatformWebview, tx: Sender<Event>) {

@@ -14,6 +14,10 @@ impl ConnectionCell {
         Self(rx)
     }
 
+    pub fn current(&self) -> Option<ConnectionInfo> {
+        self.0.borrow().clone()
+    }
+
     pub async fn get(&self) -> ConnectionInfo {
         let mut rx = self.0.clone();
         loop {

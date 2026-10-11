@@ -10,7 +10,7 @@ pub struct ProbeReply {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Completion {
     Matched { nonce: u64, rtt_ms: u64 },
-    Malformed { nonce: u64, rtt_ms: u64 },
+    Malformed,
     Unknown,
 }
 
@@ -54,18 +54,9 @@ impl ProbeTable {
                 },
                 None => Completion::Unknown,
             },
-            None => {
-                let Some((&nonce, &issued)) =
-                    self.outstanding.iter().min_by_key(|(_, &issued)| issued)
-                else {
-                    return Completion::Unknown;
-                };
-                self.outstanding.remove(&nonce);
-                Completion::Malformed {
-                    nonce,
-                    rtt_ms: now_ms.saturating_sub(issued),
-                }
-            }
+            // Native errors and callbacks from discarded generations can be empty.
+            // Without a validated nonce they cannot complete any outstanding probe.
+            None => Completion::Malformed,
         }
     }
 
@@ -99,8 +90,8 @@ fn parse_reply(payload: &str) -> Option<ProbeReply> {
     let value: serde_json::Value = serde_json::from_str(payload).ok()?;
     Some(ProbeReply {
         nonce: value.get("n")?.as_u64()?,
-        js_now_ms: value.get("t").and_then(|v| v.as_u64()).unwrap_or(0),
-        js_perf_ms: value.get("p").and_then(|v| v.as_u64()).unwrap_or(0),
+        js_now_ms: value.get("t")?.as_u64()?,
+        js_perf_ms: value.get("p")?.as_u64()?,
     })
 }
 
@@ -169,35 +160,81 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_payload_still_counts_as_proof_of_life() {
+    fn malformed_payloads_preserve_every_outstanding_probe() {
+        for payload in [
+            "",
+            "not json",
+            "null",
+            "{}",
+            r#"{"n":1}"#,
+            r#"{"n":1,"t":"invalid","p":123}"#,
+            r#"{"n":1,"t":100,"p":null}"#,
+        ] {
+            let mut t = ProbeTable::new();
+            let (a, _) = t.issue(1_000);
+            let (b, _) = t.issue(2_000);
+            assert!(
+                !matches!(t.complete(payload, 2_500), Completion::Matched { .. }),
+                "{payload:?}"
+            );
+            assert_eq!(
+                t.outstanding_len(),
+                2,
+                "{payload:?} must not consume a nonce"
+            );
+            assert!(
+                matches!(t.complete(&reply_for(a), 3_000), Completion::Matched { nonce, .. } if nonce == a)
+            );
+            assert!(
+                matches!(t.complete(&reply_for(b), 3_000), Completion::Matched { nonce, .. } if nonce == b)
+            );
+        }
+    }
+
+    #[test]
+    fn a_nonce_without_valid_timestamps_is_not_js_life() {
+        for payload in [
+            r#"{"n":1}"#,
+            r#"{"n":1,"t":100}"#,
+            r#"{"n":1,"t":"100","p":10}"#,
+            r#"{"n":1,"t":100,"p":-1}"#,
+        ] {
+            let mut t = ProbeTable::new();
+            let (nonce, _) = t.issue(1_000);
+            assert!(
+                !matches!(t.complete(payload, 2_000), Completion::Matched { .. }),
+                "{payload}"
+            );
+            assert_eq!(t.take_expired(11_000, 10_000), vec![nonce]);
+        }
+    }
+
+    #[test]
+    fn a_valid_pre_navigation_reply_cannot_complete_a_post_load_probe() {
+        let mut table = ProbeTable::new();
+        let (old, _) = table.issue(1_000);
+        table.discard_all();
+        let (current, _) = table.issue(2_000);
+        assert_eq!(table.complete(&reply_for(old), 2_010), Completion::Unknown);
+        assert_eq!(table.outstanding_len(), 1);
+        assert!(matches!(table.complete(&reply_for(current), 2_020),
+            Completion::Matched { nonce, rtt_ms: 20 } if nonce == current));
+    }
+
+    #[test]
+    fn an_empty_old_callback_cannot_complete_a_new_generation_probe() {
         let mut t = ProbeTable::new();
         t.issue(1_000);
-        match t.complete("", 1_200) {
-            Completion::Malformed { rtt_ms, .. } => assert_eq!(rtt_ms, 200),
-            other => panic!("{other:?}"),
-        }
-        assert_eq!(t.outstanding_len(), 0);
+        t.discard_all();
+        let (current, _) = t.issue(2_000);
+        t.complete("", 2_100);
+        assert_eq!(t.take_expired(12_000, 10_000), vec![current]);
     }
 
     #[test]
-    fn a_malformed_payload_resolves_the_oldest_probe() {
+    fn a_malformed_payload_with_nothing_outstanding_cannot_match() {
         let mut t = ProbeTable::new();
-        let (oldest, _) = t.issue(1_000);
-        t.issue(2_000);
-        match t.complete("not json", 2_500) {
-            Completion::Malformed { nonce, rtt_ms } => {
-                assert_eq!(nonce, oldest);
-                assert_eq!(rtt_ms, 1_500);
-            }
-            other => panic!("{other:?}"),
-        }
-        assert_eq!(t.outstanding_len(), 1);
-    }
-
-    #[test]
-    fn a_malformed_payload_with_nothing_outstanding_is_unknown() {
-        let mut t = ProbeTable::new();
-        assert_eq!(t.complete("", 1_000), Completion::Unknown);
+        assert!(!matches!(t.complete("", 1_000), Completion::Matched { .. }));
     }
 
     #[test]

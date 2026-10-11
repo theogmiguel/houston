@@ -22,6 +22,7 @@ class FakeResizeObserver {
 
 const { TerminalPane } = await import('./TerminalPane')
 const { HoustonClient } = await import('../houston/client')
+const { GhosttyPaneTerminal } = await import('./ghosttyTerminal')
 
 class MockWebSocket {
   static readonly CONNECTING = 0
@@ -83,6 +84,18 @@ function snapshotReply(
   }
 }
 
+function replayReply(data: string, bytesSeen: number, attempt: number): Record<string, unknown> {
+  return {
+    type: 'scrollback',
+    session: 1,
+    generation: 1,
+    attempt,
+    data: btoa(data),
+    replayed_bytes: data.startsWith('\x1b[0m') ? data.length - 4 : data.length,
+    bytes_seen: bytesSeen
+  }
+}
+
 interface Harness {
   ws: MockWebSocket
   sinks: Map<number, OutputSink>
@@ -102,6 +115,9 @@ describe('TerminalPane snapshot attach', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    vi.restoreAllMocks()
+    ghosttyMock.writeSpy.mockReset()
+    resetSpy.mockReset()
   })
 
   async function mount(options: {
@@ -225,6 +241,95 @@ describe('TerminalPane snapshot attach', () => {
     void sinks
     ghosttyMock.emitData('y')
     expect(stdinFrames()).toHaveLength(1)
+  })
+
+  it.each(['history', ''])('releases input when the daemon falls back to replay %j', async (history) => {
+    const { ws } = await mount({ snapshotAttach: true, active: true })
+    const stdinFrames = (): unknown[] => ws.sent.filter((m) => typeof m !== 'string')
+    ghosttyMock.emitData('x')
+    expect(stdinFrames()).toHaveLength(0)
+    act(() => ws.onmessage?.({ data: JSON.stringify(replayReply(history, history.length, 1)) }))
+    ghosttyMock.emitData('y')
+    expect(stdinFrames()).toHaveLength(1)
+    expect(resetSpy).not.toHaveBeenCalled()
+    expect(ghosttyMock.writes.map((data) => new TextDecoder().decode(data as Uint8Array)).join('')).toBe(history)
+  })
+
+  it('an older replay cannot release input for a newer snapshot attach', async () => {
+    const { ws, sinks } = await mount({ snapshotAttach: true, active: true })
+    act(() => ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) }))
+    act(() => sinks.get(1)?.gap())
+    expect(attaches(ws)).toHaveLength(2)
+    act(() => ws.onmessage?.({ data: JSON.stringify(replayReply('obsolete', 8, 1)) }))
+    ghosttyMock.emitData('x')
+    expect(ws.sent.filter((m) => typeof m !== 'string')).toHaveLength(0)
+    expect(ghosttyMock.writes).toEqual([])
+    act(() => ws.onmessage?.({ data: JSON.stringify(replayReply('current', 7, 2)) }))
+    ghosttyMock.emitData('y')
+    expect(ws.sent.filter((m) => typeof m !== 'string')).toHaveLength(1)
+  })
+
+  it('rebuilds discarded overflow bytes from a capped fallback replay and flushes held frames once', async () => {
+    const { ws, sinks } = await mount({ snapshotAttach: true, active: true })
+    act(() => ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) }))
+    let screen = ''
+    ghosttyMock.writeSpy.mockImplementation((data) => {
+      // Parsing is synchronous; only its completion notification is delayed below.
+      screen += typeof data === 'string' ? data : new TextDecoder().decode(data)
+    })
+    resetSpy.mockImplementation(() => {
+      screen = ''
+    })
+    const write = GhosttyPaneTerminal.prototype.write
+    let complete: (() => void) | undefined
+    let hold = true
+    vi.spyOn(GhosttyPaneTerminal.prototype, 'write').mockImplementation(function (this: InstanceType<typeof GhosttyPaneTerminal>, data, callback) {
+      write.call(this, data, () => {
+        if (hold) {
+          hold = false
+          complete = callback
+        } else callback?.()
+      })
+    })
+    const history = 'earlier history\n'
+    act(() => sinks.get(1)?.frame(0, new TextEncoder().encode(history)))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(complete).toBeTypeOf('function')
+    const chunk = new Uint8Array(256 * 1024).fill(0x61)
+    act(() => {
+      for (let i = 0; i < 9; i++) sinks.get(1)?.frame(history.length + i * chunk.length, chunk)
+    })
+    expect(attaches(ws)).toHaveLength(2)
+    expect(screen).toBe(history)
+    expect(resetSpy).not.toHaveBeenCalled()
+    const bytesSeen = history.length + 9 * chunk.length
+    act(() => sinks.get(1)?.frame(bytesSeen, new TextEncoder().encode('after')))
+    act(() => ws.onmessage?.({ data: JSON.stringify(replayReply('stale', 5, 1)) }))
+    expect(screen).toBe(history)
+    expect(resetSpy).not.toHaveBeenCalled()
+    // The real daemon prefixes a partial replay with SGR reset, outside bytes_seen.
+    const replay = '\x1b[0m' + 'a'.repeat(2 * 1024 * 1024)
+    act(() => ws.onmessage?.({ data: JSON.stringify(replayReply(replay, bytesSeen, 2)) }))
+    act(() => complete?.())
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    })
+    expect(screen).toBe(replay + 'after')
+    expect(resetSpy).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Earlier history may be unavailable')
+    act(() => sinks.get(1)?.frame(bytesSeen + 5, new TextEncoder().encode('next')))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen).toBe(replay + 'afternext')
+    ghosttyMock.emitData('y')
+    expect(ws.sent.filter((m) => typeof m !== 'string')).toHaveLength(1)
+    expect(attaches(ws)).toHaveLength(2)
+    act(() => sinks.get(1)?.gap())
+    ghosttyMock.emitData('z')
+    expect(ws.sent.filter((m) => typeof m !== 'string')).toHaveLength(1)
   })
 
   it('a pane that falls behind takes one fresh snapshot instead of dropping output, and keeps taking keystrokes', async () => {

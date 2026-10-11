@@ -452,6 +452,7 @@ fn main() {
 
     let tray_host = tray::TrayHost::new(state_dir.clone(), tray::probe());
     builder = builder.manage(Arc::clone(&tray_host));
+    builder = builder.manage(Arc::new(watchdog::RendererHealth::default()));
 
     builder
         .plugin(
@@ -549,6 +550,7 @@ fn main() {
             tray::tray_state,
             tray::tray_set_keep_in_tray,
             tray::app_quit,
+            tray::app_stop_daemons_and_quit,
             wsl::wsl_list,
             wsl::wsl_enable,
             wsl::wsl_disable,
@@ -661,6 +663,18 @@ fn main() {
                         .try_state::<Arc<tray::TrayHost>>()
                         .map(|host| host.hides_on_close())
                         .unwrap_or(false);
+                    let renderer_unavailable = window.app_handle()
+                        .state::<Arc<watchdog::RendererHealth>>()
+                        .unavailable();
+                    if renderer_unavailable {
+                        if let Some(tracker) = window.app_handle()
+                            .try_state::<Arc<window_state::WindowStateTracker>>() {
+                            tracker.flush();
+                        }
+                        api.prevent_close();
+                        tray::quit(window.app_handle());
+                        return;
+                    }
                     if hides {
                         if let Some(tracker) = window
                             .app_handle()
@@ -921,12 +935,17 @@ fn main() {
             if let Some(config) = watchdog::Config::from_env(log_path) {
                 watchdog::install(app.handle(), "main", config);
             }
+            #[cfg(debug_assertions)]
+            if tray::selftest::requested() {
+                tray::selftest::run(app.handle().clone());
+            }
             Ok(())
         })
         .on_page_load(move |webview, payload| {
             if webview.label() == "main" && payload.event() == PageLoadEvent::Finished {
                 watchdog::note_page_loaded(webview.app_handle());
                 watchdog::maybe_selftest_wedge(webview.app_handle());
+                watchdog::maybe_selftest_terminate(webview.app_handle());
             }
             #[cfg(debug_assertions)]
             if webview.label() == "main"

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   boxFitsOneCell,
   cssColor,
@@ -213,11 +213,25 @@ describe("ghosttyTextRunEnd", () => {
 });
 
 describe("cssColor", () => {
-  it("formats and caches an rgb() string per packed color", () => {
-    const first = cssColor(color(1, 2, 3));
-    const second = cssColor(color(1, 2, 3));
-    expect(first).toBe("rgb(1, 2, 3)");
-    expect(second).toBe(first);
+  it("formats a diverse stream of truecolor values", () => {
+    for (let index = 0; index < 65_536; index += 1) {
+      const red = index >>> 8;
+      const green = index & 0xff;
+      const blue = (index * 73) & 0xff;
+      expect(cssColor(color(red, green, blue))).toBe(`rgb(${red}, ${green}, ${blue})`);
+    }
+  });
+
+  it("does not retain converted colors in a module-level cache", () => {
+    const insert = vi.spyOn(Map.prototype, "set");
+    try {
+      for (let value = 0; value < 4096; value += 1) {
+        cssColor(color(value & 0xff, value >>> 8, 255));
+      }
+      expect(insert).not.toHaveBeenCalled();
+    } finally {
+      insert.mockRestore();
+    }
   });
 });
 
