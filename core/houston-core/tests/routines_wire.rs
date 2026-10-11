@@ -445,87 +445,8 @@ async fn a_bot_owned_routine_migrates_to_standalone_with_its_execution_fields() 
     let db_path = state_dir.path().join("test.db");
     {
         let conn = rusqlite::Connection::open(&db_path).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE named_agents (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                engine TEXT NOT NULL,
-                notes TEXT NOT NULL DEFAULT '',
-                about_you TEXT NOT NULL DEFAULT '',
-                skills TEXT NOT NULL DEFAULT '[]',
-                memory_budget INTEGER NOT NULL,
-                reflection_mode TEXT NOT NULL DEFAULT 'off',
-                allow_agent_scheduling INTEGER NOT NULL DEFAULT 0,
-                disabled_plugin_ids TEXT NOT NULL DEFAULT '[]',
-                schema_version INTEGER NOT NULL DEFAULT 1,
-                revision INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                working_dir TEXT,
-                purpose TEXT NOT NULL DEFAULT '',
-                default_model TEXT,
-                default_effort TEXT,
-                default_permission_mode TEXT,
-                default_plan INTEGER NOT NULL DEFAULT 0,
-                allow_agent_messaging INTEGER NOT NULL DEFAULT 0,
-                avatar TEXT,
-                thread_id INTEGER,
-                title TEXT NOT NULL DEFAULT '',
-                notify INTEGER NOT NULL DEFAULT 1,
-                retain_detail_days INTEGER NOT NULL DEFAULT 30
-            );
-            INSERT INTO named_agents
-                (name, engine, memory_budget, working_dir, default_model, default_effort,
-                 created_at, updated_at)
-            VALUES ('Scout', 'codex', 2200, '/tmp/scout-dir', 'gpt-5.2', 'low', 0, 0);
-            CREATE TABLE routines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                agent_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                name_folded TEXT NOT NULL,
-                prompt TEXT NOT NULL,
-                cadence TEXT NOT NULL,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                author TEXT NOT NULL DEFAULT 'builder',
-                workspace_id TEXT,
-                next_run_at_ms INTEGER NOT NULL,
-                last_run_at_ms INTEGER,
-                last_run_session_id INTEGER,
-                last_error TEXT,
-                revision TEXT NOT NULL,
-                permission_mode TEXT NOT NULL DEFAULT 'accept_edits',
-                isolate INTEGER NOT NULL DEFAULT 0,
-                last_outcome TEXT,
-                continue_context INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
-            INSERT INTO routines
-                (agent_id, name, name_folded, prompt, cadence, enabled, author,
-                 next_run_at_ms, last_error, last_outcome, revision, created_at, updated_at)
-            VALUES (1, 'Legacy sweep', 'legacy sweep', 'run the sweep',
-                    '{\"type\":\"interval\",\"seconds\":900}', 1, 'agent', 0,
-                    'conversation archive full', 'archive_full', 'rev-legacy', 0, 0);
-            CREATE TABLE routine_runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                routine_id INTEGER NOT NULL,
-                trigger TEXT NOT NULL,
-                status TEXT NOT NULL,
-                session_id INTEGER,
-                thread_id INTEGER,
-                error TEXT,
-                started_at_ms INTEGER NOT NULL,
-                ended_at_ms INTEGER
-            );
-            INSERT INTO routine_runs
-                (routine_id, trigger, status, thread_id, error, started_at_ms)
-            VALUES (1, 'schedule', 'archive_full', 7, 'conversation archive full', 0);
-            CREATE TABLE chat_threads (id INTEGER);
-            CREATE TABLE chat_messages (id INTEGER);
-            CREATE TABLE agent_messages (id INTEGER);
-            CREATE TABLE agent_skill_sources (id INTEGER);",
-        )
-        .unwrap();
+        conn.execute_batch(include_str!("fixtures/routines/legacy.sql"))
+            .unwrap();
     }
 
     let daemon = Daemon::new(DaemonConfig {
@@ -594,6 +515,229 @@ async fn a_bot_owned_routine_migrates_to_standalone_with_its_execution_fields() 
             )
             .unwrap();
         assert_eq!(n, 0, "{table} must be dropped");
+    }
+}
+
+#[test]
+fn legacy_routines_with_the_same_name_survive_upgrade_and_reopen() {
+    let state = tempfile::tempdir().unwrap();
+    let path = state.path().join("legacy.db");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(include_str!("fixtures/routines/legacy.sql"))
+            .unwrap();
+        conn.execute_batch(
+            "INSERT INTO named_agents (id, name, engine, memory_budget, created_at, updated_at)
+             VALUES (2, 'Second owner', 'codex', 2200, 0, 0);
+             INSERT INTO routines (id, agent_id, name, name_folded, prompt, cadence,
+                 next_run_at_ms, revision, created_at, updated_at)
+             SELECT 2, 2, name, name_folded, 'second prompt', cadence,
+                 12345, 'second-revision', 0, 0 FROM routines WHERE id = 1;
+             INSERT INTO routines (id, agent_id, name, name_folded, prompt, cadence,
+                 next_run_at_ms, revision, created_at, updated_at)
+             SELECT 3, 1, 'Legacy sweep (2)', 'legacy sweep (2)', 'reserved name', cadence,
+                 23456, 'third-revision', 0, 0 FROM routines WHERE id = 1;",
+        )
+        .unwrap();
+    }
+    for _ in 0..2 {
+        let db = houston_core::db::Db::open(&path).unwrap();
+        assert_eq!(db.routine_total_count().unwrap(), 3);
+        assert_eq!(db.routine(1).unwrap().unwrap().name, "Legacy sweep");
+        let second = db.routine(2).unwrap().unwrap();
+        assert_eq!(second.name, "Legacy sweep (2-1)");
+        assert_eq!(second.prompt, "second prompt");
+        assert_eq!(second.next_run_at_ms, 12345);
+        assert_ne!(second.revision, "second-revision");
+        assert_eq!(db.routine(3).unwrap().unwrap().name, "Legacy sweep (2)");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let obsolete: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('routines')
+             WHERE name IN ('agent_id', 'author', 'thread_id', 'continue_context')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(obsolete, 0, "reopening must not restore obsolete columns");
+    }
+}
+
+#[test]
+fn routine_migration_never_reuses_deleted_ids_or_their_history() {
+    let state = tempfile::tempdir().unwrap();
+    let path = state.path().join("legacy.db");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(include_str!("fixtures/routines/legacy.sql"))
+            .unwrap();
+        conn.execute_batch(
+            "INSERT INTO routines (id, agent_id, name, name_folded, prompt, cadence,
+                 next_run_at_ms, revision, created_at, updated_at)
+             SELECT 50, 1, 'Deleted routine', 'deleted routine', prompt, cadence,
+                 0, revision, 0, 0 FROM routines WHERE id = 1;
+             INSERT INTO routine_runs (id, routine_id, trigger, status, started_at_ms)
+             VALUES (70, 50, 'schedule', 'ok', 0), (90, 50, 'schedule', 'ok', 0);
+             DELETE FROM routine_runs WHERE id = 90;
+             DELETE FROM routines WHERE id = 50;",
+        )
+        .unwrap();
+    }
+    let db = houston_core::db::Db::open(&path).unwrap();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "INSERT INTO routines (name, name_folded, prompt, cadence, next_run_at_ms,
+             revision, created_at, updated_at)
+         SELECT 'New routine', 'new routine', prompt, cadence, 0, revision, 0, 0
+         FROM routines WHERE id = 1;",
+    )
+    .unwrap();
+    let id = conn.last_insert_rowid();
+    assert!(id > 50, "a deleted routine ID must not be recycled: {id}");
+    conn.execute("INSERT INTO routine_runs (routine_id, trigger, status, started_at_ms) VALUES (?1, 'schedule', 'ok', 1)", [id]).unwrap();
+    assert!(
+        conn.last_insert_rowid() > 90,
+        "deleted run IDs must not be recycled"
+    );
+    let old_owner: i64 = conn
+        .query_row(
+            "SELECT routine_id FROM routine_runs WHERE id = 70",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(old_owner, 50);
+    drop(db);
+    let reopened = houston_core::db::Db::open(&path).unwrap();
+    assert_eq!(
+        reopened.routine(id as u32).unwrap().unwrap().name,
+        "New routine"
+    );
+}
+
+#[test]
+fn interrupted_routine_rebuilds_restore_rows_and_history() {
+    let state = tempfile::tempdir().unwrap();
+    let modern = state.path().join("modern.db");
+    drop(houston_core::db::Db::open(&modern).unwrap());
+    let modern = rusqlite::Connection::open(modern).unwrap();
+    // Older opens re-added these obsolete fields even to a standalone table.
+    // Normalize the fixture so the baseline fails on lost rows, not its setup.
+    for column in ["continue_context", "thread_id"] {
+        let exists: bool = modern
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('routines') WHERE name = ?1)",
+                [column],
+                |row| row.get(0),
+            )
+            .unwrap();
+        if exists {
+            modern
+                .execute_batch(&format!("ALTER TABLE routines DROP COLUMN {column}"))
+                .unwrap();
+        }
+    }
+    for copied in [false, true] {
+        for (table, backup) in [
+            ("routines", "routines_legacy"),
+            ("routines", "routines_bot_owned"),
+            ("routine_runs", "routine_runs_threaded"),
+        ] {
+            let path = state.path().join(format!("{backup}-{copied}.db"));
+            {
+                let conn = rusqlite::Connection::open(&path).unwrap();
+                let legacy = include_str!("fixtures/routines/legacy.sql");
+                let legacy = if backup == "routines_bot_owned" {
+                    legacy.replace("agent_id INTEGER NOT NULL", "agent_id INTEGER")
+                } else {
+                    legacy.to_string()
+                };
+                conn.execute_batch(&legacy).unwrap();
+                conn.execute_batch(
+                    "ALTER TABLE routines ADD COLUMN engine TEXT NOT NULL DEFAULT 'claude';
+                 ALTER TABLE routines ADD COLUMN model TEXT;
+                 ALTER TABLE routines ADD COLUMN effort TEXT;
+                 ALTER TABLE routines ADD COLUMN thread_id INTEGER;",
+                )
+                .unwrap();
+                if backup == "routines_bot_owned" {
+                    conn.execute_batch("UPDATE routines SET engine = 'codex', model = 'gpt-5.2', effort = 'low', workspace_id = '/tmp/scout-dir'").unwrap();
+                }
+                let schema: String = modern
+                    .query_row(
+                        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                        [table],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                conn.execute_batch(&format!(
+                    "ALTER TABLE {table} RENAME TO {backup}; {schema};"
+                ))
+                .unwrap();
+                if backup == "routines_legacy" {
+                    conn.execute_batch(
+                        "ALTER TABLE routines ADD COLUMN agent_id INTEGER;
+                     ALTER TABLE routines ADD COLUMN author TEXT NOT NULL DEFAULT 'builder';
+                     ALTER TABLE routines ADD COLUMN continue_context INTEGER NOT NULL DEFAULT 0;",
+                    )
+                    .unwrap();
+                }
+                if copied {
+                    if table == "routines" {
+                        conn.execute_batch(&format!(
+                        "INSERT INTO routines (id, name, name_folded, prompt, cadence, enabled,
+                         workspace_id, engine, model, effort, next_run_at_ms, last_run_at_ms,
+                         last_run_session_id, last_error, revision, permission_mode, isolate,
+                         last_outcome, created_at, updated_at)
+                         SELECT id, name, name_folded, prompt, cadence, enabled,
+                         '/tmp/scout-dir', 'codex', 'gpt-5.2', 'low', next_run_at_ms,
+                         last_run_at_ms, last_run_session_id, last_error, revision,
+                         permission_mode, isolate, last_outcome, created_at, updated_at FROM {backup};"
+                    )).unwrap();
+                        if backup == "routines_legacy" {
+                            conn.execute_batch(
+                                "UPDATE routines SET agent_id = 1, author = 'agent';",
+                            )
+                            .unwrap();
+                        } else {
+                            conn.execute_batch("UPDATE routines SET last_outcome = 'failed', last_error = 'the previous run could not complete before routines became standalone';").unwrap();
+                        }
+                    } else {
+                        conn.execute_batch(&format!(
+                            "INSERT INTO routine_runs (id, routine_id, trigger, status, session_id,
+                         error, started_at_ms, ended_at_ms)
+                         SELECT id, routine_id, trigger, 'failed', session_id,
+                         'the previous run could not complete before routines became standalone',
+                         started_at_ms, ended_at_ms FROM {backup};"
+                        ))
+                        .unwrap();
+                    }
+                }
+            }
+            for _ in 0..2 {
+                let db = houston_core::db::Db::open(&path).unwrap();
+                let routine = db.routine(1).unwrap().unwrap();
+                assert_eq!(routine.prompt, "run the sweep", "{backup}");
+                assert_eq!(routine.engine, proto::AgentKind::Codex, "{backup}");
+                let conn = rusqlite::Connection::open(&path).unwrap();
+                let history: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM routine_runs WHERE routine_id = 1",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(history, 1, "{backup}");
+                let leftovers: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE name = ?1",
+                        [backup],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(leftovers, 0, "{backup}, copied={copied}");
+            }
+        }
     }
 }
 

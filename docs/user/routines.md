@@ -17,6 +17,10 @@ Reasoning effort appears only when the selected provider exposes it for an indiv
 An unsupported provider or access combination is refused with the setting that needs to
 change.
 
+Upgrading preserves routines with duplicate names from older versions. The first keeps
+its name; later duplicates receive a suffix containing their routine ID. Schedules,
+instructions and run history are preserved.
+
 ## Access and isolation
 
 **Accept edits** uses the provider's bounded unattended mode. **Full access** never asks for
