@@ -212,6 +212,7 @@
     if (/^(Write|write|write_file)$/.test(tool)) return { verb: "Wrote", icon: "pencil", target: target };
     if (/^(Task|Agent)$/.test(tool)) return { verb: "Delegated", icon: "layers", target: target };
     if (tool === "TodoWrite") return { verb: "Updated tasks", icon: "tasks", target: "" };
+    if (tool === "Skill") return { verb: "Used skill", icon: "layers", target: target };
     var cat = stepCategory(tool);
     if (cat === "read") return { verb: "Read", icon: "eye", target: target };
     if (cat === "search") return { verb: "Searched", icon: "search", target: target };
@@ -1084,7 +1085,8 @@
     $("heading").textContent = paneTitle(s);
     var parent = s.parent != null ? session(s.parent) : null;
     $("subheading").textContent = parent ? (parent.title || "Pane " + parent.id) + " / " + s.workspace.name : s.workspace.name + " · " + kindName(s.kind);
-    $("provider-avatar").replaceChildren(avatar(s));
+    // The status pill beside the title already says what a dot would.
+    $("provider-avatar").replaceChildren(providerMark(s.kind, "lg"));
     var st = statusOf(s), chip = $("pane-status");
     chip.className = "pill " + st.cls;
     chip.replaceChildren();
