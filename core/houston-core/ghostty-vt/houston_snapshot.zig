@@ -29,7 +29,6 @@ const terminal_c = @import("terminal.zig");
 const Terminal = terminal_c.Terminal;
 const ZigTerminal = @import("../Terminal.zig");
 const Screen = @import("../Screen.zig");
-const PageList = @import("../PageList.zig");
 const ScreenSet = @import("../ScreenSet.zig");
 const Selection = @import("../Selection.zig");
 const charsets = @import("../charsets.zig");
@@ -394,7 +393,7 @@ fn importBytes(wrapper: anytype, buf: []const u8) !Result {
         return .invalid_value;
     }
     if (cols == 0 or rows == 0) return .invalid_value;
-    try t.resize(t.gpa(), cols, rows);
+    try t.resize(t.gpa(), .{ .cols = cols, .rows = rows });
 
     // Tabstops, the palette and the pwd first: emitting a tabstop is HTS at
     // a cursor position, so this walks the cursor across the row and must
@@ -479,11 +478,13 @@ fn importScreen(wrapper: anytype, key: ScreenSet.Key, body: []const u8) !Cursor 
     // The padding below counts rows against the source's total, which only
     // holds if nothing is evicted while painting; a smaller scrollback cap
     // here would otherwise scroll the whole import out as blank rows.
-    const max_size = screen.pages.explicit_max_size;
-    screen.pages.explicit_max_size = std.math.maxInt(usize);
+    const max_bytes = screen.pages.limits.bytes.explicit;
+    const max_lines = screen.pages.limits.lines.explicit;
+    screen.pages.setMaxBytes(null);
+    screen.pages.setMaxLines(null);
     defer {
-        screen.pages.explicit_max_size = max_size;
-        trimHistory(&screen.pages);
+        screen.pages.setMaxBytes(max_bytes);
+        screen.pages.setMaxLines(max_lines);
     }
 
     // The content stream paints from wherever the cursor stands, and the
@@ -562,23 +563,8 @@ pub fn set_max_scrollback(
 ) callconv(lib.calling_conv) Result {
     const wrapper = terminal_ orelse return .invalid_value;
     const screen: *Screen = wrapper.terminal.screens.all.get(.primary) orelse return .invalid_value;
-    screen.pages.explicit_max_size = bytes;
-    trimHistory(&screen.pages);
+    screen.pages.setMaxBytes(bytes);
     return .success;
-}
-
-/// Drops the oldest history a whole page at a time until the screen is back
-/// under its scrollback cap -- what `grow` would have pruned while painting.
-fn trimHistory(pages: *PageList) void {
-    while (pages.page_size > pages.maxSize()) {
-        const first = pages.pages.first orelse return;
-        if (first == pages.pages.last) return;
-        const first_rows = first.data.size.rows;
-        if (first_rows == 0 or pages.total_rows - first_rows < pages.rows) return;
-        const before = pages.page_size;
-        pages.eraseHistory(.{ .history = .{ .y = first_rows - 1 } });
-        if (pages.page_size >= before) return;
-    }
 }
 
 // -- little-endian primitives --------------------------------------------

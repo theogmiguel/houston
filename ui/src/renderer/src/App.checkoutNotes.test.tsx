@@ -7,6 +7,7 @@ import {
   makeSession,
   makeWorkspace,
   renderReadyApp,
+  deliverControl,
   resetHarness
 } from './test/appTestHarness'
 
@@ -52,5 +53,17 @@ describe('checkout header identity', () => {
     const tooltip = document.body.querySelector('[role="tooltip"]')
     expect(tooltip?.textContent).toContain('primary · feat/rebalancing')
     expect(tooltip?.textContent).not.toContain('Also in this checkout')
+  })
+
+  it('updates a pane header when the daemon reports a branch switch', async () => {
+    const appHarness = await renderReadyApp({
+      sessions: [withCheckout(1, ROOT)],
+      workspaces: [makeWorkspace({ path: ROOT, name: 'nexus' })]
+    })
+    if (!appHarness) throw new Error('renderReadyApp did not return an app harness')
+    harness = appHarness
+    deliverControl({ type: 'session_checkout', id: 1, checkout: { root: ROOT, kind: 'primary', branch: 'feat/new-branch', head: null } })
+    expect(paneChip(appHarness, 1)?.textContent).toContain('primary · feat/new-branch')
+    expect(paneChip(appHarness, 1)?.textContent).not.toContain('feat/rebalancing')
   })
 })

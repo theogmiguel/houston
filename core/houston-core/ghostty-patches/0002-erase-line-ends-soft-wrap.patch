@@ -1,21 +1,19 @@
-End the soft-wrap link into a row that a full erase-line (EL 2) clears.
+End the soft-wrap link from the row above into a row that a full erase-line
+(EL 2) clears.
 
-A TUI that repaints by erasing and rewriting rows otherwise leaves the
-row above still marked as wrapping into new, unrelated content, and the
-next reflow joins the two side by side.
+Upstream already ends the erased row's link onto the next row. A TUI that
+repaints by erasing and rewriting rows otherwise leaves the row above still
+marked as wrapping into new, unrelated content, and the next reflow joins
+the two side by side.
 
 --- a/src/terminal/Terminal.zig
 +++ b/src/terminal/Terminal.zig
-@@ -2466,7 +2466,27 @@
+@@ -3579,6 +3579,23 @@
+             // continue onto the next row.
+             self.screens.active.cursorResetWrap();
  
-         // Note that it seems like complete should reset the soft-wrap
-         // state of the line but in xterm it does not.
--        .complete => .{ 0, self.cols },
-+        //
-+        // Houston: a fully erased row no longer continues the row above it,
-+        // so a later reflow cannot join that row with whatever is written
-+        // here next. Only the soft-wrap link between the two rows ends.
-+        .complete => complete: {
++            // Houston: nor may the row above continue into the erased row,
++            // or a later reflow joins that row with whatever is written here.
 +            const screen = self.screens.active;
 +            if (screen.cursor.page_row.wrap_continuation) {
 +                screen.cursor.page_row.wrap_continuation = false;
@@ -23,15 +21,14 @@ next reflow joins the two side by side.
 +                    const prev_row = prev.rowAndCell().row;
 +                    prev_row.wrap = false;
 +                    const prev_cells = prev.cells(.all);
-+                    const last = prev.node.data.size.cols - 1;
++                    const last = prev.node.cols() - 1;
 +                    if (prev_cells[last].wide == .spacer_head) {
-+                        screen.clearCells(&prev.node.data, prev_row, prev_cells[last..][0..1]);
++                        screen.clearCells(prev.node.page(), prev_row, prev_cells[last..][0..1]);
 +                    }
 +                    prev.markDirty();
 +                }
 +            }
-+            break :complete .{ 0, self.cols };
-+        },
++
+             break :complete .{ 0, self.cols };
+         },
  
-         else => {
-             log.err("unimplemented erase line mode: {}", .{mode});

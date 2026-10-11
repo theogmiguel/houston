@@ -41,6 +41,16 @@ async function createSpikeCore(): Promise<GhosttyTerminalCore> {
 }
 
 describe("ghostty-spike: libghostty-vt loads and parses under Houston's toolchain", () => {
+  it("leaves OSC 7501 support queries to the daemon, including replayed probes", async () => {
+    const runtime = await GhosttyRuntime.loadFromBytes(wasmBytes, writePtyBytes);
+    const replies: string[] = [];
+    const core = await GhosttyTerminalCore.create(80, 24, 8, 17, THEME, (data) => replies.push(data), runtime);
+    cores.push(core);
+    core.write("\x1b]7501;?\x07\x1b]7501;?\x1b\\");
+    expect(replies).toEqual([]);
+    core.write("\x1b[6n");
+    expect(replies.join("")).toContain("\x1b[1;1R");
+  });
   it("loads the wasm module and creates a terminal handle", async () => {
     const core = await createSpikeCore();
     const snapshot = core.snapshot();
@@ -127,7 +137,7 @@ describe("ghostty-spike: libghostty-vt loads and parses under Houston's toolchai
     expect(core.snapshot().cursorBlinking).toBe(true);
   });
 
-  it("honors maxScrollback:0 at construction -- no history is retained, not the ~10,000-row default", async () => {
+  it("honors maxScrollback:0 at construction -- no history is retained", async () => {
     const runtime = await GhosttyRuntime.loadFromBytes(wasmBytes, writePtyBytes);
     const core = await GhosttyTerminalCore.create(80, 24, 8, 17, THEME, () => {}, runtime, {
       maxScrollback: 0,

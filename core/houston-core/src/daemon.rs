@@ -6745,13 +6745,28 @@ impl Daemon {
         expected: Option<proto::AgentStatus>,
         status: proto::AgentStatus,
     ) -> bool {
+        self.replace_live_status_from(id, expected, status, false)
+    }
+
+    fn replace_live_status_from(
+        &self,
+        id: u32,
+        expected: Option<proto::AgentStatus>,
+        status: proto::AgentStatus,
+        program_status: bool,
+    ) -> bool {
         let changed = {
             let sessions = self.sessions.lock().expect("sessions lock");
             match sessions.get(&id) {
                 Some(session) => {
                     let state = session.state.lock().expect("state lock");
                     let mut current = session.status.lock().expect("status lock");
-                    if !state.is_live() || *current != expected {
+                    if !state.is_live()
+                        || *current != expected
+                        || (program_status
+                            && (session.acp.is_some()
+                                || session.lifecycle_hook_seen.load(Ordering::Acquire)))
+                    {
                         false
                     } else {
                         *current = Some(status);
@@ -9060,20 +9075,38 @@ impl Daemon {
                 }
             }
         }
-        let (offset, replies) = {
+        let (offset, replies, status_replies, program_status) = {
             let mut ring = session.scrollback.lock().expect("scrollback lock");
             let offset = ring.push(chunk);
-            let replies = match session.vt().as_mut() {
-                Some(emulator) => emulator.feed(chunk),
-                None => Vec::new(),
+            let (replies, status_replies, program_status) = match session.vt().as_mut() {
+                Some(emulator) => {
+                    let replies = emulator.feed(chunk);
+                    (
+                        replies,
+                        emulator.take_program_status_replies(),
+                        emulator.take_program_status(),
+                    )
+                }
+                None => (Vec::new(), Vec::new(), None),
             };
-            (offset, replies)
+            (offset, replies, status_replies, program_status)
         };
         session
             .last_output
             .store(self.started.elapsed().as_millis() as u64, Ordering::Relaxed);
         if !session.watched() {
             self.answer_terminal_queries(id, session, &replies);
+        }
+        // Only the daemon consumes OSC 7501. The renderer has no callback and
+        // leaves its probe unanswered, including while replaying old output.
+        self.answer_terminal_queries(id, session, &status_replies);
+        if let Some(status) = program_status {
+            if session.acp.is_none() && !session.lifecycle_hook_seen.load(Ordering::Acquire) {
+                let current = *session.status.lock().expect("status lock");
+                if current != Some(status) {
+                    self.replace_live_status_from(id, current, status, true);
+                }
+            }
         }
         if session.info.hidden {
             self.handoff_output(id, chunk);

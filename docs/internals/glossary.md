@@ -32,6 +32,7 @@ named.
 | Term | Meaning | Code |
 |---|---|---|
 | **agent** | A coding agent Houston hosts in a pane (Claude Code, Codex, Antigravity, OpenCode, Cursor, Grok). | `proto::AgentKind` |
+| **Program Status Protocol** | Explicit program state reports over OSC 7501, consumed as a fallback when hooks and ACP do not own status. Never inferred from rendered terminal text. | `vt.rs`, `daemon.rs` |
 | **provider / CLI** | The agent runtime Houston launches and talks to. Each has a launch shape (`launch.rs`) and, for six of them, a hook installer. | `launch.rs`, `agent_events.rs` |
 | **session** | One PTY (or SSH channel) running an agent CLI or a shell in a project directory. Has a process `state` and, orthogonally, an agent `status`. | `daemon.rs::Session` |
 | **pane** | A session's cell in the grid. Its identity (`LeafNode.id`) outlives the session in it. | `layout/tree.ts` |

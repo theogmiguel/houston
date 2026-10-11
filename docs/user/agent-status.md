@@ -24,15 +24,18 @@ A pane can show:
   note and hook setup. A parent receives a startup notice; missing reports do not prove
   that human input is needed.
 
-A CLI with no hook support shows none of this: its pane runs, but never reports Working,
-Idle or Needs input. Claude Code reports tool questions, permission prompts and MCP
-elicitations. Codex reports approvals, interruptions and `request_user_input` questions.
+A CLI without hooks can still report status using the Program Status Protocol below.
+Without either reporting path, its pane runs without lifecycle updates. Claude Code
+reports tool questions, permission prompts and MCP elicitations. Codex reports approvals,
+interruptions and `request_user_input` questions.
 OpenCode reports permissions, structured questions, busy/retry, completion and errors.
 Starting a supported CLI from a shell pane gives it that provider’s reported status
 and orchestration capabilities once its first hook arrives.
 
-Quiet or prolonged approval review is a warning on ongoing work, rather than a request
-for your input. A live child can show Done or Failed while its process remains open;
+Quiet or prolonged approval review can show **Stalled** with a muted gray dot. This is a
+heuristic about ongoing work; its tooltip names the observed reason. Amber remains
+reserved for requests for your input. A live child can show Done or Failed while its
+process remains open;
 its result may still be pending delivery to its parent.
 
 The pane and grid indicators use the same language: blue pulse for starting or working,
@@ -52,6 +55,29 @@ flags also keep the hook path, with a notice in the terminal. Houston account pr
 remain supported. Codex delays its startup hook until the first turn; on these fallback
 paths, inspect the pane and send the first prompt directly. Queued delivery waits for
 reported Idle. Houston does not read prompt text to infer readiness.
+
+## Program Status Protocol
+
+On Linux and macOS, a program inside a pane can report its own state through the
+[Program Status Protocol](https://www.superlogical.com/rex/docs/build/program-status)
+(OSC 7501, revision 0.3). Houston answers its support probe and consumes reports even
+when the pane is hidden or the application is closed. Programs that do not emit this
+protocol continue to use their existing reporting path. Windows does not advertise
+support; lifecycle hooks and supported provider reports remain available.
+
+`working` becomes Working and `blocked` becomes Needs input. `idle`, `done` and
+`error` become Idle; these reports do not deliver a delegation result or end a provider
+turn. When several records exist, blocked takes precedence over working. Clearing the
+last record makes status unavailable. Shell prompt boundaries discard ongoing work
+records; completed and error records remain until cleared or the terminal resets.
+
+Lifecycle hooks take precedence from the first hook until the pane respawns. ACP
+sessions always use ACP status. No switch or CLI configuration change is required for
+this fallback. Houston reads explicit state fields, never visible terminal text; it
+keeps at most 64 records per pane and drops report message text. Consuming reports sends
+no report content to an external service. The support-probe reply returns through
+the session's existing terminal connection, including SSH for remote sessions. A terminal
+multiplexer may suppress the probe or reports; then the program cannot negotiate this fallback.
 
 ## Settings ▸ Agents
 

@@ -158,12 +158,31 @@ after.
 
 ### Agent status is provider-reported; PTY content is not a status machine
 
-`Daemon::set_status` is the single mutation point. Its inputs are hook drop files (mapped
-through `agent_events.rs`) and ACP streams. Codex's pane-owned app-server also supplies
-startup readiness: a bounded observer reads the loaded root thread's native status and
-writes one SessionStart drop through the same guarded path. It never reads terminal
-content or changes the thread. See [agent lifecycle](agent-lifecycle.md). Three
-exceptions are named; anything beyond them must be named and recorded here, not blended in.
+Status mutations use guarded live-session paths in `daemon.rs`. Lifecycle hooks
+(mapped through `agent_events.rs`) and ACP streams take precedence. Codex's pane-owned
+app-server also supplies startup readiness through a SessionStart drop; it never reads
+terminal content or changes the thread. See [agent lifecycle](agent-lifecycle.md).
+
+The documented [Program Status Protocol](https://www.superlogical.com/rex/docs/build/program-status)
+(revision 0.3, OSC 7501) is a fallback for programs that explicitly report state. Native
+libghostty-vt callbacks validate complete sequences and Houston retains only declared
+states and ids, never message text. This is protocol consumption, not screen inference.
+The parser limits each sequence to 4 KiB and validates field bounds; Houston keeps at
+most 64 records per session, evicting the least recently updated. Hierarchical clear,
+RIS and shell prompt boundaries remove stale records. Blocked takes precedence over
+working; other remaining states map to Idle. No remaining records means Unavailable.
+ACP sessions ignore this fallback. Once a lifecycle hook arrives, hooks own status until
+respawn; the precedence check and mutation share the session lock. OSC reports do not
+produce provider turn-end events or delegation results.
+
+The daemon answers OSC 7501 support probes only where its native callback consumes
+reports, including detached panes. The renderer does not answer these probes. Windows
+has no native daemon emulator and does not advertise this protocol. Ordinary terminal
+queries retain their existing renderer/daemon ownership. No configuration is written
+and no external service receives report content. Support replies use the session's
+existing terminal connection, including SSH for remote sessions.
+
+Three inference exceptions are named below; further exceptions must be recorded here.
 Session activity previews are separate display metadata delivered from provider hooks;
 they are never inferred from terminal text.
 
@@ -237,28 +256,19 @@ Providers without hook mappings (Droid, Copilot, Aider) get identity only, from
 banner sniffing that `agents.rs` explicitly documents as not the status machine. They can
 be delegated to, via #3 — identity is still not status.
 
-### The daemon owns a terminal emulator; it never reads it for status
+### The daemon owns a terminal emulator; screen cells never determine status
 
-**What it is.** Each session has one libghostty-vt terminal (`vt.rs`), the same library the
-renderer paints with, built natively into the daemon from the same pinned revision. It is fed
-every PTY chunk after the token redactor. This is the third lawful reader of PTY content,
-alongside the activity mirror and the handoff excerpt above — and unlike those
-two it reads nothing *for* a decision. It has exactly two consumers: an attach
-(`session_attach{snapshot:true}` answers with its state, and the handoff manifest carries the
-same bytes) and a screen read (`pane_read --source screen`, `WaitForIdle`), plus the terminal
-questions it answers on its own behalf.
+Each session has one libghostty-vt terminal (`vt.rs`), built from the same pinned
+revision as the renderer. It receives every redacted PTY chunk for attach snapshots,
+handoff, screen reads and terminal queries. Its parsed OSC 7501 callback consumes
+explicit reports under the precedence and bounds described above. No lifecycle
+transition is derived from a cell or from sampled screen contents.
 
-**Why it is not the rule above.** What it produces is a screen and the bytes the terminal owes
-the program — never an `AgentStatus`. Nothing samples it on a timer; nothing derives a
-lifecycle transition from a cell. A pane's status still comes from provider reports, and an
-emulator that started setting one would be the pixel-reading machine the whole invariant
-forbids.
-
-**Query ownership.** The emulator parses every chunk, but its replies reach the PTY only while
-`Session::watched()` is false — no Tauri output sink, no `/ws` connection holding it. A watched
-pane is answered by the renderer's engine, which is the same engine, so the answers are the same
-bytes. Exactly one of the two is the answerer at any moment; there is no case where both reply
-and none where neither does.
+**Query ownership.** Ordinary replies reach the PTY from the daemon only while
+`Session::watched()` is false. A watched pane is answered by the renderer's engine.
+OSC 7501 probes are the exception: the daemon always answers them where it consumes
+reports, and the renderer never answers them. Replaying a snapshot cannot advertise
+support or replay a status transition to the daemon.
 
 **What changed, and why it is safer than what it replaced.** The predecessor was a fixed table
 of three questions (`terminal_query.rs`) that left every question needing a rendered screen —

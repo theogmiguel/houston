@@ -58,18 +58,22 @@ describe("snapshot round trip", () => {
 
   it("keeps the newest rows when the history outgrows the importer's scrollback", async () => {
     const source = await core(4 * 1024 * 1024);
-    for (let i = 1; i <= 3000; i++) {
+    // The byte cap permits enough complete pages for the active area.
+    // Exceed that minimum as well as the requested cap.
+    const sourceRows = 10_000;
+    for (let i = 1; i <= sourceRows; i++) {
       source.write(`\x1b[3${(i % 7) + 1}mrow ${String(i).padStart(5, "0")}\x1b[0m lorem ipsum dolor\r\n`);
     }
     source.write("END");
 
+    expect(allText(source).split("\n").filter((line) => line.startsWith("row ")).length).toBe(sourceRows);
     const restored = await core(64 * 1024);
     expect(restored.importSnapshot(source.exportSnapshot(10_000)!)).toBe(true);
 
     const text = allText(restored);
-    expect(text.endsWith("row 03000 lorem ipsum dolor\nEND")).toBe(true);
+    expect(text.endsWith("row 10000 lorem ipsum dolor\nEND")).toBe(true);
     const kept = text.split("\n").filter((line) => line.startsWith("row ")).length;
     expect(kept).toBeGreaterThan(ROWS);
-    expect(kept).toBeLessThan(3000);
+    expect(kept).toBeLessThan(sourceRows);
   });
 });
