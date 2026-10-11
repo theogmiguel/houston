@@ -223,6 +223,10 @@ async fn a_leaf_child_sees_only_dialogue_and_identity_tools_with_every_provider_
     let operator_tools = r.tools_list(&r.token_for(operator.id)).await;
     let operator_bytes = response_bytes(&operator_tools);
     assert!(
+        operator_bytes < 16_700,
+        "orchestration-disabled tools/list catalog exceeds 16700 bytes: {operator_bytes}"
+    );
+    assert!(
         operator_tools.iter().all(|t| {
             let n = t["name"].as_str().unwrap_or_default();
             !n.starts_with("pane_") || n == "pane_reply"
