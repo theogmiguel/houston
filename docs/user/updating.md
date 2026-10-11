@@ -63,6 +63,10 @@ not verify, or a manifest that moved on since the offer was shown — nothing is
 and the dialog says why. If the install fails after the sessions were stopped, Houston
 restarts the daemon and the error says how many sessions had already ended.
 
+The install check has a 30-second deadline. Downloads fail after 30 seconds without
+network data or 15 minutes overall, allowing another attempt from Settings ▸ About.
+A download timeout happens before any sessions are stopped or an installer is started.
+
 ## Linux
 
 A `.deb` install runs your package manager's usual privileged install. An AppImage install
