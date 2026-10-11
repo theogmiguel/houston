@@ -202,6 +202,23 @@ impl ConfirmRegistry {
     }
 }
 
+struct PendingGuard<'a> {
+    registry: &'a ConfirmRegistry,
+    id: String,
+    screenshot: Option<std::path::PathBuf>,
+    resolved: Box<dyn Fn(&str) + 'a>,
+}
+
+impl Drop for PendingGuard<'_> {
+    fn drop(&mut self) {
+        self.registry.take(&self.id);
+        (self.resolved)(&self.id);
+        if let Some(path) = &self.screenshot {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 pub async fn await_decision(
     app: &AppHandle,
     registry: &ConfirmRegistry,
@@ -213,6 +230,14 @@ pub async fn await_decision(
     }
     let (tx, rx) = oneshot::channel();
     let id = registry.register(tx, screenshot.clone(), request.surface_id.clone());
+    let _guard = PendingGuard {
+        registry,
+        id: id.clone(),
+        screenshot,
+        resolved: Box::new(|id| {
+            let _ = app.emit(RESOLVED_EVENT, &serde_json::json!({ "id": id }));
+        }),
+    };
     let verb = request.kind.verb();
     let request = ConfirmRequest {
         id: id.clone(),
@@ -228,8 +253,6 @@ pub async fn await_decision(
     }
 
     let outcome = tokio::time::timeout(DECISION_TIMEOUT, rx).await;
-    registry.take(&id);
-    let _ = app.emit(RESOLVED_EVENT, &serde_json::json!({ "id": id }));
 
     match outcome {
         Ok(Ok(Verdict::Approved)) | Ok(Ok(Verdict::ApprovedAndTrusted)) => Ok(()),
@@ -256,6 +279,43 @@ mod tests {
 
     fn registry() -> ConfirmRegistry {
         ConfirmRegistry::new()
+    }
+
+    #[tokio::test]
+    async fn cancelling_the_wait_removes_prompt_and_temporary_capture() {
+        let reg = std::sync::Arc::new(registry());
+        let temp = tempfile::tempdir().unwrap();
+        let shot = temp.path().join("consent.png");
+        std::fs::write(&shot, b"capture").unwrap();
+        let (tx, rx) = oneshot::channel();
+        let id = reg.register(tx, Some(shot.clone()), "surface".into());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let resolved = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let task = {
+            let reg = reg.clone();
+            let id = id.clone();
+            let shot = shot.clone();
+            let resolved = resolved.clone();
+            tokio::spawn(async move {
+                let _guard = PendingGuard {
+                    registry: &reg,
+                    id,
+                    screenshot: Some(shot),
+                    resolved: Box::new(move |_| {
+                        resolved.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }),
+                };
+                let _ = ready_tx.send(());
+                let _ = rx.await;
+            })
+        };
+        ready_rx.await.unwrap();
+        task.abort();
+        let _ = task.await;
+        assert_eq!(reg.pending_count(), 0);
+        assert!(!shot.exists());
+        assert!(resolved.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(reg.respond(&id, true, false, "/w").is_err());
     }
 
     #[test]
