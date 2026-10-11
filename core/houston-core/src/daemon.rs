@@ -10029,12 +10029,14 @@ impl Daemon {
                     reader_session.park.check_and_wait_if_requested();
                 }
                 #[cfg(unix)]
-                reader_session
-                    .park
-                    .inner
-                    .lock()
-                    .expect("park lock")
-                    .reader_tid = None;
+                {
+                    reader_session
+                        .park
+                        .inner
+                        .lock()
+                        .expect("park lock")
+                        .reader_tid = None;
+                }
                 daemon.flush_shell_token_redactor(id, &reader_session);
                 let is_hidden = daemon
                     .sessions
