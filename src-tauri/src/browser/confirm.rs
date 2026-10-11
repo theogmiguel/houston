@@ -206,7 +206,7 @@ struct PendingGuard<'a> {
     registry: &'a ConfirmRegistry,
     id: String,
     screenshot: Option<std::path::PathBuf>,
-    resolved: Box<dyn Fn(&str) + 'a>,
+    resolved: Box<dyn Fn(&str) + Send + 'a>,
 }
 
 impl Drop for PendingGuard<'_> {
@@ -226,6 +226,9 @@ pub async fn await_decision(
     screenshot: Option<std::path::PathBuf>,
 ) -> Result<(), String> {
     if registry.is_trusted(&request.workspace_id) {
+        if let Some(path) = screenshot {
+            let _ = std::fs::remove_file(path);
+        }
         return Ok(());
     }
     let (tx, rx) = oneshot::channel();

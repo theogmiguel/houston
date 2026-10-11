@@ -76,12 +76,13 @@ type RelayWriter =
 async fn serve_calls<F>(
     mut read: futures_util::stream::SplitStream<RelaySocket>,
     write: RelayWriter,
-    answer: impl Fn(u64, String, Value, u32, String) -> F,
+    answer: impl Fn(u64, String, Value, u32, String) -> F + Send + Sync,
 ) -> anyhow::Result<()>
 where
     F: std::future::Future<Output = proto::ClientMsg> + Send + 'static,
 {
     let mut calls = tokio::task::JoinSet::new();
+    let outcome = async {
     loop {
         let frame = tokio::select! {
             frame = read.next() => frame,
@@ -142,6 +143,10 @@ where
             }).await;
         });
     }
+    }.await;
+    calls.abort_all();
+    while calls.join_next().await.is_some() {}
+    outcome
 }
 
 async fn answer_call(
