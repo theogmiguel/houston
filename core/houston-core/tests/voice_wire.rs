@@ -288,18 +288,19 @@ async fn deleting_traversal_and_absolute_model_ids_preserves_external_synthetic_
             },
         )
         .await;
-        let model = next_matching(&mut ws, voice_model_msg).await;
-        assert_eq!(model.id, id);
-        match model.status {
-            proto::VoiceModelStatus::Failed { reason } => {
-                assert!(
-                    reason.contains(id) || reason.contains(&format!("{id:?}")),
-                    "{reason}"
-                );
-                assert!(reason.contains("catalog"), "{reason}");
+        let reason = next_matching(&mut ws, |msg| match msg {
+            proto::ServerMsg::Error { message, .. } => Some(message),
+            proto::ServerMsg::VoiceModelState { .. } => {
+                panic!("a refused deletion must not report a failed model")
             }
-            other => panic!("expected an unknown-model refusal, got {other:?}"),
-        }
+            _ => None,
+        })
+        .await;
+        assert!(
+            reason.contains(id) || reason.contains(&format!("{id:?}")),
+            "{reason}"
+        );
+        assert!(reason.contains("catalog"), "{reason}");
         assert_eq!(
             std::fs::read(&victim).unwrap(),
             b"synthetic protected bytes"
@@ -341,16 +342,18 @@ async fn duplicate_download_and_delete_requests_preserve_the_active_download() {
         },
     )
     .await;
-    let refusal = next_matching(&mut b, voice_model_msg).await;
-    match refusal.status {
-        proto::VoiceModelStatus::Failed { reason } => {
-            assert!(
-                reason.contains("ggml-small") && reason.contains("active"),
-                "{reason}"
-            );
+    let reason = next_matching(&mut b, |msg| match msg {
+        proto::ServerMsg::Error { message, .. } => Some(message),
+        proto::ServerMsg::VoiceModelState { model } => {
+            panic!("active model state must remain Downloading, got {model:?}")
         }
-        other => panic!("expected active-download refusal, got {other:?}"),
-    }
+        _ => None,
+    })
+    .await;
+    assert!(
+        reason.contains("ggml-small") && reason.contains("active"),
+        "{reason}"
+    );
     assert!(daemon.voice.download_in_flight("ggml-small"));
     assert!(daemon.voice.claim_download("ggml-small").is_err());
     assert_eq!(
@@ -372,8 +375,6 @@ async fn duplicate_download_and_delete_requests_preserve_the_active_download() {
         },
     )
     .await;
-    // Drain the deletion refusal broadcast to this connection first.
-    let _ = next_matching(&mut a, voice_model_msg).await;
     let deleted = next_matching(&mut a, voice_model_msg).await;
     assert_eq!(deleted.status, proto::VoiceModelStatus::NotDownloaded);
     assert!(!installed.exists());

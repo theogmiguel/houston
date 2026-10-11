@@ -15738,22 +15738,18 @@ impl Daemon {
         });
     }
 
-    pub fn voice_model_delete(&self, model_id: &str) -> proto::ServerMsg {
+    pub fn voice_model_delete(&self, model_id: &str) -> Result<proto::ServerMsg> {
         let freed = match self.voice.delete_model(&self.voice_models_dir(), model_id) {
             Ok(freed) => freed,
             Err(e) => {
                 tracing::warn!(model = %model_id, "voice: model delete failed: {e}");
-                let mut model = self.voice_model_state(model_id);
-                model.status = proto::VoiceModelStatus::Failed {
-                    reason: e.to_string(),
-                };
-                return proto::ServerMsg::VoiceModelState { model };
+                return Err(e.into());
             }
         };
         tracing::info!(model = %model_id, freed_bytes = freed, "voice: model deleted");
-        proto::ServerMsg::VoiceModelState {
+        Ok(proto::ServerMsg::VoiceModelState {
             model: self.voice_model_state(model_id),
-        }
+        })
     }
 
     pub fn voice_key_set(&self, provider: proto::CloudStt, key: String) -> Result<()> {

@@ -1791,7 +1791,7 @@ async fn dispatch(
             Ok(())
         }
         proto::ClientMsg::VoiceModelDelete { model_id } => {
-            daemon.broadcast_control(&daemon.voice_model_delete(&model_id));
+            daemon.broadcast_control(&daemon.voice_model_delete(&model_id)?);
             daemon.broadcast_control(&daemon.voice_settings_reply());
             Ok(())
         }
