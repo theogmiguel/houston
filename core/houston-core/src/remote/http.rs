@@ -482,8 +482,18 @@ async fn me(
     ConnectInfo(peer): ConnectInfo<Peer>,
     headers: HeaderMap,
 ) -> Response {
-    match blocking(move || authenticate(&daemon, &headers, peer.0.ip())).await {
-        Ok(device) => Json(json!({ "device_id": device.id, "name": device.name })).into_response(),
+    let result = blocking(move || {
+        let device = authenticate(&daemon, &headers, peer.0.ip())?;
+        let url = daemon.remote_config().effective_url();
+        Ok(json!({
+            "device_id": device.id,
+            "name": device.name,
+            "host": {"name": super::host_name(), "version": env!("CARGO_PKG_VERSION")},
+            "connection": {"url": super::feed::mask(&url), "https": url.starts_with("https://")},
+        }))
+    }).await;
+    match result {
+        Ok(me) => Json(me).into_response(),
         Err(refused) => refused.into_response(),
     }
 }

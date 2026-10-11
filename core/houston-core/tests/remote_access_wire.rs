@@ -684,3 +684,21 @@ async fn input_reaches_the_pty_and_the_screen_shows_it() {
     assert!(too_many.body.contains("500"), "{}", too_many.body);
     daemon.kill(info.id).ok();
 }
+
+#[tokio::test]
+async fn me_describes_the_host_and_configured_connection() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let (token, _) = pair(&daemon, addr).await;
+    let auth = format!("Bearer {token}");
+    let me = request(addr, "GET", "/api/me", &[("Authorization", &auth)], None).await;
+    assert_eq!(me.status, 200);
+    let me = me.json();
+    assert_eq!(me["name"], "Test phone");
+    assert_eq!(me["host"]["version"], env!("CARGO_PKG_VERSION"));
+    assert!(!me["host"]["name"].as_str().unwrap().is_empty());
+    assert!(me["host"]["name"].as_str().unwrap().chars().count() <= 128);
+    assert_eq!(me["connection"], serde_json::json!({"url":format!("http://{addr}"),"https":false}));
+    daemon.remote_configure(ConfigPatch { public_url: Some("https://box.tail1.ts.net".into()), ..Default::default() }).unwrap();
+    let me = request(addr, "GET", "/api/me", &[("Authorization", &auth)], None).await.json();
+    assert_eq!(me["connection"], serde_json::json!({"url":"https://box.tail1.ts.net","https":true}));
+}

@@ -55,6 +55,27 @@ pub const EVENT_HEARTBEAT: Duration = Duration::from_secs(15);
 // Events are a few per turn per pane; a reader this far behind resynchronises.
 const EVENT_QUEUE: usize = 256;
 
+// Hostnames are labels, so cap display length even when a platform returns arbitrary text.
+const HOST_NAME_MAX_CHARS: usize = 128;
+
+pub(crate) fn host_name() -> String {
+    #[cfg(unix)]
+    let raw = {
+        // POSIX hostnames fit in 255 bytes plus the terminating NUL.
+        let mut bytes = [0u8; 256];
+        // SAFETY: the buffer is writable for the length passed to gethostname.
+        if unsafe { libc::gethostname(bytes.as_mut_ptr().cast(), bytes.len()) } == 0 {
+            let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+            String::from_utf8_lossy(&bytes[..end]).into_owned()
+        } else {
+            "localhost".to_string()
+        }
+    };
+    #[cfg(not(unix))]
+    let raw = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "localhost".to_string());
+    feed::mask(&raw).chars().filter(|c| !c.is_control()).take(HOST_NAME_MAX_CHARS).collect()
+}
+
 /// Keys beyond the orchestration set (`orchestrate::SENDABLE_KEYS`) that a
 /// person answering from a phone needs.
 pub const EXTRA_KEYS: [(&str, &[u8]); 4] = [

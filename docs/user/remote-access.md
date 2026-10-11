@@ -66,6 +66,9 @@ address. Listening on every interface (`0.0.0.0`) requires a **Public URL** that
 address devices open. Without HTTPS in front, a device's token and the pane text it reads
 cross the network unencrypted, and Settings shows a warning.
 
+The paired device can show this computer's name and Houston version, together with the
+remote access address and whether that address uses HTTPS.
+
 ## Pair a device
 
 1. In Settings ▸ Remote access, choose **Pair a device**. Houston shows a QR code and a
