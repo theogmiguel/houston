@@ -1510,6 +1510,8 @@ impl Drop for SleepReservation<'_> {
 
 const SESSION_IDLE_REAP_ENABLED_KEY: &str = "session_idle_reap_enabled";
 const SESSION_IDLE_REAP_MINUTES_KEY: &str = "session_idle_reap_minutes";
+const CLAUDE_FULLSCREEN_KEY: &str = "claude_fullscreen";
+const CLAUDE_FULLSCREEN_ENV: &str = "CLAUDE_CODE_NO_FLICKER";
 
 const SESSION_IDLE_REAP_MINUTES_MAX: u32 = 40_000;
 
@@ -9596,6 +9598,10 @@ impl Daemon {
                 crate::paths::CHANNEL_ENV,
                 self.channel.as_deref().unwrap_or("release"),
             );
+            // Off leaves the renderer to Claude Code's own `/tui` choice.
+            if !hidden && self.session_policy().claude_fullscreen {
+                cmd.env(CLAUDE_FULLSCREEN_ENV, "1");
+            }
             if !shell_claude_resume {
                 cmd.args(crate::launch::claude_pane_env_args(
                     &cmd,
@@ -14764,9 +14770,14 @@ impl Daemon {
             Ok(Some(v)) => v.parse().unwrap_or(d.idle_reap_minutes),
             _ => d.idle_reap_minutes,
         };
+        let claude_fullscreen = match self.db.get_setting(CLAUDE_FULLSCREEN_KEY) {
+            Ok(Some(v)) => v == "1",
+            _ => d.claude_fullscreen,
+        };
         proto::SessionPolicy {
             idle_reap_enabled,
             idle_reap_minutes,
+            claude_fullscreen,
         }
     }
 
@@ -14785,6 +14796,10 @@ impl Daemon {
         self.db.set_setting(
             SESSION_IDLE_REAP_MINUTES_KEY,
             &policy.idle_reap_minutes.to_string(),
+        )?;
+        self.db.set_setting(
+            CLAUDE_FULLSCREEN_KEY,
+            if policy.claude_fullscreen { "1" } else { "0" },
         )?;
         Ok(self.session_policy())
     }

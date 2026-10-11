@@ -470,7 +470,8 @@ pane is observed through its `RoutineRun` row and can be opened from the routine
 ## Settings and logging
 
 The `settings` table is a plain string KV store. Live keys: `session_idle_reap_enabled` and
-`session_idle_reap_minutes` (≤ 40 000), `keymap_overrides`, `skill_sync_auto_push`,
+`session_idle_reap_minutes` (≤ 40 000), `claude_fullscreen` (`0`/`1`, on by default),
+`keymap_overrides`, `skill_sync_auto_push`,
 `command_history_ignore_globs`, `voice_settings`, `restore_budget`, `restore_resume`,
 `mailbox_retention_hours`, `worktree_cleanup_enabled` (`0`/`1`, off by default) and
 `worktree_cleanup_grace_hours` (1..=`proto::WORKTREE_CLEANUP_GRACE_HOURS_MAX`, default 24),

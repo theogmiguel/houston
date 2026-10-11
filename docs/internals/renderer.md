@@ -129,6 +129,13 @@ reprint taller than the pane lands in history. Explicit fits (a font change, a r
 side-panel commit) apply at once. A fit measures the canvas's layout box, not its client
 rect, because a new pane grows in under a transform that fires no observer when it ends.
 
+The debounce bounds how many reprints a resize causes; it cannot make one harmless. Claude
+Code's inline renderer answers a size change by erasing and repainting only the visible
+rows, after the terminal has already moved rows between the screen and scrollback, so the
+moved rows are repeated and older rows keep the old width. Claude panes therefore start
+with `CLAUDE_CODE_NO_FLICKER=1` (the `claude_fullscreen` session policy, on by default),
+which puts Claude Code on the alternate screen, where a resize is a full redraw.
+
 A new pane's PTY starts at the size the pane will have (`pane/newPaneSize.ts`): the caller
 predicts the slot from the split tree the way `session_created` will place it, and converts
 it with the gutter, chrome and cell metrics of a terminal pane on screen. A CLI otherwise

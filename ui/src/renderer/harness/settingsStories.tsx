@@ -409,7 +409,7 @@ export function SettingsDictationCloud(): React.JSX.Element {
 }
 
 export function SettingsWorkspaces(): React.JSX.Element {
-  const sessionPolicy: SessionPolicy = { idle_reap_enabled: false, idle_reap_minutes: 15 }
+  const sessionPolicy: SessionPolicy = { idle_reap_enabled: false, idle_reap_minutes: 15, claude_fullscreen: true }
   return <SettingsScreen section="workspaces" props={{
     hostInfo: hostInfoFixture(),
     sessionPolicy,
