@@ -1084,6 +1084,7 @@
   function toggleKeys(force) {
     var root = $("keys"), open = force != null ? force : root.classList.contains("hidden");
     root.classList.toggle("hidden", !open);
+    if (open) root.scrollLeft = 0;
     $("more").setAttribute("aria-expanded", String(open));
   }
 

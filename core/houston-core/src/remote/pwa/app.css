@@ -350,7 +350,7 @@ b { font-weight: 600; }
 .sent { font-size: var(--text-base); color: var(--text-secondary); display: flex; align-items: center; gap: var(--space-1-5); }
 .sent::before { content: ""; width: 6px; height: 6px; border-radius: var(--tr-radius-pill); background: var(--info); }
 
-.keys { display: flex; gap: var(--space-1-5); overflow-x: auto; scrollbar-width: none; }
+.keys { display: flex; justify-content: flex-start; min-width: 0; width: 100%; gap: var(--space-1-5); padding: 4px 2px; scroll-padding-inline: 2px; overflow-x: auto; scrollbar-width: none; }
 .keys::-webkit-scrollbar { display: none; }
 .key {
   flex: none; min-width: var(--touch); min-height: var(--touch); padding: 0 var(--space-3); border-radius: var(--tr-radius-button);
