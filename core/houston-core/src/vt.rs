@@ -32,6 +32,12 @@ mod imp {
     }
 
     #[repr(C)]
+    struct GhosttyTerminalModeConfig {
+        mode: u16,
+        value: bool,
+    }
+
+    #[repr(C)]
     struct ProgramStatus {
         size: usize,
         state: i32,
@@ -90,6 +96,7 @@ mod imp {
     }
 
     const RESULT_SUCCESS: i32 = 0;
+    const DATA_MODE: i32 = 37;
     const FORMAT_PLAIN: i32 = 0;
     const OPT_USERDATA: i32 = 0;
     const OPT_WRITE_PTY: i32 = 1;
@@ -122,8 +129,7 @@ mod imp {
         ) -> i32;
         fn ghostty_terminal_set(terminal: *mut c_void, option: i32, value: *const c_void) -> i32;
         fn ghostty_terminal_vt_write(terminal: *mut c_void, data: *const u8, len: usize);
-        fn ghostty_terminal_mode_get(terminal: *mut c_void, mode: u16, out_value: *mut bool)
-            -> i32;
+        fn ghostty_terminal_get(terminal: *mut c_void, data: i32, out: *mut c_void) -> i32;
         fn ghostty_free(allocator: *const c_void, ptr: *mut u8, len: usize);
 
         fn ghostty_formatter_terminal_new(
@@ -455,12 +461,20 @@ mod imp {
         /// Whether the program enabled bracketed paste (DEC mode 2004), the same
         /// check the renderer makes before wrapping a paste.
         pub fn bracketed_paste(&mut self) -> bool {
-            const MODE_BRACKETED_PASTE: u16 = 2004;
-            let mut on = false;
-            // SAFETY: `terminal` is live for `&mut self`; `on` is a valid out-pointer.
-            let result =
-                unsafe { ghostty_terminal_mode_get(self.terminal, MODE_BRACKETED_PASTE, &mut on) };
-            result == RESULT_SUCCESS && on
+            // GhosttyMode encodes DEC private modes with the high (ANSI) bit clear.
+            let mut mode = GhosttyTerminalModeConfig {
+                mode: 2004,
+                value: false,
+            };
+            // SAFETY: the terminal is live and the mode query has the frozen C layout.
+            let result = unsafe {
+                ghostty_terminal_get(
+                    self.terminal,
+                    DATA_MODE,
+                    (&mut mode as *mut GhosttyTerminalModeConfig).cast(),
+                )
+            };
+            result == RESULT_SUCCESS && mode.value
         }
 
         pub fn screen_text(&mut self, lines: usize) -> Vec<String> {
