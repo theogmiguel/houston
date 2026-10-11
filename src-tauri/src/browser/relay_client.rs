@@ -6,15 +6,12 @@ use tokio_tungstenite::tungstenite::Message;
 
 use super::mcp_tools::BrowserTools;
 
-// Not a tight loop: a daemon that just restarted needs a moment to rebind, and a
-// tool call in flight during the gap times out on the daemon's own relay timeout
-// and is retried by the agent.
-// Two slots per each of the eight native browser surfaces bound work across
-// workspaces while allowing an action and a read concurrently. A call
-// expires before the daemon's 130s response deadline; writes cannot pin a slot.
+// Two slots per browser surface allow an action and a read concurrently.
+// Calls expire before the daemon's 130s deadline; writes cannot pin a slot.
 const MAX_OUTSTANDING_CALLS: usize = 16;
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(125);
 const RESPONSE_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+// Give a restarted daemon time to rebind before the next connection attempt.
 const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
 pub async fn run(app: AppHandle, port: u16, token: String) {

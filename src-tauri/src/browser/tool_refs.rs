@@ -1,7 +1,5 @@
-//! Refs cannot live in the page: WebKitGTK hands every `evaluate_javascript` call a
-//! fresh ephemeral world, so page globals do not survive between calls. Each surface's
-//! store maps `e<n>` to a locator whose node-owned listeners prove document and
-//! element identity before a structural lookup can perform an action.
+//! WebKitGTK evaluations have ephemeral globals. Native refs retain locators whose
+//! node-owned listeners prove document and element identity across script worlds.
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
