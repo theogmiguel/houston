@@ -121,3 +121,72 @@ async fn update_policy_set_off_is_broadcast_as_disabled() {
         }
     }
 }
+
+// The daemon boots one update check and one catalog refresh. Pointing both at a local
+// listener proves the override reaches a spawned binary and that neither request leaves
+// the machine: without the override the paths below never arrive here.
+#[tokio::test]
+async fn a_spawned_daemon_asks_only_the_configured_endpoints() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let (paths_tx, mut paths_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let paths_tx = paths_tx.clone();
+            tokio::spawn(async move {
+                let mut request = vec![0; 4096];
+                let read = stream.read(&mut request).await.unwrap_or(0);
+                let text = String::from_utf8_lossy(&request[..read]).into_owned();
+                let path = text
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or_default()
+                    .to_owned();
+                let _ = paths_tx.send(path);
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    )
+                    .await;
+            });
+        }
+    });
+
+    let home = tempfile::tempdir().unwrap();
+    let mut cmd = hermetic_command(env!("CARGO_BIN_EXE_houston-core"), home.path());
+    cmd.env("HOUSTON_CHANNEL", "dev")
+        .env(
+            houston_core::updates::UPDATE_MANIFEST_URL_ENV,
+            format!("{base}/manifest/latest.json"),
+        )
+        .env(
+            houston_core::model_catalog::CATALOG_URL_ENV,
+            format!("{base}/catalog/prices.json"),
+        )
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut child = cmd.spawn().expect("spawn houston-core");
+
+    let mut seen = Vec::new();
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        while !(seen.contains(&"/manifest/latest.json".to_string())
+            && seen.contains(&"/catalog/prices.json".to_string()))
+        {
+            seen.push(paths_rx.recv().await.expect("listener closed"));
+        }
+    })
+    .await;
+
+    houston_core::pid::signal_process(child.id(), houston_core::pid::Signal::Term)
+        .expect("signalling the spawned daemon");
+    let _ = child.wait();
+    assert!(
+        outcome.is_ok(),
+        "the daemon never asked both configured endpoints; requests seen: {seen:?}"
+    );
+}

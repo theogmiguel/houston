@@ -10,6 +10,8 @@ use serde_json::Value;
 
 pub const CATALOG_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
+/// Replaces the download URL. Tests set it so no daemon reaches the real endpoint.
+pub const CATALOG_URL_ENV: &str = "HOUSTON_MODEL_CATALOG_URL";
 const CACHE_FILE: &str = "model-prices.json";
 // Usage and provider checks reuse the cache between scheduled revalidations.
 const FRESH_MS: i64 = crate::updates::UPDATE_CHECK_INTERVAL.as_millis() as i64;
@@ -503,7 +505,10 @@ fn read_bounded(reader: impl Read) -> Result<Vec<u8>> {
 }
 
 fn download(etag: Option<&str>) -> Result<CatalogResponse> {
-    download_from(CATALOG_URL, etag)
+    download_from(
+        &crate::updates::endpoint(CATALOG_URL_ENV, CATALOG_URL),
+        etag,
+    )
 }
 
 fn download_from(url: &str, etag: Option<&str>) -> Result<CatalogResponse> {

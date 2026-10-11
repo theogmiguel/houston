@@ -14,6 +14,8 @@ const RELEASES_LATEST_URL: &str =
     "https://api.github.com/repos/theogmiguel/houston/releases/latest";
 // GitHub refuses a request with no User-Agent. This one names the product and
 // nothing else: no version, no OS, no identifier.
+/// Replaces the manifest URL. Tests set it so no daemon reaches the real endpoint.
+pub const UPDATE_MANIFEST_URL_ENV: &str = "HOUSTON_UPDATE_MANIFEST_URL";
 const USER_AGENT: &str = "houston";
 // A check that outlives this is a hung request, not a slow release.
 const REQUEST_TIMEOUT_SECS: u64 = 10;
@@ -22,6 +24,14 @@ const REQUEST_TIMEOUT_SECS: u64 = 10;
 pub(crate) struct ReleaseCache {
     etag: Option<String>,
     release: Option<Option<proto::UpdateRelease>>,
+}
+
+/// Resolves an endpoint: the environment override when set and non-empty, else `default`.
+pub(crate) fn endpoint(var: &str, default: &str) -> String {
+    match std::env::var(var) {
+        Ok(url) if !url.trim().is_empty() => url.trim().to_string(),
+        _ => default.to_string(),
+    }
 }
 
 /// Compares two `MAJOR.MINOR.PATCH` strings, tolerating a leading `v` and ignoring
@@ -170,7 +180,10 @@ impl Daemon {
         *self.update_state.lock().expect("update_state lock") = proto::UpdateState::Checking;
         self.broadcast_control(&self.update_snapshot());
 
-        let state = match self.fetch_latest(RELEASES_LATEST_URL).await {
+        let state = match self
+            .fetch_latest(&endpoint(UPDATE_MANIFEST_URL_ENV, RELEASES_LATEST_URL))
+            .await
+        {
             Ok(Some(release)) => {
                 let checked_at_ms = crate::daemon::now_ms();
                 if is_newer(&release.version, env!("CARGO_PKG_VERSION")) {
