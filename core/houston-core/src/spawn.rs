@@ -38,10 +38,9 @@ pub fn output_within(
     output_within_with_stdin(cmd, timeout, std::process::Stdio::null())
 }
 
-/// Capture with caller-owned stdin (for example `Stdio::from(File)`). No copying
-/// thread is created. Combined stdout/stderr is limited to 8 MiB; exceeding it
-/// fails explicitly. Linux owns a process group until cleanup and root reap.
-/// Other platforms refuse before spawning until equivalent ownership exists.
+/// Capture with caller-owned stdin and an 8 MiB combined output limit.
+/// Linux retains process-group ownership through cleanup; other platforms refuse.
+/// See docs/internals/daemon.md for cancellation boundaries.
 pub fn output_within_with_stdin(
     mut cmd: std::process::Command,
     timeout: std::time::Duration,
