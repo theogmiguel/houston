@@ -610,6 +610,7 @@ pub struct Session {
     supervisor_wait: Mutex<SupervisorWaitState>,
     park: Arc<ParkState>,
     reader_done: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    pty_reaped: Arc<(Mutex<bool>, std::sync::Condvar)>,
     reader_cancel: AtomicBool,
     reader_worker: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
@@ -4765,6 +4766,7 @@ impl Daemon {
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
             reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
             reader_cancel: AtomicBool::new(false),
             reader_worker: Mutex::new(None),
         })
@@ -8869,6 +8871,7 @@ impl Daemon {
                 );
                 }
             }
+            self.cleanup_session_ownership(old_id, old)?;
             (
                 old.info.agent,
                 old.project_dir.lock().expect("project_dir lock").clone(),
@@ -9344,7 +9347,7 @@ impl Daemon {
 
     /// A resumed CLI that exits non-zero within `RESUME_EARLY_EXIT` is relaunched fresh
     /// in its slot, once: the relaunch has no `--resume`, so it cannot loop.
-    fn resume_exited(self: &Arc<Self>, id: u32, exit_code: Option<i32>) {
+    fn resume_exited(self: &Arc<Self>, id: u32, exit_code: Option<i32>, exited_at: Instant) {
         if let Some(launched) = self
             .wake_launches
             .lock()
@@ -9355,7 +9358,7 @@ impl Daemon {
                 .lock()
                 .expect("resume launches lock")
                 .remove(&id);
-            let elapsed = launched.elapsed();
+            let elapsed = exited_at.saturating_duration_since(launched);
             if exit_code != Some(0) && elapsed < RESUME_EARLY_EXIT && !self.is_shutting_down() {
                 let reason = format!(
                     "Wake failed because the resumed CLI exited with {} within {} seconds; the exact conversation remains asleep.",
@@ -9378,7 +9381,7 @@ impl Daemon {
         else {
             return;
         };
-        let elapsed = launched.elapsed();
+        let elapsed = exited_at.saturating_duration_since(launched);
         if exit_code == Some(0) || elapsed >= RESUME_EARLY_EXIT || self.is_shutting_down() {
             self.wake_launches
                 .lock()
@@ -9420,6 +9423,7 @@ impl Daemon {
             .expect("session lifecycle lock");
         self.ensure_not_sleeping(id)?;
         let session = self.get(id)?;
+        self.cleanup_session_ownership(id, &session)?;
         self.persist_scrollback_result(id)?;
         *session.state.lock().expect("state lock") = proto::SessionState::Sleeping;
         *session.sleep_notice.lock().expect("sleep notice lock") = Some(notice.to_string());
@@ -9804,14 +9808,27 @@ impl Daemon {
         true
     }
 
-    fn answer_terminal_queries(&self, id: u32, _session: &Session, replies: &[u8]) {
+    fn answer_terminal_queries(&self, id: u32, session: &Arc<Session>, replies: &[u8]) {
         if replies.is_empty() {
             return;
         }
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("terminal-query", id);
+        // The reader must never wait for lifecycle admission: Close owns that lock
+        // while draining it. The same bounded FIFO still serializes all PTY writes;
+        // termination interrupts its writer, including replies admitted concurrently.
+        if self.refusing_mutations()
+            || session.reader_cancel.load(Ordering::Acquire)
+            || session.removed.load(Ordering::Acquire)
+            || !session.state.lock().expect("state lock").is_live()
+        {
+            return;
+        }
         let tx = self.tx.clone();
-        let result = self.enqueue_stdin(
+        let result = session.enqueue_stdin(
             id,
             replies,
+            None,
             Box::new(move |result| {
                 if let Err(error) = result {
                     let msg = proto::ServerMsg::Error {
@@ -9936,6 +9953,22 @@ impl Daemon {
     ) -> Result<Box<dyn Fn() -> bool + Send + Sync>> {
         let done = Arc::clone(&self.get(id)?.reader_done);
         Ok(Box::new(move || *done.0.lock().expect("reader done lock")))
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn pty_cleanup_started_for_test(&self, id: u32) -> bool {
+        self.get(id)
+            .is_ok_and(|session| session.reader_cancel.load(Ordering::Acquire))
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn mark_wake_launch_for_test(&self, id: u32) {
+        self.wake_launches
+            .lock()
+            .expect("wake launches lock")
+            .insert(id, Instant::now());
     }
 
     fn spawn_pty_reader_thread(
@@ -10607,6 +10640,7 @@ impl Daemon {
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
             reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
             reader_cancel: AtomicBool::new(false),
             reader_worker: Mutex::new(None),
         });
@@ -10671,6 +10705,7 @@ impl Daemon {
                     #[cfg(not(target_os = "linux"))]
                     let exit_code = child.wait().ok().map(|status| status.exit_code() as i32);
 
+                    let exited_at = Instant::now();
                     if hidden {
                         daemon.handoff_exit(id, exit_code);
                     } else {
@@ -10686,10 +10721,29 @@ impl Daemon {
                         }
                         daemon.delegation_child_exited(id);
                         daemon.routine_pane_exited(id);
-                        daemon.resume_exited(id, exit_code);
                     }
                     #[cfg(target_os = "linux")]
                     drop(_reap);
+                    // A failed resume may have a quiet descendant retaining the slave.
+                    // Drain before reaping, then invoke replacement callbacks only after
+                    // publishing reap completion: they can wait for ownership themselves.
+                    let failed_resume = exit_code != Some(0)
+                        && [&daemon.wake_launches, &daemon.resume_launches].iter().any(
+                            |launches| {
+                                launches
+                                    .lock()
+                                    .expect("resume launches lock")
+                                    .get(&id)
+                                    .is_some_and(|launched| exited_at.saturating_duration_since(*launched) < RESUME_EARLY_EXIT)
+                            },
+                        );
+                    if failed_resume {
+                        if let Err(error) = daemon.drain_session_reader(id, &owned_session) {
+                            tracing::error!(
+                                "session {id}: failed resume cleanup retains ownership: {error:#}"
+                            );
+                        }
+                    }
                     {
                         let session = owned_session;
                         #[cfg(target_os = "linux")]
@@ -10707,11 +10761,20 @@ impl Daemon {
                             // Holding master excludes close/kill while the root anchor is reaped.
                             if let Backend::Pty { master, .. } = &session.backend {
                                 let mut master = master.lock().expect("master lock");
+                                if let Err(error) = child.wait() {
+                                    tracing::error!("session {id}: PTY root reap failed; ownership remains registered: {error}");
+                                    return;
+                                }
                                 *master = None;
-                                let _ = child.wait();
                             }
                         }
                         session.backend.release_pty();
+                        let (done, changed) = &*session.pty_reaped;
+                        *done.lock().expect("PTY reap lock") = true;
+                        changed.notify_all();
+                    }
+                    if !hidden {
+                        daemon.resume_exited(id, exit_code, exited_at);
                     }
                 })
                 .context("starting PTY wait worker")?;
@@ -11095,6 +11158,7 @@ impl Daemon {
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
             reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
             reader_cancel: AtomicBool::new(false),
             reader_worker: Mutex::new(None),
         });
@@ -12395,6 +12459,74 @@ impl Daemon {
         self.close_unlocked(id)
     }
 
+    fn drain_session_reader(&self, id: u32, session: &Session) -> Result<()> {
+        if session
+            .reader_worker
+            .lock()
+            .expect("reader worker lock")
+            .as_ref()
+            .is_some_and(|worker| worker.thread().id() == std::thread::current().id())
+        {
+            bail!("session {id}: PTY cleanup refused from its own reader; ownership remains registered");
+        }
+        let live = session.state.lock().expect("state lock").is_live();
+        #[cfg(not(target_os = "linux"))]
+        if !live && session.has_retained_reader() {
+            bail!("cleanup refused for exited session {id}: descendant PTY cleanup after root reap is unsupported on this platform; wait for PTY EOF");
+        }
+        #[cfg(target_os = "linux")]
+        let retained = matches!(&session.backend, Backend::Pty { master, .. } if master.lock().expect("master lock").is_some());
+        #[cfg(not(target_os = "linux"))]
+        let retained = false;
+        if live || retained {
+            session
+                .backend
+                .kill(id, session.pid, self.channel.as_deref())?;
+        }
+        session.reader_cancel.store(true, Ordering::Release);
+        #[cfg(unix)]
+        session.park.resume();
+        #[cfg(windows)]
+        session.backend.release_pty();
+        if matches!(&session.backend, Backend::Pty { .. }) {
+            let (done, changed) = &*session.reader_done;
+            let done = done.lock().expect("reader done lock");
+            let (done, _) = changed
+                .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
+                .expect("reader cleanup wait");
+            if !*done {
+                bail!("session {id}: PTY reader exceeded cleanup drain limit 1000 ms; ownership remains registered");
+            }
+            drop(done);
+            if let Some(worker) = session
+                .reader_worker
+                .lock()
+                .expect("reader worker lock")
+                .take()
+            {
+                worker
+                    .join()
+                    .map_err(|_| anyhow!("session {id}: PTY reader panicked during cleanup"))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn cleanup_session_ownership(&self, id: u32, session: &Session) -> Result<()> {
+        self.drain_session_reader(id, session)?;
+        if matches!(&session.backend, Backend::Pty { .. }) {
+            let (done, changed) = &*session.pty_reaped;
+            let done = done.lock().expect("PTY reap lock");
+            let (done, _) = changed
+                .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
+                .expect("PTY reap wait");
+            if !*done {
+                bail!("session {id}: PTY root exceeded cleanup reap limit 1000 ms; ownership remains registered");
+            }
+        }
+        Ok(())
+    }
+
     fn close_unlocked(&self, id: u32) -> Result<()> {
         self.ensure_not_sleeping(id)?;
         self.ensure_not_shell_restoring(id)?;
@@ -12418,46 +12550,7 @@ impl Daemon {
             .get(&id)
             .cloned();
         if let Some(session) = session.as_ref() {
-            let live = session.state.lock().expect("state lock").is_live();
-            #[cfg(not(target_os = "linux"))]
-            if !live && session.has_retained_reader() {
-                bail!("close refused for exited session {id}: descendant PTY cleanup after root reap is unsupported on this platform; wait for PTY EOF");
-            }
-            #[cfg(target_os = "linux")]
-            let retained = matches!(&session.backend, Backend::Pty { master, .. } if master.lock().expect("master lock").is_some());
-            #[cfg(not(target_os = "linux"))]
-            let retained = false;
-            if live || retained {
-                session
-                    .backend
-                    .kill(id, session.pid, self.channel.as_deref())?;
-            }
-            session.reader_cancel.store(true, Ordering::Release);
-            #[cfg(unix)]
-            session.park.resume();
-            #[cfg(windows)]
-            session.backend.release_pty();
-            if matches!(&session.backend, Backend::Pty { .. }) {
-                let (done, changed) = &*session.reader_done;
-                let done = done.lock().expect("reader done lock");
-                let (_done, result) = changed
-                    .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
-                    .expect("reader close wait");
-                if result.timed_out() {
-                    bail!("session {id}: PTY reader exceeded close drain limit 1000 ms");
-                }
-                drop(_done);
-                if let Some(worker) = session
-                    .reader_worker
-                    .lock()
-                    .expect("reader worker lock")
-                    .take()
-                {
-                    worker
-                        .join()
-                        .map_err(|_| anyhow!("session {id}: PTY reader panicked during close"))?;
-                }
-            }
+            self.cleanup_session_ownership(id, session)?;
         }
         if session.is_none() && !self.dead.lock().expect("dead lock").contains_key(&id) {
             bail!("unknown session id {id} (expected an active or restored session)");

@@ -86,8 +86,9 @@ PTY process groups before interrupting input delivery. Linux keeps the unreaped 
 child as an identity anchor until output-reader completion; an Exited state therefore does
 not imply that descendants or the reader have finished. Close still terminates that owned
 terminal session. Reaping and master release share the same lock as termination, so a
-recycled root PID cannot be signalled through an old backend. On other platforms, closing
-an Exited pane whose reader remains open is explicitly refused until PTY EOF. Windows
+recycled root PID cannot be signalled through an old backend. On other platforms, cleanup
+of an Exited pane whose reader remains open is explicitly refused until PTY EOF, including
+replacement and failed-Wake rollback. Windows
 close releases the master because conhost exit alone need not close the reader pipe.
 `Backend::resize` returns the dimensions actually applied.
 
@@ -250,10 +251,12 @@ since a headless VT parser has not landed — there is no parser to have partial
 
 One OS thread per session, named `pty-read-<id>`, loops on `reader.read(&mut buf)` with a
 fixed `PTY_READ_BUF` of 16 KiB. Unix polls a retained descriptor at 50 ms intervals to
-observe cancellation without relying on a signal to interrupt an unentered read. Close
-allows a final drain of available bytes for at most 100 ms and waits up to one second for
-reader completion and joins its owned worker before removing the pane. Reader thread
-identities are cleared before thread exit. Shutdown includes Exited panes with retained readers; generation handoff
+observe cancellation without relying on a signal to interrupt an unentered read. Close,
+respawn and failed-Wake rollback share ownership cleanup: a final drain of available bytes
+for at most 100 ms, up to one second for reader completion and a separate one-second root
+reap wait. Cleanup joins the reader before removing the registered pane; timeout or failure
+preserves registration for a retry. Replacement callbacks run after root reaping so they
+cannot wait on their own waiter. Reader thread identities are cleared before thread exit. Shutdown includes Exited panes with retained readers; generation handoff
 refuses those panes until they are closed because the live-session manifest cannot carry
 this ownership. There is no output coalescing: one frame per read.
 
@@ -278,7 +281,9 @@ and is disconnected so its reconnect resyncs full state (`server.rs`).
 Terminal input shares one FIFO writer per session across renderer frames, daemon callers and
 emulator replies. Admission bounds active plus queued input to 4 MiB and 128 jobs; a refusal
 names both limits, their current values and the requested write. Renderer admission never
-waits for PTY delivery, and terminal replies do not block the output reader. Accepted jobs
+waits for PTY delivery. Terminal replies use that same bounded FIFO directly, without
+waiting for the lifecycle lock held by ownership cleanup while it drains the reader.
+Accepted jobs
 continue after client disconnect; session termination interrupts active PTY delivery and
 returns explicit outcomes for queued jobs. PTY failures report the bytes already written.
 Handoff refuses while stdin delivery or its completion handling remains in flight, because
