@@ -5,8 +5,13 @@ import type { HoustonClient } from '../../houston/client'
 import type { RemoteInfo } from '../../houston/generated/RemoteInfo'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import { plainHttpOffLoopback } from '../../houston/useRemote'
-import { RemoteSection } from './RemoteSection'
+import { bindError, RemoteSection, routeKind } from './RemoteSection'
 import { CONNECT_PHONE_EVENT } from '../../connectPhone'
+
+const renderSection = (client: HoustonClient, onChangeRoute = vi.fn()) => {
+  render(<RemoteSection client={client} onChangeRoute={onChangeRoute} />)
+  return onChangeRoute
+}
 
 function info(overrides: Partial<RemoteInfo> = {}): RemoteInfo {
   return {
@@ -50,89 +55,88 @@ function fakeClient() {
 afterEach(cleanup)
 
 describe('RemoteSection', () => {
-  it('keeps address fields under Advanced and opens Connect phone while disabled', () => {
-    const { emit, asClient, client } = fakeClient()
-    const opened = vi.fn()
-    window.addEventListener(CONNECT_PHONE_EVENT, opened)
-    render(<RemoteSection client={asClient} />)
-    emit({ type: 'remote_state', remote: info() })
-    const details = screen.getByText('Advanced').closest('details')
-    expect(details?.open).toBe(false)
-    expect(details?.contains(screen.getByTestId('settings-remote-bind'))).toBe(true)
-    expect(details?.contains(screen.getByTestId('settings-remote-public-url'))).toBe(true)
-    fireEvent.click(screen.getByTestId('settings-remote-connect-phone'))
-    expect(opened).toHaveBeenCalledOnce()
-    expect(client.remoteConfigure).not.toHaveBeenCalled()
-    window.removeEventListener(CONNECT_PHONE_EVENT, opened)
-  })
-
-  it('asks for the state, then shows the listener off by default', () => {
+  it('asks for the state, then shows the listener off with its reason and disabled actions', () => {
     const { client, emit, asClient } = fakeClient()
-    render(<RemoteSection client={asClient} />)
+    renderSection(asClient)
     expect(client.remoteGet).toHaveBeenCalledOnce()
     expect(screen.getByText(/Asking the daemon/)).toBeTruthy()
-    emit({ type: 'remote_state', remote: info() })
-    expect(screen.getByTestId('settings-remote-status').textContent).toBe('Off.')
-    expect((screen.getByTestId('settings-remote-pair') as HTMLButtonElement).disabled).toBe(true)
+    emit({ type: 'remote_state', remote: info({ devices: [{ id: 7, name: 'Laptop', created_at: 1, last_seen_at: null }] }) })
+    expect(screen.getByTestId('settings-remote-status').textContent).toBe('Off. Nothing listens and nothing is sent.')
+    for (const id of ['settings-remote-connect-phone', 'settings-remote-revoke-7', 'settings-remote-ntfy-edit', 'settings-remote-delay', 'settings-remote-detail', 'settings-remote-finished']) {
+      expect((screen.getByTestId(id) as HTMLButtonElement).disabled).toBe(true)
+    }
+    expect(screen.getByText('Connect a phone').closest('[data-testid="settings-row"]')?.textContent).toContain('Turn on remote access first.')
     fireEvent.click(screen.getByTestId('settings-remote-enabled'))
     expect(client.remoteConfigure).toHaveBeenCalledWith({ enabled: true })
   })
 
   it('reports the listening address and a bind error', () => {
     const { emit, asClient } = fakeClient()
-    render(<RemoteSection client={asClient} />)
+    renderSection(asClient)
     emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
-    expect(screen.getByTestId('settings-remote-status').textContent).toContain('http://127.0.0.1:47823')
+    expect(screen.getByTestId('settings-remote-status').textContent).toBe('Listening at http://127.0.0.1:47823')
     emit({ type: 'remote_state', remote: info({ enabled: true, error: 'cannot listen on 127.0.0.1:47823: in use' }) })
     expect(screen.getByTestId('settings-remote-status').textContent).toContain('in use')
   })
 
-  it('shows the pairing code until a device pairs', () => {
-    const { client, emit, asClient } = fakeClient()
-    render(<RemoteSection client={asClient} />)
-    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
-    fireEvent.click(screen.getByTestId('settings-remote-pair'))
-    expect(client.remotePairStart).toHaveBeenCalledOnce()
-    emit({
-      type: 'remote_pairing',
-      url: 'http://127.0.0.1:47823/#pair=abc',
-      qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
-      expires_at: Date.now() + 600_000
-    })
-    expect((screen.getByTestId('settings-remote-pair-url') as HTMLInputElement).value).toBe('http://127.0.0.1:47823/#pair=abc')
-    expect(screen.getByAltText('Pairing code')).toBeTruthy()
-    emit({
-      type: 'remote_state',
-      remote: info({ enabled: true, listening: true, devices: [{ id: 1, name: 'Pixel', created_at: Date.now(), last_seen_at: Date.now() }] })
-    })
-    expect(screen.queryByTestId('settings-remote-pair-url')).toBeNull()
-    expect(screen.getByText('Pixel')).toBeTruthy()
-  })
-
-  it('clears a broadcast code when a device confirms through the dialog', () => {
+  it('derives the route and hands Change… to the caller', () => {
+    expect(routeKind({ bind: '127.0.0.1:47823', public_url: 'https://box.ts.net' })).toBe('Tailscale')
+    expect(routeKind({ bind: '0.0.0.0:47823', public_url: 'http://192.168.1.20:47823' })).toBe('Same Wi-Fi')
+    expect(routeKind({ bind: '127.0.0.1:47823', public_url: null })).toBe('Custom')
+    expect(routeKind({ bind: '100.64.0.2:47823', public_url: 'https://box.ts.net' })).toBe('Custom')
     const { emit, asClient } = fakeClient()
-    render(<RemoteSection client={asClient} />)
-    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
-    emit({ type: 'remote_pairing', url: 'https://box.ts.net/#pair=abc', qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>', expires_at: Date.now() + 600_000 })
-    expect(screen.getByAltText('Pairing code')).toBeTruthy()
-    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [{ id: 1, name: 'Phone', created_at: 1, last_seen_at: null }] }) })
-    expect(screen.queryByAltText('Pairing code')).toBeNull()
+    const onChangeRoute = renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, public_url: 'https://box.ts.net' }) })
+    expect(screen.getByTestId('settings-remote-route').textContent).toBe('Tailscale')
+    fireEvent.click(screen.getByTestId('settings-remote-route-change'))
+    expect(onChangeRoute).toHaveBeenCalledOnce()
   })
 
-  it('revokes a device only on the second press', () => {
+  it('validates the listen address before sending it', () => {
+    expect(bindError('127.0.0.1:47823')).toBeNull()
+    expect(bindError('[::1]:80')).toBeNull()
+    expect(bindError('localhost')).toContain('"localhost" must be IP:PORT')
+    expect(bindError('127.0.0.1:70000')).toContain('"127.0.0.1:70000" must be IP:PORT')
     const { client, emit, asClient } = fakeClient()
-    render(<RemoteSection client={asClient} />)
-    emit({ type: 'remote_state', remote: info({ devices: [{ id: 7, name: 'Laptop', created_at: 1, last_seen_at: null }] }) })
-    const button = screen.getByTestId('settings-remote-revoke-7')
-    fireEvent.click(button)
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info() })
+    fireEvent.click(screen.getByTestId('settings-remote-bind-edit'))
+    fireEvent.change(screen.getByTestId('settings-remote-bind-input'), { target: { value: 'nope' } })
+    fireEvent.click(screen.getByTestId('settings-remote-bind-save'))
+    expect(screen.getByText(/"nope" must be IP:PORT/)).toBeTruthy()
+    expect(client.remoteConfigure).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByTestId('settings-remote-bind-input'), { target: { value: ' 0.0.0.0:47823 ' } })
+    fireEvent.click(screen.getByTestId('settings-remote-bind-save'))
+    expect(client.remoteConfigure).toHaveBeenCalledWith({ bind: '0.0.0.0:47823' })
+    expect(screen.queryByTestId('settings-remote-bind-input')).toBeNull()
+  })
+
+  it('opens Connect phone from the Devices group', () => {
+    const { emit, asClient, client } = fakeClient()
+    const opened = vi.fn()
+    window.addEventListener(CONNECT_PHONE_EVENT, opened)
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
+    fireEvent.click(screen.getByTestId('settings-remote-connect-phone'))
+    expect(opened).toHaveBeenCalledOnce()
+    expect(client.remotePairStart).not.toHaveBeenCalled()
+    window.removeEventListener(CONNECT_PHONE_EVENT, opened)
+  })
+
+  it('lists devices and revokes only after confirmation', () => {
+    const { client, emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [{ id: 7, name: 'Laptop', created_at: 1, last_seen_at: null }] }) })
+    expect(screen.getByText('Laptop')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('settings-remote-revoke-7'))
     expect(client.remoteDeviceRevoke).not.toHaveBeenCalled()
-    fireEvent.click(button)
+    fireEvent.click(screen.getByText('Revoke', { selector: 'button *' }))
     expect(client.remoteDeviceRevoke).toHaveBeenCalledWith(7)
   })
 
   it('shows remote refusals and ignores other errors', () => {
     const { emit, asClient } = fakeClient()
-    render(<RemoteSection client={asClient} />)
+    renderSection(asClient)
     emit({ type: 'remote_state', remote: info() })
     emit({ type: 'error', message: 'unrelated', context: 'stdin' })
     expect(screen.queryByTestId('settings-remote-error')).toBeNull()
@@ -140,26 +144,31 @@ describe('RemoteSection', () => {
     expect(screen.getByTestId('settings-remote-error').textContent).toContain('remote bind')
   })
 
-  it('saves and clears the ntfy topic without showing it back', () => {
+  it('saves and removes the ntfy topic without showing it back', () => {
     const { client, emit, asClient } = fakeClient()
-    render(<RemoteSection client={asClient} />)
-    emit({ type: 'remote_state', remote: info() })
-    const input = screen.getByTestId('settings-remote-ntfy-url') as HTMLInputElement
-    fireEvent.change(input, { target: { value: ' https://ntfy.sh/secret ' } })
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
+    expect(screen.getByTestId('settings-remote-ntfy-server').textContent).toBe('Off')
+    fireEvent.click(screen.getByTestId('settings-remote-ntfy-edit'))
+    expect(screen.queryByTestId('settings-remote-ntfy-clear')).toBeNull()
+    fireEvent.change(screen.getByTestId('settings-remote-ntfy-url'), { target: { value: ' https://ntfy.sh/secret ' } })
     fireEvent.click(screen.getByTestId('settings-remote-ntfy-save'))
     expect(client.remoteConfigure).toHaveBeenCalledWith({ ntfy_url: 'https://ntfy.sh/secret' })
-    expect(input.value).toBe('')
-    emit({ type: 'remote_state', remote: info({ ntfy_server: 'https://ntfy.sh' }) })
-    expect(screen.getByText(/sending to https:\/\/ntfy.sh\./)).toBeTruthy()
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, ntfy_server: 'ntfy.sh' }) })
+    expect(screen.getByTestId('settings-remote-ntfy-server').textContent).toBe('ntfy.sh')
+    expect(document.body.textContent).not.toContain('secret')
+    fireEvent.click(screen.getByTestId('settings-remote-ntfy-edit'))
+    expect((screen.getByTestId('settings-remote-ntfy-url') as HTMLInputElement).value).toBe('')
     fireEvent.click(screen.getByTestId('settings-remote-ntfy-clear'))
     expect(client.remoteConfigure).toHaveBeenCalledWith({ ntfy_url: '' })
   })
 
-  it('warns about plain HTTP off loopback', () => {
+  it('warns about plain HTTP off loopback in the Route row', () => {
     const { emit, asClient } = fakeClient()
-    render(<RemoteSection client={asClient} />)
+    renderSection(asClient)
     emit({ type: 'remote_state', remote: info({ enabled: true, bind: '0.0.0.0:47823', public_url: 'http://192.168.1.20:47823' }) })
-    expect(screen.getByTestId('settings-remote-plain-http')).toBeTruthy()
+    expect(screen.getByTestId('settings-remote-plain-http').textContent).toContain('plain HTTP')
+    expect(screen.getByTestId('settings-remote-route').textContent).toBe('Same Wi-Fi')
     expect(plainHttpOffLoopback({ bind: '127.0.0.1:47823', public_url: null })).toBe(false)
     expect(plainHttpOffLoopback({ bind: '100.64.0.2:47823', public_url: 'https://box.ts.net' })).toBe(false)
     expect(plainHttpOffLoopback({ bind: '[::1]:47823', public_url: null })).toBe(false)
