@@ -634,7 +634,8 @@ async fn input_reaches_the_pty_and_the_screen_shows_it() {
     )
     .await;
     assert_eq!(reply.status, 200, "{}", reply.body);
-    let text = screen_until(addr, &token, info.id, "hello-from-phone").await;
+    // The tty echo lands before cat's copy; wait for both lines, not the first.
+    let text = screen_until(addr, &token, info.id, "hello-from-phone\nhello-from-phone").await;
     assert!(
         text.matches("hello-from-phone").count() >= 2,
         "the tty echoes the line and cat repeats it after Enter: {text:?}"
