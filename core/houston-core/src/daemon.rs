@@ -888,7 +888,6 @@ struct StdinJob {
     data: Vec<u8>,
     partial_after: Option<usize>,
     completion: StdinCompletion,
-    prepare: Option<Box<dyn FnOnce() + Send>>,
     admission: StdinWriteAdmission,
 }
 #[derive(Default)]
@@ -926,9 +925,6 @@ impl Session {
                         let Some(session) = session.upgrade() else {
                             break;
                         };
-                        if let Some(prepare) = job.prepare {
-                            prepare();
-                        }
                         let result = if let Some(cap) = job.partial_after {
                             let head = cap.min(job.data.len());
                             match session.backend.write_stdin_counting(id, &job.data[..head]) {
@@ -962,11 +958,13 @@ impl Session {
         self.stdin_writes_in_flight.fetch_add(1, Ordering::AcqRel);
         queue.bytes += data.len();
         queue.jobs += 1;
+        if let Some(prepare) = prepare {
+            prepare();
+        }
         let job = StdinJob {
             data: data.to_vec(),
             partial_after,
             completion,
-            prepare,
             admission: StdinWriteAdmission(Arc::clone(self)),
         };
         if let Err(error) = queue.sender.as_ref().expect("stdin sender").try_send(job) {
@@ -4327,8 +4325,8 @@ impl Daemon {
             return Err(refuse(&mut sock, reason));
         }
 
-        // Readers are parked (including ACP delivery). Drain any hook pass or operator
-        // write admitted before handoff, then retain this fence through CommitAck.
+        // Fence native episode mutations through CommitAck; the manifest below refuses
+        // any admitted stdin job whose delivery or completion remains in flight.
         let _native_input = self
             .native_input_handoff
             .lock()
@@ -11440,25 +11438,25 @@ impl Daemon {
         let prepare_daemon = Arc::clone(self);
         let prepare = operator_input.then(|| {
             Box::new(move || {
-                let _native_input = prepare_daemon
-                    .native_input_handoff
-                    .lock()
-                    .expect("native input handoff lock");
                 prepare_marked.store(
                     prepare_daemon.note_input_intervention(id),
                     Ordering::Release,
                 );
             }) as Box<dyn FnOnce() + Send>
         });
+        let completion_marked = Arc::clone(&marked);
+        let completion_session = Arc::clone(&session);
         let result = self.enqueue_stdin(
             id,
             data,
             Box::new(move |result| {
-                if marked.load(Ordering::Acquire)
+                if completion_marked.load(Ordering::Acquire)
                     && result.as_ref().is_err_and(StdinWriteError::nothing_written)
                 {
-                    session.input_intervention.store(false, Ordering::Release);
-                    session
+                    completion_session
+                        .input_intervention
+                        .store(false, Ordering::Release);
+                    completion_session
                         .input_intervention_id
                         .lock()
                         .expect("intervention input lock")
@@ -11468,6 +11466,14 @@ impl Daemon {
             }),
             prepare,
         );
+        if result.is_err() && marked.load(Ordering::Acquire) {
+            session.input_intervention.store(false, Ordering::Release);
+            session
+                .input_intervention_id
+                .lock()
+                .expect("intervention input lock")
+                .take();
+        }
         result.map_err(|error| anyhow!("{error}"))
     }
 
@@ -23218,6 +23224,66 @@ mod idle_profile_tests {
             available,
             "SQLite contention must not block waiter cancellation/supersession"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn queued_renderer_input_does_not_reacquire_a_waiting_callers_native_fence() {
+        let (daemon, state) = test_daemon();
+        let id = daemon
+            .create_session(CreateParams {
+                agent: proto::AgentKind::Custom,
+                project_dir: state.path().to_path_buf(),
+                cmd: Some(vec!["cat".into()]),
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+                model: None,
+                effort: None,
+            })
+            .unwrap()
+            .id;
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        daemon
+            .enqueue_stdin(
+                id,
+                b"first\n",
+                Box::new(move |result| {
+                    result.unwrap();
+                    ready_tx.send(()).unwrap();
+                    resume_rx.recv().unwrap();
+                }),
+                None,
+            )
+            .unwrap();
+        ready_rx.recv_timeout(Duration::from_secs(15)).unwrap();
+        daemon
+            .enqueue_renderer_stdin(id, b"renderer\n", Box::new(|result| result.unwrap()))
+            .unwrap();
+        let native_input = daemon.native_input_mutation_guard().unwrap();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let writer = daemon.clone();
+        let writing = std::thread::spawn(move || {
+            done_tx
+                .send(writer.write_stdin_counting(id, b"caller\n"))
+                .unwrap();
+        });
+        resume_tx.send(()).unwrap();
+        let result = done_rx.recv_timeout(Duration::from_secs(3));
+        drop(native_input);
+        writing.join().unwrap();
+        daemon.close(id).unwrap();
+        assert!(
+            result.is_ok(),
+            "a synchronous caller's native-input fence must not block earlier FIFO jobs"
+        );
+        result.unwrap().unwrap();
     }
 
     #[cfg(unix)]
