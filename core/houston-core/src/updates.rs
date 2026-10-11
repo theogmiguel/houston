@@ -9,13 +9,18 @@ use crate::daemon::Daemon;
 const UPDATES_CHECK_KEY: &str = "updates_check";
 // Check frequently enough to surface new releases and models within the working day.
 pub(crate) const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+// The repository's releases page. Both URLs below derive from it, so a repository rename
+// moves one line.
+macro_rules! releases_url {
+    () => {
+        "https://github.com/theogmiguel/houston/releases"
+    };
+}
 // The Tauri updater manifest the desktop app also reads. Unlike the REST API it has no
-// 60-requests-per-hour anonymous quota shared by everyone behind one public IP. One
-// constant, so a repository rename moves one line.
-const UPDATE_MANIFEST_URL: &str =
-    "https://github.com/theogmiguel/houston/releases/latest/download/latest.json";
+// 60-requests-per-hour anonymous quota shared by everyone behind one public IP.
+const UPDATE_MANIFEST_URL: &str = concat!(releases_url!(), "/latest/download/latest.json");
 // Release page for a version; the manifest carries notes but not a page URL.
-const RELEASE_PAGE_PREFIX: &str = "https://github.com/theogmiguel/houston/releases/tag/v";
+const RELEASE_PAGE_PREFIX: &str = concat!(releases_url!(), "/tag/v");
 /// Replaces the manifest URL. Tests set it so no daemon reaches the real endpoint.
 pub const UPDATE_MANIFEST_URL_ENV: &str = "HOUSTON_UPDATE_MANIFEST_URL";
 // GitHub refuses a request with no User-Agent. This one names the product and
