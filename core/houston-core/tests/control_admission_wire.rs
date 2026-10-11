@@ -88,6 +88,16 @@ async fn slow_control_bursts_bound_admission_across_disconnected_connections() {
     }
     assert_eq!(refusals, 6);
     drop(sockets);
+    // Sending Close does not mean the server has consumed the preceding burst.
+    // Hold admission saturated until every connection actually detaches.
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while daemon.any_live_conn().is_some() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("all burst connections must detach before releasing admitted work");
+    assert_eq!(fixture.started.load(Ordering::SeqCst), 64);
     assert_eq!(fixture.finished.load(Ordering::SeqCst), 0);
     fixture.release.add_permits(64);
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -98,5 +108,12 @@ async fn slow_control_bursts_bound_admission_across_disconnected_connections() {
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|error| {
+        panic!(
+            "admitted work did not settle after detach: {error}; started {}, finished {}, active {}",
+            fixture.started.load(Ordering::SeqCst),
+            fixture.finished.load(Ordering::SeqCst),
+            server::active_control_handlers_for_test(),
+        )
+    });
 }
