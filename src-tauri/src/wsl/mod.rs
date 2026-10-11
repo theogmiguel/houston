@@ -360,8 +360,13 @@ impl Inner {
         outcome.and_then(|report| accept_report(distro, report))
     }
 
-    async fn start_env(self: &Arc<Self>, distro: &str, slot: u8) -> Result<(), String> {
-        let generation = self.generation.load(Ordering::SeqCst);
+    async fn start_env(
+        self: &Arc<Self>,
+        distro: &str,
+        slot: u8,
+        generation: u64,
+    ) -> Result<(), String> {
+        self.start_gate(generation)?;
         self.envs.lock().expect("wsl envs lock").insert(
             distro.to_string(),
             Env {
@@ -659,7 +664,7 @@ impl WslManager {
         check_capabilities(&name, &inner.probe(&name).await?)?;
         let slot = config.enable(&name)?;
         config::save(&inner.opts.state_dir, &config)?;
-        if let Err(e) = inner.start_env(&name, slot).await {
+        if let Err(e) = inner.start_env(&name, slot, generation).await {
             inner.envs.lock().expect("wsl envs lock").remove(&name);
             if let Err(undo) = config
                 .disable(&name)
@@ -813,7 +818,7 @@ impl WslManager {
                 if !still_enabled {
                     return;
                 }
-                if let Err(e) = inner.start_env(&entry.name, entry.slot).await {
+                if let Err(e) = inner.start_env(&entry.name, entry.slot, generation).await {
                     eprintln!("houston-tauri: wsl {}: not started: {e}", entry.name);
                     inner.mark_error(&entry.name, entry.slot, e);
                 }
