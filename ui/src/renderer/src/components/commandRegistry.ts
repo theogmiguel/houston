@@ -1,3 +1,4 @@
+import { openConnectPhone } from '../connectPhone'
 import { mascotCommands } from '../mascot/mascotCommands'
 import type { MascotAction } from '../mascot/mascotPrefs'
 import { setSettingsOpen, setSettingsSection } from '../settingsNav'
@@ -572,6 +573,7 @@ export interface GridTarget {
 export function buildCommands(input: BuildCommandsInput): Command[] {
   const { actions, hasWorkspace, workspaces, grids, sessions = [], activeSessionId } = input
   return [
+    { id: 'remote.connect-phone', title: 'Connect phone', group: 'View', keywords: ['remote', 'pair', 'QR', 'device', 'mobile'], enabled: true, run: openConnectPhone },
     ...mascotCommands(actions),
     ...sessions.filter((session) => session.state === 'running' && !session.hidden).map((session) => ({
       id: `session.focus.${session.id}`,

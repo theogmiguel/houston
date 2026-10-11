@@ -1,3 +1,4 @@
+import { CONNECT_PHONE_EVENT } from '../connectPhone'
 import { RAIL_POSITION, getMascotPosition, setMascotPosition } from '../mascot/mascotPosition'
 import { DEFAULT_PREFS, setMascotPrefsForTests } from '../mascot/mascotPrefs'
 // @vitest-environment node
@@ -535,4 +536,19 @@ it('offers Return mascot to rail only while floating and enabled, and reverses t
     setMascotPrefsForTests({ ...DEFAULT_PREFS, enabled: false })
     expect(buildCommands(input).some(c => c.id === 'mascot.dock')).toBe(false)
   } finally { setMascotPosition(RAIL_POSITION); setMascotPrefsForTests({ ...DEFAULT_PREFS }) }
+})
+
+
+it('offers Connect phone without a workspace and dispatches the shared entry point', () => {
+  const dispatch = vi.fn()
+  vi.stubGlobal('window', { dispatchEvent: dispatch })
+  try {
+    const command = buildCommands({ actions: makeActions(), hasWorkspace: false, workspaces: [] }).find((command) => command.id === 'remote.connect-phone')!
+    expect(command.enabled).toBe(true)
+    expect(command.title).toBe('Connect phone')
+    command.run()
+    expect(dispatch.mock.calls[0][0].type).toBe(CONNECT_PHONE_EVENT)
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })

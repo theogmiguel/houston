@@ -1,3 +1,4 @@
+import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
 import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
@@ -4537,6 +4538,8 @@ export function App(): React.JSX.Element {
               onRejectRemaining={rejectRemainingHostKeys}
             />
           </AnimOut>
+
+          <ConnectPhoneHost client={readyClient(conn)} />
 
           <UpdateInstallHost
             update={update}

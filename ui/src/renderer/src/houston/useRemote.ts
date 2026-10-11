@@ -25,14 +25,22 @@ export function useRemote(client: HoustonClient | null): UseRemote {
   const [pairing, setPairing] = useState<RemotePairing | null>(null)
   const [error, setError] = useState<string | null>(null)
   const devicesAtPairing = useRef<number | null>(null)
+  const deviceCount = useRef(0)
 
   useEffect(() => {
+    devicesAtPairing.current = null
+    deviceCount.current = 0
     setRemote(null)
     setPairing(null)
     setError(null)
     if (!client) return
     const offState = client.subscribe('remote_state', (msg) => {
       setRemote(msg.remote)
+      deviceCount.current = msg.remote.devices.length
+      if (!msg.remote.enabled) {
+        devicesAtPairing.current = null
+        setPairing(null)
+      }
       const before = devicesAtPairing.current
       if (before !== null && msg.remote.devices.length > before) {
         devicesAtPairing.current = null
@@ -40,6 +48,8 @@ export function useRemote(client: HoustonClient | null): UseRemote {
       }
     })
     const offPairing = client.subscribe('remote_pairing', (msg) => {
+      // Every consumer on this connection sees a code, even when another surface requested it.
+      devicesAtPairing.current = deviceCount.current
       setPairing({ url: msg.url, qrSvg: msg.qr_svg, expiresAt: msg.expires_at })
     })
     const offError = client.subscribe('error', (msg) => {

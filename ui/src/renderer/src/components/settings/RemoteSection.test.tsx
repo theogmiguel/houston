@@ -6,6 +6,7 @@ import type { RemoteInfo } from '../../houston/generated/RemoteInfo'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import { plainHttpOffLoopback } from '../../houston/useRemote'
 import { RemoteSection } from './RemoteSection'
+import { CONNECT_PHONE_EVENT } from '../../connectPhone'
 
 function info(overrides: Partial<RemoteInfo> = {}): RemoteInfo {
   return {
@@ -49,6 +50,22 @@ function fakeClient() {
 afterEach(cleanup)
 
 describe('RemoteSection', () => {
+  it('keeps address fields under Advanced and opens Connect phone while disabled', () => {
+    const { emit, asClient, client } = fakeClient()
+    const opened = vi.fn()
+    window.addEventListener(CONNECT_PHONE_EVENT, opened)
+    render(<RemoteSection client={asClient} />)
+    emit({ type: 'remote_state', remote: info() })
+    const details = screen.getByText('Advanced').closest('details')
+    expect(details?.open).toBe(false)
+    expect(details?.contains(screen.getByTestId('settings-remote-bind'))).toBe(true)
+    expect(details?.contains(screen.getByTestId('settings-remote-public-url'))).toBe(true)
+    fireEvent.click(screen.getByTestId('settings-remote-connect-phone'))
+    expect(opened).toHaveBeenCalledOnce()
+    expect(client.remoteConfigure).not.toHaveBeenCalled()
+    window.removeEventListener(CONNECT_PHONE_EVENT, opened)
+  })
+
   it('asks for the state, then shows the listener off by default', () => {
     const { client, emit, asClient } = fakeClient()
     render(<RemoteSection client={asClient} />)
@@ -90,6 +107,16 @@ describe('RemoteSection', () => {
     })
     expect(screen.queryByTestId('settings-remote-pair-url')).toBeNull()
     expect(screen.getByText('Pixel')).toBeTruthy()
+  })
+
+  it('clears a broadcast code when a device confirms through the dialog', () => {
+    const { emit, asClient } = fakeClient()
+    render(<RemoteSection client={asClient} />)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
+    emit({ type: 'remote_pairing', url: 'https://box.ts.net/#pair=abc', qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>', expires_at: Date.now() + 600_000 })
+    expect(screen.getByAltText('Pairing code')).toBeTruthy()
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [{ id: 1, name: 'Phone', created_at: 1, last_seen_at: null }] }) })
+    expect(screen.queryByAltText('Pairing code')).toBeNull()
   })
 
   it('revokes a device only on the second press', () => {
