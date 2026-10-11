@@ -728,6 +728,47 @@ describe('surface fit scheduling', () => {
     }
   })
 
+  it('fits a pane growing in to the box it settles at, not its scaled rect', () => {
+    vi.stubGlobal('window', { devicePixelRatio: 1, setTimeout: () => 0, clearTimeout: () => {} })
+    try {
+      const resize = vi.fn()
+      const surface = Object.create(GhosttyTerminalSurface.prototype)
+      Object.assign(surface, {
+        disposed: false,
+        mount: { clientWidth: 800, clientHeight: 400 },
+        // Mid grow-in: scale(0.97) shrinks the client rect, never the layout box.
+        canvas: {
+          width: 0,
+          height: 0,
+          clientWidth: 800,
+          clientHeight: 400,
+          getBoundingClientRect: () => ({ width: 776, height: 388 })
+        },
+        context: { setTransform: vi.fn() },
+        metrics: { width: 8, height: 16 },
+        synchronizedOutput: { defer: vi.fn(() => false) },
+        canvasConfigured: false,
+        fitted: false,
+        resizeNotified: false,
+        resizeNotifyTimer: null,
+        pendingGrid: null,
+        cols: 80,
+        rows: 24,
+        core: { resize },
+        options: { onResize: vi.fn() },
+        sizeScrollbackCap: vi.fn(),
+        renderFrame: vi.fn(),
+        requestRender: vi.fn()
+      })
+
+      surface.fit()
+
+      expect(resize).toHaveBeenCalledWith(99, 24, 8, 16)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('reflows an observed resize animation once, when the PTY is told, in the same tick', () => {
     vi.useFakeTimers()
     vi.stubGlobal('window', {

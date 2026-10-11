@@ -503,8 +503,12 @@ function measureMountBox(
   canvas: HTMLCanvasElement
 ): { readonly width: number; readonly height: number } {
   const rect = canvas.getBoundingClientRect()
-  const width = rect.width || canvas.clientWidth || mount.clientWidth
-  const height = rect.height || canvas.clientHeight || mount.clientHeight
+  // A transform (a new pane grows in from 97%) shrinks the client rect but not the
+  // box the pane settles at, and ending it fires no ResizeObserver to fit again.
+  const settled = (measured: number, layout: number): number =>
+    layout && Math.abs(measured - layout) >= 1 ? layout : measured
+  const width = settled(rect.width, canvas.clientWidth) || canvas.clientWidth || mount.clientWidth
+  const height = settled(rect.height, canvas.clientHeight) || canvas.clientHeight || mount.clientHeight
   return { width, height }
 }
 
