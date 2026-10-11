@@ -1206,7 +1206,6 @@ async fn claude_enabled_advertisement_stays_under_byte_budget() {
         vec!["sh".into(), "-c".into(), "exec cat".into()],
     );
     let advertisement = rig.rpc(parent, "tools/list", json!({})).await;
-    // Measured: 27,876 B for orchestration and seventeen task_* tools at Read and write access.
-    // Keep less than 1% headroom for changes to the typed advertisement.
+    // Bound per-turn schema tokens while retaining all role-appropriate controls.
     bytes("claude/enabled", &advertisement, Some(28_000));
 }

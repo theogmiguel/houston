@@ -1,8 +1,12 @@
+import { ChildInputDetails, ParentOwnedInput } from './ChildInputDetails'
+import { attentionReason, attentionStatus } from '../sessionAttention'
+import { DelegationResults } from './DelegationResults'
+import { InstructionQueue } from './InstructionQueue'
 import { OverviewButton } from './ui/OverviewButtonRoles'
 import { useSession, useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
 import { Icon } from './ui/Icon'
 import { Tooltip } from './ui/Tooltip'
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import type { DelegationResult } from '../houston/generated/DelegationResult'
@@ -31,6 +35,12 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
     [...sessions.values()].filter((child) => child.spawned_by === parentId),
   )
   const [results, setResults] = useState<DelegationResult[]>([])
+  const [resultScope, setResultScope] = useState(parentId)
+  const pendingCursor = useRef<number | null | undefined>(null)
+  const scopedResults = resultScope === parentId ? results : []
+  const [nextMessageId, setNextMessageId] = useState<number | null>(null)
+  const [truncated, setTruncated] = useState(false)
+  const [resultsLoading, setResultsLoading] = useState(false)
   const [rows, setRows] = useState<InboxRow[]>([])
   const [counts, setCounts] = useState(new Map<string, number>())
   const [groupBy, setGroupBy] = useState<'status' | 'worktree'>('status')
@@ -42,6 +52,8 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
     })
     const offChanged = client.subscribe('inbox_changed', (message) => {
       if (!workspaces.has(message.workspace)) return
+      pendingCursor.current = null
+      setResultsLoading(true)
       client.delegationResultsList(parentId)
       setRows((current) => [...current.filter((row) => row.id !== message.row.id), message.row])
     })
@@ -53,26 +65,42 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
     return () => { offRows(); offChanged(); offGit() }
   }, [client, parentId, parent?.project_dir, children.flatMap((child) => [child.project_dir, child.worktree?.path ?? '']).sort().join('\0')])
   useEffect(() => {
-    setResults([])
-    const refresh = (): void => client.delegationResultsList(parentId)
+    const refresh = (): void => { pendingCursor.current = null; setResultsLoading(true); client.delegationResultsList(parentId) }
     const off = client.subscribe('delegation_results', (message) => {
-      if (message.parent === parentId) setResults(message.results)
+      if (message.parent !== parentId || (message.before_message_id ?? null) !== pendingCursor.current) return
+      pendingCursor.current = undefined
+      setResultScope(parentId)
+      setResultsLoading(false)
+      setNextMessageId(message.next_message_id ?? null)
+      setTruncated(message.truncated)
+      setResults((current) => {
+        const retained = message.before_message_id != null ? current : []
+        const byChild = new Map(retained.map((result) => [result.child, result]))
+        for (const result of message.results) {
+          const previous = byChild.get(result.child)
+          if (!previous || previous.message_id < result.message_id) byChild.set(result.child, result)
+        }
+        return [...byChild.values()].sort((a, b) => b.message_id - a.message_id)
+      })
     })
     refresh()
     return () => { off() }
   }, [client, parentId, children.map((child) => `${child.id}:${child.delegation?.state}:${child.delegation?.result_staged}`).join(',')])
+  useEffect(() => { setResults([]); setNextMessageId(null); setTruncated(false) }, [parentId])
   const childIds = new Set(children.map((child) => child.id))
   const addressed = rows.filter((row) => row.to_session === 0 && row.resolved_at == null && (row.reason === 'parent_dead' || (row.from_session != null && sessions.get(row.from_session)?.spawned_by === null)) && (row.original_to === parentId || row.from_session === parentId || (row.from_session != null && childIds.has(row.from_session))))
+  const waiting = children.filter((child) => childGroup(child) === 'Needs you').length
   const done = children.filter((child) => !isLive(child.state) && child.delegation?.state !== 'failed').length
   const failed = children.filter((child) => !isLive(child.state) && child.delegation?.state === 'failed').length
   const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? (a.worktree?.path ?? a.checkout_root ?? a.project_dir).localeCompare(b.worktree?.path ?? b.checkout_root ?? b.project_dir) : ['Needs you', 'Working', 'Settled'].indexOf(childGroup(a)) - ['Needs you', 'Working', 'Settled'].indexOf(childGroup(b)))
   const action = (label: string, onClick: () => void, summary = false): React.JSX.Element => <OrchestratorInlineAction summary={summary} onClick={onClick}>{label}</OrchestratorInlineAction>
   return <RosterOverview>
-    <OrchestratorHeader><StatusDot live={!!parent && isLive(parent.state)} status={parent?.status} />{parent && <OrchestratorAgentIcon agent={parent.detected_agent ?? parent.agent} />}<OrchestratorTitle>{parent?.title ?? `Orchestrator ${parentId}`}</OrchestratorTitle><OrchestratorIdentity>pane {parentId}</OrchestratorIdentity>{parent && <CompactionCount parent={parent} />}{action('Show terminal', () => selectOverviewChild(parentId, null))}</OrchestratorHeader>
+    <OrchestratorHeader><StatusDot live={!!parent && isLive(parent.state)} status={parent ? attentionStatus(parent) : undefined} />{parent && <OrchestratorAgentIcon agent={parent.detected_agent ?? parent.agent} />}<OrchestratorTitle>{parent?.title ?? `Orchestrator ${parentId}`}</OrchestratorTitle><OrchestratorIdentity>pane {parentId}</OrchestratorIdentity>{parent && <CompactionCount parent={parent} />}{action('Show terminal', () => selectOverviewChild(parentId, null))}</OrchestratorHeader>
     {(!parent || !isLive(parent.state)) && <OrchestratorSummary>Orchestrator ended.{action('Close', onClose, true)}</OrchestratorSummary>}
-    <OrchestratorSummary><OrchestratorCount needsInput={children.some((child) => childGroup(child) === 'Needs you')}>{children.length}</OrchestratorCount><Text size="small" tone="muted" className="truncate">children · {children.filter((child) => childGroup(child) === 'Needs you').length} needs you · {children.filter((child) => childGroup(child) === 'Working').length} working · {done} done · {failed} failed</Text><span className="flex-1" /><OrchestratorGroupToggle value={groupBy} onChange={setGroupBy} /></OrchestratorSummary>
-    <OrchestratorProgress>{(['Needs you', 'Working', 'Done', 'Failed'] as const).map((group) => <OrchestratorProgressSegment key={group} group={group} weight={group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length} />)}</OrchestratorProgress>
-    <OrchestratorChildList>{ordered.map((child) => <OverviewChildCard key={child.id} child={child} parent={parent} parentId={parentId} children={children} result={results.find((result) => result.child === child.id)} counts={counts} client={client} onReview={onReview} />)}</OrchestratorChildList>
+    <OrchestratorSummary><OrchestratorCount needsInput={children.some((child) => childGroup(child) === 'Needs you')}>{children.length}</OrchestratorCount><Text size="small" tone="muted" className="truncate">children · {waiting > 0 ? `${waiting} needs you · ` : ''}{children.filter((child) => childGroup(child) === 'Working').length} working · {done} done · {failed} failed</Text><span className="flex-1" /><OrchestratorGroupToggle value={groupBy} onChange={setGroupBy} /></OrchestratorSummary>
+    <OrchestratorProgress>{(['Needs you', 'Working', 'Done', 'Failed'] as const).filter((group) => group === 'Done' ? done > 0 : group === 'Failed' ? failed > 0 : children.some((child) => childGroup(child) === group)).map((group) => <OrchestratorProgressSegment key={group} group={group} weight={group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length} />)}</OrchestratorProgress>
+    <OrchestratorChildList>{ordered.map((child) => <OverviewChildCard key={child.id} child={child} parent={parent} parentId={parentId} children={children} result={scopedResults.find((result) => result.child === child.id)} counts={counts} client={client} onReview={onReview} />)}</OrchestratorChildList>
+    <DelegationResults parentId={parentId} results={scopedResults} nextMessageId={nextMessageId} truncated={truncated} loading={resultsLoading} onLoadMore={() => { if (nextMessageId != null) { pendingCursor.current = nextMessageId; setResultsLoading(true); client.delegationResultsList(parentId, nextMessageId) } }} client={client} />
     {addressed.length > 0 && <section aria-label="Addressed to you"><OrchestratorSectionLabel>Addressed to you</OrchestratorSectionLabel>{addressed.map((row) => <OrchestratorChildCard key={String(row.id)}><OrchestratorTask>{row.summary || row.body}</OrchestratorTask><OrchestratorActionRow>{action('Acknowledge', () => client.inboxAck(row.id))}{action('Resolve', () => client.inboxResolve(row.id))}</OrchestratorActionRow></OrchestratorChildCard>)}</section>}
   </RosterOverview>
 }
@@ -113,12 +141,15 @@ function OverviewChildCard({ child, parent, parentId, children, result, counts, 
         <CheckoutChips child={child} parent={parent} shared={shared} count={counts.get(child.worktree?.path ?? child.project_dir)} />
         <OrchestratorActionDock>{cardAction('Select', IconEye, () => selectOverviewChild(parentId, child.id))}{cardAction('Review changes', IconGitBranch, () => onReview(child))}{settled ? cardAction('Continue', IconRespawn, () => client.respawnSession(child.id, undefined, null, undefined, undefined, false)) : cardAction('Stop', IconStopCircle, () => client.closeSession(child.id))}</OrchestratorActionDock>
         {deliveryStatus != null && <StatusLabel status={deliveryStatus} />}
+        <ParentOwnedInput info={child} /><ChildInputDetails info={child} />
+        <InstructionQueue sessionId={child.id} client={client} onOpenPane={() => selectOverviewChild(parentId, child.id)} />
         <OrchestratorResult>{needs && <Icon glyph={IconCornerDownRight} role="label" />}<Text tone="muted">{childResultExcerpt(child, result, needs)}</Text>{needs && <OverviewButton onClick={() => selectOverviewChild(parentId, child.id)}>Answer</OverviewButton>}</OrchestratorResult>
       </OrchestratorChildCard>
 }
 
 function childResultExcerpt(child: SessionInfo, result: DelegationResult | undefined, needs: boolean): string {
-  return (needs ? child.delegation?.hold_reason : null) || result?.excerpt || result?.summary || child.delegation?.hold_reason || 'no result yet'
+  if (needs) return attentionReason(child) ?? 'Your input is needed.'
+  return result?.excerpt || result?.summary || child.delegation?.hold_reason || 'no result yet'
 }
 
 

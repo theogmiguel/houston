@@ -1,9 +1,9 @@
+import { needsUserInput } from '../sessionAttention'
 import { useSession, useSessionFamily } from '../sessionsStore'
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
 import type { SessionInfo } from '../houston/client'
-import { isLive } from '../houston/client'
 import { BadgeCount, BadgeSeparator, WaitingCount, StatusGlyph } from './ui/PopoverPanel'
 import { IconCornerDownRight, IconGitFork } from './icons'
 import { HOVER_DELAY_MS, Tooltip } from './ui/Tooltip'
@@ -45,7 +45,7 @@ export function pendingDeliveryStatus(d: DelegationInfo | null | undefined): 'Re
 }
 
 export function needsHumanInput(info: SessionInfo): boolean {
-  return isLive(info.state) && (info.status === 'needs-input' || info.children_waiting > 0 || info.delegation?.state === 'needs_input')
+  return needsUserInput(info)
 }
 
 // `unknown` is ignorance, not a verdict: the daemon restarted mid-flight, so
@@ -54,6 +54,8 @@ export function needsHumanInput(info: SessionInfo): boolean {
 export function stateWord(d: DelegationInfo): string {
   if (d.stalled && d.state === 'working') return 'stalled'
   switch (d.state) {
+    case 'asked_orchestrator':
+      return d.input_request?.kind === 'permission' ? 'Blocked · asked orchestrator' : 'Asked orchestrator'
     case 'needs_input':
       return 'needs input'
     case 'unknown':

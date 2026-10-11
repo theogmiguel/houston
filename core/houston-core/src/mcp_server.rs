@@ -378,8 +378,9 @@ impl ToolRegistry {
             return None;
         }
         Some(ToolError(format!(
-            "pane {} is a leaf child: it has `pane_submit` and `workspace_info`; \
-             `{tool}` is not available to it",
+            "pane {} is a leaf child: it has `pane_submit`, `pane_report`, `pane_reply`, `pane_wait` and `workspace_info`; \
+             `{tool}` is not available without managed descendants or spawn authority; \
+             parents retain deny, escalation and inbox management for inherited descendants",
             scope.session_id,
         )))
     }
@@ -446,11 +447,7 @@ impl BuiltinTools {
         vec![ToolSpec {
             name: "workspace_info".into(),
             title: "Get Houston workspace".into(),
-            description: "Report the Houston workspace this session belongs to, and \
-                          which request it is answering (`request_id`, the number \
-                          `pane_submit` takes). Takes no arguments: the answer is fixed by \
-                          the credential this session was spawned with and cannot be pointed \
-                          at another workspace."
+            description: "Workspace, providers, model routes and current request_id, scoped to this pane. No arguments."
                 .into(),
             input_schema: json!({ "type": "object", "properties": {}, "additionalProperties": false }),
             annotations: Annotations {

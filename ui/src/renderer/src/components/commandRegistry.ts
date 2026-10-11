@@ -1,3 +1,4 @@
+import { attentionLabel, attentionReason } from '../sessionAttention'
 import { mascotCommands } from '../mascot/mascotCommands'
 import type { MascotAction } from '../mascot/mascotPrefs'
 import { setSettingsOpen, setSettingsSection } from '../settingsNav'
@@ -577,7 +578,7 @@ export function buildCommands(input: BuildCommandsInput): Command[] {
       id: `session.focus.${session.id}`,
       title: session.title || session.codename || `Pane ${session.id}`,
       group: 'Sessions' as const,
-      keywords: [session.codename, session.cwd, session.project_dir, session.agent].filter((value): value is string => typeof value === 'string'),
+      keywords: [session.codename, session.cwd, session.project_dir, session.agent, attentionLabel(session), attentionReason(session)].filter((value): value is string => typeof value === 'string'),
       enabled: Boolean(actions.focusPane),
       session,
       subtitle: workspaces.find((workspace) => workspace.path === session.project_dir)?.name ?? session.project_dir,

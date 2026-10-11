@@ -9,8 +9,8 @@
 # lines instead of taking a TOML dependency.
 #
 # Bumping the revision means: bump it here, rebuild the WASM with
-# scripts/build-ghostty-vt-wasm.sh, re-run the patch (patch -F 0 refuses changed
-# upstream context), and re-run the P9 parity suite.
+# scripts/build-ghostty-vt-wasm.sh, which re-applies ghostty-patches/ in order
+# (patch -F 0 refuses if upstream moved a hunk), and re-run the P9 parity suite.
 
 revision = "bae2c3cdbf73f2ac33a67e4b0b7811165f0f62d4"
 source_url = "https://codeload.github.com/ghostty-org/ghostty/tar.gz/bae2c3cdbf73f2ac33a67e4b0b7811165f0f62d4"

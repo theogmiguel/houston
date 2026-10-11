@@ -1,3 +1,4 @@
+import { withInputOwner } from '../test/inputFixtures'
 // @vitest-environment jsdom
 import { fireEvent, render, screen, act, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +10,7 @@ const session = (id: number, parent: number | null, ended = false): SessionInfo 
 afterEach(cleanup)
 describe('orchestrator overview', () => {
   it('shows the compactions the orchestrator reported, or names a provider that reports none', () => {
-    const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+    const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
     const { rerender } = render(<OverviewTab parentId={1} sessions={new Map([[1, { ...session(1, null), compactions: 3 }]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
     expect(screen.getByText('3 compactions')).toBeTruthy()
     rerender(<OverviewTab parentId={1} sessions={new Map([[1, { ...session(1, null), agent: 'antigravity', compactions: null }]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
@@ -17,16 +18,16 @@ describe('orchestrator overview', () => {
   })
   it.each(['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const)('tints %s provider glyphs in child cards', (agent) => {
     const child = { ...session(2, 1, true), agent }
-    const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+    const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
     const { container } = render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
     expect(container.querySelector('.overview-child-head svg')?.parentElement?.style.color).toBe(`var(--${agent})`)
   })
   it('counts resumed live unknown children as working and offers Stop instead of Continue', () => {
     const child = session(2, 1)
     child.delegation!.state = 'unknown'
-    const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn(), closeSession: vi.fn() } as unknown as HoustonClient
+    const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn(), closeSession: vi.fn() } as unknown as HoustonClient
     render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
-    expect(screen.getByText('children · 0 needs you · 1 working · 0 done · 0 failed')).toBeTruthy()
+    expect(screen.getByText('children · 1 working · 0 done · 0 failed')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     expect(client.closeSession).toHaveBeenCalledWith(2)
@@ -35,7 +36,7 @@ describe('orchestrator overview', () => {
     const sessions = new Map([[1, session(1, null)], [2, session(2, 1, true)]])
     const respawnSession = vi.fn()
     const onReview = vi.fn()
-    const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn(), respawnSession } as unknown as HoustonClient
+    const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn(), respawnSession } as unknown as HoustonClient
     render(<OverviewTab parentId={1} sessions={sessions} client={client} onClose={vi.fn()} onReview={onReview} />)
     await waitFor(() => expect(screen.getByText('1m')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Review changes' }))
@@ -46,7 +47,7 @@ describe('orchestrator overview', () => {
   it('updates the operator queue and sends acknowledge and resolve receipts', () => {
     const handlers = new Map<string, (message: unknown) => void>()
     const inboxAck = vi.fn(), inboxResolve = vi.fn()
-    const client = { subscribe: (type: string, callback: (message: unknown) => void) => { handlers.set(type, callback); return () => handlers.delete(type) }, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn(), inboxAck, inboxResolve } as unknown as HoustonClient
+    const client = { subscribe: (type: string, callback: (message: unknown) => void) => { handlers.set(type, callback); return () => handlers.delete(type) }, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn(), inboxAck, inboxResolve } as unknown as HoustonClient
     render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, session(2, 1)]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
     const row = { id: 9n, to_session: 0, original_to: 1, from_session: 2, workspace: '/work', kind: 'result', urgent: false, superseded: 0, provisional: false, attempts: 0, reason: 'parent_dead', summary: 'Please review', body: 'result', artifacts: [], created_at: 2000n, resolved_at: null } as InboxRow
     act(() => handlers.get('inbox_changed')!({ workspace: '/work', row: { ...row, original_to: null, from_session: 1, reason: null } }))
@@ -63,12 +64,80 @@ describe('orchestrator overview', () => {
 })
 
 describe('overview checkout metadata and durable results', () => {
+  it('ignores an older pagination response once an inbox change requests a fresh page', () => {
+    const handlers = new Map<string, (message: any) => void>()
+    const client = { subscribe: (type: string, callback: (message: any) => void) => { handlers.set(type, callback); return () => handlers.delete(type) }, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+    render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
+    const result = { message_id: 40, child: 2, summary: 'Complete', excerpt: 'Current preview', created_at: 2000, ready_at: 3000, provisional: false }
+    act(() => handlers.get('delegation_results')!({ parent: 1, results: [result], truncated: true, before_message_id: null, next_message_id: 40 }))
+    fireEvent.click(screen.getByRole('button', { name: 'Load older results' }))
+    act(() => handlers.get('inbox_changed')!({ workspace: '/work', row: { id: 9, kind: 'result' } }))
+    act(() => handlers.get('delegation_results')!({ parent: 1, results: [{ ...result, child: 3, message_id: 39, excerpt: 'Stale older preview' }], before_message_id: 40, next_message_id: null }))
+    expect(screen.queryByText('Stale older preview')).toBeNull()
+    act(() => handlers.get('delegation_results')!({ parent: 1, results: [{ ...result, message_id: 41, excerpt: 'Fresh preview' }], before_message_id: null, next_message_id: null }))
+    expect(screen.getByText('Fresh preview')).toBeTruthy()
+    expect(screen.queryByText('Current preview')).toBeNull()
+  })
+
+  it('appends older pages by cursor, keeps the latest result per child, and refreshes after reconnect', () => {
+    const handlers = new Map<string, (message: unknown) => void>()
+    const delegationResultsList = vi.fn()
+    const makeClient = () => ({ subscribe: (type: string, callback: (message: unknown) => void) => {
+      handlers.set(type, callback)
+      return () => { handlers.delete(type) }
+    }, delegationResultsList, instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient)
+    const props = { parentId: 1, sessions: new Map([[1, session(1, null)]]), client: makeClient(), onClose: vi.fn(), onReview: vi.fn() }
+    const view = render(<OverviewTab {...props} />)
+    const result = { message_id: 40, child: 2, role: 'validator', summary: 'Complete', excerpt: 'Latest child result', created_at: 2000, ready_at: 3000, provisional: false, delivered_via: 'parent' }
+    act(() => handlers.get('delegation_results')!({ parent: 1, results: [result], truncated: true, before_message_id: null, next_message_id: 40 }))
+    fireEvent.click(screen.getByRole('button', { name: 'Load older results' }))
+    expect(delegationResultsList).toHaveBeenLastCalledWith(1, 40)
+    act(() => handlers.get('delegation_results')!({ parent: 1, before_message_id: 40, next_message_id: null, truncated: false, results: [{ ...result, message_id: 39, excerpt: 'Older same-child result' }, { ...result, child: 3, message_id: 38, excerpt: 'Older other-child result' }] }))
+    expect(screen.getByText('Latest child result')).toBeTruthy()
+    expect(screen.getByText('Older other-child result')).toBeTruthy()
+    expect(screen.queryByText('Older same-child result')).toBeNull()
+    const client = makeClient()
+    view.rerender(<OverviewTab {...props} client={client} />)
+    expect(screen.getByText('Latest child result')).toBeTruthy()
+    expect(delegationResultsList).toHaveBeenLastCalledWith(1)
+    act(() => handlers.get('delegation_results')!({ parent: 9, results: [], truncated: false }))
+    expect(screen.getByText('Latest child result')).toBeTruthy()
+  })
+  it('retains result previews after the child closes and reads full content only on request', () => {
+    const handlers = new Map<string, (message: unknown) => void>()
+    const delegationResultGet = vi.fn()
+    const client = {
+      subscribe: (type: string, callback: (message: unknown) => void) => {
+        handlers.set(type, callback)
+        return () => { handlers.delete(type) }
+      },
+      delegationResultsList: vi.fn(), delegationResultGet,
+      instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn()
+    } as unknown as HoustonClient
+    const parent = session(1, null)
+    const props = { parentId: 1, client, onClose: vi.fn(), onReview: vi.fn() }
+    const view = render(<OverviewTab {...props} sessions={new Map([[1, parent], [2, session(2, 1, true)]])} />)
+    const result = {
+      message_id: 42, child: 2, role: 'validator', from_codename: 'code-2', request_id: 1,
+      summary: 'Complete', excerpt: 'Validated the recorded checkout', created_at: 2000, delivered_via: 'parent'
+    }
+    act(() => handlers.get('delegation_results')!({ parent: 1, before_message_id: null, next_message_id: null, results: [result] }))
+    expect(screen.getAllByText(result.excerpt).length).toBeGreaterThan(0)
+    expect(delegationResultGet).not.toHaveBeenCalled()
+    view.rerender(<OverviewTab {...props} sessions={new Map([[1, parent]])} />)
+    expect(screen.getAllByText(result.excerpt).length).toBeGreaterThan(0)
+    expect(delegationResultGet).not.toHaveBeenCalled()
+    act(() => handlers.get('delegation_results')!({ parent: 1, before_message_id: null, next_message_id: null, results: [result] }))
+    expect(screen.getAllByText(result.excerpt)).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'View result' }))
+    expect(delegationResultGet).toHaveBeenCalledExactlyOnceWith(1, 42)
+  })
   it('groups live siblings by checkout root, excludes ended siblings and reads worktree counts', () => {
     const handlers = new Map<string, (message: any) => void>()
     const child = { ...session(2, 1), project_dir: '/work/tree/src', checkout_root: '/work/tree', worktree: { path: '/work/tree', branch: 'fix/validator', repo_common_dir: '/work/.git' } }
     const sibling = { ...session(3, 1), project_dir: '/work/tree/tests', checkout_root: '/work/tree', delegation: { ...session(3, 1).delegation!, role: 'tests' } }
     const ended = { ...session(4, 1, true), checkout_root: '/work/tree', delegation: { ...session(4, 1, true).delegation!, role: 'ended' } }
-    const client = { subscribe: (type: string, callback: (message: any) => void) => { handlers.set(type, callback); return () => handlers.delete(type) }, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+    const client = { subscribe: (type: string, callback: (message: any) => void) => { handlers.set(type, callback); return () => handlers.delete(type) }, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
     render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child], [3, sibling], [4, ended]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
     expect(screen.getByText('fix/validator')).toBeTruthy()
     expect(screen.getAllByText('shares checkout with tests')).toHaveLength(1)
@@ -80,29 +149,28 @@ describe('overview checkout metadata and durable results', () => {
 
   it('retrieves the parent result snapshot on reopen and refreshes when inbox results change', () => {
     const handlers = new Map<string, (message: any) => void>()
-    const client = { subscribe: (type: string, callback: (message: any) => void) => { handlers.set(type, callback); return () => handlers.delete(type) }, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+    const client = { subscribe: (type: string, callback: (message: any) => void) => { handlers.set(type, callback); return () => handlers.delete(type) }, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
     const props = { parentId: 1, sessions: new Map([[1, session(1, null)], [2, session(2, 1, true)]]), client, onClose: vi.fn(), onReview: vi.fn() }
     const first = render(<OverviewTab {...props} />)
     expect(client.delegationResultsList).toHaveBeenCalledWith(1)
-    const result = { child: 2, role: 'validator', summary: 'Complete', excerpt: 'Validated the recorded checkout', created_at: 2, delivered_via: 'parent' }
+    const result = { message_id: 42, provisional: false, ready_at: 1, child: 2, role: 'validator', summary: 'Complete', excerpt: 'Validated the recorded checkout', created_at: 2, delivered_via: 'parent' }
     act(() => handlers.get('delegation_results')!({ parent: 9, results: [result] }))
     expect(screen.queryByText(result.excerpt)).toBeNull()
     act(() => handlers.get('delegation_results')!({ parent: 1, results: [result] }))
-    expect(screen.getByText(result.excerpt)).toBeTruthy()
+    expect(screen.getAllByText(result.excerpt).length).toBeGreaterThan(0)
     act(() => handlers.get('inbox_changed')!({ workspace: '/work', row: { id: 9, kind: 'result' } }))
     expect(client.delegationResultsList).toHaveBeenCalledTimes(2)
     first.unmount()
     render(<OverviewTab {...props} />)
     expect(client.delegationResultsList).toHaveBeenCalledTimes(3)
     act(() => handlers.get('delegation_results')!({ parent: 1, results: [result] }))
-    expect(screen.getByText(result.excerpt)).toBeTruthy()
+    expect(screen.getAllByText(result.excerpt).length).toBeGreaterThan(0)
   })
 })
 
 it('emphasizes the child count when attention is needed and groups using a segmented track', () => {
-  const child = session(2, 1)
-  child.status = 'needs-input'
-  const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+  const child = withInputOwner(session(2, 1), 'user')
+  const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
   render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
   expect(screen.getByText('1').className).toContain('text-[var(--warn)]')
   expect(screen.getByRole('radiogroup', { name: 'Group children' })).toBeTruthy()
@@ -113,7 +181,7 @@ it('emphasizes the child count when attention is needed and groups using a segme
 
 it('shows held completed results without requesting human input', () => {
   const child = { ...session(2, 1), delegation: { ...session(2, 1).delegation!, state: 'done' as const, inbox_owed: 1, hold_reason: 'parent is working' } }
-  const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+  const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
   const { container } = render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
   expect(screen.getByText('Pending delivery')).toBeTruthy()
   expect(screen.getByText('parent is working')).toBeTruthy()

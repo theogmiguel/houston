@@ -1,3 +1,5 @@
+import { ChildInputDetails } from './ChildInputDetails'
+import { askedOrchestrator } from '../sessionAttention'
 import { DelegationButton } from './ui/DelegationButtonRoles'
 import { useEffect, useState } from 'react'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
@@ -126,7 +128,7 @@ function RecordBody({
   parent: SessionInfo | undefined
   onDeliverNow?: (session: number) => void
 }): React.JSX.Element {
-  const d = info.delegation && needsHumanInput(info) ? { ...info.delegation, state: 'needs_input' as const } : info.delegation
+  const d = info.delegation ? { ...info.delegation, state: needsHumanInput(info) ? 'needs_input' as const : askedOrchestrator(info) ? 'asked_orchestrator' as const : info.delegation.state } : info.delegation
   const parentId = d?.parent ?? info.spawned_by
   return (
     <>
@@ -159,6 +161,7 @@ function RecordBody({
               <DefinitionEntry label="superseded">{d.superseded} earlier partial result(s)</DefinitionEntry>
             )}
             <OwedRows d={d} />
+            {d.input_request && <DefinitionEntry label="request"><ChildInputDetails info={info} /></DefinitionEntry>}
             {d.hold_reason != null && (
               <DefinitionEntry label="waiting">
                 <span className="grid gap-[var(--space-1)]">
@@ -225,7 +228,7 @@ function RosterBody({
         <Eyebrow>Children · waiting first</Eyebrow>
         <CrewList>
           {crew.map((c) => {
-            const d = c.delegation && needsHumanInput(c) ? { ...c.delegation, state: 'needs_input' as const } : c.delegation
+            const d = c.delegation ? { ...c.delegation, state: needsHumanInput(c) ? 'needs_input' as const : askedOrchestrator(c) ? 'asked_orchestrator' as const : c.delegation.state } : c.delegation
             const secondary = [d?.role, sessionTaskLabel(c)].filter(
               (value): value is string => value != null
             )
@@ -263,7 +266,7 @@ function crewOf(
 }
 
 function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React.JSX.Element {
-  const d = info.delegation && needsHumanInput(info) ? { ...info.delegation, state: 'needs_input' as const } : info.delegation
+  const d = info.delegation ? { ...info.delegation, state: needsHumanInput(info) ? 'needs_input' as const : askedOrchestrator(info) ? 'asked_orchestrator' as const : info.delegation.state } : info.delegation
   const waiting = info.children_waiting
   const identity = sessionIdentity(info)
   if (kind === 'orchestrator') {

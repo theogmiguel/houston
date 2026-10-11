@@ -1,3 +1,4 @@
+import { attentionLabel, needsUserInput } from '../../sessionAttention'
 import { useSession } from '../../sessionsStore'
 import { useState } from 'react'
 import type { AgentKind } from '../../houston/generated/AgentKind'
@@ -231,9 +232,10 @@ export function TaskExecutionCard({
   branchReuse?: string | null
   pullRequestUrl?: string | null
 }): React.JSX.Element {
-  const tone = runStateTone(run.state)
   const session = useSession(run.session_id ?? -1, run.session_id != null ? sessions.get(run.session_id) : undefined)
-  const reason = run.reason ?? null
+  const parentOwned = runWaitsForOrchestrator(run, session)
+  const tone = parentOwned ? 'idle' : runStateTone(run.state)
+  const reason = parentOwned ? null : run.reason ?? null
   const outcome = review ?? null
   const retryRunId = outcome?.retryRunId ?? null
 
@@ -253,11 +255,11 @@ export function TaskExecutionCard({
   />
 
   return (
-    <TaskExecCard run needs={run.state === 'waiting_for_input'} data-testid="task-execution">
+    <TaskExecCard run needs={run.state === 'waiting_for_input' && !parentOwned} data-testid="task-execution">
       <TaskExecHeader>
         <TaskDot tone={tone} />
         <TaskExecTitle>Execution · Attempt {run.attempt}</TaskExecTitle>
-        <TaskStateText tone={tone}>{runStateLabel(run.state, run.kind)}</TaskStateText>
+        <TaskStateText tone={tone}>{parentOwned ? parentInputLabel(session) : runStateLabel(run.state, run.kind)}</TaskStateText>
         <span className="flex-1" />
         <TaskMono faint label>{formatAge(run.started_at_ms, now)}</TaskMono>
       </TaskExecHeader>
@@ -285,6 +287,14 @@ export function TaskExecutionCard({
       />
     </TaskExecCard>
   )
+}
+
+function parentInputLabel(session: SessionInfo | undefined): string {
+  return session ? attentionLabel(session) : 'Asked orchestrator'
+}
+
+function runWaitsForOrchestrator(run: TaskRun, session: SessionInfo | undefined): boolean {
+  return run.state === 'waiting_for_input' && (!session || !needsUserInput(session))
 }
 
 function TaskDrawerExecution({
@@ -317,10 +327,11 @@ function TaskDrawerExecution({
   const branch = branchReuse ? `Reuses ${branchReuse}` : run.branch ? `Reuses ${run.branch}` : 'Reuses task worktree'
   const pullRequest = pullRequestUrl ? pullRequestNumber(pullRequestUrl) : null
   const age = runIsOpen(run.state) ? formatAge(run.started_at_ms, now) : `Stopped ${formatAge(run.ended_at_ms ?? run.started_at_ms, now)} ago`
-  const status = runIsOpen(run.state) ? runStateLabel(run.state, run.kind) : 'Idle'
+  const parentOwned = runWaitsForOrchestrator(run, session)
+  const status = parentOwned ? parentInputLabel(session) : runIsOpen(run.state) ? runStateLabel(run.state, run.kind) : 'Idle'
 
   return <TaskDrawerExecutionPanel
-    tone={run.state === 'waiting_for_input' ? 'needs' : runStateTone(run.state)}
+    tone={parentOwned ? 'idle' : run.state === 'waiting_for_input' ? 'needs' : runStateTone(run.state)}
     status={status}
     metadata={`${age} · Attempt ${run.attempt} · ${run.provider === 'claude' ? 'Claude Code' : taskAgentLabel(run.provider)}`}
     reuse={`${branch} · ${pullRequest ? `pull request #${pullRequest}` : 'no pull request yet'}`}

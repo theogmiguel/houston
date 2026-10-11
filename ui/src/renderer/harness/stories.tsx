@@ -128,7 +128,7 @@ import {
   HarnessHistoryEmptyStory,
   HarnessFindingsDismissedStory
 } from './navStories'
-import { HandoffStatesStory, PaneHandoffSelectedStory, QuestionStatesStory, DelegationPanelsStory } from './orchestrationStories'
+import { HandoffStatesStory, PaneHandoffSelectedStory, QuestionStatesStory, DelegationPanelsStory, ParentFirstAttentionStory, ArchivedResultsStory, InstructionRecoveryStory, PermissionOwnershipStory } from './orchestrationStories'
 import { PaneLifecycleStory, TasksChipsStory, TasksComposerStory, TasksDetailStatesStory, TasksDetailStory, TasksListStatesStory, TasksListStory, TasksQueueEmptyStory, TasksQueueResultStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory, TasksStartStory } from './tasksStories'
 import { RenameTitleStory } from './renameTitleStories'
 
@@ -342,6 +342,10 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'orchestration/pane-handoff-selected': () => <PaneHandoffSelectedStory />,
   'orchestration/question-states': () => <QuestionStatesStory />,
   'orchestration/delegation-panels': () => <DelegationPanelsStory />,
+  'orchestration/permission-ownership': () => <PermissionOwnershipStory />,
+  'orchestration/parent-first-attention': () => <ParentFirstAttentionStory />,
+  'orchestration/archived-results': () => <ArchivedResultsStory />,
+  'orchestration/instruction-recovery': () => <InstructionRecoveryStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
   'git/worktree-stale': () => <StaleWorktreesStory />,
   'editor/markdown-preview': () => <MarkdownPreviewStory />,

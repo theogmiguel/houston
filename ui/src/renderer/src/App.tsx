@@ -1,3 +1,4 @@
+import { inputEpisode, ownUserInput } from './sessionAttention';
 import { useReportMascotLifecycle } from './mascot/mascotLifecycle'
 import { requestMascotAction } from './mascot/mascotPrefs'
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
@@ -97,6 +98,7 @@ import { useShellFocus } from "./Shell/useShellFocus";
 import { BrowserActConfirmModal } from "./components/BrowserActConfirm";
 import { useBrowserConfirm } from "./houston/browserConfirm";
 import { TERMINAL_SYNC_FIT_EVENT, TerminalTuningContext, type OutputSink } from "./pane/TerminalPane";
+import { newPaneSize, newPaneSizes } from "./pane/newPaneSize";
 import { CHROME_THEME_LABELS, THEME_LABELS } from "./theme";
 import { revealThemeFromClick } from "./themeReveal";
 import {
@@ -234,7 +236,7 @@ import {
 import { preloadable } from "./preloadable";
 import { useExitAnimation } from "./components/ui/AnimOut";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
-import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideBrowser, openSideTasks } from "./sidePanel";
+import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, TERMINAL_FOCUS_EVENT, selectOverviewChild, openSideBrowser, openSideTasks } from "./sidePanel";
 import { terminalSelection } from "./pane/terminalSelection";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
@@ -247,6 +249,7 @@ import {
   autoNameGrid,
   findEditorByPath,
   findPane,
+  findSessionGrid,
   findStackContaining,
   filesPane,
   gridStorageKey,
@@ -256,6 +259,7 @@ import {
   leaf,
   loadGrids,
   loadLayout,
+  loadWorkspaceGridLayouts,
   moveLeaf,
   preorderLeaves,
   preorderNonSessionPanes,
@@ -278,6 +282,7 @@ import {
   stackWith,
   swapLeaf,
   syncWorkspaceGrids,
+  workspaceGridSessionIds,
   respawnedSessions,
   syncSessionLayout,
   unstack,
@@ -632,6 +637,7 @@ function SessionEffects({
   visiblePaneIds,
   getNotificationContext,
   pushNotificationNotice,
+  dismissNotificationNotice,
   onDesktopDelivery
 }: {
   connection: Parameters<typeof useTrayBridge>[0]["connection"];
@@ -643,6 +649,7 @@ function SessionEffects({
   visiblePaneIds: ReadonlySet<number>;
   getNotificationContext: (session: SessionInfo) => OrchestrationNotificationContext;
   pushNotificationNotice: (notice: NoticeInput) => void;
+  dismissNotificationNotice: (code: string) => void;
   onDesktopDelivery: (allowed: boolean, error?: string) => void;
 }): null {
   const sessions = useSessions();
@@ -655,6 +662,7 @@ function SessionEffects({
     getContext: getNotificationContext,
     onFocusPane,
     pushNotice: pushNotificationNotice,
+    dismissNotice: dismissNotificationNotice,
     onDesktopDelivery
   });
   useTrayBridge({ connection, sessions, workspaces, onFocusPane });
@@ -724,7 +732,8 @@ export function App(): React.JSX.Element {
   const railPrByDir = useRailPrCache();
   const setSessions = sessionsStore.set;
   const [rosterRevision, setRosterRevision] = useState(0);
-  const [openedAttention, setOpenedAttention] = useState<ReadonlySet<number>>(() => new Set());
+  const [peekedChildren, setPeekedChildren] = useState<ReadonlyMap<number, number>>(() => new Map());
+  const [openedAttention, setOpenedAttention] = useState<ReadonlyMap<number, string>>(() => new Map());
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
   const appNotices = useNotices();
@@ -1140,6 +1149,23 @@ export function App(): React.JSX.Element {
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const sessionsRef = useMemo(() => ({ get current() { return sessionsStore.getSnapshot(); } }), [sessionsStore]);
+  useEffect(() => {
+    const selected = (event: Event): void => {
+      const id = (event as CustomEvent<{ session: number }>).detail.session;
+      const session = sessionsRef.current.get(id);
+      if (!session) return;
+      setPeekedChildren((current) => {
+        const next = new Map(current);
+        if (session.spawned_by != null) next.set(session.spawned_by, id);
+        next.delete(id);
+        return next;
+      });
+      const episode = inputEpisode(session);
+      if (episode != null) setOpenedAttention((current) => new Map(current).set(id, episode));
+    };
+    window.addEventListener(TERMINAL_FOCUS_EVENT, selected);
+    return () => window.removeEventListener(TERMINAL_FOCUS_EVENT, selected);
+  }, [sessionsRef]);
   const proactiveDiff = useProactiveDiff({
     client: readyClient(conn),
     enabled: openDiffOnAgentStop,
@@ -1149,25 +1175,24 @@ export function App(): React.JSX.Element {
     setActiveSurface,
   });
   const taskbarAttentionCount = useMemo(() => [...sessions.values()].filter((session) =>
-    session.state === 'running' && session.status === 'needs-input' &&
-    session.spawned_by == null && !session.hidden && !openedAttention.has(session.id)
+    ownUserInput(session) && !session.hidden && openedAttention.get(session.id) !== inputEpisode(session)
   ).length, [sessions, openedAttention]);
   useEffect(() => {
     void setTaskbarAttentionCount(taskbarAttentionCount).catch(() => {});
   }, [taskbarAttentionCount]);
   useEffect(() => {
     setOpenedAttention((current) => {
-      const next = new Set(current);
-      for (const id of current) {
+      const next = new Map(current);
+      for (const [id, episode] of current) {
         const session = sessions.get(id);
-        if (!session || session.status !== 'needs-input') next.delete(id);
+        if (!session || inputEpisode(session) !== episode) next.delete(id);
       }
       return next.size === current.size ? current : next;
     });
   }, [sessions]);
   useEffect(() => {
-    if (activeId === null || sessions.get(activeId)?.status !== 'needs-input') return;
-    setOpenedAttention((current) => new Set(current).add(activeId));
+    if (activeId === null || !sessions.get(activeId) || !ownUserInput(sessions.get(activeId)!)) return;
+    setOpenedAttention((current) => new Map(current).set(activeId, inputEpisode(sessions.get(activeId)!)!));
   }, [activeId, sessions]);
   const layoutsRef = useRef(layouts);
   layoutsRef.current = layouts;
@@ -1186,8 +1211,8 @@ export function App(): React.JSX.Element {
   const focusPane = (session: number): void => {
     const target = sessionsRef.current.get(session);
     if (!target) return;
-    if (target.status === 'needs-input') {
-      setOpenedAttention((current) => new Set(current).add(session));
+    if (ownUserInput(target)) {
+      setOpenedAttention((current) => new Map(current).set(session, inputEpisode(target)!));
     }
     for (const w of workspacesRef.current) {
       for (const g of gridsFor(w.path)) {
@@ -1200,6 +1225,26 @@ export function App(): React.JSX.Element {
           return;
         }
       }
+    }
+    let child = target.id;
+    let parentId = target.spawned_by;
+    const visited = new Set([child]);
+    while (parentId != null && !visited.has(parentId)) {
+      visited.add(parentId);
+      for (const w of workspacesRef.current) for (const g of gridsFor(w.path)) {
+        const key = gridStorageKey(w.path, g.id);
+        const tree = layouts.get(key)?.tree ?? loadLayout(key).tree;
+        if (!preorderSessions(tree).includes(parentId)) continue;
+        const parent = parentId;
+        const selectedChild = child;
+        setSelectedWs(w.path);
+        handleSelectGrid(w.path, g.id);
+        setActiveId(parent);
+        window.setTimeout(() => selectOverviewChild(parent, selectedChild), 0);
+        return;
+      }
+      child = parentId;
+      parentId = sessionsRef.current.get(parentId)?.spawned_by;
     }
     setSelectedWs(target.project_dir);
     setActiveId(session);
@@ -1748,16 +1793,14 @@ export function App(): React.JSX.Element {
     for (const w of orderedWorkspaces) {
       const grids = gridsFor(w.path);
       const active = activeGridId(w.path);
-      const wsSessionIds = [...sessions.values()]
-        .filter((sess) => sess.project_dir === w.path || sessions.get(sess.spawned_by ?? -1)?.project_dir === w.path)
-        .map((sess) => sess.id)
-        .sort((a, b) => a - b);
+      const current = loadWorkspaceGridLayouts(w.path, grids, layouts);
+      const wsSessionIds = workspaceGridSessionIds(w.path, grids, current, replacedSessions, sessions);
       const synced = syncWorkspaceGrids(
         w.path,
         grids,
         active,
         wsSessionIds,
-        layouts,
+        current,
         replacedSessions,
         wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
       );
@@ -1875,16 +1918,14 @@ export function App(): React.JSX.Element {
       for (const w of workspaces) {
         const grids = gridsFor(w.path);
         const active = activeGridId(w.path);
-        const wsSessionIds = [...sessions.values()]
-          .filter((s) => s.project_dir === w.path || sessions.get(s.spawned_by ?? -1)?.project_dir === w.path)
-          .map((s) => s.id)
-          .sort((a, b) => a - b);
+        const current = loadWorkspaceGridLayouts(w.path, grids, prev);
+        const wsSessionIds = workspaceGridSessionIds(w.path, grids, current, replacedSessions, sessions);
         const synced = syncWorkspaceGrids(
           w.path,
           grids,
           active,
           wsSessionIds,
-          prev,
+          current,
           replacedSessions,
           wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
         );
@@ -2047,14 +2088,18 @@ export function App(): React.JSX.Element {
   }
   for (const id of preorderSessions(currentTree)) mountedGridSessionIds.add(id);
   const moveChildToGrid = (parent: number, child: number): void => {
-    const path = sessions.get(parent)?.project_dir;
-    if (!path) return;
-    const key = gridStorageKey(path, activeGridId(path));
+    const destination = findSessionGrid(parent,
+      new Map(orderedWorkspaces.map((workspace) => [workspace.path, gridsFor(workspace.path)])),
+      new Map([...warmLayouts, ...layouts]));
+    if (!destination) return;
+    const { workspace: path, gridId, key } = destination;
     setLayouts((prev) => {
       const cur = prev.get(key) ?? warmLayouts.get(key) ?? loadLayout(key);
-      const tree = cur.tree ? insertBeside(cur.tree, parent, leaf(child), "right") : leaf(child);
+      if (!cur.tree || findPane(cur.tree, child)) return prev;
+      const tree = insertBeside(cur.tree, parent, leaf(child), "right");
       return new Map(prev).set(key, { ...cur, tree });
     });
+    setSelectedGridByWs((prev) => new Map(prev).set(path, gridId));
     setSelectedWs(path);
     setActiveId(child);
   };
@@ -2138,9 +2183,15 @@ export function App(): React.JSX.Element {
     (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
       if (conn.kind !== "ready" || selectedWs === "all") return;
       setExpandedId(null);
+      const sizes = newPaneSizes({
+        current: currentTreeRef.current,
+        target: target === "new-grid" ? null : currentTreeRef.current,
+        count: slots.length,
+      });
       if (target === "new-grid") handleAddGrid(selectedWs);
-      for (const slot of slots) {
+      for (const [index, slot] of slots.entries()) {
         conn.client.createSession({
+          ...sizes[index],
           agent: slot.agent,
           project_dir: selectedWs,
           shell_integration: shellIntegration,
@@ -2275,6 +2326,10 @@ export function App(): React.JSX.Element {
         ts: Date.now(),
       });
       conn.client.createSession({
+        ...newPaneSize(currentTreeRef.current, currentTreeRef.current, {
+          anchor: session,
+          side,
+        }),
         agent: "shell",
         project_dir: info.project_dir,
         cwd_from: session,
@@ -2824,6 +2879,7 @@ export function App(): React.JSX.Element {
     }
     setExpandedId(null);
     conn.client.createSession({
+      ...newPaneSize(currentTreeRef.current, currentTreeRef.current),
       agent: "shell",
       project_dir: selectedWs,
       shell_integration: shellIntegration,
@@ -2836,6 +2892,7 @@ export function App(): React.JSX.Element {
       if (selectedWs === "all") return;
       setExpandedId(null);
       conn.client.createSession({
+        ...newPaneSize(currentTreeRef.current, currentTreeRef.current),
         agent,
         project_dir: selectedWs,
         shell_integration: shellIntegration,
@@ -2858,6 +2915,7 @@ export function App(): React.JSX.Element {
     setSelectedWorkspace: setSelectedWs,
     setExpandedId,
     splitIntents,
+    currentTreeRef,
   })
 
   const [addPanePopover, setAddPanePopover] = useState<{
@@ -2907,6 +2965,10 @@ export function App(): React.JSX.Element {
         ts: Date.now(),
       });
       conn.client.createSession({
+        ...newPaneSize(currentTreeRef.current, currentTreeRef.current, {
+          anchor: source.session,
+          side: "right",
+        }),
         agent,
         project_dir: info.project_dir,
         cwd_from: source.session,
@@ -3298,14 +3360,43 @@ export function App(): React.JSX.Element {
     stepGrid,
   ]);
 
-  const visiblePaneIds = useMemo(() => new Set(preorderSessions(currentTree)), [currentTree]);
-  const getNotificationContext = useCallback((session: SessionInfo): OrchestrationNotificationContext => {
-    const workspace = workspaces.find((entry) => entry.path === session.project_dir);
-    const grid = gridsFor(session.project_dir).find((entry) => {
-      const key = gridStorageKey(session.project_dir, entry.id);
-      const tree = layouts.get(key)?.tree ?? warmLayouts.get(key)?.tree ?? loadLayout(key).tree;
-      return preorderSessions(tree).includes(session.id);
+  const visiblePaneIds = useMemo(() => {
+    const ids = new Set(preorderSessions(currentTree));
+    for (const [parent, child] of peekedChildren) if (ids.has(parent) && sessions.has(child)) ids.add(child);
+    return ids;
+  }, [currentTree, peekedChildren, sessions]);
+  useEffect(() => {
+    setOpenedAttention((current) => {
+      const next = new Map(current);
+      for (const [parent, child] of peekedChildren) {
+        const session = sessions.get(child);
+        if (!visiblePaneIds.has(parent) || !session) continue;
+        const episode = inputEpisode(session);
+        if (episode != null) next.set(child, episode);
+      }
+      return [...next].every(([id, episode]) => current.get(id) === episode) ? current : next;
     });
+  }, [peekedChildren, sessions, visiblePaneIds]);
+  useEffect(() => {
+    setPeekedChildren((current) => {
+      const next = new Map([...current].filter(([parent, child]) => sessions.has(parent) && sessions.get(child)?.spawned_by === parent));
+      return next.size === current.size ? current : next;
+    });
+  }, [sessions]);
+  const getNotificationContext = useCallback((session: SessionInfo): OrchestrationNotificationContext => {
+    const gridSets = new Map(workspaces.map((workspace) => [workspace.path, gridsFor(workspace.path)]));
+    const allLayouts = new Map([...warmLayouts, ...layouts]);
+    let owner: SessionInfo | undefined = session;
+    let location = findSessionGrid(owner.id, gridSets, allLayouts);
+    const seen = new Set<number>();
+    while (!location && owner?.spawned_by != null && !seen.has(owner.id)) {
+      seen.add(owner.id);
+      owner = sessionsRef.current.get(owner.spawned_by);
+      if (owner) location = findSessionGrid(owner.id, gridSets, allLayouts);
+    }
+    const path = location?.workspace ?? session.project_dir;
+    const workspace = workspaces.find((entry) => entry.path === path);
+    const grid = location ? gridsFor(location.workspace).find((entry) => entry.id === location.gridId) : undefined;
     const agent = session.detected_agent ?? session.agent;
     const agentName = agent === 'claude' ? 'Claude Code' : agent === 'opencode' ? 'OpenCode' : agent[0].toUpperCase() + agent.slice(1);
     return {
@@ -3464,6 +3555,7 @@ export function App(): React.JSX.Element {
         visiblePaneIds={visiblePaneIds}
         getNotificationContext={getNotificationContext}
         pushNotificationNotice={orchestrationNotices.push}
+        dismissNotificationNotice={orchestrationNotices.dismiss}
         onDesktopDelivery={(allowed, error) => setDesktopNotificationDelivery({ allowed, error })}
       />
     <TerminalTuningContext.Provider value={terminalTuning}>
@@ -4184,6 +4276,10 @@ export function App(): React.JSX.Element {
                         if (conn.kind !== "ready" || selectedWs === "all")
                           return;
                         conn.client.createSession({
+                          ...newPaneSize(
+                            currentTreeRef.current,
+                            currentTreeRef.current,
+                          ),
                           agent: acpAgent.agent,
                           project_dir: selectedWs,
                           acp: acpAgent.slug,

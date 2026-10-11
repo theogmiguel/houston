@@ -1,4 +1,4 @@
-# Wire protocol v131
+# Wire protocol v133
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -148,7 +148,12 @@ failure not given a typed refusal comes back as `error`.
 | `workspace_action_set` | `workspace`, `action: WorkspaceAction` | `workspace_actions` (bcast), or `workspace_action_refused` |
 | `workspace_action_delete` | `workspace`, `id` | `workspace_actions` (bcast) |
 | `orchestration_caps_set` | `max_live_children`, `max_spawn_depth` (both `1..=ORCHESTRATION_CAP_MAX`) | `orchestration_state` (bcast); out of range is an `error` naming cap and value |
-| `delegation_results_list` | `parent: u32` (nonzero) | `delegation_results` (direct); latest durable result per child for this parent, including delivered, staged and operator-routed rows; authenticated `/ws` clients only |
+| `delegation_results_list` | `parent: u32` (nonzero), `before_message_id?: i64` (positive or null) | `delegation_results` (direct); latest retained result per child for this parent, including delivered, staged and operator-routed rows; authenticated `/ws` clients only |
+| `delegation_result_get` | `parent: u32` (nonzero), `message_id: i64` (positive) | `delegation_result_detail` or `delegation_result_refused` (direct); full retained result and artifacts scoped to the parent or its session origin; reads do not consume it |
+| `instruction_queue_list` | `session: u32` | `instruction_queue` or `instruction_refused` (direct); bounded current delivery state and history |
+| `instruction_get` | `session: u32`, `instruction_id: string` | `instruction_detail` or `instruction_refused` (direct); explicit full-body inspection |
+| `instruction_cancel` | `session: u32`, `instruction_id: string` | `instruction_queue` or `instruction_refused` (direct); cancels an untouched queued/held instruction or an inactive uncertain delivery |
+| `instruction_resume` | `session: u32`, `instruction_id: string` | `instruction_queue` or `instruction_refused` (direct); explicitly resumes an untouched recovery-held instruction after target/conversation validation |
 | `inbox_list` | `workspace` | `inbox_rows` (direct) — every row addressed to the operator for that workspace |
 | `inbox_ack` | `id` | `inbox_changed` (bcast); `error` naming the id if no operator row matched. Opening a row is delivery, not resolution |
 | `inbox_resolve` | `id` | `inbox_changed` (bcast); `error` naming the id if no row matched. Writes `reason: "operator"` |
@@ -398,9 +403,14 @@ every refusal names the setting.
 | `session_cwd` | `session`, `cwd` | direct reply to `session_cwd` |
 | `session_cwds` | `entries: SessionCwdEntry[]` | direct reply to `session_cwds` |
 | `session_running_procs` | `entries: SessionProcsEntry[]` | direct reply to `session_running_procs` |
-| `live_children_changed` | `session`, `live_children`, `children_waiting` | bcast after any transition that can change either of a parent's child counts — a child spawning, dying or respawning moves the first; a child reporting needs-input or being released moves the second; a stall warning alone does not raise this count |
+| `live_children_changed` | `session`, `live_children`, `children_waiting` | bcast after a transition that changes child liveness or user-owned input; parent-owned asks and stall warnings never increase `children_waiting` |
 | `delegation_changed` | `session` (the CHILD), `delegation: DelegationInfo` | bcast after every write to a delegation record — spawn, state transition, stall flag, staging, flush, close. The whole record, so a client replaces rather than patches |
-| `delegation_results` | `parent`, `results: DelegationResult[]`, `truncated: bool` | direct; newest first (timestamp then inbox id), at most 256 children; `truncated` reports omitted older children |
+| `delegation_results` | `parent`, `results: DelegationResult[]`, `truncated: bool`, `before_message_id?`, `next_message_id?` | direct; descending message id, at most 256 children per page; nullable continuation and echoed cursor support pagination after child close |
+| `delegation_result_detail` | `parent`, `row: InboxRow` | direct; full scoped stored result |
+| `delegation_result_refused` | `parent`, `message_id`, `message` | direct; correlates a failed detail lookup |
+| `instruction_queue` | `snapshot: InstructionQueueSnapshot` | direct and bcast after committed queue changes |
+| `instruction_detail` | `detail: InstructionDetail` | direct; body returned only on explicit inspection |
+| `instruction_refused` | `session`, `instruction_id: string | null`, `message` | direct; correlates queue/detail/control failures without claiming acceptance |
 | `inbox_rows` | `workspace`, `rows: InboxRow[]` | v96: direct reply to `inbox_list` — every row addressed to the operator for that workspace, oldest first |
 | `inbox_changed` | `workspace`, `row: InboxRow` | v96: bcast on every write to a row — produced, released, delivered, confirmed, re-addressed, acked, resolved. The whole row, so a client replaces rather than patches |
 | `idle` | `request`, `session`, `idle` | bcast — a `wait_for_idle` resolved (`true` = quiet window elapsed or not running; `false` = timeout while output flowed) |
@@ -522,12 +532,32 @@ RestoreReason      kebab: circuit-breaker | invalid-cwd | ssh | budget | previou
 
 SessionWorktree    path (checkout root), branch (Houston-recorded branch), repo_common_dir.
                    Only Houston-recorded worktrees are exposed; base_branch is not recorded.
-DelegationResult   child, role: string | null (sender snapshot), summary, excerpt (at most
+DelegationResult   message_id, request_id?, from_codename?, child, role: string | null (sender snapshot),
+                   ready_at?, provisional, reason?, summary, excerpt (at most
                    DELEGATION_RESULT_EXCERPT_MAX_CHARS = 400 Unicode characters), created_at
                    (epoch milliseconds), delivered_via: InboxDeliveredVia | null.
                    DELEGATION_RESULTS_MAX_ROWS = 256; reads never acknowledge or consume rows.
                    Parent and child ids follow session_origin across respawn. Rows remain
                    subject to the existing inbox retention policy.
+InstructionMode    snake: queue | steer | restart
+InstructionState   snake: queued | held_after_recovery | delivered | cancelled | uncertain
+InstructionInfo    id, mode: InstructionMode, state: InstructionState, request_id: u32 | null,
+                   preview (480 Unicode characters), created_at, updated_at (epoch ms), hold_reason: string | null
+InstructionQueueSnapshot session, queued_count, held_count, uncertain_count, hold_reason: string | null,
+                   items: InstructionInfo[] (bounded 32), truncated
+InstructionDetail  session, instruction: InstructionInfo, body (bounded 64 KiB)
+InstructionAcceptance instruction_id, accepted, state: InstructionState, request_id: u32 | null,
+                   hold_reason: string | null; acceptance is durable, delivery does not prove task completion
+ChildInputKind     snake: question | blocked | permission | unclassified
+ChildInputOwner    snake: orchestrator | user
+ChildInputEscalationReason snake: explicit | parent_turn_ended | parent_unavailable
+ChildInputRequest  id (stable opaque string), kind: ChildInputKind, owner: ChildInputOwner,
+                   reason: string | null, escalation_reason: ChildInputEscalationReason | null,
+                   escalation_detail: string | null, permission?: PermissionInputDetails
+PermissionInputDetails provider: AgentKind, command: ProviderReportedText, block_reason: ProviderReportedText
+ProviderReportedText tagged state: reported{text: string} | not_reported{provider: AgentKind}
+PaneDenyRequest     child: u32, episode_id (opaque input episode id, distinct from worker request_id)
+PaneEscalateRequest child: u32, reason (nonblank, at most 2000 Unicode characters)
 SessionInfo        checkout_root?: string | null (Git root, including ordinary shared checkouts),
                    worktree?: SessionWorktree | null; absent for SSH/non-repository sessions.
                    Group live sibling children by checkout_root to identify shared checkouts.
@@ -556,7 +586,7 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    absent when its provider reports none),
                    task? (v124: the SessionTask this pane is bound to — the newest run recorded
                    with its id, at a claimed or Started task — so a header chip needs no Tasks tab)
-DelegationInfo     started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
+DelegationInfo     input_request?: ChildInputRequest, started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
                    last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
                    still owes its parent, the correction link, what its CLI cannot report, and
@@ -565,7 +595,7 @@ DelegationInfo     started_at (epoch ms), settled_at? (epoch ms), retained_until
                    The record a pane is the CHILD of; `None`
                    for an operator-spawned pane. Deliberately NOT the record's `brief` (8 000 chars, on
                    every roster broadcast) — that stays MCP-only, on `pane_get`'s `DelegationView`
-DelegationState    snake: spawning | working | needs_input | done | failed | cancelled | unknown
+DelegationState    snake: spawning | working | asked_orchestrator | needs_input | done | failed | cancelled | unknown
                    (the last four terminal; `unknown` is a daemon restart mid-flight, not a failure)
 TurnEndSource      kebab: stop-hook | acp-turn | quiet-settle
                    Effective completion source: stop-hook requires a lifecycle hook received
@@ -575,9 +605,11 @@ InboxRow           v96: id, to_session, original_to?, workspace, from_session?, 
                    kind: InboxKind, urgent, summary, body, artifacts, superseded, provisional, corrects?,
                    reason?, created_at, ready_at?, resolved_at?, delivered_at?, delivered_via?:
                    InboxDeliveredVia, confirmed_at?, attempts (delivery attempts by any door),
-                   from_codename?, from_role? (bounded sender identity snapshots). The renderer's copy of a `pane_inbox` row —
+                   from_codename?, from_role? (bounded sender identity snapshots),
+                   reply_to?: i64 (v133: stable original question id for a reply). The renderer's copy of a `pane_inbox` row —
                    drops `reserved_at`/`delivery_id` (door internals)
 InboxKind          snake: restored | result | no_handback | needs_input | exited | stalled | operator_note | mail
+                   | progress | question | blocked | reply (v133)
 InboxDeliveredVia  snake: wait | stop_hook | paste | operator
 RoleRoute          pattern (1..128 bytes), model (1..128 bytes), effort?: ChatEffort
 Workspace          path, name
@@ -586,7 +618,7 @@ TagInfo            v100: id, name (trimmed, non-empty, ≤ MAX_TAG_NAME_LEN (32)
                    fixed, because the chrome's 4.5:1 ink/ground gate can only clear colors
                    somebody measured). One registry row; sessions reference it by id
 RecoverySummary    respawned, deferred, crashed
-SessionPolicy      idle_reap_enabled (default false), idle_reap_minutes (default 15)
+SessionPolicy      idle_reap_enabled (default false), idle_reap_minutes (default 15), claude_fullscreen (default true; v132)
 UpdatePolicy       check (default true) — off means no request is ever made, and the one
                    request carries no version, OS or identifier
 UpdateRelease      version, notes (GitHub's release body verbatim; empty when the release
@@ -1123,6 +1155,24 @@ Settings → Agent status → Codex repair path. The same cause is recorded in a
 The legacy nullable `warning` string remains available. Spawn warnings return to the
 caller; shared-checkout and worktree-trust warnings do not create inbox rows.
 
+`POST /orchestrate/deny` accepts `PaneDenyRequest {child,episode_id}` with a pane
+bearer credential. The episode id is 1–64 ASCII letters, digits, colons, underscores or
+hyphens (for example `provider:12:1`) and is distinct from a worker request number. Unknown fields and invalid
+values refuse with the offending value and expected shape. MCP `pane_deny` and
+`hs-pane deny CHILD --episode-id ID` use the same daemon path. The caller must manage
+the target descendant; spawning need not be enabled. Only a current parent-owned
+permission episode with a verified provider denial path can receive bytes. Successful
+write does not resolve the episode: provider evidence is still required.
+
+`POST /orchestrate/escalate` accepts `PaneEscalateRequest {child,reason}` through the
+same ancestry scope. Reason is nonblank and at most 2000 Unicode characters; it
+becomes `ChildInputRequest.escalation_detail` for the parent's recommendation. Every
+actual permission prompt starts parent-owned in all launch modes. Pending permissions
+refuse all `pane_send_keys`; the parent denies or escalates and only the operator may
+approve. Escalation transfers ownership to User; accepted Stop/ACP turn end or parent
+unavailability is the safety net, never quiet-settle. Provider permission text stays
+bounded and redacted, with explicit `not_reported` markers when evidence is missing.
+
 `POST /inbox/tool-boundary`, authenticated with a pane token, returns `{text: string | null}`
 for Claude and Codex PostToolUse context. These supplementary hints do not acknowledge,
 resolve or consume the durable inbox rows.
@@ -1147,6 +1197,8 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 133 | **Children ask the orchestrator before alerting the user, retain instruction queues and expose full results after close.** `InboxKind` gains progress/question/blocked/reply and `InboxRow.reply_to?`. `DelegationState.asked_orchestrator` and `DelegationInfo.input_request?` type input ownership, stable identity, bounded redacted provider permission evidence and escalation reasons. Every actual permission is parent-first; parents deny or escalate and only the operator may approve; only user-owned asks count in `children_waiting`. MCP/CLI gain report, reply, deny, escalate and instruction list/get/cancel/resume. Typed instruction snapshots, acceptance and detail record queued/held/delivered/cancelled/uncertain states. Result previews gain stable message/request identity and readiness; result pagination and scoped full-result detail/refusal support archived children. All new `/ws` messages and payloads are defined above. |
+| 132 | **Claude panes use the fullscreen TUI by default.** `SessionPolicy.claude_fullscreen` defaults to true and can be changed through `session_policy_set`; the launcher sets the fullscreen environment flag when enabled. |
 | 131 | **A folder opened from a WSL shell is focused in the app.** New `workspace_focus{path}` server message, broadcast after the new `/manage` verb `workspace_open` (`ManageRequest.path?`, `ManageWorkspaceOpenOk`) adds a workspace; `MANAGE_VERSION` stays 1 |
 | 129 | **Checkout, activity and pull-request surfaces gain their wire data.** `SessionInfo.checkout?` (`SessionCheckout`, `CheckoutKind`) and `SessionInfo.activity?` (`SessionActivity`) have matching `session_checkout` and `session_activity` broadcasts. `PrInfo` and `PrListItem` gain title, branch, diffstat, creation, comment, review-request and mergeability details; `pr_list` gains `PrSort`; `pr_status_batch` requests one existing `pr_status` reply per directory. `PrCheck.run_id` and `pr_check_log` expose a tail capped at 40 lines and 16 KiB. Tag colors accept any six-digit hexadecimal `#rrggbb`, stored lowercase; `TAG_PALETTE` remains the preset list. `session_attach` gains `from_offset?` and `generation?`, so a client that already holds a session's output asks only for the bytes after it |
 | 128 | Manual Sleep/Wake adds `SessionState.sleeping`, retained hook-fed cues and context, `session_sleep`, `session_wake`, `session_memory_get`, `session_updated` and `session_memory`. Sleeping panes do not auto-restore. Task Projects, Delivery/Slice metadata, blockers, readiness, revision-bound read-only Plan and per-workspace GitHub Issues/Notion connectors add the corresponding `task_project_*`, `task_domain_*`, `task_plan_*` and `task_tracker_*` messages and shared shapes above. Manual `task_start` gains `override_readiness`; automatic starts never bypass readiness. External snapshots preserve both conflicting values until an explicit resolution. |

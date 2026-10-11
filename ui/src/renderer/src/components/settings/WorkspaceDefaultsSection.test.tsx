@@ -75,4 +75,35 @@ describe('WorkspaceDefaultsSection', () => {
     })
     expect(onStaleWorktreeDaysSet).toHaveBeenCalledWith(45)
   })
+
+  it('turning Claude fullscreen off keeps the rest of the session policy', () => {
+    const onSessionPolicy = vi.fn()
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+    act(() => {
+      root!.render(
+        <WorkspaceDefaultsSection
+          onRestoreBudgetSet={() => {}}
+          onRestoreResumeSet={() => {}}
+          onWorktreeCleanupSet={() => {}}
+          onWorktreeIdleRemovalDaysSet={() => {}}
+          openLinksInPane={false}
+          onOpenLinksInPane={() => {}}
+          hostInfo={null}
+          sessionPolicy={{ idle_reap_enabled: true, idle_reap_minutes: 30, claude_fullscreen: true }}
+          onSessionPolicy={onSessionPolicy}
+        />
+      )
+    })
+
+    const toggle = document.querySelector<HTMLButtonElement>('[data-testid="claude-fullscreen-switch"]')!
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    act(() => toggle.click())
+    expect(onSessionPolicy).toHaveBeenCalledWith({
+      idle_reap_enabled: true,
+      idle_reap_minutes: 30,
+      claude_fullscreen: false
+    })
+  })
 })
