@@ -515,6 +515,10 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 Ok(Outbound::Frame(_)) => {
                 }
                 Ok(Outbound::Control(json)) => {
+                    if let Some(session) = removed_session(&json) {
+                        frames_wanted.forget(session);
+                        daemon.conn_set_visibility(conn_id, session, true);
+                    }
                     if sink.send(Message::Text(json.as_str().to_owned().into())).await.is_err() {
                         break;
                     }
@@ -553,7 +557,7 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 Some(Ok(Message::Binary(buf))) => {
                     if let Some((id, payload)) = proto::decode_stdin_frame(&buf) {
                         daemon.note_operator_keystroke(id, payload);
-                        if let Err(e) = daemon.write_stdin_from_renderer(id, payload) {
+                        if let Err(e) = daemon.enqueue_stdin_from_renderer(id, payload, conn_id) {
                             send_error(&mut sink, e.to_string(), Some("stdin".into())).await;
                         }
                     }
@@ -596,9 +600,23 @@ async fn flush_frames(sink: &mut (impl SinkExt<Message> + Unpin), taps: &AttachS
     !fed || sink.flush().await.is_ok()
 }
 
+fn removed_session(json: &str) -> Option<u32> {
+    #[derive(serde::Deserialize)]
+    struct Header<'a> {
+        #[serde(rename = "type", borrow)]
+        kind: &'a str,
+        session: Option<u32>,
+    }
+    let header: Header<'_> = serde_json::from_str(json).ok()?;
+    (header.kind == "session_removed")
+        .then_some(header.session)
+        .flatten()
+}
+
 struct AttachSet {
     taps: std::collections::HashMap<u32, Arc<FrameTap>>,
     visible: std::collections::HashSet<u32>,
+    attempts: std::collections::HashMap<u32, u32>,
     daemon: Arc<Daemon>,
     wake: Arc<Notify>,
 }
@@ -608,13 +626,14 @@ impl AttachSet {
         Self {
             taps: std::collections::HashMap::new(),
             visible: std::collections::HashSet::new(),
+            attempts: std::collections::HashMap::new(),
             daemon,
             wake,
         }
     }
 
     fn insert(&mut self, session: u32) {
-        if !self.visible.insert(session) {
+        if !self.daemon.has_session(session) || !self.visible.insert(session) {
             return;
         }
         let tap = self
@@ -630,17 +649,29 @@ impl AttachSet {
         if !self.visible.remove(&session) {
             return;
         }
-        if let Some(tap) = self.taps.get(&session) {
-            self.daemon.frame_taps().unregister(tap);
+        if let Some(tap) = self.taps.remove(&session) {
+            self.daemon.frame_taps().unregister(&tap);
+            tap.clear();
         }
         self.daemon.ws_detach(session);
     }
 
+    fn forget(&mut self, session: u32) {
+        self.remove(session);
+        self.attempts.remove(&session);
+    }
+
     fn attach(&mut self, session: u32, bytes_seen: Option<u64>) -> u32 {
         self.insert(session);
+        let attempts = &mut self.attempts;
         self.taps
             .get(&session)
-            .map(|tap| tap.attach(bytes_seen))
+            .map(|tap| {
+                tap.attach(bytes_seen);
+                let attempt = attempts.entry(session).or_default();
+                *attempt = attempt.saturating_add(1);
+                *attempt
+            })
             .unwrap_or(0)
     }
 
@@ -3295,6 +3326,10 @@ async fn dispatch(
             Ok(())
         }
         proto::ClientMsg::SessionVisibility { session, visible } => {
+            anyhow::ensure!(
+                daemon.has_session(session),
+                "unknown session id {session} (expected an active or restored session)"
+            );
             let frames_wanted =
                 frames_wanted.expect("an attach-family message runs on the connection task");
             if visible {
@@ -5641,22 +5676,138 @@ mod frame_flush_tests {
         }
     }
 
+    struct LiveSession {
+        daemon: Arc<Daemon>,
+        id: u32,
+        _state: tempfile::TempDir,
+    }
+
+    impl LiveSession {
+        fn new() -> Self {
+            let state = tempfile::tempdir().unwrap();
+            let daemon = Daemon::new(crate::daemon::DaemonConfig {
+                token: "token".into(),
+                db_path: state.path().join("test.db"),
+            })
+            .unwrap();
+            let id = daemon
+                .create_session(crate::daemon::CreateParams {
+                    agent: proto::AgentKind::Custom,
+                    project_dir: state.path().to_path_buf(),
+                    cmd: Some(if cfg!(windows) {
+                        vec!["cmd.exe".into(), "/d".into(), "/c".into(), "more".into()]
+                    } else {
+                        vec!["cat".into()]
+                    }),
+                    cols: 80,
+                    rows: 24,
+                    cwd_from: None,
+                    shell_integration: false,
+                    auto_approve: false,
+                    acp: None,
+                    profile: None,
+                    prompt: None,
+                    model: None,
+                    effort: None,
+                })
+                .unwrap()
+                .id;
+            Self {
+                daemon,
+                id,
+                _state: state,
+            }
+        }
+    }
+
+    impl Drop for LiveSession {
+        fn drop(&mut self) {
+            let _ = self.daemon.close(self.id);
+        }
+    }
+
+    #[test]
+    fn hiding_releases_queued_bytes_and_keeps_attach_attempts_and_cutoffs() {
+        let fixture = LiveSession::new();
+        let id = fixture.id;
+        let mut taps = AttachSet::new(Arc::clone(&fixture.daemon), Arc::new(Notify::new()));
+        assert_eq!(taps.attach(id, Some(0)), 1);
+        let tap = Arc::clone(taps.taps.get(&id).unwrap());
+        let payload = vec![b'x'; 16 * 1024];
+        let cutoff = 1024 * 1024;
+        for offset in (0..cutoff).step_by(payload.len()) {
+            tap.offer(
+                offset as u64,
+                payload.len(),
+                &Arc::new(proto::encode_output_frame(id, offset as u64, &payload)),
+            );
+        }
+        assert_eq!(tap.queued_bytes_for_test(), cutoff);
+        taps.remove(id);
+        assert_eq!(
+            tap.queued_bytes_for_test(),
+            0,
+            "hide immediately clears queued output"
+        );
+        assert!(!taps.taps.contains_key(&id));
+        assert_eq!(
+            taps.attach(id, Some(cutoff as u64)),
+            2,
+            "reattach numbers remain monotonic for the live session"
+        );
+        let shown = taps.taps.get(&id).unwrap();
+        shown.offer(
+            0,
+            8,
+            &Arc::new(proto::encode_output_frame(id, 0, b"old-data")),
+        );
+        shown.offer(
+            cutoff as u64,
+            3,
+            &Arc::new(proto::encode_output_frame(id, cutoff as u64, b"new")),
+        );
+        let frames = shown.drain();
+        assert_eq!(frames.len(), 1);
+        let Queued::Frame(frame) = &frames[0] else {
+            panic!("expected output")
+        };
+        assert_eq!(
+            proto::decode_output_frame(frame).unwrap(),
+            (id, cutoff as u64, b"new".as_slice())
+        );
+        shown.offer(
+            cutoff as u64 + 3,
+            4,
+            &Arc::new(proto::encode_output_frame(id, cutoff as u64 + 3, b"held")),
+        );
+        let retained = Arc::clone(shown);
+        fixture.daemon.close(id).unwrap();
+        assert_eq!(
+            retained.queued_bytes_for_test(),
+            0,
+            "close clears output even before the connection receives removal"
+        );
+        taps.forget(id);
+        assert!(!taps.attempts.contains_key(&id));
+        taps.insert(id + 1000);
+        assert!(
+            !taps.taps.contains_key(&(id + 1000)),
+            "invalid IDs do not allocate taps"
+        );
+    }
+
     #[tokio::test]
     async fn drained_frames_are_fed_in_order_before_a_single_flush() {
-        let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(crate::daemon::DaemonConfig {
-            token: "token".into(),
-            db_path: state.path().join("test.db"),
-        })
-        .unwrap();
-        let mut taps = AttachSet::new(daemon, Arc::new(Notify::new()));
-        taps.insert(7);
-        let tap = taps.taps.get(&7).unwrap();
+        let fixture = LiveSession::new();
+        let id = fixture.id;
+        let mut taps = AttachSet::new(Arc::clone(&fixture.daemon), Arc::new(Notify::new()));
+        taps.insert(id);
+        let tap = taps.taps.get(&id).unwrap();
         for (offset, payload) in [(0, b"first".as_slice()), (10, b"second".as_slice())] {
             tap.offer(
                 offset,
                 payload.len(),
-                &Arc::new(proto::encode_output_frame(7, offset, payload)),
+                &Arc::new(proto::encode_output_frame(id, offset, payload)),
             );
         }
 

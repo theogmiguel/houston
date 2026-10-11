@@ -143,6 +143,11 @@ impl FrameTap {
         self.wake.notify_one();
     }
 
+    #[cfg(test)]
+    pub(crate) fn queued_bytes_for_test(&self) -> usize {
+        self.state.lock().expect("frame tap lock").bytes
+    }
+
     pub fn clear(&self) {
         let mut s = self.state.lock().expect("frame tap lock");
         s.queue.clear();
@@ -293,12 +298,31 @@ impl FrameRegistry {
         }
     }
 
-    pub fn forget_session(&self, session: u32) {
+    #[doc(hidden)]
+    pub fn taps_for_test(&self, session: u32) -> Vec<std::sync::Weak<FrameTap>> {
         self.inner
             .lock()
             .expect("frame registry lock")
             .by_session
+            .get(&session)
+            .into_iter()
+            .flatten()
+            .map(Arc::downgrade)
+            .collect()
+    }
+
+    pub fn forget_session(&self, session: u32) {
+        let taps = self
+            .inner
+            .lock()
+            .expect("frame registry lock")
+            .by_session
             .remove(&session);
+        if let Some(taps) = taps {
+            for tap in taps {
+                tap.clear();
+            }
+        }
     }
 
     pub fn offer(&self, session: u32, offset: u64, payload_len: usize, frame: &Arc<Vec<u8>>) {
