@@ -1626,6 +1626,11 @@ impl Db {
         conn.pragma_update(None, "temp_store", "MEMORY")
             .with_context(|| format!("setting temp_store on {}", path.display()))?;
         conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS hook_compaction_receipts (
+            identity TEXT PRIMARY KEY, event_ms INTEGER NOT NULL
+        )",
+        )?;
+        conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS orchestration_receipts (
             caller INTEGER NOT NULL,
             client_request_id TEXT NOT NULL,
@@ -5441,6 +5446,49 @@ impl Db {
             rusqlite::params![id],
             |row| row.get(0),
         )?)
+    }
+
+    /// Receipt and counter commit together; expired drop files cannot be replayed.
+    pub fn session_note_compaction_once(
+        &self,
+        id: u32,
+        identity: &str,
+        event_ms: u64,
+        now: u64,
+    ) -> Result<Option<u32>> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM hook_compaction_receipts WHERE event_ms < ?1",
+            [now.saturating_sub(crate::hook_drop::MAX_AGE_MS) as i64],
+        )?;
+        if tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM hook_compaction_receipts WHERE identity = ?1)",
+            [identity],
+            |row| row.get::<_, bool>(0),
+        )? {
+            return Ok(None);
+        }
+        // At capacity keep the drop retryable rather than evicting a live receipt.
+        let count: u32 =
+            tx.query_row("SELECT COUNT(*) FROM hook_compaction_receipts", [], |row| {
+                row.get(0)
+            })?;
+        anyhow::ensure!(
+            count < 4096,
+            "hook compaction receipt limit 4096 reached (actual {count}); retry compaction later"
+        );
+        tx.execute(
+            "INSERT INTO hook_compaction_receipts VALUES (?1, ?2)",
+            rusqlite::params![identity, event_ms as i64],
+        )?;
+        let count = tx.query_row(
+            "UPDATE sessions SET compactions = compactions + 1 WHERE id = ?1 RETURNING compactions",
+            [id],
+            |row| row.get(0),
+        )?;
+        tx.commit()?;
+        Ok(Some(count))
     }
 
     pub fn session_compactions(&self, id: u32) -> Result<u32> {

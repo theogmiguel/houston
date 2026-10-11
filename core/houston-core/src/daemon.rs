@@ -12695,6 +12695,7 @@ impl Daemon {
     fn apply_hook_drop(
         self: &Arc<Self>,
         d: &crate::hook_drop::HookDrop,
+        receipt: Option<(&str, u64)>,
     ) -> crate::hook_drop::DropVerdict {
         if self.ensure_not_sleeping(d.session).is_err() {
             return crate::hook_drop::DropVerdict::Retry;
@@ -12870,7 +12871,9 @@ impl Daemon {
                 && d.subagent_type.is_none()
                 && d.agent_id.is_none()
             {
-                self.note_compaction(d.session);
+                if !self.note_compaction(d.session, receipt) {
+                    return crate::hook_drop::DropVerdict::Retry;
+                }
             }
         }
         if !d.internal_prompt
@@ -14088,13 +14091,20 @@ impl Daemon {
         let (mut applied, mut all_listed) = (0usize, true);
         for dir in &dirs {
             let state = states.entry(dir.clone()).or_default();
-            let out = crate::hook_drop::run_pass(dir, state, now, pass, |d| {
-                let verdict = self.apply_hook_drop(d);
-                if verdict == crate::hook_drop::DropVerdict::Applied {
-                    self.remote_feed_hook(d);
-                }
-                verdict
-            });
+            let out = crate::hook_drop::run_pass_with_io(
+                dir,
+                state,
+                now,
+                pass,
+                |d, identity, event_ms| {
+                    let verdict = self.apply_hook_drop(d, Some((identity, event_ms)));
+                    if verdict == crate::hook_drop::DropVerdict::Applied {
+                        self.remote_feed_hook(d);
+                    }
+                    verdict
+                },
+                |path| std::fs::remove_file(path),
+            );
             applied += out.applied;
             all_listed &= out.listed_ok;
             if out.collected > 0 {
@@ -20769,12 +20779,22 @@ impl Daemon {
         }
     }
 
-    fn note_compaction(self: &Arc<Self>, session: u32) {
-        let compactions = match self.db.session_note_compaction(session) {
-            Ok(n) => n,
+    fn note_compaction(self: &Arc<Self>, session: u32, receipt: Option<(&str, u64)>) -> bool {
+        let result = match receipt {
+            Some((identity, event_ms)) => self.db.session_note_compaction_once(
+                session,
+                identity,
+                event_ms,
+                crate::hook_drop::now_ms(),
+            ),
+            None => self.db.session_note_compaction(session).map(Some),
+        };
+        let compactions = match result {
+            Ok(Some(n)) => n,
+            Ok(None) => return true,
             Err(e) => {
                 tracing::warn!("counting a compaction for session {session}: {e:#}");
-                return;
+                return false;
             }
         };
         self.broadcast_control(&proto::ServerMsg::CompactionsChanged {
@@ -20789,7 +20809,7 @@ impl Daemon {
                 .delegations_for_parent(session)
                 .map_or(true, |children| children.is_empty())
         {
-            return;
+            return true;
         }
         let workspace = self.current_workspace(session).unwrap_or_default();
         if let Err(e) = self.inbox_write(
@@ -20808,6 +20828,7 @@ impl Daemon {
         ) {
             tracing::warn!("offering a handoff to pane {session}: {e:#}");
         }
+        true
     }
 
     fn compactions_of(&self, info: &proto::SessionInfo) -> Option<u32> {
