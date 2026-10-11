@@ -1005,6 +1005,41 @@ fn main() {
                         ),
                     }
                 }
+                if let Ok(raw) = std::env::var("TR_BENCH_BACKGROUND_PAINT_MS") {
+                    match raw.parse::<f64>() {
+                        Ok(ms) if ms.is_finite() && ms >= 0.0 => {
+                            if let Err(err) = webview
+                                .eval(format!("window.__TR_BACKGROUND_PAINT_MS = {ms};"))
+                            {
+                                eprintln!(
+                                    "houston-tauri: background-paint override eval failed: {err}"
+                                );
+                            }
+                        }
+                        _ => eprintln!(
+                            "houston-tauri: TR_BENCH_BACKGROUND_PAINT_MS={raw:?} is not a \
+                             non-negative number of milliseconds -- using the built-in default"
+                        ),
+                    }
+                }
+                if let Ok(raw) = std::env::var("TR_BENCH_HIDDEN_POLICY") {
+                    match raw.as_str() {
+                        "attached" | "hibernate" | "hibernate-snapshot" => {
+                            if let Err(err) = webview
+                                .eval(format!("window.__TR_HIDDEN_PANE_POLICY__ = '{raw}';"))
+                            {
+                                eprintln!(
+                                    "houston-tauri: hidden-pane policy override eval failed: {err}"
+                                );
+                            }
+                        }
+                        _ => eprintln!(
+                            "houston-tauri: TR_BENCH_HIDDEN_POLICY={raw:?} is not one of \
+                             \"attached\", \"hibernate\" or \"hibernate-snapshot\" -- using \
+                             the built-in default"
+                        ),
+                    }
+                }
                 let _ = webview.set_focus();
                 if let Err(err) = webview.eval(include_str!("bench_harness.js")) {
                     eprintln!("houston-tauri: bench harness eval failed: {err}");

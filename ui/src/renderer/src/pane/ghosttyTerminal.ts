@@ -298,6 +298,10 @@ export class GhosttyPaneTerminal implements PaneTerminal {
     return this.surface?.getBufferText() ?? ''
   }
 
+  paintCount(): number {
+    return this.surface?.paintCount() ?? 0
+  }
+
   private async attach(): Promise<void> {
     try {
       const surface = await this.init.load(this.init.host, {

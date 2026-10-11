@@ -23,6 +23,13 @@ export interface WsGapStats {
 const wsGapStats: WsGapStats = { gaps: 0, reattaches: 0 }
 ;(globalThis as unknown as { __trWsGapStats__: WsGapStats }).__trWsGapStats__ = wsGapStats
 
+type FrameTap = (session: number, payload: Uint8Array) => void
+
+/** Set only by the bench harness, to time when output reaches the renderer. */
+function benchFrameTap(): FrameTap | undefined {
+  return (globalThis as { __trBenchFrameTap__?: FrameTap }).__trBenchFrameTap__
+}
+
 export class WsTerminalTransport implements TerminalTransport {
   private encoder = new TextEncoder()
 
@@ -268,7 +275,9 @@ export class WsTerminalTransport implements TerminalTransport {
       return
     }
     const frame = decodeOutputFrame(buf)
-    if (frame) this.onFrame(frame.session, frame.offset, frame.payload)
+    if (!frame) return
+    benchFrameTap()?.(frame.session, frame.payload)
+    this.onFrame(frame.session, frame.offset, frame.payload)
   }
 
   dispose(): void {

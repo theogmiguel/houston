@@ -1,10 +1,14 @@
 //! The daemon's terminal emulator (libghostty-vt), one per session. Live output still
 //! streams as raw bytes -- this is for attach, terminal queries and `pane_read --source
-//! screen`; it is never a status source (see docs/internals/invariants.md).
+//! screen`. OSC 7501 callbacks receive declared program status, never rendered cells.
 
-// Bound on how much history a reattach snapshot carries; VT_HISTORY_BYTES is the real
-// cap on live retention (the library evicts by bytes, not rows).
+// History rows a daemon handoff snapshot carries, kept low for the manifest byte cap;
+// VT_HISTORY_BYTES is the real cap on live retention (the library evicts by bytes).
 pub const VT_HISTORY_ROWS: u32 = 1000;
+
+// Row bound for a client attach snapshot: high enough that VT_HISTORY_BYTES decides what a
+// reattaching pane gets back. A full history at 32 columns measured ~230 KiB, ~5 ms import.
+pub const VT_ATTACH_HISTORY_ROWS: u32 = 10_000;
 
 // Per-session scrollback budget (bytes, not rows -- the library evicts by page).
 // Sized so twelve live sessions stay under the daemon's RSS ceiling.
@@ -22,10 +26,32 @@ mod imp {
     pub const LIBRARY_REVISION: &str = env!("HOUSTON_GHOSTTY_VT_REVISION");
 
     #[repr(C)]
-    struct TerminalOptions {
-        cols: u16,
-        rows: u16,
-        max_scrollback: usize,
+    struct GhosttyString {
+        ptr: *const u8,
+        len: usize,
+    }
+
+    #[repr(C)]
+    struct ProgramStatus {
+        size: usize,
+        state: i32,
+        kind: i32,
+        progress: i8,
+        id: GhosttyString,
+        app: GhosttyString,
+        title: GhosttyString,
+        message: GhosttyString,
+    }
+
+    #[repr(C)]
+    struct SemanticPrompt {
+        size: usize,
+        kind: i32,
+        prompt_kind: i32,
+        has_exit_code: bool,
+        exit_code: i32,
+        command: GhosttyString,
+        error: GhosttyString,
     }
 
     #[repr(C)]
@@ -67,6 +93,15 @@ mod imp {
     const FORMAT_PLAIN: i32 = 0;
     const OPT_USERDATA: i32 = 0;
     const OPT_WRITE_PTY: i32 = 1;
+    const OPT_SCROLLBACK_BYTES: i32 = 27;
+    const OPT_SEMANTIC_PROMPT: i32 = 42;
+    const OPT_PROGRAM_STATUS: i32 = 46;
+
+    // The protocol requires at least 64 records; keep only ids and declared states.
+    const MAX_STATUS_RECORDS: usize = 64;
+
+    type ProgramStatusFn = unsafe extern "C" fn(*mut c_void, *mut c_void, *const ProgramStatus);
+    type SemanticPromptFn = unsafe extern "C" fn(*mut c_void, *mut c_void, *const SemanticPrompt);
 
     type WritePtyFn = unsafe extern "C" fn(*mut c_void, *mut c_void, *const u8, usize);
 
@@ -74,7 +109,8 @@ mod imp {
         fn ghostty_terminal_new(
             allocator: *const c_void,
             out: *mut *mut c_void,
-            options: TerminalOptions,
+            cols: u16,
+            rows: u16,
         ) -> i32;
         fn ghostty_terminal_free(terminal: *mut c_void);
         fn ghostty_terminal_resize(
@@ -126,7 +162,78 @@ mod imp {
         unsafe { houston_vt_snapshot_format_version() }
     }
 
-    struct Replies(Vec<u8>);
+    #[derive(Default)]
+    struct Replies {
+        terminal: Vec<u8>,
+        program_status: Vec<u8>,
+        records: std::collections::VecDeque<(String, i32)>,
+        status_changed: bool,
+    }
+
+    impl Replies {
+        fn status(&self) -> houston_protocol::AgentStatus {
+            use houston_protocol::AgentStatus;
+            if self.records.iter().any(|(_, state)| *state == 3) {
+                AgentStatus::NeedsInput
+            } else if self.records.iter().any(|(_, state)| *state == 1) {
+                AgentStatus::Working
+            } else if self.records.is_empty() {
+                AgentStatus::Unavailable
+            } else {
+                AgentStatus::Idle
+            }
+        }
+    }
+
+    // SAFETY: Ghostty passes the boxed userdata and validated, borrowed report
+    // synchronously. Copy only the bounded id; no message text becomes a decision.
+    unsafe extern "C" fn program_status(
+        _terminal: *mut c_void,
+        userdata: *mut c_void,
+        report: *const ProgramStatus,
+    ) {
+        let replies = unsafe { &mut *(userdata as *mut Replies) };
+        let report = unsafe { &*report };
+        let id = if report.id.len == 0 {
+            ""
+        } else {
+            // SAFETY: the callback owns this validated UTF-8 slice for its duration.
+            std::str::from_utf8(unsafe { std::slice::from_raw_parts(report.id.ptr, report.id.len) })
+                .expect("Ghostty validates program status ids")
+        };
+        if report.state == 5 {
+            replies.records.retain(|(key, _)| {
+                !id.is_empty()
+                    && key != id
+                    && !key
+                        .strip_prefix(id)
+                        .is_some_and(|tail| tail.starts_with('/'))
+            });
+        } else {
+            replies.records.retain(|(key, _)| key != id);
+            if replies.records.len() == MAX_STATUS_RECORDS {
+                replies.records.pop_front();
+            }
+            replies.records.push_back((id.to_owned(), report.state));
+        }
+        replies.status_changed = true;
+    }
+
+    // SAFETY: the event and boxed userdata are borrowed for this synchronous call.
+    unsafe extern "C" fn semantic_prompt(
+        _terminal: *mut c_void,
+        userdata: *mut c_void,
+        event: *const SemanticPrompt,
+    ) {
+        let replies = unsafe { &mut *(userdata as *mut Replies) };
+        if unsafe { (*event).kind } == 1 {
+            let before = replies.records.len();
+            replies
+                .records
+                .retain(|(_, state)| !matches!(state, 0 | 1 | 3));
+            replies.status_changed |= replies.records.len() != before;
+        }
+    }
 
     // SAFETY (extern "C" callback): the library calls this with the userdata pointer
     // installed via OPT_USERDATA and a valid `data`/`len` describing what it wrote.
@@ -142,9 +249,12 @@ mod imp {
         // SAFETY: `userdata` is the live `&mut Replies` installed in `new`, valid for
         // this synchronous call; `data`/`len` describe a buffer the library just wrote.
         let replies = unsafe { &mut *(userdata as *mut Replies) };
-        replies
-            .0
-            .extend_from_slice(unsafe { std::slice::from_raw_parts(data, len) });
+        let bytes = unsafe { std::slice::from_raw_parts(data, len) };
+        if bytes == b"\x1b]7501;?\x07" || bytes == b"\x1b]7501;?\x1b\\" {
+            replies.program_status.extend_from_slice(bytes);
+        } else {
+            replies.terminal.extend_from_slice(bytes);
+        }
     }
 
     pub struct Emulator {
@@ -165,19 +275,9 @@ mod imp {
             let cols = cols.max(1);
             let rows = rows.max(1);
             let mut terminal: *mut c_void = std::ptr::null_mut();
-            // SAFETY: `terminal` is a valid out-pointer; the options struct is passed
-            // by value and matches GhosttyTerminalOptions's layout.
-            let result = unsafe {
-                ghostty_terminal_new(
-                    std::ptr::null(),
-                    &mut terminal,
-                    TerminalOptions {
-                        cols,
-                        rows,
-                        max_scrollback: history_bytes,
-                    },
-                )
-            };
+            // SAFETY: `terminal` is a valid out-pointer and dimensions are nonzero.
+            let result =
+                unsafe { ghostty_terminal_new(std::ptr::null(), &mut terminal, cols, rows) };
             if result != RESULT_SUCCESS || terminal.is_null() {
                 anyhow::bail!(
                     "libghostty-vt refused a {cols}x{rows} terminal with a {history_bytes}-byte \
@@ -186,7 +286,7 @@ mod imp {
             }
             let mut me = Self {
                 terminal,
-                replies: Box::new(Replies(Vec::new())),
+                replies: Box::default(),
                 pending: Vec::new(),
                 pending_truncated: false,
                 cols,
@@ -199,6 +299,21 @@ mod imp {
                 ghostty_terminal_set(me.terminal, OPT_USERDATA, userdata);
                 ghostty_terminal_set(
                     me.terminal,
+                    OPT_SCROLLBACK_BYTES,
+                    &history_bytes as *const usize as *const c_void,
+                );
+                ghostty_terminal_set(
+                    me.terminal,
+                    OPT_PROGRAM_STATUS,
+                    program_status as ProgramStatusFn as *const c_void,
+                );
+                ghostty_terminal_set(
+                    me.terminal,
+                    OPT_SEMANTIC_PROMPT,
+                    semantic_prompt as SemanticPromptFn as *const c_void,
+                );
+                ghostty_terminal_set(
+                    me.terminal,
                     OPT_WRITE_PTY,
                     write_pty as WritePtyFn as *const c_void,
                 );
@@ -206,7 +321,7 @@ mod imp {
             // Matches the renderer's own construction sequence (ghostty/core.ts), so a
             // snapshot taken here paints the same there. Safe only here: it runs before
             // any PTY byte, so it cannot land inside a sequence already in flight.
-            me.feed(b"\x1b]133;A;redraw=1\x07");
+            me.feed(b"\x1b]133;A;redraw=1\x07\x1b]133;C\x07");
             Ok(me)
         }
 
@@ -214,12 +329,20 @@ mod imp {
             if chunk.is_empty() {
                 return Vec::new();
             }
-            self.replies.0.clear();
+            self.replies.terminal.clear();
             // SAFETY: `chunk` is valid for the duration of the call, and the library
             // documents this as accepting arbitrary bytes.
             unsafe { ghostty_terminal_vt_write(self.terminal, chunk.as_ptr(), chunk.len()) };
             self.track_pending(chunk);
-            std::mem::take(&mut self.replies.0)
+            std::mem::take(&mut self.replies.terminal)
+        }
+
+        pub fn take_program_status_replies(&mut self) -> Vec<u8> {
+            std::mem::take(&mut self.replies.program_status)
+        }
+
+        pub fn take_program_status(&mut self) -> Option<houston_protocol::AgentStatus> {
+            std::mem::take(&mut self.replies.status_changed).then(|| self.replies.status())
         }
 
         // Keeps `pending` equal to the in-flight escape sequence's bytes, so a snapshot
@@ -423,6 +546,14 @@ mod imp {
             Vec::new()
         }
 
+        pub fn take_program_status_replies(&mut self) -> Vec<u8> {
+            Vec::new()
+        }
+
+        pub fn take_program_status(&mut self) -> Option<houston_protocol::AgentStatus> {
+            None
+        }
+
         pub fn resize(&mut self, _cols: u16, _rows: u16) {}
 
         pub fn snapshot(&mut self, _history_rows: u32) -> anyhow::Result<Vec<u8>> {
@@ -451,6 +582,72 @@ mod tests {
 
     fn emulator(cols: u16, rows: u16) -> Emulator {
         Emulator::new(cols, rows, VT_HISTORY_BYTES).expect("the pinned library builds a terminal")
+    }
+
+    #[test]
+    fn program_status_probe_is_separate_from_other_terminal_replies() {
+        let mut vt = emulator(80, 24);
+        assert!(vt.feed(b"\x1b]750").is_empty());
+        assert!(vt.feed(b"1;?\x1b\\").is_empty());
+        assert_eq!(vt.take_program_status_replies(), b"\x1b]7501;?\x1b\\");
+        assert_eq!(vt.take_program_status(), None);
+        assert!(!vt.feed(b"\x1b[6n\x1b]7501;?\x07").is_empty());
+        assert_eq!(vt.take_program_status_replies(), b"\x1b]7501;?\x07");
+    }
+
+    #[test]
+    fn program_status_records_clear_by_hierarchy_and_expire_at_shell_prompt() {
+        use houston_protocol::AgentStatus::*;
+        let mut vt = emulator(80, 24);
+        vt.feed(b"\x1b]7501;state=working\x07\x1b]7501;state=blocked:id=build/test\x07");
+        assert_eq!(vt.take_program_status(), Some(NeedsInput));
+        vt.feed(b"\x1b]7501;state=clear:id=build\x07");
+        assert_eq!(vt.take_program_status(), Some(Working));
+        vt.feed(b"\x1b]7501;state=done:id=result\x07\x1b]133;A\x07");
+        assert_eq!(vt.take_program_status(), Some(Idle));
+        vt.feed(b"\x1b]7501;state=clear\x07");
+        assert_eq!(vt.take_program_status(), Some(Unavailable));
+        vt.feed(b"\x1b]7501;state=error\x07\x1b[!p");
+        assert_eq!(vt.take_program_status(), Some(Idle));
+        vt.feed(b"\x1bc");
+        assert_eq!(vt.take_program_status(), Some(Unavailable));
+    }
+
+    #[test]
+    fn invalid_and_oversized_program_status_reports_change_nothing() {
+        use houston_protocol::AgentStatus::*;
+        let mut vt = emulator(80, 24);
+        vt.feed(b"\x1b]7501;state=working\x07");
+        assert_eq!(vt.take_program_status(), Some(Working));
+        for body in [
+            "state=unknown",
+            "state=idle:id=a//b",
+            "state=idle:msg=YQpi",
+            "state=idle:title=/w==",
+            "state=idle:msg=a",
+        ] {
+            vt.feed(format!("\x1b]7501;{body}\x07").as_bytes());
+            assert_eq!(vt.take_program_status(), None, "{body}");
+        }
+        vt.feed(format!("\x1b]7501;state=idle:msg={}\x07", "QUFB".repeat(684)).as_bytes());
+        assert_eq!(vt.take_program_status(), None);
+        vt.feed(format!("\x1b]7501;state=idle:{}\x07", "x".repeat(4096)).as_bytes());
+        assert_eq!(vt.take_program_status(), None);
+        vt.feed(b"\x1b]7501;future=yes:state=idle:state=blocked\x07");
+        assert_eq!(vt.take_program_status(), Some(NeedsInput));
+    }
+
+    #[test]
+    fn program_status_evicts_the_least_recently_updated_record() {
+        use houston_protocol::AgentStatus::*;
+        let mut vt = emulator(80, 24);
+        vt.feed(b"\x1b]7501;state=blocked:id=old\x07");
+        for i in 0..63 {
+            vt.feed(format!("\x1b]7501;state=idle:id=record{i}\x07").as_bytes());
+        }
+        assert_eq!(vt.take_program_status(), Some(NeedsInput));
+        vt.feed(b"\x1b]7501;state=idle:id=new\x07");
+        assert_eq!(vt.take_program_status(), Some(Idle));
     }
 
     fn live_history_retained_rows(cols: u16) -> usize {
@@ -639,6 +836,26 @@ mod tests {
             bounded.len(),
             full.len()
         );
+    }
+
+    #[test]
+    fn a_resize_keeps_rows_printed_without_prompt_marks() {
+        let mut vt = emulator(60, 8);
+        let lines: Vec<String> = (0..20).map(|n| format!("tui row {n:02}")).collect();
+        vt.feed(lines.join("\r\n").as_bytes());
+
+        for (cols, rows) in [(34, 6), (60, 8)] {
+            vt.resize(cols, rows);
+            let all = vt.screen_text(usize::MAX);
+            assert!(
+                all.ends_with(&lines[14..]),
+                "the screen at {cols}x{rows} lost the program's last rows: {all:?}"
+            );
+            assert!(
+                all.contains(&lines[0]),
+                "history at {cols}x{rows} lost the program's first row: {all:?}"
+            );
+        }
     }
 
     #[test]

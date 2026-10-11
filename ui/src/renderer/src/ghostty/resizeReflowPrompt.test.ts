@@ -86,3 +86,24 @@ describe("shell_redraws_prompt opt-in: resize + zsh SIGWINCH redraw", () => {
     expect(logicalLines(core)).toContain("first line of scrollback");
   });
 });
+
+describe("output from a program without OSC 133 marks (a TUI such as Claude Code)", () => {
+  const TUI_LINES = Array.from({ length: 20 }, (_, n) => `tui row ${String(n).padStart(2, "0")}`);
+
+  it("keeps its rows on screen and in history across a narrow-then-restore resize", async () => {
+    const core = await makeCore(60, 8);
+    core.write(TUI_LINES.join("\r\n"));
+    const totalBefore = core.scrollbarState()!.total;
+
+    core.resize(34, 6, 8, 17);
+    expect(logicalLines(core).filter((line) => line.length > 0)).not.toEqual([]);
+    expect(logicalLines(core)).toContain(TUI_LINES[19]);
+    expect(core.scrollbarState()!.total).toBeGreaterThanOrEqual(totalBefore);
+
+    core.resize(60, 8, 8, 17);
+    expect(logicalLines(core)).toContain(TUI_LINES[19]);
+    expect(core.scrollbarState()!.total).toBeGreaterThanOrEqual(totalBefore);
+    core.scroll(-totalBefore);
+    expect(logicalLines(core)).toContain(TUI_LINES[0]);
+  });
+});

@@ -1,7 +1,8 @@
 .mascot-buddy { justify-self: start; position: relative; z-index: var(--z-leaf); width: var(--mascot-rail-size); height: var(--mascot-rail-size); margin: var(--mascot-margin-5); border: 0; padding: 0; background: none; color: inherit; cursor: pointer; border-radius: var(--mascot-border-radius-1); }
 
 .mascot-buddy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.mascot-buddy .sprite { display: grid; place-items: end center; width: 100%; height: 100%; }
+/* Animated transparent layers may overflow; keep pointer input on the companion button. */
+.mascot-buddy .sprite { display: grid; place-items: end center; width: 100%; height: 100%; pointer-events: none; }
 .mascot-buddy .sprite > * { grid-area: 1 / 1; }
 .mascot-buddy .mascot-rig { --size: 64px; }
 .mascot-buddy canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }

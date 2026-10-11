@@ -433,6 +433,7 @@ type RosterPatchMsg = Extract<
   ServerMsg,
   {
     type:
+      | "session_checkout"
       | "session_renamed"
       | "session_reparented"
       | "live_children_changed"
@@ -445,6 +446,7 @@ type RosterPatchMsg = Extract<
 >;
 
 const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
+  "session_checkout",
   "session_renamed",
   "session_reparented",
   "live_children_changed",
@@ -463,28 +465,32 @@ function patchRosterFields(
   prev: Map<number, SessionInfo>,
   msg: RosterPatchMsg,
 ): Map<number, SessionInfo> {
-  const cur = prev.get(msg.session);
+  const isCheckout = msg.type === "session_checkout";
+  const id = isCheckout ? msg.id : msg.session;
+  const cur = prev.get(id);
   if (!cur) return prev;
   const patch: Partial<SessionInfo> =
-    msg.type === "session_renamed"
-      ? { title: msg.title }
-      : msg.type === "session_reparented"
-        ? { project_dir: msg.project_dir }
-        : msg.type === "live_children_changed"
-          ? {
-              live_children: msg.live_children,
-              children_waiting: msg.children_waiting,
-            }
-          : msg.type === "compactions_changed"
-            ? { compactions: msg.compactions }
-            : msg.type === "session_tags_set"
-              ? { tags: msg.tags }
-              : msg.type === "session_resumable"
-                ? { resumable: msg.resumable }
-                : msg.type === "agent_running"
-                  ? { running_agent: msg.agent ?? null }
-                  : { delegation: msg.delegation };
-  return new Map(prev).set(msg.session, { ...cur, ...patch });
+    isCheckout
+      ? { checkout: msg.checkout ?? null }
+      : msg.type === "session_renamed"
+        ? { title: msg.title }
+        : msg.type === "session_reparented"
+          ? { project_dir: msg.project_dir }
+          : msg.type === "live_children_changed"
+            ? {
+                live_children: msg.live_children,
+                children_waiting: msg.children_waiting,
+              }
+            : msg.type === "compactions_changed"
+              ? { compactions: msg.compactions }
+              : msg.type === "session_tags_set"
+                ? { tags: msg.tags }
+                : msg.type === "session_resumable"
+                  ? { resumable: msg.resumable }
+                  : msg.type === "agent_running"
+                    ? { running_agent: msg.agent ?? null }
+                    : { delegation: msg.delegation };
+  return new Map(prev).set(id, { ...cur, ...patch });
 }
 
 function handleTagWireMessage(

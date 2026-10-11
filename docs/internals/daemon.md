@@ -274,11 +274,13 @@ is still the thing that paints — and the emulator is never a status source.
 `Session::watched()` is false. An attached renderer answers from its own engine, so exactly one
 of the two is the answerer at any moment, and the attach count is what flips it.
 
-**History.** `VT_HISTORY_ROWS` is the daemon's own budget in rows, deliberately independent of
-the renderer's preference: this one is paid twelve times over in a background service.
-`VT_HISTORY_BYTES` is the byte budget handed to the library (its `max_scrollback` is measured
-in bytes, whatever the C header says), sized so twelve full histories stay under the P4
-ceiling — which holds `VT_HISTORY_ROWS` rows up to about 190 columns, and fewer beyond.
+**History.** `VT_HISTORY_BYTES` is the daemon's own retention budget, deliberately independent
+of the renderer's preference: it is paid twelve times over in a background service. It is the
+byte budget handed to the library (its `max_scrollback` is measured in bytes, whatever the C
+header says), sized so twelve full histories stay under the P4 ceiling. An attach snapshot is
+bounded by `VT_ATTACH_HISTORY_ROWS`, set high enough that the byte budget, not the row count,
+decides what a reattaching pane gets back; a handoff snapshot is bounded by the lower
+`VT_HISTORY_ROWS`, because twelve of them share the manifest byte cap.
 `VT_HISTORY_BYTES` is 3 MiB per session; twelve sessions each saturated at that budget measure
 49–51 MiB RSS across two idle-box runs, against a 24.0 MiB pre-emulator baseline at twelve idle
 shells and 12 MiB at zero sessions, and RSS returns to within 3.5 MiB of the pre-session
@@ -286,8 +288,8 @@ reading once all twelve close and their PTY reader/wait threads wind down.
 
 **Snapshots.** `Daemon::attach_snapshot` captures the state and the output cutoff under one
 hold of the scrollback lock, in the order the read path takes it, so the two are atomic. The
-container and the sequencing rules are in `protocol/protocol.md`; the same bytes ride the
-handoff manifest (v2), which is why an escape sequence split across an upgrade continues
+container and the sequencing rules are in `protocol/protocol.md`; the same container rides
+the handoff manifest (v2), which is why an escape sequence split across an upgrade continues
 instead of corrupting.
 
 Windows has no emulator: `build.rs` does not build the library there, `cfg(houston_vt)` is
@@ -346,7 +348,7 @@ and reading nothing.
 
 | Source | What it is | When it is right |
 |---|---|---|
-| **screen** | the session's emulator (`vt.rs`) hands back its grid at the pane's current size, trailing blanks trimmed, plus as much history as `VT_HISTORY_ROWS` holds | the default, and the only honest answer for a CLI that addresses the cursor and repaints |
+| **screen** | the session's emulator (`vt.rs`) hands back its grid at the pane's current size, trailing blanks trimmed, plus the history `VT_HISTORY_BYTES` retains | the default, and the only honest answer for a CLI that addresses the cursor and repaints |
 | **tail** | `Scrollback::tail_lines` splits the ring on `\n` and collapses each line's carriage returns | a CLI that prints lines; the cheaper read; the only way back to text older than the current screen |
 
 A full-screen agent CLI writes **zero** newlines, so `tail` answers a read of one with a

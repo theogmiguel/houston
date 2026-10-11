@@ -138,6 +138,9 @@ export interface WriteQueueOptions {
   batchWindowMs?: number
   isAltBuffer?: () => boolean
   onLossOutOfBand?: (totalDropped: number) => void
+  /** Called once the queue is over its cap. Returning true means the owner rebuilds
+   * the screen from elsewhere, so the queue drops its backlog without a loss notice. */
+  resyncOnOverflow?: () => boolean
   noticeIntervalMs?: number
   dropTargetFraction?: number
 }
@@ -165,6 +168,7 @@ export interface PaneWriteQueueStats {
   watchdogFires: number
   batchDelayMaxMs: number
   batchWindowsDisabled: number
+  overflowResyncs: number
 }
 
 const writeQueueStats: PaneWriteQueueStats = {
@@ -173,7 +177,8 @@ const writeQueueStats: PaneWriteQueueStats = {
   staleCompletions: 0,
   watchdogFires: 0,
   batchDelayMaxMs: 0,
-  batchWindowsDisabled: 0
+  batchWindowsDisabled: 0,
+  overflowResyncs: 0
 }
 ;(
   globalThis as unknown as { __trWriteQueueStats__: PaneWriteQueueStats }
@@ -209,12 +214,14 @@ export class PaneWriteQueue {
     this.batchWindowMs = opts.batchWindowMs ?? DEFAULT_BATCH_WINDOW_MS
     this.isAltBuffer = opts.isAltBuffer ?? (() => false)
     this.onLossOutOfBand = opts.onLossOutOfBand ?? (() => {})
+    this.resyncOnOverflow = opts.resyncOnOverflow ?? (() => false)
     this.noticeIntervalMs = opts.noticeIntervalMs ?? DEFAULT_NOTICE_INTERVAL_MS
     this.dropTargetFraction = opts.dropTargetFraction ?? DEFAULT_DROP_TARGET_FRACTION
   }
 
   private readonly isAltBuffer: () => boolean
   private readonly onLossOutOfBand: (totalDropped: number) => void
+  private readonly resyncOnOverflow: () => boolean
   private readonly noticeIntervalMs: number
   private readonly dropTargetFraction: number
 
@@ -262,6 +269,12 @@ export class PaneWriteQueue {
     this.queue.push({ data, isWarning, exempt })
     this.queuedBytes += data.length
     if (isWarning || this.queuedBytes <= this.maxQueuedBytes) return
+    if (this.resyncOnOverflow()) {
+      writeQueueStats.overflowResyncs += 1
+      this.queue = []
+      this.queuedBytes = 0
+      return
+    }
 
     let dropped = 0
     let i = 0

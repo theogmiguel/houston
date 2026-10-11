@@ -84,11 +84,16 @@ fn build_ghostty_vt() {
     let cache = cache_dir(&out_dir);
     fs::create_dir_all(&cache).unwrap_or_else(|e| panic!("creating {}: {e}", cache.display()));
 
+    let patch_text =
+        fs::read(&patch).unwrap_or_else(|e| panic!("reading {}: {e}", patch.display()));
     let src = match std::env::var("HOUSTON_GHOSTTY_VT_SRC") {
         Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => fetch_source(&cache, &lock, &lock_path, revision),
+        _ => {
+            forget_stale_patch(&cache.join(format!("src-{revision}")), &patch_text);
+            fetch_source(&cache, &lock, &lock_path, revision)
+        }
     };
-    apply_shim(&src, &shim, &patch);
+    apply_shim(&src, &shim, &patch, &patch_text);
 
     let zig = zig_binary(&cache, &lock, &lock_path);
     let prefix = cache.join(format!("build-{revision}"));
@@ -186,7 +191,7 @@ fn fetch_source(
 /// `patch -F 0`, not `git apply`: the extracted tree usually sits under
 /// `core/target/` inside Houston's own work tree, where `git apply` resolves
 /// paths against the wrong root — and `-F 0` makes an upstream move fail loudly.
-fn apply_shim(src: &Path, shim: &Path, patch: &Path) {
+fn apply_shim(src: &Path, shim: &Path, patch: &Path, patch_text: &[u8]) {
     let dest = src
         .join("src")
         .join("terminal")
@@ -196,8 +201,15 @@ fn apply_shim(src: &Path, shim: &Path, patch: &Path) {
         .unwrap_or_else(|e| panic!("copying {} -> {}: {e}", shim.display(), dest.display()));
 
     let stamp = src.join(".houston-patched");
-    if stamp.exists() {
-        return;
+    match fs::read(&stamp) {
+        Ok(applied) if applied == patch_text => return,
+        Ok(_) => panic!(
+            "{} was patched with a different {}; point HOUSTON_GHOSTTY_VT_SRC at a freshly \
+             extracted tree of the pinned revision",
+            src.display(),
+            patch.display()
+        ),
+        Err(_) => {}
     }
     run(
         Command::new("patch")
@@ -219,7 +231,20 @@ fn apply_shim(src: &Path, shim: &Path, patch: &Path) {
          houston_vt_snapshot_encode",
         src.join("src").join("lib_vt.zig").display()
     );
-    fs::write(&stamp, "1").unwrap_or_else(|e| panic!("writing {}: {e}", stamp.display()));
+    fs::write(&stamp, patch_text).unwrap_or_else(|e| panic!("writing {}: {e}", stamp.display()));
+}
+
+/// The patch stamp holds the patch it applied. A tree patched by an older patch
+/// cannot take the new one on top, so its extraction stamp goes and the source is
+/// extracted afresh.
+fn forget_stale_patch(dir: &Path, patch_text: &[u8]) {
+    if let Ok(applied) = fs::read(dir.join(".houston-patched")) {
+        if applied != patch_text {
+            let extracted = dir.join(".houston-extracted");
+            fs::remove_file(&extracted)
+                .unwrap_or_else(|e| panic!("removing {}: {e}", extracted.display()));
+        }
+    }
 }
 
 /// The pinned Zig, fetched into the build cache. Never taken from `PATH`
