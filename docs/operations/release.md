@@ -295,9 +295,13 @@ is wired for both and running the unsigned one.
 
 ### Houston checks for a release; you click to install it
 
-The daemon asks the releases API once at start, every six hours, and whenever the
-About panel's **Check now** is pressed, and broadcasts what it found. The panel
-names the release, shows a teaser of its notes and links to the release page.
+The daemon fetches `releases/latest/download/latest.json`, the same manifest the
+app's updater reads, once at start, every six hours, and whenever the About
+panel's **Check now** is pressed, and broadcasts what it found. The panel names
+the release, shows a teaser of its notes and links to the release page, whose URL
+is built from the manifest's version. The notes are the manifest's `notes`
+field, fixed when the draft is built, so editing the release body afterwards does
+not change what the panel shows.
 Scheduled checks also revalidate the shared model catalog independently of the release result.
 Release checks send the last valid ETag within a daemon lifetime; a `304` reuses the cached
 release payload. Restarting the daemon performs a full release check.

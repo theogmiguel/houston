@@ -234,6 +234,16 @@ build-dir = "{cargo-cache-home}/build-dir/{workspace-path-hash}"
 | `TR_DEBUG_PTY_DUMP=<dir>` | Resolved once; when set, dumps raw PTY bytes to that directory for debugging. |
 | `HOUSTON_WSL_BIN_DIR=<dir>` | Where WSL environments read the Linux `houston-core`, `tr-helper` and `houston-supervisor` they install into a distro, instead of the bundled `wsl/` resources. A development build has no bundle; point it at a Linux build of `core/target/<profile>`. |
 | `HOUSTON_DAEMON_BIN_DIR=<dir>` | Where connect-or-spawn looks for `houston-core` (and, on Linux, `houston-supervisor`) instead of beside the app's own binary. Set by `dev.sh` to `core/target/debug`; unset in a packaged install, where the sidecars are frozen copies beside `houston`. |
+| `HOUSTON_UPDATE_MANIFEST_URL=<url>` | Replaces the update-manifest URL (`latest.json`) the daemon checks. |
+| `HOUSTON_MODEL_CATALOG_URL=<url>` | Replaces the model-catalog download URL. |
+
+`.cargo/config.toml` sets both URLs to a refused loopback port for every `cargo test` and
+`cargo run`, so a test daemon never reaches the real endpoints: an anonymous GitHub client is
+throttled per public IP and every daemon boots one check. A test that needs a response sets
+the variables to a local server; Cargo does not override a variable already in the
+environment. `common::hermetic_command` forwards them across `env_clear`, so a spawn that
+clears its environment must do the same. A daemon launched by `dev.sh` from a built binary
+is unaffected and checks the real endpoints.
 
 `HOUSTON_DISABLE_SWARM_AUTOLAUNCH`, `TR_BENCH_RESULTS_PATH`, and
 `TR_BENCH_WRITE_BURST_MS` are bench-harness-only knobs
