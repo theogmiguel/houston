@@ -2139,7 +2139,17 @@ impl Drop for SessionStartup {
         }
         self.gate.finish(false);
         if let Some(mut child) = self.child.lock().expect("startup child lock").take() {
-            if let Err(error) = child.kill() {
+            #[cfg(unix)]
+            let killed = match child.process_id() {
+                // The gated waiter has not reaped this child, so its PID cannot be recycled.
+                Some(pid) => crate::pid::signal_process_checked(pid, crate::pid::Signal::Kill)
+                    .map(|_| ())
+                    .map_err(std::io::Error::other),
+                None => child.kill(),
+            };
+            #[cfg(not(unix))]
+            let killed = child.kill();
+            if let Err(error) = killed {
                 tracing::warn!(
                     "killing owned startup process for session {}: {error}",
                     self.id

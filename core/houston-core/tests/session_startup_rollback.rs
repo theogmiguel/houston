@@ -160,6 +160,37 @@ fn startup_failures_are_owned_and_transactional() {
             if !sql.is_empty() { conn.execute_batch("DROP TRIGGER startup_failure").unwrap(); }
         }
     }
+    // Orchestration uses a synthetic provider executable inside the isolated HOME.
+    let shims = std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join("provider-shims");
+    std::fs::write(shims.join("codex"), script).unwrap();
+    daemon
+        .workspace_add(project.path().to_str().unwrap())
+        .unwrap();
+    daemon.orchestration_set(true).unwrap();
+    daemon.set_orchestration_caps(4, 2).unwrap();
+    conn.execute_batch("CREATE TRIGGER startup_failure BEFORE UPDATE OF profile_config_dir ON sessions BEGIN SELECT RAISE(ABORT, 'orchestration profile failure'); END").unwrap();
+    let receipts = observe(&daemon, project.path(), None);
+    assert!(daemon
+        .orchestrate_spawn(
+            baseline.id,
+            proto::AgentKind::Codex,
+            None,
+            None,
+            houston_core::orchestrate::Brief::from("fixture task".to_string()),
+            Some(false),
+            None,
+            Some("rollback-child".into())
+        )
+        .is_err());
+    let (id, pid) = receipts.lock().unwrap()[0];
+    assert_reaped(pid);
+    assert!(daemon.session_cwd(id).is_err());
+    assert!(daemon
+        .open_delegations()
+        .iter()
+        .all(|row| row.child_session != id));
+    assert_eq!(daemon.mcp_creds.len(), baseline_credentials);
+    conn.execute_batch("DROP TRIGGER startup_failure").unwrap();
     // Hidden handoff generators use the same owned worker-startup rollback.
     for fault in ["reader-thread", "wait-thread"] {
         let receipts = observe(&daemon, project.path(), Some(fault));
