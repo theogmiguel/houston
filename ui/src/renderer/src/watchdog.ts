@@ -71,7 +71,7 @@ export function installWatchdog(): () => void {
       if (gap > T_WARN_MS) {
         console.warn(`watchdog: rAF gap ${gap.toFixed(0)}ms exceeded T_warn (${T_WARN_MS}ms)`)
       }
-      if (lastReportWasFailure) {
+      if (lastReportWasFailure && gap <= T_PAINT_BASE_MS) {
         lastReportWasFailure = false
         invoke('wd_paint_report', {
           generation,
@@ -79,6 +79,7 @@ export function installWatchdog(): () => void {
           rafGapMs: Math.round(gap),
           visibility: 'visible'
         }).catch((err: unknown) => {
+          lastReportWasFailure = true
           console.warn('watchdog: wd_paint_report invoke failed', err)
         })
       }
@@ -115,13 +116,14 @@ export function installWatchdog(): () => void {
     ])
     if (disposed) return
     const unlistenGeneration = await listen<{ generation: number }>('wd:paint-generation', (event) => {
-      generation = event.payload.generation
+      generation = Math.max(generation ?? 0, event.payload.generation)
       lastReportWasFailure = true
       armPaintProbe(T_PAINT_BASE_MS, invoke)
     })
     if (disposed) { unlistenGeneration(); return }
     disposers.push(unlistenGeneration)
-    generation = await invoke<number | null>('wd_paint_generation')
+    const initialGeneration = await invoke<number | null>('wd_paint_generation')
+    if (initialGeneration !== null) generation = Math.max(generation ?? 0, initialGeneration)
     if (disposed) return
 
     function onVisibilityChange(): void {

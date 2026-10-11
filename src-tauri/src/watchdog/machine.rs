@@ -471,7 +471,9 @@ impl Machine {
                         ));
                         self.maybe_recover(now_ms, &mut actions);
                     }
-                    (true, State::PaintStalled | State::Recovering) if self.paint_incident() => {
+                    (true, State::PaintStalled | State::Recovering)
+                        if self.paint_incident() && raf_gap_ms <= self.thresholds.paint_ms =>
+                    {
                         self.state = State::Healthy;
                         self.close_incident();
                         actions.push(self.log(prev, Trigger::PaintReport { ok, raf_gap_ms }, None));

@@ -1092,11 +1092,12 @@ fn main() {
         .expect("error while building houston-tauri")
         .run({
             let requested_code = std::cell::Cell::new(0);
-            move |_app_handle, event| {
+            move |app_handle, event| {
                 if let tauri::RunEvent::ExitRequested { code: Some(code), .. } = &event {
                     requested_code.set(*code);
                 }
                 if let tauri::RunEvent::Exit = event {
+                    watchdog::stop(app_handle);
                     if let Some(handle) = DAEMON_HANDLE.get() {
                         daemon_host::shutdown(handle);
                     }

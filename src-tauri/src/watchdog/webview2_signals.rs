@@ -1,12 +1,12 @@
-use super::machine::Event;
+use super::ingress::EventSender;
 #[cfg(windows)]
-use super::machine::TerminationReason;
+use super::machine::{Event, TerminationReason};
 use super::RendererHealth;
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::Arc;
 use tauri::webview::PlatformWebview;
 
 #[cfg(windows)]
-pub fn install(platform: &PlatformWebview, tx: Sender<Event>) {
+pub(super) fn install(platform: &PlatformWebview, tx: EventSender) {
     let outcome = install_with(platform, move |_kind, event| {
         if let Some(event) = event {
             let _ = tx.send(event);
@@ -22,7 +22,7 @@ pub fn install(platform: &PlatformWebview, tx: Sender<Event>) {
 
 #[cfg(not(windows))]
 #[allow(dead_code)]
-pub fn install(_platform: &PlatformWebview, _tx: Sender<Event>) {}
+pub(super) fn install(_platform: &PlatformWebview, _tx: EventSender) {}
 
 #[cfg(windows)]
 pub fn install_termination_logger(platform: &PlatformWebview, health: Arc<RendererHealth>) {

@@ -2,20 +2,22 @@
 
 pub mod clocks;
 pub mod gtk_signals;
+mod ingress;
 pub mod log;
 pub mod machine;
 pub mod probe;
 pub mod webview2_signals;
 
+use ingress::{EventSender, Inbox, Sender};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow};
 
 use clocks::{ClockClassifier, Clocks, SystemClocks};
-use log::{NdjsonSink, Record, SessionSource, Sink, TransitionLog};
+use log::{BufferedSink, NdjsonSink, Record, SessionSource, Sink, TransitionLog};
 use machine::{Action, Event, Machine, Thresholds, TitleState};
 use probe::{Completion, ProbeTable};
 
@@ -88,12 +90,14 @@ impl RendererHealth {
 }
 
 enum Msg {
+    Wake,
     Event(Event),
     ProbeReply {
         payload: String,
         generation: u64,
     },
     PromptAnswer {
+        _permit: WorkPermit,
         incident_id: u64,
         generation: u64,
         outcome: PromptOutcome,
@@ -106,13 +110,8 @@ enum Msg {
 }
 
 pub struct WatchdogHandle {
-    tx: Sender<Msg>,
-}
-
-impl WatchdogHandle {
-    fn send(&self, event: Event) {
-        let _ = self.tx.send(Msg::Event(event));
-    }
+    tx: Sender,
+    join: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -189,8 +188,17 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, label: &str, config: Config) -> b
         return false;
     };
 
-    let (tx, rx) = mpsc::channel();
-    app.manage(WatchdogHandle { tx: tx.clone() });
+    let (tx, rx) = ingress::channel();
+    app.manage(WatchdogHandle {
+        tx: tx.clone(),
+        join: std::sync::Mutex::new(None),
+    });
+    let destroyed_tx = tx.clone();
+    window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            destroyed_tx.stop();
+        }
+    });
 
     let signal_tx = tx.clone();
     #[cfg(target_os = "linux")]
@@ -211,7 +219,15 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, label: &str, config: Config) -> b
     #[cfg(not(any(target_os = "linux", windows)))]
     drop(signal_tx);
 
-    let sink: Arc<dyn Sink> = Arc::new(NdjsonSink::new(config.log_path.clone()));
+    let sink: Arc<dyn Sink> =
+        match BufferedSink::new(Arc::new(NdjsonSink::new(config.log_path.clone()))) {
+            Ok(sink) => Arc::new(sink),
+            Err(err) => {
+                tx.stop();
+                eprintln!("houston-tauri: watchdog log worker failed to spawn: {err}");
+                return false;
+            }
+        };
     let sessions: SessionSource = Box::new(Vec::new);
 
     let page_loaded = Arc::new(AtomicBool::new(false));
@@ -224,13 +240,25 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, label: &str, config: Config) -> b
         page_loaded: page_loaded.clone(),
         last_scale: Arc::new(std::sync::Mutex::new(None)),
         prompt: Arc::new(std::sync::Mutex::new(None)),
+        recovery_work: WorkGate::new(1),
+        recovery_intent: Arc::new(std::sync::Mutex::new(None)),
+        prompt_work: WorkGate::new(1),
+        poll: WorkGate::new(1),
+        eval: WorkGate::new(2),
+        title: std::sync::Mutex::new(None),
         clocks: SystemClocks,
     };
 
     std::thread::Builder::new()
         .name("tr-watchdog".into())
         .spawn(move || supervisor.run(config))
-        .map(|_| true)
+        .map(|join| {
+            *app.state::<WatchdogHandle>()
+                .join
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = Some(join);
+            true
+        })
         .unwrap_or_else(|err| {
             eprintln!("houston-tauri: watchdog thread failed to spawn: {err}");
             false
@@ -301,29 +329,34 @@ pub fn maybe_selftest_terminate<R: Runtime>(app: &AppHandle<R>) {
 }
 
 #[cfg(any(target_os = "linux", windows))]
-fn signal_events(tx: Sender<Msg>) -> Sender<Event> {
-    let (event_tx, event_rx) = mpsc::channel::<Event>();
-    std::thread::Builder::new()
-        .name("tr-watchdog-signals".into())
-        .spawn(move || {
-            while let Ok(event) = event_rx.recv() {
-                if tx.send(Msg::Event(event)).is_err() {
-                    return;
-                }
-            }
-        })
-        .ok();
-    event_tx
+fn signal_events(tx: Sender) -> EventSender {
+    EventSender(tx)
 }
+
+pub fn stop<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(handle) = app.try_state::<WatchdogHandle>() {
+        handle.tx.stop();
+        if let Some(join) = handle.join.lock().unwrap_or_else(|p| p.into_inner()).take() {
+            let _ = join.join();
+        }
+    }
+}
+
 struct Supervisor<R: Runtime, C: Clocks> {
     window: WebviewWindow<R>,
-    rx: Receiver<Msg>,
-    tx: Sender<Msg>,
+    rx: Inbox,
+    tx: Sender,
     sink: Arc<dyn Sink>,
     sessions: SessionSource,
     page_loaded: Arc<AtomicBool>,
     last_scale: Arc<std::sync::Mutex<Option<f64>>>,
     prompt: Arc<std::sync::Mutex<Option<PromptLease>>>,
+    recovery_work: WorkGate,
+    recovery_intent: Arc<std::sync::Mutex<Option<(u8, u64)>>>,
+    prompt_work: WorkGate,
+    poll: WorkGate,
+    eval: WorkGate,
+    title: std::sync::Mutex<Option<TitleState>>,
     clocks: C,
 }
 
@@ -383,7 +416,7 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                     let terminated = matches!(event, Event::WebProcessTerminated { .. });
                     let actions = machine.on_event(event, now.mono_ms);
                     self.apply(&mut machine, &mut probes, actions, now);
-                    // Navigation may finish before the native signal forwarding thread runs.
+                    // Navigation may finish before the supervisor consumes native process loss.
                     if terminated
                         && self
                             .window
@@ -398,6 +431,7 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                     }
                 }
                 Ok(Msg::PromptAnswer {
+                    _permit,
                     incident_id,
                     generation,
                     outcome,
@@ -465,8 +499,16 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                         }
                     }
                 }
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => return,
+                Ok(Msg::Wake) | Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {
+                    self.cancel_prompt();
+                    probes.discard_all();
+                    let dropped = self.tx.dropped.swap(0, Ordering::Relaxed);
+                    if dropped != 0 {
+                        self.sink.dropped(dropped);
+                    }
+                    return;
+                }
             }
 
             let now = self.clocks.sample();
@@ -478,7 +520,10 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
 
             if self.page_loaded.load(Ordering::SeqCst) && now.mono_ms >= next_probe_ms {
                 next_probe_ms = now.mono_ms + machine.probe_period_ms();
-                self.issue_probe(&mut probes, now.mono_ms);
+                if !self.issue_probe(&mut probes, now.mono_ms) {
+                    let actions = machine.on_event(Event::ProbeFailed, now.mono_ms);
+                    self.apply(&mut machine, &mut probes, actions, now);
+                }
             }
         }
     }
@@ -490,6 +535,10 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
         classifier: &mut ClockClassifier,
         now: clocks::ClockSample,
     ) {
+        let dropped = self.tx.dropped.swap(0, Ordering::Relaxed);
+        if dropped != 0 {
+            self.sink.dropped(dropped);
+        }
         let verdict = classifier.classify(now);
 
         if !verdict.is_quiet() {
@@ -516,61 +565,86 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
         self.apply(machine, probes, actions, now);
 
         self.poll_platform();
+        self.dispatch_recovery();
     }
 
     fn poll_platform(&self) {
+        let Some(permit) = self.poll.acquire() else {
+            return;
+        };
         let tx = self.tx.clone();
         let window = self.window.clone();
         let last_scale = self.last_scale.clone();
         let _ = self.window.run_on_main_thread(move || {
+            if tx.stop.load(Ordering::SeqCst) {
+                return;
+            }
             let visible =
                 window.is_visible().unwrap_or(true) && !window.is_minimized().unwrap_or(false);
             let _ = tx.send(Msg::Event(Event::WindowVisible(visible)));
             let _ = tx.send(Msg::Event(Event::WindowFocused(
                 window.is_focused().unwrap_or(true),
             )));
-
             if let Ok(scale) = window.scale_factor() {
-                let mut last = match last_scale.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
+                let mut last = last_scale.lock().unwrap_or_else(|p| p.into_inner());
                 if last.is_some_and(|prev: f64| (prev - scale).abs() > f64::EPSILON) {
                     let _ = window.emit("wd:dpr", serde_json::json!({ "scale_factor": scale }));
                 }
                 *last = Some(scale);
             }
-        });
-
-        #[cfg(target_os = "linux")]
-        {
-            let tx = self.tx.clone();
-            let _ = self.window.with_webview(move |platform| {
-                for event in gtk_signals::poll(&platform) {
-                    if tx.send(Msg::Event(event)).is_err() {
-                        return;
+            #[cfg(target_os = "linux")]
+            let _ = window.with_webview(move |platform| {
+                if !tx.stop.load(Ordering::SeqCst) {
+                    for event in gtk_signals::poll(&platform) {
+                        let _ = tx.send(Msg::Event(event));
                     }
                 }
+                drop(permit);
             });
-        }
+            #[cfg(not(target_os = "linux"))]
+            drop(permit);
+        });
     }
 
-    fn issue_probe(&self, probes: &mut ProbeTable, now_ms: u64) {
-        let health = self.window.app_handle().state::<Arc<RendererHealth>>();
+    fn issue_probe(&self, probes: &mut ProbeTable, now_ms: u64) -> bool {
+        let health = self
+            .window
+            .app_handle()
+            .state::<Arc<RendererHealth>>()
+            .inner()
+            .clone();
         let Some(generation) = health.probe_generation() else {
-            return;
+            return true;
+        };
+        let Some(permit) = self.eval.acquire() else {
+            return false;
+        };
+        let token = NativeToken {
+            health,
+            stop: self.tx.stop.clone(),
+            generation,
         };
         let (nonce, script) = probes.issue(now_ms);
         let tx = self.tx.clone();
-        if let Err(err) = self.window.eval_with_callback(script, move |payload| {
-            let _ = tx.send(Msg::ProbeReply {
-                payload,
-                generation,
+        let window = self.window.clone();
+        if let Err(err) = self.window.run_on_main_thread(move || {
+            if !token.live() {
+                return;
+            }
+            let permit = std::sync::Mutex::new(Some(permit));
+            let _ = window.eval_with_callback(script, move |payload| {
+                // Expiry in ProbeTable does not release this physical callback slot.
+                drop(permit.lock().unwrap_or_else(|p| p.into_inner()).take());
+                let _ = tx.send(Msg::ProbeReply {
+                    payload,
+                    generation,
+                });
             });
         }) {
             eprintln!("houston-tauri: watchdog could not dispatch a probe: {err}");
             probes.discard(nonce);
         }
+        true
     }
 
     fn apply(
@@ -593,6 +667,8 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                 }
             }
         }
+        let mut record_reload = false;
+        let mut terminate = false;
         for action in actions {
             match action {
                 Action::Log(transition) => self.write(transition, now),
@@ -607,7 +683,7 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                     );
                 }
                 Action::RecordReloadInPage => {
-                    let _ = self.window.eval(RECORD_RELOAD_JS);
+                    record_reload = true;
                 }
                 Action::Reload => {
                     let now_ms = self.clocks.sample().mono_ms;
@@ -618,28 +694,35 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                         .record_termination();
                     self.page_loaded.store(false, Ordering::SeqCst);
                     probes.discard_all();
-                    if let Err(err) = self.window.reload() {
-                        eprintln!("houston-tauri: watchdog reload failed: {err}");
-                    }
+                    self.queue_recovery(record_reload, terminate);
                 }
                 Action::TerminateWebProcess => {
-                    #[cfg(target_os = "linux")]
-                    let _ = self
-                        .window
-                        .with_webview(|platform| gtk_signals::terminate_web_process(&platform));
-                    #[cfg(not(target_os = "linux"))]
-                    eprintln!("houston-tauri: forced renderer termination is unsupported on this platform; trying reload only");
+                    terminate = true;
                 }
                 Action::PromptThenRecover {
                     incident_id,
                     deadline_ms,
                 } => {
+                    #[cfg(target_os = "linux")]
                     self.prompt(incident_id, deadline_ms);
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        let _ = deadline_ms;
+                        eprintln!("houston-tauri: native recovery confirmation is unsupported on this platform; recovery withheld");
+                        let actions =
+                            machine.on_event(Event::RecoveryDeclined { incident_id }, now.mono_ms);
+                        self.apply(machine, probes, actions, now);
+                    }
                 }
                 Action::SetTitle(title) => {
                     if title == TitleState::Normal {
                         self.cancel_prompt();
                     }
+                    let mut last = self.title.lock().unwrap_or_else(|p| p.into_inner());
+                    if *last == Some(title) {
+                        continue;
+                    }
+                    *last = Some(title);
                     let _ = self.window.set_title(match title {
                         TitleState::Normal => "Houston",
                         TitleState::NotResponding => HALTED_TITLE,
@@ -649,6 +732,68 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
         }
     }
 
+    fn queue_recovery(&self, record_reload: bool, terminate: bool) {
+        let flags = 1 | if record_reload { 2 } else { 0 } | if terminate { 4 } else { 0 };
+        let generation = self
+            .window
+            .app_handle()
+            .state::<Arc<RendererHealth>>()
+            .state()
+            .generation;
+        *self
+            .recovery_intent
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some((flags, generation));
+        self.dispatch_recovery();
+    }
+
+    fn dispatch_recovery(&self) {
+        if self
+            .recovery_intent
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .is_none()
+        {
+            return;
+        }
+        let Some(permit) = self.recovery_work.acquire() else {
+            return;
+        };
+        let intent = self.recovery_intent.clone();
+        let stopped = self.tx.stop.clone();
+        let health = self
+            .window
+            .app_handle()
+            .state::<Arc<RendererHealth>>()
+            .inner()
+            .clone();
+        let eval = self.eval.clone();
+        let window = self.window.clone();
+        let _ = self.window.run_on_main_thread(move || {
+            let Some((flags, generation)) = intent.lock().unwrap_or_else(|p| p.into_inner()).take() else { return; };
+            {
+                let state = health.state();
+                if stopped.load(Ordering::SeqCst) || state.generation != generation || !state.navigation_required { return; }
+            }
+            if flags & 2 != 0 {
+                if let Some(permit) = eval.acquire() {
+                    let permit = std::sync::Mutex::new(Some(permit));
+                    let _ = window.eval_with_callback(RECORD_RELOAD_JS, move |_| {
+                        drop(permit.lock().unwrap_or_else(|p| p.into_inner()).take());
+                    });
+                }
+            }
+            if flags & 4 != 0 {
+                #[cfg(target_os = "linux")]
+                let _ = window.with_webview(|platform| gtk_signals::terminate_web_process(&platform));
+                #[cfg(not(target_os = "linux"))]
+                eprintln!("houston-tauri: forced renderer termination is unsupported on this platform; trying reload only");
+            }
+            if let Err(err) = window.reload() { eprintln!("houston-tauri: watchdog reload failed: {err}"); }
+            drop(permit);
+        });
+    }
+
     fn cancel_prompt(&self) {
         if let Some(lease) = self.prompt.lock().unwrap_or_else(|p| p.into_inner()).take() {
             lease.cancel.store(true, Ordering::SeqCst);
@@ -656,6 +801,9 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
     }
 
     fn prompt(&self, incident_id: u64, deadline_ms: u64) {
+        let Some(permit) = self.prompt_work.acquire() else {
+            return;
+        };
         let health = self
             .window
             .app_handle()
@@ -677,7 +825,9 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
         let slot = self.prompt.clone();
         let dispatch_lease = lease.clone();
         if let Err(err) = self.window.run_on_main_thread(move || {
-            let outcome = if health.probe_generation() != Some(generation) {
+            let outcome = if tx.stop.load(Ordering::SeqCst)
+                || health.probe_generation() != Some(generation)
+            {
                 PromptOutcome::Cancelled
             } else {
                 native_prompt(
@@ -688,6 +838,7 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
             };
             release_prompt(&slot, &dispatch_lease);
             let _ = tx.send(Msg::PromptAnswer {
+                _permit: permit,
                 incident_id,
                 generation,
                 outcome,
@@ -707,6 +858,48 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
             transition,
             session_ids: (self.sessions)(),
         });
+    }
+}
+
+struct NativeToken {
+    health: Arc<RendererHealth>,
+    stop: Arc<AtomicBool>,
+    generation: u64,
+}
+impl NativeToken {
+    fn live(&self) -> bool {
+        !self.stop.load(Ordering::SeqCst) && self.health.probe_generation() == Some(self.generation)
+    }
+}
+
+// Physical permits are returned only when queued closures/callbacks finish or
+// are dropped by the runtime, never when logical probe receipts expire.
+#[derive(Clone)]
+struct WorkGate {
+    count: Arc<std::sync::atomic::AtomicUsize>,
+    limit: usize,
+}
+
+impl WorkGate {
+    fn new(limit: usize) -> Self {
+        Self {
+            count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            limit,
+        }
+    }
+    fn acquire(&self) -> Option<WorkPermit> {
+        self.count
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                (count < self.limit).then_some(count + 1)
+            })
+            .ok()?;
+        Some(WorkPermit(self.count.clone()))
+    }
+}
+struct WorkPermit(Arc<std::sync::atomic::AtomicUsize>);
+impl Drop for WorkPermit {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -864,20 +1057,37 @@ pub fn wd_paint_report(
     raf_gap_ms: u64,
     generation: u64,
     visibility: Option<String>,
-) {
+) -> Result<(), String> {
     if visibility.as_deref() == Some("hidden") {
-        return;
+        return Ok(());
     }
-    let _ = handle.tx.send(Msg::Paint {
-        ok,
-        raf_gap_ms,
-        generation,
-    });
+    handle
+        .tx
+        .send(Msg::Paint {
+            ok,
+            raf_gap_ms,
+            generation,
+        })
+        .map_err(|_| {
+            "watchdog ingress limit 32 receipts reached; paint report was not accepted".into()
+        })
 }
 
 #[tauri::command]
-pub fn wd_request_reload(handle: tauri::State<'_, WatchdogHandle>, reason: String) {
-    handle.send(Event::ReloadRequested { reason });
+pub fn wd_request_reload(
+    handle: tauri::State<'_, WatchdogHandle>,
+    reason: String,
+) -> Result<(), String> {
+    if reason.len() > 256 {
+        return Err(format!(
+            "reload reason limit 256 bytes exceeded: {} bytes",
+            reason.len()
+        ));
+    }
+    handle
+        .tx
+        .send(Msg::Event(Event::ReloadRequested { reason }))
+        .map_err(|_| "watchdog ingress limit 32 receipts reached; reload was not accepted".into())
 }
 
 #[tauri::command]
@@ -985,6 +1195,73 @@ mod tests {
     use super::*;
 
     #[test]
+    fn held_native_executor_and_unanswered_callbacks_have_physical_bounds() {
+        let gate = WorkGate::new(2);
+        let health = Arc::new(RendererHealth::default());
+        health.page_loaded(true);
+        let stop = Arc::new(AtomicBool::new(false));
+        let effects = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut executor: Vec<Box<dyn FnOnce()>> = Vec::new();
+        let mut probes = ProbeTable::new();
+        for tick in 0..10_000 {
+            if let Some(permit) = gate.acquire() {
+                probes.issue(tick);
+                let token = NativeToken {
+                    health: health.clone(),
+                    stop: stop.clone(),
+                    generation: health.probe_generation().unwrap(),
+                };
+                let effects = effects.clone();
+                executor.push(Box::new(move || {
+                    if token.live() {
+                        effects.fetch_add(1, Ordering::SeqCst);
+                    }
+                    drop(permit);
+                }));
+            }
+            probes.take_expired(tick + 10_000, 10_000);
+            probes.discard_all();
+            assert!(executor.len() <= 2);
+        }
+        assert_eq!(executor.len(), 2);
+        assert!(
+            gate.acquire().is_none(),
+            "logical expiry must not release native callback ownership"
+        );
+        health.page_loaded(true);
+        for job in executor.drain(..) {
+            job();
+        }
+        assert_eq!(
+            effects.load(Ordering::SeqCst),
+            0,
+            "old generation executed native work"
+        );
+        assert_eq!(gate.count.load(Ordering::SeqCst), 0);
+        let permit = gate.acquire().unwrap();
+        let token = NativeToken {
+            health,
+            stop: stop.clone(),
+            generation: 2,
+        };
+        stop.store(true, Ordering::SeqCst);
+        assert!(!token.live());
+        drop(permit);
+        assert_eq!(gate.count.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn queued_native_poll_retains_one_permit_until_executor_releases_it() {
+        let gate = WorkGate::new(1);
+        let held = gate.acquire().unwrap();
+        for _ in 0..10_000 {
+            assert!(gate.acquire().is_none());
+        }
+        drop(held);
+        assert!(gate.acquire().is_some());
+    }
+
+    #[test]
     fn held_prompt_dispatch_expires_without_opening_a_dialog() {
         let cancel = AtomicBool::new(false);
         assert_eq!(prompt_preflight(100, &cancel, 99), None);
@@ -1039,6 +1316,49 @@ mod tests {
 #[cfg(test)]
 mod reliability_tests {
     use super::*;
+
+    #[test]
+    fn paint_recovery_keeps_native_close_health_until_current_page_paints() {
+        let health = RendererHealth::default();
+        let mut machine = Machine::new(Thresholds::default(), true, 0);
+        machine.on_event(Event::ProbeReturned { rtt_ms: 5 }, 1);
+        machine.on_event(
+            Event::PaintReport {
+                ok: false,
+                raf_gap_ms: 9_000,
+            },
+            2,
+        );
+        health.record_state(machine.state());
+        assert!(health.unavailable());
+        machine.on_event(Event::ProbeReturned { rtt_ms: 5 }, 3);
+        if machine.state() == machine::State::Healthy {
+            health.recover(0);
+        }
+        assert!(health.unavailable());
+        health.record_termination();
+        machine.note_reload_issued(4);
+        let old = 0;
+        health.page_loaded(true);
+        machine.on_event(Event::PageLoaded, 5);
+        let current = health.probe_generation().unwrap();
+        health.recover(old);
+        assert!(health.unavailable());
+        machine.on_event(Event::ProbeReturned { rtt_ms: 5 }, 6);
+        assert_eq!(machine.state(), machine::State::Recovering);
+        assert!(health.unavailable());
+        machine.on_event(
+            Event::PaintReport {
+                ok: true,
+                raf_gap_ms: 16,
+            },
+            7,
+        );
+        if machine.state() == machine::State::Healthy {
+            health.recover(current);
+        }
+        assert!(!health.unavailable());
+    }
 
     #[test]
     fn native_termination_rejects_a_queued_reply_before_the_forwarded_event() {

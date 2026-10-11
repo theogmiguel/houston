@@ -80,6 +80,25 @@ collaborator's contract, not just against its own assertions.
 - `m9-baseline.sh` uses a throwaway `m9bench` channel, wiped before every run and refused if
   a live daemon holds its lock.
 
+## Native watchdog ownership
+
+The watchdog unit fixtures hold an executor while logical probes expire, then release
+its closures after generation invalidation or stop. Physical permits must remain bounded
+until queued closures or native callbacks finish; clearing `ProbeTable` is not evidence
+of cancelled native work. The ingress fixture floods ordinary receipts while preserving
+process loss, the latest visibility and a reserved Wait answer. The blocked log sink
+checks queue plateau, loss reporting and worker release separately from supervisor exit.
+
+Paint recovery coverage must enable recovery and reach `Recovering`, including the
+post-reload navigation boundary. A valid JavaScript reply must retain the paint incident,
+prompt and unavailable health until a current-generation animation-frame report arrives.
+Prompt coverage must release an executor after the original deadline and resolve an old
+incident's answer while another incident owns confirmation. An expired entry must not
+construct an interactive dialog. Linux dialog and window-destruction runtime checks still
+require an isolated, unlocked display; the pure fixtures do not establish GTK or WebView2
+callback teardown. Queue counts establish structural bounds, not memory or CPU performance.
+Measure those on an idle machine at normal priority before making performance claims.
+
 ## Windows
 
 Windows CI runs core unit tests and selected integration suites. The

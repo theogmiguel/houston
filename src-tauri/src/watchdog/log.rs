@@ -118,6 +118,61 @@ pub type SessionSource = Box<dyn Fn() -> Vec<String> + Send + Sync>;
 
 pub trait Sink: Send + Sync {
     fn write(&self, record: &Record);
+    fn dropped(&self, count: u64) {
+        eprintln!("houston-tauri: watchdog dropped {count} records/events (bounded queue full)");
+    }
+}
+
+// Disk latency must not hold the supervisor or native callbacks. One writer
+// retains at most 64 records; overflow is reported by that writer on resume.
+pub struct BufferedSink {
+    tx: std::sync::mpsc::SyncSender<Record>,
+    dropped: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+impl BufferedSink {
+    pub fn new(sink: std::sync::Arc<dyn Sink>) -> std::io::Result<Self> {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Record>(64);
+        let dropped = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let loss = dropped.clone();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stopped = stop.clone();
+        std::thread::Builder::new()
+            .name("houston-watchdog-log".into())
+            .spawn(move || {
+                while let Ok(record) = rx.recv() {
+                    let count = loss.swap(0, std::sync::atomic::Ordering::Relaxed);
+                    if count != 0 {
+                        sink.dropped(count);
+                    }
+                    if stopped.load(std::sync::atomic::Ordering::SeqCst) {
+                        break;
+                    }
+                    sink.write(&record);
+                }
+                let count = loss.swap(0, std::sync::atomic::Ordering::Relaxed);
+                if count != 0 {
+                    sink.dropped(count);
+                }
+            })?;
+        Ok(Self { tx, dropped, stop })
+    }
+}
+impl Sink for BufferedSink {
+    fn write(&self, record: &Record) {
+        if self.tx.try_send(record.clone()).is_err() {
+            self.dropped(1);
+        }
+    }
+    fn dropped(&self, count: u64) {
+        self.dropped
+            .fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+impl Drop for BufferedSink {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 pub struct NdjsonSink {
@@ -169,6 +224,21 @@ impl Sink for NdjsonSink {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
+        // Keep one 4 MiB segment and one previous segment; rotation runs only
+        // on the bounded writer, away from timing and native dispatch.
+        if guard.as_ref().is_some_and(|file| {
+            file.get_ref()
+                .metadata()
+                .is_ok_and(|meta| meta.len() >= 4 * 1024 * 1024)
+        }) {
+            if let Some(mut file) = guard.take() {
+                let _ = file.flush();
+            }
+            let previous = self.path.with_extension("ndjson.1");
+            let _ = std::fs::remove_file(&previous);
+            let _ = std::fs::rename(&self.path, &previous);
+            *guard = Self::open(&self.path);
+        }
         if let Some(file) = guard.as_mut() {
             if writeln!(file, "{line}").is_ok() && file.flush().is_ok() {
                 return;
@@ -195,6 +265,56 @@ impl Sink for NdjsonSink {
 mod tests {
     use super::*;
     use crate::watchdog::machine::TerminationReason;
+
+    #[test]
+    fn blocked_log_writer_plateaus_and_reports_loss_after_release() {
+        struct BlockingSink {
+            entered: std::sync::mpsc::SyncSender<()>,
+            release: Mutex<std::sync::mpsc::Receiver<()>>,
+            loss: std::sync::mpsc::SyncSender<u64>,
+        }
+        impl Sink for BlockingSink {
+            fn write(&self, _: &Record) {
+                let _ = self.entered.try_send(());
+                let _ = self.release.lock().unwrap().recv();
+            }
+            fn dropped(&self, count: u64) {
+                let _ = self.loss.try_send(count);
+            }
+        }
+        let (entered, observed) = std::sync::mpsc::sync_channel(1);
+        let (release, released) = std::sync::mpsc::channel();
+        let (loss, losses) = std::sync::mpsc::sync_channel(2);
+        let writer = BufferedSink::new(std::sync::Arc::new(BlockingSink {
+            entered,
+            release: Mutex::new(released),
+            loss,
+        }))
+        .unwrap();
+        writer.write(&record());
+        observed
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        for _ in 0..10_000 {
+            writer.write(&record());
+        }
+        assert_eq!(
+            writer.dropped.load(std::sync::atomic::Ordering::Relaxed),
+            10_000 - 64
+        );
+        drop(writer);
+        release.send(()).unwrap();
+        assert_eq!(
+            losses
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap(),
+            10_000 - 64
+        );
+        // Disconnection means the worker and its blocked-sink owner settled.
+        assert!(observed
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .is_err());
+    }
 
     fn transition() -> TransitionLog {
         TransitionLog {
