@@ -102,6 +102,10 @@ pub struct HookDrop {
     pub tool_input_fingerprint: Option<String>,
     #[serde(default)]
     pub resume_evidence: Option<ResumeHookEvidence>,
+    // The remote feed's masked, truncated summary: the one exception to the
+    // digest rule above, read only by the in-memory feed.
+    #[serde(default)]
+    pub feed: Option<crate::remote::feed::HookFeed>,
 }
 
 impl Default for HookDrop {
@@ -135,6 +139,7 @@ impl Default for HookDrop {
             tool_name: None,
             tool_input_fingerprint: None,
             resume_evidence: None,
+            feed: None,
         }
     }
 }

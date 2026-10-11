@@ -99,6 +99,7 @@ import {
   InsetPanelSpecimen,
   MonoBlockSpecimen,
   Notice,
+  QrImage,
   NumberFieldSpecimen,
   NoticeEvictionCaption,
   NoticeToast,
@@ -1181,6 +1182,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <TextInput variant="setting-number" aria-label="Compact setting number" type="number" value={4} readOnly />
           <TextInput variant="setting-number-rounded" aria-label="Rounded setting number" type="number" value={15} readOnly />
           <TextInput variant="task-number" aria-label="Task number" type="number" value={2} readOnly />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="QrImage">
+          <QrImage label="Pairing code" svg={'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1z" fill="#000"/></svg>'} />
         </SpecimenGroup>
 
         <SpecimenGroup heading="EmptyState">

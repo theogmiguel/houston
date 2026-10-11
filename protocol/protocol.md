@@ -1,4 +1,4 @@
-# Wire protocol v130
+# Wire protocol v131
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -361,6 +361,15 @@ every refusal names the setting.
 | `voice_model_delete` | `model_id` | `voice_model_state` + `voice_settings` (bcast) |
 | `voice_level_monitor` | `enabled` | `voice_level` every `VOICE_LEVEL_INTERVAL_MS` while anyone is monitoring. Opens the microphone; refcounted per connection as a set, and released on disconnect |
 
+### Remote access
+
+| Message | Fields | Reply |
+|---|---|---|
+| `remote_get` | — | `remote_state` (direct) |
+| `remote_configure` | `enabled?`, `bind?` (`IP:PORT`, port not 0), `public_url?` (an http(s) origin; `""` clears), `ntfy_url?` (an http(s) topic URL, stored in the OS keychain; `""` turns notifications off), `notify_delay_secs?` (`0..=REMOTE_NOTIFY_DELAY_MAX_SECS`), `notify_detail?: RemoteNotifyDetail`, `notify_finished?` | `remote_state` (bcast). Every field is validated before any is stored, so a refusal changes nothing; it is an `error` with `context: "remote"` naming the value and the expected shape (an ntfy refusal never echoes the URL) |
+| `remote_pair_start` | — | `remote_pairing` (direct). Replaces any earlier code |
+| `remote_device_revoke` | `id` | `remote_state` (bcast); an unknown id is an `error` with `context: "remote"` |
+
 ### Host and usage
 
 | Message | Fields | Reply |
@@ -498,6 +507,8 @@ every refusal names the setting.
 | `voice_transcript` | `session`, `text`, `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start` |
 | `voice_model_state` | `model: VoiceModelState` | bcast — download progress, completion, failure or deletion |
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
+| `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
+| `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
@@ -810,6 +821,13 @@ WorktreeKeep       stale{idle_days} | branch_changed{current?} | dirty{files} | 
                    grace{until_ms} | not_merged{state} | no_pr | gh_unavailable{gh} |
                    probably_integrated | remove_failed{message}
 
+RemoteNotifyDetail generic | pane_name
+RemoteDevice       id, name, created_at (epoch ms), last_seen_at? (epoch ms)
+RemoteInfo         enabled, bind ("IP:PORT"), public_url?, url (public_url, else http://<bind>), listening,
+                   error? (the last bind or serve failure), ntfy_server? (origin only; the topic URL is in the
+                   OS keychain and never on the wire), notify_delay_secs, notify_detail: RemoteNotifyDetail,
+                   notify_finished, devices: RemoteDevice[]
+
 UsageProvider      claude | codex
 UsageTokenTotals   uncached_input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_tokens
 UsageBucket        hour_start_ms, provider, model, totals, cost_usd, cache_savings_usd, records,
@@ -1118,6 +1136,56 @@ caller; shared-checkout and worktree-trust warnings do not create inbox rows.
 for Claude and Codex PostToolUse context. These supplementary hints do not acknowledge,
 resolve or consume the durable inbox rows.
 
+## Remote access HTTP API
+
+A separate, opt-in listener (`RemoteInfo.bind`, default `127.0.0.1:47823`, or
+`127.0.0.1:47824` on the dev channel so the two never share a web origin) serves
+paired devices. It is not `/ws`: it never serves `/ws`, `/mcp`, `/orchestrate`,
+`/task`, `/inbox`, `/harness` or `/manage`, and it carries no PTY byte stream.
+Bodies are JSON (`Content-Type: application/json`), at most `BODY_LIMIT` bytes.
+Errors are `{"error": "<message naming the value and the expected shape>"}`.
+
+| Route | Auth | Body / query | Reply |
+|---|---|---|---|
+| `GET /`, `/app.js`, `/app.css`, `/manifest.webmanifest`, `/icon.svg` | none | — | the embedded web client; `/` carries a CSP that admits scripts and styles only from this listener and no inline code |
+| `POST /api/pair` | pairing code | `{code, device_name}` (1–64 printable characters) | `{token, device_id}`. The token (256 bits, hex) is returned once; the daemon stores its SHA-256 |
+| `GET /api/me` | device | — | `{device_id, name}` |
+| `GET /api/sessions` | device | — | `{sessions: [{id, title, workspace: {name, path}, kind: AgentKind, state: SessionState, status: AgentStatus?, reason: null, status_since?, pending?: Pending, waiting_since?, last_reply_excerpt? (≤ 160 characters), last_step? (≤ 120)}]}`, needs-input first, then working, idle, others, and panes that are not running. `pending` and `waiting_since` are set only while the pane needs input |
+| `GET /api/sessions/{id}/feed` | device | `?after=` a sequence number, default 0 | `{id, epoch, entries: FeedEntry[], first_seq, last_seq, truncated, pending?: Pending}`: the entries after `after` still held. `truncated` means some entries after `after` were already evicted. Sequence numbers start at 1 per pane and restart with each `epoch` (a 16-digit hex string that changes when the daemon starts or remote access is turned back on) |
+| `POST /api/sessions/{id}/decide` | device | `{epoch, entry_seq, choice, text?}`; `choice` is `approve`, `always` or `deny` for a permission, an option number (`"1"`…) or `other` with `text` for a question (`other` is refused, 400, when the question has `previews`) | `{ok: true}` once the provider's keys for that choice were written to the PTY. 409 when `epoch` is not the current one, `entry_seq` is not the pane's pending card, the card was already answered from a device or in the terminal, the permission's target is `truncated` and the choice approves it, or Houston has no key mapping for the provider or the card's shape (the message names which); 400 for a choice the card does not offer |
+| `GET /api/events` | device | — | `text/event-stream`: `ready` once, then `session` `{id}` when a pane's status or card changes, `feed` `{id, seq}` when its feed grows, and `resync` when this reader fell behind; a comment every 15 s. The stream ends when remote access is turned off, its address changes, or the device is revoked. At most `EVENT_STREAMS_MAX` (8) streams at once, else 503 |
+| `GET /api/sessions/{id}/screen` | device | `?lines=` 1–200, default 60 | `{id, lines: string[], source}`. `source: "screen"` is the same text extraction as `pane_read`; where the build has no terminal emulator (Windows) it is `"scrollback"`, the raw output tail with escape sequences removed. It never attaches or resizes |
+| `POST /api/sessions/{id}/input` | device | `{text?: string (≤ 4096 characters, no control characters but newline), keys?: string[] (≤ 16)}` | `{ok: true}`. Text is written first, then keys after a short settle, through the desktop's stdin path. Multi-line text is sent as a bracketed paste only when the pane's program enabled paste mode (2004), else refused with 409. One request per pane at a time; a concurrent one gets 409. Keys: `esc enter up down tab ctrl+c y n left right backspace space` |
+
+`FeedEntry` is `{seq, at (epoch ms), type, …}` with `type` one of `prompt {text}`,
+`reply {text}` (markdown, ≤ 16 KiB), `question {questions: [{header, question, options:
+[{label, description}], multi_select, previews}], answers?}`, `answer {answers}`,
+`permission {tool, target, always, truncated, outcome?}`, `step {tool, target}` and
+`status {status: finished | exited}`. Text is masked by the credential redactor before it
+leaves the hook client; a permission `target` keeps its line breaks, loses invisible
+formatting characters, and is `truncated` when it was cut or had such characters removed.
+`Pending` is `{epoch, seq, type: question | permission | input, title, detail, truncated,
+since, decidable, sent, answered_elsewhere}`; `sent` and `answered_elsewhere` stay set until
+the pane's status changes or a new card replaces it. `input` is a pane waiting without a
+structured request, which a device answers through `input`.
+
+Device auth is `Authorization: Bearer <token>`. Every request's `Host` must name
+an allowed host (`localhost`, `127.0.0.1`, `[::1]`, the bind IP, the public URL's
+host), else 421; a non-GET request whose `Origin` is not the public URL or
+`http://<allowed host>:<bind port>` (scheme, host and port compared) gets 403.
+Neither refusal lists the allowed names. A bind on every interface (`0.0.0.0`,
+`::`) is refused unless a public URL is set.
+
+Statuses: 400 invalid input, 401 missing or unknown token or pairing code, 404
+unknown pane, 408 a request ran past 20 s, 409 pane not running, input already
+in flight, multi-line text the program cannot take as a paste or a decision that
+no longer applies, 413 body too large, 429 locked out (with `Retry-After`), 503
+the daemon could not read its paired devices or too many event streams are open. Ten wrong tokens or pairing codes from one source within 60 s
+lock that source out of token checks and pairing for 60 s; loopback callers
+(everything behind `tailscale serve`) are one source; a valid token is never
+locked out. The listener holds at most 64 connections and closes one that is
+idle for 30 s.
+
 ## Versioning rules
 
 - `PROTOCOL_VERSION` is bumped **once per wire-touching batch**, not once per
@@ -1138,6 +1206,8 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 131 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |
+| 130 | Shell panes report the agent CLI currently running through optional `SessionInfo.running_agent` and the `agent_running` broadcast. Hook drops or banners set it while a command is in flight; authenticated shell command completion or the provider session-end hook clears it. |
 | 129 | **Checkout, activity and pull-request surfaces gain their wire data.** `SessionInfo.checkout?` (`SessionCheckout`, `CheckoutKind`) and `SessionInfo.activity?` (`SessionActivity`) have matching `session_checkout` and `session_activity` broadcasts. `PrInfo` and `PrListItem` gain title, branch, diffstat, creation, comment, review-request and mergeability details; `pr_list` gains `PrSort`; `pr_status_batch` requests one existing `pr_status` reply per directory. `PrCheck.run_id` and `pr_check_log` expose a tail capped at 40 lines and 16 KiB. Tag colors accept any six-digit hexadecimal `#rrggbb`, stored lowercase; `TAG_PALETTE` remains the preset list. `session_attach` gains `from_offset?` and `generation?`, so a client that already holds a session's output asks only for the bytes after it |
 | 128 | Manual Sleep/Wake adds `SessionState.sleeping`, retained hook-fed cues and context, `session_sleep`, `session_wake`, `session_memory_get`, `session_updated` and `session_memory`. Sleeping panes do not auto-restore. Task Projects, Delivery/Slice metadata, blockers, readiness, revision-bound read-only Plan and per-workspace GitHub Issues/Notion connectors add the corresponding `task_project_*`, `task_domain_*`, `task_plan_*` and `task_tracker_*` messages and shared shapes above. Manual `task_start` gains `override_readiness`; automatic starts never bypass readiness. External snapshots preserve both conflicting values until an explicit resolution. |
 | 127 | Managed worktree entries carry their recorded `base_branch` and a `status` (`ready`, `stale`, `kept`). `WorktreeKeep.not_integrated { count, base }` means `git cherry` found `count` commits on a branch with no PR that have no patch-equivalent in `base` (the recorded base, or the default branch for rows recorded without one); with none, the worktree is integrated and removable after the grace. `WorktreeKeep.stale` carries `idle_days` and `removal_in_days`; a worktree becomes stale at half the idle removal threshold, which defaults to 30 days and is reported by `host_info.worktree_idle_removal_days`. When automatic removal is enabled, a qualifying worktree is removed at the threshold and its branch is kept. Manual stale removal also keeps the branch. |

@@ -11,6 +11,7 @@ export type SettingsSectionId =
   | 'dictation'
   | 'privacy'
   | 'daemon'
+  | 'remote'
   | 'about'
 
 export type SettingsIconKey =
@@ -26,6 +27,7 @@ export type SettingsIconKey =
   | 'database'
   | 'info'
   | 'server'
+  | 'phone'
 
 export interface SettingsSectionDef {
   id: SettingsSectionId
@@ -48,6 +50,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'dictation', label: 'Dictation', icon: 'mic', keywords: ['dictation', 'voice', 'speech', 'microphone', 'whisper', 'transcribe', 'stt', 'push to talk', 'language'] },
   { id: 'privacy', label: 'Privacy & data', icon: 'database', keywords: ['telemetry', 'history', 'ignore patterns', 'browsing data', 'session database', 'transcripts', 'clear'] },
   { id: 'daemon', label: 'Daemon', icon: 'server', keywords: ['diagnostics', 'channel', 'state directory', 'pid', 'port', 'protocol version', 'uptime', 'logs', 'stop daemon', 'live sessions'] },
+  { id: 'remote', label: 'Remote access', icon: 'phone', keywords: ['phone', 'mobile', 'remote', 'pair', 'device', 'tailscale', 'ntfy', 'push', 'qr', 'revoke', 'another computer'] },
   { id: 'about', label: 'About', icon: 'info', keywords: ['version', 'build', 'third-party notices', 'release notes', 'licences'] }
 ] as const
 

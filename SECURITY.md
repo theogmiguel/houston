@@ -14,8 +14,9 @@ backported patch.
 
 ## Scope
 
-Houston is a local, single-user app with a loopback-only daemon and no Houston account or
-hosted control plane. Network-backed features are explicit, including hosted agent CLIs,
+Houston is a local, single-user app with no Houston account or hosted control plane. The
+daemon's control endpoint listens on loopback only; the optional remote access listener is
+off by default and serves only devices the user paired. Network-backed features are explicit, including hosted agent CLIs,
 GitHub operations, browser and MCP integrations, model downloads and optional cloud
 dictation. The security-sensitive surfaces include:
 
@@ -26,6 +27,11 @@ dictation. The security-sensitive surfaces include:
 - **The OS keychain** — where Houston stores secrets, and never in the database or the log.
 - **Network-backed features** — particularly browser automation, MCP servers and cloud
   dictation, which can transmit user-selected content to external services.
+- **Remote access** — the opt-in listener for paired phones and computers: pairing codes,
+  per-device bearer tokens (only their SHA-256 is stored), the Host and Origin checks and
+  the authentication lockout. A paired device can read and type into every pane, which is
+  equivalent to a shell as the user; a way to obtain that access without pairing, or to
+  reach the control endpoint through this listener, is in scope.
 - **Writes into another CLI's own config** — the managed-marker blocks Houston installs
   into an agent CLI's hooks or MCP configuration.
 

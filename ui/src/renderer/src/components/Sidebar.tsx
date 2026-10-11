@@ -57,6 +57,7 @@ import {
   IconSliders,
   IconTag,
   IconServer,
+  IconPhone,
   IconUser,
   IconTarget,
   IconTasks,
@@ -182,6 +183,7 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   info: IconInfo,
   wrench: IconWrench,
   server: IconServer,
+  phone: IconPhone,
 };
 
 const GridRailGitSubscription = lazy(() =>

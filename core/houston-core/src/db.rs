@@ -18,7 +18,9 @@ pub use intake::{
     STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
+mod remote;
 mod task_trackers;
+pub use remote::RemoteDeviceRow;
 mod tasks;
 pub use task_trackers::TaskTrackerOutboxRow;
 pub use tasks::{
@@ -1616,6 +1618,7 @@ impl Db {
         harness::migrate(&conn)?;
         tasks::migrate(&conn)?;
         task_trackers::migrate(&conn)?;
+        remote::migrate(&conn)?;
         intake::migrate(&conn)?;
         add_column_if_missing(
             &conn,

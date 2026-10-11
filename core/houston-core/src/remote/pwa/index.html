@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f0f12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f1f1f3" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Houston">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="app.css">
+<title>Houston</title>
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="bar" id="bar">
+  <button id="back" class="icon-btn hidden" type="button" aria-label="Back to panes">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+  </button>
+  <div class="bar-title">
+    <h1 id="heading">Houston</h1>
+    <p id="subheading" class="bar-sub hidden"></p>
+  </div>
+  <span id="pane-status" class="status hidden"></span>
+  <span id="conn" class="conn hidden" role="status"><span class="dot"></span><span id="conn-label">Connecting</span></span>
+</header>
+
+<main id="view-pair" class="view pair hidden">
+  <div class="pair-card">
+    <img class="pair-mark" src="icon.svg" alt="" width="56" height="56">
+    <h2 class="pair-title">Pair this device</h2>
+    <p class="pair-lede">Follow and answer your Houston panes from here.</p>
+    <ol class="steps" id="pair-steps">
+      <li id="step-1"><span class="step-n">1</span><span>On the computer running Houston, open <b>Settings ▸ Remote access</b>.</span></li>
+      <li id="step-2"><span class="step-n">2</span><span>Choose <b>Pair a device</b>, then scan the code or open its link on this device.</span></li>
+      <li id="step-3"><span class="step-n">3</span><span>Name this device and confirm.</span></li>
+    </ol>
+    <form id="pair-form" class="pair-form hidden">
+      <label class="field-label" for="device-name">Device name</label>
+      <input id="device-name" class="input" maxlength="64" autocomplete="off" required>
+      <button class="btn primary block" type="submit" id="pair-submit">Pair</button>
+    </form>
+    <p id="pair-error" class="notice danger hidden" role="alert"></p>
+  </div>
+</main>
+
+<main id="view-list" class="view list hidden">
+  <div id="chips" class="chips hidden" role="toolbar" aria-label="Filter by workspace"></div>
+  <div id="list"></div>
+  <div id="list-empty" class="empty hidden">
+    <p class="empty-title">No panes are open</p>
+    <p class="empty-body">Panes you start in Houston appear here.</p>
+  </div>
+  <p id="list-error" class="notice danger hidden" role="alert"></p>
+</main>
+
+<main id="view-pane" class="view pane hidden">
+  <div class="tabs" role="tablist" aria-label="Pane view">
+    <button id="tab-conv" class="tab" role="tab" type="button" aria-selected="true">Conversation</button>
+    <button id="tab-term" class="tab" role="tab" type="button" aria-selected="false">Terminal</button>
+  </div>
+  <section id="conv" class="conv" aria-live="polite">
+    <div id="feed" class="feed"></div>
+    <div id="feed-empty" class="empty hidden">
+      <p class="empty-title">No activity yet</p>
+      <p class="empty-body">Prompts, replies and requests appear here as the agent reports them. Older output is in the Terminal tab.</p>
+    </div>
+  </section>
+  <section id="term" class="term hidden">
+    <pre id="screen" class="screen" tabindex="0" aria-label="Terminal screen"></pre>
+    <p id="screen-note" class="term-note hidden"></p>
+  </section>
+  <div class="dock" id="dock">
+    <div id="card" class="decision hidden" aria-live="assertive"></div>
+    <div id="keys" class="keys hidden" role="toolbar" aria-label="Keys"></div>
+    <div id="other" class="other hidden"><span id="other-label"></span><button id="other-cancel" class="link-btn" type="button">Cancel</button></div>
+    <div class="composer">
+      <button id="more" class="icon-btn round" type="button" aria-label="Show keys" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <textarea id="text" rows="1" placeholder="Message" aria-label="Message to the pane"></textarea>
+      <button id="send" class="send" type="button" aria-label="Send" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </div>
+    <p id="dock-status" class="dock-status" role="status"></p>
+  </div>
+</main>
+</body>
+</html>

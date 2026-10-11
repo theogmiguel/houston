@@ -7,7 +7,7 @@ describe('settingsSections', () => {
       ['appearance', 'Appearance'], ['mascot', 'Mascot'], ['terminal', 'Terminal'], ['shortcuts', 'Shortcuts'],
       ['agents', 'Agents'], ['notifications', 'Notifications'], ['workspaces', 'Workspaces'],
       ['orchestration', 'Orchestration'], ['tasks', 'Tasks'], ['dictation', 'Dictation'],
-      ['privacy', 'Privacy & data'], ['daemon', 'Daemon'], ['about', 'About']
+      ['privacy', 'Privacy & data'], ['daemon', 'Daemon'], ['remote', 'Remote access'], ['about', 'About']
     ])
     expect(SETTINGS_SECTIONS.find(({ id }) => id === 'notifications')?.pending).toBeUndefined()
     expect(NAVIGABLE_SETTINGS_SECTIONS).toHaveLength(13)

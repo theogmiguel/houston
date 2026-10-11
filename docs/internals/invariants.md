@@ -256,6 +256,28 @@ Providers without hook mappings (Droid, Copilot, Aider) get identity only, from
 banner sniffing that `agents.rs` explicitly documents as not the status machine. They can
 be delegated to, via #3 — identity is still not status.
 
+### The remote feed comes from hook payloads and lives in memory
+
+The conversation a paired remote-access device reads (`remote/feed.rs`) is built only from
+hook payload fields: the prompt, the turn's last message, `AskUserQuestion`'s questions and
+answers, and a permission request's or finished tool call's name and one target (a command,
+path, URL or pattern). It never reads a transcript or the screen. Its decision card follows
+status transitions; it never sets one. No hook reports that a permission was granted, so the
+pane keeps needing input until the approved tool finishes: a card a device answered stays
+consumed until the status changes or a new card replaces it, and an operator keystroke into
+the pane marks an open card as answered in the terminal.
+
+This is the one exception to the rule that hook drops carry only a digest of `tool_input`:
+the hook client masks that single target, like every feed text, with the review-packet
+credential patterns followed by the high-entropy pass (`remote::feed::mask`), removes
+invisible formatting characters, cuts it to at most 300 characters, and writes it into the
+drop under `feed`. A target that was cut or had such characters removed is marked
+`truncated`, and a device may not approve it. The daemon keeps it in a per-session ring
+(200 entries, 512 KiB, 32 MiB across sessions) only while remote access is on, clears every
+ring when it is turned off, serves it only to paired devices, and never writes it to SQLite
+or the log; it is gone when the daemon exits. A decision a device makes is typed into the PTY as the provider's own
+keys, through the same stdin path as typed input, never through a hook reply.
+
 ### The daemon owns a terminal emulator; screen cells never determine status
 
 Each session has one libghostty-vt terminal (`vt.rs`), built from the same pinned
@@ -263,6 +285,11 @@ revision as the renderer. It receives every redacted PTY chunk for attach snapsh
 handoff, screen reads and terminal queries. Its parsed OSC 7501 callback consumes
 explicit reports under the precedence and bounds described above. No lifecycle
 transition is derived from a cell or from sampled screen contents.
+
+Paired remote-access devices can request a screen read (`GET /api/sessions/{id}/screen`)
+for display; the daemon never polls it. Remote input also checks whether bracketed paste
+is enabled to encode a multi-line answer, as the renderer does for a desktop paste. That
+mode bit decides an encoding, never a status.
 
 **Query ownership.** Ordinary replies reach the PTY from the daemon only while
 `Session::watched()` is false. A watched pane is answered by the renderer's engine.
