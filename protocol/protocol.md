@@ -1,4 +1,4 @@
-# Wire protocol v134
+# Wire protocol v135
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -516,7 +516,7 @@ every refusal names the setting.
 | `voice_settings` | `settings: VoiceSettings`, `cloud_key_present`, `keyring_error?`, `models: VoiceModelState[]` | direct reply to `voice_settings_get`; bcast after any settings or key change |
 | `voice_devices` | `devices: VoiceDevice[]` | direct reply to `voice_devices_get` |
 | `voice_state` | `state: VoiceState` | bcast on every capture transition, including failures |
-| `voice_transcript` | `session`, `text`, `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start` |
+| `voice_transcript` | `session`, `text` (the engine's transcript), `insert` (what to put in the prompt: the trimmed text plus one space, led by the agent preamble on the pane's first dictation when `output_mode` is `english` and `agent_preamble` is on; empty when there is nothing to insert), `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start`. The daemon tracks which panes already received the preamble, for the desktop and paired devices together, and forgets a pane when it is removed |
 | `voice_model_state` | `model: VoiceModelState` | bcast — download progress, completion, failure or deletion |
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
 | `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
@@ -1290,6 +1290,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 135 | **The daemon assembles dictated text.** `voice_transcript` gains `insert`, the text the renderer puts in the prompt; the agent preamble and its once-per-pane rule moved from the renderer to the daemon, so desktop and remote dictation share them. |
 | 134 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`, and `remote_grids_publish` with `RemoteGrid`, so paired devices group panes by desktop grid. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |
 | 133 | **Children ask the orchestrator before alerting the user, retain instruction queues and expose full results after close.** `InboxKind` gains progress/question/blocked/reply and `InboxRow.reply_to?`. `DelegationState.asked_orchestrator` and `DelegationInfo.input_request?` type input ownership, stable identity, bounded redacted provider permission evidence and escalation reasons. Every actual permission is parent-first; parents deny or escalate and only the operator may approve; only user-owned asks count in `children_waiting`. MCP/CLI gain report, reply, deny, escalate and instruction list/get/cancel/resume. Typed instruction snapshots, acceptance and detail record queued/held/delivered/cancelled/uncertain states. Result previews gain stable message/request identity and readiness; result pagination and scoped full-result detail/refusal support archived children. All new `/ws` messages and payloads are defined above. |
 | 132 | **Claude panes use the fullscreen TUI by default.** `SessionPolicy.claude_fullscreen` defaults to true and can be changed through `session_policy_set`; the launcher sets the fullscreen environment flag when enabled. |

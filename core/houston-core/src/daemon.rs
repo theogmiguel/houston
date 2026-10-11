@@ -8904,6 +8904,7 @@ impl Daemon {
             .lock()
             .expect("respawned_as lock")
             .insert(old_id, spawned.id);
+        self.voice.forget_session(old_id);
         self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: old_id });
         if let Some(parent) = spawned.spawned_by {
             self.broadcast_live_children(parent);
@@ -11788,6 +11789,7 @@ impl Daemon {
             self.mcp_notify.close_session(id);
             self.remove_persisted_scrollback(id);
             self.frame_taps.forget_session(id);
+            self.voice.forget_session(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             if let Some(parent) = session.info.spawned_by {
                 self.broadcast_live_children(parent);
@@ -11803,6 +11805,7 @@ impl Daemon {
             self.db.mark_closed(id)?;
             worktree_pass::queue_closed_session(self, id);
             self.remove_persisted_scrollback(id);
+            self.voice.forget_session(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             return Ok(());
         }
@@ -15130,6 +15133,7 @@ impl Daemon {
             sample_rate: crate::voice::capture::TARGET_SAMPLE_RATE,
         };
         let me = self.clone();
+        let settings_used = settings.clone();
         let outcome = tokio::task::spawn_blocking(move || {
             let _engine = me.voice.claim_engine_desktop();
             me.voice_transcribe(&audio, &settings)
@@ -15161,9 +15165,16 @@ impl Daemon {
             });
             return;
         }
+        let insert = self.voice.dictation_text(
+            target,
+            &text,
+            settings_used.output_mode,
+            settings_used.agent_preamble,
+        );
         self.broadcast_control(&proto::ServerMsg::VoiceTranscript {
             session: target,
             text,
+            insert,
             engine: engine_label,
             translated,
         });

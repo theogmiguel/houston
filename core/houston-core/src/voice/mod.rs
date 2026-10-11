@@ -1,5 +1,6 @@
 pub mod capture;
 pub mod cloud;
+pub mod dictation;
 pub mod models;
 pub mod runtime;
 #[cfg(unix)]

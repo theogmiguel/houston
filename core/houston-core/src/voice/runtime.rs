@@ -31,6 +31,7 @@ struct Inner {
     monitors: std::collections::HashSet<u64>,
     desktop_transcribing: usize,
     remote_transcribing: bool,
+    preambled: std::collections::HashSet<u32>,
 }
 
 /// Who already holds the engine when a paired device asks for it.
@@ -177,6 +178,29 @@ impl Runtime {
             runtime: self,
             remote: true,
         })
+    }
+
+    /// The text a dictation for `session` inserts. The agent preamble leads only
+    /// the pane's first non-empty dictation, from the desktop or a paired device.
+    pub fn dictation_text(
+        &self,
+        session: u32,
+        text: &str,
+        output_mode: houston_protocol::VoiceOutputMode,
+        agent_preamble: bool,
+    ) -> String {
+        let mut inner = self.lock();
+        let first = super::dictation::wants_preamble(output_mode, agent_preamble)
+            && !inner.preambled.contains(&session);
+        let out = super::dictation::insert_text(text, first);
+        if first && !out.is_empty() {
+            inner.preambled.insert(session);
+        }
+        out
+    }
+
+    pub fn forget_session(&self, session: u32) {
+        self.lock().preambled.remove(&session);
     }
 
     #[cfg(unix)]
@@ -465,6 +489,53 @@ mod tests {
             Some(EngineBusy::Desktop),
             "the desktop is never refused, and still blocks the next remote claim"
         );
+    }
+
+    #[test]
+    fn the_preamble_leads_each_panes_first_dictation_only() {
+        use super::super::dictation::AGENT_PREAMBLE;
+        use houston_protocol::VoiceOutputMode::English;
+        let rt = Runtime::new();
+        assert!(rt
+            .dictation_text(1, "one", English, true)
+            .starts_with(AGENT_PREAMBLE));
+        assert_eq!(rt.dictation_text(1, "two", English, true), "two ");
+        assert!(rt
+            .dictation_text(2, "three", English, true)
+            .starts_with(AGENT_PREAMBLE));
+    }
+
+    #[test]
+    fn an_empty_transcript_does_not_use_up_the_preamble() {
+        use super::super::dictation::AGENT_PREAMBLE;
+        use houston_protocol::VoiceOutputMode::English;
+        let rt = Runtime::new();
+        assert_eq!(rt.dictation_text(1, "  ", English, true), "");
+        assert!(rt
+            .dictation_text(1, "the real one", English, true)
+            .starts_with(AGENT_PREAMBLE));
+    }
+
+    #[test]
+    fn a_closed_pane_is_forgotten() {
+        use super::super::dictation::AGENT_PREAMBLE;
+        use houston_protocol::VoiceOutputMode::English;
+        let rt = Runtime::new();
+        rt.dictation_text(1, "one", English, true);
+        rt.forget_session(1);
+        assert!(rt
+            .dictation_text(1, "two", English, true)
+            .starts_with(AGENT_PREAMBLE));
+    }
+
+    #[test]
+    fn original_output_never_records_a_preamble() {
+        use houston_protocol::VoiceOutputMode::{English, Original};
+        let rt = Runtime::new();
+        assert_eq!(rt.dictation_text(1, "rode", Original, true), "rode ");
+        assert!(rt
+            .dictation_text(1, "run", English, true)
+            .starts_with("The following"));
     }
 
     #[test]

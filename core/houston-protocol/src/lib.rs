@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 134;
+pub const PROTOCOL_VERSION: u32 = 135;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -5253,6 +5253,10 @@ pub enum ServerMsg {
     VoiceTranscript {
         session: u32,
         text: String,
+        /// What to insert into the pane's prompt, assembled by the daemon: the
+        /// trimmed text, the agent preamble on the pane's first English-output
+        /// dictation, a trailing space. Empty when there is nothing to insert.
+        insert: String,
         engine: String,
         translated: bool,
     },
