@@ -1,4 +1,4 @@
-# Wire protocol v131
+# Wire protocol v132
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -586,7 +586,7 @@ TagInfo            v100: id, name (trimmed, non-empty, ≤ MAX_TAG_NAME_LEN (32)
                    fixed, because the chrome's 4.5:1 ink/ground gate can only clear colors
                    somebody measured). One registry row; sessions reference it by id
 RecoverySummary    respawned, deferred, crashed
-SessionPolicy      idle_reap_enabled (default false), idle_reap_minutes (default 15), claude_fullscreen (default true; v131)
+SessionPolicy      idle_reap_enabled (default false), idle_reap_minutes (default 15), claude_fullscreen (default true; v132)
 UpdatePolicy       check (default true) — off means no request is ever made, and the one
                    request carries no version, OS or identifier
 UpdateRelease      version, notes (GitHub's release body verbatim; empty when the release
