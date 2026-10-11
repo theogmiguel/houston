@@ -51,7 +51,8 @@ describe('skill surface helpers', () => {
       tool('codex', { skills: [{ name: skill.name, path: '/codex/ui-tokens', digest: 'same' }] }),
       tool('opencode', { inherits_claude: true }),
       tool('cursor', { inherits_claude: true }),
-      tool('grok', { inherits_claude: true })
+      tool('grok', { inherits_claude: true }),
+      tool('zcode', { skills: [{ name: skill.name, path: '/zcode/ui-tokens', digest: 'old' }] })
     ])
 
     expect(rows.map(({ label, relation }) => [label, relation])).toEqual([
@@ -60,8 +61,10 @@ describe('skill surface helpers', () => {
       ['OpenCode', 'reads Claude Code’s copy'],
       ['Cursor', 'reads Claude Code’s copy'],
       ['Grok', 'reads Claude Code’s copy'],
+      ['ZCode', 'copy differs'],
       ['Antigravity', 'not managed here']
     ])
+    expect(skillCliRelations(skill, [tool('zcode')]).find((r) => r.tool === 'zcode')?.relation).toBe('no copy')
   })
 
   it('counts sessions from the last Harness digest and names missing reviews', () => {

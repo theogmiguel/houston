@@ -10,6 +10,7 @@ export const SKILL_CLI_ORDER: readonly AgentKind[] = [
   'opencode',
   'cursor',
   'grok',
+  'zcode',
   'antigravity'
 ]
 

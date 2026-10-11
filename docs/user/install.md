@@ -146,7 +146,9 @@ tells the pane's parent (or shows an error) to check the pane; the message never
 the prompt. Without the hook toggle on, nothing can confirm the paste.
 ZCode loads a skill with `/skill <name>`, so a skill used in a ZCode pane is sent that way,
 and Skills shows and copies it that way while a ZCode pane is focused. ZCode finds skills
-in `~/.zcode/skills`, `~/.agents/skills` and the same folders in the project.
+in `~/.zcode/skills`, `~/.agents/skills` and the same folders in the project, not in
+`~/.claude/skills`; Houston's skill push copies your Claude skills into `~/.zcode/skills`,
+as it does for Codex, and agent spawning installs its `houston-pane` skill there.
 
 What is transmitted: ZCode sends prompts, code and tool results to the service you signed
 in to — Z.ai, which processes data in Singapore, or BigModel, in China. For GLM Coding Plan
