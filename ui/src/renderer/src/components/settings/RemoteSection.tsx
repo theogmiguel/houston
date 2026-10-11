@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { openConnectPhone } from '../../connectPhone'
 import type { HoustonClient } from '../../houston/client'
 import { REMOTE_NOTIFY_DELAY_MAX_SECS } from '../../houston/generated/DEFAULTS'
 import type { RemoteDevice } from '../../houston/generated/RemoteDevice'
@@ -6,7 +7,7 @@ import type { RemoteNotifyDetail } from '../../houston/generated/RemoteNotifyDet
 import { plainHttpOffLoopback, useRemote } from '../../houston/useRemote'
 import { Select, type SelectOption } from '../ui/Select'
 import { SettingsList, Toggle } from '../ui/settingsPrimitives'
-import { Button, Notice, QrImage, TextInput } from '../ui'
+import { Button, DetailsDisclosure, Notice, QrImage, TextInput } from '../ui'
 import { NumberSetting, Row, SectionHead, SubHead } from './shared'
 
 const DETAIL_OPTIONS: SelectOption[] = [
@@ -124,26 +125,6 @@ export function RemoteSection({ client }: { client: HoustonClient | null }): Rea
                 data-testid="settings-remote-enabled"
               />
             </Row>
-            <Row title="Listen address" desc="IP and port. Keep 127.0.0.1 and publish it with tailscale serve for HTTPS on your tailnet.">
-              <TextSetting
-                label="Listen address"
-                testId="settings-remote-bind"
-                width="md"
-                mono
-                value={remote.bind}
-                onCommit={(bind) => configure({ bind })}
-              />
-            </Row>
-            <Row title="Public URL" desc="The address devices open, such as https://machine.tailnet.ts.net. Empty uses the listen address.">
-              <TextSetting
-                label="Public URL"
-                testId="settings-remote-public-url"
-                type="url"
-                placeholder={`http://${remote.bind}`}
-                value={remote.public_url ?? ''}
-                onCommit={(public_url) => configure({ public_url })}
-              />
-            </Row>
             <Row
               title="Status"
               desc={
@@ -159,6 +140,31 @@ export function RemoteSection({ client }: { client: HoustonClient | null }): Rea
               }
             />
           </SettingsList>
+          <DetailsDisclosure summary="Advanced">
+            <SettingsList>
+              <Row title="Listen address" desc="IP and port. Keep 127.0.0.1 and publish it with tailscale serve for HTTPS on your tailnet.">
+                <TextSetting
+                  label="Listen address"
+                  testId="settings-remote-bind"
+                  width="md"
+                  mono
+                  value={remote.bind}
+                  onCommit={(bind) => configure({ bind })}
+                />
+              </Row>
+              <Row title="Public URL" desc="The address devices open, such as https://machine.tailnet.ts.net. Empty uses the listen address.">
+                <TextSetting
+                  label="Public URL"
+                  testId="settings-remote-public-url"
+                  type="url"
+                  placeholder={`http://${remote.bind}`}
+                  value={remote.public_url ?? ''}
+                  onCommit={(public_url) => configure({ public_url })}
+                />
+              </Row>
+            </SettingsList>
+          </DetailsDisclosure>
+          <Button onClick={openConnectPhone} data-testid="settings-remote-connect-phone">Connect phone</Button>
           {remote.enabled && plainHttpOffLoopback(remote) && (
             <div data-testid="settings-remote-plain-http">
               <Notice tone="warn">
