@@ -1,12 +1,15 @@
 //! Refs cannot live in the page: WebKitGTK hands every `evaluate_javascript` call a
 //! fresh ephemeral world, so page globals do not survive between calls. Each surface's
-//! store maps `e<n>` to a structural locator re-resolved against the live document.
+//! store maps `e<n>` to a locator whose node-owned listeners prove document and
+//! element identity before a structural lookup can perform an action.
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Locator {
     pub path: Vec<u32>,
     pub tags: Vec<String>,
+    pub document_identity: String,
+    pub element_identity: String,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -40,6 +43,8 @@ mod tests {
 
     fn locator(path: &[u32], tags: &[&str]) -> Locator {
         Locator {
+            document_identity: "document".into(),
+            element_identity: "element".into(),
             path: path.to_vec(),
             tags: tags.iter().map(|t| t.to_string()).collect(),
         }

@@ -324,6 +324,24 @@ pub fn browser_confirm_revoke_trust(
     registry.revoke_trust(&workspace_id)
 }
 
+fn invalidate_document(app: &AppHandle, id: &str) {
+    if let Some(registry) = app.try_state::<BrowserRegistry>() {
+        if let Ok(mut state) = registry.0.lock() {
+            if let Some(entry) = state.children.get_mut(id) {
+                entry.tool_refs.clear_for_navigation();
+            }
+        }
+    }
+    if let Some(registry) = app.try_state::<confirm::ConfirmRegistry>() {
+        for pending in registry.cancel_surface(id) {
+            let _ = app.emit(
+                confirm::RESOLVED_EVENT,
+                serde_json::json!({ "id": pending }),
+            );
+        }
+    }
+}
+
 pub(crate) fn cache_last_state(app: &AppHandle, id: &str, payload: &state::BrowserState) {
     let Some(registry) = app.try_state::<BrowserRegistry>() else {
         return;
@@ -549,6 +567,7 @@ pub fn browser_mount(
         let id_for_nav = id.clone();
         move |url| {
             if webkit::scheme_is_allowed(url.scheme()) {
+                invalidate_document(&app_for_nav, &id_for_nav);
                 return true;
             }
             let shown: String = url.as_str().chars().take(200).collect();
@@ -655,6 +674,7 @@ pub fn browser_destroy(
     registry: State<'_, BrowserRegistry>,
     id: String,
 ) -> Result<(), String> {
+    invalidate_document(&app, &id);
     id::validate_surface_id(&id)?;
     let (label, window_label) = {
         let mut state = lock_registry(&registry)?;

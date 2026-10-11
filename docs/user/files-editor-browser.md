@@ -109,7 +109,9 @@ for a type action, the full text about to be inserted, never truncated. Where po
 it draws the target directly on a screenshot of the pane; if the pane can't be captured
 right then, it falls back to describing the element in text. If nobody answers within
 two minutes, the action is denied on its own — an unattended prompt never becomes an
-approval by waiting it out.
+approval by waiting it out. Navigation and reload dismiss pending confirmations.
+Approval binds the document and element shown; replacing the element requires a fresh
+snapshot and confirmation even when its tag, text and position are unchanged.
 
 ### Trusting a directory
 

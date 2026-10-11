@@ -1,6 +1,5 @@
-// Evaluated fresh per call and STATELESS by hard requirement: WebKitGTK hands every
-// `evaluate_javascript` call a fresh ephemeral world even under the same world name,
-// so refs must live on the Rust side and be re-resolved against the live document.
+// Globals do not persist across WebKit evaluations. Node-owned DOM listeners prove
+// identity across worlds; cloning markup copies attributes but never listeners.
 (() => {
   const MAX_ELEMENTS = 500
   const MAX_TEXT = 300
@@ -128,6 +127,23 @@
     return entry
   }
 
+  const IDENTITY_ATTRIBUTE = 'data-houston-tool-identity'
+  const provesIdentity = (node, identity) => {
+    if (!node || typeof identity !== 'string' || !identity) return false
+    const event = new Event(identity, { cancelable: true })
+    return !node.dispatchEvent(event)
+  }
+  const identityOf = (node) => {
+    const previous = node.getAttribute(IDENTITY_ATTRIBUTE)
+    if (provesIdentity(node, previous)) return previous
+    const identity = `houston-identity-${crypto.randomUUID()}`
+    node.addEventListener(identity, (event) => {
+      if (event.target === node) event.preventDefault()
+    })
+    node.setAttribute(IDENTITY_ATTRIBUTE, identity)
+    return identity
+  }
+
   const locatorOf = (el) => {
     const path = []
     const tags = []
@@ -145,7 +161,7 @@
     if (node !== document.documentElement) return null
     path.reverse()
     tags.reverse()
-    return { path, tags }
+    return { path, tags, documentIdentity: identityOf(document.documentElement), elementIdentity: identityOf(el) }
   }
 
   const snapshot = (startSeq) => {
@@ -202,10 +218,12 @@
       )
     }
     let node = document.documentElement
+    if (!provesIdentity(node, op.documentIdentity)) throw stale()
     for (let i = 0; i < op.path.length; i++) {
       node = node.children[op.path[i]]
       if (!node || node.tagName.toLowerCase() !== op.tags[i]) throw stale()
     }
+    if (!provesIdentity(node, op.elementIdentity)) throw stale()
     return node
   }
 

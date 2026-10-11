@@ -60,6 +60,7 @@ pub enum Verdict {
 }
 
 struct Waiting {
+    surface_id: String,
     tx: oneshot::Sender<Verdict>,
     screenshot: Option<std::path::PathBuf>,
 }
@@ -114,11 +115,19 @@ impl ConfirmRegistry {
         &self,
         tx: oneshot::Sender<Verdict>,
         screenshot: Option<std::path::PathBuf>,
+        surface_id: String,
     ) -> String {
         let mut state = self.0.lock().expect("confirm registry lock");
         state.next += 1;
         let id = format!("act-{}", state.next);
-        state.pending.insert(id.clone(), Waiting { tx, screenshot });
+        state.pending.insert(
+            id.clone(),
+            Waiting {
+                tx,
+                screenshot,
+                surface_id,
+            },
+        );
         id
     }
 
@@ -128,6 +137,20 @@ impl ConfirmRegistry {
             .expect("confirm registry lock")
             .pending
             .remove(id)
+    }
+
+    pub fn cancel_surface(&self, surface: &str) -> Vec<String> {
+        let mut state = self.0.lock().expect("confirm registry lock");
+        let ids: Vec<_> = state
+            .pending
+            .iter()
+            .filter(|(_, waiting)| waiting.surface_id == surface)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &ids {
+            state.pending.remove(id);
+        }
+        ids
     }
 
     pub fn screenshot_for(&self, id: &str) -> Option<std::path::PathBuf> {
@@ -189,7 +212,7 @@ pub async fn await_decision(
         return Ok(());
     }
     let (tx, rx) = oneshot::channel();
-    let id = registry.register(tx, screenshot);
+    let id = registry.register(tx, screenshot.clone(), request.surface_id.clone());
     let verb = request.kind.verb();
     let request = ConfirmRequest {
         id: id.clone(),
@@ -245,7 +268,7 @@ mod tests {
     async fn approving_with_trust_skips_the_gate_for_that_workspace_only() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         reg.respond(&id, true, true, "/home/dev/proj").unwrap();
 
         assert!(reg.is_trusted("/home/dev/proj"));
@@ -259,7 +282,7 @@ mod tests {
     async fn denying_never_trusts_even_if_the_box_was_ticked() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         reg.respond(&id, false, true, "/home/dev/proj").unwrap();
         assert!(
             !reg.is_trusted("/home/dev/proj"),
@@ -283,7 +306,7 @@ mod tests {
     async fn a_request_can_only_be_answered_once() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         assert!(reg.respond(&id, true, false, "/w").is_ok());
         assert!(
             reg.respond(&id, true, false, "/w").is_err(),
@@ -296,7 +319,7 @@ mod tests {
         let reg = registry();
         let shot = std::path::PathBuf::from("/tmp/tr-capture.png");
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, Some(shot.clone()));
+        let id = reg.register(tx, Some(shot.clone()), "surface".into());
 
         assert_eq!(reg.screenshot_for(&id), Some(shot));
         reg.respond(&id, false, false, "/w").unwrap();
@@ -312,7 +335,7 @@ mod tests {
     async fn a_request_with_no_capture_reports_none_rather_than_a_stale_path() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         assert_eq!(reg.screenshot_for(&id), None);
     }
 
@@ -346,7 +369,7 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for _ in 0..50 {
             let (tx, _rx) = oneshot::channel();
-            let id = reg.register(tx, None);
+            let id = reg.register(tx, None, "surface".into());
             assert!(seen.insert(id.clone()), "id {id} was handed out twice");
             reg.take(&id);
         }
@@ -356,7 +379,7 @@ mod tests {
     fn the_pending_set_empties_as_requests_are_answered() {
         let reg = registry();
         let (tx, _rx) = oneshot::channel();
-        let id = reg.register(tx, None);
+        let id = reg.register(tx, None, "surface".into());
         assert_eq!(reg.pending_count(), 1);
         reg.respond(&id, false, false, "/w").unwrap();
         assert_eq!(reg.pending_count(), 0);

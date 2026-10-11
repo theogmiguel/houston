@@ -37,7 +37,7 @@ function opFor(
   const locators = snap.result!.locators as Record<string, Locator>
   const locator = locators[ref]
   expect(locator, `snapshot reported no locator for ${ref}`).toBeTruthy()
-  return { kind, ref, path: locator.path, tags: locator.tags, ...extra }
+  return { kind, ref, ...locator, ...extra }
 }
 
 type Element_ = {
@@ -519,5 +519,34 @@ describe('reveal', () => {
     const env = runOp(opFor(snap, elements(snap)[0].ref, 'describe'))
     expect(env.ok, env.error).toBe(true)
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('consent identity', () => {
+  it('rejects identical replacement markup even when identity attributes are cloned', () => {
+    document.body.innerHTML = '<button>Send</button>'
+    const snap = snapshot()
+    const ref = elements(snap)[0].ref
+    const old = document.querySelector('button')!
+    const replacement = old.cloneNode(true)
+    old.replaceWith(replacement)
+    const effects = vi.fn()
+    replacement.addEventListener('click', effects)
+    expect(runOp(opFor(snap, ref, 'click')).ok).toBe(false)
+    expect(effects).not.toHaveBeenCalled()
+    const fresh = snapshot()
+    expect(runOp(opFor(fresh, elements(fresh)[0].ref, 'describe')).ok).toBe(true)
+  })
+  it('rejects a same-URL replacement document', () => {
+    document.body.innerHTML = '<button>Send</button>'
+    const snap = snapshot()
+    const action = opFor(snap, elements(snap)[0].ref, 'click')
+    const root = document.documentElement.cloneNode(true)
+    document.documentElement.replaceWith(root)
+    const effects = vi.fn()
+    document.querySelector('button')!.addEventListener('click', effects)
+    expect(runOp(action).ok).toBe(false)
+    expect(effects).not.toHaveBeenCalled()
   })
 })
