@@ -4,6 +4,7 @@
   var FILTER_KEY = "houston.remote.workspace";
   var REPLIES_KEY = "houston.remote.replies";
   var COLLAPSED_KEY = "houston.remote.collapsed";
+  var KEYBOARD_KEY = "houston.remote.keyboard";
   // With the event stream up, polling is only a safety net; without it, the
   // client polls at these rates until the stream reconnects.
   var SAFETY_MS = 30000, LIST_MS = 3000, FEED_MS = 2500, SCREEN_MS = 1500, SCREEN_LINES = 40;
@@ -2043,24 +2044,39 @@
   // keyboard. The decision card folds to its title meanwhile.
   var touch = !!window.visualViewport && !!window.matchMedia && matchMedia("(pointer: coarse)").matches;
 
+  // iOS reports the keyboard only once it has finished sliding in, so the
+  // height it covered last time (per width and display mode) is remembered and
+  // the frame shrinks with the keyboard instead of jumping after it.
+  var kb = { base: 0, guess: 0 };
+  // A shrink smaller than this is the browser's toolbar, not a keyboard.
+  var KEYBOARD_MIN_PX = 120;
+  function keyboardSlot() { return window.innerWidth + (standalone() ? "-app" : "-tab"); }
+
   function fitKeyboard() {
-    var vv = window.visualViewport, body = document.body;
+    var vv = window.visualViewport, body = document.body, root = document.documentElement;
     var typing = document.activeElement === $("text");
     $("dock").classList.toggle("composing", typing);
     var frame = touch && typing && S.view === "pane";
     if (frame && !body.classList.contains("composing")) {
       var stick = pinned(), at = window.scrollY;
+      kb.base = vv.height;
+      kb.guess = storedJson(KEYBOARD_KEY, {})[keyboardSlot()] || 0;
+      root.style.setProperty("--vv-top", Math.round(vv.offsetTop) + "px");
+      root.style.setProperty("--vv-h", Math.round(vv.height) + "px");
       body.classList.add("composing");
       var conv = $("conv");
       conv.scrollTop = stick ? conv.scrollHeight : at;
+      void body.offsetHeight; // commit the full height so the shrink below animates
     } else if (!frame && body.classList.contains("composing")) {
       var inner = $("conv"), bottom = inner.scrollTop + inner.clientHeight >= inner.scrollHeight - 120, top = inner.scrollTop;
       body.classList.remove("composing");
       if (S.view === "pane") { if (bottom) toBottom(); else window.scrollTo(0, top); }
     }
     if (frame) {
-      document.documentElement.style.setProperty("--vv-top", Math.round(vv.offsetTop) + "px");
-      document.documentElement.style.setProperty("--vv-h", Math.round(vv.height) + "px");
+      var waiting = kb.guess && vv.height > kb.base - KEYBOARD_MIN_PX;
+      if (!waiting) kb.guess = 0;
+      root.style.setProperty("--vv-top", Math.round(vv.offsetTop) + "px");
+      root.style.setProperty("--vv-h", Math.round(waiting ? kb.base - kb.guess : vv.height) + "px");
     }
   }
   // iOS pans the page to the focused box after the keyboard has opened and
@@ -2074,8 +2090,18 @@
     if (running) return;
     (function tick() {
       fitKeyboard();
-      if (Date.now() < settleUntil && document.activeElement === $("text")) requestAnimationFrame(tick);
-      else settleUntil = 0;
+      if (Date.now() < settleUntil && document.activeElement === $("text")) { requestAnimationFrame(tick); return; }
+      settleUntil = 0;
+      if (!document.body.classList.contains("composing")) return;
+      var shrink = kb.base - window.visualViewport.height;
+      if (shrink >= KEYBOARD_MIN_PX) {
+        var known = storedJson(KEYBOARD_KEY, {});
+        known[keyboardSlot()] = Math.round(shrink);
+        store(KEYBOARD_KEY, JSON.stringify(known));
+      }
+      // No keyboard came (a hardware keyboard): drop the guess.
+      kb.guess = 0;
+      fitKeyboard();
     })();
   }
   if (window.visualViewport) {

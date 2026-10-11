@@ -75,6 +75,9 @@
   --fast: 120ms;
   --dur: 200ms;
   --slow: 320ms;
+  /* Approximates the iOS keyboard slide so the dock rides along with it. */
+  --keyboard-dur: 350ms;
+  --keyboard-ease: cubic-bezier(0.25, 0.9, 0.3, 1);
 }
 
 @media (prefers-color-scheme: light) {
@@ -703,7 +706,7 @@ body[data-view="pane"] .view { display: flex; flex-direction: column; padding-bo
 
 /* While typing on a touch screen the page is a frame the size of the visible
    area (--vv-top, --vv-h from app.js), so the keyboard never covers the dock. */
-body.composing { position: fixed; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100dvh); min-height: 0; overflow: hidden; }
+body.composing { position: fixed; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100dvh); min-height: 0; overflow: hidden; transition: height var(--keyboard-dur) var(--keyboard-ease); }
 body.composing #view-pane { min-height: 0; overflow: hidden; }
 body.composing .conv { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) var(--s3); }
 body.composing .dock { position: static; }
