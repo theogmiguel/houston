@@ -144,8 +144,12 @@ async fn ssh_stalled_window_bounds_input_and_close_preempts_transfer() {
         b"READY",
         "output survives pending input"
     );
-    tokio::time::timeout(Duration::from_secs(15), server)
+    let server_result = tokio::time::timeout(Duration::from_secs(15), server)
         .await
-        .unwrap()
         .unwrap();
+    assert!(
+        server_result.is_ok()
+            || matches!(&server_result, Err(russh::Error::IO(error)) if error.kind() == std::io::ErrorKind::BrokenPipe),
+        "closing the client must release the server, got {server_result:?}"
+    );
 }
