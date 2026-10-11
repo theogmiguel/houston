@@ -138,7 +138,10 @@ describe('ConnectPhoneDialog', () => {
     const close = screen.getByRole('button', { name: 'Close' })
     close.focus()
     fireEvent.keyDown(close, { key: 'Tab' })
-    expect(document.activeElement).toBe(screen.getByRole('combobox'))
+    const route = screen.getByRole('combobox')
+    expect(document.activeElement).toBe(route)
+    fireEvent.keyDown(route, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(close)
   })
 })
 

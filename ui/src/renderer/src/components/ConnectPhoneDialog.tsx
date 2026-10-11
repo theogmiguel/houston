@@ -8,6 +8,7 @@ import { Button, Caption, DialogActions, DialogBackdrop, DialogBody, DialogDescr
 import { Text } from './ui/Text'
 import { PairingProgress } from './ui/PairingProgress'
 import { useCopyFeedback } from './useCopyFeedback'
+import { useFocusTrap } from './dialogFocus'
 
 type Route = 'tailscale' | 'wifi'
 const ROUTES = [
@@ -43,6 +44,8 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
   const requested = useRef(false)
   const root = useRef<HTMLDivElement>(null)
   const close = useRef<HTMLButtonElement>(null)
+  // A single selector branch preserves control order across DOM selector engines.
+  const trapFocus = useFocusTrap(root, ':is(button, input, [tabindex="0"]):not([disabled])')
   useNativeOverlaySuppression('modal', true, root)
   const { copy, copyState } = useCopyFeedback()
   const port = remote?.bind.match(/:(\d+)$/)?.[1] ?? ''
@@ -138,11 +141,7 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
         if (event.key === 'Escape') { event.stopPropagation(); onClose() }
         if (event.key === 'Tab') {
           event.stopPropagation()
-          const controls = Array.from(root.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]') ?? [])
-          const first = controls[0]
-          const last = controls[controls.length - 1]
-          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
-          if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+          trapFocus(event)
         }
       }}>
         <DialogTitle id="connect-phone-title">{confirmed ? `${confirmed} is connected` : 'Connect phone'}</DialogTitle>
