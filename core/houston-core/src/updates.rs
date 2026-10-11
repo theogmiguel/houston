@@ -127,13 +127,20 @@ fn parse_latest_release(body: &str) -> anyhow::Result<Option<proto::UpdateReleas
     }))
 }
 
+/// `x-ratelimit-reset` is an epoch second; the reader wants how long to wait.
+fn reset_in(reset_epoch_secs: u64, now_epoch_secs: u64) -> String {
+    match reset_epoch_secs.checked_sub(now_epoch_secs) {
+        None | Some(0) => "resets now".to_string(),
+        Some(secs) if secs < 90 => format!("resets in {secs}s"),
+        Some(secs) => format!("resets in about {} min", secs.div_ceil(60)),
+    }
+}
+
 /// Names the limit when GitHub throttles the check, instead of reqwest's bare status text.
+/// A 403 is only a rate limit when it says so (`x-ratelimit-remaining: 0` or `retry-after`);
+/// any other 403 is an ordinary refusal and keeps the generic message.
 fn status_error(url: &str, response: &reqwest::Response) -> anyhow::Error {
     let status = response.status();
-    if status != reqwest::StatusCode::FORBIDDEN && status != reqwest::StatusCode::TOO_MANY_REQUESTS
-    {
-        return anyhow!("update check got HTTP {status} from {url}");
-    }
     let header = |name: &str| {
         response
             .headers()
@@ -141,9 +148,16 @@ fn status_error(url: &str, response: &reqwest::Response) -> anyhow::Error {
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned)
     };
+    let remaining = header("x-ratelimit-remaining");
+    let retry = header("retry-after");
+    let rate_limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || (status == reqwest::StatusCode::FORBIDDEN
+            && (remaining.as_deref().map(str::trim) == Some("0") || retry.is_some()));
+    if !rate_limited {
+        return anyhow!("update check got HTTP {status} from {url}");
+    }
     let mut details = Vec::new();
     let limit = header("x-ratelimit-limit");
-    let remaining = header("x-ratelimit-remaining");
     if let Some(limit) = &limit {
         details.push(format!("limit {limit} requests"));
     }
@@ -156,10 +170,13 @@ fn status_error(url: &str, response: &reqwest::Response) -> anyhow::Error {
     if let Some(remaining) = &remaining {
         details.push(format!("remaining {remaining}"));
     }
-    if let Some(reset) = header("x-ratelimit-reset") {
-        details.push(format!("resets at unix time {reset}"));
+    if let Some(Ok(reset)) = header("x-ratelimit-reset").map(|v| v.parse::<u64>()) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        details.push(reset_in(reset, now));
     }
-    if let Some(retry) = header("retry-after") {
+    if let Some(retry) = retry {
         details.push(format!("retry after {retry}s"));
     }
     let details = if details.is_empty() {
@@ -507,15 +524,27 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_reset_is_shown_as_a_wait_not_an_epoch() {
+        assert_eq!(reset_in(1_000, 1_000), "resets now");
+        assert_eq!(reset_in(900, 1_000), "resets now");
+        assert_eq!(reset_in(1_045, 1_000), "resets in 45s");
+        assert_eq!(reset_in(1_000 + 1_500, 1_000), "resets in about 25 min");
+    }
+
     #[tokio::test]
-    async fn a_rate_limited_check_names_the_limit_the_usage_the_reset_and_the_url() {
+    async fn only_a_throttle_is_called_rate_limited_and_it_names_the_limit_and_the_url() {
+        let reset = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 1_500;
         let responses = vec![
-            "HTTP/1.1 403 Forbidden\r\nx-ratelimit-limit: 60\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: 1760000000\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                .to_string(),
-            "HTTP/1.1 429 Too Many Requests\r\nretry-after: 120\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                .to_string(),
-            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                .to_string(),
+            format!("HTTP/1.1 403 Forbidden\r\nx-ratelimit-limit: 60\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: {reset}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+            "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+            "HTTP/1.1 403 Forbidden\r\nx-ratelimit-limit: 60\r\nx-ratelimit-remaining: 12\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+            "HTTP/1.1 429 Too Many Requests\r\nretry-after: 120\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
         ];
         let (url, _requests) = scripted_release_server(responses).await;
         let dir = tempfile::tempdir().unwrap();
@@ -532,11 +561,25 @@ mod tests {
             "limit 60",
             "used 60",
             "remaining 0",
-            "1760000000",
+            "resets in about 25 min",
             &url,
         ] {
             assert!(text.contains(want), "{want:?} missing from: {text}");
         }
+        assert!(
+            !text.contains(&reset.to_string()),
+            "raw epoch leaked: {text}"
+        );
+
+        // A 403 with no rate-limit headers, or with quota left, is an ordinary refusal.
+        for _ in 0..2 {
+            let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+            assert_eq!(
+                text,
+                format!("update check got HTTP 403 Forbidden from {url}")
+            );
+        }
+
         let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
         for want in ["rate limited", "429", "retry after 120s", &url] {
             assert!(text.contains(want), "{want:?} missing from: {text}");
