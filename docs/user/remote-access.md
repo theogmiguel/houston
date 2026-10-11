@@ -160,7 +160,7 @@ turn end, the log folds into a summary with its duration and changed files. Tap 
 to reopen it. Older computers show the tool steps without a duration or changed-file card.
 Child panes appear together
 when the computer reports their relationship, and a child that needs you has an **Open**
-band. Quick replies appear only while idle and fill the message box without sending.
+band. Quick replies appear while idle after a finished turn and fill the message box without sending.
 
 The message box sends your text and presses Enter. Multi-line text works only when the
 program in the pane accepts pasted text; otherwise send one line at a time. The keys button shows the

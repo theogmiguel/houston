@@ -304,7 +304,8 @@
         renderCard();
         // Reply labels name the agent, which the feed alone does not carry.
         var s = session(S.pane);
-        if (s && s.kind !== known) { S.kindShown = s.kind; renderFeed(true); }
+        if (s && s.kind !== known) S.kindShown = s.kind;
+        renderFeed(!!s && s.kind !== known);
       }
     }).catch(function (e) {
       if (S.token && (!e.status || e.status >= 500)) setReachable(false);
@@ -531,7 +532,8 @@
 
   function renderQuickReplies() {
     var root = $("quick-replies"), s = session(S.pane); root.replaceChildren();
-    root.classList.toggle("hidden", !s || s.state !== "running" || s.status !== "idle" || !!S.pending || stored("houston.remote.quick") === "off");
+    var finished = S.entries.some(function (e) { return e.type === "turn_end" || e.type === "status" && e.status === "finished"; });
+    root.classList.toggle("hidden", !s || s.state !== "running" || s.status !== "idle" || !(finished || s.last_reply_excerpt) || !!S.pending || stored("houston.remote.quick") === "off");
     ["Commit it", "Open a PR", "Explain the fix"].forEach(function (text) { root.appendChild(button("tsug", text, function () { $("text").value = text; grow(); $("text").focus(); })); });
   }
 
@@ -675,10 +677,33 @@
       var node = safeEntry(e, s);
       if (node) {
         node.dataset.feedSeq = e.seq;
+        node.dataset.feedType = e.type;
         if (arrive) node.classList.add("arrive");
         root.appendChild(node);
       }
     }
+    root.querySelectorAll('[data-feed-type="question"], [data-feed-type="permission"]').forEach(function (node) {
+      node.classList.toggle("hidden", !!S.pending && S.pending.epoch === S.epoch && String(S.pending.seq) === node.dataset.feedSeq && !cardState(S.pane, S.pending));
+    });
+    renderWorking();
+  }
+
+  function renderWorking() {
+    clearTimeout(S.timers.working);
+    var root = $("working-row"), s = session(S.pane), prompt = null, hasStep = false;
+    for (var i = S.entries.length - 1; i >= 0; i--) {
+      var e = S.entries[i];
+      if (e.type === "step") hasStep = true;
+      if (e.type === "prompt") { prompt = e; break; }
+      if (e.type === "turn_end") break;
+    }
+    var active = S.view === "pane" && s && s.state === "running" && s.status === "working" && !hasStep;
+    root.classList.toggle("hidden", !active);
+    if (!active) return;
+    var since = s.status_since || (prompt && prompt.at);
+    $("working-elapsed").textContent = since ? duration(Math.max(0, Date.now() - since)) : "";
+    // One row updates once a second, only while visible and awaiting reported steps.
+    if (!document.hidden) later("working", renderWorking, 1000);
   }
 
   function safeEntry(e, s) {
@@ -955,6 +980,7 @@
         // Held until the server's card changes: the daemon keeps it consumed.
         S.sent[key] = true;
         if (S.pane === id) S.deepLink = false;
+        if (S.pane === id) renderFeed(false);
         notice("");
         if (choice === "other") setOther(null);
         return true;
