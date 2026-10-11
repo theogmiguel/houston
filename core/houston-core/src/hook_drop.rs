@@ -504,6 +504,7 @@ pub fn run_pass_with_io(
 
     for (parsed, path, name) in files {
         if now_ms.saturating_sub(parsed.ms) > MAX_AGE_MS {
+            state.applied.remove(&name);
             match remove(&path) {
                 Ok(()) => out.collected += 1,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => out.collected += 1,
@@ -560,7 +561,11 @@ pub fn run_pass_with_io(
                 continue;
             }
         };
-        let identity = path.to_string_lossy();
+        use sha2::Digest;
+        let identity = format!(
+            "{:x}",
+            sha2::Sha256::digest(path.as_os_str().as_encoded_bytes())
+        );
         match apply(&drop, &identity, parsed.ms) {
             DropVerdict::Applied => {
                 state.applied.insert(name.clone());

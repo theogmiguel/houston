@@ -14097,6 +14097,14 @@ impl Daemon {
                 now,
                 pass,
                 |d, identity, event_ms| {
+                    match self.db.hook_compaction_seen(identity) {
+                        Ok(true) => return crate::hook_drop::DropVerdict::Applied,
+                        Ok(false) => {}
+                        Err(error) => {
+                            tracing::warn!("checking hook compaction receipt: {error:#}");
+                            return crate::hook_drop::DropVerdict::Retry;
+                        }
+                    }
                     let verdict = self.apply_hook_drop(d, Some((identity, event_ms)));
                     if verdict == crate::hook_drop::DropVerdict::Applied {
                         self.remote_feed_hook(d);

@@ -5448,6 +5448,15 @@ impl Db {
         )?)
     }
 
+    pub fn hook_compaction_seen(&self, identity: &str) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM hook_compaction_receipts WHERE identity = ?1)",
+            [identity],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Receipt and counter commit together; expired drop files cannot be replayed.
     pub fn session_note_compaction_once(
         &self,
