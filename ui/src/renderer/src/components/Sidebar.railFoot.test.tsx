@@ -132,8 +132,8 @@ describe('Sidebar railfoot — navigation actions', () => {
   it('offers one worded chip carrying the glyph and the version, pushed to the far end', () => {
     render({ updateVersion: '1.2.3' })
     const buttons = Array.from(foot().querySelectorAll('button'))
-    expect(buttons).toHaveLength(6)
-    const indicator = buttons[5]
+    expect(buttons).toHaveLength(5)
+    const indicator = buttons[4]
     expect(indicator.getAttribute('data-testid')).toBe('rail-update-available')
     expect(indicator.getAttribute('aria-label')).toBe('Houston v1.2.3 is available. Open to install')
     expect(indicator.textContent).toBe('1.2.3 available')
