@@ -198,7 +198,10 @@ yourself, Houston keeps it when it refreshes its entries at startup. On Windows,
 ZCode runs a shell command hook through `cmd.exe`, each entry instead names Houston's hook
 helper, `claude-hook.exe` in the channel's state directory (for example
 `%USERPROFILE%\.houston\bin`), which ZCode starts directly. Outside a Houston pane the
-helper exits at once without doing anything.
+helper exits at once without doing anything. Turn the toggle off before you uninstall
+Houston or delete its state directory: once the helper is gone, every ZCode session, in a
+Houston pane or not, reports `Hook process failed` until Houston's entries are removed from
+the settings file.
 
 ### Droid, Copilot, Aider
 
