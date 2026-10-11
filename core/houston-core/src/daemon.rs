@@ -1271,10 +1271,12 @@ impl DelegationSettleSample {
 mod child_inputs;
 mod harness_review;
 mod provider_deny;
+mod remote;
 mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
 mod worktree_pass;
+pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 
 type TranscriptLink = (Option<String>, Option<String>);
 
@@ -1355,6 +1357,7 @@ pub struct Daemon {
     pub mcp_tools: crate::mcp_server::ToolRegistry,
     pub browser_relay: Arc<crate::browser_relay::BrowserRelayState>,
     pub voice: crate::voice::runtime::Runtime,
+    pub remote: crate::remote::Runtime,
     mcp_progress_tick_ms: AtomicU64,
     handoff_batch_ms: AtomicU64,
     last_inbox_retention: AtomicU64,
@@ -2822,6 +2825,7 @@ impl Daemon {
             cli_probes: Mutex::new(crate::cli_probe::ProbeCache::default()),
             model_catalog: Arc::new(crate::model_catalog::ModelCatalog::new(&state_dir)),
             voice: crate::voice::runtime::Runtime::new(),
+            remote: crate::remote::Runtime::new(),
             mcp_progress_tick_ms: AtomicU64::new(
                 crate::mcp_server::PROGRESS_TICK_DEFAULT.as_millis() as u64,
             ),
@@ -7031,6 +7035,7 @@ impl Daemon {
                 session: id,
                 status,
             });
+            self.remote_note_status(id, status);
             self.tasks_on_session_status(id, status);
             if orchestrate::settled(status) {
                 if let Some(this) = self.self_arc() {
@@ -7459,6 +7464,7 @@ impl Daemon {
                 session: id,
                 status: ev.status(),
             });
+            self.remote_note_status(id, ev.status());
             if orchestrate::settled(ev.status()) {
                 self.drain_pending_inbox(id);
             }
@@ -10309,6 +10315,7 @@ impl Daemon {
         }
         self.task_run_session_ended(id);
         self.task_planning_session_ended(id);
+        self.remote_note_exit(id);
         final_state
     }
 
@@ -14077,8 +14084,13 @@ impl Daemon {
         let (mut applied, mut all_listed) = (0usize, true);
         for dir in &dirs {
             let state = states.entry(dir.clone()).or_default();
-            let out =
-                crate::hook_drop::run_pass(dir, state, now, pass, |d| self.apply_hook_drop(d));
+            let out = crate::hook_drop::run_pass(dir, state, now, pass, |d| {
+                let verdict = self.apply_hook_drop(d);
+                if verdict == crate::hook_drop::DropVerdict::Applied {
+                    self.remote_feed_hook(d);
+                }
+                verdict
+            });
             applied += out.applied;
             all_listed &= out.listed_ok;
             if out.collected > 0 {
@@ -20493,6 +20505,7 @@ impl Daemon {
         if is_terminal_report_only(payload) {
             return;
         }
+        self.remote_note_keystroke(session);
         self.composer_occupied
             .lock()
             .expect("composer lock")

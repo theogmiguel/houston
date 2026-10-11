@@ -9,8 +9,9 @@ export function FormGrid({ children }: { children: ReactNode }): React.JSX.Eleme
   return <div className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">{children}</div>
 }
 
-export function FormGridLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }): React.JSX.Element {
-  return <Text as="label" size="base" tone="primary" htmlFor={htmlFor} className="text-right">{children}</Text>
+/** Without `htmlFor` the label names a control that cannot take an id (a Select), which carries its own aria-label. */
+export function FormGridLabel({ htmlFor, children }: { htmlFor?: string; children: ReactNode }): React.JSX.Element {
+  return <Text as={htmlFor ? 'label' : 'span'} size="base" tone="primary" htmlFor={htmlFor} className="text-right">{children}</Text>
 }
 
 /** A right-pointing chevron that turns downward while its section is open. */

@@ -106,6 +106,10 @@ pub struct HookDrop {
     pub permission_block_reason: Option<String>,
     #[serde(default)]
     pub resume_evidence: Option<ResumeHookEvidence>,
+    // The remote feed's masked, bounded targets and edit previews: the exception to the
+    // digest rule above, read only by the in-memory feed.
+    #[serde(default)]
+    pub feed: Option<crate::remote::feed::HookFeed>,
 }
 
 impl Default for HookDrop {
@@ -141,6 +145,7 @@ impl Default for HookDrop {
             permission_command: None,
             permission_block_reason: None,
             resume_evidence: None,
+            feed: None,
         }
     }
 }

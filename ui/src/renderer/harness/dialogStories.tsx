@@ -17,6 +17,10 @@ import { UpdateInstallModal } from '../src/components/UpdateInstallModal'
 import { BrowserActConfirmModal } from '../src/components/BrowserActConfirm'
 import { ChangesPane } from '../src/components/ChangesPane'
 import { Timeline } from '../src/components/Timeline'
+import { ConnectPhoneDialog } from '../src/components/ConnectPhoneDialog'
+import type { HoustonClient } from '../src/houston/client'
+import type { RemoteInfo } from '../src/houston/generated/RemoteInfo'
+import type { ServerMsg } from '../src/houston/generated/ServerMsg'
 
 const noop = (): void => {}
 
@@ -121,4 +125,40 @@ export function LegacyUpdateStory(): React.JSX.Element {
 
 export function LegacyBrowserActStory(): React.JSX.Element {
   return <BrowserActConfirmModal request={{ id: 'legacy-1', surfaceId: 'surface-1', workspaceId: 'workspace-1', kind: 'click', element: { ref: 'submit', role: 'button', tag: 'button', name: 'Submit form', rect: { x: 300, y: 220, width: 120, height: 32 } }, text: null, replace: false, hasScreenshot: false, url: 'https://example.test/form', title: 'Example form', timeoutSecs: 30 }} onDone={noop} />
+}
+
+type ConnectPhoneScenario = 'route' | 'scan' | 'expired' | 'connected'
+
+const QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1z" fill="#000"/></svg>'
+const PHONE_REMOTE: RemoteInfo = { enabled: true, bind: '127.0.0.1:47823', public_url: 'https://workstation.tail1234.ts.net', url: 'https://workstation.tail1234.ts.net', listening: true, error: null, ntfy_server: null, notify_delay_secs: 30, notify_detail: 'generic', notify_finished: false, devices: [] }
+
+/** A daemon stand-in that answers the dialog's `/ws` requests so each step renders without a daemon. */
+function connectPhoneClient(scenario: ConnectPhoneScenario): HoustonClient {
+  const handlers = new Map<string, Set<(message: ServerMsg) => void>>()
+  const emit = (message: ServerMsg): void => { for (const handler of handlers.get(message.type) ?? []) handler(message) }
+  const remote: RemoteInfo = scenario === 'route' ? { ...PHONE_REMOTE, enabled: false, listening: false, public_url: null, url: 'http://127.0.0.1:47823' } : PHONE_REMOTE
+  const client = {
+    subscribe: (kind: string, handler: (message: ServerMsg) => void) => {
+      const set = handlers.get(kind) ?? new Set()
+      set.add(handler)
+      handlers.set(kind, set)
+      return () => set.delete(handler)
+    },
+    remoteGet: () => setTimeout(() => emit({ type: 'remote_state', remote }), 0),
+    remoteConfigure: noop,
+    remoteDeviceRevoke: noop,
+    remotePairStart: () => setTimeout(() => {
+      const expiresAt = scenario === 'expired' ? Date.now() - 1 : Date.now() + 9 * 60_000 + 41_000
+      emit({ type: 'remote_pairing', url: `${remote.url}/#pair=story`, qr_svg: QR_SVG, expires_at: expiresAt })
+      if (scenario === 'connected') {
+        setTimeout(() => emit({ type: 'remote_state', remote: { ...remote, devices: [{ id: 1, name: 'Pixel 8', created_at: 1, last_seen_at: null }] } }), 0)
+      }
+    }, 0)
+  }
+  return client as unknown as HoustonClient
+}
+
+export function ConnectPhoneStory({ scenario }: { scenario: ConnectPhoneScenario }): React.JSX.Element {
+  const client = React.useMemo(() => connectPhoneClient(scenario), [scenario])
+  return <ConnectPhoneDialog client={client} onClose={noop} />
 }

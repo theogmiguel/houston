@@ -11,7 +11,7 @@ const actions: PaletteActions = {
   newTerminal: noop, newGrid: noop, toggleGitPane: noop, spawnAgent: noop,
   openTasks: noop, toggleSidebarRail: noop, toggleChromeTheme: noop, openAddPanePopover: noop,
   setGridLayout: noop, openShortcutSheet: noop, selectNavRow: noop, switchWorkspace: noop,
-  switchGrid: noop, focusPane: noop, restartPane: noop
+  switchGrid: noop, focusPane: noop, restartPane: noop, openConnectPhone: noop
 }
 
 const sessions = [

@@ -96,7 +96,7 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
 })
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -157,6 +157,7 @@ import {
   LegacyDelegationBadgeStory,
   LegacyDelegationPanelStory,
   LegacyGitShellStory,
+  ConnectPhoneStory,
   LegacyChangesIdleStory,
   LegacyTimelineStatesStory,
   LegacyHandoffStory,
@@ -309,6 +310,10 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/shortcuts': () => <LegacyShortcutStory />,
   'legacy/host-key': () => <LegacyHostKeyStory />,
   'legacy/ssh': () => <LegacySshStory />,
+  'connect-phone/route': () => <ConnectPhoneStory scenario="route" />,
+  'connect-phone/scan': () => <ConnectPhoneStory scenario="scan" />,
+  'connect-phone/expired': () => <ConnectPhoneStory scenario="expired" />,
+  'connect-phone/connected': () => <ConnectPhoneStory scenario="connected" />,
   'legacy/handoff': () => <LegacyHandoffStory />,
   'legacy/pane-handoff': () => <LegacyPaneHandoffStory />,
   'legacy/tags': () => <LegacyTagsStory />,
@@ -459,6 +464,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/workspaces': () => <SettingsWorkspaces />,
   'settings/privacy': () => <SettingsPrivacy />,
   'settings/privacy-edit': () => <SettingsPrivacyEditor />,
+  'settings/remote': () => <SettingsRemote />,
+  'settings/remote-off': () => <SettingsRemoteOff />,
   'settings/about': () => <SettingsAbout />,
   'composer/controls-open': () => <ComposerControlsOpen />,
   'composer/controls-overflow': () => <ComposerControlsOverflow />,

@@ -33,7 +33,11 @@ import type { PrListState } from './generated/PrListState'
 import type { PrListInvolvement } from './generated/PrListInvolvement'
 import type { PrSort } from './generated/PrSort'
 import type { PrStackHead } from './generated/PrStackHead'
+import type { RemoteGrid } from './generated/RemoteGrid'
 
+
+/// The optional fields of `remote_configure`; an absent field keeps its value.
+export type RemoteConfigurePatch = Omit<Extract<ClientMsg, { type: 'remote_configure' }>, 'type'>
 export type { AgentKind } from './generated/AgentKind'
 export type { SessionState } from './generated/SessionState'
 export type { SessionInfo } from './generated/SessionInfo'
@@ -1549,6 +1553,26 @@ export class HoustonClient {
 
   tasksAccessSet(workspace: string, access: TasksAccess): void {
     this.send({ type: 'tasks_access_set', workspace, access })
+  }
+
+  remoteGet(): void {
+    this.send({ type: 'remote_get' })
+  }
+
+  remoteConfigure(patch: RemoteConfigurePatch): void {
+    this.send({ type: 'remote_configure', ...patch })
+  }
+
+  remotePairStart(): void {
+    this.send({ type: 'remote_pair_start' })
+  }
+
+  remoteDeviceRevoke(id: number): void {
+    this.send({ type: 'remote_device_revoke', id })
+  }
+
+  remoteGridsPublish(grids: RemoteGrid[]): void {
+    this.send({ type: 'remote_grids_publish', grids })
   }
 
   taskStart(id: number, agent: AgentKind, base: string | null = null, workspace: string | null = null): void {

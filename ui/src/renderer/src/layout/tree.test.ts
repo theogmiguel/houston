@@ -23,6 +23,7 @@ import {
   loadGrids,
   loadLayout,
   moveLeaf,
+  onGridsSaved,
   paneId,
   preorderLeaves,
   preorderNonSessionPanes,
@@ -42,6 +43,7 @@ import {
   quadrant,
   removeLeaf,
   saveLayout,
+  savedGrids,
   setRatio,
   stackWith,
   swapLeaf,
@@ -1028,5 +1030,42 @@ describe('headless children', () => {
     const current = new Map([[key, { tree: leaf(2), cols: 2 }]])
     const next = syncWorkspaceGrids(path, [{ id: 'g', name: 'Grid' }], 'g', [1, 2, 3], current, new Map(), [1])
     expect(preorderSessions(next.get(key)!.tree)).toEqual([2, 1])
+  })
+})
+
+describe('savedGrids', () => {
+  it('lists every saved grid with its sessions in reading order, without writing', () => {
+    localStorage.clear()
+    const grids = addGrid('/proj/api', 'Auth work')
+    const second = grids[grids.length - 1]
+    saveLayout(gridStorageKey('/proj/api', grids[0].id), { tree: row(leaf(3), leaf(1)), cols: 2 })
+    saveLayout(gridStorageKey('/proj/api', second.id), { tree: leaf(7), cols: 1 })
+    // A workspace with only a pre-grid layout has no grid list yet; reading must not migrate it.
+    localStorage.setItem('tr-layout:/proj/legacy', JSON.stringify({ tree: leaf(9), cols: 1 }))
+    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).sort()
+
+    expect(savedGrids()).toEqual([
+      { workspace: '/proj/api', id: grids[0].id, name: grids[0].name, sessions: [3, 1] },
+      { workspace: '/proj/api', id: second.id, name: 'Auth work', sessions: [7] }
+    ])
+    expect(Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).sort()).toEqual(keys)
+    localStorage.clear()
+  })
+
+  it('notifies listeners after layouts and grid lists are saved', () => {
+    localStorage.clear()
+    let calls = 0
+    const off = onGridsSaved(() => {
+      calls += 1
+    })
+    const grids = addGrid('/proj/api', 'Auth work')
+    saveLayout(gridStorageKey('/proj/api', grids[0].id), { tree: leaf(1), cols: 1 })
+    off()
+    renameGrid('/proj/api', grids[0].id, 'Renamed')
+    expect(calls).toBeGreaterThanOrEqual(2)
+    const seen = calls
+    saveLayout(gridStorageKey('/proj/api', grids[0].id), { tree: leaf(2), cols: 1 })
+    expect(calls).toBe(seen)
+    localStorage.clear()
   })
 })

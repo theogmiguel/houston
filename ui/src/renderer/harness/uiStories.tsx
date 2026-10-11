@@ -1,3 +1,4 @@
+import { SpinnerSpecimen } from '../src/components/ui/Spinner'
 import { OrchestrationContentSpecimen } from '../src/components/ui/OrchestrationContent'
 import { ChildPaneLayoutSpecimen } from '../src/components/ui/ChildPaneLayout'
 import { MascotDockSlot } from '../src/components/ui/MascotDockSlot'
@@ -101,6 +102,7 @@ import {
   InsetPanelSpecimen,
   MonoBlockSpecimen,
   Notice,
+  QrImage,
   NumberFieldSpecimen,
   NoticeEvictionCaption,
   NoticeToast,
@@ -325,6 +327,7 @@ import { SettingsButton } from '../src/components/ui/SettingsButtonRoles'
 import type { ManagedWorktreeInfo } from '../src/houston/generated/ManagedWorktreeInfo'
 
 const noop = (): void => {}
+const QR_SPECIMEN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1z" fill="#000"/></svg>'
 
 function SkillsChromeSpecimen(): React.JSX.Element {
   const [enabled, setEnabled] = useState(true)
@@ -1185,6 +1188,17 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <TextInput variant="setting-number" aria-label="Compact setting number" type="number" value={4} readOnly />
           <TextInput variant="setting-number-rounded" aria-label="Rounded setting number" type="number" value={15} readOnly />
           <TextInput variant="task-number" aria-label="Task number" type="number" value={2} readOnly />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Spinner">
+          <SpinnerSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="QrImage">
+          <SpecimenRow>
+            <QrImage label="Pairing code" svg={QR_SPECIMEN_SVG} />
+            <QrImage label="Expired pairing code" svg={QR_SPECIMEN_SVG} dimmed />
+          </SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="EmptyState">
