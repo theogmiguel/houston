@@ -443,7 +443,140 @@ fn body(app: &AppHandle) -> Result<(), String> {
     focus_event(app, &registry)?;
 
     zoomed_commit(app, &registry)?;
+    #[cfg(target_os = "linux")]
+    consent_identity(app, &registry)?;
 
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn consent_identity(
+    app: &AppHandle,
+    registry: &tauri::State<'_, BrowserRegistry>,
+) -> Result<(), String> {
+    use houston_core::mcp_server::ToolProvider;
+    use serde_json::json;
+    let surface = "st-consent";
+    let events = Events::install(app)?;
+    let fixture = data_url("<!doctype html><title>consent-ready</title><button onclick=\"document.title='ACTION-FIRED'\">Send</button>");
+    mount(app, registry, surface, rect(0.0, 0.0, 300.0, 200.0))?;
+    browser_navigate(
+        app.clone(),
+        registry.clone(),
+        surface.into(),
+        fixture.clone(),
+    )?;
+    let settled = || {
+        wait_until("consent fixture ready", Duration::from_secs(10), || {
+            super::last_state_for(app, surface)
+                .filter(|state| state.title.as_deref() == Some("consent-ready") && !state.loading)
+        })
+    };
+    settled()?;
+    let scope = houston_core::mcp_creds::McpScope {
+        session_id: 0,
+        workspace_id: "/browser-selftest-consent".into(),
+    };
+    let tools = super::mcp_tools::BrowserTools::new(app.clone());
+    let (prompt_tx, prompt_rx) = std::sync::mpsc::channel();
+    let listener = app.listen(super::confirm::REQUEST_EVENT, move |event| {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+            if value["surfaceId"] == "st-consent" {
+                if let Some(id) = value["id"].as_str() {
+                    let _ = prompt_tx.send(id.to_string());
+                }
+            }
+        }
+    });
+    for change in ["live", "replacement", "navigation", "reload"] {
+        let snapshot =
+            tauri::async_runtime::block_on(tools.call(&scope, "browser_snapshot", &json!({})))
+                .map_err(|e| e.0)?;
+        let reference = snapshot
+            .structured
+            .as_ref()
+            .and_then(|value| value["elements"][0]["ref"].as_str())
+            .ok_or_else(|| "consent fixture snapshot has no button ref".to_string())?
+            .to_string();
+        let call = {
+            let app = app.clone();
+            let scope = scope.clone();
+            tauri::async_runtime::spawn(async move {
+                let tools = super::mcp_tools::BrowserTools::new(app);
+                tools
+                    .call(&scope, "browser_click", &json!({ "ref": reference }))
+                    .await
+            })
+        };
+        let prompt = prompt_rx
+            .recv_timeout(Duration::from_secs(20))
+            .map_err(|e| format!("consent fixture prompt: {e}"))?;
+        if change == "replacement" {
+            let child = app
+                .get_webview(&id::derive_label(surface))
+                .ok_or_else(|| "missing consent child".to_string())?;
+            child.eval("const b=document.querySelector('button');b.replaceWith(b.cloneNode(true));document.title='replacement-ready'").map_err(|e| e.to_string())?;
+            wait_until(
+                "same-tag replacement receipt",
+                Duration::from_secs(10),
+                || {
+                    super::last_state_for(app, surface)
+                        .filter(|state| state.title.as_deref() == Some("replacement-ready"))
+                },
+            )?;
+        } else if change == "navigation" {
+            browser_navigate(
+                app.clone(),
+                registry.clone(),
+                surface.into(),
+                fixture.clone(),
+            )?;
+            settled()?;
+        } else if change == "reload" {
+            events.reset();
+            browser_reload(app.clone(), registry.clone(), surface.into(), false)?;
+            wait_until("same URL reload receipt", Duration::from_secs(10), || {
+                events
+                    .states_for(surface)
+                    .into_iter()
+                    .find(|state| state["loading"] == true)
+            })?;
+            settled()?;
+        }
+        let _ = app.state::<super::confirm::ConfirmRegistry>().respond(
+            &prompt,
+            true,
+            false,
+            &scope.workspace_id,
+        );
+        let result = tauri::async_runtime::block_on(call).map_err(|e| e.to_string())?;
+        report(
+            &format!("consent-{change}-outcome"),
+            result.is_ok() == (change == "live"),
+            &format!("action success: {}", result.is_ok()),
+        );
+        let observed =
+            tauri::async_runtime::block_on(tools.call(&scope, "browser_snapshot", &json!({})))
+                .map_err(|e| e.0)?;
+        let effect = observed
+            .structured
+            .as_ref()
+            .is_some_and(|value| value["title"] == "ACTION-FIRED");
+        report(
+            &format!("consent-{change}-effects"),
+            effect == (change == "live"),
+            "only the unchanged, approved fixture may receive a click",
+        );
+        browser_navigate(
+            app.clone(),
+            registry.clone(),
+            surface.into(),
+            fixture.clone(),
+        )?;
+        settled()?;
+    }
+    app.unlisten(listener);
+    browser_destroy(app.clone(), registry.clone(), surface.into())?;
     Ok(())
 }
 

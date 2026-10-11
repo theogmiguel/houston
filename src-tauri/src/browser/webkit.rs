@@ -123,6 +123,7 @@ mod linux {
                     _ => {}
                 });
                 if matches!(event, LoadEvent::Started) {
+                    crate::browser::invalidate_document(&app, &id);
                     last_progress.set(-1.0);
                 }
                 let Some(sticky) = sticky else { return };
