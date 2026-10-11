@@ -6,12 +6,17 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
+mod child_inputs;
 mod harness;
+mod instructions;
 mod intake;
 pub use harness::{
     HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
     HarnessFindingWrite, HarnessPublication, HarnessReviewRow, HarnessTaskRow,
     HarnessVerificationRow, HarnessVerificationWrite,
+};
+pub use instructions::{
+    InstructionRow, INSTRUCTION_ACTIVE_MAX, INSTRUCTION_BODY_MAX, INSTRUCTION_RETAINED_MAX,
 };
 pub use intake::{
     AdjustmentRow, IntakeRow, IntakeWrite, OutboxRow, OutboxTarget, Outgoing, Posted, QuestionRow,
@@ -34,6 +39,63 @@ pub const ORCHESTRATION_RECEIPT_MAX: i64 = 4096;
 pub enum OrchestrationReceipt {
     New,
     Recorded(String),
+}
+
+pub struct MessageReceipt {
+    pub caller: u32,
+    pub key: Option<String>,
+    pub operation: &'static str,
+    pub digest: String,
+}
+
+impl MessageReceipt {
+    pub fn new(
+        caller: u32,
+        key: Option<String>,
+        operation: &'static str,
+        arguments: &serde_json::Value,
+    ) -> Result<Self> {
+        use sha2::Digest;
+        if let Some(key) = &key {
+            crate::orchestrate::validate_client_request_id(key)?;
+        }
+        Ok(Self {
+            caller,
+            key,
+            operation,
+            digest: format!("{:x}", sha2::Sha256::digest(serde_json::to_vec(arguments)?)),
+        })
+    }
+
+    fn begin(&self, conn: &Connection, now: u64) -> Result<Option<serde_json::Value>> {
+        let Some(key) = &self.key else {
+            return Ok(None);
+        };
+        match begin_orchestration_receipt(
+            conn,
+            self.caller,
+            key,
+            self.operation,
+            &self.digest,
+            now,
+        )? {
+            OrchestrationReceipt::New => Ok(None),
+            OrchestrationReceipt::Recorded(result) => {
+                let result: std::result::Result<serde_json::Value, String> =
+                    serde_json::from_str(&result)?;
+                result.map(Some).map_err(anyhow::Error::msg)
+            }
+        }
+    }
+
+    fn finish(&self, conn: &Connection, result: &serde_json::Value) -> Result<()> {
+        if let Some(key) = &self.key {
+            let recorded = serde_json::to_string(&std::result::Result::<_, String>::Ok(result))?;
+            conn.execute("UPDATE orchestration_receipts SET result = ?3 WHERE caller = ?1 AND client_request_id = ?2",
+                rusqlite::params![self.caller, key, recorded])?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -849,6 +911,7 @@ pub struct RoutineRow {
 }
 
 pub struct DelegationRow {
+    pub input_request: Option<proto::ChildInputRequest>,
     pub id: i64,
     pub parent_session: u32,
     pub child_session: u32,
@@ -913,10 +976,24 @@ fn inbox_live_recipient(conn: &rusqlite::Connection, mut to: u32, live: &[u32]) 
 
 const DELEGATION_SELECT: &str = "SELECT id, parent_session, child_session, role, state, stalled, \
     brief, created_at, updated_at, ended_at, stop_reason, \
-    no_handback_reported, no_handback_suppressed, round, reusable, cleanup_after, settled_at, retained_until FROM delegations";
+    no_handback_reported, no_handback_suppressed, round, reusable, cleanup_after, settled_at, retained_until, \
+    (SELECT request_json FROM child_input_requests i WHERE i.child_session = delegations.child_session AND i.resolved_at IS NULL \
+     ORDER BY CASE i.owner WHEN 'user' THEN 0 ELSE 1 END, CASE i.kind WHEN 'permission' THEN 0 ELSE 1 END, i.created_at, i.rowid LIMIT 1) FROM delegations";
 
 fn map_delegation_row(r: &rusqlite::Row) -> rusqlite::Result<DelegationRow> {
     Ok(DelegationRow {
+        input_request: r
+            .get::<_, Option<String>>(18)?
+            .map(|json| {
+                serde_json::from_str(&json).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        18,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })
+            })
+            .transpose()?,
         id: r.get(0)?,
         parent_session: r.get(1)?,
         child_session: r.get(2)?,
@@ -940,6 +1017,7 @@ fn map_delegation_row(r: &rusqlite::Row) -> rusqlite::Result<DelegationRow> {
 
 #[derive(Debug, Clone)]
 pub struct InboxRow {
+    pub reply_to: Option<i64>,
     pub id: i64,
     pub to_session: u32,
     pub original_to: Option<u32>,
@@ -996,7 +1074,7 @@ pub struct InboxRecovery {
 const INBOX_SELECT: &str = "SELECT id, to_session, original_to, workspace, from_session, \
     request_id, kind, urgent, summary, body, artifacts, superseded, provisional, corrects, \
     reason, created_at, ready_at, resolved_at, reserved_at, delivery_id, delivered_at, \
-    delivered_via, confirmed_at, attempts, from_codename, from_role FROM pane_inbox";
+    delivered_via, confirmed_at, attempts, from_codename, from_role, reply_to FROM pane_inbox";
 
 // A row a door is not holding: never reserved, or reserved longer ago than
 // INBOX_RESERVATION_MS so that door is presumed dead. Shared by the reserve claim
@@ -1035,6 +1113,7 @@ fn map_inbox_row(r: &rusqlite::Row) -> rusqlite::Result<InboxRow> {
         attempts: r.get(23)?,
         from_codename: r.get(24)?,
         from_role: r.get(25)?,
+        reply_to: r.get(26)?,
     })
 }
 
@@ -1871,6 +1950,7 @@ impl Db {
             "retained_until",
             "retained_until INTEGER",
         )?;
+        child_inputs::migrate(&conn)?;
         // Three timestamps, three meanings: created_at is persisted, delivered_at is sent,
         // confirmed_at is proven — and what "sent" is worth depends on delivered_via, since
         // only paste/operator can prove landing while wait/stop_hook are final on send.
@@ -1913,6 +1993,7 @@ impl Db {
         add_column_if_missing(&conn, "pane_inbox", "from_codename", "from_codename TEXT")?;
         add_column_if_missing(&conn, "pane_inbox", "from_role", "from_role TEXT")?;
         add_column_if_missing(&conn, "pane_inbox", "excerpt", "excerpt TEXT")?;
+        add_column_if_missing(&conn, "pane_inbox", "reply_to", "reply_to INTEGER")?;
         add_column_if_missing(
             &conn,
             "pane_inbox",
@@ -1928,6 +2009,13 @@ impl Db {
         conn.execute("UPDATE pane_inbox SET paste_started_at = delivered_at WHERE delivered_via = 'paste' AND paste_started_at IS NULL", [])?;
         migrate_staged_results_into_the_inbox(&conn)?;
         migrate_pending_swarm_mail_into_the_inbox(&conn)?;
+        conn.execute("INSERT OR IGNORE INTO child_input_requests (id, child_session, request_json, owner, kind, created_at)
+            SELECT 'report:' || id, from_session,
+              json_object('id', 'report:' || id, 'kind', kind, 'owner', 'orchestrator', 'reason', body, 'escalation_reason', NULL, 'escalation_detail', NULL),
+              'orchestrator', kind, created_at FROM pane_inbox WHERE kind IN ('question','blocked') AND resolved_at IS NULL AND from_session IS NOT NULL", [])?;
+        conn.execute("UPDATE delegations SET state = 'asked_orchestrator' WHERE state IN ('working', 'spawning') AND EXISTS
+            (SELECT 1 FROM child_input_requests i WHERE i.child_session = delegations.child_session AND i.resolved_at IS NULL)", [])?;
+
         conn.execute(
             "UPDATE pane_inbox
              SET from_codename = COALESCE(
@@ -1945,6 +2033,7 @@ impl Db {
             [],
         )?;
         add_column_if_missing(&conn, "pane_inbox", "tool_hint_at", "tool_hint_at INTEGER")?;
+        instructions::init(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -3731,6 +3820,10 @@ impl Db {
         let tx = conn.transaction()?;
         tx.execute("UPDATE delegations SET child_session = ?2, parent_session = COALESCE(?3, parent_session), state = 'working', stop_reason = NULL, ended_at = NULL, settled_at = NULL, retained_until = NULL, cleanup_after = NULL, updated_at = ?4 WHERE child_session = ?1", rusqlite::params![old, new, parent, now as i64])?;
         tx.execute(
+            "UPDATE child_input_requests SET child_session = ?2 WHERE child_session = ?1",
+            rusqlite::params![old, new],
+        )?;
+        tx.execute(
             "UPDATE delegations SET parent_session = ?2 WHERE parent_session = ?1",
             rusqlite::params![old, new],
         )?;
@@ -3838,40 +3931,9 @@ impl Db {
     ) -> Result<OrchestrationReceipt> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
-        tx.execute(
-            "DELETE FROM orchestration_receipts WHERE created_at < ?1",
-            [now.saturating_sub(ORCHESTRATION_RECEIPT_RETENTION_MS) as i64],
-        )?;
-        let existing: Option<(String, String, Option<String>)> = tx.query_row(
-            "SELECT operation, arguments_digest, result FROM orchestration_receipts WHERE caller = ?1 AND client_request_id = ?2",
-            rusqlite::params![caller, key], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
-        if let Some((original_operation, original_digest, result)) = existing {
-            anyhow::ensure!(original_operation == operation && original_digest == digest,
-                "client_request_id {key:?} reused with different arguments or operation; expected the original {original_operation} request");
-            let result = result.ok_or_else(|| anyhow::anyhow!(
-                "client_request_id {key:?} is pending with an uncertain outcome; inspect the pane before choosing a new key"))?;
-            tx.commit()?;
-            return Ok(OrchestrationReceipt::Recorded(result));
-        }
-        let count: i64 =
-            tx.query_row("SELECT COUNT(*) FROM orchestration_receipts", [], |row| {
-                row.get(0)
-            })?;
-        if count >= ORCHESTRATION_RECEIPT_MAX {
-            tx.execute("DELETE FROM orchestration_receipts WHERE rowid IN
-                (SELECT rowid FROM orchestration_receipts WHERE result IS NOT NULL ORDER BY created_at, rowid LIMIT ?1)",
-                [count - ORCHESTRATION_RECEIPT_MAX + 1])?;
-            let remaining: i64 =
-                tx.query_row("SELECT COUNT(*) FROM orchestration_receipts", [], |row| {
-                    row.get(0)
-                })?;
-            anyhow::ensure!(remaining < ORCHESTRATION_RECEIPT_MAX,
-                "orchestration receipt limit {ORCHESTRATION_RECEIPT_MAX}: actual {remaining} pending receipts; cannot record client_request_id {key:?}");
-        }
-        tx.execute("INSERT INTO orchestration_receipts (caller, client_request_id, operation, arguments_digest, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![caller, key, operation, digest, now as i64])?;
+        let receipt = begin_orchestration_receipt(&tx, caller, key, operation, digest, now)?;
         tx.commit()?;
-        Ok(OrchestrationReceipt::New)
+        Ok(receipt)
     }
 
     pub fn orchestration_receipt_discard_pending(&self, caller: u32, key: &str) -> Result<()> {
@@ -3900,8 +3962,9 @@ impl Db {
     }
 
     pub fn delegation_reopen(&self, child: u32, state: &str, now: u64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
-        conn.execute(
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE delegations SET
                 state = ?2, stop_reason = NULL, ended_at = NULL,
                 no_handback_reported = 0, no_handback_suppressed = 0, updated_at = ?3,
@@ -3909,6 +3972,8 @@ impl Db {
              WHERE child_session = ?1",
             rusqlite::params![child, state, now as i64],
         )?;
+        expire_worker_dialogue(&tx, child, now)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -3971,6 +4036,7 @@ impl Db {
              AND request_id = (SELECT round FROM delegations WHERE child_session = ?1)",
             rusqlite::params![child, now as i64],
         )?;
+        expire_worker_dialogue(&tx, child, now)?;
         tx.commit()?;
         Ok(())
     }
@@ -4306,7 +4372,7 @@ impl Db {
 
     pub fn inbox_pending_recipients(&self) -> Result<Vec<u32>> {
         let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn.prepare("SELECT DISTINCT to_session FROM pane_inbox WHERE to_session != 0 AND delivered_at IS NULL AND resolved_at IS NULL")?;
+        let mut stmt = conn.prepare("SELECT DISTINCT to_session FROM pane_inbox WHERE to_session != 0 AND resolved_at IS NULL AND (delivered_at IS NULL OR kind IN ('question', 'blocked'))")?;
         let rows = stmt
             .query_map([], |row| row.get(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -4318,16 +4384,28 @@ impl Db {
         inbox_live_recipient(&conn, to, live_sessions)
     }
 
-    pub fn inbox_route_after_failure(&self, id: i64, recipient: u32, reason: &str) -> Result<()> {
+    pub fn inbox_route_after_failure(
+        &self,
+        observed: &InboxRow,
+        recipient: u32,
+        reason: &str,
+    ) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
-        conn.execute(
+        Ok(conn.execute(
             "UPDATE pane_inbox SET original_to = CASE WHEN to_session != ?2 THEN COALESCE(original_to, to_session) ELSE original_to END,
+                delivered_at = CASE WHEN to_session != ?2 AND kind IN ('question', 'blocked') THEN NULL ELSE delivered_at END,
+                delivered_via = CASE WHEN to_session != ?2 AND kind IN ('question', 'blocked') THEN NULL ELSE delivered_via END,
+                confirmed_at = CASE WHEN to_session != ?2 AND kind IN ('question', 'blocked') THEN NULL ELSE confirmed_at END,
+                paste_started_at = CASE WHEN to_session != ?2 AND kind IN ('question', 'blocked') THEN NULL ELSE paste_started_at END,
                 to_session = ?2, reason = CASE WHEN reason = 'approval_outcome_unobserved' THEN reason ELSE ?3 END,
                 reserved_at = NULL, delivery_id = NULL
-             WHERE id = ?1",
-            rusqlite::params![id, recipient, reason],
-        )?;
-        Ok(())
+             WHERE id = ?1 AND (kind NOT IN ('question', 'blocked') OR resolved_at IS NULL)
+                   AND to_session = ?4 AND reserved_at IS ?5 AND delivery_id IS ?6
+                   AND delivered_at IS ?7 AND resolved_at IS ?8 AND attempts = ?9",
+            rusqlite::params![observed.id, recipient, reason, observed.to_session,
+                observed.reserved_at.map(|value| value as i64), observed.delivery_id,
+                observed.delivered_at.map(|value| value as i64), observed.resolved_at.map(|value| value as i64), observed.attempts],
+        )? == 1)
     }
 
     // Boot recovery: release every reservation (the door that held it is gone) and requeue
@@ -4344,7 +4422,8 @@ impl Db {
     ) -> Result<InboxRecovery> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "DELETE FROM pane_inbox WHERE confirmed_at IS NULL AND paste_started_at < ?1",
+            "DELETE FROM pane_inbox WHERE confirmed_at IS NULL AND paste_started_at < ?1
+             AND (kind NOT IN ('question', 'blocked') OR resolved_at IS NOT NULL)",
             [now.saturating_sub(crate::orchestrate::UNCONFIRMED_PASTE_MAX_MS) as i64],
         )?;
         let reservations_released = conn.execute(
@@ -4373,7 +4452,7 @@ impl Db {
         let dead_parent_ids: Vec<i64> = {
             let sql = format!(
                 "SELECT id FROM pane_inbox
-                 WHERE delivered_at IS NULL AND resolved_at IS NULL
+                 WHERE (delivered_at IS NULL OR kind IN ('question', 'blocked')) AND resolved_at IS NULL
                        AND to_session != 0 AND to_session NOT IN ({live_list})"
             );
             let mut stmt = conn.prepare(&sql)?;
@@ -4392,6 +4471,10 @@ impl Db {
             let recipient = inbox_live_recipient(&conn, to, live_sessions)?;
             conn.execute(
                 "UPDATE pane_inbox SET original_to = COALESCE(original_to, to_session), to_session = ?2, reason = CASE WHEN reason = 'approval_outcome_unobserved' THEN reason ELSE 'parent_dead' END,
+                    delivered_at = CASE WHEN kind IN ('question', 'blocked') THEN NULL ELSE delivered_at END,
+                    delivered_via = CASE WHEN kind IN ('question', 'blocked') THEN NULL ELSE delivered_via END,
+                    confirmed_at = CASE WHEN kind IN ('question', 'blocked') THEN NULL ELSE confirmed_at END,
+                    paste_started_at = CASE WHEN kind IN ('question', 'blocked') THEN NULL ELSE paste_started_at END,
                     reserved_at = NULL, delivery_id = NULL
                  WHERE id = ?1",
                 rusqlite::params![id, recipient],
@@ -4460,6 +4543,15 @@ impl Db {
         )? as u32)
     }
 
+    pub fn inbox_has_worker_question(&self, recipient: u32) -> Result<bool> {
+        Ok(self.conn.lock().expect("db lock").query_row(
+            "SELECT EXISTS(SELECT 1 FROM pane_inbox WHERE to_session = ?1
+             AND kind IN ('question', 'blocked') AND resolved_at IS NULL)",
+            [recipient],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn inbox_ack_operator(&self, id: i64, now: u64) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
         let changed = conn.execute(
@@ -4473,6 +4565,126 @@ impl Db {
     pub fn inbox_insert(&self, row: &NewInboxRow, now: u64) -> Result<i64> {
         let conn = self.conn.lock().expect("db lock");
         insert_inbox_row(&conn, row, now)
+    }
+
+    pub fn message_receipt_lookup(
+        &self,
+        receipt: &MessageReceipt,
+        now: u64,
+    ) -> Result<Option<serde_json::Value>> {
+        if receipt.key.is_none() {
+            return Ok(None);
+        }
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        // A missing receipt is rolled back; only the message transaction records it.
+        receipt.begin(&tx, now)
+    }
+
+    pub fn inbox_insert_report(
+        &self,
+        row: &NewInboxRow,
+        receipt: &MessageReceipt,
+        now: u64,
+    ) -> Result<serde_json::Value> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        if let Some(result) = receipt.begin(&tx, now)? {
+            return Ok(result);
+        }
+        validate_worker_round(
+            &tx,
+            row.from_session.unwrap_or_default(),
+            row.request_id.unwrap_or_default(),
+        )?;
+        let pending: u32 = tx.query_row(
+            "SELECT COUNT(*) FROM pane_inbox WHERE from_session = ?1
+             AND resolved_at IS NULL
+             AND (kind IN ('question', 'blocked') OR (kind = 'progress' AND delivered_at IS NULL))",
+            [row.from_session],
+            |r| r.get(0),
+        )?;
+        let cap = crate::orchestrate::WORKER_REPORT_PENDING_MAX;
+        anyhow::ensure!(pending < cap,
+            "report refused: WORKER_REPORT_PENDING_MAX is {cap}; worker has {pending} pending reports; requested one more report");
+        let id = insert_inbox_row(&tx, row, now)?;
+        if matches!(row.kind.as_str(), "question" | "blocked") {
+            let request = proto::ChildInputRequest {
+                id: format!("report:{id}"),
+                kind: if row.kind == "question" {
+                    proto::ChildInputKind::Question
+                } else {
+                    proto::ChildInputKind::Blocked
+                },
+                owner: proto::ChildInputOwner::Orchestrator,
+                reason: Some(row.body.clone()),
+                permission: None,
+                escalation_reason: None,
+                escalation_detail: None,
+            };
+            child_inputs::insert(
+                &tx,
+                row.from_session.unwrap_or_default(),
+                None,
+                &request,
+                now,
+            )?;
+        }
+        let result = serde_json::json!({"reported":true,"message_id":id,"request_id":row.request_id,"kind":row.kind,
+            "note":"Stored in the parent's inbox; this is not a final result. For a question or blocker, wait with pane_wait (omit session) for a reply; do not submit until the task is done."});
+        receipt.finish(&tx, &result)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
+    pub fn inbox_insert_reply(
+        &self,
+        row: &NewInboxRow,
+        question: i64,
+        caller: u32,
+        receipt: &MessageReceipt,
+        now: u64,
+    ) -> Result<serde_json::Value> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        if let Some(result) = receipt.begin(&tx, now)? {
+            return Ok(result);
+        }
+        let operator_owned: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM child_input_requests WHERE child_session = ?1 AND id = ?2 AND owner = 'user' AND resolved_at IS NULL)",
+            rusqlite::params![row.to_session, format!("report:{question}")], |r| r.get(0),
+        )?;
+        anyhow::ensure!(!operator_owned,
+            "reply refused: message_id {question}, child {}, input episode report:{question} belongs to the operator after escalation; only the operator may answer", row.to_session);
+        validate_worker_round(&tx, row.to_session, row.request_id.unwrap_or_default())?;
+        let pending: u32 = tx.query_row(
+            "SELECT COUNT(*) FROM pane_inbox WHERE to_session = ?1 AND kind = 'reply'
+             AND delivered_at IS NULL AND resolved_at IS NULL",
+            [row.to_session],
+            |r| r.get(0),
+        )?;
+        let cap = crate::orchestrate::WORKER_REPORT_PENDING_MAX;
+        anyhow::ensure!(pending < cap,
+            "reply refused: WORKER_REPORT_PENDING_MAX is {cap}; worker has {pending} pending replies; requested one more reply");
+        let changed = tx.execute(
+            "UPDATE pane_inbox SET resolved_at = ?3
+             WHERE id = ?1 AND to_session = ?2 AND resolved_at IS NULL
+             AND kind IN ('question', 'blocked') AND from_session = ?4 AND request_id = ?5",
+            rusqlite::params![question, caller, now as i64, row.to_session, row.request_id],
+        )?;
+        anyhow::ensure!(changed == 1,
+            "reply refused: message_id {question} is not an unresolved question or blocker addressed to pane {caller}");
+        child_inputs::resolve(&tx, row.to_session, &format!("report:{question}"), now)?;
+        let id = insert_inbox_row(&tx, row, now)?;
+        tx.execute(
+            "UPDATE pane_inbox SET reply_to = ?2 WHERE id = ?1",
+            rusqlite::params![id, question],
+        )?;
+        let result = serde_json::json!({"replied":true,"message_id":id,"reply_to":question,"session":row.to_session,"request_id":row.request_id,
+            "note":"Reply stored durably; the worker receives it through its wait or next safe inbox delivery. This does not answer a provider permission prompt."});
+        receipt.finish(&tx, &result)?;
+        tx.commit()?;
+        Ok(result)
     }
 
     pub fn inbox_release(&self, delivery_id: &str) -> Result<usize> {
@@ -4499,6 +4711,7 @@ impl Db {
             "DELETE FROM pane_inbox WHERE id IN (
                  SELECT id FROM pane_inbox
                  WHERE to_session = 0 AND confirmed_at IS NOT NULL
+                       AND (kind NOT IN ('question', 'blocked') OR resolved_at IS NOT NULL)
                  ORDER BY created_at, id LIMIT ?1
              )",
             rusqlite::params![over],
@@ -4507,15 +4720,17 @@ impl Db {
 
     // Age counts from the door's own notion of finished: delivered_at for the doors final
     // on send, confirmed_at for those proven only once confirmed. A row with neither was
-    // never delivered and is never touched.
+    // never delivered stays pending unless its dialogue was explicitly resolved.
     pub fn inbox_prune_expired(&self, now: u64, retention_ms: u64) -> Result<usize> {
         let cutoff = now.saturating_sub(retention_ms) as i64;
         let conn = self.conn.lock().expect("db lock");
         Ok(conn.execute(
             "DELETE FROM pane_inbox
-             WHERE (delivered_via IN ('wait', 'stop_hook') AND delivered_at < ?1)
+             WHERE (kind NOT IN ('question', 'blocked') OR resolved_at IS NOT NULL)
+             AND ((delivered_via IN ('wait', 'stop_hook') AND delivered_at < ?1)
                 OR (confirmed_at IS NOT NULL AND confirmed_at < ?1)
-                OR (confirmed_at IS NULL AND paste_started_at < ?2)",
+                OR (confirmed_at IS NULL AND paste_started_at < ?2)
+                OR (resolved_at IS NOT NULL AND resolved_at < ?1))",
             rusqlite::params![
                 cutoff,
                 now.saturating_sub(retention_ms.min(crate::orchestrate::UNCONFIRMED_PASTE_MAX_MS))
@@ -4620,6 +4835,14 @@ impl Db {
     }
 
     pub fn delegation_latest_results(&self, parent: u32) -> Result<Vec<proto::DelegationResult>> {
+        self.delegation_results_page(parent, None)
+    }
+
+    pub fn delegation_results_page(
+        &self,
+        parent: u32,
+        before_message_id: Option<i64>,
+    ) -> Result<Vec<proto::DelegationResult>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
             "WITH recipients AS (
@@ -4640,15 +4863,18 @@ impl Db {
                 SELECT MAX(id) AS id, child FROM scoped GROUP BY child
              )
              SELECT latest.child, i.from_role, i.summary, substr(i.body, 1, ?2),
-                    i.created_at, i.delivered_via
+                    i.created_at, i.delivered_via, i.id, i.request_id, i.from_codename,
+                    i.ready_at, i.provisional, i.reason
              FROM pane_inbox i JOIN latest ON i.id = latest.id
-             ORDER BY i.created_at DESC, i.id DESC LIMIT ?3",
+             WHERE (?4 IS NULL OR i.id < ?4)
+             ORDER BY i.id DESC LIMIT ?3",
         )?;
         let rows = stmt.query_map(
             rusqlite::params![
                 parent,
                 proto::DELEGATION_RESULT_EXCERPT_MAX_CHARS,
-                proto::DELEGATION_RESULTS_MAX_ROWS + 1
+                proto::DELEGATION_RESULTS_MAX_ROWS + 1,
+                before_message_id
             ],
             |r| {
                 let via: Option<String> = r.get(5)?;
@@ -4664,6 +4890,12 @@ impl Db {
                     })
                     .transpose()?;
                 Ok(proto::DelegationResult {
+                    message_id: r.get(6)?,
+                    request_id: r.get(7)?,
+                    from_codename: r.get(8)?,
+                    ready_at: r.get::<_, Option<i64>>(9)?.map(|value| value as u64),
+                    provisional: r.get::<_, i64>(10)? != 0,
+                    reason: r.get(11)?,
                     child: r.get(0)?,
                     role: r.get(1)?,
                     summary: r.get(2)?,
@@ -4674,6 +4906,25 @@ impl Db {
             },
         )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn delegation_result_get(&self, parent: u32, message_id: i64) -> Result<Option<InboxRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                &format!(
+                    "WITH recipients AS (
+                    SELECT id FROM sessions WHERE COALESCE(session_origin, id) =
+                        COALESCE((SELECT session_origin FROM sessions WHERE id = ?1), ?1)
+                    UNION SELECT ?1
+                 ) {INBOX_SELECT} WHERE id = ?2 AND kind = 'result'
+                    AND from_session IS NOT NULL
+                    AND (to_session IN recipients OR original_to IN recipients)"
+                ),
+                rusqlite::params![parent, message_id],
+                map_inbox_row,
+            )
+            .optional()?)
     }
 
     pub fn inbox_child_summary(
@@ -4842,26 +5093,102 @@ impl Db {
         }
         #[cfg(feature = "test-barriers")]
         crate::test_barriers::pause("completion", child);
+        expire_worker_dialogue(&tx, child, now)?;
         tx.commit()?;
         Ok(row_id)
     }
 
     pub fn delegation_bump_round(&self, child: u32, now: u64) -> Result<Option<u32>> {
-        let conn = self.conn.lock().expect("db lock");
-        conn.execute(
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE delegations SET round = round + 1, cleanup_after = NULL, settled_at = NULL, retained_until = NULL, updated_at = ?2
              WHERE child_session = ?1",
             rusqlite::params![child, now as i64],
         )?;
-        Ok(conn
+        expire_worker_dialogue(&tx, child, now)?;
+        let round = tx
             .query_row(
                 "SELECT round FROM delegations WHERE child_session = ?1",
                 rusqlite::params![child],
                 |r| r.get::<_, i64>(0),
             )
             .optional()?
-            .map(|v| v as u32))
+            .map(|v| v as u32);
+        tx.commit()?;
+        Ok(round)
     }
+}
+
+fn begin_orchestration_receipt(
+    conn: &Connection,
+    caller: u32,
+    key: &str,
+    operation: &str,
+    digest: &str,
+    now: u64,
+) -> Result<OrchestrationReceipt> {
+    conn.execute(
+        "DELETE FROM orchestration_receipts WHERE created_at < ?1",
+        [now.saturating_sub(ORCHESTRATION_RECEIPT_RETENTION_MS) as i64],
+    )?;
+    let existing: Option<(String, String, Option<String>)> = conn.query_row(
+            "SELECT operation, arguments_digest, result FROM orchestration_receipts WHERE caller = ?1 AND client_request_id = ?2",
+            rusqlite::params![caller, key], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
+    if let Some((original_operation, original_digest, result)) = existing {
+        anyhow::ensure!(original_operation == operation && original_digest == digest,
+                "client_request_id {key:?} reused with different arguments or operation; expected the original {original_operation} request");
+        let result = result.ok_or_else(|| anyhow::anyhow!(
+                "client_request_id {key:?} is pending with an uncertain outcome; inspect the pane before choosing a new key"))?;
+        return Ok(OrchestrationReceipt::Recorded(result));
+    }
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM orchestration_receipts", [], |row| {
+        row.get(0)
+    })?;
+    if count >= ORCHESTRATION_RECEIPT_MAX {
+        conn.execute("DELETE FROM orchestration_receipts WHERE rowid IN
+                (SELECT rowid FROM orchestration_receipts WHERE result IS NOT NULL ORDER BY created_at, rowid LIMIT ?1)",
+                [count - ORCHESTRATION_RECEIPT_MAX + 1])?;
+        let remaining: i64 =
+            conn.query_row("SELECT COUNT(*) FROM orchestration_receipts", [], |row| {
+                row.get(0)
+            })?;
+        anyhow::ensure!(remaining < ORCHESTRATION_RECEIPT_MAX,
+                "orchestration receipt limit {ORCHESTRATION_RECEIPT_MAX}: actual {remaining} pending receipts; cannot record client_request_id {key:?}");
+    }
+    conn.execute("INSERT INTO orchestration_receipts (caller, client_request_id, operation, arguments_digest, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![caller, key, operation, digest, now as i64])?;
+    Ok(OrchestrationReceipt::New)
+}
+
+fn validate_worker_round(conn: &Connection, child: u32, request: u32) -> Result<()> {
+    let (round, state): (u32, String) = conn.query_row(
+        "SELECT round, state FROM delegations WHERE child_session = ?1",
+        [child],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    anyhow::ensure!(request > 0 && request == round &&
+        crate::orchestrate::DelegationState::parse(&state).is_some_and(|state| !state.is_closed()),
+        "report/reply refused: request_id {request} for pane {child}; current request is {round} with state {state}");
+    Ok(())
+}
+
+fn expire_worker_dialogue(conn: &Connection, child: u32, now: u64) -> Result<()> {
+    conn.execute("UPDATE child_input_requests SET resolved_at = ?2 WHERE child_session = ?1 AND resolved_at IS NULL
+        AND EXISTS (SELECT 1 FROM delegations d WHERE d.child_session = ?1 AND
+            (d.state IN ('done', 'failed', 'cancelled', 'unknown') OR EXISTS
+                (SELECT 1 FROM pane_inbox m WHERE child_input_requests.id = 'report:' || m.id
+                 AND m.from_session = ?1 AND m.request_id != d.round)))", rusqlite::params![child, now as i64])?;
+
+    conn.execute(
+        "UPDATE pane_inbox SET resolved_at = ?2, reason = 'request_closed'
+         WHERE resolved_at IS NULL
+         AND ((from_session = ?1 AND kind IN ('progress', 'question', 'blocked'))
+              OR (to_session = ?1 AND kind = 'reply'))
+         AND EXISTS (SELECT 1 FROM delegations WHERE child_session = ?1
+                     AND (round != pane_inbox.request_id OR state IN ('done', 'failed', 'cancelled', 'unknown')))",
+        rusqlite::params![child, now as i64])?;
+    Ok(())
 }
 
 pub enum RoundHandback<'a> {
@@ -7739,6 +8066,239 @@ mod tests {
         );
     }
 
+    fn dialogue_report_row(parent: u32, child: u32, round: u32) -> NewInboxRow {
+        let mut row = new_inbox_row(parent, "/ws", Some(child), Some(round), true);
+        row.kind = "question".into();
+        row.urgent = true;
+        row
+    }
+    fn dialogue_receipt(caller: u32, key: &str, op: &'static str, payload: &str) -> MessageReceipt {
+        MessageReceipt::new(
+            caller,
+            Some(key.into()),
+            op,
+            &serde_json::json!({"body":payload}),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn dialogue_stale_reroute_cannot_clear_a_new_recipients_pinned_lease() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let id = db.inbox_insert(&dialogue_report_row(1, 4, 1), 100).unwrap();
+        let old = db.inbox_get(id).unwrap().unwrap();
+        assert!(db
+            .inbox_route_after_failure(&old, 2, "parent_dead")
+            .unwrap());
+        let (delivery, _) = db.inbox_reserve(2, 110, 10, 100_000).unwrap().unwrap();
+        assert!(db.inbox_pin_reservation(&delivery).unwrap());
+        let pinned = db.inbox_get(id).unwrap().unwrap();
+        assert!(!db
+            .inbox_route_after_failure(&old, 2, "parent_dead")
+            .unwrap());
+        assert_eq!(
+            db.inbox_get(id).unwrap().unwrap().delivery_id,
+            pinned.delivery_id
+        );
+        assert_eq!(
+            db.inbox_get(id).unwrap().unwrap().reserved_at,
+            pinned.reserved_at
+        );
+        assert!(db.inbox_reserve(2, 120, 10, 100_000).unwrap().is_none());
+        assert_eq!(db.inbox_mark_delivered(&delivery, "wait", 125).unwrap(), 1);
+        assert_eq!(db.inbox_confirm(&delivery, 125).unwrap(), 1);
+        let ancestor = db.inbox_get(id).unwrap().unwrap();
+        assert!(db
+            .inbox_route_after_failure(&ancestor, 3, "parent_dead")
+            .unwrap());
+        assert!(!db
+            .inbox_route_after_failure(&old, 2, "parent_dead")
+            .unwrap());
+        assert_eq!(db.inbox_get(id).unwrap().unwrap().to_session, 3);
+        let current = db.inbox_get(id).unwrap().unwrap();
+        db.inbox_resolve(id, "answered", 140).unwrap();
+        assert!(!db
+            .inbox_route_after_failure(&current, 0, "parent_dead")
+            .unwrap());
+        assert_eq!(db.inbox_get(id).unwrap().unwrap().to_session, 3);
+    }
+
+    #[test]
+    fn dialogue_closed_undelivered_rows_are_pruned_without_losing_open_questions_or_receipts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        db.delegation_create(1, 2, None, "work", 100).unwrap();
+        let receipt = dialogue_receipt(2, "report", "pane_report", "question");
+        let original = db
+            .inbox_insert_report(&dialogue_report_row(1, 2, 1), &receipt, 100)
+            .unwrap();
+        let mut reply = new_inbox_row(2, "/ws", Some(1), Some(1), true);
+        reply.kind = "reply".into();
+        let answered = db
+            .inbox_insert_reply(
+                &reply,
+                original["message_id"].as_i64().unwrap(),
+                1,
+                &dialogue_receipt(1, "answer", "pane_reply", "answer"),
+                101,
+            )
+            .unwrap();
+        let mut progress = dialogue_report_row(1, 2, 1);
+        progress.kind = "progress".into();
+        db.inbox_insert_report(
+            &progress,
+            &dialogue_receipt(2, "progress", "pane_report", "progress"),
+            102,
+        )
+        .unwrap();
+        db.delegation_bump_round(2, 110).unwrap();
+        let open = db
+            .inbox_insert_report(
+                &dialogue_report_row(1, 2, 2),
+                &dialogue_receipt(2, "open", "pane_report", "open"),
+                120,
+            )
+            .unwrap();
+        let (delivery, _) = db.inbox_reserve(1, 121, 10, 100_000).unwrap().unwrap();
+        db.inbox_mark_delivered(&delivery, "wait", 121).unwrap();
+        assert_eq!(db.inbox_prune_expired(1000, 100).unwrap(), 3);
+        assert!(db
+            .inbox_get(answered["message_id"].as_i64().unwrap())
+            .unwrap()
+            .is_none());
+        assert!(db
+            .inbox_get(open["message_id"].as_i64().unwrap())
+            .unwrap()
+            .is_some());
+        assert_eq!(
+            db.message_receipt_lookup(&receipt, 1000).unwrap(),
+            Some(original)
+        );
+        for round in 2..20 {
+            db.delegation_finish(
+                2,
+                if round % 2 == 0 {
+                    "failed"
+                } else {
+                    "cancelled"
+                },
+                None,
+                round * 1000,
+            )
+            .unwrap();
+            db.inbox_prune_expired(round * 1000 + 200, 100).unwrap();
+            assert!(db.inbox_list_for_session(1).unwrap().is_empty());
+            db.delegation_reopen(2, "working", round * 1000 + 300)
+                .unwrap();
+            db.inbox_insert_report(
+                &dialogue_report_row(1, 2, (round + 1) as u32),
+                &dialogue_receipt(2, &format!("round-{round}"), "pane_report", "question"),
+                round * 1000 + 310,
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn dialogue_caps_keep_delivered_questions_open_and_reply_failure_atomic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        db.delegation_create(1, 2, None, "work", 1).unwrap();
+        for n in 0..crate::orchestrate::WORKER_REPORT_PENDING_MAX {
+            db.inbox_insert_report(
+                &dialogue_report_row(1, 2, 1),
+                &dialogue_receipt(2, &format!("q-{n}"), "pane_report", "question"),
+                2,
+            )
+            .unwrap();
+        }
+        let (delivery, questions) = db.inbox_reserve(1, 3, 100, 100_000).unwrap().unwrap();
+        db.inbox_mark_delivered(&delivery, "wait", 3).unwrap();
+        let overflow = dialogue_receipt(2, "overflow", "pane_report", "question");
+        assert!(db
+            .inbox_insert_report(&dialogue_report_row(1, 2, 1), &overflow, 4)
+            .unwrap_err()
+            .to_string()
+            .contains("64"));
+        assert!(db.message_receipt_lookup(&overflow, 4).unwrap().is_none());
+        let mut answer = new_inbox_row(2, "/ws", Some(1), Some(1), true);
+        answer.kind = "reply".into();
+        for (n, question) in questions.iter().enumerate() {
+            db.inbox_insert_reply(
+                &answer,
+                question.id,
+                1,
+                &dialogue_receipt(1, &format!("a-{n}"), "pane_reply", "answer"),
+                5,
+            )
+            .unwrap();
+        }
+        let another = db
+            .inbox_insert_report(&dialogue_report_row(1, 2, 1), &overflow, 6)
+            .unwrap()["message_id"]
+            .as_i64()
+            .unwrap();
+        let answer_receipt = dialogue_receipt(1, "retry-answer", "pane_reply", "answer");
+        assert!(db
+            .inbox_insert_reply(&answer, another, 1, &answer_receipt, 7)
+            .unwrap_err()
+            .to_string()
+            .contains("64"));
+        assert!(db
+            .inbox_get(another)
+            .unwrap()
+            .unwrap()
+            .resolved_at
+            .is_none());
+        assert!(db
+            .message_receipt_lookup(&answer_receipt, 7)
+            .unwrap()
+            .is_none());
+        let (delivery, _) = db.inbox_reserve(2, 8, 100, 100_000).unwrap().unwrap();
+        db.inbox_mark_delivered(&delivery, "wait", 8).unwrap();
+        db.inbox_insert_reply(&answer, another, 1, &answer_receipt, 9)
+            .unwrap();
+    }
+
+    #[test]
+    fn dialogue_receipt_failure_rolls_back_message_and_resolution() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        db.delegation_create(1, 2, None, "work", 1).unwrap();
+        db.conn.lock().unwrap().execute_batch("CREATE TRIGGER receipt_abort BEFORE UPDATE OF result ON orchestration_receipts BEGIN SELECT RAISE(ABORT, 'injected receipt failure'); END").unwrap();
+        let report = dialogue_receipt(2, "q", "pane_report", "question");
+        assert!(db
+            .inbox_insert_report(&dialogue_report_row(1, 2, 1), &report, 2)
+            .is_err());
+        assert!(db.inbox_list_for_session(1).unwrap().is_empty());
+        assert!(db.message_receipt_lookup(&report, 2).unwrap().is_none());
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TRIGGER receipt_abort")
+            .unwrap();
+        let id = db
+            .inbox_insert_report(&dialogue_report_row(1, 2, 1), &report, 3)
+            .unwrap()["message_id"]
+            .as_i64()
+            .unwrap();
+        db.conn.lock().unwrap().execute_batch("CREATE TRIGGER receipt_abort BEFORE UPDATE OF result ON orchestration_receipts BEGIN SELECT RAISE(ABORT, 'injected receipt failure'); END").unwrap();
+        let mut answer = new_inbox_row(2, "/ws", Some(1), Some(1), true);
+        answer.kind = "reply".into();
+        assert!(db
+            .inbox_insert_reply(
+                &answer,
+                id,
+                1,
+                &dialogue_receipt(1, "a", "pane_reply", "answer"),
+                4
+            )
+            .is_err());
+        assert!(db.inbox_get(id).unwrap().unwrap().resolved_at.is_none());
+        assert!(db.inbox_list_for_session(2).unwrap().is_empty());
+    }
+
     fn new_inbox_row(
         to_session: u32,
         workspace: &str,
@@ -7874,7 +8434,8 @@ mod tests {
         let id = db
             .inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), false), 100)
             .unwrap();
-        db.inbox_route_after_failure(id, 3, "parent_dead").unwrap();
+        db.inbox_route_after_failure(&db.inbox_get(id).unwrap().unwrap(), 3, "parent_dead")
+            .unwrap();
         assert_eq!(db.inbox_get(id).unwrap().unwrap().ready_at, None);
         assert!(db.inbox_reserve(3, 200, 10, 1000000).unwrap().is_none());
         assert_eq!(db.inbox_pending_result(1, 2, 1).unwrap(), Some(id));
@@ -7909,7 +8470,8 @@ mod tests {
         let id = db
             .inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), true), 100)
             .unwrap();
-        db.inbox_route_after_failure(id, 0, "parent_dead").unwrap();
+        db.inbox_route_after_failure(&db.inbox_get(id).unwrap().unwrap(), 0, "parent_dead")
+            .unwrap();
         db.delegation_rebind(1, 3, None, 200).unwrap();
         assert_eq!(db.inbox_get(id).unwrap().unwrap().to_session, 3);
     }
@@ -7921,9 +8483,11 @@ mod tests {
         let id = db
             .inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), false), 100)
             .unwrap();
-        db.inbox_route_after_failure(id, 0, "parent_dead").unwrap();
+        db.inbox_route_after_failure(&db.inbox_get(id).unwrap().unwrap(), 0, "parent_dead")
+            .unwrap();
         db.delegation_rebind(1, 3, None, 200).unwrap();
-        db.inbox_route_after_failure(id, 4, "parent_dead").unwrap();
+        db.inbox_route_after_failure(&db.inbox_get(id).unwrap().unwrap(), 4, "parent_dead")
+            .unwrap();
         assert_eq!(db.inbox_pending_result(3, 2, 1).unwrap(), Some(id));
         assert!(db.inbox_round_handed_back(3, 2, 1).unwrap());
         assert!(db.inbox_round_has_result(3, 2, 1).unwrap());

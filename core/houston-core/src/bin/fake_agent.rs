@@ -231,7 +231,10 @@ impl Agent {
     }
 
     fn run(&mut self) -> Result<()> {
-        self.log("start", json!({"provider":self.script.provider}))?;
+        self.log(
+            "start",
+            json!({"provider":self.script.provider,"pid":std::process::id()}),
+        )?;
         self.lifecycle("start")?;
         self.lifecycle("prompt")?;
         println!("FAKE-READY");
@@ -246,15 +249,42 @@ impl Agent {
                         "grok" => "--allow",
                         other => bail!("no handback-only launch rule for {other}"),
                     };
-                    let joined = format!("{expected}=mcp__houston__pane_submit");
-                    if !args.contains(&joined)
-                        && !args
-                            .windows(2)
-                            .any(|pair| pair == [expected, "mcp__houston__pane_submit"])
+                    let mut allowed = Vec::new();
+                    for (index, argument) in args.iter().enumerate() {
+                        let value = argument.strip_prefix(&format!("{expected}=")).or_else(|| {
+                            (argument == expected)
+                                .then(|| args.get(index + 1).map(String::as_str))
+                                .flatten()
+                        });
+                        if let Some(value) = value {
+                            allowed.extend(value.split(',').map(str::to_owned));
+                        }
+                    }
+                    let required = [
+                        "pane_submit",
+                        "pane_report",
+                        "pane_reply",
+                        "pane_wait",
+                        "pane_deny",
+                        "pane_escalate",
+                    ]
+                    .map(|name| format!("mcp__houston__{name}"));
+                    if required.iter().any(|name| !allowed.contains(name))
+                        || allowed.len() != required.len()
                     {
-                        bail!("missing handback-only permission flag {expected}");
+                        bail!("expected only the six local dialogue and input tools in {expected}; got {allowed:?}");
                     }
                     self.log("handback_allowed", Value::Null)?;
+                }
+                "read_bytes" => {
+                    let count = step["count"].as_u64().context("read_bytes count")?;
+                    anyhow::ensure!(
+                        (1..=64).contains(&count),
+                        "read_bytes count {count}: expected 1–64 bytes"
+                    );
+                    let mut bytes = vec![0; count as usize];
+                    std::io::stdin().read_exact(&mut bytes)?;
+                    self.log("input_bytes", json!({"bytes":bytes}))?;
                 }
                 "terminal_query" => {
                     let da = step["query"] == "da";

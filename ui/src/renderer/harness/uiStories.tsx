@@ -1,3 +1,5 @@
+import { OrchestrationContentSpecimen } from '../src/components/ui/OrchestrationContent'
+import { ChildPaneLayoutSpecimen } from '../src/components/ui/ChildPaneLayout'
 import { MascotDockSlot } from '../src/components/ui/MascotDockSlot'
 import { MascotArtSpecimen } from '../src/components/ui/MascotArt'
 import { MascotRigSpecimen } from '../src/components/ui/MascotRig'
@@ -810,6 +812,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Roster surfaces">
           <RosterSurfaceSpecimen />
+          <ChildPaneLayoutSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Pane frame">
@@ -818,6 +821,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Orchestrator overview">
           <OrchestratorOverviewSpecimen />
+          <OrchestrationContentSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Progress timeline">

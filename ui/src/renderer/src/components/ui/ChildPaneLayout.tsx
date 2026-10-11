@@ -1,6 +1,18 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { BTN_GHOST, BTN_ICO_STRUCTURE } from './buttonChrome'
 import { Text } from './Text'
+import { Notice } from './Notice'
+
+export function PeekTerminalLayer({ sessionId, hidden, children }: { sessionId: number; hidden: boolean; children: ReactNode }): React.JSX.Element {
+  return <div data-peek-session={sessionId} className="absolute inset-0 flex flex-col min-w-0 min-h-0" aria-hidden={hidden} style={hidden ? { visibility: 'hidden', pointerEvents: 'none' } : undefined}>{children}</div>
+}
+
+export function ChildPaneLayoutSpecimen(): React.JSX.Element {
+  return <div className="relative h-[var(--h-roster-specimen)] overflow-hidden border border-[var(--divider)]">
+    <PeekTerminalLayer sessionId={1} hidden={false}><Notice tone="warn" inset="compact-inline">Needs you · Permission escalated by the orchestrator</Notice><div className="flex-1 min-h-0 p-[var(--space-2)] bg-[var(--terminal-frame-bg)]"><Text mono size="small">Agent terminal remains available for input.</Text></div></PeekTerminalLayer>
+  </div>
+}
+
 export function ChildrenColumn({ children }: { children: ReactNode }): React.JSX.Element {
   return <div className="flex-1 min-w-0 min-h-0 flex flex-col">{children}</div>
 }

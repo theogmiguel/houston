@@ -7,7 +7,7 @@ them. It does that over MCP, against the daemon that owns its own PTY, with a cr
 minted for its pane alone. Every signal one pane owes another is one row in `pane_inbox`, the
 single table the three delivery doors read — see "The inbox" below.
 
-Every child runs with its CLI's own bypass/auto flag. Unless `cwd` is supplied, it inherits
+Children default to their CLI's Auto mode; Ask and Bypass use the provider's launch flags. Unless `cwd` is supplied, it inherits
 the parent's reported working directory when that directory exists inside the target
 workspace; otherwise it starts at the workspace root. There is no merge gate or sandbox
 isolating it. The one
@@ -24,11 +24,11 @@ pane drops its record, and a new worktree at a recorded path replaces the stale 
 a slug is reusable once its worktree and branch are gone. Houston does not commit changes
 on an agent's behalf.
 
-For single-branch work the orchestrator will edit itself, it continues in the new
-worktree with `pane_spawn{handoff: true, worktree: SLUG}` (`hs-pane spawn --handoff
---worktree SLUG`), passing context via `state_doc`. It must not edit a child's worktree
-from the primary checkout: the pane's checkout must describe where its process works.
-Delegated multi-branch work continues to use child panes with `worktree`.
+Creating a worktree does not request a handoff. Normal delegation uses child panes
+with `worktree`; independent handoff is reserved for an explicit operator request to
+continue in a new pane, passing context via `state_doc`. A contributor must not edit
+a child's worktree from the primary checkout: the pane's checkout must describe where
+its process works.
 
 ## Guarantees
 
@@ -127,6 +127,29 @@ The marker leaves the agent Working, produces no desktop notification and reache
 only through an explicit wait. Matching PostToolUse, Stop, Interrupt or a new root user
 prompt clears it. Without a call id, matching requires turn, tool and canonical input
 digest; incomplete evidence survives unrelated tools until an authoritative turn boundary.
+Live daemon adoption carries tracked native permission, question and Auto-review episodes,
+including exact correlation identities, generation counters, digests, root prompt replay and
+provider conversation fences, evidence that lifecycle hooks were seen, and operator-intervention fences.
+Reported lifecycle evidence keeps its precedence over program-status and quiet-settle fallbacks
+after adoption. The database remains authoritative for typed request ids, ownership and denial
+attempts; adoption does not reopen requests or repeat
+a denial. Descriptive metadata is bounded and redacted, and the snapshot shares the existing
+manifest byte cap. Structured matching evidence can resolve an adopted episode before a turn
+ends, with the same cardinality checks for denial.
+
+Older manifests remain readable when no native input is pending. A pending NeedsInput status or
+persisted provider request without matching recovery state refuses adoption before commit, naming
+the session and leaving the old daemon owning its PTYs. The owning daemon also refuses a
+handoff to a candidate lacking snapshot support when native episodes or intervention fences
+remain pending. The operator must resolve unknown input before retrying; Houston invents no
+permission identity or verified denial. Captured operator answer text is not transferred;
+resolution still records the intervention without it.
+A legacy Working session without a persisted native request remains adoptable; a later typed
+waiting signal reconstructs the request normally. Bare activity alone does not invent an ask.
+Native hook passes and operator writes admitted before handoff drain before snapshot capture.
+They remain fenced through commit; new hook files stay queued for the adopting daemon, and
+operator or parent input during handoff is refused for retry against the owning generation.
+
 Internal inbox prompts never clear permission episodes. Ordinary root tool activity
 reports Working only when no human-input episode remains open, preserving concurrent
 questions. A SessionStart arriving during Working or Needs input cannot end that turn.
@@ -148,6 +171,12 @@ spelling, or a verb that is CLI-only).
 | `pane_wait` | `mcp_orchestration.rs` | `hs-pane wait` | door 1: block on the caller's own `pane_inbox` until an eligible row exists (or the timeout runs out), reserve it, return the rows in this same call, and mark `delivered_via = 'wait'` after the response body completes. `session` (optional) scopes to one child; `kind` (optional) filters to one row kind but never hides an urgent one for a waited child. `until` is removed and refused by name, naming `kind` as its replacement |
 | `pane_kill` | `mcp_orchestration.rs` | `hs-pane kill` | end a child pane |
 | `pane_submit` | `mcp_orchestration.rs` | `hs-pane submit` | worker→parent result handoff, with an optional summary and artifact paths; wakes the parent |
+| `pane_report` | `mcp_orchestration.rs` | `hs-pane report` | worker progress, question or blocker during its current request; does not complete the request |
+| `pane_reply` | `mcp_orchestration.rs` | `hs-pane reply` | answer a question addressed to the caller and atomically store a correlated reply |
+| `pane_deny` | `mcp_orchestration.rs` | `hs-pane deny CHILD --episode-id ID` | deny an exact pending descendant permission with verified provider input |
+| `pane_escalate` | `mcp_orchestration.rs` | `hs-pane escalate` | transfer an unresolved descendant input request to the user with a reason |
+| `pane_instruction_list` / `pane_instruction_get` | `mcp_orchestration.rs` | `hs-pane instruction-list` / `instruction-get` | inspect durable instruction delivery states or explicitly read a retained body |
+| `pane_instruction_cancel` / `pane_instruction_resume` | `mcp_orchestration.rs` | `hs-pane instruction-cancel` / `instruction-resume` | cancel an inactive pending instruction or explicitly resume an untouched recovery-held instruction |
 | — | — | `hs-pane keys` | press a small set of keys in a pane (the CLI-only spelling of `pane_send_keys`) |
 | `pane_send_keys` | `mcp_orchestration.rs` | — | press a small set of keys in a pane (see the tool's own description for the list) |
 | `harness_publish` | `mcp_harness.rs` | `hs-harness publish` | not a pane verb: a harness review run hands its `report.md` and `findings.json` to the Harness view. Offered only to that run's pane while it is in flight, whatever the orchestration setting |
@@ -189,6 +218,24 @@ and the approval ceiling still applies.
 `pane_submit` takes `body` and optional `summary`, `artifacts`, `request_id`. A pane nobody
 spawned has nobody to submit to and is refused; a harness review run's refusal names
 `harness_publish` instead.
+
+Reports and replies use the inbox without treating an intermediate question as a
+handback. Their round must still be open; Codex steer can reconcile the pending
+request header without a new prompt hook, using the same rule as submit. A question
+remains unresolved after delivery. Only its recipient, with recorded ancestry over
+the worker, can answer it. The answer and resolution share a transaction with the
+retry receipt, so transport loss cannot duplicate an answer or leave a committed
+message behind a permanently pending receipt. Receipt lookup precedes current-round
+validation, allowing a successful answer to be retried after the round closes.
+
+Delivered unanswered questions remain eligible for ancestor rerouting and count
+toward the worker's pending-report limit. Rerouting compares the observed recipient,
+reservation, delivery and attempt state before releasing a lease; an old failure
+cannot erase a newer delivery. An ancestor's ability to answer inherited questions
+is independent of its ability to spawn. Replies keep the original question id in
+`reply_to`, rather than in a reason that recovery may replace. Round changes close
+obsolete dialogue; retention removes resolved messages even if they were never
+delivered, while preserving unanswered questions.
 
 The `task_*` tools are the one non-pane family: they reach every top-level pane and no
 child, whatever the orchestration switch, and the workspace's Settings ▸ Tasks access
@@ -389,9 +436,9 @@ other table already keys on; `request_id` is the `delegations.round` the row ans
 can keep naming a result after temporary settlement ends the process.
 `kind` is one of `InboxKind`: `result` (a `pane_submit` body), `no_handback` (a turn ended
 with nothing submitted), `needs_input` (urgent), `exited` (urgent, the child's process is
-gone), `stalled`, `operator_note` (the operator ended or interrupted the child), and `mail`
-(a swarm-scope message addressed to a pane's label). `needs_input` and `exited` are the
-urgent kinds,
+gone), `stalled`, `operator_note` (the operator ended or interrupted the child), `mail`
+(a swarm-scope message addressed to a pane's label), and worker `progress`, `question`,
+`blocked` and `reply`. `needs_input`, `exited`, `question`, `blocked` and `reply` are urgent,
 and they bypass every batch window. Swarm mail between siblings remains agent-to-agent
 traffic. A top-level pane may address the operator; delegated children hand results to their
 orchestrator and its live ancestors.
@@ -501,15 +548,29 @@ occupancy immediately and defer cleanup cancellation to the watcher when that lo
 busy, so unrelated terminal input does not wait for a spawn.
 
 `pane_prompt` defaults to `mode: "queue"`: it applies the same status and
-operator-composer hold as inbox pastes. A held prompt remains on the bounded wake
-lane and reports `held`. The lane keeps up to sixteen prompts until their hold clears
-or the session ends; elapsed hold time cannot discard them. This queue is in memory,
-so daemon restart does not preserve it. `steer` permits a paste while the provider is working;
+operator-composer hold as inbox pastes. Acceptance and its retry receipt retain the
+instruction body atomically before any terminal action. Each target origin admits
+sixteen active instructions; the channel retains at most 4096 bodies of 64 KiB each.
+Pruning removes only terminal history. Request numbers are assigned under dispatch
+serialization, and start/adoption evidence prevents an old idle event from dispatching
+the next instruction. Before the first prompt hook, dispatch uses the spawn's reserved
+initial request; its start and completion must still release the next queued instruction.
+A retry returns the same instruction's current state. Sessions without retained
+instructions do not emit queue updates for ordinary lifecycle events.
+
+Untouched instructions become held after recovery. Explicit resume validates the
+target origin, provider, directory, profile and conversation. A write-ahead marker
+precedes PTY input; partial writes, withheld Enter and ambiguous crash recovery become
+uncertain and block replay. Delivery proves the complete prompt and Enter, not task
+completion. Full instruction bodies are read only on explicit inspection; snapshots
+carry bounded previews. `steer` permits a paste while the provider is working;
 `restart` sends the provider's interrupt key while working and queues delivery
 until authoritative idle. Both immediate modes refuse an operator draft,
 needs-input, or an occupied wake lane before writing. The composer and
 needs-input guards are rechecked before paste and before Enter. A partial or
 unsubmitted paste creates a note for the sender and is never retried automatically.
+Restart or a superseding request releases an old staged handback as partial with its
+body retained. A pending replacement prevents temporary child cleanup.
 Queued prompts retain their sender; a dead sender's nearest live ancestor inherits
 the note, or the operator receives it when no ancestor is live.
 
@@ -528,8 +589,10 @@ retain their default binding for restart delivery.
 Optional `client_request_id` keys for spawn and prompt are shared by HTTP, MCP and
 `hs-pane`. Keys are scoped to the calling pane and admit 1–64 ASCII letters,
 digits, dots, underscores and hyphens. The daemon stores only an argument digest
-and the recorded success in SQLite. Defaults and normalized request fields are applied
-before hashing. Matching retries return that outcome;
+and the recorded success in SQLite; prompt receipts additionally retain their durable
+instruction identity and body. Defaults and normalized request fields are applied
+before hashing. Matching spawn retries return their original outcome; prompt retries
+return the retained instruction's current delivery state;
 a different operation or argument set is refused with the key's name. Reservation
 precedes the mutation and completion precedes the response. A refusal before the
 action discards its pending receipt, so a retry can act after a cap, input or busy
@@ -799,7 +862,8 @@ request the list after reconnecting. **Read is not resolved**: `inbox_ack` sets
 `delivered_via = 'operator'` and `confirmed_at`; only an explicit resolve (or the block
 ending) sets `resolved_at`, because reading about a blocked child does not unblock it. Children keep
 running. Retention is `INBOX_OPERATOR_MAX_ROWS` for confirmed rows, never for unconfirmed
-ones. The overview shows genuine operator rows in "Addressed to you" and hides that group when empty. Child warnings and delivery failures with a live ancestor remain in the orchestrator inbox.
+ones or unanswered worker questions. A delivered unanswered question reopens for
+delivery to its new recipient when the parent dies. The overview shows genuine operator rows in "Addressed to you" and hides that group when empty. Child warnings and delivery failures with a live ancestor remain in the orchestrator inbox.
 
 ### Restart and migration
 
@@ -820,6 +884,9 @@ restarts produce one state, and it runs **after** restore:
    transaction, so a later ancestor reroute still closes the original delegation round.
    Unsupported children remain ended; settled children remain
    archived. A child without a valid resume handle never starts a bare replacement CLI.
+   Shell-hosted recovery reserves the parent's lifecycle while provider preparation runs
+   outside the hook drain and global cleanup lock, so unrelated panes remain usable.
+   Parent exit is checked around each launch; a replacement whose parent exited is closed.
 3. `db::inbox_recover_after_restart` runs against the live set restore actually brought
    back, not the empty roster boot started with — a respawned husk keeps its own rows
    addressed to it instead of re-addressing them to the operator on the strength of an
@@ -836,7 +903,9 @@ restarts produce one state, and it runs **after** restore:
 Every spawn opens a row in `delegations` (one per child, keyed uniquely by child
 session) carrying the brief, the lifecycle state, and the request counter. What the child
 hands back is NOT here — it is a `pane_inbox` row addressed to the parent. The states are
-`spawning -> working <-> needs_input`, closing at `done | failed | cancelled | unknown`.
+`spawning -> working <-> asked_orchestrator | needs_input`, closing at
+`done | failed | cancelled | unknown`. Input ownership distinguishes the two waiting
+states without replacing the provider's reported `AgentStatus::NeedsInput`.
 Stalling is a flag beside the state, never a state: the stall signal cannot tell a wedged
 child from a long silent turn, and a terminal `stalled` would kill live delegations.
 
@@ -963,7 +1032,7 @@ block. The flag is readable per child in `pane_list`'s payload.
 (the record this pane is the child of, or absent for a pane the operator opened — it is
 `DelegationView` minus `brief`, which stays MCP-only because it is capped at 8 000
 characters and this rides every roster broadcast), `children_waiting` (how many of a
-pane's live children report needs-input, derived in the daemon — never reduced
+pane's live children have user-owned input requests, derived in the daemon — never reduced
 client-side), and `inbox_unread`. `ServerMsg::DelegationChanged { session, delegation }`
 carries one child's whole record and fires from every seam that writes it — the spawn that
 opens it, `advance_delegation` (hooks and ACP both reach the row through it), a submit, a
@@ -985,8 +1054,9 @@ The words those replaced cost roughly 79px of a 28px row that also has to hold a
 worse than one that asks to be hovered — so the sentence moved into the card and into
 `aria-label`, where a screen reader hears exactly what it heard before.
 
-One alarm, split by who can already see it. A child blocked on its own pane needs nothing
-extra: its `StatusDot` is already `--warn`. A stalled child remains ongoing work
+One alarm identifies input owned by the user. Asked orchestrator is neutral even when
+the provider reports needs-input. A user-owned request uses `--warn` and displays its
+escalation or permission reason. A stalled child remains ongoing work
 with a static warning dot; silence alone does not place it in Needs you. A live child’s
 Done or Failed verdict also controls its dot and label. Reported human input and
 waiting descendants take priority over that verdict. On the
@@ -1028,15 +1098,21 @@ without which the hold would be a one-way door the operator cannot see.
 ## Role-scoped advertisement
 
 A pane's tool list is its role. A leaf child —
-spawned by another pane, unable to spawn, with no live children of its own —
-sees exactly `pane_submit` and `workspace_info`: its handback and its
-identity. The `task_*` tools are withheld from every child, not only a leaf:
+spawned by another pane, unable to spawn, with no managed children of its own —
+keeps `pane_submit`, `pane_report`, `pane_reply`, `pane_wait` and `workspace_info`:
+its handback, intermediate dialogue and identity. The `task_*` tools are withheld from every child, not only a leaf:
 a child's scope is the brief, so its provider checks parentage before access
-and its direct calls are refused the same way. An orchestrator — one that may spawn, or has live children — sees
+and its direct calls are refused the same way. An orchestrator — one that may spawn,
+has managed children or owes an answer to an inherited question — sees
 the management verbs, with `pane_spawn` only while actually spawnable (out of
 slots keeps the rest; only the spawn verb drops) and `pane_submit` only with
-a parent to hand back to. An operator-opened pane with the switch off sees
-nothing from orchestration. The gate lives in `ToolRegistry::list`, which
+a parent to hand back to. `pane_reply` remains advertised to every role, including
+after the last inherited question is resolved, so retries can reach receipt lookup.
+The daemon still enforces recipient, ancestry and request checks. An operator-opened
+pane with the switch off and no managed children sees only this reply verb from orchestration.
+Retained ended children keep their parent's management authority until explicitly closed
+or removed by retention; cleanup does not depend on spawning remaining enabled.
+The gate lives in `ToolRegistry::list`, which
 merges every provider, so browser, mail and routine tools are filtered for a
 leaf with the rest; the rule itself is one pure function
 (`orchestrate::tool_role`), fed by `Daemon::tool_role_of`.
@@ -1045,7 +1121,7 @@ Advertisement is not authorisation — except for a leaf, whose hidden tools
 are also refused at `tools/call` (every tool hidden there is one the leaf
 could never use and pays for on every turn). The switch gating stays
 advertisement-only: a child whose operator turned orchestration off can still
-call the two tools it keeps. The Codex gateway's `call_tool` enforces the same
+call the dialogue tools it keeps. The Codex gateway's `call_tool` enforces the same
 predicate, so a leaf Codex pane cannot bypass the gate through the meta-tool;
 its `list_tools` still serves the full catalogue, listable-but-not-callable.
 
@@ -1069,6 +1145,77 @@ Because `pane_spawn` is not always advertised, it cannot carry the live state
 any more: that moved to `pane_list`, which is advertised whenever anything is.
 It reports the free slots and the depth cap when spawning is available, and
 which of the three gates closed — plus how it reopens — when it is not.
+
+## Child input ownership
+
+Input ownership is durable and independent of provider status. Native episodes and
+reported questions retain stable identities until resolution; delivery alone never
+resolves them. Parent-owned requests project Asked orchestrator. User-owned requests
+project Needs you and alone contribute to `children_waiting`. Renderer snapshots include
+the current identity and reason, allowing ownership changes to alert once even when the
+raw status remains NeedsInput. A child raw-status update received before its ownership
+projection remains neutral.
+
+`pane_escalate` transfers the current unresolved request to the user under the same
+cleanup guard used by input delivery. Authoritative accepted Stop/ACP turn completion
+escalates unanswered parent-owned requests. Continued Stop and internal-subagent-held
+events have not ended the turn. Quiet-settle is excluded because terminal silence cannot
+prove the orchestrator finished handling a question. Parent close/death also escalates;
+existing ancestor routing and the operator inbox remain available when a parent is lost.
+Closing a parent retains its existing child-close semantics.
+An escalated question rejects parent `pane_reply` and `pane_send_keys` responses;
+the operator answers in the child terminal. Reply ownership is checked against that
+question's episode, allowing the parent to handle other requests without reclaiming
+the operator's decision.
+
+Houston classifies from supported structured signals, never action names or terminal
+text. Every actual question, blocker and permission wait starts parent-owned in all
+launch modes. Its actionable `needs_input` inbox row identifies the input episode and
+includes a bounded snapshot when available. Delivery does not resolve the episode.
+Parent ownership stays gray; explicit or safety escalation transfers ownership to User,
+with amber status and notifications. Input episode ids differ from worker `request_id`.
+
+| Provider or source | Waiting evidence | Verified denial or refusal |
+|---|---|---|
+| Claude | `PermissionRequest`; typed `Notification.permission_prompt` | Escape with the default permission cancel binding. Custom rebinding is refused. `AskUserQuestion`, `ExitPlanMode` and elicitation are questions. |
+| Codex | Permission request outside Auto, or typed waiting notification | Escape cancels the approval overlay and may interrupt the turn. A bare Auto `PermissionRequest` is approval activity, with no input ownership or alert. `request_user_input` is a question. |
+| OpenCode | `permission.asked` / legacy `permission.updated` | Unsupported: root and native child permissions share pane input, and Escape depends on permission/reject/always stage. Event evidence does not prove which stage receives the key. Question events remain parent-owned questions. |
+| Cursor | No needs-input signal | Unsupported. A missing badge cannot prove the pane is working or awaiting permission. |
+| Grok | Typed `Notification.permission_prompt` | Ctrl+C cancels the permission; Escape is not a verified denial. Elicitation and unclassified blocking notifications remain parent-owned. |
+| Antigravity | Blocking `PreToolUse.ask_permission` / `ask_custom_permission` | n without Enter for the verified default prompt. Refuse when the default input contract cannot be verified. `ask_question` is a question. |
+| Supported ACP stream | `session/request_permission` | Unsupported response path: Houston observes the stream but does not answer ACP permissions. |
+| Houston report | `pane_report` question / blocked | Parent answers through `pane_reply`; a reply cannot approve a native permission. |
+
+Denial bindings are verified against the live provider process on Linux. Claude uses
+`~/.claude/keybindings.json` or the launched `CLAUDE_CONFIG_DIR`; a custom bindings
+file refuses denial. Grok's custom-binding guard checks `~/.grok/keybindings.json`.
+Antigravity's documented default `confirm.no` is n and its customization file is
+`~/.gemini/antigravity-cli/keybindings.json` ([keybindings reference](https://www.antigravity.google/docs/cli/using/#keybindings));
+Houston refuses custom bindings rather than adding Enter or choosing a default button.
+Codex Escape and Grok Ctrl+C can interrupt the turn while denying. On other platforms,
+effective process bindings cannot currently be verified, so `pane_deny` explicitly
+refuses and directs the parent to `pane_escalate`. An agent adopted inside a shell also
+refuses denial when its effective provider configuration cannot be verified.
+
+The parent NEVER approves a permission, including in Ask mode. `pane_send_keys` refuses
+ALL keys for any pending permission under the ownership/cleanup guard, naming the child,
+episode and “use pane_deny or pane_escalate; only the operator may approve”. Question
+keys remain available within existing authority. `pane_kill` and inbox management remain
+available for inherited descendants even when spawning is disabled.
+
+`pane_deny{child,episode_id}` verifies the exact current episode and provider path before
+sending bytes. It never adds Enter or sends a default selection. A successful write
+leaves the episode pending until matching provider completion or an authoritative
+boundary resolves it. Stale ids, non-permissions, user-owned episodes, unsupported paths
+and unverifiable bindings refuse. `pane_escalate.reason` records the parent's recommendation
+in `escalation_detail`; prose or a mailbox reply alone cannot transfer ownership.
+
+Permission metadata stores only bounded, redacted provider evidence. `command` and
+`block_reason` use tagged `ProviderReportedText`: `reported{text}` or
+`not_reported{provider}`. Missing evidence remains explicitly unreported; terminal reads
+and action names cannot fill these fields. Accepted direct renderer input records an
+intervention for the parent at provider lifecycle evidence, with an answer only when
+structured provider data reports it. Terminal bytes remain ordinary PTY input.
 
 ## The provider table
 
@@ -1218,34 +1365,19 @@ The live probes that settled these rows, in a real PTY with every hook event log
   pending. Verify Grok's field casing and whether Cursor's `stop` →
   `followup_message` really continues a turn.
 
-The token budget for a child's `tools/list`, measured on the serialised response with every
-in-`core` provider registered (`core/houston-core/tests/tool_roles_wire.rs`, which prints
-all three):
-
-| Role | bytes |
-|---|---|
-| Leaf child (`pane_submit` + `workspace_info`) | 1 996 |
-| Orchestrator parent (the management verbs + `workspace_info` + browser relay) | 15 971 |
-| Operator pane, switch off (`workspace_info` + browser relay) | 7 968 |
-
-The Tauri shell's own `BrowserTools` cannot be registered from a `core` test; the
-string-literal upper bound for that half is 18 613 B, and a leaf filters it out like every
-other non-handback tool, so the shipped leaf cost is the 1 996 B measured here. Door 2's
-latency budget (`STOP_INBOX_QUERY_MS`, 250 ms) was measured under load at p50 9.9 ms /
-p99 15.3 ms.
+The role regression measures serialized `tools/list` responses with every in-core
+provider registered and verifies that a leaf keeps a bounded dialogue tool set.
+The Tauri shell's browser tools are filtered by the same role gate. Tool schemas
+and inbox JSON stay on the control plane; terminal bytes use binary PTY frames.
 
 ## `pane_send_keys`
 
-The only lever on a blocked pane, and on a pane whose
-CLI Houston hears nothing from. Deliberately NOT refused on `NeedsInput` —
-that refusal is `pane_prompt`'s, and it is about prose: a permission prompt
-wants a keystroke. What keeps this safe is `orchestrate::SENDABLE_KEYS`, an
-allowlist of eight (`esc enter up down tab ctrl+c y n`), checked in full
-before any byte is written so a bad key sends nothing rather than half a
-sequence. No paste framing and no trailing Enter; `enter` is asked for by
-name, because a tool that always submitted could not answer a prompt that
-wants a selection first. One encoding on both platforms: ConPTY takes the same
-VT input sequences a kernel PTY does.
+Keys can answer a routine question within the caller's existing authority. Pending
+permission episodes refuse every key before any PTY write; `pane_deny` and
+`pane_escalate` are the parent's permission actions, and only the operator may approve.
+The eight-key allowlist (`esc enter up down tab ctrl+c y n`) is checked in full so an
+invalid key sends nothing. Keys have no paste framing or implicit Enter. ConPTY and
+kernel PTYs use the same VT input sequences.
 
 ## `pane_get`
 
@@ -1308,7 +1440,7 @@ gets (`Daemon::child_label`).
 `ApprovalMode` ladder (`Default < Auto < Bypass`) that names the two existing per-CLI flag
 tables. The rule is deliberately NOT `child <= parent`: every orchestrated child is spawned
 at `Auto` on purpose, so that rule would drag them all down to the CLI's own prompting
-default with nobody there to answer it. Only escalation is gated — `Bypass` is refused
+default with nobody there to answer it. The Bypass launch mode is gated — it is refused
 unless the parent already holds it.
 
 A body over `SUBMIT_BODY_MAX_CHARS` is clipped with a marker naming the cap and the actual
@@ -1346,15 +1478,22 @@ live under each workspace's `.houston/orchestration/bin/`.
 
 A headless child has a real daemon-owned PTY but no separate grid cell. The renderer's
 roster selects it inside its orchestrator pane; moving it to the grid changes placement,
-not delegation ancestry. Roster and overview grouping use session liveness before
-mission state: an ended child is Settled, a live blocked child Needs you, and other live
+not delegation ancestry. New children remain in the roster. Explicit promotion finds
+the grid containing the parent across loaded and persisted layouts, rather than using
+the child's workspace or the currently selected grid. Layout ownership stays in the
+renderer. Roster and overview grouping use session liveness before
+mission state: an ended child is Settled, a live child with user-owned input Needs you, and other live
 children Working. Stalled children remain in Working with a warning; the parent’s
 Inbox count and each child’s Pending delivery or Result staged badge expose delivery
 state independently of process liveness. A resumed child must never be included in Close settled, including
 when it resumes during the Undo interval.
 
 Each orchestrator can have one overview tab in the workspace's side panel. It exposes
-results and the operator queue without intercepting terminal input. Queue acknowledgement
+retained result previews independently of live child sessions. Stable inbox ids identify
+full-body reads and copying; artifact links use the stored validated paths. Pagination is
+bounded and ordered by message id so clock changes do not skip archive pages. Readiness
+and provisional reasons prevent archived staged or interrupted bodies from appearing as
+completed work. The overview also exposes the operator queue without intercepting terminal input. Queue acknowledgement
 and resolution use durable inbox receipts. Source control reviews use the child's own
 checkout and can return a review prompt to that child.
 
@@ -1370,7 +1509,7 @@ Worktree spawning passes Codex a session-local inline `projects` trust table for
 child checkout and the repository's main checkout,
 passes Cursor its supported `--trust` flag, and appends a reversible managed-marker
 block to Grok's folder-trust TOML. Existing unmanaged trust decisions are preserved.
-Claude, Antigravity and OpenCode worktree spawns return a `worktree_trust` warning to the caller: the provider may ask to trust the new folder before starting. The parent inspects and answers with `pane_send_keys`, or escalates to the user. When no lifecycle report arrives within the startup window, the child becomes
+Claude, Antigravity and OpenCode worktree spawns return a `worktree_trust` warning to the caller: the provider may ask to trust the new folder before starting. The parent inspects the warning and asks the operator to handle folder trust; permission approval belongs only to the operator. When no lifecycle report arrives within the startup window, the child becomes
 Unavailable and a deduplicated `startup_unconfirmed` note reaches its parent. This
 notice names hook and folder trust as possible causes without inferring a human wait. Claude's parent-folder trust
 walk stops at the linked worktree's git root, so workspace trust does not carry over.
@@ -1395,13 +1534,13 @@ Worktree cleanup claims are shared by repository common directory, rechecks live
 use immediately before removal, and measures only trees with no keep reason. Kept rows
 retain their last byte count and measurement timestamp, or null for not measured.
 
-Child `needs_input` writes an urgent row to the parent. The parent inspects the prompt
-and answers through `pane_send_keys`, or asks the user for a decision. Child status and
-roll-up badges do not trigger renderer notifications. The renderer reports a top-level
-pane's own transition to `needs-input` or from `working` to `idle`, subject to the user's
-desktop and in-app notification settings; roster snapshots are silent. The renderer updates
-the taskbar count for visible top-level panes waiting on the user where the platform supports
-it, and clears a pane's count when it is opened.
+Parent-owned child input writes an urgent parent inbox row and remains neutral in every
+renderer attention consumer. User-owned input produces the same amber, banner and
+notification policy as top-level input, with the displayed reason. Notifications identify
+the stable input episode, including ownership transitions, and suppress roster replay.
+Parent rollups do not produce a second alert for that same request. Settings › Notifications
+still controls desktop and in-app notices. Taskbar counts use user-owned input where the
+platform supports them and clear the opened pane's count.
 
 No supported API-failure hook carries a verified machine-readable reset time,
 so Houston does not schedule automatic resume.

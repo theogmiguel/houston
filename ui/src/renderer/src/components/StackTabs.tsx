@@ -1,3 +1,4 @@
+import { attentionStatus, needsUserInput } from '../sessionAttention'
 import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
 import type { SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
@@ -23,7 +24,7 @@ function tabNeedsInputInBackground(
 ): boolean {
   if (isActiveTab || node.kind !== 'leaf') return false
   const info = sessions.get(node.session)
-  return !!info && isLive(info.state) && info.status === 'needs-input'
+  return !!info && needsUserInput(info)
 }
 
 interface Props {
@@ -71,7 +72,7 @@ export function StackTabs({
               if (e.key === 'Enter' || e.key === ' ') onSelect(key)
             }}
           >
-            {info && <StatusDot status={info.status} live={isLive(info.state)} />}
+            {info && <StatusDot status={attentionStatus(info)} live={isLive(info.state)} />}
             <StackTabLabel>{tabLabel(child, sessions)}</StackTabLabel>
             {badge && (
               <Tooltip label="Needs your input — hidden behind this stack's active tab">

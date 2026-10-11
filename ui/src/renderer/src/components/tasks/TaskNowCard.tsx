@@ -1,3 +1,5 @@
+import { useSession } from '../../sessionsStore'
+import { attentionLabel, needsUserInput } from '../../sessionAttention'
 import type { SessionInfo } from '../../houston/client'
 import type { TaskAcceptanceItem } from '../../houston/generated/TaskAcceptanceItem'
 import type { TaskRun } from '../../houston/generated/TaskRun'
@@ -29,18 +31,22 @@ import { TaskStatusGlyph } from './glyphs'
 function NowRunMeta({
   state,
   status,
-  openRun
+  openRun,
+  parentOwned,
+  parentOwnedLabel
 }: {
   state: TaskRunState | null
   status: TaskStatus
   openRun: TaskRun | null
+  parentOwned: boolean
+  parentOwnedLabel: string
 }): React.JSX.Element {
   return (
     <>
       {state !== null && (
         <>
-          <TaskDot tone={runStateTone(state)} />
-          <TaskStateText tone={runStateTone(state)}>{nowRunLabel(state, status)}</TaskStateText>
+          <TaskDot tone={parentOwned ? 'idle' : runStateTone(state)} />
+          <TaskStateText tone={parentOwned ? 'idle' : runStateTone(state)}>{parentOwned ? parentOwnedLabel : nowRunLabel(state, status)}</TaskStateText>
           <span>derived from pane status</span>
         </>
       )}
@@ -101,7 +107,8 @@ export function TaskNowCard({
   onOpenSession: (sessionId: number) => void
   onStop: (runId: number) => void
 }): React.JSX.Element | null {
-  const task = session.task
+  const current = useSession(session.id, session) ?? session
+  const task = current.task
   if (!task) return null
   const openRun = summary?.open_run ?? null
   const state: TaskRunState | null = summary ? openRun?.state ?? null : task.run_state
@@ -117,7 +124,7 @@ export function TaskNowCard({
           <TaskStatusGlyph status={summary?.status ?? task.status} />
           {task.key}
         </TaskKeyTag>
-        <NowRunMeta state={state} status={summary?.status ?? task.status} openRun={openRun} />
+        <NowRunMeta parentOwnedLabel={attentionLabel(current)} parentOwned={state === 'waiting_for_input' && !needsUserInput(current)} state={state} status={summary?.status ?? task.status} openRun={openRun} />
       </TaskNowMeta>
       <NowAcceptance acceptance={acceptance} summary={summary} />
       <TaskNowSection>

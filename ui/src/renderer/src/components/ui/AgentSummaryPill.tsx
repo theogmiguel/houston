@@ -1,3 +1,4 @@
+import { attentionStatus } from '../../sessionAttention'
 import { Icon } from './Icon'
 import { IconChevronRight } from '../icons'
 import type { RailAgentRow } from '../rail/railCardModel'
@@ -16,12 +17,12 @@ export function AgentSummaryPill({
 }): React.JSX.Element {
   const groups = STATUS_ORDER.flatMap((status) => {
     const rows = agents.filter(
-      ({ session }) => session.status === status || (status === 'needs-input' && session.children_waiting > 0),
+      ({ session }) => attentionStatus(session) === status,
     )
     return rows.length ? [{ status, rows }] : []
   })
   const ungrouped = agents.filter(
-    ({ session }) => !STATUS_ORDER.includes((session.status ?? 'idle') as (typeof STATUS_ORDER)[number]),
+    ({ session }) => !STATUS_ORDER.includes((attentionStatus(session) ?? 'idle') as (typeof STATUS_ORDER)[number]),
   )
   if (ungrouped.length) groups.push({ status: 'idle', rows: ungrouped })
   return (

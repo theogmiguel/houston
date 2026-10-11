@@ -879,6 +879,22 @@ async fn needs_input(provider: &str, seed: u64) {
         r.daemon.session_status(child).unwrap(),
         Some(proto::AgentStatus::NeedsInput)
     );
+    let input = r
+        .daemon
+        .delegation_of(child)
+        .unwrap()
+        .input_request
+        .unwrap();
+    assert_eq!(input.owner, proto::ChildInputOwner::Orchestrator);
+    assert_eq!(
+        r.daemon
+            .list()
+            .into_iter()
+            .find(|s| s.id == parent)
+            .unwrap()
+            .children_waiting,
+        0
+    );
     r.daemon
         .delegation_watch_tick_at(houston_core::daemon::now_ms() + 60000);
     assert_eq!(
@@ -897,13 +913,56 @@ async fn needs_input(provider: &str, seed: u64) {
         r.check(parent, &[(child, rows)], "needs_input");
         return;
     }
-    r.call(
-        parent,
-        "pane_send_keys",
-        json!({"session":child,"keys":["y","enter"]}),
-    )
-    .await;
-    let rows = r.wait(parent, child).await;
+    if input.kind == proto::ChildInputKind::Permission {
+        let refused = r
+            .raw_call(
+                parent,
+                "pane_send_keys",
+                json!({"session":child,"keys":["y","enter"]}),
+            )
+            .await;
+        assert_eq!(refused["isError"], true, "{refused}");
+        assert!(refused
+            .to_string()
+            .contains("only the operator may approve"));
+        r.call(
+            parent,
+            "pane_escalate",
+            json!({"child":child,"reason":"Fixture permission requires the operator's approval."}),
+        )
+        .await;
+        assert_eq!(
+            r.daemon
+                .list()
+                .into_iter()
+                .find(|s| s.id == parent)
+                .unwrap()
+                .children_waiting,
+            1
+        );
+        r.daemon.write_stdin_from_renderer(child, b"y\n").unwrap();
+    } else {
+        r.call(
+            parent,
+            "pane_send_keys",
+            json!({"session":child,"keys":["y","enter"]}),
+        )
+        .await;
+    }
+    let mut rows = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while !rows.iter().any(|row: &Value| row["kind"] == "result") {
+        assert!(tokio::time::Instant::now() < deadline,
+            "needs_input provider={provider} seed={seed}: result did not follow input notices; rows={rows:?}");
+        rows.extend(r.wait(parent, child).await);
+    }
+    if input.kind == proto::ChildInputKind::Permission {
+        assert!(
+            rows.iter()
+                .any(|row| row["reason"] == "user_input_intervention"),
+            "operator approval must inform the parent: {rows:?}"
+        );
+    }
     r.check(parent, &[(child, rows)], "result");
 }
 
@@ -976,29 +1035,30 @@ async fn lane_full(provider: &str, seed: u64) {
         .unwrap_err()
         .to_string();
     assert!(
-        error.contains("16 nudges queued") && error.contains("limit is 16"),
+        error.contains("16 active instructions")
+            && error.contains("limit 16")
+            && error.contains(&format!("session {child}")),
         "{error}"
     );
-    let result = rig
-        .call(
-            parent,
-            "pane_wait",
-            json!({"session":child,"kind":"operator_note","timeout_ms":20000}),
-        )
-        .await;
-    let rows = result["rows"].as_array().unwrap().clone();
+    let queue = rig.daemon.instruction_queue(Some(parent), child).unwrap();
+    assert_eq!(queue.queued_count, 16);
+    assert_eq!(queue.items.len(), 16);
     assert_eq!(
-        rows.iter()
-            .filter(|row| row["reason"] == "lane_full")
-            .count(),
-        1
+        queue
+            .items
+            .iter()
+            .map(|item| item.preview.clone())
+            .collect::<Vec<_>>(),
+        (0..16)
+            .map(|index| format!("nudge-{seed}-{index}"))
+            .collect::<Vec<_>>()
     );
     assert!(
         !rig.logs().iter().any(|event| event["event"] == "prompt"),
         "held lane accepted a prompt: {:?}",
         rig.logs()
     );
-    rig.check(parent, &[(child, rows)], "operator_note");
+    rig.check(parent, &[], "operator_note");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]

@@ -180,9 +180,9 @@ fn response_bytes(tools: &[serde_json::Value]) -> usize {
 }
 
 #[tokio::test]
-async fn a_leaf_child_sees_exactly_two_tools_with_every_provider_registered() {
+async fn a_leaf_child_sees_only_dialogue_and_identity_tools_with_every_provider_registered() {
     let _guard = serial().await;
-    let r = rig("leaf-two-tools").await;
+    let r = rig("leaf-dialogue-tools").await;
     r.daemon.orchestration_set(true).unwrap();
     let parent = r.pane();
     let parent_token = r.token_for(parent.id);
@@ -193,8 +193,14 @@ async fn a_leaf_child_sees_exactly_two_tools_with_every_provider_registered() {
     let names = tool_names(&tools);
     assert_eq!(
         names,
-        vec!["pane_submit".to_string(), "workspace_info".to_string()],
-        "a leaf child must see exactly its handback and its identity: {names:?}"
+        vec![
+            "pane_reply".to_string(),
+            "pane_report".to_string(),
+            "pane_submit".to_string(),
+            "pane_wait".to_string(),
+            "workspace_info".to_string()
+        ],
+        "a leaf child must see only its dialogue tools and identity: {names:?}"
     );
     assert!(
         names.iter().all(|name| !name.starts_with("task_")),
@@ -204,6 +210,13 @@ async fn a_leaf_child_sees_exactly_two_tools_with_every_provider_registered() {
     let leaf_bytes = response_bytes(&tools);
     let parent_tools = r.tools_list(&parent_token).await;
     let orchestrator_bytes = response_bytes(&parent_tools);
+    assert!(
+        orchestrator_bytes < 28_000,
+        "root tools/list catalog exceeds 28000 bytes: {orchestrator_bytes}"
+    );
+    assert!(tool_names(&parent_tools)
+        .iter()
+        .any(|name| name == "pane_deny"));
 
     r.daemon.orchestration_set(false).unwrap();
     let operator = r.pane();
@@ -212,9 +225,9 @@ async fn a_leaf_child_sees_exactly_two_tools_with_every_provider_registered() {
     assert!(
         operator_tools.iter().all(|t| {
             let n = t["name"].as_str().unwrap_or_default();
-            !n.starts_with("pane_")
+            !n.starts_with("pane_") || n == "pane_reply"
         }),
-        "an operator pane with the switch off sees no pane tool: {:?}",
+        "an operator pane with the switch off keeps only the reply verb: {:?}",
         tool_names(&operator_tools)
     );
 
@@ -223,8 +236,8 @@ async fn a_leaf_child_sees_exactly_two_tools_with_every_provider_registered() {
          operator {operator_bytes} B"
     );
     assert!(
-        leaf_bytes < 2_000,
-        "the plan's leaf target is under 2 000 bytes; measured {leaf_bytes} B"
+        leaf_bytes < 8_192 && leaf_bytes < orchestrator_bytes / 2,
+        "five leaf dialogue/identity schemas must fit 8 KiB and remain below half the parent cost; measured {leaf_bytes} B / {orchestrator_bytes} B"
     );
 }
 
@@ -346,7 +359,13 @@ async fn a_role_change_pushes_tools_list_changed() {
     let names = tool_names(&r.tools_list(&child_token).await);
     assert_eq!(
         names,
-        vec!["pane_submit".to_string(), "workspace_info".to_string()],
+        vec![
+            "pane_reply".to_string(),
+            "pane_report".to_string(),
+            "pane_submit".to_string(),
+            "pane_wait".to_string(),
+            "workspace_info".to_string()
+        ],
         "starts a leaf: {names:?}"
     );
 
@@ -391,6 +410,13 @@ async fn a_root_out_of_slots_keeps_management_and_handoff() {
         "pane_prompt",
         "pane_wait",
         "pane_send_keys",
+        "pane_deny",
+        "pane_escalate",
+        "pane_reply",
+        "pane_instruction_list",
+        "pane_instruction_get",
+        "pane_instruction_cancel",
+        "pane_instruction_resume",
         "pane_kill",
         "workspace_info",
     ] {
@@ -398,5 +424,37 @@ async fn a_root_out_of_slots_keeps_management_and_handoff() {
             names.iter().any(|n| n == kept),
             "management verbs stay available: {names:?}"
         );
+    }
+}
+
+#[tokio::test]
+async fn spawning_disabled_preserves_descendant_permission_and_inbox_management() {
+    let _guard = serial().await;
+    let r = rig("management-with-spawn-off").await;
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(4, 2).unwrap();
+    let root = r.pane();
+    let root_token = r.token_for(root.id);
+    let child = r.spawn_child(&root_token, "intermediate parent").await;
+    let child_token = r.token_for(child);
+    r.spawn_child(&child_token, "descendant").await;
+    r.daemon.orchestration_set(false).unwrap();
+    for token in [&root_token, &child_token] {
+        let names = tool_names(&r.tools_list(token).await);
+        assert!(!names.iter().any(|name| name == "pane_spawn"), "{names:?}");
+        for kept in [
+            "pane_deny",
+            "pane_escalate",
+            "pane_wait",
+            "pane_reply",
+            "pane_get",
+            "pane_kill",
+            "pane_instruction_list",
+        ] {
+            assert!(
+                names.iter().any(|name| name == kept),
+                "managed descendants retain {kept}: {names:?}"
+            );
+        }
     }
 }

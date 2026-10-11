@@ -1,3 +1,4 @@
+import { attentionLabel, attentionStatus } from '../../sessionAttention'
 import { useMascotPlacement } from '../../mascot/mascotPosition'
 import { useMascotPrefs } from '../../mascot/mascotPrefs'
 import { MascotSurfaceMount } from '../../mascot/MascotMount'
@@ -163,7 +164,7 @@ export function CommandPalette({
           runCommand(cmd)
         }}
       >
-        {cmd.session && <span aria-hidden="true" className={`h-[7px] w-[7px] rounded-full flex-none ${sessionDotClass(cmd.session.status)}`} />}
+        {cmd.session && <span aria-hidden="true" className={`h-[7px] w-[7px] rounded-full flex-none ${sessionDotClass(attentionStatus(cmd.session))}`} />}
         {cmd.session && <span aria-hidden="true" className="w-3 text-center text-[var(--text-secondary)]">{cmd.session.agent === 'claude' ? '✳' : cmd.session.agent === 'codex' ? '◇' : '•'}</span>}
         <div className="min-w-0 flex-1">
           <div
@@ -179,7 +180,7 @@ export function CommandPalette({
             </div>
           )}
         </div>
-        {cmd.session && <span className="ml-auto text-[length:var(--tr-text-small-size)] text-[var(--text-faint)] truncate">{cmd.subtitle} · {cmd.session.status === 'needs-input' ? 'needs input' : cmd.session.status ?? 'idle'}</span>}
+        {cmd.session && <span className="ml-auto text-[length:var(--tr-text-small-size)] text-[var(--text-faint)] truncate">{cmd.subtitle} · {attentionLabel(cmd.session)}</span>}
         {chordLabel && <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] font-mono text-[var(--text-faint)] flex-none">{chordLabel}</span>}
       </div>
     )

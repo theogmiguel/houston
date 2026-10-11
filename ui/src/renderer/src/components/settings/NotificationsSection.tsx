@@ -106,7 +106,7 @@ export function NotificationsSection({
           desc={
             <div className="grid gap-[var(--space-1)]">
               <span>
-                When an agent finishes a turn or needs your input while Houston is in the background. Clicking one opens that pane. The pane name, agent and workspace go to the desktop’s notification service on this machine; nothing else is sent.
+                When an agent finishes a turn or needs your input while Houston is in the background. Clicking one opens that pane. The pane name, agent, workspace and reason for input go to the desktop’s notification service on this machine; nothing else is sent.
               </span>
               <Caption tone="secondary">
                 <StatusNote data-testid="desktop-notification-status" tone={desktopStatusTone(delivery)}>
@@ -145,7 +145,7 @@ export function NotificationsSection({
         </SettingsList>
       <div data-testid="notification-children-note">
         <Caption>
-          Child panes report to the agent that started them, not to you. The taskbar icon counts the panes waiting on you.
+          Child panes ask their orchestrator first. Only requests addressed to you trigger notifications and taskbar attention; requests escalated to you show their reason.
         </Caption>
       </div>
       </div>

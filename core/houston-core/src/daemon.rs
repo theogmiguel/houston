@@ -20,6 +20,7 @@ use crate::scrollback::{Replay, Scrollback};
 use crate::shellint;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+mod instruction_queue;
 
 pub const OUTBOUND_CAPACITY: usize = 4096;
 const PTY_READ_BUF: usize = 16 * 1024;
@@ -538,8 +539,13 @@ fn short_path_alias(p: &Path, max_len: usize) -> Option<PathBuf> {
 const CLI_TITLE_MIN_GAP_MS: u64 = 1000;
 const SLEEP_CUE_MAX_CHARS: usize = 2000;
 
-fn bounded_hook_text(value: &str) -> String {
-    value.trim().chars().take(SLEEP_CUE_MAX_CHARS).collect()
+pub(crate) fn bounded_hook_text(value: &str) -> String {
+    crate::sanitize::redact_secrets(value)
+        .0
+        .trim()
+        .chars()
+        .take(SLEEP_CUE_MAX_CHARS)
+        .collect()
 }
 
 #[derive(Clone)]
@@ -583,6 +589,15 @@ pub struct Session {
     backend_exited: AtomicBool,
     stdin_writes_in_flight: AtomicU32,
     lifecycle_hook_seen: AtomicBool,
+    #[cfg(unix)]
+    native_input_recovery: Option<adoption::NativeInputSnapshot>,
+    input_intervention: AtomicBool,
+    input_pending: AtomicBool,
+    input_current_id: Mutex<Option<String>>,
+    input_intervention_id: Mutex<Option<String>>,
+    input_intervention_answer: Mutex<Option<String>>,
+    hook_input_reason: Mutex<Option<String>>,
+    hook_permission_details: Mutex<Option<proto::PermissionInputDetails>>,
     hook_cwd: Mutex<Option<String>>,
     hook_last_message: Mutex<Option<String>>,
     hook_latest_prompt: Mutex<Option<String>>,
@@ -1254,7 +1269,9 @@ impl DelegationSettleSample {
     }
 }
 
+mod child_inputs;
 mod harness_review;
+mod provider_deny;
 mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
@@ -1404,6 +1421,8 @@ pub struct Daemon {
     inbox_flush_scheduled: Mutex<HashSet<u32>>,
     composer_occupied: Mutex<HashMap<u32, ComposerKeystroke>>,
     orchestration_retry_lock: Mutex<()>,
+    instruction_dispatch_lock: Mutex<()>,
+    instruction_wake_active: Mutex<HashSet<u32>>,
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
@@ -1429,6 +1448,8 @@ pub struct Daemon {
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
     subagent_rounds: Mutex<HashMap<u32, orchestrate::SubagentRound>>,
     stop_blocks: Mutex<HashMap<u32, u32>>,
+    // Native lifecycle passes and operator input drain before capture and stay fenced through commit.
+    native_input_handoff: Mutex<()>,
     permission_episodes: Mutex<HashMap<u32, orchestrate::PermissionEpisodes>>,
     antigravity_roots: Mutex<HashMap<u32, String>>,
     routine_runs: Mutex<HashMap<u32, RoutineRun>>,
@@ -2615,6 +2636,14 @@ impl Daemon {
     ) -> Result<Arc<Self>> {
         let db = Db::open(&cfg.db_path)?;
         for (session, _) in &mut adopted {
+            #[cfg(unix)]
+            Self::validate_native_input_recovery(&db, session)?;
+            let input = db.child_input_request(session.info.id)?;
+            session
+                .input_pending
+                .store(input.is_some(), Ordering::Release);
+            *session.input_current_id.lock().expect("current input lock") =
+                input.map(|input| input.id);
             let (parent, profile) = db.session_orchestration_identity(session.info.id)?;
             // The manifest owns each reconstructed session until its reader is started.
             let session = Arc::get_mut(session).expect("adoption owns the reconstructed session");
@@ -2635,6 +2664,7 @@ impl Daemon {
         #[cfg(not(target_os = "linux"))]
         let _ = session_launcher;
         let db = Db::open(&cfg.db_path)?;
+        db.instruction_recover(now_ms())?;
         if adopted.is_none() {
             let retention_hours = db
                 .get_setting("settled_retention_hours")?
@@ -2868,15 +2898,77 @@ impl Daemon {
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),
+            instruction_dispatch_lock: Mutex::new(()),
+            instruction_wake_active: Mutex::new(HashSet::new()),
             paste_confirmations: Mutex::new(HashMap::new()),
             turn_start_round: Mutex::new(HashMap::new()),
-            last_prompt_id: Mutex::new(HashMap::new()),
+            last_prompt_id: Mutex::new({
+                #[cfg(unix)]
+                let recovered = adopted
+                    .as_ref()
+                    .map(|sessions| {
+                        sessions
+                            .iter()
+                            .filter_map(|(session, _)| {
+                                session
+                                    .native_input_recovery
+                                    .as_ref()
+                                    .and_then(|snapshot| snapshot.last_prompt_id.clone())
+                                    .map(|id| (session.info.id, id))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                #[cfg(not(unix))]
+                let recovered = HashMap::new();
+                recovered
+            }),
             prompt_awaiting_hook: Mutex::new(HashSet::new()),
             swarm_wake_generation: AtomicU64::new(1),
             subagent_rounds: Mutex::new(HashMap::new()),
             stop_blocks: Mutex::new(HashMap::new()),
-            permission_episodes: Mutex::new(HashMap::new()),
-            antigravity_roots: Mutex::new(HashMap::new()),
+            native_input_handoff: Mutex::new(()),
+            permission_episodes: Mutex::new({
+                #[cfg(unix)]
+                let recovered = adopted
+                    .as_ref()
+                    .map(|sessions| {
+                        sessions
+                            .iter()
+                            .filter_map(|(session, _)| {
+                                session
+                                    .native_input_recovery
+                                    .as_ref()
+                                    .map(|snapshot| (session.info.id, snapshot.episodes.clone()))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                #[cfg(not(unix))]
+                let recovered = HashMap::new();
+                recovered
+            }),
+            antigravity_roots: Mutex::new({
+                #[cfg(unix)]
+                let recovered = adopted
+                    .as_ref()
+                    .map(|sessions| {
+                        sessions
+                            .iter()
+                            .filter_map(|(session, _)| {
+                                session
+                                    .native_input_recovery
+                                    .as_ref()
+                                    .and_then(|snapshot| snapshot.antigravity_root.clone())
+                                    .map(|id| (session.info.id, id))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                #[cfg(not(unix))]
+                let recovered = HashMap::new();
+                recovered
+            }),
             browser_relay: Arc::new(crate::browser_relay::BrowserRelayState::new()),
             routine_runs: Mutex::new(HashMap::new()),
             transcript_links: Mutex::new(HashMap::new()),
@@ -2929,7 +3021,9 @@ impl Daemon {
             daemon.inbox_retention_pass(crate::hook_drop::now_ms());
         }
         daemon.rebuild_hook_state();
-        daemon.hook_drop_boot();
+        if adopted.is_none() {
+            daemon.hook_drop_boot();
+        }
         crate::statusline_sweep::sweep(&daemon.db);
         *daemon.self_weak.lock().expect("self_weak lock") = Arc::downgrade(&daemon);
         daemon.mcp_tools.bind_daemon(&daemon);
@@ -3189,21 +3283,22 @@ impl Daemon {
                     Ok(None) => Err(anyhow!("no resume handle")),
                     Err(e) => Err(e.context("reading resume handle")),
                     Ok(Some(_)) => {
-                        let _parent_exit_guard = self
-                            .temporary_cleanup_lock
-                            .lock()
-                            .expect("temporary cleanup lock");
-                        let parent_live = self
-                            .sessions
-                            .lock()
-                            .expect("sessions lock")
-                            .get(&parent)
-                            .is_some_and(|session| {
-                                !session.removed.load(Ordering::Acquire)
-                                    && !session.backend_exited.load(Ordering::Acquire)
-                                    && session.state.lock().expect("state lock").is_live()
-                            });
-                        if !parent_live {
+                        let parent_live = || {
+                            let _parent_exit_guard = self
+                                .temporary_cleanup_lock
+                                .lock()
+                                .expect("temporary cleanup lock");
+                            self.sessions
+                                .lock()
+                                .expect("sessions lock")
+                                .get(&parent)
+                                .is_some_and(|session| {
+                                    !session.removed.load(Ordering::Acquire)
+                                        && !session.backend_exited.load(Ordering::Acquire)
+                                        && session.state.lock().expect("state lock").is_live()
+                                })
+                        };
+                        if !parent_live() {
                             Err(anyhow!(
                                 "parent session {parent} exited before child {} could be restored",
                                 child.id
@@ -3217,14 +3312,26 @@ impl Daemon {
                             if let Some(observer) = observer {
                                 observer(child.id);
                             }
-                            self.respawn_session_with(
-                                child.id,
-                                true,
-                                None,
-                                None,
-                                false,
-                                RespawnConversation::Resume,
-                            )
+                            // Provider preparation must not block unrelated lifecycle hooks.
+                            if !parent_live() {
+                                Err(anyhow!("parent session {parent} exited while child {} recovery was being prepared", child.id))
+                            } else {
+                                self.respawn_session_with(
+                                    child.id,
+                                    true,
+                                    None,
+                                    None,
+                                    false,
+                                    RespawnConversation::Resume,
+                                ).and_then(|restored| {
+                                    if parent_live() {
+                                        Ok(restored)
+                                    } else {
+                                        self.rollback_spawned_child(restored.id)?;
+                                        Err(anyhow!("parent session {parent} exited while child {} was being restored; replacement {} was closed", child.id, restored.id))
+                                    }
+                                })
+                            }
                         }
                     }
                 }
@@ -3496,6 +3603,18 @@ impl Daemon {
 
     pub fn refusing_mutations(&self) -> bool {
         self.is_shutting_down() || self.is_handing_off()
+    }
+
+    fn native_input_mutation_guard(&self) -> Result<std::sync::MutexGuard<'_, ()>> {
+        anyhow::ensure!(!self.refusing_mutations(),
+            "native input refused while daemon is handing off or shutting down; reconnect to the owning daemon and retry");
+        let guard = self
+            .native_input_handoff
+            .lock()
+            .expect("native input handoff lock");
+        anyhow::ensure!(!self.refusing_mutations(),
+            "native input refused while daemon is handing off or shutting down; reconnect to the owning daemon and retry");
+        Ok(guard)
     }
 
     pub fn reap_status(&self) -> (bool, Option<i64>) {
@@ -4092,6 +4211,13 @@ impl Daemon {
             return Err(refuse(&mut sock, reason));
         }
 
+        // Readers are parked (including ACP delivery). Drain any hook pass or operator
+        // write admitted before handoff, then retain this fence through CommitAck.
+        let _native_input = self
+            .native_input_handoff
+            .lock()
+            .expect("native input handoff lock");
+
         if let Err(e) = self.checkpoint_scrollback() {
             self.resume_sessions(&parked);
             return Err(refuse(
@@ -4122,6 +4248,23 @@ impl Daemon {
             }
         };
 
+        if !hello.native_input_snapshot {
+            let pending: Vec<_> = manifest
+                .sessions
+                .iter()
+                .filter(|session| {
+                    session.status == Some(proto::AgentStatus::NeedsInput)
+                        || session.native_input.as_ref().is_some_and(|snapshot| {
+                            snapshot.episodes.open_count() != 0 || snapshot.operator_intervened
+                        })
+                })
+                .map(|session| session.session_id)
+                .collect();
+            if !pending.is_empty() {
+                self.resume_sessions(&parked);
+                return Err(refuse(&mut sock, format!("native input handoff refused for sessions {pending:?}: candidate does not support native input snapshots; operator resolution is required before handoff")));
+            }
+        }
         if let Err(e) = adoption::write_frame(&mut sock, &adoption::FromOld::Manifest(manifest)) {
             self.resume_sessions(&parked);
             return Err(format!("sending manifest: {e}"));
@@ -4290,7 +4433,28 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
-            lifecycle_hook_seen: AtomicBool::new(false),
+            lifecycle_hook_seen: AtomicBool::new(
+                m.native_input
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.lifecycle_hook_seen),
+            ),
+            #[cfg(unix)]
+            native_input_recovery: m.native_input.clone(),
+            input_intervention: AtomicBool::new(
+                m.native_input
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.operator_intervened),
+            ),
+            input_pending: AtomicBool::new(false),
+            input_current_id: Mutex::new(None),
+            input_intervention_id: Mutex::new(
+                m.native_input
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.intervention_input_id.clone()),
+            ),
+            input_intervention_answer: Mutex::new(None),
+            hook_input_reason: Mutex::new(None),
+            hook_permission_details: Mutex::new(None),
             hook_cwd: Mutex::new(m.hook_cwd.clone()),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -4302,6 +4466,35 @@ impl Daemon {
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
         })
+    }
+
+    #[cfg(unix)]
+    fn validate_native_input_recovery(db: &Db, session: &Session) -> Result<()> {
+        let id = session.info.id;
+        let sources = db.child_input_pending_provider_sources(id)?;
+        let status = *session.status.lock().expect("status lock");
+        let needs_input = status == Some(proto::AgentStatus::NeedsInput);
+        let Some(snapshot) = &session.native_input_recovery else {
+            anyhow::ensure!(!needs_input && sources.is_empty(),
+                "native input handoff refused for session {id}: pending input has no recovery snapshot; leave the old daemon running and let the operator resolve input before retrying");
+            return Ok(());
+        };
+        snapshot
+            .validate()
+            .with_context(|| format!("native input handoff refused for session {id}"))?;
+        let pending = snapshot.episodes.input_episodes();
+        anyhow::ensure!(!needs_input || !pending.is_empty(),
+            "native input handoff refused for session {id}: NeedsInput has no tracked pending native episode; operator resolution is required before handoff");
+        for episode in &pending {
+            let source = format!("{:?}", episode.key);
+            anyhow::ensure!(!db.child_input_sources_already_resolved(id, &[source])?,
+                "native input handoff refused for session {id}: recovery episode is already resolved in the database; retry with current native input state");
+        }
+        for source in sources {
+            anyhow::ensure!(pending.iter().any(|episode| format!("{:?}", episode.key) == source),
+                "native input handoff refused for session {id}: a pending provider request has no matching recovery episode; operator resolution is required before handoff");
+        }
+        Ok(())
     }
 
     #[cfg(unix)]
@@ -4319,10 +4512,17 @@ impl Daemon {
                 adoption::FD_CAP
             ));
         }
-        let sessions = self.sessions.lock().expect("sessions lock");
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
-            let Some(s) = sessions.get(id) else { continue };
+            let Some(s) = self
+                .sessions
+                .lock()
+                .expect("sessions lock")
+                .get(id)
+                .cloned()
+            else {
+                continue;
+            };
             let (cols, rows) = s.geometry();
             let mcp_cred =
                 self.mcp_creds
@@ -4350,6 +4550,41 @@ impl Daemon {
                 swarm_agent: s.info.swarm_agent,
                 hook_cwd: s.hook_cwd.lock().expect("hook cwd lock").clone(),
                 mcp_cred,
+                native_input: Some({
+                    let episodes = self
+                        .permission_episodes
+                        .lock()
+                        .expect("episodes lock")
+                        .get(id)
+                        .map(orchestrate::PermissionEpisodes::adoption_snapshot)
+                        .unwrap_or_default();
+                    let snapshot = adoption::NativeInputSnapshot {
+                        episodes,
+                        lifecycle_hook_seen: s.lifecycle_hook_seen.load(Ordering::Acquire),
+                        operator_intervened: s.input_intervention.load(Ordering::Acquire),
+                        intervention_input_id: s
+                            .input_intervention_id
+                            .lock()
+                            .expect("intervention input lock")
+                            .clone(),
+                        last_prompt_id: self
+                            .last_prompt_id
+                            .lock()
+                            .expect("last prompt id lock")
+                            .get(id)
+                            .cloned(),
+                        antigravity_root: self
+                            .antigravity_roots
+                            .lock()
+                            .expect("antigravity roots lock")
+                            .get(id)
+                            .cloned(),
+                    };
+                    snapshot.validate().map_err(|error| {
+                        format!("native input handoff refused for session {id}: {error}")
+                    })?;
+                    snapshot
+                }),
                 vt_snapshot: match s.vt().as_mut() {
                     Some(emulator) => emulator
                         .snapshot(crate::vt::VT_HISTORY_ROWS)
@@ -4365,7 +4600,6 @@ impl Daemon {
                 vt_format_version: crate::vt::snapshot_format_version(),
             });
         }
-        drop(sessions);
         let manifest = adoption::Manifest {
             version: adoption::MANIFEST_VERSION,
             generation,
@@ -4611,8 +4845,8 @@ impl Daemon {
             .iter()
             .filter(|child| {
                 self.delegation_of(**child).is_some_and(|row| {
-                    orchestrate::DelegationState::parse(&row.state)
-                        == Some(orchestrate::DelegationState::NeedsInput)
+                    row.input_request
+                        .is_some_and(|input| input.owner == proto::ChildInputOwner::User)
                 })
             })
             .count() as u32;
@@ -4623,6 +4857,13 @@ impl Daemon {
         let Some(row) = self.delegation_of(child) else {
             return;
         };
+        if let Ok(session) = self.get(child) {
+            *session.input_current_id.lock().expect("current input lock") =
+                row.input_request.as_ref().map(|input| input.id.clone());
+            session
+                .input_pending
+                .store(row.input_request.is_some(), Ordering::Release);
+        }
         let parent = row.parent_session;
         let pending = self.pending_handback(parent, child);
         let owed = self.inbox_owed(parent, child);
@@ -7049,7 +7290,10 @@ impl Daemon {
         event: &str,
         cwd: Option<&str>,
     ) -> crate::hook_drop::DropVerdict {
-        self.handle_hook_from_with(id, provider, event, cwd, event == "Notification")
+        let Ok(_native_input) = self.native_input_mutation_guard() else {
+            return crate::hook_drop::DropVerdict::Retry;
+        };
+        self.handle_hook_from_with(id, provider, event, cwd, event == "Notification", None)
     }
 
     fn handle_hook_from_with(
@@ -7059,12 +7303,15 @@ impl Daemon {
         event: &str,
         cwd: Option<&str>,
         ambiguous_idle_notification: bool,
+        prompt_id: Option<&str>,
     ) -> crate::hook_drop::DropVerdict {
         if !self.note_hook_seen(id, provider, event, cwd) {
             return crate::hook_drop::DropVerdict::NoSession;
         }
         match crate::agent_events::AgentEvent::from_provider(provider, event) {
-            Some(ev) => self.apply_agent_event(id, event, ev, ambiguous_idle_notification, true),
+            Some(ev) => {
+                self.apply_agent_event(id, event, ev, ambiguous_idle_notification, true, prompt_id)
+            }
             None => tracing::debug!("ignoring unknown hook event {event:?} for session {id}"),
         }
         self.swarm_mirror_hook(id, event);
@@ -7117,7 +7364,54 @@ impl Daemon {
         ev: crate::agent_events::AgentEvent,
         ambiguous_idle_notification: bool,
         deliver_delegation: bool,
+        prompt_id: Option<&str>,
     ) {
+        let input_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        if ev == crate::agent_events::AgentEvent::NeedsInput {
+            let episodes = self
+                .permission_episodes
+                .lock()
+                .expect("episodes lock")
+                .get(&id)
+                .map(orchestrate::PermissionEpisodes::input_episodes)
+                .unwrap_or_default();
+            let sources: Vec<_> = episodes
+                .iter()
+                .map(|episode| format!("{:?}", episode.key))
+                .collect();
+            // Only provider-issued identities distinguish a replay from a new prompt.
+            // Local generated keys can recur after the episode tracker is cleared.
+            if episodes
+                .iter()
+                .all(|episode| matches!(episode.key, orchestrate::EpisodeKey::ToolUseId(_)))
+                && self
+                    .db
+                    .child_input_sources_already_resolved(id, &sources)
+                    .unwrap_or(false)
+            {
+                if let Some(pending) = self
+                    .permission_episodes
+                    .lock()
+                    .expect("episodes lock")
+                    .get_mut(&id)
+                {
+                    for episode in episodes {
+                        if let orchestrate::EpisodeKey::ToolUseId(key) = episode.key {
+                            pending.resolve_on(&orchestrate::EpisodeEnd::PostToolUse {
+                                tool_use_id: Some(key),
+                                prompt_id: None,
+                                tool_name: None,
+                                tool_input_fingerprint: None,
+                            });
+                        }
+                    }
+                }
+                return;
+            }
+        }
         let changed = {
             let sessions = self.sessions.lock().expect("sessions lock");
             let Some(session) = sessions.get(&id) else {
@@ -7149,6 +7443,10 @@ impl Daemon {
                 true
             }
         };
+        if deliver_delegation {
+            self.sync_child_inputs_locked(id, event, ev);
+        }
+        drop(input_guard);
         if changed {
             self.broadcast_control(&proto::ServerMsg::AgentStatus {
                 session: id,
@@ -7163,9 +7461,14 @@ impl Daemon {
                 ev.status()
             );
         }
-        self.tasks_on_session_status(id, ev.status());
+        self.tasks_on_input_ownership(id);
         if deliver_delegation {
             self.advance_delegation(id, ev);
+        }
+        if deliver_delegation {
+            if let Err(error) = self.instruction_lifecycle(id, ev, event, prompt_id) {
+                tracing::warn!("applying instruction lifecycle for pane {id}: {error}");
+            }
         }
         if ev.status() == proto::AgentStatus::Idle {
             if let Some(row) = self
@@ -9783,6 +10086,15 @@ impl Daemon {
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
             lifecycle_hook_seen: AtomicBool::new(false),
+            #[cfg(unix)]
+            native_input_recovery: None,
+            input_intervention: AtomicBool::new(false),
+            input_pending: AtomicBool::new(false),
+            input_current_id: Mutex::new(None),
+            input_intervention_id: Mutex::new(None),
+            input_intervention_answer: Mutex::new(None),
+            hook_input_reason: Mutex::new(None),
+            hook_permission_details: Mutex::new(None),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -9916,6 +10228,7 @@ impl Daemon {
                 return proto::SessionState::Exited;
             }
         }
+        self.escalate_child_inputs_locked(id, proto::ChildInputEscalationReason::ParentUnavailable);
         let (final_state, session_missing) = {
             let sessions = self.sessions.lock().expect("sessions lock");
             match sessions.get(&id) {
@@ -9950,6 +10263,15 @@ impl Daemon {
         self.mcp_notify.close_session(id);
         self.swarm_session_finished(id, final_state, exit_code);
         self.reap_reevaluate();
+        drop(_cleanup_guard);
+        if let Err(error) = self.instruction_lifecycle(
+            id,
+            crate::agent_events::AgentEvent::SessionEnded,
+            "session-close",
+            None,
+        ) {
+            tracing::warn!("ending instruction lifecycle for pane {id}: {error}");
+        }
         self.task_run_session_ended(id);
         self.task_planning_session_ended(id);
         final_state
@@ -10188,6 +10510,15 @@ impl Daemon {
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
             lifecycle_hook_seen: AtomicBool::new(false),
+            #[cfg(unix)]
+            native_input_recovery: None,
+            input_intervention: AtomicBool::new(false),
+            input_pending: AtomicBool::new(false),
+            input_current_id: Mutex::new(None),
+            input_intervention_id: Mutex::new(None),
+            input_intervention_answer: Mutex::new(None),
+            hook_input_reason: Mutex::new(None),
+            hook_permission_details: Mutex::new(None),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             hook_latest_prompt: Mutex::new(None),
@@ -10909,11 +11240,24 @@ impl Daemon {
         if !session.state.lock().expect("state lock").is_live() {
             return Ok(());
         }
-        let result = self.write_stdin(id, data);
+        let operator_input = !data.is_empty() && !is_terminal_report_only(data);
+        let _native_input = operator_input
+            .then(|| self.native_input_mutation_guard())
+            .transpose()?;
+        let marked = operator_input && self.note_input_intervention(id);
+        let result = self.write_stdin_counting(id, data);
+        if marked && result.as_ref().is_err_and(StdinWriteError::nothing_written) {
+            session.input_intervention.store(false, Ordering::Release);
+            session
+                .input_intervention_id
+                .lock()
+                .expect("intervention input lock")
+                .take();
+        }
         if !session.state.lock().expect("state lock").is_live() {
             return Ok(());
         }
-        result
+        result.map_err(|error| anyhow!("{error}"))
     }
 
     #[doc(hidden)]
@@ -11353,6 +11697,7 @@ impl Daemon {
     fn close_unlocked(&self, id: u32) -> Result<()> {
         self.ensure_not_sleeping(id)?;
         self.ensure_not_shell_restoring(id)?;
+        self.escalate_child_inputs_locked(id, proto::ChildInputEscalationReason::ParentUnavailable);
         for row in self.db.delegations_for_parent(id)? {
             if row.child_session != id
                 && (self.get(row.child_session).is_ok()
@@ -12474,6 +12819,25 @@ impl Daemon {
                 self.note_compaction(d.session);
             }
         }
+        if !d.internal_prompt
+            && crate::agent_events::AgentEvent::from_provider(provider, &d.event)
+                == Some(crate::agent_events::AgentEvent::PromptSubmitted)
+        {
+            if let Ok(session) = self.get(d.session) {
+                *session
+                    .input_intervention_answer
+                    .lock()
+                    .expect("input answer lock") = d.prompt.as_deref().map(bounded_hook_text);
+            }
+        }
+        if let Ok(session) = self.get(d.session) {
+            *session.hook_input_reason.lock().expect("input reason lock") =
+                d.reason.as_deref().map(bounded_hook_text);
+            *session
+                .hook_permission_details
+                .lock()
+                .expect("permission details lock") = Some(Self::permission_details(provider, d));
+        }
         self.note_hook_last_message(
             d.session,
             crate::agent_events::AgentEvent::from_provider(provider, &d.event),
@@ -12496,6 +12860,9 @@ impl Daemon {
                 }
             }
         }
+        // Native correlation and status effects acquire the cleanup guard. Release
+        // lifecycle admission first, matching send_keys' cleanup -> stdin lock order.
+        drop(lifecycle.take());
         if let Some(verdict) = self.correlate_hook_drop(d, provider) {
             return verdict;
         }
@@ -12510,14 +12877,27 @@ impl Daemon {
             }
             if let Some(ev) = crate::agent_events::AgentEvent::from_provider(provider, &d.event) {
                 let ambiguous = d.event == "Notification" && d.notification_type.is_none();
-                self.apply_agent_event(d.session, &d.event, ev, ambiguous, false);
+                self.apply_agent_event(
+                    d.session,
+                    &d.event,
+                    ev,
+                    ambiguous,
+                    false,
+                    d.prompt_id.as_deref(),
+                );
             }
             self.swarm_mirror_hook(d.session, &d.event);
             return crate::hook_drop::DropVerdict::Applied;
         }
         let ambiguous = d.event == "Notification" && d.notification_type.is_none();
-        let verdict =
-            self.handle_hook_from_with(d.session, provider, &d.event, d.cwd.as_deref(), ambiguous);
+        let verdict = self.handle_hook_from_with(
+            d.session,
+            provider,
+            &d.event,
+            d.cwd.as_deref(),
+            ambiguous,
+            d.prompt_id.as_deref(),
+        );
         self.note_context_from_hook(d.session, provider, d);
         drop(lifecycle.take());
         verdict
@@ -12606,6 +12986,16 @@ impl Daemon {
             }
         }
 
+        if (d.agent_id.is_some() || d.subagent_type.is_some())
+            && (ev == Some(crate::agent_events::AgentEvent::NeedsInput)
+                || matches!(
+                    d.event.as_str(),
+                    "PreToolUse" | "PostToolUse" | "PostToolUseFailure"
+                ))
+        {
+            return Some(crate::hook_drop::DropVerdict::Applied);
+        }
+
         let opencode_input_kind = match d.event.as_str() {
             "permission.asked" | "permission.updated" | "permission.replied" => {
                 Some("OpenCode permission")
@@ -12646,6 +13036,7 @@ impl Daemon {
                         crate::agent_events::AgentEvent::NeedsInput,
                         false,
                         true,
+                        d.prompt_id.as_deref(),
                     );
                 } else {
                     let resumed = self.resolve_permission_episodes(
@@ -12664,6 +13055,7 @@ impl Daemon {
                             crate::agent_events::AgentEvent::InputResolved,
                             false,
                             true,
+                            d.prompt_id.as_deref(),
                         );
                     }
                 }
@@ -12759,6 +13151,7 @@ impl Daemon {
                 crate::agent_events::AgentEvent::NeedsInput,
                 false,
                 true,
+                d.prompt_id.as_deref(),
             );
             return Some(crate::hook_drop::DropVerdict::Applied);
         }
@@ -12783,6 +13176,7 @@ impl Daemon {
                     crate::agent_events::AgentEvent::InputResolved,
                     false,
                     true,
+                    d.prompt_id.as_deref(),
                 );
             }
             self.note_reported_tool_activity(d);
@@ -12894,6 +13288,8 @@ impl Daemon {
                 d.tool_input_fingerprint.clone(),
                 now,
             );
+            pending.mark_permission_kind(&key);
+            pending.attach_permission_details(&key, Self::permission_details(provider, d));
             if provider == proto::AgentKind::Codex {
                 pending.mark_codex_permission(
                     &key,
@@ -12913,6 +13309,7 @@ impl Daemon {
                 },
                 false,
                 true,
+                d.prompt_id.as_deref(),
             );
             if provider == proto::AgentKind::Codex
                 && self.approval_mode_of(d.session) == crate::launch::ApprovalMode::Auto
@@ -12942,6 +13339,7 @@ impl Daemon {
                     crate::agent_events::AgentEvent::InputResolved,
                     false,
                     true,
+                    d.prompt_id.as_deref(),
                 );
             }
             return Some(crate::hook_drop::DropVerdict::Applied);
@@ -12966,6 +13364,7 @@ impl Daemon {
                 crate::agent_events::AgentEvent::NeedsInput,
                 false,
                 true,
+                d.prompt_id.as_deref(),
             );
             return Some(crate::hook_drop::DropVerdict::Applied);
         }
@@ -12990,6 +13389,7 @@ impl Daemon {
                     crate::agent_events::AgentEvent::InputResolved,
                     false,
                     true,
+                    d.prompt_id.as_deref(),
                 );
             }
             return Some(crate::hook_drop::DropVerdict::Applied);
@@ -13009,14 +13409,45 @@ impl Daemon {
                 }
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
+            if d.notification_type.as_deref() == Some("permission_prompt")
+                && episodes
+                    .get(&d.session)
+                    .is_none_or(|eps| eps.open_count() == 0)
+            {
+                let pending = episodes.entry(d.session).or_default();
+                let (key, _) = pending.open(
+                    d.tool_use_id.as_deref().or(d.request_id.as_deref()),
+                    d.prompt_id.as_deref(),
+                    "provider permission",
+                    d.reason.clone(),
+                    now,
+                );
+                pending.attach_permission_details(&key, Self::permission_details(provider, d));
+            }
             let attached = match episodes.get_mut(&d.session) {
                 Some(eps) => eps.attach_notification(d.reason.clone()),
                 None => false,
             };
+            let waiting_permission = d.notification_type.as_deref() == Some("permission_prompt");
+            if waiting_permission {
+                if let Some(eps) = episodes.get_mut(&d.session) {
+                    eps.confirm_waiting_permission();
+                }
+            }
             if attached {
                 drop(episodes);
                 if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
+                }
+                if waiting_permission {
+                    self.apply_agent_event(
+                        d.session,
+                        "permission_prompt",
+                        crate::agent_events::AgentEvent::NeedsInput,
+                        false,
+                        true,
+                        d.prompt_id.as_deref(),
+                    );
                 }
                 return Some(crate::hook_drop::DropVerdict::Applied);
             } else {
@@ -13024,6 +13455,18 @@ impl Daemon {
                     "session {}: a blocking notification with no permission episode open",
                     d.session
                 );
+            }
+            drop(episodes);
+            if waiting_permission {
+                self.apply_agent_event(
+                    d.session,
+                    "permission_prompt",
+                    crate::agent_events::AgentEvent::NeedsInput,
+                    false,
+                    true,
+                    d.prompt_id.as_deref(),
+                );
+                return Some(crate::hook_drop::DropVerdict::Applied);
             }
             return None;
         }
@@ -13050,6 +13493,7 @@ impl Daemon {
                 crate::agent_events::AgentEvent::Activity,
                 false,
                 true,
+                d.prompt_id.as_deref(),
             );
         }
     }
@@ -13156,13 +13600,20 @@ impl Daemon {
                 return Some(crate::hook_drop::DropVerdict::Applied);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
-            episodes.entry(d.session).or_default().open(
+            let pending = episodes.entry(d.session).or_default();
+            let (key, _) = pending.open(
                 d.tool_use_id.as_deref(),
                 None,
                 d.tool_name.as_deref().unwrap_or("unnamed tool"),
                 d.reason.clone(),
                 now,
             );
+            if d.tool_name.as_deref() != Some("ask_question") {
+                pending.attach_permission_details(
+                    &key,
+                    Self::permission_details(proto::AgentKind::Antigravity, d),
+                );
+            }
             return None;
         }
 
@@ -13191,6 +13642,7 @@ impl Daemon {
                     crate::agent_events::AgentEvent::InputResolved,
                     false,
                     true,
+                    d.prompt_id.as_deref(),
                 );
             }
             return Some(crate::hook_drop::DropVerdict::Applied);
@@ -13319,6 +13771,44 @@ impl Daemon {
             episodes.remove(&session);
         }
         drop(episodes);
+        if !resolved.is_empty() {
+            let input_guard = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            let sources: Vec<_> = resolved
+                .iter()
+                .map(|episode| format!("{:?}", episode.key))
+                .collect();
+            if let Err(error) = self
+                .db
+                .child_input_resolve_sources(session, &sources, now_ms())
+            {
+                tracing::warn!("resolving child {session} correlated asks: {error}");
+            }
+            if let (Some(daemon), Ok(Some(input)), Some(row)) = (
+                self.self_arc(),
+                self.db.child_input_request(session),
+                self.delegation_of(session),
+            ) {
+                if input.owner == proto::ChildInputOwner::Orchestrator
+                    && input.id.starts_with("provider:")
+                {
+                    let label = self.child_label_of(session);
+                    daemon.refresh_or_write_block(
+                        row.parent_session,
+                        session,
+                        &self.current_workspace(session).unwrap_or_default(),
+                        row.round,
+                        &format!("{label} needs its parent's input"),
+                        &Self::child_input_body(&input),
+                    );
+                }
+            }
+            self.broadcast_delegation(session);
+            self.tasks_on_input_ownership(session);
+            drop(input_guard);
+        }
         if clear_stall {
             let _ = self.db.delegation_set_stalled(session, false, now_ms());
             let _ = self.db.inbox_resolve_approval_stalls(session, now_ms());
@@ -13373,6 +13863,7 @@ impl Daemon {
                 crate::agent_events::AgentEvent::TurnEnded,
                 false,
                 true,
+                None,
             );
         }
         let with_episodes: Vec<u32> = {
@@ -13527,13 +14018,15 @@ impl Daemon {
 
     #[doc(hidden)]
     pub fn subagent_expiry_tick_at(self: &Arc<Self>, now: u64) {
-        self.subagent_expiry_pass(now);
+        if let Ok(_native_input) = self.native_input_mutation_guard() {
+            self.subagent_expiry_pass(now);
+        }
     }
 
     fn hook_drop_tick(self: &Arc<Self>, pass: crate::hook_drop::Pass) -> (usize, bool) {
-        if self.refusing_mutations() {
+        let Ok(_native_input) = self.native_input_mutation_guard() else {
             return (0, true);
-        }
+        };
         let dirs = self.hook_drop_dirs();
         let mut states = self.hook_drop_states.lock().expect("hook_drop_states lock");
         states.retain(|dir, _| dirs.contains(dir));
@@ -13558,6 +14051,12 @@ impl Daemon {
         self.subagent_expiry_pass(now);
         self.inbox_retention_pass(now);
         (applied, all_listed)
+    }
+
+    /// Start native delivery only after the candidate owns the committed generation.
+    #[cfg(unix)]
+    pub fn start_adopted_hooks(self: &Arc<Self>) {
+        self.hook_drop_boot();
     }
 
     fn hook_drop_boot(self: &Arc<Self>) {
@@ -14794,7 +15293,27 @@ impl Daemon {
             match outcome {
                 crate::acp::AcpDecodeOutcome::Message(msg) => {
                     if let Some(event) = crate::acp::event_for_message(&msg) {
-                        self.apply_agent_event(id, "ACP", event, false, true);
+                        if event == crate::agent_events::AgentEvent::NeedsInput {
+                            let request_id = msg
+                                .get("id")
+                                .and_then(|id| serde_json::to_string(id).ok())
+                                .map(|id| {
+                                    format!("acp:{}", id.chars().take(256).collect::<String>())
+                                });
+                            self.permission_episodes
+                                .lock()
+                                .expect("episodes lock")
+                                .entry(id)
+                                .or_default()
+                                .open(
+                                    request_id.as_deref(),
+                                    None,
+                                    "ACP permission",
+                                    None,
+                                    now_ms(),
+                                );
+                        }
+                        self.apply_agent_event(id, "ACP", event, false, true, None);
                     }
                 }
                 crate::acp::AcpDecodeOutcome::Error(e) => {
@@ -15155,6 +15674,8 @@ impl Daemon {
         None
     }
 
+    // Internal swarm and Slack nudges have no child authority or request number.
+    // Durable pane instructions use instruction_queue instead of this transport.
     fn swarm_wake_write(
         self: &Arc<Self>,
         session_id: u32,
@@ -15170,11 +15691,9 @@ impl Daemon {
         });
         if held.is_some() {
             self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string(), sender))?;
-        } else {
-            if !self.paste_text(session_id, text, sender)? {
-                self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string(), sender))?;
-                return Ok(Some("pane became held before paste".to_string()));
-            }
+        } else if !self.paste_text(session_id, text, sender)? {
+            self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string(), sender))?;
+            return Ok(Some("pane became held before paste".to_string()));
         }
         Ok(held)
     }
@@ -15543,6 +16062,32 @@ impl Daemon {
         kids
     }
 
+    pub(crate) fn has_managed_children(&self, parent: u32) -> bool {
+        if self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .values()
+            .any(|s| s.info.spawned_by == Some(parent))
+        {
+            return true;
+        }
+        if self
+            .dead
+            .lock()
+            .expect("dead lock")
+            .values()
+            .any(|s| s.spawned_by == Some(parent))
+        {
+            return true;
+        }
+        self.spawn_reservations
+            .lock()
+            .expect("spawn reservations lock")
+            .values()
+            .any(|(owner, _)| *owner == parent)
+    }
+
     pub(crate) fn descendants_of(&self, root: u32) -> Vec<u32> {
         let sessions = self.sessions.lock().expect("sessions lock");
         let mut children_of: HashMap<u32, Vec<u32>> = HashMap::new();
@@ -15738,7 +16283,7 @@ impl Daemon {
                 "capabilities": {
                     "needs_input": caps.block, "last_message": caps.last_message,
                     "turn_end": caps.turn_end, "turn_end_continuation": caps.door2,
-                    "handback_only_permission": !crate::launch::handback_permission_args(provider).is_empty(),
+                    "dialogue_tools_permission": !crate::launch::dialogue_permission_args(provider).is_empty(),
                     "compaction_counting": crate::agent_events::compaction_event(provider).is_some(),
                     "turn_failure": crate::agent_events::events_for(provider).iter().any(|(_, ev)| *ev == crate::agent_events::AgentEvent::TurnFailed),
                 },
@@ -16033,19 +16578,14 @@ impl Daemon {
         key: Option<&str>,
         mode: Option<&str>,
     ) -> Result<(String, Option<proto::AgentStatus>, Option<String>)> {
-        let mode = orchestrate::PromptMode::parse(mode)?;
-        let text = text.trim();
-        self.orchestration_retry(
-            caller,
-            key,
-            "pane_prompt",
-            &serde_json::json!({"session":target,"text":text,"mode":mode}),
-            || {
-                let (source, status, held) =
-                    self.orchestrate_prompt_with_mode(caller, target, text, mode)?;
-                Ok((source.to_string(), status, held))
-            },
-        )
+        let (acceptance, source, status) =
+            self.orchestrate_instruction_request(caller, target, text, key, mode)?;
+        let held = (acceptance.state != proto::InstructionState::Delivered).then(|| {
+            acceptance
+                .hold_reason
+                .unwrap_or_else(|| "instruction queued for delivery".into())
+        });
+        Ok((source, status, held))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -16361,7 +16901,7 @@ impl Daemon {
         )?;
         extra_args.extend(mode_args);
         if !handoff {
-            extra_args.extend(crate::launch::handback_permission_args(kind));
+            extra_args.extend(crate::launch::dialogue_permission_args(kind));
         }
         if let Some(effort) = effort {
             extra_args.extend(crate::launch::effort_args(kind, effort)?);
@@ -16847,115 +17387,20 @@ impl Daemon {
         text: &str,
         mode: orchestrate::PromptMode,
     ) -> Result<(&'static str, Option<proto::AgentStatus>, Option<String>)> {
-        let text = text.trim();
-        anyhow::ensure!(!text.is_empty(), "prompt text must not be empty");
-        let _cleanup_guard = self
-            .temporary_cleanup_lock
-            .lock()
-            .expect("temporary cleanup lock");
-        if let Some(row) = self.delegation_of(target) {
-            if row.parent_session == caller && self.respawn_chain_tip(target).is_none() {
-                if let Some(state) = orchestrate::DelegationState::parse(&row.state) {
-                    let failed_live_turn = state == orchestrate::DelegationState::Failed
-                        && self.get(target).is_ok_and(|session| {
-                            session.state.lock().expect("state lock").is_live()
-                        });
-                    if let Some(refusal) =
-                        orchestrate::prompt_refusal(target, state).filter(|_| !failed_live_turn)
-                    {
-                        bail!("{refusal}");
-                    }
-                }
-            }
-        }
-        self.assert_orchestration_target(caller, target)?;
-        let provider = self
-            .agent_kind_of(target)
-            .ok_or_else(|| anyhow!("pane {target} has no provider"))?;
-        orchestrate::prompt_mode_supported(provider, mode)?;
-        if mode != orchestrate::PromptMode::Queue {
-            if let Some(reason) = self.immediate_paste_hold_reason(target) {
-                bail!("mode {mode:?} refused for pane {target}: {reason}; use mode queue");
-            }
-            anyhow::ensure!(!self.swarm_wake_lanes.lock().expect("wake lanes lock").contains_key(&target),
-                "mode {mode:?} refused for pane {target}: a prompt is already queued; use mode queue");
-        }
-        self.cancel_temporary_cleanup_locked(target);
-        let source = {
-            let s = self.get(target)?;
-            let cur = *s.status.lock().expect("status lock");
-            if cur == Some(proto::AgentStatus::NeedsInput) {
-                bail!(
-                    "refused: pane {target} needs input (NeedsInput) — inspect it with \
-                     `hs-pane read {target}` and answer what it asked before sending a \
-                     new prompt"
-                );
-            }
-            crate::orchestrate::status_source(s.status_kind())
+        let mode = match mode {
+            orchestrate::PromptMode::Queue => "queue",
+            orchestrate::PromptMode::Steer => "steer",
+            orchestrate::PromptMode::Restart => "restart",
         };
-        let source_label = source.label();
-        let framed = match self.round_a_re_prompt_opens(target) {
-            Some(round) => format!("{}\n\n{text}", orchestrate::request_header(round)),
-            None => text.to_string(),
-        };
-        let held = match mode {
-            orchestrate::PromptMode::Queue => self.swarm_wake_write(target, &framed, caller)?,
-            orchestrate::PromptMode::Steer => {
-                anyhow::ensure!(self.paste_text_with_activity(target, &framed, caller, true)?,
-                    "mode steer refused for pane {target}: operator input or a permission request appeared before paste; use mode queue");
-                None
-            }
-            orchestrate::PromptMode::Restart => {
-                if self.session_status(target)? == Some(proto::AgentStatus::Working) {
-                    if let Err(error) = self
-                        .write_stdin_counting(target, orchestrate::prompt_interrupt_key(provider)?)
-                    {
-                        let nothing_written = error.nothing_written();
-                        let error = anyhow!("interrupting pane {target}: {error}");
-                        return Err(if nothing_written {
-                            error
-                        } else {
-                            error.context(orchestrate::MutationMayHaveActed)
-                        });
-                    }
-                    self.swarm_wake_write(target, &framed, caller)
-                        .context(orchestrate::MutationMayHaveActed)?
-                } else {
-                    self.swarm_wake_write(target, &framed, caller)?
-                }
-            }
-        };
-        if source == orchestrate::StatusSource::ProcessOnly {
-            match self.db.delegation_bump_round(target, now_ms()) {
-                Ok(Some(round)) => {
-                    self.turn_start_round
-                        .lock()
-                        .expect("turn start round lock")
-                        .insert(target, round);
-                }
-                Ok(None) => {}
-                Err(e) => tracing::warn!("opening a new round for child {target}: {e}"),
-            }
-        } else {
-            self.prompt_awaiting_hook
-                .lock()
-                .expect("prompt awaiting hook lock")
-                .insert(target);
-        }
-        if let Err(e) = self
-            .db
-            .delegation_set_no_handback(target, false, 0, now_ms())
-        {
-            tracing::warn!("clearing child {target}'s no_handback latch after a prompt: {e}");
-        } else {
-            self.broadcast_delegation(target);
-        }
-        Ok((
-            source_label,
-            self.session_status(target)
-                .context(orchestrate::MutationMayHaveActed)?,
-            held,
-        ))
+        let (acceptance, _, status) =
+            self.orchestrate_instruction_request(caller, target, text, None, Some(mode))?;
+        let source = orchestrate::status_source(self.get(target)?.status_kind()).label();
+        let held = (acceptance.state != proto::InstructionState::Delivered).then(|| {
+            acceptance
+                .hold_reason
+                .unwrap_or_else(|| "instruction queued for delivery".into())
+        });
+        Ok((source, status, held))
     }
 
     pub fn session_status(&self, id: u32) -> Result<Option<proto::AgentStatus>> {
@@ -16989,8 +17434,12 @@ impl Daemon {
         orchestrate::tool_role(
             self.parent_of(id).is_some(),
             self.spawnable_by(id) || self.handoffable_by(id),
-            !self.live_children_of(id).is_empty(),
+            self.has_managed_children(id) || self.has_worker_questions(id),
         )
+    }
+
+    pub(crate) fn has_worker_questions(&self, id: u32) -> bool {
+        self.db.inbox_has_worker_question(id).unwrap_or(false)
     }
 
     pub fn agent_kind_of(&self, id: u32) -> Option<proto::AgentKind> {
@@ -17299,6 +17748,10 @@ impl Daemon {
             }
             if child.is_none()
                 && self.live_children_of(caller).is_empty()
+                && !self.delegation_of(caller).is_some_and(|row| {
+                    orchestrate::DelegationState::parse(&row.state)
+                        .is_some_and(|state| !state.is_closed())
+                })
                 && self.db.inbox_pending_count(caller)? == 0
             {
                 return Ok(orchestrate::InboxWaitOutcome::NothingToWaitOn);
@@ -17371,11 +17824,20 @@ impl Daemon {
     }
 
     pub fn orchestrate_send_keys(&self, caller: u32, target: u32, keys: &[String]) -> Result<()> {
+        let _native_input = self.native_input_mutation_guard()?;
         let _cleanup_guard = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
         self.assert_orchestration_target(caller, target)?;
+        if let Some(episode) = self.pending_permission_episode(target)? {
+            bail!("send_keys refused for child {target}, permission episode {episode}: use pane_deny or pane_escalate; only the operator may approve");
+        }
+        if let Some(input) = self.db.child_input_request(target)? {
+            anyhow::ensure!(input.owner != proto::ChildInputOwner::User,
+                "send_keys refused for child {target}, input episode {} belongs to the operator after escalation; only the operator may answer", input.id);
+        }
+        self.assert_no_operator_input_intervention(target, None)?;
         self.cancel_temporary_cleanup_locked(target);
         let bytes = orchestrate::keys_to_bytes(keys).map_err(|e| anyhow!("{e}"))?;
         self.write_stdin(target, &bytes)?;
@@ -17597,6 +18059,155 @@ impl Daemon {
         Ok(out)
     }
 
+    pub fn orchestrate_report(
+        self: &Arc<Self>,
+        child: u32,
+        mut report: orchestrate::WorkerReport,
+    ) -> Result<serde_json::Value> {
+        report.body = orchestrate::report_text(&report.body)?;
+        let key = report.client_request_id.take();
+        let receipt = crate::db::MessageReceipt::new(
+            child,
+            key,
+            "pane_report",
+            &serde_json::to_value(&report)?,
+        )?;
+        self.orchestrate_whoami(child)?;
+        let guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        if let Some(result) = self.db.message_receipt_lookup(&receipt, now_ms())? {
+            return Ok(result);
+        }
+        let parent = self
+            .parent_of(child)
+            .ok_or_else(|| anyhow!("report refused: pane {child} has no parent"))?;
+        let (_, reason, _) = self.stamp_submit(child, Some(report.request_id))?;
+        anyhow::ensure!(
+            reason.is_none(),
+            "report refused: request_id {} for pane {child} has already closed",
+            report.request_id
+        );
+        let kind = report.kind.inbox_kind();
+        let workspace = self.current_workspace(child)?;
+        let row = orchestrate::inbox_row_new(
+            parent,
+            &workspace,
+            Some(child),
+            Some(report.request_id),
+            kind,
+            &orchestrate::submit_summary_fallback(&report.body),
+            &report.body,
+            Vec::new(),
+            false,
+            None,
+            None,
+            true,
+        )?;
+        let result = self.db.inbox_insert_report(&row, &receipt, now_ms())?;
+        let id = result["message_id"].as_i64().expect("stored report id");
+        if self.live_inbox_recipient(parent) != parent {
+            self.escalate_child_inputs_locked(
+                parent,
+                proto::ChildInputEscalationReason::ParentUnavailable,
+            );
+        }
+        self.broadcast_delegation(child);
+        self.tasks_on_input_ownership(child);
+        let recipient = self.live_inbox_recipient(parent);
+        if recipient != parent {
+            self.retain_or_readdress_row(id, "parent_dead");
+        } else {
+            self.broadcast_inbox_row(id);
+        }
+        drop(guard);
+        self.mcp_notify.tools_changed_for_session(recipient);
+        self.inbox_notify(recipient, kind.urgent());
+        Ok(result)
+    }
+
+    pub fn orchestrate_reply(
+        self: &Arc<Self>,
+        caller: u32,
+        mut reply: orchestrate::WorkerReply,
+    ) -> Result<serde_json::Value> {
+        let _native_input = self.native_input_mutation_guard()?;
+        reply.text = orchestrate::report_text(&reply.text)?;
+        let key = reply.client_request_id.take();
+        let receipt = crate::db::MessageReceipt::new(
+            caller,
+            key,
+            "pane_reply",
+            &serde_json::to_value(&reply)?,
+        )?;
+        self.orchestrate_whoami(caller)?;
+        let guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        if let Some(result) = self.db.message_receipt_lookup(&receipt, now_ms())? {
+            return Ok(result);
+        }
+        let question = self.db.inbox_get(reply.message_id)?.ok_or_else(|| {
+            anyhow!(
+                "reply refused: message_id {} does not exist",
+                reply.message_id
+            )
+        })?;
+        anyhow::ensure!(
+            question.to_session == caller
+                && matches!(question.kind.as_str(), "question" | "blocked"),
+            "reply refused: message_id {} is not a question or blocker addressed to pane {caller}",
+            reply.message_id
+        );
+        let child = question.from_session.ok_or_else(|| {
+            anyhow!(
+                "reply refused: message_id {} has no worker",
+                reply.message_id
+            )
+        })?;
+        self.assert_orchestration_target(caller, child)?;
+        if let Some(input) = self
+            .db
+            .child_input_request_by_id(child, &format!("report:{}", reply.message_id))?
+        {
+            anyhow::ensure!(input.owner != proto::ChildInputOwner::User,
+                "reply refused: message_id {}, child {child}, input episode {} belongs to the operator after escalation; only the operator may answer", reply.message_id, input.id);
+        }
+        self.assert_no_operator_input_intervention(
+            child,
+            Some(&format!("report:{}", reply.message_id)),
+        )?;
+        self.current_workspace(child)?;
+        let row = orchestrate::inbox_row_new(
+            child,
+            &question.workspace,
+            Some(caller),
+            question.request_id,
+            orchestrate::InboxKind::Reply,
+            &format!("Reply to message #{}", reply.message_id),
+            &reply.text,
+            Vec::new(),
+            false,
+            None,
+            None,
+            true,
+        )?;
+        let result =
+            self.db
+                .inbox_insert_reply(&row, reply.message_id, caller, &receipt, now_ms())?;
+        let id = result["message_id"].as_i64().expect("stored reply id");
+        self.broadcast_delegation(child);
+        self.tasks_on_input_ownership(child);
+        self.broadcast_inbox_row(reply.message_id);
+        self.broadcast_inbox_row(id);
+        drop(guard);
+        self.mcp_notify.tools_changed_for_session(caller);
+        self.inbox_notify(child, true);
+        Ok(result)
+    }
+
     pub fn orchestrate_submit(
         self: &Arc<Self>,
         child: u32,
@@ -17699,6 +18310,13 @@ impl Daemon {
         child: u32,
         named: Option<u32>,
     ) -> Result<(Option<u32>, Option<&'static str>, String)> {
+        let _dispatch = self
+            .instruction_dispatch_lock
+            .lock()
+            .expect("instruction dispatch lock");
+        if named.is_some() {
+            self.instruction_adopt_locked(child, named)?;
+        }
         let Some(row) = self.delegation_of(child) else {
             return Ok((
                 None,
@@ -17856,25 +18474,70 @@ impl Daemon {
         ) {
             bail!("tool-boundary context unsupported for provider {provider:?}; expected Claude or Codex, use the operator channel");
         }
-        let lines: Vec<_> = self.db.inbox_tool_hints(caller, now_ms())?.into_iter().map(|row| {
-            let role = row.from_role.or(row.from_codename).unwrap_or_else(|| "unnamed child".into());
+        let mut lines = Vec::new();
+        for row in self.db.inbox_tool_hints(caller, now_ms())? {
+            let role = row
+                .from_role
+                .or(row.from_codename)
+                .unwrap_or_else(|| "unnamed child".into());
             let summary: String = row.summary.chars().take(200).collect();
-            format!("child {role} ({}) needs input: {summary}; answer with pane_read + pane_send_keys or leave it to the operator", row.from_session.unwrap_or(0))
-        }).collect();
+            let child = row.from_session.unwrap_or(0);
+            let guidance = match self.db.child_input_request(child)? {
+                Some(input) if input.owner == proto::ChildInputOwner::User => {
+                    format!("input episode {} awaits the operator; inspect with pane_read and wait for provider confirmation", input.id)
+                }
+                Some(input) if input.kind == proto::ChildInputKind::Permission => {
+                    format!("permission episode {}; inspect with pane_read, then use pane_deny with this episode_id or pane_escalate with your recommendation; only the operator may approve", input.id)
+                }
+                Some(_) => "inspect with pane_read and answer the question with pane_send_keys, or use pane_escalate if the decision belongs to the operator".into(),
+                None => "inspect with pane_read; the input request may already be resolved".into(),
+            };
+            lines.push(format!(
+                "child {role} ({child}) needs input: {summary}; {guidance}"
+            ));
+        }
         Ok((!lines.is_empty()).then(|| lines.join("\n")))
     }
 
     pub fn delegation_results_list(&self, parent: u32) -> Result<proto::ServerMsg> {
+        self.delegation_results_page(parent, None)
+    }
+
+    pub fn delegation_results_page(
+        &self,
+        parent: u32,
+        before_message_id: Option<i64>,
+    ) -> Result<proto::ServerMsg> {
         if parent == 0 {
             bail!("parent 0 is the operator inbox; expected a nonzero parent session id");
         }
-        let mut results = self.db.delegation_latest_results(parent)?;
+        if before_message_id.is_some_and(|id| id <= 0) {
+            bail!("before_message_id {before_message_id:?}: expected a positive inbox message id or null");
+        }
+        let mut results = self.db.delegation_results_page(parent, before_message_id)?;
         let truncated = results.len() > proto::DELEGATION_RESULTS_MAX_ROWS;
         results.truncate(proto::DELEGATION_RESULTS_MAX_ROWS);
+        let next_message_id = truncated
+            .then(|| results.last().map(|row| row.message_id))
+            .flatten();
         Ok(proto::ServerMsg::DelegationResults {
             parent,
             results,
             truncated,
+            before_message_id,
+            next_message_id,
+        })
+    }
+
+    pub fn delegation_result_get(&self, parent: u32, message_id: i64) -> Result<proto::ServerMsg> {
+        if parent == 0 || message_id <= 0 {
+            bail!("parent {parent}, message_id {message_id}: expected a nonzero parent session and positive result message id");
+        }
+        let row = self.db.delegation_result_get(parent, message_id)?
+            .ok_or_else(|| anyhow::anyhow!("result message_id {message_id} for parent {parent}: expected a retained result addressed to this parent or its session origin"))?;
+        Ok(proto::ServerMsg::DelegationResultDetail {
+            parent,
+            row: row.into(),
         })
     }
 
@@ -18278,6 +18941,9 @@ impl Daemon {
     }
 
     fn temporary_cleanup_safe(&self, child: u32, now: u64) -> bool {
+        if self.db.instruction_pending(child).unwrap_or(true) {
+            return false;
+        }
         if !self.live_children_of(child).is_empty() {
             return false;
         }
@@ -18390,6 +19056,55 @@ impl Daemon {
         }
         let parent = row.parent_session;
         let workspace = self.current_workspace(child).unwrap_or_default();
+        if let Some(input) = row.input_request.as_ref() {
+            if matches!(
+                ev,
+                AgentEvent::NeedsInput
+                    | AgentEvent::TurnEnded
+                    | AgentEvent::PromptSubmitted
+                    | AgentEvent::InputResolved
+            ) {
+                if ev == AgentEvent::NeedsInput
+                    && input.owner == proto::ChildInputOwner::Orchestrator
+                {
+                    if let Ok(Some(id)) = self.db.inbox_pending_result(parent, child, row.round) {
+                        // Input can suspend a turn after submission. Return the body without
+                        // declaring completion or consuming the outstanding input episode.
+                        match self.db.delegation_close_round(
+                            child,
+                            &row.state,
+                            None,
+                            false,
+                            crate::db::RoundHandback::Ready {
+                                id,
+                                provisional: true,
+                                reason: Some("child_needs_input"),
+                            },
+                            now_ms(),
+                        ) {
+                            Ok(_) => {
+                                self.broadcast_inbox_row(id);
+                                self.inbox_notify(parent, false);
+                            }
+                            Err(error) => tracing::warn!(
+                                "releasing child {child} result while input is pending: {error}"
+                            ),
+                        }
+                    }
+                    let label = self.child_label_of(child);
+                    self.refresh_or_write_block(
+                        parent,
+                        child,
+                        &workspace,
+                        row.round,
+                        &format!("{label} needs its parent's input"),
+                        &Self::child_input_body(input),
+                    );
+                }
+                self.broadcast_delegation(child);
+                return;
+            }
+        }
         let pending = self
             .db
             .inbox_pending_result(parent, child, row.round)
@@ -18595,6 +19310,9 @@ impl Daemon {
                 }
             }
         }
+        if let Err(error) = self.db.child_input_project(child, now_ms()) {
+            tracing::warn!("projecting child {child} input: {error}");
+        }
         self.broadcast_delegation(child);
         drop(cleanup_guard);
         if let Some(provisional) = cleanup_provisional {
@@ -18603,8 +19321,30 @@ impl Daemon {
     }
 
     fn open_round_on_external_prompt(&self, child: u32, from: orchestrate::DelegationState) {
+        let _dispatch = self
+            .instruction_dispatch_lock
+            .lock()
+            .expect("instruction dispatch lock");
+        match self.instruction_adopt_locked(child, None) {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(error) => {
+                tracing::warn!("adopting dispatched instruction for session {child}: {error:#}")
+            }
+        }
         use orchestrate::DelegationState::*;
         let current = self.db.delegation_round(child).ok().flatten();
+        if from.is_closed() {
+            if let Some(round) = current {
+                if let Err(error) =
+                    self.instruction_settle_round_locked(child, round.saturating_sub(1))
+                {
+                    tracing::warn!(
+                        "releasing interrupted staged round for session {child}: {error:#}"
+                    );
+                }
+            }
+        }
         let houston_asked = self
             .prompt_awaiting_hook
             .lock()
@@ -18629,13 +19369,15 @@ impl Daemon {
                 );
                 None
             }
-            NeedsInput => match self.db.delegation_bump_round(child, now_ms()) {
-                Ok(round) => round,
-                Err(e) => {
-                    tracing::warn!("opening a new round for child {child}: {e}");
-                    None
+            NeedsInput | AskedOrchestrator => {
+                match self.db.delegation_bump_round(child, now_ms()) {
+                    Ok(round) => round,
+                    Err(e) => {
+                        tracing::warn!("opening a new round for child {child}: {e}");
+                        None
+                    }
                 }
-            },
+            }
             Done | Unknown | Failed | Cancelled => current,
         };
         if let Some(round) = opened {
@@ -19162,7 +19904,9 @@ impl Daemon {
                     if self.live_inbox_recipient(recipient) != recipient {
                         if let Ok(rows) = self.db.inbox_list_for_session(recipient) {
                             for row in rows.into_iter().filter(|row| {
-                                row.delivered_at.is_none() && row.resolved_at.is_none()
+                                row.resolved_at.is_none()
+                                    && (row.delivered_at.is_none()
+                                        || matches!(row.kind.as_str(), "question" | "blocked"))
                             }) {
                                 self.retain_or_readdress_row(row.id, "parent_dead");
                             }
@@ -19398,8 +20142,9 @@ impl Daemon {
         {
             return;
         }
-        let blocked = orchestrate::DelegationState::parse(&row.state)
-            == Some(orchestrate::DelegationState::NeedsInput);
+        let blocked = row.input_request.is_some()
+            || orchestrate::DelegationState::parse(&row.state)
+                == Some(orchestrate::DelegationState::NeedsInput);
         let quiet = now.saturating_sub(s.last_output.load(Ordering::Relaxed));
         let stalled = !blocked && !busy && quiet >= orchestrate::DELEGATION_STALL_MS;
         if stalled == row.stalled {
@@ -19443,6 +20188,9 @@ impl Daemon {
         busy: bool,
         now: u64,
     ) {
+        if row.input_request.is_some() {
+            return;
+        }
         let child = row.child_session;
         let source = s.turn_end_source();
         if source != orchestrate::TurnEndSource::QuietSettle {
@@ -19620,6 +20368,9 @@ impl Daemon {
         if std::env::var_os("HOUSTON_TEST_INBOX_WAIT_ONLY").is_some() {
             return Some("the crash harness consumes inbox rows through pane_wait".into());
         }
+        if let Some(reason) = self.child_input_paste_hold_reason(parent) {
+            return Some(reason);
+        }
         match self.session_status(parent) {
             Ok(Some(proto::AgentStatus::Idle)) => {}
             Ok(Some(proto::AgentStatus::NeedsInput)) => {
@@ -19653,9 +20404,12 @@ impl Daemon {
     }
 
     fn immediate_paste_hold_reason(&self, target: u32) -> Option<String> {
+        if let Some(reason) = self.child_input_paste_hold_reason(target) {
+            return Some(reason);
+        }
         match self.session_status(target) {
             Ok(Some(proto::AgentStatus::NeedsInput)) => {
-                Some("pane needs input; inspect it and use pane_send_keys".into())
+                Some("pane needs input; inspect the provider request; for permission use pane_deny or pane_escalate; only the operator may approve".into())
             }
             Err(error) => Some(format!("pane cannot be read: {error}")),
             _ => self.operator_composer_hold_reason(target),
@@ -19921,21 +20675,27 @@ impl Daemon {
             return;
         };
         let recipient = self.live_inbox_recipient(row.to_session);
-        if let Err(e) = self.db.inbox_route_after_failure(
-            id,
+        let routed = self.db.inbox_route_after_failure(
+            &row,
             recipient,
             if recipient != row.to_session {
                 "parent_dead"
             } else {
                 reason
             },
-        ) {
-            tracing::warn!("routing inbox row {id} to pane {recipient}: {e}");
-            return;
+        );
+        match routed {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(e) => {
+                tracing::warn!("routing inbox row {id} to pane {recipient}: {e}");
+                return;
+            }
         }
         self.broadcast_inbox_row(id);
         self.notify_inbox_wake(recipient);
         if recipient != row.to_session {
+            self.mcp_notify.tools_changed_for_session(recipient);
             self.inbox_notify(recipient, true);
         }
     }
@@ -22360,6 +23120,7 @@ mod handoff_refusal_tests {
             swarm_agent: None,
             hook_cwd: None,
             mcp_cred: None,
+            native_input: None,
             vt_snapshot: Vec::new(),
             vt_format_version: 0,
         }

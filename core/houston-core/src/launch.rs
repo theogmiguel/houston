@@ -112,11 +112,21 @@ fn write_owner_only(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub fn handback_permission_args(agent: proto::AgentKind) -> Vec<String> {
+pub fn dialogue_permission_args(agent: proto::AgentKind) -> Vec<String> {
     match agent {
         // One token: the flag is variadic, so a separate value could swallow a later positional.
-        proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit".into()],
-        proto::AgentKind::Grok => vec!["--allow".into(), "mcp__houston__pane_submit".into()],
+        proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate".into()],
+        proto::AgentKind::Grok => [
+            "pane_submit",
+            "pane_report",
+            "pane_reply",
+            "pane_wait",
+            "pane_deny",
+            "pane_escalate",
+        ]
+        .into_iter()
+        .flat_map(|name| ["--allow".into(), format!("mcp__houston__{name}")])
+        .collect(),
         _ => Vec::new(),
     }
 }
@@ -585,18 +595,31 @@ mod tests {
         assert_eq!(settings["hooks"]["SessionStart"], serde_json::json!([]));
     }
     #[test]
-    fn child_handback_permission_is_limited_to_the_exact_houston_tool() {
+    fn child_dialogue_permissions_are_limited_to_exact_houston_tools() {
         use houston_protocol::AgentKind::*;
         assert_eq!(
-            super::handback_permission_args(Claude),
-            ["--allowedTools=mcp__houston__pane_submit"]
+            super::dialogue_permission_args(Claude),
+            ["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate"]
         );
         assert_eq!(
-            super::handback_permission_args(Grok),
-            ["--allow", "mcp__houston__pane_submit"]
+            super::dialogue_permission_args(Grok),
+            [
+                "--allow",
+                "mcp__houston__pane_submit",
+                "--allow",
+                "mcp__houston__pane_report",
+                "--allow",
+                "mcp__houston__pane_reply",
+                "--allow",
+                "mcp__houston__pane_wait",
+                "--allow",
+                "mcp__houston__pane_deny",
+                "--allow",
+                "mcp__houston__pane_escalate"
+            ]
         );
         for agent in [Codex, Antigravity, Opencode, Cursor] {
-            assert!(super::handback_permission_args(agent).is_empty());
+            assert!(super::dialogue_permission_args(agent).is_empty());
         }
     }
     use super::*;
