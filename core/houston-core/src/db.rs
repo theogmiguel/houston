@@ -2451,6 +2451,14 @@ impl Db {
         title_source: Option<&str>,
     ) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
+        Self::insert_session_on(&conn, info, title_source)
+    }
+
+    fn insert_session_on(
+        conn: &Connection,
+        info: &proto::SessionInfo,
+        title_source: Option<&str>,
+    ) -> Result<()> {
         conn.execute(
             "INSERT INTO sessions (id, agent, project_dir, cwd, state, title, codename, title_source,
                                    ssh_host, spawned_by, acp, profile_label, tags, session_origin,
@@ -2477,6 +2485,26 @@ impl Db {
                 info.context.map(|context| serde_json::to_string(&context)).transpose()?,
             ],
         )?;
+        Ok(())
+    }
+
+    /// Startup workers remain gated until both persistence and thread creation succeed.
+    pub fn insert_session_for_startup(
+        &self,
+        info: &proto::SessionInfo,
+        title_source: &str,
+        profile: Option<&str>,
+        prepare: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        Self::insert_session_on(&tx, info, Some(title_source))?;
+        tx.execute(
+            "UPDATE sessions SET profile_config_dir = ?2 WHERE id = ?1",
+            rusqlite::params![info.id, profile],
+        )?;
+        prepare()?;
+        tx.commit()?;
         Ok(())
     }
     pub fn save_ssh_profile(&self, p: &proto::SshProfile) -> Result<()> {

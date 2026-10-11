@@ -3,7 +3,7 @@ use houston_protocol as proto;
 use std::path::{Path, PathBuf};
 
 // Resolve existing symlinks so replacement updates the user's target, not the link.
-fn atomic_config_write(path: &Path, bytes: impl AsRef<[u8]>) -> Result<()> {
+pub(crate) fn atomic_config_write(path: &Path, bytes: impl AsRef<[u8]>) -> Result<()> {
     atomic_config_write_with(path, |file| {
         use std::io::Write;
         file.write_all(bytes.as_ref())
