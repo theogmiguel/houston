@@ -418,6 +418,43 @@
     else mark.appendChild(icon({ ok: "check", warn: "clock", danger: "unlink", device: "phone" }[kind] || "phone"));
   }
 
+  // Android installs the authority as a CA certificate; iOS installs a profile, then needs full trust turned on.
+  var TRUST_STEPS = [
+    ["Android", "Settings ▸ Security ▸ Encryption & credentials ▸ Install a certificate ▸ CA certificate, then pick houston-ca.crt."],
+    ["iPhone or iPad", "Settings ▸ Profile Downloaded ▸ Install, then Settings ▸ General ▸ About ▸ Certificate Trust Settings and turn on full trust for it."]
+  ];
+
+  // This computer's certificate authority, when the listener serves its own HTTPS;
+  // behind a proxy such as tailscale serve there is none (404).
+  function loadCa() {
+    return api("GET", "/api/ca").then(function (d) { S.ca = d; }, function () { S.ca = null; }).then(function () {
+      renderTrust();
+      if (S.view === "list" && S.home === "computer") renderList();
+    });
+  }
+
+  function trustLinks(root) {
+    var a = el("a", "btn block", "Android: download certificate"); a.href = "houston-ca.crt"; a.setAttribute("download", "houston-ca.crt");
+    var i = el("a", "btn block", "iPhone or iPad: download profile"); i.href = "houston-ca.mobileconfig";
+    root.appendChild(a); root.appendChild(i);
+  }
+
+  function renderTrust() {
+    var root = $("trust"), show = !!S.ca && !$("pair-form").classList.contains("hidden");
+    root.classList.toggle("hidden", !show);
+    if (!show) return;
+    root.replaceChildren();
+    root.appendChild(el("b", null, "Trust this computer"));
+    root.appendChild(el("span", null, "Houston serves this page over HTTPS with a certificate from the computer itself. If the browser warned about this site, install the certificate once; the microphone and the home-screen app need it."));
+    var actions = el("div", "trust-actions"); trustLinks(actions); root.appendChild(actions);
+    var ol = el("ol", "mini-steps");
+    TRUST_STEPS.forEach(function (t) { var li = el("li"); li.appendChild(el("b", null, t[0] + ": ")); li.appendChild(document.createTextNode(t[1])); ol.appendChild(li); });
+    root.appendChild(ol);
+    var fp = el("span", "trust-fp", "Before trusting it, check that this fingerprint matches Settings ▸ Remote access on the computer: ");
+    fp.appendChild(el("code", null, S.ca.fingerprint));
+    root.appendChild(fp);
+  }
+
   function pairFacts() {
     var root = $("pair-facts"), https = location.protocol === "https:";
     root.replaceChildren();
@@ -438,6 +475,8 @@
     $("pair-facts").classList.toggle("hidden", !confirm);
     if (confirm) pairFacts();
     $("pair-form").classList.toggle("hidden", !confirm);
+    renderTrust();
+    if (confirm) loadCa();
     $("route-warning").classList.toggle("hidden", !confirm || location.protocol === "https:");
     $("pair-submit").classList.toggle("hidden", !confirm);
     $("pair-connected").classList.add("hidden");
@@ -542,7 +581,7 @@
     window.scrollTo(0, 0);
     renderList();
     if (tab === "activity") loadActivity();
-    if (tab === "computer") loadMe().catch(function (e) { toast(e.message, true); });
+    if (tab === "computer") { loadMe().catch(function (e) { toast(e.message, true); }); loadCa(); }
   }
 
   function renderTabs() {
@@ -956,6 +995,14 @@
     pref(tools, "Quick replies", count, openReplies);
     root.appendChild(tools);
 
+    if (S.ca) {
+      var trust = el("div", "card howto");
+      trust.appendChild(el("b", null, "This computer's certificate"));
+      trust.appendChild(el("span", null, "Install it once so the microphone and the home-screen app work. Fingerprint: " + S.ca.fingerprint));
+      var links = el("div", "trust-actions"); trustLinks(links); trust.appendChild(links);
+      root.appendChild(trust);
+      trust.style.marginBottom = "var(--s3)";
+    }
     if (!standalone()) {
       var app = el("div", "card howto");
       installHelp(app);
@@ -1713,7 +1760,7 @@
   // Why the page cannot dictate, or null when it can.
   function micBlocked() {
     if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      return "The microphone needs a secure (HTTPS) connection to Houston. Your keyboard's microphone still works in the message box.";
+      return "The microphone needs a trusted HTTPS connection: trust this computer's certificate (Computer tab), or use your keyboard's microphone in the message box.";
     }
     if (!window.AudioWorkletNode) return "This browser cannot record audio for dictation. Your keyboard's microphone still works in the message box.";
     if (S.me.dictation === false) return "Dictation is off. Turn on Allow dictation from paired devices in Houston's Settings ▸ Remote access.";
@@ -2107,7 +2154,7 @@
       setMark("ok");
       $("pair-title").textContent = "You're connected";
       $("pair-lede").textContent = "Houston is ready on this phone.";
-      ["pair-form", "pair-facts", "pair-submit"].forEach(function (id) { $(id).classList.add("hidden"); });
+      ["pair-form", "pair-facts", "pair-submit", "trust"].forEach(function (id) { $(id).classList.add("hidden"); });
       installHelp($("install-help"));
       $("install-help").classList.toggle("hidden", standalone());
       $("pair-connected").classList.remove("hidden");

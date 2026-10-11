@@ -326,6 +326,10 @@ body[data-view="list"] .view { padding-bottom: calc(var(--tab-h) + 32px + env(sa
 .howto { padding: 14px var(--s4); display: grid; gap: 4px; font-size: 14px; color: var(--text-secondary); }
 .howto b { color: var(--text-primary); }
 .mini-steps { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 3px; }
+.trust-actions { display: grid; gap: var(--s2); margin-top: 6px; }
+.trust-actions .btn { text-decoration: none; }
+.trust-fp { font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }
+.trust-fp code { font-family: var(--font-mono); color: var(--text-primary); }
 .pair-actions { position: sticky; bottom: 0; width: 100%; max-width: 420px; margin: 0 auto; padding: var(--s3) 0 calc(var(--s3) + env(safe-area-inset-bottom)); display: grid; gap: var(--s2); background: linear-gradient(transparent, var(--content-bg) 30%); }
 
 /* ---------- Home ---------- */
