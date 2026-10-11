@@ -4,7 +4,7 @@ import { useNativeOverlaySuppression } from '../layout/nativeSuppression'
 import { CONNECT_PHONE_EVENT } from '../connectPhone'
 import type { HoustonClient } from '../houston/client'
 import { useRemote } from '../houston/useRemote'
-import { Button, Caption, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle, Field, Notice, QrImage, Select, TextInput } from './ui'
+import { Button, Caption, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle, Field, Inline, Notice, QrImage, Select, TextInput } from './ui'
 import { Text } from './ui/Text'
 import { PairingProgress } from './ui/PairingProgress'
 import { useCopyFeedback } from './useCopyFeedback'
@@ -153,7 +153,7 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
           </> : <>
             <DialogDescription>Follow and answer your panes when you are away from this computer.</DialogDescription>
             <Notice tone="warn">{SECURITY}</Notice>
-            {!remote ? <Notice tone="info">Asking the daemon for its remote access settings.</Notice> : <div className="flex flex-wrap items-start gap-[var(--space-5)]">
+            {!remote ? <Notice tone="info">Asking the daemon for its remote access settings.</Notice> : <Inline wrap align="start" gap="spacious">
               <div className="grid gap-[var(--space-2)]">
                 {pairing && applied && remote.enabled && remote.listening ? <>
                   <QrImage svg={pairing.qrSvg} label="Pairing code" />
@@ -181,7 +181,7 @@ export function ConnectPhoneDialog({ client, onClose }: { client: HoustonClient 
                 {applied && remote.enabled && remote.listening && !pairing && <Button onClick={retry}>Get a new code</Button>}
                 <PairingProgress listening={remote.enabled && remote.listening} waiting={!!pairing && applied} />
               </div>
-            </div>}
+            </Inline>}
           </>}
           {(error || remote?.error) && <Notice tone="danger">{error ?? remote?.error}</Notice>}
           {copyState !== 'idle' && <Notice tone={copyState === 'error' ? 'warn' : 'info'}>{copyState === 'error' ? 'Could not copy. Select and copy the text above.' : 'Copied.'}</Notice>}
