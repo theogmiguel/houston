@@ -10,11 +10,16 @@ daemon starts, every six hours after that, and whenever you press **Check now**.
 The same schedule checks the model catalog used by Usage and the context indicator.
 Checks reuse cached responses when the server confirms nothing changed.
 
-The request goes to GitHub's releases API and asks one question: what is the latest
-release. It carries nothing about you — not your version, not your operating system, not
-any identifier — and nothing comes back except the release's own public details. Draft
-releases are ignored, and so is a prerelease: a release candidate is cut as a tag and
+The request fetches the public `latest.json` update manifest from the project's GitHub
+releases — the same file the in-app updater reads — and asks one question: what is the latest
+release. It is not a GitHub API call, so it does not draw on the anonymous API quota shared
+by everyone behind your public IP address. It carries nothing about you — not your version,
+not your operating system, not any identifier — and nothing comes back except the release's
+own public details. A prerelease is ignored: a release candidate is cut as a tag and
 installed by hand, never offered as an update.
+
+If GitHub refuses the check because of a rate limit, the panel names the limit, how much of
+it was used and when it resets, when GitHub reports them.
 
 **Switching it off.** Settings ▸ About ▸ *Check for updates*. Off means the request is
 never made, and the panel says so rather than going quiet. The current value is always on
