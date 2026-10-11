@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { GhosttyTerminalCore } from './core'
 import { GhosttyRuntime } from './runtime'
 const cores: GhosttyTerminalCore[] = []
-afterEach(() => { cores.splice(0).forEach(core => core.dispose()) })
+afterEach(() => { cores.splice(0).forEach(core => core.dispose()); vi.restoreAllMocks() })
 it('real WASM preserves OSC, DCS, CSI, UTF-8, modes and replies across arbitrary write boundaries', async () => {
   const runtime = await GhosttyRuntime.loadFromBytes(
     readFileSync(new URL('./vendor/ghostty-vt.wasm', import.meta.url)),
@@ -30,3 +30,18 @@ it('real WASM preserves OSC, DCS, CSI, UTF-8, modes and replies across arbitrary
   }
 })
 
+it('refuses oversized paste before allocating UTF-8 or WASM scratch', async () => {
+  const runtime = await GhosttyRuntime.loadFromBytes(
+    readFileSync(new URL('./vendor/ghostty-vt.wasm', import.meta.url)),
+    readFileSync(new URL('./vendor/ghostty-write-pty.wasm', import.meta.url)))
+  const core = await GhosttyTerminalCore.create(80, 24, 8, 17,
+    { foreground: { r: 229, g: 231, b: 235 }, background: { r: 12, g: 12, b: 12 }, cursor: { r: 255, g: 255, b: 255 } }, () => {}, runtime)
+  cores.push(core)
+  const allocation = vi.spyOn(runtime, "alloc")
+  const utf8 = vi.spyOn(TextEncoder.prototype, "encode")
+  expect(() => core.encodePaste('é'.repeat(65537))).toThrow(/requested 65537.*limit 65536/)
+  expect(allocation).not.toHaveBeenCalled()
+  expect(utf8).not.toHaveBeenCalled()
+  core.write('\x1b[?2004h')
+  expect(core.encodePaste('é🙂')).toBe('\x1b[200~é🙂\x1b[201~')
+})

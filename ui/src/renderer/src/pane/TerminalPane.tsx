@@ -342,6 +342,7 @@ export function TerminalPane({
         return mod.GhosttyTerminalSurface.create(mountEl, options)
       },
       toGhosttyTheme: ghosttyThemeFromCss,
+      onInputRefused: message => pushToastRef.current('Input refused', message, 'danger'),
       onAttached: () => setSurfaceAttached(true),
       onAttachOverflow: (totalDropped) => {
         pushToastRef.current(
@@ -1025,7 +1026,7 @@ export function TerminalPane({
       term.textarea?.addEventListener('keydown', onKeyDownTrace)
     }
 
-    const disposeData = term.onData((d) => {
+    const disposeData = term.onData((d, reply) => {
       const { deliver, state } = decideImeDelivery(imeState.current, d, performance.now())
       imeState.current = state
       if (tracing) {
@@ -1035,7 +1036,8 @@ export function TerminalPane({
       }
       const inputHeld = seqRef.current.awaitingSnapshot && !overflowResyncRef.current
       if (liveRef.current && deliver && !inputHeld) {
-        clientRef.current.sendStdin(info.id, d)
+        if (reply) clientRef.current.sendStdin(info.id, d, true)
+        else clientRef.current.sendStdin(info.id, d)
       }
     })
 

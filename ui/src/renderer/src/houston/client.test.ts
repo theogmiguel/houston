@@ -1353,3 +1353,17 @@ it('bounds removed-session bookkeeping through real control delivery and suppres
   await expect(client.waitForReady(2001)).resolves.toBe(true)
   client.close()
 })
+
+it('surfaces refused input and parser replies through the visible error subscription', async () => {
+  const { client } = await connectFakeClient()
+  const transport = getTransport(client)
+  const error = vi.fn()
+  client.subscribe('error', error)
+  const write = vi.spyOn(transport, 'write').mockImplementation(() => { throw new Error('Input refused: current 1048576; requested 12; limit 1048576') })
+  expect(client.sendStdin(7, 'paste')).toBe(false)
+  expect(client.sendStdin(7, '\x1b[1;1R', true)).toBe(false)
+  expect(write).toHaveBeenLastCalledWith(7, '\x1b[1;1R', true)
+  expect(error).toHaveBeenCalledTimes(2)
+  expect(error.mock.calls[0][0].message).toContain('requested 12')
+  client.close()
+})

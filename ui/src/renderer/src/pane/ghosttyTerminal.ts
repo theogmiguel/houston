@@ -54,7 +54,7 @@ export interface PaneTerminal {
   getSelection(): string
   clearSelection(): void
   onSelectionChange(listener: () => void): PaneDisposable
-  onData(listener: (data: string) => void): PaneDisposable
+  onData(listener: (data: string, reply?: boolean) => void): PaneDisposable
   onRender(listener: () => void): PaneDisposable
   registerLinkProvider(provider: PaneLinkProvider): PaneDisposable
   attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void
@@ -100,6 +100,7 @@ export interface GhosttyTerminalInit {
   // Narrated out of band (a toast), never written into the stream -- inside
   // a full-screen TUI an inline marker would land mid-frame.
   readonly onAttachOverflow?: (totalDroppedBytes: number, capBytes: number) => void
+  readonly onInputRefused?: (message: string) => void
   // Fires once the engine is live and has drained what queued during create.
   // Before this, no keystroke can reach the PTY however focused the pane
   // looks. Never fires if create throws.
@@ -109,7 +110,8 @@ export interface GhosttyTerminalInit {
 export interface GhosttySurfaceCreateOptions {
   readonly theme: GhosttyTheme
   readonly font: { family: string; size: number; lineHeight?: number }
-  readonly onData: (data: string) => void
+  readonly onData: (data: string, reply?: boolean) => void
+  readonly onInputRefused?: (message: string) => void
   readonly onResize: (cols: number, rows: number) => void
   readonly onSelectionChange: () => void
   readonly beforeKey: (event: KeyboardEvent) => boolean
@@ -166,7 +168,7 @@ export class GhosttyPaneTerminal implements PaneTerminal {
   private surface: GhosttyTerminalSurface | null = null
   private disposed = false
   private readonly init: GhosttyTerminalInit
-  private readonly dataListeners = new Set<(data: string) => void>()
+  private readonly dataListeners = new Set<(data: string, reply?: boolean) => void>()
   private readonly renderListeners = new Set<() => void>()
   private readonly selectionListeners = new Set<() => void>()
   private readonly linkProviders: PaneLinkProvider[] = []
@@ -322,9 +324,13 @@ export class GhosttyPaneTerminal implements PaneTerminal {
         cursorBlink: this.optionsValue.cursorBlink ?? this.init.cursorBlink,
         readOnly: this.optionsValue.readOnly,
         maxScrollbackLines: this.init.maxScrollbackLines,
-        onData: (data) => {
+        onInputRefused: this.init.onInputRefused,
+        onData: (data, reply) => {
           if (this.optionsValue.readOnly || this.optionsValue.disableStdin) return
-          for (const listener of this.dataListeners) listener(data)
+          for (const listener of this.dataListeners) {
+            if (reply) listener(data, true)
+            else listener(data)
+          }
         },
         onResize: (cols, rows) => {
           this.colsValue = cols
@@ -580,7 +586,7 @@ export class GhosttyPaneTerminal implements PaneTerminal {
     return { dispose: () => this.selectionListeners.delete(listener) }
   }
 
-  onData(listener: (data: string) => void): PaneDisposable {
+  onData(listener: (data: string, reply?: boolean) => void): PaneDisposable {
     this.dataListeners.add(listener)
     return { dispose: () => this.dataListeners.delete(listener) }
   }

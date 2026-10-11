@@ -1035,9 +1035,14 @@ export class HoustonClient {
     this.send({ type: 'history_count' })
   }
 
-  sendStdin(session: number, data: string): boolean {
+  sendStdin(session: number, data: string, reply = false): boolean {
     const writeStartedMs = performance.now()
-    const ok = this.terminals.write(session, data)
+    let ok: boolean
+    try { ok = reply ? this.terminals.write(session, data, true) : this.terminals.write(session, data) }
+    catch (error) {
+      this.dispatchLocal({ type: 'error', message: String((error as Error).message ?? error), context: null })
+      return false
+    }
     if (ok) this.latency.recordWrite(session, data, performance.now() - writeStartedMs)
     if (data.includes('\n') || data.includes('\r')) this.invalidateCwdCache(session)
     return ok

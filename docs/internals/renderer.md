@@ -77,7 +77,14 @@ recent-removal set suppresses late readiness and background queries; exited sess
 remain in the roster keep their readiness suppression until removal.
 
 `sendStdin` is the outbound path: `term.onData` → `client.sendStdin` → the transport's
-`write`. It is not queued — a keystroke goes straight out.
+`write`. Each accepted input is sent as one binary frame, preserving paste transaction
+ordering. Paste encoding admits at most 65,536 UTF-16 code units before UTF-8/WASM
+allocation (at most 192 KiB of UTF-8), and individual input frames are capped at
+256 KiB. Socket admission caps operator backlog at 1 MiB; parser-generated replies
+have a separate 64 KiB reserve. A saturated reserve is also a visible error, never
+an unreported reply loss. These are bounded admission policies, not delivery receipts:
+WebSocket acceptance does not establish PTY consumption. Large content should use
+files; renderer input does not add a second unbounded queue.
 
 `PaneWriteQueue` (`pane/writeQueue.ts`) is the **inbound** pipeline, between arriving frames
 and the engine's synchronous `term.write`. It owns a hard byte chunk ceiling,

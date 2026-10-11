@@ -9,6 +9,12 @@ import {
 } from '../client'
 import type { SessionInfo } from '../generated/SessionInfo'
 
+// At least four maximum paste transactions fit before admission stops. Replies have a
+// separate 64 KiB reserve so a saturated operator backlog does not lose queries.
+export const MAX_SOCKET_INPUT_BYTES = 1024 * 1024
+export const REPLY_RESERVE_BYTES = 64 * 1024
+const MAX_INPUT_FRAME_BYTES = 256 * 1024
+
 const RESIZE_ACK_TIMEOUT_MS = 1500
 
 const ATTACH_REPLY_TIMEOUT_MS = 1500
@@ -129,14 +135,21 @@ export class WsTerminalTransport implements TerminalTransport {
     return promise
   }
 
-  write(session: number, data: string): boolean {
+  write(session: number, data: string, reply = false): boolean {
     if (this.ws.readyState !== WebSocket.OPEN) {
-      console.warn(
-        `houston: dropped stdin for session ${session} — socket is ${['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][this.ws.readyState] ?? this.ws.readyState}`
-      )
-      return false
+      throw new Error(`Input refused for session ${session}: socket state ${this.ws.readyState}; expected OPEN (${WebSocket.OPEN})`)
     }
-    this.ws.send(encodeStdinFrame(session, this.encoder.encode(data)))
+    const actual = this.ws.bufferedAmount ?? 0
+    const limit = MAX_SOCKET_INPUT_BYTES + (reply ? REPLY_RESERVE_BYTES : 0)
+    // Refuse before encoding or frame allocation when even the minimum cannot fit.
+    if (data.length > MAX_INPUT_FRAME_BYTES || actual + data.length + 5 > limit) {
+      throw new Error(`Input refused for session ${session}: current socket backlog ${actual} bytes; requested ${data.length} code units plus 5 framing bytes; limit ${limit} bytes (frame limit ${MAX_INPUT_FRAME_BYTES} code units)`)
+    }
+    const bytes = this.encoder.encode(data)
+    if (bytes.length + 5 > MAX_INPUT_FRAME_BYTES || actual + bytes.length + 5 > limit) {
+      throw new Error(`Input refused for session ${session}: current socket backlog ${actual} bytes; requested ${bytes.length + 5} bytes; limit ${limit} bytes (frame limit ${MAX_INPUT_FRAME_BYTES} bytes)`)
+    }
+    this.ws.send(encodeStdinFrame(session, bytes))
     return true
   }
 

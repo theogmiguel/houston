@@ -1,3 +1,4 @@
+import { assertPasteBudget } from "./inputBudget";
 import {
   type GhosttyKeyboardLayoutMap,
   ghosttyKeyForCode,
@@ -646,6 +647,7 @@ export class GhosttyTerminalCore {
 
   encodePaste(data: string): string {
     this.ensureActive();
+    assertPasteBudget(data);
     const input = encoder.encode(data);
     if (input.length === 0) return "";
     const inputPointer = this.runtime.alloc(input.length);
