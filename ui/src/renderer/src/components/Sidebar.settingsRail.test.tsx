@@ -194,6 +194,7 @@ describe('Sidebar rail — Settings mode state matrix', () => {
       'dictation',
       'privacy',
       'daemon',
+      'remote',
       'about'
     ])
   })

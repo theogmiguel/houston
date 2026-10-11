@@ -10,7 +10,7 @@ describe('settingsSections', () => {
       ['privacy', 'Privacy & data'], ['daemon', 'Daemon'], ['remote', 'Remote access'], ['about', 'About']
     ])
     expect(SETTINGS_SECTIONS.find(({ id }) => id === 'notifications')?.pending).toBeUndefined()
-    expect(NAVIGABLE_SETTINGS_SECTIONS).toHaveLength(13)
+    expect(NAVIGABLE_SETTINGS_SECTIONS).toHaveLength(14)
   })
 
   it('keeps every section searchable', () => {
