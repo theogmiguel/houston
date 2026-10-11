@@ -67,6 +67,14 @@ impl RendererHealth {
         (!state.navigation_required).then_some(state.generation)
     }
 
+    fn current_generation(&self) -> u64 {
+        self.state().generation
+    }
+
+    fn prompt_is_current(&self, generation: u64) -> bool {
+        self.current_generation() == generation
+    }
+
     fn recover(&self, generation: u64) {
         let mut state = self.state();
         // Serialize acknowledgment with the native callback, including queued replies.
@@ -445,8 +453,7 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
                         .window
                         .app_handle()
                         .state::<Arc<RendererHealth>>()
-                        .probe_generation()
-                        == Some(generation)
+                        .prompt_is_current(generation)
                     {
                         let event = match outcome {
                             PromptOutcome::Reload => Some(Event::RecoveryConfirmed {
@@ -822,9 +829,8 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
             .state::<Arc<RendererHealth>>()
             .inner()
             .clone();
-        let Some(generation) = health.probe_generation() else {
-            return;
-        };
+        // A native crash dialog remains usable after the renderer has gone.
+        let generation = health.current_generation();
         let lease = PromptLease {
             incident_id,
             deadline_ms,
@@ -837,8 +843,7 @@ impl<R: Runtime, C: Clocks> Supervisor<R, C> {
         let slot = self.prompt.clone();
         let dispatch_lease = lease.clone();
         if let Err(err) = self.window.run_on_main_thread(move || {
-            let outcome = if tx.stop.load(Ordering::SeqCst)
-                || health.probe_generation() != Some(generation)
+            let outcome = if tx.stop.load(Ordering::SeqCst) || !health.prompt_is_current(generation)
             {
                 PromptOutcome::Cancelled
             } else {
@@ -1417,6 +1422,55 @@ mod tests {
 #[cfg(test)]
 mod reliability_tests {
     use super::*;
+
+    #[test]
+    fn focused_process_loss_keeps_native_wait_available_without_a_live_renderer() {
+        let health = RendererHealth::default();
+        let mut machine = Machine::new(Thresholds::default(), true, 0);
+        machine.on_event(Event::ProbeReturned { rtt_ms: 5 }, 1);
+        machine.on_event(Event::WindowFocused(true), 2);
+        health.record_termination();
+        let actions = machine.on_event(
+            Event::WebProcessTerminated {
+                reason: machine::TerminationReason::Crashed,
+            },
+            3,
+        );
+        let (incident_id, deadline_ms) = actions
+            .iter()
+            .find_map(|action| match action {
+                Action::PromptThenRecover {
+                    incident_id,
+                    deadline_ms,
+                } => Some((*incident_id, *deadline_ms)),
+                _ => None,
+            })
+            .expect("a focused crash must offer native confirmation");
+        assert_eq!(health.probe_generation(), None, "the renderer is gone");
+        let generation = health.current_generation();
+        assert!(
+            health.prompt_is_current(generation),
+            "native confirmation must still dispatch"
+        );
+        assert_eq!(
+            prompt_preflight(deadline_ms, &AtomicBool::new(false), 4),
+            None
+        );
+        let actions = machine.on_event(Event::RecoveryDeclined { incident_id }, 4);
+        assert!(!actions
+            .iter()
+            .any(|action| matches!(action, Action::Reload)));
+        let actions = machine.on_event(Event::Tick, deadline_ms + 1);
+        assert!(!actions
+            .iter()
+            .any(|action| matches!(action, Action::Reload)));
+        assert_eq!(machine.state(), machine::State::Halted);
+        health.page_loaded(true);
+        assert!(
+            !health.prompt_is_current(generation),
+            "navigation must invalidate an older answer"
+        );
+    }
 
     #[test]
     fn paint_recovery_keeps_native_close_health_until_current_page_paints() {
