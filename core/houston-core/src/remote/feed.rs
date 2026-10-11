@@ -714,6 +714,8 @@ impl SessionFeed {
 pub enum Change {
     Session(u32),
     Feed(u32, u64),
+    /// The desktop published another set of grids.
+    Grids,
 }
 
 pub struct FeedPage {

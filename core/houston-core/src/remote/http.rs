@@ -36,7 +36,35 @@ const INDEX_HTML: &str = include_str!("pwa/index.html");
 const APP_JS: &str = include_str!("pwa/app.js");
 const APP_CSS: &str = include_str!("pwa/app.css");
 const MANIFEST: &str = include_str!("pwa/manifest.webmanifest");
-const ICON_SVG: &str = include_str!("pwa/icon.svg");
+const ICON_PNG: &[u8] = include_bytes!("pwa/icon-192.png");
+const TOUCH_ICON_PNG: &[u8] = include_bytes!("pwa/apple-touch-icon.png");
+/// The renderer's typefaces, Latin subset, so a device reads in Houston's type.
+const FONTS: [(&str, &[u8]); 6] = [
+    (
+        "sans-400.woff2",
+        include_bytes!("pwa/fonts/plus-jakarta-sans-latin-400-normal.woff2"),
+    ),
+    (
+        "sans-500.woff2",
+        include_bytes!("pwa/fonts/plus-jakarta-sans-latin-500-normal.woff2"),
+    ),
+    (
+        "sans-600.woff2",
+        include_bytes!("pwa/fonts/plus-jakarta-sans-latin-600-normal.woff2"),
+    ),
+    (
+        "sans-700.woff2",
+        include_bytes!("pwa/fonts/plus-jakarta-sans-latin-700-normal.woff2"),
+    ),
+    (
+        "mono-400.woff2",
+        include_bytes!("pwa/fonts/jetbrains-mono-latin-400-normal.woff2"),
+    ),
+    (
+        "mono-500.woff2",
+        include_bytes!("pwa/fonts/jetbrains-mono-latin-500-normal.woff2"),
+    ),
+];
 
 /// Serves `router` on `listener` with the connection cap and idle timeout,
 /// until `shutdown` resolves.
@@ -183,7 +211,9 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/manifest.webmanifest", get(manifest))
-        .route("/icon.svg", get(icon))
+        .route("/icon-192.png", get(icon))
+        .route("/apple-touch-icon.png", get(touch_icon))
+        .route("/fonts/{name}", get(font))
         .route("/app.js", get(app_js))
         .route("/app.css", get(app_css))
         .route("/api/pair", post(pair))
@@ -300,7 +330,7 @@ async fn guard(State(daemon): State<Arc<Daemon>>, req: Request, next: Next) -> R
 
 /// Scripts and styles only from this listener's own files: no inline code runs.
 const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
-     img-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; \
+     img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; \
      form-action 'none'; frame-ancestors 'none'";
 
 async fn index() -> Response {
@@ -337,7 +367,18 @@ async fn manifest() -> Response {
 }
 
 async fn icon() -> Response {
-    ([(header::CONTENT_TYPE, "image/svg+xml")], ICON_SVG).into_response()
+    ([(header::CONTENT_TYPE, "image/png")], ICON_PNG).into_response()
+}
+
+async fn touch_icon() -> Response {
+    ([(header::CONTENT_TYPE, "image/png")], TOUCH_ICON_PNG).into_response()
+}
+
+async fn font(Path(name): Path<String>) -> Response {
+    match FONTS.iter().find(|(file, _)| *file == name) {
+        Some((_, bytes)) => ([(header::CONTENT_TYPE, "font/woff2")], *bytes).into_response(),
+        None => not_found().await,
+    }
 }
 
 async fn not_found() -> Response {
@@ -509,11 +550,15 @@ async fn sessions(
 ) -> Response {
     let result = blocking(move || {
         authenticate(&daemon, &headers, peer.0.ip())?;
-        Ok(daemon.remote_sessions())
+        let sessions = daemon.remote_sessions();
+        let grids = daemon.remote_grids(&sessions);
+        Ok((sessions, grids))
     })
     .await;
     match result {
-        Ok(sessions) => Json(json!({ "sessions": sessions })).into_response(),
+        Ok((sessions, grids)) => {
+            Json(json!({ "sessions": sessions, "grids": grids })).into_response()
+        }
         Err(refused) => refused.into_response(),
     }
 }
@@ -744,6 +789,7 @@ async fn events(
                 Ok(Change::Feed(id, seq)) => Event::default()
                     .event("feed")
                     .data(json!({ "id": id, "seq": seq }).to_string()),
+                Ok(Change::Grids) => Event::default().event("grids").data("{}"),
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Event::default().event("resync").data("{}"),
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
             },

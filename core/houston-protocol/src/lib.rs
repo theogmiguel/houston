@@ -3078,6 +3078,25 @@ pub struct RemoteInfo {
 
 pub const REMOTE_NOTIFY_DELAY_MAX_SECS: u32 = 600;
 
+/// A desktop grid as a paired device shows it: the panes it holds, in the
+/// grid's reading order. Grids live in renderer storage; this copy is how the
+/// daemon learns them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct RemoteGrid {
+    /// The workspace path the grid belongs to.
+    pub workspace: String,
+    pub id: String,
+    pub name: String,
+    pub sessions: Vec<u32>,
+}
+
+// Generous for one person's workspaces; they bound what a client can make the
+// daemon hold, and a refusal names the limit that tripped.
+pub const REMOTE_GRIDS_MAX: usize = 256;
+pub const REMOTE_GRID_SESSIONS_MAX: usize = 64;
+pub const REMOTE_GRID_NAME_MAX: usize = 120;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -4270,6 +4289,11 @@ pub enum ClientMsg {
     RemoteDeviceRevoke {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
+    },
+    /// Replaces the grids paired devices group panes by. No reply; a refusal
+    /// is an `error` with context `remote`.
+    RemoteGridsPublish {
+        grids: Vec<RemoteGrid>,
     },
 }
 

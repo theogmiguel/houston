@@ -1,5 +1,6 @@
 //! The daemon's side of remote access: persisted settings, the listener loop,
 //! pairing, and the observe-and-answer operations the HTTP API exposes.
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -420,6 +421,72 @@ impl Daemon {
                 .then_with(|| a.id.cmp(&b.id))
         });
         out
+    }
+
+    /// Replaces the grids devices group panes by. Refuses a set over the
+    /// limits instead of trimming it, naming the limit that tripped.
+    pub fn remote_grids_publish(&self, grids: Vec<proto::RemoteGrid>) -> anyhow::Result<()> {
+        if grids.len() > proto::REMOTE_GRIDS_MAX {
+            anyhow::bail!(
+                "remote grids: {} grids exceed the limit of {}; publish at most {} grids",
+                grids.len(),
+                proto::REMOTE_GRIDS_MAX,
+                proto::REMOTE_GRIDS_MAX
+            );
+        }
+        for grid in &grids {
+            if grid.id.is_empty() {
+                anyhow::bail!(
+                    "remote grids: a grid named {:?} has an empty id; expected a non-empty grid id",
+                    grid.name
+                );
+            }
+            if grid.sessions.len() > proto::REMOTE_GRID_SESSIONS_MAX {
+                anyhow::bail!(
+                    "remote grids: grid {:?} holds {} panes, over the limit of {} panes per grid",
+                    grid.id,
+                    grid.sessions.len(),
+                    proto::REMOTE_GRID_SESSIONS_MAX
+                );
+            }
+            let chars = grid.name.chars().count();
+            if chars > proto::REMOTE_GRID_NAME_MAX {
+                anyhow::bail!(
+                    "remote grids: grid {:?} has a {chars}-character name, over the limit of {} characters",
+                    grid.id,
+                    proto::REMOTE_GRID_NAME_MAX
+                );
+            }
+        }
+        let mut held = self.remote.grids.lock().expect("remote grids lock");
+        if *held != grids {
+            *held = grids;
+            drop(held);
+            self.remote.emit(Change::Grids);
+        }
+        Ok(())
+    }
+
+    /// The published grids restricted to `sessions`, in their published order.
+    /// A pane listed by two grids stays in the first; grids left empty are dropped.
+    pub fn remote_grids(&self, sessions: &[RemoteSession]) -> Vec<proto::RemoteGrid> {
+        let visible: HashSet<u32> = sessions.iter().map(|s| s.id).collect();
+        let mut placed = HashSet::new();
+        let held = self.remote.grids.lock().expect("remote grids lock");
+        held.iter()
+            .filter_map(|grid| {
+                let ids: Vec<u32> = grid
+                    .sessions
+                    .iter()
+                    .copied()
+                    .filter(|id| visible.contains(id) && placed.insert(*id))
+                    .collect();
+                (!ids.is_empty()).then(|| proto::RemoteGrid {
+                    sessions: ids,
+                    ..grid.clone()
+                })
+            })
+            .collect()
     }
 
     fn remote_target(&self, id: u32) -> Result<Arc<super::Session>, ApiError> {

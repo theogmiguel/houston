@@ -37,6 +37,7 @@ import type {
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
 import type { VoiceDevice } from "./houston/generated/VoiceDevice";
+import { useRemoteGridPublish } from "./houston/useRemoteGridPublish";
 import type { VoiceModelState } from "./houston/generated/VoiceModelState";
 import type { VoiceSettings } from "./houston/generated/VoiceSettings";
 import {
@@ -1694,6 +1695,7 @@ export function App(): React.JSX.Element {
       bootClient?.close();
     };
   }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
+  useRemoteGridPublish(conn.kind === "ready" ? conn.client : null);
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
     return registerOwned(outputHandlers.current, id, sink);

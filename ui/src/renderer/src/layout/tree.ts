@@ -664,6 +664,21 @@ function removePaneKinds(node: LayoutNode, kinds: PaneNode['kind'][]): LayoutNod
 
 export function saveLayout(workspaceKey: string, state: LayoutState): void {
   localStorage.setItem(KEY_PREFIX + workspaceKey, JSON.stringify({ tree: state.tree, cols: state.cols }))
+  notifyGridsSaved()
+}
+
+const gridsSavedListeners = new Set<() => void>()
+
+/** Runs `listener` after any grid list or grid layout is written to storage. */
+export function onGridsSaved(listener: () => void): () => void {
+  gridsSavedListeners.add(listener)
+  return () => {
+    gridsSavedListeners.delete(listener)
+  }
+}
+
+function notifyGridsSaved(): void {
+  for (const listener of gridsSavedListeners) listener()
 }
 
 // Writes back every saved grid without its legacy `git` leaf, and reports the
@@ -751,6 +766,46 @@ function parseGridMetaArray(raw: unknown): GridMeta[] | null {
 
 function saveGrids(path: string, grids: GridMeta[]): void {
   localStorage.setItem(gridsKey(path), JSON.stringify(grids))
+  notifyGridsSaved()
+}
+
+export interface SavedGrid {
+  workspace: string
+  id: string
+  name: string
+  sessions: number[]
+}
+
+/** Every saved grid of every workspace, with its sessions in reading order. Reads
+ *  storage only: unlike `loadGrids`, it never migrates or writes. */
+export function savedGrids(): SavedGrid[] {
+  const out: SavedGrid[] = []
+  try {
+    const paths: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key !== null && key.startsWith(GRIDS_KEY_PREFIX)) paths.push(key.slice(GRIDS_KEY_PREFIX.length))
+    }
+    for (const workspace of paths.sort()) {
+      let metas: GridMeta[] | null = null
+      try {
+        metas = parseGridMetaArray(JSON.parse(localStorage.getItem(gridsKey(workspace)) ?? 'null'))
+      } catch {
+        continue
+      }
+      for (const grid of metas ?? []) {
+        let tree: LayoutNode | null = null
+        try {
+          const raw = JSON.parse(localStorage.getItem(KEY_PREFIX + gridStorageKey(workspace, grid.id)) ?? 'null')
+          tree = raw && typeof raw === 'object' && isNode(raw.tree) ? (raw.tree as LayoutNode) : null
+        } catch {
+        }
+        out.push({ workspace, id: grid.id, name: grid.name, sessions: preorderSessions(tree) })
+      }
+    }
+  } catch {
+  }
+  return out
 }
 
 function migrateLegacyLayout(path: string): GridMeta[] {

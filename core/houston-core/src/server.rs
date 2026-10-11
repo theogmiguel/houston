@@ -3304,6 +3304,12 @@ async fn dispatch(
             remote_reply(sink, result).await;
             Ok(())
         }
+        proto::ClientMsg::RemoteGridsPublish { grids } => {
+            if let Err(e) = daemon.remote_grids_publish(grids) {
+                send_error(sink, format!("{e:#}"), Some("remote".into())).await;
+            }
+            Ok(())
+        }
     }
 }
 

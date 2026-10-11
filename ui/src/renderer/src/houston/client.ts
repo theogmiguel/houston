@@ -33,6 +33,7 @@ import type { PrListState } from './generated/PrListState'
 import type { PrListInvolvement } from './generated/PrListInvolvement'
 import type { PrSort } from './generated/PrSort'
 import type { PrStackHead } from './generated/PrStackHead'
+import type { RemoteGrid } from './generated/RemoteGrid'
 
 
 /// The optional fields of `remote_configure`; an absent field keeps its value.
@@ -1532,6 +1533,10 @@ export class HoustonClient {
 
   remoteDeviceRevoke(id: number): void {
     this.send({ type: 'remote_device_revoke', id })
+  }
+
+  remoteGridsPublish(grids: RemoteGrid[]): void {
+    this.send({ type: 'remote_grids_publish', grids })
   }
 
   taskStart(id: number, agent: AgentKind, base: string | null = null, workspace: string | null = null): void {

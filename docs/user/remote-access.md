@@ -17,7 +17,7 @@ panes. That is as much access as a shell on this computer as your user: treat a 
 device, and the link it was paired with, like an unlocked terminal. A device cannot pair
 other devices, change settings, open or close panes. Revoke a device you lose straight away.
 
-**View screen** is a read-only text snapshot of the last 40 lines that refreshes while the
+**View screen**, in a pane's **⋯** menu, is a read-only text snapshot of the last 40 lines that refreshes while the
 sheet is open. Its key row sends input to the pane; the snapshot never resizes or takes
 over the pane on your desktop. **Computer ▸ Screen text size** changes its text size on
 this device.
@@ -106,29 +106,33 @@ remote access address and whether that address uses HTTPS.
 1. In Settings ▸ Remote access ▸ Devices, choose **Connect phone…**. Houston shows a QR code and a
    link that work once and expire after 10 minutes.
 2. Scan the code with the phone's camera, or open the link on the other computer.
-3. Confirm the suggested device name or enter another, then choose **Connect this phone**.
+3. Check the address and connection shown, confirm the suggested device name or enter
+   another, then choose **Connect**.
    The device is listed under **Devices** with the time it was last seen.
 4. Follow the browser-specific installation steps if you want a home-screen shortcut,
-   then choose **Open Houston**. These steps are also in **Computer ▸ App**.
+   then choose **Open Houston**. Until Houston is installed, the steps are also in **Computer**.
 
 On a phone, use the browser's **Add to Home Screen** to open Houston like an app. Each
 browser keeps its own pairing; a device that lost its pairing (for example, after clearing
-site data) asks to be paired again.
+site data) asks to be paired again. An expired or used code explains how to get a new one.
 
 ## Answer an agent
 
 The phone has four tabs:
 
-- **Inbox** shows one request at a time. Use the arrows to move between requests. When
-  nothing needs you, it shows working panes and recent replies.
-- **Panes** lists tiles, with waiting panes first, followed by working and idle panes.
-  Workspace chips show counts and an amber dot when a pane there needs you. The workspace
-  choice is remembered on this device.
+- **Inbox** shows one request at a time. Swipe or use the arrows to move between requests.
+  When nothing needs you, it shows working panes and recent replies.
+- **Panes** groups tiles by the grids of the desktop application, in each workspace, with
+  waiting panes first, followed by working and idle panes. Each tile shows the agent's
+  provider and its latest step or reply. Tap a grid's name to collapse it; panes that are in
+  no grid are listed under **Not in a grid**. Workspace chips show counts and an amber dot
+  when a pane there needs you. The workspace choice and collapsed grids are remembered on
+  this device. Grids appear once the desktop application has connected to the daemon.
 - **Activity** shows recent finishes, requests and answers across panes. Tap an entry to
   open its conversation near that event. Older entries may have left the conversation's
   bounded history. Computers without activity support show an availability message.
 - **Computer** shows the host, connection route and device name. Vibration, quick replies
-  and screen text size are device-local preferences; notifications and remote access
+  and screen text size are device-local preferences, as are collapsed grids; notifications and remote access
   settings are configured on the computer.
 
 The page title counts waiting panes. Android can vibrate for a new request while Houston
@@ -146,9 +150,9 @@ request waiting on you is a card above the message box:
 - **Permission:** **Approve**, **Deny**, and **Always** when the CLI offers to stop asking
   for similar requests.
 - **Question:** in Inbox, tap an option to send it. In a pane, select an option and choose
-  **Next**. Choose **Other…** to type your own answer in the message box.
-  Questions whose options carry previews offer no **Other…**; type that answer in the
-  terminal.
+  **Send answer**. Choose **Something else…** to type your own answer in the message box.
+  Questions whose options carry previews offer no **Something else…**; type that answer in
+  the terminal.
 
 After a tap the card shows **Sent** and takes no further tap until the agent moves on, which
 for an approved command can be when the command finishes. Houston answers by typing the same
@@ -171,12 +175,15 @@ Each pane shows user messages, agent replies and a work log. Claude tool calls t
 remain in the log with a **failed** label and count toward the turn summary;
 listed edit paths include attempted edits even when the tool failed. When the computer
 reports a turn end, a log with steps folds into a summary with its duration and changed
-files. Tap the summary to reopen it. Each turn ends with one timestamped divider, including
-turns with no tool steps. Older computers show the tool steps without a duration or
+files. Tap the summary to reopen it. A stopped or failed turn ends with a timestamped
+divider. Older computers show the tool steps without a duration or
 changed-file card.
 Child panes appear together
 when the computer reports their relationship, and a child that needs you has an **Open**
-band. Quick replies appear while idle after a finished turn and fill the message box without sending.
+band. Quick replies appear while the agent is idle after a reply and fill the message box
+without sending. Edit them with the pencil at the end of the row or in **Computer ▸ Quick
+replies**; they are kept on this device, up to 12. On a phone, swipe from the left edge
+of a pane to go back.
 
 The message box sends your text and presses Enter. Multi-line text works only when the
 program in the pane accepts pasted text; otherwise send one line at a time. The keys button shows the
@@ -217,7 +224,7 @@ them on your server.
 
 ## Revoke a device or turn it off
 
-**Computer ▸ Disconnect this device** forgets this browser's token and clears its displayed
+**Computer ▸ Disconnect this phone** forgets this browser's token and clears its displayed
 conversations. It does not revoke the token on the computer: use **Settings ▸ Remote
 access ▸ Devices ▸ Revoke…** there to revoke access. Pair again to reconnect this browser.
 

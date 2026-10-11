@@ -5,6 +5,7 @@ mod common;
 use common::{connect_and_hello, next_control, start_daemon_with_handle, WsStream, TOKEN};
 use futures_util::SinkExt;
 use houston_protocol as proto;
+use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 
 async fn send(ws: &mut WsStream, msg: proto::ClientMsg) {
@@ -118,4 +119,77 @@ async fn settings_read_configure_pair_and_revoke_over_ws() {
     .await;
     assert_eq!(context.as_deref(), Some("remote"));
     assert!(message.contains("4242"), "{message}");
+}
+
+#[tokio::test]
+async fn grids_publish_over_ws_and_refuse_a_grid_over_the_pane_limit() {
+    let (addr, _state, daemon) = start_daemon_with_handle().await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let dir = tempfile::tempdir().unwrap();
+    let info = daemon
+        .create_session(houston_core::daemon::CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: dir.path().to_path_buf(),
+            cmd: Some(vec!["sleep".into(), "30".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let grid = |sessions: Vec<u32>| proto::RemoteGrid {
+        workspace: dir.path().display().to_string(),
+        id: "main".into(),
+        name: "Main".into(),
+        sessions,
+    };
+
+    send(
+        &mut ws,
+        proto::ClientMsg::RemoteGridsPublish {
+            grids: vec![grid(vec![info.id])],
+        },
+    )
+    .await;
+    let mut published = Vec::new();
+    for _ in 0..100 {
+        published = daemon.remote_grids(&daemon.remote_sessions());
+        if !published.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(published, vec![grid(vec![info.id])]);
+
+    let over = proto::REMOTE_GRID_SESSIONS_MAX as u32 + 1;
+    send(
+        &mut ws,
+        proto::ClientMsg::RemoteGridsPublish {
+            grids: vec![grid((1..=over).collect())],
+        },
+    )
+    .await;
+    let (message, context) = next_matching(&mut ws, |m| match m {
+        proto::ServerMsg::Error { message, context } => Some((message, context)),
+        _ => None,
+    })
+    .await;
+    assert_eq!(context.as_deref(), Some("remote"));
+    assert!(message.contains(&over.to_string()), "{message}");
+    assert!(
+        message.contains(&proto::REMOTE_GRID_SESSIONS_MAX.to_string()),
+        "{message}"
+    );
+    // A refusal stores nothing: the earlier grids stay.
+    assert_eq!(
+        daemon.remote_grids(&daemon.remote_sessions()),
+        vec![grid(vec![info.id])]
+    );
+    daemon.kill(info.id).ok();
 }

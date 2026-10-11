@@ -263,7 +263,7 @@ async fn the_web_client_is_served_with_a_strict_policy() {
     let (_daemon, addr, _state) = remote_daemon().await;
     let reply = request(addr, "GET", "/", &[], None).await;
     assert_eq!(reply.status, 200);
-    assert!(reply.body.contains("Pair this device"));
+    assert!(reply.body.contains("Connect your phone"));
     let headers = reply.headers.to_ascii_lowercase();
     assert!(headers.contains(
         "content-security-policy: default-src 'none'; script-src 'self'; style-src 'self';"
@@ -285,8 +285,28 @@ async fn the_web_client_is_served_with_a_strict_policy() {
     assert_eq!(manifest.status, 200);
     assert_eq!(manifest.json()["display"], "standalone");
     assert_eq!(
-        request(addr, "GET", "/icon.svg", &[], None).await.status,
+        request(addr, "GET", "/icon-192.png", &[], None)
+            .await
+            .status,
         200
+    );
+    assert_eq!(
+        request(addr, "GET", "/apple-touch-icon.png", &[], None)
+            .await
+            .status,
+        200
+    );
+    let font = request(addr, "GET", "/fonts/sans-400.woff2", &[], None).await;
+    assert_eq!(font.status, 200);
+    assert!(font
+        .headers
+        .to_ascii_lowercase()
+        .contains("content-type: font/woff2"));
+    assert_eq!(
+        request(addr, "GET", "/fonts/other.woff2", &[], None)
+            .await
+            .status,
+        404
     );
     assert_eq!(request(addr, "GET", "/ws", &[], None).await.status, 404);
     assert_eq!(
@@ -742,4 +762,51 @@ async fn sessions_expose_null_orchestration_fields_for_root_panes() {
     assert_eq!(row.get("parent"), Some(&serde_json::Value::Null));
     assert_eq!(row.get("role"), Some(&serde_json::Value::Null));
     daemon.kill(info.id).unwrap();
+}
+
+#[tokio::test]
+async fn sessions_carry_the_published_grids_restricted_to_listed_panes() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let (token, _) = pair(&daemon, addr).await;
+    let (first, _d1) = pane(&daemon, &["sleep", "30"]);
+    let (second, _d2) = pane(&daemon, &["sleep", "30"]);
+    let grid = |id: &str, name: &str, sessions: Vec<u32>| proto::RemoteGrid {
+        workspace: "/projects/api".into(),
+        id: id.into(),
+        name: name.into(),
+        sessions,
+    };
+    daemon
+        .remote_grids_publish(vec![
+            // A pane closed since the publish is dropped from the grid.
+            grid("g1", "Auth work", vec![first.id, 9999, second.id]),
+            // A pane already placed stays in the first grid, leaving this one empty.
+            grid("g2", "Duplicate", vec![second.id]),
+            grid("g3", "Gone", vec![9998]),
+        ])
+        .unwrap();
+
+    let auth = format!("Bearer {token}");
+    let reply = request(
+        addr,
+        "GET",
+        "/api/sessions",
+        &[("Authorization", &auth)],
+        None,
+    )
+    .await;
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let grids = reply.json()["grids"].clone();
+    assert_eq!(
+        grids,
+        serde_json::json!([{
+            "workspace": "/projects/api",
+            "id": "g1",
+            "name": "Auth work",
+            "sessions": [first.id, second.id],
+        }])
+    );
+    for info in [first, second] {
+        daemon.kill(info.id).ok();
+    }
 }

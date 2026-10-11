@@ -627,6 +627,9 @@ pub struct Runtime {
     pub(crate) event_streams: std::sync::Arc<tokio::sync::Semaphore>,
     streams: Arc<Mutex<StreamRegistry>>,
     revoked_hashes: Mutex<VecDeque<String>>,
+    /// The renderer's grids, held in memory: the renderer publishes them again
+    /// whenever it connects.
+    pub(crate) grids: Mutex<Vec<proto::RemoteGrid>>,
 }
 
 impl Default for Runtime {
@@ -656,6 +659,7 @@ impl Runtime {
             event_streams: std::sync::Arc::new(tokio::sync::Semaphore::new(EVENT_STREAMS_MAX)),
             streams: Arc::new(Mutex::new(StreamRegistry::default())),
             revoked_hashes: Mutex::new(VecDeque::new()),
+            grids: Mutex::new(Vec::new()),
         }
     }
 
