@@ -613,9 +613,8 @@ body[data-view="pane"] .view { display: flex; flex-direction: column; padding-bo
 .jump svg { width: 14px; height: 14px; stroke-width: 2.2; }
 
 /* ---------- Dock ---------- */
-/* --keyboard is the part of the layout viewport an iOS keyboard covers (app.js). */
 .dock {
-  position: sticky; bottom: var(--keyboard, 0px); z-index: 10; margin: 0 calc(-1 * var(--gutter));
+  position: sticky; bottom: 0; z-index: 10; margin: 0 calc(-1 * var(--gutter));
   padding: 6px calc(var(--gutter) + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(var(--gutter) + env(safe-area-inset-left));
   background: linear-gradient(transparent, var(--content-bg) 14px); display: grid; gap: 8px;
 }
@@ -701,6 +700,14 @@ body[data-view="pane"] .view { display: flex; flex-direction: column; padding-bo
 .send.stop { background: var(--text-primary); color: var(--content-bg); }
 .send.stop .sq { width: 11px; height: 11px; border-radius: 2px; background: currentColor; }
 .send.armed { width: auto; padding: 0 12px; border-radius: 18px; background: var(--stop); color: #fff; font-size: 12.5px; font-weight: 700; }
+
+/* While typing on a touch screen the page is a frame the size of the visible
+   area (--vv-top, --vv-h from app.js), so the keyboard never covers the dock. */
+body.composing { position: fixed; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100dvh); min-height: 0; overflow: hidden; }
+body.composing #view-pane { min-height: 0; overflow: hidden; }
+body.composing .conv { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) var(--s3); }
+body.composing .dock { position: static; }
+body.composing .jump { display: none; }
 
 /* ---------- Sheets ---------- */
 .sheet {

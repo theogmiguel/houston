@@ -387,7 +387,7 @@
     $("bar-meta").classList.add("hidden");
     $("jump").classList.add("hidden");
     document.body.dataset.view = view;
-    document.body.classList.remove("scrolled");
+    document.body.classList.remove("scrolled", "composing");
     setLive(S.live);
     if (view !== "pane") $("heading").textContent = view === "list" ? homeTitle() : "Houston";
     if (from && from !== view) {
@@ -1134,14 +1134,20 @@
     else { if ($("screen-sheet").open) closeSheet($("screen-sheet")); clearTimeout(S.timers.screen); }
   }
 
+  // While typing on a touch screen the conversation scrolls inside a frame
+  // (see fitKeyboard); otherwise the document scrolls.
+  function scroller() {
+    return document.body.classList.contains("composing") ? $("conv") : document.scrollingElement || document.documentElement;
+  }
+
   function pinned() {
-    var d = document.scrollingElement || document.documentElement;
-    return d.scrollTop + window.innerHeight >= d.scrollHeight - 120;
+    var d = scroller();
+    return d.scrollTop + d.clientHeight >= d.scrollHeight - 120;
   }
 
   function toBottom(smooth) {
-    var d = document.scrollingElement || document.documentElement;
-    if (smooth) window.scrollTo({ top: d.scrollHeight, behavior: "smooth" });
+    var d = scroller();
+    if (smooth && d.scrollTo) d.scrollTo({ top: d.scrollHeight, behavior: "smooth" });
     else d.scrollTop = d.scrollHeight;
     $("jump").classList.add("hidden");
   }
@@ -2028,22 +2034,47 @@
     });
   })();
 
-  // iOS ignores interactive-widget=resizes-content: the keyboard covers the
-  // layout viewport, so the dock is lifted by the part the keyboard hides, and
-  // the decision card folds to its title while the message box has focus.
+  // iOS ignores interactive-widget=resizes-content and pans the page itself
+  // when the keyboard opens, so lifting the dock by the covered height counts
+  // the keyboard twice. While the message box has focus on a touch screen, the
+  // page becomes a frame the size of the visible area instead: the bar on top,
+  // the conversation scrolling inside, the dock at the bottom right above the
+  // keyboard. The decision card folds to its title meanwhile.
+  var touch = !!window.visualViewport && !!window.matchMedia && matchMedia("(pointer: coarse)").matches;
+
   function fitKeyboard() {
-    var vv = window.visualViewport;
-    if (!vv) return;
-    var hidden = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-    document.documentElement.style.setProperty("--keyboard", hidden + "px");
-    $("dock").classList.toggle("composing", document.activeElement === $("text"));
+    var vv = window.visualViewport, body = document.body;
+    var typing = document.activeElement === $("text");
+    $("dock").classList.toggle("composing", typing);
+    var frame = touch && typing && S.view === "pane";
+    if (frame && !body.classList.contains("composing")) {
+      var stick = pinned(), at = window.scrollY;
+      body.classList.add("composing");
+      var conv = $("conv");
+      conv.scrollTop = stick ? conv.scrollHeight : at;
+    } else if (!frame && body.classList.contains("composing")) {
+      var inner = $("conv"), bottom = inner.scrollTop + inner.clientHeight >= inner.scrollHeight - 120, top = inner.scrollTop;
+      body.classList.remove("composing");
+      if (S.view === "pane") { if (bottom) toBottom(); else window.scrollTo(0, top); }
+    }
+    if (frame) {
+      document.documentElement.style.setProperty("--vv-top", Math.round(vv.offsetTop) + "px");
+      document.documentElement.style.setProperty("--vv-h", Math.round(vv.height) + "px");
+    }
   }
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitKeyboard);
     window.visualViewport.addEventListener("scroll", fitKeyboard);
   }
   $("text").addEventListener("focus", fitKeyboard);
-  $("text").addEventListener("blur", fitKeyboard);
+  // A blur that a tap on the dock causes is followed by a refocus; waiting a
+  // moment keeps the frame from jumping in between.
+  $("text").addEventListener("blur", function () { later("blur-fit", fitKeyboard, 120); });
+  // Taps on the dock's buttons keep the keyboard open, as in a messaging app.
+  $("dock").addEventListener("mousedown", function (ev) {
+    if (document.activeElement === $("text") && ev.target.closest("button")) ev.preventDefault();
+  });
+  $("conv").addEventListener("scroll", function () { if (pinned()) $("jump").classList.add("hidden"); }, { passive: true });
   fitKeyboard();
 
   document.addEventListener("visibilitychange", function () {
