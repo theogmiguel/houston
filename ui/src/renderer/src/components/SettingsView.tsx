@@ -1,4 +1,4 @@
-import { openConnectPhone } from '../connectPhone'
+import { openConnectPhoneRoute } from '../connectPhone'
 import type { HoustonClient } from '../houston/client'
 import { useEffect, useRef } from 'react'
 import type { ChromeTheme, TerminalPaletteChoice } from '../theme'
@@ -421,7 +421,7 @@ function SectionDispatch({
           </>
         )}
 
-        {section === 'remote' && <RemoteSection client={daemonClient ?? null} onChangeRoute={openConnectPhone} />}
+        {section === 'remote' && <RemoteSection client={daemonClient ?? null} onChangeRoute={openConnectPhoneRoute} />}
     </>
   )
 }
