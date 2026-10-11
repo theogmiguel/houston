@@ -69,7 +69,7 @@ fn local_write(name: &str, title: &str, description: &str, schema: Value) -> Too
 // One value type: GLM writes a string unquoted under an integer-or-string union, so
 // ZCode cannot parse the call and drops `id`. The daemon still accepts an integer.
 fn id_property() -> Value {
-    json!({ "type": "string", "description": "Task key such as \"HOU-42\", or a task id as a string such as \"7\"" })
+    json!({ "type": "string", "description": "Task key (\"HOU-42\") or id (\"7\")" })
 }
 
 fn id_schema() -> Value {
