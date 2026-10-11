@@ -266,6 +266,8 @@ export class PaneWriteQueue {
   }
 
   private push(data: Uint8Array, isWarning = false, exempt = false): void {
+    // Replay overlap can leave a tiny view owning the entire replay allocation.
+    if (data.byteLength < data.buffer.byteLength / 2) data = data.slice()
     this.queue.push({ data, isWarning, exempt })
     this.queuedBytes += data.length
     if (isWarning || this.queuedBytes <= this.maxQueuedBytes) return

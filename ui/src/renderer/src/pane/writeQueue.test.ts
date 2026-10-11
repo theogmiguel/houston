@@ -705,3 +705,25 @@ describe('batch window under a clamping host', () => {
     expect(stats.batchDelayMaxMs).toBeGreaterThanOrEqual(1000)
   })
 })
+
+it('owns a small overlapping replay tail while preserving zero-copy full frames', () => {
+  const completions: (() => void)[] = []
+  const written: Uint8Array[] = []
+  const queue = new PaneWriteQueue({ batchWindowMs: 0, write: (data, done) => { written.push(data); if (done) completions.push(done) } })
+  queue.enqueue(new Uint8Array([65]))
+  // The normal foreground replay budget, with all but its final 1 KiB already seen.
+  const replay = new Uint8Array(2 * 1024 * 1024).fill(66)
+  const tail = replay.subarray(replay.length - 1024)
+  queue.enqueue(tail, true)
+  const frame = new Uint8Array(16 * 1024).fill(67)
+  queue.enqueue(frame)
+  const state = queue as unknown as { queue: { data: Uint8Array }[]; queuedBytes: number }
+  expect(state.queuedBytes).toBe(1024 + frame.length)
+  expect(state.queue[0].data.buffer.byteLength).toBe(1024)
+  expect(state.queue[0].data).toEqual(tail)
+  expect(state.queue[1].data).toBe(frame)
+  completions.shift()!()
+  expect(written[1].subarray(0, 1024)).toEqual(tail)
+  queue.dispose()
+  expect(state.queue).toHaveLength(0)
+})

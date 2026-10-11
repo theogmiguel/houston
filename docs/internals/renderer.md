@@ -87,7 +87,8 @@ the overflow policy. When the queue passes its cap, a synced pane whose daemon h
 emulator discards the backlog and reattaches from a snapshot. The daemon has parsed every
 byte, so the screen comes back exact, and stdin stays live while the snapshot is in flight.
 Without a snapshot path, the queue drops its oldest bytes and says so in the pane.
-
+Incoming replay views covering less than half their backing allocation are copied before
+queueing, so a small overlap tail does not retain the entire replay while waiting to drain.
 
 | Constant | Value | Reason |
 |---|---|---|
