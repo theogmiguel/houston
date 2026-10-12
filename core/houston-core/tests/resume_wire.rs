@@ -63,6 +63,7 @@ fn shim_dir() -> PathBuf {
 
 struct Env {
     _serial: tokio::sync::MutexGuard<'static, ()>,
+    _home: tempfile::TempDir,
     argv: tempfile::TempDir,
     state: tempfile::TempDir,
 }
@@ -76,6 +77,9 @@ impl Env {
 async fn setup() -> Env {
     let serial = SERIAL.lock().await;
     shim_dir();
+    // Real shell startup must not source the runner's or contributor's configuration.
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("HOME", home.path());
     let argv = tempfile::tempdir().unwrap();
     std::env::set_var("RESUME_ARGV_DIR", argv.path());
     std::env::set_var("SHELL", "/bin/sh");
@@ -91,11 +95,16 @@ async fn setup() -> Env {
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
         "CLAUDE_CODE_NO_FLICKER",
+        "ZDOTDIR",
+        "HOUSTON_USER_ZDOTDIR",
+        "BASH_ENV",
+        "ENV",
     ] {
         std::env::remove_var(var);
     }
     Env {
         _serial: serial,
+        _home: home,
         argv,
         state: tempfile::tempdir().unwrap(),
     }
@@ -126,6 +135,10 @@ fn reboot(env: &Env, before: &Daemon) -> Arc<Daemon> {
 }
 
 async fn argv_of(env: &Env, id: u32) -> Vec<String> {
+    argv_with_diagnostics(env, id, None).await
+}
+
+async fn argv_with_diagnostics(env: &Env, id: u32, daemon: Option<&Daemon>) -> Vec<String> {
     let path = env.argv.path().join(id.to_string());
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     loop {
@@ -134,9 +147,26 @@ async fn argv_of(env: &Env, id: u32) -> Vec<String> {
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "session {id} never launched its CLI"
+            "session {id} never launched its CLI{}",
+            daemon
+                .map(|daemon| pty_diagnostics(daemon, id))
+                .unwrap_or_default()
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+fn pty_diagnostics(daemon: &Daemon, id: u32) -> String {
+    // The daemon removes the shell capability before storing PTY output; strip OSCs
+    // and redact other secrets too before emitting a bounded failure diagnostic.
+    match daemon.scrollback(id, Some(4096)) {
+        Ok(replay) => {
+            let text = houston_core::agents::strip_ansi(&String::from_utf8_lossy(&replay.data));
+            let text = houston_core::sanitize::redact_review_secrets(&text).0;
+            let text = houston_core::sanitize::redact_secrets(&text).0;
+            format!("; redacted PTY tail: {text:?}")
+        }
+        Err(_) => "; PTY scrollback unavailable".into(),
     }
 }
 
@@ -585,7 +615,7 @@ async fn restored_cli_is_the_running_agent_until_it_exits(shell_path: &str) {
         Some(proto::AgentKind::Claude),
         "the relaunch runs a command no command-start marker announces"
     );
-    argv_of(&env, restored.id).await;
+    argv_with_diagnostics(&env, restored.id, Some(&restarted)).await;
     // The CLI echoes this line, so its own output has passed through the daemon.
     restarted.write_stdin(restored.id, b"receipt\n").unwrap();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
