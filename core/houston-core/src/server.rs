@@ -4320,13 +4320,14 @@ async fn send_pr_list(
     })
     .await
     .unwrap_or_else(|e| Err(anyhow::anyhow!("pull request listing task panicked: {e}")));
-    let (items, truncated, message) = match result {
-        Ok((items, truncated)) => (items, truncated, None),
-        Err(e) => (Vec::new(), false, Some(e.to_string())),
+    let (items, truncated, viewer_login, message) = match result {
+        Ok(list) => (list.items, list.truncated, list.viewer_login, None),
+        Err(e) => (Vec::new(), false, None, Some(e.to_string())),
     };
     let _ = send_msg(
         sink,
         &proto::ServerMsg::PrList {
+            viewer_login,
             dir,
             request,
             items,

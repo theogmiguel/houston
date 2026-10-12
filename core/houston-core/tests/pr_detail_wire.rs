@@ -187,6 +187,7 @@ fn shim_dir() -> PathBuf {
              \tcat \"$dir/view.err\" >&2 2>/dev/null\n\
              \texit 1\n\
              fi\n\
+             if [ \"$1 $2\" = \"api user\" ]; then respond api-user; fi\n\
              if [ \"$1 $2\" = \"api graphql\" ]; then\n\
              \tbody=$(cat)\n\
              \tprintf '%s\\n' \"$body\" >> \"$dir/graphql.log\"\n\
@@ -279,6 +280,9 @@ fn reset(dir: &Path) {
         "api-review.out",
         "api-review.exit",
         "api-review.err",
+        "api-user.out",
+        "api-user.exit",
+        "api-user.err",
         "api-reviewers.out",
         "api-reviewers.exit",
         "api-reviewers.err",
@@ -1991,6 +1995,119 @@ async fn a_host_without_the_stacks_preview_answers_no_stack() {
                 break;
             }
             proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
+async fn pr_list_returns_cached_viewer_even_without_authored_rows() {
+    let _serial = SERIAL.lock().await;
+    let mut rig = rig().await;
+    write_scenario(&rig.shim, "api-user.out", "viewer\n");
+    write_scenario(&rig.shim, "list.json", "[]");
+    for request in [91, 92] {
+        send(
+            &mut rig.ws,
+            &proto::ClientMsg::PrList {
+                dir: rig.dir.clone(),
+                state: proto::PrListState::Open,
+                involvement: proto::PrListInvolvement::All,
+                query: None,
+                limit: 25,
+                sort: proto::PrSort::Updated,
+                request,
+            },
+        )
+        .await;
+        loop {
+            match next_control(&mut rig.ws).await {
+                proto::ServerMsg::PrList {
+                    viewer_login,
+                    items,
+                    message,
+                    request: echoed,
+                    ..
+                } => {
+                    assert_eq!(echoed, request);
+                    assert_eq!(viewer_login.as_deref(), Some("viewer"));
+                    assert_eq!(message, None);
+                    if request == 91 {
+                        assert!(items.is_empty());
+                    } else {
+                        assert_eq!(items.len(), 1);
+                        assert_eq!(items[0].author.as_deref(), Some("other"));
+                        assert!(items[0].review_requested);
+                    }
+                    break;
+                }
+                proto::ServerMsg::Error { message, .. } => panic!("{message}"),
+                _ => continue,
+            }
+        }
+        write_scenario(&rig.shim, "api-user.out", "changed\n");
+        write_scenario(
+            &rig.shim,
+            "list.json",
+            r#"[
+            {"number":61,"title":"Review this","author":{"login":"other"},
+             "url":"https://github.com/owner/repo/pull/61","state":"OPEN",
+             "headRefName":"feat/x","baseRefName":"main","isDraft":false,
+             "reviewRequests":[{"login":"viewer"}]}
+        ]"#,
+        );
+    }
+    let log = gh_log(&rig.shim);
+    assert_eq!(
+        log.lines()
+            .filter(|line| line.starts_with("api user "))
+            .count(),
+        1,
+        "{log}"
+    );
+}
+
+#[tokio::test]
+async fn pr_list_keeps_rows_when_viewer_lookup_fails() {
+    let _serial = SERIAL.lock().await;
+    let mut rig = rig().await;
+    write_scenario(&rig.shim, "api-user.exit", "1\n");
+    write_scenario(&rig.shim, "api-user.err", "identity unavailable\n");
+    write_scenario(
+        &rig.shim,
+        "list.json",
+        r#"[
+        {"number":61,"title":"Listed","author":{"login":"other"},
+         "url":"https://github.com/owner/repo/pull/61","state":"OPEN"}
+    ]"#,
+    );
+    send(
+        &mut rig.ws,
+        &proto::ClientMsg::PrList {
+            dir: rig.dir.clone(),
+            state: proto::PrListState::Open,
+            involvement: proto::PrListInvolvement::All,
+            query: None,
+            limit: 25,
+            sort: proto::PrSort::Updated,
+            request: 93,
+        },
+    )
+    .await;
+    loop {
+        match next_control(&mut rig.ws).await {
+            proto::ServerMsg::PrList {
+                viewer_login,
+                items,
+                message,
+                ..
+            } => {
+                assert_eq!(viewer_login, None);
+                assert_eq!(message, None);
+                assert_eq!(items.len(), 1);
+                break;
+            }
+            proto::ServerMsg::Error { message, .. } => panic!("{message}"),
             _ => continue,
         }
     }

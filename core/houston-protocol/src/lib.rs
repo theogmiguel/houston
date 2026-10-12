@@ -4869,6 +4869,9 @@ pub enum ServerMsg {
         message: Option<String>,
     },
     PrList {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        viewer_login: Option<String>,
         dir: String,
         request: u32,
         #[serde(default)]
@@ -6325,6 +6328,7 @@ mod tests {
     #[test]
     fn pr_list_reply_carries_rows_and_its_truncation() {
         let msg = ServerMsg::PrList {
+            viewer_login: Some("theo".into()),
             dir: "/w".into(),
             request: 5,
             items: vec![PrListItem {
@@ -6354,6 +6358,7 @@ mod tests {
             message: None,
         };
         let value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(value["viewer_login"], serde_json::json!("theo"));
         assert_eq!(value["type"], serde_json::json!("pr_list"));
         assert_eq!(value["items"][0]["is_draft"], serde_json::json!(true));
         assert_eq!(value["items"][0]["checks"], serde_json::json!("running"));
