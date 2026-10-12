@@ -1,4 +1,4 @@
-# Harness review
+# Review
 
 A harness review reads a workspace's recent agent sessions, compares them with the workspace's
 agent harness (CLAUDE.md, AGENTS.md, `.claude/rules` and its subdirectories, skills, settings,
@@ -6,8 +6,8 @@ hooks and MCP configuration), and reports what slowed those sessions down and wh
 It recommends changes and can create a linked Tasks item from a finding; it never edits the
 harness itself.
 
-Open **Harness** in the sidebar or choose **Go to Harness** from the command palette. Select
-a workspace in the sidebar first; when no workspace is active, choose one on the Harness page.
+Open Settings ▸ Agents ▸ Review. Select a workspace first, or choose one in Review when
+none is active. Its built-in **Weekly review** is managed from Routines.
 
 ## What a run sends
 
@@ -25,7 +25,7 @@ A run is an ordinary agent pane in the workspace, which you can open and watch. 
 
 The agent reads those files, which sends their content to the review's provider through that
 provider's own CLI, as any turn of that agent does. The view shows this before the first run.
-OpenCode, Cursor, Grok, Antigravity and ZCode sessions are not read. Harness shows their Houston-hosted
+OpenCode, Cursor, Grok, Antigravity and ZCode sessions are not read. Review shows their Houston-hosted
 session counts for the latest review window as provider coverage. A review routine starts in
 accept-edits access, which OpenCode and ZCode do not offer, so they are unavailable for the
 first review. To review with either, switch the routine to isolated full access afterwards
@@ -47,8 +47,8 @@ stopped, never less than 7 days nor more than 30. Sessions older than your CLI k
 (`cleanupPeriodDays` in `~/.claude/settings.json` for Claude Code) cannot be read, and the
 report says so.
 
-The review is a routine, so it also appears in **Routines**, where it can be edited, paused or
-deleted.
+The review appears under **Built in** in Routines, where it can be edited, paused or deleted.
+Setting it up in Routines creates the definition without running it immediately.
 
 ## Reading the result
 
@@ -63,11 +63,13 @@ and your decisions are kept per workspace and remain after Houston restarts.
 - **Active**, **Resolved** and **Dismissed** filter findings by their current phase. An open
   finding can become a linked task; a fixing finding opens that task; a landed task can be
   checked with **Verify now**. Use **Resolve** or **Keep open** when a finding is **Not seen**.
-- The Harness rail count shows findings that need attention. A notice reports a newly published
+- Settings ▸ Agents reports findings that need attention. A notice reports a newly published
   review until you dismiss it. Dismissing advances the shared seen cursor.
+- Tasks shows open unlinked findings under **Suggested**, with **Dismiss** and **Add to queue**
+  for triage. Adding to the queue does not start an agent.
 - **Create task** creates a linked task in Tasks with the finding key, recommendation, target and
   apply prompt. It does not copy transcript quotes or start the task. The task uses the current
-  Harness provider; start it from Tasks when you are ready.
+  review provider; start it from Tasks when you are ready.
 - A task that is still open marks its finding **Fixing**. A completed task waits for a later review.
   **Verify now** runs the existing Harness routine immediately. A verdict needs at least three
   sessions that started after the task landed; below that, the result stays inconclusive. The task's
@@ -77,7 +79,7 @@ and your decisions are kept per workspace and remain after Houston restarts.
   create another linked task. **Inconclusive** leaves the finding awaiting verification.
 - If the latest published review omits a finding and it has no open fix task, it becomes **Not seen**
   with the review number. Resolve it or keep it open; Houston never closes it automatically.
-- The Harness attention count is based on a review cursor stored by the daemon, so it is shared
+- The Review attention count is based on a review cursor stored by the daemon, so it is shared
   across windows and survives closing the app.
 - **Reviews** shows the latest published review with its New, Still there and Gone findings.
   Expand older reviews to inspect their available finding details.

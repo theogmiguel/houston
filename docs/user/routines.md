@@ -4,7 +4,9 @@ A routine runs the same instructions on a schedule or whenever you choose **Run 
 run opens a fresh agent pane in the selected working directory, so its terminal and result
 remain visible like any other session.
 
-Open **Routines** from the left rail and choose **New routine**. Give it a name and
+Open **Routines** from the rail. **Built in** contains Houston's Weekly review for each
+workspace; **Yours** contains routines you create. Choose **New routine** for your own
+instructions. Give it a name and
 instructions, then choose:
 
 - when it runs;
@@ -38,9 +40,24 @@ view shows when all three run slots are occupied and a due routine is waiting.
 The run table shows each run's start time, result and duration. A run with a session link can
 reopen its pane. Runs do not reuse a previous conversation or context.
 
-A workspace's [harness review](harness-review.md) is also a routine. It is created from the
-**Harness** view and listed here too, where it can be edited, paused or deleted like any other.
-
 Houston runs at most three routines at once and queues due work until a slot is free. If the
 daemon was not running when a schedule elapsed, the routine runs once when the daemon returns;
 it does not replay every missed interval.
+
+## Weekly review
+
+Houston offers one built-in [Weekly review](harness-review.md) per workspace. It reviews
+recent agent sessions and recommends improvements to the workspace's agent configuration.
+**Set up Weekly review** chooses its provider, optional model and schedule without starting
+a run immediately. Settings ▸ Agents ▸ Review also supports setup and an explicit first run.
+
+Select the workspace's Weekly review to change its schedule, provider or model, enable or
+pause it, or run it now. Manual mode keeps the routine available for explicit runs without
+a schedule. Its recent runs report session and finding counts and let you read the published
+report. A failed report read can be retried. Findings are available in Review and in
+Tasks' Suggested work; creating a task from one does not start implementation.
+
+Reviews read from the previous review checkpoint, subject to the review window limits;
+**Weekly review** names the built-in routine and does not imply a fixed seven-day input
+window. See [Review](harness-review.md#running-and-scheduling) for coverage and provider
+transmission.

@@ -17,6 +17,29 @@ changes**, keeps acceptance items toggleable, and its **…** menu includes **Op
 and task actions. Search by title or key, or filter the list to one project or to tasks
 without a project. **By project** groups deliveries and their slices instead of queue state.
 
+## Suggested work and sources
+
+**Suggested** contains open, unlinked findings from [Review](harness-review.md) for the
+selected workspace, or across workspaces in **All workspaces**. Each suggestion identifies
+its workspace and the reported session count. **Dismiss** records that decision in Review;
+**Add to queue** creates a linked task without starting an agent. The task uses the review
+routine's provider, falling back to Claude when no routine exists. Start it after checking
+its scope and acceptance criteria.
+
+Open **Sources** on Tasks to configure where work comes from: Slack requests, GitHub
+issues, Notion and Weekly review. Source status reports whether intake is enabled,
+connected or failing. Tracker configuration is per workspace; choose one when viewing
+**All workspaces**. The same tracker form remains available in Settings ▸ Work ▸ Tasks.
+
+A Slack bot mention in a mapped channel files a pending task. The configured owner starts
+it with Slack's `:white_check_mark:` reaction (✅), or another supported acceptance action;
+a reaction from another member does not approve it. Review findings wait for your decision
+to become tasks. Tracker synchronization follows its own configuration; it is not a Slack
+approval flow. See [Slack requests](slack.md) for setup, readiness and what is transmitted.
+
+For Weekly review, **Set up** opens Routines. After setup, use Routines to manage its
+provider, schedule and runs; findings return to Suggested for triage.
+
 ## Creating and editing
 
 Ctrl-click a task key (`HOU-3`) in a terminal to open that task on the Tasks page. The
@@ -91,7 +114,7 @@ The task moves to **In progress** and the detail shows the run: its attempt, pro
 branch and pane. Starting again after a stop, or **Resume** after a restart interrupted the
 pane, reuses the same branch and worktree as the next attempt; nothing is force-pushed.
 
-Settings ▸ Tasks carries the workspace's defaults: the agent a Start uses, and how the
+Settings ▸ Work ▸ Tasks carries the workspace's defaults: the agent a Start uses, and how the
 brief is delivered. **Send** (the default) submits the brief as the pane's first prompt.
 **Prefill** types it into the input box without sending it, so you can review and press
 Enter yourself. ZCode takes no prompt on its command line, so for ZCode both are typed
@@ -126,7 +149,7 @@ This is all or nothing: when the
 pane has fewer free child slots than asked, nothing starts and the refusal names the cap,
 the free count and the requested count. Nothing is queued silently.
 
-Review is off by default. Settings ▸ Tasks ▸ Review sets the workspace's default reviewer
+Review is off by default. Settings ▸ Work ▸ Tasks ▸ Review sets the workspace's default reviewer
 (none) and the automatic **rework rounds** (0, at most `TASKS_REWORK_ROUNDS_MAX`). A task
 an orchestrator starts with a reviewer gets an independent, read-only reviewer on the same
 branch once the implementer hands back; the reviewer's input is the task text, the
@@ -143,7 +166,7 @@ to review.
 
 ## Agent access
 
-Settings ▸ Tasks controls whether agents running in a workspace may read and write the
+Settings ▸ Work ▸ Tasks controls whether agents running in a workspace may read and write the
 backlog. **Off** withholds them entirely, **Read only** lets them look but not change, and
 **Read and write** allows both. The settings show the current value, and a refused write
 names the setting that has to change.
