@@ -303,7 +303,10 @@ fn replacement_commits_identity_ancestry_inbox_and_wake_cues_together() {
     let replacement = daemon.wake_session(1).unwrap();
     let (_, pid) = observed.lock().unwrap()[0];
     assert_eq!(replacement.session_origin, Some(1));
-    assert_eq!(db.session_title_candidates(replacement.id).unwrap(), db.session_title_candidates(1).unwrap());
+    assert_eq!(
+        db.session_title_candidates(replacement.id).unwrap(),
+        db.session_title_candidates(1).unwrap()
+    );
     assert_eq!(replacement.latest_prompt, before.latest_prompt);
     assert_eq!(replacement.last_agent_message, before.last_agent_message);
     assert_eq!(replacement.context, before.context);
