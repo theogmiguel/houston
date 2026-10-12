@@ -109,3 +109,17 @@ it('reports failed tests at server level and retries without duplicating the fai
   expect(onTest).toHaveBeenCalledWith('github')
   expect(document.querySelectorAll('main')).toHaveLength(0)
 })
+
+it('expands a Settings server and toggles only its owning agent destination', () => {
+  const onSync = vi.fn(), onUpsertServer = vi.fn()
+  render(<McpManager {...props({ embedded: true, onSync, onUpsertServer })} />)
+  expect(screen.queryByRole('table')).toBeNull()
+  const summary = screen.getByText('github').closest('summary')!
+  fireEvent.click(summary)
+  expect(summary.parentElement?.querySelector('input')).toBeNull()
+  fireEvent.click(screen.getByRole('switch', { name: 'github in Claude Code' }))
+  expect(onUpsertServer).toHaveBeenCalledWith('github', expect.objectContaining({ destinations: ['codex', 'opencode', 'cursor'] }))
+  expect(onSync).toHaveBeenCalledWith('claude')
+  fireEvent.click(screen.getByRole('button', { name: 'Edit command' }))
+  expect(screen.getByRole('dialog', { name: 'Edit github' })).toBeTruthy()
+})
