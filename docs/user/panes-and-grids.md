@@ -80,7 +80,8 @@ the CLI's native title or a bound task, in that order of precedence. Automatic/m
 provenance appears beside the name. A name you type wins and survives Restart, application
 reopen and daemon handoff. Choose **Reset to automatic** beside a manually renamed pane to
 restore the strongest available automatic name. Older panes may only retain their codename
-and current role or task; Houston cannot recover titles that were never stored.
+and current role or task; Houston cannot recover titles that were never stored. Older
+non-codename names without recorded provenance stay protected until you reset them.
 
 Claude, Codex and OpenCode native titles are adopted when their CLIs provide contextual
 window titles; supported ACP agents can also provide session titles. Product labels are

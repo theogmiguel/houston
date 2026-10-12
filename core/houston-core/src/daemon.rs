@@ -2295,9 +2295,6 @@ pub(crate) fn restored_title_source(stored: Option<&str>, title: &str) -> TitleS
     if crate::pane_name::is_codename(title) {
         return TitleSource::Codename;
     }
-    if crate::pane_name::title_from_prompt(title, MAX_TITLE_LEN).as_deref() == Some(title) {
-        return TitleSource::Prompt;
-    }
     TitleSource::User
 }
 

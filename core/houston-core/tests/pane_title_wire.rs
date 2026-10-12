@@ -225,11 +225,10 @@ async fn a_restored_prompt_named_pane_accepts_its_clis_title() {
     std::fs::create_dir_all(&ws).unwrap();
     let db_path = state.path().join("test.db");
     let db = Db::open(&db_path).unwrap();
-    db.insert_session(&stored_session(
-        1,
-        &ws,
-        "Are we protected against people doing",
-    ))
+    db.insert_session_with_title_source(
+        &stored_session(1, &ws, "Are we protected against people doing"),
+        Some("prompt"),
+    )
     .unwrap();
     drop(db);
 
@@ -529,6 +528,40 @@ async fn hidden_handoff_pane_can_reset_its_manual_title() {
         }
     }
     daemon.close(source.id).unwrap();
+}
+
+#[tokio::test]
+async fn legacy_manual_title_without_provenance_stays_locked_until_reset() {
+    let state = tempfile::tempdir().unwrap();
+    let db_path = state.path().join("legacy-titles.db");
+    let db = Db::open(&db_path).unwrap();
+    let mut stored = stored_session(1, state.path(), "Manual project overview");
+    stored.codename = "Max".into();
+    db.insert_session(&stored).unwrap();
+    assert_eq!(db.session_title_source(1).unwrap(), None);
+    let daemon = Daemon::new_with_safe_mode_flags_for_test(
+        DaemonConfig {
+            token: "legacy-title".into(),
+            db_path,
+        },
+        houston_core::daemon::SafeModeFlags {
+            disable_auto_restore: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let listed = daemon.list().into_iter().find(|s| s.id == 1).unwrap();
+    assert_eq!(listed.title, "Manual project overview");
+    assert_eq!(listed.title_source, proto::TitleSource::User);
+    daemon.name_pane_from_prompt(1, "Later prompt candidate");
+    let listed = daemon.list().into_iter().find(|s| s.id == 1).unwrap();
+    assert_eq!(listed.title, "Manual project overview");
+    assert_eq!(listed.title_source, proto::TitleSource::User);
+    daemon.reset_title(1).unwrap();
+    let listed = daemon.list().into_iter().find(|s| s.id == 1).unwrap();
+    assert_eq!(listed.title, "Later prompt candidate");
+    assert_eq!(listed.title_source, proto::TitleSource::Prompt);
+    daemon.close(1).unwrap();
 }
 
 #[tokio::test]

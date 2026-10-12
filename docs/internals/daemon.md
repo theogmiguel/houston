@@ -376,7 +376,8 @@ boot restore and daemon handoff preserve provenance. Automatic candidates retain
 prompt title and latest native title beneath a user override; reset chooses the strongest
 available candidate, including stored role and task identity. Older rows cannot recover a
 first prompt or native title that was never stored; reset uses available candidates or the
-codename.
+codename. Legacy rows without a recorded source protect non-codename names as user
+names until an explicit reset; their spelling cannot reliably identify who named them.
 
 CLI-title repaints have a one-second write floor; the latest title inside the floor is
 retained and applied when it expires. Product-only titles are rejected. A live capture of
