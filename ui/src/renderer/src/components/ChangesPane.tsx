@@ -71,6 +71,7 @@ import {
   GitCommitMessageRow,
   GitCommitPanel,
   GitCommitStagedCount,
+  GitCompactToolsTrigger,
   GitCompactToolsAnchor,
   GitCompactToolsSurface,
   GitPrSummaryLabel,
@@ -1158,7 +1159,7 @@ function ChangesToolbar({ compact, strip, items, triggerLabel = "Git actions and
   return (
     <GitCompactToolsAnchor view={triggerLabel !== "Git actions and diff scope"}>
       <Tooltip label={triggerLabel}>
-        <Button variant="ghost" size="sm"
+        <GitCompactToolsTrigger
           ref={trigger}
           aria-label={triggerLabel}
           aria-expanded={anchor !== null}
@@ -1168,7 +1169,7 @@ function ChangesToolbar({ compact, strip, items, triggerLabel = "Git actions and
           }}
         >
           {triggerLabel === "View" ? <><Icon glyph={IconSliders} role="small" />View</> : <Icon glyph={IconEllipsis} role="ui" />}
-        </Button>
+        </GitCompactToolsTrigger>
       </Tooltip>
       {anchor && createPortal(
         <GitCompactToolsSurface

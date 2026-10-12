@@ -1,5 +1,8 @@
+import { Button } from './Button'
+import { Icon } from './Icon'
+import { IconEllipsis } from '../icons'
 import { SplitButton } from './SplitButton'
-import type { HTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode, Ref, TextareaHTMLAttributes } from 'react'
 import { MATERIAL_CLS, materialAttrs } from './material'
 import { OVERLAY_GLASS_OVERLAY_CLS } from './overlayChrome'
 import { Text } from './Text'
@@ -90,5 +93,16 @@ export function GitCommitSpecimen(): React.JSX.Element {
         <GitCommitButtonGroup><SplitButton label="Commit" testId="changes-commit" onClick={() => {}} items={[{ label: 'Amend', onClick: () => {} }]} /></GitCommitButtonGroup>
       </GitCommitActionRow>
     </GitCommitPanel>
+  </div>
+}
+
+export function GitCompactToolsTrigger(props: ButtonHTMLAttributes<HTMLButtonElement> & { ref?: Ref<HTMLButtonElement> }): React.JSX.Element {
+  return <Button {...props} variant="ghost" size="sm" className="changes-tools-trigger" />
+}
+
+export function GitToolsTriggerSpecimen(): React.JSX.Element {
+  return <div className="flex items-center gap-[var(--space-1)]">
+    <GitCompactToolsTrigger aria-label="Git tools specimen"><Icon glyph={IconEllipsis} role="small" /></GitCompactToolsTrigger>
+    <GitCompactToolsTrigger>View</GitCompactToolsTrigger>
   </div>
 }
