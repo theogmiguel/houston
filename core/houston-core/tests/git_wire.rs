@@ -430,6 +430,165 @@ async fn git_branch_separates_a_worktree_from_its_main_checkout() {
 }
 
 #[tokio::test]
+async fn git_status_counts_preserve_raw_paths_and_staging_over_the_wire() {
+    let (addr, _state) = start_daemon().await;
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    git(repo.path(), &["config", "core.quotePath", "true"]);
+    git(repo.path(), &["config", "status.renames", "true"]);
+    git(repo.path(), &["config", "diff.renames", "true"]);
+    #[cfg(unix)]
+    const EXTRA_PATHS: &[&str] = &["tab\tfile.txt", "line\nfile.txt", "back\\slash.txt"];
+    #[cfg(not(unix))]
+    const EXTRA_PATHS: &[&str] = &[];
+    let names = ["café.txt", "dual.txt", "old.txt", "binary.bin"]
+        .into_iter()
+        .chain(EXTRA_PATHS.iter().copied())
+        .collect::<Vec<_>>();
+    for name in &names {
+        std::fs::write(repo.path().join(name), "original\n".repeat(10)).unwrap();
+    }
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-m", "count fixture"]);
+    git(repo.path(), &["mv", "old.txt", "renamed.txt"]);
+    std::fs::write(
+        repo.path().join("renamed.txt"),
+        format!("{}renamed addition\n", "original\n".repeat(10)),
+    )
+    .unwrap();
+    std::fs::write(
+        repo.path().join("dual.txt"),
+        format!("{}staged addition\n", "original\n".repeat(10)),
+    )
+    .unwrap();
+    git(repo.path(), &["add", "dual.txt", "renamed.txt"]);
+    std::fs::write(
+        repo.path().join("dual.txt"),
+        format!(
+            "{}staged addition\nunstaged addition\n",
+            "original\n".repeat(10)
+        ),
+    )
+    .unwrap();
+    for name in names
+        .iter()
+        .filter(|name| !["dual.txt", "old.txt", "binary.bin"].contains(name))
+    {
+        std::fs::write(
+            repo.path().join(name),
+            format!("{}added\n", "original\n".repeat(10)),
+        )
+        .unwrap();
+    }
+    std::fs::write(repo.path().join("binary.bin"), b"\0binary").unwrap();
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitStatus {
+            dir: repo.path().display().to_string(),
+            base: None,
+        },
+    )
+    .await;
+    let reply = expect_git_status(&mut ws).await;
+    for name in names
+        .iter()
+        .filter(|name| !["old.txt", "binary.bin"].contains(name))
+    {
+        let file = reply
+            .files
+            .iter()
+            .find(|file| file.path == *name && !file.staged)
+            .unwrap();
+        assert_eq!((file.added, file.deleted), (Some(1), Some(0)), "{name:?}");
+    }
+    let staged = reply
+        .files
+        .iter()
+        .find(|file| file.path == "dual.txt" && file.staged)
+        .unwrap();
+    assert_eq!((staged.added, staged.deleted), (Some(1), Some(0)));
+    let renamed = reply
+        .files
+        .iter()
+        .find(|file| file.path == "renamed.txt" && file.staged)
+        .unwrap();
+    assert_eq!(renamed.status, proto::GitFileState::Renamed);
+    assert_eq!((renamed.added, renamed.deleted), (Some(1), Some(0)));
+    let binary = reply
+        .files
+        .iter()
+        .find(|file| file.path == "binary.bin")
+        .unwrap();
+    assert_eq!((binary.added, binary.deleted), (None, None));
+}
+
+#[tokio::test]
+#[ignore = "large-repository measurement: run alone at normal priority with the shared performance lock"]
+async fn git_status_large_repository_measurement() {
+    let (addr, _state) = start_daemon().await;
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    const FILES: usize = 20_000;
+    for n in 0..FILES {
+        std::fs::write(repo.path().join(format!("file-{n:05}.txt")), "before\n").unwrap();
+    }
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-m", "large index"]);
+    for n in 0..FILES {
+        std::fs::write(
+            repo.path().join(format!("file-{n:05}.txt")),
+            "before\nafter\n",
+        )
+        .unwrap();
+    }
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let mut samples = Vec::new();
+    for round in 0..6 {
+        let started = std::time::Instant::now();
+        send(
+            &mut ws,
+            &proto::ClientMsg::GitStatus {
+                dir: repo.path().display().to_string(),
+                base: None,
+            },
+        )
+        .await;
+        let files = tokio::time::timeout(Duration::from_secs(120), async {
+            loop {
+                if let Message::Text(raw) = ws.next().await.unwrap().unwrap() {
+                    match serde_json::from_str::<proto::ServerMsg>(&raw).unwrap() {
+                        proto::ServerMsg::GitStatus { files, .. } => break files,
+                        proto::ServerMsg::Error { message, .. } => {
+                            panic!("daemon error: {message}")
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        })
+        .await
+        .expect("large status response deadline");
+        let elapsed = started.elapsed();
+        assert_eq!(files.len(), FILES);
+        assert!(files
+            .iter()
+            .all(|file| file.added == Some(1) && file.deleted == Some(0)));
+        println!(
+            "git_status files={FILES} round={round} elapsed_ms={:.3}",
+            elapsed.as_secs_f64() * 1000.0
+        );
+        if round > 0 {
+            samples.push(elapsed);
+        }
+    }
+    samples.sort();
+    println!("git_status warm_median_ms={:.3}; profile=debug; normal priority and idle host required; no release-performance claim", samples[2].as_secs_f64() * 1000.0);
+}
+
+#[tokio::test]
 async fn git_status_and_diff_over_the_wire() {
     let (addr, _state) = start_daemon().await;
     let repo = tempfile::tempdir().unwrap();

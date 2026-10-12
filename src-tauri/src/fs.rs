@@ -1,3 +1,4 @@
+use futures_util::FutureExt;
 use notify::Watcher as _;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -160,7 +161,7 @@ pub struct PathSearchResult {
     pub truncated: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct IndexedPath {
     relative: String,
     is_dir: bool,
@@ -169,7 +170,8 @@ struct IndexedPath {
 #[derive(Default)]
 struct PathIndexCache {
     generations: HashMap<PathBuf, u64>,
-    indexes: HashMap<PathBuf, (u64, Vec<IndexedPath>)>,
+    indexes: HashMap<PathBuf, (u64, Arc<Vec<IndexedPath>>)>,
+    builds: HashMap<PathBuf, (u64, Arc<IndexBuild>)>,
     recent: std::collections::VecDeque<PathBuf>,
     next_generation: u64,
 }
@@ -185,6 +187,7 @@ impl PathIndexCache {
             let oldest = self.recent.pop_front().expect("nonempty cache");
             self.generations.remove(&oldest);
             self.indexes.remove(&oldest);
+            self.builds.remove(&oldest);
         }
         if !self.generations.contains_key(root) {
             self.next_generation = self.next_generation.wrapping_add(1);
@@ -200,11 +203,13 @@ impl PathIndexCache {
             *generation = self.next_generation;
         }
         self.indexes.remove(root);
+        self.builds.remove(root);
     }
 
     fn forget(&mut self, root: &Path) {
         self.generations.remove(root);
         self.indexes.remove(root);
+        self.builds.remove(root);
         self.recent.retain(|path| path != root);
     }
 }
@@ -238,40 +243,65 @@ fn fuzzy_indices(text: &str, query: &str) -> Option<Vec<usize>> {
     None
 }
 
+type RankedPath<'a> = (usize, usize, &'a str, usize);
+
+fn ranked_path_matches<'a>(
+    index: &'a [IndexedPath],
+    query: &str,
+    cap: usize,
+) -> (std::collections::BinaryHeap<RankedPath<'a>>, usize) {
+    let mut best = std::collections::BinaryHeap::new();
+    let mut total = 0;
+    for (position, entry) in index.iter().enumerate() {
+        let name = Path::new(&entry.relative)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let name_match = fuzzy_indices(&name, query).is_some();
+        if !name_match && fuzzy_indices(&entry.relative, query).is_none() {
+            continue;
+        }
+        total += 1;
+        if cap == 0 {
+            continue;
+        }
+        let rank = (
+            usize::from(!name_match),
+            entry.relative.chars().count(),
+            entry.relative.as_str(),
+            position,
+        );
+        if best.len() < cap {
+            best.push(rank);
+        } else if best.peek().is_some_and(|worst| rank < *worst) {
+            best.pop();
+            best.push(rank);
+        }
+    }
+    (best, total)
+}
+
 fn search_index(index: &[IndexedPath], query: &str, limit: usize) -> PathSearchResult {
-    let mut matches = index
-        .iter()
-        .filter_map(|entry| {
+    // Retain only the display budget, even when every indexed path matches.
+    let (best, total) = ranked_path_matches(index, query, limit.min(MAX_PATH_SEARCH_RESULTS));
+    let items = best
+        .into_sorted_vec()
+        .into_iter()
+        .map(|(_, _, _, position)| {
+            let entry = &index[position];
             let name = Path::new(&entry.relative)
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
-            let name_indices = fuzzy_indices(&name, query);
-            let path_indices = fuzzy_indices(&entry.relative, query);
-            if name_indices.is_none() && path_indices.is_none() {
-                return None;
+            PathSearchItem {
+                name_indices: fuzzy_indices(&name, query).unwrap_or_default(),
+                path_indices: fuzzy_indices(&entry.relative, query).unwrap_or_default(),
+                path: entry.relative.clone(),
+                name,
+                is_dir: entry.is_dir,
             }
-            Some((
-                usize::from(name_indices.is_none()),
-                entry.relative.chars().count(),
-                PathSearchItem {
-                    path: entry.relative.clone(),
-                    name,
-                    is_dir: entry.is_dir,
-                    name_indices: name_indices.unwrap_or_default(),
-                    path_indices: path_indices.unwrap_or_default(),
-                },
-            ))
         })
-        .collect::<Vec<_>>();
-    matches.sort_by(|a, b| (a.0, a.1, &a.2.path).cmp(&(b.0, b.1, &b.2.path)));
-    let total = matches.len();
-    let cap = limit.min(MAX_PATH_SEARCH_RESULTS);
-    let items = matches
-        .into_iter()
-        .take(cap)
-        .map(|(_, _, item)| item)
         .collect::<Vec<_>>();
     PathSearchResult {
         truncated: total > items.len(),
@@ -453,15 +483,69 @@ pub async fn fs_search_paths(
         ));
     }
     let index = load_path_index(real_root, |root| build_path_index(&root)).await?;
-    Ok(search_index(&index, &query, limit))
+    let permit = search_permits().clone().try_acquire_owned().map_err(|_| {
+        format!(
+            "fs_search_paths: search limit {MAX_PATH_SEARCHES}; actual {}; refused query {query:?}",
+            MAX_PATH_SEARCHES - search_permits().available_permits()
+        )
+    })?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        search_index(&index, &query, limit)
+    })
+    .await
+    .map_err(|error| format!("fs_search_paths search task failed: {error}"))
 }
 
-async fn load_path_index<F>(real_root: PathBuf, builder: F) -> Result<Vec<IndexedPath>, String>
+type IndexSnapshot = Arc<Vec<IndexedPath>>;
+type SharedIndexResult = futures_util::future::Shared<
+    futures_util::future::BoxFuture<'static, Result<IndexSnapshot, String>>,
+>;
+
+struct IndexBuild {
+    result: SharedIndexResult,
+}
+
+// Two scans allow a second project to progress while bounding detached blocking work.
+const MAX_INDEX_BUILDS: usize = 2;
+
+// Each search visits the bounded index; cap outstanding CPU work from abandoned queries.
+const MAX_PATH_SEARCHES: usize = 2;
+
+fn search_permits() -> &'static Arc<tokio::sync::Semaphore> {
+    static PERMITS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+    PERMITS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_PATH_SEARCHES)))
+}
+
+fn index_build_permits() -> &'static Arc<tokio::sync::Semaphore> {
+    static PERMITS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+    PERMITS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_INDEX_BUILDS)))
+}
+
+async fn load_path_index<F>(real_root: PathBuf, builder: F) -> Result<IndexSnapshot, String>
 where
     F: FnOnce(PathBuf) -> Result<Vec<IndexedPath>, String> + Send + 'static,
 {
-    let generation = {
-        let mut cache = path_index()
+    load_path_index_with(
+        path_index(),
+        index_build_permits().clone(),
+        real_root,
+        builder,
+    )
+    .await
+}
+
+async fn load_path_index_with<F>(
+    cache: &Mutex<PathIndexCache>,
+    permits: Arc<tokio::sync::Semaphore>,
+    real_root: PathBuf,
+    builder: F,
+) -> Result<IndexSnapshot, String>
+where
+    F: FnOnce(PathBuf) -> Result<Vec<IndexedPath>, String> + Send + 'static,
+{
+    let (generation, build) = {
+        let mut cache = cache
             .lock()
             .map_err(|_| "path index lock poisoned".to_string())?;
         let generation = cache.touch(&real_root);
@@ -470,20 +554,60 @@ where
                 return Ok(index.clone());
             }
         }
-        generation
+        let build = match cache.builds.get(&real_root) {
+            Some((building_generation, build)) if *building_generation == generation => {
+                build.clone()
+            }
+            _ => {
+                let permit = permits.clone().try_acquire_owned().map_err(|_| {
+                    format!(
+                        "fs_search_paths: indexing {} refused: active index builds limit {}; actual {}",
+                        real_root.display(), MAX_INDEX_BUILDS,
+                        MAX_INDEX_BUILDS - permits.available_permits(),
+                    )
+                })?;
+                let index_root = real_root.clone();
+                let task = tokio::task::spawn_blocking(move || {
+                    // Dropping a request does not cancel spawn_blocking: retain the
+                    // physical permit until this scan has actually completed.
+                    let _permit = permit;
+                    builder(index_root).map(Arc::new)
+                });
+                let build = Arc::new(IndexBuild {
+                    result: async move {
+                        task.await.map_err(|error| {
+                            format!("fs_search_paths indexing task failed: {error}")
+                        })?
+                    }
+                    .boxed()
+                    .shared(),
+                });
+                cache
+                    .builds
+                    .insert(real_root.clone(), (generation, build.clone()));
+                build
+            }
+        };
+        (generation, build)
     };
-    let index_root = real_root.clone();
-    let index = tokio::task::spawn_blocking(move || builder(index_root))
-        .await
-        .map_err(|e| format!("fs_search_paths indexing task failed: {e}"))??;
-    let mut cache = path_index()
+    let result = build.result.clone().await;
+    let mut cache = cache
         .lock()
         .map_err(|_| "path index lock poisoned".to_string())?;
+    if cache
+        .builds
+        .get(&real_root)
+        .is_some_and(|(_, current)| Arc::ptr_eq(current, &build))
+    {
+        cache.builds.remove(&real_root);
+    }
     if cache.generations.get(&real_root) == Some(&generation) {
-        cache.indexes.insert(real_root, (generation, index.clone()));
+        if let Ok(index) = &result {
+            cache.indexes.insert(real_root, (generation, index.clone()));
+        }
     }
     // Return the completed snapshot; a changed generation must not cache it.
-    Ok(index)
+    result
 }
 
 struct RootWatcher {
@@ -1863,18 +1987,147 @@ mod tests {
             std::fs::create_dir(root.path().join(format!("directory-{id}"))).unwrap();
         }
         let entries = super::collect_walk_paths_with_limits(root.path(), 4, usize::MAX)
-            .err()
-            .expect("empty directories still consume the scan budget");
+            .expect_err("empty directories still consume the scan budget");
         assert!(
             entries.contains("scanned entries limit 4; actual 5"),
             "{entries}"
         );
         let bytes = super::collect_walk_paths_with_limits(root.path(), usize::MAX, 1)
-            .err()
-            .expect("pending directory paths must fit the byte budget");
+            .expect_err("pending directory paths must fit the byte budget");
         assert!(
             bytes.contains("retained path bytes limit 1; actual"),
             "{bytes}"
+        );
+    }
+
+    #[tokio::test]
+    async fn overlapping_index_requests_share_a_scan_after_the_first_waiter_is_cancelled() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("file.txt"), "content").unwrap();
+        let cache = Arc::new(Mutex::new(PathIndexCache::default()));
+        let permits = Arc::new(tokio::sync::Semaphore::new(MAX_INDEX_BUILDS));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (entered, receipt) = tokio::sync::oneshot::channel();
+        let (release, held) = std::sync::mpsc::channel();
+        let first = {
+            let (cache, permits, calls, root) = (
+                cache.clone(),
+                permits.clone(),
+                calls.clone(),
+                root.path().to_path_buf(),
+            );
+            tokio::spawn(async move {
+                load_path_index_with(&cache, permits, root, move |root| {
+                    calls.fetch_add(1, Ordering::Relaxed);
+                    entered.send(()).unwrap();
+                    held.recv().unwrap();
+                    build_path_index(&root)
+                })
+                .await
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(5), receipt)
+            .await
+            .unwrap()
+            .unwrap();
+        let follower =
+            load_path_index_with(&cache, permits.clone(), root.path().to_path_buf(), |_| {
+                panic!("overlapping requests must share the first scan")
+            });
+        tokio::pin!(follower);
+        assert!(futures_util::poll!(&mut follower).is_pending());
+        first.abort();
+        assert!(first.await.unwrap_err().is_cancelled());
+        assert_eq!(
+            permits.available_permits(),
+            MAX_INDEX_BUILDS - 1,
+            "cancelling the waiter cannot release the physical scan permit"
+        );
+        release.send(()).unwrap();
+        let index = follower.await.unwrap();
+        assert_eq!(index.len(), 1);
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        let cached =
+            load_path_index_with(&cache, permits.clone(), root.path().to_path_buf(), |_| {
+                panic!("a warm query must not rebuild or copy the index")
+            })
+            .await
+            .unwrap();
+        assert!(Arc::ptr_eq(&index, &cached));
+        assert_eq!(permits.available_permits(), MAX_INDEX_BUILDS);
+    }
+
+    #[tokio::test]
+    async fn invalidation_cannot_admit_scans_beyond_the_physical_limit() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = Mutex::new(PathIndexCache::default());
+        let permits = Arc::new(tokio::sync::Semaphore::new(MAX_INDEX_BUILDS));
+        let mut releases = Vec::new();
+        for _ in 0..MAX_INDEX_BUILDS {
+            let (release, held) = std::sync::mpsc::channel();
+            let (entered, receipt) = tokio::sync::oneshot::channel();
+            let request = load_path_index_with(
+                &cache,
+                permits.clone(),
+                root.path().to_path_buf(),
+                move |_| {
+                    entered.send(()).unwrap();
+                    held.recv().unwrap();
+                    Ok(Vec::new())
+                },
+            );
+            tokio::pin!(request);
+            assert!(futures_util::poll!(&mut request).is_pending());
+            tokio::time::timeout(Duration::from_secs(5), receipt)
+                .await
+                .unwrap()
+                .unwrap();
+            cache.lock().unwrap().invalidate(root.path());
+            // Drop the waiter while its blocking scan is still held.
+            releases.push(release);
+        }
+        let error =
+            load_path_index_with(&cache, permits.clone(), root.path().to_path_buf(), |_| {
+                panic!("a scan beyond the physical limit must never start")
+            })
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            error.contains("active index builds limit 2; actual 2"),
+            "{error}"
+        );
+        assert!(error.contains(&root.path().display().to_string()));
+        for release in releases {
+            release.send(()).unwrap();
+        }
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let _all = permits.acquire_many(MAX_INDEX_BUILDS as u32).await.unwrap();
+        })
+        .await
+        .unwrap();
+        assert_eq!(permits.available_permits(), MAX_INDEX_BUILDS);
+    }
+
+    #[tokio::test]
+    async fn failed_shared_index_build_can_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = Mutex::new(PathIndexCache::default());
+        let permits = Arc::new(tokio::sync::Semaphore::new(MAX_INDEX_BUILDS));
+        let failed =
+            load_path_index_with(&cache, permits.clone(), root.path().to_path_buf(), |_| {
+                Err("fixture indexing failed".into())
+            })
+            .await;
+        assert!(failed.err().unwrap().contains("fixture indexing failed"));
+        assert!(cache.lock().unwrap().builds.is_empty());
+        assert!(
+            load_path_index_with(&cache, permits, root.path().to_path_buf(), |_| Ok(
+                Vec::new()
+            ))
+            .await
+            .is_ok()
         );
     }
 
@@ -1929,10 +2182,10 @@ mod tests {
                 path,
                 (
                     generation,
-                    vec![super::IndexedPath {
+                    Arc::new(vec![super::IndexedPath {
                         relative: "file.txt".into(),
                         is_dir: false,
-                    }],
+                    }]),
                 ),
             );
             assert!(cache.indexes.len() <= super::MAX_CACHED_ROOTS);
@@ -2164,6 +2417,108 @@ mod tests {
         );
         assert!(result.items.iter().all(|item| !item.is_dir));
         assert_eq!(result.items[0].name_indices, vec![0, 1, 2, 3, 4, 5]);
+    }
+
+    #[tokio::test]
+    #[ignore = "large-repository measurement: run alone at normal priority with the shared performance lock"]
+    async fn path_search_large_git_repository_measurement() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = Mutex::new(PathIndexCache::default());
+        let permits = Arc::new(tokio::sync::Semaphore::new(MAX_INDEX_BUILDS));
+        const FILES: usize = 20_000;
+        for n in 0..FILES {
+            std::fs::write(root.path().join(format!("file-{n:05}.txt")), "fixture\n").unwrap();
+        }
+        for args in [["init", "-q"], ["add", "-A"]] {
+            let output = houston_core::spawn::command("git")
+                .args(args)
+                .current_dir(root.path())
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let cold = std::time::Instant::now();
+        let index =
+            load_path_index_with(&cache, permits.clone(), root.path().to_path_buf(), |root| {
+                build_path_index(&root)
+            })
+            .await
+            .unwrap();
+        assert_eq!(index.len(), FILES);
+        println!(
+            "path_index files={FILES} cold_ms={:.3}",
+            cold.elapsed().as_secs_f64() * 1000.0
+        );
+        let mut samples = Vec::new();
+        for round in 0..5 {
+            let started = std::time::Instant::now();
+            let warm =
+                load_path_index_with(&cache, permits.clone(), root.path().to_path_buf(), |_| {
+                    panic!("warm rebuild")
+                })
+                .await
+                .unwrap();
+            assert!(Arc::ptr_eq(&warm, &index));
+            let result = search_index(&warm, "file", MAX_PATH_SEARCH_RESULTS);
+            let elapsed = started.elapsed();
+            assert_eq!(result.total, FILES);
+            assert_eq!(result.items.len(), MAX_PATH_SEARCH_RESULTS);
+            println!(
+                "path_search files={FILES} matches={} retained={} round={round} elapsed_ms={:.3}",
+                result.total,
+                result.items.len(),
+                elapsed.as_secs_f64() * 1000.0
+            );
+            samples.push(elapsed);
+        }
+        samples.sort();
+        println!("path_search warm_median_ms={:.3}; profile=debug; normal priority and idle host required; no release-performance claim", samples[2].as_secs_f64() * 1000.0);
+    }
+
+    #[test]
+    fn broad_search_retains_only_the_best_results_with_exact_totals() {
+        let index = (0..10_000)
+            .rev()
+            .map(|n| IndexedPath {
+                relative: format!("nested/file-{n:05}.txt"),
+                is_dir: false,
+            })
+            .collect::<Vec<_>>();
+        let (best, total) = ranked_path_matches(&index, "file", MAX_PATH_SEARCH_RESULTS);
+        assert_eq!(best.len(), MAX_PATH_SEARCH_RESULTS);
+        assert_eq!(total, index.len());
+        let result = search_index(&index, "file", 3);
+        assert_eq!(
+            result
+                .items
+                .iter()
+                .map(|item| item.path.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "nested/file-00000.txt",
+                "nested/file-00001.txt",
+                "nested/file-00002.txt"
+            ]
+        );
+        assert_eq!(result.total, index.len());
+        assert!(result.truncated);
+        let zero = search_index(&index, "file", 0);
+        assert!(zero.items.is_empty());
+        assert_eq!(zero.total, index.len());
+        assert!(zero.truncated);
+        let unicode = search_index(
+            &[IndexedPath {
+                relative: "😀café.txt".into(),
+                is_dir: false,
+            }],
+            "cé",
+            1,
+        );
+        assert_eq!(unicode.items[0].name_indices, vec![2, 5]);
     }
 
     #[test]

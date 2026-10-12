@@ -10,6 +10,7 @@ struct Stalled {
     channel: Option<Channel<server::Msg>>,
     received: Arc<AtomicUsize>,
     changed: Arc<tokio::sync::Notify>,
+    output_bytes: usize,
 }
 impl server::Handler for Stalled {
     type Error = russh::Error;
@@ -32,7 +33,13 @@ impl server::Handler for Stalled {
         session: &mut server::Session,
     ) -> Result<(), Self::Error> {
         session.channel_success(channel)?;
-        session.data(channel, b"READY".to_vec())?;
+        if self.output_bytes == 0 {
+            session.data(channel, b"READY".to_vec())?;
+        } else {
+            for _ in 0..self.output_bytes {
+                session.data(channel, vec![b'x'])?;
+            }
+        }
         Ok(())
     }
     async fn data(
@@ -77,6 +84,7 @@ async fn ssh_stalled_window_bounds_input_and_close_preempts_transfer() {
             channel: None,
             received: received.clone(),
             changed: changed.clone(),
+            output_bytes: 0,
         },
     ));
     let (handle, connected) = tokio::time::timeout(
@@ -151,5 +159,102 @@ async fn ssh_stalled_window_bounds_input_and_close_preempts_transfer() {
         server_result.is_ok()
             || matches!(&server_result, Err(russh::Error::IO(error)) if error.kind() == std::io::ErrorKind::BrokenPipe),
         "closing the client must release the server, got {server_result:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ready_inbound_backlog_does_not_postpone_stdin_until_output_drains() {
+    const OUTPUT_BYTES: usize = 32;
+    let key =
+        russh::keys::PrivateKey::random(&mut rand::rng(), russh::keys::Algorithm::Ed25519).unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let known = home.path().join("known_hosts");
+    std::fs::write(
+        &known,
+        format!("fixture {}\n", key.public_key().to_openssh().unwrap()),
+    )
+    .unwrap();
+    let config = Arc::new(server::Config {
+        keys: vec![key],
+        window_size: 0,
+        maximum_packet_size: 1024,
+        ..Default::default()
+    });
+    let (client_stream, server_stream) = tokio::io::duplex(64 * 1024);
+    let server_task = tokio::spawn(server::run_stream(
+        config,
+        server_stream,
+        Stalled {
+            channel: None,
+            received: Arc::new(AtomicUsize::new(0)),
+            changed: Arc::new(tokio::sync::Notify::new()),
+            output_bytes: OUTPUT_BYTES,
+        },
+    ));
+    let (handle, connected) = tokio::time::timeout(
+        Duration::from_secs(15),
+        houston_core::ssh::connect_stream_for_test(client_stream, known),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let server = server_task.await.unwrap().unwrap();
+    let handle = Arc::new(handle);
+    // The client handler receipts occur after channel enqueue. No sleep or
+    // throughput assumption is needed to make every inbound packet ready.
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while handle.received_output_bytes_for_test() != OUTPUT_BYTES {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let input = handle.enqueue_stdin(b"input").unwrap();
+    handle.resize(100, 40).unwrap();
+    let output = Arc::new(AtomicUsize::new(0));
+    let output_during_input = Arc::new(AtomicUsize::new(0));
+    let capture = output.clone();
+    let during = output_during_input.clone();
+    let active = handle.clone();
+    let driver = tokio::spawn(houston_core::ssh::run(connected, move |data| {
+        capture.fetch_add(data.len(), Ordering::SeqCst);
+        if active.transfer_active_for_test() {
+            during.fetch_add(data.len(), Ordering::SeqCst);
+        }
+    }));
+    let settled = tokio::time::timeout(Duration::from_secs(15), async {
+        while output.load(Ordering::SeqCst) != OUTPUT_BYTES || !handle.transfer_active_for_test() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    // Clean up before asserting so a failed fairness receipt cannot leave the
+    // fixture's zero-window transfer running.
+    handle.kill().unwrap();
+    tokio::time::timeout(Duration::from_secs(15), driver)
+        .await
+        .unwrap()
+        .unwrap();
+    let server_result = tokio::time::timeout(Duration::from_secs(15), server)
+        .await
+        .unwrap();
+    assert!(
+        server_result.is_ok()
+            || matches!(&server_result, Err(russh::Error::IO(error)) if error.kind() == std::io::ErrorKind::BrokenPipe),
+        "closing the client must release the server, got {server_result:?}"
+    );
+    settled.expect("driver must process the backlog and admit input");
+    assert!(
+        output_during_input.load(Ordering::SeqCst) > 0,
+        "stdin must begin while inbound output remains queued"
+    );
+    assert_eq!(
+        input
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap_err()
+            .written,
+        None,
+        "the active transfer must retain its cancellation outcome"
     );
 }

@@ -81,6 +81,15 @@ collaborator's contract, not just against its own assertions.
 - `m9-baseline.sh` uses a throwaway `m9bench` channel, wiped before every run and refused if
   a live daemon holds its lock.
 
+The real-WASM colour regression in `core.selection.test.ts` churns distinct RGB values
+across disposed terminals while another terminal retains a live colour. It checks cache
+eviction, value equality and unchanged colour fidelity. Run it with
+`cd ui && bun run test -- src/renderer/src/ghostty/core.selection.test.ts`.
+The standalone terminal surface diagnostics in the [development runbook](../operations/development.md#terminal-surface-diagnostics)
+measure lifetime retention and pause/reveal behaviour separately from native PTY and
+hibernation tests. Structural cache bounds and regression results do not establish CPU,
+RSS or native WebKit memory safety.
+
 ## Native watchdog ownership
 
 The watchdog unit fixtures hold an executor while logical probes expire, then release

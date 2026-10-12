@@ -111,6 +111,20 @@ queueing, so a small overlap tail does not retain the entire replay while waitin
 | `RESYNC_WINDOW_BYTES` | 8 KiB | resync scan after a drop — the same window the daemon's safe-cut uses |
 | `DEFAULT_NOTICE_INTERVAL_MS` | 2 000 | how often a loss may narrate itself; the cumulative total rides every notice |
 
+## Session metadata subscriptions
+
+Session metadata uses immutable map snapshots and session objects. Single-session
+consumers subscribe by id: an event for another session does not notify them or run
+their React snapshot reader. Dispatch compares only ids with mounted subscribers,
+and the last unsubscribe removes the id's listener bucket. Changing the selected id
+or store releases the previous subscription; removal and later insertion of the
+selected id remain observable.
+
+Selectors for families, membership, layout and workspace attention still receive
+whole-roster updates and preserve equal selections to avoid unrelated renders.
+This separation reduces single-session notification work without suppressing
+background status needed by the rail, tray and notifications.
+
 ## The terminal engine
 
 `ghostty/` is Houston's own engine. The WASM is vendored and loaded by Vite URL import
@@ -124,6 +138,11 @@ because growing a `WebAssembly.Memory` detaches the old `ArrayBuffer`.
 
 The render target is **Canvas 2D** — not WebGL, not DOM (`ghostty/renderer.ts`,
 `ghostty/surface.ts`). `pane/ghosttyTerminal.ts` is the pane-facing wrapper.
+
+RGB interning is shared across terminals and capped at 4096 colours with FIFO eviction.
+Repeated colours keep the renderer's identity comparison fast path while cached; evicted
+colours retain their exact RGB values and compare by value. The cap bounds historical
+cache retention across pane disposal, not the colours in live snapshots or total memory.
 
 The engine caps scrollback in bytes, while the setting counts lines. The surface converts
 the setting at the current width (`scrollbackLinesToBytes`) and recomputes the cap through
@@ -486,6 +505,14 @@ as other Houston saves, preserve file permissions, write a same-directory tempor
 file and rename it over the target. Conflicts return `FILE_SAVE_CONFLICT` with expected
 and actual hashes. Rename is atomic for readers; the save lock does not exclude writes
 by external processes, and the filesystem allowlist retains its resolve/syscall race.
+
+Path search shares immutable index snapshots and one in-flight scan per root generation.
+Invalidation prevents caching an obsolete scan but lets its existing callers receive the
+completed snapshot. Scan permits belong to the blocking closures, so cancelling a caller
+or evicting its cache entry cannot admit replacement work beyond the process limit.
+Search ranking runs off the async executor and retains only the display budget of
+candidates while counting every match. Index scans and ranking each have a two-worker
+limit; excess requests return a visible error instead of accumulating blocking jobs.
 
 Native notifications use the Linux desktop notification service over the existing session
 bus. The daemon is not involved: the renderer detects top-level status transitions, checks

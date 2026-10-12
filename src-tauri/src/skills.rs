@@ -652,7 +652,6 @@ async fn install_skill_url_under(
     if let Err(e) = tokio::fs::create_dir_all(dir).await {
         return InstallSkillResult::err(e.to_string());
     }
-    use tokio::io::AsyncWriteExt;
     let mut options = tokio::fs::OpenOptions::new();
     options.write(true);
     if overwrite {
@@ -669,10 +668,17 @@ async fn install_skill_url_under(
             ))
         }
     };
-    match file.write_all(content.as_bytes()).await {
+    match finish_skill_write(&mut file, content).await {
         Ok(()) => InstallSkillResult::ok(),
         Err(e) => InstallSkillResult::err(e.to_string()),
     }
+}
+
+async fn finish_skill_write(file: &mut tokio::fs::File, content: &str) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    file.write_all(content.as_bytes()).await?;
+    // Tokio may still have a blocking write queued when write_all completes.
+    file.flush().await
 }
 
 #[tauri::command]
@@ -1383,6 +1389,54 @@ mod tests {
         .await;
         assert!(!result.ok);
         assert!(!home.path().join(".claude/skills/deploy/SKILL.md").exists());
+    }
+
+    #[test]
+    fn skill_installation_waits_for_the_pending_file_write() {
+        use std::future::{poll_fn, Future};
+        use std::task::Poll;
+
+        let home = tempdir().unwrap();
+        let target = home.path().join("SKILL.md");
+        let mut file = tokio::fs::File::from_std(std::fs::File::create(&target).unwrap());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = std::sync::mpsc::channel();
+            let blocker = tokio::task::spawn_blocking(move || {
+                started_tx.send(()).unwrap();
+                let _ = release_rx.recv();
+            });
+            started_rx.await.unwrap();
+            let content = "# Deploy\nbody";
+            let mut write = Box::pin(finish_skill_write(&mut file, content));
+            let first_poll = poll_fn(|cx| Poll::Ready(write.as_mut().poll(cx))).await;
+            let before_release = std::fs::read_to_string(&target).unwrap();
+            // Release before asserting so failures cannot strand runtime shutdown.
+            release_tx.send(()).unwrap();
+            blocker.await.unwrap();
+            assert!(
+                first_poll.is_pending(),
+                "installation acknowledged a queued write"
+            );
+            assert!(before_release.is_empty());
+            write.await.unwrap();
+            assert_eq!(std::fs::read_to_string(&target).unwrap(), content);
+        });
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn skill_installation_reports_a_pending_file_write_error() {
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .unwrap();
+        let mut file = tokio::fs::File::from_std(file);
+        assert!(finish_skill_write(&mut file, "# Deploy").await.is_err());
     }
 
     #[tokio::test]
