@@ -23,7 +23,12 @@ reader drain and root reap run without either lock. Both spawn phases, hook and 
 and stdin refuse reserved sessions. Worktree preparation between spawn phases cannot publish
 into a closing parent; a refused spawn removes only the worktree it created.
 The reservation is bounded by registered sessions and releases on failure, leaving ownership
-and final output available for a Close retry. Registry removal follows reader completion,
+and final output available for a Close retry. Admission projects pending child asks to the
+operator when their parent becomes unavailable, and captures the checked Close notice before
+cancelling requests. Explicit Kill and Close persist cancellation before signalling the PTY.
+A failed cleanup leaves that request cancelled and the pane available for retry. Staged
+handbacks become ready without changing cancellation into a successful or failed natural exit.
+Ownership replacement uses a separate reservation. Registry removal follows reader completion,
 root reap and a successful durable close. On Linux, exit observation retains the root with
 `WEXITED | WNOWAIT` until drain, so quiet descendants can be terminated using the same process
 identity while the pane already reports `Exited`.

@@ -12427,10 +12427,18 @@ impl Daemon {
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
+        let cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         self.ensure_not_closing(id, "kill")?;
         self.ensure_not_sleeping(id)?;
         self.ensure_not_shell_restoring(id)?;
         let session = self.get(id)?;
+        self.cancel_delegation(id)?;
+        drop(cleanup);
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("kill-admitted", id);
         session
             .backend
             .kill(id, session.pid, self.channel.as_deref())?;
@@ -12441,7 +12449,6 @@ impl Daemon {
             .expect("operator_ended lock")
             .insert(id);
         self.forget_resume_handle(id);
-        self.cancel_delegation(id);
         *session.state.lock().expect("state lock") = proto::SessionState::Killed;
         *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
         self.db
@@ -12826,7 +12833,7 @@ impl Daemon {
                 .temporary_cleanup_lock
                 .lock()
                 .expect("temporary cleanup lock");
-            self.reserve_close_locked(id)?
+            self.reserve_deliberate_close_locked(id)?
         };
         self.close_reserved(&reservation)
     }
@@ -12885,6 +12892,23 @@ impl Daemon {
             .expect("closing sessions lock")
             .extend(ids.iter().copied());
         Ok(CloseReservation { daemon: self, ids })
+    }
+
+    fn reserve_deliberate_close_locked(&self, id: u32) -> Result<CloseReservation<'_>> {
+        let reservation = self.reserve_close_locked(id)?;
+        // Project pending asks before cancellation expires descendant dialogue.
+        for &parent in reservation.ids.iter().rev() {
+            self.escalate_child_inputs_locked(
+                parent,
+                proto::ChildInputEscalationReason::ParentUnavailable,
+            );
+        }
+        // Persist deliberate cancellation before the waiter can publish natural exit.
+        // Cleanup failures retain the pane for retry, with its request already cancelled.
+        for &child in &reservation.ids {
+            self.cancel_delegation(child)?;
+        }
+        Ok(reservation)
     }
 
     fn close_reserved(&self, reservation: &CloseReservation<'_>) -> Result<()> {
@@ -12998,7 +13022,7 @@ impl Daemon {
             .expect("operator_ended lock")
             .insert(id);
         self.forget_resume_handle(id);
-        self.cancel_delegation(id);
+        self.cancel_delegation(id)?;
         self.db.delegation_forget_retention(id)?;
         let removed = self.sessions.lock().expect("sessions lock").remove(&id);
         self.remote_forget_session(id);
@@ -19621,35 +19645,30 @@ impl Daemon {
             self.ensure_not_closing(target, "orchestrate_kill")?;
             self.assert_orchestration_target(caller, target)?;
             self.child_guard(target, confirm_children)?;
-            self.reserve_close_locked(target)?
+            self.reserve_deliberate_close_locked(target)?
         };
         self.close_reserved(&reservation)
     }
 
-    fn cancel_delegation(&self, child: u32) {
-        match self.db.delegation_for_child(child) {
-            Ok(Some(row))
-                if !orchestrate::DelegationState::parse(&row.state)
-                    .is_some_and(|s| s.is_closed()) =>
-            {
-                if let Err(e) = self.db.delegation_finish(
-                    child,
-                    orchestrate::DelegationState::Cancelled.as_str(),
-                    Some("ended on purpose while its current request was still open"),
-                    now_ms(),
-                ) {
-                    tracing::warn!("cancelling the delegation for child {child}: {e}");
-                }
-                self.broadcast_delegation(child);
-                if let Some(daemon) = self.self_arc() {
-                    daemon.inbox_notify(row.parent_session, false);
-                } else {
-                    self.notify_inbox_wake(row.parent_session);
-                }
+    fn cancel_delegation(&self, child: u32) -> Result<()> {
+        if let Some(row) = self.db.delegation_for_child(child)? {
+            if orchestrate::DelegationState::parse(&row.state).is_some_and(|s| s.is_closed()) {
+                return Ok(());
             }
-            Ok(_) => {}
-            Err(e) => tracing::warn!("reading the delegation record for child {child}: {e}"),
+            self.db.delegation_finish(
+                child,
+                orchestrate::DelegationState::Cancelled.as_str(),
+                Some("ended on purpose while its current request was still open"),
+                now_ms(),
+            )?;
+            self.broadcast_delegation(child);
+            if let Some(daemon) = self.self_arc() {
+                daemon.inbox_notify(row.parent_session, false);
+            } else {
+                self.notify_inbox_wake(row.parent_session);
+            }
         }
+        Ok(())
     }
 
     fn child_guard(&self, id: u32, confirmed: bool) -> Result<()> {
@@ -19723,10 +19742,8 @@ impl Daemon {
                 .expect("temporary cleanup lock");
             self.ensure_not_closing(id, "close")?;
             self.child_guard(id, confirm_children)?;
-            (
-                self.reserve_close_locked(id)?,
-                self.operator_ended_notice_facts(id),
-            )
+            let notice = self.operator_ended_notice_facts(id);
+            (self.reserve_deliberate_close_locked(id)?, notice)
         };
         self.close_reserved(&reservation)?;
         if let Some((parent, label)) = notice {
@@ -20446,6 +20463,10 @@ impl Daemon {
     }
 
     fn delegation_child_exited(self: &Arc<Self>, child: u32) {
+        let cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         let row = match self.db.delegation_for_child(child) {
             Ok(Some(row)) => row,
             Ok(None) => return,
@@ -20490,6 +20511,7 @@ impl Daemon {
         ) {
             tracing::warn!("closing the delegation for child {child}: {e}");
         }
+        drop(cleanup);
         if let Some(id) = pending {
             self.broadcast_inbox_row(id);
         }

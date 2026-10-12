@@ -8997,6 +8997,7 @@ async fn k1_cancelling_a_child_releases_its_staged_result() {
         .orchestrate_submit(child, "durable answer".to_string().into())
         .unwrap();
     r.daemon.orchestrate_kill(parent.id, child, false).unwrap();
+    assert_eq!(r.daemon.delegation_of(child).unwrap().state, "cancelled");
     let rows = r.daemon.inbox_rows_for_test(parent.id);
     let result = rows.iter().find(|row| row.kind == "result").unwrap();
     assert!(result.ready_at.is_some(), "{rows:?}");
@@ -15179,4 +15180,149 @@ async fn instruction_start_and_end_before_enter_receipt_are_retained() {
         row.adopted && row.completed,
         "supported events during the receipt wait must finish the exact claimed instruction"
     );
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+struct InstructionReceiptBarrier {
+    directory: tempfile::TempDir,
+    previous: Option<std::ffi::OsString>,
+    point: &'static str,
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+impl InstructionReceiptBarrier {
+    fn new(point: &'static str) -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("HOUSTON_TEST_BARRIER_DIR");
+        std::env::set_var("HOUSTON_TEST_BARRIER_DIR", directory.path());
+        std::fs::write(directory.path().join("armed"), point).unwrap();
+        Self {
+            directory,
+            previous,
+            point,
+        }
+    }
+
+    async fn reached(&self, child: u32) {
+        let receipt = format!("{} {child}", self.point);
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while std::fs::read_to_string(self.directory.path().join("reached"))
+                .ok()
+                .as_deref()
+                != Some(receipt.as_str())
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("instruction did not reach its real PTY receipt barrier");
+    }
+
+    fn release(&self) {
+        let _ = std::fs::remove_file(self.directory.path().join("armed"));
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+impl Drop for InstructionReceiptBarrier {
+    fn drop(&mut self) {
+        self.release();
+        if let Some(previous) = &self.previous {
+            std::env::set_var("HOUSTON_TEST_BARRIER_DIR", previous);
+        } else {
+            std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+        }
+    }
+}
+
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn explicit_close_cancels_before_reap_and_retains_retryable_ownership() {
+    let _guard = serial().await;
+    for staged in [false, true] {
+        let r = rig("close-cancellation-admission").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        let child = input_policy_child(&r, parent.id, "grok", None).await;
+        if staged {
+            r.daemon
+                .orchestrate_submit(child, "retained handback".to_string().into())
+                .unwrap();
+        }
+        let barrier = InstructionReceiptBarrier::new("pty-exit-observed");
+        let closing = r.daemon.clone();
+        let operation =
+            tokio::task::spawn_blocking(move || closing.orchestrate_kill(parent.id, child, false));
+        barrier.reached(child).await;
+        assert_eq!(
+            r.daemon.delegation_of(child).unwrap().state,
+            "cancelled",
+            "explicit close must durably cancel before the waiter is allowed to finish"
+        );
+        if staged {
+            assert!(r
+                .daemon
+                .inbox_rows_for_test(parent.id)
+                .iter()
+                .any(|row| row.kind == "result" && row.ready_at.is_some()));
+        }
+        let error = operation.await.unwrap().unwrap_err();
+        assert!(
+            error.to_string().contains("cleanup reap limit 1000 ms"),
+            "{error:#}"
+        );
+        assert!(r.daemon.list().iter().any(|info| info.id == child));
+        barrier.release();
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while info_of(&r.daemon, child).state.is_live() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        r.daemon
+            .orchestrate_kill(parent.id, child, false)
+            .expect("retry drains retained ownership");
+        assert!(!r.daemon.list().iter().any(|info| info.id == child));
+        assert_eq!(r.daemon.delegation_of(child).unwrap().state, "cancelled");
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn explicit_kill_cancels_before_signalling_the_live_child() {
+    let _guard = serial().await;
+    let r = rig("kill-cancellation-admission").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let child = input_policy_child(&r, parent.id, "grok", None).await;
+    let barrier = InstructionReceiptBarrier::new("kill-admitted");
+    let mut events = r.daemon.observe();
+    let killing = r.daemon.clone();
+    let operation = tokio::task::spawn_blocking(move || killing.session_kill_checked(child, false));
+    barrier.reached(child).await;
+    assert!(info_of(&r.daemon, child).state.is_live());
+    assert_eq!(
+        r.daemon.delegation_of(child).unwrap().state,
+        "cancelled",
+        "Kill admission must cancel the request before its signal can wake the waiter"
+    );
+    barrier.release();
+    operation.await.unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if let houston_core::daemon::Outbound::Control(json) = events.recv().await.unwrap() {
+                if matches!(serde_json::from_str::<proto::ServerMsg>(&json),
+                    Ok(proto::ServerMsg::SessionState { session, state: proto::SessionState::Killed, exit_code: Some(_) }) if session == child) {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(r.daemon.delegation_of(child).unwrap().state, "cancelled");
 }
