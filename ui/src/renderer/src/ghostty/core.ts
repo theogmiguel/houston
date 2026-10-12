@@ -155,15 +155,23 @@ export interface GhosttyMouseInput {
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
 
-// Interned by packed RGB: every cell read mints fresh colors and the key space is
-// only 24-bit, so unbounded caching is cheap and gives ghosttyColorsEqual an identity
-// fast path that the run-boundary checks in renderer.ts hit on nearly every cell.
+// Keep the identity fast path for repeated colours without retaining every RGB
+// value emitted over the application's lifetime. FIFO leaves cache hits read-only.
+// Room for sixteen indexed palettes; eviction bounds retention without reducing RGB fidelity.
+const COLOR_CACHE_CAPACITY = 4096;
 const colorCache = new Map<number, GhosttyColor>();
+const colorCacheKeys = new Uint32Array(COLOR_CACHE_CAPACITY);
+let nextColorCacheSlot = 0;
 
 function ghosttyColor(r: number, g: number, b: number): GhosttyColor {
   const key = (r << 16) | (g << 8) | b;
   const hit = colorCache.get(key);
   if (hit) return hit;
+  if (colorCache.size >= COLOR_CACHE_CAPACITY) {
+    colorCache.delete(colorCacheKeys[nextColorCacheSlot]!);
+  }
+  colorCacheKeys[nextColorCacheSlot] = key;
+  nextColorCacheSlot = (nextColorCacheSlot + 1) % COLOR_CACHE_CAPACITY;
   const color = Object.freeze({ r, g, b });
   colorCache.set(key, color);
   return color;

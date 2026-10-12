@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { GhosttyTerminalCore, ghosttyRowText, type GhosttyTheme } from "./core";
+import { GhosttyTerminalCore, ghosttyColorsEqual, ghosttyRowText, type GhosttyTheme } from "./core";
 import { GhosttyRuntime } from "./runtime";
 
 const vendorDir = fileURLToPath(new URL("./vendor/", import.meta.url));
@@ -52,6 +52,46 @@ function selectedCellsByRow(core: GhosttyTerminalCore): Map<number, number[]> {
 }
 
 describe("terminal colours", () => {
+  it("evicts historical RGB interns across terminal lifetimes without changing live colours", async () => {
+    const runtime = await GhosttyRuntime.loadFromBytes(wasmBytes, writePtyBytes);
+    const create = async () => {
+      const core = await GhosttyTerminalCore.create(64, 2, 8, 17, THEME, () => {}, runtime);
+      cores.push(core);
+      return core;
+    };
+    const live = await create();
+    const marker = "\x1b[38;2;197;91;203m";
+    live.write(marker + "AB");
+    const original = live.snapshot().rowData[0]!.cells[0]!.foreground;
+    expect(live.snapshot().rowData[0]!.cells[1]!.foreground).toBe(original);
+    expect(Object.isFrozen(original)).toBe(true);
+
+    // Distinct truecolours remain interned after closing each emitting terminal
+    // in the old implementation. Snapshot every batch so colours reach the reader.
+    for (let session = 0; session < 8; session += 1) {
+      const churn = await create();
+      for (let batch = 0; batch < 16; batch += 1) {
+        let output = "\x1b[H";
+        for (let column = 0; column < 64; column += 1) {
+          const rgb = session * 1024 + batch * 64 + column;
+          output += `\x1b[38;2;0;${rgb >> 8};${rgb & 255}mX`;
+        }
+        churn.write(output);
+        const cells = churn.snapshot().rowData[0]!.cells;
+        expect(cells[63]!.foreground).toEqual({ r: 0, g: session * 4 + (batch >> 2), b: batch % 4 * 64 + 63 });
+      }
+      churn.dispose();
+    }
+
+    expect(original).toEqual({ r: 197, g: 91, b: 203 });
+    // Force a dirty row: clean snapshots reuse the old cells, independently of interning.
+    live.write("\x1b[H" + marker + "CD");
+    const recreated = live.snapshot().rowData[0]!.cells[0]!.foreground;
+    expect(recreated).not.toBe(original);
+    expect(ghosttyColorsEqual(recreated, original)).toBe(true);
+    expect(live.snapshot().rowData[0]!.cells[1]!.foreground).toBe(recreated);
+  });
+
   it("preserves ANSI, indexed and RGB foregrounds through repaint and resize", async () => {
     const core = await createCore();
     core.write("\x1b]133;C\x07\x1b[31mR\x1b[38;5;46mG\x1b[38;2;17;91;203mB\x1b[0mW\r\n");
