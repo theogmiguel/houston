@@ -163,7 +163,7 @@ export function RailGroupCount({ children }: { children: ReactNode }): React.JSX
 }
 
 export function RailTreeGroupHeader({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div data-testid="tree-group-header" className="box-content flex h-[var(--h-rail-group-header)] flex-none items-center gap-1 px-[var(--space-2)] pt-[var(--space-2)]">{children}</div>
+  return <div data-testid="tree-group-header" className="box-content flex h-[var(--h-rail-group-header)] flex-none items-center gap-1 px-[var(--space-4)] pt-[var(--space-2)]">{children}</div>
 }
 
 export function RailTreeTitle({ children }: { children: ReactNode }): React.JSX.Element {
@@ -176,7 +176,7 @@ export function RailFilterCountBadge({ children }: { children: ReactNode }): Rea
 
 export function RailActiveTagFilter({ tags, onClear }: { tags: readonly TagInfo[]; onClear: () => void }): React.JSX.Element | null {
   if (!tags.length) return null
-  return <div data-testid="rail-active-tag-filter" className="flex flex-none flex-wrap items-center gap-1 px-2 pb-1 text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
+  return <div data-testid="rail-active-tag-filter" className="flex flex-none flex-wrap items-center gap-1 px-[var(--space-4)] pb-1 text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
     Showing {tags.map((tag) => <TagChip key={tag.id} tag={tag} />)} only
     <Button variant="muted-link" size="sm" className="ml-auto" onClick={onClear}>Clear</Button>
   </div>
