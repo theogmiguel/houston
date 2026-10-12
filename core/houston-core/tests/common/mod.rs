@@ -38,7 +38,15 @@ pub fn hermetic_command(
         use std::os::unix::fs::PermissionsExt;
         let shims = home.join("provider-shims");
         std::fs::create_dir_all(&shims).unwrap();
-        for name in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
+        for name in [
+            "claude",
+            "codex",
+            "agy",
+            "opencode",
+            "cursor-agent",
+            "grok",
+            "zcode",
+        ] {
             let path = shims.join(name);
             if !path.exists() {
                 std::fs::write(
