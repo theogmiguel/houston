@@ -117,6 +117,17 @@ describe('Usage page', () => {
     expect(onActivityRequest).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps previous results at full contrast while reading another window', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 3 * DAY + 120_000)
+    render({ loading: true, summary: summary({ until_ms: DAY0 + DAY, read_at_ms: DAY0 + 3 * DAY }) })
+    expect(q('[data-testid="usage-meta"]')?.textContent).toContain('Reading transcripts…')
+    expect(q('[data-testid="usage-meta"]')?.textContent).toContain('showing the result from 2 min ago')
+    expect(q('[data-testid="usage-headline"]')?.textContent).toContain('$125.00')
+    expect(q('[data-testid="usage-body"]')?.style.opacity).toBe('')
+    expect(q('[data-testid="usage-body"]')?.getAttribute('aria-busy')).toBe('true')
+  })
+
   it('shows the API price explanation, scan metadata and four stat cards', () => {
     render()
     expect(q('[data-testid="usage-headline"]')?.textContent).toContain('$125.00')

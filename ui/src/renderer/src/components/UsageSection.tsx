@@ -138,12 +138,11 @@ function UsageBreakdown({
 }
 
 function usageRangeLabel(
-  stale: boolean,
   summary: UsageSummaryMsg | null,
   asked: { sinceMs: number; untilMs: number } | null,
   timeZone: string
 ): string {
-  if (stale || !summary) {
+  if (!summary) {
     return asked
       ? `${formatRange(asked.sinceMs, asked.untilMs, timeZone)} · reading transcripts…`
       : 'Reading transcripts…'
@@ -248,12 +247,11 @@ export function UsageSection({
     onRequest(sinceMs, untilMs, true, selectedWorkspace === 'all' ? null : selectedWorkspace)
   }
 
-  const stale =
-    loading && summary !== null && asked !== null && summary.until_ms - summary.since_ms !== asked.untilMs - asked.sinceMs
+  const reading = loading || !summary && !error
 
   const sessions = [...sessionsByProvider.values()].reduce((sum, count) => sum + count, 0)
-  const noUsage = !stale && summary !== null && sessions === 0
-  const rangeLabel = usageRangeLabel(stale, summary, asked, timeZone)
+  const noUsage = summary !== null && sessions === 0
+  const rangeLabel = usageRangeLabel(summary, asked, timeZone)
 
   return (
     <div className="h-full min-h-0 w-full overflow-y-auto" data-testid="nav-surface" data-page="usage">
@@ -265,7 +263,7 @@ export function UsageSection({
           <Tooltip label="Read transcripts again"><Button variant="icon" aria-label="Refresh usage" data-testid="usage-refresh" onClick={refresh} disabled={loading} icon={IconRefresh} /></Tooltip>
         </>
       } />
-      <UsageMetaLine range={rangeLabel.replace(' to ', ' – ')} readAge={summary ? readAge(summary.read_at_ms) : null} duration={summary ? `${(summary.scan_duration_ms / 1000).toFixed(1)} s` : null} reading={loading || !summary && !error} pricing={summary?.pricing.fetched_at_ms ? `Prices from the model catalog, updated ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(summary.pricing.fetched_at_ms)}` : 'Model catalog prices unavailable'} />
+      <UsageMetaLine range={rangeLabel.replace(' to ', ' – ')} readAge={summary ? readAge(summary.read_at_ms) : null} duration={summary ? `${(summary.scan_duration_ms / 1000).toFixed(1)} s` : null} reading={reading} pricing={summary?.pricing.fetched_at_ms ? `Prices from the model catalog, updated ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(summary.pricing.fetched_at_ms)}` : 'Model catalog prices unavailable'} />
       {error && (
         <Notice tone="danger" data-testid="usage-error">
           {error}
@@ -273,7 +271,7 @@ export function UsageSection({
       )}
 
       {}
-      <UsageBody stale={stale}>
+      <UsageBody reading={reading}>
         {!summary ? (
           <Text as="p" role="status" size="ui" tone="secondary">{error ? 'No usage result available.' : 'Reading transcripts…'}</Text>
         ) : noUsage ? (

@@ -30,8 +30,8 @@ export function UsageChartHeading({ children }: { children: ReactNode }): React.
   return <Text as="div" size="large" weight="semibold" className="tracking-[var(--tr-text-subhead-tracking)]">{children}</Text>
 }
 
-export function UsageBody({ stale, children }: { stale: boolean; children: ReactNode }): React.JSX.Element {
-  return <div data-testid="usage-body" aria-busy={stale} style={stale ? { opacity: 'var(--opacity-usage-stale)' } : undefined} className={`grid gap-[var(--space-5)] ${stale ? 'transition-opacity duration-150' : ''}`}>{children}</div>
+export function UsageBody({ reading, children }: { reading: boolean; children: ReactNode }): React.JSX.Element {
+  return <div data-testid="usage-body" aria-busy={reading} className="grid gap-[var(--space-5)]">{children}</div>
 }
 
 export function UsageError({ children }: { children: ReactNode }): React.JSX.Element {
@@ -91,7 +91,7 @@ export function UsageToolbarActions({ children }: { children: ReactNode }): Reac
 }
 
 export function UsageChromeSpecimen(): React.JSX.Element {
-  return <div className="grid gap-[var(--space-3)]"><UsageToolbar><Text as="h1" size="ui" weight="semibold" flush>Usage</Text><span className="text-[var(--text-faint)]">/</span><Text size="small" tone="muted" tabular>Last 7 days</Text></UsageToolbar><UsageContentFrame><div className="grid gap-[var(--space-3)]"><UsageHeroColumn><UsageHeroSummary><UsageHeroValue>$14.20</UsageHeroValue><UsageHeroCaption>12 sessions · API estimate</UsageHeroCaption></UsageHeroSummary><UsageProviderList><UsageStatCell label="Sessions" value="12" note="active sessions" /></UsageProviderList></UsageHeroColumn><UsageStatCell label="Processed tokens" value="24,500" note="per active day"/><UsageChartHeading>Daily cost</UsageChartHeading><UsageError>Usage could not be refreshed.</UsageError><UsageBody stale><span>Reading transcripts…</span></UsageBody><UsageBreakdownSection><UsageBreakdownHeading><Text size="large" weight="semibold">Breakdown</Text></UsageBreakdownHeading><UsageBreakdownFrame><Text size="small" tone="muted">Daily model activity</Text></UsageBreakdownFrame></UsageBreakdownSection></div></UsageContentFrame></div>
+  return <div className="grid gap-[var(--space-3)]"><UsageToolbar><Text as="h1" size="ui" weight="semibold" flush>Usage</Text><span className="text-[var(--text-faint)]">/</span><Text size="small" tone="muted" tabular>Last 7 days</Text></UsageToolbar><UsageContentFrame><div className="grid gap-[var(--space-3)]"><UsageHeroColumn><UsageHeroSummary><UsageHeroValue>$14.20</UsageHeroValue><UsageHeroCaption>12 sessions · API estimate</UsageHeroCaption></UsageHeroSummary><UsageProviderList><UsageStatCell label="Sessions" value="12" note="active sessions" /></UsageProviderList></UsageHeroColumn><UsageStatCell label="Processed tokens" value="24,500" note="per active day"/><UsageChartHeading>Daily cost</UsageChartHeading><UsageError>Usage could not be refreshed.</UsageError><UsageBody reading><span>Reading transcripts…</span></UsageBody><UsageBreakdownSection><UsageBreakdownHeading><Text size="large" weight="semibold">Breakdown</Text></UsageBreakdownHeading><UsageBreakdownFrame><Text size="small" tone="muted">Daily model activity</Text></UsageBreakdownFrame></UsageBreakdownSection></div></UsageContentFrame></div>
 }
 
 export function UsageMetaLine({ range, readAge, duration, pricing, reading }: { range: string; readAge: string | null; duration: string | null; pricing: string; reading: boolean }): React.JSX.Element {

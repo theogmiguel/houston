@@ -560,6 +560,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'tasks/list': () => <TasksListStory />,
   'usage/page': () => <UsagePageStory />,
   'usage/error': () => <UsagePageStory state="error" />,
+  'usage/reading': () => <UsagePageStory state="reading" />,
+  'usage/loading': () => <UsagePageStory state="loading" />,
   'usage/stale': () => <UsagePageStory state="stale" />,
   'usage/empty': () => <UsagePageStory state="empty" />,
   'tasks/page': () => <TasksPageStory />,
