@@ -69,8 +69,8 @@ workspace from the pane it names.
 A tag is a named colour you attach to mark work, such as `code review`. Choose a preset or
 enter a custom `#rrggbb` colour when creating or editing a tag. Tag controls open the same
 anchored popover next to the control that invoked it. Grids and panes carry tags
-independently: a grid's tags are set from its card, and a pane's tags are set from the
-pane's actions or context menu.
+independently: choose **Tags** from a grid's menu to assign its tags, or use a pane's
+actions or context menu to assign that pane's tags.
 Adding a tag to a grid does not add it to the grid's panes, and a pane's tag does not
 appear on its grid card. Each grid and each pane carries at most five tags.
 
@@ -83,23 +83,36 @@ tags as the grid's own the first time they open; their panes' copies are removed
 
 ## Grid cards
 
-The navigation rail shows one card for each grid. **Detailed** cards can show the primary
-pane's checkout, pull request, CI, diff totals, task, inline agents, context use and tags.
-Detailed cards show the primary checkout and a `+N` count for other checkouts; hover the
-card to see every checkout. The
-compact layout keeps the grid name with compact status and unread indicators, plus optional
-tags, pull request, checkout branch and agent count; hover it for the details card. Agent
-activity can show a compact summary or the full list of agents, their prompt and latest
-message. Prompt and message previews stay local to Houston.
-The unread marker reflects inbox messages and waiting child panes; use it to mark a grid
-read or unread. Smart sort places unread cards after cards that need input or are working.
+The Workspaces rail shows one card for each grid. **Detailed** cards show the primary
+checkout, a pull request with its reported check state, branch changes, agents and tags.
+The ahead count and added (`+`) or deleted (`−`) line totals appear only when non-zero.
+Tags appear as named chips by default. Cards show the primary checkout and a `+N` count
+for other checkouts; hover the card to see every checkout. **Condensed** cards keep the
+grid name, status and unread indicators, with optional tags, pull request, checkout and
+agent count; hover for the details.
 
-Open **Sidebar options** to group cards by workspace, status, pull-request state or not at
-all; sort manually, smartly, by recent activity or by name; choose a card layout and agent
-activity display; and choose which card properties to show. Status and unread indicators
-are always shown. Filters can hide idle grids, grids on `main` or `master`, empty grids or
-grids without selected tags. When tags are hidden from cards, the tag filter offers to show
-them before applying a tag filter.
+Agent rows show **Waiting** when input is needed and context use as a percentage when it
+reaches 80% or higher. Selecting an agent row selects its grid and focuses its pane.
+With collapsed agent activity, a grid with more than three agents shows its first two
+and an **N more agents** action; expand it to see the rest. Expanded activity shows the
+full list. Optional prompt and latest-message previews stay local to Houston.
+The unread marker reflects inbox messages and waiting child panes; use it to mark a grid
+read or unread. **Agent activity** sort places unread cards after cards that need input
+or are working.
+
+Open the Workspaces options menu to group cards by workspace, status, pull-request state
+or not at all, and sort by **Manual**, **Agent activity**, **Recent** or **Name**. Its other
+options are:
+
+- **Cards show**: choose tags, pull request and checks, branch and changes, agents or
+  latest messages. Status and unread indicators are always shown.
+- **Hide**: hide idle grids, grids on the default branch (`main` or `master`), or empty grids.
+- **Filter by tag**: keep grids carrying a selected tag themselves or on any of their
+  panes. The active filter line names the selected tags; **Clear** removes the tag filter.
+  If tags are hidden, Houston offers to show them before applying the filter.
+- **Manage tags…**: create, rename, recolour or delete tags.
+- **Card display**: choose Detailed or Condensed cards, Expanded or Collapsed agent
+  activity, and how tags appear.
 
 Pin a grid from its card menu to place it in the Pinned section. Drag cards to reorder
 them, or use `Mod+Shift+↑` and `Mod+Shift+↓` for the selected card. Manual reordering is
@@ -114,6 +127,14 @@ Hide an unneeded work destination with **Hide from sidebar**; restore it in Sett
 
 Open Settings ▸ Agents for Skills, MCP servers and Review. **Back to workspaces** returns
 to the workspace view; **Esc** clears an active settings search first, then returns.
+
+## Closing a grid
+
+Choose **Close grid and its N agents…** from the grid menu and confirm to close a populated
+grid. Closing any grid ends all its agents and shell sessions, even when other grids
+remain in the workspace. Cancelling keeps the grid and its sessions. An empty grid uses
+**Close grid** without an agent confirmation; closing the last grid leaves the workspace
+empty.
 
 ## The branch and shared checkouts
 
