@@ -1195,6 +1195,15 @@ export function UiPrimitivesStory(): React.JSX.Element {
             onUpdateEngine={noop}
             onOpenSession={noop}
           />
+          <RoutineDetail
+            routine={{ kind: 'harness_review', id: 2, name: 'Weekly review', prompt: 'Review sessions', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}
+            heading="Weekly review"
+            description={<Text size="small" tone="secondary">Sessions in Houston since the previous review.</Text>}
+            scheduleControl={<Select aria-label="Review schedule" value="weekly" options={[{ value: 'off', label: 'Only when I run it' }, { value: 'weekly', label: 'Mondays 09:00' }, { value: 'daily', label: 'Daily 09:00' }]} onChange={noop} />}
+            history={<div className="grid gap-[var(--space-2)]"><SectionHead title="Recent runs" /><Card><Card.Row heading="38 sessions" meta="3 findings" action={<Button variant="link" size="sm">Open report</Button>} /></Card></div>}
+            runsLoading={false} now={Date.now()} running={false} pending={false} atLimit={null}
+            onRunNow={noop} onToggleEnabled={noop} onEdit={noop} onDelete={noop} onUpdateSchedule={noop} onUpdateEngine={noop} onOpenSession={noop}
+          />
         </SpecimenGroup>
 
         <SpecimenGroup heading="PageFrame, PageHeader and SectionHead">

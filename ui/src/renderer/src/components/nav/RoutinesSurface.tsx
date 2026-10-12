@@ -1,6 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Button, EmptyState, ListDetail, Notice, PageFrame, PageHeader, StatusLabel, type ListDetailItem, NavSurfaceFrame } from '../ui'
+import type { HoustonClient } from '../../houston/client'
+import { WeeklyReviewDetail, WeeklyReviewSetup } from './WeeklyReviewDetail'
+import { Text } from '../ui'
 import { IconClock, IconPlus } from '../icons'
+import { scheduleFields } from './harnessFormat'
 import { formatRoutineError, nextUpTimeLabel } from './routineFormat'
 import { RoutineEditor, type RoutineFormValue } from './RoutineEditor'
 import type {
@@ -18,12 +22,13 @@ const RoutineDetail = lazy(() => import('../ui/RoutineDetail').then((module) => 
 
 export function sortRoutines(routines: Routine[]): Routine[] {
   return [...routines].sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'harness_review' ? -1 : 1
     if (a.next_run_at_ms !== b.next_run_at_ms) return a.next_run_at_ms - b.next_run_at_ms
     return a.id - b.id
   })
 }
 
-type Panel = { mode: 'create' } | { mode: 'edit'; routine: Routine } | null
+type Panel = { mode: 'create' } | { mode: 'edit'; routine: Routine } | { mode: 'review-setup'; workspace: RoutineWorkspaceOption } | null
 
 function routineStatus(routine: Routine, running: boolean, waiting: boolean, now: number): React.JSX.Element {
   if (running) return <StatusLabel status="Working" />
@@ -33,6 +38,7 @@ function routineStatus(routine: Routine, running: boolean, waiting: boolean, now
 }
 
 export function RoutinesSurface(props: {
+  client?: HoustonClient | null
   routines: Routine[]
   running: number[]
   /** Engine and access pairs the daemon refuses; their choices are shown disabled. */
@@ -55,7 +61,7 @@ export function RoutinesSurface(props: {
   showLimitNotice?: boolean
 }): React.JSX.Element {
   const {
-    routines, running, engineRefusals = [], runs, runsLoading, workspaces, error, onDismissError, onCreate,
+    client = null, routines, running, engineRefusals = [], runs, runsLoading, workspaces, error, onDismissError, onCreate,
     onUpdate, onDelete, onRunNow, onLoadRuns, onOpenSession, onRequest, now,
     selectedRoutineId, onRoutineSelect, showLimitNotice = true
   } = props
@@ -68,25 +74,32 @@ export function RoutinesSurface(props: {
   const waitingIds = new Set(sortRoutines(routines)
     .filter((routine) => routine.enabled && !running.includes(routine.id) && routine.next_run_at_ms <= now)
     .map((routine) => routine.id))
-  const items: Array<ListDetailItem & { routine: Routine }> = sortRoutines(routines).map((routine) => ({
+  const routineItems: Array<ListDetailItem & { routine: Routine | null; setupWorkspace?: RoutineWorkspaceOption }> = sortRoutines(routines).map((routine) => ({
     id: String(routine.id),
-    title: <>{routine.name}{routine.workspace_id && workspaceById.get(routine.workspace_id) ? ` · ${workspaceById.get(routine.workspace_id)?.name}` : ''}</>,
+    section: routine.kind === 'harness_review' ? 'Built in' : 'Yours',
+    title: <>{routine.kind === 'harness_review' ? 'Weekly review' : routine.name}{routine.workspace_id ? ` · ${workspaceById.get(routine.workspace_id)?.name ?? routine.workspace_id}` : ''}</>,
     sub: routineStatus(routine, running.includes(routine.id), slotsFull && waitingIds.has(routine.id), now),
     routine
   }))
+  const setupItems = client ? workspaces.filter((workspace) => !routines.some((routine) => routine.kind === 'harness_review' && routine.workspace_id === workspace.id)).map((workspace) => ({
+    id: `setup:${workspace.id}`, section: 'Built in', title: `Weekly review · ${workspace.name}`,
+    sub: <Text size="small" tone="muted">Not set up</Text>, routine: null, setupWorkspace: workspace,
+    right: <Button variant="link" size="sm" data-testid={`review-setup-${workspace.id}`} onClick={() => { onDismissError(); setPanel({ mode: 'review-setup', workspace }) }}>Set up Weekly review</Button>
+  })) : []
+  const items = [...routineItems.filter((item) => item.section === 'Built in'), ...setupItems, ...routineItems.filter((item) => item.section === 'Yours')]
   const selected = items.find((item) => item.id === selectedId)?.routine ?? null
 
   useEffect(() => {
     if (selectedRoutineId !== undefined) return
     if (localSelection && !routines.some((routine) => String(routine.id) === localSelection)) {
-      setLocalSelection(routines[0] ? String(routines[0].id) : null)
+      setLocalSelection(routines[0] ? String(sortRoutines(routines)[0].id) : null)
     } else if (localSelection === null && routines.length > 0) {
       setLocalSelection(String(sortRoutines(routines)[0].id))
     }
   }, [localSelection, routines, selectedRoutineId])
 
   useEffect(() => {
-    if (selected && runs[selected.id] === undefined && runsLoading !== selected.id) onLoadRuns(selected.id)
+    if (selected && selected.kind !== 'harness_review' && runs[selected.id] === undefined && runsLoading !== selected.id) onLoadRuns(selected.id)
   }, [onLoadRuns, runs, runsLoading, selected])
 
   useEffect(() => {
@@ -101,6 +114,8 @@ export function RoutinesSurface(props: {
   }, [error, runs, running])
 
   function selectRoutine(value: string | null): void {
+    const setupWorkspace = items.find((item) => item.id === value)?.setupWorkspace
+    if (setupWorkspace) { onDismissError(); setPanel({ mode: 'review-setup', workspace: setupWorkspace }); return }
     setLocalSelection(value)
     onRoutineSelect?.(value === null ? null : Number(value))
   }
@@ -138,11 +153,23 @@ export function RoutinesSurface(props: {
     setPanel(null)
   }
 
+  if (panel?.mode === 'review-setup') {
+    return <NavSurfaceFrame row><PageFrame width="wide" className="flex-1 min-w-0">
+      <PageHeader heading="Set up Weekly review" description={`Review sessions in ${panel.workspace.name}.`} />
+      {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
+      <WeeklyReviewSetup client={client} workspace={panel.workspace} onCancel={() => { onDismissError(); setPanel(null) }} onCreate={(setup) => {
+        onRequest({ attemptedName: 'Weekly review' })
+        client?.harnessRoutineCreate({ workspace: panel.workspace.id, ...setup })
+        setPanel(null)
+      }} />
+    </PageFrame></NavSurfaceFrame>
+  }
+
   if (panel) {
     return (
       <NavSurfaceFrame row>
         <PageFrame width="wide" className="flex-1 min-w-0">
-          <PageHeader heading="Routines" description="Prompts that run on a schedule, each in its own pane." />
+          <PageHeader heading="Routines" description="Prompts that run on a schedule, each in its own pane. Houston offers one weekly review per workspace." />
           {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
           <RoutineEditor
             mode={panel.mode}
@@ -173,7 +200,7 @@ export function RoutinesSurface(props: {
     <PageFrame width="wide" className="flex-1 min-w-0">
       <PageHeader
         heading="Routines"
-        description="Prompts that run on a schedule, each in its own pane."
+        description="Prompts that run on a schedule, each in its own pane. Houston offers one weekly review per workspace."
         actions={<Button variant="primary" icon={IconPlus} data-testid="routine-create" onClick={() => { onDismissError(); setPanel({ mode: 'create' }) }}>New routine</Button>}
       />
       {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
@@ -186,9 +213,13 @@ export function RoutinesSurface(props: {
         renderDetail={(item) => {
           if (!item) return <EmptyState icon={IconClock} heading="Select a routine" description="Choose a routine to see its schedule and runs." />
           const routine = item.routine
+          if (!routine) return <EmptyState icon={IconClock} heading="Review setup" description="This workspace has no review routine yet." />
+          const Detail = routine.kind === 'harness_review' ? WeeklyReviewDetail : RoutineDetail
           return (
             <Suspense fallback={<p role="status">Loading routine details…</p>}>
-              <RoutineDetail
+              <Detail
+                client={client}
+                workspaceName={routine.workspace_id ? workspaceById.get(routine.workspace_id)?.name ?? routine.workspace_id : null}
                 routine={routine}
                 engineRefusals={engineRefusals}
                 runs={runs[routine.id]}
@@ -208,6 +239,7 @@ export function RoutinesSurface(props: {
                 }}
                 onEdit={() => { onDismissError(); setPanel({ mode: 'edit', routine }) }}
                 onDelete={() => { onRequest({ routineName: routine.name }); onDelete(routine.id, routine.revision) }}
+                onUpdateReviewSchedule={(fields: ReturnType<typeof scheduleFields>) => onUpdate({ id: routine.id, expected_revision: routine.revision, ...fields })}
                 onUpdateSchedule={(cadence) => onUpdate({ id: routine.id, expected_revision: routine.revision, cadence })}
                 onUpdateEngine={(engine) => onUpdate({ id: routine.id, expected_revision: routine.revision, engine })}
                 onOpenSession={onOpenSession}

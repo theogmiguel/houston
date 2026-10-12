@@ -174,14 +174,14 @@ function FirstRun({
             rules, skills and settings, and lists what to change. It never edits them.
           </Caption>
         </div>
-        <SetupFields models={models} engineRefusals={engineRefusals} onSubmit={onStart} />
+        <HarnessSetupFields models={models} engineRefusals={engineRefusals} onSubmit={onStart} />
       </Card>
-      <WhatARunSends />
+      <HarnessReviewConsent />
     </div>
   )
 }
 
-function WhatARunSends(): React.JSX.Element {
+export function HarnessReviewConsent(): React.JSX.Element {
   return (
     <Card tone="inset" padding="md" className="grid gap-[var(--space-1-5)]" data-testid="harness-consent">
       <SectionTitle>What a review sends to its provider</SectionTitle>
@@ -203,14 +203,16 @@ function WhatARunSends(): React.JSX.Element {
   )
 }
 
-function SetupFields({
+export function HarnessSetupFields({
   models,
   engineRefusals,
-  onSubmit
+  onSubmit,
+  submitLabel
 }: {
   models: HarnessModelOption[]
   engineRefusals: readonly RoutineEngineRefusal[]
   onSubmit: (value: HarnessSetupValue) => void
+  submitLabel?: string
 }): React.JSX.Element {
   const [engine, setEngine] = useState<AgentKind>('claude')
   const [model, setModel] = useState('')
@@ -254,6 +256,7 @@ function SetupFields({
       <Field label="Schedule" hint="Every run spends tokens. A scheduled run reads from where the previous review stopped.">
         <Segmented aria-label="Schedule" value={schedule} options={SCHEDULE_OPTIONS} onChange={setSchedule} />
       </Field>
+      {submitLabel && <Button type="submit" variant="primary" className="justify-self-start">{submitLabel}</Button>}
     </form>
   )
 }
@@ -275,7 +278,7 @@ function HarnessBody(
   const unscanned = state.providerCoverage.map((item) => `${item.sessions} ${engineLabel(item.agent)} sessions`).join(', ')
   return (
     <div className="grid gap-[var(--space-2)]">
-      {published.length === 0 && <WhatARunSends />}
+      {published.length === 0 && <HarnessReviewConsent />}
       {published.length > 0 && <div className="flex min-w-0 items-center gap-[var(--space-2)]">
         <BarSparkline values={trend} label={`Repeated mistakes per 100 sessions: ${firstValue} to ${lastValue}`} />
         <Caption className="min-w-0">

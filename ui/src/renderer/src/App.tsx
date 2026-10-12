@@ -4029,6 +4029,7 @@ export function App(): React.JSX.Element {
                     </Suspense>
                   ) : railView === "routines" ? (
                     <RoutinesSurface
+                      client={readyClient(conn)}
                       routines={routines}
                       running={routinesRunning}
                       engineRefusals={routineEngineRefusals}

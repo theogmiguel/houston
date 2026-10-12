@@ -63,6 +63,17 @@ function disabledEngines(container: HTMLElement, testId: string): (string | unde
 }
 
 describe('Routines page', () => {
+  it('groups built-in reviews by kind and names each workspace', () => {
+    render(surface({ routines: [
+      { ...routine(1, 'Harness review'), kind: 'harness_review', workspace_id: '/a' },
+      { ...routine(2, 'Harness review'), kind: 'harness_review', workspace_id: '/b' },
+      { ...routine(3, 'My review'), prompt: '[houston harness review] a user prompt' }
+    ], workspaces: [{ id: '/a', name: 'A' }, { id: '/b', name: 'B' }], selectedRoutineId: 3 }))
+    const sections = screen.getAllByTestId('list-detail-section')
+    expect(sections.map((node) => node.textContent)).toEqual(['Built in2', 'Yours1'])
+    expect(screen.getByText('Weekly review · A')).toBeTruthy()
+    expect(screen.getByText('Weekly review · B')).toBeTruthy()
+  })
   it("Runs on disables an engine the routine's access refuses and offers it once the access allows it", async () => {
     const isolated = { ...routine(2), permission_mode: 'bypass_permissions' as const, isolate: true }
     const { container, rerender } = render(surface({ routines: [routine(1)], engineRefusals: [ZCODE_REFUSAL] }))

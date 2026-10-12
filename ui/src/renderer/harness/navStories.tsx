@@ -26,6 +26,7 @@ import type { RoutineRun } from '../src/houston/generated/RoutineRun'
 import type { RoutineEngineRefusal } from '../src/houston/generated/RoutineEngineRefusal'
 import type { SkillToolState } from '../src/houston/generated/SkillToolState'
 import type { Skill } from '../src/env'
+import type { ServerMsg } from '../src/houston/generated/ServerMsg'
 import type { HoustonClient } from '../src/houston/client'
 
 const noop = (): void => {}
@@ -71,32 +72,60 @@ function routine(o: Partial<Routine> = {}): Routine {
   }
 }
 
-export function NavRoutines(): React.JSX.Element {
+export function NavRoutines({ selectedRoutineId = 1, setup = false, report = false }: { selectedRoutineId?: number; setup?: boolean; report?: boolean }): React.JSX.Element {
   const run = (id: number, status: RoutineRun['status'], started: number, sessionId: number | null, error?: string): RoutineRun => ({
     id, routine_id: 2, trigger: 'schedule', status, started_at_ms: started, ended_at_ms: status === 'running' ? null : started + 4 * 60_000,
     session_id: sessionId, error
   })
   const runHistory: RoutineRun[] = [
-    run(30, 'running', new Date(2026, 9, 3, 2).getTime(), 42),
+    run(30, 'ok', new Date(2026, 9, 3, 2).getTime(), 42),
     run(29, 'ok', new Date(2026, 9, 2, 2).getTime(), 41),
     run(28, 'failed', new Date(2026, 9, 1, 2).getTime(), 40, 'npx was not found on PATH'),
     ...Array.from({ length: 27 }, (_, index) => run(27 - index, 'ok', new Date(2026, 8, 30 - index, 2).getTime(), 13 + index))
   ]
   const routines = [
-    routine({ id: 1, name: 'Harness review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW - 120_000, last_run_at_ms: NOW - 60_000 }),
-    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000, workspace_id: null }),
-    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: new Date(2026, 9, 9, 17).getTime(), last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok', workspace_id: null }),
-    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: null, next_run_at_ms: NOW + 7 * 24 * 3600_000 })
+    routine({ id: 1, kind: 'harness_review', name: 'Weekly review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW - 120_000, last_run_at_ms: NOW - 60_000 }),
+    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000, workspace_id: '/home/dev/code/finex' }),
+    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: new Date(2026, 9, 9, 17).getTime(), last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok', workspace_id: '/home/dev/code/houston' }),
+    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: null, next_run_at_ms: NOW + 7 * 24 * 3600_000 }),
+    ...(!setup ? [routine({ id: 5, kind: 'harness_review', name: 'Weekly review', workspace_id: '/home/dev/code/finex', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] } })] : [])
   ]
+  const client = React.useMemo(() => {
+    const handlers = new Map<string, Set<(message: ServerMsg) => void>>()
+    const emit = (message: ServerMsg): void => handlers.get(message.type)?.forEach((handler) => handler(message))
+    return {
+      subscribe: (type: string, handler: (message: ServerMsg) => void) => {
+        const set = handlers.get(type) ?? new Set(); set.add(handler); handlers.set(type, set)
+        return () => set.delete(handler)
+      },
+      harnessState: (workspace: string) => emit({ type: 'harness_state', workspace, routine: routines.find((item) => item.kind === 'harness_review' && item.workspace_id === workspace) ?? null,
+        reviews: workspace === '/home/dev/code/houston' ? [{ id: 8, workspace, routine_id: 1, run_id: 8, session_id: 42, status: 'running', started_at_ms: NOW - 3 * 60_000, sessions: null, finding_count: 0, run_dir: `${workspace}/.houston/harness/r8` },
+          { id: 7, workspace, routine_id: 1, run_id: 7, status: 'published', started_at_ms: NOW - 7 * 24 * 3600_000, sessions: 38, finding_count: 3, run_dir: `${workspace}/.houston/harness/r7`, summary: '3 repeated mistakes to address' }] : [],
+        findings: [], models: [], provider_coverage: [], engine_refusals: ENGINE_REFUSALS }),
+      harnessReport: (reviewId: number) => emit({ type: 'harness_report', review_id: reviewId, markdown: '# Weekly review\n\n38 sessions reviewed. Three repeated mistakes are ready for triage in Tasks.', truncated: false }),
+      harnessRoutineCreate: noop
+    } as unknown as HoustonClient
+  }, [])
+  React.useEffect(() => {
+    const testId = setup ? 'review-setup-/home/dev/code/finex' : report ? 'review-open-report-7' : null
+    if (!testId) return
+    const timer = window.setInterval(() => {
+      const target = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+      if (target) { target.click(); window.clearInterval(timer) }
+    }, 100)
+    const stop = window.setTimeout(() => window.clearInterval(timer), 2000)
+    return () => { window.clearInterval(timer); window.clearTimeout(stop) }
+  }, [setup, report])
   return (
     <Frame active="Routines">
       <RoutinesSurface
+        client={client}
         routines={routines}
-        running={[1, 91, 92]}
+        running={[1]}
         engineRefusals={ENGINE_REFUSALS}
         runs={{ 2: runHistory }}
         runsLoading={null}
-        workspaces={[{ id: '/home/dev/code/houston', name: 'houston' }]}
+        workspaces={[{ id: '/home/dev/code/houston', name: 'Houston' }, { id: '/home/dev/code/finex', name: 'finex' }]}
         error={null}
         onDismissError={noop}
         onCreate={noop}
@@ -107,7 +136,7 @@ export function NavRoutines(): React.JSX.Element {
         onOpenSession={noop}
         onRequest={noop}
         now={NOW}
-        selectedRoutineId={2}
+        selectedRoutineId={selectedRoutineId}
         showLimitNotice={false}
       />
     </Frame>
