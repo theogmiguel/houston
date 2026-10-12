@@ -30,7 +30,7 @@ export const ROW_FOOTER =
 
 const BUTTON_BASE =
   'btn inline-flex items-center justify-center gap-[7px] min-h-[var(--h-ctl)] px-[12px] rounded-[var(--tr-radius-sm)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default'
-export const PRIMARY_BUTTON = `${BUTTON_BASE} border border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] hover:brightness-110 disabled:opacity-55`
+export const PRIMARY_BUTTON = `${BUTTON_BASE} border border-[var(--primary-fill)] bg-[var(--primary-fill)] text-[var(--primary-foreground)] hover:brightness-110 disabled:opacity-55`
 export const SECONDARY_BUTTON = `${BUTTON_BASE} border border-[var(--border)] bg-[var(--hover-fill)] text-[var(--text-secondary)] hover:bg-[var(--selected-fill)] hover:text-[var(--text-primary)] disabled:opacity-55`
 
 export const CHROME_BUTTON =

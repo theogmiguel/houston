@@ -380,6 +380,10 @@
   --border-active: color-mix(in srgb, var(--accent) 65%, transparent);
   --primary: var(--accent);
   --primary-foreground: #ffffff;
+  /* Filled affirmative buttons: a deeper step of the accent so the white label keeps 4.5:1
+     (#3b6fe8 / #fff = 4.54); the accent itself stays for focus, links and selection. */
+  --primary-fill: #3b6fe8;
+  --primary-fill-hover: color-mix(in srgb, #3b6fe8 88%, black);
   --secondary: color-mix(in srgb, var(--card-bg) 86%, white 8%);
   --muted: color-mix(in srgb, var(--card-bg) 78%, transparent);
   --popover: var(--elevated-surface);
@@ -884,6 +888,8 @@
   --border-active: color-mix(in srgb, var(--accent) 65%, transparent);
   --primary: var(--accent);
   --primary-foreground: #ffffff;
+  --primary-fill: var(--accent);
+  --primary-fill-hover: var(--accent-hover);
   --secondary: color-mix(in srgb, var(--card-bg) 86%, white 8%);
   --muted: color-mix(in srgb, var(--card-bg) 78%, transparent);
   --popover: var(--elevated-surface);

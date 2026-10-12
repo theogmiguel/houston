@@ -63,7 +63,7 @@ describe('components/ui primitives', () => {
     const { rerender } = render(<Button variant="primary">Create</Button>)
     const button = screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement
     expect(button.type).toBe('button')
-    expect(button.className).toContain('bg-[var(--accent)]')
+    expect(button.className).toContain('bg-[var(--primary-fill)]')
     expect(button.className).toContain('h-[var(--h-ctl)]')
 
     rerender(<Button variant="secondary" size="sm">Cancel</Button>)

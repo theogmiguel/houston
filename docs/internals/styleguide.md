@@ -113,8 +113,9 @@ There is no `--ink-*` family. `--text-*` is the naming.
 `--accent` / `--accent-ink` / `--accent-hover` / `--accent-muted`, aliased as
 `--primary` / `--primary-foreground`. Accent is for **focus rings and the single
 affirmative action** — not a hover colour, not a selection tint, not decoration. A
-filled accent button pairs with `text-white` verbatim: the fill is a fixed contrast
-pair, not a themed surface.
+filled affirmative button uses `--primary-fill` with the white `--primary-foreground`
+label. On Graphite the fill is a deeper step of the accent so the white label keeps
+4.5:1; on Paper it is the accent itself.
 
 ### Status
 
@@ -478,9 +479,8 @@ differences as a variant in the registry.
 | `text` | A title link inside an interactive content row; no control box or padding |
 
 Existing call sites keep using `BTN_*` and the `PRIMARY_BUTTON` /
-`SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY` is flagged for removal:
-its white label misses the contrast check on Graphite, while `PRIMARY_BUTTON` uses
-the theme's contrast-paired `--accent-ink` in both Graphite and Paper.
+`SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY`, `PRIMARY_BUTTON` and the
+`primary` button variants share the same fill and white label.
 `SECONDARY_BUTTON` is the selected secondary look: it has broader current use
 (55 references versus 47) and its neutral label and fill pass contrast in both
 themes. Neither secondary recipe has a direct test, and both date to the initial
