@@ -14730,6 +14730,7 @@ impl Daemon {
             until_ms,
             read_at_ms: crate::usage::time::now_ms(),
             buckets: outcome.buckets,
+            session_counts: Some(outcome.session_counts),
             sources: outcome.sources,
             pricing: outcome.pricing,
             untracked_agents: crate::usage::untracked_agents(),

@@ -62,6 +62,7 @@ pub struct ScanRequest {
 pub struct ScanOutcome {
     pub buckets: Vec<proto::UsageBucket>,
     pub sources: Vec<proto::UsageSource>,
+    pub session_counts: proto::UsageSessionCounts,
     pub pricing: proto::UsagePricing,
     pub scan_duration_ms: u64,
     pub duplicates_dropped: u64,
@@ -105,6 +106,74 @@ fn dedupe_sources(sources: Vec<SourceSpec>) -> Vec<SourceSpec> {
     out
 }
 
+#[derive(Default)]
+struct ModelSessionSets {
+    window: HashSet<String>,
+    days: std::collections::BTreeMap<String, HashSet<String>>,
+}
+
+#[derive(Default)]
+struct SessionCounter {
+    models: std::collections::HashMap<(proto::UsageProvider, String), ModelSessionSets>,
+    days: std::collections::BTreeMap<String, HashSet<(proto::UsageProvider, String)>>,
+}
+
+impl SessionCounter {
+    fn add(&mut self, record: &UsageRecord) {
+        let day = time::local_date_from_ms(time::floor_hour_ms(record.timestamp_ms));
+        let model = self
+            .models
+            .entry((record.provider, record.model.clone()))
+            .or_default();
+        model.window.insert(record.session_id.clone());
+        model
+            .days
+            .entry(day.clone())
+            .or_default()
+            .insert(record.session_id.clone());
+        self.days
+            .entry(day)
+            .or_default()
+            .insert((record.provider, record.session_id.clone()));
+    }
+
+    fn finish(self) -> proto::UsageSessionCounts {
+        let mut models: Vec<_> = self
+            .models
+            .into_iter()
+            .map(|((provider, model), sets)| proto::UsageModelSessions {
+                provider,
+                model,
+                sessions: sets.window.len() as u32,
+                days: sets
+                    .days
+                    .into_iter()
+                    .map(|(day, sessions)| proto::UsageSessionDay {
+                        day,
+                        sessions: sessions.len() as u32,
+                    })
+                    .collect(),
+            })
+            .collect();
+        models.sort_by(|a, b| {
+            matches!(a.provider, proto::UsageProvider::Codex)
+                .cmp(&matches!(b.provider, proto::UsageProvider::Codex))
+                .then_with(|| a.model.cmp(&b.model))
+        });
+        proto::UsageSessionCounts {
+            models,
+            days: self
+                .days
+                .into_iter()
+                .map(|(day, sessions)| proto::UsageSessionDay {
+                    day,
+                    sessions: sessions.len() as u32,
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Blocking transcript IO; callers on the daemon event loop use `spawn_blocking`.
 pub fn scan(request: &ScanRequest) -> ScanOutcome {
     let started = std::time::Instant::now();
@@ -118,6 +187,7 @@ pub fn scan(request: &ScanRequest) -> ScanOutcome {
 
     let mut aggregator = aggregate::Aggregator::new(request.since_ms, request.until_ms, rates);
     let mut sources = Vec::with_capacity(request.sources.len());
+    let mut session_counts = SessionCounter::default();
 
     for spec in dedupe_sources(request.sources.clone()) {
         let listing = scan::list_transcripts(&spec.root, request.since_ms);
@@ -153,6 +223,13 @@ pub fn scan(request: &ScanRequest) -> ScanOutcome {
                     && !record.session_id.is_empty()
                 {
                     session_ids.insert(record.session_id.clone());
+                    if request
+                        .workspace_filter
+                        .as_ref()
+                        .is_none_or(|workspace| record.workspace_path.as_ref() == Some(workspace))
+                    {
+                        session_counts.add(record);
+                    }
                 }
             }
         }
@@ -213,6 +290,7 @@ pub fn scan(request: &ScanRequest) -> ScanOutcome {
         .collect();
     ScanOutcome {
         buckets,
+        session_counts: session_counts.finish(),
         sources,
         pricing,
         scan_duration_ms: started.elapsed().as_millis() as u64,

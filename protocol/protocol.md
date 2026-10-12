@@ -524,7 +524,7 @@ every refusal names the setting.
 | `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
 | `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
-| `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
+| `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `session_counts?: UsageSessionCounts`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only |
 | `browser_tool_call` | `request_id`, `tool`, `args: JSON`, `session_id`, `workspace_id` | daemon-initiated, to the explicitly registered browser relay connection — the browser-tool relay (v93, Detach) |
@@ -878,12 +878,23 @@ UsageBucket        hour_start_ms, provider, model, totals, cost_usd, cache_savin
                    cost_source (provider_reported | model_priced | unpriced), unpriced_records, sessions,
                    workspace_path?, category_cost_usd, fast_cost_usd, ultrafast_cost_usd,
                    speed_premium_usd, speed_rate_available
+UsageSessionCounts models: UsageModelSessions[], days: UsageSessionDay[]
+UsageModelSessions provider, model, sessions (distinct in the window), days: UsageSessionDay[]
+UsageSessionDay    day (local YYYY-MM-DD), sessions (distinct on that day)
 UsageCategoryCost  input_usd, cache_read_usd, cache_write_usd, output_usd, other_usd
 UsageActivityDay   day (local YYYY-MM-DD), cost_usd, totals
 UsageSource        provider, path, profile_name?, status (ok | missing | partial | failed), scanned_files,
                    skipped_files, failed_files, distinct_sessions, message?
 UsagePricing       status (fresh | cached | unavailable), source, fetched_at_ms?, known_models, message?
 ```
+
+Usage session counts use accepted, deduplicated records after the workspace filter.
+Model counts distinguish providers; daily totals distinguish provider/session identities
+across models. Days follow the local date of the UTC hour bucket, matching usage charts.
+The reply contains at most one window count and one count per day for each model,
+plus one total per day. It never sends session identifiers. Older replies may omit
+`session_counts`; clients display unavailable session counts rather than summing
+hourly bucket counts. Retained activity rollups contain no session identities.
 
 Every client-input cap and default named above is a constant in `lib.rs`, mirrored
 into the UI as `DEFAULTS.ts` by `scripts/gen-protocol-types.sh` so a client can

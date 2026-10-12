@@ -5378,6 +5378,9 @@ pub enum ServerMsg {
         read_at_ms: i64,
         buckets: Vec<UsageBucket>,
         sources: Vec<UsageSource>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        session_counts: Option<UsageSessionCounts>,
         pricing: UsagePricing,
         untracked_agents: Vec<AgentKind>,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -5496,6 +5499,29 @@ pub struct UsageBucket {
     pub ultrafast_cost_usd: f64,
     pub speed_premium_usd: f64,
     pub speed_rate_available: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageSessionCounts {
+    pub models: Vec<UsageModelSessions>,
+    pub days: Vec<UsageSessionDay>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageModelSessions {
+    pub provider: UsageProvider,
+    pub model: String,
+    pub sessions: u32,
+    pub days: Vec<UsageSessionDay>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageSessionDay {
+    pub day: String,
+    pub sessions: u32,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
