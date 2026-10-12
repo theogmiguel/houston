@@ -99,6 +99,7 @@ async fn setup() -> Env {
         "HOUSTON_USER_ZDOTDIR",
         "BASH_ENV",
         "ENV",
+        "skip_global_compinit",
     ] {
         std::env::remove_var(var);
     }
@@ -590,6 +591,10 @@ async fn restored_cli_is_the_running_agent_until_it_exits(shell_path: &str) {
     }
     let env = setup().await;
     std::env::set_var("SHELL", shell_path);
+    if shell_path == "/bin/zsh" {
+        // Ubuntu's global zshrc otherwise prompts about completion directory permissions.
+        std::env::set_var("skip_global_compinit", "1");
+    }
     let daemon = boot(&env);
     let dir = project(&env, "shell-running-agent");
     let shell = shell_pane(&daemon, &dir);
