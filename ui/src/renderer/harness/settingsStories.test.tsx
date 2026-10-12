@@ -28,5 +28,5 @@ it.each([
     const row = within(screen.getByRole('navigation', { name: 'Settings sections' })).getByRole('button', { name: new RegExp(`^${label}`) })
     expect(row.textContent).toContain(count)
   }
-  expect(screen.getByLabelText('3 agent settings need you')).toBeTruthy()
+  expect(screen.getByLabelText('Settings, 3 agent settings need you')).toBeTruthy()
 })
