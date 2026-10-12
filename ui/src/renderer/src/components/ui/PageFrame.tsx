@@ -16,6 +16,7 @@ const frameClasses = variants(
     scroll: { true: 'overflow-y-auto', false: '' },
     padding: {
       default: 'min-h-0 gap-[var(--space-3)] px-[var(--space-4-5)] pt-[var(--space-4)] pb-[var(--space-4-5)]',
+      page: 'min-h-0 gap-[var(--space-5)] px-[var(--space-6)] pt-[var(--space-5)] pb-[var(--space-6)]',
       settings: 'min-h-full gap-0 px-[var(--space-6)] pt-[var(--space-4)] pb-[var(--space-6)]'
     }
   },
@@ -25,7 +26,7 @@ const frameClasses = variants(
 export interface PageFrameProps extends Omit<HTMLAttributes<HTMLElement>, 'className'> {
   width?: PageWidth
   scroll?: boolean
-  padding?: 'default' | 'settings'
+  padding?: 'default' | 'settings' | 'page'
   children: ReactNode
   className?: string
 }

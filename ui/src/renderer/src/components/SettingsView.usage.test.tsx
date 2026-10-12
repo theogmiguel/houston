@@ -117,11 +117,17 @@ describe('Usage page', () => {
     expect(onActivityRequest).toHaveBeenCalledTimes(2)
   })
 
-  it('shows the API estimate and a tooltip with the full-rate caveat', () => {
+  it('shows the API price explanation, scan metadata and four stat cards', () => {
     render()
     expect(q('[data-testid="usage-headline"]')?.textContent).toContain('$125.00')
     expect(text()).toContain('43 sessions')
-    expect(host.querySelector('[aria-label="API estimate details"]')).not.toBeNull()
+    expect(text()).toContain('at API prices')
+    expect(text()).toContain('nothing is sent anywhere')
+    expect(q('[data-testid="usage-meta"]')?.textContent).toContain('in 1.8 s')
+    expect(q('[data-testid="usage-meta"]')?.textContent).toContain(`updated ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(DAY0)}`)
+    expect(q('[data-testid="usage-totals"]')?.children).toHaveLength(4)
+    expect(text()).toContain('Tokens processed')
+    expect(text()).toContain('against full input prices')
   })
 
   it('shows 365 local calendar days with the five-step legend', () => {
@@ -145,11 +151,10 @@ describe('Usage page', () => {
     expect(rows[0].textContent).toContain(expectedDay)
   })
 
-  it('disables Limits and exposes its reason', () => {
+  it('offers only Cost and Tokens, without a placeholder Limits option', () => {
     render()
     const limits = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Limits')
-    expect(limits?.disabled).toBe(true)
-    expect(limits?.parentElement?.getAttribute('data-tooltip')).toBe('A quota reader is not available yet')
+    expect(limits).toBeUndefined()
   })
 
   it('category and speed segments sum to their respective totals', () => {

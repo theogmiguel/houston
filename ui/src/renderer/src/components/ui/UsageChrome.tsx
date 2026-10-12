@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
 import { Text } from './Text'
+import { Card } from './Card'
 
 export function UsageToolbar({ children }: { children: ReactNode }): React.JSX.Element {
   return <div className="flex min-h-[var(--h-usage-toolbar)] flex-wrap items-center gap-[var(--space-2)] border-b border-[var(--divider)] px-[var(--space-3)] py-[var(--space-2)]" data-testid="usage-toolbar">{children}</div>
@@ -88,4 +89,23 @@ export function UsageToolbarActions({ children }: { children: ReactNode }): Reac
 
 export function UsageChromeSpecimen(): React.JSX.Element {
   return <div className="grid gap-[var(--space-3)]"><UsageToolbar><Text as="h1" size="ui" weight="semibold" flush>Usage</Text><span className="text-[var(--text-faint)]">/</span><Text size="small" tone="muted" tabular>Last 7 days</Text></UsageToolbar><UsageContentFrame><div className="grid gap-[var(--space-3)]"><UsageHeroColumn><UsageHeroSummary><UsageHeroValue>$14.20</UsageHeroValue><UsageHeroCaption>12 sessions · API estimate</UsageHeroCaption></UsageHeroSummary><UsageProviderList><UsageStatCell label="Sessions" value="12" note="active sessions" /></UsageProviderList></UsageHeroColumn><UsageStatCell label="Processed tokens" value="24,500" note="per active day"/><UsageChartHeading>Daily cost</UsageChartHeading><UsageError>Usage could not be refreshed.</UsageError><UsageBody stale><span>Reading transcripts…</span></UsageBody><UsageBreakdownSection><UsageBreakdownHeading><Text size="large" weight="semibold">Breakdown</Text></UsageBreakdownHeading><UsageBreakdownFrame><Text size="small" tone="muted">Daily model activity</Text></UsageBreakdownFrame></UsageBreakdownSection></div></UsageContentFrame></div>
+}
+
+export function UsageMetaLine({ range, readAge, duration, pricing, reading }: { range: string; readAge: string | null; duration: string | null; pricing: string; reading: boolean }): React.JSX.Element {
+  return <Text as="div" size="small" tone="muted" className="-mt-[var(--space-3)] flex flex-wrap items-center gap-[var(--space-2)]" data-testid="usage-meta">
+    {reading ? <><span aria-hidden="true" className="inline-block size-[var(--space-2-5)] rounded-full border-2 border-[var(--accent)] border-r-transparent motion-safe:animate-spin" /><Text tone="secondary">Reading transcripts…</Text>{readAge && <span>showing the result from {readAge}</span>}</> : <span>{range}{readAge && ` · read ${readAge}`}{duration && ` in ${duration}`}</span>}
+    <span>·</span><span>{pricing}</span>
+  </Text>
+}
+
+export function UsageStatCard({ label, value, note, headline = false }: { label: string; value: string; note: string; headline?: boolean }): React.JSX.Element {
+  return <Card shape="card" tone="block" padding="page" data-material="inset"><div className="grid gap-[var(--space-1)]">
+    <Text size="small" tone="muted">{label}</Text>
+    <Text size="title" weight="semibold" tone="primary" leading="tight" tight tabular data-testid={headline ? 'usage-headline' : undefined}>{value}</Text>
+    <Text size="small" tone="secondary">{note}</Text>
+  </div></Card>
+}
+
+export function UsageStatsSpecimen(): React.JSX.Element {
+  return <div className="grid gap-[var(--space-3)]"><UsageMetaLine range="Oct 5 – Oct 11" readAge="2 min ago" duration="1.2 s" pricing="Prices from the model catalog, updated Oct 9" reading={false} /><UsageMetaLine range="Oct 5 – Oct 11" readAge="2 min ago" duration="1.2 s" pricing="Prices from the model catalog, updated Oct 9" reading /><UsageStatCard label="API-equivalent cost" value="$2,486.30" note="214 sessions · $355 a day" /></div>
 }

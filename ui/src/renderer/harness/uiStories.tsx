@@ -10,6 +10,7 @@ import { GitToolsTriggerSpecimen, GitCommitSpecimen } from '../src/components/ui
 import { BranchSwitcherSpecimen } from '../src/components/ui/BranchSwitcher'
 import { ChangesReviewSpecimen } from '../src/components/ui/ChangesReview'
 import { DiffBody } from '../src/components/git/DiffBody'
+import { UsageStatsSpecimen } from '../src/components/ui/UsageChrome'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { SpinnerSpecimen } from '../src/components/ui/Spinner'
 import { OrchestrationContentSpecimen } from '../src/components/ui/OrchestrationContent'
@@ -795,7 +796,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Usage and configuration roles">
           <SpecimenRow>
-            <UsageChromeSpecimen />
+            <UsageChromeSpecimen /><UsageStatsSpecimen />
             <MaterialSurfaceSpecimen />
             <ConfigurationDetailSpecimen />
             <Text size="subhead" weight="semibold" tone="primary">Configuration heading</Text>

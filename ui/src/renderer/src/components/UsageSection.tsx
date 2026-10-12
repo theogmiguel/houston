@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { IconChartArea, IconInfo, IconRefresh } from './icons'
+import { IconChartArea, IconRefresh } from './icons'
 import { EmptyState } from './ui/ActionEmptyState'
 import { Segmented } from './ui/SegmentedControl'
 import { UsageChart, type UsageSeries } from './ui/UsageChart'
@@ -28,7 +28,11 @@ import {
 import { Icon } from './ui/Icon'
 import { Tooltip } from './ui/Tooltip'
 import { Select } from './ui/Select'
-import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageToolbar, UsageContentFrame, UsageStatCell, UsageHeroValue, UsageHeroCaption, UsageChartHeading, UsageBody, UsageError, UsageProviderList, UsageChartHeader, UsageTotalsStrip, UsageTotalsSection, UsageCalendarSectionFrame, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup, UsageHeroLayout, UsageHeroColumn, UsageHeroSummary, UsageToolbarActions } from './ui'
+import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageProviderList, UsageChartHeader, UsageCalendarSectionFrame, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup, UsageHeroLayout, UsageHeroColumn, UsageChartHeading } from './ui'
+import { PageFrame } from './ui/PageFrame'
+import { PageHeader } from './ui/PageHeader'
+import { Notice } from './ui/Notice'
+import { UsageMetaLine, UsageStatCard } from './ui/UsageChrome'
 import { calendarStartMs } from './ui/UsageCalendar'
 import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'
 
@@ -46,8 +50,7 @@ const PROVIDER_MARK: Record<UsageProvider, string> = {
 
 function UsageHero({
   metric,
-  heroValue,
-  sessions,
+  onMetricChange,
   providers,
   windowDef,
   points,
@@ -55,6 +58,7 @@ function UsageHero({
   labelFor
 }: {
   metric: 'cost' | 'tokens'
+  onMetricChange: (metric: 'cost' | 'tokens') => void
   heroValue: string
   sessions: number
   providers: (ProviderSummary & { sessions: number })[]
@@ -66,16 +70,6 @@ function UsageHero({
   return (
     <UsageHeroLayout>
       <UsageHeroColumn>
-        <UsageHeroSummary>
-          <UsageHeroValue data-testid="usage-headline">
-            {heroValue}
-          </UsageHeroValue>
-          <UsageHeroCaption>
-            {sessions.toLocaleString('en-US')} sessions · {metric === 'cost' ? 'API estimate' : 'processed tokens'}
-            {metric === 'cost' && <Tooltip label="Estimated at the published full API rate. Subscriptions are billed separately."><span aria-label="API estimate details" role="img"><Icon glyph={IconInfo} role="small" /></span></Tooltip>}
-          </UsageHeroCaption>
-        </UsageHeroSummary>
-
         <UsageProviderList>
           {providers.map((p) => {
             return (
@@ -98,6 +92,7 @@ function UsageHero({
           <UsageChartHeading>
             {windowDef.hourly ? 'Hourly' : 'Daily'} {metric === 'cost' ? 'cost' : 'processed tokens'}
           </UsageChartHeading>
+          <Segmented aria-label="Measure" size="xs" value={metric} onChange={onMetricChange} options={[{ value: 'cost', label: 'Cost' }, { value: 'tokens', label: 'Tokens' }]} />
         </UsageChartHeader>
         <UsageChart points={points} series={series} metric={metric} labelFor={labelFor} />
       </UsageHeroColumn>
@@ -105,50 +100,22 @@ function UsageHero({
   )
 }
 
-function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element {
-  return (
-    <UsageTotalsStrip>
-      <UsageStatCell
-        label="Processed tokens"
-        value={formatTokens(totals.tokens)}
-        note={
-          totals.activeDays > 0
-            ? `${formatTokens(totals.tokens / totals.activeDays)} per active day`
-            : 'no active days in this window'
-        }
-      />
-      <UsageStatCell
-        label="Cached input"
-        value={formatTokens(totals.cachedInput)}
-        note={`${formatShare(
-          totals.cachedInput / Math.max(1, totals.cachedInput + totals.uncachedInput + totals.cacheCreation)
-        )} of observed input`}
-      />
-      <UsageStatCell
-        label="Uncached input"
-        value={formatTokens(totals.uncachedInput)}
-        note={`${formatTokens(totals.cacheCreation)} cache writes`}
-      />
-      <UsageStatCell
-        label="Output"
-        value={formatTokens(totals.output)}
-        note={
-          totals.reasoning > 0
-            ? `includes ${formatTokens(totals.reasoning)} reasoning`
-            : 'no reasoning tokens reported'
-        }
-      />
-      <UsageStatCell
-        label="Cache savings"
-        value={formatUsd(totals.cacheSavings)}
-        note={
-          totals.cost > 0
-            ? `${(totals.cacheSavings / totals.cost).toFixed(1)}× the raw token cost`
-            : 'nothing priced in this window'
-        }
-      />
-    </UsageTotalsStrip>
-  )
+function UsageStats({ totals, sessions, days }: { totals: UsageTotals; sessions: number; days: number }): React.JSX.Element {
+  const roundedUsd = (value: number): string => `$${Math.round(value).toLocaleString('en-US')}`
+  return <div className="grid grid-cols-2 gap-[var(--space-3)] lg:grid-cols-4" data-testid="usage-totals">
+    <UsageStatCard label="API-equivalent cost" value={formatUsd(totals.cost)} note={`${sessions.toLocaleString('en-US')} sessions · ${roundedUsd(totals.cost / days)} a day`} headline />
+    <UsageStatCard label="Tokens processed" value={formatTokens(totals.tokens)} note={`${Math.round(100 * totals.cachedInput / Math.max(1, totals.tokens))}% read from cache`} />
+    <UsageStatCard label="Output tokens" value={formatTokens(totals.output)} note={`${formatTokens(totals.uncachedInput)} uncached input`} />
+    <UsageStatCard label="Saved by caching" value={roundedUsd(totals.cacheSavings)} note="against full input prices" />
+  </div>
+}
+
+function readAge(readAt: number): string {
+  const minutes = Math.max(0, Math.floor((Date.now() - readAt) / 60_000))
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  if (minutes < 1440) return `${Math.floor(minutes / 60)} h ago`
+  return `${Math.floor(minutes / 1440)} days ago`
 }
 
 function UsageBreakdown({
@@ -327,35 +294,20 @@ export function UsageSection({
   const rangeLabel = usageRangeLabel(stale, summary, asked, timeZone)
 
   return (
-    <main className="h-full min-h-0 w-full overflow-y-auto" data-testid="nav-surface" data-page="usage">
-      <UsageToolbar>
-        <Text as="h1" size="ui" weight="semibold" tone="primary" flush>Usage</Text>
-        <Text tone="faint">/</Text>
-        <Select
-          aria-label="Usage workspace"
-          data-testid="usage-workspace"
-          value={selectedWorkspace}
-          options={[{ value: 'all', label: 'All workspaces' }, ...workspaces.map((workspace) => ({ value: workspace.path, label: workspace.name }))]}
-          onChange={setSelectedWorkspace}
-        />
-        <Text data-testid="usage-range" size="small" tone="muted" tabular>{rangeLabel}</Text>
-        <UsageToolbarActions>
-          <Segmented aria-label="Usage metric" options={[
-            { value: 'cost', label: 'Cost' }, { value: 'tokens', label: 'Tokens' },
-            { value: 'limits', label: 'Limits', disabled: true, disabledReason: 'A quota reader is not available yet' }
-          ]} value={metric} onChange={(value) => { if (value !== 'limits') setMetric(value) }} />
-          <Segmented aria-label="Usage window" options={USAGE_WINDOWS.map((w) => ({ value: w.id, label: w.label }))} value={windowId} onChange={setWindowId} />
-          <Tooltip label="Re-scan usage">
-            <Button variant="icon" aria-label="Refresh usage" data-testid="usage-refresh" onClick={refresh} disabled={loading} icon={IconRefresh} />
-          </Tooltip>
-        </UsageToolbarActions>
-      </UsageToolbar>
-
-      <UsageContentFrame>
+    <div className="h-full min-h-0 w-full overflow-y-auto" data-testid="nav-surface" data-page="usage">
+      <PageFrame width="wide" scroll={false} padding="page">
+      <PageHeader heading="Usage" description="What your Claude Code and Codex sessions on this machine would cost at API prices. Houston reads their transcripts locally; nothing is sent anywhere." actions={
+        <>
+          <Select aria-label="Usage workspace" data-testid="usage-workspace" value={selectedWorkspace} options={[{ value: 'all', label: 'All workspaces' }, ...workspaces.map((workspace) => ({ value: workspace.path, label: workspace.name }))]} onChange={setSelectedWorkspace} />
+          <Segmented aria-label="Window" size="xs" options={USAGE_WINDOWS.map((w) => ({ value: w.id, label: w.id === '24h' ? '24 hours' : w.label }))} value={windowId} onChange={setWindowId} />
+          <Tooltip label="Read transcripts again"><Button variant="icon" aria-label="Refresh usage" data-testid="usage-refresh" onClick={refresh} disabled={loading} icon={IconRefresh} /></Tooltip>
+        </>
+      } />
+      <UsageMetaLine range={rangeLabel.replace(' to ', ' – ')} readAge={summary ? readAge(summary.read_at_ms) : null} duration={summary ? `${(summary.scan_duration_ms / 1000).toFixed(1)} s` : null} reading={loading || !summary && !error} pricing={summary?.pricing.fetched_at_ms ? `Prices from the model catalog, updated ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(summary.pricing.fetched_at_ms)}` : 'Model catalog prices unavailable'} />
       {error && (
-        <UsageError>
+        <Notice tone="danger" data-testid="usage-error">
           {error}
-        </UsageError>
+        </Notice>
       )}
 
       {}
@@ -372,8 +324,11 @@ export function UsageSection({
         ) : (
           <>
         {}
+        <UsageStats totals={totals} sessions={sessions} days={windowDef.days} />
+        {totals.unpricedRecords > 0 && <Notice tone="warn">{totals.unpricedRecords} records have no published model rate. Their tokens are included; their cost is not priced.</Notice>}
         <UsageHero
           metric={metric}
+          onMetricChange={setMetric}
           heroValue={heroValue}
           sessions={sessions}
           providers={displayProviders}
@@ -384,11 +339,6 @@ export function UsageSection({
         />
 
         {}
-        <UsageTotalsSection data-testid="usage-totals">
-          <UsageSectionHeading>Totals</UsageSectionHeading>
-          <UsageTokenStrip totals={totals} />
-        </UsageTotalsSection>
-
         <UsageCalendarSectionFrame data-testid="usage-calendar-section">
           <div className="flex items-center justify-between gap-[var(--space-3)]">
             <UsageSectionHeading fullWidth aside="Follows Cost | Tokens">{activitySummary(metric, activity)}</UsageSectionHeading>
@@ -408,8 +358,8 @@ export function UsageSection({
 
         {}
       </UsageBody>
-      </UsageContentFrame>
-    </main>
+      </PageFrame>
+    </div>
   )
 }
 

@@ -13,7 +13,7 @@ const cardClasses = variants('border', {
     plate: 'border-0 bg-[var(--field-plate-bg)]'
   },
   shape: { button: 'rounded-[var(--tr-radius-button)]', md: 'rounded-[var(--tr-radius-md)]', card: 'rounded-[var(--tr-radius-card)]', inset: 'rounded-[var(--tr-radius-sm)]' },
-  padding: { none: '', md: 'p-[var(--space-3)]', sm: 'p-[var(--space-2-5)]', invocation: 'px-[var(--space-card-invocation-x)] py-[var(--space-card-invocation-y)]', note: 'px-[var(--space-card-note-x)] py-[var(--space-card-note-y)]', roomy: 'p-[var(--space-7)]' },
+  padding: { none: '', page: 'p-[var(--space-4)]', md: 'p-[var(--space-3)]', sm: 'p-[var(--space-2-5)]', invocation: 'px-[var(--space-card-invocation-x)] py-[var(--space-card-invocation-y)]', note: 'px-[var(--space-card-note-x)] py-[var(--space-card-note-y)]', roomy: 'p-[var(--space-7)]' },
   disabled: { false: '', true: 'opacity-50' },
   clip: { false: 'overflow-visible', true: 'overflow-hidden' }
 }, { tone: 'default', shape: 'button', padding: 'none', disabled: 'false', clip: 'true' })
@@ -24,7 +24,7 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   disabled?: boolean
   clip?: boolean
   shape?: 'button' | 'md' | 'card' | 'inset'
-  padding?: 'none' | 'md' | 'sm' | 'invocation' | 'note' | 'roomy'
+  padding?: 'none' | 'page' | 'md' | 'sm' | 'invocation' | 'note' | 'roomy'
   className?: string
   layout?: 'default' | 'center-stack' | 'sleeping-session' | 'scrolling-copy'
 }
