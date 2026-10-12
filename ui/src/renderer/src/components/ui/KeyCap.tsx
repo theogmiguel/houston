@@ -1,9 +1,9 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
 
-export function KeyCap({ children }: { children: ReactNode }): React.JSX.Element {
+export function KeyCap({ children, variant = 'binding' }: { children: ReactNode; variant?: 'binding' | 'hint' }): React.JSX.Element {
   return (
-    <span className="inline-flex min-w-[var(--w-shortcut-keycap)] justify-center rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] px-[var(--space-keycap-inline)] py-[var(--space-keycap-block)]">
+    <span className={`inline-flex ${variant === 'hint' ? 'w-auto min-w-0 flex-none' : 'min-w-[var(--w-shortcut-keycap)]'} justify-center rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] px-[var(--space-keycap-inline)] py-[var(--space-keycap-block)]`}>
       <Text size="small" weight="semibold" tone="muted" center>{children}</Text>
     </span>
   )
@@ -22,6 +22,7 @@ export function KeyCapSpecimen(): React.JSX.Element {
   return (
     <div data-testid="key-cap-specimen" className="grid gap-[var(--space-2)]">
       <KeyCap>Ctrl + K</KeyCap>
+      <div className="flex gap-[var(--space-2)]"><KeyCap variant="hint">/</KeyCap><KeyCap variant="hint">J</KeyCap><KeyCap variant="hint">K</KeyCap><KeyCap variant="hint">Esc</KeyCap></div>
       <KeyBindingRow keyName="Ctrl + Shift + P" description="Open command palette" />
       <KeyBindingRow keyName="Ctrl + Shift + P" description="Shortcuts are off" disabled />
       <div className="flex items-center gap-[var(--space-2)]"><KeyChip size="shortcut">Ctrl + Enter</KeyChip><KeyChip as="button" size="shortcut" state="armed">Press a key…</KeyChip></div>

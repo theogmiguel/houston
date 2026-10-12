@@ -35,6 +35,16 @@ const SKILLS: Skill[] = [
   }
 ]
 
+const EXTRA_SKILLS: Skill[] = ['code-review', 'debug-systematically', 'frontend-design', 'git-workflow', 'integration-tests', 'performance-audit', 'plan-feature', 'research-docs', 'security-review', 'sql-migrations', 'write-documentation'].map((name, index) => ({
+  agent: 'claude', source: 'user', name, invoke: `/${name}`, path: `/home/dev/.claude/skills/${name}/SKILL.md`,
+  description: ['Review changes for correctness and maintainability.', 'Find the root cause before changing code.', 'Build interfaces with shared design tokens and reusable controls.'][index % 3]
+}))
+export const LIBRARY_SKILLS: Skill[] = [...SKILLS.filter(skill => skill.name !== 'lint-sweep'), { agent: 'claude', source: 'user', name: 'typescript-patterns', invoke: '/typescript-patterns', path: '/home/dev/.claude/skills/typescript-patterns/SKILL.md', description: 'Model application state with precise types.' }, ...EXTRA_SKILLS]
+export const LIBRARY_TOOLS: SkillToolState[] = (['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const).map(tool => ({
+  tool, detected: true, inherits_claude: false, path: `/home/dev/.${tool}/skills`, error: null,
+  skills: LIBRARY_SKILLS.filter((_skill, index) => tool === 'claude' || tool === 'codex' || tool === 'opencode' || index < 4).map(skill => ({ name: skill.name, path: `/home/dev/.${tool}/skills/${skill.name}/SKILL.md`, digest: tool === 'codex' && skill.name === 'ui-tokens' ? 'different' : 'same' }))
+}))
+
 type HoustonStub = Record<string, unknown>
 
 function installStubs(): void {
@@ -45,12 +55,12 @@ function installStubs(): void {
       if (dir === 'loading') return new Promise<Skill[]>(() => {})
       if (dir === 'error') throw new Error('permission denied: /home/dev/.claude/skills')
       if (dir === 'empty') return []
-      return SKILLS
+      return [...LIBRARY_SKILLS, ...SKILLS.filter(skill => skill.name === 'lint-sweep')]
     },
     readFile: async (path: string) => {
-      if (path.includes('/.codex/')) throw new Error('permission denied')
+      if (path.includes('/lint-sweep')) throw new Error('permission denied')
       if (path.endsWith('digest.jsonl')) return ''
-      if (path.includes('/other/')) return '# tdd\n\nA different procedure body.\n\n- one\n- two'
+      if (path.includes('/.codex/') || path.includes('/other/')) return '# tdd\n\nA different procedure body.\n\n- one\n- two'
       return '# TDD\n\nRed, green, refactor.\n\n- Write the failing test\n- Make it pass\n- Clean up'
     },
     writeSkill: async () => ({ ok: true }),
@@ -58,27 +68,7 @@ function installStubs(): void {
   }
 }
 
-function skillTool(
-  tool: SkillToolState['tool'],
-  skills: Array<{ name: string; digest: string }>,
-  inherits = false
-): SkillToolState {
-  return {
-    tool,
-    path: `/home/dev/.${tool}/skills`,
-    detected: true,
-    inherits_claude: inherits,
-    skills: skills.map((s) => ({ name: s.name, digest: s.digest, path: `/skills/${tool === 'claude' ? 'claude' : 'other'}/${s.name}` })),
-    error: null
-  }
-}
-
-const TOOLS: SkillToolState[] = [
-  skillTool('claude', [{ name: 'tdd', digest: 'A' }, { name: 'ui-tokens', digest: 'B' }]),
-  skillTool('codex', [{ name: 'tdd', digest: 'X' }, { name: 'ui-tokens', digest: 'B' }]),
-  skillTool('opencode', [], true),
-  skillTool('cursor', [])
-]
+const TOOLS = LIBRARY_TOOLS
 
 const PUSHES: SkillPushRecord[] = [
   { tool: 'codex', skill: 'tdd', path: '/home/dev/.codex/skills/tdd', pushed_at: Math.floor(new Date(2026, 9, 3).getTime() / 1000), had_existing: true }
@@ -185,7 +175,7 @@ export function SkillsStandaloneB(): React.JSX.Element {
       <StandalonePanel dir="no-match" tools={false} steps={[{ type: 'input[role=searchbox]', value: 'zzz' }]} />
       <StandalonePanel
         dir="detail"
-        steps={[{ click: 'button[aria-label="View tdd"]' }, { click: 'button', text: 'View difference' }]}
+        steps={[{ click: 'button[aria-label="View ui-tokens"]' }, { click: 'button', text: 'View difference' }]}
       />
       <StandalonePanel dir="edit" tools={false} steps={[{ click: 'button[aria-label="Edit tdd"]' }]} />
       <StandalonePanel dir="new" tools={false} steps={[{ click: 'button', text: 'New skill' }]} />

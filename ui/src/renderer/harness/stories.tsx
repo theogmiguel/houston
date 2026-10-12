@@ -1,3 +1,13 @@
+import { SettingsAgentsOverview } from './settingsStories'
+import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
+import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
+import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
+import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
+import { PrPanelStory } from './prPanelStories'
+import { ChangesStory } from './changesStories'
+import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
+import { FoundationMotionStory } from './foundationMotionStory'
+import { Segmented as SegmentedControl } from '../src/components/ui/SegmentedControl'
 import { MascotStory } from './mascotStories'
 import React from 'react'
 import {
@@ -96,7 +106,7 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
 })
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsRemoteUnconfigured, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -133,17 +143,17 @@ import { PaneLifecycleStory, TasksChipsStory, TasksComposerStory, TasksDetailSta
 import { RenameTitleStory } from './renameTitleStories'
 
 document.documentElement.setAttribute('data-motion-paused', '')
-import { TasksByProjectStory, TasksPageStory, TasksProjectsDialogStory } from './tasksPageStory'
+import { TasksByProjectStory, TasksPageStory, TasksProjectsDialogStory, TasksSourcesStory, TasksSlackSetupStory, TasksNotionSetupStory, TasksGitHubSetupStory } from './tasksPageStory'
 import { TrackerSettingsStory } from './projectsStories'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
 import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
 
 const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }, { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }]
-import { StaleWorktreesStory, UiPrimitivesStory } from './uiStories'
+import { PhonePairingSpecimen, StaleWorktreesStory, UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
-import { FilesSurfaceDelete470, FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceImage470, FilesSurfaceImage732, FilesSurfaceMarkdown470, FilesSurfaceMarkdown732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
+import { FilesSurfaceDelete470, FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceImage470, FilesSurfaceImage732, FilesSurfaceMarkdown470, FilesSurfaceMarkdown732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceQuickOpenHighlighted, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
 import { EditorSurfaceMenuStory, LayoutDropSlotsStory, MarkdownPreviewStory, OpenInSubmenuStory, EditorPreviewStatesStory, DictationListeningStory, DictationTranscribingStory, WindowControlsStory } from './workbenchStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper, SurfaceBrowserTabs, SurfaceBrowserEmpty, SurfaceBrowserEmpty340, SurfaceBrowserPage, SurfaceBrowserPage340, SurfaceDiff, SurfaceDiff340, SurfaceDiff600, SurfaceDiff732, SurfaceDiffGraphite, SurfaceLauncher, SurfacePrFailing, SurfacePrFailing340, SurfacePrFailing600, SurfacePrFailing732, SurfacePrPassing, SurfaceWidth340, SurfaceWidth470, SurfaceWidth600, SurfaceWidth732 } from './inspectorStories'
@@ -178,10 +188,10 @@ import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
-import { PaneCheckoutHeaderStory, PaneEndedStory, PaneOrchestratorHeaderStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
+import { PaneCheckoutHeaderStory, PaneEndedStory, PaneOrchestratorHeaderStory, PaneWorktreePopoverStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
-import { PullRequestDetailStory, PullRequestsScreenStory } from './prsStories'
+import { PullRequestDetailStory, PullRequestsScreenStory, PrPageStory } from './prsStories'
 
 const noop = (): void => {}
 
@@ -319,6 +329,21 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/tags': () => <LegacyTagsStory />,
   'legacy/question': () => <LegacyQuestionStory />,
   'legacy/git-shell': () => <LegacyGitShellStory />,
+  'pr-panel/ready': () => <PrPanelStory />,
+  'pr-panel/running': () => <PrPanelStory runningChecks />,
+  'pr-panel/failing': () => <PrPanelStory failing />,
+  'pr-panel/older': () => <PrPanelStory ageSeconds={172800} />,
+  'pr-panel/metadata-unavailable': () => <PrPanelStory metadataMissing />,
+  'pr-panel/draft': () => <PrPanelStory isDraft />,
+  'pr-panel/merged': () => <PrPanelStory state="merged" />,
+  'pr-panel/closed': () => <PrPanelStory state="closed" />,
+  'changes/empty-message': () => <ChangesStory />,
+  'changes/no-staged-files': () => <ChangesStory ready staged={false} />,
+  'changes/branch-switcher': () => <ChangesStory />,
+  'changes/maximized': () => <ChangesStory ready maximized />,
+  'changes/split': () => <ChangesStory />,
+  'changes/ready': () => <ChangesStory ready />,
+  'changes/branch-inline': () => <ChangesStory ready branchComparison />,
   'legacy/changes-idle': () => <LegacyChangesIdleStory />,
   'legacy/timeline-states': () => <LegacyTimelineStatesStory />,
   'legacy/overview': () => <InspectorOverviewStory />,
@@ -351,7 +376,16 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'orchestration/parent-first-attention': () => <ParentFirstAttentionStory />,
   'orchestration/archived-results': () => <ArchivedResultsStory />,
   'orchestration/instruction-recovery': () => <InstructionRecoveryStory />,
+  'ui-primitives/launch-fields-custom': () => <div className="p-6 max-w-[560px]"><LaunchSlotCardSpecimen custom /></div>,
+  'ui-primitives/verb-glyphs': () => <VerbGlyphSpecimen />,
+  'ui-primitives/chip-shapes': () => <ChipShapeSpecimen />,
+  'ui-primitives/composer-menu': () => <div className="p-6"><ComposerPillMenuSpecimen /></div>,
+  'ui-primitives/launch-fields': () => <div className="p-6 max-w-[560px]"><LaunchSlotCardSpecimen /></div>,
+  'ui-primitives/row-states': () => <RowStateSpecimen />,
+  'ui-primitives/motion': () => <FoundationMotionStory />,
+  'ui-primitives/focus-halo': () => <div className="p-6"><SegmentedControl aria-label="Focus halo specimen" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} value="one" /></div>,
   'ui-primitives': () => <UiPrimitivesStory />,
+  'ui-primitives/phone-pairing': () => <PhonePairingSpecimen />,
   'git/worktree-stale': () => <StaleWorktreesStory />,
   'editor/markdown-preview': () => <MarkdownPreviewStory />,
   'editor/surface-menu': () => <EditorSurfaceMenuStory />,
@@ -369,6 +403,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'files/surface-file-470': () => <FilesSurfaceFile470 />,
   'files/surface-file-600': () => <FilesSurfaceFile600 />,
   'files/surface-file-732': () => <FilesSurfaceFile732 />,
+  'files/surface-quick-open-highlighted': () => <FilesSurfaceQuickOpenHighlighted />,
   'files/surface-quick-open': () => <FilesSurfaceQuickOpen />,
   'files/surface-disk-changed': () => <FilesSurfaceDiskChanged />,
   'files/surface-open-in': () => <FilesSurfaceOpenIn />,
@@ -402,11 +437,14 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'harness/first-run': () => <HarnessPageStory firstRun />,
   'harness/no-reviews': () => <HarnessPageStory noReviews />,
   'rail/workspaces-multi': () => <RailWorkspacesMulti />,
+  'pr-page/populated': () => <PrPageStory />,
+  'pr-page/selected': () => <PrPageStory mode="selected" />,
+  'pr-page/empty': () => <PrPageStory mode="empty" />,
+  'pr-page/loading': () => <PrPageStory mode="loading" />,
+  'pr-page/viewer-unavailable': () => <PrPageStory mode="viewer-unavailable" />,
   'prs/screen-paper': () => <PullRequestsScreenStory />,
   'prs/screen-empty': () => <PullRequestsScreenStory mode="empty" />,
   'prs/screen-loading': () => <PullRequestsScreenStory mode="loading" />,
-  'prs/screen-sort-menu': () => <PullRequestsScreenStory mode="sort" />,
-  'prs/screen-filter-menu': () => <PullRequestsScreenStory mode="filters" />,
   'prs/screen-hover': () => <PullRequestsScreenStory mode="hover" />,
   'prs/screen-selected': () => <PullRequestsScreenStory mode="selected" />,
   'prs/screen-folded': () => <PullRequestsScreenStory mode="folded" />,
@@ -430,8 +468,19 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'rail/grid-row-paper-200': () => <RailGridRowStory theme="paper" width={200} />,
   'rail/grid-row-paper-240': () => <RailGridRowStory theme="paper" width={240} />,
   'rail/grid-row-paper-420': () => <RailGridRowStory theme="paper" width={420} />,
+  'settings/agents-skill-detail': () => <NavSkills inSettings detail />,
+  'settings/agents-skills': () => <NavSkills inSettings />,
+  'settings/agents-mcp': () => <NavMcp inSettings />,
+  'settings/agents-review': () => <HarnessPageStory inSettings />,
+  'settings/agents-review-no-reviews': () => <HarnessPageStory inSettings noReviews />,
+  'settings/agents-review-first': () => <HarnessPageStory inSettings firstRun />,
+  'settings/agents-overview': () => <SettingsAgentsOverview />,
+  'settings/agents-overview-healthy': () => <SettingsAgentsOverview healthy />,
+  'settings/agents-cli-detail': () => <SettingsAgentSetup detail />,
+  'settings/agents-account-rename': () => <SettingsAgentSetup rename />,
+  'settings/agents-clis': () => <SettingsAgentSetup />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
-  'settings/agents': () => <SettingsAgentSetup />,
+  'settings/agents': () => <SettingsAgentsOverview />,
   'settings/agents-loading': () => <SettingsAgentStatusLoading />,
   'settings/agents-empty': () => <SettingsAgentStatusEmpty />,
   'settings/appearance': () => <SettingsAppearance />,
@@ -442,6 +491,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/detail-loading': () => <SettingsDetailStory state="loading" />,
   'settings/detail-empty': () => <SettingsDetailStory state="empty" />,
   'settings/appearance-picker': () => <AppearancePickerStory />,
+  'settings/appearance-picker-highlighted': () => <AppearancePickerStory highlighted />,
   'settings/appearance-picker-empty': () => <AppearancePickerStory empty />,
   'settings/search': () => <SettingsSearchStory />,
   'settings/terminal': () => <SettingsTerminal />,
@@ -466,10 +516,13 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/privacy-edit': () => <SettingsPrivacyEditor />,
   'settings/remote': () => <SettingsRemote />,
   'settings/remote-off': () => <SettingsRemoteOff />,
+  'settings/remote-pairing': () => <SettingsRemote pairing />,
+  'settings/remote-unconfigured': () => <SettingsRemoteUnconfigured />,
   'settings/about': () => <SettingsAbout />,
   'composer/controls-open': () => <ComposerControlsOpen />,
   'composer/controls-overflow': () => <ComposerControlsOverflow />,
   'composer/controls-states': () => <ComposerControlsStates />,
+  'ui-primitives/attachment-chips': () => <AttachmentChips />,
   'composer/attachment-chips': () => <AttachmentChips />,
   'composer/attachment-previews': () => <AttachmentPreviews />,
   'new-session/routes': () => <NewSessionWithRoutes />,
@@ -491,6 +544,10 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'notices/pane-corner': () => <NoticesPaneCorner />,
   'notices/orchestration': () => <NoticesOrchestration />,
   'nav/routines': () => <NavRoutines />,
+  'nav/routines-many-workspaces': () => <NavRoutines many />,
+  'nav/routines-user': () => <NavRoutines selectedRoutineId={2} />,
+  'nav/routines-review-setup': () => <NavRoutines setup />,
+  'nav/routines-review-report': () => <NavRoutines report />,
   'nav/routines-empty': () => <NavRoutinesEmpty />,
   'nav/routine-editor': () => <NavRoutineEditor />,
   'nav/routine-editor-clock': () => <NavRoutineEditorClock />,
@@ -526,9 +583,26 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/hooks': () => <NavHooks />,
   'tasks/list': () => <TasksListStory />,
   'usage/page': () => <UsagePageStory />,
+  'usage/error-first': () => <UsagePageStory state="error-first" />,
+  'usage/partial': () => <UsagePageStory state="partial" />,
+  'usage/empty-failed': () => <UsagePageStory state="empty-failed" />,
+  'usage/profile': () => <UsagePageStory state="profile" />,
+  'usage/day': () => <UsagePageStory state="day" />,
+  'usage/by-day': () => <UsagePageStory state="by-day" />,
+  'usage/tokens': () => <UsagePageStory state="tokens" />,
+  'usage/hover': () => <UsagePageStory state="hover" />,
+  'usage/retained-day': () => <UsagePageStory state="retained-day" />,
+  'usage/retained-day-total': () => <UsagePageStory state="retained-day-total" />,
   'usage/error': () => <UsagePageStory state="error" />,
+  'usage/reading': () => <UsagePageStory state="reading" />,
+  'usage/unpriced': () => <UsagePageStory state="unpriced" />,
+  'usage/loading': () => <UsagePageStory state="loading" />,
   'usage/stale': () => <UsagePageStory state="stale" />,
   'usage/empty': () => <UsagePageStory state="empty" />,
+  'tasks/sources': () => <TasksSourcesStory />,
+  'tasks/source-slack': () => <TasksSlackSetupStory />,
+  'tasks/source-notion': () => <TasksNotionSetupStory />,
+  'tasks/source-github': () => <TasksGitHubSetupStory />,
   'tasks/page': () => <TasksPageStory />,
   'tasks/by-project': () => <TasksByProjectStory />,
   'tasks/projects-dialog': () => <TasksProjectsDialogStory />,
@@ -538,6 +612,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'panes/lifecycle': () => <PaneLifecycleStory />,
   'panes/chrome-menu': () => <PaneMenuStory />,
   'surface/pane-header': () => <PaneCheckoutHeaderStory />,
+  'surface/pane-worktree-popover': () => <PaneWorktreePopoverStory />,
   'surface/pane-header-orchestrator': () => <PaneOrchestratorHeaderStory />,
   'panes/chrome-ended': () => <PaneEndedStory />,
   'panes/sleeping': () => <PaneSleepingStory />,

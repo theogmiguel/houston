@@ -1,6 +1,6 @@
 # Notifications
 
-Open Settings › Notifications to choose how Houston reports when an agent pane finishes a turn or needs your input. Both options are off by default.
+Open Settings ▸ Notifications to choose how Houston reports when an agent pane finishes a turn or needs your input. Both options are off by default.
 
 Desktop notifications appear only while the Houston window is unfocused. Choose Off, Notifications only, Sound only, or Notifications with sound. A desktop notification shows the pane, agent and workspace; clicking it focuses Houston and opens that pane. Sound only plays locally and does not send a desktop notification.
 

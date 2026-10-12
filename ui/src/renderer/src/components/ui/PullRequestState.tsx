@@ -5,7 +5,7 @@ import { Text } from './Text'
 export type PullRequestStateValue = 'open' | 'merged' | 'closed'
 export type CheckStateValue = 'passing' | 'running' | 'queued' | 'failing' | 'skipped' | 'unknown' | 'none'
 
-const stateClasses = variants('flex-none inline-flex items-center px-1.5 rounded-[var(--tr-radius-pill)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[var(--tr-text-label-tracking)] leading-4', {
+const stateClasses = variants('flex-none inline-flex items-center px-1.5 rounded-[var(--tr-radius-sm)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[var(--tr-text-label-tracking)] leading-4', {
   state: {
     open: 'bg-[color-mix(in_srgb,var(--ok)_16%,transparent)] text-[var(--ok)]',
     merged: 'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)]',

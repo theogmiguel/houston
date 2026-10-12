@@ -32,6 +32,8 @@ const PullRequestTab = lazy(() =>
 )
 
 export interface SourceControlPanelProps {
+  maximized?: boolean
+  checkoutPanes?: import('./git/BranchSwitcher').CheckoutPane[]
   onChangedCount?: (count: number) => void
   hideHeader?: boolean
   onSummaryChange?: (summary: ChangesSummary) => void
@@ -208,6 +210,8 @@ export function ScmResizeHandle({
 }
 
 export function SourceControlPanel({
+  maximized,
+  checkoutPanes,
   onChangedCount,
   hideHeader = false,
   onSummaryChange,
@@ -346,6 +350,9 @@ export function SourceControlPanel({
               onReviewPacket={onReviewPacket}
               review={review}
               compact={embedded}
+              maximized={maximized}
+              checkoutPanes={checkoutPanes}
+              onOpenPane={onOpenPane}
               checkoutLabel={checkoutLabel}
               onSummary={onSummary}
               refreshSignal={changesRefresh}

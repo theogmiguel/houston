@@ -68,7 +68,7 @@ describe('SkillItemDistribution — a skill\'s own per-tool availability', () =>
     expect(container.querySelector('[data-testid="skill-item-distribution"]')).toBeNull()
   })
 
-  it('shows an explicit "Copy Claude\'s version" action for a missing/drifted copy, and none for an identical one', () => {
+  it('shows copy replacement for drifted copies and Add copy for missing copies', () => {
     render({
       tools: [
         toolState('claude', [{ name: 'deploy', digest: 'a' }]),
@@ -78,7 +78,7 @@ describe('SkillItemDistribution — a skill\'s own per-tool availability', () =>
     })
     const buttons = Array.from(container.querySelectorAll('button')).map((b) => b.textContent)
     expect(buttons.some((t) => t?.includes("Copy Claude's version to Codex"))).toBe(true)
-    expect(buttons.some((t) => t?.includes("Copy Claude's version to OpenCode"))).toBe(true)
+    expect(container.querySelector('[aria-label="Add copy to OpenCode"]')).not.toBeNull()
   })
 
   it('calls onPush with the tool and skill name', () => {
@@ -91,7 +91,7 @@ describe('SkillItemDistribution — a skill\'s own per-tool availability', () =>
       onPush
     })
     const push = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes("Copy Claude's version to Codex")
+      b.getAttribute('aria-label') === 'Add copy to Codex'
     )!
     act(() => push.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onPush).toHaveBeenCalledWith('codex', 'deploy')

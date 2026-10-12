@@ -36,12 +36,34 @@ function storage(seed: Record<string, string> = {}): Storage {
 }
 
 describe('rail preferences', () => {
+  it('shows tag chips by default', () => {
+    expect(normalizeRailPrefs(null).properties).toContain('tags')
+    expect(normalizeRailPrefs(null).tagDisplay).toBe('chips')
+  })
+
   it('normalizes invalid or older persisted data to the v1 shape', () => {
     const prefs = normalizeRailPrefs({ v: 0, groupBy: 'repo', properties: ['status', 'invalid'] })
     expect(prefs.v).toBe(1)
     expect(prefs.groupBy).toBe('workspace')
     expect(prefs.properties).toContain('unread')
     expect(prefs.properties).not.toContain('invalid')
+  })
+
+  it('drops dead card properties from saved preferences', () => {
+    const prefs = normalizeRailPrefs({ v: 1, properties: ['ci', 'task', 'context', 'tags'], customisedProperties: true })
+    expect(prefs.properties).toEqual(['status', 'unread', 'tags'])
+  })
+
+  it('shows tag chips to users whose saved tag display was never chosen', () => {
+    expect(normalizeRailPrefs({ v: 1, tagDisplay: 'icon' }).tagDisplay).toBe('chips')
+    expect(normalizeRailPrefs({ v: 1, tagDisplay: 'icon', tagDisplayChosen: true }).tagDisplay).toBe('icon')
+    expect(normalizeRailPrefs({ v: 1, tagDisplay: 'dots', tagDisplayChosen: true }).tagDisplayChosen).toBe(true)
+  })
+
+  it('gives uncustomised saved preferences the current defaults for their card mode', () => {
+    const savedDefault = { v: 1, cardMode: 'detailed', properties: ['status', 'unread', 'checkout', 'pr', 'diff', 'task', 'inline-agents'], customisedProperties: false }
+    expect(normalizeRailPrefs(savedDefault).properties).toEqual(DETAILED_DEFAULT)
+    expect(normalizeRailPrefs({ ...savedDefault, cardMode: 'compact', properties: ['status', 'unread'] }).properties).toEqual(COMPACT_DEFAULT)
   })
 
   it('migrates tag filters once and leaves workspace collapse under its own key', () => {
@@ -56,7 +78,7 @@ describe('rail preferences', () => {
   it('swaps card presets only before the properties are customized', () => {
     const custom = {
       ...normalizeRailPrefs(null),
-      properties: [...DETAILED_DEFAULT, 'context' as const],
+      properties: [...DETAILED_DEFAULT, 'last-message' as const],
       customisedProperties: true,
     }
     expect(setRailCardMode(custom, 'compact').properties).toEqual(custom.properties)

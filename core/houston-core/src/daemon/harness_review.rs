@@ -441,6 +441,9 @@ impl Daemon {
                 })?;
             self.db.set_harness_routine(workspace, created.id)?;
             self.broadcast_harness_changed(workspace);
+            // The mapping transaction sets the persisted kind; replies and broadcasts
+            // must use the list read after that commit.
+            return Ok(self.routine_list());
         }
         Ok(msg)
     }

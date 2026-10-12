@@ -44,20 +44,20 @@ describe('HooksSurface — the Agents detail screen', () => {
     expect(container.textContent).toContain('Asking the daemon what is installed.')
   })
 
-  it('renders the Agent CLIs list and its selected detail', () => {
+  it('renders the flat CLI list and opens its selected detail', () => {
     act(() => {
       root.render(
         <HooksSurface providers={[state({ provider: 'claude' })]} onSet={noop} onRefresh={noop} />
       )
     })
-    expect(container.querySelector('[data-testid="settings-section-title"]')?.textContent).toBe(
-      'Agent CLIs'
+    expect(container.querySelector('h1')?.textContent).toBe(
+      'CLIs'
     )
-    expect(container.querySelector('[data-testid="list-detail"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="list-detail"]')).toBeNull()
     expect(container.querySelector('[data-testid="agent-status-row"]')?.textContent).toContain(
       'Claude Code'
     )
-    const cli = container.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
+    const cli = container.querySelector<HTMLButtonElement>('[data-testid="agent-status-row"] button')
     act(() => cli?.click())
     expect(container.querySelector('[data-testid="agent-status-detail"]')).not.toBeNull()
   })
@@ -74,7 +74,7 @@ describe('HooksSurface — the Agents detail screen', () => {
     act(() => {
       root.render(<HooksSurface providers={[state()]} onSet={noop} onRefresh={noop} />)
     })
-    const cli = container.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
+    const cli = container.querySelector<HTMLButtonElement>('[data-testid="agent-status-row"] button')
     act(() => cli?.click())
     expect(container.querySelector('[data-testid="nav-footnote"]')).toBeNull()
     const text = container.textContent ?? ''

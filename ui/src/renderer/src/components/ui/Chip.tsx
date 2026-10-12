@@ -1,10 +1,11 @@
+import { ROW_STATE } from './rowState'
 import { IconClose } from '../icons'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 
-export type ChipVariant = 'state' | 'provider' | 'count' | 'compound' | 'removable' | 'choice'
+export type ChipVariant = 'state' | 'provider' | 'count' | 'compound' | 'removable' | 'choice' | 'label'
 export type ChipTone = 'default' | 'info' | 'success' | 'warning' | 'danger'
 
 export interface ChipProps {
@@ -55,20 +56,21 @@ function CountContent({ loading, count, emptySetLabel }: Pick<ChipProps, 'loadin
   return <span className="tabular-nums">{count}</span>
 }
 
-function choiceClass(selected: boolean): string {
-  return `btn min-h-[var(--h-ctl)] px-[var(--space-choice-x)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default disabled:opacity-60 ${selected ? 'bg-[var(--selected-fill)] font-semibold text-[var(--text-primary)]' : 'bg-[var(--hover-fill)] font-medium text-[var(--text-secondary)] hover:not-disabled:bg-[var(--selected-fill)] hover:not-disabled:text-[var(--text-primary)]'}`
+function choiceClass(selected: boolean, isPressable: boolean): string {
+  return `btn min-h-[var(--h-ctl)] px-[var(--space-choice-x)] ${isPressable ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'} border ${selected ? 'border-[var(--border-hover)]' : 'border-[var(--border)]'} [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default disabled:opacity-60 disabled:pointer-events-none ${ROW_STATE[selected ? 'selected' : 'rest']}`
 }
 
 function pillClass(tone: ChipTone, isPressable: boolean, selected: boolean): string {
   const shapeRadius = isPressable ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'
-  const press = isPressable ? 'cursor-pointer hover:bg-[var(--surface-hover)] active:scale-[0.96]' : ''
-  const pressed = selected ? 'border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--text-primary)]' : ''
-  return `inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-pill)] max-w-full px-[var(--space-2)] border text-[length:var(--tr-text-small-size)] font-medium leading-[var(--tr-text-small-leading)] ${shapeRadius} ${TONE_CLASS[tone]} ${press} ${pressed}`
+  const press = isPressable ? 'cursor-pointer active:scale-[0.96]' : ''
+  const paint = isPressable ? `${ROW_STATE[selected ? 'selected' : 'rest']} ${selected ? 'border-[var(--border-hover)]' : 'border-[var(--border)]'}` : TONE_CLASS[tone]
+  return `inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-pill)] max-w-full px-[var(--space-2)] border text-[length:var(--tr-text-small-size)] font-medium leading-[var(--tr-text-small-leading)] ${shapeRadius} ${paint} ${press}`
 }
 
 function chipClass({ variant, tone, selected, disabled, isPressable }: { variant: ChipVariant; tone: ChipTone; selected: boolean; disabled: boolean; isPressable: boolean }): string {
-  const shape = variant === 'choice' ? choiceClass(selected) : pillClass(tone, isPressable, selected)
-  return `${shape} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]`
+  if (variant === 'label') return 'inline-flex flex-none items-center rounded-[var(--tr-radius-input)] border border-[var(--border)] px-[var(--space-1-5)] text-[length:var(--tr-text-label-size)] font-normal text-[var(--text-muted)]'
+  const shape = variant === 'choice' ? choiceClass(selected, isPressable) : pillClass(tone, isPressable, selected)
+  return `${shape} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} focus-visible:outline-none ${FOCUS_HALO_CLS}`
 }
 
 export function Chip({
@@ -122,7 +124,7 @@ export function Chip({
                 e.stopPropagation()
                 onRemove?.()
               }}
-              className={`border-0 bg-transparent flex-none inline-flex items-center justify-center h-[var(--h-chip-dismiss)] w-[var(--h-chip-dismiss)] rounded-full hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed ${HIT_TARGET_28}`}
+              className={`border-0 bg-transparent flex-none inline-flex items-center justify-center h-[var(--h-chip-dismiss)] w-[var(--h-chip-dismiss)] rounded-full hover:bg-[var(--surface-hover)] focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-50 disabled:cursor-not-allowed ${HIT_TARGET_28}`}
             >
               <Icon glyph={IconClose} role="label" />
             </button>

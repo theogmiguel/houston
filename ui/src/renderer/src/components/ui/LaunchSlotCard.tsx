@@ -3,6 +3,7 @@ import type { ChatEffort } from '../../houston/generated/ChatEffort'
 import { useState } from 'react'
 import type { SessionSlot, SlotOverrides } from '../sessionPresets'
 import { Select } from './Select'
+import { FIELD_CLS } from './selectChrome'
 import { IconAgent } from '../icons'
 import { ICON_ROLE_CLS } from './Icon'
 import { FieldLabel } from './Field'
@@ -27,7 +28,7 @@ export interface LaunchSlotCardProps {
 
 const FIELD = 'flex min-w-0 flex-col gap-[var(--space-1)]'
 const SOURCE = '[font-size:var(--tr-text-label-size)] text-[var(--text-muted)]'
-const FIELD_VALUE = 'min-w-0 truncate rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--card-bg)] px-[var(--space-2)] py-[var(--space-1)] [font-size:var(--tr-text-small-size)] text-[var(--text-primary)]'
+const FIELD_VALUE = `min-w-0 truncate ${FIELD_CLS}`
 const editedBorderClass = (isEdited: boolean): string => isEdited ? 'border-[color-mix(in_srgb,var(--warn)_55%,transparent)]' : ''
 
 const MODEL_OPTIONS: Partial<Record<AgentKind, string[]>> = {
@@ -83,7 +84,7 @@ export function LaunchSlotCard({ slot, workspaceName, override, onAgentChange, o
   const edited = editedAgent || editedModel || editedEffort
   const headerSource = edited ? 'edited' : slot.headerSource === 'user override' ? 'edited' : slot.headerSource ?? slot.agentSource
   return (
-    <div data-slot={slot.index} className="flex min-w-0 flex-col gap-[var(--space-2)] rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--card-bg)] p-[var(--space-2)]">
+    <div data-slot={slot.index} className="flex min-w-0 flex-col gap-[var(--space-2)] rounded-[var(--tr-radius-card)] border border-[var(--border)] bg-[var(--card-bg)] p-[var(--space-2)]">
       <div className="flex min-w-0 items-center gap-[var(--space-1-5)]">
         <span className="w-3 flex-none font-mono [font-size:var(--tr-text-label-size)] text-[var(--text-faint)]">{slot.index + 1}</span>
         <IconAgent agent={slot.agent} brand className={ICON_ROLE_CLS.small} />
@@ -111,7 +112,7 @@ export function LaunchSlotCard({ slot, workspaceName, override, onAgentChange, o
         </div>
         <div className={FIELD}>
           <FieldLabel size="compact">Checkout</FieldLabel>
-          <span className={FIELD_VALUE}>This checkout · {workspaceName}</span>
+          <span className={`flex items-center ${FIELD_VALUE}`}>This checkout · {workspaceName}</span>
         </div>
       </div>
       {slot.skippedRoute && <span role="status">Skipped route: {slot.skippedRoute}</span>}
@@ -120,7 +121,7 @@ export function LaunchSlotCard({ slot, workspaceName, override, onAgentChange, o
   )
 }
 
-export function LaunchSlotCardSpecimen(): React.JSX.Element {
+export function LaunchSlotCardSpecimen({ custom = false }: { custom?: boolean } = {}): React.JSX.Element {
   return <LaunchSlotCard slot={{ index: 0, agent: 'claude', roleLabel: 'builder', prompt: '', model: null, effort: null, modelSource: 'agent default', effortSource: 'workspace setting', agentSource: 'preset', skippedRoute: null, invalidReason: null }}
-    workspaceName="Houston" override={{}} onAgentChange={() => {}} onModelChange={() => {}} onEffortChange={() => {}} onReset={() => {}} />
+    workspaceName="Houston" override={custom ? { model: 'custom-model' } : {}} onAgentChange={() => {}} onModelChange={() => {}} onEffortChange={() => {}} onReset={() => {}} />
 }

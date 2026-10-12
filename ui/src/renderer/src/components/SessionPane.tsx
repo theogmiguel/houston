@@ -1,3 +1,4 @@
+import { GLYPH_FOR_VERB } from './verbGlyphs'
 import { ChildInputBanner } from './ChildInputDetails'
 import { askedOrchestrator, attentionStatus, needsUserInput } from '../sessionAttention'
 import { PaneFrame } from './ui/PaneFrame'
@@ -40,7 +41,6 @@ import {
   IconCopy,
   IconEllipsis,
   IconEraser,
-  IconFolder,
   IconMaximize,
   IconMinimize,
   IconMoon,
@@ -109,6 +109,7 @@ import { RosterPeekbar, RosterSplit, type RosterMode } from './ui/RosterSurface'
 import { Count } from './ui/Count'
 import { ShellBranchCopyChip, ShellElement } from './ui/ShellPrimitives'
 import { formatCheckout } from './checkout/formatCheckout'
+import { WorktreeChildrenPopover } from './WorktreeChildrenPopover'
 import type { SessionCheckout } from '../houston/generated/SessionCheckout'
 import type { PaneContextMenu as PaneContextMenuController } from './paneContextMenu'
 
@@ -265,13 +266,19 @@ function useWorktreeChildren(info: SessionInfo): SessionInfo[] {
 export function BranchChip({
   checkout,
   remoteHost,
-  worktreeChildren = noWorktreeChildren
+  worktreeChildren = noWorktreeChildren,
+  onFocusChild
 }: {
   checkout?: SessionCheckout | null
   remoteHost?: string | null
   worktreeChildren?: readonly SessionInfo[]
+  onFocusChild?: (id: number) => void
 }): React.JSX.Element | null {
   const formatted = formatCheckout(checkout, { remoteHost: remoteHost ?? undefined })
+  const countRef = useRef<HTMLButtonElement | null>(null)
+  const [childrenOpen, setChildrenOpen] = useState(false)
+  const closeChildren = useCallback(() => setChildrenOpen(false), [])
+  const popoverOpen = childrenOpen && worktreeChildren.length > 0
   if (formatted.kind === 'unknown') return null
   const detail = formatted.kind === 'remote' ? remoteHost : formatted.branch
   const revealWorktree = (event: React.MouseEvent<HTMLSpanElement>): void => {
@@ -281,26 +288,42 @@ export function BranchChip({
     void showItemInFolder(checkout.root)
   }
   return (
-    <Tooltip label={[
-      formatted.kind === 'worktree' && checkout ? `${formatted.text}\n${checkout.root}` : formatted.text,
-      ...(worktreeChildren.length > 0 ? ["Children's worktrees:"] : []),
-      ...worktreeChildren.map((child) => `${child.codename} · ${child.delegation?.role ?? child.title}: ${formatCheckout((child as CheckoutOf).checkout).branch ?? '(detached)'}`)
-    ].join('\n')}>
-      <span data-testid="branch-chip" className="[@container_(max-width:400px)]:hidden" onClickCapture={revealWorktree}>
-        <ShellBranchCopyChip value={formatted.branch ?? checkout?.head ?? formatted.badge}>
-          <span className="inline-flex min-w-0 items-center gap-[var(--space-1)] truncate">
-            <span>{formatted.kind === 'remote' ? 'remote' : formatted.badge}</span>
-            {detail && <><span> </span><ShellElement as="span" shellRole="pane-branch-detail-separator">·</ShellElement><span> </span><span className="truncate">{detail}</span></>}
-            {worktreeChildren.length > 0 && (
-              <ShellElement as="span" shellRole="pane-branch-children" aria-label={`${worktreeChildren.length} children in worktrees`}>
-                <Icon glyph={IconGitBranch} role="label" />
-                <span data-testid="branch-chip-children">{worktreeChildren.length}</span>
-              </ShellElement>
-            )}
-          </span>
-        </ShellBranchCopyChip>
+    <>
+      <span data-testid="branch-chip" className="inline-flex items-center gap-[var(--space-1)] [@container_(max-width:400px)]:hidden" onClickCapture={revealWorktree}>
+        <Tooltip label={formatted.kind === 'worktree' && checkout ? `${formatted.text}\n${checkout.root}` : formatted.text}>
+          <ShellBranchCopyChip value={formatted.branch ?? checkout?.head ?? formatted.badge}>
+            <span className="inline-flex min-w-0 items-center gap-[var(--space-1)] truncate">
+              <span>{formatted.kind === 'remote' ? 'remote' : formatted.badge}</span>
+              {detail && <><span> </span><ShellElement as="span" shellRole="pane-branch-detail-separator">·</ShellElement><span> </span><span className="truncate">{detail}</span></>}
+            </span>
+          </ShellBranchCopyChip>
+        </Tooltip>
+        {worktreeChildren.length > 0 && (
+          <Button
+            variant="badge"
+            ref={countRef}
+            aria-label={`${worktreeChildren.length} child worktrees`}
+            aria-haspopup="dialog"
+            aria-expanded={popoverOpen}
+            onClick={() => setChildrenOpen((open) => !open)}
+          >
+            <ShellElement as="span" shellRole="pane-branch-children">
+              <Icon glyph={IconGitBranch} role="label" />
+              <span data-testid="branch-chip-children">{worktreeChildren.length}</span>
+            </ShellElement>
+          </Button>
+        )}
       </span>
-    </Tooltip>
+      {popoverOpen && (
+        <WorktreeChildrenPopover
+          checkout={checkout}
+          childSessions={worktreeChildren}
+          anchorRef={countRef}
+          onFocusChild={(id) => onFocusChild?.(id)}
+          onClose={closeChildren}
+        />
+      )}
+    </>
   )
 }
 
@@ -440,7 +463,7 @@ function SessionLifecycleMenuItems({
       <CtxRow glyph={IconRespawn} label="Wake conversation" onClick={menuItem(() => client.send({ type: 'session_wake', session: info.id }))} />
       <CtxRow glyph={IconRespawn} label="Start fresh conversation" onClick={menuItem(() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true))} />
     </>}
-    {!sleeping && <CtxRow glyph={IconFolder} label="Measure process memory" onClick={menuItem(() => {
+    {!sleeping && <CtxRow glyph={GLYPH_FOR_VERB['measure-memory']} label="Measure process memory" onClick={menuItem(() => {
       setMemoryResult(null)
       client.send({ type: 'session_memory_get', session: info.id })
     })} />}
@@ -561,7 +584,6 @@ function SessionPaneImpl({
       <PaneHeader
         data-pane-focus-head={focusTier}
         divider="solid"
-        transition="background"
         dragCursor
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button, input, [data-pane-head-control]')) return
@@ -588,7 +610,7 @@ function SessionPaneImpl({
           />
           <PaneTaskChip task={info.task} />
           <PaneWatchChip watches={prWatches} />
-          <BranchChip checkout={(info as CheckoutOf).checkout} remoteHost={info.ssh_host} worktreeChildren={worktreeChildren} />
+          <BranchChip checkout={(info as CheckoutOf).checkout} remoteHost={info.ssh_host} worktreeChildren={worktreeChildren} onFocusChild={selectChild} />
           <PaneHeaderTags tagIds={info.tags} />
           {info.acp != null && <AcpBadge slug={info.acp} />}
           {info.profile_label != null && <ProfileBadge label={info.profile_label} />}
@@ -629,7 +651,7 @@ function SessionPaneImpl({
           {lifecycleError && <Notice tone="danger">{lifecycleError}</Notice>}
           <SessionLifecycleMenuItems info={info} live={live} sleeping={sleeping} shellIntegration={shellIntegration} client={client} menuItem={menuItem} setMemoryResult={setMemoryResult} />
           <PaneContextMenuSeparator />
-          {children.length > 0 && <CtxRow glyph={IconFolder} label="Overview" onClick={menuItem(() => openSideOverview(info.id))} />}
+          {children.length > 0 && <CtxRow glyph={GLYPH_FOR_VERB['overview']} label="Overview" onClick={menuItem(() => openSideOverview(info.id))} />}
           {info.spawned_by != null && onReturnChildToRoster && <CtxRow glyph={IconArrowUpRight} label="Return to roster" onClick={menuItem(() => onReturnChildToRoster(info.id))} />}
           <CtxRow
             glyph={IconSplitRight}
@@ -720,7 +742,7 @@ function SessionPaneImpl({
           ))}
           <PaneContextMenuSeparator />
           <CtxRow
-            glyph={IconFolder}
+            glyph={GLYPH_FOR_VERB['reveal-in-file-manager']}
             label="Reveal in file manager"
             onClick={menuItem(() => {
               void showItemInFolder(cwd).then((res) => {

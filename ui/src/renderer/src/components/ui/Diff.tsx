@@ -24,7 +24,17 @@ export function DiffScrollArea({ children, surface = 'content', className = '' }
   return <div className={`min-h-0 overflow-y-auto [scrollbar-width:thin] ${surfaceClass} ${className}`}>{children}</div>
 }
 
-export function DiffHeader({ path, tag, added, deleted, blocked, onOpenInEditor }: { path: string; tag: string; added: number | null; deleted: number | null; blocked: boolean; onOpenInEditor?: () => void }): React.JSX.Element {
+export function DiffHeader({ controls, status, path, tag, added, deleted, blocked, onOpenInEditor }: { controls?: ReactNode; status?: string; path: string; tag: string; added: number | null; deleted: number | null; blocked: boolean; onOpenInEditor?: () => void }): React.JSX.Element {
+  if (controls) {
+    const split = path.lastIndexOf('/') + 1
+    const letter = status === 'added' || status === 'untracked' ? 'A' : status === 'deleted' ? 'D' : status === 'renamed' ? 'R' : status === 'conflicted' ? 'C' : 'M'
+    return <div className="flex h-[var(--h-top)] flex-none items-center gap-[var(--space-2)] border-b border-[var(--divider)] px-[var(--space-4)] text-[length:var(--tr-text-ui-size)]">
+      <span aria-label={status} className="text-[var(--info)] font-mono">{letter}</span>
+      <span className="min-w-0 truncate"><span className="text-[var(--text-muted)]">{path.slice(0, split)}</span><span className="text-[var(--text-primary)] font-medium">{path.slice(split)}</span></span>
+      <span className="flex-none font-mono text-[length:var(--tr-text-small-size)]"><span className="text-[var(--ok)]">+{added ?? 0}</span> <span className="text-[var(--stop)]">−{deleted ?? 0}</span></span>
+      <span className="ml-auto flex items-center gap-[var(--space-1)]">{controls}<Button variant="ghost" size="sm" disabled={!onOpenInEditor || blocked} data-testid="changes-open-editor" onClick={onOpenInEditor}>Open in editor</Button></span>
+    </div>
+  }
   const tagTone: Record<string, string> = {
     staged: 'bg-[color-mix(in_srgb,var(--success)_16%,transparent)] text-[var(--success)]',
     unstaged: 'bg-[color-mix(in_srgb,var(--text-muted)_18%,transparent)] text-[var(--text-muted)]',
@@ -45,7 +55,7 @@ export function DiffBlockedMark({ children }: { children: ReactNode }): React.JS
 }
 
 export function DiffCode({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="block min-w-full w-max pt-1 px-0 pb-2 font-mono text-[length:var(--tr-text-xs)] leading-[1.55]" role="presentation">{children}</div>
+  return <div className="block w-full min-w-0 pt-1 px-0 pb-2 font-mono text-[length:var(--tr-text-xs)] leading-[1.55]" role="presentation">{children}</div>
 }
 
 export function DiffPlainText({ children }: { children: ReactNode }): React.JSX.Element {
@@ -61,9 +71,29 @@ export function DiffGutter({ children }: { children?: ReactNode }): React.JSX.El
 }
 
 export function DiffLineText({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span className="flex-1 min-w-0">{children}</span>
+  return <span className="flex-1 min-w-0 overflow-hidden text-ellipsis">{children}</span>
 }
 
 export function DiffPaneSurface({ children, selected = false }: { children: ReactNode; selected?: boolean }): React.JSX.Element {
-  return <div className={`flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--content-bg)] ${selected ? 'changes-diff' : ''}`}>{children}</div>
+  return <div className={`flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--rail-bg)] ${selected ? 'changes-diff' : ''}`}>{children}</div>
+}
+
+export function DiffSplitCode({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div data-diff-layout="split" className="w-full min-w-0 font-mono text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)]">{children}</div>
+}
+
+export function DiffSplitRow({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div data-diff-pair className="grid grid-cols-2 divide-x divide-[var(--border)]">{children}</div>
+}
+
+export function DiffSplitCell({ side, kind, filler, number, children }: { side: 'old' | 'new'; kind: DiffLineKind; filler: boolean; number: number | null; children: ReactNode }): React.JSX.Element {
+  return <div data-side={side} data-kind={kind} data-filler={filler ? 'true' : undefined} data-line={number ?? undefined}
+    className={`flex min-w-0 overflow-hidden whitespace-pre ${filler ? 'bg-[color-mix(in_srgb,var(--text-primary)_2%,transparent)]' : DIFF_TONE[kind]}`}>
+    <span className="w-[40px] shrink-0 pr-[var(--space-1-5)] text-right text-[var(--text-faint)] select-none" aria-hidden>{number ?? ''}</span>
+    {children}
+  </div>
+}
+
+export function DiffSectionHeader({ kind, children }: { kind: DiffLineKind; children: ReactNode }): React.JSX.Element {
+  return <div data-kind={kind} data-diff-section-header className="flex items-start font-normal whitespace-pre text-[var(--text-muted)]"><span aria-hidden className="w-[40px] shrink-0" /><DiffGutter /><DiffLineText>{children}</DiffLineText></div>
 }

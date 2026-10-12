@@ -81,6 +81,7 @@ const isKeyword = (t: string): boolean =>
 
 function animationNameOf(decl: string): string | null {
   const tokens = decl
+    .replace(/!\s*important\s*$/i, '')
     .trim()
     .replace(/\([^)]*\)/g, (m) => m.replace(/\s/g, ''))
     .split(/\s+/)
@@ -90,6 +91,15 @@ function animationNameOf(decl: string): string | null {
 }
 
 describe('animation names', () => {
+  it.each<[string, string | null]>([
+    ['none !important', null],
+    ['none ! IMPORTANT', null],
+    ['spin 1s linear !important', 'spin'],
+    ['undefined-animation 1s !important', 'undefined-animation']
+  ])('parses %s without treating the importance flag as a name', (decl, name) => {
+    expect(animationNameOf(decl)).toBe(name)
+  })
+
   it('every @keyframes name referenced from CSS is defined', () => {
     const defined = definedNames()
     const missing = cssReferences().filter((r) => !defined.has(r.name))

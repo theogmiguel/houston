@@ -721,8 +721,8 @@ export class HoustonClient {
     this.send({ type: 'git_unstage', dir, paths })
   }
 
-  gitCommit(dir: string, message: string): void {
-    this.send({ type: 'git_commit', dir, message })
+  gitCommit(dir: string, message: string, opts: { amend?: boolean } = {}): void {
+    this.send({ type: 'git_commit', dir, message, amend: opts.amend ?? false })
   }
 
   gitPush(dir: string): void {

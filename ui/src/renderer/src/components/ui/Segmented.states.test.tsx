@@ -124,7 +124,7 @@ describe('Segmented — state matrix', () => {
       root.render(<Segmented aria-label="View" options={OPTIONS} value="list" />)
     })
     const group = container.querySelector('[data-testid="segmented"]')
-    expect(group?.className).toContain('border-[var(--border)]')
+    expect(group?.className).toContain('border-[var(--border-control)]')
     expect(group?.className).toContain('bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)]')
     expect(group?.className).toContain('rounded-[var(--tr-radius-button)]')
     expect(group?.className).not.toContain('rounded-[var(--tr-radius-pill)]')

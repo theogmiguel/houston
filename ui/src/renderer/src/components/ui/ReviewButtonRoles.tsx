@@ -4,6 +4,8 @@ import { ButtonRecipe } from './ButtonRecipe'
 import type { ButtonRecipeProps } from './Button'
 
 const RECIPES = {
+  'text-link': 'btn inline-flex min-w-0 h-auto min-h-0 border-0 rounded-none bg-transparent p-0 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)] underline underline-offset-2 hover:enabled:text-[var(--text-primary)]',
+
   'picker-candidate': 'w-full min-h-0 flex items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] bg-transparent border-0 rounded-none text-left [font-size:inherit] [font-weight:inherit] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] disabled:opacity-55 hover:enabled:bg-[var(--card-hover)] focus-visible:outline-none focus-visible:bg-[var(--card-hover)]',
   'primary-action': `btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)] disabled:opacity-55`,
   'secondary-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)]`,

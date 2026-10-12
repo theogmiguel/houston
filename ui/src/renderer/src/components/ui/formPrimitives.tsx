@@ -9,7 +9,7 @@ const FIELD_INPUT_HEIGHT_CLS = 'h-[var(--h-form-control)]'
 const BUTTON_BASE =
   'btn inline-flex items-center justify-center gap-[var(--space-form-button-gap)] border min-h-[var(--h-ctl)] px-[var(--space-field-control-inline)] rounded-[var(--tr-radius-sm)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default'
 const BUTTON_TONE = {
-  primary: 'border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] hover:brightness-110 disabled:opacity-55',
+  primary: 'border-[var(--primary-fill)] bg-[var(--primary-fill)] text-[var(--primary-foreground)] hover:brightness-110 disabled:opacity-55',
   secondary: 'border-[var(--border)] bg-[var(--hover-fill)] text-[var(--text-secondary)] hover:bg-[var(--selected-fill)] hover:text-[var(--text-primary)] disabled:opacity-55'
 } as const
 const BUTTON_MIN_WIDTH = { sm: 'min-w-[var(--w-form-button-sm)]', md: 'min-w-[var(--w-form-button-md)]' } as const

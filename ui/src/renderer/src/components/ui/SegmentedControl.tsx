@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
 import { HIT_TARGET_28 } from '../hitTarget'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { Tooltip } from './Tooltip'
 import {
   SEG_ITEM_CLS,
@@ -68,7 +68,7 @@ export function Segmented<T extends string = string>({
         <button
           type="button"
           onClick={error.onRetry}
-          className={`btn rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current text-[length:var(--tr-text-small-size)] font-semibold focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${HIT_TARGET_28}`}
+          className={`btn rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current text-[length:var(--tr-text-small-size)] font-semibold focus-visible:outline-none ${FOCUS_HALO_CLS} ${HIT_TARGET_28}`}
         >
           Try again
         </button>

@@ -6,10 +6,11 @@ import { AgentProfiles } from '../AgentProfiles'
 import { CheckedStamp } from '../ui/CheckedStamp'
 import { ICON_ROLE_CLS } from '../ui/Icon'
 import { IconAgent, IconLoaderCircle, IconRefresh, IconZap } from '../icons'
-import { ListDetail, type ListDetailItem } from '../nav/ListDetail'
+import { AgentCliRow } from '../ui/AgentCliRow'
+import { Button, Card, PageHeader, DialogBackdrop, DialogPanel, DialogTitle, DialogBody, DialogActions } from '../ui'
 import { Caption } from '../ui/Caption'
-import { Group, SectionHead, SettingsRow } from '../ui/settingsPrimitives'
-import { StatusIcon, type StatusIconState } from '../ui/StatusIcon'
+import { Group, SettingsRow } from '../ui/settingsPrimitives'
+import { type StatusIconState } from '../ui/StatusIcon'
 import { Tooltip } from '../ui/Tooltip'
 import { Text } from '../ui/Text'
 import { PaneHeaderButton } from '../ui/PaneHeaderButton'
@@ -108,23 +109,7 @@ function VersionText({ version }: { version: string | null }): React.JSX.Element
   return <Caption tone="faint" variant="code">{version ?? 'Unknown'}</Caption>
 }
 
-function AgentDetail({
-  state,
-  pending,
-  onSet,
-  agentProfiles,
-  onAgentProfileUpsert,
-  onAgentProfileDelete,
-  onAgentProfileSetActive
-}: {
-  state: AgentHookState
-  pending: boolean
-  onSet: (provider: AgentKind, enabled: boolean) => void
-  agentProfiles: AgentProfileState | null
-  onAgentProfileUpsert?: AgentStatusSectionProps['onAgentProfileUpsert']
-  onAgentProfileDelete?: AgentStatusSectionProps['onAgentProfileDelete']
-  onAgentProfileSetActive?: AgentStatusSectionProps['onAgentProfileSetActive']
-}): React.JSX.Element {
+function AgentDetail({ state, pending, onSet }: { state: AgentHookState; pending: boolean; onSet: (provider: AgentKind, enabled: boolean) => void }): React.JSX.Element {
   const copy = copyFor(state)
   const scope = state.scope === 'workspace' ? 'Every workspace Houston opens' : 'This machine'
   const mismatch = state.enabled && !state.installed
@@ -189,18 +174,7 @@ function AgentDetail({
           <VersionText version={state.version} />
         </SettingsRow>
       </Group>
-      {(state.provider === 'claude' || state.provider === 'codex') && (
-        <Group heading="Accounts">
-          <AgentProfiles
-            agents={[state.provider]}
-            profiles={agentProfiles?.profiles ?? []}
-            active={agentProfiles?.active ?? []}
-            onUpsert={onAgentProfileUpsert ?? (() => {})}
-            onDelete={onAgentProfileDelete ?? (() => {})}
-            onSetActive={onAgentProfileSetActive ?? (() => {})}
-          />
-        </Group>
-      )}
+
     </div>
   )
 }
@@ -217,6 +191,7 @@ export function AgentStatusSection({
 }: AgentStatusSectionProps): React.JSX.Element {
   const [pending, setPending] = useState<Partial<Record<AgentKind, boolean>>>({})
   const [checking, setChecking] = useState(false)
+  const [selected, setSelected] = useState<AgentKind | null>(null)
 
   useEffect(() => {
     if (providers === null) return
@@ -271,81 +246,30 @@ export function AgentStatusSection({
     </>
   )
 
-  const items: ListDetailItem[] = (providers ?? []).map((state) => {
-    const copy = copyFor(state)
-    const accountCount = agentProfiles?.profiles.filter((profile) => profile.agent === state.provider).length ?? 0
-    const subtitle = [
-      state.version ?? 'Unknown',
-      !state.present ? 'Not found on PATH' : state.error || (state.enabled && !state.installed)
-        ? 'Hooks need attention' : state.installed ? 'Hooks on' : 'Hooks off',
-      accountCount > 0 ? `${accountCount} account${accountCount === 1 ? '' : 's'}` : null
-    ].filter(Boolean).join(' · ')
-    return {
-      id: state.provider,
-      title: (
-        <Text
-          as="div"
-          data-testid="agent-status-row"
-          data-settings-row-name={copy.label}
-          data-provider={state.provider}
-          data-status={markFor(state)}
-          className="grid min-w-0 items-start"
-          tone={state.present ? undefined : 'secondary'}
-        >
-          <Text className="truncate" size="ui" weight="medium">{copy.label}</Text>
-          <Text className="truncate" size="small" weight="small" tone="muted">{subtitle}</Text>
-        </Text>
-      ),
-      right: <StatusIcon state={markFor(state)} />
-    }
-  })
+  const detail = providers?.find((provider) => provider.provider === selected)
+  return <div className="grid gap-[var(--space-6)]">
+    <PageHeader heading="CLIs" description="The agent CLIs Houston can launch, whether they report status, and the accounts new panes use." actions={actions} />
+    {providers === null ? <CenteredStatus testId="agent-status-loading" title="Checking agent status…" detail="Asking the daemon what is installed." /> : providers.length === 0 ? <EmptyPanel testId="agent-status-empty" title="No hookable CLIs" icon={IconZap}>The daemon reported no CLI it can wire. Panes will still run — they just show no Working / Idle / Needs input until a CLI that supports this is installed.</EmptyPanel> : <Card shape="card">
+      {providers.map((state) => <ProviderRow key={state.provider} state={state} agentProfiles={agentProfiles} pending={pending[state.provider] !== undefined} onSet={handleSet} onOpen={() => setSelected(state.provider)} />)}
+    </Card>}
+    {agentProfiles ? <AgentProfiles profiles={agentProfiles?.profiles ?? []} active={agentProfiles?.active ?? []} onUpsert={onAgentProfileUpsert ?? (() => {})} onDelete={onAgentProfileDelete ?? (() => {})} onSetActive={onAgentProfileSetActive ?? (() => {})} /> : <Text size="small" tone="muted">Reading accounts…</Text>}
+    {detail && <DialogBackdrop onMouseDown={() => setSelected(null)}><DialogPanel size="wide" role="dialog" aria-modal="true" aria-labelledby="cli-detail-title" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Escape') setSelected(null) }}><DialogTitle id="cli-detail-title">{copyFor(detail).label}</DialogTitle><DialogBody>{!detail.present && <Text as="p" size="small" tone="secondary">Install {copyFor(detail).label} using its official CLI instructions, then choose Check again. Houston looks for its executable on this computer's PATH.</Text>}<AgentDetail state={detail} pending={pending[detail.provider] !== undefined} onSet={handleSet} /></DialogBody><DialogActions variant="row"><Button variant="ghost" onClick={() => setSelected(null)}>Close</Button></DialogActions></DialogPanel></DialogBackdrop>}
+  </div>
+}
 
-  return (
-    <>
-      <SectionHead title="Agent CLIs" actions={actions} />
-      {providers === null ? (
-        <CenteredStatus
-          testId="agent-status-loading"
-          title="Checking agent status…"
-          detail="Asking the daemon what is installed."
-        />
-      ) : providers.length === 0 ? (
-        <EmptyPanel
-          testId="agent-status-empty"
-          title="No hookable CLIs"
-          icon={IconZap}
-        >
-          The daemon reported no CLI it can wire. Panes will still run — they just show no
-          Working / Idle / Needs input until a CLI that supports this is installed.
-        </EmptyPanel>
-      ) : (
-        <ListDetail
-          items={items}
-          backLabel="Agent CLIs"
-          renderDetail={(item) => {
-            const state = providers.find((p) => p.provider === item?.id)
-            if (!state) {
-              return (
-                <Text as="div" className="flex-1 flex items-center justify-center" center size="small" tone="faint">
-                  Nothing selected. Each CLI here carries the file Houston writes into and what
-                  is installed on this machine.
-                </Text>
-              )
-            }
-            return (
-              <AgentDetail
-                state={state}
-                pending={pending[state.provider] !== undefined}
-                onSet={handleSet}
-                agentProfiles={agentProfiles}
-                onAgentProfileUpsert={onAgentProfileUpsert}
-                onAgentProfileDelete={onAgentProfileDelete}
-                onAgentProfileSetActive={onAgentProfileSetActive}
-              />
-            )
-          }}
-        />
-      )}
-    </>
-  )
+function ProviderRow({ state, agentProfiles, pending, onSet, onOpen }: { state: AgentHookState; agentProfiles: AgentProfileState | null; pending: boolean; onSet: AgentStatusSectionProps['onSet']; onOpen: () => void }): React.JSX.Element {
+  const mark = markFor(state)
+  const profiles = agentProfiles?.profiles.filter((profile) => profile.agent === state.provider) ?? []
+  const active = profiles.find((profile) => profile.id === agentProfiles?.active.find((entry) => entry.agent === state.provider)?.id)
+  const accountLine = `${profiles.length} account${profiles.length === 1 ? '' : 's'}${active ? ` · ${active.name} is used for new panes` : ''}`
+  const value = providerPresentation(state, mark, agentProfiles ? accountLine : 'Accounts not checked yet')
+  return <AgentCliRow provider={state.provider} name={copyFor(state).label} version={state.version} detail={value.detail} mark={mark} status={value.status} tone={value.tone} pending={pending} action={mark === 'absent' ? 'How to install' : mark === 'differs' ? 'Repair hooks' : undefined} onAction={mark === 'absent' ? onOpen : () => onSet(state.provider, true)} onOpen={onOpen} />
+}
+
+function providerPresentation(state: AgentHookState, mark: StatusIconState, accounts: string): { detail: string; status: string; tone: import('../ui/AgentSetupRow').SetupTone } {
+  if (!state.present) return { detail: `${state.provider === 'cursor' ? 'cursor-agent' : state.provider} is not on PATH`, status: 'Not installed', tone: 'muted' }
+  if (mark === 'differs') return { detail: 'Status will fall back to “unknown”', status: 'Hooks need repair', tone: 'warn' }
+  if (mark === 'off') return { detail: 'Hooks are off · status is unknown', status: 'Hooks off', tone: 'muted' }
+  if (state.trust === 'not_confirmed') return { detail: 'Accept the hook once in the Codex review screen', status: 'Hooks not confirmed', tone: 'warn' }
+  return { detail: accounts, status: 'Reporting status', tone: 'ok' }
 }

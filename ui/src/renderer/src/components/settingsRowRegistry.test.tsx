@@ -64,7 +64,7 @@ function orchestrationStateFixture(): OrchestrationStateView {
 const SECTION_OVERRIDES: Partial<
   Record<SettingsSectionId, Partial<React.ComponentProps<typeof SettingsView>>>
 > = {
-  agents: {
+  'agents-clis': {
     agentHooks: (['claude', 'codex', 'opencode', 'cursor', 'grok', 'zcode'] as const).map((provider) => ({ provider, path: `~/.${provider}/settings.json`, scope: 'global', enabled: true, installed: true, error: null, present: true, version: '1.0.0', trust: null })) as AgentHookState[],
     agentProfiles: { profiles: [], active: [] }
   },
@@ -114,18 +114,15 @@ describe('settingsRowRegistry — every registered title actually renders', () =
     setRailViewForTests({ hidden: [] })
   })
 
-  it('renders mascot rows in Mascot and removes them from Appearance', () => {
+  it('folds Mascot into Appearance and restores legacy navigation there', () => {
     act(() => setSettingsNavForTests({ section: 'mascot' }))
     act(() => root.render(<SettingsView {...baseSettingsViewProps()} />))
-    const rowNames = (): (string | null)[] => Array.from(
-      host.querySelectorAll('[data-settings-row-name]')
-    ).map(row => row.getAttribute('data-settings-row-name'))
-    const mascotRows = SETTINGS_ROW_REGISTRY.mascot!
-    expect(rowNames().slice(0, mascotRows.length)).toEqual(mascotRows)
-
-    act(() => setSettingsNavForTests({ section: 'appearance' }))
+    const rowNames = (): (string | null)[] => Array.from(host.querySelectorAll('[data-settings-row-name]')).map(row => row.getAttribute('data-settings-row-name'))
+    expect(rowNames()).toContain('Mascot')
+    expect(rowNames()).toContain('Meet the mascot again')
     expect(rowNames()).toContain('App zoom')
-    for (const title of mascotRows) expect(rowNames()).not.toContain(title)
+    act(() => setSettingsNavForTests({ section: 'appearance' }))
+    expect(rowNames()).toContain('Meet the mascot again')
   })
 
   it.each(Object.entries(SETTINGS_ROW_REGISTRY) as [SettingsSectionId, readonly string[]][])(
@@ -133,7 +130,7 @@ describe('settingsRowRegistry — every registered title actually renders', () =
     async (section, titles) => {
       act(() => setSettingsNavForTests({ section }))
       if (section === 'appearance') {
-        act(() => setRailViewForTests({ hidden: ['skills', 'routines', 'mcp'] }))
+        act(() => setRailViewForTests({ hidden: ['tasks', 'prs', 'routines', 'usage'] }))
       }
       act(() => {
         root.render(
@@ -146,10 +143,10 @@ describe('settingsRowRegistry — every registered title actually renders', () =
       })
       await flush()
 
-      if (section === 'agents') {
-        const claude = host.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
+      if (section === 'agents-clis') {
+        const claude = host.querySelector<HTMLElement>('[data-testid="agent-status-row"][data-provider="claude"]')
         expect(claude?.textContent).toContain('Claude Code')
-        act(() => claude?.click())
+        expect(host.querySelector('[data-testid="list-detail"]')).toBeNull()
       }
 
       for (const title of titles) {

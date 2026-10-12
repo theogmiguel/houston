@@ -214,12 +214,239 @@ async fn a_refused_window_travels_back_as_an_error_not_an_empty_summary() {
     .unwrap();
 
     match next_control(&mut ws).await {
-        proto::ServerMsg::Error { message, .. } => {
+        proto::ServerMsg::Error { message, context } => {
+            assert_eq!(context.as_deref(), Some("usage_summary"));
             assert!(
                 message.starts_with(proto::USAGE_WINDOW_REFUSED),
                 "the marker is what routes this to the Usage section: {message}"
             );
         }
         other => panic!("expected an Error, got {other:?}"),
+    }
+}
+
+#[test]
+fn workspace_filter_counts_only_sessions_in_that_workspace() {
+    use houston_core::usage::{scan, ScanRequest, SourceSpec};
+    let state = tempfile::tempdir().unwrap();
+    let root = state.path().join("projects");
+    std::fs::create_dir_all(&root).unwrap();
+    for (session, workspace) in [("s1", "/project/one"), ("s2", "/project/two")] {
+        let record = serde_json::json!({
+            "type": "assistant", "timestamp": "2026-08-27T10:00:00Z",
+            "sessionId": session, "cwd": workspace, "requestId": session,
+            "message": {"id": session, "model": "claude-opus-5",
+                "usage": {"input_tokens": 10, "output_tokens": 50}}
+        });
+        std::fs::write(root.join(format!("{session}.jsonl")), format!("{record}\n")).unwrap();
+    }
+    let mut request = ScanRequest {
+        since_ms: 0,
+        until_ms: i64::MAX / 2,
+        catalog: houston_core::model_catalog::ModelCatalog::new(state.path()).load(false, false),
+        state_dir: state.path().to_path_buf(),
+        sources: vec![SourceSpec {
+            provider: proto::UsageProvider::Claude,
+            root,
+            profile_name: None,
+        }],
+        workspaces: vec!["/project/one".into(), "/project/two".into()],
+        workspace_filter: Some("/project/one".into()),
+    };
+    let out = scan(&request);
+    assert_eq!(out.buckets.len(), 1);
+    assert_eq!(out.sources[0].distinct_sessions, 1);
+    // Repeat from the transcript cache with a different selection.
+    request.workspace_filter = Some("/project/missing".into());
+    assert_eq!(scan(&request).sources[0].distinct_sessions, 0);
+    request.workspace_filter = None;
+    assert_eq!(scan(&request).sources[0].distinct_sessions, 2);
+}
+
+#[tokio::test]
+async fn a_refused_year_window_has_an_activity_error_context() {
+    let (addr, _state, _daemon) = start_daemon_with_handle().await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let now = now_ms();
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::UsageActivitySummaryGet {
+            since_ms: now,
+            until_ms: now - 1,
+            workspace: None,
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    match next_control(&mut ws).await {
+        proto::ServerMsg::Error { context, .. } => {
+            assert_eq!(context.as_deref(), Some("usage_activity"));
+        }
+        other => panic!("expected an Error, got {other:?}"),
+    }
+}
+
+#[test]
+fn model_sessions_are_distinct_across_hours_days_and_workspace_filtered() {
+    use houston_core::usage::{scan, ScanRequest, SourceSpec};
+    let state = tempfile::tempdir().unwrap();
+    let root = state.path().join("transcripts");
+    let workspace = state.path().join("project");
+    let other = state.path().join("other");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::create_dir_all(&other).unwrap();
+    seed_rate_table(state.path());
+    let stamp = |day: u32, hour: u32| format!("2026-10-{day:02}T{hour:02}:00:00Z");
+    let local_day = |value: &str| {
+        houston_core::usage::time::local_date_from_ms(
+            houston_core::usage::time::parse_rfc3339_ms(value).unwrap(),
+        )
+    };
+    let hour = (0..20)
+        .find(|hour| local_day(&stamp(5, *hour)) == local_day(&stamp(5, *hour + 4)))
+        .unwrap();
+    let stamps = [
+        stamp(5, hour),
+        stamp(5, hour + 1),
+        stamp(5, hour + 2),
+        stamp(6, hour),
+        stamp(5, hour + 3),
+        stamp(5, hour + 4),
+    ];
+    let mut lines = Vec::new();
+    for (id, session, stamp, cwd, model) in [
+        ("1", "session-a", &stamps[0], &workspace, "claude-opus-5"),
+        ("2", "session-a", &stamps[1], &workspace, "claude-opus-5"),
+        ("3", "session-b", &stamps[2], &workspace, "claude-opus-5"),
+        ("4", "session-a", &stamps[3], &workspace, "claude-opus-5"),
+        ("5", "session-b", &stamps[4], &workspace, "claude-sonnet-5"),
+        ("6", "session-c", &stamps[5], &other, "claude-opus-5"),
+    ] {
+        lines.push(
+            serde_json::json!({
+                "type": "assistant", "timestamp": stamp, "sessionId": session,
+                "cwd": cwd, "requestId": format!("request-{id}"),
+                "message": { "id": format!("message-{id}"), "model": model,
+                    "usage": { "input_tokens": 100, "output_tokens": 50 } }
+            })
+            .to_string(),
+        );
+    }
+    std::fs::write(root.join("sessions.jsonl"), lines.join("\n")).unwrap();
+    let workspace_path = std::fs::canonicalize(&workspace)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let other_path = std::fs::canonicalize(&other)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let request = ScanRequest {
+        since_ms: houston_core::usage::time::parse_rfc3339_ms("2026-10-04T00:00:00Z").unwrap(),
+        until_ms: houston_core::usage::time::parse_rfc3339_ms("2026-10-08T00:00:00Z").unwrap(),
+        catalog: houston_core::model_catalog::ModelCatalog::new(state.path()).load(false, false),
+        state_dir: state.path().to_path_buf(),
+        sources: vec![SourceSpec {
+            provider: proto::UsageProvider::Claude,
+            root,
+            profile_name: None,
+        }],
+        workspaces: vec![workspace_path.clone(), other_path],
+        workspace_filter: Some(workspace_path),
+    };
+    let first_day = local_day(&stamps[0]);
+    let second_day = local_day(&stamps[3]);
+    for _ in 0..2 {
+        let outcome = scan(&request);
+        let model = outcome
+            .session_counts
+            .models
+            .iter()
+            .find(|row| row.model == "claude-opus-5")
+            .unwrap();
+        assert_eq!(
+            model.sessions, 2,
+            "one session crossing hours and days counts once in the window"
+        );
+        assert_eq!(
+            model
+                .days
+                .iter()
+                .find(|day| day.day == first_day)
+                .unwrap()
+                .sessions,
+            2
+        );
+        assert_eq!(
+            model
+                .days
+                .iter()
+                .find(|day| day.day == second_day)
+                .unwrap()
+                .sessions,
+            1
+        );
+        assert_eq!(outcome.session_counts.models.len(), 2);
+        assert_eq!(
+            outcome
+                .session_counts
+                .days
+                .iter()
+                .find(|day| day.day == first_day)
+                .unwrap()
+                .sessions,
+            2,
+            "switching model must not overcount a daily session"
+        );
+        assert_eq!(
+            outcome
+                .session_counts
+                .days
+                .iter()
+                .find(|day| day.day == second_day)
+                .unwrap()
+                .sessions,
+            1
+        );
+        assert_eq!(
+            outcome
+                .buckets
+                .iter()
+                .map(|bucket| bucket.sessions)
+                .sum::<u32>(),
+            5,
+            "the fixture demonstrates why hourly counts cannot be summed"
+        );
+        let reply = proto::ServerMsg::UsageSummary {
+            since_ms: request.since_ms,
+            until_ms: request.until_ms,
+            read_at_ms: now_ms(),
+            buckets: outcome.buckets,
+            sources: outcome.sources,
+            pricing: outcome.pricing,
+            untracked_agents: houston_core::usage::untracked_agents(),
+            scan_duration_ms: outcome.scan_duration_ms,
+            session_counts: Some(outcome.session_counts),
+        };
+        let mut value = serde_json::to_value(reply).unwrap();
+        let decoded: proto::ServerMsg = serde_json::from_value(value.clone()).unwrap();
+        assert!(matches!(
+            decoded,
+            proto::ServerMsg::UsageSummary {
+                session_counts: Some(_),
+                ..
+            }
+        ));
+        value.as_object_mut().unwrap().remove("session_counts");
+        let older: proto::ServerMsg = serde_json::from_value(value).unwrap();
+        assert!(matches!(
+            older,
+            proto::ServerMsg::UsageSummary {
+                session_counts: None,
+                ..
+            }
+        ));
     }
 }

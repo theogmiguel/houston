@@ -252,7 +252,7 @@ The new pane is an ordinary pane rather than a child: it does not report back, t
 original agent cannot prompt or wait on it, and you can close the original pane without
 closing the new one. Only a pane without a parent can hand off, and `reusable` and
 `output_format` are refused with `handoff`. Orchestration must be enabled in
-Settings → Orchestration.
+Settings ▸ Orchestration.
 
 Creating a worktree does not request a handoff. Normal delegation uses child panes,
 including isolated branch work with `worktree`. The agent uses an independent handoff
@@ -371,6 +371,11 @@ Show only on the Needs you heading hides the other groups until you select it ag
 until no child needs you. The parent agent can answer routine reported questions;
 the daemon does not make decisions or approve provider prompts on your behalf.
 
+When children run in their own git worktrees, the orchestrator's header shows a branch
+count next to its branch chip. Select it to list each child's own branch, commits ahead
+and changed lines; select a child to focus its pane, or use the row's copy-path and
+reveal actions.
+
 Overview opens a closable side-panel tab for that orchestrator. Group its children by
 status or worktree, select a terminal, or review changes in the child's checkout.
 The parent’s Inbox count opens pending messages. A child’s Pending delivery badge
@@ -395,7 +400,7 @@ children are Working; an interrupted mission is not reported as successful.
 
 Children report results, questions and delivery problems to their parent orchestrator.
 An input request alerts you only when it belongs to you: an explicit escalation,
-the authoritative turn-end or parent-unavailable safety net. Settings › Notifications controls desktop and in-app notices for these
+the authoritative turn-end or parent-unavailable safety net. Settings ▸ Notifications controls desktop and in-app notices for these
 requests, as it does for top-level input. Snapshot replay does not repeat old alerts.
 Spawn warnings return to the orchestrator. Addressed to you is hidden when empty.
 

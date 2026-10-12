@@ -17,19 +17,21 @@ export function TagChip({
   tag,
   onToggle,
   tooltip,
-  compact = false
+  compact = false,
+  variant = 'default'
 }: {
   tag: TagInfo
   onToggle?: () => void
   tooltip?: string
   compact?: boolean
+  variant?: 'default' | 'card'
 }): React.JSX.Element {
   const style = compact
     ? { ['--tag' as string]: tag.color }
     : {
         ['--tag' as string]: tag.color,
         background: 'color-mix(in srgb, var(--tag) 13%, transparent)',
-        color: 'color-mix(in srgb, var(--tag) 72%, var(--tag-chip-text-base))',
+        color: 'var(--text-secondary)',
         border: '1px solid color-mix(in srgb, var(--tag) 26%, transparent)'
       }
   const children: ReactNode = compact ? (
@@ -40,9 +42,11 @@ export function TagChip({
       <Text size="caption" weight="label" className="truncate">{tag.name}</Text>
     </>
   )
+  const radius = onToggle ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'
+  const sizing = variant === 'card' ? 'min-w-0 shrink max-w-[var(--w-tag-form-preview-chip)]' : 'flex-none max-w-[var(--tag-chip-max,var(--w-tag-chip-max))]'
   const classes = compact
-    ? 'inline-flex items-center justify-center flex-none w-[var(--h-tag-chip)] h-[var(--h-tag-chip)] rounded-[var(--tr-radius-sm)]'
-    : 'inline-flex items-center gap-[var(--space-tag-chip-gap)] flex-none max-w-[var(--tag-chip-max,var(--w-tag-chip-max))] h-[var(--h-tag-chip)] px-[var(--space-tag-chip-padding)] rounded-[var(--tr-radius-sm)] leading-none whitespace-nowrap'
+    ? 'inline-flex items-center justify-center flex-none w-[var(--h-tag-chip)] h-[var(--h-tag-chip)]' + ` ${radius}`
+    : `inline-flex w-fit items-center gap-[var(--space-tag-chip-gap)] ${sizing} h-[var(--h-tag-chip)] px-[var(--space-tag-chip-padding)] leading-none whitespace-nowrap ${radius}`
   if (!onToggle) {
     const chip = <span className={classes} style={style} data-testid="tag-chip">{children}</span>
     return tooltip ? <Tooltip label={tooltip}>{chip}</Tooltip> : chip

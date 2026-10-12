@@ -17,6 +17,29 @@ changes**, keeps acceptance items toggleable, and its **…** menu includes **Op
 and task actions. Search by title or key, or filter the list to one project or to tasks
 without a project. **By project** groups deliveries and their slices instead of queue state.
 
+## Suggested work and sources
+
+**Suggested** contains open, unlinked findings from [Review](harness-review.md) for the
+selected workspace, or across workspaces in **All workspaces**. Each suggestion identifies
+its workspace and the reported session count. **Dismiss** records that decision in Review;
+**Add to queue** creates a linked task without starting an agent. The task uses the review
+routine's provider, falling back to Claude when no routine exists. Start it after checking
+its scope and acceptance criteria.
+
+Open **Sources** on Tasks to configure where work comes from: Slack requests, GitHub
+issues, Notion and Weekly review. Source status reports whether intake is enabled,
+connected or failing. Tracker configuration is per workspace; choose one when viewing
+**All workspaces**. The same tracker form remains available in Settings ▸ Tasks.
+
+A Slack bot mention in a mapped channel files a pending task. The configured owner starts
+it with Slack's `:white_check_mark:` reaction (✅), or another supported acceptance action;
+a reaction from another member does not approve it. Review findings wait for your decision
+to become tasks. Tracker synchronization follows its own configuration; it is not a Slack
+approval flow. See [Slack requests](slack.md) for setup, readiness and what is transmitted.
+
+For Weekly review, **Set up** opens Routines. After setup, use Routines to manage its
+provider, schedule and runs; findings return to Suggested for triage.
+
 ## Creating and editing
 
 Ctrl-click a task key (`HOU-3`) in a terminal to open that task on the Tasks page. The

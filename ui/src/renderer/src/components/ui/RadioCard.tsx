@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { FOCUS_HALO, RING_ACCENT_SOLID } from './shadowChrome'
+import { FOCUS_HALO_CLS, RING_ACCENT_SOLID } from './shadowChrome'
 import { Text } from './Text'
 
 export type RadioCardEmphasis = 'subtle' | 'raised'
@@ -15,10 +15,10 @@ export type RadioCardProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'clas
 export function RadioCard({ selected, emphasis = 'subtle', children, className = '', type = 'button', ...props }: RadioCardProps): React.JSX.Element {
   const selectedStyle = selected
     ? emphasis === 'raised'
-      ? `border-[var(--accent)] shadow-[${RING_ACCENT_SOLID}] bg-[var(--card-bg)] focus-visible:shadow-[${RING_ACCENT_SOLID},${FOCUS_HALO}]`
+      ? `border-[var(--accent)] shadow-[${RING_ACCENT_SOLID}] bg-[var(--card-bg)] ${FOCUS_HALO_CLS}`
       : 'border-[var(--accent)] bg-[var(--card-bg)]'
     : 'border-[var(--border)] hover:border-[var(--border-hover)] bg-[var(--card-bg)]'
-  const focus = emphasis === 'subtle' ? `focus-visible:shadow-[${FOCUS_HALO}]` : ''
+  const focus = emphasis === 'subtle' ? `${FOCUS_HALO_CLS}` : ''
   const motion = emphasis === 'raised' ? '[transition:border-color_.12s_ease,transform_.12s_ease] motion-safe:hover:-translate-y-px' : '[transition:border-color_.12s_ease]'
   return <button {...props} type={type} role="radio" aria-checked={selected} className={`btn flex flex-col p-0 overflow-hidden rounded-[var(--tr-radius-card)] border text-left whitespace-normal ${focus} ${motion} ${selectedStyle} ${className}`}>{children}</button>
 }

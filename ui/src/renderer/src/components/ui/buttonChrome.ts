@@ -1,6 +1,6 @@
 export const BTN_PRIMARY =
-  'bg-[var(--accent)] [border-color:var(--accent)] text-white font-bold ' +
-  'hover:bg-[var(--accent-hover)]'
+  'bg-[var(--primary-fill)] [border-color:var(--primary-fill)] text-[var(--primary-foreground)] font-bold ' +
+  'hover:bg-[var(--primary-fill-hover)]'
 
 // text-white is a fixed contrast pair, not a themed surface: every theme's
 // --danger is dark enough (#ef4444/#dc2626) for white to clear 4.5:1, which

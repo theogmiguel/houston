@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
+import { ROW_STATE } from './rowState'
 
 export interface DataTableColumn<T> {
   key: string
@@ -21,6 +22,9 @@ export interface DataTableProps<T> {
   error?: DataTableError
   emptySetLabel?: string
   onRowClick?: (row: T) => void
+  expandedRowId?: string | null
+  renderExpanded?: (row: T) => ReactNode
+  variant?: 'default' | 'dense'
   maxBodyHeight?: number
   /** Floor in px under which the table scrolls horizontally in its container instead of squeezing columns. */
   minWidth?: number
@@ -51,6 +55,9 @@ export function DataTable<T>({
   error,
   emptySetLabel = 'Nothing here yet',
   onRowClick,
+  expandedRowId,
+  renderExpanded,
+  variant = 'default',
   maxBodyHeight = 360,
   minWidth,
   className = '',
@@ -59,7 +66,6 @@ export function DataTable<T>({
   const ariaLabel = rest['aria-label']
   const isEmpty = rows === undefined
   const isEmptySet = !isEmpty && !error && !loading && rows.length === 0
-  const colCount = columns.length
 
   return (
     <div
@@ -72,7 +78,7 @@ export function DataTable<T>({
       style={minWidth === undefined ? undefined : { minWidth }}
     >
       <div className="overflow-y-auto" style={{ maxHeight: maxBodyHeight }}>
-        <table aria-label={ariaLabel} className="w-full border-collapse text-[length:var(--tr-text-ui-size)]">
+        <table aria-label={ariaLabel} className={`w-full border-collapse text-[length:var(--tr-text-ui-size)] ${variant === 'dense' ? 'table-fixed' : ''}`}>
           <thead
             data-testid="data-table-head"
             className="sticky top-0 z-[var(--z-base)] bg-[var(--surface)] border-b border-[var(--divider)]"
@@ -92,73 +98,75 @@ export function DataTable<T>({
               ))}
             </tr>
           </thead>
-          <tbody>
-            {error ? (
-              <tr>
-                <td colSpan={colCount} className="px-[var(--space-3)] py-[var(--space-3)]">
-                  <div className="flex items-center gap-[var(--space-2)] text-[var(--status-blocked-text)]">
-                    <span>{error.message}</span>
-                    <button
-                      type="button"
-                      onClick={error.onRetry}
-                      className="rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current text-[length:var(--tr-text-small-size)] font-semibold bg-transparent"
-                    >
-                      Try again
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ) : loading ? (
-              <tr>
-                <td colSpan={colCount} className="px-[var(--space-3)] py-[var(--space-3)] text-[var(--text-muted)]">
-                  <span className="inline-flex items-center gap-[var(--space-2)]">
-                    <Spinner /> Loading…
-                  </span>
-                </td>
-              </tr>
-            ) : isEmpty ? (
-              <tr data-testid="data-table-empty">
-                <td colSpan={colCount} className="px-[var(--space-3)] py-[var(--space-3)] text-[var(--text-muted)]">
-                  Nothing loaded yet
-                </td>
-              </tr>
-            ) : isEmptySet ? (
-              <tr data-testid="data-table-empty-set">
-                <td colSpan={colCount} className="px-[var(--space-3)] py-[var(--space-3)] text-[var(--text-muted)]">
-                  {emptySetLabel}
-                </td>
-              </tr>
-            ) : (
-              rows.map((row) => {
-                const id = getRowId(row)
-                const clickable = !!onRowClick
-                return (
-                  <tr
-                    key={id}
-                    data-testid="data-table-row"
-                    onClick={clickable ? () => onRowClick(row) : undefined}
-                    className={`border-b border-[var(--divider)] last:border-b-0 ${
-                      clickable ? 'cursor-pointer hover:bg-[var(--surface-hover)]' : ''
-                    }`}
-                  >
-                    {columns.map((col) => (
-                      <td
-                        key={col.key}
-                        style={colStyle(col)}
-                        className={`h-[var(--h-row)] px-[var(--space-3)] text-[var(--text-primary)] ${
-                          col.numeric ? 'text-right tabular-nums' : 'text-left'
-                        }`}
-                      >
-                        {col.render(row)}
-                      </td>
-                    ))}
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
+          <DataTableBody columns={columns} rows={rows} getRowId={getRowId} error={error} loading={loading} emptySetLabel={emptySetLabel} onRowClick={onRowClick} expandedRowId={expandedRowId} renderExpanded={renderExpanded} variant={variant} />
         </table>
       </div>
     </div>
+  )
+}
+
+function DataTableRow<T>({ row, id, columns, onRowClick, expanded, renderExpanded, dense }: { row: T; id: string; columns: DataTableColumn<T>[]; onRowClick?: (row: T) => void; expanded: boolean; renderExpanded?: (row: T) => ReactNode; dense: boolean }): React.JSX.Element {
+  const clickable = !!onRowClick
+  return <Fragment>
+    <tr data-testid="data-table-row" tabIndex={clickable ? 0 : undefined} aria-expanded={renderExpanded ? expanded : undefined} aria-controls={renderExpanded ? `table-detail-${id}` : undefined}
+      onClick={clickable ? (event) => {
+        if ((event.target as Element).closest('button, a, input, select, textarea, [role="button"]')) return
+        onRowClick(row)
+      } : undefined}
+      onKeyDown={clickable ? (event) => {
+        if (event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onRowClick(row) }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault()
+          const rows = [...event.currentTarget.parentElement!.querySelectorAll<HTMLTableRowElement>('tr[data-testid="data-table-row"]')]
+          rows[rows.indexOf(event.currentTarget) + (event.key === 'ArrowDown' ? 1 : -1)]?.focus()
+        }
+      } : undefined}
+      className={`border-b border-[var(--divider)] last:border-b-0 ${clickable ? `cursor-pointer ${ROW_STATE.rest}` : ''}`}>
+      {columns.map(col => <td key={col.key} style={colStyle(col)} className={`${dense ? 'h-[var(--h-ctl)]' : 'h-[var(--h-row)]'} px-[var(--space-3)] text-[var(--text-primary)] ${col.numeric ? 'text-right tabular-nums' : 'text-left'}`}>{col.render(row)}</td>)}
+    </tr>
+    {expanded && renderExpanded && <tr id={`table-detail-${id}`}><td colSpan={columns.length} className="border-b border-[var(--divider)] bg-[var(--surface)] p-[var(--space-3)]">{renderExpanded(row)}</td></tr>}
+  </Fragment>
+}
+
+function DataTableBody<T>({ columns, rows, getRowId, error, loading, emptySetLabel, onRowClick, expandedRowId, renderExpanded, variant }: Pick<DataTableProps<T>, 'columns' | 'rows' | 'getRowId' | 'error' | 'loading' | 'emptySetLabel' | 'onRowClick' | 'expandedRowId' | 'renderExpanded' | 'variant'>): React.JSX.Element {
+  const isEmpty = rows === undefined
+  const isEmptySet = rows?.length === 0
+  const colCount = columns.length
+  return (
+    <tbody>
+      {error ? (
+        <tr>
+          <td colSpan={colCount} className="px-[var(--space-3)] py-[var(--space-3)]">
+            <div className="flex items-center gap-[var(--space-2)] text-[var(--status-blocked-text)]">
+              <span>{error.message}</span>
+              <button type="button" onClick={error.onRetry} className="rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current text-[length:var(--tr-text-small-size)] font-semibold bg-transparent">Try again</button>
+            </div>
+          </td>
+        </tr>
+      ) : loading ? (
+        <tr>
+          <td colSpan={colCount} className="px-[var(--space-3)] py-[var(--space-3)] text-[var(--text-muted)]">
+            <span className="inline-flex items-center gap-[var(--space-2)]">
+              <Spinner /> Loading…
+            </span>
+          </td>
+        </tr>
+      ) : isEmpty ? (
+        <tr data-testid="data-table-empty">
+          <td colSpan={colCount} className="px-[var(--space-3)] py-[var(--space-3)] text-[var(--text-muted)]">
+            Nothing loaded yet
+          </td>
+        </tr>
+      ) : isEmptySet ? (
+        <tr data-testid="data-table-empty-set">
+          <td colSpan={colCount} className="px-[var(--space-3)] py-[var(--space-3)] text-[var(--text-muted)]">
+            {emptySetLabel}
+          </td>
+        </tr>
+      ) : (
+        rows.map((row) => <DataTableRow key={getRowId(row)} row={row} id={getRowId(row)} columns={columns} onRowClick={onRowClick} expanded={expandedRowId === getRowId(row)} renderExpanded={renderExpanded} dense={variant === 'dense'} />)
+      )}
+    </tbody>
   )
 }

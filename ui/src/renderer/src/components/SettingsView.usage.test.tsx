@@ -85,36 +85,140 @@ const text = (): string => host.textContent ?? ''
 const q = (sel: string): HTMLElement | null => host.querySelector(sel)
 
 describe('Usage page', () => {
-  it('requests both summary windows and includes the selected workspace', () => {
+  it('shows a reading state instead of zero totals before the first summary', () => {
+    render({ summary: null, loading: true })
+    expect(text()).toContain('Reading transcripts…')
+    expect(q('[data-testid="usage-headline"]')).toBeNull()
+    expect(q('[data-testid="usage-totals"]')).toBeNull()
+    expect(text()).not.toContain('$0.00')
+  })
+
+  it('requests the year view after each completed scan, including Refresh', () => {
     const onRequest = vi.fn()
     const onActivityRequest = vi.fn()
-    render({ initialWorkspace: '/proj', onRequest, onActivityRequest })
+    const first = summary()
+    render({ summary: null, loading: true, initialWorkspace: '/proj', onRequest, onActivityRequest })
     expect(onRequest).toHaveBeenCalledTimes(1)
     expect(onRequest.mock.calls[0][3]).toBe('/proj')
+    expect(onActivityRequest).not.toHaveBeenCalled()
+    render({ summary: first, initialWorkspace: '/proj', onRequest, onActivityRequest })
     expect(onActivityRequest).toHaveBeenCalledTimes(1)
     expect(onActivityRequest.mock.calls[0][2]).toBe('/proj')
     const [since, until] = onActivityRequest.mock.calls[0] as [number, number]
-    const first = new Date(since)
-    expect([first.getHours(), first.getMinutes(), first.getSeconds(), first.getMilliseconds()]).toEqual([0, 0, 0, 0])
+    const start = new Date(since)
+    expect([start.getHours(), start.getMinutes(), start.getSeconds(), start.getMilliseconds()]).toEqual([0, 0, 0, 0])
     const last = new Date(until - 1)
-    const calendarDays = Math.round((new Date(last.getFullYear(), last.getMonth(), last.getDate()).getTime() - since) / DAY) + 1
-    expect(calendarDays).toBe(365)
+    expect(Math.round((new Date(last.getFullYear(), last.getMonth(), last.getDate()).getTime() - since) / DAY) + 1).toBe(365)
+    act(() => q('[data-testid="usage-refresh"]')?.click())
+    expect(onRequest).toHaveBeenCalledTimes(2)
+    expect(onRequest.mock.calls[1][2]).toBe(true)
+    expect(onActivityRequest).toHaveBeenCalledTimes(1)
+    render({ summary: summary({ read_at_ms: first.read_at_ms + 1 }), initialWorkspace: '/proj', onRequest, onActivityRequest })
+    expect(onActivityRequest).toHaveBeenCalledTimes(2)
   })
 
-  it('shows the API estimate and a tooltip with the full-rate caveat', () => {
+  it('keeps previous results at full contrast while reading another window', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 3 * DAY + 120_000)
+    render({ loading: true, summary: summary({ until_ms: DAY0 + DAY, read_at_ms: DAY0 + 3 * DAY }) })
+    expect(q('[data-testid="usage-meta"]')?.textContent).toContain('Reading transcripts…')
+    expect(q('[data-testid="usage-meta"]')?.textContent).toContain('showing the result from 2 min ago')
+    expect(q('[data-testid="usage-headline"]')?.textContent).toContain('$125.00')
+    expect(q('[data-testid="usage-body"]')?.style.opacity).toBe('')
+    expect(q('[data-testid="usage-body"]')?.getAttribute('aria-busy')).toBe('true')
+  })
+
+  it('shows the API price explanation, scan metadata and four stat cards', () => {
     render()
     expect(q('[data-testid="usage-headline"]')?.textContent).toContain('$125.00')
     expect(text()).toContain('43 sessions')
-    expect(host.querySelector('[aria-label="API estimate details"]')).not.toBeNull()
+    expect(text()).toContain('at API prices')
+    expect(text()).toContain('nothing is sent anywhere')
+    expect(q('[data-testid="usage-meta"]')?.textContent).toContain('in 1.8 s')
+    expect(q('[data-testid="usage-meta"]')?.textContent).toContain(`updated ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(DAY0)}`)
+    expect(q('[data-testid="usage-totals"]')?.children).toHaveLength(4)
+    expect(text()).toContain('Tokens processed')
+    expect(text()).toContain('against full input prices')
   })
 
-  it('shows 365 local calendar days with the five-step legend', () => {
+  it('lists counted agents in chart order and names only the reported untracked agents', () => {
+    render({ summary: summary({ untracked_agents: ['grok', 'opencode', 'zcode'] }) })
+    const agents = q('[data-testid="usage-by-agent"]')
+    const rows = agents?.querySelectorAll('[data-testid="usage-provider-row"]')
+    expect(rows?.[0].textContent).toContain('Claude Code')
+    expect(rows?.[1].textContent).toContain('Codex')
+    expect(rows?.[0].textContent).toContain('31 sessions')
+    expect(rows?.[1].textContent).toContain('12 sessions')
+    expect(agents?.textContent).toContain('Not counted: OpenCode, Grok and ZCode.')
+    expect(agents?.textContent).not.toContain('Cursor')
+    expect(agents?.querySelectorAll('[role="progressbar"]')).toHaveLength(2)
+  })
+
+  it('shows actual source paths, distinct sessions and the subscription caveat', () => {
+    const result = summary()
+    render({ summary: summary({ sources: [...result.sources].reverse() }) })
+    const sources = q('[data-testid="usage-sources"]')!
+    expect(sources.textContent).toContain('Read from /home/u/.claude/projects (31 sessions) and /home/u/.codex/sessions (12 sessions).')
+    expect(sources.textContent).toContain('Costs are estimates at API list prices; a subscription is billed differently.')
+    expect([...sources.querySelectorAll('span')].filter((span) => span.className.includes('font-mono'))).toHaveLength(2)
+  })
+
+  it('makes source failures visible alongside an existing result', () => {
+    const result = summary()
+    render({ summary: summary({ sources: result.sources.map((source) => source.provider === 'codex' ? { ...source, status: 'partial', failed_files: 3, message: 'Cannot parse records in /home/u/.codex/sessions' } : source) }) })
+    const sources = q('[data-testid="usage-sources"]')?.textContent
+    expect(sources).toContain('Scan incomplete · 3 files could not be read')
+    expect(sources).toContain('Cannot parse records in /home/u/.codex/sessions')
+  })
+
+  it('explains an empty window with each actual source status and untracked agents', () => {
+    const sources = summary().sources.map((source) => ({ ...source, distinct_sessions: 0, status: source.provider === 'codex' ? 'missing' as const : 'ok' as const }))
+    render({ summary: summary({ buckets: [], sources }) })
+    const empty = q('[data-testid="usage-empty"]')!
+    expect(empty.textContent).toContain('No sessions in the last 7 days')
+    expect(empty.textContent).toContain('Usage appears after a Claude Code or Codex session writes its transcript.')
+    expect(empty.textContent).toContain('/home/u/.claude/projects')
+    expect(empty.textContent).toContain('No sessions in this window')
+    expect(empty.textContent).toContain('/home/u/.codex/sessions')
+    expect(empty.textContent).toContain('Folder not found')
+    expect(empty.textContent).toContain('OpenCode, Cursor, Grok, Antigravity')
+    expect(empty.textContent).toContain('Not counted')
+    expect(q('[data-testid="usage-headline"]')).toBeNull()
+  })
+
+  it.each(['partial', 'failed'] as const)('empty scans expose %s source diagnostics', (status) => {
+    render({ summary: summary({ buckets: [], sources: [{ ...summary().sources[0], distinct_sessions: 0, status, failed_files: 4, message: 'Cannot read /home/u/.claude/projects' }] }) })
+    expect(q('[data-testid="usage-empty"]')?.textContent).toContain(status === 'partial' ? 'Scan incomplete · 4 files could not be read' : 'Could not read transcripts')
+    expect(q('[data-testid="usage-empty"]')?.textContent).toContain('Cannot read /home/u/.claude/projects')
+  })
+
+  it('shows 365 local calendar days and a labelled daily-cost legend', () => {
     render()
     expect(host.querySelectorAll('[data-testid="usage-calendar-day"]')).toHaveLength(365)
-    expect(host.querySelectorAll('[data-testid="usage-calendar"] [data-level]')).toHaveLength(370)
+    expect(host.querySelectorAll('[data-testid="usage-calendar"] [data-level]')).toHaveLength(367)
     expect(text()).toContain('Mon')
     expect(text()).toContain('Wed')
     expect(text()).toContain('Fri')
+  })
+
+  it('the year view keeps its daily-cost meaning when the chart switches to Tokens', () => {
+    render({ activity: [{ day: '2026-10-11', cost_usd: 123, totals: { uncached_input_tokens: 999, cached_input_tokens: 0, cache_creation_tokens: 0, output_tokens: 0, reasoning_tokens: 0 } }] })
+    const tokens = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Tokens')!
+    const before = q('[data-testid="usage-calendar-meaning"]')?.textContent
+    act(() => tokens.click())
+    expect(q('[data-testid="usage-calendar-meaning"]')?.textContent).toBe(before)
+    expect(before).toContain('colour shows cost per day')
+    expect(before).not.toContain('tokens')
+  })
+
+  it('aligns calendar weekdays with the Sunday-first grid and Mon label', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 2 * DAY)
+    render()
+    const grid = host.querySelector('[aria-label="Usage activity by day"]')!
+    const monday = [...grid.querySelectorAll<HTMLButtonElement>('button')].find((button) => new Date(`${button.getAttribute('aria-label')?.slice(0, 10)}T12:00:00`).getDay() === 1)!
+    const index = [...grid.children].findIndex((child) => child === monday || child.contains(monday))
+    expect(index % 7).toBe(1)
   })
 
   it('a selected day filters the breakdown to that date', () => {
@@ -124,16 +228,87 @@ describe('Usage page', () => {
     const expectedDay = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(DAY0 + DAY))
     const day = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="usage-calendar-day"]')].find((button) => button.getAttribute('aria-label')?.startsWith(expectedDay))
     act(() => day?.click())
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'By day')?.click())
     const rows = [...host.querySelectorAll('[data-testid="usage-breakdown"] tbody tr')]
     expect(rows).toHaveLength(1)
     expect(rows[0].textContent).toContain(expectedDay)
   })
 
-  it('disables Limits and exposes its reason', () => {
+  it('keeps model grouping for a selected day and clears the day without losing grouping', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 2 * DAY)
+    render()
+    const key = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(DAY0 + DAY)
+    const day = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="usage-calendar-day"]')].find((button) => button.getAttribute('aria-label')?.startsWith(key))!
+    act(() => day.click())
+    expect([...host.querySelectorAll('[data-testid="usage-breakdown"] th')].find((cell) => ['Model', 'Day'].includes(cell.textContent ?? ''))?.textContent).toBe('Model')
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('gpt-5-codex')
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).not.toContain('claude-opus-5')
+    const clear = host.querySelector<HTMLButtonElement>('[aria-label="Show the whole window"]')
+    expect(clear).not.toBeNull()
+    act(() => clear?.click())
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('claude-opus-5')
+    expect(host.querySelector('[aria-label="Show the whole window"]')).toBeNull()
+  })
+
+  it('retained days show the daily total without placing a date in the Model column', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 2 * DAY)
+    const key = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(DAY0 - DAY)
+    render({ activity: [{ day: key, cost_usd: 42, totals: { uncached_input_tokens: 1000, cached_input_tokens: 0, cache_creation_tokens: 0, output_tokens: 0, reasoning_tokens: 0 } }] })
+    const day = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="usage-calendar-day"]')].find((button) => button.getAttribute('aria-label')?.startsWith(key))!
+    act(() => day.click())
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('Model details no longer available')
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('Daily total: $42.00')
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'By day')?.click())
+    expect(q('[data-testid="usage-breakdown"] tbody')?.textContent).toContain(key)
+    expect(q('[data-testid="usage-breakdown"] tbody')?.textContent).toContain('$42.00')
+  })
+
+  it('uses distinct window and daily Sessions counts, never hourly bucket sums', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 3 * DAY)
+    const key = (ms: number): string => { const date = new Date(ms); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
+    const firstDay = key(DAY0 + HOUR)
+    const secondDay = key(DAY0 + DAY + HOUR)
+    const exact = summary({
+      buckets: [bucket({ hour_start_ms: DAY0 + HOUR, sessions: 1 }), bucket({ hour_start_ms: DAY0 + 2 * HOUR, sessions: 1 }), bucket({ hour_start_ms: DAY0 + DAY + HOUR, sessions: 2 })],
+      session_counts: { models: [{ provider: 'claude', model: 'claude-opus-5', sessions: 2, days: [{ day: firstDay, sessions: 1 }, { day: secondDay, sessions: 2 }] }], days: [{ day: firstDay, sessions: 1 }, { day: secondDay, sessions: 2 }] }
+    })
+    render({ summary: exact })
+    expect([...host.querySelectorAll('[data-testid="usage-breakdown"] th')].map((cell) => cell.textContent)).toEqual(['Model', 'Sessions', 'Tokens', 'Cost', 'Share'])
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('2')
+    act(() => q(`[data-testid="usage-calendar-day"][aria-label^="${firstDay}:"]`)?.click())
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('1')
+    act(() => q('button[aria-label="Show the whole window"]')?.click())
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('2')
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'By day')?.click())
+    expect([...host.querySelectorAll('[data-testid="usage-breakdown"] tbody tr')].map((row) => row.children[1].textContent)).toEqual(['2', '1'])
+  })
+
+  it('shows unavailable Sessions for older replies and retained days without source detail', () => {
+    render({ summary: summary({ session_counts: undefined }) })
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('—')
+    const retained = new Date(DAY0 - 10 * DAY)
+    const retainedKey = `${retained.getFullYear()}-${String(retained.getMonth() + 1).padStart(2, '0')}-${String(retained.getDate()).padStart(2, '0')}`
+    render({ summary: summary({ session_counts: undefined }), activity: [{ day: retainedKey, cost_usd: 42, totals: summary().buckets[0].totals }] })
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'By day')?.click())
+    act(() => q(`[data-testid="usage-calendar-day"][aria-label^="${retainedKey}:"]`)?.click())
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('—')
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.textContent).toContain('$42.00')
+  })
+
+  it('keeps the folder-marked workspace action and whole-dollar cache summary', () => {
+    render({ summary: summary({ buckets: [bucket({ hour_start_ms: DAY0 + HOUR, cache_savings_usd: 18_240.55 })] }) })
+    expect(q('[data-testid="usage-workspace"]')?.querySelectorAll('svg')).toHaveLength(2)
+    const saved = [...host.querySelectorAll('[data-testid="usage-totals"] > *')].find((card) => card.textContent?.includes('Saved by caching'))
+    expect(saved?.textContent).toContain('$18,240')
+  })
+
+  it('offers only Cost and Tokens, without a placeholder Limits option', () => {
     render()
     const limits = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Limits')
-    expect(limits?.disabled).toBe(true)
-    expect(limits?.parentElement?.getAttribute('data-tooltip')).toBe('A quota reader is not available yet')
+    expect(limits).toBeUndefined()
   })
 
   it('category and speed segments sum to their respective totals', () => {
@@ -143,12 +318,37 @@ describe('Usage page', () => {
     expect(speedTotals(buckets).map((item) => item.label)).toEqual(['Standard', 'Fast', 'Ultrafast'])
   })
 
-  it('shows Cost by speed beside Cost by type even when every request ran at standard speed', () => {
+  it('shows ordered cost categories, shares and the cache savings explanation', () => {
     const standard = summary().buckets.map((b) => ({ ...b, fast_cost_usd: 0, ultrafast_cost_usd: 0, speed_premium_usd: 0 }))
     render({ summary: summary({ buckets: standard }) })
-    expect(text()).toContain('Cost by type')
-    expect(text()).toContain('Cost by speed')
-    expect(text()).toContain('Premium $0.00')
+    const categories = q('[data-testid="usage-share-where-the-cost-goes"]')
+    expect(categories?.textContent).toContain('Caching saved $12.00 against full input prices.')
+    expect(categories?.textContent).toContain('Fast and Ultrafast modes added $0.00.')
+    const labels = categories?.textContent ?? ''
+    expect(labels.indexOf('Cache read')).toBeLessThan(labels.indexOf('Cache write'))
+    expect(labels.indexOf('Cache write')).toBeLessThan(labels.indexOf('Output'))
+    expect(labels.indexOf('Output')).toBeLessThan(labels.indexOf('Input'))
+    expect(labels).toContain('40%$50.00')
+    expect(text()).not.toContain('Cost by speed')
+  })
+
+  it('does not present a speed cost chart when speed rates are unavailable', () => {
+    render({ summary: summary({ buckets: summary().buckets.map((bucket) => ({ ...bucket, speed_rate_available: false })) }) })
+    expect(text()).not.toContain('Cost by speed')
+    expect(text()).not.toContain('Fast and Ultrafast modes added')
+  })
+
+  it('does not present entirely unpriced usage as zero dollars', () => {
+    const unpriced = bucket({ hour_start_ms: DAY0, cost_usd: 0, records: 5, unpriced_records: 5, cost_source: 'unpriced', cache_savings_usd: 0, category_cost_usd: { input_usd: 0, cache_read_usd: 0, cache_write_usd: 0, output_usd: 0, other_usd: 0 } })
+    render({ summary: summary({ buckets: [unpriced], pricing: { status: 'unavailable', source: 'model catalog', known_models: 0, fetched_at_ms: null, message: 'Catalog could not be read' } }) })
+    expect(q('[data-testid="usage-headline"]')?.textContent).toBe('Not priced')
+    expect(q('[data-testid="usage-chart"]')).toBeNull()
+    expect(text()).toContain('Model catalog prices unavailable')
+    expect(text()).toContain('Catalog could not be read')
+    expect(text()).toContain('Tokens are still counted')
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Tokens')?.click())
+    expect(q('[data-testid="usage-chart"]')).not.toBeNull()
+    expect(text()).toContain('Tokens per day')
   })
 
   it('reports unpriced models without assigning them a zero rate', () => {

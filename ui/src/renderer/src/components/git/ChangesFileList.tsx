@@ -26,6 +26,8 @@ const MARK_GLYPH: Record<GitFileStatus['status'], string> = {
 
 export function ChangesFileList({
   compact = false,
+  flat = false,
+  basenameOnly,
   files,
   rows,
   branch,
@@ -54,6 +56,8 @@ export function ChangesFileList({
   splitDiff
 }: {
   compact?: boolean
+  flat?: boolean
+  basenameOnly?: boolean
   files: GitFileStatus[] | null
   rows: ChangeRow[]
   branch: string | null
@@ -82,10 +86,10 @@ export function ChangesFileList({
   splitDiff?: boolean
 }): React.JSX.Element {
   const statusGroups = files ? groupRows(files) : []
-  const showCompactGroups = compact && statusGroups.length > 1
+  const showCompactGroups = !flat && compact && statusGroups.length > 1
   const groups = files
-    ? compact && !showCompactGroups
-      ? [{ group: 'unstaged' as const, rows: files.map(toRow) }]
+    ? (flat || compact) && !showCompactGroups
+      ? [{ group: 'unstaged' as const, rows: files.filter((file, index) => !flat || files.findIndex((other) => other.path === file.path) === index).map(toRow) }]
       : statusGroups
     : []
   if (files === null) {
@@ -191,6 +195,7 @@ export function ChangesFileList({
                 key={row.key}
                 row={row}
                 compact={compact}
+                basenameOnly={basenameOnly}
                 expanded={expandedPaths?.has(row.path) ?? false}
                 selected={selected === row.path}
                 menuOpen={menuFor === row.key}
@@ -216,7 +221,7 @@ export function ChangesFileList({
               {compact && expandedPaths?.has(row.path) && (
                 <PrTab as="div" surface="changes-inline-diff" states={[wrapDiff ? 'wrapped' : '', splitDiff ? 'split' : ''].filter(Boolean)} data-testid="changes-inline-diff" data-path={row.path}>
                   {inlineDiffs?.get(row.path)
-                    ? <DiffBody patch={inlineDiffs.get(row.path)!.patch} truncated={inlineDiffs.get(row.path)!.truncated} />
+                    ? <DiffBody patch={inlineDiffs.get(row.path)!.patch} truncated={inlineDiffs.get(row.path)!.truncated} split={splitDiff} />
                     : <PrTab as="div" surface="changes-inline-loading">Loading diff…</PrTab>}
                 </PrTab>
               )}
@@ -256,7 +261,13 @@ function StageToggleButton({
   )
 }
 
+function FileName({ row, basenameOnly }: { row: ChangeRow; basenameOnly?: boolean }): React.JSX.Element {
+  if (basenameOnly) return <Tooltip label={row.path} className={classes.label}><span>{row.name}</span></Tooltip>
+  return <span className={classes.label}><span>{row.name}</span><span className={classes.dir}>{row.dir}</span></span>
+}
+
 function FileRow({
+  basenameOnly,
   row,
   compact = false,
   expanded = false,
@@ -271,6 +282,7 @@ function FileRow({
   onOpenInEditorError,
   onCloseMenu
 }: {
+  basenameOnly?: boolean
   row: ChangeRow
   compact?: boolean
   expanded?: boolean
@@ -289,7 +301,7 @@ function FileRow({
   const discard = discardKindFor(row)
   return (
     <div
-      className={changeRowClass(selected)}
+      className={changeRowClass(selected && !compact)}
       onContextMenu={(e) => {
         e.preventDefault()
         onToggleMenu()
@@ -311,10 +323,7 @@ function FileRow({
         <PrTab as={GitStatusMark} surface="changes-inline-status" enabled={compact} status={row.state} kind="file" aria-hidden data-status={row.state}>
           {row.blocked ? <Icon glyph={IconShieldAlert} role="label" /> : MARK_GLYPH[row.state]}
         </PrTab>
-        <span className={classes.label}>
-          <span>{row.name}</span>
-          <span className={classes.dir}>{row.dir}</span>
-        </span>
+        <FileName row={row} basenameOnly={basenameOnly} />
       </PrTab>
       <StageToggleButton stage={stage} onStageToggle={onStageToggle} />
       <FileCounts row={row} />

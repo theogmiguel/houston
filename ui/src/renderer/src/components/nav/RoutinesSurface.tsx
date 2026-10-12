@@ -1,7 +1,12 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, type ComponentProps } from 'react'
 import { Button, EmptyState, ListDetail, Notice, PageFrame, PageHeader, StatusLabel, type ListDetailItem, NavSurfaceFrame } from '../ui'
+import type { HoustonClient } from '../../houston/client'
+import { WeeklyReviewDetail, WeeklyReviewSetup } from './WeeklyReviewDetail'
+import { WeeklyReviewWorkspaces } from './WeeklyReviewWorkspaces'
 import { IconClock, IconPlus } from '../icons'
-import { formatRoutineError, nextUpTimeLabel } from './routineFormat'
+import { ListDetailMeta } from '../ui/ListDetail'
+import { scheduleFields } from './harnessFormat'
+import { formatRoutineError, nextUpTimeLabel, formatCadence } from './routineFormat'
 import { RoutineEditor, type RoutineFormValue } from './RoutineEditor'
 import type {
   Routine,
@@ -18,21 +23,23 @@ const RoutineDetail = lazy(() => import('../ui/RoutineDetail').then((module) => 
 
 export function sortRoutines(routines: Routine[]): Routine[] {
   return [...routines].sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'harness_review' ? -1 : 1
     if (a.next_run_at_ms !== b.next_run_at_ms) return a.next_run_at_ms - b.next_run_at_ms
     return a.id - b.id
   })
 }
 
-type Panel = { mode: 'create' } | { mode: 'edit'; routine: Routine } | null
+type Panel = { mode: 'create' } | { mode: 'edit'; routine: Routine } | { mode: 'review-setup'; workspace: RoutineWorkspaceOption } | null
 
 function routineStatus(routine: Routine, running: boolean, waiting: boolean, now: number): React.JSX.Element {
-  if (running) return <StatusLabel status="Working" />
-  if (waiting) return <StatusLabel status="Waiting for a slot" />
-  if (!routine.enabled) return <StatusLabel status="Paused" />
-  return <span className="flex min-w-0 items-center gap-[var(--space-2)]"><StatusLabel status="Idle" /><span className="truncate">{nextUpTimeLabel(routine.next_run_at_ms, now)}</span></span>
+  if (running) return <StatusLabel status="Running" size="small" />
+  if (waiting) return <StatusLabel status="Waiting for a slot" size="small" />
+  if (!routine.enabled) return <StatusLabel status="Paused" size="small" />
+  return <StatusLabel status="Idle" size="small">{`Next ${nextUpTimeLabel(routine.next_run_at_ms, now)}`}</StatusLabel>
 }
 
-export function RoutinesSurface(props: {
+type RoutinesSurfaceProps = {
+  client?: HoustonClient | null
   routines: Routine[]
   running: number[]
   /** Engine and access pairs the daemon refuses; their choices are shown disabled. */
@@ -50,43 +57,28 @@ export function RoutinesSurface(props: {
   onOpenSession: (sessionId: number) => void
   onRequest: (request: { attemptedName?: string; routineName?: string }) => void
   now: number
+  /** Zero selects Weekly review; individual review IDs also open the group. */
   selectedRoutineId?: number | null
   onRoutineSelect?: (id: number | null) => void
   showLimitNotice?: boolean
-}): React.JSX.Element {
+}
+
+export function RoutinesSurface(props: RoutinesSurfaceProps): React.JSX.Element {
   const {
-    routines, running, engineRefusals = [], runs, runsLoading, workspaces, error, onDismissError, onCreate,
-    onUpdate, onDelete, onRunNow, onLoadRuns, onOpenSession, onRequest, now,
-    selectedRoutineId, onRoutineSelect, showLimitNotice = true
+    client = null, routines, running, engineRefusals = [], runs, runsLoading, workspaces, error, onDismissError, onCreate,
+    onUpdate, onLoadRuns, onRequest, now, selectedRoutineId, onRoutineSelect
   } = props
   const [panel, setPanel] = useState<Panel>(null)
-  const [localSelection, setLocalSelection] = useState<string | null>(null)
   const [pendingRuns, setPendingRuns] = useState<Set<number>>(() => new Set())
-  const selectedId = selectedRoutineId === undefined ? localSelection : selectedRoutineId == null ? null : String(selectedRoutineId)
+  const reviews = sortRoutines(routines).filter((routine) => routine.kind === 'harness_review')
+  const { selectedId, selectRoutine } = useRoutineSelection(routines, selectedRoutineId, onRoutineSelect)
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]))
   const slotsFull = running.length >= ROUTINE_RUNS_CONCURRENT
-  const waitingIds = new Set(sortRoutines(routines)
-    .filter((routine) => routine.enabled && !running.includes(routine.id) && routine.next_run_at_ms <= now)
-    .map((routine) => routine.id))
-  const items: Array<ListDetailItem & { routine: Routine }> = sortRoutines(routines).map((routine) => ({
-    id: String(routine.id),
-    title: <>{routine.name}{routine.workspace_id && workspaceById.get(routine.workspace_id) ? ` · ${workspaceById.get(routine.workspace_id)?.name}` : ''}</>,
-    sub: routineStatus(routine, running.includes(routine.id), slotsFull && waitingIds.has(routine.id), now),
-    routine
-  }))
+  const items = routineItems(routines, reviews, workspaces, running, slotsFull, now)
   const selected = items.find((item) => item.id === selectedId)?.routine ?? null
 
   useEffect(() => {
-    if (selectedRoutineId !== undefined) return
-    if (localSelection && !routines.some((routine) => String(routine.id) === localSelection)) {
-      setLocalSelection(routines[0] ? String(routines[0].id) : null)
-    } else if (localSelection === null && routines.length > 0) {
-      setLocalSelection(String(sortRoutines(routines)[0].id))
-    }
-  }, [localSelection, routines, selectedRoutineId])
-
-  useEffect(() => {
-    if (selected && runs[selected.id] === undefined && runsLoading !== selected.id) onLoadRuns(selected.id)
+    if (selected && selected.kind !== 'harness_review' && runs[selected.id] === undefined && runsLoading !== selected.id) onLoadRuns(selected.id)
   }, [onLoadRuns, runs, runsLoading, selected])
 
   useEffect(() => {
@@ -99,11 +91,6 @@ export function RoutinesSurface(props: {
       return next.size === current.size ? current : next
     })
   }, [error, runs, running])
-
-  function selectRoutine(value: string | null): void {
-    setLocalSelection(value)
-    onRoutineSelect?.(value === null ? null : Number(value))
-  }
 
   function submit(value: RoutineFormValue): void {
     if (panel?.mode === 'edit') {
@@ -138,11 +125,23 @@ export function RoutinesSurface(props: {
     setPanel(null)
   }
 
+  if (panel?.mode === 'review-setup') {
+    return <NavSurfaceFrame row><PageFrame width="wide" className="flex-1 min-w-0">
+      <PageHeader heading="Set up Weekly review" description={`Review sessions in ${panel.workspace.name}.`} />
+      {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
+      <WeeklyReviewSetup client={client} workspace={panel.workspace} onCancel={() => { onDismissError(); setPanel(null) }} onCreate={(setup) => {
+        onRequest({ attemptedName: 'Weekly review' })
+        client?.harnessRoutineCreate({ workspace: panel.workspace.id, ...setup })
+        setPanel(null)
+      }} />
+    </PageFrame></NavSurfaceFrame>
+  }
+
   if (panel) {
     return (
       <NavSurfaceFrame row>
         <PageFrame width="wide" className="flex-1 min-w-0">
-          <PageHeader heading="Routines" description="Prompts that run on a schedule, each in its own pane." />
+          <PageHeader heading="Routines" description="Prompts that run on a schedule, each in its own pane. Set up Weekly review for the workspaces you choose." />
           {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
           <RoutineEditor
             mode={panel.mode}
@@ -173,47 +172,26 @@ export function RoutinesSurface(props: {
     <PageFrame width="wide" className="flex-1 min-w-0">
       <PageHeader
         heading="Routines"
-        description="Prompts that run on a schedule, each in its own pane."
+        description="Prompts that run on a schedule, each in its own pane. Set up Weekly review for the workspaces you choose."
         actions={<Button variant="primary" icon={IconPlus} data-testid="routine-create" onClick={() => { onDismissError(); setPanel({ mode: 'create' }) }}>New routine</Button>}
       />
       {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
       <ListDetail
         items={items}
+        sectionStyle="plain"
         selectedId={selectedId}
         onSelect={selectRoutine}
         backLabel="Routines"
         listEmpty={<EmptyState icon={IconClock} heading="No routines" description="Create a routine to run prompts on a schedule." />}
         renderDetail={(item) => {
           if (!item) return <EmptyState icon={IconClock} heading="Select a routine" description="Choose a routine to see its schedule and runs." />
-          const routine = item.routine
-          return (
-            <Suspense fallback={<p role="status">Loading routine details…</p>}>
-              <RoutineDetail
-                routine={routine}
-                engineRefusals={engineRefusals}
-                runs={runs[routine.id]}
-                runsLoading={runsLoading === routine.id}
-                now={now}
-                running={running.includes(routine.id)}
-                pending={pendingRuns.has(routine.id)}
-                atLimit={showLimitNotice && slotsFull ? { running: running.length, limit: ROUTINE_RUNS_CONCURRENT } : null}
-                onRunNow={() => {
-                  onRequest({ routineName: routine.name })
-                  setPendingRuns((current) => new Set(current).add(routine.id))
-                  onRunNow(routine.id)
-                }}
-                onToggleEnabled={() => {
-                  onRequest({ routineName: routine.name })
-                  onUpdate({ id: routine.id, expected_revision: routine.revision, enabled: !routine.enabled })
-                }}
-                onEdit={() => { onDismissError(); setPanel({ mode: 'edit', routine }) }}
-                onDelete={() => { onRequest({ routineName: routine.name }); onDelete(routine.id, routine.revision) }}
-                onUpdateSchedule={(cadence) => onUpdate({ id: routine.id, expected_revision: routine.revision, cadence })}
-                onUpdateEngine={(engine) => onUpdate({ id: routine.id, expected_revision: routine.revision, engine })}
-                onOpenSession={onOpenSession}
-              />
-            </Suspense>
-          )
+          const detail = (routine: Routine, workspaceName: string | null): React.JSX.Element => <SurfaceRoutineDetail
+            {...props} routine={routine} workspaceName={workspaceName} pending={pendingRuns.has(routine.id)} slotsFull={slotsFull}
+            onStart={() => setPendingRuns((current) => new Set(current).add(routine.id))}
+            onEdit={() => { onDismissError(); setPanel({ mode: 'edit', routine }) }} />
+          if (item.id === REVIEW_SELECTION) return <WeeklyReviewWorkspaces reviews={reviews} workspaces={workspaces} connected={!!client}
+            onSetup={(workspace) => { onDismissError(); setPanel({ mode: 'review-setup', workspace }) }} renderReview={detail} />
+          return item.routine && detail(item.routine, item.routine.workspace_id ? workspaceById.get(item.routine.workspace_id)?.name ?? item.routine.workspace_id : null)
         }}
       />
     </PageFrame>
@@ -224,4 +202,80 @@ export function RoutinesSurface(props: {
 const EMPTY_DRAFT = {
   name: '', prompt: '', workspaceId: null, permissionMode: 'accept_edits' as const,
   isolate: false, cadence: { type: 'interval' as const, seconds: 900 }
+}
+
+function routineMeta(routine: Routine, workspaceName: string | null): string {
+  const cadence = !routine.enabled ? 'Paused' : formatCadence(routine.cadence)
+  const label = cadence.charAt(0).toUpperCase() + cadence.slice(1)
+  return `${label}${workspaceName ? ` · ${workspaceName}` : ''}`
+}
+
+// Zero identifies the aggregate only in renderer selection; daemon routine IDs are positive.
+const REVIEW_SELECTION = '0'
+
+function selectionFor(id: number | null, routines: Routine[]): string | null {
+  if (id === null) return null
+  return routines.some((routine) => routine.id === id && routine.kind === 'harness_review') ? REVIEW_SELECTION : String(id)
+}
+
+function useRoutineSelection(routines: Routine[], controlled: number | null | undefined, onSelect?: (id: number | null) => void): {
+  selectedId: string | null
+  selectRoutine: (value: string | null) => void
+} {
+  const [local, setLocal] = useState<string | null>(null)
+  const [picked, setPicked] = useState(false)
+  useEffect(() => {
+    if (controlled !== undefined) return
+    // The default follows the roster until the user picks; it often arrives after the page opens.
+    if (picked && (local === REVIEW_SELECTION || routines.some((routine) => String(routine.id) === local))) return
+    const next = selectionFor(sortRoutines(routines)[0]?.id ?? 0, routines)
+    if (next !== local) setLocal(next)
+  }, [controlled, local, picked, routines])
+  return {
+    selectedId: controlled === undefined ? local : selectionFor(controlled, routines),
+    selectRoutine: (value) => { setPicked(true); setLocal(value); onSelect?.(value === null ? null : Number(value)) }
+  }
+}
+
+type RoutineItem = ListDetailItem & { routine: Routine | null }
+
+function routineItems(routines: Routine[], reviews: Routine[], workspaces: RoutineWorkspaceOption[], running: number[], slotsFull: boolean, now: number): RoutineItem[] {
+  const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace.name]))
+  const active = reviews.filter((routine) => routine.enabled).length
+  const summary = reviews.length === 0 ? 'Not set up' : `On in ${active} of ${workspaces.length} workspaces`
+  const reviewRunning = reviews.some((routine) => running.includes(routine.id))
+  const reviewSub = reviewRunning ? <ListDetailMeta left={summary} right={<StatusLabel status="Running" size="small" />} /> : summary
+  return [{ id: REVIEW_SELECTION, section: 'Built in', title: 'Weekly review', sub: reviewSub, ...(reviewRunning ? { subLayout: 'full-width' as const } : {}), routine: null },
+    ...sortRoutines(routines).filter((routine) => routine.kind !== 'harness_review').map((routine) => ({
+      id: String(routine.id), section: 'Yours', title: routine.name, subLayout: 'full-width' as const,
+      sub: <ListDetailMeta left={routineMeta(routine, routine.workspace_id ? workspaceById.get(routine.workspace_id) ?? routine.workspace_id : null)} right={routineStatus(routine, running.includes(routine.id), slotsFull && routine.enabled && !running.includes(routine.id) && routine.next_run_at_ms <= now, now)} />,
+      routine
+    }))]
+}
+
+function SurfaceRoutineDetail({ routine, workspaceName, pending, slotsFull, onStart, onEdit, ...props }: RoutinesSurfaceProps & {
+  routine: Routine
+  workspaceName: string | null
+  pending: boolean
+  slotsFull: boolean
+  onStart: () => void
+  onEdit: () => void
+}): React.JSX.Element {
+  const { running, runs, runsLoading, now, onRequest, onRunNow, onUpdate, onDelete, onOpenSession, showLimitNotice = true } = props
+  const common: ComponentProps<typeof RoutineDetail> = {
+    routine, engineRefusals: props.engineRefusals, runs: runs[routine.id], runsLoading: runsLoading === routine.id, now,
+    running: running.includes(routine.id), pending,
+    atLimit: showLimitNotice && slotsFull ? { running: running.length, limit: ROUTINE_RUNS_CONCURRENT } : null,
+    onRunNow: () => { onRequest({ routineName: routine.name }); onStart(); onRunNow(routine.id) },
+    onToggleEnabled: () => { onRequest({ routineName: routine.name }); onUpdate({ id: routine.id, expected_revision: routine.revision, enabled: !routine.enabled }) },
+    onEdit,
+    onDelete: () => { onRequest({ routineName: routine.name }); onDelete(routine.id, routine.revision) },
+    onUpdateSchedule: (cadence) => onUpdate({ id: routine.id, expected_revision: routine.revision, cadence }),
+    onUpdateEngine: (engine) => onUpdate({ id: routine.id, expected_revision: routine.revision, engine }),
+    onOpenSession
+  }
+  return <Suspense fallback={<p role="status">Loading routine details…</p>}>
+    {routine.kind === 'harness_review' ? <WeeklyReviewDetail {...common} client={props.client} workspaceName={workspaceName} grouped
+      onUpdateReviewSchedule={(fields: ReturnType<typeof scheduleFields>) => onUpdate({ id: routine.id, expected_revision: routine.revision, ...fields })} /> : <RoutineDetail {...common} />}
+  </Suspense>
 }

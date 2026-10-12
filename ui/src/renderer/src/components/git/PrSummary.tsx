@@ -1,7 +1,9 @@
 import { PrTab } from '../ui/PrTab'
 import { PullRequestRole } from '../ui/PullRequestRoles'
 import type { PrDetail } from '../../houston/client'
-import { Disclosure } from '../ui/Disclosure'
+import { useState } from 'react'
+import { ReviewButton } from '../ui/ReviewButtonRoles'
+import { PrDescriptionFrame } from '../ui/PrPresentation'
 import { MarkdownDocument } from '../markdownPipeline'
 import type { ReactNode } from 'react'
 
@@ -13,28 +15,14 @@ export function PrSummary({ children }: { children: React.ReactNode }): React.JS
   )
 }
 
-export function PrBranchSummary({
-  detail,
-  people,
-  checks,
-  footer,
-  descriptionAction
-}: {
-  detail: PrDetail
-  people: ReactNode
-  checks: ReactNode
-  footer: ReactNode
-  descriptionAction: ReactNode
-}): React.JSX.Element {
+export function PrBranchSummary({ detail, people, descriptionAction }: { detail: PrDetail; people: ReactNode; descriptionAction: ReactNode; checks?: ReactNode; footer?: ReactNode }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
   return <PrTab as="div" surface="pr-branch-summary" data-testid="pr-summary">
     {people}
-    <Disclosure summary="Description" defaultOpen variant="flush" scrollBody={false}>
-      <div data-testid="pr-description">
-        <PrTab as="div" surface="pr-branch-description-action">{descriptionAction}</PrTab>
-        {detail.body ? <MarkdownDocument source={detail.body} variant="editor" /> : null}
-      </div>
-    </Disclosure>
-    {checks}
-    {footer}
+    {detail.body && <>
+      <PrDescriptionFrame clamped={!expanded}><MarkdownDocument source={detail.body} variant="panel" /></PrDescriptionFrame>
+      <ReviewButton variant="text-link" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? 'Show less description' : 'Show full description'}</ReviewButton>
+      {expanded && descriptionAction}
+    </>}
   </PrTab>
 }

@@ -1,4 +1,4 @@
-# Wire protocol v139
+# Wire protocol v140
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -170,11 +170,11 @@ failure not given a typed refusal comes back as `error`.
 | `git_branch_commits` | `dir` | `git_branch_commits` (direct), newest first for `@{upstream}..HEAD`; capped at `GIT_BRANCH_COMMITS_CAP`, with `total` and `truncated`; a missing upstream or non-repo is an `error` |
 | `git_stage` | `dir`, `paths` (empty = all) | fresh `git_status` (direct) |
 | `git_unstage` | `dir`, `paths` (empty = all) | fresh `git_status` (direct) |
-| `git_commit` | `dir`, `message` | `git_commit` then `git_status` (direct) |
+| `git_commit` | `dir`, `message`, `amend?` (v138; rewrites HEAD, refused when HEAD is already contained in its upstream) | `git_commit` then `git_status` (direct) |
 | `git_push` | `dir` | fresh `git_status` (direct); `error` on failure |
 | `git_discard` | `dir`, `path`, `kind: GitDiscardKind` | fresh `git_status` (direct). Absolute paths, `..` segments and sensitive paths are refused before any git call |
 | `git_review_diffs` | `dir` | `git_review_diffs` (direct) — one pre-ship review bundle |
-| `git_branches` | `dir` | `git_branches` (direct) — locals, remote-tracking branches and the default apart |
+| `git_branches` | `dir` | `git_branches` (direct) — locals, remote-tracking branches and the default apart; each carries `ahead?`, `behind?` (null without a live upstream) and `committed_at?` (Unix seconds); capped at 200 entries per list |
 | `git_worktrees` | `dir` | `git_worktrees` (direct); a reply to a mutation carries the note in `message` |
 | `git_checkpoints` | `dir` | `git_checkpoints` (direct) — every owner |
 | `git_checkpoint_diff` | `dir`, `ref`, `against: GitCheckpointAgainst` | `git_checkpoint_diff` (direct); the patch is redacted and capped like `git_diff` |
@@ -473,7 +473,7 @@ every refusal names the setting.
 | `pr_mutation` | `dir`, `request`, `number`, `kind: PrMutationKind`, `ok`, `message?` | direct reply to every pull-request write but merge; success is followed by a fresh `pr_detail` with the same `request` |
 | `pr_reviewer_candidates` | `dir`, `request`, `candidates: PrReviewerCandidate[]`, `truncated`, `message?` | direct reply to `pr_reviewers`; a failed read is `message`, never an `error` |
 | `pr_label_candidates` | `dir`, `request`, `candidates: PrLabelCandidate[]`, `truncated`, `message?` | direct reply to `pr_labels` |
-| `pr_list` | `dir`, `request`, `items: PrListItem[]`, `truncated`, `message?` | direct reply to `pr_list`; `truncated` says the host has more rows than `limit` |
+| `pr_list` | `dir`, `request`, `items: PrListItem[]`, `truncated`, `viewer_login?`, `message?` | direct reply to `pr_list`; `truncated` says the host has more rows than `limit`; `viewer_login` comes from `gh api user`, cached per repository directory for 60 seconds, and is available even when the list is empty; null means the identity read was unavailable |
 | `pr_diff` | `dir`, `request`, `number`, `patch`, `truncated`, `message?` | direct reply to `pr_diff`; `patch` is a unified diff, capped byte-wise with `truncated` |
 | `pr_stack` | `dir`, `request`, `stack?: PrStack`, `message?` | direct reply to `pr_stack`; `stack: null` with no message is "not in a stack or the host has no stacks preview" |
 | `history_count` | `count` | direct reply to `history_count` |
@@ -526,7 +526,7 @@ every refusal names the setting.
 | `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
 | `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
-| `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
+| `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `session_counts?: UsageSessionCounts`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only |
 | `browser_tool_call` | `request_id`, `tool`, `args: JSON`, `session_id`, `workspace_id` | daemon-initiated, to the explicitly registered browser relay connection — the browser-tool relay (v93, Detach) |
@@ -716,7 +716,8 @@ AgentProfile       id, agent (claude | codex), name, config_dir
 AgentProfileActive agent, id
 ProfileChoice      tag "kind": default | profile{id}
 
-Routine            id, name, prompt, cadence,
+RoutineKind        user | harness_review
+Routine            id, name, prompt, cadence, kind: RoutineKind (default user),
                    enabled,
                    workspace_id? (the routine's own working directory — where a run starts,
                    and the base an isolated run branches from),
@@ -879,12 +880,23 @@ UsageBucket        hour_start_ms, provider, model, totals, cost_usd, cache_savin
                    cost_source (provider_reported | model_priced | unpriced), unpriced_records, sessions,
                    workspace_path?, category_cost_usd, fast_cost_usd, ultrafast_cost_usd,
                    speed_premium_usd, speed_rate_available
+UsageSessionCounts models: UsageModelSessions[], days: UsageSessionDay[]
+UsageModelSessions provider, model, sessions (distinct in the window), days: UsageSessionDay[]
+UsageSessionDay    day (local YYYY-MM-DD), sessions (distinct on that day)
 UsageCategoryCost  input_usd, cache_read_usd, cache_write_usd, output_usd, other_usd
 UsageActivityDay   day (local YYYY-MM-DD), cost_usd, totals
 UsageSource        provider, path, profile_name?, status (ok | missing | partial | failed), scanned_files,
                    skipped_files, failed_files, distinct_sessions, message?
 UsagePricing       status (fresh | cached | unavailable), source, fetched_at_ms?, known_models, message?
 ```
+
+Usage session counts use accepted, deduplicated records after the workspace filter.
+Model counts distinguish providers; daily totals distinguish provider/session identities
+across models. Days follow the local date of the UTC hour bucket, matching usage charts.
+The reply contains at most one window count and one count per day for each model,
+plus one total per day. It never sends session identifiers. Older replies may omit
+`session_counts`; clients display unavailable session counts rather than summing
+hourly bucket counts. Retained activity rollups contain no session identities.
 
 Every client-input cap and default named above is a constant in `lib.rs`, mirrored
 into the UI as `DEFAULTS.ts` by `scripts/gen-protocol-types.sh` so a client can
@@ -1312,6 +1324,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 140 | `pr_list` replies include the cached viewer login. `Routine.kind` identifies user and harness review routines, backfilled from existing harness mappings. `GitBranchInfo` gains upstream ahead/behind counts and committer time. `usage_summary` gains optional `session_counts` (`UsageSessionCounts`): exact distinct sessions by model and by day; older replies omit it. **Amend.** `git_commit` gains `amend` (default false): rewrites HEAD instead of adding a commit, and refuses with an error naming the branch and HEAD SHA when HEAD is already contained in its upstream. |
 | 139 | Pane names expose `title_source` (`codename < prompt < role < cli < task < user`) in `SessionInfo` and `session_renamed`. `session_title_reset` restores the strongest stored automatic candidate without a user override. |
 | 138 | Session creation accepts a connection-local request ID and replies with `session_create_result`, correlating success or refusal without relying on broadcast order. |
 | 137 | Browser relay explicitly registers its authenticated connection; replies are scoped to the connection owning each pending call. |

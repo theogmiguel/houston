@@ -892,6 +892,7 @@ async fn git_stage_and_commit_over_the_wire() {
         &proto::ClientMsg::GitCommit {
             dir: dir.clone(),
             message: "add feature".into(),
+            amend: false,
         },
     )
     .await;
@@ -941,4 +942,168 @@ async fn git_push_to_bare_remote_clears_ahead() {
     send(&mut ws, &proto::ClientMsg::GitPush { dir: dir.clone() }).await;
     let st = expect_git_status(&mut ws).await;
     assert_eq!(st.ahead, 0, "push should clear the ahead count");
+}
+
+async fn expect_error(ws: &mut WsStream) -> String {
+    loop {
+        match next_control(ws).await {
+            proto::ServerMsg::Error { message, .. } => return message,
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
+async fn git_commit_amend_rewrites_an_unpublished_head() {
+    let (addr, _state) = start_daemon().await;
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "--bare", "-b", "main"]);
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            &remote.path().display().to_string(),
+        ],
+    );
+    git(repo.path(), &["push", "-u", "origin", "main"]);
+    std::fs::write(repo.path().join("second.txt"), "more\n").unwrap();
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-m", "second"]);
+    let before = git_stdout(repo.path(), &["rev-list", "--count", "HEAD"]);
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitCommit {
+            dir: repo.path().display().to_string(),
+            message: "second, reworded".into(),
+            amend: true,
+        },
+    )
+    .await;
+    let _ = expect_git_commit(&mut ws).await;
+
+    assert_eq!(
+        git_stdout(repo.path(), &["rev-list", "--count", "HEAD"]),
+        before
+    );
+    assert_eq!(
+        git_stdout(repo.path(), &["log", "-1", "--format=%s"]),
+        "second, reworded"
+    );
+}
+
+#[tokio::test]
+async fn git_commit_amend_refuses_a_published_head() {
+    let (addr, _state) = start_daemon().await;
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "--bare", "-b", "main"]);
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            &remote.path().display().to_string(),
+        ],
+    );
+    git(repo.path(), &["push", "-u", "origin", "main"]);
+    let head = git_stdout(repo.path(), &["rev-parse", "--short", "HEAD"]);
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitCommit {
+            dir: repo.path().display().to_string(),
+            message: "rewrite".into(),
+            amend: true,
+        },
+    )
+    .await;
+    let message = expect_error(&mut ws).await;
+    assert!(message.contains("main"), "{message}");
+    assert!(message.contains(&head), "{message}");
+    assert!(message.contains("origin/main"), "{message}");
+    assert_eq!(
+        git_stdout(repo.path(), &["log", "-1", "--format=%s"]),
+        "init"
+    );
+}
+
+#[tokio::test]
+async fn git_branches_report_tracking_counts_and_committer_time() {
+    let (addr, _state) = start_daemon().await;
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "--bare", "-b", "main"]);
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            &remote.path().display().to_string(),
+        ],
+    );
+    git(repo.path(), &["push", "-u", "origin", "main"]);
+    git(repo.path(), &["branch", "untracked"]);
+    git(repo.path(), &["branch", "behind"]);
+    git(
+        repo.path(),
+        &["branch", "--set-upstream-to=origin/main", "behind"],
+    );
+    git(
+        repo.path(),
+        &["commit", "--allow-empty", "-m", "remote change"],
+    );
+    git(repo.path(), &["push"]);
+    git(repo.path(), &["checkout", "-B", "main", "HEAD~1"]);
+    git(
+        repo.path(),
+        &["commit", "--allow-empty", "-m", "local change"],
+    );
+    let timestamp: i64 = git_stdout(repo.path(), &["show", "-s", "--format=%ct", "HEAD"])
+        .parse()
+        .unwrap();
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitBranches {
+            dir: repo.path().display().to_string(),
+        },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::GitBranches {
+                branches,
+                remotes,
+                truncated,
+                ..
+            } => {
+                assert!(!truncated);
+                let main = branches.iter().find(|b| b.name == "main").unwrap();
+                assert_eq!((main.ahead, main.behind), (Some(1), Some(1)));
+                assert_eq!(main.committed_at, Some(timestamp));
+                let behind = branches.iter().find(|b| b.name == "behind").unwrap();
+                assert_eq!((behind.ahead, behind.behind), (Some(0), Some(1)));
+                let untracked = branches.iter().find(|b| b.name == "untracked").unwrap();
+                assert_eq!((untracked.ahead, untracked.behind), (None, None));
+                assert!(remotes.iter().all(|b| b.committed_at.is_some()));
+                break;
+            }
+            proto::ServerMsg::Error { message, .. } => panic!("{message}"),
+            _ => continue,
+        }
+    }
 }

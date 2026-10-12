@@ -1,3 +1,4 @@
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { useState } from 'react'
 import type { ButtonHTMLAttributes, MouseEvent } from 'react'
 import { Icon } from './Icon'
@@ -51,9 +52,9 @@ export function Checkbox({
         onClick={handleClick}
         className={`relative grid size-4 flex-none place-items-center rounded-[var(--tr-radius-xs)] border border-[var(--border)]
           ${isChecked ? 'border-[var(--accent)] bg-[var(--accent)]' : 'bg-[var(--content-bg)]'}
-          focus-visible:shadow-[var(--focus-halo)] cursor-pointer`}
+          ${FOCUS_HALO_CLS} cursor-pointer`}
       >
-        {isChecked && <Icon glyph={IconCheck} role="small" className="pointer-events-none text-[var(--accent-contrast)]" />}
+        {isChecked && <Icon glyph={IconCheck} role="small" className="pointer-events-none text-[var(--accent-ink)]" />}
       </button>
       {label && <span className="truncate">{label}</span>}
     </label>

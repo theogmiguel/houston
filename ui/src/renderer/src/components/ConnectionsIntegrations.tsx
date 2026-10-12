@@ -26,7 +26,7 @@ function relativeTime(timestamp: number): string {
 }
 
 function slackCaption(info: SlackInfo | null, workspaces: Workspace[]): string {
-  if (!info || !info.enabled) return 'A mention of the bot in a mapped channel becomes a pending task.'
+  if (!info || !info.enabled) return 'A mention of the bot in a mapped channel becomes a pending task; the owner starts it with a :white_check_mark: reaction.'
   if (info.connection === 'retrying' || info.connection === 'connecting') {
     return info.error ?? 'Waiting for Slack to reconnect.'
   }
@@ -45,7 +45,7 @@ function statusFor(info: SlackInfo | null): 'Off' | 'Connected' | 'Reconnecting'
   return info.connection === 'connected' ? 'Connected' : 'Reconnecting'
 }
 
-export function ConnectionsIntegrations({ client }: { client: HoustonClient | null }): React.JSX.Element {
+export function ConnectionsIntegrations({ client, setupOnly = false, onClose }: { client: HoustonClient | null; setupOnly?: boolean; onClose?: () => void }): React.JSX.Element {
   const [info, setInfo] = useState<SlackInfo | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -110,56 +110,93 @@ export function ConnectionsIntegrations({ client }: { client: HoustonClient | nu
     client?.slackConfigure(info?.owner_user_id ?? null, info?.channels ?? [], next)
   }
 
+  const closeSetup = (): void => { setDrawerOpen(false); onClose?.() }
+
   return (
-    <ContentSection heading="Integrations" description="Outside services that bring work into Houston. Tokens stay in the OS keychain." data-testid="slack-integrations">
-      <IntegrationCard
-        icon={<IconMessageSquare />}
-        title="Slack"
-        status={status}
-        caption={status === 'Reconnecting' && info?.error ? info.error : slackCaption(info, workspaces)}
-        actions={status === 'Off' ? (
-          <Button variant="primary" onClick={() => setDrawerOpen(true)}>Connect</Button>
-        ) : (
-          <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(true)}>Configure</Button>
-            <Button variant="ghost" onClick={() => client?.slackDisconnect()}>Disconnect</Button>
-          </>
-        )}
-      />
-      <Drawer open={drawerOpen} heading="Slack" onClose={() => setDrawerOpen(false)}>
-        <div className="grid gap-[var(--space-4)]">
-          <Notice tone="info">Tokens go to the OS keychain and are never shown again. Leave them empty to keep the saved ones.</Notice>
-          {error && <Notice tone="danger">{error}</Notice>}
-          {hasPartialToken && <Notice tone="danger">Enter both Slack tokens or leave both empty.</Notice>}
-          <Field label="App-level token" hint="xapp-, scope connections:write">
-            <TextInput type="password" font="mono" spellCheck={false} autoComplete="off" maxLength={SLACK_TOKEN_LEN_MAX} placeholder={info?.has_tokens ? '••••••••••••' : 'xapp-…'} value={appToken} onChange={(event) => setAppToken(event.target.value)} />
-          </Field>
-          <Field label="Bot token" hint="xoxb-">
-            <TextInput type="password" font="mono" spellCheck={false} autoComplete="off" maxLength={SLACK_TOKEN_LEN_MAX} placeholder={info?.has_tokens ? '••••••••••••' : 'xoxb-…'} value={botToken} onChange={(event) => setBotToken(event.target.value)} />
-          </Field>
-          <Field label="Owner" hint="The only member whose ✅ starts a request (U…)">
-            <TextInput font="mono" width="md" spellCheck={false} placeholder="U…" value={owner} onChange={(event) => setOwner(event.target.value)} />
-          </Field>
-          <Field label="Language" hint="What Houston writes in Slack">
-            <Select value={language} options={LANGUAGE_OPTIONS} aria-label="Language" onChange={changeLanguage} />
-          </Field>
-          <div className="grid gap-[var(--space-2)]">
-            <FieldLabel>Channels</FieldLabel>
-            {channels.map((channel, index) => (
-              <div key={index} className="flex items-center gap-[var(--space-2)]">
-                <TextInput font="mono" width="md" spellCheck={false} aria-label="Slack channel ID" placeholder="C…" value={channel.channel_id} onChange={(event) => setChannels(channels.map((current, row) => row === index ? { ...current, channel_id: event.target.value.trim() } : current))} />
-                <Select value={channel.workspace} options={workspaceOptions} aria-label="Workspace" onChange={(workspace) => setChannels(channels.map((current, row) => row === index ? { ...current, workspace } : current))} />
-                <Button variant="ghost" onClick={() => setChannels(channels.filter((_, row) => row !== index))}>Remove</Button>
-              </div>
-            ))}
-            <div><Button variant="secondary" disabled={!canAddChannel} onClick={() => setChannels([...channels, { channel_id: '', workspace: workspaceOptions[0]?.value ?? '' }])}>Add channel</Button></div>
-          </div>
-          <div className="flex items-center gap-[var(--space-2)]">
-            <Button variant="primary" disabled={!client || hasPartialToken} onClick={save}>Save</Button>
-            <Button variant="ghost" onClick={() => setDrawerOpen(false)}>Cancel</Button>
-          </div>
-        </div>
+    <>
+      {!setupOnly && <ContentSection heading="Integrations" description="Outside services that bring work into Houston. Tokens stay in the OS keychain." data-testid="slack-integrations">
+        <IntegrationCard
+          icon={<IconMessageSquare />}
+          title="Slack"
+          status={status}
+          caption={status === 'Reconnecting' && info?.error ? info.error : slackCaption(info, workspaces)}
+          actions={status === 'Off' ? (
+            <Button variant="primary" onClick={() => setDrawerOpen(true)}>Connect</Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setDrawerOpen(true)}>Configure</Button>
+              <Button variant="ghost" onClick={() => client?.slackDisconnect()}>Disconnect</Button>
+            </>
+          )}
+        />
+      </ContentSection>}
+      <Drawer open={setupOnly || drawerOpen} heading="Slack" onClose={closeSetup}>
+        <SlackSetupForm info={info} error={error} hasPartialToken={hasPartialToken}
+          appToken={appToken} setAppToken={setAppToken} botToken={botToken} setBotToken={setBotToken}
+          owner={owner} setOwner={setOwner} channels={channels} setChannels={setChannels}
+          language={language} onLanguage={changeLanguage} workspaceOptions={workspaceOptions} canAddChannel={canAddChannel}
+          connected={!!client} onSave={save} onCancel={closeSetup}
+          onDisconnect={setupOnly ? () => client?.slackDisconnect() : undefined} />
       </Drawer>
-    </ContentSection>
+    </>
+  )
+}
+
+function SlackSetupForm({ info, error, hasPartialToken, appToken, setAppToken, botToken, setBotToken, owner, setOwner,
+  channels, setChannels, language, onLanguage, workspaceOptions, canAddChannel, connected, onSave, onCancel, onDisconnect }: {
+  info: SlackInfo | null
+  error: string | null
+  hasPartialToken: boolean
+  appToken: string
+  setAppToken: (token: string) => void
+  botToken: string
+  setBotToken: (token: string) => void
+  owner: string
+  setOwner: (owner: string) => void
+  channels: SlackChannelMap[]
+  setChannels: (channels: SlackChannelMap[]) => void
+  language: SlackLanguage
+  onLanguage: (language: string) => void
+  workspaceOptions: { value: string; label: string }[]
+  canAddChannel: boolean
+  connected: boolean
+  onSave: () => void
+  onCancel: () => void
+  onDisconnect?: () => void
+}): React.JSX.Element {
+  return (
+    <div className="grid gap-[var(--space-4)]">
+      <Notice tone="info">Tokens go to the OS keychain and are never shown again. Leave them empty to keep the saved ones.</Notice>
+      {error && <Notice tone="danger">{error}</Notice>}
+      {hasPartialToken && <Notice tone="danger">Enter both Slack tokens or leave both empty.</Notice>}
+      <Field label="App-level token" hint="xapp-, scope connections:write">
+        <TextInput type="password" font="mono" spellCheck={false} autoComplete="off" maxLength={SLACK_TOKEN_LEN_MAX} placeholder={info?.has_tokens ? '••••••••••••' : 'xapp-…'} value={appToken} onChange={(event) => setAppToken(event.target.value)} />
+      </Field>
+      <Field label="Bot token" hint="xoxb-">
+        <TextInput type="password" font="mono" spellCheck={false} autoComplete="off" maxLength={SLACK_TOKEN_LEN_MAX} placeholder={info?.has_tokens ? '••••••••••••' : 'xoxb-…'} value={botToken} onChange={(event) => setBotToken(event.target.value)} />
+      </Field>
+      <Field label="Owner" hint="The only member whose :white_check_mark: reaction starts a request (U…)">
+        <TextInput font="mono" width="md" spellCheck={false} placeholder="U…" value={owner} onChange={(event) => setOwner(event.target.value)} />
+      </Field>
+      <Field label="Language" hint="What Houston writes in Slack">
+        <Select value={language} options={LANGUAGE_OPTIONS} aria-label="Language" onChange={onLanguage} />
+      </Field>
+      <div className="grid gap-[var(--space-2)]">
+        <FieldLabel>Channels</FieldLabel>
+        {channels.map((channel, index) => (
+          <div key={index} className="flex items-center gap-[var(--space-2)]">
+            <TextInput font="mono" width="md" spellCheck={false} aria-label="Slack channel ID" placeholder="C…" value={channel.channel_id} onChange={(event) => setChannels(channels.map((current, row) => row === index ? { ...current, channel_id: event.target.value.trim() } : current))} />
+            <Select value={channel.workspace} options={workspaceOptions} aria-label="Workspace" onChange={(workspace) => setChannels(channels.map((current, row) => row === index ? { ...current, workspace } : current))} />
+            <Button variant="ghost" onClick={() => setChannels(channels.filter((_, row) => row !== index))}>Remove</Button>
+          </div>
+        ))}
+        <div><Button variant="secondary" disabled={!canAddChannel} onClick={() => setChannels([...channels, { channel_id: '', workspace: workspaceOptions[0]?.value ?? '' }])}>Add channel</Button></div>
+      </div>
+      <div className="flex items-center gap-[var(--space-2)]">
+        <Button variant="primary" disabled={!connected || hasPartialToken} onClick={onSave}>Save</Button>
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        {onDisconnect && info?.enabled && <Button variant="ghost" onClick={onDisconnect}>Disconnect</Button>}
+      </div>
+    </div>
   )
 }

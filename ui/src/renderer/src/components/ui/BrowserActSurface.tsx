@@ -12,7 +12,7 @@ const ACT_APPROVE_BUTTON_CLS =
 const ACT_OVERLAY_CLS =
   'absolute inset-0 z-[var(--z-sticky)] bg-[color-mix(in_srgb,var(--content-bg)_55%,transparent)] motion-safe:animate-[backdrop-in_var(--animate-t-scrim)_var(--animate-ease-scrim)]'
 const ACT_CARD_CLS =
-  'absolute w-[var(--browser-act-card-width)] max-w-[calc(100%_-_var(--space-6))] flex flex-col gap-[var(--space-2)] rounded-[var(--tr-radius-card)] border border-[var(--warning)] bg-[var(--card-bg)] p-[var(--space-3)] shadow-[var(--shadow-lg)] motion-safe:animate-[menu-in_var(--animate-t-fast)_var(--animate-ease-menu)]'
+  'absolute w-[var(--browser-act-card-width)] max-w-[calc(100%_-_var(--space-6))] flex flex-col gap-[var(--space-2)] rounded-[var(--tr-radius-card)] border border-[var(--warning)] bg-[var(--card-bg)] p-[var(--space-3)] shadow-[var(--shadow-1)] motion-safe:animate-[menu-in_var(--animate-t-fast)_var(--animate-ease-menu)]'
 const ACT_MODAL_PANEL_CLS = 'rounded-[var(--tr-radius-card)] border-[var(--border-hover)] p-[var(--space-4)] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)]'
 
 export function ConfirmationBadge({ children, ...props }: HTMLAttributes<HTMLSpanElement>): React.JSX.Element {

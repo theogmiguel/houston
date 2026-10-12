@@ -39,6 +39,50 @@ pub fn viewer_login(dir: &Path) -> Result<Option<String>> {
     Ok((!out.stdout.trim().is_empty()).then(|| out.stdout.trim().to_string()))
 }
 
+// Coalesce page refreshes while letting a changed signed-in account appear within a minute.
+const VIEWER_LOGIN_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+// Bound memory when a daemon visits many repositories over its lifetime.
+const VIEWER_LOGIN_CACHE_MAX_ENTRIES: usize = 256;
+type ViewerLoginCache =
+    std::collections::HashMap<std::path::PathBuf, (std::time::Instant, Option<String>)>;
+static VIEWER_LOGIN_CACHE: std::sync::OnceLock<std::sync::Mutex<ViewerLoginCache>> =
+    std::sync::OnceLock::new();
+
+fn cached_viewer_login(dir: &Path) -> Option<String> {
+    let mut cache = VIEWER_LOGIN_CACHE
+        .get_or_init(Default::default)
+        .lock()
+        .expect("viewer login cache poisoned");
+    if let Some((at, login)) = cache.get(dir) {
+        if at.elapsed() < VIEWER_LOGIN_CACHE_TTL {
+            return login.clone();
+        }
+    }
+    cache.retain(|_, (at, _)| at.elapsed() < VIEWER_LOGIN_CACHE_TTL);
+    if cache.len() >= VIEWER_LOGIN_CACHE_MAX_ENTRIES {
+        if let Some(oldest) = cache
+            .iter()
+            .min_by_key(|(_, (at, _))| *at)
+            .map(|(path, _)| path.clone())
+        {
+            cache.remove(&oldest);
+        }
+    }
+    // Keep the lock through this blocking read so concurrent refreshes share one request.
+    let login = viewer_login(dir).ok().flatten();
+    cache.insert(
+        dir.to_path_buf(),
+        (std::time::Instant::now(), login.clone()),
+    );
+    login
+}
+
+pub struct PrList {
+    pub items: Vec<proto::PrListItem>,
+    pub truncated: bool,
+    pub viewer_login: Option<String>,
+}
+
 pub struct PrStatus {
     pub gh: proto::GhState,
     pub has_upstream: bool,
@@ -1058,7 +1102,7 @@ pub fn pr_list(
     query: Option<&str>,
     limit: u32,
     sort: proto::PrSort,
-) -> Result<(Vec<proto::PrListItem>, bool)> {
+) -> Result<PrList> {
     ready(dir, "list pull requests")?;
     if limit == 0 || limit > PR_LIST_LIMIT_MAX {
         bail!("a pull request listing asks for 1..={PR_LIST_LIMIT_MAX} rows; {limit} was asked");
@@ -1110,16 +1154,24 @@ pub fn pr_list(
                 .unwrap_or_else(|| format!("gh pr list failed (exit {:?})", out.code))
         );
     }
+    let viewer = cached_viewer_login(dir);
     let raw = out.stdout.trim();
     if raw.is_empty() {
-        return Ok((Vec::new(), false));
+        return Ok(PrList {
+            items: Vec::new(),
+            truncated: false,
+            viewer_login: viewer,
+        });
     }
     let value: serde_json::Value =
         serde_json::from_str(raw).with_context(|| "gh pr list returned unreadable JSON")?;
-    let viewer = viewer_login(dir).ok().flatten();
     let items = super::pull_requests::github::list_items_for_viewer(&value, viewer.as_deref());
     let truncated = items.len() as u32 > limit;
-    Ok((items.into_iter().take(limit as usize).collect(), truncated))
+    Ok(PrList {
+        items: items.into_iter().take(limit as usize).collect(),
+        truncated,
+        viewer_login: viewer,
+    })
 }
 
 /// The reader's own words as one quoted phrase of a GitHub search query: the

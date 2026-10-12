@@ -102,6 +102,7 @@ There is no `--ink-*` family. `--text-*` is the naming.
 |---|---|
 | `--border` | Every ordinary hairline: card edges, input outlines, control borders |
 | `--border-hover` | The same hairline under hover |
+| `--border-control` | Controls read by their edge: number fields, segmented tracks, off switches, the branch chip. One step above `--border-hover`, not a bright frame |
 | `--divider` | Row separators *inside* a container — deliberately fainter than `--border` |
 | `--hairline` | The divider equivalent on a custom surface |
 | `--border-focus` | The active-pane ring. A luminance step, no hue |
@@ -112,8 +113,9 @@ There is no `--ink-*` family. `--text-*` is the naming.
 `--accent` / `--accent-ink` / `--accent-hover` / `--accent-muted`, aliased as
 `--primary` / `--primary-foreground`. Accent is for **focus rings and the single
 affirmative action** — not a hover colour, not a selection tint, not decoration. A
-filled accent button pairs with `text-white` verbatim: the fill is a fixed contrast
-pair, not a themed surface.
+filled affirmative button uses `--primary-fill` with the white `--primary-foreground`
+label. On Graphite the fill is a deeper step of the accent so the white label keeps
+4.5:1; on Paper it is the accent itself.
 
 ### Status
 
@@ -137,6 +139,12 @@ AgentStatus maps as:
 
 `needs-input` is static on purpose: it is settled-until-addressed, not transient.
 Only the two genuinely indeterminate states move.
+
+Action glyphs are keyed by verb in `components/verbGlyphs.ts`. Notifications and
+About, file-tree visibility and line wrapping, file-manager reveal, memory measurement
+and overview each have a distinct glyph. The verb identifies the action rather than
+the page containing it; use the same mapping across related surfaces. Related surfaces use `GLYPH_FOR_VERB` and
+choose the size through the shared `Icon` role.
 
 ### Provider brand marks, diff and tool colors
 
@@ -301,23 +309,34 @@ are deliberately uneven.
 
 ## Radius
 
-Six values, in `ui/src/renderer/src/theme.css`:
+Shared radius roles are defined in `ui/src/renderer/src/theme.css`:
 
 | Token | Value | Meaning |
 |---|---|---|
 | `--tr-radius-input` | 4px | Inputs, select triggers |
-| `--tr-radius-sm` | 6px | Chips, small tiles, menu option rows, inputs, badges, banners, mini icon buttons |
+| `--tr-radius-sm` | 6px | Value chips, small tiles, menu option rows, badges, banners, mini icon buttons |
 | `--tr-radius-button` | 8px | Buttons, segmented track |
 | `--tr-radius-md` | 10px | Panes, overlays, modals, the command palette |
 | `--tr-radius-card` | 12px | Cards |
 | `--tr-radius-pill` | 9999px | Full capsule |
 
-**The rule: rounded = a value, capsule = pressable.** A status pill, a tag, a count
-badge is a *value* and gets a rounded radius. A segmented group, a filter chip, a
-removable chip is *pressable* and gets the full capsule. Getting these backwards is
-why some interfaces have controls that don't read as controls.
+**The rule: rounded = a value, capsule = pressable.** For chip-sized plates, a status, tag or count is a value and uses
+`--tr-radius-sm`. A choice, filter, copy or removable chip is pressable and uses
+`--tr-radius-pill`. Clickable tags follow the pressable recipe; read-only tags keep
+the value recipe. Fields, menus, ordinary buttons and segmented controls retain the
+radii assigned to their roles in the table.
 
-Match the neighbouring primitive rather than introducing a new step.
+For cards containing fields, use `--tr-radius-card` with `--space-2` padding and
+`--tr-radius-input` fields. The 1px border plus padding gives a 9px inset; the
+12px outer radius stays within 1px of the 4px inner radius plus that inset.
+Launch slot selects, typed model IDs and checkout readouts share `FIELD_CLS` in
+`selectChrome.ts`: `--h-ctl` (28px), canvas fill, `--border`, `--tr-radius-input` and UI
+type size. An override changes the value and its source label; it does not invent a
+separate control recipe.
+
+Series keys use `--tr-radius-legend-mark` (2px) to remain square at small sizes.
+Status dots and chart point markers remain circular. Match the neighbouring primitive
+rather than introducing a new radius.
 
 **One source, and a guard that keeps it that way.** A call site names the rung —
 `rounded-[var(--tr-radius-button)]`, `border-radius: var(--tr-radius-md)` — never
@@ -341,8 +360,8 @@ more separated" is a step on an axis rather than a new hex. Five rungs, in
 | **base** | `--content-bg` (Custom: nothing — the field) | — | — | The canvas: the Agents gutter, a pane column's ground |
 | **shell** | `--rail-bg` (Custom: `--custom-chrome-scrim`) | — | — | The app's own frame: rail, titlebar, the grid container |
 | **inset** | `--card-bg` | `--border` | — | A box cut into what it sits on: cards, panels, list surfaces |
-| **raised** | `--raised` | `--border` | `--shadow-1` | Menus, dropdowns, hover previews, toasts |
-| **overlay** | `--raised` | `--border` | `--shadow-2` + a sibling scrim | Modals, confirm sheets, popovers, the command palette |
+| **raised** | `--raised` | `--border` | `--shadow-1` | Menus, dropdowns, popovers, tooltips, hover previews, toasts |
+| **overlay** | `--raised` | `--border` | `--shadow-2` + a sibling scrim | Modals, confirm sheets, the command palette |
 
 `raised` and `overlay` each have a translucent twin — `raised-glass` and
 `overlay-glass` — which is the same step with a 90% film instead of an opaque
@@ -378,8 +397,8 @@ tiers on top of the ladder — use a constant, don't hand-roll a shadow:
 | `OVERLAY_GLASS_OVERLAY_CLS` + `OVERLAY_GLASS_OVERLAY_ATTRS` | `overlay-glass` |
 
 All four add the shared structure the ladder does not carry: `--tr-radius-md`,
-`no-drag`, `select-text`, and a `motion-safe:` `menu-in` entrance. The scrim under
-the `overlay` rung is a sibling element at the call site, not part of the class.
+`no-drag` and `select-text`. Floating menus and popovers appear immediately.
+The scrim under the `overlay` rung is a sibling element at the call site, not part of the class.
 
 ### A rung's own ink, and its receipt
 
@@ -460,9 +479,8 @@ differences as a variant in the registry.
 | `text` | A title link inside an interactive content row; no control box or padding |
 
 Existing call sites keep using `BTN_*` and the `PRIMARY_BUTTON` /
-`SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY` is flagged for removal:
-its white label misses the contrast check on Graphite, while `PRIMARY_BUTTON` uses
-the theme's contrast-paired `--accent-ink` in both Graphite and Paper.
+`SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY`, `PRIMARY_BUTTON` and the
+`primary` button variants share the same fill and white label.
 `SECONDARY_BUTTON` is the selected secondary look: it has broader current use
 (55 references versus 47) and its neutral label and fill pass contrast in both
 themes. Neither secondary recipe has a direct test, and both date to the initial
@@ -560,11 +578,12 @@ controls means a full focus trap.
 
 ### Chips, badges and tiles
 
-`Chip` has five variants (`state`, `provider`, `count`, `compound`, `removable`) and
+`Chip` has six variants (`state`, `provider`, `count`, `compound`, `removable`, `choice`) and
 five tones: neutral plus the four status tones. Shell: 26px, `--space-2` padding,
 `small` type. Radius follows the meaning rule — `removable` or clickable → capsule,
-everything else → `--tr-radius-sm`. A selected chip may use `--accent-muted` and an
-accent border. A `count` chip distinguishes "no value yet" from a known zero —
+everything else → `--tr-radius-sm`. Choice controls are 28px; other chips are 26px.
+Selected pressable chips use the shared neutral row fill and a `--border-hover`
+border cue. A `count` chip distinguishes "no value yet" from a known zero —
 render an empty-set label, never a bare `0`, for the latter. `IconTile` comes in
 24/32/40px with six tones, including accent; its interactive variant adds a hover
 surface and a small active scale. A selected tile may also use `--accent-muted` and
@@ -589,7 +608,10 @@ panel with other content. Rows highlight on hover. Row actions remain in their o
 Enter and Space and ignores events from nested controls. Empty results use
 `EmptyState`; failures use `Notice` with an optional retry action. `DataTable` remains
 for existing callers that need its loading state, sticky head and bounded body scroll;
-it does not provide the row keyboard and action-column behaviour of `Table`.
+its clickable rows support Enter/Space and Up/Down navigation. The `dense` variant
+uses fixed columns and control-height rows for compact libraries. Expanded details
+occupy a separate row spanning every column; keep actions inside that detail so they
+remain independent of the row toggle.
 
 `DefinitionTable` is a lookup surface, not a form: a 160px label column on `--panel`
 with a small muted icon tile, a mono value column with optional middle-truncation, and
@@ -697,6 +719,9 @@ when the page header does not show it.
 
 Use `Field` with a sentence-case label in the `small` text step, weight 600 and
 secondary ink, 6px above a 28px control. A hint is optional; an error replaces it.
+`Field` supplies labelling and feedback; its input or Select supplies the shared control
+chrome. Launch slots reuse that field chrome for model, effort and checkout values,
+including typed custom model IDs.
 Use `Segmented`
 for two to four exclusive options and `Select` for more than four. Use pressed
 chips only for multi-select filters.
@@ -790,27 +815,38 @@ tracking guards (`scripts/check-ellipsis.sh` and `scripts/check-label-tracking.s
 | State | Treatment |
 |---|---|
 | **Focus (keyboard)** | Element-level, applied once for `button`, `select` and `input`: `outline: 2px solid var(--accent); outline-offset: 1px` — so no site can forget it. A site with its own ring still wins by utility order. |
-| **Focus (halo)** | The composite ring used on chips, tiles and segmented options: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
-| **Hover** | `--hover-fill`, an achromatic 5% overlay, for rows and rail items. Bordered buttons use `--border-hover` / `--card-hover`. Ghost buttons use `--hover-fill` with a `--text-primary` label; ghost-danger buttons replace both with a danger tint and danger label. |
+| **Focus (halo)** | Import `FOCUS_HALO_CLS` from `shadowChrome.ts` for chips, tiles and segmented options. Its composite ring is: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
+| **Hover** | `ROW_STATE.rest` adds `--hover-fill` to an otherwise transparent row or rail item. Bordered buttons use `--border-hover` / `--card-hover`. Ghost buttons use `--hover-fill` with a `--text-primary` label; ghost-danger buttons replace both with a danger tint and danger label. |
 | **Disabled** | Element-level `opacity: 0.45; cursor: not-allowed`. Controls repeat `opacity-45` locally where they need it. Disabled controls still carry a reason where one exists. |
-| **Selected** | `--selected-fill`, an achromatic 10% overlay. Full-row fill, no left bar, no accent tint. `Chip` and `IconTile` may use an accent border and `--accent-muted` when selected. |
+| **Selected** | `ROW_STATE.selected` uses `--selected-fill` and primary ink, with the stronger `--selected-hover-fill` on hover. Full-row fill, no left bar or accent tint. Pressable chips use the neutral recipe; an explicitly selected `IconTile` retains its primitive accent treatment. |
 | **Active pane** | `--border-focus` — a plain luminance-step ring, a header lift to `--raised`, and the pane's own name held at `--text-primary` while every other pane's name steps to `--text-secondary`. **No hue** in any of the three: a coloured stroke or ink would clash with whichever terminal palette the agent underneath is using. The pane body — the terminal itself — never changes on focus. |
+
+Shared row treatments come from `components/ui/rowState.ts`, not independently chosen
+fills in feature components. `ROW_STATE` includes rest hover and selected hover; the
+selected row stays distinct while hovered. `ROW_HIGHLIGHT` omits CSS hover for searchable
+lists whose pointer and keyboard share one active index. This prevents the pointer from
+painting a second row while the keyboard highlight remains elsewhere.
 
 ## Motion
 
 Four named curves, `--motion-{fast,menu,panel,scrim}-{t,ease}` in `theme.css`. Nothing
-should reach past them for a new site.
+should introduce a separate duration for new chrome. Pages, cards and ordinary rows
+appear without decorative entrance effects; origin-aware transitions belong to the
+shared overlay and panel primitives.
 
 | Curve | Duration | Easing | For |
 |---|---|---|---|
 | Fast | 120ms | `cubic-bezier(.2, 0, .38, 1)` | Micro-transitions, hovers |
-| Menu | 160ms | `cubic-bezier(.16, 1, .3, 1)` | Menus, dropdowns, popovers |
-| Panel | 240ms | `cubic-bezier(.32, .72, 0, 1)` | Panels sliding from an edge |
+| Menu | 160ms (`--motion-menu-t`) | `cubic-bezier(.16, 1, .3, 1)` | Menu content and popover view changes; floating containers appear immediately |
+| Panel | 240ms (`--motion-panel-t`) | `cubic-bezier(.32, .72, 0, 1)` | Panel transitions using the panel curve |
 | Scrim | 90ms | `linear` | Backdrops — always the fastest thing on screen |
 | Reveal | 400ms | Panel easing | Chrome theme changes revealed from the clicked control with a View Transition snapshot and a WAAPI `clip-path` circle. This is the named exception to rule 1. Changes without a click, under reduced motion, or without runtime `startViewTransition` support are instant. The native browser pane is a separate webview and switches instantly. |
 
-The `--animate-*` names are back-compat aliases; each points at whichever curve its
-site's *purpose* is, not at whatever its old literal happened to compute to.
+The `--animate-*` names provide shared animation settings. Drawer uses
+`--animate-t-panel`, which resolves to `--motion-menu-t` (160ms), with
+`--animate-ease-panel`; `--animate-t-enter` is 200ms. Keep call sites on their shared
+tokens instead of adding a duration. Use the actual animation token when checking a
+primitive's timing; its name alone does not imply the Panel curve.
 
 The rules:
 
@@ -818,8 +854,8 @@ The rules:
    same visual as `transform: scale()` + `opacity` on a pseudo-element.
 2. **Exits are faster than entrances.** Enforced at the call site: enter at Menu,
    exit at Fast.
-3. **Motion communicates origin.** A toast enters from the corner it lives in, not
-   from nowhere.
+3. **Motion communicates origin.** Corner toasts enter from their anchor in Fast;
+   top-centred notices, the command palette and rail sections appear immediately.
 4. **Nothing loops but a genuine indeterminate.** Only `working` and `spawning`
    pulse; a running process has no known end time. `needs-input` is static.
    The optional mascot companion is a scoped exception: its reference idle and
@@ -832,8 +868,10 @@ The rules:
    through dedicated `--mascot-*` tokens. These tokens and literal artwork colours
    are confined to mascot primitives; ordinary app controls keep the shared recipes.
 5. **Reduced motion shows a settled frame, not a broken one.** Under
-   `prefers-reduced-motion: reduce`, a pulse jumps to its mid-pulse frame rather
-   than disappearing.
+   `prefers-reduced-motion: reduce`, loading and status indicators remain visible
+   without movement. One global rule in `base.css` disables animations, transitions
+   and smooth scrolling, including pseudo-elements. Primitives supply visible static
+   states; JavaScript exit handling removes overlays immediately under reduced motion.
 6. **Everything is `motion-safe:`-gated.**
 7. **No animation library.** Interruptible springs, layout tracking and gesture
    physics are exactly what rules 1–4 forbid; there is no Framer/Motion dependency.
@@ -842,8 +880,8 @@ The rules:
 Popover anchors use the trigger's start edge and clamp only to the viewport; a trigger label
 changing width never recentres an open menu. Houston does not use RTL. A popover with multiple
 views keeps the largest view's bounds and crossfades the outgoing view in Fast (120ms) before
-the incoming view in Menu (160ms). Its container enters in Menu with `menu-in`; header and body
-rise 4px with opacity, 40ms apart. The complete popover exits once with `menu-out` in Fast.
+the incoming view in Menu (160ms). Its container appears immediately. The complete
+popover exits once with `menu-out` in Fast.
 Reduced motion removes the stagger and view crossfade and shows each settled state immediately.
 
 Keyframes live in `keyframes.css` — global and unlayered by necessity, since Tailwind

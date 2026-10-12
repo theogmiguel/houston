@@ -28,6 +28,13 @@ export function UiRoleSpecimenTags(): React.JSX.Element {
           <span className={TAG_POPOVER_CLS.tagName}>{TAG.name}</span>
         </button>
       </div>
+      <div className="flex w-56 items-center gap-1">
+        <TagChip tag={{ id: 10, name: 'backend', color: '#4ade80' }} variant="card" onToggle={() => {}} />
+        <TagChip tag={{ id: 11, name: 'release', color: '#c084fc' }} variant="card" onToggle={() => {}} />
+      </div>
+      <div className="w-40">
+        <TagCardAffordance tags={[{ ...TAG, name: 'A very long backend tag label' }, { ...TAGS[1], name: 'A very long release tag label' }, TAGS[2]]} mode="chips" onClick={() => {}} />
+      </div>
       <div className="flex items-center gap-3">
         <TagCardAffordance tags={TAGS} mode="icon" onClick={() => {}} />
         <TagCardAffordance tags={TAGS} mode="dots" onClick={() => {}} />

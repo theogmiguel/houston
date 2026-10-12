@@ -16,8 +16,8 @@ const ROUTES = [
   { value: 'wifi', label: 'Same Wi-Fi · HTTPS' }
 ]
 const ROUTE_HINT: Record<Route, string> = {
-  tailscale: 'Works anywhere; only your own devices can open it.',
-  wifi: "Works on your home or office network; Houston listens on all interfaces and serves HTTPS with this computer's own certificate."
+  tailscale: 'Requires Tailscale on this computer and your phone, on the same tailnet, with HTTPS enabled.',
+  wifi: "Requires both devices on the same reachable network; Houston listens on all interfaces and serves HTTPS with this computer's own certificate."
 }
 const SECURITY = 'A paired phone can read and type into any pane: as much access as a shell on this computer.'
 const TRUST_NOTE = "The phone trusts this computer's certificate once, from the pairing page, before it connects."
@@ -96,7 +96,7 @@ function ConnectedStep({ heading }: { heading: string }): React.JSX.Element {
     <Stack gap={3} align="center">
       <IconTile tone="success" size="lg" radius="medium" icon={<Icon glyph={IconCheck} role="ui" />} />
       <Text as="h2" size="subhead" tone="primary" flush center id="connect-phone-title">{heading}</Text>
-      <Text as="p" size="base" tone="secondary" flush center>It can follow and answer every pane. Manage it in Settings ▸ Remote access.</Text>
+      <Text as="p" size="base" tone="secondary" flush center>It can follow and answer every pane. Manage it in Settings ▸ Phone & remote access.</Text>
     </Stack>
   )
 }
@@ -149,7 +149,7 @@ function PairingCode({ shown, expired, countdown, copyState, copyTarget, copyTex
 }
 
 /** The certificate trust step for a listener that serves its own HTTPS. */
-function TrustStep({ fingerprint }: { fingerprint: string | null | undefined }): React.JSX.Element {
+export function TrustStep({ fingerprint }: { fingerprint: string | null | undefined }): React.JSX.Element {
   return (
     <Stack gap={1}>
       <Text as="p" size="small" tone="secondary" flush>

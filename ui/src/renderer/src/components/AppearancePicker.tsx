@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   THEMES,
   THEME_LABELS,
@@ -28,23 +28,40 @@ export function AppearancePicker({
   const restoredRef = useRef(false)
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<'all' | ThemeMode>('all')
-  const [highlighted, setHighlighted] = useState<ThemeName>(currentTheme)
+  const [highlighted, setHighlighted] = useState(() => Math.max(0, THEMES.indexOf(currentTheme)))
+  const searchRef = useRef<HTMLInputElement>(null)
+  const listId = useId()
 
-  const queryNorm = query.trim().toLowerCase()
-  const matching = THEMES.filter((t) => {
-    if (!queryNorm) return true
-    return (
-      THEME_LABELS[t].toLowerCase().includes(queryNorm) ||
-      t.toLowerCase().includes(queryNorm) ||
-      THEME_DESCRIPTIONS[t].toLowerCase().includes(queryNorm)
-    )
-  })
-  const visible = matching.filter((t) => tab === 'all' || THEME_MODES[t] === tab)
-
-  const highlight = (t: ThemeName): void => {
-    setHighlighted(t)
-    onPreview(t)
+  const filterThemes = (search: string, mode: 'all' | ThemeMode): ThemeName[] => {
+    const needle = search.trim().toLowerCase()
+    return THEMES.filter((t) => (mode === 'all' || THEME_MODES[t] === mode) && (
+      !needle || THEME_LABELS[t].toLowerCase().includes(needle) ||
+      t.toLowerCase().includes(needle) || THEME_DESCRIPTIONS[t].toLowerCase().includes(needle)
+    ))
   }
+  const visible = filterThemes(query, tab)
+  const activeTheme = visible[highlighted]
+
+  const highlight = (index: number): void => {
+    const theme = visible[index]
+    if (!theme) return
+    setHighlighted(index)
+    onPreview(theme)
+  }
+
+  const filter = (search: string, mode: 'all' | ThemeMode): void => {
+    setQuery(search)
+    setTab(mode)
+    setHighlighted(0)
+    const first = filterThemes(search, mode)[0]
+    if (first) onPreview(first)
+    searchRef.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!activeTheme) return
+    document.getElementById(`${listId}-${activeTheme}`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [activeTheme, listId])
 
   const restoreOriginal = (): void => {
     if (committedRef.current || restoredRef.current) return
@@ -69,6 +86,7 @@ export function AppearancePicker({
   }, [])
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.target !== searchRef.current) return
     if (e.key === 'Escape') {
       e.preventDefault()
       restoreOriginal()
@@ -76,23 +94,21 @@ export function AppearancePicker({
     }
     if (e.key === 'Enter') {
       e.preventDefault()
-      commit(highlighted)
+      if (activeTheme) commit(activeTheme)
       return
     }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       if (visible.length === 0) return
-      const idx = visible.indexOf(highlighted)
       const delta = e.key === 'ArrowDown' ? 1 : -1
-      const next = visible[(idx + delta + visible.length) % visible.length] ?? visible[0]
-      highlight(next)
+      highlight((highlighted + delta + visible.length) % visible.length)
     }
   }
 
   return (
     <Stack data-testid="appearance-picker" gap={3} onKeyDown={onKeyDown}>
       <Stack axis="horizontal" align="center" gap={2}>
-        <PaletteSearch value={query} onChange={(e) => setQuery(e.target.value)} />
+        <PaletteSearch ref={searchRef} autoFocus value={query} onChange={(e) => filter(e.target.value, tab)} role="combobox" aria-autocomplete="list" aria-expanded={visible.length > 0} aria-controls={visible.length ? listId : undefined} aria-activedescendant={activeTheme ? `${listId}-${activeTheme}` : undefined} />
         <Segmented
           aria-label="Filter palettes by mode"
           options={[
@@ -101,7 +117,7 @@ export function AppearancePicker({
             { value: 'light', label: 'Light' }
           ]}
           value={tab}
-          onChange={setTab}
+          onChange={(mode) => filter(query, mode)}
         />
       </Stack>
 
@@ -110,16 +126,18 @@ export function AppearancePicker({
           No palettes match &quot;{query}&quot;
         </EmptyMessage>
       ) : (
-        <PaletteOptionList>
-          {visible.map((t) => {
-            const selected = t === highlighted
+        <PaletteOptionList id={listId}>
+          {visible.map((t, index) => {
+            const selected = t === originalRef.current
             const palette = TERMINAL_PALETTES[t]
             return <PaletteOptionRow
               key={t}
               selected={selected}
+              highlighted={index === highlighted}
+              id={`${listId}-${t}`}
               label={THEME_LABELS[t] ?? t}
               color={palette.background ?? "transparent"}
-              onHover={() => highlight(t)}
+              onHover={() => highlight(index)}
               onSelect={() => commit(t)}
             />
           })}

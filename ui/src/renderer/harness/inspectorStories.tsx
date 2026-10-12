@@ -18,7 +18,8 @@ export class InspectorClient {
   constructor(
     private readonly failingChecks = false,
     private readonly diffFixture = false,
-    private readonly prFixture?: { number: number; state: 'open' | 'merged' | 'closed'; isDraft?: boolean },
+    private readonly prFixture?: { number: number; state: 'open' | 'merged' | 'closed'; isDraft?: boolean; metadataMissing?: boolean; ageSeconds?: number; runningChecks?: boolean },
+    private readonly unstagedFixture = false,
   ) {}
 
   subscribe(kind: string, handler: (message: never) => void): () => void {
@@ -32,21 +33,40 @@ export class InspectorClient {
     for (const listener of this.subscribers.get(String(message.type)) ?? []) listener(message as never)
   }
 
-  gitStatus(dir: string): void {
+  gitStatus(dir: string, base: string | null = null): void {
     setTimeout(() => this.emit({
-      type: 'git_status', dir, base: null, branch: this.diffFixture ? 'inspector-polish' : 'feat/tasks-backlog', upstream: 'origin/main',
-      ahead: this.diffFixture ? 0 : 4, behind: 0, default_base: 'main', not_a_repo: false,
+      type: 'git_status', dir, base, branch: this.diffFixture ? 'inspector-polish' : 'feat/tasks-backlog', upstream: 'origin/main',
+      ahead: this.diffFixture ? 2 : 4, behind: 0, default_base: 'main', not_a_repo: false,
       files: this.diffFixture ? [
-        { path: 'ui/src/renderer/src/ghostty/surface.ts', status: 'modified', staged: true, added: 12, deleted: 3, is_sensitive: false },
-        { path: 'ui/src/renderer/src/components/ui/AnimOut.tsx', status: 'modified', staged: true, added: 9, deleted: 2, is_sensitive: false },
-        { path: 'ui/src/renderer/src/components/ui/inspector.css', status: 'modified', staged: true, added: 6, deleted: 1, is_sensitive: false },
-        { path: 'ui/src/renderer/src/ghostty/surface.fitPaint.test.ts', status: 'added', staged: true, added: 64, deleted: 0, is_sensitive: false }
+        ...(base ? ['src/branch-a.ts', 'src/branch-b.ts', 'src/branch-c.ts'].map((path) => ({ path, status: 'modified', staged: false, added: 1, deleted: 0, is_sensitive: false })) : []),
+        { path: 'ui/src/renderer/src/ghostty/surface.ts', status: 'modified', staged: !this.unstagedFixture, added: 12, deleted: 3, is_sensitive: false },
+        { path: 'ui/src/renderer/src/components/ui/AnimOut.tsx', status: 'modified', staged: !this.unstagedFixture, added: 9, deleted: 2, is_sensitive: false },
+        { path: 'ui/src/renderer/src/components/ui/inspector.css', status: 'modified', staged: !this.unstagedFixture, added: 6, deleted: 1, is_sensitive: false },
+        { path: 'ui/src/renderer/src/ghostty/surface.fitPaint.test.ts', status: 'added', staged: !this.unstagedFixture, added: 64, deleted: 0, is_sensitive: false }
       ] : [
-        { path: 'core/houston-core/src/orchestrate.rs', status: 'modified', staged: true, added: 52, deleted: 12, is_sensitive: false },
-        { path: 'core/houston-core/tests/batch_wake_wire.rs', status: 'added', staged: true, added: 12, deleted: 0, is_sensitive: false }
+        { path: 'core/houston-core/src/orchestrate.rs', status: 'modified', staged: !this.unstagedFixture, added: 52, deleted: 12, is_sensitive: false },
+        { path: 'core/houston-core/tests/batch_wake_wire.rs', status: 'added', staged: !this.unstagedFixture, added: 12, deleted: 0, is_sensitive: false }
       ]
     }), 10)
   }
+
+  gitBranches(dir: string): void {
+    queueMicrotask(() => this.emit({ type: 'git_branches', dir, default_branch: 'main', truncated: false, remotes: [], branches: [
+      { name: 'inspector-polish', current: true, is_default: false, is_remote: false, committed_at: Math.floor(Date.now() / 1000) - 3600 },
+      { name: 'main', current: false, is_default: true, is_remote: false, committed_at: Math.floor(Date.now() / 1000) - 7200 },
+      { name: 'feature/source-control', current: false, is_default: false, is_remote: false, committed_at: Math.floor(Date.now() / 1000) - 10800, ahead: 0, behind: 2 },
+      { name: 'houston/pr-list', current: false, is_default: false, is_remote: false, committed_at: Math.floor(Date.now() / 1000) - 14400, worktree_path: '/repo/.houston/worktrees/pr-list' }
+    ] }))
+  }
+
+  gitWorktrees(dir: string): void {
+    queueMicrotask(() => this.emit({ type: 'git_worktrees', dir, worktrees: [
+      { path: '/repo', branch: 'inspector-polish', is_main: false, is_detached: false, is_bare: false, dirty: true },
+      { path: '/repo/.houston/worktrees/pr-list', branch: 'houston/pr-list', is_main: false, is_detached: false, is_bare: false, dirty: false }
+    ] }))
+  }
+
+  worktreeCleanupStatus(): void {}
 
   gitBranchCommits(dir: string): void {
     queueMicrotask(() => this.emit({
@@ -60,14 +80,14 @@ export class InspectorClient {
     }))
   }
 
-  gitDiff(dir: string, path?: string): void {
+  gitDiff(dir: string, path?: string, base: string | null = null): void {
     const pathValue = path ?? 'core/houston-core/src/orchestrate.rs'
     const diffPath = pathValue
     const patch = this.diffFixture
       ? 'diff --git a/ui/src/renderer/src/ghostty/surface.ts b/ui/src/renderer/src/ghostty/surface.ts\n--- a/ui/src/renderer/src/ghostty/surface.ts\n+++ b/ui/src/renderer/src/ghostty/surface.ts\n@@ -910,9 +910,10 @@ fit(): boolean\n     this.mountHeight = height\n     if (shouldRender) {\n-     if (!this.fitted) this.renderFrame()\n+     // A resized canvas is blank until the next paint.\n+     if (!this.fitted || canvasCleared) this.renderFrame()\n      else this.requestRender()\n    }\n'
       : 'diff --git a/core/houston-core/src/orchestrate.rs b/core/houston-core/src/orchestrate.rs\n--- a/core/houston-core/src/orchestrate.rs\n+++ b/core/houston-core/src/orchestrate.rs\n@@ -208,3 +208,4 @@ impl Daemon {\n-    for row in rows {\n+    let grouped = group_by_parent(rows);\n+    wake_each_parent(grouped);\n'
     this.emit({
-      type: 'git_diff', dir, base: null, path: diffPath, truncated: false, patch
+      type: 'git_diff', dir, base, path: diffPath, truncated: false, patch
     })
   }
 
@@ -80,15 +100,22 @@ export class InspectorClient {
     const number = requestedNumber ?? this.prFixture?.number ?? 95
     const state = this.prFixture?.state ?? 'open'
     const isDraft = this.prFixture?.isDraft ?? false
+    const failingChecks = this.failingChecks || (number === 93 && state === 'open')
+    const runningChecks = this.prFixture?.runningChecks === true
     const merged = number === 93
     const title = merged ? 'fix(codex): Codex panes start again with Codex CLI 0.160' : 'fix(panes): terminals keep their content while the inspector opens'
-    const updatedAt = Math.floor(Date.now() / 1000) - (merged ? 13 : 12) * 60
+    const updatedAt = Math.floor(Date.now() / 1000) - (this.prFixture?.ageSeconds ?? (merged ? 13 : 12) * 60)
     queueMicrotask(() => this.emit({
       type: 'pr_detail', dir, request, gh: 'ready', has_upstream: true, linked: true, hint: null, message: null,
-      link: { host: 'github.com', repository: 'owner/houston', number, url: `https://github.com/owner/houston/pull/${number}`, state, source: 'detected', title, is_draft: isDraft, additions: merged ? 156 : 91, deletions: merged ? 15 : 12, changed_files: 4, checks: this.failingChecks ? 'failing' : 'passing', review_decision: null, linked_at: 1 },
+      link: { host: 'github.com', repository: 'owner/houston', number, url: `https://github.com/owner/houston/pull/${number}`, state, source: 'detected', title, is_draft: isDraft, additions: merged ? 156 : 91, deletions: merged ? 15 : 12, changed_files: 4, checks: failingChecks ? 'failing' : runningChecks ? 'running' : 'passing', review_decision: null, linked_at: 1 },
       detail: {
-        body: merged ? '## Problem\nSince v0.16.0, every native Codex launch fails when Codex CLI 0.160 is installed. The socket directory was writable by other users.\n\n## Changes\n- Create the socket directory with mode `0700` regardless of umask.\n- Drain stderr into a bounded 4 KiB tail.\n\n## Verification\n- Regression tests pass.\n- Full renderer gates pass.' : '## Problem\nOpening the inspector narrowed the grid, and every terminal repainted one frame late, so panes flashed blank. `fit()` resized the canvas, which clears its bitmap, but only scheduled the next paint with `requestRender()`.\n\n## Changes\n- `fix(panes)`: a fit that resizes the canvas paints in the same frame.\n- `feat(ui)`: the inspector slides in with `transform`; the grid changes width once.\n\n## Verification\n- Regression test `surface.fitPaint.test.ts` fails before the fix.\n- `bun run typecheck` and renderer tests pass.', author: 'maintainer', base_ref: 'main', head_ref: merged ? 'fix/codex-native-startup' : 'inspector-polish', head_sha: 'a1c3f09', commit_count: 5, created_at: updatedAt - 6000, updated_at: updatedAt, mergeable: 'mergeable', merge_state: 'clean',
-        checks: this.failingChecks
+        body: merged ? '## Problem\nSince v0.16.0, every native Codex launch fails when Codex CLI 0.160 is installed. The socket directory was writable by other users.\n\n## Changes\n- Create the socket directory with mode `0700` regardless of umask.\n- Drain stderr into a bounded 4 KiB tail.\n\n## Verification\n- Regression tests pass.\n- Full renderer gates pass.' : '## Problem\nOpening the inspector narrowed the grid, and every terminal repainted one frame late, so panes flashed blank. `fit()` resized the canvas, which clears its bitmap, but only scheduled the next paint with `requestRender()`.\n\n## Changes\n- `fix(panes)`: a fit that resizes the canvas paints in the same frame.\n- `feat(ui)`: the inspector slides in with `transform`; the grid changes width once.\n\n## Verification\n- Regression test `surface.fitPaint.test.ts` fails before the fix.\n- `bun run typecheck` and renderer tests pass.', author: this.prFixture?.metadataMissing ? null : 'maintainer', base_ref: this.prFixture?.metadataMissing ? null : 'main', head_ref: this.prFixture?.metadataMissing ? null : merged ? 'fix/codex-native-startup' : 'inspector-polish', head_sha: 'a1c3f09', commit_count: 5, created_at: updatedAt - 6000, updated_at: updatedAt, mergeable: 'mergeable', merge_state: 'clean',
+        checks: runningChecks ? [
+          { name: 'core-checks', state: 'running', url: null, duration_ms: null },
+          { name: 'safety-checks', state: 'passing', url: null, duration_ms: 72000 },
+          { name: 'windows-checks', state: 'queued', url: null, duration_ms: null },
+          { name: 'optional-checks', state: 'skipped', url: null, duration_ms: null }
+        ] : failingChecks
           ? [
               { name: 'core-checks', state: 'failing', url: 'https://github.com/acme/houston/actions/runs/412001', duration_ms: 252000, run_id: 412001 },
               { name: 'safety-checks', state: 'passing', url: null, duration_ms: 72000 },
@@ -104,7 +131,7 @@ export class InspectorClient {
         comments: [
           { id: 'comment-1', author: 'reviewer', body: 'Nice catch on the cleared bitmap. Can the regression test assert the paint count instead of timing?', created_at: updatedAt - 8 * 60, reactions: [] },
           { id: 'comment-2', author: 'maintainer', body: 'Done, the test now counts renderFrame calls inside the resize frame.', created_at: updatedAt - 2 * 60, reactions: [] },
-        ], reviews: [], comments_total: 2, reviews_total: 0, merge_disabled_reason: null, viewer: { can_write: true, can_triage: true, can_update: true, did_author: false, can_update_branch: true }, viewer_message: null, behind_by: null, labels: merged ? [] : [{ name: 'bug', color: 'f04438' }, { name: 'renderer', color: '3b82f6' }], reviewers: [], reactions: [], threads: [], threads_truncated: false, threads_message: null, auto_merge_enabled: null, auto_merge_method: null, cross_repository: false
+        ], reviews: [], comments_total: 2, reviews_total: 0, merge_disabled_reason: failingChecks ? `PR #${number} has failing checks: core-checks` : null, viewer: { can_write: true, can_triage: true, can_update: true, did_author: false, can_update_branch: true }, viewer_message: null, behind_by: null, labels: merged ? [] : [{ name: 'bug', color: 'f04438' }, { name: 'renderer', color: '3b82f6' }], reviewers: [], reactions: [], threads: [], threads_truncated: false, threads_message: null, auto_merge_enabled: null, auto_merge_method: null, cross_repository: false
       }
     }))
     return request

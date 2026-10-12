@@ -27,7 +27,8 @@ counts="$(perl -e '
         my $paint = qr/(shadow-|ring-|ring\b|border(?:-|\b)|bg-|outline(?!-none\b))/;
         my $ok = $content =~ /focus-visible:\[?$paint/
               || $content =~ /focus-visible:after:$paint/
-              || $content =~ /:focus-visible\]:$paint/;
+              || $content =~ /:focus-visible\]:$paint/
+              || $content =~ /\$\{FOCUS_HALO_CLS\}/;
         $n++ unless $ok;
       }
     }
@@ -46,7 +47,7 @@ if [ "$fail" -ne 0 ]; then
   echo "      A violation is a class string containing outline-none (any" >&2
   echo "      variant) with no focus-visible: declaration that paints" >&2
   echo "      something (shadow-, ring-, border, bg-, or a real outline)." >&2
-  echo "      Give the control a visible focus state -- FOCUS_HALO in" >&2
+  echo "      Give the control a visible focus state -- FOCUS_HALO_CLS in" >&2
   echo "      components/ui/shadowChrome.ts for a rounded or capsule control." >&2
   exit 1
 fi

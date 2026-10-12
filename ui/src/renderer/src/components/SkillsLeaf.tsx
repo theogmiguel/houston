@@ -48,7 +48,6 @@ export function SkillsLeaf({
       <PaneHeader
         data-pane-focus-head="none"
         divider="borderMuted"
-        transition="surface"
         inset="compact"
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button')) return

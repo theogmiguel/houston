@@ -16,7 +16,7 @@ export function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCanc
   return (
     <DialogBackdrop tone="git" onMouseDown={onCancel}>
       <div
-        className="w-[var(--w-confirm-dialog)] max-w-[var(--w-confirm-dialog-max)] rounded-[calc(var(--tr-radius-card)+var(--space-1))] border border-[var(--panel-field-border)] bg-surface shadow-[var(--shadow-lg)] overflow-hidden"
+        className="w-[var(--w-confirm-dialog)] max-w-[var(--w-confirm-dialog-max)] rounded-[calc(var(--tr-radius-card)+var(--space-1))] border border-[var(--panel-field-border)] bg-surface shadow-[var(--shadow-2)] overflow-hidden"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <Text as="div" size="ui" weight="semibold" tight tone="primary" className="py-[var(--space-confirm-title-y)] px-[var(--space-confirm-content-x)] border-b border-[var(--panel-surface-border)]">

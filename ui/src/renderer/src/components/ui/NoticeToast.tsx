@@ -38,9 +38,9 @@ const ANCHOR_CLS: Record<NoticeToastAnchor, string> = {
     'absolute top-[var(--space-3)] right-[var(--space-3)] z-[var(--z-notice-pane-corner)] max-w-[min(var(--w-notice-pane-stack),calc(100%-var(--space-5)))] flex flex-col items-end gap-[var(--space-2)]'
 }
 
-// Entrances are keyed to the anchor: a top-centred stack drops in, a corner stack slides in.
+// Corner notices enter from their anchor; top-centred notices appear immediately.
 const ANCHOR_MOTION: Record<NoticeToastAnchor, string> = {
-  'workspace-top': 'motion-safe:[animation:var(--motion-notice-entry-top)]',
+  'workspace-top': '',
   'workspace-top-right': 'motion-safe:[animation:var(--motion-notice-entry-corner)]',
   'pane-corner': 'motion-safe:[animation:var(--motion-notice-entry-corner)]'
 }

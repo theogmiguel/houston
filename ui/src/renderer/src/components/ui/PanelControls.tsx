@@ -10,7 +10,7 @@ export { PanelFootnote, PanelIconButton, type PanelIconButtonProps } from './Pan
 const BUTTON_BASE = 'btn inline-flex items-center justify-center gap-[var(--space-panel-button-gap)] min-h-[var(--h-ctl)] px-[var(--space-panel-control-x)] rounded-[var(--tr-radius-sm)] border [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default'
 
 const BUTTON_TONE = {
-  primary: 'border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] hover:brightness-110 disabled:opacity-55',
+  primary: 'border-[var(--primary-fill)] bg-[var(--primary-fill)] text-[var(--primary-foreground)] hover:brightness-110 disabled:opacity-55',
   secondary: 'border-[var(--border)] bg-[var(--hover-fill)] text-[var(--text-secondary)] hover:bg-[var(--selected-fill)] hover:text-[var(--text-primary)] disabled:opacity-55',
   'secondary-danger': 'border-[var(--border)] bg-[var(--hover-fill)] text-[var(--text-secondary)] hover:bg-[var(--selected-fill)] hover:text-[var(--text-primary)] disabled:opacity-55 hover:not-disabled:text-[var(--danger)]!'
 } as const

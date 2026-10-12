@@ -10,9 +10,9 @@ export function GridRailContextActions({
   branch: string | null
   onClose: () => void
   onError?: (message: string) => void
-}): React.JSX.Element {
-  return <ContextMenuItem role="menuitem" disabled={!branch} onClick={() => {
-    if (!branch) return
+}): React.JSX.Element | null {
+  if (!branch) return null
+  return <ContextMenuItem role="menuitem" onClick={() => {
     void navigator.clipboard.writeText(branch).then(onClose, (error: unknown) => onError?.(`Copying branch "${branch}" failed: ${String(error)}`))
-  }}><Icon glyph={IconGitBranch} role="ui" /><span>Copy branch</span></ContextMenuItem>
+  }}><Icon glyph={IconGitBranch} role="ui" /><span>Copy branch name</span></ContextMenuItem>
 }

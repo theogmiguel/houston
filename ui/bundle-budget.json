@@ -130,7 +130,7 @@
     "it renders only while an update installs, and the headroom it gave back pays",
     "for the WSL environment wiring that must sit on the boot path."
   ],
-  "maxBootBytes": 986641,
+  "maxBootBytes": 944582,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

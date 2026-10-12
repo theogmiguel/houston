@@ -1,3 +1,5 @@
+import { LIBRARY_SKILLS, LIBRARY_TOOLS } from './skillsStories'
+import { SettingsScreen, settingsAgentAttentionFixture } from './settingsStories'
 import React from 'react'
 import { HooksSurface } from '../src/components/nav/HooksSurface'
 import { McpSurface } from '../src/components/nav/McpSurface'
@@ -23,8 +25,7 @@ import type { McpToolState } from '../src/houston/generated/McpToolState'
 import type { Routine } from '../src/houston/routineTypes'
 import type { RoutineRun } from '../src/houston/generated/RoutineRun'
 import type { RoutineEngineRefusal } from '../src/houston/generated/RoutineEngineRefusal'
-import type { SkillToolState } from '../src/houston/generated/SkillToolState'
-import type { Skill } from '../src/env'
+import type { ServerMsg } from '../src/houston/generated/ServerMsg'
 import type { HoustonClient } from '../src/houston/client'
 
 const noop = (): void => {}
@@ -52,6 +53,7 @@ function Frame({ children, active = 'Routines' }: { children: React.ReactNode; a
 function routine(o: Partial<Routine> = {}): Routine {
   return {
     id: 1,
+    kind: 'user',
     engine: 'claude',
     name: 'Leak watch',
     prompt: 'Check for leaked file descriptors and report.',
@@ -69,32 +71,67 @@ function routine(o: Partial<Routine> = {}): Routine {
   }
 }
 
-export function NavRoutines(): React.JSX.Element {
+export function NavRoutines({ selectedRoutineId = 1, setup = false, report = false, many = false }: { selectedRoutineId?: number; setup?: boolean; report?: boolean; many?: boolean }): React.JSX.Element {
   const run = (id: number, status: RoutineRun['status'], started: number, sessionId: number | null, error?: string): RoutineRun => ({
     id, routine_id: 2, trigger: 'schedule', status, started_at_ms: started, ended_at_ms: status === 'running' ? null : started + 4 * 60_000,
     session_id: sessionId, error
   })
   const runHistory: RoutineRun[] = [
-    run(30, 'running', new Date(2026, 9, 3, 2).getTime(), 42),
+    run(30, 'ok', new Date(2026, 9, 3, 2).getTime(), 42),
     run(29, 'ok', new Date(2026, 9, 2, 2).getTime(), 41),
     run(28, 'failed', new Date(2026, 9, 1, 2).getTime(), 40, 'npx was not found on PATH'),
     ...Array.from({ length: 27 }, (_, index) => run(27 - index, 'ok', new Date(2026, 8, 30 - index, 2).getTime(), 13 + index))
   ]
   const routines = [
-    routine({ id: 1, name: 'Harness review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW - 120_000, last_run_at_ms: NOW - 60_000 }),
-    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000, workspace_id: null }),
-    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: new Date(2026, 9, 9, 17).getTime(), last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok', workspace_id: null }),
-    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: null, next_run_at_ms: NOW + 7 * 24 * 3600_000 })
+    routine({ id: 1, kind: 'harness_review', name: 'Weekly review', model: 'sonnet', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: new Date(2026, 9, 5, 9).getTime(), last_run_at_ms: NOW - 3 * 60_000, last_run_session_id: 42 }),
+    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: new Date(2026, 9, 4, 2).getTime(), workspace_id: '/home/dev/code/finex' }),
+    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: new Date(2026, 9, 9, 17).getTime(), last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok', workspace_id: '/home/dev/code/houston' }),
+    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: null, next_run_at_ms: NOW + 7 * 24 * 3600_000 }),
+    ...(!setup ? [routine({ id: 5, kind: 'harness_review', name: 'Weekly review', workspace_id: '/home/dev/code/finex', next_run_at_ms: new Date(2026, 9, 5, 9).getTime(), cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] } })] : [])
   ]
+  const client = React.useMemo(() => {
+    const handlers = new Map<string, Set<(message: ServerMsg) => void>>()
+    const emit = (message: ServerMsg): void => handlers.get(message.type)?.forEach((handler) => handler(message))
+    return {
+      subscribe: (type: string, handler: (message: ServerMsg) => void) => {
+        const set = handlers.get(type) ?? new Set(); set.add(handler); handlers.set(type, set)
+        return () => set.delete(handler)
+      },
+      harnessState: (workspace: string) => emit({ type: 'harness_state', workspace, routine: routines.find((item) => item.kind === 'harness_review' && item.workspace_id === workspace) ?? null,
+        reviews: workspace === '/home/dev/code/houston' ? [{ id: 8, workspace, routine_id: 1, run_id: 8, session_id: 42, status: 'running', started_at_ms: NOW - 3 * 60_000, sessions: null, finding_count: 0, run_dir: `${workspace}/.houston/harness/r8` },
+          { id: 7, workspace, routine_id: 1, run_id: 7, status: 'published', started_at_ms: new Date(2026, 8, 28, 9).getTime(), sessions: 38, finding_count: 3, run_dir: `${workspace}/.houston/harness/r7`, summary: 'Repeated mistakes to address' },
+          { id: 6, workspace, routine_id: 1, run_id: 6, status: 'published', started_at_ms: new Date(2026, 8, 21, 9).getTime(), sessions: 41, finding_count: 2, run_dir: `${workspace}/.houston/harness/r6` }] : [],
+        findings: [], models: [], provider_coverage: [], engine_refusals: ENGINE_REFUSALS }),
+      harnessReport: (reviewId: number) => emit({ type: 'harness_report', review_id: reviewId, markdown: '# Weekly review\n\n38 sessions reviewed. Three repeated mistakes are ready for triage in Tasks.', truncated: false }),
+      harnessRoutineCreate: noop
+    } as unknown as HoustonClient
+  }, [])
+  React.useEffect(() => {
+    const testId = setup ? 'review-setup-workspace' : report ? 'review-open-report-7' : null
+    if (!testId) return
+    const timer = window.setInterval(() => {
+      const target = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+      if (target) {
+        if (setup) {
+          target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+          window.setTimeout(() => document.querySelector<HTMLElement>('[role="option"][data-value="/home/dev/code/finex"]')?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 })), 0)
+        } else target.click()
+        window.clearInterval(timer)
+      }
+    }, 100)
+    const stop = window.setTimeout(() => window.clearInterval(timer), 2000)
+    return () => { window.clearInterval(timer); window.clearTimeout(stop) }
+  }, [setup, report])
   return (
     <Frame active="Routines">
       <RoutinesSurface
+        client={client}
         routines={routines}
-        running={[1, 91, 92]}
+        running={[1]}
         engineRefusals={ENGINE_REFUSALS}
         runs={{ 2: runHistory }}
         runsLoading={null}
-        workspaces={[{ id: '/home/dev/code/houston', name: 'houston' }]}
+        workspaces={[{ id: '/home/dev/code/houston', name: 'Houston' }, { id: '/home/dev/code/finex', name: 'finex' }, ...(many ? ['ProjetosPessoais', 'live-ws', '.houston', 'a-long-workspace-name-for-review', 'sandbox'].map((name) => ({ id: `/home/dev/code/${name}`, name })) : [])]}
         error={null}
         onDismissError={noop}
         onCreate={noop}
@@ -105,7 +142,7 @@ export function NavRoutines(): React.JSX.Element {
         onOpenSession={noop}
         onRequest={noop}
         now={NOW}
-        selectedRoutineId={2}
+        selectedRoutineId={selectedRoutineId}
         showLimitNotice={false}
       />
     </Frame>
@@ -168,32 +205,7 @@ export function NavRoutinesEmpty(): React.JSX.Element {
 }
 
 function installSkillFixture(): void {
-  const skills: Skill[] = [
-    {
-      agent: 'claude',
-      source: 'user',
-      name: 'tdd',
-      path: '/home/dev/.claude/skills/tdd/SKILL.md',
-      invoke: '/tdd',
-      description: 'Red-green-refactor loop with an integration test first.'
-    },
-    {
-      agent: 'claude',
-      source: 'project',
-      name: 'ui-tokens',
-      path: '/home/dev/code/auth-refactor/.claude/skills/ui-tokens/SKILL.md',
-      invoke: '/ui-tokens',
-      description: 'Use theme tokens and shared chrome constants in the renderer.'
-    },
-    {
-      agent: 'codex',
-      source: 'user',
-      name: 'lint-sweep',
-      path: '/home/dev/.codex/skills/lint-sweep/SKILL.md',
-      invoke: '/lint-sweep',
-      description: ''
-    }
-  ]
+  const skills = LIBRARY_SKILLS
   const w = window as unknown as { houston?: Record<string, unknown> }
   w.houston = {
     ...(w.houston ?? {}),
@@ -204,33 +216,23 @@ function installSkillFixture(): void {
   }
 }
 
-function skillColumn(tool: SkillToolState['tool'], names: string[], inherits = false): SkillToolState {
-  return {
-    tool,
-    path: `/home/dev/.${tool}/skills`,
-    detected: true,
-    inherits_claude: inherits,
-    skills: names.map((name) => ({ name, path: `/skills/${name}`, digest: name === 'tdd' ? 'A' : 'B' })),
-    error: null
-  }
-}
-
-function OpenSkillStory({ children }: { children: React.ReactNode }): React.JSX.Element {
+export function OpenSkillStory({ children, open = true }: { children: React.ReactNode; open?: boolean }): React.JSX.Element {
   const ref = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
+    if (!open) return
     const timer = window.setInterval(() => {
-      const button = [...(ref.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+      const button = [...(ref.current?.querySelectorAll<HTMLElement>('button, tr[data-testid="data-table-row"]') ?? [])]
         .find((candidate) => candidate.textContent?.includes('ui-tokens'))
       if (!button) return
       button.click()
       window.clearInterval(timer)
     }, 50)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [open])
   return <div ref={ref} style={{ display: 'flex', flex: 1, minWidth: 0 }}>{children}</div>
 }
 
-export function NavSkills(): React.JSX.Element {
+export function NavSkills({ inSettings = false, detail = false }: { inSettings?: boolean; detail?: boolean } = {}): React.JSX.Element {
   installSkillFixture()
   const client = React.useMemo(() => {
     const handlers = new Map<string, (message: unknown) => void>()
@@ -262,17 +264,11 @@ export function NavSkills(): React.JSX.Element {
       }
     } as unknown as HoustonClient
   }, [])
-  return (
-    <Frame active="Skills">
-      <OpenSkillStory>
+  const content = (
+      <OpenSkillStory open={!inSettings || detail}>
         <SkillsSurface
-          tools={[
-            skillColumn('claude', ['tdd', 'ui-tokens']),
-            skillColumn('codex', ['ui-tokens']),
-            skillColumn('opencode', [], true),
-            skillColumn('cursor', [], true),
-            skillColumn('grok', [], true)
-          ]}
+          embedded={inSettings}
+          tools={LIBRARY_TOOLS}
           client={client}
           workspace="/home/dev/code/auth-refactor"
           focusedPaneName="auth-refactor"
@@ -286,8 +282,8 @@ export function NavSkills(): React.JSX.Element {
           onAutoPushSet={noop}
         />
       </OpenSkillStory>
-    </Frame>
   )
+  return inSettings ? <SettingsScreen section="agents-skills" props={{ agentPages: { 'agents-skills': content } }} /> : <Frame active="Skills">{content}</Frame>
 }
 
 function mcpServer(name: string, fingerprint: string, o: Partial<McpServer> = {}): McpServer {
@@ -311,10 +307,10 @@ function mcpColumn(tool: McpToolState['tool'], servers: McpServer[], detected = 
   return { tool, path: `/home/dev/.${tool}/config.json`, detected, servers, error: null }
 }
 
-export function NavMcp({ slackClient = null, results = [] }: { slackClient?: HoustonClient | null; results?: McpSyncResult[] } = {}): React.JSX.Element {
-  return (
-    <Frame active="Connections">
+export function NavMcp({ slackClient = null, results = [], inSettings = false }: { slackClient?: HoustonClient | null; results?: McpSyncResult[]; inSettings?: boolean } = {}): React.JSX.Element {
+  const content = (
       <McpSurface
+        embedded={inSettings}
         source={[mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]}
         tools={[
           mcpColumn('claude', [mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]),
@@ -335,8 +331,8 @@ export function NavMcp({ slackClient = null, results = [] }: { slackClient?: Hou
         onOpenSource={noop}
         slackClient={slackClient}
       />
-    </Frame>
   )
+  return inSettings ? <SettingsScreen section="agents-mcp" props={{ agentPages: { 'agents-mcp': content } }} /> : <Frame active="Connections">{content}</Frame>
 }
 
 export function NavMcpDetail(): React.JSX.Element {
@@ -460,7 +456,7 @@ function harnessFinding(overrides: Partial<HarnessFinding>): HarnessFinding {
   }
 }
 
-export function HarnessPageStory({ firstRun = false, noReviews = false }: { firstRun?: boolean; noReviews?: boolean }): React.JSX.Element {
+export function HarnessPageStory({ firstRun = false, noReviews = false, inSettings = false }: { firstRun?: boolean; noReviews?: boolean; inSettings?: boolean }): React.JSX.Element {
   const latest = harnessReview(13, 38, 7)
   const reviews = [latest, harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12))]
   const findings = [
@@ -490,6 +486,7 @@ export function HarnessPageStory({ firstRun = false, noReviews = false }: { firs
     workspace: HARNESS_WS,
     routine: {
       id: 3,
+      kind: 'harness_review',
       name: 'Harness review · auth-refactor',
       prompt: '[houston harness review]',
       cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] },
@@ -510,6 +507,38 @@ export function HarnessPageStory({ firstRun = false, noReviews = false }: { firs
   }
   const shown: HarnessState = firstRun || noReviews ? { ...state, routine: firstRun ? null : state.routine, reviews: [], findings: [], providerCoverage: [] } : state
 
+  if (inSettings) return <SettingsScreen section="agents-review" props={{ agentAttention: firstRun || noReviews ? undefined : settingsAgentAttentionFixture, agentPages: { 'agents-review': (<HarnessSurface embedded onOpenRoutines={noop}
+        workspaces={[{ id: HARNESS_WS, name: 'auth-refactor' }]}
+        workspace={HARNESS_WS}
+        onWorkspace={noop}
+        state={shown}
+        report={null}
+        running={false}
+        error={null}
+        onCreateRoutine={noop}
+        onRunNow={noop}
+        onDecide={noop}
+        attention={firstRun || noReviews ? null : {
+          workspace: HARNESS_WS,
+          open: 1,
+          fixing: 2,
+          awaiting_verification: 1,
+          not_seen: 1,
+          resolved: 1,
+          dismissed: 1,
+          latest_published_review_id: 13,
+          seen_review_id: 12,
+          attention: 4
+        }}
+        onSeen={noop}
+        onCreateTask={noop}
+        onLoadReport={noop}
+        onOpenFile={noop}
+        onReveal={noop}
+        trendValues={[41, 33, 25, 18]}
+        trendReviewCount={4}
+        historyDeltaOverrides={{ 12: { new: 2, gone: 1 } }}
+        />) } }} />
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', minWidth: 0 }}>
       <div style={{ display: 'flex', width: 'calc(100% - 16px)', height: 'calc(100% - 8px)', margin: '0 8px 8px', border: '1px solid var(--divider)', borderRadius: 10, overflow: 'hidden' }}>

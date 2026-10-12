@@ -1,3 +1,5 @@
+import { DiffSplitCell, DiffSplitRow, DiffSplitCode, DiffSectionHeader } from '../ui/Diff'
+import { pairDiffLines, type NumberedDiffLine } from './splitDiff'
 import { DiffCode, DiffGutter, DiffLine, DiffLineText, DiffPlainText, type DiffLineKind } from '../ui'
 
 export function lineKind(line: string): DiffLineKind {
@@ -26,7 +28,8 @@ export function diffBodyLines(patch: string): string[] {
   return firstHunk < 0 ? lines : lines.slice(firstHunk)
 }
 
-export function DiffBody({ patch, truncated }: { patch: string; truncated: boolean }): React.JSX.Element {
+export function DiffBody({ patch, truncated, split = false }: { patch: string; truncated: boolean; split?: boolean }): React.JSX.Element {
+  if (patch.trim().length === 0) return <DiffPlainText>No textual diff for this file.</DiffPlainText>
   const lines = diffBodyLines(patch)
   // Above this, one <div> per line makes the DOM too heavy; fall back to a plain <pre>.
   if (lines.length > 4000)
@@ -38,9 +41,7 @@ export function DiffBody({ patch, truncated }: { patch: string; truncated: boole
     )
   let oldLine = 0
   let newLine = 0
-  return (
-    <DiffCode>
-      {lines.map((line, i) => {
+  const numbered: NumberedDiffLine[] = lines.map((line) => {
         const kind = lineKind(line)
         let oldNumber: number | null = null
         let newNumber: number | null = null
@@ -62,25 +63,29 @@ export function DiffBody({ patch, truncated }: { patch: string; truncated: boole
           newNumber = newLine
           newLine += 1
         }
-        return (
-          <DiffLine key={i} kind={kind} data-old-line={oldNumber ?? undefined} data-new-line={newNumber ?? undefined}>
-            <span data-line-number="old" aria-hidden>{oldNumber ?? ''}</span>
-            <span data-line-number="new" aria-hidden>{newNumber ?? ''}</span>
-            <DiffGutter>
-              {kind === 'add' ? '+' : kind === 'del' ? '−' : ''}
-            </DiffGutter>
-            <DiffLineText>{(kind === 'add' || kind === 'del' ? line.slice(1) : line) || ' '}</DiffLineText>
-          </DiffLine>
-        )
-      })}
-      {truncated && (
-        <DiffLine kind="meta">
-          <span data-line-number="old" aria-hidden />
-          <span data-line-number="new" aria-hidden />
-          <DiffGutter />
-          <DiffLineText>… patch truncated at 512 KiB — review locally</DiffLineText>
-        </DiffLine>
-      )}
-    </DiffCode>
-  )
+    return { kind, text: kind === 'add' || kind === 'del' || kind === 'ctx' ? line.slice(1) : line, oldNumber, newNumber }
+  })
+  if (truncated) numbered.push({ kind: 'meta', text: '… patch truncated at 512 KiB — review locally', oldNumber: null, newNumber: null })
+  if (split) return <DiffSplitCode>
+    {pairDiffLines(numbered).map((row, i) => 'header' in row
+      ? <DiffSectionHeader key={i} kind={row.header.kind}>{row.header.text}</DiffSectionHeader>
+      : <DiffSplitRow key={i}>
+        {(['old', 'new'] as const).map((side) => {
+          const line = row[side]
+          const number = side === 'old' ? line?.oldNumber : line?.newNumber
+          return <DiffSplitCell key={side} side={side} kind={line?.kind ?? 'ctx'} filler={!line} number={number ?? null}>
+            <DiffGutter>{line?.kind === 'add' ? '+' : line?.kind === 'del' ? '−' : ''}</DiffGutter>
+            <DiffLineText>{line?.text || ' '}</DiffLineText>
+          </DiffSplitCell>
+        })}
+      </DiffSplitRow>)}
+  </DiffSplitCode>
+  return <DiffCode>
+    {numbered.map((line, i) => <DiffLine key={i} kind={line.kind} data-old-line={line.oldNumber ?? undefined} data-new-line={line.newNumber ?? undefined}>
+      <span data-line-number="old" aria-hidden>{line.oldNumber ?? ''}</span>
+      <span data-line-number="new" aria-hidden>{line.newNumber ?? ''}</span>
+      <DiffGutter>{line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ''}</DiffGutter>
+      <DiffLineText>{line.text || ' '}</DiffLineText>
+    </DiffLine>)}
+  </DiffCode>
 }

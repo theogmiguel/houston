@@ -1,8 +1,42 @@
 # Appearance, mascot and terminal settings
 
-Three settings sections cover presentation: **Settings ▸ Appearance** for the app
-chrome and window, **Settings → Mascot** for the companion, and **Settings ▸ Terminal**
-for how panes render and behave.
+Two settings sections cover presentation: **Settings ▸ Appearance** for the app
+chrome, window and mascot, and **Settings ▸ Terminal** for how panes render and behave.
+
+## Finding settings
+
+Settings groups configuration by purpose:
+
+| Group | Configuration |
+|---|---|
+| Agents | Overview, CLIs, Skills, MCP servers and Review |
+| App | Appearance, Terminal, Shortcuts and Notifications |
+| Work | Workspaces, Tasks, Orchestration and Dictation |
+| Devices | Phone and remote access, and WSL on Windows |
+| System | Privacy & data, Daemon, and About |
+
+Use Agents ▸ Overview to resolve reported hook, skill, server or
+review issues; it opens the owning configuration page. Search Settings by feature or
+setting name. **Back to workspaces** returns to your work; **Esc** first clears an active
+settings search, then returns to workspaces.
+
+Skills, MCP servers and Review are configured under Settings ▸ Agents. Tasks, Pull
+requests, Routines and Usage remain work destinations in the rail.
+
+## Settings ▸ Agents ▸ Skills
+
+Search your skills and filter by Yours or This workspace. Copy counts show how many
+reported agents can use each skill. Select a skill or its copy count to expand the
+per-agent status inline: synced, missing, different from Claude Code, or reading
+Claude Code’s folder directly. Add a missing copy or compare differing instructions
+before copying Claude Code’s version to an agent. The expanded detail also provides
+editing, deleting, an instructions disclosure and undoing a previous copy operation.
+
+**Sync all** fills missing copies using the Claude Code source for every eligible
+skill in the library, including skills hidden by search or the scope filter. Skills
+with differing copies are excluded; expand them and compare instructions before
+choosing which copy to keep. Agents that read Claude Code’s skills directly do not
+need a separate copy. **Sync this skill** fills only that skill’s missing copies.
 
 ## Settings ▸ Appearance
 
@@ -30,21 +64,24 @@ own Custom choice is not lost, and Custom comes back on its own once you turn th
 setting back off.
 
 **Terminal palette** — pick a color palette for terminal panes, or leave it on Auto to
-follow the chrome theme.
+follow the chrome theme. The command palette’s **Change terminal palette…** picker
+previews the palette highlighted by Up/Down or the pointer. The check marks the saved
+palette; Enter saves the preview and Escape restores the saved palette. Focus stays
+in the search field while browsing.
 
 New panes support full colour even when Houston is launched from a command runner with
 `NO_COLOR` set. To disable CLI colours intentionally, set `NO_COLOR` inside the pane or
 in your shell startup files.
 
-**Sidebar** — toggle whether Skills, Routines, and Connections show as rows at the top of
-the sidebar.
+**Sidebar** — restore work destinations hidden from the rail: Tasks, Pull requests,
+Routines and Usage.
 
 **App zoom** — scales the whole app: 90%, 100%, 110%, or 125%. Ctrl+/Ctrl− do the same
 thing from the keyboard.
 
-## Settings → Mascot
+## Settings ▸ Appearance ▸ Mascot
 
-Settings → Mascot controls Houston's companion in the rail or floating
+Settings ▸ Appearance ▸ Mascot controls Houston's companion in the rail or floating
 inside the Houston window. It is on by default and keeps you company; it never
 reports agent status or reads terminal text or hooks. Turn Mascot off to remove its artwork and interactions.
 
@@ -63,7 +100,7 @@ Click to say hello, rub the mascot to pet it, or double-click to flip. Drag Hous
 anywhere inside the window and release it to leave it floating. Its usual
 moods, outfits, speech and idle activities continue there. During a drag, the rail
 shows a docking target; drop Houston onto that slot to return it with a boing.
-Position in Settings → Mascot shows Rail or Floating and offers Return
+Position in Settings ▸ Appearance ▸ Mascot shows Rail or Floating and offers Return
 to rail. While floating, the command palette also offers Return mascot to rail.
 Position is remembered relative to the window and kept on screen when the window
 resizes. Drops over a native browser pane move to the nearest available position

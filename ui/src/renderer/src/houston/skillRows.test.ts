@@ -42,7 +42,7 @@ describe('the skills matrix fold (row 37)', () => {
     const rows = buildSkillRows(tools)
     expect(rows[0].hasDrift).toBe(true)
     expect(skillCellFor(rows[0], tools[1]).kind).toBe('differs')
-    expect(skillCellFor(rows[0], tools[0]).kind).toBe('differs')
+    expect(skillCellFor(rows[0], tools[0]).kind).toBe('same')
   })
 
   it('leaves identical copies alone', () => {
@@ -58,4 +58,10 @@ describe('the skills matrix fold (row 37)', () => {
     expect(rows.map((r) => r.name)).toEqual(['codex-only'])
     expect(skillCellFor(rows[0], tools[2]).kind).toBe('missing')
   })
+})
+
+it('compares each native copy to Claude rather than marking all copies as drifted', () => {
+  const tools = [column('claude', [['triage', 'A']]), column('codex', [['triage', 'B']]), column('antigravity', [['triage', 'A']]), column('grok', [['triage', 'A']])]
+  const row = buildSkillRows(tools)[0]
+  expect(tools.map(tool => skillCellFor(row, tool).kind)).toEqual(['same', 'differs', 'same', 'same'])
 })

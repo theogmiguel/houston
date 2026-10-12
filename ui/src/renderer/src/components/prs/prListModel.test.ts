@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PrListItem } from '../../houston/client'
-import { filterPullRequests, groupPullRequests, sortPullRequests } from './prListModel'
+import { filterPullRequests, groupPullRequests, pullRequestStatus, sortPullRequests } from './prListModel'
 
 function item(overrides: Partial<PrListItem> & Pick<PrListItem, 'number' | 'author' | 'title'>): PrListItem {
   return {
@@ -31,8 +31,8 @@ describe('pull request list model', () => {
       item({ number: 3, title: 'Third', author: 'someone', updated_at: 200 }),
     ]
     const groups = groupPullRequests(items, 'theo', 'updated')
-    expect(groups.authored.map((pr) => pr.number)).toEqual([1])
-    expect(groups.reviewRequested.map((pr) => pr.number)).toEqual([2])
+    expect(groups.yours.map((pr) => pr.number)).toEqual([1])
+    expect(groups.waitingOnYou.map((pr) => pr.number)).toEqual([2])
     expect(groups.others.map((pr) => pr.number)).toEqual([3])
     expect(sortPullRequests(items, 'created').map((pr) => pr.number)).toEqual([1, 2, 3])
   })
@@ -45,4 +45,18 @@ describe('pull request list model', () => {
     expect(sortPullRequests(items, 'ready').map((pr) => pr.number)).toEqual([123, 12])
     expect(filterPullRequests(items, '#12').map((pr) => pr.number)).toEqual([12])
   })
+})
+
+it('keeps Yours empty when the viewer login is unavailable', () => {
+  const rows = [item({ number: 1, title: 'Own', author: 'theo' }), item({ number: 2, title: 'Review', author: 'someone', review_requested: true })]
+  const groups = groupPullRequests(rows, '', 'updated')
+  expect(groups.yours).toHaveLength(0)
+  expect(groups.waitingOnYou.map((row) => row.number)).toEqual([2])
+  expect(groups.others.map((row) => row.number)).toEqual([1])
+})
+
+it.each([
+  [{ state: 'merged' }, 'Merged'], [{ state: 'closed' }, 'Closed'], [{ is_draft: true }, 'Draft'], [{ review_requested: true }, 'Your review'], [{ checks: 'failing' }, 'Checks failing'], [{ checks: 'running' }, 'Checks running'], [{ mergeable: 'conflicting' }, 'Conflicts'], [{ review_decision: 'APPROVED' }, 'Approved']
+] as const)('labels a reported state with words', (state, label) => {
+  expect(pullRequestStatus(item({ number: 1, title: 'State', author: 'theo', ...state })).label).toBe(label)
 })

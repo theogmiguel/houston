@@ -316,11 +316,17 @@ impl Db {
     /// Replaces a mapping whose routine was deleted.
     pub fn set_harness_routine(&self, workspace: &str, routine_id: u32) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
-        conn.execute(
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
             "INSERT INTO harness_routines (workspace, routine_id) VALUES (?1, ?2) \
              ON CONFLICT(workspace) DO UPDATE SET routine_id = excluded.routine_id",
             rusqlite::params![workspace, routine_id],
         )?;
+        tx.execute(
+            "UPDATE routines SET kind = 'harness_review' WHERE id = ?1",
+            [routine_id],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 

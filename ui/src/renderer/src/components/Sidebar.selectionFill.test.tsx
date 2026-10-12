@@ -74,6 +74,15 @@ describe('Sidebar — D2 full-row selection fill, no SelectionBar', () => {
     expect(grid?.querySelector('.w-\\[2px\\]')).toBeNull()
   })
 
+  it('keeps the workspace group plain when its selected grid carries the fill', () => {
+    render({ workspaces: [ws('/a', 'alpha')], selected: '/a',
+      gridsByWorkspace: { '/a': [{ id: 'g1', name: 'Main', sessionIds: [1] }] },
+      selectedGridId: 'g1', onSelectGrid: noop })
+    const row = container.querySelector('[data-testid="ws-disclosure"]')!
+    expect(row.className).not.toContain('bg-selected-fill')
+    expect(container.querySelector('[data-testid="grid-row"]')?.className).toContain('bg-selected-fill')
+  })
+
   it('a selected settings-section row carries the fill', () => {
     setSettingsNavForTests({ open: true, section: 'appearance' })
     render({})
@@ -92,11 +101,15 @@ describe('Sidebar — D2 full-row selection fill, no SelectionBar', () => {
     expect(row?.style.background).toBe('')
   })
 
-  it('the rail-foot Settings toggle keeps its own visible current value, in the same fill', () => {
+  it('keeps the Settings footer unselected while the active section carries the current value', () => {
     setSettingsNavForTests({ open: true })
     render({ onOpenSettings: noop })
-    const toggle = container.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')
+    const toggle = container.querySelector<HTMLButtonElement>('[data-testid="rail-settings"]')
     expect(toggle).not.toBeNull()
-    expect(toggle?.className).toContain('bg-selected-fill')
+    expect(toggle?.getAttribute('aria-current')).toBeNull()
+    expect(toggle?.getAttribute('aria-pressed')).not.toBe('true')
+    expect(toggle?.className).toContain('bg-transparent')
+    expect(toggle?.className).not.toContain('bg-selected-fill')
+    expect(container.querySelector('[data-testid="settings-section-row"][aria-current="true"]')?.className).toContain('bg-selected-fill')
   })
 })

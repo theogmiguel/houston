@@ -192,6 +192,24 @@ describe('grids (step 05, driven from the rail)', () => {
     expect(grids[0].id).not.toBe(DEFAULT_GRID_ID)
   })
 
+  it('closing a populated non-last grid ends its agents after confirmation', async () => {
+    await boot([1, 2])
+    const close = vi.fn()
+    currentClient().closeSession = close
+    await openWorkspaceMenu()
+    await act(async () => { addBtn()!.click(); await Promise.resolve() })
+    await rightClick(gridRows()[0])
+    const remove = menuItems().find((item) => item.textContent?.includes('Close grid'))!
+    await act(async () => { remove.click(); await Promise.resolve() })
+    const confirm = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Close grid')
+    expect(close).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('ends its 2 agents')
+    expect(document.body.textContent).toContain('Close Terminal?')
+    expect(confirm).toBeDefined()
+    await act(async () => { confirm!.click(); await Promise.resolve() })
+    expect(close.mock.calls.map(([id]) => id).sort()).toEqual([1, 2])
+  })
+
   it('a second tab unlocks Close grid, and closing it drops back to one row', async () => {
     await boot([1])
     await openWorkspaceMenu()

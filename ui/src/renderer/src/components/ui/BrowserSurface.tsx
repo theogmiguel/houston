@@ -3,7 +3,7 @@ import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { IconClose, IconRefresh } from '../icons'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
-import { FOCUS_HALO, GLOW_ACCENT, GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './shadowChrome'
+import { FOCUS_HALO_CLS, GLOW_ACCENT, GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './shadowChrome'
 import { Icon } from './Icon'
 import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './panelChrome'
 import { Text } from './Text'
@@ -218,7 +218,7 @@ export const BrowserStage = forwardRef<HTMLDivElement, { children: ReactNode }>(
 export type BrowserDeviceKind = 'desktop' | 'phone' | 'tablet'
 
 const DEVICE_FRAME_BASE =
-  'min-w-0 min-h-0 border border-[var(--border-hover)] bg-white overflow-hidden shadow-[var(--shadow-1)] flex flex-col'
+  'min-w-0 min-h-0 border border-[var(--border-hover)] bg-white overflow-hidden flex flex-col'
 const DEVICE_FRAME_CLS: Record<BrowserDeviceKind, string> = {
   desktop: `${DEVICE_FRAME_BASE} w-full flex-1 rounded-[var(--tr-radius-button)]`,
   phone: DEVICE_FRAME_BASE,
@@ -314,7 +314,7 @@ const PICKER_DOT_CLS =
 const PICKER_SELROW_CLS = 'flex items-center gap-[var(--browser-picker-row-gap)] py-[var(--space-1-5)] px-[var(--space-2-5)] border-t border-border min-w-0 flex-none'
 const PICKER_INPUTROW_CLS = 'flex items-center gap-[var(--space-1-5)] pt-[var(--space-2)] pr-[var(--space-2-5)] pb-[var(--space-2-5)] pl-[var(--space-2-5)] border-t border-border flex-none'
 const PICKER_PROMPT_INPUT_CLS =
-  `flex-1 min-w-0 h-[var(--h-ctl)] rounded-[var(--tr-radius-button)] border border-border bg-surface text-text-primary px-[var(--space-2-5)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] outline-none focus-visible:shadow-[${FOCUS_HALO}] ` +
+  `flex-1 min-w-0 h-[var(--h-ctl)] rounded-[var(--tr-radius-button)] border border-border bg-surface text-text-primary px-[var(--space-2-5)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] outline-none ${FOCUS_HALO_CLS} ` +
   'placeholder:text-text-muted'
 const PICKER_AGENT_SELECT_CLS =
   'h-[var(--h-ctl)] rounded-[var(--tr-radius-button)] border border-border bg-surface text-text-primary px-[var(--space-2)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] flex-none'
@@ -369,7 +369,7 @@ const FS_MODAL_CLS =
 
 const FS_URL_INPUT_CLS =
   'flex-1 min-w-0 h-[var(--h-ctl)] rounded-[var(--tr-radius-button)] border border-border [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] ' +
-  `bg-[var(--tool-code-bg)] text-[var(--text-secondary)] px-[var(--space-2-5)] outline-none focus-visible:shadow-[${FOCUS_HALO}] cursor-default`
+  `bg-[var(--tool-code-bg)] text-[var(--text-secondary)] px-[var(--space-2-5)] outline-none ${FOCUS_HALO_CLS} cursor-default`
 const FS_EXIT_BUTTON_CLS =
   `inline-flex items-center justify-center ${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] flex-none border-0 ` +
   'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] ' +

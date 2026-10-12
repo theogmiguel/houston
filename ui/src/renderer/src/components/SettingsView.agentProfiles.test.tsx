@@ -4,7 +4,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SettingsView } from './SettingsView'
 import { setSettingsNavForTests } from '../settingsNav'
-import { pickOption, selectTrigger, selectValue } from '../test/selectHarness'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
 import type { AgentProfileState } from './SettingsView'
@@ -28,10 +27,6 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
     onUpdateCheckNow: () => {},
     onUpdatePolicySet: () => {},
     onOpenExternal: () => {},
-    usage: null,
-    usageLoading: false,
-    usageError: null,
-    onUsageRequest: () => {},
     voiceSettings: null,
     voiceCloudKeyPresent: false,
     voiceKeyringError: null,
@@ -110,10 +105,7 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
 
 function openAgentProfiles(container: HTMLDivElement): void {
   act(() => setSettingsNavForTests({ section: 'accounts' }))
-  const claude = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]'))
-    .find((button) => button.textContent?.includes('Claude Code'))
-  if (!claude) throw new Error('expected Claude Code in the Agents list')
-  act(() => claude.click())
+  expect(container.querySelector('[data-testid="list-detail-item"]')).toBeNull()
 }
 
 function stateWithOneClaudeProfile(): AgentProfileState {
@@ -145,7 +137,7 @@ describe('Settings › Accounts — CLAUDE_CONFIG_DIR/CODEX_HOME isolation (row 
     openAgentProfiles(container)
     const text = container.textContent ?? ''
     expect(text).toContain('next')
-    expect(text.toLowerCase()).toContain('already running')
+    expect(text).toContain('Running panes keep their account.')
   })
 
   it('shows both CLI-specific variable names, never a generic one', () => {
@@ -155,10 +147,6 @@ describe('Settings › Accounts — CLAUDE_CONFIG_DIR/CODEX_HOME isolation (row 
     openAgentProfiles(container)
     const text = container.textContent ?? ''
     expect(text).toContain('CLAUDE_CONFIG_DIR')
-    const codex = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]'))
-      .find((button) => button.textContent?.includes('Codex'))
-    if (!codex) throw new Error('expected Codex in the Agents list')
-    act(() => codex.click())
     const codexText = container.textContent ?? ''
     expect(codexText).toContain('CODEX_HOME')
   })
@@ -172,9 +160,8 @@ describe('Settings › Accounts — CLAUDE_CONFIG_DIR/CODEX_HOME isolation (row 
     expect(text).toContain('work')
     expect(text).toContain('/home/dev/.claude-work')
 
-    expect(selectValue(container, 'agent-profile-active-claude')).toBe(
-      'work — /home/dev/.claude-work'
-    )
+    expect(container.textContent).toContain('New panes')
+    expect(container.querySelector('[data-testid="agent-profile-use-1"]')).toBeNull()
   })
 
   it('setting active sends the profile id for the right agent, not the other one', () => {
@@ -189,7 +176,7 @@ describe('Settings › Accounts — CLAUDE_CONFIG_DIR/CODEX_HOME isolation (row 
       )
     })
     openAgentProfiles(container)
-    pickOption(container, 'agent-profile-active-claude', '')
+    act(() => container.querySelector<HTMLButtonElement>('[data-testid="agent-profile-default-claude"]')!.click())
     expect(calls).toEqual([['claude', null]])
   })
 
@@ -205,9 +192,9 @@ describe('Settings › Accounts — CLAUDE_CONFIG_DIR/CODEX_HOME isolation (row 
       )
     })
     openAgentProfiles(container)
-    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
-      b.textContent?.includes('Delete')
-    )
+    const rename = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === 'Rename')!
+    act(() => rename.click())
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent?.includes('Delete'))
     if (!button) throw new Error('expected a Delete button for the saved profile')
     act(() => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -215,15 +202,15 @@ describe('Settings › Accounts — CLAUDE_CONFIG_DIR/CODEX_HOME isolation (row 
     expect(deleted).toEqual([1])
   })
 
-  it('the active-profile picker is on the shared SELECT_CLS (dropdown-01), not the old rounded-md/11.5px chrome', () => {
-    act(() => {
-      root.render(<SettingsView {...baseProps()} agentProfiles={stateWithOneClaudeProfile()} />)
-    })
+  it('account controls use shared button and value-chip chrome', () => {
+    act(() => root.render(<SettingsView {...baseProps()} agentProfiles={stateWithOneClaudeProfile()} />))
     openAgentProfiles(container)
-    const trigger = selectTrigger(container, 'agent-profile-active-claude')
-    expect(trigger.className).toContain('var(--tr-radius-sm)')
-    expect(trigger.className).toContain('var(--tr-text-ui-size)')
-    expect(trigger.className).not.toContain('rounded-md')
-    expect(trigger.className).not.toContain('text-[11.5px]')
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="agent-profile-default-claude"]')!
+    expect(button.className).toContain('var(--tr-radius-button)')
+    expect(button.className).toContain('var(--tr-text-ui-size)')
+    expect(button.className).not.toContain('rounded-md')
+    expect(button.className).not.toContain('text-[11.5px]')
+    const value = container.querySelector<HTMLElement>('[data-testid="chip"]')!
+    expect(value.className).toContain('var(--tr-radius-sm)')
   })
 })

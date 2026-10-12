@@ -135,6 +135,7 @@ describe('HarnessView', () => {
       workspace: WS,
       routine: {
         id: 7,
+        kind: 'harness_review',
         name: 'Harness review · proj',
         prompt: 'p',
         cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] },
@@ -187,7 +188,7 @@ describe('HarnessView', () => {
       type: 'harness_state',
       models: [],
       workspace: WS,
-      routine: { id: 7, name: 'Harness', prompt: 'p', cadence: { type: 'interval', seconds: 60 }, enabled: false, engine: 'claude', next_run_at_ms: 0, permission_mode: 'accept_edits', isolate: false, revision: 'r' },
+      routine: { kind: 'harness_review', id: 7, name: 'Harness', prompt: 'p', cadence: { type: 'interval', seconds: 60 }, enabled: false, engine: 'claude', next_run_at_ms: 0, permission_mode: 'accept_edits', isolate: false, revision: 'r' },
       reviews: [],
       findings: [{
         review_id: 1, key: 'HOU-12', title: 'Repeated mistake', category: '', confidence: '', sessions: [], count: 2, quotes: [], recommendation_kind: '', target: '', recommendation: '', apply_prompt: 'Fix this safely.', state: 'open', recurred: false, phase: 'open', last_seen_review_id: 1

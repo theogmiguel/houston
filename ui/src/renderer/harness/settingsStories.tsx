@@ -1,3 +1,6 @@
+import { ConnectPhoneHost } from '../src/components/ConnectPhoneDialog'
+import { RAIL_DEFAULT } from '../src/railWidth'
+import { agentAttentionFor } from '../src/useAgentAttention'
 import React from 'react'
 import { SettingsView, type OrchestrationStateView } from '../src/components/SettingsView'
 import { Sidebar } from '../src/components/Sidebar'
@@ -37,7 +40,7 @@ export function SettingsScreen({
   const ws = (path: string, name: string): Workspace => ({ path, name }) as Workspace
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--content-bg)' }}>
-      <div style={{ width: 240, flex: '0 0 240px', minWidth: 0 }}>
+      <div style={{ width: RAIL_DEFAULT, flex: `0 0 ${RAIL_DEFAULT}px`, minWidth: 0 }}>
         <Sidebar
           workspaces={[ws('/home/dev/code/houston', 'houston')]}
           sessions={[] as SessionInfo[]}
@@ -59,6 +62,7 @@ export function SettingsScreen({
           chromeTheme="graphite"
           onToggleChromeTheme={noop}
           onOpenSettings={noop}
+          agentAttention={props?.agentAttention}
         />
       </div>
       <div style={{ display: 'flex', flex: '1 1 0', minWidth: 0, flexDirection: 'column' }}>
@@ -82,7 +86,7 @@ export function SettingsAppearance(): React.JSX.Element {
 }
 
 export function SettingsMascot(): React.JSX.Element {
-  return <SettingsScreen section="mascot" />
+  return <SettingsScreen section="appearance" />
 }
 
 export function SettingsAppearanceCustom(): React.JSX.Element {
@@ -118,15 +122,19 @@ export function SettingsDetailStory({ state = 'ready' }: { state?: 'ready' | 'er
   /></div>
 }
 
-export function AppearancePickerStory({ empty = false }: { empty?: boolean }): React.JSX.Element {
+export function AppearancePickerStory({ empty = false, highlighted = false }: { empty?: boolean; highlighted?: boolean }): React.JSX.Element {
   React.useEffect(() => {
-    if (!empty) return
+    if (!empty && !highlighted) return
     const input = document.querySelector<HTMLInputElement>('[data-testid="appearance-picker-search"]')
     if (!input) return
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (highlighted) {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+      return
+    }
     setter?.call(input, 'missing palette')
     input.dispatchEvent(new Event('input', { bubbles: true }))
-  }, [empty])
+  }, [empty, highlighted])
   return <div className="max-w-[700px] p-6 bg-[var(--content-bg)] text-[var(--text-primary)]"><AppearancePicker currentTheme="black" onPreview={noop} onCommit={noop} /></div>
 }
 
@@ -290,15 +298,29 @@ function routingClient(routes: RoleRoute[]): HoustonClient {
   }) as unknown as HoustonClient
 }
 
-function remoteClient(remote: RemoteInfo): HoustonClient {
-  let listener: ((message: ServerMsg) => void) | null = null
+export function remoteClient(initial: RemoteInfo, pairing = false): HoustonClient {
+  const handlers = new Map<string, Set<(message: ServerMsg) => void>>()
+  let remote = initial
+  const emit = (message: ServerMsg): void => { for (const handler of handlers.get(message.type) ?? []) handler(message) }
+  const showCode = (): void => emit({ type: 'remote_pairing', url: `${remote.url}/#pair=story`, qr_svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1z" fill="#000"/></svg>', expires_at: Date.now() + 9 * 60_000 + 41_000 })
   return new Proxy({
     subscribe(type: string, handler: (message: ServerMsg) => void) {
-      if (type === 'remote_state') listener = handler
-      return () => { listener = null }
+      const set = handlers.get(type) ?? new Set()
+      set.add(handler)
+      handlers.set(type, set)
+      return () => { set.delete(handler) }
     },
     remoteGet() {
-      queueMicrotask(() => listener?.({ type: 'remote_state', remote }))
+      queueMicrotask(() => { emit({ type: 'remote_state', remote }); if (pairing) showCode() })
+    },
+    remoteConfigure(patch: Partial<RemoteInfo>) {
+      remote = { ...remote, ...patch, url: patch.public_url ?? remote.url, listening: patch.enabled ?? remote.enabled }
+      queueMicrotask(() => emit({ type: 'remote_state', remote }))
+    },
+    remotePairStart() { queueMicrotask(showCode) },
+    remoteDeviceRevoke(id: number) {
+      remote = { ...remote, devices: remote.devices.filter((device) => device.id !== id) }
+      queueMicrotask(() => emit({ type: 'remote_state', remote }))
     }
   }, {
     get(target, property, receiver) {
@@ -328,16 +350,27 @@ const remoteFixture: RemoteInfo = {
   ]
 }
 
-export function SettingsRemote(): React.JSX.Element {
-  return <SettingsScreen section="remote" props={{ daemonClient: remoteClient(remoteFixture) }} />
+export function SettingsRemote({ pairing = false }: { pairing?: boolean } = {}): React.JSX.Element {
+  const client = React.useMemo(() => remoteClient({ ...remoteFixture, devices: remoteFixture.devices.map((device, index) => ({ ...device, last_seen_at: Date.now() - (index === 0 ? 30_000 : 26 * 3_600_000) })) }, pairing), [pairing])
+  return <><SettingsScreen section="remote" props={{ daemonClient: client, agentAttention: pairing ? settingsAgentAttentionFixture : undefined }} /><ConnectPhoneHost client={client} /></>
 }
 
 export function SettingsRemoteOff(): React.JSX.Element {
-  return <SettingsScreen section="remote" props={{ daemonClient: remoteClient({ ...remoteFixture, enabled: false, listening: false, public_url: null, url: 'http://127.0.0.1:47823', ntfy_server: null }) }} />
+  const client = React.useMemo(() => remoteClient({ ...remoteFixture, enabled: false, listening: false, devices: [], ntfy_server: null }), [])
+  return <><SettingsScreen section="remote" props={{ daemonClient: client }} /><ConnectPhoneHost client={client} /></>
 }
 
-export function SettingsAgentSetup(): React.JSX.Element {
-  return <SettingsScreen section="agents" props={{
+export function SettingsRemoteUnconfigured(): React.JSX.Element {
+  const client = React.useMemo(() => remoteClient({ ...remoteFixture, enabled: false, listening: false, devices: [], public_url: null, url: 'http://127.0.0.1:47823', ntfy_server: null }), [])
+  return <><SettingsScreen section="remote" props={{ daemonClient: client }} /><ConnectPhoneHost client={client} /></>
+}
+
+export function SettingsAgentSetup({ detail = false, rename = false }: { detail?: boolean; rename?: boolean } = {}): React.JSX.Element {
+  React.useEffect(() => {
+    if (detail) document.querySelector<HTMLButtonElement>('[data-provider="claude"] button')?.click()
+    if (rename) [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Rename')?.click()
+  }, [detail, rename])
+  return <SettingsScreen section="agents-clis" props={{
     agentHooks: agentHookFixture,
     agentProfiles: {
       profiles: [
@@ -350,11 +383,11 @@ export function SettingsAgentSetup(): React.JSX.Element {
 }
 
 export function SettingsAgentStatusLoading(): React.JSX.Element {
-  return <SettingsScreen section="agents" props={{ agentHooks: null }} />
+  return <SettingsScreen section="agents-clis" props={{ agentHooks: null }} />
 }
 
 export function SettingsAgentStatusEmpty(): React.JSX.Element {
-  return <SettingsScreen section="agents" props={{ agentHooks: [] }} />
+  return <SettingsScreen section="agents-clis" props={{ agentHooks: [] }} />
 }
 
 export function SettingsOrchestration(): React.JSX.Element {
@@ -569,4 +602,12 @@ export function SettingsSearchStory(): React.JSX.Element {
     input.dispatchEvent(new Event('input', { bubbles: true }))
   }, [])
   return <SettingsScreen section="workspaces" />
+}
+
+export const settingsAgentAttentionFixture = agentAttentionFor({ agentHooks: [{ provider: 'opencode', path: '/home/dev/.config/opencode/plugins/houston.ts', scope: 'global', present: true, enabled: true, installed: false, error: 'The managed hook block differs.', version: '1.18', trust: null }], skills: [], checks: [['github', { state: 'failed', message: 'npx is not on PATH' }]], reviews: [{ workspace: '/home/dev/code/houston', attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, seen_review_id: 0 }] })
+
+export function SettingsAgentsOverview({ healthy = false }: { healthy?: boolean } = {}): React.JSX.Element {
+  const attention = healthy ? agentAttentionFor({ agentHooks: [], skills: [], checks: [], reviews: [] }) : settingsAgentAttentionFixture
+  const review: import('../src/houston/useHarness').HarnessState = { workspace: '/home/dev/code/houston', routine: { id: 1, kind: 'harness_review', name: 'Weekly review', prompt: 'Review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, enabled: true, workspace_id: '/home/dev/code/houston', engine: 'claude', model: null, next_run_at_ms: 1791802800000, permission_mode: 'accept_edits', isolate: false, revision: '1' }, reviews: [{ id: 1, workspace: '/home/dev/code/houston', routine_id: 1, run_id: 1, status: 'published', started_at_ms: 1, run_dir: '/home/dev/code/houston/.houston/harness/r1', sessions: 38, finding_count: 1 }], findings: [{ review_id: 1, key: 'style', title: 'Agents re-read the styleguide on every UI change', category: 'workflow', confidence: 'high', sessions: ['a'], count: 9, quotes: [], recommendation_kind: 'workflow', target: 'AGENTS.md', recommendation: 'Read once', apply_prompt: 'Read once', state: 'open', recurred: false, phase: 'open', last_seen_review_id: 1 }], models: [], providerCoverage: [], engineRefusals: [] }
+  return <SettingsScreen section="agents-overview" props={{ agentAttention: attention, agentReviewStates: healthy ? [] : [review] }} />
 }

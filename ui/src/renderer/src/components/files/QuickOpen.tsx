@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { FilesSurfaceClass, filesSurfaceClass } from '../ui/FilesSurfaceElement'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { FilesSurfaceClass, filesSurfaceClass, QuickOpenRow } from '../ui/FilesSurfaceElement'
 import { searchFilePaths, type FileSearchResult } from '../../houston/bridge'
 import { IconSearch } from '../icons'
 import { fileTypeIcon } from './fileTypeIcons'
@@ -52,6 +52,7 @@ export function QuickOpen({
   const [retry, setRetry] = useState(0)
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  const listId = useId()
   useEffect(() => {
     input.current?.focus()
   }, [])
@@ -85,14 +86,18 @@ export function QuickOpen({
       window.clearTimeout(timer)
     }
   }, [root, query, retry])
-  const current = matches[active]
+  const current = loading ? undefined : matches[active]
+  useEffect(() => {
+    if (!current) return
+    document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [active, current, listId])
   const onKeyDown = (event: React.KeyboardEvent): void => {
     if (event.key === 'Escape') {
       event.preventDefault()
       onClose()
     } else if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setActive((n) => Math.min(matches.length - 1, n + 1))
+      setActive((n) => Math.max(0, Math.min(matches.length - 1, n + 1)))
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
       setActive((n) => Math.max(0, n - 1))
@@ -118,9 +123,14 @@ export function QuickOpen({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search files…"
             aria-label="Search files"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls={listId}
+            aria-activedescendant={current ? `${listId}-${active}` : undefined}
           />
         </label>
-        <div className={filesSurfaceClass(FilesSurfaceClass.quickOpenList)} role="listbox" aria-label={`${workspaceName} files`}>
+        <div className={filesSurfaceClass(FilesSurfaceClass.quickOpenList)} id={listId} role="listbox" aria-label={`${workspaceName} files`}>
           {loading ? (
             <div className={filesSurfaceClass(FilesSurfaceClass.quickOpenEmpty)} role="status">
               Loading files…
@@ -134,12 +144,15 @@ export function QuickOpen({
             <>
               <div className={filesSurfaceClass(FilesSurfaceClass.quickOpenGroup)}>{workspaceName}</div>
               {groups.map((item, index) => (
-                <button
+                <QuickOpenRow
                   key={item.path}
                   type="button"
                   role="option"
+                  id={`${listId}-${index}`}
+                  tabIndex={-1}
+                  onMouseDown={(event) => event.preventDefault()}
                   aria-selected={active === index}
-                  className={filesSurfaceClass(FilesSurfaceClass.quickOpenRow, active === index && FilesSurfaceClass.highlighted)}
+                  highlighted={active === index}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => onOpen(item.path)}
                 >
@@ -156,7 +169,7 @@ export function QuickOpen({
                         .map((char, i) => (query && item.pathIndices.includes(i) ? <b key={i}>{char}</b> : char))}
                     </span>
                   </span>
-                </button>
+                </QuickOpenRow>
               ))}
             </>
           ) : query ? (

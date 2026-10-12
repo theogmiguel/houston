@@ -5,10 +5,12 @@ import { ContextMenu } from '../ContextMenu'
 import { Icon } from '../Icon'
 import { IconCheck, IconChevronRight, IconPin } from '../../icons'
 import { Tooltip } from '../Tooltip'
+import type { TagInfo } from '../../../houston/generated/TagInfo'
+import { TagChip } from '../TagChip'
 import { WorkspaceTreeRow } from '../WorkspaceTreeRow'
 
 export function RailOptionsSurface({ children, style }: { children: ReactNode; style: React.CSSProperties }): React.JSX.Element {
-  return <div data-rail-options role="dialog" aria-label="Sidebar options" className="fixed z-[var(--z-popover)] w-[var(--w-rail-options)] rounded-[var(--tr-radius-md)] border border-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] bg-[var(--glass)] p-1 shadow-[var(--shadow-popover)] backdrop-blur-[16px] [backdrop-filter:blur(16px)_saturate(1.08)] [font-size:var(--tr-text-base)]" style={style}>{children}</div>
+  return <div data-rail-options role="dialog" aria-label="Sidebar options" className="fixed z-[var(--z-popover)] w-[var(--w-rail-options)] rounded-[var(--tr-radius-md)] border border-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] bg-[var(--glass)] p-1 shadow-[var(--shadow-1)] backdrop-blur-[16px] [backdrop-filter:blur(16px)_saturate(1.08)] [font-size:var(--tr-text-base)]" style={style}>{children}</div>
 }
 
 export function RailOptionsView({ direction, children }: { direction: 'none' | 'forward' | 'back'; children: ReactNode }): React.JSX.Element {
@@ -33,7 +35,7 @@ export function RailMenuRow({ children, selected = false, ...props }: ButtonHTML
 }
 
 export function RailMenuValue({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span className="ml-auto text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">{children}</span>
+  return <span className="ml-auto inline-flex items-center gap-1 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">{children}</span>
 }
 
 export function RailMenuCheckSlot({ checked }: { checked: boolean }): React.JSX.Element {
@@ -111,7 +113,7 @@ export function RailFilterButton({ children, active = true, ...props }: ButtonHT
 }
 
 export function RailVirtualViewport({ children, dragging, ...props }: ComponentProps<'div'> & { dragging: boolean; children: ReactNode }): React.JSX.Element {
-  return <div {...props} className={`wlist flex min-h-0 flex-1 flex-col gap-[var(--space-1)] overflow-y-auto px-[var(--space-1-5)] pt-[var(--space-0-5)] pb-[var(--space-2)] ${dragging ? 'cursor-grabbing' : 'cursor-pointer'}`}>{children}</div>
+  return <div {...props} data-rail-grid-list className={`wlist flex min-h-0 flex-1 flex-col gap-[var(--space-1)] overflow-y-auto px-[var(--space-1-5)] pt-[var(--space-0-5)] pb-[var(--space-2)] ${dragging ? 'cursor-grabbing' : 'cursor-pointer'}`}>{children}</div>
 }
 
 export function RailWorkspaceGroupRow(props: ComponentProps<typeof WorkspaceTreeRow>): React.JSX.Element {
@@ -161,7 +163,7 @@ export function RailGroupCount({ children }: { children: ReactNode }): React.JSX
 }
 
 export function RailTreeGroupHeader({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div data-testid="tree-group-header" className="box-content flex h-[var(--h-rail-group-header)] flex-none items-center gap-1 px-[var(--space-2)] pt-[var(--space-2)]">{children}</div>
+  return <div data-testid="tree-group-header" className="box-content flex h-[var(--h-rail-group-header)] flex-none items-center gap-1 px-[var(--space-4)] pt-[var(--space-2)]">{children}</div>
 }
 
 export function RailTreeTitle({ children }: { children: ReactNode }): React.JSX.Element {
@@ -169,9 +171,17 @@ export function RailTreeTitle({ children }: { children: ReactNode }): React.JSX.
 }
 
 export function RailFilterCountBadge({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span aria-hidden data-testid="tree-filter-badge" className="absolute -right-[var(--space-pixel)] -top-[var(--space-pixel)] h-[var(--h-rail-filter-badge)] min-w-[var(--h-rail-filter-badge)] rounded-full bg-[var(--accent)] px-[var(--space-0-5)] text-center [font-size:var(--tr-text-label-size)] leading-[var(--h-rail-filter-badge)] text-white">{children}</span>
+  return <span aria-hidden data-testid="tree-filter-badge" className="text-[length:var(--tr-text-xs)] text-[var(--text-secondary)]">{children}</span>
+}
+
+export function RailActiveTagFilter({ tags, onClear }: { tags: readonly TagInfo[]; onClear: () => void }): React.JSX.Element | null {
+  if (!tags.length) return null
+  return <div data-testid="rail-active-tag-filter" className="flex flex-none flex-wrap items-center gap-1 px-[var(--space-4)] pb-1 text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
+    Showing {tags.map((tag) => <TagChip key={tag.id} tag={tag} />)} only
+    <Button variant="muted-link" size="sm" className="ml-auto" onClick={onClear}>Clear</Button>
+  </div>
 }
 
 export function RailChromeSpecimen(): React.JSX.Element {
-  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsView direction="none"><RailOptionsTitle>Sidebar options</RailOptionsTitle></RailOptionsView><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailGroupSegment value="workspace" onChange={() => {}} /><RailCardModeSegment value="detailed" onChange={() => {}} /><RailTagDisplaySegment value="dots" onChange={() => {}} /><RailMenuRow selected><RailMenuCheckSlot checked />Sort by<RailMenuValue>Manual</RailMenuValue></RailMenuRow><RailMenuRow>Tags<RailTagFilterValue active colors={['var(--ok)', 'var(--info)']} /></RailMenuRow><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded><RailGroupStatusDot label="Working" />Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle></RailTreeGroupHeader></div>
+  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsView direction="none"><RailOptionsTitle>Sidebar options</RailOptionsTitle></RailOptionsView><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailGroupSegment value="workspace" onChange={() => {}} /><RailCardModeSegment value="detailed" onChange={() => {}} /><RailTagDisplaySegment value="dots" onChange={() => {}} /><RailMenuRow selected><RailMenuCheckSlot checked />Sort by<RailMenuValue>Manual</RailMenuValue></RailMenuRow><RailMenuRow>Tags<RailTagFilterValue active colors={['var(--ok)', 'var(--info)']} /></RailMenuRow><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded><RailGroupStatusDot label="Working" />Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle><RailFilterCountBadge>1</RailFilterCountBadge></RailTreeGroupHeader><RailActiveTagFilter tags={[{ id: 1, name: 'ui', color: 'var(--info)' }]} onClear={() => {}} /></div>
 }

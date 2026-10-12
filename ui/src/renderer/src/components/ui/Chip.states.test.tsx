@@ -56,13 +56,14 @@ describe('Chip — state matrix', () => {
     expect(container.querySelector('[data-testid="chip"]')?.className).toContain('active:scale-')
   })
 
-  it('Selected — a selected chip is aria-pressed and carries accent styling', () => {
+  it('Selected — a selected chip is aria-pressed with neutral fill and a border cue', () => {
     act(() => {
       root.render(<Chip variant="compound" label="foo" onClick={() => {}} selected />)
     })
     const el = container.querySelector('[data-testid="chip"]')
     expect(el?.getAttribute('aria-pressed')).toBe('true')
-    expect(el?.className).toContain('border-[var(--accent)]')
+    expect(el?.className).toContain('bg-selected-fill')
+    expect(el?.className).toContain('border-[var(--border-hover)]')
   })
 
   it('Disabled — carries its reason as a title and blocks the click handler', () => {

@@ -40,7 +40,7 @@ export function buildSkillRows(tools: SkillToolState[]): SkillRow[] {
 
 export function skillCellFor(row: SkillRow, tool: SkillToolState): SkillCell {
   const entry = row.byTool[tool.tool]
-  if (entry) return { kind: row.hasDrift ? 'differs' : 'same', entry }
+  if (entry) return { kind: row.claude && entry.digest !== row.claude.digest ? 'differs' : 'same', entry }
   if (tool.inherits_claude && row.claude) return { kind: 'inherited' }
   return { kind: 'missing' }
 }
@@ -54,9 +54,9 @@ export function needsPush(row: SkillRow, tool: SkillToolState): boolean {
 export function skillCellTitle(cell: SkillCell, tool: string): string {
   switch (cell.kind) {
     case 'same':
-      return `Its own copy, identical to the others — ${cell.entry.path}`
+      return `Its own copy, in sync — ${cell.entry.path}`
     case 'differs':
-      return `Its own copy, and it differs from another tool's — ${cell.entry.path}`
+      return `Its own copy, and it differs from Claude Code's — ${cell.entry.path}`
     case 'inherited':
       return `No copy of its own, but ${tool} reads Claude Code's skills directory, so it sees this one`
     case 'missing':

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import type { HoustonClient, PrListItem, PrListState, PrSort, PullRequestLink } from '../../houston/client'
+import type { HoustonClient, PrListItem, PrListState, PrSort, PullRequestLink, Workspace } from '../../houston/client'
 import type { SurfaceKind } from '../../scmPanel'
 
 const PullRequestsScreen = lazy(() =>
@@ -10,6 +10,8 @@ interface PullRequestsRailScreenProps {
   repoName: string
   workspace: string
   currentUser: string
+  workspaces?: readonly Workspace[]
+  onWorkspaceChange?: (workspace: string) => void
   items: PrListItem[]
   client: HoustonClient | null
   directory: string | null
@@ -20,6 +22,7 @@ interface PullRequestsRailScreenProps {
   onSortChange: (sort: PrSort) => void
   onRefresh: () => void
   onOpenSurface?: (surface: SurfaceKind) => void
+  onOpenUrlInPane?: (url: string) => void
 }
 
 export function PullRequestsRailScreen(props: PullRequestsRailScreenProps): React.JSX.Element {

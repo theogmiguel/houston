@@ -295,17 +295,7 @@
 @keyframes browser-surface-live-far {
   50% { opacity: 1; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .browser-surface-live::before,
-  .browser-surface-live::after {
-    animation: none;
-  }
-  .browser-surface-load > span {
-    animation: none;
-    width: 100%;
-    opacity: 0.6;
-  }
-}
+
 .browser-surface-cards {
   display: flex;
   flex-direction: column;
@@ -480,4 +470,8 @@
 .browser-surface-error {
   color: var(--danger);
   font-size: var(--tr-text-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-surface-load > span { width: 100%; opacity: 0.6; }
 }

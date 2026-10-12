@@ -16,18 +16,18 @@ describe('fidelity primitives', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('renders a provider bullet and summary without a share bar', () => {
-    const { container } = render(<UsageProviderRow mark={<span>✳</span>} label="Claude Code" sessions={3} amount="$12.00" note="75% of cost · 20K tokens" color="var(--claude)" />)
+  it('renders a provider summary and accessible share bar', () => {
+    const { container } = render(<UsageProviderRow mark={<span>✳</span>} label="Claude Code" sessions={3} amount="$12.00" note="20K tokens" share={0.75} color="var(--claude)" />)
     expect(screen.getByText('Claude Code')).toBeTruthy()
-    expect(container.querySelector('[data-testid="usage-provider-row"]')?.querySelectorAll('span.rounded-full')).toHaveLength(1)
-    expect(container.querySelector('[role="progressbar"]')).toBeNull()
+    expect(container.textContent).toContain('3 sessions · 20K tokens')
+    expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('75')
   })
 
-  it('uses the UI section heading and names models above their colored share bars', () => {
-    const { container } = render(<><UsageSectionHeading>Breakdown</UsageSectionHeading><UsageModelCell mark={<span>◎</span>} name="gpt-5.5-codex" share={0.4} color="var(--text-primary)" /></>)
+  it('uses the UI section heading and uses mono model names with shares in their own column', () => {
+    const { container } = render(<><UsageSectionHeading>Breakdown</UsageSectionHeading><UsageModelCell mark={<span>◎</span>} name="gpt-5.5-codex" /></>)
     expect(screen.getByRole('heading', { name: 'Breakdown' }).className).toContain('tr-text-ui-size')
-    expect(screen.getByText('gpt-5.5-codex').className).not.toContain('font-mono')
-    expect(container.querySelector('span[aria-hidden="true"] span')?.getAttribute('style')).toContain('linear-gradient')
+    expect(screen.getByText('gpt-5.5-codex').className).toContain('font-mono')
+    expect(container.querySelector('span[aria-hidden="true"] span')).toBeNull()
   })
 
   it('formats share amounts with grouped currency and square swatches', () => {

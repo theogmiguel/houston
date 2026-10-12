@@ -3,7 +3,14 @@ import { pushDisabledReason } from './changes'
 import type { PrState } from './usePrSubscription'
 
 export function canCommit(staged: number, message: string, committing: boolean): boolean {
-  return staged > 0 && message.trim().length > 0 && !committing
+  return commitBlockedReason(staged, message, committing) === null
+}
+
+export function commitBlockedReason(staged: number, message: string, committing: boolean): string | null {
+  if (committing) return 'Committing…'
+  if (message.trim().length === 0) return 'Write a message to commit'
+  if (staged === 0) return 'Stage files to commit'
+  return null
 }
 
 export function pushBlockedReason(

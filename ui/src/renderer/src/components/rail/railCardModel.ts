@@ -2,6 +2,7 @@ import type { PrInfo, SessionInfo } from '../../houston/client'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionActivity } from '../../houston/generated/SessionActivity'
 import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
+import { sessionCheckoutRoot } from '../checkout/formatCheckout'
 import { gridStatus, liftDelegatedWork, type GridStatusModel } from '../ui/railRows'
 import { orderGridPanes } from '../ui/railRowModel'
 
@@ -31,7 +32,7 @@ export type RailCard = {
   status: GridStatusModel
   checkouts: CheckoutIdentity[]
   pr: { gh: string; pr: PrInfo | null } | null
-  diff: { added: number; deleted: number } | null
+  diff: { added: number; deleted: number; ahead?: number } | null
   agents: RailAgentRow[]
   lastActivityMs: number
 }
@@ -44,7 +45,7 @@ export type RailCardSource = {
   paneIds: readonly number[]
   sessions: readonly SessionInfo[]
   branches?: ReadonlyMap<number, string>
-  diffByDir?: ReadonlyMap<string, { added: number; deleted: number }>
+  diffByDir?: ReadonlyMap<string, { added: number; deleted: number; ahead?: number }>
   prByDir?: ReadonlyMap<string, { gh: string; pr: PrInfo | null }>
 }
 
@@ -64,7 +65,7 @@ function checkoutIdentity(session: SessionInfo, branches: ReadonlyMap<number, st
   if (worktree || session.worktree) {
     return {
       kind: 'worktree',
-      root: checkout?.root ?? session.worktree?.path ?? session.checkout_root ?? session.cwd,
+      root: sessionCheckoutRoot(session),
       slug: worktree?.slug ?? session.worktree?.branch ?? 'worktree',
       branch,
       detached: branch === null,
@@ -73,12 +74,12 @@ function checkoutIdentity(session: SessionInfo, branches: ReadonlyMap<number, st
   if (checkoutKind === 'primary' || session.checkout_root) {
     return {
       kind: 'primary',
-      root: checkout?.root ?? session.checkout_root ?? session.cwd,
+      root: sessionCheckoutRoot(session),
       branch,
       detached: branch === null,
     }
   }
-  if (checkoutKind === 'folder') return { kind: 'folder', root: checkout?.root ?? session.cwd }
+  if (checkoutKind === 'folder') return { kind: 'folder', root: sessionCheckoutRoot(session) }
   return { kind: 'folder', root: session.cwd }
 }
 
@@ -126,7 +127,7 @@ export function buildRailCard(source: RailCardSource): RailCard {
     status,
     checkouts,
     pr,
-    diff: diff ? { added: diff.added, deleted: diff.deleted } : null,
+    diff: diff ? { added: diff.added, deleted: diff.deleted, ahead: diff.ahead } : null,
     agents,
     lastActivityMs: statusSince,
   }

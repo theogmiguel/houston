@@ -77,7 +77,6 @@ export function EditorLeaf({
       <PaneHeader
         data-pane-focus-head={focusTier}
         divider="dividerMuted"
-        transition="surface"
         dragCursor
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button')) return

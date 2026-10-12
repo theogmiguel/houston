@@ -3,6 +3,7 @@ import type { IconComponent } from '../icons'
 import { Button } from './Button'
 import { Icon } from './Icon'
 import { Text } from './Text'
+import { WorktreePopoverSpecimen } from './WorktreePopover'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS, popOriginStyle } from './overlayChrome'
 
 // The hover card that describes a delegated pane, and the badge glyphs that open it.
@@ -21,12 +22,14 @@ export function PopoverPanel({
   top,
   left,
   visible,
+  width = 'default',
   ref,
   ...props
 }: {
   top: number
   left: number
   visible: boolean
+  width?: 'default' | 'wide' | 'list'
   ref?: Ref<HTMLDivElement>
 } & Omit<HTMLAttributes<HTMLDivElement>, 'className' | 'style'>): React.JSX.Element {
   const style: CSSProperties = {
@@ -41,16 +44,20 @@ export function PopoverPanel({
       ref={ref}
       role="dialog"
       {...OVERLAY_RAISED_ATTRS}
-      className={`${OVERLAY_RAISED_CLS} fixed z-[var(--z-overlay)] w-[var(--w-popover-content)] overflow-hidden`}
+      className={`${OVERLAY_RAISED_CLS} fixed z-[var(--z-overlay)] ${width === 'wide' ? 'w-[420px] max-w-[calc(100vw_-_var(--space-4))] max-h-[calc(100vh_-_var(--space-4))] overflow-auto' : width === 'list' ? 'w-[460px] max-w-[calc(100vw_-_var(--space-4))] max-h-[calc(100vh_-_var(--space-4))] overflow-auto p-[var(--space-1)]' : 'w-[var(--w-popover-content)] overflow-hidden'}`}
       style={style}
     />
   )
 }
 
-export function PopoverHeader({ children, trailing }: { children: ReactNode; trailing?: ReactNode }): React.JSX.Element {
+export function PopoverBody({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="grid gap-[var(--space-2)] p-[var(--space-2)]">{children}</div>
+}
+
+export function PopoverHeader({ children, trailing, description }: { children: ReactNode; trailing?: ReactNode; description?: ReactNode }): React.JSX.Element {
   return (
     <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
-      {children}
+      {description ? <div className="grid min-w-0 gap-[var(--space-0-5)]">{children}<Text size="small" tone="muted">{description}</Text></div> : children}
       <span className="ml-auto" />
       {trailing}
     </div>
@@ -195,13 +202,15 @@ export function BadgeSeparator({ children }: { children: ReactNode }): React.JSX
   return <Text className="px-px" tone="muted">{children}</Text>
 }
 
-export function PopoverPanelSpecimen(): React.JSX.Element {
+export function PopoverPanelSpecimen({ width = 'default' }: { width?: 'default' | 'wide' | 'list' }): React.JSX.Element {
+  if (width === 'list') return <WorktreePopoverSpecimen />
   return (
-    <div className="w-[var(--w-popover-content)] overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--pop-bg)]">
+    <div className={`${width === 'wide' ? 'w-[420px] max-w-full' : 'w-[var(--w-popover-content)]'} overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--elevated-surface)]`}>
       <PopoverHeader trailing={<PopoverDescription>1 waiting</PopoverDescription>}>
         <PopoverTitle>Review</PopoverTitle>
         <PopoverDescription>Review API changes</PopoverDescription>
       </PopoverHeader>
+      {width === 'wide' && <PopoverBody><Text size="small" tone="muted">Workspace sources</Text></PopoverBody>}
       <IdentityLine>
         claude
         <InlineSeparator />

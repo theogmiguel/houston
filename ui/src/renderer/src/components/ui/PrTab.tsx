@@ -1,11 +1,12 @@
+import { ROW_STATE } from './rowState'
 import * as React from 'react'
 import type { JSX } from 'react'
 import './floatingSurface.css'
 import './prs.css'
 import { MATERIAL_CLS } from './material'
 
-export const PR_FLOATING_MENU = `${MATERIAL_CLS['overlay-glass']} floating-glass floating-pop-in`
-export const PR_FLOATING_CANDIDATES = 'floating-glass floating-pop-in'
+export const PR_FLOATING_MENU = `${MATERIAL_CLS['raised-glass']} floating-glass`
+export const PR_FLOATING_CANDIDATES = `${MATERIAL_CLS['raised-glass']} floating-glass`
 
 const SURFACE_CLASSES = {
   'pr-number': 'font-mono text-[var(--text-secondary)]',
@@ -87,7 +88,7 @@ const SURFACE_CLASSES = {
   'pr-code-line': 'pr-code-line',
   'pr-code-viewed': 'pr-code-viewed',
   'pr-code-viewed-box': 'pr-code-viewed-box',
-  'pr-code-tree': 'pr-code-tree floating-glass floating-pop-in',
+  'pr-code-tree': 'pr-code-tree floating-glass shadow-[var(--shadow-1)]',
   'pr-code-tree-item': 'pr-code-tree-item',
   'pr-check-popover': 'panel-pr-check-popover',
   'pr-check-popover-title': 'pr-check-popover-title',
@@ -155,5 +156,6 @@ export function PrTab<T extends React.ElementType>({
   const activeStates = [...(state ? [state] : []), ...states]
   const modifier = activeStates.map((value) => ` ${STATE_CLASSES[value] ?? (value.startsWith('is-') ? value : `is-${value}`)}`).join('')
   const className = enabled ? `${SURFACE_CLASSES[surface]}${modifier}${baseClass ? ` ${baseClass}` : ''}` : baseClass
-  return React.createElement(as, { ...props, className })
+  const rowState = surface === 'pr-code-action' || surface === 'pr-code-tree-item' ? ROW_STATE[(props as React.ButtonHTMLAttributes<HTMLButtonElement>)['aria-pressed'] === true ? 'selected' : 'rest'] : ''
+  return React.createElement(as, { ...props, className: `${className} ${rowState}` })
 }

@@ -270,7 +270,7 @@ export { TaskKeyChip, TaskKeyTag, type TaskKeyChipProps } from './TaskKeyChip'
 
 /** A provider mark at 14px. */
 export function TaskAgentIcon({ agent }: { agent: AgentKind }): React.JSX.Element {
-  return <IconAgent agent={agent} brand className="size-[var(--task-agent-icon-size)] flex-none" />
+  return <IconAgent agent={agent} brand className="size-[var(--tr-icon-heading-size)] flex-none" />
 }
 
 /** A provider mark and name, with an optional faint lead-in label. */
