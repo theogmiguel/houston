@@ -8,11 +8,11 @@ export function GitChangesToolbarSurface({ children }: { children: ReactNode }):
 }
 
 export function GitCommitPanel({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="changes-commit flex-none flex flex-col gap-[var(--space-2)] p-[var(--space-2-5)] border-t border-t-[var(--border)] bg-[var(--material-shell-bg)]">{children}</div>
+  return <div className="changes-commit flex-none flex flex-col gap-[var(--space-1)] m-[var(--space-3)] p-[var(--space-1)] rounded-[var(--tr-radius-card)] border border-[var(--border)] bg-[var(--card-bg)]">{children}</div>
 }
 
 export function GitCommitMessageField(props: TextareaHTMLAttributes<HTMLTextAreaElement>): React.JSX.Element {
-  return <textarea {...props} className="flex-1 min-w-0 min-h-[var(--h-ctl)] resize-none rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] px-[var(--space-2)] py-[var(--space-1-5)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus-visible:border-[var(--border-focus)] focus-visible:outline-none" />
+  return <textarea {...props} className="flex-1 min-w-0 min-h-[var(--h-ctl)] resize-none rounded-[var(--tr-radius-sm)] border border-transparent bg-transparent px-[var(--space-2)] py-[var(--space-1-5)] text-[length:var(--tr-text-ui-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus-visible:border-[var(--border-focus)] focus-visible:outline-none" />
 }
 
 export function GitCommitMessageRow({ children }: { children: ReactNode }): React.JSX.Element {
@@ -20,15 +20,15 @@ export function GitCommitMessageRow({ children }: { children: ReactNode }): Reac
 }
 
 export function GitCommitActionRow({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div data-testid="changes-actions" className="flex items-center gap-[var(--space-2)]">{children}</div>
+  return <div data-testid="changes-actions" className="flex items-center gap-[var(--space-2)] px-[var(--space-1)] pb-[var(--space-1)]">{children}</div>
 }
 
 export function GitCommitButtonGroup({ children }: { children: ReactNode }): React.JSX.Element {
   return <div className="flex flex-wrap items-center justify-end gap-[var(--space-2)] ml-auto">{children}</div>
 }
 
-export function GitCommitStagedCount({ children, compact }: { children: ReactNode; compact: boolean }): React.JSX.Element {
-  return <span data-testid="changes-staged-count" className={`font-mono text-[length:var(--tr-text-small-size)] text-[var(--text-faint)] whitespace-nowrap ${compact ? 'hidden' : ''}`}>{children}</span>
+export function GitCommitStagedCount({ children }: { children: ReactNode; compact: boolean }): React.JSX.Element {
+  return <span data-testid="changes-staged-count" className={`min-w-0 flex-1 truncate text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]`}>{children}</span>
 }
 
 export function GitPrSummaryLabel({ children }: { children: ReactNode }): React.JSX.Element {

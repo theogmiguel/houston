@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, click, file, mount, q, qa, teardown } from './ChangesPane.harness'
 
+beforeEach(() => localStorage.clear())
 afterEach(teardown)
 
 function menu(): HTMLButtonElement[] {
@@ -145,6 +146,15 @@ describe('Changes pane — open in editor (carried from GitPanel.openInEditor.te
 })
 
 describe('Changes pane — commit', () => {
+  it('Amend sends amend: true instead of creating a new commit', () => {
+    const h = mount({})
+    h.status([file({ staged: true })])
+    typeCommitMessage('amended message')
+    click(q('[data-testid="changes-commit-options"]'))
+    click(menu().find((item) => item.textContent === 'Amend')!)
+    expect(h.client.gitCommitCalls).toEqual([{ dir: '/repo', message: 'amended message', options: { amend: true } }])
+  })
+
   it('Commit is refused until something is staged AND a message is typed', () => {
     const h = mount({})
     h.status([file({ path: 'a.ts' })])
@@ -161,7 +171,8 @@ describe('Changes pane — commit', () => {
       file({ path: 'a.ts', staged: false }),
       file({ path: 'b.ts', staged: true })
     ])
-    expect(q('[data-testid="changes-staged-count"]')!.textContent).toBe('2 files staged')
+    typeCommitMessage('add a and b')
+    expect(q('[data-testid="changes-staged-count"]')!.textContent).toBe('2 files to main')
     typeCommitMessage('  add a and b  ')
     click(q('[data-testid="changes-commit"]'))
     expect(h.client.gitCommitCalls).toEqual([{ dir: '/repo', message: 'add a and b' }])

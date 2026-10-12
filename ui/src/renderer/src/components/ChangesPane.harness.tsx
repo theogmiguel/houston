@@ -24,7 +24,7 @@ export class FakeClient {
   gitStageCalls: Array<{ dir: string; paths: string[] }> = []
   gitUnstageCalls: Array<{ dir: string; paths: string[] }> = []
   gitDiscardCalls: Array<{ dir: string; path: string; kind: string }> = []
-  gitCommitCalls: Array<{ dir: string; message: string }> = []
+  gitCommitCalls: Array<{ dir: string; message: string; options?: { amend?: boolean } }> = []
   gitPushCalls: string[] = []
   gitReviewDiffsCalls: string[] = []
   prStatusCalls: string[] = []
@@ -65,8 +65,8 @@ export class FakeClient {
   gitDiscard(dir: string, path: string, kind: string): void {
     this.gitDiscardCalls.push({ dir, path, kind })
   }
-  gitCommit(dir: string, message: string): void {
-    this.gitCommitCalls.push({ dir, message })
+  gitCommit(dir: string, message: string, options?: { amend?: boolean }): void {
+    this.gitCommitCalls.push(options ? { dir, message, options } : { dir, message })
   }
   gitPush(dir: string): void {
     this.gitPushCalls.push(dir)

@@ -2,6 +2,7 @@ import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
+import { ChangesStory } from './changesStories'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { FoundationMotionStory } from './foundationMotionStory'
 import { Segmented as SegmentedControl } from '../src/components/ui/SegmentedControl'
@@ -326,6 +327,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/tags': () => <LegacyTagsStory />,
   'legacy/question': () => <LegacyQuestionStory />,
   'legacy/git-shell': () => <LegacyGitShellStory />,
+  'changes/empty-message': () => <ChangesStory />,
+  'changes/ready': () => <ChangesStory ready />,
   'legacy/changes-idle': () => <LegacyChangesIdleStory />,
   'legacy/timeline-states': () => <LegacyTimelineStatesStory />,
   'legacy/overview': () => <InspectorOverviewStory />,

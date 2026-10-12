@@ -85,7 +85,7 @@ import { SplitButton } from './ui/SplitButton'
 import { ChangesFileList } from './git/ChangesFileList'
 import { BranchCommits } from './git/BranchCommits'
 import { changeListKeyDown } from './git/changeListKeyboard'
-import { canCommit as canCommitForState, offerCreatePr as offerPrCreateForState, openSelectedFile, pushBlockedReason, reviewDisabledReason } from './git/changesPaneDerived'
+import { commitBlockedReason, canCommit as canCommitForState, offerCreatePr as offerPrCreateForState, openSelectedFile, pushBlockedReason, reviewDisabledReason } from './git/changesPaneDerived'
 
 export interface ChangesReview {
   session: number
@@ -307,6 +307,7 @@ function CommitBox({
   ahead,
   doPush,
   canCommit,
+  blockedReason,
   doCommit,
   offerCreatePr,
   prBusy,
@@ -324,7 +325,8 @@ function CommitBox({
   ahead: number
   doPush: () => void
   canCommit: boolean
-  doCommit: (thenPush: boolean) => void
+  blockedReason: string | null
+  doCommit: (thenPush: boolean, amend?: boolean) => void
   offerCreatePr: boolean
   prBusy: boolean
   onCreatePr: () => void
@@ -340,15 +342,14 @@ function CommitBox({
           aria-label="Commit message"
           value={commitMsg}
           onChange={(event) => setCommitMsg(event.target.value)}
-          placeholder="Commit message"
+          placeholder="Describe what changed"
           rows={compact ? 3 : 2}
         />
       </GitCommitMessageRow>}
       <GitCommitActionRow>
         <GitCommitStagedCount compact={compact}>
-          {staged} file{staged === 1 ? '' : 's'} staged
+          {blockedReason ?? <>{staged} file{staged === 1 ? '' : 's'} to {target}</>}
         </GitCommitStagedCount>
-        {compact && target && <span data-testid="changes-commit-target">to {target}</span>}
         <GitCommitButtonGroup>
           <Tooltip label={pushBlocked ?? undefined} className="inline-flex">
             <LazyLegacyButton
@@ -379,13 +380,14 @@ function CommitBox({
           )}
           {!offerCreatePr && (
             <SplitButton
-              label={compact ? `Commit ${staged} file${staged === 1 ? '' : 's'}` : 'Commit'}
+              label="Commit"
               testId="changes-commit"
               disabled={!canCommit}
+              disabledReason={blockedReason ?? undefined}
               onClick={() => doCommit(false)}
               items={[
                 { label: 'Commit & push', testId: 'changes-commit-push', disabled: !canCommit, onClick: () => doCommit(true) },
-                { label: 'Amend last commit', disabled: !canCommit, onClick: () => doCommit(false) }
+                { label: 'Amend', testId: 'changes-commit-amend', disabled: !canCommit, onClick: () => doCommit(false, true) }
               ]}
             />
           )}
@@ -939,7 +941,7 @@ export function ChangesPane({
   )
 
   const doCommit = useCallback(
-    (thenPush: boolean): void => {
+    (thenPush: boolean, amend = false): void => {
       if (!client || !repoDir || committing || staged === 0) return
       const message = commitMsg.trim()
       if (message.length === 0) return
@@ -948,7 +950,8 @@ export function ChangesPane({
       setPushAfterCommit(thenPush)
       pushAfterCommitRef.current = thenPush
       pendingCommit.current = repoDir
-      client.gitCommit(repoDir, message)
+      if (amend) client.gitCommit(repoDir, message, { amend: true })
+      else client.gitCommit(repoDir, message)
     },
     [client, repoDir, committing, staged, commitMsg]
   )
@@ -1096,6 +1099,7 @@ export function ChangesPane({
       ahead={ahead}
       doPush={doPush}
       canCommit={canCommit}
+      blockedReason={commitBlockedReason(staged, commitMsg, committing)}
       doCommit={doCommit}
       offerCreatePr={offerCreatePr}
       prBusy={prBusy}
@@ -1107,7 +1111,7 @@ export function ChangesPane({
       }}
       hasChanges={rows.length > 0}
       compact={compact === true}
-      target={checkoutLabel ?? (repoDir ? repoDir.split(/[\\/]/).filter(Boolean).at(-1) : undefined)}
+      target={branch ?? checkoutLabel}
     />
   )
 
