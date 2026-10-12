@@ -1,3 +1,4 @@
+import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { SpinnerSpecimen } from '../src/components/ui/Spinner'
 import { OrchestrationContentSpecimen } from '../src/components/ui/OrchestrationContent'
@@ -1025,6 +1026,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Launch preset outline">
           <LaunchPresetOutlineSpecimen />
         </SpecimenGroup>
+        <SpecimenGroup heading="Composer menu rows"><ComposerPillMenuSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Launch slot card">
           <LaunchSlotCardSpecimen /><LaunchSlotCardSpecimen custom />
           <FieldLabel size="compact">Compact field label</FieldLabel>
