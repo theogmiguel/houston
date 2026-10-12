@@ -214,7 +214,8 @@ async fn a_refused_window_travels_back_as_an_error_not_an_empty_summary() {
     .unwrap();
 
     match next_control(&mut ws).await {
-        proto::ServerMsg::Error { message, .. } => {
+        proto::ServerMsg::Error { message, context } => {
+            assert_eq!(context.as_deref(), Some("usage_summary"));
             assert!(
                 message.starts_with(proto::USAGE_WINDOW_REFUSED),
                 "the marker is what routes this to the Usage section: {message}"
@@ -260,4 +261,25 @@ fn workspace_filter_counts_only_sessions_in_that_workspace() {
     assert_eq!(scan(&request).sources[0].distinct_sessions, 0);
     request.workspace_filter = None;
     assert_eq!(scan(&request).sources[0].distinct_sessions, 2);
+}
+
+#[tokio::test]
+async fn a_refused_year_window_has_an_activity_error_context() {
+    let (addr, _state, _daemon) = start_daemon_with_handle().await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let now = now_ms();
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::UsageActivitySummaryGet {
+            since_ms: now,
+            until_ms: now - 1,
+            workspace: None,
+        }).unwrap(),
+    )).await.unwrap();
+    match next_control(&mut ws).await {
+        proto::ServerMsg::Error { context, .. } => {
+            assert_eq!(context.as_deref(), Some("usage_activity"));
+        }
+        other => panic!("expected an Error, got {other:?}"),
+    }
 }

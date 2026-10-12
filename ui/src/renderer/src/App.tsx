@@ -427,6 +427,10 @@ const GIT_STATUS_ERROR_CONTEXT = "git_status";
 
 // Background git_status polls fail for workspaces whose folder is gone; the
 // Changes panel shows that error where it was asked for, not as a notice.
+// Mirrored by the daemon in server.rs.
+const USAGE_SUMMARY_ERROR_CONTEXT = "usage_summary";
+const USAGE_ACTIVITY_ERROR_CONTEXT = "usage_activity";
+
 function pushGlobalError(msg: { message: string; context?: string | null }, push: (message: string) => void): void {
   if (msg.context !== GIT_STATUS_ERROR_CONTEXT) push(msg.message);
 }
@@ -1608,10 +1612,12 @@ export function App(): React.JSX.Element {
             setHistoryCount(msg.count);
             break;
           case "error": {
-            if (msg.message.startsWith(USAGE_WINDOW_REFUSED)) {
+            if (msg.context === USAGE_SUMMARY_ERROR_CONTEXT || msg.context === USAGE_ACTIVITY_ERROR_CONTEXT || msg.message.startsWith(USAGE_WINDOW_REFUSED)) {
               setUsageLoading(false);
               setUsageError(
-                msg.message.slice(USAGE_WINDOW_REFUSED.length).trim(),
+                msg.message.startsWith(USAGE_WINDOW_REFUSED)
+                  ? msg.message.slice(USAGE_WINDOW_REFUSED.length).trim()
+                  : msg.message,
               );
               break;
             }

@@ -978,7 +978,15 @@ async fn dispatch(
                     let _ = send_msg(sink, &msg).await;
                     Ok(())
                 }
-                Err(e) => Err(e),
+                Err(e) => {
+                    send_error(
+                        sink,
+                        format!("{e:#}"),
+                        Some(USAGE_SUMMARY_ERROR_CONTEXT.into()),
+                    )
+                    .await;
+                    Ok(())
+                }
             }
         }
         proto::ClientMsg::UsageActivitySummaryGet {
@@ -997,7 +1005,15 @@ async fn dispatch(
                     let _ = send_msg(sink, &msg).await;
                     Ok(())
                 }
-                Err(e) => Err(e),
+                Err(e) => {
+                    send_error(
+                        sink,
+                        format!("{e:#}"),
+                        Some(USAGE_ACTIVITY_ERROR_CONTEXT.into()),
+                    )
+                    .await;
+                    Ok(())
+                }
             }
         }
         proto::ClientMsg::RestoreBudgetSet { budget } => daemon
@@ -3467,6 +3483,10 @@ async fn dispatch(
         }
     }
 }
+
+// Mirrored by the renderer in App.tsx.
+const USAGE_SUMMARY_ERROR_CONTEXT: &str = "usage_summary";
+const USAGE_ACTIVITY_ERROR_CONTEXT: &str = "usage_activity";
 
 const GIT_STATUS_ERROR_CONTEXT: &str = "git_status";
 
