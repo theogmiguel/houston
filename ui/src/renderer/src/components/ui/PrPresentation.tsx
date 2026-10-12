@@ -48,12 +48,16 @@ export function PrReadinessRow({ tone, heading, detail, actions }: { tone: 'ok' 
   </div>
 }
 
+export function PrCheckLogFrame({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="border-b border-[var(--divider)]">{children}</div>
+}
+
 export function PrMergeFooter({ consequence, children }: { consequence: ReactNode; children: ReactNode }): React.JSX.Element {
   return <div className="flex items-center gap-[var(--space-2)] bg-[color-mix(in_srgb,var(--text-primary)_2%,transparent)] px-[var(--space-3)] py-[var(--space-2)]"><Text size="small" tone="muted" className="min-w-0 flex-1">{consequence}</Text>{children}</div>
 }
 
 export function PrMergeSpecimen(): React.JSX.Element {
-  return <PrMergeFrame><PrReadinessRow tone="ok" heading="4 of 4 checks passed" detail="core, renderer, safety, licence inventory" /><PrMergeFooter consequence="5 commits become one"><span>Squash and merge</span></PrMergeFooter></PrMergeFrame>
+  return <PrMergeFrame><PrReadinessRow tone="stop" heading="core-checks failed" detail="4m 12s" /><PrCheckLogFrame><pre>test rail::cards … FAILED</pre></PrCheckLogFrame><PrReadinessRow tone="ok" heading="safety-checks" detail="Passed · 1m 12s" /><PrMergeFooter consequence="5 commits become one"><span>Squash and merge</span></PrMergeFooter></PrMergeFrame>
 }
 
 type PrView = 'summary' | 'timeline' | 'files'

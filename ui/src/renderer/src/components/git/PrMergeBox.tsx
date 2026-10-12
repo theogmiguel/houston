@@ -5,7 +5,7 @@ import { checkKey, CheckLog } from '../prs/ChecksList'
 import { Button } from '../ui/Button'
 import { SplitButton } from '../ui/SplitButton'
 import { Tooltip } from '../ui/Tooltip'
-import { PrMergeFrame, PrMergeFooter, PrReadinessRow } from '../ui/PrPresentation'
+import { PrCheckLogFrame, PrMergeFrame, PrMergeFooter, PrReadinessRow } from '../ui/PrPresentation'
 import { actionDisabledReason } from './prDetailUi'
 
 type MergeBoxProps = { link: PullRequestLink; detail: PrDetail; pr: PrDetailController; method: PrMergeMethod; setMethod: (method: PrMergeMethod) => void; mergeReason: string | null; checks: PrChecksState }
@@ -30,7 +30,7 @@ function PrFailedChecks({ checks }: { checks: PrChecksState }): React.JSX.Elemen
   const { checks: _checks, logs, expanded: _expanded, picker, sent, ...logProps } = props
   return <>
     <PrReadinessRow tone="stop" heading={`${first.name} failed`} detail={duration} actions={<div className="flex gap-[var(--space-1)]"><Button variant="ghost" size="sm" aria-expanded={open} onClick={() => props.onToggle(first)}>Log</Button>{!open && <Button variant="secondary" size="sm" onClick={() => { props.onToggle(first); props.onPickAgent(first) }}>Fix with agent</Button>}</div>} />
-    {open && <div className="border-b border-[var(--divider)]"><CheckLog {...logProps} check={first} log={logs[key]} picker={picker === key} sent={sent[key]} /></div>}
+    {open && <PrCheckLogFrame><CheckLog {...logProps} check={first} log={logs[key]} picker={picker === key} sent={sent[key]} /></PrCheckLogFrame>}
   </>
 }
 
