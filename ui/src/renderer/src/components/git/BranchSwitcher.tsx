@@ -11,6 +11,27 @@ import { Text } from '../ui/Text'
 
 export interface CheckoutPane { id: number; path: string }
 
+function BranchSwitcherOptions({ create, id, selected, busy, name, defaultBase, worktreeBranch, worktreeTaken, shown, truncated, setActive, createBranch, chooseBranch, branchNote }: {
+  create: boolean; id: string; selected: number | null; busy: boolean; name: string; defaultBase: string | null; worktreeBranch: string; worktreeTaken: boolean; shown: GitBranchInfo[]; truncated: boolean; setActive: (index: number) => void; createBranch: (worktree: boolean) => void; chooseBranch: (branch: GitBranchInfo) => void; branchNote: (branch: GitBranchInfo) => string | null
+}): React.JSX.Element {
+  return <BranchSwitcherList role="listbox" id={`${id}-options`} aria-label="Branches">
+        {create && <>
+          <BranchSwitcherGroup>Create</BranchSwitcherGroup>
+          <BranchSwitcherRow id={`${id}-0`} role="option" aria-selected={selected === 0} active={selected === 0} kind="create" shortcut="Enter" disabled={busy} onMouseMove={() => setActive(0)} onClick={() => createBranch(false)}>Branch <strong>{name}</strong> from {defaultBase ?? 'HEAD'}</BranchSwitcherRow>
+          <BranchSwitcherRow id={`${id}-1`} role="option" aria-selected={selected === 1} active={selected === 1} kind="worktree" shortcut="Ctrl Enter" disabled={busy || worktreeTaken} onMouseMove={() => setActive(1)} onClick={() => createBranch(true)}>Worktree <strong>{worktreeBranch}</strong> in a new pane</BranchSwitcherRow>
+        </>}
+        <BranchSwitcherGroup>Branches</BranchSwitcherGroup>
+        {shown.map((item, index) => {
+          const position = index + (create ? 2 : 0)
+          return <BranchSwitcherRow key={item.name} id={`${id}-${position}`} role="option" aria-selected={selected === position} active={selected === position} current={item.current} note={branchNote(item)} disabled={busy || item.current} onMouseMove={() => setActive(position)} onClick={() => chooseBranch(item)}>{item.name}</BranchSwitcherRow>
+        })}
+        {shown.length === 0 && <Text size="small" tone="muted">No branches found.</Text>}
+        {name && !nameShapeLooksValid(name) && <Text size="small" tone="muted">Cannot create “{name}”: use a Git branch name without whitespace or a leading hyphen.</Text>}
+        {create && worktreeTaken && <Text size="small" tone="muted">Worktree branch “{worktreeBranch}” already exists. Choose another name.</Text>}
+        {truncated && <Text size="small" tone="muted">Showing the first 200 branches.</Text>}
+      </BranchSwitcherList>
+}
+
 export function BranchSwitcher({ client, dir, branch, base, tools, busy, error, onManage, panes = [], onOpenPane }: {
   client: HoustonClient | null; dir: string; branch: string | null; base: string | null; tools: GitTools; busy: boolean; error: string | null; onManage: () => void; panes?: CheckoutPane[]; onOpenPane?: (id: number) => void
 }): React.JSX.Element {
@@ -126,22 +147,7 @@ export function BranchSwitcher({ client, dir, branch, base, tools, busy, error, 
       }
     }}>
       <BranchSwitcherSearch inputRef={input} value={query} onChange={(event) => { setQuery(event.target.value); setActive(null) }} role="combobox" aria-label="Find or create a branch" placeholder="Find or create a branch" aria-expanded aria-controls={`${id}-options`} aria-activedescendant={selected === null ? undefined : `${id}-${selected}`} />
-      <BranchSwitcherList role="listbox" id={`${id}-options`} aria-label="Branches">
-        {create && <>
-          <BranchSwitcherGroup>Create</BranchSwitcherGroup>
-          <BranchSwitcherRow id={`${id}-0`} role="option" aria-selected={selected === 0} active={selected === 0} kind="create" shortcut="Enter" disabled={busy} onMouseMove={() => setActive(0)} onClick={() => createBranch(false)}>Branch <strong>{name}</strong> from {defaultBase ?? 'HEAD'}</BranchSwitcherRow>
-          <BranchSwitcherRow id={`${id}-1`} role="option" aria-selected={selected === 1} active={selected === 1} kind="worktree" shortcut="Ctrl Enter" disabled={busy || worktreeTaken} onMouseMove={() => setActive(1)} onClick={() => createBranch(true)}>Worktree <strong>{worktreeBranch}</strong> in a new pane</BranchSwitcherRow>
-        </>}
-        <BranchSwitcherGroup>Branches</BranchSwitcherGroup>
-        {shown.map((item, index) => {
-          const position = index + (create ? 2 : 0)
-          return <BranchSwitcherRow key={item.name} id={`${id}-${position}`} role="option" aria-selected={selected === position} active={selected === position} current={item.current} note={branchNote(item)} disabled={busy || item.current} onMouseMove={() => setActive(position)} onClick={() => chooseBranch(item)}>{item.name}</BranchSwitcherRow>
-        })}
-        {shown.length === 0 && <Text size="small" tone="muted">No branches found.</Text>}
-        {name && !nameShapeLooksValid(name) && <Text size="small" tone="muted">Cannot create “{name}”: use a Git branch name without whitespace or a leading hyphen.</Text>}
-        {create && worktreeTaken && <Text size="small" tone="muted">Worktree branch “{worktreeBranch}” already exists. Choose another name.</Text>}
-        {tools.branchesTruncated && <Text size="small" tone="muted">Showing the first 200 branches.</Text>}
-      </BranchSwitcherList>
+      <BranchSwitcherOptions create={create} id={id} selected={selected} busy={busy} name={name} defaultBase={defaultBase} worktreeBranch={worktreeBranch} worktreeTaken={worktreeTaken} shown={shown} truncated={tools.branchesTruncated} setActive={setActive} createBranch={createBranch} chooseBranch={chooseBranch} branchNote={branchNote} />
       <BranchSwitcherFooter>
         <span>Switching keeps uncommitted changes or refuses with the files that block it.</span>
         <Button variant="link" size="sm" onClick={() => { setOpen(false); onManage() }}>Manage…</Button>

@@ -112,12 +112,25 @@ function PanelLinkIcon(): React.JSX.Element {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l3-3A5 5 0 0 0 13 2.9l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.1 0l-3 3A5 5 0 0 0 11 21.1l1.7-1.7" /></svg>
 }
 
+function browserSurfaceTitle(browserTitle: string, faviconUrl: string | null): { title: string; icon: React.ReactNode } {
+  const icon = faviconUrl ? <img src={faviconUrl} alt="" className="h-3.5 w-3.5" /> : browserTitle && browserTitle !== 'New tab' ? <ShellElement as="span" shellRole="browser-tab-favicon">{browserTitle.slice(0, 1).toUpperCase()}</ShellElement> : SURFACE_META.browser.icon
+  return { title: browserTitle || 'New tab', icon }
+}
+
+function pullRequestSurfaceTitle(number: number | null, reportedTone: string | null): { title: string; icon: React.ReactNode; badge: React.ReactNode } {
+  const tone = reportedTone === 'stop' || reportedTone === 'warn' ? reportedTone : 'ok'
+  const label = tone === 'stop' ? 'Checks failing' : tone === 'warn' ? 'Checks running' : 'Checks passing'
+  const iconState = reportedTone === 'stop' || reportedTone === 'warn' || reportedTone === 'ok' ? reportedTone : undefined
+  return { title: number === null ? SURFACE_META['pull-request'].label : `#${number}`, badge: <Tooltip label={label}><GitPresenceDot data-tone={reportedTone ?? 'ok'} tone={tone} /></Tooltip>, icon: <ShellElement as="span" shellRole="panel-pr-icon" state={iconState}><Icon glyph={IconGitPullRequest} role="label" /></ShellElement> }
+}
+
 function titleForSurface(surface: SurfaceKind, browserTitle: string, faviconUrl: string | null, prNumber: number | null, prTone: string | null, fileTitle: string, changed: number): { title: string; icon: React.ReactNode; badge?: React.ReactNode } {
-  if (isBrowserSurface(surface) || surface === 'browser') return { title: browserTitle || 'New tab', icon: faviconUrl ? <img src={faviconUrl} alt="" className="h-3.5 w-3.5" /> : browserTitle && browserTitle !== 'New tab' ? <ShellElement as="span" shellRole="browser-tab-favicon">{browserTitle.slice(0, 1).toUpperCase()}</ShellElement> : SURFACE_META.browser.icon }
+  if (isBrowserSurface(surface) || surface === 'browser') return browserSurfaceTitle(browserTitle, faviconUrl)
   if (surface === 'diff') return { title: `Changes ${changed}`, icon: SURFACE_META.diff.icon }
   if (surface === 'files') return { title: fileTitle || SURFACE_META.files.label, icon: <PanelFilesIcon /> }
-  if (surface === 'pull-request') return { title: prNumber === null ? SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label : `#${prNumber}`, badge: <Tooltip label={prTone === 'stop' ? 'Checks failing' : prTone === 'warn' ? 'Checks running' : 'Checks passing'}><GitPresenceDot data-tone={prTone ?? 'ok'} tone={prTone === 'stop' || prTone === 'warn' ? prTone : 'ok'} /></Tooltip>, icon: <ShellElement as="span" shellRole="panel-pr-icon" state={prTone === 'stop' || prTone === 'warn' || prTone === 'ok' ? prTone : undefined}><Icon glyph={IconGitPullRequest} role="label" /></ShellElement> }
-  return { title: SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label, icon: SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].icon }
+  if (surface === 'pull-request') return pullRequestSurfaceTitle(prNumber, prTone)
+  const meta = SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface]
+  return { title: meta.label, icon: meta.icon }
 }
 
 function surfaceDisabledReason(

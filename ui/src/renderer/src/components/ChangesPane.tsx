@@ -606,6 +606,32 @@ function DiffLayoutChoices({ split, setSplit, view }: { split: boolean; setSplit
   </div>
 }
 
+function changesEmptySummary(rows: ChangeRow[], ahead: number, base: string | null): { headline: string; description: string } {
+  return {
+    headline: `${rows.length} file${rows.length === 1 ? '' : 's'} changed`,
+    description: `+${rows.reduce((sum, row) => sum + (row.added ?? 0), 0)} added, −${rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)} removed${ahead > 0 ? ` · ${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${base ?? 'the base'}` : ''}. Pick a file to read its diff.`
+  }
+}
+
+function ChangesPanelFileList({ compact, maximized, files, rows, visibleFiles, visibleRows, inlineDiffs, expandedPaths, togglePath, onKeyDown, ...props }: Parameters<typeof ChangesFileList>[0] & { maximized: boolean; visibleFiles: GitFileStatus[] | null; visibleRows: ChangeRow[] }): React.JSX.Element {
+  const inline = compact && !maximized
+  return <ChangesFileList {...props} compact={compact} flat={compact || maximized} files={compact ? visibleFiles : files} rows={compact ? visibleRows : rows} inlineDiffs={inline ? inlineDiffs : undefined} expandedPaths={inline ? expandedPaths : undefined} togglePath={inline ? togglePath : undefined} onKeyDown={onKeyDown} />
+}
+
+function ChangesBranchHeader({ client, dir, branch, base, tools, busy, error, panes, onOpenPane, onManage, upstream, behind, pushBlocked, pushing, ahead, maximized, doPush, onAddWorkspace }: {
+  client: HoustonClient | null; dir: string; branch: string | null; base: string | null; tools: GitTools; busy: boolean; error: string | null; panes: ChangesPaneProps['checkoutPanes']; onOpenPane: ChangesPaneProps['onOpenPane']; onManage: () => void; upstream: string | null; behind: number; pushBlocked: string | null; pushing: boolean; ahead: number; maximized: boolean; doPush: () => void; onAddWorkspace: (path: string) => void
+}): React.JSX.Element {
+  const pushLabel = pushing ? 'Pushing…' : ahead > 0 ? maximized ? `Push ${ahead}` : `Push ${ahead} commit${ahead === 1 ? '' : 's'}` : 'Push'
+  return <ChangesBranchLine>
+    <BranchSwitcher client={client} dir={dir} branch={branch} base={base} tools={tools} busy={busy} error={error} panes={panes} onOpenPane={onOpenPane} onManage={onManage} />
+    <span className="flex flex-1 justify-end gap-[var(--space-1)]">
+      <PullQuickButton upstream={upstream} behind={behind} busy={busy} onPull={tools.pull} />
+      <Tooltip label={pushBlocked ?? undefined}><Button variant="secondary" size="sm" icon={IconArrowUp} data-testid="changes-push" disabled={pushBlocked !== null} onClick={doPush}>{pushLabel}</Button></Tooltip>
+      <ChangesToolbar compact triggerLabel="Git tools: fetch, worktrees, checkpoints" strip={<GitToolsBar clientReady={client !== null} dir={dir} tools={tools} busy={busy} error={error} behind={behind} upstream={upstream} fallbackBase={base} onAddWorkspace={onAddWorkspace} compact />} />
+    </span>
+  </ChangesBranchLine>
+}
+
 export function ChangesPane({
   client,
   dir,
@@ -1010,11 +1036,13 @@ export function ChangesPane({
 
   const notice = <ReviewNoticeLine reviewNotice={reviewNotice} />
   const fileList = (
-    <ChangesFileList
+    <ChangesPanelFileList
       compact={compact}
-      flat={compact || maximized}
-      files={compact ? visibleFiles : files}
-      rows={compact ? visibleRows : rows}
+      maximized={maximized}
+      files={files}
+      rows={rows}
+      visibleFiles={visibleFiles}
+      visibleRows={visibleRows}
       branch={branch}
       scope={scope}
       defaultBase={defaultBase}
@@ -1034,9 +1062,9 @@ export function ChangesPane({
       unstageAll={unstageAll}
       bulkForGroup={bulkForGroup}
       setStatusError={setStatusError}
-      inlineDiffs={compact && !maximized ? inlineDiffs : undefined}
-      expandedPaths={compact && !maximized ? expandedPaths : undefined}
-      togglePath={compact && !maximized ? togglePath : undefined}
+      inlineDiffs={inlineDiffs}
+      expandedPaths={expandedPaths}
+      togglePath={togglePath}
       wrapDiff={wrapDiff}
       splitDiff={splitDiff}
     />
@@ -1059,10 +1087,7 @@ export function ChangesPane({
       diff={diff}
       split={splitDiff}
       controls={maximized ? layoutChoices : undefined}
-      emptySummary={{
-        headline: `${rows.length} file${rows.length === 1 ? '' : 's'} changed`,
-        description: `+${rows.reduce((sum, row) => sum + (row.added ?? 0), 0)} added, −${rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)} removed${ahead > 0 ? ` · ${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${defaultBase ?? 'the base'}` : ''}. Pick a file to read its diff.`
-      }}
+      emptySummary={changesEmptySummary(rows, ahead, defaultBase)}
       onOpenInEditor={openSelectedFile(onOpenFileInEditor, activeRepoDir, selectedRow)}
       onReview={openReviewPicker}
       reviewDisabledReason={reviewDisabledReason(client !== null, reviewBusy)}
@@ -1098,18 +1123,7 @@ export function ChangesPane({
 
   const prLine = <PrLine pr={pr} onOpenUrlInPane={onOpenUrlInPane} hidden={compact} />
 
-  const branchHeader = <ChangesBranchLine>
-    <BranchSwitcher client={client} dir={activeRepoDir} branch={branch} base={defaultBase} tools={tools} busy={toolsBusy} error={toolsError} panes={checkoutPanes} onOpenPane={onOpenPane} onManage={() => setBranchManageOpen(true)} />
-    <span className="flex flex-1 justify-end gap-[var(--space-1)]">
-      <PullQuickButton upstream={upstream} behind={behind} busy={toolsBusy} onPull={tools.pull} />
-      <Tooltip label={pushBlocked ?? undefined}>
-        <Button variant="secondary" size="sm" icon={IconArrowUp} data-testid="changes-push" disabled={pushBlocked !== null} onClick={doPush}>
-          {pushing ? 'Pushing…' : ahead > 0 ? maximized ? `Push ${ahead}` : `Push ${ahead} commit${ahead === 1 ? '' : 's'}` : 'Push'}
-        </Button>
-      </Tooltip>
-      <ChangesToolbar compact triggerLabel="Git tools: fetch, worktrees, checkpoints" strip={<GitToolsBar clientReady={client !== null} dir={activeRepoDir} tools={tools} busy={toolsBusy} error={toolsError} behind={behind} upstream={upstream} fallbackBase={defaultBase} onAddWorkspace={addWorkspace} compact />} />
-    </span>
-  </ChangesBranchLine>
+  const branchHeader = <ChangesBranchHeader client={client} dir={activeRepoDir} branch={branch} base={defaultBase} tools={tools} busy={toolsBusy} error={toolsError} panes={checkoutPanes} onOpenPane={onOpenPane} onManage={() => setBranchManageOpen(true)} upstream={upstream} behind={behind} pushBlocked={pushBlocked} pushing={pushing} ahead={ahead} maximized={maximized} doPush={doPush} onAddWorkspace={addWorkspace} />
   const compactToolbar = <GitChangesToolbarSurface>
     <ComparisonChoices counts={counts} scope={scope} setScope={(value) => { setScope(value); setStagedOnly(false) }} defaultBase={defaultBase} />
     {!maximized && <span className="flex flex-1 justify-end">{layoutChoices}</span>}
