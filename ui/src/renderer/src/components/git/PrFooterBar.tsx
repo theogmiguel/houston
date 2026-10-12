@@ -284,7 +284,8 @@ export function PrFooterBar({
   setMethod,
   onOpenUrlInPane,
   mergeReason,
-  compact = false
+  compact = false,
+  menuOnly = false
 }: {
   link: PullRequestLink
   detail: PrDetail
@@ -295,6 +296,7 @@ export function PrFooterBar({
   onOpenUrlInPane?: (url: string) => void
   mergeReason: string | null
   compact?: boolean
+  menuOnly?: boolean
 }): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false)
   const busy = pr.write.busy !== null
@@ -320,5 +322,6 @@ export function PrFooterBar({
       : null
 
   const layoutProps: PrFooterLayoutProps = { link, detail, pr, linked, method, setMethod, onOpenUrlInPane, mergeReason, menuOpen, setMenuOpen, busy, reason, open, draft, merged, closed, primary }
+  if (menuOnly) return <PrTab as="div" surface="pr-header-actions" data-testid="pr-actions"><Tooltip label="More pull request actions"><ReviewButton variant="pull-request-nav-action" type="button" data-testid="pr-actions-menu" aria-label="More pull request actions" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}><Icon glyph={IconMoreHorizontal} role="small" /></ReviewButton></Tooltip>{menuOpen && <PrFooterMenu link={link} detail={detail} pr={pr} linked={linked} open={open} draft={draft} busy={busy} method={method} reason={reason} onOpenUrlInPane={onOpenUrlInPane} compact={compact} />}</PrTab>
   return compact ? <PrFooterCompactLayout {...layoutProps} /> : <PrFooterWideLayout {...layoutProps} />
 }

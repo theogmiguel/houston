@@ -1,3 +1,4 @@
+import { PrMergeBox } from './PrMergeBox'
 import { PrHeaderFrame, PrHeaderActions, PrHeaderNumber, PrHeaderAvatar, PrHeaderSentence, PrStatusWord } from '../ui/PrPresentation'
 import { prRelativeAge } from './prRelativeAge'
 import { PrTab } from '../ui/PrTab'
@@ -1166,13 +1167,15 @@ function PrDetailView({
       onOpenUrlInPane={onOpenUrlInPane}
       mergeReason={mergeReason}
       compact={compact}
+      menuOnly
     />
   )
 
 
   return (
     <PullRequestRole data-testid="pr-tab" as="div" role="tab-frame">
-      <PrBranchHeader link={link} detail={detail} actionBar={compact ? actionBar : null} onOpenUrlInPane={onOpenUrlInPane} />
+      <PrBranchHeader link={link} detail={detail} actionBar={actionBar} onOpenUrlInPane={onOpenUrlInPane} />
+      <PrMergeBox link={link} detail={detail} pr={pr} method={method} setMethod={setMethod} mergeReason={mergeReason} checks={checkState} />
       <PrDetailToolbar
         compact={compact}
         pane={pane}
@@ -1226,7 +1229,6 @@ function PrDetailView({
         </Tooltip></PrTab>
       </>}
       {!compact && pane === 'files' && reviewBar}
-      {!compact && pane === 'summary' && actionBar}
     </PullRequestRole>
   )
 }

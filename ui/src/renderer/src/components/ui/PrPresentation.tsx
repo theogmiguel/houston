@@ -32,3 +32,22 @@ export function PrHeaderSpecimen(): React.JSX.Element {
 export function PrStatusWord({ children, tone = 'ok', ...props }: React.HTMLAttributes<HTMLSpanElement> & { children: ReactNode; tone?: 'ok' | 'stop' | 'warn' | 'info' | 'muted' }): React.JSX.Element {
   return <span {...props} className="inline-flex items-center gap-[var(--space-1-5)] whitespace-nowrap text-[length:var(--tr-text-small-size)]" style={{ color: `var(--${tone === 'muted' ? 'text-muted' : tone})` }}><span aria-hidden className="w-[var(--space-1-5)] h-[var(--space-1-5)] rounded-full bg-current" />{children}</span>
 }
+
+export function PrMergeFrame({ children }: { children: ReactNode }): React.JSX.Element {
+  return <section data-testid="pr-merge-box" className="mx-[var(--space-3)] flex-none overflow-hidden rounded-[var(--tr-radius-card)] border border-[var(--border)] bg-[var(--card-bg)]">{children}</section>
+}
+
+export function PrReadinessRow({ tone, heading, detail, actions }: { tone: 'ok' | 'stop' | 'warn' | 'muted'; heading: ReactNode; detail?: ReactNode; actions?: ReactNode }): React.JSX.Element {
+  return <div className="flex items-start gap-[var(--space-2-5)] border-b border-[var(--divider)] px-[var(--space-3)] py-[var(--space-2)]">
+    <span aria-hidden style={{ color: `var(--${tone === 'muted' ? 'text-muted' : tone})` }}>{tone === 'ok' ? '✓' : tone === 'stop' ? '×' : '·'}</span>
+    <div className="grid min-w-0 flex-1 gap-[var(--space-0-5)]"><Text size="ui" tone="primary">{heading}</Text>{detail && <Text size="small" tone="muted">{detail}</Text>}</div>{actions}
+  </div>
+}
+
+export function PrMergeFooter({ consequence, children }: { consequence: ReactNode; children: ReactNode }): React.JSX.Element {
+  return <div className="flex items-center gap-[var(--space-2)] bg-[color-mix(in_srgb,var(--text-primary)_2%,transparent)] px-[var(--space-3)] py-[var(--space-2)]"><Text size="small" tone="muted" className="min-w-0 flex-1">{consequence}</Text>{children}</div>
+}
+
+export function PrMergeSpecimen(): React.JSX.Element {
+  return <PrMergeFrame><PrReadinessRow tone="ok" heading="4 of 4 checks passed" detail="core, renderer, safety, licence inventory" /><PrReadinessRow tone="ok" heading="No review required" /><PrReadinessRow tone="ok" heading="No conflicts with main" /><PrMergeFooter consequence="5 commits become one"><span>Squash and merge</span></PrMergeFooter></PrMergeFrame>
+}

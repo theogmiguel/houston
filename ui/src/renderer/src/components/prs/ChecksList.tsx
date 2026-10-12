@@ -54,7 +54,7 @@ function checkSummary(check: PrCheck, duration: string): string {
   return `${check.state} ${duration}`
 }
 
-function CheckLog({
+export function CheckLog({
   check,
   log,
   picker,

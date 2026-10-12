@@ -11,7 +11,6 @@ import type {
   PrThread,
   PullRequestLink
 } from '../../houston/client'
-import { BTN_PRIMARY } from '../ui/buttonChrome'
 import {
   checkMeta,
   pendingMergeReason,
@@ -392,7 +391,8 @@ describe('PullRequestTab — reading a pull request', () => {
     click(q('[data-testid="pr-checks"] button'))
     expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
     expect(qa('[data-testid="pr-check-row"]').some((row) => row.textContent?.includes('1m 12s'))).toBe(true)
-    expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
+    expect(q('[data-testid="pr-merge"]')).toBeNull()
+    expect(q('[data-testid="pr-auto-merge"]')!.textContent).toBe('Merge when green')
     expect(q('[data-testid="pr-merge-reason"]')!.textContent).toContain(
       'Merge waits for core-checks'
     )
@@ -409,7 +409,7 @@ describe('PullRequestTab — reading a pull request', () => {
 
   it('merges with the sha on screen and the chosen method, and shows a refusal', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     click(q('[data-testid="pr-merge"]'))
     expect(client.prMergeCalls).toEqual([
       { dir: '/repo', number: 61, method: 'squash', sha: HEAD_SHA, request: 2 }
@@ -457,12 +457,10 @@ describe('PullRequestTab — housed footer primary', () => {
         client,
         detailMsg({
           link: current.link,
-          detail: detail({ merge_disabled_reason: null })
+          detail: detail({ merge_disabled_reason: null, checks: [] })
         })
       )
-      const primary = qa<HTMLButtonElement>('[data-testid="pr-actions"] button').filter((button) =>
-        button.className.includes(BTN_PRIMARY) && button.dataset.testid !== 'pr-merge-options'
-      )
+      const primary = qa<HTMLButtonElement>('[data-testid="pr-merge"], [data-testid="pr-action-ready"]')
       expect(primary, current.name).toHaveLength(current.primary)
       teardown()
     }
@@ -515,7 +513,7 @@ describe('PullRequestTab — stale replies', () => {
 
   it('ignores a refresh while a mutation is in flight so its own read lands', () => {
     const client = mount()
-    emit(client, detailMsg({ request: 1, detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ request: 1, detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     click(q('[data-testid="pr-merge"]'))
     expect(client.prMergeCalls).toEqual([
       { dir: '/repo', number: 61, method: 'squash', sha: HEAD_SHA, request: 2 }
@@ -530,7 +528,7 @@ describe('PullRequestTab — stale replies', () => {
       ok: true,
       message: null
     })
-    emit(client, detailMsg({ request: 2, detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ request: 2, detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     expect(q('[data-testid="pr-merge"]')).not.toBeNull()
   })
 
@@ -812,7 +810,7 @@ describe('PullRequestTab — editing, comments and reviews', () => {
 
   it('submits one review carrying the inline drafts built on the remote diff', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     click(q('[data-testid="pr-pane-files"]'))
     expect(client.prDiffCalls).toEqual([{ number: 61, request: 2 }])
     emit(client, {
@@ -976,7 +974,7 @@ describe('PullRequestTab — reviewers, labels and actions', () => {
 
   it('sends a state action and shows the server’s own words', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     openActions()
     click(q('[data-testid="pr-action-close"]'))
     expect(client.prActionCalls).toEqual([{ number: 61, action: 'close', request: 2 }])
@@ -1004,7 +1002,7 @@ describe('PullRequestTab — reviewers, labels and actions', () => {
 
   it('enables auto-merge with the chosen method and disables it once armed', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     openActions()
     click(q('[data-testid="pr-action-auto-merge"]'))
     expect(client.prActionCalls).toEqual([
@@ -1114,7 +1112,7 @@ describe('PullRequestTab — stacks', () => {
 
   it('loads the stack on demand and merges it with the layer heads it showed', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     expect(q('[data-testid="pr-stack-value"]')!.textContent).toContain('not checked')
     click(q('[data-testid="pr-stack-load"]'))
     expect(client.prStackCalls).toEqual([{ number: 61, request: 2 }])
@@ -1136,7 +1134,7 @@ describe('PullRequestTab — stacks', () => {
 
   it('says so when the host serves no stack', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     click(q('[data-testid="pr-stack-load"]'))
     emit(client, { type: 'pr_stack', dir: '/repo', request: 2, stack: null, message: null })
     expect(q('[data-testid="pr-stack-none"]')!.textContent).toContain('no stack')
@@ -1145,7 +1143,7 @@ describe('PullRequestTab — stacks', () => {
 
   it('refuses to merge a stack whose layer is still a draft', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     click(q('[data-testid="pr-stack-load"]'))
     emit(
       client,
@@ -1247,7 +1245,8 @@ describe('compact side panel pull request', () => {
     expect(q('[data-testid="pr-checks"] [aria-expanded="true"]')).not.toBeNull()
     expect(q('[data-testid="pr-check-row"]')?.textContent).toContain('running 6m')
     expect(q('[data-testid="pr-header-top"]')!.compareDocumentPosition(q('[data-testid="pr-watch-row"]')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
+    expect(q('[data-testid="pr-merge"]')).toBeNull()
+    expect(q('[data-testid="pr-auto-merge"]')!.textContent).toBe('Merge when green')
     expect(q('[data-testid="pr-pane-files"]')).toBeNull()
     expect(q('[data-testid="pr-browse-open"]')).toBeNull()
     expect(q('[data-testid="pr-inspector-review"] [data-testid="disclosure"]')).toBeNull()
@@ -1323,5 +1322,32 @@ describe('shared pull request header', () => {
     expect(sentence).not.toContain('main')
     expect(sentence).toContain('Author unavailable')
     expect(sentence).toContain('base branch unavailable')
+  })
+})
+
+describe('merge readiness box', () => {
+  it('places readiness before the tabs and uses only the reported review decision', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ link: link({ review_decision: 'REVIEW_REQUIRED' }), detail: detail({ reviewers: [{ id: 'alice', kind: 'user' }] }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    expect(box).not.toBeNull()
+    expect(box.textContent).toContain('Review required')
+    expect(box.textContent).not.toContain('approval')
+    expect(box.textContent).toContain('No conflicts with main')
+    expect(box.compareDocumentPosition(q('[data-testid="pr-pane-summary"]')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('offers auto-merge and log/agent actions when a check fails', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ checks: [{ name: 'core-checks', state: 'failing', url: null, duration_ms: 252000 }], merge_disabled_reason: 'core-checks failed' }) }))
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('core-checks failed')
+    expect(q('[data-testid="pr-merge"]')).toBeNull()
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('Fix with agent')
+    click(Array.from(q('[data-testid="pr-merge-box"]')!.querySelectorAll('button')).find((button) => button.textContent === 'Log')!)
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain("Logs aren't available for this check")
+    click(Array.from(q('[data-testid="pr-merge-box"]')!.querySelectorAll('button')).find((button) => button.textContent === 'Fix with agent')!)
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('No agent panes in this grid')
+    click(q('[data-testid="pr-auto-merge"]'))
+    expect(client.prActionCalls.at(-1)).toMatchObject({ number: 61, action: 'enable_auto_merge', mergeMethod: 'squash' })
   })
 })
