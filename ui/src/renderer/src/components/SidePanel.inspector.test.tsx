@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useEffect } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SidePanel } from './SidePanel'
 import { PanelTab } from './ui/PanelTab'
 import type { SourceControlPanelProps } from './SourceControlPanel'
 import type { SessionInfo } from '../houston/client'
 
-vi.mock('./SourceControlPanel', () => ({ SourceControlPanel: () => <div data-testid="scm-content" /> , ScmResizeHandle: () => <div /> }))
+vi.mock('./SourceControlPanel', () => ({ SourceControlPanel: ({ onSummaryChange }: SourceControlPanelProps) => {
+  useEffect(() => { onSummaryChange?.({ branch: 'feature', ahead: 2, behind: 0, changed: 4, hasPr: true, prNumber: 95, prTone: 'ok' }) }, [onSummaryChange])
+  return <div data-testid="scm-content" />
+} , ScmResizeHandle: () => <div /> }))
 vi.mock('./files/FilesSurface', () => ({ FilesSurface: ({ workspaceRoot }: { workspaceRoot: string }) => <div data-testid="inspector-files">Files root: {workspaceRoot}</div> }))
 vi.mock('./browser/BrowserSurface', () => ({ BrowserSurface: () => <div data-testid="inspector-browser" /> }))
 vi.mock('./OverviewTab', () => ({ OverviewTab: () => <div data-testid="overview-content" /> }))
@@ -17,8 +21,8 @@ describe('PanelTab primitive', () => {
   it('selects the tab and closes it from the hover close affordance', () => {
     const onClick = vi.fn()
     const onClose = vi.fn()
-    render(<PanelTab label="Diff" icon={<span>icon</span>} active onClick={onClick} onClose={onClose} />)
-    const tab = screen.getByRole('tab', { name: 'Diff' })
+    render(<PanelTab label="Changes 0" icon={<span>icon</span>} active onClick={onClick} onClose={onClose} />)
+    const tab = screen.getByRole('tab', { name: 'Changes 0' })
     expect(tab.getAttribute('aria-selected')).toBe('true')
     fireEvent.click(tab.querySelector('.panel-tab-close')!)
     expect(onClose).toHaveBeenCalledOnce()
@@ -51,6 +55,15 @@ function props(sessions: ReadonlyMap<number, SessionInfo>, activeSessionId: numb
 }
 
 describe('pane inspector focus', () => {
+  it('shows the uncommitted count and a PR status dot in panel tabs', () => {
+    localStorage.setItem('tr-inspector-tabs:/repo', JSON.stringify({ openTabs: ['diff', 'pull-request'], active: 'diff' }))
+    render(<SidePanel {...props(new Map([[1, session(1, 'session')]]), 1)} />)
+    expect(screen.getByRole('tab', { name: 'Changes 4' })).toBeTruthy()
+    const pr = screen.getByRole('tab', { name: 'Pull request' })
+    expect(pr.textContent).toContain('#95')
+    expect(pr.querySelector('[data-tone="ok"]')).toBeTruthy()
+  })
+
   it('returns keyboard focus to the grid on Escape', () => {
     const onFocusGrid = vi.fn()
     const focused = props(new Map([[1, session(1, 'session')]]), 1)
@@ -136,7 +149,7 @@ describe('panel Files surface', () => {
   it('closes a panel tab with middle-click while preventing the Linux paste gesture', () => {
     localStorage.setItem('tr-inspector-tabs:/repo', JSON.stringify({ openTabs: ['diff', 'files'], active: 'diff' }))
     render(<SidePanel {...props(new Map([[1, session(1, 'session')]]), 1)} />)
-    const tab = screen.getByRole('tab', { name: 'Diff' })
+    const tab = screen.getByRole('tab', { name: 'Changes 4' })
     expect(fireEvent.mouseDown(tab, { button: 1 })).toBe(false)
     let notCancelled = true
     act(() => {

@@ -32,11 +32,12 @@ export class InspectorClient {
     for (const listener of this.subscribers.get(String(message.type)) ?? []) listener(message as never)
   }
 
-  gitStatus(dir: string): void {
+  gitStatus(dir: string, base: string | null = null): void {
     setTimeout(() => this.emit({
-      type: 'git_status', dir, base: null, branch: this.diffFixture ? 'inspector-polish' : 'feat/tasks-backlog', upstream: 'origin/main',
+      type: 'git_status', dir, base, branch: this.diffFixture ? 'inspector-polish' : 'feat/tasks-backlog', upstream: 'origin/main',
       ahead: this.diffFixture ? 0 : 4, behind: 0, default_base: 'main', not_a_repo: false,
       files: this.diffFixture ? [
+        ...(base ? ['src/branch-a.ts', 'src/branch-b.ts', 'src/branch-c.ts'].map((path) => ({ path, status: 'modified', staged: false, added: 1, deleted: 0, is_sensitive: false })) : []),
         { path: 'ui/src/renderer/src/ghostty/surface.ts', status: 'modified', staged: true, added: 12, deleted: 3, is_sensitive: false },
         { path: 'ui/src/renderer/src/components/ui/AnimOut.tsx', status: 'modified', staged: true, added: 9, deleted: 2, is_sensitive: false },
         { path: 'ui/src/renderer/src/components/ui/inspector.css', status: 'modified', staged: true, added: 6, deleted: 1, is_sensitive: false },

@@ -1,3 +1,4 @@
+import { useGitComparisonCounts } from './git/useGitComparisonCounts'
 import { GitPrOpenAction, LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
 import { DiffLoadingMark } from './ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -42,7 +43,6 @@ import {
   IconLoaderCircle,
   IconEllipsis,
   IconSparkles,
-  IconChevronDown,
   IconCollapse,
   IconExpand,
   IconRefresh,
@@ -157,6 +157,7 @@ function visibleFilesFor(files: GitFileStatus[] | null, stagedOnly: boolean): Gi
 }
 
 function ChangesStrip({
+  counts,
   scope,
   setScope,
   defaultBase,
@@ -172,6 +173,7 @@ function ChangesStrip({
   onAddWorkspace,
   compact
 }: {
+  counts?: { working: number | null; branch: number | null }
   scope: 'working' | 'branch'
   setScope: (scope: 'working' | 'branch') => void
   defaultBase: string | null
@@ -187,7 +189,7 @@ function ChangesStrip({
   onAddWorkspace: (path: string) => void
   compact: boolean
 }): React.JSX.Element {
-  const labels = scopeLabels(defaultBase)
+  const labels = counts ? { working: `Uncommitted ${counts.working ?? "…"}`, branch: `vs ${defaultBase ?? "base"} ${counts.branch ?? "…"}` } : scopeLabels(defaultBase)
   if (compact) {
     const compareItem = (value: 'working' | 'branch', label: string, testId: string, disabledReason?: string): React.JSX.Element => (
       <Tooltip label={disabledReason} className="w-full">
@@ -582,7 +584,8 @@ function ReadyChangesBody({ toolbar, notice, toolsNotice, toolsError, reviewErro
   </>
 }
 
-function CompactDiffToolbar({ scope, setScope, stagedOnly, setStagedOnly, scopeMenuOpen, setScopeMenuOpen, defaultBase, branch, checkoutLabel, stageAll, unstageAll, bulkForGroup, visibleAdded, visibleDeleted, expanded, toggleAllDiffs, splitDiff, setSplitDiff, wrapDiff, setWrapDiff, treeVisible, setTreeVisible, refresh, strip }: {
+function CompactDiffToolbar({ counts, scope, setScope, setStagedOnly, scopeMenuOpen, setScopeMenuOpen, defaultBase, branch, checkoutLabel, stageAll, unstageAll, bulkForGroup, visibleAdded, visibleDeleted, expanded, toggleAllDiffs, splitDiff, setSplitDiff, wrapDiff, setWrapDiff, treeVisible, setTreeVisible, refresh, strip }: {
+  counts?: { working: number | null; branch: number | null }
   scope: 'working' | 'branch'
   setScope: (scope: 'working' | 'branch') => void
   stagedOnly: boolean
@@ -624,7 +627,6 @@ function CompactDiffToolbar({ scope, setScope, stagedOnly, setStagedOnly, scopeM
       document.removeEventListener('keydown', closeOnEscape, true)
     }
   }, [scopeMenuOpen, setScopeMenuOpen])
-  const scopeLabel = scope === 'branch' ? 'Branch' : stagedOnly ? 'Staged' : 'Changes'
   const head = branch ?? checkoutLabel ?? null
   // Refs only mean something for a branch diff, and only when the two sides differ.
   const refs = scope === 'branch' && defaultBase && head && defaultBase !== head ? { base: defaultBase, head } : null
@@ -638,16 +640,10 @@ function CompactDiffToolbar({ scope, setScope, stagedOnly, setStagedOnly, scopeM
     <GitToolMenuItem data-testid="changes-overflow-unstage-all" disabled={unstageAll.length === 0} onClick={() => bulkForGroup('staged', unstageAll)}><Icon glyph={IconMinus} role="small" />Unstage all</GitToolMenuItem>
   </>
   return <PrTab as="div" surface="changes-diff-toolbar" data-testid="changes-diff-toolbar">
-    <PrTab as="div" surface="changes-diff-scope-wrap" ref={scopeMenuRef}>
-      <PrTab as="button" surface="changes-diff-scope" type="button" aria-label="Choose diff scope" aria-haspopup="menu" aria-expanded={scopeMenuOpen} onClick={() => setScopeMenuOpen((open) => !open)}>
-        {scopeLabel} <Icon glyph={IconChevronDown} role="small" />
-      </PrTab>
-      {scopeMenuOpen && <PrTab as="div" surface="changes-diff-scope-menu" role="menu">
-        <button role="menuitemradio" aria-checked={scope === 'working' && !stagedOnly} onClick={() => pickScope('working', false)}>Uncommitted changes</button>
-        <button role="menuitemradio" aria-checked={scope === 'working' && stagedOnly} onClick={() => pickScope('working', true)}>Staged changes</button>
-        <button role="menuitemradio" aria-checked={scope === 'branch'} disabled={!defaultBase} onClick={() => pickScope('branch', false)}>Branch changes</button>
-      </PrTab>}
-    </PrTab>
+    <Segmented aria-label="Compare" size="xs" value={scope} onChange={(value) => pickScope(value, false)} options={[
+      { value: 'working', label: `Uncommitted ${counts?.working ?? '…'}`, testId: 'changes-scope-working' },
+      { value: 'branch', label: `vs ${defaultBase ?? 'base'} ${counts?.branch ?? '…'}`, testId: 'changes-scope-branch', disabled: !defaultBase, disabledReason: 'This repository has no base branch to compare against' }
+    ]} />
     {refs && <PrTab as="div" surface="changes-diff-refs" data-testid="changes-diff-refs"><span>{refs.base}</span><span aria-hidden>←</span><span>{refs.head}</span></PrTab>}
     <PrTab as="span" surface="changes-diff-stat"><span data-tone="added">+{visibleAdded}</span><span data-tone="deleted">−{visibleDeleted}</span></PrTab>
     <PrTab as="div" surface="changes-diff-actions">
@@ -688,6 +684,7 @@ export function ChangesPane({
   const [behind, setBehind] = useState(0)
   const [upstream, setUpstream] = useState<string | null>(null)
   const [defaultBase, setDefaultBase] = useState<string | null>(null)
+  const counts = useGitComparisonCounts(client, repoDir, defaultBase)
   const [notARepo, setNotARepo] = useState(false)
   const [scope, setScope] = useState<'working' | 'branch'>('working')
   const [stagedOnly, setStagedOnly] = useState(false)
@@ -778,12 +775,12 @@ export function ChangesPane({
       branch,
       ahead,
       behind,
-      changed: rows.length,
+      changed: counts.working ?? 0,
       hasPr: pr?.pr != null,
       prNumber: pr?.pr?.number,
       prTone: prToneForSummary(pr)
     })
-  }, [branch, ahead, behind, rows.length, pr])
+  }, [branch, ahead, behind, counts.working, pr])
 
   useGitStatusSubscription({
     client,
@@ -1022,6 +1019,7 @@ export function ChangesPane({
 
   const strip = (
     <ChangesStrip
+      counts={counts}
       scope={scope}
       setScope={setScope}
       defaultBase={defaultBase}
@@ -1119,6 +1117,7 @@ export function ChangesPane({
   const prLine = <PrLine pr={pr} onOpenUrlInPane={onOpenUrlInPane} hidden={compact} />
 
   const compactToolbar = compact ? <CompactDiffToolbar
+    counts={counts}
     scope={scope} setScope={setScope} stagedOnly={stagedOnly} setStagedOnly={setStagedOnly}
     scopeMenuOpen={scopeMenuOpen} setScopeMenuOpen={setScopeMenuOpen} defaultBase={defaultBase}
     branch={branch} checkoutLabel={checkoutLabel} stageAll={stageAll} unstageAll={unstageAll}

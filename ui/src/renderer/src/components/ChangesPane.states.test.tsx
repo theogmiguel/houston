@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, click, file, mount, q, qa, state, teardown } from './ChangesPane.harness'
+import { act, click, file, mount, q, qa, state, typeCommitMessage, teardown } from './ChangesPane.harness'
 import { HIT_TARGET_28 } from './hitTarget'
 
 afterEach(teardown)
@@ -67,10 +67,7 @@ describe('Changes pane — state matrix (§14)', () => {
     const h = mount({ compact: true })
     h.status([file({ path: 'src/a.ts' })], { branch: 'feat/tags', default_base: 'main' })
     expect(q('[data-testid="changes-diff-refs"]')).toBeNull()
-    click(q('[aria-label="Choose diff scope"]')!)
-    const scopes = qa<HTMLButtonElement>('[role="menuitemradio"]')
-    expect(scopes.map((item) => item.textContent)).toEqual(['Uncommitted changes', 'Staged changes', 'Branch changes'])
-    click(scopes[2])
+    click(q('[data-testid="changes-scope-branch"]'))
     expect(q('[data-testid="changes-diff-refs"]')?.textContent).toBe('main←feat/tags')
     h.status([file({ path: 'src/a.ts' })], { branch: 'main', default_base: 'main', base: 'main' })
     expect(q('[data-testid="changes-diff-refs"]')).toBeNull()
@@ -90,14 +87,17 @@ describe('Changes pane — state matrix (§14)', () => {
 
   it('shows the checkout target beside the embedded commit actions', () => {
     const h = mount({ compact: true, checkoutLabel: 'wt/inbox-api' })
-    h.status([file({ staged: true })])
-    expect(q('[data-testid="changes-commit-target"]')?.textContent).toBe('to wt/inbox-api')
+    h.status([file({ staged: true })], { branch: 'inbox-api' })
+    typeCommitMessage('Update inbox')
+    expect(q('[data-testid="changes-staged-count"]')?.textContent).toBe('1 file to inbox-api')
   })
 
   it('counts only staged files for commit and keeps the PR link out of Changes', () => {
     const h = mount({ compact: true })
     h.status([file({ path: 'src/a.ts', staged: true }), file({ path: 'src/b.ts', staged: true })])
-    expect(q('[data-testid="changes-commit"]')?.textContent).toContain('Commit 2 files')
+    typeCommitMessage('Update files')
+    expect(q('[data-testid="changes-commit"]')?.textContent).toBe('Commit')
+    expect(q('[data-testid="changes-staged-count"]')?.textContent).toBe('2 files to main')
     h.prStatus()
     expect(q('[data-testid="changes-pr-line"]')).toBeNull()
   })
@@ -251,6 +251,6 @@ describe('Changes pane — width is the panel\'s business', () => {
     const row = actions.lastElementChild!
     expect(row.className).toContain('flex-wrap')
     expect(row.className).toContain('justify-end')
-    expect(q('[data-testid="changes-staged-count"]')!.className).toContain('whitespace-nowrap')
+    expect(q('[data-testid="changes-staged-count"]')!.className).toContain('truncate')
   })
 })

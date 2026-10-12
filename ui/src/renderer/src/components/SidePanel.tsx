@@ -13,7 +13,9 @@ import { useExitAnimation } from './ui/AnimOut'
 import { PanelTab } from './ui/PanelTab'
 import { LauncherRow } from './ui/LauncherRow'
 import { Icon } from './ui/Icon'
-import { IconGitPullRequest, IconGlobe, IconPlus, IconMaximize, IconMinimize } from './icons'
+import { GitPresenceDot } from './ui'
+import type { ChangesSummary } from './ChangesPane'
+import { IconGitBranch, IconGitPullRequest, IconGlobe, IconPlus, IconMaximize, IconMinimize } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { ShellElement } from './ui/ShellPrimitives'
 import './ui/panel.css'
@@ -44,7 +46,7 @@ function pullRequestTone(link: PullRequestLink | undefined): 'stop' | 'warn' | '
 const SURFACE_META: Record<SurfaceKind, { label: string; shortcut: string; description: string; icon: React.ReactNode }> = {
   browser: { label: 'Browser', shortcut: 'B', description: 'Browse local pages', icon: <Icon glyph={IconGlobe} role="label" /> },
   files: { label: 'Files', shortcut: 'F', description: 'Browse and edit workspace files', icon: <PanelFilesIcon /> },
-  diff: { label: 'Diff', shortcut: 'D', description: 'Review working tree changes', icon: <PanelDiffIcon /> },
+  diff: { label: 'Changes', shortcut: 'D', description: 'Review working tree changes', icon: <Icon glyph={IconGitBranch} role="label" /> },
   'pull-request': { label: 'Pull request', shortcut: 'P', description: 'Review this branch’s pull request', icon: <Icon glyph={IconGitPullRequest} role="label" /> },
   'linked-pull-requests': { label: 'Linked pull requests', shortcut: 'L', description: 'Review pull requests in this grid', icon: <PanelLinkIcon /> }
 }
@@ -102,10 +104,6 @@ function gridCheckAgents(sessions: ReadonlyMap<number, SessionInfo>, workspace: 
   })
 }
 
-function PanelDiffIcon(): React.JSX.Element {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 13h3m2 0h3M8 17h3m2 0h3" /></svg>
-}
-
 function PanelFilesIcon(): React.JSX.Element {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg>
 }
@@ -114,10 +112,11 @@ function PanelLinkIcon(): React.JSX.Element {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l3-3A5 5 0 0 0 13 2.9l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.1 0l-3 3A5 5 0 0 0 11 21.1l1.7-1.7" /></svg>
 }
 
-function titleForSurface(surface: SurfaceKind, browserTitle: string, faviconUrl: string | null, prNumber: number | null, prTone: string | null, fileTitle: string): { title: string; icon: React.ReactNode } {
+function titleForSurface(surface: SurfaceKind, browserTitle: string, faviconUrl: string | null, prNumber: number | null, prTone: string | null, fileTitle: string, changed: number): { title: string; icon: React.ReactNode; badge?: React.ReactNode } {
   if (isBrowserSurface(surface) || surface === 'browser') return { title: browserTitle || 'New tab', icon: faviconUrl ? <img src={faviconUrl} alt="" className="h-3.5 w-3.5" /> : browserTitle && browserTitle !== 'New tab' ? <ShellElement as="span" shellRole="browser-tab-favicon">{browserTitle.slice(0, 1).toUpperCase()}</ShellElement> : SURFACE_META.browser.icon }
+  if (surface === 'diff') return { title: `Changes ${changed}`, icon: SURFACE_META.diff.icon }
   if (surface === 'files') return { title: fileTitle || SURFACE_META.files.label, icon: <PanelFilesIcon /> }
-  if (surface === 'pull-request') return { title: prNumber === null ? SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label : `#${prNumber}`, icon: <ShellElement as="span" shellRole="panel-pr-icon" state={prTone === 'stop' || prTone === 'warn' || prTone === 'ok' ? prTone : undefined}><Icon glyph={IconGitPullRequest} role="label" /></ShellElement> }
+  if (surface === 'pull-request') return { title: prNumber === null ? SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label : `#${prNumber}`, badge: <GitPresenceDot data-tone={prTone ?? 'ok'} tone={prTone === 'stop' || prTone === 'warn' ? prTone : 'ok'} />, icon: <ShellElement as="span" shellRole="panel-pr-icon" state={prTone === 'stop' || prTone === 'warn' || prTone === 'ok' ? prTone : undefined}><Icon glyph={IconGitPullRequest} role="label" /></ShellElement> }
   return { title: SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label, icon: SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].icon }
 }
 
@@ -162,7 +161,7 @@ function SidePanelHeader({
   tabsRef: React.RefObject<HTMLDivElement | null>
   overflowing: boolean
   dragTab: React.MutableRefObject<SurfaceKind | null>
-  metaFor: (surface: SurfaceKind) => { title: string; icon: React.ReactNode }
+  metaFor: (surface: SurfaceKind) => { title: string; icon: React.ReactNode; badge?: React.ReactNode }
   selectSurface: (surface: SurfaceKind) => void
   closeSurface: (surface: SurfaceKind) => void
   reorderSurface: (from: SurfaceKind, to: SurfaceKind) => void
@@ -198,6 +197,7 @@ function SidePanelHeader({
               key={surface}
               draggable
               label={tab.title}
+              badge={tab.badge}
               ariaLabel={surface === 'pull-request' ? 'Pull request' : tab.title}
               icon={tab.icon}
               active={active === surface}
@@ -547,7 +547,7 @@ function SidePanelFrame({ open, entering, mounted, props, openTabs, active, tabs
   tabsRef: React.RefObject<HTMLDivElement | null>
   overflowing: boolean
   dragTab: React.MutableRefObject<SurfaceKind | null>
-  metaFor: (surface: SurfaceKind) => { title: string; icon: React.ReactNode }
+  metaFor: (surface: SurfaceKind) => { title: string; icon: React.ReactNode; badge?: React.ReactNode }
   selectSurface: (surface: SurfaceKind) => void
   closeSurface: (surface: SurfaceKind) => void
   reorderSurface: (from: SurfaceKind, to: SurfaceKind) => void
@@ -734,9 +734,11 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
   }
   const onTitleChange = useCallback((id: string, title: string, favicon: string | null): void => { setBrowserMeta((current) => ({...current, [id]: {title, favicon}})) }, [])
   const onFilesTabTitleChange = useCallback((name: string | null): void => setFilesTabTitle(name ?? ''), [])
+  const [changesSummary, setChangesSummary] = useState<ChangesSummary | null>(null)
+  const onChangesSummary = useCallback((summary: ChangesSummary): void => { setChangesSummary(summary); props.onSummaryChange?.(summary) }, [props.onSummaryChange])
   const prLink = props.requestedPr ?? props.linkedPullRequests?.[0]
   const prTone = pullRequestTone(prLink)
-  const metaFor = (surface: SurfaceKind): { title: string; icon: React.ReactNode } => titleForSurface(surface, browserMeta[surface]?.title ?? '', browserMeta[surface]?.favicon ?? null, prLink?.number ?? null, prTone, filesTabTitle)
+  const metaFor = (surface: SurfaceKind): { title: string; icon: React.ReactNode; badge?: React.ReactNode } => titleForSurface(surface, browserMeta[surface]?.title ?? '', browserMeta[surface]?.favicon ?? null, prLink?.number ?? changesSummary?.prNumber ?? null, prTone ?? changesSummary?.prTone ?? null, filesTabTitle, changesSummary?.changed ?? 0)
   const icons = useMemo(() => ({ ...SURFACE_META }), [])
   const handledProactiveDiff = useRef<number | null>(null)
   useEffect(() => {
@@ -749,7 +751,7 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
   }, [props.proactiveDiffEnabled, props.proactiveDiffRequest, props.onUserActionCounterChange])
 
   if (!mounted && !props.keepMounted && !openTabs.some(isBrowserSurface)) return null
-  return <SidePanelFrame open={open} entering={entering} mounted={mounted} props={props} openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} links={links} openSurface={openSurface} icons={icons} rendered={rendered} requested={requested} hostWidth={hostWidth} finishExit={finishExit} onKeyDown={onKeyDown} isOrchestrator={isOrchestrator} filesRoot={filesRoot} onTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} setEntering={setEntering} maximized={maximized} onToggleMaximize={onToggleMaximize} />
+  return <SidePanelFrame open={open} entering={entering} mounted={mounted} props={{ ...props, onSummaryChange: onChangesSummary }} openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} links={links} openSurface={openSurface} icons={icons} rendered={rendered} requested={requested} hostWidth={hostWidth} finishExit={finishExit} onKeyDown={onKeyDown} isOrchestrator={isOrchestrator} filesRoot={filesRoot} onTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} setEntering={setEntering} maximized={maximized} onToggleMaximize={onToggleMaximize} />
 }
 
 export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: sessionsProp, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: Omit<SourceControlPanelProps, 'onCreateCheckAgent' | 'requestedPr'> & {

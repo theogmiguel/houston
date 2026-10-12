@@ -19,9 +19,21 @@ describe('Changes pane — housed ground', () => {
 
 
 describe('compact side panel changes', () => {
+  it('shows independent distinct-path comparison counts and ignores other repositories', () => {
+    const h = mount({ compact: true })
+    h.status([file(), file({ staged: true }), file({ path: 'b.ts' })])
+    h.status([file({ path: 'c.ts' })], { base: 'main' })
+    expect(q('[data-testid="changes-scope-working"]')?.textContent).toBe('Uncommitted 2')
+    expect(q('[data-testid="changes-scope-branch"]')?.textContent).toBe('vs main 1')
+    expect(h.client.gitStatusCalls).toContainEqual({ dir: '/repo', base: 'main' })
+    act(() => h.client.emit({ type: 'git_status', dir: '/other', base: null, files: [] }))
+    expect(q('[data-testid="changes-scope-working"]')?.textContent).toBe('Uncommitted 2')
+  })
+
   it('keeps diff scope and Git operations available through the compact actions control', () => {
     const h = mount({ compact: true })
     h.status([file()])
+    expect(q('[aria-label="Compare"]')).not.toBeNull()
     expect(q('[aria-label="Diff scope"]')).toBeNull()
     click(q('[aria-label="Git actions and diff scope"]'))
     expect(q('[aria-label="Diff scope"]')).not.toBeNull()
