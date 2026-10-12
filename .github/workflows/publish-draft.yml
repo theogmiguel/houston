@@ -19,16 +19,15 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: release-publish-gate
-  cancel-in-progress: false
-
 jobs:
   publish:
     # Records who approved; a required reviewer is configured on this
     # environment in repository settings, not here.
     environment: stable-release
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-state-${{ inputs.tag }}
+      cancel-in-progress: false
     steps:
       - name: Refuse an unattested release
         if: inputs.smoke_tested != true
@@ -50,15 +49,7 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if ! release=$(gh release view "$TAG" --json isDraft,isPrerelease 2>/dev/null); then
-            echo "::error::no GitHub release exists for tag $TAG; a draft must be filed before it is promoted"
-            exit 1
-          fi
-          if [ "$(jq -r .isDraft <<< "$release")" != "true" ]; then
-            echo "::error::release $TAG is already public; promoting it again would rebuild nothing and change nothing, so this run refuses"
-            exit 1
-          fi
-          echo "prerelease=$(jq -r .isPrerelease <<< "$release")" >> "$GITHUB_ENV"
+          python3 scripts/release-draft.py snapshot --repository "$GITHUB_REPOSITORY" --tag "$TAG" --output draft-snapshot.json
 
       - name: Download the draft's assets
         env:
@@ -77,50 +68,16 @@ jobs:
           mv release-assets/latest.json shipped-latest.json
           ls -lh release-assets
 
-      # The generator is the gate that decides what ships: its own tests run
-      # first, then it is run again over the attached files, and the regenerated
-      # manifest must describe exactly what was attached.
-      - name: Verify the asset set with the manifest generator
+      - name: Verify assets, synchronize reviewed notes and publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          version="${TAG#v}"
-          gh release view "$TAG" --json body --jq '.body // ""' > notes.md
-          args=(
-            --repository "$GITHUB_REPOSITORY"
-            --tag "$TAG"
-            --version "$version"
-            --notes-file notes.md
-            --artifacts-dir release-assets
-            --output regenerated-latest.json
-          )
-          if ! jq -e '.platforms | keys | any(startswith("windows-"))' shipped-latest.json >/dev/null; then
-            args+=(--linux-only)
-          fi
           python3 scripts/test-update-manifest.py
-          python3 scripts/gen-update-manifest.py "${args[@]}"
-          if ! diff <(jq -S '{version, platforms}' shipped-latest.json) \
-                    <(jq -S '{version, platforms}' regenerated-latest.json); then
-            echo "::error::the shipped latest.json does not match the attached assets; the release is not promotable"
-            exit 1
-          fi
-
-      - name: Make the release public
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          args=(--draft=false)
-          if [ "$prerelease" = "true" ]; then
-            args+=(--prerelease)
-          fi
-          gh release edit "$TAG" "${args[@]}"
+          python3 scripts/release-draft.py promote --repository "$GITHUB_REPOSITORY" --tag "$TAG" --assets release-assets --shipped shipped-latest.json --notes-file notes.md --output synchronized/latest.json --snapshot draft-snapshot.json
           {
-            echo "| Job | Elapsed (s) |"
-            echo "|---|---|"
-            echo "| promote | $(( $(date +%s) - JOB_START )) |"
+            echo "## Published: $TAG"
+            echo "[Open the release](https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG). The app and release page now use the reviewed notes."
+            echo "Elapsed: $(( $(date +%s) - JOB_START )) seconds."
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "promoted $TAG to public (prerelease=$prerelease)" >> "$GITHUB_STEP_SUMMARY"

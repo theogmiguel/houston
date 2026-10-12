@@ -12206,7 +12206,7 @@ impl Daemon {
             .collect()
     }
 
-    pub fn wait_for_idle(
+    pub async fn wait_for_idle(
         self: &Arc<Self>,
         request: u32,
         id: u32,
@@ -12226,36 +12226,33 @@ impl Daemon {
                 None => bail!("unknown session id {id} (expected an active or restored session)"),
             }
         };
-        let daemon = Arc::clone(self);
-        tokio::spawn(async move {
-            let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout);
-            let idle = loop {
-                let live = match &session {
-                    None => break true,
-                    Some(s) => s.state.lock().expect("state lock").is_live(),
-                };
-                if !live {
-                    break true;
-                }
-                let last = session
-                    .as_ref()
-                    .expect("checked above")
-                    .last_output
-                    .load(Ordering::Relaxed);
-                let now = daemon.started.elapsed().as_millis() as u64;
-                if now.saturating_sub(last) >= quiet {
-                    break true;
-                }
-                if tokio::time::Instant::now() >= deadline {
-                    break false;
-                }
-                tokio::time::sleep(Duration::from_millis(IDLE_POLL_MS)).await;
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout);
+        let idle = loop {
+            let live = match &session {
+                None => break true,
+                Some(s) => s.state.lock().expect("state lock").is_live(),
             };
-            daemon.broadcast_control(&proto::ServerMsg::Idle {
-                request,
-                session: id,
-                idle,
-            });
+            if !live {
+                break true;
+            }
+            let last = session
+                .as_ref()
+                .expect("checked above")
+                .last_output
+                .load(Ordering::Relaxed);
+            let now = self.started.elapsed().as_millis() as u64;
+            if now.saturating_sub(last) >= quiet {
+                break true;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                break false;
+            }
+            tokio::time::sleep(Duration::from_millis(IDLE_POLL_MS)).await;
+        };
+        self.broadcast_control(&proto::ServerMsg::Idle {
+            request,
+            session: id,
+            idle,
         });
         Ok(())
     }

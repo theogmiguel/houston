@@ -21,7 +21,10 @@ branch comparison. Each number counts distinct changed files in that comparison.
 The Changes tab continues to count uncommitted files when you review the branch diff.
 A repository with no upstream, or a detached HEAD, is shown as such rather
 than left blank. Below the files, On this branch lists the commits your upstream does
-not have yet, newest first; View all expands the list.
+not have yet, newest first; View all expands the list. Added and deleted line counts
+follow the staged and unstaged versions separately, including renamed files and
+filenames with non-ASCII characters or control characters. Binary changes have no
+line counts.
 
 ## Reviewing a diff
 

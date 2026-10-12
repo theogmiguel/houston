@@ -2170,7 +2170,11 @@ impl Db {
                 ON pane_inbox(to_session, created_at)
                 WHERE delivered_at IS NULL AND resolved_at IS NULL;
             CREATE INDEX IF NOT EXISTS pane_inbox_workspace
-                ON pane_inbox(workspace, created_at) WHERE to_session = 0;",
+                ON pane_inbox(workspace, created_at) WHERE to_session = 0;
+            CREATE INDEX IF NOT EXISTS pane_inbox_pending_recipients
+                ON pane_inbox(to_session)
+                WHERE to_session != 0 AND resolved_at IS NULL
+                    AND (delivered_at IS NULL OR kind IN ('question', 'blocked'));",
         )?;
         add_column_if_missing(&conn, "pane_inbox", "from_codename", "from_codename TEXT")?;
         add_column_if_missing(&conn, "pane_inbox", "from_role", "from_role TEXT")?;

@@ -43,3 +43,6 @@ than held in memory, which is the one other operation an SSH pane supports beyon
 shell.
 
 There is no auto-reconnect: if the connection drops, you reconnect the pane yourself.
+
+Continuous remote output shares processing time with keyboard input and resizing.
+Closing the pane takes priority, including while input waits for the remote receive window.

@@ -263,6 +263,10 @@ scans are `spawn_blocking`; a dedicated writer thread owns the command-history l
 SQLite stays off the read path. Session maps on `Daemon` are plain `std::sync::Mutex`, never
 held across `.await`.
 
+The SSH driver rotates output, resize and input processing when multiple operations are
+ready. Cancellation is checked first. The same scheduling applies while an input transfer
+waits for the remote receive window, so continuous output cannot postpone a resize.
+
 ### Detach and shutdown
 
 Quitting the app (`RunEvent::Exit`, or its own signal handler) only closes the `/ws`

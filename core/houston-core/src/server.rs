@@ -826,7 +826,10 @@ pub fn set_control_test(daemon: &Arc<Daemon>, fixture: Arc<ControlTestGate>) {
 
 #[cfg(feature = "test-barriers")]
 fn control_fixture(daemon: &Daemon, msg: &proto::ClientMsg) -> Option<Arc<ControlTestGate>> {
-    if !matches!(msg, proto::ClientMsg::SessionList) {
+    if !matches!(
+        msg,
+        proto::ClientMsg::SessionList | proto::ClientMsg::WaitForIdle { .. }
+    ) {
         return None;
     }
     CONTROL_FIXTURE
@@ -999,7 +1002,7 @@ async fn handle_control(
             tracing::warn!("control handler failed: {error}");
         }
     }
-    // Admitted operations finish even on disconnect. Retain permits through blocking
+    // Admitted mutations finish even on disconnect. Retain permits through blocking
     // mutations and subprocess cleanup; aborting their async wrapper is not cancellation.
     #[cfg(feature = "test-barriers")]
     let fixture = control_fixture(daemon.as_ref(), &msg);
@@ -1019,7 +1022,17 @@ async fn handle_control(
                 .finished
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
-        let result = dispatch(&daemon, &mut tx, msg, None, conn_id).await;
+        // Idle waits only observe state; retain admission until they resolve, and
+        // release them when their requesting connection can no longer receive replies.
+        let result = if matches!(msg, proto::ClientMsg::WaitForIdle { .. }) {
+            let connection = tx.tx.clone();
+            tokio::select! {
+                _ = connection.closed() => return,
+                result = dispatch(&daemon, &mut tx, msg, None, conn_id) => result,
+            }
+        } else {
+            dispatch(&daemon, &mut tx, msg, None, conn_id).await
+        };
         report(&mut tx, result).await;
     });
 }
@@ -3548,7 +3561,11 @@ async fn dispatch(
             session,
             timeout_ms,
             idle_quiet_ms,
-        } => daemon.wait_for_idle(request, session, timeout_ms, idle_quiet_ms),
+        } => {
+            daemon
+                .wait_for_idle(request, session, timeout_ms, idle_quiet_ms)
+                .await
+        }
         proto::ClientMsg::SessionPolicyGet => {
             let policy = daemon.session_policy();
             let _ = send_msg(sink, &proto::ServerMsg::SessionPolicy { policy }).await;

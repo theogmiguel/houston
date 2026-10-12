@@ -351,6 +351,18 @@ pub async fn shell_list_editors() -> Vec<EditorTarget> {
         .collect()
 }
 
+fn spawn_editor(command: std::process::Command) -> std::io::Result<()> {
+    let mut child = tokio::process::Command::from(command).spawn()?;
+    // Wait without tying the editor's lifetime to Houston. Dropping a standard
+    // Child leaves an exited launcher as a zombie on Linux; no kill-on-drop here.
+    tokio::spawn(async move {
+        if let Err(error) = child.wait().await {
+            eprintln!("houston-tauri: could not reap external editor launcher: {error}");
+        }
+    });
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn shell_open_in_editor(
     editor: String,
@@ -377,7 +389,7 @@ pub async fn shell_open_in_editor(
     })?;
     let mut cmd = houston_core::spawn::command(&program);
     cmd.args(editor_args(spec, &real, line, col));
-    cmd.spawn().map(|_| ()).map_err(|e| {
+    spawn_editor(cmd).map_err(|e| {
         format!(
             "cannot open {path} in {}: failed to spawn {} ({e})",
             spec.label,
@@ -389,6 +401,128 @@ pub async fn shell_open_in_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    fn editor_fixture() -> (std::process::Command, std::fs::File, std::fs::File) {
+        use std::os::fd::{FromRawFd, OwnedFd};
+
+        let pipe = || {
+            let mut fds = [-1; 2];
+            // SAFETY: pipe2 initializes both descriptors in this writable array.
+            assert_eq!(unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) }, 0);
+            // SAFETY: these fresh descriptors each acquire exactly one owner.
+            let (read, write) =
+                unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
+            (std::fs::File::from(read), std::fs::File::from(write))
+        };
+        let (input, control) = pipe();
+        let (output, reply) = pipe();
+        let mut command = houston_core::spawn::command("/bin/sh");
+        command
+            .args([
+                "-c",
+                "printf '%s\\n' \"$$\"; read reply; [ \"$reply\" = finish ] && printf 'finished\\n'",
+            ])
+            .stdin(input)
+            .stdout(reply);
+        (command, control, output)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn external_editor_launcher_survives_return_and_is_reaped_after_exit() {
+        use std::io::Write;
+        use tokio::io::AsyncBufReadExt;
+
+        let (command, mut control, output) = editor_fixture();
+        spawn_editor(command).unwrap();
+        let mut output = tokio::io::BufReader::new(tokio::fs::File::from_std(output));
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let mut reply = String::new();
+            output.read_line(&mut reply).await.unwrap();
+            let pid: u32 = reply.trim().parse().expect("live launcher receipt");
+            let stat_path = format!("/proc/{pid}/stat");
+            let start_time = |stat: &str| {
+                stat.rsplit_once(") ")
+                    .unwrap()
+                    .1
+                    .split_whitespace()
+                    .nth(19)
+                    .unwrap()
+                    .to_owned()
+            };
+            let original = start_time(&tokio::fs::read_to_string(&stat_path).await.unwrap());
+            control.write_all(b"finish\n").unwrap();
+            reply.clear();
+            output.read_line(&mut reply).await.unwrap();
+            assert_eq!(reply, "finished\n", "return must not terminate the editor");
+            loop {
+                match tokio::fs::read_to_string(&stat_path).await {
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::NotFound
+                            || error.raw_os_error() == Some(libc::ESRCH) =>
+                    {
+                        break;
+                    }
+                    Ok(stat) if start_time(&stat) != original => break,
+                    Ok(_) => tokio::task::yield_now().await,
+                    Err(error) => panic!("cannot observe launcher {pid}: {error}"),
+                }
+            }
+        })
+        .await
+        .expect("exited editor launcher must be reaped, not left as a zombie");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn external_editor_survives_runtime_shutdown() {
+        use std::io::{BufRead, Write};
+
+        let (command, mut control, output) = editor_fixture();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            spawn_editor(command).unwrap();
+            tokio::task::yield_now().await;
+        });
+        drop(runtime);
+
+        let mut output = std::io::BufReader::new(output);
+        let mut reply = String::new();
+        output.read_line(&mut reply).unwrap();
+        let pid: i32 = reply.trim().parse().expect("live launcher receipt");
+        assert!(pid > 0);
+        control.write_all(b"finish\n").unwrap();
+        reply.clear();
+        output.read_line(&mut reply).unwrap();
+        assert_eq!(
+            reply, "finished\n",
+            "runtime shutdown must leave the editor alive"
+        );
+
+        let mut status = 0;
+        // SAFETY: pid came from the owned fixture's receipt. Wait releases it
+        // after the runtime stops; another live runtime may already have reaped it.
+        let waited = loop {
+            // SAFETY: the owned fixture identity and status buffer remain live.
+            let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
+            if waited != -1 || std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
+                break waited;
+            }
+        };
+        if waited == -1 {
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ECHILD)
+            );
+        } else {
+            assert_eq!(waited, pid);
+            assert_eq!(status, 0);
+        }
+    }
 
     #[test]
     fn expand_tilde_resolves_bare_tilde_and_tilde_slash() {

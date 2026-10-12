@@ -1,5 +1,5 @@
 import { askedOrchestrator, attentionReason, inputEpisode, needsUserInput, ownUserInput } from './sessionAttention'
-import { createContext, useContext, useMemo, useRef, useSyncExternalStore } from 'react'
+import { createContext, useCallback, useContext, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { SessionInfo } from './houston/client'
 
 export type SessionsSnapshot = Map<number, SessionInfo>
@@ -8,16 +8,35 @@ export type SessionsUpdate = SessionsSnapshot | ((previous: SessionsSnapshot) =>
 export function createSessionsStore(initial: SessionsSnapshot = new Map()) {
   let snapshot = initial
   const listeners = new Set<() => void>()
+  const sessionListeners = new Map<number, Set<() => void>>()
   return {
     getSnapshot: (): SessionsSnapshot => snapshot,
     subscribe: (listener: () => void): (() => void) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
+    subscribeSession: (id: number, listener: () => void): (() => void) => {
+      let subscribers = sessionListeners.get(id)
+      if (!subscribers) {
+        subscribers = new Set()
+        sessionListeners.set(id, subscribers)
+      }
+      const bucket = subscribers
+      bucket.add(listener)
+      return () => {
+        if (bucket.delete(listener) && bucket.size === 0) sessionListeners.delete(id)
+      }
+    },
     set: (update: SessionsUpdate): void => {
       const next = typeof update === 'function' ? update(snapshot) : update
       if (next === snapshot) return
+      const previous = snapshot
       snapshot = next
+      // Compare subscribed ids only; background roster size does not add work.
+      for (const [id, subscribers] of sessionListeners) {
+        if (previous.get(id) === next.get(id)) continue
+        for (const listener of subscribers) listener()
+      }
       for (const listener of listeners) listener()
     }
   }
@@ -66,7 +85,10 @@ export function useSessions(fallback: ReadonlyMap<number, SessionInfo> = emptySe
 }
 
 export function useSession(id: number, fallback?: SessionInfo): SessionInfo | undefined {
-  return useSessionsSelector((sessions) => sessions.get(id), Object.is, fallback)
+  const store = useContext(SessionsStoreContext)
+  const subscribe = useCallback((listener: () => void) => store?.subscribeSession(id, listener) ?? noSubscription(), [store, id])
+  const getSnapshot = useCallback(() => store ? store.getSnapshot().get(id) : fallback, [store, id, fallback])
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 export function useSessionFamily(id: number, fallback: ReadonlyMap<number, SessionInfo> = emptySessions): ReadonlyMap<number, SessionInfo> {

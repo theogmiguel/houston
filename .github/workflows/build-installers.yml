@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.check.outputs.version }}
+      source_sha: ${{ steps.check.outputs.source_sha }}
       tauri_cli_version: ${{ steps.pin.outputs.tauri_cli_version }}
     steps:
       - name: Record start time
@@ -50,6 +51,7 @@ jobs:
           # the workspace crates' own versions and must move with them.
           ./scripts/set-version.sh --check "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Record job timing
         if: always()
@@ -68,7 +70,7 @@ jobs:
     needs: version-guard
     uses: ./.github/workflows/release-linux.yml
     with:
-      ref: ${{ inputs.ref }}
+      ref: ${{ needs.version-guard.outputs.source_sha }}
       version: ${{ needs.version-guard.outputs.version }}
       tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
       # This workflow files nothing, so signing is never required; the bundle
@@ -76,12 +78,24 @@ jobs:
       require_signing: false
     secrets: inherit
 
-  windows-bundle:
-    needs: [version-guard, linux-bundle]
+  windows-compile:
+    needs: version-guard
     if: inputs.platform != 'linux'
     uses: ./.github/workflows/release-windows.yml
     with:
-      ref: ${{ inputs.ref }}
+      stage: compile
+      ref: ${{ needs.version-guard.outputs.source_sha }}
+      version: ${{ needs.version-guard.outputs.version }}
+      tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
+      require_signing: false
+
+  windows-bundle:
+    needs: [version-guard, linux-bundle, windows-compile]
+    if: inputs.platform != 'linux'
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      stage: bundle
+      ref: ${{ needs.version-guard.outputs.source_sha }}
       version: ${{ needs.version-guard.outputs.version }}
       tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
       require_signing: false

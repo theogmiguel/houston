@@ -4,6 +4,7 @@ import { searchFilePaths, type FileSearchResult } from '../../houston/bridge'
 import { IconSearch } from '../icons'
 import { fileTypeIcon } from './fileTypeIcons'
 import { Icon } from '../ui/Icon'
+import { Button } from '../ui/Button'
 
 export function rankQuickOpenResults(query: string, paths: readonly FileSearchResult[]): FileSearchResult[] {
   const needle = query.toLowerCase()
@@ -47,6 +48,8 @@ export function QuickOpen({
   const [total, setTotal] = useState(0)
   const [capped, setCapped] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [retry, setRetry] = useState(0)
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   const listId = useId()
@@ -56,6 +59,7 @@ export function QuickOpen({
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setError(null)
     const timer = window.setTimeout(() => {
       void searchFilePaths(root, query, 200)
         .then((result) => {
@@ -65,8 +69,9 @@ export function QuickOpen({
           setCapped(result.truncated || result.total > result.items.length)
           setActive(0)
         })
-        .catch(() => {
+        .catch((failure: unknown) => {
           if (!cancelled) {
+            setError(failure instanceof Error ? failure.message : String(failure))
             setMatches([])
             setTotal(0)
             setCapped(false)
@@ -80,7 +85,7 @@ export function QuickOpen({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [root, query])
+  }, [root, query, retry])
   const current = loading ? undefined : matches[active]
   useEffect(() => {
     if (!current) return
@@ -129,6 +134,11 @@ export function QuickOpen({
           {loading ? (
             <div className={filesSurfaceClass(FilesSurfaceClass.quickOpenEmpty)} role="status">
               Loading files…
+            </div>
+          ) : error ? (
+            <div className={filesSurfaceClass(FilesSurfaceClass.quickOpenEmpty)} role="alert">
+              Search unavailable: {error}
+              <div><Button variant="link" onClick={() => { setRetry((n) => n + 1); input.current?.focus() }}>Retry</Button></div>
             </div>
           ) : groups.length ? (
             <>
