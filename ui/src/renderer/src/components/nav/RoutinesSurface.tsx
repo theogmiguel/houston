@@ -223,16 +223,17 @@ function useRoutineSelection(routines: Routine[], controlled: number | null | un
   selectRoutine: (value: string | null) => void
 } {
   const [local, setLocal] = useState<string | null>(null)
+  const [picked, setPicked] = useState(false)
   useEffect(() => {
     if (controlled !== undefined) return
-    if (local === REVIEW_SELECTION) return
-    if (local === null || !routines.some((routine) => String(routine.id) === local)) {
-      setLocal(selectionFor(sortRoutines(routines)[0]?.id ?? 0, routines))
-    }
-  }, [controlled, local, routines])
+    // The default follows the roster until the user picks; it often arrives after the page opens.
+    if (picked && (local === REVIEW_SELECTION || routines.some((routine) => String(routine.id) === local))) return
+    const next = selectionFor(sortRoutines(routines)[0]?.id ?? 0, routines)
+    if (next !== local) setLocal(next)
+  }, [controlled, local, picked, routines])
   return {
     selectedId: controlled === undefined ? local : selectionFor(controlled, routines),
-    selectRoutine: (value) => { setLocal(value); onSelect?.(value === null ? null : Number(value)) }
+    selectRoutine: (value) => { setPicked(true); setLocal(value); onSelect?.(value === null ? null : Number(value)) }
   }
 }
 
