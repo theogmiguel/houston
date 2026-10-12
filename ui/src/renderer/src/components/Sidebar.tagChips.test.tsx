@@ -177,11 +177,12 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
   const badge = (): HTMLElement | null =>
     container.querySelector('[data-testid="tree-filter-badge"]')
 
-  it('keeps grid rows free of inline tag chips', () => {
+  it('shows tag chips by default and leaves untagged cards empty', async () => {
     render(TREE)
+    await vi.waitFor(() => expect(chipsOf(gridRow('alpha review'))).toHaveLength(2))
     const row = gridRow('alpha review')
     const chips = chipsOf(row)
-    expect(chips).toHaveLength(0)
+    expect(chips.map((chip) => chip.textContent)).toEqual(['wait-human', 'renewals'])
     expect(row.querySelector('[data-testid="tag-chips-more"]')).toBeNull()
     expect(chipsOf(gridRow('bravo main'))).toHaveLength(0)
   })
@@ -189,6 +190,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
   it('marks each tagged grid row with its first tag colour and counts the rest', async () => {
     localStorage.setItem('tr-rail-prefs', JSON.stringify({
       ...DEFAULT_RAIL_PREFS,
+      tagDisplay: 'icon',
       properties: [...DEFAULT_RAIL_PREFS.properties, 'tags']
     }))
     render(TREE)
@@ -200,14 +202,15 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     expect(markOf('bravo main')).toBeNull()
   })
 
-  it('a single tag shows no count beside it', () => {
+  it('a single tag shows its name without an overflow count', async () => {
     render(TREE)
     const row = gridRow('alpha main')
-    expect(chipsOf(row)).toHaveLength(0)
+    await vi.waitFor(() => expect(chipsOf(row)).toHaveLength(1))
+    expect(chipsOf(row)[0].textContent).toBe('code review')
     expect(row.querySelector('[data-testid="tag-chips-more"]')).toBeNull()
   })
 
-  it('names one chip and counts the rest, whatever the total', () => {
+  it('names two chips and counts remaining tags', async () => {
     render({
       ...TREE,
       gridsByWorkspace: {
@@ -227,8 +230,8 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
       sessions: [taggedSession(11, '/a', [])]
     })
     const row = gridRow('alpha main')
-    expect(chipsOf(row)).toHaveLength(0)
-    expect(row.querySelector('[data-testid="tag-chips-more"]')).toBeNull()
+    await vi.waitFor(() => expect(chipsOf(row)).toHaveLength(2))
+    expect(row.querySelector('[data-testid="tag-chips-more"]')?.textContent).toBe('+1')
   })
 
   it('the tag menu toggles a filter and restores the rows when it is cleared', () => {
@@ -290,6 +293,18 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     act(() => options()[0].click())
     expect(badge()?.textContent).toBe('1')
     expect(filterToggle().getAttribute('aria-label')).toBe('Sidebar options')
+  })
+
+  it('shows the active filter below the header and clears it there', () => {
+    render(TREE)
+    openFilter()
+    act(() => options()[0].click())
+    const line = container.querySelector<HTMLElement>('[data-testid="rail-active-tag-filter"]')!
+    expect(line.textContent).toContain('Showing code review only')
+    expect(filterToggle().querySelector('[data-testid="tree-filter-badge"]')?.className).not.toContain('absolute')
+    act(() => line.querySelector<HTMLButtonElement>('button')!.click())
+    expect(container.querySelector('[data-testid="rail-active-tag-filter"]')).toBeNull()
+    expect(gridRows()).toHaveLength(3)
   })
 
   it('Clear filter empties every active tag and leaves the menu open', () => {
@@ -359,16 +374,16 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     expect(container.textContent).toContain('No tab carries that tag')
   })
 
-  it('keeps tag chips out of grid rows at every rail width', () => {
+  it('keeps configured tag chips visible at every rail width', async () => {
     render(TREE)
     const chips = (): HTMLElement[] => chipsOf(gridRow('alpha main'))
-    expect(chips()).toHaveLength(0)
+    await vi.waitFor(() => expect(chips()).toHaveLength(1))
 
     act(() => setRailWidth(RAIL_TAG_MARK_AT - 40))
-    expect(chips()).toHaveLength(0)
+    expect(chips()).toHaveLength(1)
 
     act(() => setRailWidth(RAIL_TAG_MARK_AT + 60))
-    expect(chips()).toHaveLength(0)
+    expect(chips()).toHaveLength(1)
   })
 
   it('survives a filter persisted by an older shape and prunes deleted tags', () => {

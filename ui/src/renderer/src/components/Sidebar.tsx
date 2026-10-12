@@ -160,6 +160,7 @@ import {
   RailChevron,
   RailContextMenu,
   RailFilterCountBadge,
+  RailActiveTagFilter,
   RailGroupCount,
   RailGroupHeader,
   RailGroupStatusDot,
@@ -2232,6 +2233,7 @@ function RailTree({
         />
       </RailTreeGroupHeader>
 
+      <RailActiveTagFilter tags={activeTagIds.flatMap((id) => tagById.get(id) ?? [])} onClear={onClearTagFilter} />
       <RailTreeContent groupBy={railPrefs.groupBy} virtualItems={virtualItems} compact={railPrefs.cardMode === 'compact'} dragging={dragPath !== null} renderWorkspaceContent={() => (
         <WorkspaceList dragging={dragPath !== null}>
           {filteredWorkspaces.map((w, i) => {

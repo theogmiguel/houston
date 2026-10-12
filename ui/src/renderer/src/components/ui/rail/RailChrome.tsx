@@ -5,6 +5,8 @@ import { ContextMenu } from '../ContextMenu'
 import { Icon } from '../Icon'
 import { IconCheck, IconChevronRight, IconPin } from '../../icons'
 import { Tooltip } from '../Tooltip'
+import type { TagInfo } from '../../../houston/generated/TagInfo'
+import { TagChip } from '../TagChip'
 import { WorkspaceTreeRow } from '../WorkspaceTreeRow'
 
 export function RailOptionsSurface({ children, style }: { children: ReactNode; style: React.CSSProperties }): React.JSX.Element {
@@ -169,9 +171,17 @@ export function RailTreeTitle({ children }: { children: ReactNode }): React.JSX.
 }
 
 export function RailFilterCountBadge({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span aria-hidden data-testid="tree-filter-badge" className="absolute -right-[var(--space-pixel)] -top-[var(--space-pixel)] h-[var(--h-rail-filter-badge)] min-w-[var(--h-rail-filter-badge)] rounded-full bg-[var(--accent)] px-[var(--space-0-5)] text-center [font-size:var(--tr-text-label-size)] leading-[var(--h-rail-filter-badge)] text-white">{children}</span>
+  return <span aria-hidden data-testid="tree-filter-badge" className="text-[length:var(--tr-text-xs)] text-[var(--text-secondary)]">{children}</span>
+}
+
+export function RailActiveTagFilter({ tags, onClear }: { tags: readonly TagInfo[]; onClear: () => void }): React.JSX.Element | null {
+  if (!tags.length) return null
+  return <div data-testid="rail-active-tag-filter" className="flex flex-none flex-wrap items-center gap-1 px-2 pb-1 text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
+    Showing {tags.map((tag) => <TagChip key={tag.id} tag={tag} />)} only
+    <Button variant="muted-link" size="sm" className="ml-auto" onClick={onClear}>Clear</Button>
+  </div>
 }
 
 export function RailChromeSpecimen(): React.JSX.Element {
-  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsView direction="none"><RailOptionsTitle>Sidebar options</RailOptionsTitle></RailOptionsView><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailGroupSegment value="workspace" onChange={() => {}} /><RailCardModeSegment value="detailed" onChange={() => {}} /><RailTagDisplaySegment value="dots" onChange={() => {}} /><RailMenuRow selected><RailMenuCheckSlot checked />Sort by<RailMenuValue>Manual</RailMenuValue></RailMenuRow><RailMenuRow>Tags<RailTagFilterValue active colors={['var(--ok)', 'var(--info)']} /></RailMenuRow><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded><RailGroupStatusDot label="Working" />Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle></RailTreeGroupHeader></div>
+  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsView direction="none"><RailOptionsTitle>Sidebar options</RailOptionsTitle></RailOptionsView><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailGroupSegment value="workspace" onChange={() => {}} /><RailCardModeSegment value="detailed" onChange={() => {}} /><RailTagDisplaySegment value="dots" onChange={() => {}} /><RailMenuRow selected><RailMenuCheckSlot checked />Sort by<RailMenuValue>Manual</RailMenuValue></RailMenuRow><RailMenuRow>Tags<RailTagFilterValue active colors={['var(--ok)', 'var(--info)']} /></RailMenuRow><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded><RailGroupStatusDot label="Working" />Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle><RailFilterCountBadge>1</RailFilterCountBadge></RailTreeGroupHeader><RailActiveTagFilter tags={[{ id: 1, name: 'ui', color: 'var(--info)' }]} onClear={() => {}} /></div>
 }

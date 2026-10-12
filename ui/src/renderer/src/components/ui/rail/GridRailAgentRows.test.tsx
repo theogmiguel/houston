@@ -22,7 +22,7 @@ function rowDot(status: AgentStatus | null, count = 1, contextPercent?: number):
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  act(() => root!.render(<GridRailAgentRows agents={Array.from({ length: count }, (_, index) => ({ ...agent, session: { ...session, id: index + 1 } }))} cardMode="detailed" agentActivity="compact" properties={[]} expanded={false} onToggleExpanded={() => {}} now={0} />))
+  act(() => root!.render(<GridRailAgentRows agents={Array.from({ length: count }, (_, index) => ({ ...agent, session: { ...session, id: index + 1 } }))} cardMode="detailed" agentActivity="compact" properties={['inline-agents']} expanded={false} onToggleExpanded={() => {}} now={0} />))
   const dot = host.querySelector<HTMLElement>('[data-testid="agent-row-dot"]')
   if (!dot) throw new Error('agent row did not render its status dot')
   return dot

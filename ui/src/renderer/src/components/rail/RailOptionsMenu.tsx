@@ -2,55 +2,76 @@ import { useEffect, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../ui/Icon'
 import { IconTag, IconCheck, IconGrid, IconChevronLeft, IconChevronRight, IconArrowDown } from '../icons'
-import { Checkbox } from '../ui/Checkbox'
 import { DisabledSettingPrompt } from '../tags/DisabledSettingPrompt'
 import { useTagPopover } from '../tags/TagPopover'
-import { setRailCardMode, type RailCardProperty, type RailPrefs } from '../../railPrefs'
-import { Tooltip } from '../ui/Tooltip'
+import { COMPACT_DEFAULT, DETAILED_DEFAULT, setRailCardMode, type RailCardProperty, type RailPrefs } from '../../railPrefs'
 import {
-  RailOptionsDivider,
-  RailOptionsGrid,
-  RailOptionsSectionLabel,
-  RailOptionsSurface,
-  RailOptionsView,
-  RailOptionsTitle,
-  RailResetButton,
-  RailMenuRow,
-  RailMenuValue,
-  RailMenuCheckSlot,
-  RailCardModeSegment,
-  RailTagDisplaySegment,
-  RailTagFilterValue,
-  RailGroupSegment,
+  RailOptionsDivider, RailOptionsSectionLabel, RailOptionsSurface, RailOptionsView, RailResetButton,
+  RailMenuRow, RailMenuValue, RailMenuCheckSlot, RailCardModeSegment, RailTagDisplaySegment,
+  RailTagFilterValue, RailGroupSegment,
 } from '../ui/rail/RailChrome'
 
-const PROPERTIES: { key: RailCardProperty; label: string }[] = [
-  { key: 'checkout', label: 'Checkout' },
-  { key: 'pr', label: 'Pull request' },
-  { key: 'ci', label: 'CI' },
-  { key: 'diff', label: 'Diff' },
-  { key: 'tags', label: 'Tags' },
-  { key: 'task', label: 'Task' },
-  { key: 'inline-agents', label: 'Inline agents' },
-  { key: 'context', label: 'Context %' },
+const CARD_PROPERTIES: { keys: RailCardProperty[]; label: string; hint?: string }[] = [
+  { keys: ['tags'], label: 'Tags' },
+  { keys: ['pr'], label: 'Pull request and checks' },
+  { keys: ['checkout', 'diff'], label: 'Branch and changes' },
+  { keys: ['inline-agents'], label: 'Agents', hint: 'up to 3' },
+  { keys: ['last-message'], label: 'Last message' },
 ]
+const SORT_LABEL = { smart: 'Agent activity', manual: 'Manual', recent: 'Recent', name: 'Name' }
 
-export function RailOptionsMenu({
-  anchor,
-  prefs,
-  onChange,
-  onClose,
-  selectedTagIds = [],
-  selectedTagColors = [],
-  onClearTagFilter,
-}: {
-  anchor: HTMLElement | null
-  prefs: RailPrefs
-  onChange: (next: RailPrefs) => void
-  onClose: () => void
-  selectedTagIds?: number[]
-  selectedTagColors?: string[]
-  onClearTagFilter?: () => void
+function changeCardProperties(prefs: RailPrefs, keys: RailCardProperty[], checked: boolean): RailPrefs {
+  return {
+    ...prefs,
+    properties: checked ? [...new Set([...prefs.properties, ...keys])] : prefs.properties.filter((key) => !keys.includes(key)),
+    customisedProperties: true,
+    tags: keys.includes('tags') && !checked ? [] : prefs.tags,
+  }
+}
+
+function RailCardChecklist({ prefs, onChange, onClearTagFilter }: {
+  prefs: RailPrefs; onChange: (prefs: RailPrefs) => void; onClearTagFilter?: () => void
+}): React.JSX.Element {
+  return <>
+    <RailOptionsSectionLabel>Cards show</RailOptionsSectionLabel>
+    {CARD_PROPERTIES.map(({ keys, label, hint }) => {
+      const checked = keys.some((key) => prefs.properties.includes(key))
+      return <RailMenuRow key={label} role="menuitemcheckbox" aria-label={label} aria-checked={checked} onClick={() => {
+        if (keys.includes('tags') && checked) onClearTagFilter?.()
+        onChange(changeCardProperties(prefs, keys, !checked))
+      }}><RailMenuCheckSlot checked={checked} />{label}{hint && <RailMenuValue>{hint}</RailMenuValue>}</RailMenuRow>
+    })}
+    {prefs.customisedProperties && <RailResetButton onClick={() => onChange({ ...prefs, properties: [...(prefs.cardMode === 'detailed' ? DETAILED_DEFAULT : COMPACT_DEFAULT)], customisedProperties: false })}>Reset to defaults</RailResetButton>}
+  </>
+}
+
+function RailHideChecklist({ prefs, onChange }: { prefs: RailPrefs; onChange: (prefs: RailPrefs) => void }): React.JSX.Element {
+  return <>
+    <RailOptionsSectionLabel>Hide</RailOptionsSectionLabel>
+    {([
+      ['hideIdle', 'Idle grids'], ['hideDefaultBranch', 'Grids on default branch'], ['hideEmptyGrids', 'Empty grids'],
+    ] as const).map(([key, label]) => <RailMenuRow key={key} role="menuitemcheckbox" aria-checked={prefs.filters[key]} onClick={() => onChange({ ...prefs, filters: { ...prefs.filters, [key]: !prefs.filters[key] } })}>
+      <RailMenuCheckSlot checked={prefs.filters[key]} />{label}
+    </RailMenuRow>)}
+  </>
+}
+
+function RailDisplayOptions({ prefs, onChange }: { prefs: RailPrefs; onChange: (prefs: RailPrefs) => void }): React.JSX.Element {
+  return <>
+    <RailOptionsSectionLabel>Layout</RailOptionsSectionLabel>
+    <RailCardModeSegment value={prefs.cardMode} onChange={(mode) => onChange(setRailCardMode(prefs, mode))} />
+    <RailOptionsSectionLabel>Agent activity</RailOptionsSectionLabel>
+    {(['compact', 'full'] as const).map((mode) => <RailMenuRow key={mode} onClick={() => onChange({ ...prefs, agentActivity: mode })}>
+      {mode === 'full' ? 'Expanded' : 'Collapsed'}<RailMenuValue>{prefs.agentActivity === mode && <Icon glyph={IconCheck} role="small" />}</RailMenuValue>
+    </RailMenuRow>)}
+    <RailOptionsSectionLabel>Tags display</RailOptionsSectionLabel>
+    <RailTagDisplaySegment value={prefs.tagDisplay} onChange={(tagDisplay) => onChange({ ...prefs, tagDisplay })} />
+  </>
+}
+
+export function RailOptionsMenu({ anchor, prefs, onChange, onClose, selectedTagIds = [], selectedTagColors = [], onClearTagFilter }: {
+  anchor: HTMLElement | null; prefs: RailPrefs; onChange: (next: RailPrefs) => void; onClose: () => void
+  selectedTagIds?: number[]; selectedTagColors?: string[]; onClearTagFilter?: () => void
 }): React.JSX.Element | null {
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
   const [panel, setPanel] = useState<'root' | 'sort' | 'display'>('root')
@@ -58,144 +79,54 @@ export function RailOptionsMenu({
   const [tagAnchor, setTagAnchor] = useState<HTMLElement | null>(null)
   const tagPopover = useTagPopover()
   useLayoutEffect(() => {
-    if (!anchor) {
-      setPosition(null)
-      setPanel('root')
-      setDirection('none')
-      return
-    }
+    if (!anchor) { setPosition(null); setPanel('root'); setDirection('none'); return }
     const rect = anchor.getBoundingClientRect()
-    const top = Math.min(rect.bottom - 4, Math.max(8, window.innerHeight - 280))
-    setPosition({
-      left: Math.min(rect.right + 40, window.innerWidth - 272),
-      top,
-    })
+    setPosition({ left: Math.min(rect.right + 40, window.innerWidth - 272), top: Math.min(rect.bottom - 4, Math.max(8, window.innerHeight - 500)) })
   }, [anchor])
   useEffect(() => {
     if (!anchor) return
     const close = (event: MouseEvent): void => {
-      if (
-        !(event.target instanceof Element) ||
-        (!event.target.closest('[data-rail-options], [data-testid="tags-disabled-prompt"]') &&
-          !anchor.contains(event.target))
-      ) {
-        setPosition(null)
-        onClose()
+      if (!(event.target instanceof Element) || (!event.target.closest('[data-rail-options], [data-testid="tags-disabled-prompt"], [data-testid="tag-popover"]') && !anchor.contains(event.target))) {
+        setPosition(null); onClose()
       }
     }
-    const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        setPosition(null)
-        onClose()
-      }
-    }
+    const key = (event: KeyboardEvent): void => { if (event.key === 'Escape') { setPosition(null); onClose() } }
     window.addEventListener('pointerdown', close)
     window.addEventListener('keydown', key)
-    return () => {
-      window.removeEventListener('pointerdown', close)
-      window.removeEventListener('keydown', key)
-    }
+    return () => { window.removeEventListener('pointerdown', close); window.removeEventListener('keydown', key) }
   }, [anchor, onClose])
   if (!anchor || !position) return null
-  const set = (patch: Partial<RailPrefs>): void => onChange({ ...prefs, ...patch })
-  const navigate = (next: 'root' | 'sort' | 'display'): void => {
-    setDirection(next === 'root' ? 'back' : 'forward')
-    setPanel(next)
-  }
-  const toggleProperty = (property: RailCardProperty, checked: boolean): void => {
-    if (property === 'tags' && !checked) onClearTagFilter?.()
-    set({
-      properties: checked ? [...prefs.properties, property] : prefs.properties.filter((entry) => entry !== property),
-      customisedProperties: true,
-      ...(property === 'tags' && !checked ? { tags: [] } : {}),
-    })
-  }
-  return createPortal(
-    <>
-      <RailOptionsSurface style={{ ...position, maxHeight: `calc(100vh - ${Number(position.top) + 8}px)`, overflowY: 'auto' }}>
-        <RailOptionsView key={panel} direction={direction}>
+  const navigate = (next: 'root' | 'sort' | 'display'): void => { setDirection(next === 'root' ? 'back' : 'forward'); setPanel(next) }
+  return createPortal(<>
+    <RailOptionsSurface style={{ ...position, maxHeight: `calc(100vh - ${position.top + 8}px)`, overflowY: 'auto' }}>
+      <RailOptionsView key={panel} direction={direction}>
         {panel === 'root' ? <>
-          <RailOptionsTitle>Sidebar options</RailOptionsTitle>
           <RailOptionsSectionLabel>Group by</RailOptionsSectionLabel>
-          <RailGroupSegment value={prefs.groupBy} onChange={(groupBy) => set({ groupBy })} />
+          <RailGroupSegment value={prefs.groupBy} onChange={(groupBy) => onChange({ ...prefs, groupBy })} />
+          <RailMenuRow onClick={() => navigate('sort')}><Icon glyph={IconArrowDown} role="small" tone="muted" />Sort by<RailMenuValue>{SORT_LABEL[prefs.sort]} →</RailMenuValue></RailMenuRow>
           <RailOptionsDivider />
-          <RailMenuRow onClick={() => navigate('sort')}>
-            <Icon glyph={IconArrowDown} role="small" tone="muted" />Sort by
-            <RailMenuValue>{prefs.sort === 'smart' ? 'Agent activity' : prefs.sort === 'manual' ? 'Manual' : prefs.sort === 'recent' ? 'Recent' : 'Name'}</RailMenuValue>
-          </RailMenuRow>
-          <RailMenuRow onClick={() => navigate('display')}>
-            <Icon glyph={IconGrid} role="small" tone="muted" />Card display
-            <RailMenuValue>{prefs.cardMode === 'compact' ? 'Condensed' : 'Detailed'}</RailMenuValue>
-          </RailMenuRow>
+          <RailCardChecklist prefs={prefs} onChange={onChange} onClearTagFilter={onClearTagFilter} />
           <RailOptionsDivider />
-          <RailOptionsSectionLabel>Filters</RailOptionsSectionLabel>
-          {([
-            ['hideIdle', 'Hide idle grids'],
-            ['hideDefaultBranch', 'Hide grids on default branch'],
-            ['hideEmptyGrids', 'Hide empty grids'],
-          ] as const).map(([key, label]) => <RailMenuRow key={key} selected={prefs.filters[key]} onClick={() => set({ filters: { ...prefs.filters, [key]: !prefs.filters[key] } })}>
-            <RailMenuCheckSlot checked={prefs.filters[key]} />{label}
-          </RailMenuRow>)}
+          <RailHideChecklist prefs={prefs} onChange={onChange} />
+          <RailOptionsDivider />
           <RailMenuRow data-testid="rail-tags-filter" onClick={(event) => {
             if (!prefs.properties.includes('tags')) setTagAnchor(event.currentTarget)
             else tagPopover.open({ anchor: event.currentTarget, view: 'pick', selectedTagIds })
-          }}>
-            <Icon glyph={IconTag} role="small" tone="muted" />Tags
-            <RailTagFilterValue active={prefs.properties.includes('tags')} colors={selectedTagColors} />
-          </RailMenuRow>
+          }}><Icon glyph={IconTag} role="small" tone="muted" />Filter by tag<RailTagFilterValue active={prefs.properties.includes('tags')} colors={selectedTagColors} /></RailMenuRow>
+          <RailMenuRow data-testid="rail-manage-tags" onClick={(event) => {
+            tagPopover.open({ anchor: event.currentTarget, view: 'manage', selectedTagIds }); setPosition(null); onClose()
+          }}><Icon glyph={IconTag} role="small" tone="muted" />Manage tags…<RailMenuValue><Icon glyph={IconChevronRight} role="small" /></RailMenuValue></RailMenuRow>
+          <RailMenuRow onClick={() => navigate('display')}><Icon glyph={IconGrid} role="small" tone="muted" />Card display<RailMenuValue>{prefs.cardMode === 'compact' ? 'Condensed' : 'Detailed'} →</RailMenuValue></RailMenuRow>
         </> : <>
           <RailMenuRow onClick={() => navigate('root')}><Icon glyph={IconChevronLeft} role="small" />{panel === 'sort' ? 'Sort by' : 'Card display'}</RailMenuRow>
           <RailOptionsDivider />
-          {panel === 'sort' ? (['manual', 'smart', 'recent', 'name'] as const).map((sort) =>
-            <RailMenuRow key={sort} selected={prefs.sort === sort} onClick={() => { set({ sort }); navigate('root') }}>
-              {sort === 'smart' ? 'Agent activity' : sort === 'manual' ? 'Manual' : sort === 'recent' ? 'Recent' : 'Name'}
-              <RailMenuValue>{prefs.sort === sort && <Icon glyph={IconCheck} role="small" />}</RailMenuValue>
-            </RailMenuRow>
-          ) : <>
-            <RailOptionsSectionLabel>Layout</RailOptionsSectionLabel>
-            <RailCardModeSegment value={prefs.cardMode} onChange={(mode) => onChange(setRailCardMode(prefs, mode))} />
-            <RailOptionsSectionLabel>Agent activity</RailOptionsSectionLabel>
-            <RailMenuRow selected={prefs.agentActivity === 'compact'} onClick={() => set({ agentActivity: 'compact' })}>Collapsed<RailMenuValue>{prefs.agentActivity === 'compact' && <Icon glyph={IconCheck} role="small" />}</RailMenuValue></RailMenuRow>
-            <RailMenuRow selected={prefs.agentActivity === 'full'} onClick={() => set({ agentActivity: 'full' })}>Expanded<RailMenuValue>{prefs.agentActivity === 'full' && <Icon glyph={IconCheck} role="small" />}</RailMenuValue></RailMenuRow>
-            <RailOptionsDivider />
-            <RailOptionsSectionLabel>Card properties</RailOptionsSectionLabel>
-            <RailOptionsGrid variant="always-shown">
-              {(['Status', 'Unread'] as const).map((label) => <Tooltip key={label} label="Always shown"><span><Checkbox size="xs" label={label} checked disabled /></span></Tooltip>)}
-            </RailOptionsGrid>
-            <RailOptionsGrid>
-              {PROPERTIES.map(({ key, label }) => <Checkbox key={key} size="xs" label={label} checked={prefs.properties.includes(key)} onChange={(checked) => toggleProperty(key, checked)} />)}
-            </RailOptionsGrid>
-            {prefs.properties.includes('tags') && <>
-              <RailOptionsSectionLabel>Tags display</RailOptionsSectionLabel>
-              <RailTagDisplaySegment value={prefs.tagDisplay} onChange={(tagDisplay) => set({ tagDisplay })} />
-            </>}
-            {prefs.customisedProperties && <RailResetButton onClick={() => set({ properties: prefs.cardMode === 'detailed' ? ['status', 'unread', 'checkout', 'pr', 'diff', 'tags', 'inline-agents'] : ['status', 'unread'], customisedProperties: false })}>Reset to defaults</RailResetButton>}
-            <RailOptionsDivider />
-            <RailMenuRow data-testid="rail-manage-tags" onClick={(event) => {
-              tagPopover.open({ anchor: event.currentTarget, view: 'manage', selectedTagIds })
-              setPosition(null)
-              onClose()
-            }}><Icon glyph={IconTag} role="small" tone="muted" />Manage tags<RailMenuValue><Icon glyph={IconChevronRight} role="small" /></RailMenuValue></RailMenuRow>
-          </>}
+          {panel === 'sort' ? (['manual', 'smart', 'recent', 'name'] as const).map((sort) => <RailMenuRow key={sort} onClick={() => { onChange({ ...prefs, sort }); navigate('root') }}>{SORT_LABEL[sort]}<RailMenuValue>{prefs.sort === sort && <Icon glyph={IconCheck} role="small" />}</RailMenuValue></RailMenuRow>) : <RailDisplayOptions prefs={prefs} onChange={onChange} />}
         </>}
-        </RailOptionsView>
-      </RailOptionsSurface>
-      {tagAnchor && (
-        <DisabledSettingPrompt
-          anchor={tagAnchor}
-          onShowTags={() => {
-            toggleProperty('tags', true)
-            tagPopover.open({
-              anchor: tagAnchor,
-              view: 'pick',
-              selectedTagIds,
-              onDismiss: () => setTagAnchor(null),
-            })
-          }}
-          onClose={() => setTagAnchor(null)}
-        />
-      )}
-    </>,
-    document.body,
-  )
+      </RailOptionsView>
+    </RailOptionsSurface>
+    {tagAnchor && <DisabledSettingPrompt anchor={tagAnchor} onShowTags={() => {
+      onChange(changeCardProperties(prefs, ['tags'], true))
+      tagPopover.open({ anchor: tagAnchor, view: 'pick', selectedTagIds, onDismiss: () => setTagAnchor(null) })
+    }} onClose={() => setTagAnchor(null)} />}
+  </>, document.body)
 }

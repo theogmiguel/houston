@@ -40,7 +40,7 @@ function seedStorage(opts: { collapsed?: string[]; tagFilter?: number[]; cardMod
       agentActivity: 'compact',
       properties: opts.cardMode === 'compact'
         ? ['status', 'unread']
-        : ['status', 'unread', 'checkout', 'pr', 'diff', ...(opts.showTags ? ['tags'] : []), 'task', 'inline-agents'],
+        : ['status', 'unread', 'checkout', 'pr', 'diff', ...(opts.showTags ? ['tags'] : []), 'inline-agents'],
       filters: { hideIdle: false, hideDefaultBranch: false, hideEmptyGrids: opts.showTags ?? false },
       collapsedGroups: [],
       tags: [],
@@ -461,6 +461,8 @@ function WorkspacesEmptyStory({ variant }: { variant: 'plain' | 'pending' | 'ref
 }
 
 export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
+  'rail/sidebar-options': () => <RailCardModes openOptions />,
+  'rail/sidebar-tag-filter': () => <RailCardModes tagFilter={[1]} />,
   'rail/agent-focus': () => <RailCardModes />,
   'rail/card-modes': () => <RailCardModes />,
   'rail/card-modes-options': () => <RailCardModes openOptions />,

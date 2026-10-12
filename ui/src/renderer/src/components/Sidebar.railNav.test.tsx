@@ -194,12 +194,12 @@ describe('sidebar options', () => {
     render()
     act(() => toggle().click())
     expect(document.querySelector('[aria-label="Sidebar options"]')).not.toBeNull()
-    const hideIdle = Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Sidebar options"] button')).find((row) => row.textContent?.includes('Hide idle grids'))!
+    const hideIdle = Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Sidebar options"] button')).find((row) => row.textContent?.trim() === 'Idle grids')!
     act(() => { hideIdle.click() })
     expect(q('[data-options-testid="rail-options-trigger"] span')?.textContent).toBe('1')
   })
 
-  it('shows the Tags filter row inside Filters', () => {
+  it('shows the Filter by tag row on the options root', () => {
     render()
     act(() => toggle().click())
     expect(document.querySelector('[data-testid="rail-tags-filter"]')).not.toBeNull()
