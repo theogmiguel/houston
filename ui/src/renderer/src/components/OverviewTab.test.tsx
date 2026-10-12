@@ -6,7 +6,7 @@ import { cleanup } from '@testing-library/react'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import type { InboxRow } from '../houston/generated/InboxRow'
 import { OverviewTab } from './OverviewTab'
-const session = (id: number, parent: number | null, ended = false): SessionInfo => ({ id, spawned_by: parent, project_dir: '/work', cwd: '/work', codename: `code-${id}`, title: `task ${id}`, agent: 'claude', state: ended ? 'exited' : 'running', status: 'working', children_waiting: 0, live_children: 0, tags: [], hidden: false, inbox_unread: 0, resumable: true, delegation: parent == null ? null : { parent, started_at: 1000, settled_at: ended ? 61000 : null, state: ended ? 'done' : 'working', stalled: false, result_staged: false, superseded: 0, turn_end_source: 'unknown', inbox_owed: 0, inbox_provisional: 0, reusable: true } } as SessionInfo)
+const session = (id: number, parent: number | null, ended = false): SessionInfo => ({ id, spawned_by: parent, project_dir: '/work', cwd: '/work', title_source: 'prompt' as const, codename: `code-${id}`, title: `task ${id}`, agent: 'claude', state: ended ? 'exited' : 'running', status: 'working', children_waiting: 0, live_children: 0, tags: [], hidden: false, inbox_unread: 0, resumable: true, delegation: parent == null ? null : { parent, started_at: 1000, settled_at: ended ? 61000 : null, state: ended ? 'done' : 'working', stalled: false, result_staged: false, superseded: 0, turn_end_source: 'unknown', inbox_owed: 0, inbox_provisional: 0, reusable: true } } as SessionInfo)
 afterEach(cleanup)
 describe('orchestrator overview', () => {
   it('shows the compactions the orchestrator reported, or names a provider that reports none', () => {
@@ -118,7 +118,7 @@ describe('overview checkout metadata and durable results', () => {
     const props = { parentId: 1, client, onClose: vi.fn(), onReview: vi.fn() }
     const view = render(<OverviewTab {...props} sessions={new Map([[1, parent], [2, session(2, 1, true)]])} />)
     const result = {
-      message_id: 42, child: 2, role: 'validator', from_codename: 'code-2', request_id: 1,
+      message_id: 42, child: 2, role: 'validator', from_title_source: 'prompt' as const, codename: 'code-2', request_id: 1,
       summary: 'Complete', excerpt: 'Validated the recorded checkout', created_at: 2000, delivered_via: 'parent'
     }
     act(() => handlers.get('delegation_results')!({ parent: 1, before_message_id: null, next_message_id: null, results: [result] }))
@@ -188,4 +188,15 @@ it('shows held completed results without requesting human input', () => {
   expect(screen.queryByRole('button', { name: 'Answer' })).toBeNull()
   expect(container.querySelector('.overview-child-head [aria-label="Done"]')).not.toBeNull()
   expect(container.querySelector('.overview-state')?.textContent).toBe('Done')
+})
+
+
+it('counts parent-owned waits and staged reusable results separately from working', () => {
+  const waiting = withInputOwner(session(2, 1), 'orchestrator', 'Which branch?')
+  const staged = { ...session(3, 1), delegation: { ...session(3, 1).delegation!, result_staged: true } }
+  const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), instructionQueueList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+  render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, waiting], [3, staged]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
+  expect(screen.getByText('children · 1 waiting on orchestrator · 1 idle · 0 working · 0 done · 0 failed')).toBeTruthy()
+  expect(screen.getAllByRole('button', { name: 'Stop' })).toHaveLength(2)
+  expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
 })
