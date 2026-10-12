@@ -6,7 +6,7 @@ import { WorkspacesEmpty } from '../src/components/WorkspacesEmpty'
 import { setSettingsOpen } from '../src/settingsNav'
 import { setUpdateInstallForTests } from '../src/updateInstall'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { rememberRailGitFacts } from '../src/components/git/railGitCache'
+import { rememberRailGitFacts, useRailGitCache } from '../src/components/git/railGitCache'
 import { rememberRailPr } from '../src/components/git/railPrCache'
 
 const noop = (): void => {}
@@ -334,18 +334,18 @@ const cardSession = (values: Partial<SessionInfo> & Pick<SessionInfo, 'id' | 'ag
 })
 const CARD_SESSIONS: SessionInfo[] = [
   cardSession({ id: 1, agent: 'shell', project_dir: path('dispatch'), title: 'zsh', status: 'idle', status_since_ms: CARD_NOW, activity: { prompt: 'zsh', last_message: null, model: null, tool: null } }),
-  cardSession({ id: 2, agent: 'claude', project_dir: path('project_eagle'), title: 'Orchestrator', status: 'working', status_since_ms: CARD_NOW, live_children: 3, activity: { prompt: 'Orchestrator', last_message: 'aguardando 2 filhos', model: 'opus-5.5', tool: 'claude' } }),
+  cardSession({ id: 2, agent: 'claude', project_dir: path('project_eagle'), title: 'Orchestrator', checkout: { root: path('project_eagle'), kind: 'primary', branch: 'feature/tiers', head: null }, status: 'working', status_since_ms: CARD_NOW, live_children: 3, activity: { prompt: 'Orchestrator', last_message: 'aguardando 2 filhos', model: 'opus-5.5', tool: 'claude' } }),
   cardSession({ id: 3, agent: 'claude', project_dir: path('project_eagle'), title: 'eagle-tiers-ui', context: { used_tokens: 182000, window_tokens: 200000, used_percent: 91, state: 'near_limit', source: 'reported', as_of_ms: CARD_NOW }, status: 'needs-input', status_since_ms: CARD_NOW - 2 * 60_000, checkout: { root: `${path('project_eagle')}/wt/eagle-tiers-ui`, kind: { worktree: { slug: 'eagle-tiers-ui' } }, branch: 'feature/tiers-ui', head: null }, activity: { prompt: 'eagle-tiers-ui', last_message: 'Edit TiersTable.vue', model: 'sonnet-5.5', tool: 'Edit' } }),
   cardSession({ id: 4, agent: 'claude', project_dir: path('project_eagle'), title: 'dispatch-tiers', status: 'working', status_since_ms: CARD_NOW - 2 * 60_000, checkout: { root: `${path('project_eagle')}/wt/dispatch-tiers`, kind: { worktree: { slug: 'dispatch-tiers' } }, branch: 'feature/dispatch-tiers', head: null }, activity: { prompt: 'dispatch-tiers', last_message: 'Bash pytest -k tiers', model: 'sonnet-5.5', tool: 'Bash' } }),
   cardSession({ id: 5, agent: 'claude', project_dir: path('project_eagle'), title: 'eagle-tiers-backend', status: 'idle', status_since_ms: CARD_NOW - 16 * 60_000, checkout: { root: `${path('project_eagle')}/wt/eagle-tiers-backend`, kind: { worktree: { slug: 'eagle-tiers-backend' } }, branch: 'feature/eagle-tiers-backend', head: null }, activity: { prompt: 'eagle-tiers-backend', last_message: 'Done, migração e testes verdes', model: 'sonnet-5.5', tool: 'Bash' } }),
-  cardSession({ id: 6, agent: 'claude', project_dir: path('Houston'), title: 'corrige o flicker da sidebar', status: 'working', status_since_ms: CARD_NOW, activity: { prompt: 'corrige o flicker da sidebar', last_message: 'Edit ghostty/surface.ts', model: 'opus-5.5', tool: 'Edit' } }),
+  cardSession({ id: 6, agent: 'claude', project_dir: path('Houston'), title: 'Fix the sidebar flicker', checkout: { root: path('Houston'), kind: 'primary', branch: 'inspector-polish', head: null }, status: 'working', status_since_ms: CARD_NOW, activity: { prompt: 'Fix the sidebar flicker', last_message: 'Edit ghostty/surface.ts', model: 'opus-5.5', tool: 'Edit' } }),
   cardSession({ id: 7, agent: 'codex', project_dir: path('Houston'), title: 'inspector-polish', status: 'idle', status_since_ms: CARD_NOW - 6 * 60_000, checkout: { root: `${path('Houston')}/wt/inspector-polish`, kind: { worktree: { slug: 'inspector-polish' } }, branch: 'fix/inspector-polish', head: null }, activity: { prompt: 'inspector-polish', last_message: '4 commits, testes passando', model: 'gpt-6-luna', tool: 'codex' } }),
   cardSession({ id: 8, agent: 'codex', project_dir: path('Houston'), checkout_root: `${path('Houston')}/wt/pr-list`, title: 'tela de pull requests', status: 'needs-input', status_since_ms: CARD_NOW - 14 * 60_000, checkout: { root: `${path('Houston')}/wt/pr-list`, kind: { worktree: { slug: 'pr-list' } }, branch: 'houston/pr-list', head: null }, activity: { prompt: 'tela de pull requests', last_message: 'incluir filtro de autor?', model: 'gpt-6-luna', tool: 'codex' } }),
   cardSession({ id: 9, agent: 'claude', project_dir: path('finex'), title: 'arredondamento', status: 'idle', status_since_ms: CARD_NOW - 60 * 60_000, checkout: { root: path('finex'), kind: 'primary', branch: 'fix/rounding', head: null }, activity: { prompt: 'arredondamento', last_message: 'Done, testes verdes', model: 'sonnet-5.5', tool: 'Bash' } }),
 ]
 const CARD_GRIDS: NonNullable<RailProps['gridsByWorkspace']> = {
   [path('dispatch')]: [{ id: 'terminal', name: 'Terminal', count: 1, state: 'idle', sessionIds: [1], paneTagIds: [] }],
-  [path('project_eagle')]: [{ id: 'mensageria', name: 'Mensageria access tiers', count: 4, state: 'working', sessionIds: [2, 3, 4, 5], tagIds: [3, 4, 5], paneTagIds: [] }],
+  [path('project_eagle')]: [{ id: 'mensageria', name: 'Messaging access tiers', count: 4, state: 'working', sessionIds: [2, 3, 4, 5], tagIds: [3, 4, 5], paneTagIds: [] }],
   [path('Houston')]: [
     { id: 'inspector-polish', name: 'Inspector polish', count: 2, state: 'working', sessionIds: [6, 7], tagIds: [1, 2], paneTagIds: [] },
     { id: 'pr-screen', name: 'Pull requests screen', count: 1, state: 'needs-input', sessionIds: [8], tagIds: [1], paneTagIds: [] },
@@ -353,19 +353,29 @@ const CARD_GRIDS: NonNullable<RailProps['gridsByWorkspace']> = {
   [path('finex')]: [{ id: 'rounding', name: 'Reconciliação', count: 1, state: 'stopped', sessionIds: [9], paneTagIds: [] }],
 }
 
+const CARD_GIT_FACTS = new Map([
+  [path('dispatch'), { added: 0, deleted: 0, ahead: 0, behind: 0, changedFiles: 0 }],
+  [path('project_eagle'), { added: 932, deleted: 120, ahead: 3, behind: 0, changedFiles: 21 }],
+  [path('Houston'), { added: 91, deleted: 12, ahead: 2, behind: 0, changedFiles: 7 }],
+  [`${path('Houston')}/wt/pr-list`, { added: 1204, deleted: 88, ahead: 0, behind: 0, changedFiles: 32 }],
+])
+
+function RailCardGitFixture(): null {
+  const facts = useRailGitCache()
+  React.useEffect(() => {
+    // The lazy subscription can mount after the story; keep its empty client from erasing fixture facts.
+    if (facts !== CARD_GIT_FACTS) rememberRailGitFacts(CARD_GIT_FACTS)
+  }, [facts])
+  return null
+}
+
 function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'chips', tagFilter = [], gridMenu }: { gridMenu?: 'menu' | 'tags' | 'close'; openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
-  const [compact, setCompact] = React.useState(initialCompact)
+  const compact = initialCompact
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
-      rememberRailGitFacts(new Map([
-        [path('dispatch'), { added: 162, deleted: 0, ahead: 0, behind: 0, changedFiles: 1 }],
-        [path('project_eagle'), { added: 932, deleted: 120, ahead: 3, behind: 0, changedFiles: 21 }],
-        [path('Houston'), { added: 91, deleted: 12, ahead: 2, behind: 0, changedFiles: 7 }],
-        [`${path('Houston')}/wt/pr-list`, { added: 1204, deleted: 88, ahead: 0, behind: 0, changedFiles: 32 }],
-      ]))
-      rememberRailPr(path('project_eagle'), { gh: 'ready', pr: { number: 41, url: 'https://github.com/example/project-eagle/pull/41', state: 'open', title: 'Mensageria access tiers', head_ref: 'feature/tiers', additions: 932, deletions: 120, is_draft: false, review_decision: null, checks: 'running' } })
-      rememberRailPr(path('Houston'), { gh: 'ready', pr: { number: 95, url: 'https://github.com/example/houston/pull/95', state: 'open', title: 'Inspector polish', head_ref: 'main', additions: 214, deletions: 38, is_draft: false, review_decision: null, checks: 'passing' } })
-      rememberRailPr(`${path('Houston')}/wt/pr-list`, { gh: 'ready', pr: { number: 93, url: 'https://github.com/example/houston/pull/93', state: 'open', title: 'Pull requests screen', head_ref: 'houston/pr-list', additions: 1204, deletions: 88, is_draft: true, review_decision: null, checks: 'running' } })
+      rememberRailPr(path('project_eagle'), { gh: 'ready', pr: { number: 41, url: 'https://github.com/example/project-eagle/pull/41', state: 'open', title: 'Messaging access tiers', head_ref: 'feature/tiers', additions: 932, deletions: 120, is_draft: false, review_decision: null, checks: 'running' } })
+      rememberRailPr(path('Houston'), { gh: 'ready', pr: { number: 95, url: 'https://github.com/example/houston/pull/95', state: 'open', title: 'Inspector polish', head_ref: 'inspector-polish', additions: 91, deletions: 12, is_draft: false, review_decision: null, checks: 'passing' } })
+      rememberRailPr(`${path('Houston')}/wt/pr-list`, { gh: 'ready', pr: { number: 97, url: 'https://github.com/example/houston/pull/97', state: 'open', title: 'Pull requests screen', head_ref: 'houston/pr-list', additions: 1204, deletions: 88, is_draft: true, review_decision: null, checks: 'running' } })
     }, 250)
     return () => window.clearTimeout(timer)
   }, [])
@@ -415,6 +425,7 @@ function RailCardModes({ openTagPopover = false, openOptions = false, optionsPan
   }, [gridMenu])
   return (
     <div className="flex h-full flex-col" data-rail-mode={compact ? 'compact' : 'detailed'}>
+      <RailCardGitFixture />
       <RailFixture
         key={String(compact)}
         workspaces={CARD_WORKSPACES}
@@ -430,9 +441,6 @@ function RailCardModes({ openTagPopover = false, openOptions = false, optionsPan
         showTags
         collapsed={[]}
       />
-      <button type="button" onClick={() => setCompact((current) => !current)}>
-        Toggle {compact ? 'detailed' : 'compact'}
-      </button>
     </div>
   )
 }
