@@ -97,6 +97,20 @@ class ReleaseTests(unittest.TestCase):
         self.addCleanup(self.mock.stop)
         self.client = helper.Client(REPO)
 
+    def test_pr_check_accepts_internal_notes_without_git_or_api(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "pr.json"
+            path.write_text(json.dumps(pr(body="## Release notes\nNone")))
+            self.assertEqual(helper.main(["check-pr", "--pr-file", str(path)]), 0)
+            self.assertEqual(self.fake.calls, [])
+
+    def test_pr_check_rejects_an_empty_template(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "pr.json"
+            path.write_text(json.dumps(pr(body="## Release notes\n<!-- Write notes -->")))
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(helper.main(["check-pr", "--pr-file", str(path)]), 1)
+
     def test_published_baseline_ignores_abandoned_tag_draft_and_rc(self):
         self.fake.baseline([release("v0.17.0"), release("v0.18.1", draft=True),
                             release("v0.18.0-rc.1", prerelease=True)])
@@ -114,12 +128,18 @@ class ReleaseTests(unittest.TestCase):
         self.fake.git("rev-list", "--count", f"{other}..{SOURCE}", output="8")
         self.assertEqual(helper.baseline(self.client, SOURCE), ("v0.17.0", OLD))
 
-    def test_equal_and_nonancestor_release_excluded(self):
+    def test_source_at_published_release_does_not_repeat_old_changes(self):
         self.fake.api("releases", [release("v0.17.0"), release("v0.18.0")])
         self.fake.git("rev-parse", "--verify", "--end-of-options", "v0.17.0^{commit}", output=OLD)
         self.fake.git("merge-base", "--is-ancestor", OLD, SOURCE, code=1)
         self.fake.git("rev-parse", "--verify", "--end-of-options", "v0.18.0^{commit}", output=SOURCE)
-        self.assertEqual(helper.baseline(self.client, SOURCE), (None, None))
+        self.fake.git("merge-base", "--is-ancestor", SOURCE, SOURCE)
+        self.fake.git("rev-list", "--count", f"{SOURCE}..{SOURCE}", output="0")
+        self.fake.git("rev-list", "--reverse", f"{SOURCE}..{SOURCE}", output="")
+        markdown, metadata = helper.notes(self.client, SOURCE, "v0.19.0")
+        self.assertEqual(metadata["previous_tag"], "v0.18.0")
+        self.assertEqual(metadata["prs"], [])
+        self.assertIn("No user-facing changes", markdown)
 
     def test_rc_without_baseline_includes_full_history(self):
         self.fake.baseline([]).commits(previous=None).api(f"commits/{SOURCE}/pulls", [pr()])

@@ -4,7 +4,7 @@
 Requires gh authentication and a full checkout with fetched release tags. Notes
 consume English PR copy; missing sections use titles and flag editorial review.
 No version allocation, GitHub writes, fetching, or language-model calls occur.
-Run either subcommand with --help for its workflow-facing contract.
+Run each subcommand with --help for its workflow-facing contract.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ def baseline(client, source):
                 or not release.get("published_at") or not STABLE_TAG.fullmatch(tag)):
             continue
         commit = client.resolve(tag)
-        if commit != source and client.ancestor(commit, source):
+        if client.ancestor(commit, source):
             distance = int(client.git("rev-list", "--count", f"{commit}..{source}"))
             candidates.append((distance, tag, commit))
     if not candidates:
@@ -228,8 +228,13 @@ def main(argv=None):
             command.add_argument("--rc", action="store_true", help="also accept PR CI with matching pull_requests.head.sha")
             command.add_argument("--workflow", default="ci.yml", help="CI workflow filename or ID")
             command.add_argument("--required-job", action="append", help="override required job names; repeat for every job")
+    check = commands.add_parser("check-pr", help="validate the current PR API response without git or API calls")
+    check.add_argument("--pr-file", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
+        if args.command == "check-pr":
+            pr_notes(json.loads(args.pr_file.read_text(encoding="utf-8")))
+            return 0
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo):
             raise Refused(f"Invalid repository {args.repo!r}; expected OWNER/REPO")
         client = Client(args.repo)
