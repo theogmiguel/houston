@@ -1,3 +1,4 @@
+import { ROW_HIGHLIGHT } from './rowState'
 import { createElement, type ComponentPropsWithoutRef, type ElementType, type ReactNode } from 'react'
 
 export const FilesSurfaceClass = {
@@ -36,4 +37,8 @@ export function FilesSurfaceElement<T extends ElementType>({
   ...props
 }: { as: T; role: FilesSurfaceClassName; children?: ReactNode } & Omit<ComponentPropsWithoutRef<T>, 'className' | 'children'>): React.JSX.Element {
   return createElement(as, { ...props, className: filesSurfaceClass(FilesSurfaceClass[role]) }, children)
+}
+
+export function QuickOpenRow({ highlighted, ...props }: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & { highlighted: boolean }): React.JSX.Element {
+  return <button {...props} className={`${filesSurfaceClass(FilesSurfaceClass.quickOpenRow, highlighted && FilesSurfaceClass.highlighted)} ${ROW_HIGHLIGHT[highlighted ? 'selected' : 'rest']}`} />
 }

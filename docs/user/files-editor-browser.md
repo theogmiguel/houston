@@ -18,6 +18,8 @@ Files uses that session's workspace, including when the session belongs to a dif
 checkout. Choose **Open in editor pane** to move the file into the grid.
 Use `Ctrl+P` (`Mod+P`) outside a terminal to open Quick Open. In a focused terminal, press
 the prefix key and then `F` to open the Files surface; Quick Open is available there as well.
+Type to search, use Up/Down or hover to highlight a result, and press Enter to open it.
+Focus stays in the search field while moving through results. Escape closes Quick Open.
 
 When the Files area is at least 720 pixels wide, the tree and editor sit side by side.
 Drag their divider to resize the tree, or double-click it to reset. Tree width and

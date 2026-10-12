@@ -745,12 +745,8 @@
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--tr-radius-sm);
-  background: none;
   text-align: left;
   cursor: pointer;
-}
-.files-qrow.hi {
-  background: var(--hover-fill);
 }
 .files-qglyph {
   width: 20px;
@@ -765,7 +761,7 @@
 }
 .files-qtext > span {
   overflow: hidden;
-  color: var(--text-secondary);
+  color: inherit;
   font-size: var(--tr-text-base);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1151,9 +1147,6 @@
 .files-qfoot kbd {
   margin-right: var(--space-settings-detail-caption);
 }
-.files-qrow.hi {
-  background: var(--hover-fill);
-}
 .files-surface[data-panel-compact="true"] .files-openin span:nth-child(2) {
   display: none;
 }
@@ -1165,7 +1158,7 @@
 }
 
 .files-qtext > .files-qname {
-  color: var(--text-primary) !important;
+  color: inherit;
 }
 .files-qtext > .d {
   color: var(--text-muted);

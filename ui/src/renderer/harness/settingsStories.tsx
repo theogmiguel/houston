@@ -118,15 +118,19 @@ export function SettingsDetailStory({ state = 'ready' }: { state?: 'ready' | 'er
   /></div>
 }
 
-export function AppearancePickerStory({ empty = false }: { empty?: boolean }): React.JSX.Element {
+export function AppearancePickerStory({ empty = false, highlighted = false }: { empty?: boolean; highlighted?: boolean }): React.JSX.Element {
   React.useEffect(() => {
-    if (!empty) return
+    if (!empty && !highlighted) return
     const input = document.querySelector<HTMLInputElement>('[data-testid="appearance-picker-search"]')
     if (!input) return
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (highlighted) {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+      return
+    }
     setter?.call(input, 'missing palette')
     input.dispatchEvent(new Event('input', { bubbles: true }))
-  }, [empty])
+  }, [empty, highlighted])
   return <div className="max-w-[700px] p-6 bg-[var(--content-bg)] text-[var(--text-primary)]"><AppearancePicker currentTheme="black" onPreview={noop} onCommit={noop} /></div>
 }
 

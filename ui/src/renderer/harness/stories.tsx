@@ -146,7 +146,7 @@ const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shor
 import { StaleWorktreesStory, UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
-import { FilesSurfaceDelete470, FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceImage470, FilesSurfaceImage732, FilesSurfaceMarkdown470, FilesSurfaceMarkdown732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
+import { FilesSurfaceDelete470, FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceImage470, FilesSurfaceImage732, FilesSurfaceMarkdown470, FilesSurfaceMarkdown732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceQuickOpenHighlighted, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
 import { EditorSurfaceMenuStory, LayoutDropSlotsStory, MarkdownPreviewStory, OpenInSubmenuStory, EditorPreviewStatesStory, DictationListeningStory, DictationTranscribingStory, WindowControlsStory } from './workbenchStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper, SurfaceBrowserTabs, SurfaceBrowserEmpty, SurfaceBrowserEmpty340, SurfaceBrowserPage, SurfaceBrowserPage340, SurfaceDiff, SurfaceDiff340, SurfaceDiff600, SurfaceDiff732, SurfaceDiffGraphite, SurfaceLauncher, SurfacePrFailing, SurfacePrFailing340, SurfacePrFailing600, SurfacePrFailing732, SurfacePrPassing, SurfaceWidth340, SurfaceWidth470, SurfaceWidth600, SurfaceWidth732 } from './inspectorStories'
@@ -375,6 +375,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'files/surface-file-470': () => <FilesSurfaceFile470 />,
   'files/surface-file-600': () => <FilesSurfaceFile600 />,
   'files/surface-file-732': () => <FilesSurfaceFile732 />,
+  'files/surface-quick-open-highlighted': () => <FilesSurfaceQuickOpenHighlighted />,
   'files/surface-quick-open': () => <FilesSurfaceQuickOpen />,
   'files/surface-disk-changed': () => <FilesSurfaceDiskChanged />,
   'files/surface-open-in': () => <FilesSurfaceOpenIn />,
@@ -448,6 +449,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/detail-loading': () => <SettingsDetailStory state="loading" />,
   'settings/detail-empty': () => <SettingsDetailStory state="empty" />,
   'settings/appearance-picker': () => <AppearancePickerStory />,
+  'settings/appearance-picker-highlighted': () => <AppearancePickerStory highlighted />,
   'settings/appearance-picker-empty': () => <AppearancePickerStory empty />,
   'settings/search': () => <SettingsSearchStory />,
   'settings/terminal': () => <SettingsTerminal />,

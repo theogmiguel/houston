@@ -30,7 +30,10 @@ own Custom choice is not lost, and Custom comes back on its own once you turn th
 setting back off.
 
 **Terminal palette** — pick a color palette for terminal panes, or leave it on Auto to
-follow the chrome theme.
+follow the chrome theme. The command palette’s **Change terminal palette…** picker
+previews the palette highlighted by Up/Down or the pointer. The check marks the saved
+palette; Enter saves the preview and Escape restores the saved palette. Focus stays
+in the search field while browsing.
 
 New panes support full colour even when Houston is launched from a command runner with
 `NO_COLOR` set. To disable CLI colours intentionally, set `NO_COLOR` inside the pane or
