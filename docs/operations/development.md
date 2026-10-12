@@ -728,7 +728,7 @@ and excludes Vite and the driver. Changing process sets invalidate CPU compariso
 RSS double-counts shared pages, so prefer PSS. Idle has no continuous rAF or input probe,
 but the focused cursor still blinks. Disposal does not force garbage collection, and WASM
 capacity can stay at its allocator high-water mark. A page hidden or unfocused at any point
-in a phase, changing process sets and streaming phases with fewer than 25 rAF samples per second mark diagnostic
+in a phase, missing or changing Linux process samples and streaming phases with fewer than 25 rAF samples per second mark diagnostic
 timings invalid; they do not discard the structural observations.
 Missing or timed-out synthetic input echoes fail the run and preserve the measured counts
 in the JSON instead of reporting a valid latency distribution from only successful echoes.
