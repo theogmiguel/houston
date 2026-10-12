@@ -454,6 +454,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'rail/grid-row-paper-200': () => <RailGridRowStory theme="paper" width={200} />,
   'rail/grid-row-paper-240': () => <RailGridRowStory theme="paper" width={240} />,
   'rail/grid-row-paper-420': () => <RailGridRowStory theme="paper" width={420} />,
+  'settings/agents-skill-detail': () => <NavSkills inSettings detail />,
   'settings/agents-skills': () => <NavSkills inSettings />,
   'settings/agents-mcp': () => <NavMcp inSettings />,
   'settings/agents-review': () => <HarnessPageStory inSettings />,

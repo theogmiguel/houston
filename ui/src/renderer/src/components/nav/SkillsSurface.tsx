@@ -77,6 +77,7 @@ export function SkillsSurface(props: {
           <SkillsView
             dir={workspace}
             embedded
+            settingsPage={embedded}
             onChanged={onRefresh}
             tools={tools}
             pushes={pushes}
@@ -94,12 +95,12 @@ export function SkillsSurface(props: {
         </Suspense>
         <NavSurfaceContent>
           <NavSurfaceSection>
-            <SubHead>Distribution</SubHead>
+            {!embedded && <SubHead>Distribution</SubHead>}
             <SettingsList>
               <Row
                 variant="list"
-                title="Auto-push drift"
-                desc="Copy a drifted or missing skill into every tool as soon as it changes."
+                title={embedded ? "Keep copies in sync" : "Auto-push drift"}
+                desc={embedded ? "When a skill changes, copy it into every agent that reads skills from its own folder." : "Copy a drifted or missing skill into every tool as soon as it changes."}
               >
                 <div className="flex items-center gap-[var(--space-2)]">
                   <CheckedStamp at={checkedAt} />
@@ -118,9 +119,9 @@ export function SkillsSurface(props: {
               </Row>
             </SettingsList>
           </NavSurfaceSection>
-          <PanelFootnote>
+          {!embedded && <PanelFootnote>
             Open a skill to read its instructions, copy its invocation, or manage which agents can use it.
-          </PanelFootnote>
+          </PanelFootnote>}
         </NavSurfaceContent>
       </AgentSettingsBody>
   )

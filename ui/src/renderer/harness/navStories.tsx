@@ -246,9 +246,10 @@ function skillColumn(tool: SkillToolState['tool'], names: string[], inherits = f
   }
 }
 
-function OpenSkillStory({ children }: { children: React.ReactNode }): React.JSX.Element {
+export function OpenSkillStory({ children, open = true }: { children: React.ReactNode; open?: boolean }): React.JSX.Element {
   const ref = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
+    if (!open) return
     const timer = window.setInterval(() => {
       const button = [...(ref.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
         .find((candidate) => candidate.textContent?.includes('ui-tokens'))
@@ -257,11 +258,11 @@ function OpenSkillStory({ children }: { children: React.ReactNode }): React.JSX.
       window.clearInterval(timer)
     }, 50)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [open])
   return <div ref={ref} style={{ display: 'flex', flex: 1, minWidth: 0 }}>{children}</div>
 }
 
-export function NavSkills({ inSettings = false }: { inSettings?: boolean } = {}): React.JSX.Element {
+export function NavSkills({ inSettings = false, detail = false }: { inSettings?: boolean; detail?: boolean } = {}): React.JSX.Element {
   installSkillFixture()
   const client = React.useMemo(() => {
     const handlers = new Map<string, (message: unknown) => void>()
@@ -294,12 +295,12 @@ export function NavSkills({ inSettings = false }: { inSettings?: boolean } = {})
     } as unknown as HoustonClient
   }, [])
   const content = (
-      <OpenSkillStory>
+      <OpenSkillStory open={!inSettings || detail}>
         <SkillsSurface
           embedded={inSettings}
           tools={[
             skillColumn('claude', ['tdd', 'ui-tokens']),
-            skillColumn('codex', ['ui-tokens']),
+            { ...skillColumn('codex', ['tdd', 'ui-tokens', 'lint-sweep']), skills: [{ name: 'tdd', path: '/codex/tdd', digest: 'A' }, { name: 'ui-tokens', path: '/codex/ui-tokens', digest: 'C' }, { name: 'lint-sweep', path: '/codex/lint-sweep', digest: 'B' }] },
             skillColumn('opencode', [], true),
             skillColumn('cursor', [], true),
             skillColumn('grok', [], true)

@@ -6,8 +6,8 @@ import { Text } from './Text'
 import { Button } from './Button'
 import { ROW_STATE } from './rowState'
 
-export function ProviderGlyphTile({ agent }: { agent: AgentKind }): React.JSX.Element {
-  return <span aria-hidden="true" className="flex h-[var(--space-6)] w-[var(--space-6)] flex-none items-center justify-center rounded-[var(--tr-radius-sm)] border border-[var(--divider)] bg-[var(--field-bg)]"><IconAgent agent={agent} className="h-[var(--space-4)] w-[var(--space-4)]" /></span>
+export function ProviderGlyphTile({ agent, state = 'on' }: { agent: AgentKind; state?: 'on' | 'off' | 'differs' }): React.JSX.Element {
+  return <span aria-hidden="true" className={`relative ${state === 'off' ? 'opacity-45' : ''} flex h-[var(--space-6)] w-[var(--space-6)] flex-none items-center justify-center rounded-[var(--tr-radius-sm)] border border-[var(--divider)] bg-[var(--field-bg)]`}><IconAgent agent={agent} className="h-[var(--space-4)] w-[var(--space-4)]" />{state === 'differs' && <span className="absolute -right-[var(--space-0-5)] -top-[var(--space-0-5)] h-[var(--space-2)] w-[var(--space-2)] rounded-full border-2 border-[var(--card-bg)] bg-[var(--danger)]" />}</span>
 }
 export function AgentCliRow({ provider, name, version, detail, mark, status, tone, pending, action, onAction, onOpen }: { provider: AgentKind; name: string; version: string | null; detail: string; mark: string; status: string; tone: SetupTone; pending: boolean; action?: string; onAction?: () => void; onOpen: () => void }): React.JSX.Element {
   return <div data-testid="agent-status-row" data-settings-row-name={name} data-provider={provider} data-status={mark} className={`flex items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-3)] [&+&]:border-t [&+&]:border-[var(--divider)] ${ROW_STATE.rest} ${mark === 'absent' ? 'text-[var(--text-secondary)]' : ''}`}>

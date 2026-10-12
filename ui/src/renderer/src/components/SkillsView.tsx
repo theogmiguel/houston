@@ -1,3 +1,4 @@
+import { SkillsSettingsLibrary } from './settings/SkillsSettingsLibrary'
 import { MascotSurfaceMount } from '../mascot/MascotMount'
 import { useEffect, useMemo, useState } from 'react'
 import type { Skill } from '../env'
@@ -971,6 +972,7 @@ export function SkillsView({
   hasHarnessReview,
   showAgentRelations = false,
   embedded = false,
+  settingsPage = false,
   tools,
   pushes,
   onPush,
@@ -989,6 +991,7 @@ export function SkillsView({
   hasHarnessReview?: boolean
   showAgentRelations?: boolean
   embedded?: boolean
+  settingsPage?: boolean
   onChanged?: () => void
   tools?: SkillToolState[] | null
   pushes?: SkillPushRecord[]
@@ -1102,7 +1105,7 @@ export function SkillsView({
         right: drifted ? <StatusIcon state="differs" /> : undefined
       }
     })
-    const creating = form !== null && form.path === null
+    const creating = isCreatingSkill(form)
 
     const actions = (
       <>
@@ -1111,6 +1114,44 @@ export function SkillsView({
       </>
     )
 
+    const renderSelection = (key: string | null): React.JSX.Element | null => {
+              if (creating) {
+                return <SkillEmbeddedEditor form={form!} setForm={setForm} submitForm={submitForm} />
+              }
+              if (!key) {
+                return (
+                  <Text as="div" size="small" tone="faint" center className="flex-1 flex items-center justify-center">
+                    Pick a skill from the list to see its details.
+                  </Text>
+                )
+              }
+              const skill = all.find((s) => skillKey(s) === key)
+              if (!skill) return null
+              if (form && form.path === skill.path) {
+                return <SkillEmbeddedEditor form={form} setForm={setForm} submitForm={submitForm} />
+              }
+              return (
+                <SkillEmbeddedDetail
+                  skill={skill}
+                  onRun={onRun}
+                  runLabel={runLabel}
+                  invocationAgent={invocationAgent}
+                  runDisabledReason={runDisabledReason}
+                  scopeLabel={scopeLabel}
+                  usageLine={usageLines?.[skill.name]}
+                  usageDigest={usageDigest}
+                  hasHarnessReview={hasHarnessReview}
+                  showAgentRelations={showAgentRelations}
+                  tools={tools}
+                  pushes={pushes}
+                  onPush={onPush}
+                  onPushUndo={onPushUndo}
+                  onEdit={startEdit}
+                  onDelete={startDelete}
+                />
+              )
+    }
+    if (settingsPage) return <SkillsSettingsLibrary skills={filtered} search={search} onSearch={setSearch} tools={tools} actions={actions} onOpen={(skill) => setSelectedKey(skillKey(skill))} detail={renderSelection(selectedKey)} onClose={() => { setSelectedKey(null); setForm(null) }} modalOpen={hasSkillSelection(selectedKey, form)} error={skillLibraryError(skills !== null, loadError, refresh)}><SkillActionError message={actionError} onDismiss={() => setActionError(null)} />{deleteModal}{installModal}</SkillsSettingsLibrary>
     return (
       <div data-testid="skills-library" className="grid gap-[var(--space-3)]">
         <PageHeader heading="Skills" description="Reusable instructions your agents can use." actions={actions} />
@@ -1171,43 +1212,7 @@ export function SkillsView({
                 />
               </PanelListHead>
             }
-            renderDetail={(item) => {
-              if (creating) {
-                return <SkillEmbeddedEditor form={form!} setForm={setForm} submitForm={submitForm} />
-              }
-              if (!item) {
-                return (
-                  <Text as="div" size="small" tone="faint" center className="flex-1 flex items-center justify-center">
-                    Pick a skill from the list to see its details.
-                  </Text>
-                )
-              }
-              const skill = all.find((s) => skillKey(s) === item.id)
-              if (!skill) return null
-              if (form && form.path === skill.path) {
-                return <SkillEmbeddedEditor form={form} setForm={setForm} submitForm={submitForm} />
-              }
-              return (
-                <SkillEmbeddedDetail
-                  skill={skill}
-                  onRun={onRun}
-                  runLabel={runLabel}
-                  invocationAgent={invocationAgent}
-                  runDisabledReason={runDisabledReason}
-                  scopeLabel={scopeLabel}
-                  usageLine={usageLines?.[skill.name]}
-                  usageDigest={usageDigest}
-                  hasHarnessReview={hasHarnessReview}
-                  showAgentRelations={showAgentRelations}
-                  tools={tools}
-                  pushes={pushes}
-                  onPush={onPush}
-                  onPushUndo={onPushUndo}
-                  onEdit={startEdit}
-                  onDelete={startDelete}
-                />
-              )
-            }}
+            renderDetail={(item) => renderSelection(item?.id ?? null)}
           />
         )}
         {deleteModal}
@@ -1323,4 +1328,12 @@ export function SkillsView({
       {installModal}
     </PaneViewRoot>
   )
+}
+
+function isCreatingSkill(form: SkillFormState | null): boolean { return form !== null && form.path === null }
+function hasSkillSelection(key: string | null, form: SkillFormState | null): boolean { return key !== null || form !== null }
+function skillLibraryError(loaded: boolean, error: string | null, retry: () => void): React.JSX.Element | undefined {
+  if (error) return <PanelEmpty title="Couldn't load skills" icon={<Icon glyph={IconFile} role="ui" />} testId="skills-load-error" action={<PanelButton onClick={retry}>Try again</PanelButton>}>{error}</PanelEmpty>
+  if (!loaded) return <p role="status">Reading skills…</p>
+  return undefined
 }
