@@ -25,7 +25,7 @@
 
 .grid-hover-card { opacity: 0; transform: scale(.98); pointer-events: none; }
 .grid-hover-card[data-visible='true'] { opacity: 1; transform: none; }
-.grid-card-menu { width: 208px !important; }
+.grid-card-menu { width: var(--w-context-menu) !important; max-width: calc(100vw - var(--space-4)); max-height: calc(100vh - var(--space-4)); overflow-y: auto; }
 .grid-card-menu > .grid-card-menu-label {
   margin-top: var(--space-1);
   padding: var(--space-1-5) var(--space-2) var(--space-1);

@@ -183,9 +183,9 @@ function useScript(act: (root: HTMLElement) => boolean): React.RefObject<HTMLDiv
   return ref
 }
 
-function contextMenuOn(el: Element): void {
+function contextMenuOn(el: Element, trailing = false): void {
   const r = el.getBoundingClientRect()
-  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + r.height / 2 }))
+  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: trailing ? r.right - 12 : r.left + 40, clientY: r.top + r.height / 2 }))
 }
 
 function Scripted({ act, ...props }: RailProps & { act: (root: HTMLElement) => boolean }): React.JSX.Element {
@@ -353,7 +353,7 @@ const CARD_GRIDS: NonNullable<RailProps['gridsByWorkspace']> = {
   [path('finex')]: [{ id: 'rounding', name: 'Reconciliação', count: 1, state: 'stopped', sessionIds: [9], paneTagIds: [] }],
 }
 
-function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'chips', tagFilter = [] }: { openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
+function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'chips', tagFilter = [], gridMenu }: { gridMenu?: 'menu' | 'tags' | 'close'; openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
   const [compact, setCompact] = React.useState(initialCompact)
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -399,6 +399,20 @@ function RailCardModes({ openTagPopover = false, openOptions = false, optionsPan
     }, 50)
     return () => window.clearInterval(timer)
   }, [hoverCard, expandAgents])
+  React.useEffect(() => {
+    if (!gridMenu) return
+    const timer = window.setTimeout(() => {
+      const row = document.querySelector('[data-grid-id="inspector-polish"]')
+      if (!row) return
+      contextMenuOn(row, true)
+      if (gridMenu === 'tags') document.querySelector<HTMLElement>('[data-testid="menu-tags-entry"]')?.click()
+      if (gridMenu === 'close') {
+        const close = [...document.querySelectorAll<HTMLButtonElement>('.ctxmenu .ctx-item')].find((item) => item.textContent?.includes('Close grid'))
+        close?.click()
+      }
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [gridMenu])
   return (
     <div className="flex h-full flex-col" data-rail-mode={compact ? 'compact' : 'detailed'}>
       <RailFixture
@@ -461,6 +475,9 @@ function WorkspacesEmptyStory({ variant }: { variant: 'plain' | 'pending' | 'ref
 }
 
 export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
+  'rail/sidebar-grid-menu': () => <RailCardModes gridMenu="menu" />,
+  'rail/sidebar-grid-tags': () => <RailCardModes gridMenu="tags" />,
+  'rail/sidebar-grid-close': () => <RailCardModes gridMenu="close" />,
   'rail/sidebar-options': () => <RailCardModes openOptions />,
   'rail/sidebar-tag-filter': () => <RailCardModes tagFilter={[1]} />,
   'rail/agent-focus': () => <RailCardModes />,

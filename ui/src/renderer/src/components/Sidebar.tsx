@@ -77,7 +77,7 @@ import {
   type IconProps,
 } from "./icons";
 import { Tooltip } from "./ui/Tooltip";
-import { useLastGridConfirm } from "./rail/LastGridConfirm";
+import { gridAgentCount, useGridCloseConfirm } from "./rail/LastGridConfirm";
 import { NavigationRailHeader } from "./ui/NavigationRail";
 import logoUrl from "../assets/brand-mark";
 import { showItemInFolder } from "../houston/bridge";
@@ -117,10 +117,10 @@ import {
   ContextMenu,
   ContextMenuItem,
   ContextMenuHeading,
-  ContextMenuGridLabel,
   ContextMenuItems,
   ContextMenuSeparator,
 } from "./ui/ContextMenu";
+import { usePointerMenuPosition } from "./ui/usePointerMenuPosition";
 import { GridRailContextActions } from "./ui/GridRailContextActions";
 import {
   WorkspaceTreeRow,
@@ -161,6 +161,7 @@ import {
   RailContextMenu,
   RailFilterCountBadge,
   RailActiveTagFilter,
+  RailMenuValue,
   RailGroupCount,
   RailGroupHeader,
   RailGroupStatusDot,
@@ -567,6 +568,9 @@ interface GridCtxMenu {
   canRemove: boolean;
   pinned: boolean;
   tagIds: number[];
+  tagNames: string[];
+  agentCount: number;
+  jumpNumber?: number;
   paneId: number | null;
   branch: string | null;
   checkoutPath: string;
@@ -595,7 +599,7 @@ function railGridContextFacts(
   const prStatus = prs.get(checkoutPath);
   return {
     paneId: nullable(pane?.id),
-    branch: pane ? orValue(branches.get(pane.id), orValue(pane.worktree?.branch, null)) : null,
+    branch: pane ? orValue(pane.checkout?.branch, orValue(branches.get(pane.id), orValue(pane.worktree?.branch, null))) : null,
     checkoutPath,
     worktreePath: nullable(pane?.worktree?.path),
     pr: nullable(prStatus?.pr),
@@ -769,19 +773,21 @@ function GridContextMenu({
   onError?: (message: string) => void;
 }): React.JSX.Element {
   const tagPopover = useTagPopover();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const position = usePointerMenuPosition(menuRef, gridMenu.x, gridMenu.y);
   return (
     <RailContextMenu
       variant="grid-card"
+      ref={menuRef}
+      aria-label={`${gridMenu.name} actions`}
       style={{
-        top: gridMenu.y,
-        left: gridMenu.x,
-        ["--pop-origin-x" as string]: `${gridMenu.originX}px`,
-        ["--pop-origin-y" as string]: `${gridMenu.originY}px`,
+        ...position,
+        ["--pop-origin-x" as string]: `${gridMenu.x - position.left}px`,
+        ["--pop-origin-y" as string]: `${gridMenu.y - position.top}px`,
       }}
       role="menu"
       onKeyDown={handleMenuKeyDown}
     >
-      <ContextMenuGridLabel>{gridMenu.name}</ContextMenuGridLabel>
       <ContextMenuItems>
         <ContextMenuItem role="menuitem" onClick={() => {
           onOpenGrid?.(gridMenu.path, gridMenu.gridId);
@@ -789,6 +795,7 @@ function GridContextMenu({
         }}>
           <Icon glyph={IconGrid} role="ui" />
           <span>Open</span>
+          {gridMenu.jumpNumber != null && gridMenu.jumpNumber <= 9 && <RailMenuValue><kbd>Alt {gridMenu.jumpNumber}</kbd></RailMenuValue>}
         </ContextMenuItem>
         <ContextMenuItem role="menuitem" onClick={() => {
           onStartRename(gridMenu.path, gridMenu.gridId);
@@ -799,16 +806,15 @@ function GridContextMenu({
         </ContextMenuItem>
         <ContextMenuItem role="menuitem" data-testid="menu-grid-pin" onClick={() => { onTogglePin(gridMenu.path, gridMenu.gridId); onClose() }}>
           <Icon glyph={IconPin} role="ui" />
-          <span>{gridMenu.pinned ? "Unpin" : "Pin"}</span>
+          <span>{gridMenu.pinned ? "Unpin" : "Pin to top"}</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem role="menuitem" data-testid="menu-tags-entry" onClick={(event) => {
+        <ContextMenuItem role="menuitem" aria-haspopup="dialog" data-testid="menu-tags-entry" onClick={(event) => {
           tagPopover.open({ anchor: event.currentTarget, gridId: gridStorageKey(gridMenu.path, gridMenu.gridId), view: 'pick', placement: 'right', onDismiss: onClose });
         }}>
           <Icon glyph={IconTag} role="ui" />
           <span className="flex-1">Tags</span>
-          {gridMenu.tagIds.length > 0 && <Text size="small" tone="muted">{gridMenu.tagIds.length}</Text>}
-          <Icon glyph={IconChevronRight} role="small" />
+          <RailMenuValue>{gridMenu.tagNames.join(", ")}<Icon glyph={IconChevronRight} role="small" /></RailMenuValue>
         </ContextMenuItem>
         <GridRailContextActions branch={gridMenu.branch} onClose={onClose} onError={onError} />
         <ContextMenuSeparator />
@@ -825,14 +831,14 @@ function GridContextMenu({
           />
         </Suspense>
         <ContextMenuSeparator />
-        <ContextMenuItem danger role="menuitem" disabled={!gridMenu.canRemove} onClick={() => {
+        {gridMenu.canRemove && <ContextMenuItem danger role="menuitem" onClick={() => {
             const { path, gridId } = gridMenu;
             onClose();
             onRemoveGrid?.(path, gridId);
         }}>
           <Icon glyph={IconClose} role="ui" />
-          <span>Close grid</span>
-        </ContextMenuItem>
+          <span>{gridMenu.agentCount > 0 ? `Close grid and its ${gridMenu.agentCount} ${gridMenu.agentCount === 1 ? "agent" : "agents"}…` : "Close grid"}</span>
+        </ContextMenuItem>}
       </ContextMenuItems>
     </RailContextMenu>
   );
@@ -1873,6 +1879,7 @@ function RailTree({
     path: string,
     grid: GridItem,
     canRemove: boolean,
+    jumpNumber?: number,
   ) => void;
   setGridRenaming: (v: { path: string; gridId: string } | null) => void;
   renaming: string | null;
@@ -2039,9 +2046,9 @@ function RailTree({
           <GridRailRowFallback
             name={grid.name}
             selected={selectedCard}
-            jumpNumber={1}
+            jumpNumber={jumpNumber}
             onSelect={() => onSelectGrid?.(workspace.path, grid.id)}
-            onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove))}
+            onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove), jumpNumber)}
             onRemove={onRemove}
           />
         }
@@ -2082,7 +2089,7 @@ function RailTree({
           onToggleUnread={() => onToggleGridUnread(key, unreadState.signature, unreadState.unread)}
           onFilterTag={onFilterTag}
           onRemove={onRemove}
-          onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove))}
+          onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove), jumpNumber)}
           onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
         />
       </Suspense>
@@ -2730,6 +2737,7 @@ export function Sidebar({
       const target = e.target as HTMLElement;
       if (
         !target.closest(".ctxmenu") &&
+        !target.closest('[data-testid="tag-popover"]') &&
         !target.closest('[data-testid="rail-options-trigger"]')
       )
         closeAll();
@@ -2785,6 +2793,7 @@ export function Sidebar({
     path: string,
     grid: GridItem,
     canRemove: boolean,
+    jumpNumber?: number,
   ): void => {
     e.preventDefault();
     e.stopPropagation();
@@ -2800,8 +2809,11 @@ export function Sidebar({
       gridId: grid.id,
       name: grid.name,
       canRemove,
+      jumpNumber,
       pinned: pinnedGridIds.has(gridStorageKey(path, grid.id)),
       tagIds: grid.tagIds ?? [],
+      tagNames: tags.filter((tag) => grid.tagIds?.includes(tag.id)).map((tag) => tag.name),
+      agentCount: gridAgentCount(grid),
       ...railGridContextFacts(grid, path, sessions, checkoutBranches, railPrByDir),
     });
   };
@@ -2865,7 +2877,7 @@ export function Sidebar({
     />
   );
 
-  const { removeGrid, closingLastEl } = useLastGridConfirm(gridsByWorkspace, onRemoveGrid);
+  const { removeGrid, closingLastEl } = useGridCloseConfirm(gridsByWorkspace, onRemoveGrid);
 
   const gridMenuEl = gridMenu && (
     <GridContextMenu

@@ -35,7 +35,7 @@ export function RailMenuRow({ children, selected = false, ...props }: ButtonHTML
 }
 
 export function RailMenuValue({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span className="ml-auto text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">{children}</span>
+  return <span className="ml-auto inline-flex items-center gap-1 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">{children}</span>
 }
 
 export function RailMenuCheckSlot({ checked }: { checked: boolean }): React.JSX.Element {

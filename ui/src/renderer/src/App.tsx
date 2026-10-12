@@ -2243,7 +2243,7 @@ export function App(): React.JSX.Element {
     const closing = preorderSessions((layoutsRef.current.get(key) ?? loadLayout(key)).tree);
     if (!before.some((g) => g.id === gridId)) return;
     const next = removeGrid(path, gridId);
-    if (before.length === 1) closeGridSessions(readyClient(conn), closing);
+    closeGridSessions(readyClient(conn), closing);
     setGridsByWs((prev) => new Map(prev).set(path, next));
     setLayouts((prev) => {
       const key = gridStorageKey(path, gridId);
