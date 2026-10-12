@@ -24,7 +24,7 @@ describe('fidelity primitives', () => {
   })
 
   it('uses the UI section heading and uses mono model names with shares in their own column', () => {
-    const { container } = render(<><UsageSectionHeading>Breakdown</UsageSectionHeading><UsageModelCell mark={<span>◎</span>} name="gpt-5.5-codex" share={0.4} color="var(--text-primary)" /></>)
+    const { container } = render(<><UsageSectionHeading>Breakdown</UsageSectionHeading><UsageModelCell mark={<span>◎</span>} name="gpt-5.5-codex" /></>)
     expect(screen.getByRole('heading', { name: 'Breakdown' }).className).toContain('tr-text-ui-size')
     expect(screen.getByText('gpt-5.5-codex').className).toContain('font-mono')
     expect(container.querySelector('span[aria-hidden="true"] span')).toBeNull()

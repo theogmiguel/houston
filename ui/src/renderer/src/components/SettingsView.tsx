@@ -45,7 +45,6 @@ import type { AgentProfileActive } from '../houston/generated/AgentProfileActive
 import type { SessionPolicy } from '../houston/generated/SessionPolicy'
 import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../houston/generated/AcpAgentInfo'
-import type { UsageSummaryMsg } from './UsageSection'
 import { TERMINAL_LINE_HEIGHT_DEFAULT, TERMINAL_SCROLLBACK_DEFAULT } from '../usePreferences'
 import { SettingsPageSurface } from './ui/SettingsPageSurface'
 
@@ -164,10 +163,6 @@ export interface Props {
   onMailboxRetentionSet: (hours: number) => void
 
   hostInfo: HostInfo | null
-  usage: UsageSummaryMsg | null
-  usageLoading: boolean
-  usageError: string | null
-  onUsageRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean) => void
   agentHooks: AgentHookState[] | null
   agentHooksCheckedAt?: number | null
   onAgentHooksSet: (provider: AgentKind, enabled: boolean) => void

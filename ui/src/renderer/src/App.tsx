@@ -1987,7 +1987,7 @@ export function App(): React.JSX.Element {
     return stop;
   }, [conn]);
 
-  // Settings → Usage's only ingress, deliberately not on a timer: a scan
+  // Usage scans are deliberate, never on a timer: a scan
   // reads transcript files Houston does not own, and a repeat window would
   // re-read gigabytes for a number that moves on human timescales.
   const requestUsage = useCallback(
@@ -4235,10 +4235,6 @@ export function App(): React.JSX.Element {
                           conn.client.sessionPolicySet(next);
                       }}
                       hostInfo={hostInfo}
-                      usage={usage}
-                      usageLoading={usageLoading}
-                      usageError={usageError}
-                      onUsageRequest={requestUsage}
                       onRestoreBudgetSet={(n) => {
                         if (conn.kind === "ready")
                           conn.client.restoreBudgetSet(n);
