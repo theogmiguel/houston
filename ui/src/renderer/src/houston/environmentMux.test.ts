@@ -174,7 +174,7 @@ describe('environmentMux', () => {
     for (const msg of out) r.clientSend(msg)
     expect(r.local.sent).toEqual(out.map((m) => JSON.stringify(m)))
 
-    const stdin = encodeStdinFrame(0x81000007, new Uint8Array([104, 105]))
+    const stdin = encodeStdinFrame(7, new Uint8Array([104, 105]))
     const stdinCopy = stdin.slice(0)
     r.clientSend(stdin)
     expect(new Uint8Array(r.local.sent.at(-1) as ArrayBuffer)).toEqual(new Uint8Array(stdinCopy))

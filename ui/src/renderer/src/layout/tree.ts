@@ -962,11 +962,31 @@ export function syncSessionLayout(
   ids: number[],
   cols: number,
   replaced: ReadonlyMap<number, number>,
-  autoPlaceIds: number[] = ids
+  autoPlaceIds: number[] = ids,
+  retainMissing: (session: number) => boolean = () => false
 ): LayoutNode | null {
   const latest = new Set(replaced.values())
   const alive = replaced.size === 0 ? ids : ids.filter((id) => latest.has(id))
-  return restoreSessionSlots(syncTree(restoreSessionSlots(tree, replaced), alive, cols, autoPlaceIds.filter((id) => alive.includes(id))), replaced)
+  const restored = restoreSessionSlots(tree, replaced)
+  // An incomplete environment roster cannot retire its saved slots yet.
+  const retained = preorderSessions(restored).filter((id) => !alive.includes(id) && retainMissing(id))
+  return restoreSessionSlots(syncTree(restored, [...alive, ...retained], cols, autoPlaceIds.filter((id) => alive.includes(id))), replaced)
+}
+
+export function removeSessionFromLayouts(
+  layouts: Map<string, LayoutState>,
+  session: number
+): Map<string, LayoutState> {
+  const candidates = new Map(layouts)
+  // All may never have been opened in this window; a close still retires its slot.
+  if (!candidates.has('all')) candidates.set('all', loadLayout('all'))
+  let next = layouts
+  for (const [key, state] of candidates) {
+    if (!state.tree || !findPane(state.tree, session)) continue
+    if (next === layouts) next = new Map(layouts)
+    next.set(key, { ...state, tree: removeLeaf(state.tree, session) })
+  }
+  return next
 }
 
 export function findSessionGrid(
@@ -1020,7 +1040,8 @@ export function syncWorkspaceGrids(
   wsAliveIds: number[],
   current: Map<string, LayoutState>,
   replaced: ReadonlyMap<number, number> = new Map(),
-  autoPlaceIds: number[] = wsAliveIds
+  autoPlaceIds: number[] = wsAliveIds,
+  retainMissing: (session: number) => boolean = () => false
 ): Map<string, LayoutState> {
   const latest = new Set(replaced.values())
   const alive = replaced.size === 0 ? wsAliveIds : wsAliveIds.filter((id) => latest.has(id))
@@ -1038,7 +1059,7 @@ export function syncWorkspaceGrids(
   for (const { gridId, key, state } of loaded) {
     const own = preorderSessions(state.tree)
     const ownSet = new Set(own)
-    const ids = own.filter((id) => wsAlive.has(id))
+    const ids = own.filter((id) => wsAlive.has(id) || retainMissing(id))
     if (gridId === activeGrid) {
       for (const id of autoPlaceIds) if (wsAlive.has(id) && !ownSet.has(id) && !allAssigned.has(id)) ids.push(id)
     }

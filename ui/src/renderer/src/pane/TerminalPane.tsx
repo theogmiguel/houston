@@ -1489,7 +1489,8 @@ export function TerminalPane({
   useEffect(() => {
     if (prevClientRef.current === client) return
     prevClientRef.current = client
-    if (isLive(info.state)) resetAndReattach()
+    // An ended session can have final retained bytes that arrived while disconnected.
+    resetAndReattach()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client])
 

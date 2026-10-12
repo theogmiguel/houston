@@ -19,7 +19,9 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
+import { ENVIRONMENT_SESSION_BASE, ENVIRONMENT_SESSION_SPAN, getEnvironmentRosterPending, subscribeEnvironmentRosterPending } from "./houston/environments";
 import { QuickOpenOverlay } from "./QuickOpenOverlay";
 import type { Dispatch, SetStateAction } from "react";
 import type {
@@ -289,6 +291,7 @@ import {
   workspaceGridSessionIds,
   respawnedSessions,
   syncSessionLayout,
+  removeSessionFromLayouts,
   unstack,
   updateBrowserUrl,
   type EditorNode,
@@ -543,32 +546,37 @@ function handleWorkspaceWireMessage(
   setWorkspaces(msg.workspaces);
   if (msg.workspaces.length > 0)
     setSelectedWs((cur) =>
-      msg.workspaces.some((w) => w.path === cur)
+      cur === "all" || getEnvironmentRosterPending().workspaces || msg.workspaces.some((w) => w.path === cur)
         ? cur
         : msg.workspaces[0].path,
     );
   return true;
 }
 
-// After a hello, restore the selected workspace: the remembered one when it
-// still exists, else the first; an empty roster opens the launcher instead.
+// Only a complete roster can retire the remembered workspace.
 function applyWorkspaceSelection(
   workspaces: Workspace[],
   setShowLauncher: Dispatch<SetStateAction<boolean>>,
   setSelectedWs: Dispatch<SetStateAction<string>>,
 ): void {
-  if (workspaces.length === 0) {
+  const pending = getEnvironmentRosterPending().workspaces;
+  if (workspaces.length === 0 && !pending) {
     setShowLauncher(true);
     return;
   }
   setSelectedWs((cur) => {
     if (workspaces.some((w) => w.path === cur)) return cur;
     const remembered = localStorage.getItem(SELECTED_WS_KEY);
-    if (remembered && workspaces.some((w) => w.path === remembered)) {
+    if (pending && cur !== "all") return cur;
+    if (remembered && (pending || workspaces.some((w) => w.path === remembered))) {
       return remembered;
     }
-    return workspaces[0].path;
+    return workspaces[0]?.path ?? cur;
   });
+}
+
+function workspaceRosterEmpty(workspaces: readonly Workspace[], pending: boolean): boolean {
+  return workspaces.length === 0 && !pending;
 }
 
 // The rail indicator offers exactly one thing: a release that is newer than this
@@ -744,6 +752,18 @@ export function App(): React.JSX.Element {
   const orchestrationNotices = useNotices();
   const [desktopNotificationDelivery, setDesktopNotificationDelivery] = useState<{ allowed: boolean; error?: string } | null>(null);
   const [selectedWs, setSelectedWs] = useState("all");
+  const environmentRosterPending = useSyncExternalStore(subscribeEnvironmentRosterPending, getEnvironmentRosterPending);
+  const [removedSessions, setRemovedSessions] = useState<ReadonlySet<number>>(() => new Set());
+  const retainMissingSession = useCallback((id: number): boolean => {
+    if (id < ENVIRONMENT_SESSION_BASE || removedSessions.has(id)) return false;
+    const slot = Math.floor((id - ENVIRONMENT_SESSION_BASE) / ENVIRONMENT_SESSION_SPAN);
+    return environmentRosterPending.discovering || environmentRosterPending.sessionSlots.has(slot);
+  }, [environmentRosterPending, removedSessions]);
+  useEffect(() => {
+    if (conn.kind !== "ready" || environmentRosterPending.workspaces) return;
+    if (workspaces.length === 0) return;
+    setSelectedWs((cur) => cur === "all" || workspaces.some((w) => w.path === cur) ? cur : workspaces[0].path);
+  }, [conn.kind, environmentRosterPending, workspaces]);
   const harnessOverview = useHarnessSignals(conn.kind === "ready" ? conn.client : null);
   const harnessAttention = harnessAttentionFor(harnessOverview, selectedWs);
   const [taskTurnCount, setTaskTurnCount] = useState(0);
@@ -910,13 +930,13 @@ export function App(): React.JSX.Element {
     null,
   );
   const workspacesEmptyOpen =
-    showLauncher || (conn.kind === "ready" && workspaces.length === 0);
+    showLauncher || (conn.kind === "ready" && workspaceRosterEmpty(workspaces, environmentRosterPending.workspaces));
 
   const [firstRunOpen, setFirstRunOpen] = useState(false);
   useEffect(() => {
-    if (conn.kind === "ready" && workspaces.length === 0) setFirstRunOpen(true);
+    if (conn.kind === "ready" && workspaceRosterEmpty(workspaces, environmentRosterPending.workspaces)) setFirstRunOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conn.kind, workspaces.length]);
+  }, [conn.kind, workspaces.length, environmentRosterPending.workspaces]);
   const closeFirstRun = useCallback(() => setFirstRunOpen(false), []);
   useReportMascotLifecycle(workspaces.length, firstRunOpen, workspacesEmptyOpen);
   const firstRunOrchestrationConsented =
@@ -1434,6 +1454,8 @@ export function App(): React.JSX.Element {
             handleSessionState(msg);
             break;
           case "session_removed":
+            setRemovedSessions((prev) => new Set(prev).add(msg.session));
+            setLayouts((prev) => removeSessionFromLayouts(prev, msg.session));
             setSessions((prev) => {
               const next = new Map(prev);
               next.delete(msg.session);
@@ -1825,6 +1847,7 @@ export function App(): React.JSX.Element {
         current,
         replacedSessions,
         wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
+        retainMissingSession,
       );
       for (const [key, st] of synced) map.set(key, st);
     }
@@ -1836,6 +1859,7 @@ export function App(): React.JSX.Element {
     replacedSessions,
     gridsFor,
     activeGridId,
+    retainMissingSession,
   ]);
   useBrowserLayoutMigration(orderedWorkspaces, warmLayouts);
   const documentLayouts = useMemo(() => new Map([...warmLayouts, ...layouts]), [warmLayouts, layouts]);
@@ -1909,10 +1933,10 @@ export function App(): React.JSX.Element {
     const ids = idsKey ? idsKey.split(",").map(Number) : [];
     setLayouts((prev) => {
       const cur = prev.get("all") ?? loadLayout("all");
-      const tree = syncSessionLayout(cur.tree, ids, cur.cols, replacedSessions, ids.filter((id) => sessions.get(id)?.spawned_by == null));
+      const tree = syncSessionLayout(cur.tree, ids, cur.cols, replacedSessions, ids.filter((id) => sessions.get(id)?.spawned_by == null), retainMissingSession);
       return new Map(prev).set("all", { ...cur, tree });
     });
-  }, [selectedWs, idsKey, replacedSessions, conn.kind]);
+  }, [selectedWs, idsKey, replacedSessions, conn.kind, retainMissingSession]);
 
   const gridSyncKey = useMemo(() => {
     const perWs = workspaces
@@ -1931,11 +1955,11 @@ export function App(): React.JSX.Element {
       .join("|");
     return `${perWs}~sel:${selectedWs}`;
   }, [workspaces, sessions, gridsFor, activeGridId, selectedWs]);
-  const lastGridSync = useRef("");
+  const lastGridSync = useRef<{ key: string; retainMissing: typeof retainMissingSession } | null>(null);
 
   useEffect(() => {
-    if (lastGridSync.current === gridSyncKey) return;
-    lastGridSync.current = gridSyncKey;
+    if (lastGridSync.current?.key === gridSyncKey && lastGridSync.current.retainMissing === retainMissingSession) return;
+    lastGridSync.current = { key: gridSyncKey, retainMissing: retainMissingSession };
     setLayouts((prev) => {
       const next = new Map(prev);
       let changed = false;
@@ -1952,6 +1976,7 @@ export function App(): React.JSX.Element {
           current,
           replacedSessions,
           wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
+          retainMissingSession,
         );
         for (const [key, st] of synced) {
           next.set(key, st);
@@ -1967,6 +1992,7 @@ export function App(): React.JSX.Element {
     replacedSessions,
     gridsFor,
     activeGridId,
+    retainMissingSession,
   ]);
 
   useEffect(() => {
@@ -2094,13 +2120,13 @@ export function App(): React.JSX.Element {
       const persisted = loadLayout("all");
       return {
         ...persisted,
-        tree: syncSessionLayout(persisted.tree, wsIds, persisted.cols, replacedSessions, wsIds.filter((id) => sessions.get(id)?.spawned_by == null)),
+        tree: syncSessionLayout(persisted.tree, wsIds, persisted.cols, replacedSessions, wsIds.filter((id) => sessions.get(id)?.spawned_by == null), retainMissingSession),
       };
     }
     const key = gridStorageKey(selectedWs, activeGridId(selectedWs));
     return warmLayouts.get(key) ?? loadLayout(key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layouts, warmLayouts, selectedWs, idsKey, activeGridId, replacedSessions]);
+  }, [layouts, warmLayouts, selectedWs, idsKey, activeGridId, replacedSessions, retainMissingSession]);
   const currentTree = wsState.tree;
   currentTreeRef.current = currentTree;
   const { checkAgentTargets, linkedPullRequests } = usePullRequestRailData(
