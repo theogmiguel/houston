@@ -330,6 +330,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/question': () => <LegacyQuestionStory />,
   'legacy/git-shell': () => <LegacyGitShellStory />,
   'pr-panel/ready': () => <PrPanelStory />,
+  'pr-panel/running': () => <PrPanelStory runningChecks />,
   'pr-panel/failing': () => <PrPanelStory failing />,
   'pr-panel/older': () => <PrPanelStory ageSeconds={172800} />,
   'pr-panel/metadata-unavailable': () => <PrPanelStory metadataMissing />,

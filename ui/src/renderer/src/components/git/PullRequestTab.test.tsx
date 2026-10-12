@@ -383,6 +383,55 @@ function settleWrite(client: FakeClient, request: number, kind = 'action'): void
 }
 
 describe('PullRequestTab — reading a pull request', () => {
+  it.each([false, true])('shows each CI check state in the merge box while checks are running (compact=%s)', (compact) => {
+    const client = mount({ compact })
+    emit(client, detailMsg({ detail: detail({ checks: [
+      { name: 'safety-checks', state: 'passing', url: null, duration_ms: 72000 },
+      { name: 'core-checks', state: 'running', url: null, duration_ms: null },
+      { name: 'windows-checks', state: 'queued', url: null, duration_ms: null },
+      { name: 'optional-checks', state: 'skipped', url: null, duration_ms: null }
+    ] }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    const rows = Array.from(box.querySelectorAll('[data-testid="pr-check-row"]'))
+    expect(rows).toHaveLength(4)
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('safety-checksPassed'),
+      expect.stringContaining('core-checksrunning'),
+      expect.stringContaining('windows-checksqueued'),
+      expect.stringContaining('optional-checksskipped')
+    ])
+    emit(client, detailMsg({ detail: detail({ checks: [
+      { name: 'core-checks', state: 'passing', url: null, duration_ms: 60000 }
+    ], merge_disabled_reason: null }) }))
+    expect(box.querySelectorAll('[data-testid="pr-check-row"]')).toHaveLength(1)
+    expect(box.querySelector('[data-testid="pr-check-row"]')?.textContent).toContain('core-checksPassed')
+  })
+
+  it('keeps every check visible alongside failed-check log and agent actions', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ checks: [
+      { name: 'core-checks', state: 'failing', url: null, duration_ms: null },
+      { name: 'renderer-checks', state: 'failing', url: null, duration_ms: null },
+      { name: 'safety-checks', state: 'passing', url: null, duration_ms: 72000 },
+      { name: 'windows-checks', state: 'running', url: null, duration_ms: null },
+      { name: 'optional-checks', state: 'skipped', url: null, duration_ms: null }
+    ] }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    const rows = Array.from(box.querySelectorAll('[data-testid="pr-check-row"]'))
+    expect(rows).toHaveLength(5)
+    expect(rows.map((row) => row.querySelector('button')?.textContent)).toEqual([
+      expect.stringContaining('core-checksFailed'),
+      expect.stringContaining('renderer-checksFailed'),
+      expect.stringContaining('safety-checksPassed'),
+      expect.stringContaining('windows-checksrunning'),
+      expect.stringContaining('optional-checksskipped')
+    ])
+    click(rows[1].querySelector('button'))
+    expect(rows[1].textContent).toContain("Logs aren't available for this check")
+    click(Array.from(rows[1].querySelectorAll('button')).find((button) => button.textContent?.includes('Fix with agent'))!)
+    expect(rows[1].textContent).toContain('No agent panes in this grid')
+  })
+
   it('asks for the detail on mount and renders checks, state and the merge gate', () => {
     const presence: boolean[] = []
     const client = mount({ onPrPresenceChange: (exists) => presence.push(exists) })

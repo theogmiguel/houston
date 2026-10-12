@@ -1,8 +1,7 @@
-import { useState } from 'react'
 import type { PrDetail, PrMergeMethod, PullRequestLink } from '../../houston/client'
 import type { PrDetailController } from './usePrDetailSubscription'
-import type { PrChecksState } from '../prs/usePrChecksState'
-import { CheckLog, checkKey } from '../prs/ChecksList'
+import { PrChecksList, type PrChecksState } from '../prs/usePrChecksState'
+import { checkKey } from '../prs/ChecksList'
 import { Button } from '../ui/Button'
 import { SplitButton } from '../ui/SplitButton'
 import { Tooltip } from '../ui/Tooltip'
@@ -21,25 +20,18 @@ function mergeConsequence(link: PullRequestLink, detail: PrDetail, method: PrMer
 }
 
 function PrFailedChecks({ checks }: { checks: PrChecksState }): React.JSX.Element {
-  const [logOpen, setLogOpen] = useState(false)
   const failed = checks.listProps.checks.filter((check) => check.state === 'failing')
   const first = failed[0]
   const key = checkKey(first)
-  const toggleLog = (): void => {
-    setLogOpen((open) => !open)
+  const openLog = (): void => {
     if (checks.listProps.expanded !== key) checks.listProps.onToggle(first)
   }
-  return <>
-    <PrReadinessRow tone="stop" heading={`${first.name} failed`} detail={first.duration_ms == null ? undefined : `${Math.floor(first.duration_ms / 60000)}m ${Math.floor(first.duration_ms % 60000 / 1000)}s`} actions={<div className="flex gap-[var(--space-1)]"><Button variant="ghost" size="sm" aria-expanded={logOpen} onClick={toggleLog}>Log</Button><Button variant="secondary" size="sm" onClick={() => checks.listProps.onPickAgent(first)}>Fix with agent</Button></div>} />
-    {(logOpen || checks.listProps.picker === key) && <CheckLog {...checks.listProps} check={first} log={checks.listProps.logs[key]} picker={checks.listProps.picker === key} sent={checks.listProps.sent[key]} />}
-    {failed.slice(1).map((check) => <PrReadinessRow key={checkKey(check)} tone="stop" heading={`${check.name} failed`} />)}
-    {checks.passedCount > 0 && <PrReadinessRow tone="ok" heading={`${checks.passedCount} other checks passed`} />}
-  </>
+  return <PrReadinessRow tone="stop" heading={`${first.name} failed`} detail={first.duration_ms == null ? undefined : `${Math.floor(first.duration_ms / 60000)}m ${Math.floor(first.duration_ms % 60000 / 1000)}s`} actions={<div className="flex gap-[var(--space-1)]"><Button variant="ghost" size="sm" aria-expanded={checks.listProps.expanded === key} onClick={openLog}>Log</Button><Button variant="secondary" size="sm" onClick={() => checks.listProps.onPickAgent(first)}>Fix with agent</Button></div>} />
 }
 
 function PrSettledChecks({ checks, waiting }: { checks: PrChecksState; waiting: boolean }): React.JSX.Element {
   const items = checks.listProps.checks
-  return <PrReadinessRow tone={waiting ? 'warn' : items.length ? 'ok' : 'muted'} heading={waiting ? 'Checks running' : items.length ? `${checks.passedCount} of ${items.length} checks passed` : 'No checks reported'} detail={items.map((check) => check.name).join(', ')} />
+  return <PrReadinessRow tone={waiting ? 'warn' : items.length ? 'ok' : 'muted'} heading={waiting ? 'Checks running' : items.length ? `${checks.passedCount} of ${items.length} checks passed` : 'No checks reported'} />
 }
 
 function PrReviewReadiness({ decision }: { decision: PullRequestLink['review_decision'] }): React.JSX.Element {
@@ -73,6 +65,7 @@ export function PrMergeBox(props: MergeBoxProps): React.JSX.Element {
   const waiting = detail.checks.some((check) => ['failing', 'running', 'queued', 'unknown'].includes(check.state))
   return <PrMergeFrame>
     {checks.failedCount > 0 ? <PrFailedChecks checks={checks} /> : <PrSettledChecks checks={checks} waiting={waiting} />}
+    {checks.listProps.checks.length > 0 && <PrChecksList state={checks} />}
     <PrReviewReadiness decision={link.review_decision} />
     <PrConflictReadiness detail={detail} />
     <PrMergeFooter consequence={mergeConsequence(link, detail, method, waiting)}><PrMergeControl {...props} waiting={waiting} /></PrMergeFooter>
