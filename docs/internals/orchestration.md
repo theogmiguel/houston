@@ -238,8 +238,7 @@ prior behavior. `effort` is provider-validated at the launch boundary.
 `handoff: true` opens a top-level pane instead of a child: no `spawned_by`, no delegation
 row, so no handback, cleanup or live-children guard on the caller's close. It bypasses the
 child and depth caps, so it is refused from any pane that has a parent, and with `reusable`
-or `output_format`, which only mean something to a parent. Orchestration must still be on,
-and the approval ceiling still applies.
+or `output_format`, which only mean something to a parent. Orchestration must still be on.
 `pane_submit` takes `body` and optional `summary`, `artifacts`, `request_id`. A pane nobody
 spawned has nobody to submit to and is refused; a harness review run's refusal names
 `harness_publish` instead.
@@ -1516,14 +1515,20 @@ per-parent and expires with the pane: two sibling orchestrators may each have a
 back in `pane_list`, and prefixed to the child's name in every wake its parent
 gets (`Daemon::child_label`).
 
-## The approval ceiling
+## Launch approval modes
 
-`sessions.approval_mode` records what a pane runs as, over the
-`ApprovalMode` ladder (`Default < Auto < Bypass`) that names the two existing per-CLI flag
-tables. The rule is deliberately NOT `child <= parent`: every orchestrated child is spawned
-at `Auto` on purpose, so that rule would drag them all down to the CLI's own prompting
-default with nobody there to answer it. The Bypass launch mode is gated — it is refused
-unless the parent already holds it.
+`sessions.approval_mode` records the selected launch mode. Orchestrated panes default
+to `Auto`; `auto_approve: false` selects `Default` and `true` selects `Bypass`. Explicit
+choices apply to children and independent handoffs regardless of the caller's launch
+mode. Modes describe provider-specific flags, not comparable operating-system
+permissions: Claude Auto and Codex Auto impose different sandbox boundaries. Requiring
+a caller to run in Bypass would prevent an Auto orchestrator from launching an
+explicitly authorized full-access worker.
+
+The recorded mode still distinguishes Codex automatic approval review activity from
+actual permission waits. Every actual permission episode remains subject to the
+parent-first input policy; selecting a launch mode does not grant `pane_send_keys`
+permission to approve it.
 
 A body over `SUBMIT_BODY_MAX_CHARS` is clipped with a marker naming the cap and the actual
 size — the worker is told the number in the skill and in `pane_submit`'s own description, so

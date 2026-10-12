@@ -2815,45 +2815,98 @@ async fn a_spawned_child_comes_up_in_auto_mode_by_default() {
 }
 
 #[tokio::test]
-async fn the_approval_ceiling_refuses_a_bypass_a_parent_does_not_itself_hold() {
+async fn explicit_codex_bypass_is_independent_of_parent_mode_over_http_and_mcp() {
     let _guard = serial().await;
-    let r = rig("approval-ceiling").await;
+    let r = rig("explicit-bypass").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
     r.daemon.orchestration_set(true).unwrap();
-
     let ordinary = r.pane();
     let (status, body) = r
         .post_spawn(
             &r.token_for(ordinary.id),
-            serde_json::json!({"kind": "claude", "prompt": "go", "auto_approve": true}),
+            serde_json::json!({"kind": "claude", "prompt": "go", "handoff": true}),
         )
         .await;
-    assert_eq!(status, 409, "body: {body}");
-    let text = body["error"].as_str().unwrap_or_default();
-    assert!(text.contains("Bypass"), "names what was asked: {text}");
-    assert!(
-        text.contains("Default"),
-        "names what the parent holds: {text}"
-    );
+    assert_eq!(status, 200, "{body}");
+    let auto_parent = body["session_id"].as_u64().unwrap() as u32;
+    let bypass_parent = r.bypass_pane();
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
 
-    let (status, body) = r
-        .post_spawn(
-            &r.token_for(ordinary.id),
-            serde_json::json!({"kind": "claude", "prompt": "go"}),
-        )
-        .await;
-    assert_eq!(status, 200, "body: {body}");
+    for (parent, parent_mode) in [
+        (auto_parent, "auto"),
+        (ordinary.id, "default"),
+        (bypass_parent.id, "bypass"),
+    ] {
+        assert_eq!(
+            db.session_approval_mode(parent).unwrap().as_deref(),
+            Some(parent_mode)
+        );
+        for mcp in [false, true] {
+            for handoff in [false, true] {
+                let args = serde_json::json!({
+                    "kind": "codex", "prompt": "go", "auto_approve": true, "handoff": handoff,
+                });
+                let token = r.token_for(parent);
+                let child = if mcp {
+                    let body = mcp_call(r.addr, &token, "pane_spawn", args).await;
+                    assert_eq!(body["isError"], false, "parent {parent_mode}: {body}");
+                    body["structuredContent"]["session"].as_u64().unwrap() as u32
+                } else {
+                    let (status, body) = r.post_spawn(&token, args).await;
+                    assert_eq!(status, 200, "parent {parent_mode}: {body}");
+                    body["session_id"].as_u64().unwrap() as u32
+                };
+                await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+                let replay = r.daemon.scrollback(child, None).unwrap();
+                let argv = String::from_utf8_lossy(&replay.data);
+                assert!(
+                    argv.contains("--dangerously-bypass-approvals-and-sandbox"),
+                    "{argv}"
+                );
+                assert!(!argv.contains("--approve-for-me"), "{argv}");
+                assert_eq!(
+                    db.session_approval_mode(child).unwrap().as_deref(),
+                    Some("bypass")
+                );
+                assert_eq!(
+                    info_of(&r.daemon, child).spawned_by,
+                    (!handoff).then_some(parent)
+                );
+                r.daemon.kill(child).unwrap();
+                r.daemon.close(child).unwrap();
+            }
+        }
+    }
+}
 
-    let holder = r.bypass_pane();
-    let (status, body) = r
-        .post_spawn(
-            &r.token_for(holder.id),
-            serde_json::json!({"kind": "claude", "prompt": "go", "auto_approve": true}),
-        )
-        .await;
-    assert_eq!(
-        status, 200,
-        "a bypass parent may spawn a bypass child: {body}"
-    );
+#[tokio::test]
+async fn codex_auto_and_ask_spawns_keep_their_launch_modes() {
+    let _guard = serial().await;
+    let r = rig("codex-approval-modes").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    r.daemon.orchestration_set(true).unwrap();
+    let parent = r.pane();
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    for (mode, expected) in [(None, "auto"), (Some(false), "default")] {
+        let args = serde_json::json!({"kind": "codex", "prompt": "go", "auto_approve": mode});
+        let (status, body) = r.post_spawn(&r.token_for(parent.id), args).await;
+        assert_eq!(status, 200, "{body}");
+        let child = body["session_id"].as_u64().unwrap() as u32;
+        await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+        let replay = r.daemon.scrollback(child, None).unwrap();
+        let argv = String::from_utf8_lossy(&replay.data);
+        assert_eq!(argv.contains("--approve-for-me"), mode.is_none(), "{argv}");
+        assert!(
+            !argv.contains("--dangerously-bypass-approvals-and-sandbox"),
+            "{argv}"
+        );
+        assert_eq!(
+            db.session_approval_mode(child).unwrap().as_deref(),
+            Some(expected)
+        );
+        r.daemon.kill(child).unwrap();
+        r.daemon.close(child).unwrap();
+    }
 }
 
 #[tokio::test]

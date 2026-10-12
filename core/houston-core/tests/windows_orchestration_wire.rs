@@ -16,7 +16,7 @@ fn fixture() -> &'static Path {
         let root = tempfile::tempdir().unwrap();
         let home = root.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
-        let script = "$ErrorActionPreference='Stop'\nif(-not $env:HOUSTON_SESSION){exit 0}\n@{cwd=(Get-Location).Path;session=[int]$env:HOUSTON_SESSION;task=$env:HOUSTON_TASK} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:HOUSTON_WINDOWS_FIXTURE ('pane-'+$env:HOUSTON_SESSION+'.json'))\nWrite-Output 'FIXTURE-READY'\nwhile($true){$line=[Console]::In.ReadLine();if($null -eq $line){Start-Sleep -Milliseconds 50}else{Write-Output $line}}\n";
+        let script = "$ErrorActionPreference='Stop'\nif(-not $env:HOUSTON_SESSION){exit 0}\n@{cwd=(Get-Location).Path;session=[int]$env:HOUSTON_SESSION;task=$env:HOUSTON_TASK;argv=@($args)} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:HOUSTON_WINDOWS_FIXTURE ('pane-'+$env:HOUSTON_SESSION+'.json'))\nWrite-Output 'FIXTURE-READY'\nwhile($true){$line=[Console]::In.ReadLine();if($null -eq $line){Start-Sleep -Milliseconds 50}else{Write-Output $line}}\n";
         std::fs::write(root.path().join("fixture.ps1"), script).unwrap();
         for provider in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
             std::fs::write(root.path().join(format!("{provider}.cmd")), "@powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fixture.ps1\" %*\r\n").unwrap();
@@ -378,6 +378,74 @@ async fn windows_task_queue_result_and_independent_review_complete_a_task() {
         panic!("expected TaskDetail");
     };
     assert_eq!(task.status, proto::TaskStatus::Done);
+}
+
+#[tokio::test]
+async fn auto_claude_can_spawn_explicit_codex_bypass_over_http_and_mcp() {
+    let _guard = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let root = rig.parent();
+    let (status, body) = rig
+        .post(
+            &rig.token(root.id),
+            "/orchestrate/spawn",
+            json!({"kind":"claude", "prompt":"Coordinate the work", "handoff":true}),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let parent = body["session_id"].as_u64().unwrap() as u32;
+    let db = houston_core::db::Db::open(&rig._state.path().join("test.db")).unwrap();
+    assert_eq!(
+        db.session_approval_mode(parent).unwrap().as_deref(),
+        Some("auto")
+    );
+    let token = rig.token(parent);
+    for mcp in [false, true] {
+        for (mode, expected) in [
+            (Some(true), "bypass"),
+            (None, "auto"),
+            (Some(false), "default"),
+        ] {
+            let arguments =
+                json!({"kind":"codex", "prompt":"Run the authorized task", "auto_approve":mode});
+            let child = if mcp {
+                let (status, body) = rig.post(&token, "/mcp", json!({"jsonrpc":"2.0", "id":1, "method":"tools/call", "params":{"name":"pane_spawn", "arguments":arguments}})).await;
+                assert_eq!(status, 200, "{body}");
+                assert_eq!(body["result"]["isError"], false, "{body}");
+                body["result"]["structuredContent"]["session"]
+                    .as_u64()
+                    .unwrap() as u32
+            } else {
+                let (status, body) = rig.post(&token, "/orchestrate/spawn", arguments).await;
+                assert_eq!(status, 200, "{body}");
+                body["session_id"].as_u64().unwrap() as u32
+            };
+            rig.child_cwd(child).await;
+            let receipt =
+                std::fs::read_to_string(rig._state.path().join(format!("pane-{child}.json")))
+                    .unwrap();
+            let receipt: Value =
+                serde_json::from_str(receipt.trim_start_matches('\u{feff}')).unwrap();
+            let argv = receipt["argv"].as_array().unwrap();
+            assert_eq!(
+                argv.iter()
+                    .any(|arg| arg == "--dangerously-bypass-approvals-and-sandbox"),
+                mode == Some(true),
+                "{receipt}"
+            );
+            assert_eq!(
+                argv.iter().any(|arg| arg == "--approve-for-me"),
+                mode.is_none(),
+                "{receipt}"
+            );
+            assert_eq!(
+                db.session_approval_mode(child).unwrap().as_deref(),
+                Some(expected)
+            );
+            rig.daemon.kill(child).unwrap();
+            rig.daemon.close(child).unwrap();
+        }
+    }
 }
 
 #[tokio::test]

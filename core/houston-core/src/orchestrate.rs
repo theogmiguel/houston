@@ -1351,24 +1351,6 @@ pub fn auto_mode_model_verdict(kind: proto::AgentKind, model: Option<&str>) -> S
     }
 }
 
-pub fn approval_ceiling_verdict(
-    parent: crate::launch::ApprovalMode,
-    requested: crate::launch::ApprovalMode,
-) -> SpawnVerdict {
-    if requested == crate::launch::ApprovalMode::Bypass
-        && parent != crate::launch::ApprovalMode::Bypass
-    {
-        SpawnVerdict::Refused(format!(
-            "spawn refused: requested approval mode {:?} exceeds parent's own {:?} — a pane \
-             cannot hand a child the full approval bypass unless it holds that bypass itself. \
-             Spawn at --ask or the default auto mode instead, or re-run the parent with --bypass.",
-            requested, parent
-        ))
-    } else {
-        SpawnVerdict::Go
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelegationState {
     Spawning,
@@ -4000,33 +3982,6 @@ mod tests {
                 "refusal must name the {exit} exit: {msg}"
             );
         }
-    }
-
-    #[test]
-    fn approval_ceiling_allows_default_and_auto_from_any_parent() {
-        use crate::launch::ApprovalMode::*;
-        for parent in [Default, Auto, Bypass] {
-            assert_eq!(approval_ceiling_verdict(parent, Default), SpawnVerdict::Go);
-            assert_eq!(approval_ceiling_verdict(parent, Auto), SpawnVerdict::Go);
-        }
-    }
-
-    #[test]
-    fn approval_ceiling_refuses_bypass_unless_the_parent_already_has_it() {
-        use crate::launch::ApprovalMode::*;
-        let SpawnVerdict::Refused(msg) = approval_ceiling_verdict(Default, Bypass) else {
-            panic!("a Default parent must not be able to spawn a Bypass child");
-        };
-        assert!(msg.contains("Bypass"), "{msg}");
-        assert!(msg.contains("Default"), "{msg}");
-
-        let SpawnVerdict::Refused(msg) = approval_ceiling_verdict(Auto, Bypass) else {
-            panic!("an Auto parent must not be able to spawn a Bypass child");
-        };
-        assert!(msg.contains("Bypass"), "{msg}");
-        assert!(msg.contains("Auto"), "{msg}");
-
-        assert_eq!(approval_ceiling_verdict(Bypass, Bypass), SpawnVerdict::Go);
     }
 
     #[test]
