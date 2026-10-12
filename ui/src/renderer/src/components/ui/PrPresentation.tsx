@@ -50,7 +50,7 @@ export function PrMergeFooter({ consequence, children }: { consequence: ReactNod
 }
 
 export function PrMergeSpecimen(): React.JSX.Element {
-  return <PrMergeFrame><PrReadinessRow tone="ok" heading="4 of 4 checks passed" detail="core, renderer, safety, licence inventory" /><PrReadinessRow tone="ok" heading="No review required" /><PrReadinessRow tone="ok" heading="No conflicts with main" /><PrMergeFooter consequence="5 commits become one"><span>Squash and merge</span></PrMergeFooter></PrMergeFrame>
+  return <PrMergeFrame><PrReadinessRow tone="ok" heading="4 of 4 checks passed" detail="core, renderer, safety, licence inventory" /><PrMergeFooter consequence="5 commits become one"><span>Squash and merge</span></PrMergeFooter></PrMergeFrame>
 }
 
 type PrView = 'summary' | 'timeline' | 'files'

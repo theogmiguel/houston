@@ -14,6 +14,8 @@ function mergeConsequence(link: PullRequestLink, detail: PrDetail, method: PrMer
   if (link.state === 'merged') return 'Merged'
   if (link.state === 'closed') return 'Closed'
   if (detail.auto_merge_enabled) return 'Auto-merge enabled'
+  if (detail.mergeable === 'conflicting') return `Conflicts with ${detail.base_ref ?? 'the base branch'}; resolve them before merging`
+  if (link.review_decision === 'REVIEW_REQUIRED' || link.review_decision === 'CHANGES_REQUESTED') return 'Review required before merging'
   if (waiting) return `Merges by ${method} once every check passes`
   if (method === 'squash') return `${detail.commit_count} commit${detail.commit_count === 1 ? '' : 's'} become${detail.commit_count === 1 ? 's' : ''} one`
   return method === 'rebase' ? `${detail.commit_count} commits are rebased` : 'Creates a merge commit'
@@ -32,18 +34,6 @@ function PrFailedChecks({ checks }: { checks: PrChecksState }): React.JSX.Elemen
 function PrSettledChecks({ checks, waiting }: { checks: PrChecksState; waiting: boolean }): React.JSX.Element {
   const items = checks.listProps.checks
   return <PrReadinessRow tone={waiting ? 'warn' : items.length ? 'ok' : 'muted'} heading={waiting ? 'Checks running' : items.length ? `${checks.passedCount} of ${items.length} checks passed` : 'No checks reported'} />
-}
-
-function PrReviewReadiness({ decision }: { decision: PullRequestLink['review_decision'] }): React.JSX.Element {
-  const required = decision === 'REVIEW_REQUIRED' || decision === 'CHANGES_REQUESTED'
-  return <PrReadinessRow tone={required ? 'warn' : 'ok'} heading={required ? 'Review required' : 'No review required'} />
-}
-
-function PrConflictReadiness({ detail }: { detail: PrDetail }): React.JSX.Element {
-  const base = detail.base_ref ?? 'base branch unavailable'
-  if (detail.mergeable === 'conflicting') return <PrReadinessRow tone="stop" heading={`Conflicts with ${base}`} />
-  if (detail.mergeable === 'mergeable') return <PrReadinessRow tone="ok" heading={`No conflicts with ${base}`} />
-  return <PrReadinessRow tone="muted" heading="Conflict status unavailable" />
 }
 
 function PrMergeControl({ link, detail, pr, method, setMethod, mergeReason, waiting }: Omit<MergeBoxProps, 'checks'> & { waiting: boolean }): React.JSX.Element | null {
@@ -66,8 +56,6 @@ export function PrMergeBox(props: MergeBoxProps): React.JSX.Element {
   return <PrMergeFrame>
     {checks.failedCount > 0 ? <PrFailedChecks checks={checks} /> : <PrSettledChecks checks={checks} waiting={waiting} />}
     {checks.listProps.checks.length > 0 && <PrChecksList state={checks} />}
-    <PrReviewReadiness decision={link.review_decision} />
-    <PrConflictReadiness detail={detail} />
     <PrMergeFooter consequence={mergeConsequence(link, detail, method, waiting)}><PrMergeControl {...props} waiting={waiting} /></PrMergeFooter>
   </PrMergeFrame>
 }

@@ -1386,10 +1386,24 @@ describe('merge readiness box', () => {
     emit(client, detailMsg({ link: link({ review_decision: 'REVIEW_REQUIRED' }), detail: detail({ reviewers: [{ id: 'alice', kind: 'user' }] }) }))
     const box = q('[data-testid="pr-merge-box"]')!
     expect(box).not.toBeNull()
-    expect(box.textContent).toContain('Review required')
+    expect(box.textContent).toContain('Review required before merging')
     expect(box.textContent).not.toContain('approval')
-    expect(box.textContent).toContain('No conflicts with main')
+    expect(box.textContent).not.toContain('No conflicts with main')
     expect(box.compareDocumentPosition(q('[data-testid="pr-pane-summary"]')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('shows no rows for a review or conflict state that does not block', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ link: link({ review_decision: null }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    expect(box.textContent).not.toContain('No review required')
+    expect(box.textContent).not.toContain('No conflicts with')
+  })
+
+  it('names a conflict with the base in the merge line', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ mergeable: 'conflicting' }) }))
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('Conflicts with main; resolve them before merging')
   })
 
   it('offers auto-merge and log/agent actions when a check fails', () => {
