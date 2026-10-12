@@ -29,7 +29,7 @@ its scope and acceptance criteria.
 Open **Sources** on Tasks to configure where work comes from: Slack requests, GitHub
 issues, Notion and Weekly review. Source status reports whether intake is enabled,
 connected or failing. Tracker configuration is per workspace; choose one when viewing
-**All workspaces**. The same tracker form remains available in Settings ▸ Work ▸ Tasks.
+**All workspaces**. The same tracker form remains available in Settings ▸ Tasks.
 
 A Slack bot mention in a mapped channel files a pending task. The configured owner starts
 it with Slack's `:white_check_mark:` reaction (✅), or another supported acceptance action;
@@ -114,7 +114,7 @@ The task moves to **In progress** and the detail shows the run: its attempt, pro
 branch and pane. Starting again after a stop, or **Resume** after a restart interrupted the
 pane, reuses the same branch and worktree as the next attempt; nothing is force-pushed.
 
-Settings ▸ Work ▸ Tasks carries the workspace's defaults: the agent a Start uses, and how the
+Settings ▸ Tasks carries the workspace's defaults: the agent a Start uses, and how the
 brief is delivered. **Send** (the default) submits the brief as the pane's first prompt.
 **Prefill** types it into the input box without sending it, so you can review and press
 Enter yourself. ZCode takes no prompt on its command line, so for ZCode both are typed
@@ -149,7 +149,7 @@ This is all or nothing: when the
 pane has fewer free child slots than asked, nothing starts and the refusal names the cap,
 the free count and the requested count. Nothing is queued silently.
 
-Review is off by default. Settings ▸ Work ▸ Tasks ▸ Review sets the workspace's default reviewer
+Review is off by default. Settings ▸ Tasks ▸ Review sets the workspace's default reviewer
 (none) and the automatic **rework rounds** (0, at most `TASKS_REWORK_ROUNDS_MAX`). A task
 an orchestrator starts with a reviewer gets an independent, read-only reviewer on the same
 branch once the implementer hands back; the reviewer's input is the task text, the
@@ -166,7 +166,7 @@ to review.
 
 ## Agent access
 
-Settings ▸ Work ▸ Tasks controls whether agents running in a workspace may read and write the
+Settings ▸ Tasks controls whether agents running in a workspace may read and write the
 backlog. **Off** withholds them entirely, **Read only** lets them look but not change, and
 **Read and write** allows both. The settings show the current value, and a refused write
 names the setting that has to change.

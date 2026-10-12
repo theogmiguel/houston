@@ -49,7 +49,7 @@ and cache writes, and explains the savings against full input prices. A speed su
 is reported only when the required rates are available.
 
 Published prices come from LiteLLM's public model catalog, downloaded from GitHub and
-cached locally. Automatic catalog checks follow Settings ▸ System ▸ About ▸ **Check
+cached locally. Automatic catalog checks follow Settings ▸ About ▸ **Check
 for updates**. Refreshing Usage explicitly requests a catalog refresh even when
 that setting is off. Failed downloads preserve the last valid catalog. Transcript
 contents are not sent with the request.

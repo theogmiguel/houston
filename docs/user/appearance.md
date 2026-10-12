@@ -3,6 +3,26 @@
 Two settings sections cover presentation: **Settings ▸ Appearance** for the app
 chrome, window and mascot, and **Settings ▸ Terminal** for how panes render and behave.
 
+## Finding settings
+
+Settings groups configuration by purpose:
+
+| Group | Configuration |
+|---|---|
+| Agents | Overview, CLIs, Skills, MCP servers and Review |
+| App | Appearance, Terminal, Shortcuts and Notifications |
+| Work | Workspaces, Orchestration, Tasks and Dictation |
+| Devices | Phone and remote access |
+| System | Privacy & data, Daemon, WSL on Windows, and About |
+
+Use Agents ▸ Overview to resolve reported hook, skill, server or
+review issues; it opens the owning configuration page. Search Settings by feature or
+setting name. **Back to workspaces** returns to your work; **Esc** first clears an active
+settings search, then returns to workspaces.
+
+Skills, MCP servers and Review are configured under Settings ▸ Agents. Tasks, Pull
+requests, Routines and Usage remain work destinations in the rail.
+
 ## Settings ▸ Appearance
 
 **Chrome theme** — pick between two overall themes, Graphite (the default) and Paper.
@@ -38,8 +58,8 @@ New panes support full colour even when Houston is launched from a command runne
 `NO_COLOR` set. To disable CLI colours intentionally, set `NO_COLOR` inside the pane or
 in your shell startup files.
 
-**Sidebar** — toggle whether Skills, Routines, and Connections show as rows at the top of
-the sidebar.
+**Sidebar** — restore work destinations hidden from the rail: Tasks, Pull requests,
+Routines and Usage.
 
 **App zoom** — scales the whole app: 90%, 100%, 110%, or 125%. Ctrl+/Ctrl− do the same
 thing from the keyboard.

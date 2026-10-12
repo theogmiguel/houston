@@ -19,8 +19,8 @@ For an installed build, use the documentation at its version tag from the
 - [Routines](user/routines.md) — scheduling repeatable work in an agent pane
 - [Tasks](user/tasks.md) — a global local backlog, workspace access, execution and review
 - [Slack requests](user/slack.md) — filing a Slack mention as a task the owner starts, and what that sends
-- [Harness review](user/harness-review.md) — session findings, linked fix tasks and verification
-- [Connections](user/connections.md) — MCP configuration, connection checks and Slack setup
+- [Review](user/harness-review.md) — session findings, linked fix tasks and verification
+- [MCP servers](user/connections.md) — agent configuration and connection checks in Settings
 - [Changes](user/changes.md) — the git surface
 - [Files, editor and browser panes](user/files-editor-browser.md) — the three non-terminal
   pane types, and the browser pane's consent model

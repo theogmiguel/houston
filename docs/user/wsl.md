@@ -19,7 +19,7 @@ labelled **Experimental**.
 
 ## Enabling a distro
 
-Open **Settings → WSL**. It lists every installed distro with its state and WSL version,
+Open **Settings ▸ WSL**. It lists every installed distro with its state and WSL version,
 except the utility distros that Docker Desktop and Rancher Desktop create for their
 engines (`docker-desktop`, `docker-desktop-data`, `rancher-desktop` and
 `rancher-desktop-data`), which cannot be enabled. Select **Enable** on the distro you want. Houston checks the WSL version, architecture
@@ -51,7 +51,7 @@ Use **Workspaces → + → Local folder…** and pick a folder under `\\wsl.loca
 distro's environment with its Linux path, for example `/home/you/project`, and the rail
 marks it with a penguin icon that reads `WSL: <distro>` on hover. Picking a folder from a
 distro that is not enabled is refused with a message telling you to enable it in
-Settings → WSL. A Linux path can belong to only one distro: opening the same path from a
+Settings ▸ WSL. A Linux path can belong to only one distro: opening the same path from a
 second distro is refused.
 
 New panes in a WSL workspace start inside the distro in that folder.

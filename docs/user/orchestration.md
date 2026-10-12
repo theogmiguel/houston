@@ -252,7 +252,7 @@ The new pane is an ordinary pane rather than a child: it does not report back, t
 original agent cannot prompt or wait on it, and you can close the original pane without
 closing the new one. Only a pane without a parent can hand off, and `reusable` and
 `output_format` are refused with `handoff`. Orchestration must be enabled in
-Settings → Orchestration.
+Settings ▸ Orchestration.
 
 Creating a worktree does not request a handoff. Normal delegation uses child panes,
 including isolated branch work with `worktree`. The agent uses an independent handoff
@@ -393,7 +393,7 @@ children are Working; an interrupted mission is not reported as successful.
 
 Children report results, questions and delivery problems to their parent orchestrator.
 An input request alerts you only when it belongs to you: an explicit escalation,
-the authoritative turn-end or parent-unavailable safety net. Settings › Notifications controls desktop and in-app notices for these
+the authoritative turn-end or parent-unavailable safety net. Settings ▸ Notifications controls desktop and in-app notices for these
 requests, as it does for top-level input. Snapshot replay does not repeat old alerts.
 Spawn warnings return to the orchestrator. Addressed to you is hidden when empty.
 

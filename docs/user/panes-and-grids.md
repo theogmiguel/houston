@@ -108,11 +108,12 @@ changes to settle before moving cards. Resize the rail between 220 and 500 pixel
 dragging its divider; dragging below 160 pixels collapses it, and expanding restores its
 saved width.
 
-The rail footer opens Settings, Pull requests and Usage, switches the chrome theme, and
-has an update button for checking update status or opening its install details. Right-click
-a navigation row and choose **Hide from sidebar** to remove it from the rail. Restore hidden
-rows in Settings ▸ Appearance ▸ Sidebar; hidden destinations remain available from the
-command palette.
+The work destinations in the rail are **Tasks**, **Pull requests**, **Routines** and
+**Usage**. Settings, theme switching and update status are separate application actions.
+Hide an unneeded work destination with **Hide from sidebar**; restore it in Settings ▸ Appearance ▸ Sidebar. Hidden destinations remain available from the command palette.
+
+Open Settings ▸ Agents for Skills, MCP servers and Review. **Back to workspaces** returns
+to the workspace view; **Esc** clears an active settings search first, then returns.
 
 ## The branch and shared checkouts
 

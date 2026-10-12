@@ -94,7 +94,7 @@ Houston writes managed lifecycle hook entries into `~/.claude/settings.json`, or
 `settings.json` in `CLAUDE_CONFIG_DIR` and Houston account profile directories. Each
 command carries a channel-specific `--houston-managed` marker and exits silently when
 `TR_SESSION` is empty. Claude launched from any directory inside a Houston pane can
-report status. Turn the switch off in Settings ▸ Agents ▸ Claude to remove
+report status. Turn the switch off in Settings ▸ Agents ▸ CLIs ▸ Claude to remove
 Houston's entries while preserving your hooks and other settings. Migration removes
 Houston's old entries from workspace `.claude/settings.local.json` files. Installation
 is unsupported on Windows because these commands require POSIX `sh`.
@@ -194,7 +194,7 @@ and Houston sends nothing to Z.ai. The official command has no update check of i
 Houston panes set `ZCODE_DISABLE_UPDATE_CHECK=1`, which turns off the one in the
 `zcode-app-cli` package.
 
-Turning the hook toggle on (Settings ▸ Agents ▸ ZCode) edits ZCode's settings file.
+Turning the hook toggle on (Settings ▸ Agents ▸ CLIs ▸ ZCode) edits ZCode's settings file.
 The `zcode-app-cli` package reads `~/.zcode/cli/setting.json`; the upstream command reads
 `~/.zcode/cli/config.json`. Houston edits each of the two that exists, and creates
 `config.json` when neither does (the package copies it into `setting.json` on its first
