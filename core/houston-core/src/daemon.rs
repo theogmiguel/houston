@@ -11144,12 +11144,8 @@ impl Daemon {
                         daemon.handoff_exit(id, exit_code);
                     } else {
                         let parent = daemon.parent_of(id);
-                        let state = daemon.finish_session(id, exit_code);
-                        daemon.broadcast_control(&proto::ServerMsg::SessionState {
-                            session: id,
-                            state,
-                            exit_code,
-                        });
+                        daemon.finish_session(id, exit_code);
+                        daemon.publish_session_exit(id, &owned_session, exit_code);
                         if let Some(parent) = parent {
                             daemon.broadcast_live_children(parent);
                         }
@@ -11278,6 +11274,20 @@ impl Daemon {
         }
 
         Ok(info)
+    }
+
+    fn publish_session_exit(&self, id: u32, session: &Session, exit_code: Option<i32>) {
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("session-before-exit-publication", id);
+        // Kill can supersede the state computed by finish_session before publication.
+        let state = session.state.lock().expect("state lock");
+        if !session.removed.load(Ordering::Acquire) {
+            self.broadcast_control(&proto::ServerMsg::SessionState {
+                session: id,
+                state: *state,
+                exit_code,
+            });
+        }
     }
 
     fn finish_session(self: &Arc<Self>, id: u32, exit_code: Option<i32>) -> proto::SessionState {
@@ -11418,12 +11428,8 @@ impl Daemon {
             return;
         }
         let parent = self.parent_of(id);
-        let state = self.finish_session(id, exit_code);
-        self.broadcast_control(&proto::ServerMsg::SessionState {
-            session: id,
-            state,
-            exit_code,
-        });
+        self.finish_session(id, exit_code);
+        self.publish_session_exit(id, &session, exit_code);
         if let Some(parent) = parent {
             self.broadcast_live_children(parent);
         }
@@ -11659,12 +11665,8 @@ impl Daemon {
         })
         .await;
         self.persist_scrollback(id);
-        let state = self.finish_session(id, outcome.exit_code);
-        self.broadcast_control(&proto::ServerMsg::SessionState {
-            session: id,
-            state,
-            exit_code: outcome.exit_code,
-        });
+        self.finish_session(id, outcome.exit_code);
+        self.publish_session_exit(id, &session, outcome.exit_code);
         self.delegation_child_exited(id);
         self.routine_pane_exited(id);
     }
@@ -12561,16 +12563,28 @@ impl Daemon {
             .backend
             .kill(id, session.pid, self.channel.as_deref())?;
         session.cancel_pty_reader();
+        let cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         session.remove_shell_token_file();
         self.operator_ended
             .lock()
             .expect("operator_ended lock")
             .insert(id);
         self.forget_resume_handle(id);
-        *session.state.lock().expect("state lock") = proto::SessionState::Killed;
-        *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
+        let mut state = session.state.lock().expect("state lock");
         self.db
             .update_session_state(id, proto::SessionState::Killed, None)?;
+        *state = proto::SessionState::Killed;
+        *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
+        self.broadcast_control(&proto::ServerMsg::SessionState {
+            session: id,
+            state: *state,
+            exit_code: None,
+        });
+        drop(state);
+        drop(cleanup);
         self.reap_reevaluate();
         Ok(())
     }
@@ -25221,6 +25235,36 @@ mod handoff_refusal_tests {
         assert_eq!(listed.title_source, TitleSource::User);
         drop(daemon);
         drop(state);
+    }
+
+    #[test]
+    fn refused_kill_state_update_keeps_memory_and_storage_running() {
+        let (daemon, state) = test_daemon();
+        let session = persistent_ssh_session(&daemon, state.path(), 7);
+        let status_since = *session.status_since_ms.lock().expect("status since lock");
+        let db = rusqlite::Connection::open(state.path().join("t.db")).unwrap();
+        db.execute_batch(
+            "CREATE TRIGGER refuse_kill_state BEFORE UPDATE OF state ON sessions
+             WHEN OLD.id = 7 AND NEW.state = 'killed'
+             BEGIN SELECT RAISE(ABORT, 'refuse killed state'); END;",
+        )
+        .unwrap();
+
+        let error = daemon.kill(7).unwrap_err();
+        assert!(error.to_string().contains("refuse killed state"));
+        assert_eq!(
+            *session.state.lock().expect("state lock"),
+            proto::SessionState::Running
+        );
+        assert_eq!(
+            *session.status_since_ms.lock().expect("status since lock"),
+            status_since
+        );
+        assert_eq!(
+            daemon.db.session_final(7).unwrap(),
+            Some((proto::SessionState::Running, None))
+        );
+        assert!(!session.backend_exited.load(Ordering::Acquire));
     }
 
     #[test]

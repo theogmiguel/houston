@@ -15716,6 +15716,193 @@ async fn a_named_codex_steer_completes_with_the_existing_turn_identity() {
 
 #[cfg(all(target_os = "linux", feature = "test-barriers"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn explicit_kill_keeps_killed_when_waiter_publishes_a_previously_computed_exit() {
+    let _guard = serial().await;
+    let r = rig("kill-before-late-exit-publication").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let release = r._state.path().join("release-root");
+    let session = r
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: r.ws_dir.clone(),
+            cmd: Some(vec![
+                "sh".into(),
+                "-c".into(),
+                "while [ ! -f \"$1\" ]; do sleep 0.01; done".into(),
+                "kill-waiter-fixture".into(),
+                release.display().to_string(),
+            ]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let id = session.id;
+    let (pid, creation) = r.daemon.pty_root_identity_for_test(id).unwrap();
+    let reader_done = r.daemon.pty_reader_completion_for_test(id).unwrap();
+    let barrier = InstructionReceiptBarrier::new("session-before-exit-publication");
+    let mut events = r.daemon.observe();
+    std::fs::write(release, b"").unwrap();
+    barrier.reached(id).await;
+    assert_eq!(info_of(&r.daemon, id).state, proto::SessionState::Exited);
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    assert_eq!(
+        db.session_final(id).unwrap(),
+        Some((proto::SessionState::Exited, Some(0)))
+    );
+
+    let killing = r.daemon.clone();
+    tokio::task::spawn_blocking(move || killing.kill(id))
+        .await
+        .unwrap()
+        .unwrap();
+    loop {
+        if let proto::ServerMsg::SessionState {
+            session,
+            state,
+            exit_code,
+        } = common::next_broadcast_control(&mut events).await
+        {
+            if session == id {
+                assert_eq!(state, proto::SessionState::Killed);
+                assert_eq!(exit_code, None);
+                break;
+            }
+        }
+    }
+    barrier.release();
+    loop {
+        if let proto::ServerMsg::SessionState {
+            session,
+            state,
+            exit_code,
+        } = common::next_broadcast_control(&mut events).await
+        {
+            if session == id {
+                assert_eq!(
+                    state,
+                    proto::SessionState::Killed,
+                    "a previously computed Exited must not overwrite Kill"
+                );
+                assert_eq!(exit_code, Some(0));
+                break;
+            }
+        }
+    }
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while !reader_done() || houston_core::pid::process_creation_token(pid) == Some(creation) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the late waiter must finish its owned reader and root");
+    assert_eq!(info_of(&r.daemon, id).state, proto::SessionState::Killed);
+    assert_eq!(
+        db.session_final(id).unwrap(),
+        Some((proto::SessionState::Killed, Some(0)))
+    );
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn explicit_kill_publishes_killed_after_waiter_already_published_exit() {
+    let _guard = serial().await;
+    let r = rig("kill-after-waiter-exit").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let release = r._state.path().join("release-root");
+    let session = r
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: r.ws_dir.clone(),
+            cmd: Some(vec![
+                "sh".into(),
+                "-c".into(),
+                "while [ ! -f \"$1\" ]; do sleep 0.01; done".into(),
+                "kill-waiter-fixture".into(),
+                release.display().to_string(),
+            ]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let id = session.id;
+    let (pid, creation) = r.daemon.pty_root_identity_for_test(id).unwrap();
+    let reader_done = r.daemon.pty_reader_completion_for_test(id).unwrap();
+    let barrier = InstructionReceiptBarrier::new("kill-admitted");
+    let mut events = r.daemon.observe();
+    let killing = r.daemon.clone();
+    let operation = tokio::task::spawn_blocking(move || killing.kill(id));
+    barrier.reached(id).await;
+
+    // Natural exit wins while Kill is admitted but has not signalled the root.
+    std::fs::write(release, b"").unwrap();
+    loop {
+        if matches!(common::next_broadcast_control(&mut events).await,
+            proto::ServerMsg::SessionState { session, state: proto::SessionState::Exited, .. } if session == id)
+        {
+            break;
+        }
+    }
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while !reader_done() || houston_core::pid::process_creation_token(pid) == Some(creation) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the owned reader and root must finish before resuming Kill");
+    barrier.release();
+    operation.await.unwrap().unwrap();
+    assert_eq!(info_of(&r.daemon, id).state, proto::SessionState::Killed);
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    assert_eq!(
+        db.session_final(id).unwrap(),
+        Some((proto::SessionState::Killed, Some(0)))
+    );
+
+    // This synchronous sentinel follows all events published before Kill returned.
+    r.daemon.broadcast_control(&proto::ServerMsg::SessionList {
+        sessions: Vec::new(),
+    });
+    let mut saw_killed = false;
+    loop {
+        match common::next_broadcast_control(&mut events).await {
+            proto::ServerMsg::SessionList { sessions } if sessions.is_empty() => break,
+            proto::ServerMsg::SessionState { session, state, .. } if session == id => {
+                assert_eq!(
+                    state,
+                    proto::SessionState::Killed,
+                    "late Exited must not override Kill"
+                );
+                saw_killed = true;
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        saw_killed,
+        "a successful Kill must publish Killed even after the waiter published Exited"
+    );
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn explicit_kill_cancels_before_signalling_the_live_child() {
     let _guard = serial().await;
     let r = rig("kill-cancellation-admission").await;
