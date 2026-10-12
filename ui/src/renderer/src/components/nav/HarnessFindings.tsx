@@ -113,7 +113,7 @@ function FindingRow({
   const sessionLine = latestReviewSessions == null ? `${f.count} sessions` : `${f.count} of ${latestReviewSessions} sessions`
   const task = f.task
   const linkedTask = task && (
-    <Button size="sm" variant="link" onClick={() => openSideTasks(false, task.task_id)}>
+    <Button size="sm" variant={settings ? 'body-link' : 'link'} onClick={() => openSideTasks(false, task.task_id)}>
       {task.key}
     </Button>
   )
@@ -130,6 +130,7 @@ function FindingRow({
   )
   return (
     <Card.Row
+      layout={settings ? 'columns' : 'default'}
       heading={f.title}
       meta={meta}
       status={settings ? <ReviewFindingStatus phase={f.phase} /> : <StatusLabel status={phaseStatus(f.phase)} size="small" />}

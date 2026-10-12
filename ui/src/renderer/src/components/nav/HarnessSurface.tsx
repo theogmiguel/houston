@@ -101,16 +101,16 @@ function HarnessHeader({
   const verifiedCount = noticeFindings.filter((finding) => finding.verification?.review_id === noticeReviewId && finding.verification.verdict === 'gone').length
   return (
     <>
-      {noticeVisible && workspace && state && (
-        <Notice tone="info" indicator="dot" action={{ label: 'Dismiss', onClick: () => onSeen(workspace, noticeReviewId) }}>
-          Review #{noticeReviewId} found {newCount} new {newCount === 1 ? 'thing' : 'things'} to fix and confirmed {verifiedCount} fix{verifiedCount === 1 ? '' : 'es'} worked.
-        </Notice>
-      )}
       <PageHeader
         heading={embedded ? 'Review' : 'Harness'}
         description={embedded ? "A weekly read of your sessions that looks for mistakes agents repeat. The schedule lives in Routines." : "Reads your agents' sessions and turns repeated mistakes into tasks. The next review checks whether each fix worked."}
         actions={<HarnessHeaderAction routine={routine} running={running} firstRun={firstRun} embedded={embedded} onRunNow={onRunNow} onOpenRoutines={onOpenRoutines} />}
       />
+      {noticeVisible && workspace && state && (
+        <Notice tone="info" indicator="dot" action={{ label: 'Dismiss', onClick: () => onSeen(workspace, noticeReviewId) }}>
+          Review #{noticeReviewId} found {newCount} new {newCount === 1 ? 'thing' : 'things'} to fix and confirmed {verifiedCount} fix{verifiedCount === 1 ? '' : 'es'} worked.
+        </Notice>
+      )}
       {error && <Notice tone="danger" className="w-full" action={{ label: 'Dismiss', onClick: onDismissError ?? (() => {}) }}>{error}</Notice>}
     </>
   )
@@ -333,7 +333,7 @@ function reviewTrendHeading(latest: HarnessState['reviews'][number] | null, tren
   return `Repeated mistakes ${last < first ? 'fell' : 'rose'} from ${first} to ${last} per 100 sessions`
 }
 function HarnessReviewSummary({ latestReview, trend, routine, running, onRunNow, onOpenRoutines }: HarnessSurfaceProps & { routine: Routine; latestReview: HarnessState['reviews'][number] | null; trend: number[] }): React.JSX.Element {
-  const detail = <>{latestReview ? <>Last review {formatHarnessDate(latestReview.started_at_ms, true)} · {latestReview.sessions == null ? 'Session total not reported' : `${latestReview.sessions} sessions`}</> : 'Run the first review to read this workspace’s sessions.'}{routine.enabled && <> · next {nextUpTimeLabel(routine.next_run_at_ms, Date.now())}</>} · <Button variant="link" onClick={onOpenRoutines}>Edit schedule in Routines</Button></>
+  const detail = <>{latestReview ? <>Last review {formatHarnessDate(latestReview.started_at_ms, true)} · {latestReview.sessions == null ? 'Session total not reported' : `${latestReview.sessions} sessions`}</> : 'Run the first review to read this workspace’s sessions.'}{routine.enabled && <> · next {nextUpTimeLabel(routine.next_run_at_ms, Date.now())}</>} · <Button variant="body-link" onClick={onOpenRoutines}>Edit schedule in Routines</Button></>
   return <ReviewSummary heading={reviewTrendHeading(latestReview, trend)} detail={detail} chart={trend.length > 1 ? <BarSparkline values={trend} label={`Repeated mistakes per 100 sessions: ${trend.join(', ')}`} /> : undefined} action={<Button icon={IconPlay} data-testid="harness-run" variant="primary" disabled={running} onClick={() => onRunNow(routine.id)}>{running ? 'Review running…' : 'Review now'}</Button>} />
 }
 

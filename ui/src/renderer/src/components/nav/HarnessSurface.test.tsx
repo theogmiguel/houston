@@ -284,6 +284,14 @@ describe('HarnessSurface', () => {
     expect(container.textContent).toContain('Repeated mistakes per 100 sessions: 41 → 18 over 4 reviews')
     expect(container.textContent).toContain('41 sessions · 2 new · 1 gone')
   })
+  it('keeps the page header above the new-review banner and gives findings aligned status and action columns', () => {
+    render({ embedded: true, attention: { latest_published_review_id: 3, seen_review_id: 0 } as HarnessSurfaceProps['attention'], state: harnessState({ routine: routine({ enabled: true }) }) })
+    const heading = container.querySelector('h1')!
+    const banner = Array.from(container.querySelectorAll('[role="note"]')).find((node) => node.textContent?.includes('Review #3 found'))!
+    expect(heading.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const status = container.querySelector('section[aria-label="Harness findings"] [class*="--w-finding-status"]')!
+    expect(status.nextElementSibling?.className).toContain('--w-finding-actions')
+  })
   it('puts the reported Settings review summary and its actions in one card', () => {
     render({ embedded: true, onOpenRoutines: vi.fn(), state: harnessState({ routine: routine({ enabled: true }), reviews: [review({ sessions: 38, finding_count: 7 }), review({ id: 2, sessions: 41, finding_count: 17 })] }) })
     const summary = container.querySelector('[data-testid="review-summary"]')!

@@ -49,7 +49,7 @@ export interface CardRowProps {
   compact?: boolean
   className?: string
   density?: 'default' | 'compact'
-  layout?: 'default' | 'meta-actions' | 'source'
+  layout?: 'default' | 'meta-actions' | 'source' | 'columns'
   separated?: boolean
 }
 
@@ -72,6 +72,11 @@ function CardRow({ heading, meta, status, action, rail, compact = false, classNa
   if (layout === 'source') return <div className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-[var(--space-3)] rounded-[var(--tr-radius-sm)] px-[var(--space-3)] py-[var(--space-2)] hover:bg-[var(--hover-fill)] ${className}`}>
     <div className="grid min-w-0 gap-[var(--space-0-5)]"><Text as="div" size="ui" tone="primary">{heading}</Text><Text as="div" size="small" leading="small" tone="muted">{meta}</Text></div>
     {status}{action}
+  </div>
+  if (layout === 'columns') return <div className={`flex min-w-0 items-center gap-[var(--space-3)] px-[var(--space-3)] py-[var(--space-2)] [&+&]:border-t [&+&]:border-[var(--divider)] hover:bg-[var(--hover-fill)] ${className}`}>
+    <div className="grid min-w-0 flex-1 gap-[var(--space-1)]"><Text as="div" size="ui" weight="semibold" tone="primary" className="truncate">{heading}</Text>{meta && <Text as="div" size="small" leading="small" tone="muted">{meta}</Text>}</div>
+    <div className="w-[var(--w-finding-status)] flex-none">{status}</div>
+    <div className="flex w-[var(--w-finding-actions)] flex-none justify-end">{action}</div>
   </div>
   return (
     <div className={`flex min-w-0 flex-wrap items-center gap-[var(--space-2)] ${density === 'compact' ? 'px-[var(--space-2-5)]' : 'px-[var(--space-3)]'} ${compact ? 'py-[var(--space-1)]' : 'py-[var(--space-2)]'} ${separated ? '[&+&]:border-t [&+&]:border-[var(--divider)]' : ''} hover:bg-[var(--hover-fill)] ${rail ? railClasses({ rail }) : ''} ${rail ? 'pl-[var(--space-4)]' : ''} ${className}`}>
