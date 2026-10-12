@@ -594,13 +594,33 @@ pub struct CommitResult {
     pub summary: String,
 }
 
-pub fn commit(dir: &Path, message: &str) -> Result<CommitResult> {
+/// Commits the index. With `amend`, rewrites HEAD instead, refusing when HEAD
+/// is already contained in its upstream because rewriting it would diverge
+/// from the published history.
+pub fn commit(dir: &Path, message: &str, amend: bool) -> Result<CommitResult> {
     ensure_repo(dir)?;
     let msg = message.trim();
     if msg.is_empty() {
         bail!("refusing to commit with an empty message");
     }
-    let out = run_git(dir, &["commit", "-m", msg])?;
+    if amend {
+        let s = sync(dir);
+        if let Some(upstream) = s.upstream.as_deref().filter(|_| s.ahead == 0) {
+            let head = run_git(dir, &["rev-parse", "--short", "HEAD"])?;
+            bail!(
+                "refusing to amend: HEAD {} on {} is already contained in {upstream}; \
+                 expected an unpublished HEAD (ahead of its upstream)",
+                head.trim(),
+                s.branch.as_deref().unwrap_or("(detached HEAD)"),
+            );
+        }
+    }
+    let args: &[&str] = if amend {
+        &["commit", "--amend", "-m", msg]
+    } else {
+        &["commit", "-m", msg]
+    };
+    let out = run_git(dir, args)?;
     let sha = run_git(dir, &["rev-parse", "--short", "HEAD"])?
         .trim()
         .to_string();
@@ -1814,7 +1834,7 @@ mod tests {
         fs::write(tmp.path().join("feature.txt"), "work\n").unwrap();
         stage(tmp.path(), &[]).unwrap();
 
-        let res = commit(tmp.path(), "  add feature  ").unwrap();
+        let res = commit(tmp.path(), "  add feature  ", false).unwrap();
         assert!(res.sha.len() >= 7, "short sha: {}", res.sha);
         assert!(
             status(tmp.path()).unwrap().is_empty(),
@@ -1833,7 +1853,7 @@ mod tests {
         init_repo(tmp.path());
         fs::write(tmp.path().join("x.txt"), "x\n").unwrap();
         stage(tmp.path(), &[]).unwrap();
-        let err = commit(tmp.path(), "   ").unwrap_err().to_string();
+        let err = commit(tmp.path(), "   ", false).unwrap_err().to_string();
         assert!(err.contains("empty message"), "unexpected: {err}");
     }
 

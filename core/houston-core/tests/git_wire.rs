@@ -687,6 +687,7 @@ async fn git_stage_and_commit_over_the_wire() {
         &proto::ClientMsg::GitCommit {
             dir: dir.clone(),
             message: "add feature".into(),
+            amend: false,
         },
     )
     .await;
@@ -736,4 +737,98 @@ async fn git_push_to_bare_remote_clears_ahead() {
     send(&mut ws, &proto::ClientMsg::GitPush { dir: dir.clone() }).await;
     let st = expect_git_status(&mut ws).await;
     assert_eq!(st.ahead, 0, "push should clear the ahead count");
+}
+
+async fn expect_error(ws: &mut WsStream) -> String {
+    loop {
+        match next_control(ws).await {
+            proto::ServerMsg::Error { message, .. } => return message,
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
+async fn git_commit_amend_rewrites_an_unpublished_head() {
+    let (addr, _state) = start_daemon().await;
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "--bare", "-b", "main"]);
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            &remote.path().display().to_string(),
+        ],
+    );
+    git(repo.path(), &["push", "-u", "origin", "main"]);
+    std::fs::write(repo.path().join("second.txt"), "more\n").unwrap();
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-m", "second"]);
+    let before = git_stdout(repo.path(), &["rev-list", "--count", "HEAD"]);
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitCommit {
+            dir: repo.path().display().to_string(),
+            message: "second, reworded".into(),
+            amend: true,
+        },
+    )
+    .await;
+    let _ = expect_git_commit(&mut ws).await;
+
+    assert_eq!(
+        git_stdout(repo.path(), &["rev-list", "--count", "HEAD"]),
+        before
+    );
+    assert_eq!(
+        git_stdout(repo.path(), &["log", "-1", "--format=%s"]),
+        "second, reworded"
+    );
+}
+
+#[tokio::test]
+async fn git_commit_amend_refuses_a_published_head() {
+    let (addr, _state) = start_daemon().await;
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "--bare", "-b", "main"]);
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            &remote.path().display().to_string(),
+        ],
+    );
+    git(repo.path(), &["push", "-u", "origin", "main"]);
+    let head = git_stdout(repo.path(), &["rev-parse", "--short", "HEAD"]);
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitCommit {
+            dir: repo.path().display().to_string(),
+            message: "rewrite".into(),
+            amend: true,
+        },
+    )
+    .await;
+    let message = expect_error(&mut ws).await;
+    assert!(message.contains("main"), "{message}");
+    assert!(message.contains(&head), "{message}");
+    assert!(message.contains("origin/main"), "{message}");
+    assert_eq!(
+        git_stdout(repo.path(), &["log", "-1", "--format=%s"]),
+        "init"
+    );
 }

@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 137;
+pub const PROTOCOL_VERSION: u32 = 138;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -3527,6 +3527,10 @@ pub enum ClientMsg {
     GitCommit {
         dir: String,
         message: String,
+        /// Rewrites the last commit instead of adding one. Refused when HEAD is
+        /// already contained in its upstream.
+        #[serde(default)]
+        amend: bool,
     },
     GitPush {
         dir: String,

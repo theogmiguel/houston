@@ -2237,9 +2237,13 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
-        proto::ClientMsg::GitCommit { dir, message } => {
+        proto::ClientMsg::GitCommit {
+            dir,
+            message,
+            amend,
+        } => {
             let d = PathBuf::from(&dir);
-            match tokio::task::spawn_blocking(move || crate::git::commit(&d, &message))
+            match tokio::task::spawn_blocking(move || crate::git::commit(&d, &message, amend))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("git commit task panicked: {e}")))
             {
