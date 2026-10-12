@@ -15260,6 +15260,271 @@ impl Drop for InstructionReceiptBarrier {
     }
 }
 
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn old_turn_activity_before_enter_cannot_adopt_or_complete_a_steer() {
+    let _guard = serial().await;
+    for zero_paste in [false, true] {
+        let r = rig("old-turn-before-enter").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        let child = input_policy_child(&r, parent.id, "opencode", None).await;
+        let round = r.daemon.delegation_round_of(child).unwrap();
+        let barrier = InstructionReceiptBarrier::new(if zero_paste {
+            "stdin-paste-receipt"
+        } else {
+            "instruction-before-enter"
+        });
+        if zero_paste {
+            r.daemon.fail_next_stdin_write_after_for_test(child, 0);
+        }
+        let writing = r.daemon.clone();
+        let parent_id = parent.id;
+        let operation = tokio::task::spawn_blocking(move || {
+            writing.orchestrate_instruction_request(
+                parent_id,
+                child,
+                "new steer",
+                None,
+                Some("steer"),
+            )
+        });
+        barrier.reached(child).await;
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some("opencode".into()),
+                event: "session.status".into(),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            r.daemon.delegation_round_of(child),
+            Some(round),
+            "existing-turn activity before Enter cannot adopt the next request"
+        );
+        let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+        let active = db.instruction_rows(child).unwrap().remove(0);
+        assert!(!active.adopted && !active.completed);
+        if zero_paste {
+            // A real old-turn permission keeps the untouched intent from retrying
+            // automatically after its zero-byte receipt is released.
+            input_policy_permission(&r, child, "opencode", "old-turn-permission").await;
+        } else {
+            let answer = r
+                .daemon
+                .orchestrate_submit(
+                    child,
+                    houston_core::orchestrate::Submission {
+                        body: "old request answer".into(),
+                        summary: None,
+                        artifacts: vec![],
+                        request_id: Some(round),
+                    },
+                )
+                .unwrap();
+            assert_eq!(answer.reason, None, "the old request must still be current");
+            apply_drop(
+                r._state.path(),
+                houston_core::hook_drop::HookDrop {
+                    session: child,
+                    agent: Some("opencode".into()),
+                    event: "session.idle".into(),
+                    ..Default::default()
+                },
+            )
+            .await;
+        }
+        barrier.release();
+        let accepted = operation.await.unwrap().unwrap().0;
+        let row = db
+            .instruction_row(&accepted.instruction_id)
+            .unwrap()
+            .unwrap();
+        assert!(
+            !row.adopted && !row.completed,
+            "old-turn end cannot complete the newly claimed steer"
+        );
+        assert_eq!(r.daemon.delegation_round_of(child), Some(round));
+        if zero_paste {
+            assert_eq!(row.info.state, proto::InstructionState::Queued);
+            assert!(!row.touched);
+            r.daemon
+                .instruction_cancel(Some(parent.id), child, &accepted.instruction_id)
+                .unwrap();
+        } else {
+            assert_eq!(row.info.state, proto::InstructionState::Delivered);
+            for event in ["message.updated", "session.idle"] {
+                apply_drop(
+                    r._state.path(),
+                    houston_core::hook_drop::HookDrop {
+                        session: child,
+                        agent: Some("opencode".into()),
+                        event: event.into(),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            }
+            let row = db
+                .instruction_row(&accepted.instruction_id)
+                .unwrap()
+                .unwrap();
+            assert!(row.adopted && row.completed);
+            assert_eq!(r.daemon.delegation_round_of(child), Some(round + 1));
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn provider_session_end_during_receipts_cannot_deliver_or_requeue_an_intent() {
+    let _guard = serial().await;
+    struct RawEnv(Option<std::ffi::OsString>);
+    impl Drop for RawEnv {
+        fn drop(&mut self) {
+            if let Some(value) = &self.0 {
+                std::env::set_var("HOUSTON_TEST_RAW_PTY", value);
+            } else {
+                std::env::remove_var("HOUSTON_TEST_RAW_PTY");
+            }
+        }
+    }
+    let _raw = RawEnv(std::env::var_os("HOUSTON_TEST_RAW_PTY"));
+    std::env::set_var("HOUSTON_TEST_RAW_PTY", "1");
+    for (mode, partial, point) in [
+        ("steer", None, "stdin-enter-receipt"),
+        ("steer", Some(0), "stdin-paste-receipt"),
+        ("steer", Some(4), "stdin-paste-receipt"),
+        ("restart", None, "stdin-interrupt-receipt"),
+    ] {
+        let r = rig("provider-ended-during-receipt").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        let child = input_policy_child(&r, parent.id, "grok", None).await;
+        let barrier = InstructionReceiptBarrier::new(point);
+        if let Some(cap) = partial {
+            r.daemon.fail_next_stdin_write_after_for_test(child, cap);
+        }
+        let writing = r.daemon.clone();
+        let parent_id = parent.id;
+        let operation = tokio::task::spawn_blocking(move || {
+            writing.orchestrate_instruction_request(
+                parent_id,
+                child,
+                "pending receipt",
+                None,
+                Some(mode),
+            )
+        });
+        barrier.reached(child).await;
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some("grok".into()),
+                event: "SessionEnd".into(),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            info_of(&r.daemon, child).state,
+            proto::SessionState::Running,
+            "provider SessionEnd must precede the independent physical PTY exit"
+        );
+        barrier.release();
+        let accepted = operation.await.unwrap().unwrap().0;
+        let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+        let row = db
+            .instruction_row(&accepted.instruction_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            row.info.state,
+            if partial == Some(0) {
+                proto::InstructionState::HeldAfterRecovery
+            } else {
+                proto::InstructionState::Uncertain
+            },
+            "authoritative SessionEnd before receipt cannot produce Delivered or replay"
+        );
+        assert!(!row.adopted && !row.completed);
+        assert_eq!(row.touched, partial != Some(0));
+        assert_eq!(
+            r.daemon
+                .instruction_queue(Some(parent.id), child)
+                .unwrap()
+                .queued_count,
+            0
+        );
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_matching_named_request_before_enter_preserves_exact_intent_adoption() {
+    let _guard = serial().await;
+    let r = rig("named-proof-before-enter").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let child = input_policy_child(&r, parent.id, "grok", None).await;
+    let request = r.daemon.delegation_round_of(child).unwrap() + 1;
+    let barrier = InstructionReceiptBarrier::new("instruction-before-enter");
+    let writing = r.daemon.clone();
+    let parent_id = parent.id;
+    let operation = tokio::task::spawn_blocking(move || {
+        writing.orchestrate_instruction_request(
+            parent_id,
+            child,
+            "named receipt",
+            None,
+            Some("steer"),
+        )
+    });
+    barrier.reached(child).await;
+    let answer = r
+        .daemon
+        .orchestrate_submit(
+            child,
+            houston_core::orchestrate::Submission {
+                body: "matching request proof".into(),
+                summary: None,
+                artifacts: vec![],
+                request_id: Some(request),
+            },
+        )
+        .unwrap();
+    assert_eq!(answer.reason, None);
+    assert_eq!(r.daemon.delegation_round_of(child), Some(request));
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("grok".into()),
+            event: "Stop".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    barrier.release();
+    let accepted = operation.await.unwrap().unwrap().0;
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    let row = db
+        .instruction_row(&accepted.instruction_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.info.state, proto::InstructionState::Delivered);
+    assert!(
+        row.adopted && !row.completed,
+        "named proof is retained but an unattributed pre-Enter end cannot complete it"
+    );
+}
 
 #[cfg(all(target_os = "linux", feature = "test-barriers"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -15312,6 +15577,84 @@ async fn explicit_close_cancels_before_reap_and_retains_retryable_ownership() {
             .expect("retry drains retained ownership");
         assert!(!r.daemon.list().iter().any(|info| info.id == child));
         assert_eq!(r.daemon.delegation_of(child).unwrap().state, "cancelled");
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_named_codex_steer_completes_with_the_existing_turn_identity() {
+    let _guard = serial().await;
+    for during_receipt in [false, true] {
+        let r = rig("named-codex-steer-same-turn").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        let child = input_policy_child(&r, parent.id, "codex", None).await;
+        await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some("codex".into()),
+                event: "UserPromptSubmit".into(),
+                prompt_id: Some("existing-turn".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let request = r.daemon.delegation_round_of(child).unwrap() + 1;
+        let barrier = InstructionReceiptBarrier::new("stdin-enter-receipt");
+        let writing = r.daemon.clone();
+        let parent_id = parent.id;
+        let operation = tokio::task::spawn_blocking(move || {
+            writing.orchestrate_instruction_request(
+                parent_id,
+                child,
+                "steer the current turn",
+                None,
+                Some("steer"),
+            )
+        });
+        barrier.reached(child).await;
+        r.daemon
+            .orchestrate_submit(
+                child,
+                houston_core::orchestrate::Submission {
+                    body: "exact named proof".into(),
+                    summary: None,
+                    artifacts: vec![],
+                    request_id: Some(request),
+                },
+            )
+            .unwrap();
+        if !during_receipt {
+            barrier.release();
+        }
+        let stop = houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("codex".into()),
+            event: "Stop".into(),
+            prompt_id: Some("existing-turn".into()),
+            ..Default::default()
+        };
+        if during_receipt {
+            apply_drop(r._state.path(), stop.clone()).await;
+            barrier.release();
+        }
+        let accepted = operation.await.unwrap().unwrap().0;
+        if !during_receipt {
+            apply_drop(r._state.path(), stop).await;
+        }
+        let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+        let row = db
+            .instruction_row(&accepted.instruction_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.dispatch_prompt_id.as_deref(), Some("existing-turn"));
+        assert!(
+            row.named_adoption && row.adopted && row.completed,
+            "the exact named Steer request can complete within the same Codex turn"
+        );
     }
 }
 

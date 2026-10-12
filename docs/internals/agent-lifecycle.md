@@ -39,6 +39,13 @@ PTY input is admitted to the bounded FIFO under the relevant authorization guard
 waits release global admission locks so Close can cancel a blocked writer. Instruction delivery
 claims the durable intent before writing, rechecks cancellation when committing each receipt,
 and retains bounded authoritative lifecycle evidence that arrives during the write.
+Activity from the existing turn cannot adopt a pasted instruction before Enter reaches
+the PTY. A distinct known prompt identity or a matching named request supplies earlier
+correlation. A named request is retained with its exact intent, allowing a Codex Steer to
+complete within the same turn identity after Enter, without treating old pre-Enter activity
+as its start. Provider SessionEnd remains authoritative while the PTY is still running:
+an unwritten intent is held, and an interrupted, partial or submitted write remains
+uncertain instead of being delivered or replayed automatically.
 
 What makes it an *agent* is
 that its own lifecycle events reach the daemon — through hooks it installed, or through a

@@ -945,10 +945,12 @@ const STDIN_QUEUE_JOBS: usize = 128;
 type StdinOutcome = std::result::Result<(), StdinWriteError>;
 type StdinReceipt = std::sync::mpsc::Receiver<StdinOutcome>;
 type StdinCompletion = Box<dyn FnOnce(StdinOutcome) + Send>;
+type StdinWritten = Box<dyn FnOnce(&StdinOutcome) + Send>;
 struct StdinJob {
     data: Vec<u8>,
     partial_after: Option<usize>,
     completion: StdinCompletion,
+    written: Option<StdinWritten>,
     admission: StdinWriteAdmission,
 }
 #[derive(Default)]
@@ -977,6 +979,7 @@ impl Session {
         partial_after: Option<usize>,
         completion: StdinCompletion,
         prepare: Option<Box<dyn FnOnce() + Send>>,
+        written: Option<StdinWritten>,
     ) -> std::result::Result<(), StdinWriteError> {
         let mut queue = self.stdin_queue.lock().expect("stdin queue lock");
         if data.len() > STDIN_QUEUE_BYTES.saturating_sub(queue.bytes)
@@ -1009,9 +1012,20 @@ impl Session {
                         } else {
                             session.backend.write_stdin_counting(id, &job.data)
                         };
+                        if let Some(written) = job.written {
+                            written(&result);
+                        }
                         #[cfg(feature = "test-barriers")]
                         if job.data == b"\r" {
                             crate::test_barriers::pause("stdin-enter-receipt", id);
+                        }
+                        #[cfg(feature = "test-barriers")]
+                        if job.data.starts_with(b"\x1b[200~") {
+                            crate::test_barriers::pause("stdin-paste-receipt", id);
+                        }
+                        #[cfg(feature = "test-barriers")]
+                        if job.data == b"\x03" || job.data == b"\x1b" {
+                            crate::test_barriers::pause("stdin-interrupt-receipt", id);
                         }
                         let bytes = job.data.len();
                         drop(job.data);
@@ -1041,6 +1055,7 @@ impl Session {
             data: data.to_vec(),
             partial_after,
             completion,
+            written,
             admission: StdinWriteAdmission(Arc::clone(self)),
         };
         if let Err(error) = queue.sender.as_ref().expect("stdin sender").try_send(job) {
@@ -1530,12 +1545,23 @@ impl Drop for SpawnReservation<'_> {
     }
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum InstructionWritePhase {
+    Interrupt,
+    #[default]
+    Paste,
+    PreEnter,
+    Submitted,
+}
+
 #[derive(Default, Clone)]
 struct InstructionWriteEvidence {
     instruction_id: String,
+    phase: InstructionWritePhase,
     started: bool,
     ended: bool,
     restart_ready: bool,
+    session_ended: bool,
 }
 
 struct InstructionWriteReservation<'a> {
@@ -10058,6 +10084,7 @@ impl Daemon {
                 }
             }),
             None,
+            None,
         );
         if let Err(error) = result {
             self.broadcast_control(&proto::ServerMsg::Error {
@@ -12182,7 +12209,7 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
-        self.enqueue_stdin_admitted(id, data, completion, prepare)
+        self.enqueue_stdin_admitted(id, data, completion, prepare, None)
     }
 
     // The caller owns cleanup admission. Never take lifecycle from inside cleanup:
@@ -12193,6 +12220,7 @@ impl Daemon {
         data: &[u8],
         completion: StdinCompletion,
         prepare: Option<Box<dyn FnOnce() + Send>>,
+        written: Option<StdinWritten>,
     ) -> std::result::Result<(), StdinWriteError> {
         self.ensure_not_closing(id, "stdin")
             .map_err(StdinWriteError::nothing)?;
@@ -12207,7 +12235,7 @@ impl Daemon {
             .lock()
             .expect("stdin partial lock")
             .remove(&id);
-        session.enqueue_stdin(id, data, cap, completion, prepare)
+        session.enqueue_stdin(id, data, cap, completion, prepare, written)
     }
 
     pub fn write_stdin_counting(
@@ -12243,6 +12271,7 @@ impl Daemon {
             Box::new(move |result| {
                 let _ = tx.send(result);
             }),
+            None,
             None,
         )?;
         Ok(rx)

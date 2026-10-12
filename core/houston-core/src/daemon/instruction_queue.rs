@@ -428,14 +428,44 @@ impl Daemon {
     }
 
     fn instruction_write_receipt(
-        &self,
+        self: &Arc<Self>,
         target: u32,
         data: &[u8],
         admission: &mut Option<(std::sync::MutexGuard<'_, ()>, std::sync::MutexGuard<'_, ()>)>,
     ) -> std::result::Result<(), StdinWriteError> {
         // begin_write has already claimed queued -> uncertain. Release both guards
         // until the FIFO receipt, then commit only if cancellation has not won.
-        let receipt = self.admit_stdin_counting(target, data);
+        let receipt = if data == b"\r" {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let daemon = Arc::downgrade(self);
+            let id = self.instruction_write_evidence(target).instruction_id;
+            self.enqueue_stdin_admitted(
+                target,
+                data,
+                Box::new(move |result| {
+                    let _ = tx.send(result);
+                }),
+                None,
+                Some(Box::new(move |result| {
+                    if result.is_ok() {
+                        if let Some(daemon) = daemon.upgrade() {
+                            let mut writes = daemon
+                                .instruction_writes
+                                .lock()
+                                .expect("instruction writes lock");
+                            if let Some(evidence) =
+                                writes.get_mut(&target).filter(|e| e.instruction_id == id)
+                            {
+                                evidence.phase = InstructionWritePhase::Submitted;
+                            }
+                        }
+                    }
+                })),
+            )
+            .map(|()| rx)
+        } else {
+            self.admit_stdin_counting(target, data)
+        };
         drop(admission.take());
         Self::wait_stdin_receipt(target, receipt)
     }
@@ -443,6 +473,7 @@ impl Daemon {
     fn instruction_target_live(&self, target: u32) -> bool {
         self.ensure_not_closing(target, "instruction completion")
             .is_ok()
+            && !self.instruction_write_evidence(target).session_ended
             && self
                 .get(target)
                 .is_ok_and(|session| session.state.lock().expect("state lock").is_live())
@@ -547,6 +578,12 @@ impl Daemon {
             && !row.interrupt_sent
             && self.session_status(target)? == Some(proto::AgentStatus::Working)
         {
+            self.instruction_writes
+                .lock()
+                .expect("instruction writes lock")
+                .get_mut(&target)
+                .expect("instruction write reserved")
+                .phase = InstructionWritePhase::Interrupt;
             if let Some(reason) = self.immediate_paste_hold_reason(target) {
                 self.db.instruction_set_state(
                     &row.info.id,
@@ -673,7 +710,25 @@ impl Daemon {
                 return Ok(false);
             }
         }
+        if !self.instruction_target_live(target) {
+            self.db.instruction_set_state(
+                &row.info.id,
+                State::Uncertain,
+                Some("paste completed after target ended; inspect retained instruction"),
+                now_ms(),
+            )?;
+            self.broadcast_instruction_queue(target);
+            return Ok(false);
+        }
+        self.instruction_writes
+            .lock()
+            .expect("instruction writes lock")
+            .get_mut(&target)
+            .expect("instruction write reserved")
+            .phase = InstructionWritePhase::PreEnter;
         drop(admission.take());
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("instruction-before-enter", target);
         std::thread::sleep(SWARM_WAKE_SETTLE);
         admission = Some(self.instruction_admission());
         if self
@@ -693,6 +748,10 @@ impl Daemon {
             .err()
             .map(|error| error.to_string())
             .or(held);
+        let held = held.or_else(|| {
+            (!self.instruction_target_live(target))
+                .then(|| "target ended before submission; inspect retained instruction".to_string())
+        });
         let failure = match held {
             Some(reason) => Some(reason),
             None => self
@@ -767,6 +826,7 @@ impl Daemon {
                 && (row.info.state == State::Delivered
                     || (row.info.state == State::Uncertain
                         && evidence.instruction_id == row.info.id
+                        && !evidence.session_ended
                         && (evidence.started
                             || named.is_some_and(|request| row.info.request_id == Some(request)))))
         }) else {
@@ -777,6 +837,10 @@ impl Daemon {
         };
         if named.is_some_and(|named| named != request) {
             return Ok(false);
+        }
+        if named == Some(request) {
+            self.db
+                .instruction_record_named_adoption(&row.info.id, now_ms())?;
         }
         if row.info.state == State::Uncertain {
             if let Some(evidence) = self
@@ -873,26 +937,42 @@ impl Daemon {
             if let Some(evidence) = writes.get_mut(&child) {
                 if let Some(row) = self.db.instruction_row(&evidence.instruction_id)? {
                     if row.info.state == State::Uncertain {
-                        let stale = row.info.mode == Mode::Queue
-                            && prompt_id.is_some()
-                            && row.dispatch_prompt_id.as_deref() == prompt_id;
+                        let stale =
+                            prompt_id.is_some() && row.dispatch_prompt_id.as_deref() == prompt_id;
+                        // Pre-Enter activity can belong to the existing turn. Only a
+                        // distinct prompt identity or a written Enter proves submission.
+                        let submitted = evidence.phase == InstructionWritePhase::Submitted;
+                        let correlated = row
+                            .dispatch_prompt_id
+                            .as_deref()
+                            .zip(prompt_id)
+                            .is_some_and(|(old, current)| old != current);
                         match event {
-                            AgentEvent::PromptSubmitted => evidence.started = true,
+                            AgentEvent::PromptSubmitted if !stale && (submitted || correlated) => {
+                                evidence.started = true
+                            }
                             AgentEvent::Activity
                                 if !stale
+                                    && (submitted || correlated)
                                     && self.session_status(child)?
                                         == Some(proto::AgentStatus::Working) =>
                             {
                                 evidence.started = true
                             }
                             AgentEvent::TurnEnded | AgentEvent::TurnInterrupted => {
-                                if !stale && evidence.started {
+                                if evidence.started
+                                    && ((!stale && (submitted || correlated))
+                                        || (submitted && row.named_adoption))
+                                {
                                     evidence.ended = true;
                                 }
                                 if event_name != "quiet-settle" {
                                     evidence.restart_ready = true;
                                 }
                             }
+                            // SessionEnd can precede the PTY waiter. TurnFailed leaves
+                            // the CLI live and retains its separate recovery policy.
+                            AgentEvent::SessionEnded => evidence.session_ended = true,
                             _ => {}
                         }
                     }
@@ -909,7 +989,6 @@ impl Daemon {
                 let stale = self.db.instruction_rows(child)?.iter().any(|row| {
                     row.info.state == State::Delivered
                         && !row.adopted
-                        && row.info.mode == Mode::Queue
                         && prompt_id.is_some()
                         && row.dispatch_prompt_id.as_deref() == prompt_id
                 });
@@ -920,10 +999,9 @@ impl Daemon {
             AgentEvent::TurnEnded | AgentEvent::TurnInterrupted => {
                 for row in self.db.instruction_rows(child)? {
                     if row.info.state == State::Delivered && row.adopted && !row.completed {
-                        let stale = row.info.mode == Mode::Queue
-                            && prompt_id.is_some()
-                            && row.dispatch_prompt_id.as_deref() == prompt_id;
-                        if !stale {
+                        let stale =
+                            prompt_id.is_some() && row.dispatch_prompt_id.as_deref() == prompt_id;
+                        if !stale || row.named_adoption {
                             self.db.instruction_complete(&row.info.id, now_ms())?;
                         }
                     }
