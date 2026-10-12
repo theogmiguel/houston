@@ -11,7 +11,7 @@ export function StartupSkeleton({ onDragMouseDown }: { onDragMouseDown: MouseEve
         </div>
       </aside>
       <div {...materialAttrs('shell')} className={`[grid-area:topbar] h-[var(--h-top)] [-webkit-app-region:drag] select-none ${MATERIAL_CLS.shell}`} onMouseDown={onDragMouseDown} />
-      <main className="[grid-area:grid] min-w-0 min-h-0 relative overflow-hidden"><div {...materialAttrs('raised')} className={`absolute inset-[var(--pane-gutter)] rounded-[var(--tr-radius-md)] ${MATERIAL_CLS.raised}`} /></main>
+      <main className="[grid-area:grid] min-w-0 min-h-0 relative overflow-hidden"><div {...materialAttrs('inset')} className={`absolute inset-[var(--pane-gutter)] rounded-[var(--tr-radius-md)] ${MATERIAL_CLS.inset}`} /></main>
     </div>
   )
 }

@@ -32,7 +32,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const SHADOW_2 = 'var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))'
+const SHADOW_2 = 'var(--shadow-2)'
 
 describe('overlays-04: elevation painted on --raised, named shadow', () => {
   it('ConfirmModal panel uses --raised + shadow-2, not --card-bg/--shadow-lg', () => {

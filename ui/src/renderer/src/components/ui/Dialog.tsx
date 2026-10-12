@@ -21,10 +21,10 @@ const panelClasses = variants(
       git: 'w-[560px] max-w-[calc(100vw_-_2rem)] max-h-[calc(100vh_-_4rem)] rounded-[var(--tr-radius-card)] overflow-hidden flex flex-col'
     },
     surface: {
-      raised: 'bg-[var(--raised)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))]',
+      raised: 'bg-[var(--raised)] shadow-[var(--shadow-2)]',
       card: 'bg-[var(--card-bg)] shadow-[var(--shadow-2)]',
-      git: 'bg-[var(--card-bg)] shadow-[var(--shadow-lg)]',
-      browser: 'bg-[var(--card-bg)] shadow-[var(--shadow-lg)]',
+      git: 'bg-[var(--card-bg)] shadow-[var(--shadow-2)]',
+      browser: 'bg-[var(--card-bg)] shadow-[var(--shadow-2)]',
       glass: MATERIAL_CLS['overlay-glass']
     }
   },

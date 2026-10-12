@@ -218,7 +218,7 @@ export const BrowserStage = forwardRef<HTMLDivElement, { children: ReactNode }>(
 export type BrowserDeviceKind = 'desktop' | 'phone' | 'tablet'
 
 const DEVICE_FRAME_BASE =
-  'min-w-0 min-h-0 border border-[var(--border-hover)] bg-white overflow-hidden shadow-[var(--shadow-1)] flex flex-col'
+  'min-w-0 min-h-0 border border-[var(--border-hover)] bg-white overflow-hidden flex flex-col'
 const DEVICE_FRAME_CLS: Record<BrowserDeviceKind, string> = {
   desktop: `${DEVICE_FRAME_BASE} w-full flex-1 rounded-[var(--tr-radius-button)]`,
   phone: DEVICE_FRAME_BASE,

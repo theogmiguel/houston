@@ -1,7 +1,7 @@
 import { createElement, type ComponentPropsWithoutRef, type ElementType, type ReactNode } from 'react'
 
 export const FilesSurfaceClass = {
-  floatingGlass: 'floating-glass',
+  floatingGlass: 'floating-glass shadow-[var(--shadow-1)]',
   banner: 'files-banner', bannerGhost: 'files-banner-ghost', context: 'files-context', contextSeparator: 'files-context-separator',
   crumbs: 'files-crumbs', crumbMore: 'files-crumb-more', crumbMenu: 'files-crumbmenu', deleteActions: 'files-delete-actions',
   dirty: 'files-dirty', divider: 'files-divider', explorer: 'files-explorer', explorerHead: 'files-explorer-head',

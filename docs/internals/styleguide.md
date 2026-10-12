@@ -341,8 +341,8 @@ more separated" is a step on an axis rather than a new hex. Five rungs, in
 | **base** | `--content-bg` (Custom: nothing — the field) | — | — | The canvas: the Agents gutter, a pane column's ground |
 | **shell** | `--rail-bg` (Custom: `--custom-chrome-scrim`) | — | — | The app's own frame: rail, titlebar, the grid container |
 | **inset** | `--card-bg` | `--border` | — | A box cut into what it sits on: cards, panels, list surfaces |
-| **raised** | `--raised` | `--border` | `--shadow-1` | Menus, dropdowns, hover previews, toasts |
-| **overlay** | `--raised` | `--border` | `--shadow-2` + a sibling scrim | Modals, confirm sheets, popovers, the command palette |
+| **raised** | `--raised` | `--border` | `--shadow-1` | Menus, dropdowns, popovers, tooltips, hover previews, toasts |
+| **overlay** | `--raised` | `--border` | `--shadow-2` + a sibling scrim | Modals, confirm sheets, the command palette |
 
 `raised` and `overlay` each have a translucent twin — `raised-glass` and
 `overlay-glass` — which is the same step with a 90% film instead of an opaque

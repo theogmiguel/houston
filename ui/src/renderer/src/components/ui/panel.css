@@ -298,7 +298,7 @@
   background: var(--glass-bg);
   backdrop-filter: blur(16px) saturate(1.08);
   -webkit-backdrop-filter: blur(16px) saturate(1.08);
-  box-shadow: var(--shadow-panel-check-popover);
+  box-shadow: var(--shadow-1);
   transform-origin: top right;
   animation: panel-checks-pop-in 150ms var(--motion-menu-ease) both;
 }
