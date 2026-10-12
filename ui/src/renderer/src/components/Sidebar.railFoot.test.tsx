@@ -65,22 +65,23 @@ describe('Sidebar railfoot — navigation actions', () => {
     return container.querySelector('.railfoot') as HTMLElement
   }
 
-  it('renders labelled Settings and Theme without a hide control or a Connect phone button', () => {
+  it('renders Settings and Theme without a hide control or a Connect phone button', () => {
     render()
     const buttons = foot().querySelectorAll('button')
     expect(buttons).toHaveLength(2)
     expect(foot().querySelector('button[aria-label="Connect phone"]')).toBeNull()
-    expect(foot().textContent).toContain('Settings')
+    expect(foot().textContent).not.toContain('Settings')
     expect(foot().querySelector('button[aria-label="Hide sidebar"]')).toBeNull()
     expect(foot().querySelector('[data-testid="rail-footer-pull-requests"]')).toBeNull()
     expect(foot().querySelector('button[aria-label="Usage"]')).toBeNull()
   })
 
-  it('uses a labelled row for Settings and keeps the theme action compact', () => {
+  it('keeps Settings and the theme toggle as compact icon actions', () => {
     render()
     const settings = foot().querySelector('[data-testid="rail-settings"]')!
-    expect(settings.className).toContain('h-[var(--h-row)]')
-    expect(settings.textContent).toContain('Ctrl ,')
+    expect(settings.getAttribute('aria-label')).toBe('Settings')
+    expect(settings.className).toContain('h-[var(--h-ctl)]')
+    expect(settings.textContent).toBe('')
     const theme = foot().querySelector('button[aria-label="Switch to light theme"]')!
     expect(theme.className).toContain('h-[var(--h-ctl)]')
     expect(theme.querySelector('svg')?.getAttribute('class')).toContain('var(--tr-icon-ui-size)')

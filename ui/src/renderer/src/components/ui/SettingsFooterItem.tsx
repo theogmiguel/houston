@@ -1,8 +1,16 @@
 import { IconGear } from '../icons'
-import { Count } from './Count'
-import { NavigationRailItem } from './NavigationRail'
-import { HintKey } from './ShortcutHint'
+import { Button } from './Button'
+import { Icon } from './Icon'
+import { Tooltip } from './Tooltip'
 
 export function SettingsFooterItem({ attention = 0, onClick }: { attention?: number; onClick?: () => void }): React.JSX.Element {
-  return <NavigationRailItem icon={IconGear} label="Settings" aria-label="Settings" data-testid="rail-settings" selected={false} onClick={onClick} trailing={<span className="flex items-center gap-[var(--space-1)]">{attention > 0 && <span aria-label={`${attention} agent settings need you`}><Count value={attention} from="warn" /></span>}<HintKey size="compact">Ctrl ,</HintKey></span>} />
+  const label = attention > 0 ? `Settings, ${attention} agent setting${attention === 1 ? ' needs' : 's need'} you` : 'Settings'
+  return (
+    <Tooltip label={`${label} (Ctrl ,)`}>
+      <Button variant="subtle-icon" aria-label={label} data-testid="rail-settings" onClick={onClick} className="relative">
+        <Icon glyph={IconGear} role="ui" />
+        {attention > 0 && <span aria-hidden data-testid="rail-settings-attention" className="pointer-events-none absolute -right-[var(--space-1)] -top-[var(--space-0-5)] font-mono text-[length:var(--tr-text-label-size)] leading-none text-[var(--text-muted)]">+{attention}</span>}
+      </Button>
+    </Tooltip>
+  )
 }

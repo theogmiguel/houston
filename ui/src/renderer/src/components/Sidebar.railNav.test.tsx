@@ -124,10 +124,12 @@ describe('the rail nav block', () => {
     expect(rows().find((row) => row.getAttribute('data-view') === 'tasks')?.textContent).toBe('Tasks')
   })
 
-  it('puts setup attention on the labelled Settings footer rather than a retired Harness row', () => {
+  it('puts setup attention on the Settings footer action as a neutral count rather than a retired Harness row', () => {
     render({ agentAttention: agentAttentionFor({ agentHooks: null, skills: null, reviews: [], checks: [['github', { state: 'failed', message: 'missing npx' }]] }) })
-    expect(q('[data-testid="rail-settings"]')?.textContent).toContain('Settings')
-    expect(q('[aria-label="1 agent settings need you"]')?.textContent).toBe('1')
+    expect(q('[data-testid="rail-settings"]')?.getAttribute('aria-label')).toBe('Settings, 1 agent setting needs you')
+    const count = q('[data-testid="rail-settings-attention"]')
+    expect(count?.textContent).toBe('+1')
+    expect(count?.className).toContain('text-[var(--text-muted)]')
     expect(rows().some((row) => row.getAttribute('data-view') === 'harness')).toBe(false)
   })
 

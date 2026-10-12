@@ -99,7 +99,7 @@ describe('Sidebar rail — Settings mode state matrix', () => {
   it('D2: no "SETTINGS" header renders above the first group, and the filter is visible without any hover or click', () => {
     render()
     expect(container.querySelector('[aria-label="Settings sections"]')?.textContent).not.toContain('Settings')
-    expect(container.querySelector('[data-testid="rail-settings"]')?.textContent).toContain('Settings')
+    expect(container.querySelector('[data-testid="rail-settings"]')?.getAttribute('aria-label')).toBe('Settings')
     const input = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement | null
     expect(input).not.toBeNull()
     expect(container.querySelector('[data-testid="tree-filter-toggle"]')).toBeNull()
