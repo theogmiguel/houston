@@ -1,3 +1,4 @@
+import { SplitButton } from './SplitButton'
 import type { HTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
 import { MATERIAL_CLS, materialAttrs } from './material'
 import { OVERLAY_GLASS_OVERLAY_CLS } from './overlayChrome'
@@ -77,4 +78,17 @@ export function GitPrSummaryLine({ children, hidden, testId }: { children: React
 
 export function RepositoryPanelState({ title, children, icon, action, testId }: { title: string; children: ReactNode; icon?: ReactNode; action?: ReactNode; testId?: string }): React.JSX.Element {
   return <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-2 p-6 text-center" data-testid={testId}>{icon && <span className="text-[var(--danger)]">{icon}</span>}<Text size="ui" weight="ui" tone="primary">{title}</Text><Text as="p" size="small" tone="muted" flush className="max-w-[46ch]">{children}</Text>{action}</div>
+}
+
+
+export function GitCommitSpecimen(): React.JSX.Element {
+  return <div className="changes-pane w-[470px]" data-compact="true">
+    <GitCommitPanel>
+      <GitCommitMessageRow><GitCommitMessageField readOnly rows={3} value="fix(panes): repaint in the same frame after a resize" aria-label="Commit message specimen" /></GitCommitMessageRow>
+      <GitCommitActionRow>
+        <GitCommitStagedCount compact>4 files to inspector-polish</GitCommitStagedCount>
+        <GitCommitButtonGroup><SplitButton label="Commit" testId="changes-commit" onClick={() => {}} items={[{ label: 'Amend', onClick: () => {} }]} /></GitCommitButtonGroup>
+      </GitCommitActionRow>
+    </GitCommitPanel>
+  </div>
 }
