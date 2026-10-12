@@ -126,8 +126,11 @@ function prToneForSummary(pr: PrState | null): 'ok' | 'warn' | 'stop' {
   return 'ok'
 }
 
-function useInlineDiffSubscription(client: HoustonClient | null, repoDir: string | null, base: string | null, setInlineDiffs: React.Dispatch<React.SetStateAction<Map<string, DiffState>>>): void {
+function useInlineDiffSubscription(client: HoustonClient | null, repoDir: string | null, base: string | null, expandedPaths: Set<string>, setInlineDiffs: React.Dispatch<React.SetStateAction<Map<string, DiffState>>>): void {
+  const expandedRef = useRef(expandedPaths)
+  expandedRef.current = expandedPaths
   useEffect(() => {
+    setInlineDiffs(new Map())
     if (!client || !repoDir) return
     const offDiff = client.subscribe('git_diff', (message) => {
       if (message.dir !== repoDir || (message.base ?? null) !== base || !message.path) return
@@ -135,7 +138,12 @@ function useInlineDiffSubscription(client: HoustonClient | null, repoDir: string
         path: message.path!, patch: message.patch, truncated: message.truncated
       }))
     })
-    return offDiff
+    const offStatus = client.subscribe('git_status', (message) => {
+      if (message.dir !== repoDir || (message.base ?? null) !== base) return
+      message.files.filter((file) => !file.is_sensitive && expandedRef.current.has(file.path))
+        .forEach((file) => client.gitDiff(repoDir, file.path, base))
+    })
+    return () => { offDiff(); offStatus() }
   }, [client, repoDir, base, setInlineDiffs])
 }
 
@@ -731,7 +739,7 @@ export function ChangesPane({
     if (selected === null && rows.length > 0) {
       const initialPath = compact && files?.[0] ? files[0].path : rows[0].path
       setSelected(initialPath)
-      if (compact) setExpandedPaths(new Set([initialPath]))
+      if (compact) setExpandedPaths((current) => new Set(current).add(initialPath))
     }
   }, [rows, files, selected, compact])
   refreshRef.current = refresh
@@ -782,7 +790,7 @@ export function ChangesPane({
     setCommitMsg
   })
 
-  useInlineDiffSubscription(client, repoDir, base, setInlineDiffs)
+  useInlineDiffSubscription(client, repoDir, base, expandedPaths, setInlineDiffs)
 
   usePrSubscription({ client, repoDir, base, setPr, setPrBusy, setPrMessage })
 

@@ -29,6 +29,7 @@ export function diffBodyLines(patch: string): string[] {
 }
 
 export function DiffBody({ patch, truncated, split = false }: { patch: string; truncated: boolean; split?: boolean }): React.JSX.Element {
+  if (patch.trim().length === 0) return <DiffPlainText>No textual diff for this file.</DiffPlainText>
   const lines = diffBodyLines(patch)
   // Above this, one <div> per line makes the DOM too heavy; fall back to a plain <pre>.
   if (lines.length > 4000)

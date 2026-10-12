@@ -80,14 +80,14 @@ export class InspectorClient {
     }))
   }
 
-  gitDiff(dir: string, path?: string): void {
+  gitDiff(dir: string, path?: string, base: string | null = null): void {
     const pathValue = path ?? 'core/houston-core/src/orchestrate.rs'
     const diffPath = pathValue
     const patch = this.diffFixture
       ? 'diff --git a/ui/src/renderer/src/ghostty/surface.ts b/ui/src/renderer/src/ghostty/surface.ts\n--- a/ui/src/renderer/src/ghostty/surface.ts\n+++ b/ui/src/renderer/src/ghostty/surface.ts\n@@ -910,9 +910,10 @@ fit(): boolean\n     this.mountHeight = height\n     if (shouldRender) {\n-     if (!this.fitted) this.renderFrame()\n+     // A resized canvas is blank until the next paint.\n+     if (!this.fitted || canvasCleared) this.renderFrame()\n      else this.requestRender()\n    }\n'
       : 'diff --git a/core/houston-core/src/orchestrate.rs b/core/houston-core/src/orchestrate.rs\n--- a/core/houston-core/src/orchestrate.rs\n+++ b/core/houston-core/src/orchestrate.rs\n@@ -208,3 +208,4 @@ impl Daemon {\n-    for row in rows {\n+    let grouped = group_by_parent(rows);\n+    wake_each_parent(grouped);\n'
     this.emit({
-      type: 'git_diff', dir, base: null, path: diffPath, truncated: false, patch
+      type: 'git_diff', dir, base, path: diffPath, truncated: false, patch
     })
   }
 
