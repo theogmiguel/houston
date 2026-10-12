@@ -10151,7 +10151,24 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
     let _guard = serial().await;
     let r = rig("restart-children").await;
     let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
-    let parent = r.bypass_pane();
+    let parent = r
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Claude,
+            project_dir: r.ws_dir.clone(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: true,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
     r.daemon.orchestration_set(true).unwrap();
     r.daemon.set_orchestration_caps(4, 2).unwrap();
     let token = r.token_for(parent.id);
@@ -10186,7 +10203,7 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
         .await;
     let invalid = invalid["session_id"].as_u64().unwrap() as u32;
     let path = r._state.path().join("restart.db");
-    r.daemon.checkpoint_scrollback().unwrap();
+    r.daemon.manage_shutdown().unwrap();
     let source = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
     source
         .execute("VACUUM INTO ?1", [path.to_str().unwrap()])
@@ -10221,8 +10238,6 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
         CREATE TRIGGER reject_retention BEFORE UPDATE OF retained_until ON delegations WHEN OLD.child_session = {missing} BEGIN SELECT RAISE(FAIL, 'retention write refused'); END;")).unwrap();
     }
     drop(db);
-    // A crash snapshot retains running rows and no clean-shutdown marker. The original
-    // harness remains isolated from the restart database and its new PTYs.
     let restarted = Daemon::new_with_safe_mode_flags_for_test(
         DaemonConfig {
             token: TOKEN.into(),
