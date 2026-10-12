@@ -5943,7 +5943,9 @@ mod frame_flush_tests {
                 &Arc::new(proto::encode_output_frame(id, offset as u64, &payload)),
             );
         }
-        assert_eq!(tap.queued_bytes_for_test(), cutoff);
+        // A live ConPTY can also enqueue startup control sequences. The retained
+        // payload is a lower bound; hide and close must still clear every byte.
+        assert!(tap.queued_bytes_for_test() >= cutoff);
         taps.remove(id);
         assert_eq!(
             tap.queued_bytes_for_test(),
@@ -6004,6 +6006,10 @@ mod frame_flush_tests {
         let mut taps = AttachSet::new(Arc::clone(&fixture.daemon), Arc::new(Notify::new()));
         taps.insert(id);
         let tap = taps.taps.get(&id).unwrap();
+        // This checks socket flushing of controlled frames, independently of PTY
+        // startup output. Unregister before clearing to exclude concurrent offers.
+        fixture.daemon.frame_taps().unregister(tap);
+        tap.clear();
         for (offset, payload) in [(0, b"first".as_slice()), (10, b"second".as_slice())] {
             tap.offer(
                 offset,
