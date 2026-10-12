@@ -118,8 +118,10 @@ pub struct HookDrop {
 impl HookDrop {
     pub fn root_cwd(&self, provider: houston_protocol::AgentKind) -> Option<&str> {
         (crate::agent_events::names_root_conversation(provider, &self.event)
-            && self.agent_id.is_none() && self.subagent_type.is_none())
-            .then_some(self.cwd.as_deref()).flatten()
+            && self.agent_id.is_none()
+            && self.subagent_type.is_none())
+        .then_some(self.cwd.as_deref())
+        .flatten()
     }
 }
 
@@ -433,6 +435,7 @@ pub struct PassOutcome {
     pub kept: usize,
     pub collected: usize,
     pub listed_ok: bool,
+    pub listing_limit_exceeded: Option<usize>,
     pub metadata_failed: bool,
 }
 
@@ -473,8 +476,14 @@ pub fn run_pass_with_io(
     mut apply: impl FnMut(&HookDrop, &str, u64) -> DropVerdict,
     remove: impl FnMut(&Path) -> std::io::Result<()>,
 ) -> PassOutcome {
-    run_pass_with_name_io(dir, state, now_ms, pass,
-        |drop, identity, name| apply(drop, identity, name.ms), remove)
+    run_pass_with_name_io(
+        dir,
+        state,
+        now_ms,
+        pass,
+        |drop, identity, name| apply(drop, identity, name.ms),
+        remove,
+    )
 }
 
 /// Recovery retains event ordering without replaying the event's lifecycle effects.
@@ -514,6 +523,7 @@ pub fn run_pass_with_name_io(
         if pass == Pass::RecoveryMetadata && index >= 4096 {
             tracing::warn!("hook metadata recovery directory limit 4096 exceeded (actual at least {} entries) in {}; restore refused", index + 1, dir.display());
             out.listed_ok = false;
+            out.listing_limit_exceeded = Some(index + 1);
             return out;
         }
         let entry = match entry {
@@ -521,7 +531,9 @@ pub fn run_pass_with_name_io(
             Err(error) => {
                 tracing::warn!("listing hook drop entry in {}: {error}", dir.display());
                 out.listed_ok = false;
-                if pass == Pass::RecoveryMetadata { return out; }
+                if pass == Pass::RecoveryMetadata {
+                    return out;
+                }
                 continue;
             }
         };
@@ -559,8 +571,11 @@ pub fn run_pass_with_name_io(
 
     for (parsed, path, name) in files {
         let recovering = pass == Pass::RecoveryMetadata;
-        if recovering && state.recovery_candidates.as_ref()
-            .is_some_and(|sessions| !sessions.contains(&parsed.session))
+        if recovering
+            && state
+                .recovery_candidates
+                .as_ref()
+                .is_some_and(|sessions| !sessions.contains(&parsed.session))
         {
             out.kept += 1;
             continue;

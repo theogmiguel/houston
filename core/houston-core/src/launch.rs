@@ -671,7 +671,10 @@ impl SessionLaunchSelections {
         );
         let mut args = flags_only(provider, false, false, self.model.as_deref())?;
         args.extend(self.approval.args(provider).ok_or_else(|| {
-            anyhow::anyhow!("provider {provider:?} does not support launch mode {:?}", self.approval)
+            anyhow::anyhow!(
+                "provider {provider:?} does not support launch mode {:?}",
+                self.approval
+            )
         })?);
         if let Some(effort) = self.effort {
             args.extend(effort_args(provider, effort)?);

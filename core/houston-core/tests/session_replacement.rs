@@ -27,8 +27,8 @@ fn isolated(test: &str) -> bool {
 
 fn provider() {
     use std::os::unix::fs::PermissionsExt;
-    let path = std::path::PathBuf::from(std::env::var_os("HOME").unwrap())
-        .join("provider-shims/claude");
+    let path =
+        std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join("provider-shims/claude");
     std::fs::write(
         &path,
         "#!/bin/sh\nprintf '%s\\n' \"$$\" > \"$PWD/receipt-$HOUSTON_SESSION\"\nprintf 'replacement-ready\\n'\nwhile IFS= read -r ignored; do :; done\n",
@@ -216,22 +216,33 @@ fn replacement_storage_failures_preserve_the_original_and_owned_processes() {
             .unwrap(),
             0,
         );
-        assert_eq!(db.session_resume_handle(1).unwrap().unwrap().0, CONVERSATION);
-        assert_eq!(db.session_final(1).unwrap().unwrap().0, proto::SessionState::Interrupted);
+        assert_eq!(
+            db.session_resume_handle(1).unwrap().unwrap().0,
+            CONVERSATION
+        );
+        assert_eq!(
+            db.session_final(1).unwrap().unwrap().0,
+            proto::SessionState::Interrupted
+        );
         assert!(daemon.list().iter().any(|session| session.id == 1));
         assert_eq!(db.delegation_parent_of(2).unwrap(), Some(1));
-        assert_eq!(db.delegation_for_child(2).unwrap().unwrap().state, before.state);
+        assert_eq!(
+            db.delegation_for_child(2).unwrap().unwrap().state,
+            before.state
+        );
         assert_eq!(db.session_orchestration_identity(3).unwrap().0, Some(1));
         assert_eq!(db.inbox_get(message).unwrap().unwrap().to_session, 1);
         while let Ok(event) = events.try_recv() {
             if let houston_core::daemon::Outbound::Control(body) = event {
                 assert!(!matches!(
                     serde_json::from_str::<proto::ServerMsg>(&body).unwrap(),
-                    proto::ServerMsg::SessionCreated { .. } | proto::ServerMsg::SessionRemoved { .. }
+                    proto::ServerMsg::SessionCreated { .. }
+                        | proto::ServerMsg::SessionRemoved { .. }
                 ));
             }
         }
-        conn.execute_batch("DROP TRIGGER replacement_failure").unwrap();
+        conn.execute_batch("DROP TRIGGER replacement_failure")
+            .unwrap();
         let reopened = boot(&database);
         assert!(reopened.list().iter().any(|session| session.id == 1));
         assert!(!reopened.list().iter().any(|session| session.id == new));
@@ -255,19 +266,33 @@ fn replacement_commits_identity_ancestry_inbox_and_wake_cues_together() {
     let incoming = inbox(&db, project.path(), 1, 2);
     let outgoing = inbox(&db, project.path(), 2, 1);
     let conn = rusqlite::Connection::open(&database).unwrap();
-    conn.execute("UPDATE pane_inbox SET to_session = 0, original_to = 1 WHERE id = ?1", [incoming])
-        .unwrap();
+    conn.execute(
+        "UPDATE pane_inbox SET to_session = 0, original_to = 1 WHERE id = ?1",
+        [incoming],
+    )
+    .unwrap();
     let context = serde_json::json!({
         "target": 1, "origin": 1, "provider": "claude", "workspace": project.path(),
         "cwd": project.path(), "profile": null, "profile_dir": null,
         "conversation": db.session_resume_handle(1).unwrap(), "ancestry": []
     })
     .to_string();
-    let instruction = db.instruction_accept(
-        1, &context, proto::InstructionMode::Queue, "Never replay this automatically",
-        &MessageReceipt::new(1, Some("replacement-held".into()), "pane_prompt", &serde_json::json!({})).unwrap(),
-        1,
-    ).unwrap();
+    let instruction = db
+        .instruction_accept(
+            1,
+            &context,
+            proto::InstructionMode::Queue,
+            "Never replay this automatically",
+            &MessageReceipt::new(
+                1,
+                Some("replacement-held".into()),
+                "pane_prompt",
+                &serde_json::json!({}),
+            )
+            .unwrap(),
+            1,
+        )
+        .unwrap();
     db.instruction_recover(2).unwrap();
     let observed = observe(&daemon, project.path());
     let mut events = daemon.subscribe();
@@ -278,15 +303,24 @@ fn replacement_commits_identity_ancestry_inbox_and_wake_cues_together() {
     assert_eq!(replacement.last_agent_message, before.last_agent_message);
     assert_eq!(replacement.context, before.context);
     assert_eq!(replacement.slept_at_ms, before.slept_at_ms);
-    assert_eq!(db.session_resume_handle(replacement.id).unwrap().unwrap().0, CONVERSATION);
+    assert_eq!(
+        db.session_resume_handle(replacement.id).unwrap().unwrap().0,
+        CONVERSATION
+    );
     assert!(db.session_is_closed(1).unwrap());
     assert_eq!(db.session_resume_handle(1).unwrap(), None);
     assert_eq!(db.delegation_parent_of(2).unwrap(), Some(replacement.id));
-    assert_eq!(db.session_orchestration_identity(3).unwrap().0, Some(replacement.id));
+    assert_eq!(
+        db.session_orchestration_identity(3).unwrap().0,
+        Some(replacement.id)
+    );
     let mail = db.inbox_get(incoming).unwrap().unwrap();
     assert_eq!(mail.to_session, replacement.id);
     assert_eq!(mail.original_to, Some(replacement.id));
-    assert_eq!(db.inbox_get(outgoing).unwrap().unwrap().from_session, Some(replacement.id));
+    assert_eq!(
+        db.inbox_get(outgoing).unwrap().unwrap().from_session,
+        Some(replacement.id)
+    );
     let held = db.instruction_row(&instruction.info.id).unwrap().unwrap();
     assert_eq!(held.target, 1);
     assert_eq!(held.context, context);
@@ -294,7 +328,8 @@ fn replacement_commits_identity_ancestry_inbox_and_wake_cues_together() {
     let mut created = false;
     while let Ok(event) = events.try_recv() {
         if let houston_core::daemon::Outbound::Control(body) = event {
-            if let proto::ServerMsg::SessionCreated { info } = serde_json::from_str(&body).unwrap() {
+            if let proto::ServerMsg::SessionCreated { info } = serde_json::from_str(&body).unwrap()
+            {
                 if info.id == replacement.id {
                     created = true;
                     assert_eq!(info.latest_prompt, before.latest_prompt);
@@ -325,16 +360,27 @@ fn failed_wake_keeps_the_exact_sleeping_conversation_retryable() {
     let conn = rusqlite::Connection::open(&database).unwrap();
     conn.execute_batch(
         "CREATE TRIGGER replacement_failure BEFORE INSERT ON sessions
-         WHEN NEW.latest_prompt IS NOT NULL BEGIN SELECT RAISE(ABORT, 'Wake cue failure'); END;"
-    ).unwrap();
+         WHEN NEW.latest_prompt IS NOT NULL BEGIN SELECT RAISE(ABORT, 'Wake cue failure'); END;",
+    )
+    .unwrap();
     let observed = observe(&daemon, project.path());
     assert!(daemon.wake_session(1).is_err());
     assert_reaped(observed.lock().unwrap()[0].1);
-    assert_eq!(db.session_final(1).unwrap().unwrap().0, proto::SessionState::Sleeping);
-    assert_eq!(db.session_resume_handle(1).unwrap().unwrap().0, CONVERSATION);
-    conn.execute_batch("DROP TRIGGER replacement_failure").unwrap();
+    assert_eq!(
+        db.session_final(1).unwrap().unwrap().0,
+        proto::SessionState::Sleeping
+    );
+    assert_eq!(
+        db.session_resume_handle(1).unwrap().unwrap().0,
+        CONVERSATION
+    );
+    conn.execute_batch("DROP TRIGGER replacement_failure")
+        .unwrap();
     let replacement = daemon.wake_session(1).unwrap();
-    assert_eq!(replacement.latest_prompt.as_deref(), Some("Preserve the Wake prompt"));
+    assert_eq!(
+        replacement.latest_prompt.as_deref(),
+        Some("Preserve the Wake prompt")
+    );
     daemon.close(replacement.id).unwrap();
     daemon.close(3).unwrap();
 }
@@ -361,15 +407,33 @@ fn failed_forced_restart_preserves_the_original_resume_handle() {
     ))
     .unwrap();
     let observed = observe(&daemon, project.path());
-    assert!(daemon.respawn(original.id, false, None, None, true).is_err());
+    assert!(daemon
+        .respawn(original.id, false, None, None, true)
+        .is_err());
     assert_reaped(observed.lock().unwrap()[0].1);
-    assert_eq!(db.session_resume_handle(original.id).unwrap().unwrap().0, CONVERSATION);
-    assert_eq!(db.session_final(original.id).unwrap().unwrap().0, proto::SessionState::Interrupted);
-    assert!(db.list_interrupted().unwrap().iter().any(|info| info.id == original.id));
+    assert_eq!(
+        db.session_resume_handle(original.id).unwrap().unwrap().0,
+        CONVERSATION
+    );
+    assert_eq!(
+        db.session_final(original.id).unwrap().unwrap().0,
+        proto::SessionState::Interrupted
+    );
+    assert!(db
+        .list_interrupted()
+        .unwrap()
+        .iter()
+        .any(|info| info.id == original.id));
     assert!(daemon.list().iter().any(|info| info.id == original.id));
-    conn.execute_batch("DROP TRIGGER replacement_failure").unwrap();
-    let replacement = daemon.respawn(original.id, false, None, None, false).unwrap();
-    assert_eq!(db.session_resume_handle(replacement.id).unwrap().unwrap().0, CONVERSATION);
+    conn.execute_batch("DROP TRIGGER replacement_failure")
+        .unwrap();
+    let replacement = daemon
+        .respawn(original.id, false, None, None, false)
+        .unwrap();
+    assert_eq!(
+        db.session_resume_handle(replacement.id).unwrap().unwrap().0,
+        CONVERSATION
+    );
     daemon.close(replacement.id).unwrap();
     daemon.close(3).unwrap();
 }
@@ -387,11 +451,14 @@ fn failed_forced_child_replacement_preserves_boot_eligibility_and_its_mission() 
     let child_conversation = "00000000-0000-4000-8000-000000000250";
     let transcript = project.path().join("child-conversation.jsonl");
     std::fs::write(&transcript, b"child turn\n").unwrap();
-    db.set_session_resume_handle(2, Some((child_conversation, transcript.to_str()))).unwrap();
+    db.set_session_resume_handle(2, Some((child_conversation, transcript.to_str())))
+        .unwrap();
     let daemon = boot(&database);
     observe(&daemon, project.path());
     let parent = daemon.respawn(1, false, None, None, false).unwrap();
-    let child = daemon.list().into_iter()
+    let child = daemon
+        .list()
+        .into_iter()
         .find(|info| info.session_origin == Some(2) && info.spawned_by == Some(parent.id))
         .unwrap();
     let before = db.delegation_for_child(child.id).unwrap().unwrap();
@@ -402,19 +469,31 @@ fn failed_forced_child_replacement_preserves_boot_eligibility_and_its_mission() 
          WHEN OLD.id = {} AND NEW.state = 'closed'
          BEGIN SELECT RAISE(ABORT, 'forced child retirement failure'); END;",
         child.id,
-    )).unwrap();
+    ))
+    .unwrap();
     let observed = observe(&daemon, project.path());
     assert!(daemon.respawn(child.id, false, None, None, true).is_err());
     assert_reaped(observed.lock().unwrap()[0].1);
-    assert_eq!(db.session_final(child.id).unwrap().unwrap().0, proto::SessionState::Interrupted);
-    assert!(db.list_interrupted().unwrap().iter().any(|info| info.id == child.id));
-    assert_eq!(db.session_resume_handle(child.id).unwrap().unwrap().0, child_conversation);
+    assert_eq!(
+        db.session_final(child.id).unwrap().unwrap().0,
+        proto::SessionState::Interrupted
+    );
+    assert!(db
+        .list_interrupted()
+        .unwrap()
+        .iter()
+        .any(|info| info.id == child.id));
+    assert_eq!(
+        db.session_resume_handle(child.id).unwrap().unwrap().0,
+        child_conversation
+    );
     let after = db.delegation_for_child(child.id).unwrap().unwrap();
     assert_eq!(after.state, before.state);
     assert_eq!(after.round, before.round);
     assert_eq!(after.settled_at, before.settled_at);
     assert_eq!(after.stop_reason, before.stop_reason);
-    conn.execute_batch("DROP TRIGGER replacement_failure").unwrap();
+    conn.execute_batch("DROP TRIGGER replacement_failure")
+        .unwrap();
     let replacement = daemon.respawn(child.id, false, None, None, false).unwrap();
     daemon.close(replacement.id).unwrap();
     daemon.close(parent.id).unwrap();
@@ -444,7 +523,7 @@ fn root_restore_carries_saved_scrollback_before_retiring_the_old_row() {
         let state = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
         let database = state.path().join("test.db");
-        let db = seed(&database, project.path(), false);
+        seed(&database, project.path(), false);
         seed_scrollback(state.path());
         if clean {
             std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
@@ -454,23 +533,27 @@ fn root_restore_carries_saved_scrollback_before_retiring_the_old_row() {
             db_path: database.clone(),
         })
         .unwrap();
-        let replacement = daemon.list().into_iter().find(|info| info.spawned_by.is_none()).unwrap();
+        let replacement = daemon
+            .list()
+            .into_iter()
+            .find(|info| info.spawned_by.is_none())
+            .unwrap();
         assert_ne!(replacement.id, 1);
         assert_saved_scrollback(&daemon, replacement.id);
         let saved = houston_core::scrollback::Scrollback::load(
-            &state.path().join(format!("scrollback/{}.bin", replacement.id)),
+            &state
+                .path()
+                .join(format!("scrollback/{}.bin", replacement.id)),
         )
         .unwrap();
         assert!(String::from_utf8_lossy(&saved.replay(None).data).contains("saved-before-stop"));
         assert!(!state.path().join("scrollback/1.bin").exists());
-        // Simulate the next boot classifier without another ring checkpoint.
-        db.mark_live_as_interrupted().unwrap();
+        // The staged ring was checked above, before this orderly checkpoint.
+        daemon.manage_shutdown().unwrap();
         let reopened = boot(&database);
         assert_saved_scrollback(&reopened, replacement.id);
         reopened.close(replacement.id).unwrap();
         reopened.close(3).unwrap();
-        daemon.close(replacement.id).unwrap();
-        daemon.close(3).unwrap();
     }
 }
 
@@ -489,16 +572,23 @@ fn a_failed_snapshot_transfer_keeps_the_old_ring_and_retryable_pane() {
     let blocked = state.path().join("scrollback/4.bin.tmp");
     std::fs::create_dir(&blocked).unwrap();
     let observed = observe(&daemon, project.path());
-    assert!(daemon.respawn_with(1, false, None, None, false, RespawnConversation::Restore).is_err());
+    assert!(daemon
+        .respawn_with(1, false, None, None, false, RespawnConversation::Restore)
+        .is_err());
     let (new, pid) = observed.lock().unwrap()[0];
     assert_eq!(new, 4);
     assert_reaped(pid);
     assert!(daemon.list().iter().any(|info| info.id == 1));
     assert_saved_scrollback(&daemon, 1);
     assert!(!state.path().join("scrollback/4.bin").exists());
-    assert_eq!(db.session_resume_handle(1).unwrap().unwrap().0, CONVERSATION);
+    assert_eq!(
+        db.session_resume_handle(1).unwrap().unwrap().0,
+        CONVERSATION
+    );
     std::fs::remove_dir(blocked).unwrap();
-    let replacement = daemon.respawn_with(1, false, None, None, false, RespawnConversation::Restore).unwrap();
+    let replacement = daemon
+        .respawn_with(1, false, None, None, false, RespawnConversation::Restore)
+        .unwrap();
     assert_saved_scrollback(&daemon, replacement.id);
     daemon.close(replacement.id).unwrap();
     daemon.close(3).unwrap();
@@ -521,14 +611,18 @@ fn a_failed_replacement_removes_its_staged_ring_only() {
         "CREATE TRIGGER replacement_failure BEFORE UPDATE OF state ON sessions
          WHEN OLD.id = 1 AND NEW.state = 'closed'
          BEGIN SELECT RAISE(ABORT, 'retirement failure after ring preparation'); END;",
-    ).unwrap();
+    )
+    .unwrap();
     let observed = observe(&daemon, project.path());
-    assert!(daemon.respawn_with(1, false, None, None, false, RespawnConversation::Restore).is_err());
+    assert!(daemon
+        .respawn_with(1, false, None, None, false, RespawnConversation::Restore)
+        .is_err());
     let (new, pid) = observed.lock().unwrap()[0];
     assert_reaped(pid);
     assert_saved_scrollback(&daemon, 1);
     assert!(!state.path().join(format!("scrollback/{new}.bin")).exists());
-    conn.execute_batch("DROP TRIGGER replacement_failure").unwrap();
+    conn.execute_batch("DROP TRIGGER replacement_failure")
+        .unwrap();
     daemon.close(1).unwrap();
     daemon.close(3).unwrap();
 }

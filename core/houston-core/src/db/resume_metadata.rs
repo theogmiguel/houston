@@ -17,16 +17,29 @@ pub struct RootHookMetadata {
 impl Db {
     pub fn session_resume_binding(&self, id: u32) -> Result<Option<(String, String)>> {
         let conn = self.conn.lock().expect("db lock");
-        Ok(conn.query_row(
-            "SELECT resume_agent, resume_cwd FROM sessions WHERE id = ?1", [id],
-            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
-        ).optional()?.and_then(|(agent, cwd)| agent.zip(cwd)))
+        Ok(conn
+            .query_row(
+                "SELECT resume_agent, resume_cwd FROM sessions WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .optional()?
+            .and_then(|(agent, cwd)| agent.zip(cwd)))
     }
 
     pub fn check_session_resume_binding(
-        &self, id: u32, provider: proto::AgentKind, cwd: &Path,
+        &self,
+        id: u32,
+        provider: proto::AgentKind,
+        cwd: &Path,
     ) -> std::result::Result<(), String> {
-        let binding = self.session_resume_binding(id)
+        let binding = self
+            .session_resume_binding(id)
             .map_err(|error| format!("reading session {id}'s resume binding: {error:#}"))?;
         let Some((agent, recorded_cwd)) = binding else {
             return Err(format!("session {id}'s stored conversation has no validated provider and folder binding; a new root turn is required before exact resume"));
@@ -46,7 +59,9 @@ impl Db {
         Ok(conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?1 AND resume_session_id IS NOT NULL
                 AND resume_agent = CASE WHEN agent = 'shell' THEN detected_agent ELSE agent END
-                AND resume_cwd = cwd)", [id], |row| row.get(0),
+                AND resume_cwd = cwd)",
+            [id],
+            |row| row.get(0),
         )?)
     }
 
@@ -58,7 +73,8 @@ impl Db {
                 AND NOT EXISTS(SELECT 1 FROM routine_runs WHERE session_id = sessions.id)
                 AND NOT EXISTS(SELECT 1 FROM swarm_agents WHERE session_id = sessions.id)",
         )?;
-        let ids = statement.query_map([], |row| row.get(0))?
+        let ids = statement
+            .query_map([], |row| row.get(0))?
             .collect::<std::result::Result<Vec<u32>, _>>()?;
         Ok(ids)
     }
@@ -76,60 +92,127 @@ impl Db {
             || !names_root_conversation(provider, &drop.event)
             || drop.agent_id.is_some()
             || drop.subagent_type.is_some()
-            || !matches!(event, Some(AgentEvent::SessionStarted | AgentEvent::PromptSubmitted | AgentEvent::TurnEnded))
+            || !matches!(
+                event,
+                Some(
+                    AgentEvent::SessionStarted
+                        | AgentEvent::PromptSubmitted
+                        | AgentEvent::TurnEnded
+                )
+            )
         {
             return Ok(None);
         }
         let Some(conversation) = drop.session_id.as_deref().filter(|id| {
-            !id.is_empty() && id.len() <= 128
-                && id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            !id.is_empty()
+                && id.len() <= 128
+                && id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         }) else {
             return Ok(None);
         };
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
-        let row = tx.query_row(
-            "SELECT agent, detected_agent, cwd, state, acp, native_session_id,
+        let row = tx
+            .query_row(
+                "SELECT agent, detected_agent, cwd, state, acp, native_session_id,
                     transcript_path, resume_session_id, resume_agent, resume_cwd,
                     root_hook_ms, root_hook_seq, profile_config_dir,
                     EXISTS(SELECT 1 FROM routine_runs WHERE session_id = sessions.id),
                     EXISTS(SELECT 1 FROM swarm_agents WHERE session_id = sessions.id)
              FROM sessions WHERE id = ?1",
-            [drop.session],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?,
-                r.get::<_, String>(2)?, r.get::<_, String>(3)?,
-                r.get::<_, Option<String>>(4)?, r.get::<_, Option<String>>(5)?,
-                r.get::<_, Option<String>>(6)?, r.get::<_, Option<String>>(7)?,
-                r.get::<_, Option<String>>(8)?, r.get::<_, Option<String>>(9)?,
-                r.get::<_, Option<u64>>(10)?, r.get::<_, Option<u32>>(11)?,
-                r.get::<_, Option<String>>(12)?, r.get::<_, bool>(13)?, r.get::<_, bool>(14)?)),
-        ).optional()?;
-        let Some((agent, detected, old_cwd, state, acp, old_conversation,
-            old_transcript, old_handle, bound_agent, bound_cwd, last_ms, last_seq,
-            old_profile, routine, swarm)) = row else { return Ok(None); };
+                [drop.session],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, Option<String>>(4)?,
+                        r.get::<_, Option<String>>(5)?,
+                        r.get::<_, Option<String>>(6)?,
+                        r.get::<_, Option<String>>(7)?,
+                        r.get::<_, Option<String>>(8)?,
+                        r.get::<_, Option<String>>(9)?,
+                        r.get::<_, Option<u64>>(10)?,
+                        r.get::<_, Option<u32>>(11)?,
+                        r.get::<_, Option<String>>(12)?,
+                        r.get::<_, bool>(13)?,
+                        r.get::<_, bool>(14)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((
+            agent,
+            detected,
+            old_cwd,
+            state,
+            acp,
+            old_conversation,
+            old_transcript,
+            old_handle,
+            bound_agent,
+            bound_cwd,
+            last_ms,
+            last_seq,
+            old_profile,
+            routine,
+            swarm,
+        )) = row
+        else {
+            return Ok(None);
+        };
         let slug = crate::agent_hooks::provider_slug(provider);
-        let effective = if agent == "shell" { detected.as_deref() } else { Some(agent.as_str()) };
-        if (agent != "shell" && agent != slug) || acp.is_some() || routine || swarm
+        let effective = if agent == "shell" {
+            detected.as_deref()
+        } else {
+            Some(agent.as_str())
+        };
+        let eligible = acp.is_none() && !routine && !swarm;
+        if (agent != "shell" && agent != slug)
+            || (recovery && !eligible)
             || (recovery && !matches!(state.as_str(), "interrupted" | "exited"))
-            || (!recovery && !matches!(state.as_str(), "running" | "working" | "awaiting_input" | "awaiting_approval" | "exited"))
+            || (!recovery
+                && !matches!(
+                    state.as_str(),
+                    "running" | "working" | "awaiting_input" | "awaiting_approval" | "exited"
+                ))
             || order.session != drop.session
-            || last_ms.is_some_and(|ms| order.ms < ms
-                || ((recovery || last_seq == Some(u32::MAX))
-                    && (order.ms, order.seq) <= (ms, last_seq.unwrap_or(0))))
+            || last_ms.is_some_and(|ms| {
+                order.ms < ms
+                    || ((recovery || last_seq == Some(u32::MAX))
+                        && (order.ms, order.seq) <= (ms, last_seq.unwrap_or(0)))
+            })
         {
             return Ok(None);
         }
         // An absent cwd cannot establish a binding during recovery. Ordinary hooks
         // may omit it, in which case the current persisted root cwd is unchanged.
         let cwd = match drop.cwd.as_deref() {
-            Some(cwd) if cwd.len() <= 4096 && Path::new(cwd).is_absolute() && Path::new(cwd).is_dir() => cwd,
+            Some(cwd)
+                if cwd.len() <= 4096 && Path::new(cwd).is_absolute() && Path::new(cwd).is_dir() =>
+            {
+                cwd
+            }
             None if !recovery => old_cwd.as_str(),
             _ => return Ok(None),
         };
-        let transcript = match drop.transcript_path.as_deref().filter(|path| !path.is_empty()) {
-            Some(path) if path.len() <= 4096 && Path::new(path).is_absolute() => Some(path.to_string()),
+        let transcript = match drop
+            .transcript_path
+            .as_deref()
+            .filter(|path| !path.is_empty())
+        {
+            Some(path) if path.len() <= 4096 && Path::new(path).is_absolute() => {
+                Some(path.to_string())
+            }
             Some(_) => return Ok(None),
-            None if effective == Some(slug) && old_conversation.as_deref() == Some(conversation) => old_transcript,
+            None if effective == Some(slug)
+                && old_conversation.as_deref() == Some(conversation) =>
+            {
+                old_transcript
+            }
             None => None,
         };
         let profile = match drop.resume_evidence.as_ref() {
@@ -137,14 +220,21 @@ impl Db {
             None if effective == Some(slug) => old_profile.clone(),
             None => None,
         };
-        if profile.as_deref().is_some_and(|path| path.len() > 4096 || !Path::new(path).is_absolute()) {
+        if profile
+            .as_deref()
+            .is_some_and(|path| path.len() > 4096 || !Path::new(path).is_absolute())
+        {
             return Ok(None);
         }
-        let was_resumable = old_handle.is_some() && bound_agent.as_deref() == effective
+        let was_resumable = old_handle.is_some()
+            && bound_agent.as_deref() == effective
             && bound_cwd.as_deref() == Some(old_cwd.as_str());
         let same_binding = effective == Some(slug) && old_cwd == cwd && old_profile == profile;
-        let turn = matches!(event, Some(AgentEvent::PromptSubmitted | AgentEvent::TurnEnded));
-        let retained = was_resumable && same_binding;
+        let turn = eligible && matches!(
+            event,
+            Some(AgentEvent::PromptSubmitted | AgentEvent::TurnEnded)
+        );
+        let retained = eligible && was_resumable && same_binding;
         // A fresh startup has no turn. An older handle stays eligible only in
         // the same namespace; preserve rejected handles for diagnostics and retry.
         tx.execute(
@@ -163,19 +253,26 @@ impl Db {
         )?;
         tx.commit()?;
         Ok(Some(RootHookMetadata {
-            cwd: cwd.to_string(), transcript_path: transcript,
-            conversation: conversation.to_string(), resumable: turn || retained, was_resumable,
+            cwd: cwd.to_string(),
+            transcript_path: transcript,
+            conversation: conversation.to_string(),
+            resumable: turn || retained,
+            was_resumable,
         }))
     }
 
     pub fn root_hook_is_newer(&self, id: u32, order: DropName) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
-        let previous = conn.query_row(
-            "SELECT root_hook_ms, root_hook_seq FROM sessions WHERE id = ?1", [id],
-            |row| Ok((row.get::<_, Option<u64>>(0)?, row.get::<_, Option<u32>>(1)?)),
-        ).optional()?;
-        Ok(previous.is_none_or(|(ms, seq)| ms.is_none_or(|ms|
-            order.ms > ms || (order.ms == ms && seq != Some(u32::MAX)))))
+        let previous = conn
+            .query_row(
+                "SELECT root_hook_ms, root_hook_seq FROM sessions WHERE id = ?1",
+                [id],
+                |row| Ok((row.get::<_, Option<u64>>(0)?, row.get::<_, Option<u32>>(1)?)),
+            )
+            .optional()?;
+        Ok(previous.is_none_or(|(ms, seq)| {
+            ms.is_none_or(|ms| order.ms > ms || (order.ms == ms && seq != Some(u32::MAX)))
+        }))
     }
 
     /// Shell OSC cwd supersedes older hook drops, including drops not drained yet.

@@ -462,19 +462,34 @@ async fn probe(supervised: bool) {
             .is_some_and(|identity| identity.running(&fixture.nonce));
     eprintln!("orphan probe supervised={supervised} survived={survived} resumed_exact={resumed_exact} overlap={overlap}; old={actor:?} new={replacement:?}");
     if survived && replacement.is_none() {
-        assert!(restored.resume_notice.as_deref().is_some_and(|notice| notice.contains("Previous PTY process")));
+        assert!(restored
+            .resume_notice
+            .as_deref()
+            .is_some_and(|notice| notice.contains("Previous PTY process")));
         for fresh in [false, true] {
-            resumed_ws.send(Message::text(serde_json::to_string(&proto::ClientMsg::SessionRespawn {
-                session: restored.id, shell_integration: Some(false), cwd: None, shell: None,
-                force: Some(true), fresh: Some(fresh),
-            }).unwrap())).await.unwrap();
+            resumed_ws
+                .send(Message::text(
+                    serde_json::to_string(&proto::ClientMsg::SessionRespawn {
+                        session: restored.id,
+                        shell_integration: Some(false),
+                        cwd: None,
+                        shell: None,
+                        force: Some(true),
+                        fresh: Some(fresh),
+                    })
+                    .unwrap(),
+                ))
+                .await
+                .unwrap();
             loop {
                 match common::next_control(&mut resumed_ws).await {
                     proto::ServerMsg::Error { message, .. } => {
                         assert!(message.contains("Previous PTY process"), "{message}");
                         break;
                     }
-                    proto::ServerMsg::SessionCreated { .. } => panic!("manual restart bypassed the previous-process gate"),
+                    proto::ServerMsg::SessionCreated { .. } => {
+                        panic!("manual restart bypassed the previous-process gate")
+                    }
                     _ => {}
                 }
             }

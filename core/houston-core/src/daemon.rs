@@ -2451,7 +2451,9 @@ impl Drop for SessionStartup {
         if self.scrollback_prepared {
             self.daemon.remove_persisted_scrollback(self.id);
             let _ = std::fs::remove_file(
-                self.daemon.scrollback_path(self.id).with_extension("bin.tmp"),
+                self.daemon
+                    .scrollback_path(self.id)
+                    .with_extension("bin.tmp"),
             );
         }
         let settings = self.daemon.claude_settings_path(self.id);
@@ -3580,24 +3582,37 @@ impl Daemon {
     }
 
     fn recover_root_hook_metadata(&self) -> Result<()> {
-        let candidates: HashSet<u32> = self.db.root_hook_recovery_session_ids()?.into_iter().collect();
-        if candidates.is_empty() { return Ok(()); }
+        let candidates: HashSet<u32> = self
+            .db
+            .root_hook_recovery_session_ids()?
+            .into_iter()
+            .collect();
+        if candidates.is_empty() {
+            return Ok(());
+        }
         for dir in self.hook_drop_dirs() {
             let mut failure = None;
             let mut state = crate::hook_drop::DropDirState::new();
             state.recover_sessions(candidates.iter().copied());
             let out = crate::hook_drop::run_pass_with_name_io(
-                &dir, &mut state,
-                crate::hook_drop::now_ms(), crate::hook_drop::Pass::RecoveryMetadata,
+                &dir,
+                &mut state,
+                crate::hook_drop::now_ms(),
+                crate::hook_drop::Pass::RecoveryMetadata,
                 |drop, _, order| {
                     if !candidates.contains(&drop.session) {
                         return crate::hook_drop::DropVerdict::NoSession;
                     }
-                    let provider = drop.agent.as_deref()
+                    let provider = drop
+                        .agent
+                        .as_deref()
                         .map(crate::agent_hooks::provider_from_slug)
                         .unwrap_or(Ok(proto::AgentKind::Claude));
                     if let Ok(provider) = provider {
-                        if let Err(error) = self.db.record_root_hook_metadata(drop, provider, order, true) {
+                        if let Err(error) = self
+                            .db
+                            .record_root_hook_metadata(drop, provider, order, true)
+                        {
                             failure = Some(error);
                             return crate::hook_drop::DropVerdict::Retry;
                         }
@@ -3607,13 +3622,24 @@ impl Daemon {
                 },
                 |path| std::fs::remove_file(path),
             );
-            if let Some(error) = failure { return Err(error.context("recovering root hook metadata before restore")); }
-            anyhow::ensure!(out.listed_ok, "hook metadata recovery could not fully list {}; restore refused", dir.display());
+            if let Some(error) = failure {
+                return Err(error.context("recovering root hook metadata before restore"));
+            }
+            if let Some(actual) = out.listing_limit_exceeded {
+                bail!("hook metadata recovery directory limit 4096 exceeded (actual at least {actual} entries) in {}; recovery is deferred", dir.display());
+            }
+            anyhow::ensure!(
+                out.listed_ok,
+                "hook metadata recovery could not fully list {}; restore refused",
+                dir.display()
+            );
             anyhow::ensure!(!out.metadata_failed, "hook metadata recovery could not read or validate all candidate drops in {}; resume is deferred until every relevant drop is readable and valid", dir.display());
         }
         let mut dead = self.dead.lock().expect("dead lock");
         for info in self.db.list_interrupted()? {
-            if dead.contains_key(&info.id) { dead.insert(info.id, info); }
+            if dead.contains_key(&info.id) {
+                dead.insert(info.id, info);
+            }
         }
         Ok(())
     }
@@ -3621,15 +3647,32 @@ impl Daemon {
     fn defer_metadata_recovery(&self, error: &anyhow::Error) {
         let reason = format!("Conversation metadata recovery is incomplete: {error:#}. Resume is blocked; retry after fixing recovery, or choose Fresh or Close.");
         tracing::warn!("{reason}");
-        let ids = self.db.root_hook_recovery_session_ids().unwrap_or_else(|_| {
-            self.dead.lock().expect("dead lock").values()
-                .filter(|info| matches!(info.state, proto::SessionState::Interrupted | proto::SessionState::Exited))
-                .map(|info| info.id).collect()
-        });
+        let ids = self
+            .db
+            .root_hook_recovery_session_ids()
+            .unwrap_or_else(|_| {
+                self.dead
+                    .lock()
+                    .expect("dead lock")
+                    .values()
+                    .filter(|info| {
+                        matches!(
+                            info.state,
+                            proto::SessionState::Interrupted | proto::SessionState::Exited
+                        )
+                    })
+                    .map(|info| info.id)
+                    .collect()
+            });
         let ids: HashSet<u32> = ids.into_iter().collect();
         {
-            let mut blocked = self.recovery_metadata_blocked.lock().expect("recovery metadata lock");
-            for id in &ids { blocked.insert(*id, reason.clone()); }
+            let mut blocked = self
+                .recovery_metadata_blocked
+                .lock()
+                .expect("recovery metadata lock");
+            for id in &ids {
+                blocked.insert(*id, reason.clone());
+            }
         }
         let mut dead = self.dead.lock().expect("dead lock");
         for info in dead.values_mut().filter(|info| ids.contains(&info.id)) {
@@ -3639,9 +3682,17 @@ impl Daemon {
         }
     }
 
-    fn recover_metadata_for_resume(&self, id: u32, conversation: &RespawnConversation) -> Result<()> {
+    fn recover_metadata_for_resume(
+        &self,
+        id: u32,
+        conversation: &RespawnConversation,
+    ) -> Result<()> {
         if *conversation == RespawnConversation::Fresh
-            || !self.recovery_metadata_blocked.lock().expect("recovery metadata lock").contains_key(&id)
+            || !self
+                .recovery_metadata_blocked
+                .lock()
+                .expect("recovery metadata lock")
+                .contains_key(&id)
         {
             return Ok(());
         }
@@ -3649,7 +3700,10 @@ impl Daemon {
             self.defer_metadata_recovery(&error);
             bail!("Resume refused for session {id}: conversation metadata recovery remains incomplete: {error:#}. Choose Fresh or Close explicitly.");
         }
-        self.recovery_metadata_blocked.lock().expect("recovery metadata lock").clear();
+        self.recovery_metadata_blocked
+            .lock()
+            .expect("recovery metadata lock")
+            .clear();
         Ok(())
     }
 
@@ -3702,7 +3756,13 @@ impl Daemon {
             return;
         }
 
-        candidates.retain(|candidate| !self.recovery_metadata_blocked.lock().expect("recovery metadata lock").contains_key(&candidate.id));
+        candidates.retain(|candidate| {
+            !self
+                .recovery_metadata_blocked
+                .lock()
+                .expect("recovery metadata lock")
+                .contains_key(&candidate.id)
+        });
 
         candidates.retain(|c| {
             if c.agent == proto::AgentKind::Ssh {
@@ -3725,7 +3785,10 @@ impl Daemon {
             if let Err(error) = self.db.check_previous_process_stopped(candidate.id) {
                 if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&candidate.id) {
                     info.restore_deferred = Some(R::SpawnFailed);
-                    info.resume_notice = Some(format!("Session {} recovery deferred: {error:#}", candidate.id));
+                    info.resume_notice = Some(format!(
+                        "Session {} recovery deferred: {error:#}",
+                        candidate.id
+                    ));
                 }
                 return false;
             }
@@ -4219,7 +4282,10 @@ impl Daemon {
             Err(error) => tracing::warn!("reap shutdown failed: {error}"),
         }
         let mut armed = self.reap_armed.lock().expect("reap armed lock");
-        if armed.as_ref().is_some_and(|arm| arm.generation == generation) {
+        if armed
+            .as_ref()
+            .is_some_and(|arm| arm.generation == generation)
+        {
             *armed = None;
             drop(armed);
             self.reap_reevaluate();
@@ -8162,7 +8228,9 @@ impl Daemon {
         }
         let mut recorded_cwd = None;
         let mut hook_cwd = s.hook_cwd.lock().expect("hook_cwd lock");
-        if let Some(cwd) = cwd.filter(|_| crate::agent_events::names_root_conversation(provider, event)) {
+        if let Some(cwd) =
+            cwd.filter(|_| crate::agent_events::names_root_conversation(provider, event))
+        {
             if Path::new(cwd).is_absolute() && Path::new(cwd).is_dir() {
                 *hook_cwd = Some(cwd.to_string());
                 recorded_cwd = Some(cwd.to_string());
@@ -8598,8 +8666,15 @@ impl Daemon {
                         hold,
                     )
                 });
-                info.resumable = !self.recovery_metadata_blocked.lock().expect("recovery metadata lock").contains_key(&info.id)
-                    && self.db.session_has_bound_resume_handle(info.id).unwrap_or(false);
+                info.resumable = !self
+                    .recovery_metadata_blocked
+                    .lock()
+                    .expect("recovery metadata lock")
+                    .contains_key(&info.id)
+                    && self
+                        .db
+                        .session_has_bound_resume_handle(info.id)
+                        .unwrap_or(false);
                 info.compactions = self.compactions_of(info);
                 info.inbox_unread = self.db.inbox_pending_count(info.id).unwrap_or_else(|e| {
                     tracing::warn!("reading inbox_unread for session {}: {e}", info.id);
@@ -8791,7 +8866,17 @@ impl Daemon {
     }
 
     pub fn create_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
-        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false, None, false, None)
+        self.create_session_with_env(
+            p,
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            None,
+            false,
+            None,
+        )
     }
 
     pub(crate) fn create_task_plan_session(
@@ -8930,14 +9015,15 @@ impl Daemon {
             crate::launch::ApprovalMode::Default
         };
         let launch_selections = launch_override.or_else(|| {
-            (p.acp.is_none() && crate::launch::SessionLaunchSelections::supports(p.agent))
-                .then(|| crate::launch::SessionLaunchSelections {
+            (p.acp.is_none() && crate::launch::SessionLaunchSelections::supports(p.agent)).then(
+                || crate::launch::SessionLaunchSelections {
                     provider: p.agent,
                     model: p.model.clone(),
                     effort: p.effort,
                     approval,
                     dialogue: false,
-                })
+                },
+            )
         });
         if let Some((task_id, expected_revision)) = plan_binding {
             if !self
@@ -9233,7 +9319,10 @@ impl Daemon {
             force,
             conversation.clone(),
         )?;
-        self.recovery_metadata_blocked.lock().expect("recovery metadata lock").remove(&old_id);
+        self.recovery_metadata_blocked
+            .lock()
+            .expect("recovery metadata lock")
+            .remove(&old_id);
         let mut notices = Vec::new();
         let mut count = 0;
         let parent_conversation_resumed = conversation != RespawnConversation::Fresh
@@ -9325,7 +9414,12 @@ impl Daemon {
             self.db.check_previous_process_stopped(old_id)?;
         }
         if conversation != RespawnConversation::Fresh {
-            let dead_provider = self.dead.lock().expect("dead lock").get(&old_id).map(|info| info.agent);
+            let dead_provider = self
+                .dead
+                .lock()
+                .expect("dead lock")
+                .get(&old_id)
+                .map(|info| info.agent);
             if let Some(provider) = dead_provider {
                 if self.db.session_has_command_override(old_id)? {
                     bail!("Resume refused for {provider:?} session {old_id}: its explicit command override was not persisted. Choose Start fresh explicitly to launch the default provider command.");
@@ -9569,7 +9663,8 @@ impl Daemon {
             agent
         };
         let binding_check = if handle.is_some() {
-            self.db.check_session_resume_binding(old_id, resume_provider, &cwd)
+            self.db
+                .check_session_resume_binding(old_id, resume_provider, &cwd)
         } else {
             Ok(())
         };
@@ -9669,7 +9764,9 @@ impl Daemon {
         };
         // A fresh launch in another conversation namespace cannot carry its old handle.
         let resume_handle = resume_handle.filter(|_| {
-            binding_check.is_ok() && missing_profile.is_none() && !profile_changed
+            binding_check.is_ok()
+                && missing_profile.is_none()
+                && !profile_changed
                 && cwd == Path::new(&recorded_cwd)
         });
         if agent != proto::AgentKind::Shell || !extra_args.is_empty() {
@@ -10319,12 +10416,17 @@ impl Daemon {
                         true
                     }
                 };
-                if changed && session.info.agent == proto::AgentKind::Shell
-                    && cwd.len() <= 4096 && Path::new(&cwd).is_absolute() && Path::new(&cwd).is_dir()
+                if changed
+                    && session.info.agent == proto::AgentKind::Shell
+                    && cwd.len() <= 4096
+                    && Path::new(&cwd).is_absolute()
+                    && Path::new(&cwd).is_dir()
                 {
                     *session.hook_cwd.lock().expect("hook_cwd lock") = Some(cwd.clone());
                     // Coalesce one dirty cwd per session; SQLite runs on the control path.
-                    self.dirty_shell_cwds.lock().expect("dirty shell cwd lock")
+                    self.dirty_shell_cwds
+                        .lock()
+                        .expect("dirty shell cwd lock")
                         .insert(id, (cwd, crate::hook_drop::now_ms()));
                 }
             }
@@ -10443,7 +10545,10 @@ impl Daemon {
             }
             let resumable = self.db.session_has_bound_resume_handle(id).unwrap_or(false);
             if was_resumable != resumable {
-                self.broadcast_control(&proto::ServerMsg::SessionResumable { session: id, resumable });
+                self.broadcast_control(&proto::ServerMsg::SessionResumable {
+                    session: id,
+                    resumable,
+                });
             }
             self.broadcast_control(&proto::ServerMsg::AgentDetected {
                 session: id,
@@ -13482,7 +13587,10 @@ impl Daemon {
         // Keep the pane available for a retry if storage refuses the close.
         // A late waiter cannot overwrite this durable state (update_session_state guards it).
         self.db.mark_closed(id)?;
-        self.recovery_metadata_blocked.lock().expect("recovery metadata lock").remove(&id);
+        self.recovery_metadata_blocked
+            .lock()
+            .expect("recovery metadata lock")
+            .remove(&id);
         self.escalate_child_inputs_locked(id, proto::ChildInputEscalationReason::ParentUnavailable);
         self.operator_ended
             .lock()
@@ -14507,14 +14615,18 @@ impl Daemon {
             },
         };
         if crate::agent_events::names_root_conversation(provider, &d.event)
-            && d.agent_id.is_none() && d.subagent_type.is_none()
+            && d.agent_id.is_none()
+            && d.subagent_type.is_none()
         {
             if let Some((_, order)) = receipt {
                 match self.db.root_hook_is_newer(d.session, order) {
                     Ok(false) => return crate::hook_drop::DropVerdict::Applied,
                     Ok(true) => {}
                     Err(error) => {
-                        tracing::warn!("checking hook metadata order for session {}: {error:#}", d.session);
+                        tracing::warn!(
+                            "checking hook metadata order for session {}: {error:#}",
+                            d.session
+                        );
                         return crate::hook_drop::DropVerdict::Retry;
                     }
                 }
@@ -14630,15 +14742,24 @@ impl Daemon {
             .cloned();
         if let Some(session) = session {
             let root = crate::agent_events::names_root_conversation(provider, &d.event)
-                && d.agent_id.is_none() && d.subagent_type.is_none();
+                && d.agent_id.is_none()
+                && d.subagent_type.is_none();
             let metadata_event = crate::launch::resumes_conversations(provider)
-                && matches!(crate::agent_events::AgentEvent::from_provider(provider, &d.event),
-                    Some(crate::agent_events::AgentEvent::SessionStarted
-                        | crate::agent_events::AgentEvent::PromptSubmitted
-                        | crate::agent_events::AgentEvent::TurnEnded));
+                && matches!(
+                    crate::agent_events::AgentEvent::from_provider(provider, &d.event),
+                    Some(
+                        crate::agent_events::AgentEvent::SessionStarted
+                            | crate::agent_events::AgentEvent::PromptSubmitted
+                            | crate::agent_events::AgentEvent::TurnEnded
+                    )
+                );
             if root && metadata_event {
                 if session.removed.load(Ordering::Acquire)
-                    || self.operator_ended.lock().expect("operator_ended lock").contains(&d.session)
+                    || self
+                        .operator_ended
+                        .lock()
+                        .expect("operator_ended lock")
+                        .contains(&d.session)
                 {
                     return crate::hook_drop::DropVerdict::Applied;
                 }
@@ -14646,28 +14767,38 @@ impl Daemon {
                     match self.db.record_root_hook_metadata(d, provider, order, false) {
                         Ok(Some(metadata)) => {
                             *session.hook_cwd.lock().expect("hook_cwd lock") = Some(metadata.cwd);
-                            self.transcript_links.lock().expect("transcript links lock")
-                                .insert(d.session, (metadata.transcript_path, Some(metadata.conversation)));
+                            self.transcript_links
+                                .lock()
+                                .expect("transcript links lock")
+                                .insert(
+                                    d.session,
+                                    (metadata.transcript_path, Some(metadata.conversation)),
+                                );
                             if metadata.resumable != metadata.was_resumable {
                                 self.broadcast_control(&proto::ServerMsg::SessionResumable {
-                                    session: d.session, resumable: metadata.resumable,
+                                    session: d.session,
+                                    resumable: metadata.resumable,
                                 });
                             }
                             self.mark_detected(d.session, &session, provider);
                             self.note_resume_profile(d.session, &session, provider, d);
                         }
-                        Ok(None) => {
-                            match self.db.root_hook_is_newer(d.session, order) {
-                                Ok(false) => return crate::hook_drop::DropVerdict::Applied,
-                                Ok(true) => self.mark_detected(d.session, &session, provider),
-                                Err(error) => {
-                                    tracing::warn!("checking root metadata order for session {}: {error:#}", d.session);
-                                    return crate::hook_drop::DropVerdict::Retry;
-                                }
+                        Ok(None) => match self.db.root_hook_is_newer(d.session, order) {
+                            Ok(false) => return crate::hook_drop::DropVerdict::Applied,
+                            Ok(true) => self.mark_detected(d.session, &session, provider),
+                            Err(error) => {
+                                tracing::warn!(
+                                    "checking root metadata order for session {}: {error:#}",
+                                    d.session
+                                );
+                                return crate::hook_drop::DropVerdict::Retry;
                             }
-                        }
+                        },
                         Err(error) => {
-                            tracing::warn!("recording root metadata for session {}: {error:#}", d.session);
+                            tracing::warn!(
+                                "recording root metadata for session {}: {error:#}",
+                                d.session
+                            );
                             return crate::hook_drop::DropVerdict::Retry;
                         }
                     }
@@ -14704,14 +14835,19 @@ impl Daemon {
                 if self.ensure_not_closing(d.session, "hook").is_err() {
                     return crate::hook_drop::DropVerdict::Retry;
                 }
-                if self.preserving_session(d.session) || self.ensure_not_sleeping(d.session).is_err() {
+                if self.preserving_session(d.session)
+                    || self.ensure_not_sleeping(d.session).is_err()
+                {
                     return crate::hook_drop::DropVerdict::Retry;
                 }
             }
             if crate::agent_events::compaction_event(provider) == Some(d.event.as_str())
                 && d.subagent_type.is_none()
                 && d.agent_id.is_none()
-                && !self.note_compaction(d.session, receipt.map(|(identity, order)| (identity, order.ms)))
+                && !self.note_compaction(
+                    d.session,
+                    receipt.map(|(identity, order)| (identity, order.ms)),
+                )
             {
                 return crate::hook_drop::DropVerdict::Retry;
             }
@@ -15440,12 +15576,7 @@ impl Daemon {
                 .clone();
             drop(roots);
             if root != id {
-                if !self.note_hook_seen(
-                    d.session,
-                    proto::AgentKind::Antigravity,
-                    &d.event,
-                    None,
-                ) {
+                if !self.note_hook_seen(d.session, proto::AgentKind::Antigravity, &d.event, None) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -15938,24 +16069,35 @@ impl Daemon {
 
     /// Flush on the control path and at orderly checkpoints, never on PTY readers.
     pub fn flush_shell_cwd_metadata(&self) -> Result<()> {
-        let pending = std::mem::take(&mut *self.dirty_shell_cwds.lock().expect("dirty shell cwd lock"));
+        let pending =
+            std::mem::take(&mut *self.dirty_shell_cwds.lock().expect("dirty shell cwd lock"));
         let mut failure = None;
         for (id, (cwd, observed)) in pending {
             match self.db.record_shell_cwd(id, &cwd, observed) {
                 Ok(true) => self.broadcast_control(&proto::ServerMsg::SessionResumable {
-                    session: id, resumable: self.db.session_has_bound_resume_handle(id).unwrap_or(false),
+                    session: id,
+                    resumable: self.db.session_has_bound_resume_handle(id).unwrap_or(false),
                 }),
                 Ok(false) => {}
                 Err(error) => {
-                    self.dirty_shell_cwds.lock().expect("dirty shell cwd lock")
-                        .entry(id).and_modify(|current| {
-                            if current.1 < observed { *current = (cwd.clone(), observed); }
-                        }).or_insert((cwd, observed));
+                    self.dirty_shell_cwds
+                        .lock()
+                        .expect("dirty shell cwd lock")
+                        .entry(id)
+                        .and_modify(|current| {
+                            if current.1 < observed {
+                                *current = (cwd.clone(), observed);
+                            }
+                        })
+                        .or_insert((cwd, observed));
                     failure = Some(error);
                 }
             }
         }
-        match failure { Some(error) => Err(error), None => Ok(()) }
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     fn hook_drop_tick(self: &Arc<Self>, pass: crate::hook_drop::Pass) -> (usize, bool) {
@@ -15973,7 +16115,13 @@ impl Daemon {
         let (mut applied, mut all_listed) = (0usize, true);
         for dir in &dirs {
             let state = states.entry(dir.clone()).or_default();
-            state.protect_sessions(self.recovery_metadata_blocked.lock().expect("recovery metadata lock").keys().copied());
+            state.protect_sessions(
+                self.recovery_metadata_blocked
+                    .lock()
+                    .expect("recovery metadata lock")
+                    .keys()
+                    .copied(),
+            );
             let out = crate::hook_drop::run_pass_with_name_io(
                 dir,
                 state,

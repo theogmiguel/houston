@@ -1718,9 +1718,24 @@ impl Db {
             "session_origin INTEGER",
         )?;
         add_column_if_missing(&conn, "sessions", "approval_mode", "approval_mode TEXT")?;
-        add_column_if_missing(&conn, "sessions", "launch_selections", "launch_selections TEXT")?;
-        add_column_if_missing(&conn, "sessions", "command_override", "command_override INTEGER NOT NULL DEFAULT 0")?;
-        add_column_if_missing(&conn, "sessions", "process_identity", "process_identity TEXT")?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "launch_selections",
+            "launch_selections TEXT",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "command_override",
+            "command_override INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "process_identity",
+            "process_identity TEXT",
+        )?;
         add_column_if_missing(&conn, "sessions", "transcript_path", "transcript_path TEXT")?;
         add_column_if_missing(
             &conn,
@@ -1747,8 +1762,18 @@ impl Db {
         )?;
         add_column_if_missing(&binding_tx, "sessions", "resume_agent", "resume_agent TEXT")?;
         add_column_if_missing(&binding_tx, "sessions", "resume_cwd", "resume_cwd TEXT")?;
-        add_column_if_missing(&binding_tx, "sessions", "root_hook_ms", "root_hook_ms INTEGER")?;
-        add_column_if_missing(&binding_tx, "sessions", "root_hook_seq", "root_hook_seq INTEGER")?;
+        add_column_if_missing(
+            &binding_tx,
+            "sessions",
+            "root_hook_ms",
+            "root_hook_ms INTEGER",
+        )?;
+        add_column_if_missing(
+            &binding_tx,
+            "sessions",
+            "root_hook_seq",
+            "root_hook_seq INTEGER",
+        )?;
         if !has_resume_binding {
             // Fixed-provider rows retain their existing recorded namespace. A shell
             // can host several providers, so its historical handle stays unbound.
@@ -2540,7 +2565,11 @@ impl Db {
         prepare: impl FnOnce() -> Result<()>,
     ) -> Result<()> {
         self.insert_session_with_startup_metadata(
-            info, title_source, profile, SessionStartupMetadata::default(), prepare,
+            info,
+            title_source,
+            profile,
+            SessionStartupMetadata::default(),
+            prepare,
         )
     }
 
@@ -2626,19 +2655,27 @@ impl Db {
     ) -> Result<Option<crate::launch::SessionLaunchSelections>> {
         let conn = self.conn.lock().expect("db lock");
         let json: Option<String> = conn
-            .query_row("SELECT launch_selections FROM sessions WHERE id = ?1", [id], |row| row.get(0))
+            .query_row(
+                "SELECT launch_selections FROM sessions WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
             .optional()?
             .flatten();
         json.map(|value| {
-            serde_json::from_str(&value)
-                .with_context(|| format!("session {id} launch selections must be typed provider choices"))
+            serde_json::from_str(&value).with_context(|| {
+                format!("session {id} launch selections must be typed provider choices")
+            })
         })
         .transpose()
     }
 
     pub fn check_previous_process_stopped(&self, id: u32) -> Result<()> {
-        let encoded: Option<String> = self.conn.lock().expect("db lock")
-            .query_row("SELECT process_identity FROM sessions WHERE id = ?1", [id], |row| row.get(0))?;
+        let encoded: Option<String> = self.conn.lock().expect("db lock").query_row(
+            "SELECT process_identity FROM sessions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
         if let Some(encoded) = encoded {
             let identity: crate::recovery_process::ProcessIdentity = serde_json::from_str(&encoded)
                 .with_context(|| format!("invalid previous process identity for session {id}"))?;
@@ -2649,7 +2686,11 @@ impl Db {
 
     pub(crate) fn session_has_command_override(&self, id: u32) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
-        Ok(conn.query_row("SELECT command_override FROM sessions WHERE id = ?1", [id], |row| row.get(0))?)
+        Ok(conn.query_row(
+            "SELECT command_override FROM sessions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?)
     }
     pub fn save_ssh_profile(&self, p: &proto::SshProfile) -> Result<()> {
         let (auth_kind, identity_file, passphrase_profile) = match &p.auth {
