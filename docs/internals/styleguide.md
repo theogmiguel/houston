@@ -140,7 +140,8 @@ Only the two genuinely indeterminate states move.
 
 Action glyphs are keyed by verb in `components/verbGlyphs.ts`. Notifications and
 About, file-tree visibility and line wrapping, file-manager reveal, memory measurement
-and overview each have a distinct glyph. Related surfaces use `GLYPH_FOR_VERB` and
+and overview each have a distinct glyph. The verb identifies the action rather than
+the page containing it; use the same mapping across related surfaces. Related surfaces use `GLYPH_FOR_VERB` and
 choose the size through the shared `Icon` role.
 
 ### Provider brand marks, diff and tool colors
@@ -306,7 +307,7 @@ are deliberately uneven.
 
 ## Radius
 
-Six values, in `ui/src/renderer/src/theme.css`:
+Shared radius roles are defined in `ui/src/renderer/src/theme.css`:
 
 | Token | Value | Meaning |
 |---|---|---|
@@ -327,9 +328,13 @@ For cards containing fields, use `--tr-radius-card` with `--space-2` padding and
 `--tr-radius-input` fields. The 1px border plus padding gives a 9px inset; the
 12px outer radius stays within 1px of the 4px inner radius plus that inset.
 Launch slot selects, typed model IDs and checkout readouts share `FIELD_CLS` in
-`selectChrome.ts`: 28px height, canvas fill and UI type size.
+`selectChrome.ts`: `--h-ctl` (28px), canvas fill, `--border`, `--tr-radius-input` and UI
+type size. An override changes the value and its source label; it does not invent a
+separate control recipe.
 
-Match the neighbouring primitive rather than introducing a new step.
+Series keys use `--tr-radius-legend-mark` (2px) to remain square at small sizes.
+Status dots and chart point markers remain circular. Match the neighbouring primitive
+rather than introducing a new radius.
 
 **One source, and a guard that keeps it that way.** A call site names the rung —
 `rounded-[var(--tr-radius-button)]`, `border-radius: var(--tr-radius-md)` — never
@@ -710,6 +715,9 @@ when the page header does not show it.
 
 Use `Field` with a sentence-case label in the `small` text step, weight 600 and
 secondary ink, 6px above a 28px control. A hint is optional; an error replaces it.
+`Field` supplies labelling and feedback; its input or Select supplies the shared control
+chrome. Launch slots reuse that field chrome for model, effort and checkout values,
+including typed custom model IDs.
 Use `Segmented`
 for two to four exclusive options and `Select` for more than four. Use pressed
 chips only for multi-select filters.
@@ -803,27 +811,38 @@ tracking guards (`scripts/check-ellipsis.sh` and `scripts/check-label-tracking.s
 | State | Treatment |
 |---|---|
 | **Focus (keyboard)** | Element-level, applied once for `button`, `select` and `input`: `outline: 2px solid var(--accent); outline-offset: 1px` — so no site can forget it. A site with its own ring still wins by utility order. |
-| **Focus (halo)** | The composite ring used on chips, tiles and segmented options: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
-| **Hover** | `--hover-fill`, an achromatic 5% overlay, for rows and rail items. Bordered buttons use `--border-hover` / `--card-hover`. Ghost buttons use `--hover-fill` with a `--text-primary` label; ghost-danger buttons replace both with a danger tint and danger label. |
+| **Focus (halo)** | Import `FOCUS_HALO_CLS` from `shadowChrome.ts` for chips, tiles and segmented options. Its composite ring is: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
+| **Hover** | `ROW_STATE.rest` adds `--hover-fill` to an otherwise transparent row or rail item. Bordered buttons use `--border-hover` / `--card-hover`. Ghost buttons use `--hover-fill` with a `--text-primary` label; ghost-danger buttons replace both with a danger tint and danger label. |
 | **Disabled** | Element-level `opacity: 0.45; cursor: not-allowed`. Controls repeat `opacity-45` locally where they need it. Disabled controls still carry a reason where one exists. |
-| **Selected** | `--selected-fill`, an achromatic 10% overlay. Full-row fill, no left bar, no accent tint. `Chip` and `IconTile` may use an accent border and `--accent-muted` when selected. |
+| **Selected** | `ROW_STATE.selected` uses `--selected-fill` and primary ink, with the stronger `--selected-hover-fill` on hover. Full-row fill, no left bar or accent tint. Pressable chips use the neutral recipe; an explicitly selected `IconTile` retains its primitive accent treatment. |
 | **Active pane** | `--border-focus` — a plain luminance-step ring, a header lift to `--raised`, and the pane's own name held at `--text-primary` while every other pane's name steps to `--text-secondary`. **No hue** in any of the three: a coloured stroke or ink would clash with whichever terminal palette the agent underneath is using. The pane body — the terminal itself — never changes on focus. |
+
+Shared row treatments come from `components/ui/rowState.ts`, not independently chosen
+fills in feature components. `ROW_STATE` includes rest hover and selected hover; the
+selected row stays distinct while hovered. `ROW_HIGHLIGHT` omits CSS hover for searchable
+lists whose pointer and keyboard share one active index. This prevents the pointer from
+painting a second row while the keyboard highlight remains elsewhere.
 
 ## Motion
 
 Four named curves, `--motion-{fast,menu,panel,scrim}-{t,ease}` in `theme.css`. Nothing
-should reach past them for a new site.
+should introduce a separate duration for new chrome. Pages, cards and ordinary rows
+appear without decorative entrance effects; origin-aware transitions belong to the
+shared overlay and panel primitives.
 
 | Curve | Duration | Easing | For |
 |---|---|---|---|
 | Fast | 120ms | `cubic-bezier(.2, 0, .38, 1)` | Micro-transitions, hovers |
-| Menu | 160ms | `cubic-bezier(.16, 1, .3, 1)` | Menus, dropdowns, popovers |
-| Panel | 240ms | `cubic-bezier(.32, .72, 0, 1)` | Panels sliding from an edge |
+| Menu | 160ms (`--motion-menu-t`) | `cubic-bezier(.16, 1, .3, 1)` | Menu content and popover view changes; floating containers appear immediately |
+| Panel | 240ms (`--motion-panel-t`) | `cubic-bezier(.32, .72, 0, 1)` | Panel transitions using the panel curve |
 | Scrim | 90ms | `linear` | Backdrops — always the fastest thing on screen |
 | Reveal | 400ms | Panel easing | Chrome theme changes revealed from the clicked control with a View Transition snapshot and a WAAPI `clip-path` circle. This is the named exception to rule 1. Changes without a click, under reduced motion, or without runtime `startViewTransition` support are instant. The native browser pane is a separate webview and switches instantly. |
 
-The `--animate-*` names are back-compat aliases; each points at whichever curve its
-site's *purpose* is, not at whatever its old literal happened to compute to.
+The `--animate-*` names provide shared animation settings. Drawer uses
+`--animate-t-panel`, which resolves to `--motion-menu-t` (160ms), with
+`--animate-ease-panel`; `--animate-t-enter` is 200ms. Keep call sites on their shared
+tokens instead of adding a duration. Use the actual animation token when checking a
+primitive's timing; its name alone does not imply the Panel curve.
 
 The rules:
 
@@ -845,9 +864,10 @@ The rules:
    through dedicated `--mascot-*` tokens. These tokens and literal artwork colours
    are confined to mascot primitives; ordinary app controls keep the shared recipes.
 5. **Reduced motion shows a settled frame, not a broken one.** Under
-   `prefers-reduced-motion: reduce`, a pulse jumps to its mid-pulse frame rather
-   than disappearing. One global rule in `base.css` disables animations and
-   transitions, including pseudo-elements, and supplies the settled loading poses.
+   `prefers-reduced-motion: reduce`, loading and status indicators remain visible
+   without movement. One global rule in `base.css` disables animations, transitions
+   and smooth scrolling, including pseudo-elements. Primitives supply visible static
+   states; JavaScript exit handling removes overlays immediately under reduced motion.
 6. **Everything is `motion-safe:`-gated.**
 7. **No animation library.** Interruptible springs, layout tracking and gesture
    physics are exactly what rules 1–4 forbid; there is no Framer/Motion dependency.
