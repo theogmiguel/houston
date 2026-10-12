@@ -3420,3 +3420,39 @@ async fn an_incompatible_shell_handle_is_never_rebound_during_fresh_restore() {
         daemon.close(shell.id).unwrap();
     }
 }
+
+#[tokio::test]
+async fn a_corrupt_newest_candidate_drop_blocks_stale_resume_across_two_boots() {
+    let env = setup().await;
+    let ws = project(&env, "corrupt-recovery");
+    let old_conversation = uuid::Uuid::new_v4().to_string();
+    let old_path = transcript(&env, &old_conversation, b"{}\n");
+    seed_claude(&env, 41, &ws, &ws, Some((&old_conversation, Some(&old_path))));
+    let sampled = houston_core::hook_drop::now_ms() - 2 * houston_core::hook_drop::MAX_AGE_MS;
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    conn.execute("UPDATE sessions SET created_at = ?1 WHERE id = 41", [sampled / 1000 - 1]).unwrap();
+    let newest = uuid::Uuid::new_v4().to_string();
+    let newest_path = transcript(&env, &newest, b"{}\n");
+    let drop = HookDrop {
+        session: 41, event: "Stop".into(), session_id: Some(newest),
+        transcript_path: Some(newest_path), cwd: Some(ws.display().to_string()),
+        ..HookDrop::default()
+    };
+    let pending = houston_core::hook_drop::write_drop(&houston_core::hook_drop::drop_dir(env.state.path()), &drop, sampled).unwrap();
+    // A valid managed name with a damaged payload models unreadable durable evidence.
+    std::fs::write(&pending, b"{ damaged newest root hook").unwrap();
+    for round in 1..=2 {
+        clean_shutdown(&env);
+        let daemon = boot(&env);
+        let husk = daemon.list().into_iter().find(|info| info.id == 41).unwrap();
+        assert_eq!(husk.state, proto::SessionState::Interrupted, "boot {round}");
+        assert_eq!(husk.restore_deferred, Some(proto::RestoreReason::SpawnFailed));
+        assert!(!husk.resumable);
+        assert!(husk.resume_notice.as_deref().unwrap().contains("read or validate"));
+        assert_eq!(std::fs::read_dir(env.argv.path()).unwrap().count(), 0, "boot {round}: stale handle must not launch");
+        assert_eq!(handle_in(&env, 41), Some((old_conversation.clone(), Some(old_path.clone()))));
+        assert!(pending.exists(), "boot {round}: seed TTL must not erase damaged evidence");
+        let refusal = daemon.respawn(41, false, None, None, false).unwrap_err();
+        assert!(refusal.to_string().contains("metadata recovery remains incomplete"));
+    }
+}

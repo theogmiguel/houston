@@ -3584,8 +3584,10 @@ impl Daemon {
         if candidates.is_empty() { return Ok(()); }
         for dir in self.hook_drop_dirs() {
             let mut failure = None;
+            let mut state = crate::hook_drop::DropDirState::new();
+            state.recover_sessions(candidates.iter().copied());
             let out = crate::hook_drop::run_pass_with_name_io(
-                &dir, &mut crate::hook_drop::DropDirState::new(),
+                &dir, &mut state,
                 crate::hook_drop::now_ms(), crate::hook_drop::Pass::RecoveryMetadata,
                 |drop, _, order| {
                     if !candidates.contains(&drop.session) {
@@ -3607,6 +3609,7 @@ impl Daemon {
             );
             if let Some(error) = failure { return Err(error.context("recovering root hook metadata before restore")); }
             anyhow::ensure!(out.listed_ok, "hook metadata recovery could not fully list {}; restore refused", dir.display());
+            anyhow::ensure!(!out.metadata_failed, "hook metadata recovery could not read or validate all candidate drops in {}; resume is deferred until every relevant drop is readable and valid", dir.display());
         }
         let mut dead = self.dead.lock().expect("dead lock");
         for info in self.db.list_interrupted()? {

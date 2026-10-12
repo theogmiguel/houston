@@ -208,3 +208,66 @@ fn blocked_recovery_metadata_survives_the_ordinary_seed_age_limit() {
     assert_eq!(out.kept, 1);
     assert!(path.exists());
 }
+
+#[test]
+fn invalid_candidate_drops_make_metadata_recovery_incomplete() {
+    for case in ["malformed", "future-schema", "session-mismatch", "oversized", "future-clock", "nonregular"] {
+        let fixture = Fixture::new("claude", None);
+        let dir = hook_drop::drop_dir(fixture.state.path());
+        let sampled = if case == "future-clock" { fixture.now + 10_000 } else { fixture.now };
+        let path = hook_drop::write_drop(&dir, &fixture.drop("Stop", "newest-root"), sampled).unwrap();
+        match case {
+            "malformed" => std::fs::write(&path, b"{ truncated hook payload").unwrap(),
+            "future-schema" => {
+                let mut drop = fixture.drop("Stop", "newest-root");
+                drop.v = hook_drop::DROP_V + 1;
+                std::fs::write(&path, serde_json::to_vec(&drop).unwrap()).unwrap();
+            }
+            "session-mismatch" => {
+                let mut drop = fixture.drop("Stop", "newest-root");
+                drop.session = 88;
+                std::fs::write(&path, serde_json::to_vec(&drop).unwrap()).unwrap();
+            }
+            "oversized" => std::fs::write(&path, vec![b' '; 1024 * 1024 + 1]).unwrap(),
+            "nonregular" => {
+                std::fs::remove_file(&path).unwrap();
+                std::fs::create_dir(&path).unwrap();
+            }
+            "future-clock" => {}
+            _ => unreachable!(),
+        }
+        let mut state = hook_drop::DropDirState::new();
+        state.recover_sessions([7]);
+        let out = hook_drop::run_pass(&dir, &mut state, fixture.now + 1, hook_drop::Pass::RecoveryMetadata, |_| panic!("{case}: invalid candidate applied"));
+        assert!(out.listed_ok, "{case}: directory listing itself was complete");
+        assert!(out.metadata_failed, "{case}: candidate evidence was not completely validated");
+        assert_eq!(out.kept, 1, "{case}");
+        assert!(path.exists(), "{case}: retain evidence for recovery retry");
+    }
+}
+
+#[test]
+fn unrelated_corrupt_drops_and_no_session_verdicts_do_not_block_recovery() {
+    let fixture = Fixture::new("claude", None);
+    let dir = hook_drop::drop_dir(fixture.state.path());
+    let candidate = hook_drop::write_drop(&dir, &fixture.drop("Stop", "root-seven"), fixture.now).unwrap();
+    let mut unrelated = fixture.drop("Stop", "root-other");
+    unrelated.session = 88;
+    let foreign = hook_drop::write_drop(&dir, &unrelated, fixture.now + 1).unwrap();
+    std::fs::write(&foreign, b"{ malformed unrelated evidence").unwrap();
+    let mut state = hook_drop::DropDirState::new();
+    state.recover_sessions([7]);
+    let out = hook_drop::run_pass(&dir, &mut state, fixture.now + 2, hook_drop::Pass::RecoveryMetadata, |drop| {
+        assert_eq!(drop.session, 7);
+        hook_drop::DropVerdict::Applied
+    });
+    assert!(!out.metadata_failed);
+    assert_eq!((out.applied, out.kept), (1, 1));
+    assert!(!candidate.exists());
+    assert!(foreign.exists());
+    std::fs::remove_file(&foreign).unwrap();
+    hook_drop::write_drop(&dir, &unrelated, fixture.now + 2).unwrap();
+    let out = hook_drop::run_pass(&dir, &mut hook_drop::DropDirState::new(), fixture.now + 3, hook_drop::Pass::RecoveryMetadata, |_| hook_drop::DropVerdict::NoSession);
+    assert!(!out.metadata_failed, "NoSession is unrelated, not a failed metadata write");
+    assert_eq!(out.kept, 1);
+}

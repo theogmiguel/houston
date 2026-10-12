@@ -409,6 +409,7 @@ pub struct DropDirState {
     warned: HashSet<OsString>,
     applied: HashSet<OsString>,
     protected_sessions: HashSet<u32>,
+    recovery_candidates: Option<HashSet<u32>>,
 }
 
 impl DropDirState {
@@ -417,6 +418,9 @@ impl DropDirState {
     }
     pub fn protect_sessions(&mut self, sessions: impl IntoIterator<Item = u32>) {
         self.protected_sessions = sessions.into_iter().collect();
+    }
+    pub fn recover_sessions(&mut self, sessions: impl IntoIterator<Item = u32>) {
+        self.recovery_candidates = Some(sessions.into_iter().collect());
     }
     pub fn warned_len(&self) -> usize {
         self.warned.len()
@@ -429,6 +433,7 @@ pub struct PassOutcome {
     pub kept: usize,
     pub collected: usize,
     pub listed_ok: bool,
+    pub metadata_failed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -553,6 +558,13 @@ pub fn run_pass_with_name_io(
     files.sort_by_key(|(n, _, _)| (n.ms, n.seq, n.session));
 
     for (parsed, path, name) in files {
+        let recovering = pass == Pass::RecoveryMetadata;
+        if recovering && state.recovery_candidates.as_ref()
+            .is_some_and(|sessions| !sessions.contains(&parsed.session))
+        {
+            out.kept += 1;
+            continue;
+        }
         if pass != Pass::RecoveryMetadata && state.protected_sessions.contains(&parsed.session) {
             out.kept += 1;
             continue;
@@ -587,6 +599,7 @@ pub fn run_pass_with_name_io(
                     path.display()
                 );
             });
+            out.metadata_failed |= recovering;
             out.kept += 1;
             continue;
         }
@@ -597,12 +610,14 @@ pub fn run_pass_with_name_io(
                 Ok(metadata) => metadata,
                 Err(error) => {
                     tracing::warn!("reading recovery drop metadata {}: {error}", path.display());
+                    out.metadata_failed |= recovering;
                     out.kept += 1;
                     continue;
                 }
             };
             if !metadata.is_file() || metadata.len() > 1024 * 1024 || parsed.ms > now_ms {
                 tracing::warn!("hook metadata recovery refused {}: expected a regular file of at most 1048576 bytes (actual {}) sampled by {now_ms} (actual {})", path.display(), metadata.len(), parsed.ms);
+                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -626,6 +641,7 @@ pub fn run_pass_with_name_io(
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!("hook drop pass: reading {}: {e}", path.display());
                 });
+                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -641,6 +657,7 @@ pub fn run_pass_with_name_io(
                         d.v
                     );
                 });
+                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -648,6 +665,7 @@ pub fn run_pass_with_name_io(
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!("hook drop pass: {} names session {} in its payload (expected {} from filename); kept, not applied", path.display(), d.session, parsed.session);
                 });
+                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -655,6 +673,7 @@ pub fn run_pass_with_name_io(
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!("hook drop pass: parsing {}: {e}", path.display());
                 });
+                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -678,7 +697,11 @@ pub fn run_pass_with_name_io(
                 }
                 out.applied += 1;
             }
-            DropVerdict::NoSession | DropVerdict::Retry => out.kept += 1,
+            DropVerdict::NoSession => out.kept += 1,
+            DropVerdict::Retry => {
+                out.metadata_failed |= recovering;
+                out.kept += 1;
+            }
         }
     }
     out
