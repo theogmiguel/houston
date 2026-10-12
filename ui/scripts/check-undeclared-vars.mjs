@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Fails on any var(--x) in renderer source whose --x is never declared. An undeclared custom
 // property without a fallback invalidates its declaration at computed-value time.
 
