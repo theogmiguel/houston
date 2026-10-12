@@ -100,7 +100,7 @@ describe('FirstRun', () => {
       if (label === 'Add workspace') expect(onAdd).toHaveBeenCalledOnce()
       else {
         expect(isSettingsOpen()).toBe(true)
-        expect(settingsSectionLabel()).toBe('Mascot')
+        expect(settingsSectionLabel()).toBe('Appearance')
         act(() => root.unmount())
         root = createRoot(host)
         render(props())

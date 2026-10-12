@@ -97,7 +97,8 @@ describe('the rail draws no container lines on its controls', () => {
     const foot = container.querySelector('.railfoot button')
     expect(foot).not.toBeNull()
     if (foot) {
-      expect(classes(foot)).not.toContain('btn')
+      expect(classes(foot)).toContain('bg-transparent')
+      expect(classes(foot)).not.toContain('bg-[var(--card-bg)]')
       expect(resets(foot)).toBe(true)
     }
   })
