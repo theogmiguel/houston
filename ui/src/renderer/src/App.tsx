@@ -1,4 +1,4 @@
-import { agentSettingsPages, useAgentSettingsReads } from './components/settings/agentSettingsPages'
+import { useAgentSettingsReads } from './useAgentSettingsReads'
 import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
@@ -121,8 +121,7 @@ import { MANAGE_TAGS_EVENT, Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
 import { focusedSkillAgent, paneSkillAgent, skillInvocationFor, skillRunBlocker } from "./houston/skillSurface";
 import { setSettingsSection, settingsSectionLabel, shouldIgnoreInputKey, useSettingsSection } from "./settingsNav";
-import { RoutinesSurface } from "./components/nav/RoutinesSurface";
-import { useHarnessActions } from "./components/nav/HarnessView";
+import { useHarnessActions } from "./components/nav/useHarnessActions";
 import { useHarnessSignals } from "./houston/useHarnessSignals";
 import type { Routine, RoutineRefusal, RoutineRun } from "./houston/routineTypes";
 import type { RoutineEngineRefusal } from "./houston/generated/RoutineEngineRefusal";
@@ -367,6 +366,9 @@ const SettingsView = lazy(() =>
   import("./components/SettingsView").then((m) => ({
     default: m.SettingsView,
   })),
+);
+const RoutinesSurface = lazy(() =>
+  import("./components/nav/RoutinesSurface").then((m) => ({ default: m.RoutinesSurface })),
 );
 const UsageSection = lazy(() =>
   import("./components/UsageSection").then((m) => ({ default: m.UsageSection })),
@@ -4053,6 +4055,7 @@ export function App(): React.JSX.Element {
                       />
                     </Suspense>
                   ) : railView === "routines" ? (
+                    <Suspense fallback={<div className="flex-1" />}>
                     <RoutinesSurface
                       client={readyClient(conn)}
                       routines={routines}
@@ -4096,6 +4099,7 @@ export function App(): React.JSX.Element {
                       }}
                       now={Date.now()}
                     />
+                    </Suspense>
                   ) : railView === "usage" ? (
                     <Suspense fallback={<div className="flex-1" />}>
                       <UsageSection
@@ -4114,11 +4118,11 @@ export function App(): React.JSX.Element {
                     <SettingsView
                       agentAttention={agentAttention}
                       onMcpTest={(name) => readyClient(conn)?.mcpTest(name)}
-                      agentPages={agentSettingsPages({
+                      agentPageInputs={{
                         client: readyClient(conn), mcp, mcpCheckedAt,
                         skills: { workspace: selectedWs === 'all' ? null : selectedWs, focusedPaneName: activeId === null ? null : sessions.get(activeId)?.title ?? null, focusedPaneAgent: focusedSkillAgent(sessions, activeId), runBlockedReason: skillRunBlocker(sessions, activeId, selectedWs, conn.kind), onRunSkill: runSkill, tools: skills, pushes: skillPushes, autoPushEnabled: skillAutoPush, checkedAt: skillsCheckedAt },
                         review: { client: harness.client, workspaces: workspaces.map((w) => ({ id: w.path, name: w.name })), selectedWorkspace: selectedWs, routinesRunning, onOpenFile: harness.openFile, onReveal: harness.reveal, attentionRows: harnessOverview }
-                      })}
+                      }}
                       daemonClient={scmProps.client}
                       chromeTheme={chromeTheme}
                       onChromeTheme={(theme, origin) =>

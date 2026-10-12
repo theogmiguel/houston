@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { renderHook } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
-import { useAgentSettingsReads } from './agentSettingsPages'
-import type { HoustonClient } from '../../houston/client'
-import type { SettingsSectionId } from '../../settingsSections'
+import { useAgentSettingsReads } from './useAgentSettingsReads'
+import type { HoustonClient } from './houston/client'
+import type { SettingsSectionId } from './settingsSections'
 
 it('reads each configuration only on entering its Settings owner or Overview, without timers', () => {
   const agentHooks = vi.fn(), mcpState = vi.fn(), skillSync = vi.fn()

@@ -46,6 +46,7 @@ import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../houston/generated/AcpAgentInfo'
 import { TERMINAL_LINE_HEIGHT_DEFAULT, TERMINAL_SCROLLBACK_DEFAULT } from '../usePreferences'
 import { SettingsPageSurface } from './ui/SettingsPageSurface'
+import { agentSettingsPages, type AgentSettingsPagesInput } from './settings/agentSettingsPages'
 
 export interface AgentProfileState {
   profiles: AgentProfile[]
@@ -70,6 +71,7 @@ export interface McpStateView {
 
 export interface Props {
   agentPages?: Partial<Record<AgentSetupSection, ReactNode>>
+  agentPageInputs?: AgentSettingsPagesInput
   agentReviewStates?: import('../houston/useHarness').HarnessState[]
   agentAttention?: AgentAttention
   onMcpTest?: (name: string) => void
@@ -464,6 +466,11 @@ function settingsPageWidth(section: SettingsSectionId): PageWidth {
   return SETTINGS_SECTIONS.find((entry) => entry.id === section)?.width === 'wide' ? 'wide' : 'settings'
 }
 
+function agentPageFor(props: Props, section: AgentSetupSection): ReactNode {
+  const pages: Partial<Record<AgentSetupSection, ReactNode>> | undefined = props.agentPages ?? (props.agentPageInputs && agentSettingsPages(props.agentPageInputs))
+  return pages?.[section]
+}
+
 export function SettingsView(props: Props): React.JSX.Element {
   const section = useSettingsSection()
   const terminalLineHeight = props.terminalLineHeight ?? TERMINAL_LINE_HEIGHT_DEFAULT
@@ -494,7 +501,7 @@ export function SettingsView(props: Props): React.JSX.Element {
     <SettingsPageSurface ref={columnRef} className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       {}
       <PageFrame width={settingsPageWidth(section)} scroll={false} padding="settings">
-        {section === 'agents-overview' ? <AgentsOverview reviewStates={props.agentReviewStates} client={props.daemonClient ?? null} workspace={props.historyWorkspace} attention={props.agentAttention ?? agentAttentionFor({ agentHooks: props.agentHooks, skills: null, checks: null, reviews: [] })} onRepair={props.onAgentHooksSet} onCheck={props.onMcpTest ?? NOOP} /> : props.agentPages?.[section as AgentSetupSection] ?? <SectionDispatch
+        {section === 'agents-overview' ? <AgentsOverview reviewStates={props.agentReviewStates} client={props.daemonClient ?? null} workspace={props.historyWorkspace} attention={props.agentAttention ?? agentAttentionFor({ agentHooks: props.agentHooks, skills: null, checks: null, reviews: [] })} onRepair={props.onAgentHooksSet} onCheck={props.onMcpTest ?? NOOP} /> : agentPageFor(props, section as AgentSetupSection) ?? <SectionDispatch
           {...props}
           section={section}
           terminalLineHeight={terminalLineHeight}
