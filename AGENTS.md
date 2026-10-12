@@ -1,7 +1,7 @@
 # Houston contributor instructions
 
-Houston is a local-first, Linux-first desktop application for CLI coding agents. A Tauri
-client connects to a detached Rust daemon that owns real PTYs in project directories.
+Houston is a local-first desktop application for CLI coding agents on Linux and Windows.
+A Tauri client connects to a detached Rust daemon that owns real PTYs in project directories.
 The renderer presents sessions as terminal panes. Closing the application detaches the
 client; the daemon and its sessions continue running.
 
@@ -55,7 +55,8 @@ Use the [glossary](docs/internals/glossary.md) consistently:
    independent of the checkout; preserve `install-desktop.sh`'s repository-path refusal.
 3. **One daemon per state directory.** Preserve the advisory `daemon.lock`: competing
    daemons would overwrite discovery state and share a database. Restart development
-   through `scripts/dev.sh --fresh`, which refuses to restart its own hosting channel.
+   through `scripts/dev.sh --fresh` on Linux or `scripts/dev.ps1 --fresh` on Windows;
+   both refuse to restart their own hosting channel.
 4. **Never touch the host keyring.** Do not run `gnome-keyring-daemon` (least of all
    `--unlock`) on the host: it re-encrypts the user's real login keyring and locks them
    out. Tests that need a Secret Service run through `scripts/with-test-keyring.sh`.
@@ -79,7 +80,8 @@ Before completing a change, identify which of these checks apply:
 - **State transitions:** provide reversal and visibility: spawn/kill, pin/unpin, and
   settings with a visible current value. Errors for limits name the limit, actual value
   and requested operation.
-- **Platforms:** Linux is the primary platform; Windows uses ConPTY and NSIS. Every
+- **Platforms:** Linux and Windows are supported release platforms. Linux uses Unix PTYs
+  and WebKitGTK; Windows uses ConPTY, WebView2 and an NSIS installer. Every
   platform-specific behaviour needs an equivalent or an explicit refusal elsewhere.
   WSL environments are Windows-only and refuse by name elsewhere; in-distro commands use
   `wsl.exe --exec`, never `--`.
@@ -90,10 +92,12 @@ Before completing a change, identify which of these checks apply:
 
 The [development runbook](docs/operations/development.md) contains exact commands.
 
-- `scripts/dev.sh` builds the renderer and debug app on the dev channel. There is no HMR;
-  rebuild after changes. Live-test daemon changes with `scripts/dev.sh --fresh`.
-- Run heavy builds under `scripts/oom-shield.sh`, with `nice -n 19` and `-j 3`.
-  Never run concurrent Cargo workloads. Run `perf_smoke` at normal priority on an idle
+- `scripts/dev.sh` (Linux) and `scripts/dev.ps1` (Windows) build the renderer and debug app
+  on the dev channel. There is no HMR; rebuild after changes. Live-test daemon changes with
+  the platform's development script and `--fresh`.
+- On Linux, run heavy builds under `scripts/oom-shield.sh`, with `nice -n 19` and `-j 3`.
+  On Windows, limit Cargo to three jobs. Never run concurrent Cargo workloads.
+  Run `perf_smoke` at normal priority on an idle
   machine; results obtained under load do not establish a performance regression.
 - Agent worktrees under `.houston/worktrees/` build the dev profile only, never
   `--release`. Create one with `pane_spawn`'s `worktree` argument (`hs-pane spawn
@@ -111,8 +115,9 @@ The [development runbook](docs/operations/development.md) contains exact command
   states the system can actually produce.
 - Diagnose failures using the discriminator appropriate to the failure mode in
   [testing](docs/internals/testing.md); a standalone rerun is not sufficient for every case.
-- Push and PR CI runs `safety-checks`, `renderer-checks`, `core-checks` and
-  `licence-inventory`. Contributors must also run the local integration suites.
+- Push and PR CI runs `safety-checks`, `renderer-checks`, `core-checks`,
+  `windows-renderer-checks`, `windows-checks` and `licence-inventory`. Contributors must
+  also run the local integration suites.
 
 ## Pull requests and releases
 

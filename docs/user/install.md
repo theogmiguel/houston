@@ -2,13 +2,13 @@
 
 ## Before you start
 
-Houston is Linux-first, and Windows is also built and shipped:
+Houston ships official desktop packages for Linux and Windows:
 
 | System | Published artifacts | Notes |
 |---|---|---|
 | Linux, x86_64 | `.deb` and `.AppImage` | needs glibc 2.35 or newer |
 | Linux, ARM64 | `.deb` and `.AppImage` | needs glibc 2.35 or newer |
-| Windows, x86_64 | NSIS installer | not code-signed; SmartScreen warns |
+| Windows, x86_64 | NSIS `.exe` installer | Windows 10 or 11; not Authenticode-signed |
 | Windows, ARM64 | none | no installer is published |
 | macOS | none | not built |
 
@@ -25,10 +25,20 @@ Houston hosts these CLIs, it does not provide accounts for them. See
 
 ## Installing the desktop app
 
-Download a release from the project's GitHub releases page. Each tagged release ships:
+Download the current release from
+[GitHub Releases](https://github.com/theogmiguel/houston/releases). Current releases ship:
 
 - **Linux**: an `.AppImage` and a `.deb`.
 - **Windows**: an NSIS installer (`.exe`).
+
+On Linux, choose the package matching your architecture. For an AppImage, make the file
+executable and launch it. Install a `.deb` with your package manager. On Windows, run the
+`Houston_<version>_x64-setup.exe` installer and launch Houston from the Start menu.
+SmartScreen may warn because the installer has no Authenticode signature; its updater
+signature verifies Houston updates and does not replace Windows code signing.
+
+Windows installers have been published since v0.14.0; older releases contain Linux
+packages only.
 
 There is no AUR package and no winget entry — install one of the artifacts above directly.
 
@@ -40,7 +50,25 @@ changed.
 
 ## Installing from source
 
-See `docs/operations/development.md` for building and running Houston from the repository.
+See the [development runbook](../operations/development.md) for building and running Houston
+from the repository on Linux or Windows.
+
+## Platform differences
+
+Both platforms support persistent terminal panes, agent orchestration, tasks, routines,
+Git and pull request tools, files, the editor and manual browser navigation. Some features
+have narrower support:
+
+| Feature | Linux | Windows |
+|---|---|---|
+| [Updates with live sessions](updating.md) | Keep sessions running when daemon handoff is available | Stop sessions before installing |
+| [Native desktop notifications](notifications.md) | Supported by the desktop notification service | Unavailable; in-app notices and taskbar counts remain available |
+| [Dictation](voice.md) | Local Whisper or Groq | Groq; the local engine is unavailable |
+| [Browser element picking and agent DOM actions](files-editor-browser.md) | Supported with consent | Unavailable; navigation, history and normal reload work |
+| [WSL environments](wsl.md) | Unavailable | Experimental; x86_64 WSL 2 distros with glibc 2.35 or newer |
+
+Provider-specific hook and restore limits are described below and in
+[Agent status](agent-status.md) and [Panes and grids](panes-and-grids.md).
 
 ## Providers
 
@@ -66,7 +94,7 @@ Houston writes managed lifecycle hook entries into `~/.claude/settings.json`, or
 `settings.json` in `CLAUDE_CONFIG_DIR` and Houston account profile directories. Each
 command carries a channel-specific `--houston-managed` marker and exits silently when
 `TR_SESSION` is empty. Claude launched from any directory inside a Houston pane can
-report status. Turn the switch off in Settings → Agent status → Claude to remove
+report status. Turn the switch off in Settings ▸ Agents ▸ Claude to remove
 Houston's entries while preserving your hooks and other settings. Migration removes
 Houston's old entries from workspace `.claude/settings.local.json` files. Installation
 is unsupported on Windows because these commands require POSIX `sh`.
@@ -166,7 +194,7 @@ and Houston sends nothing to Z.ai. The official command has no update check of i
 Houston panes set `ZCODE_DISABLE_UPDATE_CHECK=1`, which turns off the one in the
 `zcode-app-cli` package.
 
-Turning the hook toggle on (Settings ▸ Agent setup ▸ ZCode) edits ZCode's settings file.
+Turning the hook toggle on (Settings ▸ Agents ▸ ZCode) edits ZCode's settings file.
 The `zcode-app-cli` package reads `~/.zcode/cli/setting.json`; the upstream command reads
 `~/.zcode/cli/config.json`. Houston edits each of the two that exists, and creates
 `config.json` when neither does (the package copies it into `setting.json` on its first
