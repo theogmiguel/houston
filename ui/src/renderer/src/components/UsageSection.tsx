@@ -353,7 +353,9 @@ export function UsageSection({
 
       {}
       <UsageBody stale={stale}>
-        {noUsage ? (
+        {!summary ? (
+          <Text as="p" role="status" size="ui" tone="secondary">{error ? 'No usage result available.' : 'Reading transcripts…'}</Text>
+        ) : noUsage ? (
           <EmptyState
             headline="No usage recorded yet"
             description="Houston hasn't scanned any Claude Code or Codex sessions in this window."

@@ -85,6 +85,14 @@ const text = (): string => host.textContent ?? ''
 const q = (sel: string): HTMLElement | null => host.querySelector(sel)
 
 describe('Usage page', () => {
+  it('shows a reading state instead of zero totals before the first summary', () => {
+    render({ summary: null, loading: true })
+    expect(text()).toContain('Reading transcripts…')
+    expect(q('[data-testid="usage-headline"]')).toBeNull()
+    expect(q('[data-testid="usage-totals"]')).toBeNull()
+    expect(text()).not.toContain('$0.00')
+  })
+
   it('requests both summary windows and includes the selected workspace', () => {
     const onRequest = vi.fn()
     const onActivityRequest = vi.fn()
