@@ -795,7 +795,7 @@ export function App(): React.JSX.Element {
   const [voiceDevices, setVoiceDevices] = useState<VoiceDevice[]>([]);
   const [mcp, setMcp] = useState<McpStateView | null>(null);
   const [skills, setSkills] = useState<SkillToolState[] | null>(null);
-  const agentAttention = useAgentAttention({ agentHooks, skills, checks: mcp?.checks ?? null, reviews: harnessOverview });
+  const agentAttention = useAgentAttention({ agentHooks, skills, checks: mcp?.checks ?? null, serverCount: mcp?.source.length, reviews: harnessOverview });
   const [skillPushes, setSkillPushes] = useState<SkillPushRecord[]>([]);
   const [skillAutoPush, setSkillAutoPush] = useState(false);
   const [agentProfiles, setAgentProfiles] = useState<AgentProfileState | null>(

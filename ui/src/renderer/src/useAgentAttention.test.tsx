@@ -8,6 +8,7 @@ const empty: AgentAttentionInput = { agentHooks: null, skills: null, checks: nul
 const hook: AgentHookState = { provider: 'opencode', path: '/hooks', scope: 'global', enabled: true, installed: false, error: null, present: true, version: '1', trust: null }
 describe('agent setup attention', () => {
   it('keeps unknown sources distinct from checked healthy sources', () => {
+    expect(agentAttentionFor({ ...empty, serverCount: 2, checks: [] }).sources.serverCount).toBe(2)
     expect(agentAttentionFor(empty)).toMatchObject({ total: 0, known: { clis: false, skills: false, mcp: false } })
     expect(agentAttentionFor({ ...empty, agentHooks: [], skills: [], checks: [] }).known).toEqual({ clis: true, skills: true, mcp: true })
   })

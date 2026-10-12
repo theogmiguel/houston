@@ -20,6 +20,7 @@ export interface AgentAttentionIssue {
 export interface AgentAttentionInput {
   agentHooks: readonly AgentHookState[] | null
   skills: SkillToolState[] | null
+  serverCount?: number
   checks: readonly [string, McpConnectionCheck][] | null
   reviews: readonly HarnessAttention[]
 }
@@ -31,7 +32,7 @@ export interface AgentAttention {
   known: { clis: boolean; skills: boolean; mcp: boolean }
 }
 
-export function agentAttentionFor({ agentHooks, skills, checks, reviews }: AgentAttentionInput): AgentAttention {
+export function agentAttentionFor({ agentHooks, skills, checks, reviews, serverCount }: AgentAttentionInput): AgentAttention {
   const issues: AgentAttentionIssue[] = []
   const providers = new Set<AgentKind>()
   for (const hook of agentHooks ?? []) {
@@ -59,9 +60,9 @@ export function agentAttentionFor({ agentHooks, skills, checks, reviews }: Agent
     counts['agents-review'] += review.attention
     issues.push({ key: `review:${review.workspace}`, section: 'agents-review', title: `${review.attention} review ${review.attention === 1 ? 'finding needs' : 'findings need'} you`, detail: review.workspace, action: 'open', workspace: review.workspace })
   }
-  return { sources: { installedClis: new Set((agentHooks ?? []).filter((hook) => hook.present).map((hook) => hook.provider)).size, skillCount: buildSkillRows(skills ?? []).length, serverCount: new Set((checks ?? []).map(([name]) => name)).size }, total: Object.values(counts).reduce((sum, count) => sum + count, 0), counts, issues, known: { clis: agentHooks !== null, skills: skills !== null, mcp: checks !== null } }
+  return { sources: { installedClis: new Set((agentHooks ?? []).filter((hook) => hook.present).map((hook) => hook.provider)).size, skillCount: buildSkillRows(skills ?? []).length, serverCount: serverCount ?? new Set((checks ?? []).map(([name]) => name)).size }, total: Object.values(counts).reduce((sum, count) => sum + count, 0), counts, issues, known: { clis: agentHooks !== null, skills: skills !== null, mcp: checks !== null } }
 }
 
 export function useAgentAttention(input: AgentAttentionInput): AgentAttention {
-  return useMemo(() => agentAttentionFor(input), [input.agentHooks, input.skills, input.checks, input.reviews])
+  return useMemo(() => agentAttentionFor(input), [input.agentHooks, input.skills, input.checks, input.reviews, input.serverCount])
 }
