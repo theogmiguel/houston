@@ -93,20 +93,28 @@ describe('Usage page', () => {
     expect(text()).not.toContain('$0.00')
   })
 
-  it('requests both summary windows and includes the selected workspace', () => {
+  it('requests the year view after each completed scan, including Refresh', () => {
     const onRequest = vi.fn()
     const onActivityRequest = vi.fn()
-    render({ initialWorkspace: '/proj', onRequest, onActivityRequest })
+    const first = summary()
+    render({ summary: null, loading: true, initialWorkspace: '/proj', onRequest, onActivityRequest })
     expect(onRequest).toHaveBeenCalledTimes(1)
     expect(onRequest.mock.calls[0][3]).toBe('/proj')
+    expect(onActivityRequest).not.toHaveBeenCalled()
+    render({ summary: first, initialWorkspace: '/proj', onRequest, onActivityRequest })
     expect(onActivityRequest).toHaveBeenCalledTimes(1)
     expect(onActivityRequest.mock.calls[0][2]).toBe('/proj')
     const [since, until] = onActivityRequest.mock.calls[0] as [number, number]
-    const first = new Date(since)
-    expect([first.getHours(), first.getMinutes(), first.getSeconds(), first.getMilliseconds()]).toEqual([0, 0, 0, 0])
+    const start = new Date(since)
+    expect([start.getHours(), start.getMinutes(), start.getSeconds(), start.getMilliseconds()]).toEqual([0, 0, 0, 0])
     const last = new Date(until - 1)
-    const calendarDays = Math.round((new Date(last.getFullYear(), last.getMonth(), last.getDate()).getTime() - since) / DAY) + 1
-    expect(calendarDays).toBe(365)
+    expect(Math.round((new Date(last.getFullYear(), last.getMonth(), last.getDate()).getTime() - since) / DAY) + 1).toBe(365)
+    act(() => q('[data-testid="usage-refresh"]')?.click())
+    expect(onRequest).toHaveBeenCalledTimes(2)
+    expect(onRequest.mock.calls[1][2]).toBe(true)
+    expect(onActivityRequest).toHaveBeenCalledTimes(1)
+    render({ summary: summary({ read_at_ms: first.read_at_ms + 1 }), initialWorkspace: '/proj', onRequest, onActivityRequest })
+    expect(onActivityRequest).toHaveBeenCalledTimes(2)
   })
 
   it('shows the API estimate and a tooltip with the full-rate caveat', () => {

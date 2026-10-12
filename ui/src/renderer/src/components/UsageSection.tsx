@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { IconChartArea, IconInfo, IconRefresh } from './icons'
 import { EmptyState } from './ui/ActionEmptyState'
@@ -242,6 +242,8 @@ export function UsageSection({
   onActivityRequest?: (sinceMs: number, untilMs: number, workspace: string | null) => void
   onRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean, workspace: string | null) => void
 }): React.JSX.Element {
+  const scanStartSummary = useRef(summary)
+  const scanWorkspace = useRef<string | null>(null)
   const [windowId, setWindowId] = useState<UsageWindowId>('7d')
   const [selectedWorkspace, setSelectedWorkspace] = useState(initialWorkspace)
   const [metric, setMetric] = useState<'cost' | 'tokens'>('cost')
@@ -254,6 +256,8 @@ export function UsageSection({
 
   useEffect(() => {
     const { sinceMs, untilMs } = windowRange(windowDef, Date.now())
+    scanStartSummary.current = summary
+    scanWorkspace.current = selectedWorkspace === 'all' ? null : selectedWorkspace
     setAsked({ sinceMs, untilMs })
     setSelectedDay(null)
     onRequest(sinceMs, untilMs, false, selectedWorkspace === 'all' ? null : selectedWorkspace)
@@ -261,10 +265,11 @@ export function UsageSection({
   }, [windowId, selectedWorkspace])
 
   useEffect(() => {
+    if (!summary || summary === scanStartSummary.current) return
     const now = Date.now()
-    onActivityRequest(calendarStartMs(now), now, selectedWorkspace === 'all' ? null : selectedWorkspace)
+    onActivityRequest(calendarStartMs(now), now, scanWorkspace.current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedWorkspace])
+  }, [summary])
 
   const buckets = summary?.buckets ?? []
   const points = useMemo<SeriesPoint[]>(
@@ -307,6 +312,8 @@ export function UsageSection({
 
   const refresh = (): void => {
     const { sinceMs, untilMs } = windowRange(windowDef, Date.now())
+    scanStartSummary.current = summary
+    scanWorkspace.current = selectedWorkspace === 'all' ? null : selectedWorkspace
     setAsked({ sinceMs, untilMs })
     onRequest(sinceMs, untilMs, true, selectedWorkspace === 'all' ? null : selectedWorkspace)
   }
