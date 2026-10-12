@@ -28,7 +28,7 @@ export function UsageChartHeading({ children }: { children: ReactNode }): React.
 }
 
 export function UsageBody({ stale, children }: { stale: boolean; children: ReactNode }): React.JSX.Element {
-  return <div data-testid="usage-body" aria-busy={stale} style={stale ? { opacity: 'var(--opacity-usage-stale)' } : undefined} className={`grid ${stale ? 'transition-opacity duration-150' : ''}`}>{children}</div>
+  return <div data-testid="usage-body" aria-busy={stale} style={stale ? { opacity: 'var(--opacity-usage-stale)' } : undefined} className={`grid gap-[var(--space-5)] ${stale ? 'transition-opacity duration-150' : ''}`}>{children}</div>
 }
 
 export function UsageError({ children }: { children: ReactNode }): React.JSX.Element {
@@ -39,12 +39,12 @@ export function UsageProviderList({ children }: { children: ReactNode }): React.
   return <div className="flex flex-col gap-[var(--space-3)]">{children}</div>
 }
 
-export function UsageChartHeader({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="flex flex-wrap items-center justify-between gap-[var(--space-2)]">{children}</div>
+export function UsageChartHeader({ children, actions }: { children: ReactNode; actions?: ReactNode }): React.JSX.Element {
+  return <div className="flex flex-wrap items-center gap-[var(--space-3)]">{children}{actions && <span className="ml-auto">{actions}</span>}</div>
 }
 
 export function UsageTotalsStrip({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="grid grid-cols-2 py-[var(--space-2)] sm:grid-cols-5">{children}</div>
+  return <div className="grid grid-cols-2 gap-[var(--space-3)] lg:grid-cols-4" data-testid="usage-totals">{children}</div>
 }
 
 export function UsageTotalsSection({ children, ...props }: { children: ReactNode; 'data-testid'?: string }): React.JSX.Element {
@@ -107,5 +107,5 @@ export function UsageStatCard({ label, value, note, headline = false }: { label:
 }
 
 export function UsageStatsSpecimen(): React.JSX.Element {
-  return <div className="grid gap-[var(--space-3)]"><UsageMetaLine range="Oct 5 – Oct 11" readAge="2 min ago" duration="1.2 s" pricing="Prices from the model catalog, updated Oct 9" reading={false} /><UsageMetaLine range="Oct 5 – Oct 11" readAge="2 min ago" duration="1.2 s" pricing="Prices from the model catalog, updated Oct 9" reading /><UsageStatCard label="API-equivalent cost" value="$2,486.30" note="214 sessions · $355 a day" /></div>
+  return <div className="grid gap-[var(--space-3)]"><UsageMetaLine range="Oct 5 – Oct 11" readAge="2 min ago" duration="1.2 s" pricing="Prices from the model catalog, updated Oct 9" reading={false} /><UsageMetaLine range="Oct 5 – Oct 11" readAge="2 min ago" duration="1.2 s" pricing="Prices from the model catalog, updated Oct 9" reading /><UsageTotalsStrip><UsageStatCard label="API-equivalent cost" value="$2,486.30" note="214 sessions · $355 a day" /></UsageTotalsStrip></div>
 }

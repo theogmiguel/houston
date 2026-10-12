@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { IconChartArea, IconRefresh } from './icons'
 import { EmptyState } from './ui/ActionEmptyState'
 import { Segmented } from './ui/SegmentedControl'
-import { UsageChart, type UsageSeries } from './ui/UsageChart'
+import { UsageChart, UsageLegend, type UsageSeries } from './ui/UsageChart'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
 import type { UsageProvider } from '../houston/generated/UsageProvider'
 import {
@@ -19,20 +19,19 @@ import {
   windowRange,
   type BreakdownMode,
   type BreakdownRow,
-  type ProviderSummary,
   type SeriesPoint,
   type UsageTotals,
-  type UsageWindowDef,
   type UsageWindowId
 } from '../usage'
 import { Icon } from './ui/Icon'
 import { Tooltip } from './ui/Tooltip'
 import { Select } from './ui/Select'
-import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageProviderList, UsageChartHeader, UsageCalendarSectionFrame, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup, UsageHeroLayout, UsageHeroColumn, UsageChartHeading } from './ui'
+import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageProviderList, UsageCalendarSectionFrame, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup } from './ui'
+import { Card } from './ui/Card'
 import { PageFrame } from './ui/PageFrame'
 import { PageHeader } from './ui/PageHeader'
 import { Notice } from './ui/Notice'
-import { UsageMetaLine, UsageStatCard } from './ui/UsageChrome'
+import { UsageMetaLine, UsageStatCard, UsageChartHeader, UsageTotalsStrip } from './ui/UsageChrome'
 import { calendarStartMs } from './ui/UsageCalendar'
 import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'
 
@@ -40,7 +39,7 @@ export type UsageSummaryMsg = Extract<ServerMsg, { type: 'usage_summary' }>
 
 const PROVIDER_COLOR: Record<UsageProvider, string> = {
   claude: 'var(--claude)',
-  codex: 'var(--text-primary)'
+  codex: 'color-mix(in srgb, var(--text-primary) 55%, transparent)'
 }
 
 const PROVIDER_MARK: Record<UsageProvider, string> = {
@@ -48,66 +47,33 @@ const PROVIDER_MARK: Record<UsageProvider, string> = {
   codex: '◎'
 }
 
-function UsageHero({
-  metric,
-  onMetricChange,
-  providers,
-  windowDef,
-  points,
-  series,
-  labelFor
-}: {
+function UsageDailyChart({ metric, onMetricChange, hourly, points, series, labelFor }: {
   metric: 'cost' | 'tokens'
   onMetricChange: (metric: 'cost' | 'tokens') => void
-  heroValue: string
-  sessions: number
-  providers: (ProviderSummary & { sessions: number })[]
-  windowDef: UsageWindowDef
+  hourly: boolean
   points: SeriesPoint[]
   series: UsageSeries[]
   labelFor: (point: SeriesPoint) => string
 }): React.JSX.Element {
-  return (
-    <UsageHeroLayout>
-      <UsageHeroColumn>
-        <UsageProviderList>
-          {providers.map((p) => {
-            return (
-              <UsageProviderRow
-                key={p.provider}
-                mark={PROVIDER_MARK[p.provider]}
-                label={p.label}
-                sessions={p.sessions}
-                amount={metric === 'cost' ? formatUsd(p.cost) : formatTokens(p.tokens)}
-                note={metric === 'cost' ? `${formatShare(p.costShare)} of cost · ${formatTokens(p.tokens)} tokens` : `${formatShare(p.tokenShare)} of tokens · ${formatUsd(p.cost)}`}
-                color={PROVIDER_COLOR[p.provider]}
-              />
-            )
-          })}
-        </UsageProviderList>
-      </UsageHeroColumn>
-
-      <UsageHeroColumn>
-        <UsageChartHeader>
-          <UsageChartHeading>
-            {windowDef.hourly ? 'Hourly' : 'Daily'} {metric === 'cost' ? 'cost' : 'processed tokens'}
-          </UsageChartHeading>
-          <Segmented aria-label="Measure" size="xs" value={metric} onChange={onMetricChange} options={[{ value: 'cost', label: 'Cost' }, { value: 'tokens', label: 'Tokens' }]} />
-        </UsageChartHeader>
-        <UsageChart points={points} series={series} metric={metric} labelFor={labelFor} />
-      </UsageHeroColumn>
-    </UsageHeroLayout>
-  )
+  return <Card shape="card" tone="block" padding="page" clip={false} data-material="inset">
+    <div className="grid gap-[var(--space-4)]">
+      <UsageChartHeader actions={<Segmented aria-label="Measure" size="xs" value={metric} onChange={onMetricChange} options={[{ value: 'cost', label: 'Cost' }, { value: 'tokens', label: 'Tokens' }]} />}>
+        <UsageSectionHeading>{metric === 'cost' ? 'Cost' : 'Tokens'} per {hourly ? 'hour' : 'day'}</UsageSectionHeading>
+        <UsageLegend series={series} />
+      </UsageChartHeader>
+      <UsageChart points={points} series={series} metric={metric} labelFor={labelFor} />
+    </div>
+  </Card>
 }
 
 function UsageStats({ totals, sessions, days }: { totals: UsageTotals; sessions: number; days: number }): React.JSX.Element {
   const roundedUsd = (value: number): string => `$${Math.round(value).toLocaleString('en-US')}`
-  return <div className="grid grid-cols-2 gap-[var(--space-3)] lg:grid-cols-4" data-testid="usage-totals">
+  return <UsageTotalsStrip>
     <UsageStatCard label="API-equivalent cost" value={formatUsd(totals.cost)} note={`${sessions.toLocaleString('en-US')} sessions · ${roundedUsd(totals.cost / days)} a day`} headline />
     <UsageStatCard label="Tokens processed" value={formatTokens(totals.tokens)} note={`${Math.round(100 * totals.cachedInput / Math.max(1, totals.tokens))}% read from cache`} />
     <UsageStatCard label="Output tokens" value={formatTokens(totals.output)} note={`${formatTokens(totals.uncachedInput)} uncached input`} />
     <UsageStatCard label="Saved by caching" value={roundedUsd(totals.cacheSavings)} note="against full input prices" />
-  </div>
+  </UsageTotalsStrip>
 }
 
 function readAge(readAt: number): string {
@@ -269,7 +235,7 @@ export function UsageSection({
   const labelFor = (point: SeriesPoint): string => {
     const opts: Intl.DateTimeFormatOptions = windowDef.hourly
       ? { timeZone, hour: 'numeric' }
-      : { timeZone, month: 'short', day: 'numeric' }
+      : { timeZone, weekday: 'short', day: 'numeric' }
     try {
       return new Intl.DateTimeFormat('en-US', opts).format(new Date(windowDef.hourly ? point.startMs : `${point.key}T12:00:00`))
     } catch {
@@ -288,7 +254,6 @@ export function UsageSection({
   const stale =
     loading && summary !== null && asked !== null && summary.until_ms - summary.since_ms !== asked.untilMs - asked.sinceMs
 
-  const heroValue = metric === 'cost' ? formatUsd(totals.cost) : formatTokens(totals.tokens)
   const sessions = [...sessionsByProvider.values()].reduce((sum, count) => sum + count, 0)
   const noUsage = !stale && summary !== null && sessions === 0
   const rangeLabel = usageRangeLabel(stale, summary, asked, timeZone)
@@ -326,17 +291,15 @@ export function UsageSection({
         {}
         <UsageStats totals={totals} sessions={sessions} days={windowDef.days} />
         {totals.unpricedRecords > 0 && <Notice tone="warn">{totals.unpricedRecords} records have no published model rate. Their tokens are included; their cost is not priced.</Notice>}
-        <UsageHero
+        <UsageDailyChart
           metric={metric}
           onMetricChange={setMetric}
-          heroValue={heroValue}
-          sessions={sessions}
-          providers={displayProviders}
-          windowDef={windowDef}
+          hourly={windowDef.hourly}
           points={points}
           series={series}
           labelFor={labelFor}
         />
+        <UsageProviderList>{displayProviders.map((p) => <UsageProviderRow key={p.provider} mark={PROVIDER_MARK[p.provider]} label={p.label} sessions={p.sessions} amount={formatUsd(p.cost)} note={`${formatShare(p.costShare)} of cost · ${formatTokens(p.tokens)} tokens`} color={PROVIDER_COLOR[p.provider]} />)}</UsageProviderList>
 
         {}
         <UsageCalendarSectionFrame data-testid="usage-calendar-section">
