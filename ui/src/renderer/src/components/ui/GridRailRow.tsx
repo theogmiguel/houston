@@ -85,7 +85,7 @@ export function GridRailRow({
   expanded: controlledExpanded,
   onToggleExpanded: controlledToggle,
   onContextMenu,
-  menuOpen = false,
+  menuOpen,
   onOpenInspector,
   onRemove,
 }: GridRailRowProps): React.JSX.Element {
