@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { HoustonClient } from '../../houston/client'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import type { HarnessFinding } from '../../houston/generated/HarnessFinding'
+import { TasksSuggested } from '../tasks/TasksSuggested'
 import { TasksSurface } from './TasksSurface'
 
 afterEach(cleanup)
@@ -43,4 +44,23 @@ it('suggests only open findings without tasks in scope and routes actions to the
   expect(harnessState).toHaveBeenCalledWith('/b')
   emit('/b', [finding('Other workspace')])
   expect(screen.getByText('Other workspace')).toBeTruthy()
+})
+
+it('keeps subscriptions and findings when an equivalent workspace array is recreated', () => {
+  const handlers = new Map<string, (message: ServerMsg) => void>()
+  const harnessState = vi.fn()
+  const unsubscribe = vi.fn()
+  const client = { harnessState, subscribe: (type: string, callback: (message: ServerMsg) => void) => { handlers.set(type, callback); return unsubscribe } } as unknown as HoustonClient
+  const scope = [{ path: '/a', name: 'A' }]
+  const { rerender } = render(<TasksSuggested client={client} workspaces={scope} />)
+  act(() => handlers.get('harness_state')?.({ type: 'harness_state', workspace: '/a', findings: [finding('Retained fix')], routine: null, reviews: [], models: [], provider_coverage: [], engine_refusals: [] }))
+  rerender(<TasksSuggested client={client} workspaces={scope.map((item) => ({ ...item }))} />)
+  expect(harnessState).toHaveBeenCalledTimes(1)
+  expect(unsubscribe).not.toHaveBeenCalled()
+  expect(screen.getByText('Retained fix')).toBeTruthy()
+  act(() => handlers.get('harness_changed')?.({ type: 'harness_changed', workspace: '/a' }))
+  expect(harnessState).toHaveBeenCalledTimes(2)
+  rerender(<TasksSuggested client={client} workspaces={[{ path: '/b', name: 'B' }]} />)
+  expect(screen.queryByText('Retained fix')).toBeNull()
+  expect(harnessState).toHaveBeenLastCalledWith('/b')
 })

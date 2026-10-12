@@ -10,11 +10,14 @@ export function TasksSuggested({ client, workspaces }: {
   client: HoustonClient | null
   workspaces: { path: string; name: string }[]
 }): React.JSX.Element | null {
+  // Scope content, rather than array identity, controls the review subscription.
+  const scopeKey = JSON.stringify(workspaces)
   const [suggestions, setSuggestions] = useState<Suggestions>([])
   useEffect(() => {
     setSuggestions([])
-    if (!client || !workspaces.length) return
-    const scope = new Map(workspaces.map((item) => [item.path, item.name]))
+    const scopeWorkspaces: { path: string; name: string }[] = JSON.parse(scopeKey)
+    if (!client || !scopeWorkspaces.length) return
+    const scope = new Map(scopeWorkspaces.map((item) => [item.path, item.name]))
     const offState = client.subscribe('harness_state', (message) => {
       const name = scope.get(message.workspace)
       if (name === undefined) return
@@ -25,9 +28,9 @@ export function TasksSuggested({ client, workspaces }: {
     const offChanged = client.subscribe('harness_changed', (message) => {
       if (scope.has(message.workspace)) client.harnessState(message.workspace)
     })
-    workspaces.forEach((item) => client.harnessState(item.path))
+    scopeWorkspaces.forEach((item) => client.harnessState(item.path))
     return () => { offState(); offChanged() }
-  }, [client, workspaces])
+  }, [client, scopeKey])
   if (!suggestions.length) return null
   return (
     <Card shape="inset" data-testid="tasks-suggested">
