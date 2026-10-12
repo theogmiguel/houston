@@ -3680,6 +3680,17 @@ impl Daemon {
         });
 
         candidates.retain(|candidate| {
+            if let Err(error) = self.db.check_previous_process_stopped(candidate.id) {
+                if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&candidate.id) {
+                    info.restore_deferred = Some(R::SpawnFailed);
+                    info.resume_notice = Some(format!("Session {} recovery deferred: {error:#}", candidate.id));
+                }
+                return false;
+            }
+            true
+        });
+
+        candidates.retain(|candidate| {
             let refusal = match self.db.session_has_command_override(candidate.id) {
                 Ok(false) => return true,
                 Ok(true) => format!(
@@ -9265,6 +9276,9 @@ impl Daemon {
         conversation: RespawnConversation,
     ) -> Result<proto::SessionInfo> {
         self.ensure_not_closing(old_id, "respawn")?;
+        if self.dead.lock().expect("dead lock").contains_key(&old_id) {
+            self.db.check_previous_process_stopped(old_id)?;
+        }
         if conversation != RespawnConversation::Fresh {
             let dead_provider = self.dead.lock().expect("dead lock").get(&old_id).map(|info| info.agent);
             if let Some(provider) = dead_provider {
@@ -11457,12 +11471,15 @@ impl Daemon {
         if hidden {
             prepare().context(orchestrate::MutationMayHaveActed)?;
         } else {
+            let process_identity = crate::recovery_process::ProcessIdentity::capture(pid)
+                .context(orchestrate::MutationMayHaveActed)?;
             self.db
                 .insert_session_with_startup_metadata(
                     &info,
                     title_source.as_str(),
                     Self::agent_profile_config_dir(agent, &extra_env),
                     crate::db::SessionStartupMetadata {
+                        process_identity: process_identity.as_ref(),
                         launch_selections: launch_selections.as_ref(),
                         command_override,
                         resume_handle: resume_handle.as_ref().map(|(conversation, transcript)| {
@@ -13266,6 +13283,9 @@ impl Daemon {
                 continue;
             }
             self.ensure_not_closing(id, "close")?;
+            if self.dead.lock().expect("dead lock").contains_key(&id) {
+                self.db.check_previous_process_stopped(id)?;
+            }
             self.ensure_not_sleeping(id)?;
             self.ensure_not_shell_restoring(id)?;
             let known = self

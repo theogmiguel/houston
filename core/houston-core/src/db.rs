@@ -54,6 +54,7 @@ pub struct MessageReceipt {
 
 #[derive(Default)]
 pub struct SessionStartupMetadata<'a> {
+    pub process_identity: Option<&'a crate::recovery_process::ProcessIdentity>,
     pub launch_selections: Option<&'a crate::launch::SessionLaunchSelections>,
     pub command_override: bool,
     pub resume_handle: Option<(&'a str, Option<&'a str>)>,
@@ -1719,6 +1720,7 @@ impl Db {
         add_column_if_missing(&conn, "sessions", "approval_mode", "approval_mode TEXT")?;
         add_column_if_missing(&conn, "sessions", "launch_selections", "launch_selections TEXT")?;
         add_column_if_missing(&conn, "sessions", "command_override", "command_override INTEGER NOT NULL DEFAULT 0")?;
+        add_column_if_missing(&conn, "sessions", "process_identity", "process_identity TEXT")?;
         add_column_if_missing(&conn, "sessions", "transcript_path", "transcript_path TEXT")?;
         add_column_if_missing(
             &conn,
@@ -2554,8 +2556,8 @@ impl Db {
         let tx = conn.transaction()?;
         Self::insert_session_on(&tx, info, Some(title_source))?;
         tx.execute(
-            "UPDATE sessions SET profile_config_dir = ?2, command_override = ?3 WHERE id = ?1",
-            rusqlite::params![info.id, profile, metadata.command_override],
+            "UPDATE sessions SET profile_config_dir = ?2, command_override = ?3, process_identity = ?4 WHERE id = ?1",
+            rusqlite::params![info.id, profile, metadata.command_override, metadata.process_identity.map(serde_json::to_string).transpose()?],
         )?;
         Self::set_session_launch_selections_on(&tx, info.id, metadata.launch_selections)?;
         let resume_provider = metadata.resume_handle.and_then(|_| {
@@ -2632,6 +2634,17 @@ impl Db {
                 .with_context(|| format!("session {id} launch selections must be typed provider choices"))
         })
         .transpose()
+    }
+
+    pub fn check_previous_process_stopped(&self, id: u32) -> Result<()> {
+        let encoded: Option<String> = self.conn.lock().expect("db lock")
+            .query_row("SELECT process_identity FROM sessions WHERE id = ?1", [id], |row| row.get(0))?;
+        if let Some(encoded) = encoded {
+            let identity: crate::recovery_process::ProcessIdentity = serde_json::from_str(&encoded)
+                .with_context(|| format!("invalid previous process identity for session {id}"))?;
+            identity.check_stopped()?;
+        }
+        Ok(())
     }
 
     pub(crate) fn session_has_command_override(&self, id: u32) -> Result<bool> {

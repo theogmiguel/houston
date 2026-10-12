@@ -58,6 +58,7 @@ pub mod paths;
 pub mod pid;
 pub mod pull_requests;
 pub mod remote;
+pub mod recovery_process;
 pub mod routines;
 pub mod sanitize;
 pub mod scope;
