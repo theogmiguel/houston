@@ -1624,6 +1624,8 @@ pub struct Daemon {
     respawned_as: Mutex<HashMap<u32, u32>>,
     workspace_membership: Mutex<()>,
     session_lifecycle_lock: Mutex<()>,
+    session_startup_lock: Mutex<()>,
+    shutdown_preserved: Mutex<HashSet<u32>>,
     sleeping_sessions: Mutex<HashSet<u32>>,
     shell_restore_reservations: Arc<Mutex<HashSet<u32>>>,
     state_dir: PathBuf,
@@ -1900,6 +1902,7 @@ struct ReapArm {
 enum ShutdownGuard<'a> {
     Unconditional,
     IfIdle,
+    Reap,
     IfExactly(&'a [u32]),
 }
 
@@ -3333,6 +3336,8 @@ impl Daemon {
             respawned_as: Mutex::new(HashMap::new()),
             workspace_membership: Mutex::new(()),
             session_lifecycle_lock: Mutex::new(()),
+            session_startup_lock: Mutex::new(()),
+            shutdown_preserved: Mutex::new(HashSet::new()),
             sleeping_sessions: Mutex::new(HashSet::new()),
             shell_restore_reservations: Arc::new(Mutex::new(HashSet::new())),
             state_dir: state_dir.clone(),
@@ -4007,6 +4012,7 @@ impl Daemon {
     pub fn persist_all(&self) {
         if let Err(e) = self.checkpoint_scrollback() {
             tracing::warn!("persist_all: checkpoint failed: {e:#}");
+            return;
         }
         if let Err(e) = self.mark_clean_shutdown() {
             tracing::warn!("persist_all: writing the clean-shutdown marker failed: {e:#}");
@@ -4084,14 +4090,14 @@ impl Daemon {
         tracing::info!(
             "reap: no client, no live session, no enabled routine for {grace_ms} ms — exiting"
         );
-        if let Err(e) = self.checkpoint_scrollback() {
-            tracing::warn!("reap: checkpoint failed: {e:#}");
+        let daemon = Arc::clone(&self);
+        match tokio::task::spawn_blocking(move || daemon.manage_shutdown_inner(ShutdownGuard::Reap))
+            .await
+        {
+            Ok(Ok(_)) => self.call_exit_hook(),
+            Ok(Err(error)) => tracing::warn!("reap refused: {}", error.reason),
+            Err(error) => tracing::warn!("reap shutdown failed: {error}"),
         }
-        if let Err(e) = self.mark_clean_shutdown() {
-            tracing::warn!("reap: writing the clean-shutdown marker failed: {e:#}");
-        }
-        self.remove_discovery_files();
-        (self.exit_hook.lock().expect("reap exit hook lock"))();
     }
 
     pub fn is_shutting_down(&self) -> bool {
@@ -4295,7 +4301,22 @@ impl Daemon {
         self: &Arc<Self>,
         guard: ShutdownGuard<'_>,
     ) -> Result<proto::ManageDaemonShutdownOk, ShutdownFailure> {
-        self.shutting_down.store(true, Ordering::Release);
+        if self
+            .shutting_down
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(ShutdownFailure {
+                reason: "refusing to stop: a shutdown is already in progress".into(),
+                unterminated: Vec::new(),
+            });
+        }
+        // An admitted launch must finish publication before the confirmed set is read.
+        // Release admission before taking lifecycle locks held by respawn callers.
+        let admission = self
+            .session_startup_lock
+            .lock()
+            .expect("session startup lock");
         let routines_armed = self.db.enabled_routine_count().unwrap_or_else(|e| {
             tracing::warn!("counting armed routines for the shutdown report: {e:#}");
             0
@@ -4306,12 +4327,22 @@ impl Daemon {
             .expect("sessions lock")
             .iter()
             .filter(|(_, s)| {
-                s.state.lock().expect("state lock").is_live() || s.has_retained_reader()
+                s.state.lock().expect("state lock").is_live()
+                    || !s.backend_exited.load(Ordering::Acquire)
+                    || s.has_retained_reader()
             })
             .map(|(id, _)| *id)
             .collect();
         match guard {
             ShutdownGuard::Unconditional => {}
+            ShutdownGuard::Reap if self.reap_predicate_holds() => {}
+            ShutdownGuard::Reap => {
+                self.shutting_down.store(false, Ordering::Release);
+                return Err(ShutdownFailure {
+                    reason: "idle shutdown predicate changed; nothing was stopped".into(),
+                    unterminated: live_ids,
+                });
+            }
             ShutdownGuard::IfIdle if live_ids.is_empty() => {}
             ShutdownGuard::IfIdle => {
                 self.shutting_down.store(false, Ordering::Release);
@@ -4343,9 +4374,10 @@ impl Daemon {
                 }
             }
         }
+        drop(admission);
         let mut kill_failures = Vec::new();
         for id in &live_ids {
-            if let Err(e) = self.kill(*id) {
+            if let Err(e) = self.stop_session_for_recovery(*id) {
                 tracing::warn!("shutdown: terminating session {id}: {e:#}");
                 kill_failures.push((*id, e));
             }
@@ -4402,6 +4434,62 @@ impl Daemon {
             stopped_sessions: live_ids.len() as u32,
             disarmed_routines: routines_armed,
         })
+    }
+
+    fn preserving_session(&self, id: u32) -> bool {
+        self.shutdown_preserved
+            .lock()
+            .expect("shutdown preserved lock")
+            .contains(&id)
+    }
+
+    fn stop_session_for_recovery(&self, id: u32) -> Result<()> {
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
+        self.stop_session_for_recovery_unlocked(id)
+    }
+
+    fn stop_session_for_recovery_unlocked(&self, id: u32) -> Result<()> {
+        let session = self.get(id)?;
+        if session.info.agent == proto::AgentKind::Custom || session.info.hidden {
+            return self.kill_unlocked(id);
+        }
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        let previous = *session.state.lock().expect("state lock");
+        let preserve = previous.is_live();
+        if preserve {
+            // Commit recovery intent before terminating the owned process. A crash
+            // anywhere after this point must leave the conversation recoverable.
+            self.db
+                .update_session_state(id, proto::SessionState::Interrupted, None)?;
+            self.shutdown_preserved
+                .lock()
+                .expect("shutdown preserved lock")
+                .insert(id);
+            *session.state.lock().expect("state lock") = proto::SessionState::Interrupted;
+        }
+        if let Err(error) = session
+            .backend
+            .kill(id, session.pid, self.channel.as_deref())
+        {
+            if preserve {
+                self.shutdown_preserved
+                    .lock()
+                    .expect("shutdown preserved lock")
+                    .remove(&id);
+                *session.state.lock().expect("state lock") = previous;
+                self.db.update_session_state(id, previous, None)?;
+            }
+            return Err(error);
+        }
+        session.cancel_pty_reader();
+        session.remove_shell_token_file();
+        Ok(())
     }
 
     fn remove_discovery_files(&self) {
@@ -6879,6 +6967,9 @@ impl Daemon {
     }
 
     fn routine_pane_exited(self: &Arc<Self>, session: u32) {
+        if self.preserving_session(session) {
+            return;
+        }
         self.report_routine_pane_run(session, orchestrate::TurnEndSource::QuietSettle);
     }
 
@@ -9197,9 +9288,9 @@ impl Daemon {
                             old.info.agent
                         );
                     }
-                    self.kill_session_unlocked(old_id, false)?;
+                    self.stop_session_for_recovery_unlocked(old_id)?;
                 } else if force {
-                    self.kill_session_unlocked(old_id, false)?;
+                    self.stop_session_for_recovery_unlocked(old_id)?;
                 } else {
                     bail!(
                     "session {old_id} is still running (state {state:?}); kill it before respawning \
@@ -9670,6 +9761,18 @@ impl Daemon {
     /// A resumed CLI that exits non-zero within `RESUME_EARLY_EXIT` is relaunched fresh
     /// in its slot, once: the relaunch has no `--resume`, so it cannot loop.
     fn resume_exited(self: &Arc<Self>, id: u32, exit_code: Option<i32>, exited_at: Instant) {
+        if self.preserving_session(id) {
+            self.resume_launches
+                .lock()
+                .expect("resume launches lock")
+                .remove(&id);
+            self.wake_launches
+                .lock()
+                .expect("wake launches lock")
+                .remove(&id);
+            return;
+        }
+
         if let Some(launched) = self
             .wake_launches
             .lock()
@@ -10549,6 +10652,14 @@ impl Daemon {
     }
 
     fn spawn_session(self: &Arc<Self>, p: SpawnParams) -> Result<proto::SessionInfo> {
+        let _admission = self
+            .session_startup_lock
+            .lock()
+            .expect("session startup lock");
+        anyhow::ensure!(
+            !self.refusing_mutations(),
+            "refused: daemon is shutting down or handing off"
+        );
         let SpawnParams {
             id,
             agent,
@@ -11372,6 +11483,14 @@ impl Daemon {
                 return proto::SessionState::Exited;
             }
         }
+        if self.preserving_session(id) {
+            if let Some(session) = self.sessions.lock().expect("sessions lock").get(&id) {
+                session.backend_exited.store(true, Ordering::Release);
+            }
+            self.mcp_creds.revoke_session(id);
+            self.mcp_notify.close_session(id);
+            return proto::SessionState::Interrupted;
+        }
         self.escalate_child_inputs_locked(id, proto::ChildInputEscalationReason::ParentUnavailable);
         let (final_state, session_missing) = {
             let sessions = self.sessions.lock().expect("sessions lock");
@@ -11580,122 +11699,138 @@ impl Daemon {
             }
         };
 
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let title = self.next_codename();
-        let info = proto::SessionInfo {
-            checkout: None,
-            activity: None,
-            id,
-            agent: proto::AgentKind::Ssh,
-            project_dir: display.clone(),
-            cwd: display.clone(),
-            state: proto::SessionState::Running,
-            title: title.clone(),
-            codename: title.clone(),
-            detected_agent: None,
-            running_agent: None,
-            hidden: false,
-            ssh_host: Some(display),
-            restore_deferred: None,
-            status: None,
-            status_since_ms: None,
-            context: None,
-            swarm_agent: None,
-            spawned_by: None,
-            acp: None,
-            live_children: 0,
-            profile_label: None,
-            children_waiting: 0,
-            delegation: None,
-            inbox_unread: 0,
-            tags: Vec::new(),
-            session_origin: None,
-            checkout_root: None,
-            worktree: None,
-            resumable: false,
-            resume_notice: None,
-            compactions: None,
-            task: None,
-            sleep_notice: None,
-            latest_prompt: None,
-            last_agent_message: None,
-            slept_at_ms: None,
-        };
-        let session = Arc::new(Session {
-            info: info.clone(),
-            pid: None,
-            custom_cmd: None,
-            state: Mutex::new(proto::SessionState::Running),
-            title: Mutex::new(title),
-            project_dir: Mutex::new(info.project_dir.clone()),
-            detected: Mutex::new(None),
-            running: Mutex::new(None),
-            blocks: None,
-            shell_token_redactor: None,
-            raw_output_bytes: AtomicU64::new(0),
-            shell_token_file: None,
-            shell: None,
-            osc_cwd: Mutex::new(None),
-            osc_title: None,
-            composer_ready: None,
-            composer_watch: AtomicBool::new(false),
-            cli_title: Mutex::new(CliTitleState::default()),
-            title_source: Mutex::new(TitleSource::Codename),
-            tags: Mutex::new(Vec::new()),
-            osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
-            acp: None,
-            scrollback: Mutex::new(Scrollback::new()),
-            ws_attaches: AtomicU32::new(0),
-            vt: Mutex::new(None),
-            vt_refused: AtomicBool::new(false),
-            last_output: AtomicU64::new(self.started.elapsed().as_millis() as u64),
-            status: Mutex::new(None),
-            status_since_ms: Mutex::new(None),
-            context: Mutex::new(None),
-            activity: Mutex::new(crate::session_activity::Tracker::default()),
-            removed: AtomicBool::new(false),
-            backend_exited: AtomicBool::new(false),
-            stdin_writes_in_flight: AtomicU32::new(0),
-            stdin_queue: Mutex::new(StdinQueue::default()),
-            lifecycle_hook_seen: AtomicBool::new(false),
-            #[cfg(unix)]
-            native_input_recovery: None,
-            input_intervention: AtomicBool::new(false),
-            input_pending: AtomicBool::new(false),
-            input_current_id: Mutex::new(None),
-            input_intervention_id: Mutex::new(None),
-            input_intervention_answer: Mutex::new(None),
-            hook_input_reason: Mutex::new(None),
-            hook_permission_details: Mutex::new(None),
-            hook_cwd: Mutex::new(None),
-            hook_last_message: Mutex::new(None),
-            hook_latest_prompt: Mutex::new(None),
-            hook_latest_agent_message: Mutex::new(None),
-            sleep_notice: Mutex::new(None),
-            slept_at_ms: Mutex::new(None),
-            geometry: AtomicU32::new((u32::from(params.cols) << 16) | u32::from(params.rows)),
-            backend: Backend::Ssh(handle),
-            supervisor_wait: Mutex::new(SupervisorWaitState::default()),
-            park: Arc::new(ParkState::default()),
-            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
-            reader_cancel: AtomicBool::new(false),
-            reader_worker: Mutex::new(None),
-        });
-        self.sessions
-            .lock()
-            .expect("sessions lock")
-            .insert(id, Arc::clone(&session));
-        self.write_run_state();
-        self.reap_reevaluate();
-        if let Err(e) = self
-            .db
-            .insert_session_with_title_source(&info, Some(TitleSource::Codename.as_str()))
-        {
-            tracing::error!("persisting ssh session {id}: {e}");
-        }
-        self.broadcast_control(&proto::ServerMsg::SessionCreated { info });
+        let (id, session) = {
+            let _admission = self
+                .session_startup_lock
+                .lock()
+                .expect("session startup lock");
+            if self.refusing_mutations() {
+                let _ = handle.kill();
+                self.broadcast_control(&proto::ServerMsg::Error {
+                    message: "SSH connection refused: daemon is shutting down or handing off"
+                        .into(),
+                    context: Some(format!("ssh_connect request {request}")),
+                });
+                return;
+            }
+            let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+            let title = self.next_codename();
+            let info = proto::SessionInfo {
+                checkout: None,
+                activity: None,
+                id,
+                agent: proto::AgentKind::Ssh,
+                project_dir: display.clone(),
+                cwd: display.clone(),
+                state: proto::SessionState::Running,
+                title: title.clone(),
+                codename: title.clone(),
+                detected_agent: None,
+                running_agent: None,
+                hidden: false,
+                ssh_host: Some(display),
+                restore_deferred: None,
+                status: None,
+                status_since_ms: None,
+                context: None,
+                swarm_agent: None,
+                spawned_by: None,
+                acp: None,
+                live_children: 0,
+                profile_label: None,
+                children_waiting: 0,
+                delegation: None,
+                inbox_unread: 0,
+                tags: Vec::new(),
+                session_origin: None,
+                checkout_root: None,
+                worktree: None,
+                resumable: false,
+                resume_notice: None,
+                compactions: None,
+                task: None,
+                sleep_notice: None,
+                latest_prompt: None,
+                last_agent_message: None,
+                slept_at_ms: None,
+            };
+            let session = Arc::new(Session {
+                info: info.clone(),
+                pid: None,
+                custom_cmd: None,
+                state: Mutex::new(proto::SessionState::Running),
+                title: Mutex::new(title),
+                project_dir: Mutex::new(info.project_dir.clone()),
+                detected: Mutex::new(None),
+                running: Mutex::new(None),
+                blocks: None,
+                shell_token_redactor: None,
+                raw_output_bytes: AtomicU64::new(0),
+                shell_token_file: None,
+                shell: None,
+                osc_cwd: Mutex::new(None),
+                osc_title: None,
+                composer_ready: None,
+                composer_watch: AtomicBool::new(false),
+                cli_title: Mutex::new(CliTitleState::default()),
+                title_source: Mutex::new(TitleSource::Codename),
+                tags: Mutex::new(Vec::new()),
+                osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
+                acp: None,
+                scrollback: Mutex::new(Scrollback::new()),
+                ws_attaches: AtomicU32::new(0),
+                vt: Mutex::new(None),
+                vt_refused: AtomicBool::new(false),
+                last_output: AtomicU64::new(self.started.elapsed().as_millis() as u64),
+                status: Mutex::new(None),
+                status_since_ms: Mutex::new(None),
+                context: Mutex::new(None),
+                activity: Mutex::new(crate::session_activity::Tracker::default()),
+                removed: AtomicBool::new(false),
+                backend_exited: AtomicBool::new(false),
+                stdin_writes_in_flight: AtomicU32::new(0),
+                stdin_queue: Mutex::new(StdinQueue::default()),
+                lifecycle_hook_seen: AtomicBool::new(false),
+                #[cfg(unix)]
+                native_input_recovery: None,
+                input_intervention: AtomicBool::new(false),
+                input_pending: AtomicBool::new(false),
+                input_current_id: Mutex::new(None),
+                input_intervention_id: Mutex::new(None),
+                input_intervention_answer: Mutex::new(None),
+                hook_input_reason: Mutex::new(None),
+                hook_permission_details: Mutex::new(None),
+                hook_cwd: Mutex::new(None),
+                hook_last_message: Mutex::new(None),
+                hook_latest_prompt: Mutex::new(None),
+                hook_latest_agent_message: Mutex::new(None),
+                sleep_notice: Mutex::new(None),
+                slept_at_ms: Mutex::new(None),
+                geometry: AtomicU32::new((u32::from(params.cols) << 16) | u32::from(params.rows)),
+                backend: Backend::Ssh(handle),
+                supervisor_wait: Mutex::new(SupervisorWaitState::default()),
+                park: Arc::new(ParkState::default()),
+                reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+                reader_cancel: AtomicBool::new(false),
+                reader_worker: Mutex::new(None),
+            });
+            self.sessions
+                .lock()
+                .expect("sessions lock")
+                .insert(id, Arc::clone(&session));
+            self.write_run_state();
+            self.reap_reevaluate();
+            if let Err(e) = self
+                .db
+                .insert_session_with_title_source(&info, Some(TitleSource::Codename.as_str()))
+            {
+                tracing::error!("persisting ssh session {id}: {e}");
+            }
+            self.broadcast_control(&proto::ServerMsg::SessionCreated { info });
 
+            (id, session)
+        };
         let saved_profile = profile.as_deref().and_then(|name| {
             if let Err(e) = self.db.touch_ssh_profile(name) {
                 tracing::warn!("stamping ssh profile {name:?} as used: {e}");
@@ -12624,10 +12759,10 @@ impl Daemon {
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
-        self.kill_session_unlocked(id, true)
-    }
-
-    fn kill_session_unlocked(&self, id: u32, forget_conversation: bool) -> Result<()> {
+        self.shutdown_preserved
+            .lock()
+            .expect("shutdown preserved lock")
+            .remove(&id);
         let cleanup = self
             .temporary_cleanup_lock
             .lock()
@@ -12649,9 +12784,7 @@ impl Daemon {
             .lock()
             .expect("operator_ended lock")
             .insert(id);
-        if forget_conversation {
-            self.forget_resume_handle(id);
-        }
+        self.forget_resume_handle(id);
         *session.state.lock().expect("state lock") = proto::SessionState::Killed;
         *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
         self.db
@@ -20681,6 +20814,9 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        if self.preserving_session(child) {
+            return;
+        }
         let row = match self.db.delegation_for_child(child) {
             Ok(Some(row)) => row,
             Ok(None) => return,
