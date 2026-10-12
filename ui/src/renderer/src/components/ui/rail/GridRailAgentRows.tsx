@@ -2,7 +2,8 @@ import { attentionLabel, attentionStatus } from '../../../sessionAttention'
 import type { SessionInfo } from '../../../houston/client'
 import type { RailAgentRow } from '../../rail/railCardModel'
 import type { AgentActivityMode, RailCardMode, RailCardProperty } from '../../../railPrefs'
-import { AgentSummaryPill } from '../AgentSummaryPill'
+import { Icon } from '../Icon'
+import { IconChevronRight } from '../../icons'
 import { IconAgent } from '../../icons'
 import { Tooltip } from '../Tooltip'
 
@@ -33,6 +34,7 @@ function agentRowDotClass(status: SessionInfo['status']): string {
 }
 
 function ageLabel(session: SessionInfo, now: number): string {
+  if (attentionStatus(session) === 'needs-input') return 'Waiting'
   if (attentionStatus(session) === 'working') return 'now'
   const elapsed = Math.max(0, now - (session.status_since_ms ?? now))
   const minutes = Math.floor(elapsed / 60_000)
@@ -43,6 +45,8 @@ function ageLabel(session: SessionInfo, now: number): string {
 }
 
 function AgentRow({ agent, now }: { agent: RailAgentRow; now: number }): React.JSX.Element {
+  const context = agent.session.context?.used_percent
+  const warnContext = context != null && context >= 80
   const shellLabel = agent.session.agent === 'shell' ? ` · ${agent.agent}` : ''
   return (
     <div key={agent.session.id} className="flex h-[var(--h-agent-row)] min-w-0 items-center gap-[5px] rounded px-1 text-[length:var(--tr-text-xs)] leading-none hover:bg-hover-fill">
@@ -51,7 +55,8 @@ function AgentRow({ agent, now }: { agent: RailAgentRow; now: number }): React.J
       <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
         {agent.leading}{shellLabel}
       </span>
-      {agent.model && <span className="max-w-[76px] truncate font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">{agent.model}</span>}
+      {warnContext && <span className="font-mono text-[var(--warn)]">{Math.round(context!)}%</span>}
+      {!warnContext && attentionStatus(agent.session) !== 'needs-input' && agent.model && <span className="max-w-[76px] truncate font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">{agent.model}</span>}
       <time className="min-w-[22px] flex-none text-right text-[length:var(--tr-text-xs)] tabular-nums text-[var(--text-muted)]">{ageLabel(agent.session, now)}</time>
     </div>
   )
@@ -61,7 +66,6 @@ export function GridRailAgentRows({
   agents,
   cardMode,
   agentActivity,
-  properties,
   expanded,
   onToggleExpanded,
   now,
@@ -75,22 +79,17 @@ export function GridRailAgentRows({
   now: number
 }): React.JSX.Element | null {
   if (cardMode !== 'detailed') return null
-  const many = agents.length > 2
+  const many = agents.length > 3
   const showFullList = agentActivity === 'full' || expanded
+  const visible = many && !showFullList ? agents.slice(0, 2) : agents
+  const hiddenWorking = agents.slice(2).filter(({ session }) => attentionStatus(session) === 'working').length
   return (
     <>
-      {many && properties.includes('inline-agents') && (
-        <div>
-          <AgentSummaryPill agents={agents} expanded={expanded} onToggle={onToggleExpanded} />
-        </div>
-      )}
-      {many ? (
-        <div aria-hidden={!showFullList} className={`grid overflow-hidden transition-[grid-template-rows] duration-[180ms] ease-out motion-reduce:transition-none ${showFullList ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-          <div className="min-h-0 overflow-hidden">
-            {agents.map((agent) => <AgentRow key={agent.session.id} agent={agent} now={now} />)}
-          </div>
-        </div>
-      ) : agents.map((agent) => <AgentRow key={agent.session.id} agent={agent} now={now} />)}
+      {visible.map((agent) => <AgentRow key={agent.session.id} agent={agent} now={now} />)}
+      {many && <button type="button" aria-expanded={showFullList} onClick={(event) => { event.stopPropagation(); onToggleExpanded() }} className="flex h-5 items-center gap-1 px-1 text-[length:var(--tr-text-xs)] text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+        <Icon glyph={IconChevronRight} role="small" className={showFullList ? 'rotate-90' : ''} />
+        {showFullList ? 'Show fewer agents' : `${agents.length - 2} more agents${hiddenWorking ? ` · ${hiddenWorking} working` : ''}`}
+      </button>}
     </>
   )
 }

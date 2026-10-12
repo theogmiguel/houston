@@ -63,6 +63,7 @@ function mount({ tags = [], cardMode = 'detailed' }: { tags?: TagInfo[]; cardMod
       diffByDir={new Map()}
       prByDir={new Map([['/work', { gh: 'ready', pr }]])}
       cardMode={cardMode}
+      tagDisplay="icon"
       properties={['status', 'unread', 'checkout', 'pr', 'ci', 'diff', 'task', 'inline-agents', 'tags']}
       jumpNumber={1}
       onSelect={() => {}}
@@ -159,7 +160,7 @@ describe('GridRailRowFallback', () => {
 
   it('shows PR checks alongside the PR link', () => {
     mount()
-    expect(container.textContent).toContain('passing')
+    expect(container.querySelector('[aria-label="Checks passing"]')).not.toBeNull()
   })
 
   it('shows the cached PR title in the compact hover card', async () => {

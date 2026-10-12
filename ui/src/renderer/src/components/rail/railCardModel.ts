@@ -31,7 +31,7 @@ export type RailCard = {
   status: GridStatusModel
   checkouts: CheckoutIdentity[]
   pr: { gh: string; pr: PrInfo | null } | null
-  diff: { added: number; deleted: number } | null
+  diff: { added: number; deleted: number; ahead?: number } | null
   agents: RailAgentRow[]
   lastActivityMs: number
 }
@@ -44,7 +44,7 @@ export type RailCardSource = {
   paneIds: readonly number[]
   sessions: readonly SessionInfo[]
   branches?: ReadonlyMap<number, string>
-  diffByDir?: ReadonlyMap<string, { added: number; deleted: number }>
+  diffByDir?: ReadonlyMap<string, { added: number; deleted: number; ahead?: number }>
   prByDir?: ReadonlyMap<string, { gh: string; pr: PrInfo | null }>
 }
 
@@ -126,7 +126,7 @@ export function buildRailCard(source: RailCardSource): RailCard {
     status,
     checkouts,
     pr,
-    diff: diff ? { added: diff.added, deleted: diff.deleted } : null,
+    diff: diff ? { added: diff.added, deleted: diff.deleted, ahead: diff.ahead } : null,
     agents,
     lastActivityMs: statusSince,
   }

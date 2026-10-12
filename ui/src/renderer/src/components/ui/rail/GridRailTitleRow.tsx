@@ -5,7 +5,7 @@ import type { RailCardMode, RailTagDisplay } from '../../../railPrefs'
 import type { OpenTagPopoverOptions } from '../../tags/TagPopover'
 import { TagCardAffordance } from '../../tags/TagCardAffordance'
 import { Icon } from '../Icon'
-import { IconClose, IconTag, IconGitPullRequest } from '../../icons'
+import { IconClose, IconTag } from '../../icons'
 import { PrLink } from '../PrLink'
 import { Tooltip } from '../Tooltip'
 
@@ -54,8 +54,7 @@ export function GridRailTitleRow({
       <span data-testid="grid-name" className={`min-w-0 truncate ${unread ? 'font-semibold text-[var(--text-primary)]' : ''}`}>{name}</span>
       {unread && <span role="img" aria-label="Unread" data-testid="grid-unread-pip" className="size-1.5 flex-none rounded-full bg-[var(--accent)]" />}
       <span aria-hidden className="min-w-0 flex-1" />
-      {pr?.is_draft && <span className="flex-none rounded border border-[var(--border)] px-1 text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">draft</span>}
-      {hasTags && tagDisplay === 'dots' && <TagCardAffordance tags={tags} mode="dots" onClick={(anchor) => openTagPopover({ anchor, gridId, view: 'pick' })} />}
+      {hasTags && tags.length > 0 && tagDisplay === 'dots' && <TagCardAffordance tags={tags} mode="dots" onClick={(anchor) => openTagPopover({ anchor, gridId, view: 'pick' })} />}
       {hasTags && tagDisplay === 'icon' && tags.length > 0 && (
         <Tooltip label={`Edit tags: ${tagNames.join(' · ')}`}>
           <button
@@ -73,15 +72,7 @@ export function GridRailTitleRow({
           </button>
         </Tooltip>
       )}
-      {cardMode === 'compact' && hasPr && pr && (
-        <PrLink
-          href={pr.url}
-          onClick={() => primary && onOpenInspector(primary.session.id, 'pull-request')}
-          className="flex-none font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]"
-        >
-          <Icon glyph={IconGitPullRequest} role="small" />#{pr.number}
-        </PrLink>
-      )}
+      {hasPr && pr && <GridRailPrChip pr={pr} primary={primary} onOpenInspector={onOpenInspector} />}
       {cardMode === 'compact' && hasCheckout && checkoutLabel?.branch && (
         <Tooltip label={checkoutLabel.text}>
           <span className="max-w-24 truncate font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">{checkoutLabel.branch}</span>
@@ -104,5 +95,23 @@ export function GridRailTitleRow({
         </Tooltip>
       )}
     </div>
+  )
+}
+
+function GridRailPrChip({ pr, primary, onOpenInspector }: {
+  pr: PrInfo
+  primary?: RailAgentRow
+  onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
+}): React.JSX.Element {
+  return (
+        <PrLink
+          aria-label={`Open pull request #${pr.number}, checks ${pr.checks || 'unavailable'}`}
+          href={pr.url}
+          onClick={() => primary && onOpenInspector(primary.session.id, 'pull-request')}
+          className="flex-none font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]"
+        >
+          {pr.is_draft && <span>Draft </span>}#{pr.number}
+          <span role="img" aria-label={`Checks ${pr.checks || 'unavailable'}`} className="size-1.5 rounded-full" style={{ background: `var(--${pr.is_draft ? 'text-muted' : pr.checks === 'passing' ? 'ok' : pr.checks === 'failing' ? 'stop' : 'warn'})` }} />
+        </PrLink>
   )
 }

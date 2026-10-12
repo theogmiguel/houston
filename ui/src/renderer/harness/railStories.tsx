@@ -334,7 +334,7 @@ const cardSession = (values: Partial<SessionInfo> & Pick<SessionInfo, 'id' | 'ag
 const CARD_SESSIONS: SessionInfo[] = [
   cardSession({ id: 1, agent: 'shell', project_dir: path('dispatch'), title: 'zsh', status: 'idle', status_since_ms: CARD_NOW, activity: { prompt: 'zsh', last_message: null, model: null, tool: null } }),
   cardSession({ id: 2, agent: 'claude', project_dir: path('project_eagle'), title: 'Orchestrator', status: 'working', status_since_ms: CARD_NOW, live_children: 3, activity: { prompt: 'Orchestrator', last_message: 'aguardando 2 filhos', model: 'opus-5.5', tool: 'claude' } }),
-  cardSession({ id: 3, agent: 'claude', project_dir: path('project_eagle'), title: 'eagle-tiers-ui', status: 'working', status_since_ms: CARD_NOW - 2 * 60_000, checkout: { root: `${path('project_eagle')}/wt/eagle-tiers-ui`, kind: { worktree: { slug: 'eagle-tiers-ui' } }, branch: 'feature/tiers-ui', head: null }, activity: { prompt: 'eagle-tiers-ui', last_message: 'Edit TiersTable.vue', model: 'sonnet-5.5', tool: 'Edit' } }),
+  cardSession({ id: 3, agent: 'claude', project_dir: path('project_eagle'), title: 'eagle-tiers-ui', context: { used_tokens: 182000, window_tokens: 200000, used_percent: 91, state: 'near_limit', source: 'reported', as_of_ms: CARD_NOW }, status: 'needs-input', status_since_ms: CARD_NOW - 2 * 60_000, checkout: { root: `${path('project_eagle')}/wt/eagle-tiers-ui`, kind: { worktree: { slug: 'eagle-tiers-ui' } }, branch: 'feature/tiers-ui', head: null }, activity: { prompt: 'eagle-tiers-ui', last_message: 'Edit TiersTable.vue', model: 'sonnet-5.5', tool: 'Edit' } }),
   cardSession({ id: 4, agent: 'claude', project_dir: path('project_eagle'), title: 'dispatch-tiers', status: 'working', status_since_ms: CARD_NOW - 2 * 60_000, checkout: { root: `${path('project_eagle')}/wt/dispatch-tiers`, kind: { worktree: { slug: 'dispatch-tiers' } }, branch: 'feature/dispatch-tiers', head: null }, activity: { prompt: 'dispatch-tiers', last_message: 'Bash pytest -k tiers', model: 'sonnet-5.5', tool: 'Bash' } }),
   cardSession({ id: 5, agent: 'claude', project_dir: path('project_eagle'), title: 'eagle-tiers-backend', status: 'idle', status_since_ms: CARD_NOW - 16 * 60_000, checkout: { root: `${path('project_eagle')}/wt/eagle-tiers-backend`, kind: { worktree: { slug: 'eagle-tiers-backend' } }, branch: 'feature/eagle-tiers-backend', head: null }, activity: { prompt: 'eagle-tiers-backend', last_message: 'Done, migração e testes verdes', model: 'sonnet-5.5', tool: 'Bash' } }),
   cardSession({ id: 6, agent: 'claude', project_dir: path('Houston'), title: 'corrige o flicker da sidebar', status: 'working', status_since_ms: CARD_NOW, activity: { prompt: 'corrige o flicker da sidebar', last_message: 'Edit ghostty/surface.ts', model: 'opus-5.5', tool: 'Edit' } }),
@@ -352,14 +352,14 @@ const CARD_GRIDS: NonNullable<RailProps['gridsByWorkspace']> = {
   [path('finex')]: [{ id: 'rounding', name: 'Reconciliação', count: 1, state: 'stopped', sessionIds: [9], paneTagIds: [] }],
 }
 
-function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'icon', tagFilter = [] }: { openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
+function RailCardModes({ openTagPopover = false, openOptions = false, optionsPanel, hoverCard = false, expandAgents = false, initialCompact = false, tagDisplay = 'chips', tagFilter = [] }: { openTagPopover?: boolean; openOptions?: boolean; optionsPanel?: 'sort' | 'display'; hoverCard?: boolean; expandAgents?: boolean; initialCompact?: boolean; tagDisplay?: 'icon' | 'dots' | 'chips'; tagFilter?: number[] }): React.JSX.Element {
   const [compact, setCompact] = React.useState(initialCompact)
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
       rememberRailGitFacts(new Map([
         [path('dispatch'), { added: 162, deleted: 0, ahead: 0, behind: 0, changedFiles: 1 }],
-        [path('project_eagle'), { added: 932, deleted: 120, ahead: 0, behind: 0, changedFiles: 21 }],
-        [path('Houston'), { added: 214, deleted: 38, ahead: 0, behind: 0, changedFiles: 7 }],
+        [path('project_eagle'), { added: 932, deleted: 120, ahead: 3, behind: 0, changedFiles: 21 }],
+        [path('Houston'), { added: 91, deleted: 12, ahead: 2, behind: 0, changedFiles: 7 }],
         [`${path('Houston')}/wt/pr-list`, { added: 1204, deleted: 88, ahead: 0, behind: 0, changedFiles: 32 }],
       ]))
       rememberRailPr(path('project_eagle'), { gh: 'ready', pr: { number: 41, url: 'https://github.com/example/project-eagle/pull/41', state: 'open', title: 'Mensageria access tiers', head_ref: 'feature/tiers', additions: 932, deletions: 120, is_draft: false, review_decision: null, checks: 'running' } })

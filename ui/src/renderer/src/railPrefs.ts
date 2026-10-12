@@ -36,7 +36,7 @@ export const DETAILED_DEFAULT: RailCardProperty[] = [
   'checkout',
   'pr',
   'diff',
-  'task',
+  'tags',
   'inline-agents',
 ]
 export const COMPACT_DEFAULT: RailCardProperty[] = ['status', 'unread']
@@ -46,7 +46,7 @@ export const DEFAULT_RAIL_PREFS: RailPrefs = {
   groupBy: 'workspace',
   sort: 'manual',
   cardMode: 'detailed',
-  tagDisplay: 'icon',
+  tagDisplay: 'chips',
   agentActivity: 'compact',
   properties: [...DETAILED_DEFAULT],
   filters: { hideIdle: false, hideDefaultBranch: false, hideEmptyGrids: false },
@@ -65,7 +65,7 @@ const properties = new Set<RailCardProperty>([
   'ci',
   'diff',
   'tags',
-  'task',
+  'tags',
   'inline-agents',
   'context',
 ])
@@ -96,7 +96,7 @@ export function normalizeRailPrefs(value: unknown): RailPrefs {
         ? source.sort
         : DEFAULT_RAIL_PREFS.sort,
     cardMode: source.cardMode === 'compact' ? 'compact' : 'detailed',
-    tagDisplay: source.tagDisplay === 'dots' || source.tagDisplay === 'chips' ? source.tagDisplay : 'icon',
+    tagDisplay: source.tagDisplay === 'dots' || source.tagDisplay === 'icon' ? source.tagDisplay : 'chips',
     agentActivity: source.agentActivity === 'full' ? 'full' : 'compact',
     properties: [...new Set<RailCardProperty>(['status', 'unread', ...list])],
     filters: {

@@ -36,6 +36,11 @@ function storage(seed: Record<string, string> = {}): Storage {
 }
 
 describe('rail preferences', () => {
+  it('shows tag chips by default', () => {
+    expect(normalizeRailPrefs(null).properties).toContain('tags')
+    expect(normalizeRailPrefs(null).tagDisplay).toBe('chips')
+  })
+
   it('normalizes invalid or older persisted data to the v1 shape', () => {
     const prefs = normalizeRailPrefs({ v: 0, groupBy: 'repo', properties: ['status', 'invalid'] })
     expect(prefs.v).toBe(1)
