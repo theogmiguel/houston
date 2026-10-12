@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
-import { IconChartArea, IconRefresh } from './icons'
+import { IconChartArea, IconFolder, IconRefresh } from './icons'
 import { EmptyState } from './ui/EmptyState'
 import { StatusLabel } from './ui/StatusLabel'
 import { Segmented } from './ui/SegmentedControl'
@@ -29,6 +29,7 @@ import {
 } from '../usage'
 import { Tooltip } from './ui/Tooltip'
 import { Select } from './ui/Select'
+import { Icon } from './ui/Icon'
 import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageBreakdownHeading, UsageBreakdownSection, UsageShareGroup } from './ui'
 import { Card } from './ui/Card'
 import { PageFrame } from './ui/PageFrame'
@@ -71,7 +72,7 @@ function UsageStats({ totals, sessions, days }: { totals: UsageTotals; sessions:
     <UsageStatCard label="API-equivalent cost" value={totals.records > 0 && totals.unpricedRecords === totals.records ? 'Not priced' : formatUsd(totals.cost)} note={totals.records > 0 && totals.unpricedRecords === totals.records ? `${sessions.toLocaleString('en-US')} sessions · model rates unavailable` : `${sessions.toLocaleString('en-US')} sessions · ${roundedUsd(totals.cost / days)} a day`} headline />
     <UsageStatCard label="Tokens processed" value={formatTokens(totals.tokens)} note={`${Math.round(100 * totals.cachedInput / Math.max(1, totals.tokens))}% read from cache`} />
     <UsageStatCard label="Output tokens" value={formatTokens(totals.output)} note={`${formatTokens(totals.uncachedInput)} uncached input`} />
-    <UsageStatCard label="Saved by caching" value={totals.records > 0 && totals.unpricedRecords === totals.records ? '—' : roundedUsd(totals.cacheSavings)} note="against full input prices" />
+    <UsageStatCard label="Saved by caching" value={totals.records > 0 && totals.unpricedRecords === totals.records ? '—' : roundedUsd(Math.floor(totals.cacheSavings))} note="against full input prices" />
   </UsageTotalsStrip>
 }
 
@@ -305,7 +306,7 @@ export function UsageSection({
       <PageFrame width="wide" scroll={false} padding="page">
       <PageHeader heading="Usage" description="What your Claude Code and Codex sessions on this machine would cost at API prices. Houston reads their transcripts locally; nothing is sent anywhere." actions={
         <>
-          <Select aria-label="Usage workspace" data-testid="usage-workspace" value={selectedWorkspace} options={[{ value: 'all', label: 'All workspaces' }, ...workspaces.map((workspace) => ({ value: workspace.path, label: workspace.name }))]} onChange={setSelectedWorkspace} />
+          <Select prefix={<Icon glyph={IconFolder} role="ui" />} aria-label="Usage workspace" data-testid="usage-workspace" value={selectedWorkspace} options={[{ value: 'all', label: 'All workspaces' }, ...workspaces.map((workspace) => ({ value: workspace.path, label: workspace.name }))]} onChange={setSelectedWorkspace} />
           <Segmented aria-label="Window" size="xs" options={USAGE_WINDOWS.map((w) => ({ value: w.id, label: w.id === '24h' ? '24 hours' : w.label }))} value={windowId} onChange={setWindowId} />
           <Tooltip label="Read transcripts again"><Button variant="icon" aria-label="Refresh usage" data-testid="usage-refresh" onClick={refresh} disabled={loading} icon={IconRefresh} /></Tooltip>
         </>

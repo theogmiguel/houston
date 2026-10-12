@@ -298,6 +298,13 @@ describe('Usage page', () => {
     expect(q('[data-testid="usage-breakdown"] tbody tr')?.textContent).toContain('$42.00')
   })
 
+  it('keeps the folder-marked workspace action and whole-dollar cache summary', () => {
+    render({ summary: summary({ buckets: [bucket({ hour_start_ms: DAY0 + HOUR, cache_savings_usd: 18_240.55 })] }) })
+    expect(q('[data-testid="usage-workspace"]')?.querySelectorAll('svg')).toHaveLength(2)
+    const saved = [...host.querySelectorAll('[data-testid="usage-totals"] > *')].find((card) => card.textContent?.includes('Saved by caching'))
+    expect(saved?.textContent).toContain('$18,240')
+  })
+
   it('offers only Cost and Tokens, without a placeholder Limits option', () => {
     render()
     const limits = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Limits')
