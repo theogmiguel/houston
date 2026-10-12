@@ -127,13 +127,41 @@ conversation id before any hook arrives. `respawn_with` decides what a respawned
 `Restore` (boot) and `Resume` (a Restart) pass `launch::resume_args` for the pane's resume
 handle once `resume_check` passes (transcript metadata, recorded cwd, profile, no other live
 pane on the id); otherwise, and for `Fresh`, the pane starts a fresh CLI. A failed check, or
-a resumed CLI exiting non-zero within `RESUME_EARLY_EXIT` (10 s: an unknown id exits 1 at
-once), relaunches it fresh once with `SessionInfo.resume_notice`. Transient failures keep
+a top-level resumed CLI exiting non-zero within `RESUME_EARLY_EXIT` (10 s: an unknown id
+exits 1 at once), relaunches it fresh once with `SessionInfo.resume_notice`. An early failed
+child resume remains ended with a parent notice; it never launches a bare replacement. Transient failures keep
 the handle for retry; a changed cwd, deleted profile or changed profile configuration
 directory clears it before creating the new
 row. Codex uses `resume <id>` with the ID and transcript path supplied by native hooks.
 The resolved profile directory is recorded at launch; hooks cannot move that session's
 conversation into an edited or recreated profile's account namespace.
+Explicit launch selections are typed metadata, persisted with the initial session row.
+Replacement commits the new row, its continuation metadata, ancestry and inbox rebinding,
+and predecessor retirement together before publishing or releasing the PTY workers.
+Failed startup rolls back the replacement and retains the predecessor for retry. Initial
+prompts and arbitrary environment variables or command arguments are not recovery metadata.
+The Codex observer receives a native ID only for a launch that actually resumes it; a
+retained retry handle does not identify a newly launched conversation.
+
+Before restore, undrained root lifecycle hooks may update conversation metadata across
+long downtime. Recovery does not replay status, permission, input or orchestration effects.
+Provider and cwd bindings prevent a retained handle from crossing agent or folder changes;
+subagent hooks cannot rewrite the root namespace. Shell cwd changes are coalesced and
+persisted outside the PTY reader. Incomplete metadata recovery defers affected panes and
+retains pending drops for retry, rather than treating unreadable evidence as an empty inbox.
+Naturally exited root panes retain their identity and saved output without automatic launch.
+Only the newest row of a session origin is eligible, so legacy replacement predecessors
+cannot reappear alongside their successors.
+
+Startup commits the PTY root's PID and creation identity with the session row. Linux
+records the kernel boot UUID because process start ticks can repeat after reboot;
+Windows uses the absolute process creation FILETIME. Cold replacement and Close refuse
+while the recorded root is still present, without signalling a process from a previous
+daemon. Missing creation evidence for a live recorded PID remains a refusal. A changed
+boot or recycled PID does not block recovery. This is a root liveness check, not proof
+that an escaped descendant has stopped. Legacy rows without identity retain the previous
+recovery policy. Full containment and migration of those rows remain separate work.
+
 Shell panes can retain a root Claude, Codex or ZCode conversation reported by lifecycle
 hooks. Restart validates that provider's exact handle and launches the CLI from the restored
 POSIX shell with shell-quoted argv while keeping the pane classified as a shell. The shell
@@ -390,8 +418,15 @@ A replay that does not start at the true stream start is prefixed with an SGR re
 trimmed colour state cannot bleed into the first visible line. Rings persist to
 `scrollback/<id>.bin` behind a `TRSB` magic and version byte — written on session end, on the
 last `/ws` client detaching (`checkpoint_scrollback`), and at orderly shutdown, read on
-demand when a restored husk is attached. Between checkpoints a detached session's output
-stays in bounded memory only: a daemon crash can lose everything since the last one.
+demand when a restored husk is attached. Automatic restore carries a saved ring into the
+replacement ID before retiring the old row. Snapshot transfer failure retains the original
+pane and file; an explicit fresh root launch starts with a fresh ring. Recovery rejects
+oversized files and overflowing offsets before constructing a ring.
+
+Between checkpoints, output stays in bounded memory whether or not a client is attached:
+a daemon crash can lose everything since the last snapshot. SQLite WAL transactions and
+rename-based snapshots protect process-level recovery ordering; `synchronous = NORMAL`
+and unsynced filesystem writes do not promise the latest state after a machine power cut.
 
 ## Reading a pane
 

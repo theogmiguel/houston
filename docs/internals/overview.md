@@ -271,18 +271,18 @@ waits for the remote receive window, so continuous output cannot postpone a resi
 
 Quitting the app (`RunEvent::Exit`, or its own signal handler) only closes the `/ws`
 connection — it never touches `daemon.json`, never checkpoints, never marks a clean
-shutdown. Those are the daemon's own concerns now: it checkpoints scrollback on the last
-client detaching (`conn_forget` reaching zero connections) and marks a clean shutdown only
-after its own orderly stop (SIGTERM/SIGINT, or `/manage`'s `daemon_shutdown`) actually
-completes — `checkpoint_scrollback()` then `mark_clean_shutdown()`, in that order, so a crash
-between them is still read as abnormal on the next boot.
+shutdown. The daemon checkpoints scrollback when its last client detaches.
 
-The daemon's idle reap (a grace period with no client, no live session and no enabled routine)
-exits through this same orderly path, not a separate one: `mark_clean_shutdown()` then
-`remove_discovery_files()` removes `daemon.json` and, if present, `supervisor.json` — exactly
-what `/manage`'s `daemon_shutdown` does — before calling the injected process exit. Skipping
-this cleanup leaves `daemon.json` pointing to a process that no longer owns the listener,
-which `scripts/dev.sh --fresh` correctly treats as an unresponsive daemon.
+SIGTERM/SIGINT, management stop and idle reap share orderly shutdown admission. The stop
+claims its gate exclusively and waits for already admitted launches before checking the
+confirmed session set. It records recoverable sessions as interrupted, terminates their
+owned backends and waits for output readers to drain. This preserves conversation handles
+and lets boot reconcile interrupted instructions and delegations; it does not apply the
+per-pane Kill operation. A concurrent refusal cannot reopen another stop's admission gate.
+
+Only a successful final checkpoint permits the clean marker and removal of discovery
+files. Failed capture remains abnormal on the next boot. The marker describes completed
+process shutdown; it is not a guarantee that every filesystem write survived a power cut.
 
 ### The tray, and hide-to-tray
 

@@ -188,12 +188,14 @@ in the tray exits the client directly, including when the interface is unrespons
 When Houston detects that the interface has failed, closing the window exits the client
 instead of hiding it in the tray.
 
-To end the sessions and exit, use **Quit and stop daemon** in the command palette,
+To stop the running processes and exit, use **Quit and stop daemon** in the command palette,
 or **Quit and stop daemons…** in the tray. Both stop the local daemon and connected WSL
 daemons after confirmation. Shutdown runs independently of the interface; if a daemon
 cannot be confirmed stopped, a native dialog names the failure and offers to keep Houston
 open or close it while those sessions may continue. **Stop daemon** in Settings ▸ Daemon
-stops the selected environment; its confirmation names the affected sessions and routines.
+stops the local daemon; its confirmation names the affected sessions and routines.
+Stopping a daemon preserves recoverable panes and their conversation handles for the next
+launch. Use Kill or Close on an individual pane to discard its continuation.
 
 ## Killing a pane
 
@@ -224,16 +226,21 @@ Sleeping panes remain asleep after a daemon restart or reboot.
 
 Settings ▸ Workspaces ▸ Close idle background sessions can end sessions that have sat
 idle in the background, after the "Idle for" duration you set. Settings ▸ Workspaces ▸
-Restore budget caps how many sessions Houston brings back automatically after a shutdown
-or crash. Settings ▸ Workspaces ▸ Restore budget controls this limit; safe mode disables
-automatic restoration.
+Restore budget caps how many top-level sessions Houston brings back automatically after a
+shutdown or crash. Their eligible children recover with them; safe mode disables automatic
+restoration.
 
 A restored or restarted session comes back in the same cell: the same grid, split and
 stack, including repeated restarts while the application is closed and All workspaces.
+While a WSL environment reconnects, Houston keeps its saved grid positions and workspace
+selection until that environment reports its sessions. Terminal input to an unavailable
+environment is refused; it is not queued for later delivery.
 It runs on the same agent profile. If that profile has been deleted, it runs on the
-default account and no longer shows the profile's name.
+default account and no longer shows the profile's name. Explicit model, reasoning effort
+and approval choices made in Houston survive recovery. Choices changed inside a CLI or
+commands typed manually into a shell are controlled by that CLI.
 
-Claude and Codex panes reopen their exact conversation after a shutdown or crash, whether
+Claude, Codex and ZCode panes reopen their exact conversation after a shutdown or crash, whether
 working or waiting for input, once that conversation has had a prompt. The CLI restores
 its history and waits for your next input; Houston does not resend a prompt or repeat an
 interrupted tool. Settings ▸ Workspaces ▸ Resume conversations when restoring panes turns
@@ -243,7 +250,9 @@ older CLIs without those fields start fresh.
 Restart offers Resume conversation and Start fresh when a pane holds a conversation.
 Start fresh, Kill and Close each forget it. If its transcript is gone, its folder changes,
 its agent profile was deleted, another pane already has it open, or the resumed CLI exits
-with an error within 10 seconds, the pane starts fresh and says why. Changing the folder
+with an error within 10 seconds, a top-level pane starts fresh and says why. An orchestration
+child whose conversation fails to resume remains ended and reports the failure to its parent;
+it never substitutes an empty conversation for its mission. Changing the folder
 or changing its profile's configuration directory discards the old conversation handle.
 Losing the profile also discards it. A shell pane with a validated Claude, Codex or ZCode
 conversation can relaunch that conversation inside its shell; orchestration children stay
@@ -253,3 +262,24 @@ Resume conversation is refused naming the shell, Start fresh starts the shell wi
 conversation, and at startup the pane waits for a manual restart. Other agents, shells
 without a validated conversation and routine runs start fresh. Sessions beyond the restore
 budget remain available for manual restart.
+
+Panes that had already exited remain ended after reopening Houston, with their saved
+output available. They do not launch an agent automatically. Killed and closed panes do
+not return through recovery.
+
+A conversation belongs to its recorded provider and folder. Switching agents inside a
+shell cannot reuse the previous agent's conversation. If pending conversation metadata
+cannot be recovered, the pane stays visible with a reason; fix the reported problem and
+retry, or explicitly choose Start fresh or Close. A provider launched with a custom command
+also waits after a daemon restart: Houston does not save arbitrary command arguments.
+Start fresh launches that provider's standard command.
+
+If a recorded process from the previous daemon is still alive, Houston keeps its pane
+and refuses replacement, including Start fresh and Close. Stop that process or reboot,
+then retry. This check identifies the recorded PTY process; it cannot establish that
+all detached subprocesses have stopped, and older saved sessions may lack that identity.
+
+Saved terminal output follows an automatically restored pane. Output since the last
+checkpoint can be lost after an abrupt daemon exit, and provider conversation history
+depends on the provider's own storage. A power failure can also lose recent writes that
+had not reached storage; recovery does not promise to repeat or complete interrupted tools.

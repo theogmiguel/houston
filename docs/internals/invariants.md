@@ -373,7 +373,8 @@ overwritten by a later title.
 
 ### A pane resumes only its own conversation, by exact id
 
-Boot restore and Restart relaunch Claude with `--resume <id>` and Codex with `resume <id>`.
+Boot restore and Restart relaunch Claude and ZCode with `--resume <id>` and Codex with
+`resume <id>`.
 The handle is the root conversation ID and transcript path reported by native hooks,
 retained once the conversation has a turn. Codex versions without those hook fields do
 not acquire a handle. No command chooses the latest conversation in a directory.
@@ -385,8 +386,11 @@ the carried handle, including when
 automatic conversation resume is disabled. Kill, Close and Start fresh clear it; Sleep
 retains it with the pane and persisted scrollback, and boot leaves that pane asleep. Late
 hooks from a killed or removed session cannot recreate it. Kill and Close persist their
-terminal state before returning, so an immediate crash cannot revive the pane. A failed resume starts fresh
-once with a visible reason, while transient failures retain the handle for manual retry.
+terminal state before returning, so an immediate daemon crash cannot revive the pane. A
+failed top-level resume starts fresh once with a visible reason, while transient failures
+retain the handle for manual retry. A failed child resume remains ended and reports to its
+parent without substituting a new conversation. Daemon stop preserves recovery intent and
+handles; it does not perform per-pane Kill.
 Wake is stricter: it must resume the exact stored conversation and never falls back to a
 fresh CLI. A failed Wake remains resumable with the stored handle.
 
