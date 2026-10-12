@@ -14853,7 +14853,8 @@ impl Daemon {
             let root = crate::agent_events::names_root_conversation(provider, &d.event)
                 && d.agent_id.is_none()
                 && d.subagent_type.is_none();
-            let metadata_event = crate::launch::resumes_conversations(provider)
+            let metadata_event = session.info.agent != proto::AgentKind::Custom
+                && crate::launch::resumes_conversations(provider)
                 && matches!(
                     crate::agent_events::AgentEvent::from_provider(provider, &d.event),
                     Some(

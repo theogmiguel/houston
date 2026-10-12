@@ -101,7 +101,7 @@ async fn drive_spawn_persist_reopen(
     collect_output_until(&mut ws, info.id, LATE_MARKER).await;
     drop(ws);
     server_handle.abort();
-    daemon.persist_all();
+    daemon.manage_shutdown().unwrap();
     let checkpoint = houston_core::scrollback::Scrollback::load(
         &db_path
             .parent()
