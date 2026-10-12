@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Button } from './Button'
 import { Icon } from './Icon'
 import { Text } from './Text'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import type { IconComponent } from '../icons'
 import { IconAgent, IconCopy, IconFolderOpen, IconGitBranch } from '../icons'
 
@@ -69,7 +70,7 @@ export function WorktreePopoverRow({
         type="button"
         {...rowProps}
         onClick={onSelect}
-        className="grid min-w-0 flex-1 grid-cols-[auto_1fr] items-start gap-x-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 bg-transparent px-[var(--space-2)] py-[var(--space-1-5)] text-left focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:-2px]"
+        className={`grid min-w-0 flex-1 grid-cols-[auto_1fr] items-start gap-x-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 bg-transparent px-[var(--space-2)] py-[var(--space-1-5)] text-left focus-visible:outline-none ${FOCUS_HALO_CLS}`}
       >
         <span className="pt-[var(--space-0-5)] flex flex-none">{agent}</span>
         <span className="grid min-w-0 gap-[2px]">
