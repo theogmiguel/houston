@@ -148,6 +148,10 @@ The renderer learns port and token from the Tauri command `host_config`, not fro
 `daemon.json`. `host.rs` may not log (a unit test greps its own source for `println!` and
 `tracing::`) because the token is in scope. The first `/ws` frame must be `hello`; token
 comparison is constant-time and the protocol version is an exact match.
+After initial startup, connection configuration reads bounded discovery data from the
+same channel and authenticates the current endpoint. A failed probe clears cached
+credentials; reconnect never spawns a daemon or initiates a handoff. Same-protocol builds
+remain connectable when startup has accepted them.
 
 PTY frames flow only for sessions the connection asked about (`session_attach`,
 `session_visibility{visible:true}`, or creating the session on that socket), and each such
