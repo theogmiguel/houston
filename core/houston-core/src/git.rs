@@ -114,23 +114,53 @@ fn split_state(x: u8, y: u8) -> Vec<(proto::GitFileState, bool)> {
     out
 }
 
+fn numstat_entries(raw: &str) -> impl Iterator<Item = (&str, Option<i64>, Option<i64>)> {
+    let mut records = raw.split('\0').filter(|record| !record.is_empty());
+    std::iter::from_fn(move || loop {
+        let record = records.next()?;
+        let mut parts = record.splitn(3, '\t');
+        let (Some(added), Some(deleted), Some(path)) = (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        let path = if path.is_empty() {
+            // With -z, a rename has a separate old and new path after the counts.
+            records.next()?;
+            records.next()?
+        } else {
+            path
+        };
+        return Some((path, added.parse().ok(), deleted.parse().ok()));
+    })
+}
+
 fn merge_numstat(dir: &Path, files: &mut [proto::GitFileStatus], staged: bool) {
+    if !files
+        .iter()
+        .any(|file| file.staged == staged && file.status != proto::GitFileState::Untracked)
+    {
+        return;
+    }
     let args: &[&str] = if staged {
-        &["diff", "--cached", "--numstat"]
+        &["diff", "--cached", "--numstat", "-z"]
     } else {
-        &["diff", "--numstat"]
+        &["diff", "--numstat", "-z"]
     };
     let Ok(numstat) = run_git(dir, args) else {
         return;
     };
-    for line in numstat.lines() {
-        let mut parts = line.splitn(3, '\t');
-        let (Some(a), Some(d), Some(p)) = (parts.next(), parts.next(), parts.next()) else {
-            continue;
-        };
-        if let Some(f) = files.iter_mut().find(|f| f.staged == staged && f.path == p) {
-            f.added = a.trim().parse().ok();
-            f.deleted = d.trim().parse().ok();
+    merge_numstat_output(files, staged, &numstat);
+}
+
+fn merge_numstat_output(files: &mut [proto::GitFileStatus], staged: bool, raw: &str) {
+    // Index the diff once: searching all status rows for every record is quadratic.
+    let counts: std::collections::HashMap<_, _> = numstat_entries(raw)
+        .map(|(path, added, deleted)| (path, (added, deleted)))
+        .collect();
+    for file in files.iter_mut().filter(|file| file.staged == staged) {
+        if let Some(&(added, deleted)) = counts.get(file.path.as_str()) {
+            file.added = added;
+            file.deleted = deleted;
         }
     }
 }
@@ -899,31 +929,16 @@ pub fn status_vs_base(dir: &Path, base: &str) -> Result<Vec<proto::GitFileStatus
     ensure_repo(dir)?;
     let mb = merge_base(dir, base)?;
     let raw = run_git(dir, &["diff", "--numstat", "-z", &format!("{mb}..HEAD")])?;
-    let mut out: Vec<proto::GitFileStatus> = Vec::new();
-    let mut it = raw.split('\0').filter(|s| !s.is_empty()).peekable();
-    while let Some(rec) = it.next() {
-        let mut parts = rec.splitn(3, '\t');
-        let (Some(add), Some(del), Some(path)) = (parts.next(), parts.next(), parts.next()) else {
-            continue;
-        };
-        let path = if path.is_empty() {
-            let _old = it.next();
-            match it.next() {
-                Some(new) => new.to_string(),
-                None => continue,
-            }
-        } else {
-            path.to_string()
-        };
-        out.push(proto::GitFileStatus {
-            is_sensitive: is_sensitive_path(&path),
-            path,
+    let mut out: Vec<proto::GitFileStatus> = numstat_entries(&raw)
+        .map(|(path, added, deleted)| proto::GitFileStatus {
+            is_sensitive: is_sensitive_path(path),
+            path: path.to_string(),
             status: proto::GitFileState::Modified,
             staged: true,
-            added: add.parse::<i64>().ok(),
-            deleted: del.parse::<i64>().ok(),
-        });
-    }
+            added,
+            deleted,
+        })
+        .collect();
     out.extend(status(dir)?);
     Ok(out)
 }
@@ -1577,6 +1592,19 @@ mod tests {
     use super::*;
     use std::fs;
     use std::process::Command;
+
+    #[test]
+    fn nul_numstat_preserves_control_paths_renames_and_binary_counts() {
+        let raw = "1\t2\tcafé\tfile\n.txt\0-\t-\tbinary.bin\x003\t4\t\0old name\0new name\0";
+        assert_eq!(
+            numstat_entries(raw).collect::<Vec<_>>(),
+            vec![
+                ("café\tfile\n.txt", Some(1), Some(2)),
+                ("binary.bin", None, None),
+                ("new name", Some(3), Some(4)),
+            ]
+        );
+    }
 
     #[test]
     fn oversized_git_capture_refuses_before_returning_a_partial_patch() {
