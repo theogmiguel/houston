@@ -369,6 +369,11 @@ Show only on the Needs you heading hides the other groups until you select it ag
 until no child needs you. The parent agent can answer routine reported questions;
 the daemon does not make decisions or approve provider prompts on your behalf.
 
+When children run in their own git worktrees, the orchestrator's header shows a branch
+count next to its branch chip. Select it to list each child's own branch, commits ahead
+and changed lines; select a child to focus its pane, or use the row's copy-path and
+reveal actions.
+
 Overview opens a closable side-panel tab for that orchestrator. Group its children by
 status or worktree, select a terminal, or review changes in the child's checkout.
 The parent’s Inbox count opens pending messages. A child’s Pending delivery badge

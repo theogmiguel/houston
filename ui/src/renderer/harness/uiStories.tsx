@@ -890,6 +890,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Popover panel">
           <PopoverPanelSpecimen />
           <PopoverPanelSpecimen width="wide" />
+          <PopoverPanelSpecimen width="list" />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Choice tiles">

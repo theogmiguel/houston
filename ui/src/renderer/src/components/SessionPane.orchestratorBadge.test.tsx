@@ -291,7 +291,7 @@ it('shows an idle orchestrator as working in its header while a child works, and
   expect(container!.querySelector('[data-testid="head-identity"] .agent-dot')?.getAttribute('aria-label')).toBe('ready')
 })
 
-it("counts live children in worktrees on the orchestrator's branch chip and lists their branches in its tooltip", () => {
+it("counts live children in worktrees on the orchestrator's branch chip, keeping the tooltip to its own checkout", () => {
   const primary = { root: '/tmp/project', kind: 'primary', branch: 'main', head: null }
   const worktree = (slug: string) => ({ root: `/tmp/project/.houston/worktrees/${slug}`, kind: { worktree: { slug } }, branch: `houston/${slug}`, head: null })
   const parent = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', status: 'idle', title: 'parent', codename: 'Max', hidden: false, spawned_by: null, live_children: 3, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, checkout: primary } as SessionInfo
@@ -327,10 +327,7 @@ it("counts live children in worktrees on the orchestrator's branch chip and list
   ))
   const chip = container!.querySelector('[data-testid="branch-chip"]')!
   expect(chip.querySelector('[data-testid="branch-chip-children"]')?.textContent).toBe('2')
-  const tooltip = chip.closest('[data-tooltip]')!.getAttribute('data-tooltip')!
-  expect(tooltip).toContain('primary · main')
-  expect(tooltip).toContain('Zane · claude-global-hooks: houston/claude-global-hooks')
-  expect(tooltip).toContain('Ivy · rail-status: houston/rail-status')
-  expect(tooltip).not.toContain('Bo')
-  expect(tooltip).not.toContain('houston/gone')
+  const tooltip = chip.querySelector('[data-tooltip]')!.getAttribute('data-tooltip')!
+  expect(tooltip).toBe('primary · main')
+  expect(chip.querySelector('button[aria-label="2 child worktrees"]')?.getAttribute('aria-haspopup')).toBe('dialog')
 })

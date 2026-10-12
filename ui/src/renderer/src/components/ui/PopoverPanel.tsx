@@ -3,6 +3,7 @@ import type { IconComponent } from '../icons'
 import { Button } from './Button'
 import { Icon } from './Icon'
 import { Text } from './Text'
+import { WorktreePopoverSpecimen } from './WorktreePopover'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS, popOriginStyle } from './overlayChrome'
 
 // The hover card that describes a delegated pane, and the badge glyphs that open it.
@@ -28,7 +29,7 @@ export function PopoverPanel({
   top: number
   left: number
   visible: boolean
-  width?: 'default' | 'wide'
+  width?: 'default' | 'wide' | 'list'
   ref?: Ref<HTMLDivElement>
 } & Omit<HTMLAttributes<HTMLDivElement>, 'className' | 'style'>): React.JSX.Element {
   const style: CSSProperties = {
@@ -43,7 +44,7 @@ export function PopoverPanel({
       ref={ref}
       role="dialog"
       {...OVERLAY_RAISED_ATTRS}
-      className={`${OVERLAY_RAISED_CLS} fixed z-[var(--z-overlay)] ${width === 'wide' ? 'w-[420px] max-w-[calc(100vw_-_var(--space-4))] max-h-[calc(100vh_-_var(--space-4))] overflow-auto' : 'w-[var(--w-popover-content)] overflow-hidden'}`}
+      className={`${OVERLAY_RAISED_CLS} fixed z-[var(--z-overlay)] ${width === 'wide' ? 'w-[420px] max-w-[calc(100vw_-_var(--space-4))] max-h-[calc(100vh_-_var(--space-4))] overflow-auto' : width === 'list' ? 'w-[460px] max-w-[calc(100vw_-_var(--space-4))] max-h-[calc(100vh_-_var(--space-4))] overflow-auto p-[var(--space-1)]' : 'w-[var(--w-popover-content)] overflow-hidden'}`}
       style={style}
     />
   )
@@ -201,7 +202,8 @@ export function BadgeSeparator({ children }: { children: ReactNode }): React.JSX
   return <Text className="px-px" tone="muted">{children}</Text>
 }
 
-export function PopoverPanelSpecimen({ width = 'default' }: { width?: 'default' | 'wide' }): React.JSX.Element {
+export function PopoverPanelSpecimen({ width = 'default' }: { width?: 'default' | 'wide' | 'list' }): React.JSX.Element {
+  if (width === 'list') return <WorktreePopoverSpecimen />
   return (
     <div className={`${width === 'wide' ? 'w-[420px] max-w-full' : 'w-[var(--w-popover-content)]'} overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--elevated-surface)]`}>
       <PopoverHeader trailing={<PopoverDescription>1 waiting</PopoverDescription>}>
