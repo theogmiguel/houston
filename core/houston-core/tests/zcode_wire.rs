@@ -819,8 +819,7 @@ async fn a_restored_zcode_pane_resumes_its_session_by_id() {
     )
     .await;
 
-    daemon.checkpoint_scrollback().unwrap();
-    daemon.mark_clean_shutdown().unwrap();
+    daemon.manage_shutdown().unwrap();
     let after = boot(&env);
     let restored = after
         .list()
