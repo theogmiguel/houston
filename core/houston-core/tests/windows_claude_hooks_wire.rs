@@ -24,14 +24,17 @@ fn git_bash() -> PathBuf {
 
 fn run_in_git_bash(command: &str, home: &Path, session: Option<u32>, stdin: &str) -> Output {
     let mut cmd = houston_core::spawn::command(git_bash());
+    cmd.env_clear();
+    for name in ["PATH", "SystemRoot", "SystemDrive", "windir", "TEMP", "TMP"] {
+        if let Some(value) = std::env::var_os(name) {
+            cmd.env(name, value);
+        }
+    }
     cmd.arg("-c")
         .arg(command)
         .env("HOME", home)
         .env("USERPROFILE", home)
         .env("HOUSTON_CHANNEL", CHANNEL)
-        .env_remove("TR_SESSION")
-        .env_remove("CLAUDE_CONFIG_DIR")
-        .env_remove("GROK_SESSION_ID")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

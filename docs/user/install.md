@@ -97,8 +97,8 @@ command carries a channel-specific `--houston-managed` marker and exits silently
 report status. Turn the switch off in Settings ▸ Agents ▸ Claude to remove
 Houston's entries while preserving your hooks and other settings. Migration removes
 Houston's old entries from workspace `.claude/settings.local.json` files. On Windows,
-Install Git for Windows to provide Git Bash for Claude lifecycle hooks, then enable the
-Claude hook in Settings > Agents > Claude. If Git Bash is unavailable, Claude reports a
+install Git for Windows to provide Git Bash for Claude lifecycle hooks, then enable the
+Claude hook in Settings ▸ Agents ▸ Claude. If Git Bash is unavailable, Claude reports a
 hook error instead of reporting status.
 
 Houston also registers itself as an MCP server in `~/.claude.json` (or under
