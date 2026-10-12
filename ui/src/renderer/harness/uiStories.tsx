@@ -1,3 +1,4 @@
+import { AgentSetupRow } from '../src/components/ui/AgentSetupRow'
 import { SettingsFooterItem } from '../src/components/ui/SettingsFooterItem'
 import { AgentSettingsBody } from '../src/components/ui/AgentSettingsBody'
 import { SettingsNavigationGroup } from '../src/components/ui/NavigationRailFooter'
@@ -616,7 +617,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Row states"><RowStateSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Embedded agent content"><AgentSettingsBody embedded><Text>Agent content inside the Settings page frame</Text></AgentSettingsBody></SpecimenGroup>
-        <SpecimenGroup heading="Settings footer"><SettingsFooterItem attention={3} onClick={noop} /></SpecimenGroup>
+        <SpecimenGroup heading="Settings footer"><SettingsFooterItem attention={3} onClick={noop} /><AgentSetupRow heading="MCP servers" detail="3 servers · github can’t start" tone="danger" status="1 failing" onClick={noop} /></SpecimenGroup>
         <SpecimenGroup heading="Grouped settings navigation"><SettingsNavigationGroup label="Agents"><SettingsRailRow kind="section" icon={IconTerminal} label="CLIs" trailing={<Count value={1} from="warn" />} /><SettingsRailRow kind="section" icon={IconSearch} label="MCP servers" selected trailing={<Count value={1} from="stop" />} /></SettingsNavigationGroup></SpecimenGroup>
         <SpecimenGroup heading="Settings navigation and scope">
           <SpecimenRow>

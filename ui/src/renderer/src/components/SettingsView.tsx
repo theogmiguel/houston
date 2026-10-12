@@ -72,6 +72,7 @@ export interface McpStateView {
 
 export interface Props {
   agentPages?: Partial<Record<AgentSetupSection, ReactNode>>
+  agentReviewStates?: import('../houston/useHarness').HarnessState[]
   agentAttention?: AgentAttention
   onMcpTest?: (name: string) => void
   daemonClient?: HoustonClient | null
@@ -495,7 +496,7 @@ export function SettingsView(props: Props): React.JSX.Element {
     <SettingsPageSurface ref={columnRef} className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       {}
       <PageFrame width={SETTINGS_SECTIONS.find((entry) => entry.id === section)?.width === 'wide' ? 'wide' : 'settings'} scroll={false} padding="settings">
-        {section === 'agents-overview' ? <AgentsOverview attention={props.agentAttention ?? agentAttentionFor({ agentHooks: props.agentHooks, skills: null, checks: null, reviews: [] })} onRepair={props.onAgentHooksSet} onCheck={props.onMcpTest ?? NOOP} /> : props.agentPages?.[section as AgentSetupSection] ?? <SectionDispatch
+        {section === 'agents-overview' ? <AgentsOverview reviewStates={props.agentReviewStates} client={props.daemonClient ?? null} workspace={props.historyWorkspace} attention={props.agentAttention ?? agentAttentionFor({ agentHooks: props.agentHooks, skills: null, checks: null, reviews: [] })} onRepair={props.onAgentHooksSet} onCheck={props.onMcpTest ?? NOOP} /> : props.agentPages?.[section as AgentSetupSection] ?? <SectionDispatch
           {...props}
           section={section}
           terminalLineHeight={terminalLineHeight}

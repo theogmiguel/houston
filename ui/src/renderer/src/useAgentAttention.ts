@@ -27,6 +27,7 @@ export interface AgentAttention {
   total: number
   counts: Record<AgentSetupSection, number>
   issues: AgentAttentionIssue[]
+  sources: { installedClis: number; skillCount: number; serverCount: number }
   known: { clis: boolean; skills: boolean; mcp: boolean }
 }
 
@@ -40,7 +41,7 @@ export function agentAttentionFor({ agentHooks, skills, checks, reviews }: Agent
   }
   for (const row of buildSkillRows(skills ?? [])) {
     if (!row.hasDrift) continue
-    issues.push({ key: `skill:${row.name}`, section: 'agents-skills', title: `${row.name} copies differ`, detail: 'Agent copies have different content digests.', action: 'open' })
+    issues.push({ key: `skill:${row.name}`, section: 'agents-skills', title: row.claude && row.byTool.codex && row.byTool.codex.digest !== row.claude.digest ? `Codex copy differs for ${row.name}` : `${row.name} copies differ`, detail: 'Agent copies have different content digests.', action: 'open' })
   }
   for (const tool of skills ?? []) {
     if (tool.error) issues.push({ key: `skill-tool:${tool.tool}`, section: 'agents-skills', title: `${tool.tool} skills could not be read`, detail: tool.error, action: 'open' })
@@ -58,7 +59,7 @@ export function agentAttentionFor({ agentHooks, skills, checks, reviews }: Agent
     counts['agents-review'] += review.attention
     issues.push({ key: `review:${review.workspace}`, section: 'agents-review', title: `${review.attention} review ${review.attention === 1 ? 'finding needs' : 'findings need'} you`, detail: review.workspace, action: 'open', workspace: review.workspace })
   }
-  return { total: Object.values(counts).reduce((sum, count) => sum + count, 0), counts, issues, known: { clis: agentHooks !== null, skills: skills !== null, mcp: checks !== null } }
+  return { sources: { installedClis: new Set((agentHooks ?? []).filter((hook) => hook.present).map((hook) => hook.provider)).size, skillCount: buildSkillRows(skills ?? []).length, serverCount: new Set((checks ?? []).map(([name]) => name)).size }, total: Object.values(counts).reduce((sum, count) => sum + count, 0), counts, issues, known: { clis: agentHooks !== null, skills: skills !== null, mcp: checks !== null } }
 }
 
 export function useAgentAttention(input: AgentAttentionInput): AgentAttention {
