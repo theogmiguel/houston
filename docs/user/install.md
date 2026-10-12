@@ -96,8 +96,11 @@ command carries a channel-specific `--houston-managed` marker and exits silently
 `TR_SESSION` is empty. Claude launched from any directory inside a Houston pane can
 report status. Turn the switch off in Settings ▸ Agents ▸ Claude to remove
 Houston's entries while preserving your hooks and other settings. Migration removes
-Houston's old entries from workspace `.claude/settings.local.json` files. Installation
-is unsupported on Windows because these commands require POSIX `sh`.
+Houston's old entries from workspace `.claude/settings.local.json` files. On Windows,
+each entry selects Git Bash (`"shell": "bash"`) and names Houston's `claude-hook.exe` in the
+channel's state directory (for example `%USERPROFILE%\.houston\bin`). Install Git for
+Windows before turning the switch on; without it Claude reports a hook error instead of
+reporting status.
 
 Houston also registers itself as an MCP server in `~/.claude.json` (or under
 `$CLAUDE_CONFIG_DIR` if you've set that), so agents in Claude Code panes can spawn and

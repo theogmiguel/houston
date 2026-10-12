@@ -214,10 +214,14 @@ pub(crate) fn guard_launcher_exec(exe: &Path, argv_tail: &str) -> String {
     format!("if [ -x {exe} ]; then exec {exe} {argv_tail}; fi")
 }
 
+// Claude runs a hook command through `sh -c`, or Git Bash on Windows (PowerShell
+// only when Git Bash is not installed). Windows names the `.exe` launcher copy,
+// which `command_spelling` renders with forward slashes for bash.
 fn hook_command(exe: &str, event: &str, sentinel: &str) -> String {
+    let launcher = executable_launcher(Path::new(exe));
     format!(
         "if [ -z \"${{TR_SESSION:-}}\" ]; then exit 0; fi; {}",
-        guard_launcher_exec(Path::new(exe), &format!("hook {event} {sentinel}"))
+        guard_launcher_exec(&launcher, &format!("hook {event} {sentinel}"))
     )
 }
 
@@ -233,6 +237,10 @@ fn tr_hook_group(exe: &str, event: &str, sentinel: &str) -> serde_json::Value {
             }
         ]
     });
+    if cfg!(windows) {
+        // Without it Claude runs the POSIX guard in PowerShell when Git Bash is absent.
+        group["hooks"][0]["shell"] = serde_json::json!("bash");
+    }
     let matcher = match event {
         "PreToolUse" => Some("AskUserQuestion|ExitPlanMode"),
         "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => Some("*"),
@@ -302,11 +310,6 @@ pub fn is_installed(path: &Path, sentinel: &str) -> bool {
 }
 
 pub fn install(settings_path: &Path, exe: &str, sentinel: &str) -> Result<HooksInstall> {
-    if cfg!(windows) {
-        anyhow::bail!(
-            "Claude lifecycle hooks require POSIX sh; installation is unsupported on Windows"
-        );
-    }
     let exe = crate::exe_path::strip_deleted_exe_suffix(Path::new(exe));
     let exe = exe.to_string_lossy();
     let exe = exe.as_ref();
@@ -1064,12 +1067,43 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_installation_is_explicitly_refused() {
+    fn windows_hooks_name_the_exe_launcher_in_a_bash_spelling() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("settings.json");
-        let error = install(&path, "helper", "--houston-managed").unwrap_err();
-        assert!(error.to_string().contains("unsupported on Windows"));
-        assert!(!path.exists());
+        let launcher = r"C:\Users\O'Brien\My Dir\.houston\bin\claude-hook";
+        let sentinel = sentinel_for(Some("dev"));
+        let outcome = install(&path, launcher, &sentinel).unwrap();
+        assert!(outcome.created_file && outcome.created_hooks);
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let quoted = "'C:/Users/O'\\''Brien/My Dir/.houston/bin/claude-hook.exe'";
+        for event in hook_events() {
+            let cmd = v["hooks"][event][0]["hooks"][0]["command"]
+                .as_str()
+                .unwrap();
+            assert_eq!(
+                cmd,
+                format!(
+                    "if [ -z \"${{TR_SESSION:-}}\" ]; then exit 0; fi; \
+                     if [ -x {quoted} ]; then exec {quoted} hook {event} {sentinel}; fi"
+                ),
+                "{event} must guard and exec the quoted .exe launcher"
+            );
+            assert!(command_has_sentinel(cmd, &sentinel), "{event}: {cmd}");
+            assert_eq!(v["hooks"][event][0]["hooks"][0]["shell"], "bash", "{event}");
+        }
+        assert!(is_installed(&path, &sentinel));
+        remove(
+            &path,
+            outcome.created_file,
+            outcome.created_hooks,
+            &sentinel,
+        )
+        .unwrap();
+        assert!(
+            !path.exists(),
+            "removal must delete the file Houston created"
+        );
     }
 
     const EXE: &str = "/opt/houston/houston-core";
