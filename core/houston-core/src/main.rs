@@ -175,7 +175,10 @@ async fn wait_for_sigterm() {
         Ok(mut sigterm) => {
             let _ = sigterm.recv().await;
         }
-        Err(e) => tracing::warn!("no SIGTERM stream installed: {e}"),
+        Err(e) => {
+            tracing::warn!("no SIGTERM stream installed: {e}");
+            std::future::pending::<()>().await;
+        }
     }
     #[cfg(not(unix))]
     std::future::pending::<()>().await;
@@ -362,13 +365,10 @@ async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) ->
         exit_retired_daemon(&daemon).await;
         return Ok(());
     }
-    if let Err(e) = daemon.checkpoint_scrollback() {
-        tracing::warn!("shutdown: checkpoint failed: {e:#}");
-    }
-    if let Err(e) = daemon.mark_clean_shutdown() {
-        tracing::warn!("shutdown: writing the clean-shutdown marker failed: {e:#}");
-    }
-    let _ = fs::remove_file(&cfg_path);
+    tokio::task::spawn_blocking(move || daemon.manage_shutdown())
+        .await
+        .context("joining orderly daemon shutdown")?
+        .map_err(|error| anyhow::anyhow!("daemon shutdown failed: {}", error.reason))?;
     Ok(())
 }
 
@@ -570,13 +570,10 @@ async fn run(supervisor: Option<SupervisorSocket>) -> Result<()> {
         exit_retired_daemon(&daemon).await;
         return Ok(());
     }
-    if let Err(e) = daemon.checkpoint_scrollback() {
-        tracing::warn!("shutdown: checkpoint failed: {e:#}");
-    }
-    if let Err(e) = daemon.mark_clean_shutdown() {
-        tracing::warn!("shutdown: writing the clean-shutdown marker failed: {e:#}");
-    }
-    let _ = fs::remove_file(&cfg_path);
+    tokio::task::spawn_blocking(move || daemon.manage_shutdown())
+        .await
+        .context("joining orderly daemon shutdown")?
+        .map_err(|error| anyhow::anyhow!("daemon shutdown failed: {}", error.reason))?;
     Ok(())
 }
 

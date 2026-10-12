@@ -4158,9 +4158,18 @@ impl Daemon {
         match tokio::task::spawn_blocking(move || daemon.manage_shutdown_inner(ShutdownGuard::Reap))
             .await
         {
-            Ok(Ok(_)) => self.call_exit_hook(),
+            Ok(Ok(_)) => {
+                self.call_exit_hook();
+                return;
+            }
             Ok(Err(error)) => tracing::warn!("reap refused: {}", error.reason),
             Err(error) => tracing::warn!("reap shutdown failed: {error}"),
+        }
+        let mut armed = self.reap_armed.lock().expect("reap armed lock");
+        if armed.as_ref().is_some_and(|arm| arm.generation == generation) {
+            *armed = None;
+            drop(armed);
+            self.reap_reevaluate();
         }
     }
 

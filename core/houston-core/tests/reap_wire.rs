@@ -270,3 +270,53 @@ async fn a_spawn_racing_the_deadline_wins_and_the_reap_does_not_fire() {
     );
     let _ = id;
 }
+
+#[tokio::test]
+async fn failed_idle_shutdown_capture_does_not_exit_and_retries() {
+    if std::env::var_os("HOUSTON_REAP_RETRY_FIXTURE").is_none() {
+        let home = tempfile::tempdir().unwrap();
+        let status = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
+            .args([
+                "--exact",
+                "failed_idle_shutdown_capture_does_not_exit_and_retries",
+                "--nocapture",
+            ])
+            .env("HOUSTON_REAP_RETRY_FIXTURE", "1")
+            .env("HOUSTON_REAP_GRACE_MS", "100")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let state = tempfile::tempdir().unwrap();
+    let d = daemon(state.path());
+    let initial_deadline = d.reap_status().1;
+    let marker = state.path().join("clean-shutdown");
+    std::fs::create_dir(&marker).unwrap();
+    let fired = Arc::new(AtomicBool::new(false));
+    let reported = Arc::clone(&fired);
+    d.reap_set_exit_hook_for_test(Box::new(move || reported.store(true, Ordering::SeqCst)));
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !fired.load(Ordering::SeqCst) && d.reap_status().1 == initial_deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first idle shutdown attempt");
+    assert!(
+        !fired.load(Ordering::SeqCst),
+        "failed marker write must not exit as clean"
+    );
+    assert!(
+        !d.is_shutting_down(),
+        "failed capture must reopen admission"
+    );
+    std::fs::remove_dir(marker).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !fired.load(Ordering::SeqCst) {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("idle shutdown must retry after a transient capture failure");
+}

@@ -188,11 +188,33 @@ impl Process {
         (process, cfg, ws)
     }
 
-    async fn stop(&mut self, signal: Signal) {
+    async fn stop(&mut self, signal: Option<Signal>) {
         let child = self.child.as_mut().unwrap();
         let cfg = discovery(&self.channel_dir).expect("the daemon owns a discovery file");
         assert_eq!(cfg.pid, child.id());
-        pid::signal_process_checked_identity(cfg.pid, signal, cfg.pid_creation).unwrap();
+        if let Some(signal) = signal {
+            pid::signal_process_checked_identity(cfg.pid, signal, cfg.pid_creation).unwrap();
+        } else {
+            let response = reqwest::Client::new()
+                .post(format!("http://127.0.0.1:{}/manage", cfg.port))
+                .bearer_auth(&cfg.token)
+                .json(&proto::ManageRequest {
+                    manage_version: proto::MANAGE_VERSION,
+                    verb: proto::ManageVerb::DaemonShutdown,
+                    candidate_bin: None,
+                    expected_sessions: None,
+                    path: None,
+                })
+                .timeout(DEADLINE)
+                .send()
+                .await
+                .unwrap();
+            assert!(
+                response.status().is_success(),
+                "{}",
+                response.text().await.unwrap()
+            );
+        }
         let status = poll("the old daemon to exit and release its database", || {
             child.try_wait().unwrap()
         })
@@ -204,10 +226,10 @@ impl Process {
         );
         assert_eq!(
             self.channel_dir.join("clean-shutdown").exists(),
-            signal == Signal::Term,
+            signal != Some(Signal::Kill),
             "only a graceful stop writes the clean shutdown marker"
         );
-        if signal == Signal::Term {
+        if signal != Some(Signal::Kill) {
             assert!(status.success(), "SIGTERM shutdown failed: {status}");
         }
     }
@@ -321,7 +343,7 @@ struct Pane {
     launch: Launch,
 }
 
-async fn restart_roundtrip(signal: Signal) {
+async fn restart_roundtrip(signal: Option<Signal>) {
     let fixture = Fixture::new();
     let (mut daemon, cfg, mut ws) = Process::start(&fixture).await;
     let mut panes = Vec::new();
@@ -371,8 +393,9 @@ async fn restart_roundtrip(signal: Signal) {
     }
 
     for generation in 1..=2 {
-        drop(ws);
+        // Keep the client attached: detaching would checkpoint before the crash.
         daemon.stop(signal).await;
+        drop(ws);
         let (next, cfg, mut next_ws) = Process::start(&fixture).await;
         daemon = next;
         let listed = sessions(&mut next_ws).await;
@@ -445,15 +468,53 @@ async fn restart_roundtrip(signal: Signal) {
         ws = next_ws;
     }
     drop(ws);
-    daemon.stop(Signal::Term).await;
+    daemon.stop(Some(Signal::Term)).await;
 }
 
 #[tokio::test]
 async fn sigterm_restarts_resume_idle_and_working_agents_by_native_id() {
-    restart_roundtrip(Signal::Term).await;
+    restart_roundtrip(Some(Signal::Term)).await;
 }
 
 #[tokio::test]
 async fn sigkill_restarts_automatically_resume_idle_and_working_agents_by_native_id() {
-    restart_roundtrip(Signal::Kill).await;
+    restart_roundtrip(Some(Signal::Kill)).await;
+}
+
+#[tokio::test]
+async fn explicit_daemon_stop_preserves_native_conversations_across_two_restarts() {
+    restart_roundtrip(None).await;
+}
+
+#[tokio::test]
+async fn failed_signal_checkpoint_does_not_claim_a_clean_shutdown() {
+    let fixture = Fixture::new();
+    let (mut daemon, cfg, mut ws) = Process::start(&fixture).await;
+    ws.send(Message::text(common::create_custom_msg(
+        vec!["/bin/sh", "-c", "printf checkpoint-fixture; read ignored"],
+        &fixture.project,
+    )))
+    .await
+    .unwrap();
+    let pane = common::expect_created(&mut ws).await;
+    common::attach_and_collect_output_until(&mut ws, pane.id, "checkpoint-fixture").await;
+    let scrollback = fixture.channel_dir().join("scrollback");
+    std::fs::remove_dir_all(&scrollback).unwrap();
+    std::fs::write(&scrollback, b"not a directory").unwrap();
+    pid::signal_process_checked_identity(cfg.pid, Signal::Term, cfg.pid_creation).unwrap();
+    let status = poll("failed shutdown to exit", || {
+        daemon.child.as_mut().unwrap().try_wait().unwrap()
+    })
+    .await;
+    daemon.child.take();
+    assert!(
+        !fixture.channel_dir().join("clean-shutdown").exists(),
+        "session {} failed its final checkpoint but the daemon claimed clean exit ({status})",
+        pane.id
+    );
+}
+
+#[tokio::test]
+async fn sigint_restarts_resume_idle_and_working_agents_by_native_id() {
+    restart_roundtrip(Some(Signal::Int)).await;
 }
