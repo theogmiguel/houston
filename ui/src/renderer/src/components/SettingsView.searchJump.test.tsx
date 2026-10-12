@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SettingsView } from './SettingsView'
-import { setSettingsNavForTests } from '../settingsNav'
+import { settingsSectionLabel, setSettingsNavForTests } from '../settingsNav'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
 
@@ -106,7 +106,7 @@ describe('SettingsView destinations match the rebuilt Settings frame', () => {
     container.remove()
   })
 
-  it('resolves the accounts destination to Agents and shows profiles in the selected CLI detail', () => {
+  it('resolves accounts to CLIs and shows profiles without selecting a provider', () => {
     act(() => setSettingsNavForTests({ section: 'accounts' }))
     const agentHooks: AgentHookState[] = ['claude', 'codex'].map((provider) => ({
       provider: provider as AgentHookState['provider'],
@@ -119,10 +119,11 @@ describe('SettingsView destinations match the rebuilt Settings frame', () => {
       version: '1.0.0',
       trust: null
     }))
-    act(() => root.render(<SettingsView {...baseProps()} agentHooks={agentHooks} />))
-    const claude = container.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
-    act(() => claude?.click())
-    expect(container.textContent).toContain('Accounts')
+    act(() => root.render(<SettingsView {...baseProps()} agentHooks={agentHooks} agentProfiles={{ profiles: [{ id: 7, agent: 'claude', name: 'work', config_dir: '/home/dev/.claude-work' }], active: [] }} />))
+    expect(settingsSectionLabel()).toBe('Agents / CLIs')
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.textContent).toContain('Claude Code accounts')
+    expect(container.textContent).toContain('/home/dev/.claude-work')
     expect(container.textContent).toContain('CLAUDE_CONFIG_DIR')
   })
 

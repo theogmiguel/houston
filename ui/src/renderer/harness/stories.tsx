@@ -460,6 +460,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/agents-review-first': () => <HarnessPageStory inSettings firstRun />,
   'settings/agents-overview': () => <SettingsAgentsOverview />,
   'settings/agents-overview-healthy': () => <SettingsAgentsOverview healthy />,
+  'settings/agents-cli-detail': () => <SettingsAgentSetup detail />,
+  'settings/agents-account-rename': () => <SettingsAgentSetup rename />,
   'settings/agents-clis': () => <SettingsAgentSetup />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
   'settings/agents': () => <SettingsAgentsOverview />,

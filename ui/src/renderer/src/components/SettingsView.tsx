@@ -21,7 +21,6 @@ import type { McpSyncResult } from '../houston/generated/McpSyncResult'
 import { useSettingsSection } from '../settingsNav'
 import type { SettingsSectionId } from '../settingsSections'
 import { consumeSettingsRowJump } from '../settingsRowJump'
-import { PageHeader } from './ui/PageHeader'
 import { PageFrame } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
@@ -331,7 +330,6 @@ function SectionDispatch({
 
         {section === 'agents-clis' && (
           <>
-            <PageHeader heading="CLIs" description="The agent CLIs Houston can launch, whether they report status, and the accounts new panes use." />
             <AgentStatusSection
               providers={agentHooks}
               onSet={onAgentHooksSet}

@@ -144,9 +144,9 @@ describe('settingsRowRegistry — every registered title actually renders', () =
       await flush()
 
       if (section === 'agents-clis') {
-        const claude = host.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
+        const claude = host.querySelector<HTMLElement>('[data-testid="agent-status-row"][data-provider="claude"]')
         expect(claude?.textContent).toContain('Claude Code')
-        act(() => claude?.click())
+        expect(host.querySelector('[data-testid="list-detail"]')).toBeNull()
       }
 
       for (const title of titles) {

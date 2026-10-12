@@ -33,7 +33,7 @@ it('shows each open review finding with severity and session evidence, and makes
   expect(screen.getByText('npx is not on PATH · MCP servers')).toBeTruthy()
   expect(container.querySelectorAll('[data-tone="danger"]').length).toBeGreaterThan(0)
   setSettingsNavForTests({ section: 'appearance' })
-  fireEvent.click(screen.getByRole('button', { name: /MCP servers.*1 servers.*1 failing/ }))
+  fireEvent.click(screen.getByRole('button', { name: /MCP servers.*1 server.*1 failing/ }))
   expect(settingsSectionLabel()).toBe('Agents / MCP servers')
   expect(screen.queryByText('1 review finding needs you')).toBeNull()
 })

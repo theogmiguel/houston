@@ -343,7 +343,11 @@ export function SettingsRemoteOff(): React.JSX.Element {
   return <SettingsScreen section="remote" props={{ daemonClient: remoteClient({ ...remoteFixture, enabled: false, listening: false, public_url: null, url: 'http://127.0.0.1:47823', ntfy_server: null }) }} />
 }
 
-export function SettingsAgentSetup(): React.JSX.Element {
+export function SettingsAgentSetup({ detail = false, rename = false }: { detail?: boolean; rename?: boolean } = {}): React.JSX.Element {
+  React.useEffect(() => {
+    if (detail) document.querySelector<HTMLButtonElement>('[data-provider="claude"] button')?.click()
+    if (rename) [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Rename')?.click()
+  }, [detail, rename])
   return <SettingsScreen section="agents-clis" props={{
     agentHooks: agentHookFixture,
     agentProfiles: {
@@ -580,6 +584,6 @@ export function SettingsSearchStory(): React.JSX.Element {
 
 export function SettingsAgentsOverview({ healthy = false }: { healthy?: boolean } = {}): React.JSX.Element {
   const attention = agentAttentionFor({ agentHooks: healthy ? [] : [{ provider: 'opencode', path: '/home/dev/.config/opencode/plugins/houston.ts', scope: 'global', present: true, enabled: true, installed: false, error: 'The managed hook block differs.', version: '1.18', trust: null }], skills: [], checks: healthy ? [] : [['github', { state: 'failed', message: 'npx is not on PATH' }]], reviews: healthy ? [] : [{ workspace: '/home/dev/code/houston', attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, seen_review_id: 0 }] })
-  const review: import('../src/houston/useHarness').HarnessState = { workspace: '/home/dev/code/houston', routine: null, reviews: [{ id: 1, workspace: '/home/dev/code/houston', routine_id: 1, run_id: 1, status: 'published', started_at_ms: 1, run_dir: '/home/dev/code/houston/.houston/harness/r1', sessions: 38, finding_count: 1 }], findings: [{ review_id: 1, key: 'style', title: 'Agents re-read the styleguide on every UI change', category: 'workflow', confidence: 'high', sessions: ['a'], count: 9, quotes: [], recommendation_kind: 'workflow', target: 'AGENTS.md', recommendation: 'Read once', apply_prompt: 'Read once', state: 'open', recurred: false, phase: 'open', last_seen_review_id: 1 }], models: [], providerCoverage: [], engineRefusals: [] }
+  const review: import('../src/houston/useHarness').HarnessState = { workspace: '/home/dev/code/houston', routine: { id: 1, kind: 'harness_review', name: 'Weekly review', prompt: 'Review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, enabled: true, workspace_id: '/home/dev/code/houston', engine: 'claude', model: null, next_run_at_ms: 1791802800000, permission_mode: 'accept_edits', isolate: false, revision: '1' }, reviews: [{ id: 1, workspace: '/home/dev/code/houston', routine_id: 1, run_id: 1, status: 'published', started_at_ms: 1, run_dir: '/home/dev/code/houston/.houston/harness/r1', sessions: 38, finding_count: 1 }], findings: [{ review_id: 1, key: 'style', title: 'Agents re-read the styleguide on every UI change', category: 'workflow', confidence: 'high', sessions: ['a'], count: 9, quotes: [], recommendation_kind: 'workflow', target: 'AGENTS.md', recommendation: 'Read once', apply_prompt: 'Read once', state: 'open', recurred: false, phase: 'open', last_seen_review_id: 1 }], models: [], providerCoverage: [], engineRefusals: [] }
   return <SettingsScreen section="agents-overview" props={{ agentAttention: attention, agentReviewStates: healthy ? [] : [review] }} />
 }

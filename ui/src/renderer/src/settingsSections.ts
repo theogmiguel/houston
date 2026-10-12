@@ -49,7 +49,7 @@ export interface SettingsSectionDef {
 
 const ALL_SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'agents-overview', label: 'Overview', icon: 'compass', group: 'agents', width: 'wide', keywords: ['agents', 'setup', 'attention', 'status'] },
-  { id: 'agents-clis', label: 'CLIs', icon: 'terminal', group: 'agents', width: 'wide', keywords: ['agents', 'accounts', 'profiles', 'hooks', 'status', 'setup', 'login', 'claude', 'codex'] },
+  { id: 'agents-clis', label: 'CLIs', icon: 'terminal', group: 'agents', width: 'wide', keywords: ['agents', 'accounts', 'profiles', 'active profile', 'saved profiles', 'add profile', 'hooks', 'status', 'setup', 'login', 'claude', 'codex'] },
   { id: 'agents-skills', label: 'Skills', icon: 'sparkles', group: 'agents', width: 'wide', keywords: ['skills', 'library', 'commands', 'sync', 'copies'] },
   { id: 'agents-mcp', label: 'MCP servers', icon: 'plug', group: 'agents', width: 'wide', keywords: ['mcp', 'servers', 'plugins', 'connections'] },
   { id: 'agents-review', label: 'Review', icon: 'history', group: 'agents', width: 'wide', keywords: ['review', 'harness', 'findings', 'mistakes', 'sessions'] },

@@ -147,8 +147,8 @@ it off removes exactly what Houston added:
   write-up on this screen beyond the generic "installs a hook for this CLI."
 
 To repair a broken setup, use "Check again" to have Houston re-read every CLI's hooks,
-then flip the switch off and back on for a row that shows "needs attention" — that
-reruns the install.
+then choose **Repair hooks** for the affected CLI. Open its details to inspect the
+configuration path, full consent description or hooks switch.
 
 ## Agent setup
 

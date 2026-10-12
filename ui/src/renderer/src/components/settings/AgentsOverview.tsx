@@ -17,9 +17,9 @@ function summary(attention: AgentAttention, section: AgentSetupSection, reviews:
   const problem = attention.issues.find((issue) => issue.section === section)
   if (section === 'agents-clis') return !attention.known.clis ? 'Not checked yet' : `${attention.sources.installedClis} installed${problem ? ` · ${issueHeading(problem)}` : ' · Hooks checked'}`
   if (section === 'agents-skills') return !attention.known.skills ? 'Not checked yet' : `${attention.sources.skillCount} skills${problem ? ` · ${problem.title}` : ' · Copies match'}`
-  if (section === 'agents-mcp') return !attention.known.mcp ? 'Not checked yet' : `${attention.sources.serverCount} servers${problem ? ` · ${problem.server} can't start` : ' · No reported failures'}`
+  if (section === 'agents-mcp') return !attention.known.mcp ? 'Not checked yet' : `${attention.sources.serverCount} server${attention.sources.serverCount === 1 ? '' : 's'}${problem ? ` · ${problem.server} can't start` : ' · No reported failures'}`
   const state = reviews.find((item) => item.routine) ?? reviews[0]
-  return state?.routine ? `${scheduleLabel(state.routine)} · ${state.findings.filter((finding) => finding.phase === 'open').length} open findings` : 'Set up a weekly review in Routines.'
+  return state?.routine ? `${scheduleLabel(state.routine)} · ${attention.counts['agents-review']} new finding${attention.counts['agents-review'] === 1 ? '' : 's'}` : state?.reviews.length ? `${attention.counts['agents-review']} new finding${attention.counts['agents-review'] === 1 ? '' : 's'} · No review schedule` : 'Set up a weekly review in Routines.'
 }
 function status(attention: AgentAttention, section: AgentSetupSection): { tone: SetupTone; label: string } {
   const count = attention.counts[section]
