@@ -625,7 +625,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <div className="w-72"><SettingsSearch inputRef={React.createRef<HTMLInputElement>()} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={noop} /></div>
           </SpecimenRow>
           <SpecimenRow>
-            <SettingsBreadcrumb open section="Terminal" />
+            <SettingsBreadcrumb open section="Terminal" /><SettingsBreadcrumb open section="Agents / CLIs" />
             <SettingsScope workspace="houston" />
             <SettingsScope workspace={null} scope="global" />
           </SpecimenRow>

@@ -18,5 +18,5 @@ export function SettingsNavigation({ children }: { children: ReactNode }): React
 }
 
 export function SettingsNavigationGroup({ label, children }: { label: string; children: ReactNode }): React.JSX.Element {
-  return <section className="grid gap-[var(--space-0-5)] pb-[var(--space-1-5)]"><Text as="h3" size="label" weight="label" tone="faint" flush className="px-[var(--space-2)] pb-[var(--space-0-5)]">{label}</Text>{children}</section>
+  return <section className="grid gap-[var(--space-0-5)] pb-[var(--space-1-5)]"><Text as="h3" size="caption" weight="small" tone="faint" flush className="px-[var(--space-2)] pb-[var(--space-0-5)]">{label}</Text>{children}</section>
 }

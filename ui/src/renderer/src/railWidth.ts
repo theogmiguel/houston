@@ -2,8 +2,8 @@ import { useSyncExternalStore } from "react";
 
 const KEY = "tr-rail-width";
 
-// The rail's shipped width (`w-60`), so a fresh install looks unchanged until dragged.
-export const RAIL_DEFAULT = 240;
+// Fits the Settings labels and counts without truncating the remote-access label.
+export const RAIL_DEFAULT = 264;
 
 // The grid card identity and workspace controls remain readable at 220px.
 export const RAIL_MIN = 220;

@@ -1,3 +1,4 @@
+import { RAIL_DEFAULT } from '../src/railWidth'
 import { agentAttentionFor } from '../src/useAgentAttention'
 import React from 'react'
 import { SettingsView, type OrchestrationStateView } from '../src/components/SettingsView'
@@ -38,7 +39,7 @@ export function SettingsScreen({
   const ws = (path: string, name: string): Workspace => ({ path, name }) as Workspace
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--content-bg)' }}>
-      <div style={{ width: 240, flex: '0 0 240px', minWidth: 0 }}>
+      <div style={{ width: RAIL_DEFAULT, flex: `0 0 ${RAIL_DEFAULT}px`, minWidth: 0 }}>
         <Sidebar
           workspaces={[ws('/home/dev/code/houston', 'houston')]}
           sessions={[] as SessionInfo[]}
