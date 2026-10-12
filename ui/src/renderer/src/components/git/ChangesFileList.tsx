@@ -27,6 +27,7 @@ const MARK_GLYPH: Record<GitFileStatus['status'], string> = {
 export function ChangesFileList({
   compact = false,
   flat = false,
+  basenameOnly,
   files,
   rows,
   branch,
@@ -56,6 +57,7 @@ export function ChangesFileList({
 }: {
   compact?: boolean
   flat?: boolean
+  basenameOnly?: boolean
   files: GitFileStatus[] | null
   rows: ChangeRow[]
   branch: string | null
@@ -193,6 +195,7 @@ export function ChangesFileList({
                 key={row.key}
                 row={row}
                 compact={compact}
+                basenameOnly={basenameOnly}
                 expanded={expandedPaths?.has(row.path) ?? false}
                 selected={selected === row.path}
                 menuOpen={menuFor === row.key}
@@ -258,7 +261,13 @@ function StageToggleButton({
   )
 }
 
+function FileName({ row, basenameOnly }: { row: ChangeRow; basenameOnly?: boolean }): React.JSX.Element {
+  if (basenameOnly) return <Tooltip label={row.path} className={classes.label}><span>{row.name}</span></Tooltip>
+  return <span className={classes.label}><span>{row.name}</span><span className={classes.dir}>{row.dir}</span></span>
+}
+
 function FileRow({
+  basenameOnly,
   row,
   compact = false,
   expanded = false,
@@ -273,6 +282,7 @@ function FileRow({
   onOpenInEditorError,
   onCloseMenu
 }: {
+  basenameOnly?: boolean
   row: ChangeRow
   compact?: boolean
   expanded?: boolean
@@ -313,10 +323,7 @@ function FileRow({
         <PrTab as={GitStatusMark} surface="changes-inline-status" enabled={compact} status={row.state} kind="file" aria-hidden data-status={row.state}>
           {row.blocked ? <Icon glyph={IconShieldAlert} role="label" /> : MARK_GLYPH[row.state]}
         </PrTab>
-        <span className={classes.label}>
-          <span>{row.name}</span>
-          <span className={classes.dir}>{row.dir}</span>
-        </span>
+        <FileName row={row} basenameOnly={basenameOnly} />
       </PrTab>
       <StageToggleButton stage={stage} onStageToggle={onStageToggle} />
       <FileCounts row={row} />

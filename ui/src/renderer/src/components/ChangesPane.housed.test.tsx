@@ -111,3 +111,20 @@ describe('compact actions popover', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 })
+
+describe('maximized review presentation', () => {
+  it('uses glyph-width key hints instead of settings binding fields', () => {
+    const h = mount({ compact: true, maximized: true })
+    h.status([file()])
+    expect(document.querySelectorAll('[data-testid="changes-pane"] [class*="w-shortcut-keycap"]')).toHaveLength(0)
+  })
+
+  it('opens the first displayed file and keeps the footer at the selected displayed index', () => {
+    const h = mount({ compact: true, maximized: true })
+    h.status([file({ path: 'z/first.ts' }), file({ path: 'a/second.ts' })])
+    const choices = Array.from(document.querySelectorAll('[data-testid="changes-file"]'))
+    const selectedIndex = choices.findIndex((choice) => choice.getAttribute('aria-selected') === 'true')
+    expect(q('[data-testid="changes-file-position"]')?.textContent).toBe(`File ${selectedIndex + 1} of 2`)
+    expect(choices[selectedIndex].getAttribute('data-path')).toBe('z/first.ts')
+  })
+})

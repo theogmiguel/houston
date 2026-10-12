@@ -17,6 +17,7 @@ import {
   discardConfirmMessage,
   discardKindFor,
   flatRows,
+  toRow,
   pushDisabledReason,
   paneStateFor,
   prChecksLabel,
@@ -615,7 +616,7 @@ function changesEmptySummary(rows: ChangeRow[], ahead: number, base: string | nu
 
 function ChangesPanelFileList({ compact, maximized, files, rows, visibleFiles, visibleRows, inlineDiffs, expandedPaths, togglePath, onKeyDown, ...props }: Parameters<typeof ChangesFileList>[0] & { maximized: boolean; visibleFiles: GitFileStatus[] | null; visibleRows: ChangeRow[] }): React.JSX.Element {
   const inline = compact && !maximized
-  return <ChangesFileList {...props} compact={compact} flat={compact || maximized} files={compact ? visibleFiles : files} rows={compact ? visibleRows : rows} inlineDiffs={inline ? inlineDiffs : undefined} expandedPaths={inline ? expandedPaths : undefined} togglePath={inline ? togglePath : undefined} onKeyDown={onKeyDown} />
+  return <ChangesFileList {...props} basenameOnly={maximized} compact={compact} flat={compact || maximized} files={compact ? visibleFiles : files} rows={compact ? visibleRows : rows} inlineDiffs={inline ? inlineDiffs : undefined} expandedPaths={inline ? expandedPaths : undefined} togglePath={inline ? togglePath : undefined} onKeyDown={onKeyDown} />
 }
 
 function ChangesBranchHeader({ client, dir, branch, base, tools, busy, error, panes, onOpenPane, onManage, upstream, behind, pushBlocked, pushing, ahead, maximized, doPush, onAddWorkspace }: {
@@ -709,7 +710,7 @@ export function ChangesPane({
     pushAfterCommitRef.current = pushAfterCommit
   }, [pushAfterCommit])
 
-  const rows = useMemo(() => (files ? flatRows(files) : []), [files])
+  const rows = useMemo(() => (files ? compact ? files.map(toRow) : flatRows(files) : []), [files, compact])
   const selectedRow = useMemo(
     () => rows.find((r) => r.path === selected) ?? null,
     [rows, selected]

@@ -1,4 +1,4 @@
-import { DiffSplitCell, DiffSplitRow, DiffSplitCode } from '../ui/Diff'
+import { DiffSplitCell, DiffSplitRow, DiffSplitCode, DiffSectionHeader } from '../ui/Diff'
 import { pairDiffLines, type NumberedDiffLine } from './splitDiff'
 import { DiffCode, DiffGutter, DiffLine, DiffLineText, DiffPlainText, type DiffLineKind } from '../ui'
 
@@ -67,7 +67,7 @@ export function DiffBody({ patch, truncated, split = false }: { patch: string; t
   if (truncated) numbered.push({ kind: 'meta', text: '… patch truncated at 512 KiB — review locally', oldNumber: null, newNumber: null })
   if (split) return <DiffSplitCode>
     {pairDiffLines(numbered).map((row, i) => 'header' in row
-      ? <DiffLine key={i} kind={row.header.kind}><DiffLineText>{row.header.text}</DiffLineText></DiffLine>
+      ? <DiffSectionHeader key={i} kind={row.header.kind}>{row.header.text}</DiffSectionHeader>
       : <DiffSplitRow key={i}>
         {(['old', 'new'] as const).map((side) => {
           const line = row[side]

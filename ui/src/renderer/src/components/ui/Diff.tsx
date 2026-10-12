@@ -93,3 +93,7 @@ export function DiffSplitCell({ side, kind, filler, number, children }: { side: 
     {children}
   </div>
 }
+
+export function DiffSectionHeader({ kind, children }: { kind: DiffLineKind; children: ReactNode }): React.JSX.Element {
+  return <div data-kind={kind} data-diff-section-header className="flex items-start font-normal whitespace-pre text-[var(--text-muted)]"><span aria-hidden className="w-[40px] shrink-0" /><DiffGutter /><DiffLineText>{children}</DiffLineText></div>
+}
