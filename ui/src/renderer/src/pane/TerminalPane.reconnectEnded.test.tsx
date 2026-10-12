@@ -44,6 +44,7 @@ function session(state: SessionInfo['state']): SessionInfo {
     project_dir: '/tmp/project',
     cwd: '/tmp/project',
     title: 'retained pane',
+    title_source: 'user',
     hidden: false,
     codename: 'test',
     live_children: 0,

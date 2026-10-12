@@ -75,6 +75,7 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
         let db = Db::open(&db_path).unwrap();
         db.set_setting("restore_budget", "0").unwrap();
         db.insert_session(&proto::SessionInfo {
+            title_source: Default::default(),
             checkout: None,
             activity: None,
             id: 50,
@@ -157,6 +158,7 @@ fn reparent_refuses_a_swarm_tied_session() {
     let agent_id = {
         let db = Db::open(&db_path).unwrap();
         db.insert_session(&proto::SessionInfo {
+            title_source: Default::default(),
             checkout: None,
             activity: None,
             id: 1,

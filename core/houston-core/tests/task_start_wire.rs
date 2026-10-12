@@ -268,6 +268,7 @@ async fn start_creates_a_worktree_branch_and_a_bound_session() {
         "the pane belongs to the workspace, not to its worktree"
     );
     assert!(info.title.starts_with("HOU-1 "), "{:?}", info.title);
+    assert_eq!(info.title_source, proto::TitleSource::Task);
     let task = info.task.as_ref().expect("the pane carries its task");
     assert_eq!(task.key, "HOU-1");
     assert_eq!(task.run_id, run.id);

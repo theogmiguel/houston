@@ -39,6 +39,7 @@ fn provider() {
 
 fn info(id: u32, project: &Path, parent: Option<u32>) -> proto::SessionInfo {
     proto::SessionInfo {
+        title_source: Default::default(),
         checkout: None,
         activity: None,
         id,
@@ -104,6 +105,8 @@ fn seed(database: &Path, project: &Path, sleeping: bool) -> Db {
         parent.context = Some(proto::SessionContext::unknown());
     }
     db.insert_session(&parent).unwrap();
+    db.save_title_candidate(1, proto::TitleSource::Prompt, "Retained automatic title")
+        .unwrap();
     let transcript = project.join("conversation.jsonl");
     std::fs::write(&transcript, b"{}\n").unwrap();
     db.set_session_resume_handle(1, Some((CONVERSATION, transcript.to_str())))
@@ -181,6 +184,7 @@ fn replacement_storage_failures_preserve_the_original_and_owned_processes() {
     }
     provider();
     for trigger in [
+        "BEFORE INSERT ON session_title_candidates WHEN NEW.session_id != 1",
         "BEFORE UPDATE OF launch_selections ON sessions WHEN NEW.id != 1",
         "BEFORE UPDATE OF approval_mode ON sessions WHEN NEW.id != 1",
         "BEFORE UPDATE OF resume_session_id ON sessions WHEN NEW.id != 1",
@@ -299,6 +303,7 @@ fn replacement_commits_identity_ancestry_inbox_and_wake_cues_together() {
     let replacement = daemon.wake_session(1).unwrap();
     let (_, pid) = observed.lock().unwrap()[0];
     assert_eq!(replacement.session_origin, Some(1));
+    assert_eq!(db.session_title_candidates(replacement.id).unwrap(), db.session_title_candidates(1).unwrap());
     assert_eq!(replacement.latest_prompt, before.latest_prompt);
     assert_eq!(replacement.last_agent_message, before.last_agent_message);
     assert_eq!(replacement.context, before.context);

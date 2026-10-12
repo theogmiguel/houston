@@ -583,6 +583,8 @@ function SessionPaneImpl({
           <RenameTitle
             title={info.title}
             onRename={(t) => client.renameSession(info.id, t)}
+            titleSource={info.title_source}
+            onReset={() => client.resetSessionTitle(info.id)}
           />
           <PaneTaskChip task={info.task} />
           <PaneWatchChip watches={prWatches} />

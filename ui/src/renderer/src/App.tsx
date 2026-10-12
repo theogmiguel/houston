@@ -485,7 +485,7 @@ function patchRosterFields(
     isCheckout
       ? { checkout: msg.checkout ?? null }
       : msg.type === "session_renamed"
-        ? { title: msg.title }
+        ? { title: msg.title, title_source: msg.title_source }
         : msg.type === "session_reparented"
           ? { project_dir: msg.project_dir }
           : msg.type === "live_children_changed"
@@ -2281,13 +2281,13 @@ export function App(): React.JSX.Element {
         if (ids.length === 0) continue;
         const first = sessions.get(ids[0]);
         if (!first) continue;
-        const name =
-          first.agent === "shell" ? "Terminal" : engineLabel(first.agent);
+        const name = first.title_source !== "codename" ? first.title : first.task?.key || railPrByDir.get(first.cwd)?.pr?.title || first.worktree?.branch || (first.agent === "shell" ? "Terminal" : engineLabel(first.agent));
+        if (name === g.name) continue;
         const renamed = autoNameGrid(path, g.id, name);
         setGridsByWs((prev) => new Map(prev).set(path, renamed));
       }
     }
-  }, [gridsByWs, layouts, sessions]);
+  }, [gridsByWs, layouts, sessions, railPrByDir]);
   // A legacy grid's tags were its panes' union, written to every pane: move the
   // union to the grid once and clear the panes. An empty tree may be unsynced.
   useEffect(() => {

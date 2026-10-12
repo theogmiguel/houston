@@ -715,6 +715,7 @@ export function migrateSavedGitLeaves(): string[] {
 export interface GridMeta {
   id: string
   name: string
+  nameSource?: 'auto' | 'user'
   named?: boolean
   // The grid's own tags, independent of the tags its panes carry. Absent on a
   // grid saved when a grid's tags were the union of its panes' tags.
@@ -728,9 +729,11 @@ export function gridTagIds(g: GridMeta): number[] {
   return Array.isArray(g.tags) ? g.tags.filter((t) => Number.isInteger(t)) : []
 }
 
+const LEGACY_ENGINE_NAMES = new Set(['Terminal', 'Claude', 'Claude Code', 'Codex', 'Antigravity', 'OpenCode', 'Opencode', 'Cursor', 'Grok', 'ZCode', 'Zcode', 'Shell', 'Ssh', 'Custom', 'Droid', 'Copilot', 'Aider'])
+
 export function isAutoNameable(g: GridMeta): boolean {
-  if (g.named !== undefined) return !g.named
-  return /^Grid \d+$/.test(g.name)
+  if (g.nameSource !== undefined) return g.nameSource === 'auto'
+  return g.named === false || /^Grid \d+$/.test(g.name) || LEGACY_ENGINE_NAMES.has(g.name)
 }
 
 export const DEFAULT_GRID_ID = 'g-default'
@@ -813,7 +816,7 @@ function migrateLegacyLayout(path: string): GridMeta[] {
   if (legacyRaw !== null) {
     localStorage.setItem(KEY_PREFIX + gridStorageKey(path, DEFAULT_GRID_ID), legacyRaw)
   }
-  const grids: GridMeta[] = [{ id: DEFAULT_GRID_ID, name: DEFAULT_GRID_NAME }]
+  const grids: GridMeta[] = [{ id: DEFAULT_GRID_ID, name: DEFAULT_GRID_NAME, nameSource: 'auto' }]
   saveGrids(path, grids)
   return grids
 }
@@ -821,7 +824,11 @@ function migrateLegacyLayout(path: string): GridMeta[] {
 export function loadGrids(path: string): GridMeta[] {
   try {
     const raw = parseGridMetaArray(JSON.parse(localStorage.getItem(gridsKey(path)) ?? 'null'))
-    if (raw && raw.length > 0) return raw
+    if (raw && raw.length > 0) {
+      const next = raw.map((g) => ({ ...g, nameSource: g.nameSource ?? (isAutoNameable(g) ? 'auto' : 'user') } as GridMeta))
+      if (raw.some((g) => g.nameSource === undefined)) saveGrids(path, next)
+      return next
+    }
   } catch {
   }
   return migrateLegacyLayout(path)
@@ -829,21 +836,21 @@ export function loadGrids(path: string): GridMeta[] {
 
 export function addGrid(path: string, name: string): GridMeta[] {
   const grids = loadGrids(path)
-  const grid: GridMeta = { id: newGridId(), name, named: false, tags: [] }
+  const grid: GridMeta = { id: newGridId(), name, nameSource: 'auto', tags: [] }
   const next = [...grids, grid]
   saveGrids(path, next)
   return next
 }
 
 export function renameGrid(path: string, gridId: string, name: string): GridMeta[] {
-  const next = loadGrids(path).map((g) => (g.id === gridId ? { ...g, name, named: true } : g))
+  const next = loadGrids(path).map((g) => (g.id === gridId ? { ...g, name: name.trim() || g.name, nameSource: name.trim() ? 'user' as const : 'auto' as const } : g))
   saveGrids(path, next)
   return next
 }
 
 export function autoNameGrid(path: string, gridId: string, name: string): GridMeta[] {
   const next = loadGrids(path).map((g) =>
-    g.id === gridId && isAutoNameable(g) ? { ...g, name, named: true } : g
+    g.id === gridId && isAutoNameable(g) ? { ...g, name, nameSource: 'auto' as const } : g
   )
   saveGrids(path, next)
   return next

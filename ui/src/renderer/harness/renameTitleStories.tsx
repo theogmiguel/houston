@@ -13,10 +13,13 @@ export function RenameTitleStory(): React.JSX.Element {
   return (
     <div ref={ref} style={{ height: '100%', padding: 12, display: 'grid', gap: 12, alignContent: 'start', background: 'var(--content-bg)' }}>
       <div className="group" style={{ display: 'flex', alignItems: 'center', gap: 8, width: 320, containerType: 'inline-size' }}>
-        <RenameTitle title="A pane title" onRename={() => {}} />
+        <RenameTitle title="A pane title" titleSource="prompt" onRename={() => {}} />
       </div>
       <div className="group" style={{ display: 'flex', alignItems: 'center', gap: 8, width: 320, containerType: 'inline-size' }}>
-        <RenameTitle title="Edited title" onRename={() => {}} />
+        <RenameTitle title="Manual title" titleSource="user" onRename={() => {}} onReset={() => {}} />
+      </div>
+      <div className="group" style={{ display: 'flex', alignItems: 'center', gap: 8, width: 320, containerType: 'inline-size' }}>
+        <RenameTitle title="Edited title" titleSource="user" onRename={() => {}} onReset={() => {}} />
       </div>
     </div>
   )

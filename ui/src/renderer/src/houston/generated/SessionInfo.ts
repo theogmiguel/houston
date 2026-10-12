@@ -9,8 +9,9 @@ import type { SessionContext } from "./SessionContext";
 import type { SessionState } from "./SessionState";
 import type { SessionTask } from "./SessionTask";
 import type { SessionWorktree } from "./SessionWorktree";
+import type { TitleSource } from "./TitleSource";
 
-export type SessionInfo = { id: number, agent: AgentKind, project_dir: string, cwd: string, checkout_root?: string | null, worktree?: SessionWorktree | null, checkout?: SessionCheckout | null, activity?: SessionActivity | null, state: SessionState, title: string, codename: string, detected_agent?: AgentKind | null,
+export type SessionInfo = { id: number, agent: AgentKind, project_dir: string, cwd: string, checkout_root?: string | null, worktree?: SessionWorktree | null, checkout?: SessionCheckout | null, activity?: SessionActivity | null, state: SessionState, title: string, title_source: TitleSource, codename: string, detected_agent?: AgentKind | null,
 /**
  * The agent CLI a shell pane is running right now; `None` once the shell
  * has its prompt back. Memory-only, never set on a non-shell pane.

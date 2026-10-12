@@ -355,8 +355,9 @@ reader that turns a cell into a status.
 ### A window title is a name the CLI sent us, not the screen
 
 `osc_title.rs` reads the OSC 0/2 window title (`ESC ] 0 ; <text> BEL`) out of every agent
-pane's PTY stream and uses it to name the pane, so the header says what the CLI itself calls
-the session — the same summary its own resume picker shows.
+pane's PTY stream and uses a sanitized contextual title to name the pane. Product-only
+titles are rejected. Claude Code 2.1.296 has been observed emitting both product-only
+and contextual OSC titles; Houston does not assume they equal its resume-picker summary.
 
 **Why this is not "status comes from the CLI, not from pixels".** A window title is a
 protocol message the program addresses to its terminal, exactly like the OSC 52 clipboard
@@ -368,8 +369,11 @@ addressed to us, not inferring anything from rendered content. And what it produ
 dropped past that; the scanner keeps one small carry and no screen. A pane takes at most one
 name per second from its CLI (`CLI_TITLE_MIN_GAP_MS`), because each one is a DB write and a
 broadcast on the reader's own thread. Shell panes are excluded, because a shell's precmd title
-is the cwd rather than a session summary. A name the user typed always wins, and is never
-overwritten by a later title.
+is the cwd rather than a session summary. Antigravity is excluded by provider because its
+window title carries model and status text. Supported ACP `session_info_update.title` is
+session metadata and follows the same title ladder and bounds. Display titles never drive
+status or serve as orchestration addresses. A name the user typed always wins until the
+user explicitly resets it to automatic.
 
 ### A pane resumes only its own conversation, by exact id
 

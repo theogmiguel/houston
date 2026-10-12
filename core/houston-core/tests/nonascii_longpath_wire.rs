@@ -9,6 +9,7 @@ use houston_protocol as proto;
 use tokio_tungstenite::tungstenite::Message;
 
 const MARKER: &str = "Houston-PATH-FIXTURE-ECHO";
+const LATE_MARKER: &str = "Houston-PATH-FIXTURE-AFTER-SAMPLE";
 
 fn no_auto_restore() -> SafeModeFlags {
     SafeModeFlags {
@@ -90,9 +91,30 @@ async fn drive_spawn_persist_reopen(
     collect_output_until(&mut ws, info.id, MARKER).await;
 
     let seen_before = daemon.scrollback(info.id, None).unwrap().bytes_seen;
+    // A live shell can append its next prompt between a sample and the checkpoint.
+    // Force that ordering instead of relying on shell prompt timing to expose it.
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(info.id, format!("echo {LATE_MARKER}\n").as_bytes()).into(),
+    ))
+    .await
+    .unwrap();
+    collect_output_until(&mut ws, info.id, LATE_MARKER).await;
     drop(ws);
     server_handle.abort();
     daemon.persist_all();
+    let checkpoint = houston_core::scrollback::Scrollback::load(
+        &db_path
+            .parent()
+            .unwrap()
+            .join("scrollback")
+            .join(format!("{}.bin", info.id)),
+    )
+    .unwrap()
+    .replay(None);
+    assert!(
+        checkpoint.bytes_seen > seen_before,
+        "the fixture must append output after the earlier live sample"
+    );
     drop(daemon);
 
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
@@ -124,8 +146,12 @@ async fn drive_spawn_persist_reopen(
     let replay = daemon.scrollback(info.id, None).unwrap();
     assert_eq!(replay.generation, 1);
     assert_eq!(
-        replay.bytes_seen, seen_before,
+        replay.bytes_seen, checkpoint.bytes_seen,
         "stream accounting must survive the restart"
+    );
+    assert_eq!(
+        replay.data, checkpoint.data,
+        "checkpoint bytes must survive the restart"
     );
     assert_eq!(replay.replayed_bytes, replay.bytes_seen);
     assert!(

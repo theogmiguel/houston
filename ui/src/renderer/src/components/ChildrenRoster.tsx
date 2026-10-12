@@ -1,10 +1,12 @@
-import { askedOrchestrator, attentionLabel, attentionReason, attentionStatus } from '../sessionAttention'
+import { CHILD_GROUPS, childGroup, classifyChild } from '../childStatus'
+export { CHILD_GROUPS, childGroup, childStateWord } from '../childStatus'
+import { askedOrchestrator, attentionLabel, attentionReason } from '../sessionAttention'
 import { useSession, useSessionFamily, useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { openSideOverview } from '../sidePanel'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
-import { HeaderDelegationBadge, needsHumanInput, pendingDeliveryStatus, stateWord, type PaneRoster } from './DelegationCard'
+import { HeaderDelegationBadge, pendingDeliveryStatus, type PaneRoster } from './DelegationCard'
 import { StatusDot } from './SessionPane'
 import { IconAgent, IconClose, IconArrowUpRight, IconEye, IconSearch, IconStopCircle, IconChevronLeft, IconChevronRight, IconUndo, IconGrid } from './icons'
 import { Icon } from './ui/Icon'
@@ -60,19 +62,6 @@ export const PEEK_KEEP_MOUNTED = 3
 // Delay destruction so Undo can preserve the original PTYs.
 export const CLOSE_SETTLED_UNDO_MS = 5000
 
-export function childGroup(info: SessionInfo): 'Needs you' | 'Working' | 'Settled' {
-  if (!isLive(info.state)) return 'Settled'
-  if (needsHumanInput(info)) return 'Needs you'
-  return 'Working'
-}
-
-export function childStateWord(info: SessionInfo): string {
-  if (askedOrchestrator(info)) return attentionLabel(info)
-  if (childGroup(info) === 'Needs you') return 'needs input'
-  if (isLive(info.state) && info.delegation?.state === 'unknown') return info.status ?? 'unavailable'
-  return info.delegation ? stateWord(info.delegation) : childGroup(info) === 'Settled' ? 'done' : info.status ?? 'unavailable'
-}
-
 const ageTicks = (info: SessionInfo): boolean => isLive(info.state) && info.delegation?.settled_at == null
 
 // A missing provider signal is named, so an absent badge is not read as proof of work.
@@ -86,18 +75,12 @@ export function delegationAge(start: number, now: number): string {
 }
 
 export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Element {
-  if (!isLive(info.state)) {
-    const status = info.delegation?.state === 'done' ? 'Done' : info.delegation?.state === 'failed' ? 'Failed' : 'Ended'
-    return <Tooltip label="Ended"><StatusLabel status={status} variant="dot" /></Tooltip>
-  }
-  if (askedOrchestrator(info)) return <Tooltip label={attentionLabel(info)}><StatusLabel status="Asked orchestrator" variant="dot" /></Tooltip>
-  const state = childStateWord(info)
-  if (state === 'done' || state === 'failed' || state === 'stalled') {
-    const status = state === 'done' ? 'Done' : state === 'failed' ? 'Failed' : 'Stalled'
-    const label = state === 'stalled' ? ['Stalled · Heuristic', info.delegation?.hold_reason].filter(Boolean).join(' · ') : status
-    return <Tooltip label={label}><StatusLabel status={status} variant="dot" /></Tooltip>
-  }
-  return <StatusDot live status={attentionStatus(info) ?? 'unavailable'} />
+  const classification = classifyChild(info)
+  if (classification.dot === 'Needs input') return <StatusDot live status="needs-input" />
+  if (classification.dot === 'Working') return <StatusDot live status="working" />
+  return classification.dot == null
+    ? <StatusDot live status="unavailable" />
+    : <Tooltip label={classification.dot === 'Stalled' ? ['Stalled · Heuristic', info.delegation?.hold_reason].filter(Boolean).join(' · ') : classification.word}><StatusLabel status={classification.dot} variant="dot" /></Tooltip>
 }
 
 function ChildDeliveryStatus({ info }: { info: SessionInfo }): React.JSX.Element | null {
@@ -156,11 +139,11 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
   }
   // The toggle lives on the Needs you heading, so it must not outlast that group.
   if (filter && !children.some((child) => childGroup(child) === 'Needs you')) setFilter(false)
-  const grouped = ['Needs you', 'Working', 'Settled'] as const
+  const grouped = CHILD_GROUPS
   const ordered = grouped.flatMap((group) => children.filter((child) => childGroup(child) === group).sort((a, b) => group === 'Settled' ? Number(a.delegation?.state === 'failed') - Number(b.delegation?.state === 'failed') : 0))
   const [view, setView] = useState<'children' | 'queue'>(defaultView)
   const ready = useTaskReadyCount(client, parent.project_dir, !collapsed)
-  const liveCount = children.length - settled.length
+  const liveCount = children.filter((child) => isLive(child.state)).length
   const cap = roster?.maxLiveChildren ?? null
   const dot = (child: SessionInfo): React.JSX.Element => <ChildStatusDot info={child} />
   const glyph = (child: SessionInfo): React.JSX.Element => <IconAgent brand agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" />

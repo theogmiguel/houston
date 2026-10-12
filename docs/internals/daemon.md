@@ -398,12 +398,25 @@ a path that no longer resolves. `TokenRedactor` strips the capability from the s
 scrollback and both fanouts, so it never reaches a client, the DB or a log.
 
 Pane names carry a persisted source with the precedence codename < first prompt < spawned role
-< CLI title < user rename. This lets respawn and boot restore keep a manual rename final without
-mistaking an older prompt-derived name for one. CLI-title repaints have a one-second write floor;
-the latest title inside the floor is retained and applied when it expires. A title that is only
-the CLI's own name is not a name (recorded: Claude Code writes a spinner glyph and its product
-name, never a summary), so such a pane keeps its prompt or role name. Local and SSH shells
-do not build the title scanner because their window title describes the cwd, not an agent session.
+< CLI title < task < user rename. CLI titles continue to outrank a parent-assigned role;
+orchestration addresses use the stable codename and role, never the display title. Respawn,
+boot restore and daemon handoff preserve provenance. Automatic candidates retain the first
+prompt title and latest native title beneath a user override; reset chooses the strongest
+available candidate, including stored role and task identity. Older rows cannot recover a
+first prompt or native title that was never stored; reset uses available candidates or the
+codename. Legacy rows without a recorded source protect non-codename names as user
+names until an explicit reset; their spelling cannot reliably identify who named them.
+Hidden generators retain bounded automatic title candidates only in memory and discard
+those candidates when the generator finishes.
+
+CLI-title repaints have a one-second write floor; the latest title inside the floor is
+retained and applied when it expires. Product-only titles are rejected. A live capture of
+Claude Code 2.1.296 emitted `✳ Claude Code` initially, then `◑ Pane title across daemon handoff`
+and `✳ Pane title across daemon handoff`; the contextual title is adopted after removing the
+spinner. This establishes OSC behaviour for that version, not equivalence with its resume
+picker. Supported ACP `session_info_update.title` uses the same CLI source and bounds.
+Antigravity titles are excluded because they describe model and agent state. Local and SSH
+shells exclude the scanner because their titles describe the directory.
 
 ## Scrollback
 
