@@ -650,7 +650,7 @@ impl ApprovalMode {
 /// Reusable provider choices only: never an initial prompt, arbitrary argv or environment.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SessionLaunchSelections {
+pub struct SessionLaunchSelections {
     pub provider: proto::AgentKind,
     pub model: Option<String>,
     pub effort: Option<proto::ChatEffort>,

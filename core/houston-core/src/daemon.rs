@@ -2362,6 +2362,7 @@ struct SessionStartup {
     session: Option<Arc<Session>>,
     previous_credential: Option<(String, crate::mcp_creds::McpScope, std::time::Duration)>,
     previous_settings: Option<Vec<u8>>,
+    scrollback_prepared: bool,
     committed: bool,
     #[cfg(unix)]
     master: Option<std::os::fd::OwnedFd>,
@@ -2383,6 +2384,7 @@ impl SessionStartup {
             session: None,
             previous_credential: daemon.mcp_creds.export_for_session(id),
             previous_settings,
+            scrollback_prepared: false,
             committed: false,
             #[cfg(unix)]
             master: None,
@@ -2440,6 +2442,12 @@ impl Drop for SessionStartup {
         }
         for worker in self.workers.drain(..) {
             let _ = worker.join();
+        }
+        if self.scrollback_prepared {
+            self.daemon.remove_persisted_scrollback(self.id);
+            let _ = std::fs::remove_file(
+                self.daemon.scrollback_path(self.id).with_extension("bin.tmp"),
+            );
         }
         let settings = self.daemon.claude_settings_path(self.id);
         let cleanup = match &self.previous_settings {
@@ -2500,9 +2508,22 @@ struct SpawnParams {
     resume_handle: Option<ResumeHandle>,
     resume_notice: Option<String>,
     scrollback_seed: Option<Scrollback>,
+    replacement: Option<SessionReplacement>,
     /// A first prompt will be pasted once the composer takes input, so its output is
     /// watched for that until the delivery ends.
     pastes_first_prompt: bool,
+}
+
+struct SessionReplacement {
+    id: u32,
+    wake_cues: Option<SessionWakeCues>,
+}
+
+struct SessionWakeCues {
+    latest_prompt: Option<String>,
+    last_agent_message: Option<String>,
+    slept_at_ms: Option<u64>,
+    context: Option<proto::SessionContext>,
 }
 
 /// A conversation id and the transcript path the CLI reported with it.
@@ -8737,6 +8758,7 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
+            replacement: None,
             pastes_first_prompt: first_prompt.is_some() || prefill_follows,
         });
         let info = match spawned {
@@ -8985,20 +9007,14 @@ impl Daemon {
             .filter(|child| child.spawned_by.is_some())
             .cloned()
             .collect();
-        let mut parent = match self.respawn_session_with(
+        let mut parent = self.respawn_session_with(
             old_id,
             shell_integration,
             cwd_override,
             shell_override,
             force,
             conversation.clone(),
-        ) {
-            Ok(parent) => parent,
-            Err(error) => {
-                self.defer_children(old_id, &children, proto::RestoreReason::SpawnFailed);
-                return Err(error);
-            }
-        };
+        )?;
         let mut notices = Vec::new();
         let mut count = 0;
         let parent_conversation_resumed = conversation != RespawnConversation::Fresh
@@ -9181,9 +9197,9 @@ impl Daemon {
                             old.info.agent
                         );
                     }
-                    self.kill_unlocked(old_id)?;
+                    self.kill_session_unlocked(old_id, false)?;
                 } else if force {
-                    self.kill_unlocked(old_id)?;
+                    self.kill_session_unlocked(old_id, false)?;
                 } else {
                     bail!(
                     "session {old_id} is still running (state {state:?}); kill it before respawning \
@@ -9314,6 +9330,7 @@ impl Daemon {
         let recorded_cwd = cwd;
         let cwd = Self::respawn_cwd(cwd_override, &recorded_cwd, &project_dir);
         let strict_resume = conversation == RespawnConversation::Wake;
+        let restore_scrollback = conversation == RespawnConversation::Restore;
         if strict_resume && (handle.is_none() || acp.is_some()) {
             bail!("Wake refused for session {old_id}: the exact provider conversation handle is unavailable. Choose fresh explicitly to start a new conversation.");
         }
@@ -9418,11 +9435,17 @@ impl Daemon {
                 extra_args.extend(selections.args(provider)?);
             }
         }
-        let scrollback_seed = if spawned_by.is_some() || strict_resume {
-            from_live
-                .as_ref()
-                .map(|session| session.scrollback.lock().expect("scrollback lock").clone())
-                .or_else(|| Scrollback::load(&self.scrollback_path(old_id)).ok())
+        let scrollback_seed = if spawned_by.is_some() || strict_resume || restore_scrollback {
+            if let Some(session) = from_live.as_ref() {
+                Some(session.scrollback.lock().expect("scrollback lock").clone())
+            } else {
+                let path = self.scrollback_path(old_id);
+                match std::fs::metadata(&path) {
+                    Ok(_) => Some(Scrollback::load(&path)?),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                    Err(error) => return Err(error.into()),
+                }
+            }
         } else {
             None
         };
@@ -9451,7 +9474,7 @@ impl Daemon {
                 .expect("wake launches lock")
                 .insert(id, Instant::now());
         }
-        let mut spawned = match self.spawn_session(SpawnParams {
+        let spawned = match self.spawn_session(SpawnParams {
             id,
             agent,
             detected_agent,
@@ -9480,6 +9503,15 @@ impl Daemon {
             resume_handle,
             resume_notice,
             scrollback_seed,
+            replacement: Some(SessionReplacement {
+                id: old_id,
+                wake_cues: strict_resume.then(|| SessionWakeCues {
+                    latest_prompt: retained_cues.0,
+                    last_agent_message: retained_cues.1,
+                    slept_at_ms: retained_cues.2,
+                    context: retained_cues.3,
+                }),
+            }),
             pastes_first_prompt: false,
         }) {
             Ok(spawned) => spawned,
@@ -9493,39 +9525,6 @@ impl Daemon {
                 return Err(error);
             }
         };
-        if strict_resume {
-            spawned.latest_prompt = retained_cues.0.clone();
-            spawned.last_agent_message = retained_cues.1.clone();
-            spawned.slept_at_ms = retained_cues.2;
-            spawned.context = retained_cues.3;
-            if let Some(session) = self
-                .sessions
-                .lock()
-                .expect("sessions lock")
-                .get(&spawned.id)
-            {
-                *session
-                    .hook_latest_prompt
-                    .lock()
-                    .expect("latest prompt lock") = retained_cues.0.clone();
-                *session
-                    .hook_latest_agent_message
-                    .lock()
-                    .expect("latest agent message lock") = retained_cues.1.clone();
-                *session.slept_at_ms.lock().expect("slept-at lock") = retained_cues.2;
-                *session.context.lock().expect("context lock") = retained_cues.3;
-            }
-            self.db.update_session_sleep_cues(
-                spawned.id,
-                retained_cues.0.as_deref(),
-                retained_cues.1.as_deref(),
-            )?;
-            self.db
-                .update_session_context(spawned.id, retained_cues.3)?;
-        }
-
-        self.db
-            .delegation_rebind(old_id, spawned.id, spawned_by, now_ms())?;
         for info in self.dead.lock().expect("dead lock").values_mut() {
             if info.spawned_by == Some(old_id) {
                 info.spawned_by = Some(spawned.id);
@@ -9537,9 +9536,6 @@ impl Daemon {
                 .lock()
                 .expect("dead geometry lock")
                 .remove(&old_id);
-            if let Err(e) = self.db.mark_closed(old_id) {
-                tracing::warn!("marking respawned session {old_id} closed: {e}");
-            }
         } else {
             if let Some(old) = self.sessions.lock().expect("sessions lock").remove(&old_id) {
                 old.remove_shell_token_file();
@@ -9655,41 +9651,13 @@ impl Daemon {
         Ok(args)
     }
 
-    /// Records the conversation a new pane starts in: the pre-assigned id of a fresh
-    /// Claude CLI, or the resumed one, plus the handle the row carries forward.
-    fn record_launch_conversation(
-        &self,
-        id: u32,
-        resumed: bool,
-        preassigned: Option<String>,
-        handle: Option<ResumeHandle>,
-    ) {
-        if let Some((conversation, transcript)) = &handle {
-            if let Err(e) = self
-                .db
-                .set_session_resume_handle(id, Some((conversation, transcript.as_deref())))
-            {
-                tracing::warn!("carrying the resume handle to session {id}: {e:#}");
-            }
-        }
-        let link = if resumed {
-            handle.map(|(conversation, transcript)| (transcript, Some(conversation)))
-        } else {
-            preassigned.map(|conversation| (None, Some(conversation)))
-        };
+    /// Publish only the in-memory link; startup committed its durable counterpart.
+    fn record_launch_conversation(&self, id: u32, resumed: bool, link: Option<TranscriptLink>) {
         if let Some(link) = link {
-            match self
-                .db
-                .update_session_transcript_link(id, link.0.as_deref(), link.1.as_deref())
-            {
-                Ok(()) => {
-                    self.transcript_links
-                        .lock()
-                        .expect("transcript links lock")
-                        .insert(id, link);
-                }
-                Err(e) => tracing::warn!("recording session {id}'s conversation: {e:#}"),
-            }
+            self.transcript_links
+                .lock()
+                .expect("transcript links lock")
+                .insert(id, link);
         }
         if resumed {
             self.resume_launches
@@ -10610,6 +10578,7 @@ impl Daemon {
             resume_handle,
             resume_notice,
             scrollback_seed,
+            replacement,
             pastes_first_prompt,
         } = p;
         let pty = native_pty_system();
@@ -11059,7 +11028,18 @@ impl Daemon {
             slept_at_ms: None,
         };
 
+        if let Some(cues) = replacement
+            .as_ref()
+            .and_then(|replacement| replacement.wake_cues.as_ref())
+        {
+            info.latest_prompt = cues.latest_prompt.clone();
+            info.last_agent_message = cues.last_agent_message.clone();
+            info.slept_at_ms = cues.slept_at_ms;
+            info.context = cues.context;
+        }
+
         self.session_checkout_metadata(&mut info);
+        let carries_scrollback = scrollback_seed.is_some();
         let session = Arc::new(Session {
             info: info.clone(),
             pid,
@@ -11105,7 +11085,7 @@ impl Daemon {
             last_output: AtomicU64::new(self.started.elapsed().as_millis() as u64),
             status: Mutex::new(initial_status),
             status_since_ms: Mutex::new(status_since_ms),
-            context: Mutex::new(None),
+            context: Mutex::new(info.context),
             activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
@@ -11123,10 +11103,10 @@ impl Daemon {
             hook_permission_details: Mutex::new(None),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
-            hook_latest_prompt: Mutex::new(None),
-            hook_latest_agent_message: Mutex::new(None),
+            hook_latest_prompt: Mutex::new(info.latest_prompt.clone()),
+            hook_latest_agent_message: Mutex::new(info.last_agent_message.clone()),
             sleep_notice: Mutex::new(None),
-            slept_at_ms: Mutex::new(None),
+            slept_at_ms: Mutex::new(info.slept_at_ms),
             geometry: AtomicU32::new((u32::from(cols) << 16) | u32::from(rows)),
             backend: Backend::Pty {
                 #[cfg(unix)]
@@ -11145,6 +11125,16 @@ impl Daemon {
             reader_worker: Mutex::new(None),
         });
         startup.session = Some(Arc::clone(&session));
+        if carries_scrollback && replacement.is_some() {
+            // The row can retire its predecessor only after the new snapshot exists.
+            startup.scrollback_prepared = true;
+            session
+                .scrollback
+                .lock()
+                .expect("scrollback lock")
+                .persist(&self.scrollback_path(id))
+                .context(orchestrate::MutationMayHaveActed)?;
+        }
         let prepare = || -> Result<()> {
             #[cfg(feature = "test-barriers")]
             self.startup_fault("reader-thread")?;
@@ -11283,15 +11273,36 @@ impl Daemon {
             startup.workers.push(worker);
             Ok(())
         };
+        let conversation_link = if resumed {
+            resume_handle
+                .as_ref()
+                .map(|(conversation, transcript)| (transcript.clone(), Some(conversation.clone())))
+        } else {
+            preassigned.map(|conversation| (None, Some(conversation)))
+        };
         if hidden {
             prepare().context(orchestrate::MutationMayHaveActed)?;
         } else {
             self.db
-                .insert_session_for_startup_with_launch(
+                .insert_session_with_startup_metadata(
                     &info,
                     title_source.as_str(),
                     Self::agent_profile_config_dir(agent, &extra_env),
-                    launch_selections.as_ref(),
+                    crate::db::SessionStartupMetadata {
+                        launch_selections: launch_selections.as_ref(),
+                        resume_handle: resume_handle.as_ref().map(|(conversation, transcript)| {
+                            (conversation.as_str(), transcript.as_deref())
+                        }),
+                        transcript_path: conversation_link
+                            .as_ref()
+                            .and_then(|link| link.0.as_deref()),
+                        native_session_id: conversation_link
+                            .as_ref()
+                            .and_then(|link| link.1.as_deref()),
+                        replacement: replacement
+                            .as_ref()
+                            .map(|replacement| (replacement.id, now_ms())),
+                    },
                     prepare,
                 )
                 .context(orchestrate::MutationMayHaveActed)?;
@@ -11304,7 +11315,7 @@ impl Daemon {
         self.write_run_state();
         self.reap_reevaluate();
         if !hidden {
-            self.record_launch_conversation(id, resumed, preassigned, resume_handle);
+            self.record_launch_conversation(id, resumed, conversation_link);
             let mut created = info.clone();
             created.compactions = self.compactions_of(&created);
             self.broadcast_control(&proto::ServerMsg::SessionCreated { info: created });
@@ -12613,6 +12624,10 @@ impl Daemon {
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
+        self.kill_session_unlocked(id, true)
+    }
+
+    fn kill_session_unlocked(&self, id: u32, forget_conversation: bool) -> Result<()> {
         let cleanup = self
             .temporary_cleanup_lock
             .lock()
@@ -12634,7 +12649,9 @@ impl Daemon {
             .lock()
             .expect("operator_ended lock")
             .insert(id);
-        self.forget_resume_handle(id);
+        if forget_conversation {
+            self.forget_resume_handle(id);
+        }
         *session.state.lock().expect("state lock") = proto::SessionState::Killed;
         *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
         self.db
@@ -13763,6 +13780,7 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
+            replacement: None,
             pastes_first_prompt: false,
         });
         if let Err(e) = spawned {
@@ -18976,6 +18994,7 @@ impl Daemon {
             resume_handle: None,
             resume_notice: None,
             scrollback_seed: None,
+            replacement: None,
             pastes_first_prompt: first_prompt.is_some(),
         });
         let info = match spawned {

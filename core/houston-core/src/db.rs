@@ -50,6 +50,15 @@ pub struct MessageReceipt {
     pub digest: String,
 }
 
+#[derive(Default)]
+pub struct SessionStartupMetadata<'a> {
+    pub launch_selections: Option<&'a crate::launch::SessionLaunchSelections>,
+    pub resume_handle: Option<(&'a str, Option<&'a str>)>,
+    pub transcript_path: Option<&'a str>,
+    pub native_session_id: Option<&'a str>,
+    pub replacement: Option<(u32, u64)>,
+}
+
 impl MessageReceipt {
     pub fn new(
         caller: u32,
@@ -2501,15 +2510,17 @@ impl Db {
         profile: Option<&str>,
         prepare: impl FnOnce() -> Result<()>,
     ) -> Result<()> {
-        self.insert_session_for_startup_with_launch(info, title_source, profile, None, prepare)
+        self.insert_session_with_startup_metadata(
+            info, title_source, profile, SessionStartupMetadata::default(), prepare,
+        )
     }
 
-    pub(crate) fn insert_session_for_startup_with_launch(
+    pub fn insert_session_with_startup_metadata(
         &self,
         info: &proto::SessionInfo,
         title_source: &str,
         profile: Option<&str>,
-        launch: Option<&crate::launch::SessionLaunchSelections>,
+        metadata: SessionStartupMetadata<'_>,
         prepare: impl FnOnce() -> Result<()>,
     ) -> Result<()> {
         let mut conn = self.conn.lock().expect("db lock");
@@ -2519,7 +2530,35 @@ impl Db {
             "UPDATE sessions SET profile_config_dir = ?2 WHERE id = ?1",
             rusqlite::params![info.id, profile],
         )?;
-        Self::set_session_launch_selections_on(&tx, info.id, launch)?;
+        Self::set_session_launch_selections_on(&tx, info.id, metadata.launch_selections)?;
+        tx.execute(
+            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3,
+                    transcript_path = ?4, native_session_id = ?5, detected_agent = ?6
+             WHERE id = ?1",
+            rusqlite::params![
+                info.id,
+                metadata.resume_handle.map(|handle| handle.0),
+                metadata.resume_handle.and_then(|handle| handle.1),
+                metadata.transcript_path,
+                metadata.native_session_id,
+                info.detected_agent
+                    .map(|agent| serde_json::to_string(&agent))
+                    .transpose()?
+                    .map(|agent| agent.trim_matches('"').to_string()),
+            ],
+        )?;
+        if let Some((old, now)) = metadata.replacement {
+            Self::delegation_rebind_on(&tx, old, info.id, info.spawned_by, now)?;
+            let retired = tx.execute(
+                "UPDATE sessions SET state = 'closed', resume_session_id = NULL,
+                        resume_transcript_path = NULL WHERE id = ?1 AND state != 'closed'",
+                [old],
+            )?;
+            anyhow::ensure!(
+                retired == 1,
+                "replacement of session {old} refused: expected an open original row"
+            );
+        }
         prepare()?;
         tx.commit()?;
         Ok(())
@@ -4060,32 +4099,43 @@ impl Db {
     ) -> Result<()> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
-        tx.execute("UPDATE delegations SET child_session = ?2, parent_session = COALESCE(?3, parent_session), state = 'working', stop_reason = NULL, ended_at = NULL, settled_at = NULL, retained_until = NULL, cleanup_after = NULL, updated_at = ?4 WHERE child_session = ?1", rusqlite::params![old, new, parent, now as i64])?;
-        tx.execute(
+        Self::delegation_rebind_on(&tx, old, new, parent, now)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn delegation_rebind_on(
+        conn: &Connection,
+        old: u32,
+        new: u32,
+        parent: Option<u32>,
+        now: u64,
+    ) -> Result<()> {
+        conn.execute("UPDATE delegations SET child_session = ?2, parent_session = COALESCE(?3, parent_session), state = 'working', stop_reason = NULL, ended_at = NULL, settled_at = NULL, retained_until = NULL, cleanup_after = NULL, updated_at = ?4 WHERE child_session = ?1", rusqlite::params![old, new, parent, now as i64])?;
+        conn.execute(
             "UPDATE child_input_requests SET child_session = ?2 WHERE child_session = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE delegations SET parent_session = ?2 WHERE parent_session = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE sessions SET spawned_by = ?2 WHERE spawned_by = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE pane_inbox SET to_session = ?2 WHERE to_session = ?1 OR (to_session = 0 AND original_to = ?1)",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE pane_inbox SET from_session = ?2 WHERE from_session = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE pane_inbox SET original_to = ?2 WHERE original_to = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.commit()?;
         Ok(())
     }
 
