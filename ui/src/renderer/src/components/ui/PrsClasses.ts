@@ -46,7 +46,7 @@ export const PRS_CLASSES = {
   PRS_CLASS_33: 'mx-auto flex w-full max-w-[1152px] flex-col gap-4 px-6 pb-12 pt-6',
   PRS_CLASS_34: 'flex flex-wrap items-center gap-2',
   PRS_CLASS_35: `flex h-8 min-w-[220px] flex-1 items-center gap-2 rounded-[var(--tr-radius-button)] border border-[var(--border)] bg-[color-mix(in_srgb,var(--text-primary)_2.5%,transparent)] px-[11px] text-[length:var(--tr-text-ui-size)] text-[var(--text-muted)] focus-within:border-[var(--accent)] focus-within:shadow-[${PRS_FOCUS_SHADOW}]`,
-  PRS_CLASS_36: 'min-w-0 flex-1 border-0 bg-transparent text-[var(--text-primary)] outline-none focus-visible:shadow-[var(--focus-halo)] placeholder:text-[var(--text-muted)]',
+  PRS_CLASS_36: 'min-w-0 flex-1 border-0 bg-transparent text-[var(--text-primary)] outline-none focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)] placeholder:text-[var(--text-muted)]',
   PRS_CLASS_37: 'relative',
   PRS_CLASS_38: 'inline-flex h-8 items-center gap-1.5 rounded-[var(--tr-radius-button)] border border-[var(--border)] bg-[color-mix(in_srgb,var(--text-primary)_3%,transparent)] px-[11px] text-[length:var(--tr-text-ui-size)] font-medium transition-colors duration-150 hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] active:scale-[.97]',
   PRS_CLASS_41: 'absolute left-0 top-full z-40 prs-mt-1 w-[200px] rounded-[var(--tr-radius-md)] p-1 floating-glass floating-pop-in [transform-origin:top_left]',

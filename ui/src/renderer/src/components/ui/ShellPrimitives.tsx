@@ -77,7 +77,7 @@ const SHELL_CLASS: Record<ShellRole, string> = {
   'task-activity-content': 'grid gap-[var(--space-2)] p-[var(--space-3)]',
   'task-description-heading': 'group flex items-center',
   'task-description-edit-button': 'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
-  'task-description-editor': 'block w-full resize-none border-0 bg-transparent p-[var(--space-3)] text-[var(--text-primary)] outline-none focus-visible:shadow-[var(--focus-halo)]',
+  'task-description-editor': 'block w-full resize-none border-0 bg-transparent p-[var(--space-3)] text-[var(--text-primary)] outline-none focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]',
   'task-description-empty': 'flex items-center justify-between gap-[var(--space-2)] p-[var(--space-3)]',
   'task-description-empty-label': 'text-[var(--text-muted)]',
   'appearance-hidden-empty': 'px-[var(--space-3)] py-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]',

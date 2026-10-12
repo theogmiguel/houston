@@ -51,9 +51,9 @@ export function Checkbox({
         onClick={handleClick}
         className={`relative grid size-4 flex-none place-items-center rounded-[var(--tr-radius-xs)] border border-[var(--border)]
           ${isChecked ? 'border-[var(--accent)] bg-[var(--accent)]' : 'bg-[var(--content-bg)]'}
-          focus-visible:shadow-[var(--focus-halo)] cursor-pointer`}
+          focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)] cursor-pointer`}
       >
-        {isChecked && <Icon glyph={IconCheck} role="small" className="pointer-events-none text-[var(--accent-contrast)]" />}
+        {isChecked && <Icon glyph={IconCheck} role="small" className="pointer-events-none text-[var(--accent-ink)]" />}
       </button>
       {label && <span className="truncate">{label}</span>}
     </label>

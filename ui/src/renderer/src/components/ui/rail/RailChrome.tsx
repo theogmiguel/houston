@@ -8,7 +8,7 @@ import { Tooltip } from '../Tooltip'
 import { WorkspaceTreeRow } from '../WorkspaceTreeRow'
 
 export function RailOptionsSurface({ children, style }: { children: ReactNode; style: React.CSSProperties }): React.JSX.Element {
-  return <div data-rail-options role="dialog" aria-label="Sidebar options" className="fixed z-[var(--z-popover)] w-[var(--w-rail-options)] rounded-[var(--tr-radius-md)] border border-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] bg-[var(--glass)] p-1 shadow-[var(--shadow-popover)] backdrop-blur-[16px] [backdrop-filter:blur(16px)_saturate(1.08)] [font-size:var(--tr-text-base)]" style={style}>{children}</div>
+  return <div data-rail-options role="dialog" aria-label="Sidebar options" className="fixed z-[var(--z-popover)] w-[var(--w-rail-options)] rounded-[var(--tr-radius-md)] border border-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] bg-[var(--glass)] p-1 shadow-[var(--shadow-1)] backdrop-blur-[16px] [backdrop-filter:blur(16px)_saturate(1.08)] [font-size:var(--tr-text-base)]" style={style}>{children}</div>
 }
 
 export function RailOptionsView({ direction, children }: { direction: 'none' | 'forward' | 'back'; children: ReactNode }): React.JSX.Element {

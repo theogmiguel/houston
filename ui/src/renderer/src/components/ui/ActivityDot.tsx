@@ -10,7 +10,7 @@ const COLOR: Record<ActivityDotState, string> = {
 }
 
 export function ActivityDot({ state, label, active = false }: { state: ActivityDotState; label: string; active?: boolean }): React.JSX.Element {
-  return <span role="img" aria-label={label} data-testid="grid-state-dot" data-state={state} className={`w-[var(--sz-grid-state-dot)] h-[var(--sz-grid-state-dot)] rounded-full flex-none ${active ? 'loop-anim [--dot-pulse-opacity:var(--opacity-grid-state-pulse)] motion-safe:animate-[dot-pulse_var(--t-grid-state-pulse)_steps(4,end)_infinite]' : ''}`} style={{ background: COLOR[state], boxShadow: state === 'unavailable' ? 'inset 0 0 0 1px var(--text-faint)' : undefined, opacity: state === 'stopped' ? 'var(--opacity-grid-state-stopped)' : undefined }} />
+  return <span role="img" aria-label={label} data-testid="grid-state-dot" data-state={state} className={`w-[var(--sz-grid-state-dot)] h-[var(--sz-grid-state-dot)] rounded-full flex-none ${active ? 'loop-anim [--dot-pulse-opacity:var(--opacity-connection-dot-pulse)] motion-safe:[animation:var(--motion-connection-pulse)]' : ''}`} style={{ background: COLOR[state], boxShadow: state === 'unavailable' ? 'inset 0 0 0 1px var(--text-faint)' : undefined, opacity: state === 'stopped' ? 'var(--opacity-grid-state-stopped)' : undefined }} />
 }
 
 export function ActivityDotSpecimen(): React.JSX.Element {

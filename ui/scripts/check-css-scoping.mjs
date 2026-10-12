@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+import { checkUndeclaredVars } from './check-undeclared-vars.mjs'
+
+checkUndeclaredVars()
+
 import { chromium } from 'playwright'
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'

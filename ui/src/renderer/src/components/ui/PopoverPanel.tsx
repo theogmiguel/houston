@@ -197,7 +197,7 @@ export function BadgeSeparator({ children }: { children: ReactNode }): React.JSX
 
 export function PopoverPanelSpecimen(): React.JSX.Element {
   return (
-    <div className="w-[var(--w-popover-content)] overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--pop-bg)]">
+    <div className="w-[var(--w-popover-content)] overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--elevated-surface)]">
       <PopoverHeader trailing={<PopoverDescription>1 waiting</PopoverDescription>}>
         <PopoverTitle>Review</PopoverTitle>
         <PopoverDescription>Review API changes</PopoverDescription>
