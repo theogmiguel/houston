@@ -100,15 +100,16 @@ export class InspectorClient {
     const number = requestedNumber ?? this.prFixture?.number ?? 95
     const state = this.prFixture?.state ?? 'open'
     const isDraft = this.prFixture?.isDraft ?? false
+    const failingChecks = this.failingChecks || (number === 93 && state === 'open')
     const merged = number === 93
     const title = merged ? 'fix(codex): Codex panes start again with Codex CLI 0.160' : 'fix(panes): terminals keep their content while the inspector opens'
     const updatedAt = Math.floor(Date.now() / 1000) - (this.prFixture?.ageSeconds ?? (merged ? 13 : 12) * 60)
     queueMicrotask(() => this.emit({
       type: 'pr_detail', dir, request, gh: 'ready', has_upstream: true, linked: true, hint: null, message: null,
-      link: { host: 'github.com', repository: 'owner/houston', number, url: `https://github.com/owner/houston/pull/${number}`, state, source: 'detected', title, is_draft: isDraft, additions: merged ? 156 : 91, deletions: merged ? 15 : 12, changed_files: 4, checks: this.failingChecks ? 'failing' : 'passing', review_decision: null, linked_at: 1 },
+      link: { host: 'github.com', repository: 'owner/houston', number, url: `https://github.com/owner/houston/pull/${number}`, state, source: 'detected', title, is_draft: isDraft, additions: merged ? 156 : 91, deletions: merged ? 15 : 12, changed_files: 4, checks: failingChecks ? 'failing' : 'passing', review_decision: null, linked_at: 1 },
       detail: {
         body: merged ? '## Problem\nSince v0.16.0, every native Codex launch fails when Codex CLI 0.160 is installed. The socket directory was writable by other users.\n\n## Changes\n- Create the socket directory with mode `0700` regardless of umask.\n- Drain stderr into a bounded 4 KiB tail.\n\n## Verification\n- Regression tests pass.\n- Full renderer gates pass.' : '## Problem\nOpening the inspector narrowed the grid, and every terminal repainted one frame late, so panes flashed blank. `fit()` resized the canvas, which clears its bitmap, but only scheduled the next paint with `requestRender()`.\n\n## Changes\n- `fix(panes)`: a fit that resizes the canvas paints in the same frame.\n- `feat(ui)`: the inspector slides in with `transform`; the grid changes width once.\n\n## Verification\n- Regression test `surface.fitPaint.test.ts` fails before the fix.\n- `bun run typecheck` and renderer tests pass.', author: this.prFixture?.metadataMissing ? null : 'maintainer', base_ref: this.prFixture?.metadataMissing ? null : 'main', head_ref: this.prFixture?.metadataMissing ? null : merged ? 'fix/codex-native-startup' : 'inspector-polish', head_sha: 'a1c3f09', commit_count: 5, created_at: updatedAt - 6000, updated_at: updatedAt, mergeable: 'mergeable', merge_state: 'clean',
-        checks: this.failingChecks
+        checks: failingChecks
           ? [
               { name: 'core-checks', state: 'failing', url: 'https://github.com/acme/houston/actions/runs/412001', duration_ms: 252000, run_id: 412001 },
               { name: 'safety-checks', state: 'passing', url: null, duration_ms: 72000 },
@@ -124,7 +125,7 @@ export class InspectorClient {
         comments: [
           { id: 'comment-1', author: 'reviewer', body: 'Nice catch on the cleared bitmap. Can the regression test assert the paint count instead of timing?', created_at: updatedAt - 8 * 60, reactions: [] },
           { id: 'comment-2', author: 'maintainer', body: 'Done, the test now counts renderFrame calls inside the resize frame.', created_at: updatedAt - 2 * 60, reactions: [] },
-        ], reviews: [], comments_total: 2, reviews_total: 0, merge_disabled_reason: null, viewer: { can_write: true, can_triage: true, can_update: true, did_author: false, can_update_branch: true }, viewer_message: null, behind_by: null, labels: merged ? [] : [{ name: 'bug', color: 'f04438' }, { name: 'renderer', color: '3b82f6' }], reviewers: [], reactions: [], threads: [], threads_truncated: false, threads_message: null, auto_merge_enabled: null, auto_merge_method: null, cross_repository: false
+        ], reviews: [], comments_total: 2, reviews_total: 0, merge_disabled_reason: failingChecks ? `PR #${number} has failing checks: core-checks` : null, viewer: { can_write: true, can_triage: true, can_update: true, did_author: false, can_update_branch: true }, viewer_message: null, behind_by: null, labels: merged ? [] : [{ name: 'bug', color: 'f04438' }, { name: 'renderer', color: '3b82f6' }], reviewers: [], reactions: [], threads: [], threads_truncated: false, threads_message: null, auto_merge_enabled: null, auto_merge_method: null, cross_repository: false
       }
     }))
     return request

@@ -1401,3 +1401,9 @@ it('waits for close confirmation without sending a mutation on the menu click', 
   click(q('[data-testid="pr-action-close"]'))
   expect(client.prActionCalls).toHaveLength(0)
 })
+
+it('keeps the compact reviewer value in the shared left value column', () => {
+  const client = mount({ compact: true })
+  emit(client, detailMsg())
+  expect(q('[data-testid="pr-reviewers-value"]')!.className).not.toContain('ml-auto')
+})

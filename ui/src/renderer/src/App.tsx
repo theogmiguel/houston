@@ -3989,6 +3989,9 @@ export function App(): React.JSX.Element {
                       repoName={pullRequestRepositoryName(workspaces, prListDir)}
                       workspace={pullRequestWorkspace(prListDir)}
                       currentUser={prScreen.viewerLogin}
+                      workspaces={workspaces}
+                      onWorkspaceChange={setSelectedWs}
+                      onOpenUrlInPane={(url: string) => { if (prListDir) openBrowserPane(prListDir, null, url); }}
                       items={prScreen.items}
                       client={conn.kind === "ready" ? conn.client : null}
                       directory={prListDir}

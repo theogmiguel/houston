@@ -191,7 +191,7 @@ import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEdit
 import { PaneCheckoutHeaderStory, PaneEndedStory, PaneOrchestratorHeaderStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
-import { PullRequestDetailStory, PullRequestsScreenStory } from './prsStories'
+import { PullRequestDetailStory, PullRequestsScreenStory, PrPageStory } from './prsStories'
 
 const noop = (): void => {}
 
@@ -434,11 +434,14 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'harness/first-run': () => <HarnessPageStory firstRun />,
   'harness/no-reviews': () => <HarnessPageStory noReviews />,
   'rail/workspaces-multi': () => <RailWorkspacesMulti />,
+  'pr-page/populated': () => <PrPageStory />,
+  'pr-page/selected': () => <PrPageStory mode="selected" />,
+  'pr-page/empty': () => <PrPageStory mode="empty" />,
+  'pr-page/loading': () => <PrPageStory mode="loading" />,
+  'pr-page/viewer-unavailable': () => <PrPageStory mode="viewer-unavailable" />,
   'prs/screen-paper': () => <PullRequestsScreenStory />,
   'prs/screen-empty': () => <PullRequestsScreenStory mode="empty" />,
   'prs/screen-loading': () => <PullRequestsScreenStory mode="loading" />,
-  'prs/screen-sort-menu': () => <PullRequestsScreenStory mode="sort" />,
-  'prs/screen-filter-menu': () => <PullRequestsScreenStory mode="filters" />,
   'prs/screen-hover': () => <PullRequestsScreenStory mode="hover" />,
   'prs/screen-selected': () => <PullRequestsScreenStory mode="selected" />,
   'prs/screen-folded': () => <PullRequestsScreenStory mode="folded" />,

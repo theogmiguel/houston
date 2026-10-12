@@ -4,8 +4,8 @@ import type { PrSort } from '../../houston/generated/PrSort'
 export type PullRequestSort = PrSort | 'blocked' | 'oldest' | 'largest' | 'smallest'
 
 export interface PullRequestGroups {
-  authored: PrListItem[]
-  reviewRequested: PrListItem[]
+  yours: PrListItem[]
+  waitingOnYou: PrListItem[]
   others: PrListItem[]
 }
 
@@ -27,10 +27,10 @@ export function sortPullRequests(items: PrListItem[], sort: PullRequestSort): Pr
 }
 
 export function groupPullRequests(items: PrListItem[], currentUser: string, sort: PullRequestSort): PullRequestGroups {
-  const groups: PullRequestGroups = { authored: [], reviewRequested: [], others: [] }
+  const groups: PullRequestGroups = { yours: [], waitingOnYou: [], others: [] }
   for (const item of sortPullRequests(items, sort)) {
-    if (item.author?.toLocaleLowerCase() === currentUser.toLocaleLowerCase()) groups.authored.push(item)
-    else if (item.review_requested) groups.reviewRequested.push(item)
+    if (item.review_requested) groups.waitingOnYou.push(item)
+    else if (currentUser && item.author?.toLocaleLowerCase() === currentUser.toLocaleLowerCase()) groups.yours.push(item)
     else groups.others.push(item)
   }
   return groups
@@ -69,4 +69,19 @@ export function filterPullRequests(items: PrListItem[], query: string): PrListIt
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .map((entry) => entry.item)
+}
+
+export function pullRequestStatus(item: PrListItem): { label: string; tone: 'ok' | 'stop' | 'warn' | 'info' | 'muted' } {
+  if (item.state === 'merged') return { label: 'Merged', tone: 'info' }
+  if (item.state === 'closed') return { label: 'Closed', tone: 'muted' }
+  if (item.is_draft) return { label: 'Draft', tone: 'muted' }
+  if (item.review_requested) return { label: 'Your review', tone: 'warn' }
+  if (item.checks === 'failing') return { label: 'Checks failing', tone: 'stop' }
+  if (item.checks === 'running') return { label: 'Checks running', tone: 'info' }
+  if (item.mergeable === 'conflicting') return { label: 'Conflicts', tone: 'stop' }
+  if (item.review_decision === 'CHANGES_REQUESTED') return { label: 'Changes requested', tone: 'warn' }
+  if (item.review_decision === 'REVIEW_REQUIRED') return { label: 'Review required', tone: 'warn' }
+  if (item.review_decision === 'APPROVED') return { label: 'Approved', tone: 'muted' }
+  if (item.checks === 'passing' && item.mergeable === 'mergeable') return { label: 'Ready to merge', tone: 'ok' }
+  return { label: 'Open', tone: 'muted' }
 }

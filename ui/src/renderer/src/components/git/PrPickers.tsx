@@ -154,7 +154,7 @@ export function PrReviewerPicker({
     <PickerSection data-testid="pr-reviewers">
       <PickerRow>
         <PickerFieldLabel>Reviewers</PickerFieldLabel>
-        <ReviewerValue data-testid="pr-reviewers-value">
+        <ReviewerValue plain={compact} data-testid="pr-reviewers-value">
           {detail.reviewers.length === 0 ? (compact ? 'None' : 'none requested') : requestedReviewers(detail.reviewers)}
         </ReviewerValue>
         <Tooltip label={compact ? 'Add reviewer' : 'Manage reviewers'}>
