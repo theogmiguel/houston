@@ -29,6 +29,8 @@ Secrets that match Houston's credential patterns are masked, long text is shorte
 nothing of it is saved: it is kept in memory and is gone when the daemon stops. Turning remote
 access off clears it, and nothing is collected while it is off, so activity from before
 remote access was last turned on is only in **View screen**.
+Closing or respawning a pane clears its old conversation and pending notifications.
+An exited pane keeps its conversation until it is closed or respawned.
 
 Activity lists recent finished turns, requests that need you and answers across panes.
 Answers identify whether they came from the phone or the terminal. Like conversations,
@@ -193,7 +195,9 @@ The phone has four tabs:
   settings are configured on the computer.
 
 The page title counts waiting panes. Android can vibrate for a new request while Houston
-is open. When the connection drops, the last state is dimmed and answers are disabled.
+is open. When the connection drops, the last state is dimmed and answers are disabled. Requests time out after 15 seconds so a stalled
+request cannot keep answers blocked indefinitely. An input timeout does not confirm
+whether the agent received it; check the pane before sending the same answer again.
 After about 30 seconds, the page offers **Retry** and suggests checking whether the
 computer is asleep. Live updates use a stream, with polling when the stream is unavailable.
 
@@ -266,7 +270,9 @@ returns the text to the device; nothing reaches the pane until you send it.
    model in Settings ▸ Dictation first; with Groq, store the API key there.
 2. In a pane, tap the microphone next to the message box and speak. Tap it again to stop,
    then edit the text and send it, or tap **Insert and send** to send it as soon as it is
-   transcribed. **Cancel** discards the recording. A recording stops by itself at 2 minutes.
+   transcribed. **Cancel** discards the recording or pending transcript. Leaving the pane,
+   signing out, or hiding the page discards pending dictation too. A recording stops by
+   itself at 2 minutes.
 
 The microphone button needs a trusted HTTPS address: the Tailscale route, or a device that
 trusts this computer's certificate (see [The certificate](#the-certificate)). Otherwise the
@@ -299,7 +305,10 @@ recording over the limit.
    it and **Remove** turns notifications off.
 3. Adjust **Delay** (30 seconds by default, up to 600). A pane must keep waiting for that
    long before the notification goes out; if you answer on the desktop sooner, nothing is
-   sent. Each time a pane starts waiting, at most one notification is sent.
+   sent. Each time a pane starts waiting, at most one notification is sent. Closing
+   the pane cancels its pending notification. The current notification settings and
+   topic apply when the delay ends; turning off finished-turn notifications also
+   cancels finished-turn notifications still waiting to be sent.
 
 Tapping a notification with a pane link opens that pane on the paired device. A late link
 shows **Already answered** when the conversation reports an answer, or **No request

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { basename, getBuffer, retainBuffer, subscribeBuffer, type EditorBuffer } from '../../editor/bufferStore'
+import { basename, DOCUMENT_TABS_EVENT, FILES_TABS_MAX, FILES_TABS_STORAGE_PREFIX, fileTabOwners, getBuffer, retainBuffer, subscribeBuffer, type EditorBuffer } from '../../editor/bufferStore'
 import { caretLabel, caretPosition, languageLabel, PLAIN_TEXT_LABEL } from '../../editor/statusStrip'
 import { useEditorSurface, type EditorSurfaceState } from '../../editor/useEditorSurface'
 
@@ -35,13 +35,10 @@ export interface FileTabsState {
   labelFor: (path: string) => string
 }
 
-// Bound retained editor buffers and keep the tab strip manageable.
-export const FILES_TABS_MAX = 12
-
-const PERSIST_PREFIX = 'tr-files-tabs:'
+export { FILES_TABS_MAX } from '../../editor/bufferStore'
 
 function persistKey(workspaceDir: string): string {
-  return `${PERSIST_PREFIX}${workspaceDir}`
+  return `${FILES_TABS_STORAGE_PREFIX}${workspaceDir}`
 }
 
 interface PersistedTab {
@@ -82,7 +79,13 @@ function persist(workspaceDir: string, tabs: readonly FileTab[], activePath: str
     tabs: tabs.map((t) => ({ path: t.path, preview: t.preview })),
     activePath
   }
-  try { localStorage.setItem(persistKey(workspaceDir), JSON.stringify(data)) } catch { /* Storage may be disabled. */ }
+  try {
+    const key = persistKey(workspaceDir)
+    const encoded = JSON.stringify(data)
+    if (localStorage.getItem(key) === encoded) return
+    localStorage.setItem(key, encoded)
+    window.dispatchEvent(new Event(DOCUMENT_TABS_EVENT))
+  } catch { /* Storage may be disabled. */ }
 }
 
 export function labelForTab(tabs: readonly { path: string }[], path: string): string {
@@ -98,7 +101,7 @@ function parentName(path: string): string {
   return basename(parent) || parent
 }
 
-export function useFileTabs(workspaceDir: string): FileTabsState {
+export function useFileTabs(workspaceDir: string, documentOwnerId?: string): FileTabsState {
   const [tabs, setTabs] = useState<FileTab[]>(() => loadPersisted(workspaceDir).tabs)
   const [activePath, setActivePath] = useState<string | null>(
     () => loadPersisted(workspaceDir).activePath
@@ -132,13 +135,32 @@ export function useFileTabs(workspaceDir: string): FileTabsState {
   const labelFor = useCallback((path: string): string => labelForTab(tabs, path), [tabs])
 
   useEffect(() => {
+    if (documentOwnerId) {
+      const paths = tabs.map(tab => tab.path)
+      const old = fileTabOwners.get(documentOwnerId)
+      if (old?.workspace !== workspaceDir || old.paths.join('\0') !== paths.join('\0')) {
+        fileTabOwners.set(documentOwnerId, { workspace: workspaceDir, paths })
+        window.dispatchEvent(new Event(DOCUMENT_TABS_EVENT))
+      }
+    }
     persist(workspaceDir, tabs, activePath)
-  }, [workspaceDir, tabs, activePath])
+  }, [workspaceDir, tabs, activePath, documentOwnerId])
 
+  const owners = useRef(new Map<string, () => void>())
   useEffect(() => {
-    const releases = tabs.map((t) => retainBuffer(workspaceDir, t.path))
-    return () => releases.forEach((r) => r())
+    const current = owners.current
+    const paths = new Set(tabs.map(t => t.path))
+    for (const path of paths) if (!current.has(path)) current.set(path, retainBuffer(workspaceDir, path))
+    for (const [path, release] of current) {
+      if (paths.has(path)) continue
+      current.delete(path)
+      release()
+    }
   }, [tabs, workspaceDir])
+  useEffect(() => () => {
+    for (const release of owners.current.values()) release()
+    owners.current.clear()
+  }, [workspaceDir])
 
   useEffect(() => {
     const offs = tabs.map((t) =>

@@ -307,10 +307,15 @@ fn stop_daemons_and_quit(app: &AppHandle) {
         return;
     }
     let local = app.state::<crate::host::ConnectionCell>().current();
-    let environments = app.state::<crate::wsl::WslManager>().wsl_envs();
+    let wsl = app.state::<crate::wsl::WslManager>().inner().clone();
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let failures = shutdown::stop_all(local, environments).await;
+        let (environments, ownership_failure) = match wsl.pause_for_stop().await {
+            Ok(envs) => (envs, None),
+            Err(error) => (Vec::new(), Some(error)),
+        };
+        let mut failures = shutdown::stop_all(local, environments).await;
+        failures.extend(ownership_failure);
         if failures.is_empty() {
             quit(&handle);
             return;
@@ -334,6 +339,8 @@ fn stop_daemons_and_quit(app: &AppHandle) {
                 STOPPING.store(false, Ordering::SeqCst);
                 if confirmed {
                     quit(&exit_handle);
+                } else {
+                    wsl.keep_open_after_stop();
                 }
             });
     });

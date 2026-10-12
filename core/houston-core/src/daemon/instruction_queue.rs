@@ -156,6 +156,7 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        self.ensure_not_closing(session, "instruction mutation")?;
         let _dispatch = self
             .instruction_dispatch_lock
             .lock()
@@ -183,6 +184,7 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        self.ensure_not_closing(session, "instruction mutation")?;
         let _dispatch = self
             .instruction_dispatch_lock
             .lock()
@@ -273,6 +275,7 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        self.ensure_not_closing(target, "pane_prompt")?;
         let _dispatch = self
             .instruction_dispatch_lock
             .lock()
@@ -342,13 +345,19 @@ impl Daemon {
         )?;
         self.cancel_temporary_cleanup_locked(target);
         self.broadcast_instruction_queue(target);
-        self.instruction_dispatch_locked(target)?;
+        drop(_dispatch);
+        drop(_cleanup);
+        self.instruction_dispatch(target)?;
         self.instruction_wake(target)?;
         let row = self
             .db
             .instruction_row(&row.info.id)?
             .expect("accepted instruction retained");
-        Ok((row.acceptance(), source, self.session_status(target)?))
+        Ok((
+            row.acceptance(),
+            source,
+            self.session_status(target).ok().flatten(),
+        ))
     }
 
     fn instruction_wake(self: &Arc<Self>, target: u32) -> Result<()> {
@@ -367,15 +376,7 @@ impl Daemon {
                 loop {
                     let Some(this) = daemon.upgrade() else { return };
                     let keep = {
-                        let _cleanup = this
-                            .temporary_cleanup_lock
-                            .lock()
-                            .expect("temporary cleanup lock");
-                        let _dispatch = this
-                            .instruction_dispatch_lock
-                            .lock()
-                            .expect("instruction dispatch lock");
-                        let keep = match this.instruction_dispatch_locked(target) {
+                        let keep = match this.instruction_dispatch(target) {
                             Ok(keep) => keep,
                             Err(error) => {
                                 tracing::warn!(
@@ -412,7 +413,107 @@ impl Daemon {
         Ok(())
     }
 
-    fn instruction_dispatch_locked(self: &Arc<Self>, target: u32) -> Result<bool> {
+    fn instruction_admission(
+        &self,
+    ) -> (std::sync::MutexGuard<'_, ()>, std::sync::MutexGuard<'_, ()>) {
+        let cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        let dispatch = self
+            .instruction_dispatch_lock
+            .lock()
+            .expect("instruction dispatch lock");
+        (cleanup, dispatch)
+    }
+
+    fn instruction_write_receipt(
+        self: &Arc<Self>,
+        target: u32,
+        data: &[u8],
+        admission: &mut Option<(std::sync::MutexGuard<'_, ()>, std::sync::MutexGuard<'_, ()>)>,
+    ) -> std::result::Result<(), StdinWriteError> {
+        // begin_write has already claimed queued -> uncertain. Release both guards
+        // until the FIFO receipt, then commit only if cancellation has not won.
+        let receipt = if data == b"\r" {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let daemon = Arc::downgrade(self);
+            let id = self.instruction_write_evidence(target).instruction_id;
+            self.enqueue_stdin_admitted(
+                target,
+                data,
+                Box::new(move |result| {
+                    let _ = tx.send(result);
+                }),
+                None,
+                Some(Box::new(move |result| {
+                    if result.is_ok() {
+                        if let Some(daemon) = daemon.upgrade() {
+                            let mut writes = daemon
+                                .instruction_writes
+                                .lock()
+                                .expect("instruction writes lock");
+                            if let Some(evidence) =
+                                writes.get_mut(&target).filter(|e| e.instruction_id == id)
+                            {
+                                evidence.phase = InstructionWritePhase::Submitted;
+                            }
+                        }
+                    }
+                })),
+            )
+            .map(|()| rx)
+        } else {
+            self.admit_stdin_counting(target, data)
+        };
+        drop(admission.take());
+        Self::wait_stdin_receipt(target, receipt)
+    }
+
+    fn instruction_target_live(&self, target: u32) -> bool {
+        self.ensure_not_closing(target, "instruction completion")
+            .is_ok()
+            && !self.instruction_write_evidence(target).session_ended
+            && self
+                .get(target)
+                .is_ok_and(|session| session.state.lock().expect("state lock").is_live())
+    }
+
+    fn instruction_unwritten_receipt(&self, row: &InstructionRow, reason: &str) -> Result<()> {
+        self.db
+            .instruction_unwritten(&row.info.id, reason, now_ms())?;
+        if !self.instruction_target_live(row.target) {
+            self.db.instruction_set_state(
+                &row.info.id,
+                if row.interrupt_sent {
+                    State::Uncertain
+                } else {
+                    State::HeldAfterRecovery
+                },
+                Some("target ended before write; inspect retained instruction"),
+                now_ms(),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn instruction_write_evidence(&self, target: u32) -> InstructionWriteEvidence {
+        self.instruction_writes
+            .lock()
+            .expect("instruction writes lock")
+            .get(&target)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn instruction_dispatch(self: &Arc<Self>, target: u32) -> Result<bool> {
+        let mut admission = Some(self.instruction_admission());
+        if self
+            .ensure_not_closing(target, "instruction dispatch")
+            .is_err()
+        {
+            return Ok(false);
+        }
         let rows = self.db.instruction_rows(target)?;
         let Some(mut head) = rows.iter().find(|row| {
             matches!(
@@ -437,6 +538,29 @@ impl Daemon {
             .db
             .instruction_row(&head.info.id)?
             .expect("queued instruction retained");
+        if self
+            .instruction_writes
+            .lock()
+            .expect("instruction writes lock")
+            .contains_key(&target)
+        {
+            return Ok(true);
+        }
+        self.instruction_writes
+            .lock()
+            .expect("instruction writes lock")
+            .insert(
+                target,
+                InstructionWriteEvidence {
+                    instruction_id: row.info.id.clone(),
+                    ..Default::default()
+                },
+            );
+        let _write = InstructionWriteReservation {
+            daemon: self,
+            target,
+        };
+
         if !self
             .get(target)
             .is_ok_and(|s| s.state.lock().expect("state lock").is_live())
@@ -454,6 +578,12 @@ impl Daemon {
             && !row.interrupt_sent
             && self.session_status(target)? == Some(proto::AgentStatus::Working)
         {
+            self.instruction_writes
+                .lock()
+                .expect("instruction writes lock")
+                .get_mut(&target)
+                .expect("instruction write reserved")
+                .phase = InstructionWritePhase::Interrupt;
             if let Some(reason) = self.immediate_paste_hold_reason(target) {
                 self.db.instruction_set_state(
                     &row.info.id,
@@ -468,16 +598,35 @@ impl Daemon {
                 .ok_or_else(|| anyhow!("session {target}: provider missing"))?;
             self.db
                 .instruction_begin_write(&row.info.id, None, None, now_ms())?;
-            match self.write_stdin_counting(target, orchestrate::prompt_interrupt_key(provider)?) {
+            let outcome = self.instruction_write_receipt(
+                target,
+                orchestrate::prompt_interrupt_key(provider)?,
+                &mut admission,
+            );
+            admission = Some(self.instruction_admission());
+            if self
+                .db
+                .instruction_row(&row.info.id)?
+                .is_none_or(|current| current.info.state != State::Uncertain)
+            {
+                return Ok(false);
+            }
+            match outcome {
+                Ok(()) if !self.instruction_target_live(target) => {
+                    self.db.instruction_set_state(&row.info.id, State::Uncertain,
+                        Some("interrupt completed while target ended; cancel before creating a new intent"), now_ms())?;
+                }
                 Ok(()) => {
                     self.db
                         .instruction_interrupt_written(&row.info.id, now_ms())?;
                     self.instruction_settle_old_round_locked(target)?;
+                    if self.instruction_write_evidence(target).restart_ready {
+                        self.db.instruction_restart_ready(target, now_ms())?;
+                    }
                 }
-                Err(error) if error.nothing_written() => self.db.instruction_unwritten(
-                    &row.info.id,
+                Err(error) if error.nothing_written() => self.instruction_unwritten_receipt(
+                    &row,
                     &format!("interrupt wrote no bytes: {error}"),
-                    now_ms(),
                 )?,
                 Err(error) => {
                     let reason = format!(
@@ -493,7 +642,9 @@ impl Daemon {
                 }
             }
             self.broadcast_instruction_queue(target);
-            return Ok(true);
+            let keep = self.instruction_target_live(target);
+            drop(admission);
+            return Ok(keep);
         }
         if row.interrupt_sent && !row.restart_ready {
             return Ok(true);
@@ -524,13 +675,22 @@ impl Daemon {
             .cloned();
         self.db
             .instruction_begin_write(&row.info.id, request, prompt_id.as_deref(), now_ms())?;
-        match self.write_stdin_counting(target, &bracketed_paste(&text)) {
+        let outcome =
+            self.instruction_write_receipt(target, &bracketed_paste(&text), &mut admission);
+        admission = Some(self.instruction_admission());
+        if self
+            .db
+            .instruction_row(&row.info.id)?
+            .is_none_or(|current| current.info.state != State::Uncertain)
+        {
+            return Ok(false);
+        }
+        match outcome {
             Ok(()) => {}
             Err(error) if error.nothing_written() => {
-                self.db.instruction_unwritten(
-                    &row.info.id,
+                self.instruction_unwritten_receipt(
+                    &row,
                     &format!("paste wrote no bytes: {error}"),
-                    now_ms(),
                 )?;
                 self.broadcast_instruction_queue(target);
                 return Ok(true);
@@ -550,16 +710,68 @@ impl Daemon {
                 return Ok(false);
             }
         }
+        if !self.instruction_target_live(target) {
+            self.db.instruction_set_state(
+                &row.info.id,
+                State::Uncertain,
+                Some("paste completed after target ended; inspect retained instruction"),
+                now_ms(),
+            )?;
+            self.broadcast_instruction_queue(target);
+            return Ok(false);
+        }
+        self.instruction_writes
+            .lock()
+            .expect("instruction writes lock")
+            .get_mut(&target)
+            .expect("instruction write reserved")
+            .phase = InstructionWritePhase::PreEnter;
+        drop(admission.take());
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("instruction-before-enter", target);
         std::thread::sleep(SWARM_WAKE_SETTLE);
+        admission = Some(self.instruction_admission());
+        if self
+            .db
+            .instruction_row(&row.info.id)?
+            .is_none_or(|current| current.info.state != State::Uncertain)
+        {
+            return Ok(false);
+        }
         let held = if row.info.mode == Mode::Steer {
             self.immediate_paste_hold_reason(target)
         } else {
             self.paste_hold_reason(target)
         };
-        let failure = held.or_else(|| {
-            self.write_stdin_counting(target, b"\r")
+        let held = self
+            .ensure_not_closing(target, "instruction submission")
+            .err()
+            .map(|error| error.to_string())
+            .or(held);
+        let held = held.or_else(|| {
+            (!self.instruction_target_live(target))
+                .then(|| "target ended before submission; inspect retained instruction".to_string())
+        });
+        let failure = match held {
+            Some(reason) => Some(reason),
+            None => self
+                .instruction_write_receipt(target, b"\r", &mut admission)
                 .err()
-                .map(|error| format!("Enter outcome uncertain: {error}"))
+                .map(|error| format!("Enter outcome uncertain: {error}")),
+        };
+        if admission.is_none() {
+            admission = Some(self.instruction_admission());
+        }
+        if self
+            .db
+            .instruction_row(&row.info.id)?
+            .is_none_or(|current| current.info.state != State::Uncertain)
+        {
+            return Ok(false);
+        }
+        let failure = failure.or_else(|| {
+            (!self.instruction_target_live(target))
+                .then(|| "target ended during submission; inspect retained instruction".to_string())
         });
         if let Some(ref reason) = failure {
             self.db.instruction_set_state(
@@ -587,21 +799,37 @@ impl Daemon {
                 Some("waiting for authoritative start or named request adoption"),
                 now_ms(),
             )?;
-            self.prompt_awaiting_hook
-                .lock()
-                .expect("prompt awaiting hook lock")
-                .insert(target);
+            let evidence = self.instruction_write_evidence(target);
+            if evidence.started {
+                self.instruction_adopt_locked(target, None)?;
+                if evidence.ended {
+                    self.db.instruction_complete(&row.info.id, now_ms())?;
+                }
+            } else {
+                self.prompt_awaiting_hook
+                    .lock()
+                    .expect("prompt awaiting hook lock")
+                    .insert(target);
+            }
         }
         self.broadcast_instruction_queue(target);
+        drop(admission);
         Ok(failure.is_none())
     }
 
     pub(super) fn instruction_adopt_locked(&self, child: u32, named: Option<u32>) -> Result<bool> {
         let rows = self.db.instruction_rows(child)?;
-        let Some(row) = rows
-            .iter()
-            .find(|row| row.info.state == State::Delivered && !row.completed && !row.adopted)
-        else {
+        let evidence = self.instruction_write_evidence(child);
+        let Some(row) = rows.iter().find(|row| {
+            !row.completed
+                && !row.adopted
+                && (row.info.state == State::Delivered
+                    || (row.info.state == State::Uncertain
+                        && evidence.instruction_id == row.info.id
+                        && !evidence.session_ended
+                        && (evidence.started
+                            || named.is_some_and(|request| row.info.request_id == Some(request)))))
+        }) else {
             return Ok(false);
         };
         let Some(request) = row.info.request_id else {
@@ -609,6 +837,20 @@ impl Daemon {
         };
         if named.is_some_and(|named| named != request) {
             return Ok(false);
+        }
+        if named == Some(request) {
+            self.db
+                .instruction_record_named_adoption(&row.info.id, now_ms())?;
+        }
+        if row.info.state == State::Uncertain {
+            if let Some(evidence) = self
+                .instruction_writes
+                .lock()
+                .expect("instruction writes lock")
+                .get_mut(&child)
+            {
+                evidence.started = true;
+            }
         }
         let current = self.delegation_round_of(child).ok_or_else(|| {
             anyhow!("session {child}: delegation missing during instruction adoption")
@@ -659,8 +901,8 @@ impl Daemon {
         Ok(())
     }
 
-    // Called outside the lifecycle cleanup guard. Naming a dispatched request in
-    // report/submit adopts it through instruction_adopt_locked even without a hook.
+    // The caller must release cleanup admission before entering. A named request
+    // can adopt through report/submit even when a hook has not arrived.
     pub(crate) fn instruction_lifecycle(
         self: &Arc<Self>,
         child: u32,
@@ -673,12 +915,69 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        if event != AgentEvent::SessionEnded
+            && self.ensure_not_closing(child, "instruction event").is_err()
+        {
+            return Ok(());
+        }
         let _dispatch = self
             .instruction_dispatch_lock
             .lock()
             .expect("instruction dispatch lock");
         if self.db.instruction_rows(child)?.is_empty() {
             return Ok(());
+        }
+        // Supported lifecycle evidence can arrive before the FIFO write receipt.
+        // Retain only flags for this session's claimed intent; cancellation still wins.
+        {
+            let mut writes = self
+                .instruction_writes
+                .lock()
+                .expect("instruction writes lock");
+            if let Some(evidence) = writes.get_mut(&child) {
+                if let Some(row) = self.db.instruction_row(&evidence.instruction_id)? {
+                    if row.info.state == State::Uncertain {
+                        let stale =
+                            prompt_id.is_some() && row.dispatch_prompt_id.as_deref() == prompt_id;
+                        // Pre-Enter activity can belong to the existing turn. Only a
+                        // distinct prompt identity or a written Enter proves submission.
+                        let submitted = evidence.phase == InstructionWritePhase::Submitted;
+                        let correlated = row
+                            .dispatch_prompt_id
+                            .as_deref()
+                            .zip(prompt_id)
+                            .is_some_and(|(old, current)| old != current);
+                        match event {
+                            AgentEvent::PromptSubmitted if !stale && (submitted || correlated) => {
+                                evidence.started = true
+                            }
+                            AgentEvent::Activity
+                                if !stale
+                                    && (submitted || correlated)
+                                    && self.session_status(child)?
+                                        == Some(proto::AgentStatus::Working) =>
+                            {
+                                evidence.started = true
+                            }
+                            AgentEvent::TurnEnded | AgentEvent::TurnInterrupted => {
+                                if evidence.started
+                                    && ((!stale && (submitted || correlated))
+                                        || (submitted && row.named_adoption))
+                                {
+                                    evidence.ended = true;
+                                }
+                                if event_name != "quiet-settle" {
+                                    evidence.restart_ready = true;
+                                }
+                            }
+                            // SessionEnd can precede the PTY waiter. TurnFailed leaves
+                            // the CLI live and retains its separate recovery policy.
+                            AgentEvent::SessionEnded => evidence.session_ended = true,
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
         match event {
             AgentEvent::PromptSubmitted => {
@@ -690,7 +989,6 @@ impl Daemon {
                 let stale = self.db.instruction_rows(child)?.iter().any(|row| {
                     row.info.state == State::Delivered
                         && !row.adopted
-                        && row.info.mode == Mode::Queue
                         && prompt_id.is_some()
                         && row.dispatch_prompt_id.as_deref() == prompt_id
                 });
@@ -701,10 +999,9 @@ impl Daemon {
             AgentEvent::TurnEnded | AgentEvent::TurnInterrupted => {
                 for row in self.db.instruction_rows(child)? {
                     if row.info.state == State::Delivered && row.adopted && !row.completed {
-                        let stale = row.info.mode == Mode::Queue
-                            && prompt_id.is_some()
-                            && row.dispatch_prompt_id.as_deref() == prompt_id;
-                        if !stale {
+                        let stale =
+                            prompt_id.is_some() && row.dispatch_prompt_id.as_deref() == prompt_id;
+                        if !stale || row.named_adoption {
                             self.db.instruction_complete(&row.info.id, now_ms())?;
                         }
                     }

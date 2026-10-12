@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
+use std::time::Duration;
 
 // The ManageLiveSessions payload only reaches this module on Windows, where the
 // live-session refusal is built, and in its tests.
@@ -23,6 +24,34 @@ pub const PROGRESS_EVENT: &str = "app-update://progress";
 // prerelease: the one endpoint an installed copy can be offered from.
 const MANIFEST_URL: &str =
     "https://github.com/theogmiguel/houston/releases/latest/download/latest.json";
+
+// Bound stalled requests while allowing a large installer on a slow connection.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const NETWORK_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn bounded_updater(
+    builder: tauri_plugin_updater::UpdaterBuilder,
+    check_timeout: Duration,
+    idle_timeout: Duration,
+) -> tauri_plugin_updater::UpdaterBuilder {
+    builder
+        .timeout(check_timeout)
+        .configure_client(move |client| {
+            client
+                .connect_timeout(idle_timeout.min(Duration::from_secs(10)))
+                .read_timeout(idle_timeout)
+        })
+}
+
+fn bounded_download(
+    mut update: tauri_plugin_updater::Update,
+    timeout: Duration,
+) -> tauri_plugin_updater::Update {
+    // The plugin does not copy the check's timeout into the download.
+    update.timeout = Some(timeout);
+    update
+}
 
 /// One download at a time: a second click bounces off while the first is live.
 #[derive(Default)]
@@ -311,8 +340,7 @@ pub async fn app_update_install(
         format!("app_update_install: the fixed endpoint {endpoint:?} is not a URL: {e}")
     })?;
 
-    let updater = app
-        .updater_builder()
+    let updater = bounded_updater(app.updater_builder(), CHECK_TIMEOUT, NETWORK_IDLE_TIMEOUT)
         .target(target.clone())
         .endpoints(vec![endpoint_url])
         .map_err(|e| format!("app_update_install: endpoint {endpoint:?} was refused: {e}"))?
@@ -333,6 +361,8 @@ pub async fn app_update_install(
             version: env!("CARGO_PKG_VERSION").to_string(),
         });
     };
+
+    let update = bounded_download(update, DOWNLOAD_TIMEOUT);
 
     if !expected_version_matches(&update.version, &expected_version) {
         return Err(format!(
@@ -460,6 +490,88 @@ pub async fn app_update_install(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn stalled_update_requests_release_the_flight_for_retry() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().plugins.0.insert(
+            "updater".into(),
+            serde_json::json!({"pubkey": "fixture", "dangerousInsecureTransportProtocol": true}),
+        );
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .build(context)
+            .unwrap();
+        for download in [false, true] {
+            for headers_sent in [false, true] {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let endpoint = format!("http://{}", listener.local_addr().unwrap());
+                let manifest = serde_json::json!({
+                    "version": "999.0.0", "platforms": {"fixture": {
+                        "url": format!("{endpoint}/installer"), "signature": "fixture"
+                    }}
+                })
+                .to_string();
+                let server = tokio::spawn(async move {
+                    if download {
+                        let (mut socket, _) = listener.accept().await.unwrap();
+                        let mut request = [0; 4096];
+                        assert!(socket.read(&mut request).await.unwrap() > 0);
+                        socket.write_all(format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{manifest}", manifest.len()
+                        ).as_bytes()).await.unwrap();
+                    }
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let mut request = [0; 4096];
+                    assert!(socket.read(&mut request).await.unwrap() > 0);
+                    if headers_sent {
+                        socket
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n")
+                            .await
+                            .unwrap();
+                    }
+                    let _ = socket.read(&mut request).await;
+                });
+                let updater = bounded_updater(
+                    app.updater_builder(),
+                    Duration::from_millis(100),
+                    Duration::from_millis(100),
+                )
+                .target("fixture")
+                .no_proxy()
+                .endpoints(vec![endpoint.parse().unwrap()])
+                .unwrap()
+                .build()
+                .unwrap();
+                let flight = UpdateFlight::new();
+                let result = tokio::time::timeout(Duration::from_secs(3), async {
+                    let _guard = flight.claim().unwrap();
+                    if download {
+                        let update = updater.check().await.unwrap().unwrap();
+                        bounded_download(update, Duration::from_millis(200))
+                            .download(|_, _| {}, || {})
+                            .await
+                            .map(|_| ())
+                    } else {
+                        updater.check().await.map(|_| ())
+                    }
+                })
+                .await;
+                server.abort();
+                let _ = server.await;
+                let error = result
+                    .expect("network deadline must end the stalled request")
+                    .expect_err("the fixture never completes its response");
+                assert!(
+                    matches!(&error, tauri_plugin_updater::Error::Reqwest(error) if error.is_timeout()),
+                    "{error}"
+                );
+                assert!(flight.claim().is_ok(), "a failed update must allow retry");
+            }
+        }
+    }
 
     #[test]
     fn the_manifest_endpoint_is_fixed() {

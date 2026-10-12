@@ -29,7 +29,16 @@ Selecting a file shows its diff. Diffs are capped in size; a patch beyond the ca
 truncated rather than left to grow the pane without bound. Certain path patterns (things
 that look like secrets — for example anything with "secrets" in the name) are excluded
 or redacted from the diff Houston builds for review, on the same rules whether the diff
-is read by you or handed to an agent for review.
+is read by you or handed to an agent for review. Filename rules also apply to paths
+containing tabs or non-ASCII characters, and to both names of a renamed file.
+Patches whose file names cannot be safely identified are excluded from review and
+checkpoint inspection.
+
+Each patch retains at most 512 KiB. Combined untracked-file previews stop after
+1,024 files or the patch size limit. A Git command that produces more than 8 MiB
+of output is refused with an error, and commands have a two-minute deadline.
+If a commit, push or other mutation times out, inspect the repository and remote
+before retrying: part of the operation may already have completed.
 
 For a larger review, maximize Changes to keep the file list and diff alongside one
 another. Press `/` to focus the filename filter, then use `J` and `K` to move through

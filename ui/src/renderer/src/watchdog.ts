@@ -33,7 +33,8 @@ export function installWatchdog(): () => void {
   let gapHandle: ReturnType<typeof setTimeout> | null = null
   let probeScheduledAt = 0
 
-  let lastReportWasFailure = false
+  let generation: number | null = null
+  let lastReportWasFailure = true
 
   let lastInteractionAt = -Infinity
   function interactedRecently(): boolean {
@@ -57,7 +58,7 @@ export function installWatchdog(): () => void {
 
   function armPaintProbe(timeoutMs: number, invoke: (typeof import('@tauri-apps/api/core'))['invoke']): void {
     clearProbe()
-    if (document.visibilityState !== 'visible') return
+    if (generation === null || document.visibilityState !== 'visible') return
     if (!document.hasFocus() && !interactedRecently()) return
     probeScheduledAt = performance.now()
     rafHandle = requestAnimationFrame(() => {
@@ -70,13 +71,15 @@ export function installWatchdog(): () => void {
       if (gap > T_WARN_MS) {
         console.warn(`watchdog: rAF gap ${gap.toFixed(0)}ms exceeded T_warn (${T_WARN_MS}ms)`)
       }
-      if (lastReportWasFailure) {
+      if (lastReportWasFailure && gap <= T_PAINT_BASE_MS) {
         lastReportWasFailure = false
         invoke('wd_paint_report', {
+          generation,
           ok: true,
           rafGapMs: Math.round(gap),
           visibility: 'visible'
         }).catch((err: unknown) => {
+          lastReportWasFailure = true
           console.warn('watchdog: wd_paint_report invoke failed', err)
         })
       }
@@ -93,6 +96,7 @@ export function installWatchdog(): () => void {
       }
       if (document.visibilityState === 'visible' && (document.hasFocus() || interactedRecently())) {
         invoke('wd_paint_report', {
+          generation,
           ok: false,
           rafGapMs: Math.round(performance.now() - probeScheduledAt),
           visibility: 'visible'
@@ -110,6 +114,16 @@ export function installWatchdog(): () => void {
       import('@tauri-apps/api/core'),
       import('@tauri-apps/api/event')
     ])
+    if (disposed) return
+    const unlistenGeneration = await listen<{ generation: number }>('wd:paint-generation', (event) => {
+      generation = Math.max(generation ?? 0, event.payload.generation)
+      lastReportWasFailure = true
+      armPaintProbe(T_PAINT_BASE_MS, invoke)
+    })
+    if (disposed) { unlistenGeneration(); return }
+    disposers.push(unlistenGeneration)
+    const initialGeneration = await invoke<number | null>('wd_paint_generation')
+    if (initialGeneration !== null) generation = Math.max(generation ?? 0, initialGeneration)
     if (disposed) return
 
     function onVisibilityChange(): void {

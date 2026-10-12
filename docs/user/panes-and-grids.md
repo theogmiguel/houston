@@ -1,5 +1,11 @@
 # Panes and grids
 
+Text pastes are limited to 65,536 UTF-16 code units (a supplementary Unicode
+character counts as two). Use a file for larger content. Houston refuses input
+when the connection's outgoing backlog would exceed 1 MiB and reports the current
+backlog, requested size and limit. Retry after the connection drains. An accepted
+paste remains one transaction, including its bracketed-paste markers.
+
 ## The model
 
 A **session** is one PTY running an agent CLI — Claude Code, Codex, Antigravity,
@@ -39,8 +45,26 @@ environment; restart an affected session after updating Houston.
 From an empty grid or the new pane menu, choose **Add action** and enter a name, command
 and optional shortcut. Houston saves actions per workspace. Run one from either list or
 from the command palette's **Run** group; Houston opens a real shell pane and submits the
-command there. Edit or delete an action from its More actions menu. Deleting asks for
+command there only after that creation succeeds. A refused or disconnected creation
+reports an error without sending the command to another pane. Edit or delete an action from its More actions menu. Deleting asks for
 confirmation.
+
+## Terminal input
+
+Input is delivered in order even when a program temporarily stops reading it. Other panes
+and resize or termination requests remain available. Each session can admit up to 4 MiB
+and 128 pending input writes, including the active write. An error names the limit if a
+write cannot be admitted; retry that input after the program resumes reading. Terminating
+the session cancels pending input and reports delivery failures, including any bytes
+already written. Input already admitted continues after disconnecting the client. SSH input follows the
+same ordering and admission rules. Cancelling an active SSH write reports that its partial
+delivery is unknown; queued writes report that nothing was transferred. Cancelling an
+upload may leave a partial file on the remote host; at most four uploads can be pending.
+
+On Linux, closing an Exited pane also stops descendants still holding its terminal open
+and completes the output reader. On other platforms, that close is refused until the
+terminal reaches EOF. A daemon handoff asks you to close Exited panes that still retain
+output readers.
 
 ## Splitting and stacking
 

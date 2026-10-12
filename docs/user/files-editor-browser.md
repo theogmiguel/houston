@@ -34,6 +34,10 @@ keep the file in its own tab. Tabs show Git status and unsaved changes. Close wi
 tab button or middle-click; unsaved changes require confirmation. Files keeps up to
 12 tabs, replacing the oldest clean preview at the limit. If every tab is pinned or
 unsaved, close a tab before opening another. Terminal file links open pinned tabs.
+Closing the last view releases its document; reopening reads the file from disk.
+Discard and Close abandons edits when that was the last view. If another tab or
+editor pane shares the file, its edits remain available there. Moving a tab to an
+editor pane preserves the shared document.
 
 ## Files pane
 
@@ -50,7 +54,13 @@ with spaces are quoted.
 
 Saves check the file's content revision atomically. When another process changes an
 unsaved file, Houston keeps your edits and offers Reload or Overwrite. Returning focus
-to the window also checks for external changes.
+to the window also checks for external changes. If you edit or save while Reload is
+reading the file, Houston keeps the current document and asks you to review and retry.
+
+The tree continues refreshing during sustained filesystem activity. Large change bursts
+trigger a rescan; open files are checked against disk without replacing unsaved edits.
+Search returns a completed scan even if more changes arrive while it runs. It reports
+an error when indexing exceeds its file, traversal, path-storage or Git time limits.
 
 ## Editor pane
 
@@ -120,7 +130,9 @@ for a type action, the full text about to be inserted, never truncated. Where po
 it draws the target directly on a screenshot of the pane; if the pane can't be captured
 right then, it falls back to describing the element in text. If nobody answers within
 two minutes, the action is denied on its own — an unattended prompt never becomes an
-approval by waiting it out.
+approval by waiting it out. Navigation and reload dismiss pending confirmations.
+Approval binds the document and element shown; replacing the element requires a fresh
+snapshot and confirmation even when its tag, text and position are unchanged.
 
 ### Trusting a directory
 

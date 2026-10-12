@@ -1,23 +1,39 @@
-//! Refs cannot live in the page: WebKitGTK hands every `evaluate_javascript` call a
-//! fresh ephemeral world, so page globals do not survive between calls. Each surface's
-//! store maps `e<n>` to a structural locator re-resolved against the live document.
+//! WebKitGTK evaluations have ephemeral globals. Native refs retain locators whose
+//! node-owned listeners prove document and element identity across script worlds.
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Locator {
     pub path: Vec<u32>,
     pub tags: Vec<String>,
+    pub document_identity: String,
+    pub element_identity: String,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct RefStore {
     seq: u64,
+    cleanup_identity: String,
     map: HashMap<String, Locator>,
+}
+
+impl Default for RefStore {
+    fn default() -> Self {
+        Self {
+            seq: 0,
+            map: HashMap::new(),
+            cleanup_identity: format!("houston-cleanup-{}", uuid::Uuid::new_v4()),
+        }
+    }
 }
 
 impl RefStore {
     pub fn start_seq(&self) -> u64 {
         self.seq
+    }
+
+    pub fn cleanup_identity(&self) -> &str {
+        &self.cleanup_identity
     }
 
     pub fn replace(&mut self, entries: HashMap<String, Locator>, minted: u64) {
@@ -40,6 +56,8 @@ mod tests {
 
     fn locator(path: &[u32], tags: &[&str]) -> Locator {
         Locator {
+            document_identity: "document".into(),
+            element_identity: "element".into(),
             path: path.to_vec(),
             tags: tags.iter().map(|t| t.to_string()).collect(),
         }

@@ -205,8 +205,11 @@ impl Daemon {
                 None => remote::ntfy::delete_url(&self.state_dir)?,
             }
             next.ntfy_server = url.as_deref().and_then(remote::ntfy_server);
-            *self.remote.ntfy_url.lock().expect("remote ntfy lock") =
-                url.clone().map(zeroize::Zeroizing::new);
+            let mut cached = self.remote.ntfy_url.lock().expect("remote ntfy lock");
+            self.remote
+                .ntfy_generation
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            *cached = url.clone().map(zeroize::Zeroizing::new);
         }
         let flag = |b: bool| if b { "1" } else { "0" };
         let bind = next.bind.to_string();
@@ -234,6 +237,7 @@ impl Daemon {
             self.remote.stop_streams(Some("disabled"));
         }
         self.remote.reconfigured.send_modify(|n| *n += 1);
+        self.remote.notification_wake.notify_one();
         self.remote_broadcast_state();
         Ok(())
     }
@@ -731,6 +735,10 @@ impl Daemon {
     }
 
     pub(crate) fn remote_note_status(&self, id: u32, status: proto::AgentStatus) {
+        let _retention = self.remote.retention.lock().expect("remote retention lock");
+        if self.get(id).is_err() {
+            return;
+        }
         let now = now_ms();
         let from = self.remote.note_status(id, status, now);
         {
@@ -823,6 +831,7 @@ impl Daemon {
     /// Feeds an applied hook drop into the pane's activity feed. Only while
     /// remote access is on: nothing is collected for a listener that is off.
     pub(crate) fn remote_feed_hook(&self, d: &crate::hook_drop::HookDrop) {
+        let _retention = self.remote.retention.lock().expect("remote retention lock");
         if !self.remote_config().enabled || self.get(d.session).is_err() {
             return;
         }
@@ -1003,12 +1012,47 @@ impl Daemon {
     }
 
     pub(crate) fn remote_note_exit(&self, id: u32) {
+        let _retention = self.remote.retention.lock().expect("remote retention lock");
+        if self.get(id).is_err() {
+            return;
+        }
         if !self.remote_config().enabled {
             return;
         }
         self.remote.feed.resolve_pending(id);
         self.remote_push(id, FeedItem::Status { status: "exited" }, now_ms());
         self.remote_emit(id, Change::Session(id));
+    }
+
+    pub(crate) fn remote_forget_session(&self, id: u32) {
+        // Serialize against a waiter or hook that obtained the pane before close.
+        let _retention = self.remote.retention.lock().expect("remote retention lock");
+        self.remote.feed.forget(id);
+        self.remote
+            .notifications
+            .lock()
+            .expect("remote notifications lock")
+            .remove(&id);
+        self.remote.notification_wake.notify_one();
+        self.remote
+            .seen
+            .lock()
+            .expect("remote seen lock")
+            .remove(&id);
+    }
+
+    #[doc(hidden)]
+    pub fn remote_feed_session_count_for_test(&self) -> usize {
+        self.remote.feed.session_count()
+    }
+
+    #[doc(hidden)]
+    pub fn remote_pending_notifications_for_test(&self) -> usize {
+        self.remote
+            .notifications
+            .lock()
+            .expect("remote notifications lock")
+            .len()
     }
 
     pub fn remote_feed(&self, id: u32, after: u64) -> Result<RemoteFeed, ApiError> {
@@ -1327,10 +1371,27 @@ impl Daemon {
         {
             return Some(url);
         }
+        let generation = self
+            .remote
+            .ntfy_generation
+            .load(std::sync::atomic::Ordering::Acquire);
         let state_dir = self.state_dir.clone();
         match tokio::task::spawn_blocking(move || remote::ntfy::load_url(&state_dir)).await {
             Ok(Ok(Some(url))) => {
-                *self.remote.ntfy_url.lock().expect("remote ntfy lock") = Some(url.clone());
+                let mut cached = self.remote.ntfy_url.lock().expect("remote ntfy lock");
+                if generation
+                    != self
+                        .remote
+                        .ntfy_generation
+                        .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    return None;
+                }
+                // A configuration write may have installed a newer topic while we loaded.
+                if let Some(current) = cached.as_ref() {
+                    return Some(current.clone());
+                }
+                *cached = Some(url.clone());
                 Some(url)
             }
             Ok(Ok(None)) => {
@@ -1350,8 +1411,8 @@ impl Daemon {
         }
     }
 
-    /// One timer per status transition; the epoch check makes it a no-op once
-    /// the pane has moved on, which is the debounce and the desktop-answer case.
+    /// One owned sender and one replaceable deadline per pane. Status churn cannot
+    /// accumulate sleeping tasks, and close releases a deadline immediately.
     async fn remote_notify_loop(
         self: Arc<Self>,
         mut rx: tokio::sync::mpsc::Receiver<remote::StatusEvent>,
@@ -1368,60 +1429,120 @@ impl Daemon {
                 return;
             }
         };
-        while let Some(ev) = rx.recv().await {
+        loop {
             let cfg = self.remote_config();
-            if !cfg.enabled || cfg.ntfy_server.is_none() {
-                continue;
-            }
-            let kind = match (ev.from, ev.to) {
-                (_, proto::AgentStatus::NeedsInput) => remote::ntfy::Kind::NeedsInput,
-                (Some(proto::AgentStatus::Working), proto::AgentStatus::Idle)
-                    if cfg.notify_finished =>
-                {
-                    remote::ntfy::Kind::Finished
-                }
-                _ => continue,
+            let due = {
+                let mut pending = self
+                    .remote
+                    .notifications
+                    .lock()
+                    .expect("remote notifications lock");
+                pending.retain(|id, n| {
+                    cfg.enabled
+                        && cfg.ntfy_server.is_some()
+                        && (n.kind != remote::ntfy::Kind::Finished || cfg.notify_finished)
+                        && self.remote.seen(*id).map(|s| s.epoch) == Some(n.event.epoch)
+                        && self.get(*id).is_ok()
+                });
+                pending.values().map(|n| n.due).min()
             };
-            let this = Arc::clone(&self);
-            let client = client.clone();
-            let delay = Duration::from_secs(u64::from(cfg.notify_delay_secs));
-            tokio::spawn(async move {
-                tokio::time::sleep(delay).await;
-                if this.remote.seen(ev.session).map(|s| s.epoch) != Some(ev.epoch) {
-                    return;
-                }
-                let Ok(session) = this.get(ev.session) else {
-                    return;
-                };
-                if session.info.hidden || !session.state.lock().expect("state lock").is_live() {
-                    return;
-                }
-                let title = session.title.lock().expect("title lock").clone();
-                let cfg = this.remote_config();
-                if !cfg.enabled || cfg.ntfy_server.is_none() {
-                    return;
-                }
-                let Some(url) = this.remote_ntfy_url().await else {
-                    return;
-                };
-                let msg = remote::ntfy::compose(
-                    kind,
-                    cfg.notify_detail,
-                    &title,
-                    &cfg.effective_url(),
-                    ev.session,
-                );
-                let server = cfg.ntfy_server.as_deref().unwrap_or("ntfy");
-                match remote::ntfy::send(&client, &url, &msg).await {
-                    Ok(()) => {
-                        tracing::info!("remote access: notified {server} about pane {}", ev.session)
+            tokio::select! {
+                event = rx.recv() => {
+                    let Some(ev) = event else { break };
+                    let _retention = self.remote.retention.lock().expect("remote retention lock");
+                    let cfg = self.remote_config();
+                    if !cfg.enabled || cfg.ntfy_server.is_none() || self.get(ev.session).is_err()
+                        || self.remote.seen(ev.session).map(|s| s.epoch) != Some(ev.epoch) {
+                        continue;
                     }
-                    Err(e) => tracing::warn!(
-                        "remote access: notifying {server} about pane {} failed: {e}",
-                        ev.session
-                    ),
+                    let kind = match (ev.from, ev.to) {
+                        (_, proto::AgentStatus::NeedsInput) => remote::ntfy::Kind::NeedsInput,
+                        (Some(proto::AgentStatus::Working), proto::AgentStatus::Idle) if cfg.notify_finished => remote::ntfy::Kind::Finished,
+                        _ => continue,
+                    };
+                    self.remote.notifications.lock().expect("remote notifications lock").insert(ev.session, remote::PendingNotification {
+                        event: ev,
+                        kind,
+                        due: tokio::time::Instant::now() + Duration::from_secs(u64::from(cfg.notify_delay_secs)),
+                    });
                 }
-            });
+                _ = self.remote.notification_wake.notified() => {}
+                _ = async {
+                    match due {
+                        Some(due) => tokio::time::sleep_until(due).await,
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    let next = {
+                        let mut pending = self.remote.notifications.lock().expect("remote notifications lock");
+                        let id = pending.iter().filter(|(_, n)| n.due <= tokio::time::Instant::now()).min_by_key(|(_, n)| n.due).map(|(id, _)| *id);
+                        id.and_then(|id| pending.remove(&id))
+                    };
+                    if let Some(next) = next {
+                        self.remote_send_notification(&client, next).await;
+                    }
+                }
+            }
+        }
+        self.remote
+            .notifications
+            .lock()
+            .expect("remote notifications lock")
+            .clear();
+    }
+
+    async fn remote_send_notification(
+        self: &Arc<Self>,
+        client: &reqwest::Client,
+        n: remote::PendingNotification,
+    ) {
+        let revision = *self.remote.reconfigured.borrow();
+        let generation = self
+            .remote
+            .ntfy_generation
+            .load(std::sync::atomic::Ordering::Acquire);
+        let Some(url) = self.remote_ntfy_url().await else {
+            return;
+        };
+        let cfg = self.remote_config();
+        if revision != *self.remote.reconfigured.borrow()
+            || generation
+                != self
+                    .remote
+                    .ntfy_generation
+                    .load(std::sync::atomic::Ordering::Acquire)
+            || !cfg.enabled
+            || cfg.ntfy_server.is_none()
+            || cfg.ntfy_server.as_deref() != remote::ntfy_server(&url).as_deref()
+            || (n.kind == remote::ntfy::Kind::Finished && !cfg.notify_finished)
+            || self.remote.seen(n.event.session).map(|s| s.epoch) != Some(n.event.epoch)
+        {
+            return;
+        }
+        let Ok(session) = self.get(n.event.session) else {
+            return;
+        };
+        if session.info.hidden || !session.state.lock().expect("state lock").is_live() {
+            return;
+        }
+        let title = session.title.lock().expect("title lock").clone();
+        let msg = remote::ntfy::compose(
+            n.kind,
+            cfg.notify_detail,
+            &title,
+            &cfg.effective_url(),
+            n.event.session,
+        );
+        match remote::ntfy::send(client, &url, &msg).await {
+            Ok(()) => tracing::info!(
+                "remote access: notified {} about pane {}",
+                cfg.ntfy_server.as_deref().unwrap_or("ntfy"),
+                n.event.session
+            ),
+            Err(e) => tracing::warn!(
+                "remote access: notifying pane {} failed: {e}",
+                n.event.session
+            ),
         }
     }
 }

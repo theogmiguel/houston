@@ -1199,3 +1199,120 @@ async fn activity_identifies_phone_keys_for_an_unstructured_request() {
     assert_eq!(answers[0]["excerpt"], "from this phone");
     daemon.kill(info.id).unwrap();
 }
+
+#[tokio::test]
+async fn hookless_exited_panes_keep_their_feed_until_closed() {
+    let (_addr, _state, daemon) = start_daemon_with_handle().await;
+    daemon
+        .remote_configure(ConfigPatch {
+            enabled: Some(true),
+            ..Default::default()
+        })
+        .unwrap();
+    for _ in 0..8 {
+        let (info, _dir) = pane(&daemon, &["sh", "-c", "exit 0"]);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let page = daemon.remote_feed(info.id, 0).unwrap();
+            if page
+                .entries
+                .iter()
+                .any(|e| serde_json::to_value(e).unwrap()["status"] == "exited")
+            {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "no exit feed for {}",
+                info.id
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(daemon.remote_feed_session_count_for_test(), 1);
+        daemon.close(info.id).unwrap();
+        assert_eq!(daemon.remote_feed_session_count_for_test(), 0);
+    }
+    // Closing a live pane also races its real backend waiter, without hook drops.
+    let (info, _dir) = pane(&daemon, &["sleep", "30"]);
+    daemon.close(info.id).unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(daemon.remote_feed_session_count_for_test(), 0);
+}
+
+#[tokio::test]
+async fn repeated_respawns_release_old_feeds_and_pending_notifications() {
+    // Match the notifier tests' in-process store; never use the host keyring.
+    let _ = keyring::Entry::new("__tr_mock_priming__", "__tr_mock_priming__");
+    keyring_core::set_default_store(
+        keyring_core::mock::Store::new().expect("building the mock credential store"),
+    );
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    daemon
+        .remote_configure(ConfigPatch {
+            enabled: Some(true),
+            bind: Some(format!("127.0.0.1:{}", free_port())),
+            ntfy_url: Some("http://127.0.0.1:9/respawn-test".into()),
+            notify_delay_secs: Some(600),
+            ..Default::default()
+        })
+        .unwrap();
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (mut info, _dir) = pane(&daemon, &["sleep", "30"]);
+    let permission = fixture("claude-2.1.263-08-PermissionRequest.json");
+    for _ in 0..8 {
+        let old_id = info.id;
+        let drop = hook(None, "PermissionRequest", old_id, &permission);
+        apply(state.path(), &drop).await;
+        assert!(feed(addr, &token, old_id, 0).await["pending"].is_object());
+        assert_eq!(daemon.remote_feed_session_count_for_test(), 1);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while daemon.remote_pending_notifications_for_test() == 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "no pending deadline"
+            );
+            tokio::task::yield_now().await;
+        }
+        info = daemon.respawn(old_id, false, None, None, true).unwrap();
+        assert_ne!(info.id, old_id);
+        assert_eq!(daemon.remote_feed_session_count_for_test(), 0);
+        assert_eq!(daemon.remote_pending_notifications_for_test(), 0);
+        assert_eq!(
+            request(
+                addr,
+                "GET",
+                &format!("/api/sessions/{old_id}/feed"),
+                Some(&token),
+                None,
+            )
+            .await
+            .status,
+            404
+        );
+        // A late hook and the old backend waiter cannot recreate removed state.
+        hook_drop::write_drop(
+            &hook_drop::drop_dir(state.path()),
+            &drop,
+            hook_drop::now_ms(),
+        )
+        .unwrap();
+        daemon.hook_drop_tick_for_test();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(daemon.remote_feed_session_count_for_test(), 0);
+        assert_eq!(daemon.remote_pending_notifications_for_test(), 0);
+        let prompt = serde_json::json!({"prompt": "continue after respawn"});
+        apply(
+            state.path(),
+            &hook(None, "UserPromptSubmit", info.id, &prompt),
+        )
+        .await;
+        let page = feed(addr, &token, info.id, 0).await;
+        assert_eq!(page["entries"][0]["text"], "continue after respawn");
+        assert_eq!(daemon.remote_feed_session_count_for_test(), 1);
+    }
+    daemon.close(info.id).unwrap();
+    assert_eq!(daemon.remote_feed_session_count_for_test(), 0);
+    assert_eq!(daemon.remote_pending_notifications_for_test(), 0);
+}

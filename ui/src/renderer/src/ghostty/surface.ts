@@ -520,7 +520,8 @@ export interface GhosttySelectionPosition {
 export interface GhosttyTerminalSurfaceOptions {
   readonly theme: GhosttyTheme
   readonly font?: GhosttyTerminalFont
-  readonly onData: (data: string) => void
+  readonly onData: (data: string, reply?: boolean) => void
+  readonly onInputRefused?: (message: string) => void
   readonly onResize: (cols: number, rows: number) => void
   readonly onSelectionChange: () => void
   readonly beforeKey: (event: KeyboardEvent) => boolean
@@ -717,7 +718,7 @@ export class GhosttyTerminalSurface {
       metrics.width,
       metrics.height,
       options.theme,
-      options.onData,
+      data => options.onData(data, true),
       undefined,
       {
         defaultCursorBlink: options.cursorBlink ?? true,
@@ -1023,17 +1024,18 @@ export class GhosttyTerminalSurface {
     const token = ++this.pasteShortcutToken
     const text = await readText()
     if (this.disposed || this.pasteShortcutToken !== token || !isCurrent()) return
-    this.pasteShortcutToken += 1
-    if (text.length === 0) return
-    const encoded = this.core.encodePaste(text)
-    if (encoded.length > 0) this.options.onData(encoded)
+    this.paste(text)
   }
 
   paste(text: string): void {
     if (this.disposed || text.length === 0) return
     this.pasteShortcutToken += 1
-    const encoded = this.core.encodePaste(text)
-    if (encoded.length > 0) this.options.onData(encoded)
+    try {
+      const encoded = this.core.encodePaste(text)
+      if (encoded.length > 0) this.options.onData(encoded)
+    } catch (error) {
+      this.options.onInputRefused?.(String((error as Error).message ?? error))
+    }
   }
 
   hasSelection(): boolean {
@@ -1283,7 +1285,7 @@ export class GhosttyTerminalSurface {
           (text) => {
             if (this.disposed || this.pasteShortcutToken !== token) return
             this.pasteShortcutToken += 1
-            if (text.length > 0) this.options.onData(this.core.encodePaste(text))
+            this.paste(text)
           },
           () => {
           }
@@ -1378,7 +1380,7 @@ export class GhosttyTerminalSurface {
     const data = event.clipboardData?.getData('text/plain') ?? ''
     if (data.length === 0) return
     this.pasteShortcutToken += 1
-    this.options.onData(this.core.encodePaste(data))
+    this.paste(data)
   }
 
   private readonly onCompositionStart = (): void => {

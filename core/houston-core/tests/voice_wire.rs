@@ -1,7 +1,24 @@
 mod common;
 
-use common::{connect_and_hello, next_control, start_daemon_with_handle, TOKEN};
+use common::{connect_and_hello, next_control, TOKEN};
 use houston_protocol as proto;
+
+async fn start_daemon_with_handle() -> (
+    std::net::SocketAddr,
+    tempfile::TempDir,
+    std::sync::Arc<houston_core::daemon::Daemon>,
+) {
+    // Voice settings broadcasts consult the credential store even for model-only
+    // requests. Install the shared mock before any fixture can serve requests.
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = keyring::Entry::new("__tr_mock_priming__", "__tr_mock_priming__");
+        keyring_core::set_default_store(
+            keyring_core::mock::Store::new().expect("building the mock credential store"),
+        );
+    });
+    common::start_daemon_with_handle().await
+}
 
 async fn send(ws: &mut common::WsStream, msg: proto::ClientMsg) {
     use futures_util::SinkExt;
@@ -251,6 +268,131 @@ async fn an_installed_model_reports_its_size_and_delete_frees_it() {
     let model = next_matching(&mut ws, voice_model_msg).await;
     assert_eq!(model.status, proto::VoiceModelStatus::NotDownloaded);
     assert!(!installed.exists(), "delete must actually remove the file");
+}
+
+#[tokio::test]
+async fn deleting_traversal_and_absolute_model_ids_preserves_external_synthetic_files() {
+    let (addr, state_dir, daemon) = start_daemon_with_handle().await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let models_dir = daemon.voice_models_dir();
+    std::fs::create_dir_all(&models_dir).unwrap();
+    let victim = state_dir.path().join("victim.bin");
+    std::fs::write(&victim, b"synthetic protected bytes").unwrap();
+    let absolute = victim.with_extension("").to_str().unwrap().to_string();
+    for id in ["../victim", absolute.as_str()] {
+        send(
+            &mut ws,
+            proto::ClientMsg::VoiceModelDelete {
+                model_id: id.to_string(),
+            },
+        )
+        .await;
+        let reason = next_matching(&mut ws, |msg| match msg {
+            proto::ServerMsg::Error { message, .. } => Some(message),
+            proto::ServerMsg::VoiceModelState { .. } => {
+                panic!("a refused deletion must not report a failed model")
+            }
+            _ => None,
+        })
+        .await;
+        assert!(
+            reason.contains(id) || reason.contains(&format!("{id:?}")),
+            "{reason}"
+        );
+        assert!(reason.contains("catalog"), "{reason}");
+        assert_eq!(
+            std::fs::read(&victim).unwrap(),
+            b"synthetic protected bytes"
+        );
+    }
+}
+
+#[tokio::test]
+async fn duplicate_download_and_delete_requests_preserve_the_active_download() {
+    let (addr, _dir, daemon) = start_daemon_with_handle().await;
+    let mut a = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut a).await;
+    let mut b = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut b).await;
+
+    // This is the production lease held by a worker awaiting HTTP bytes. Holding
+    // it directly lets the authenticated-wire regression avoid outbound HTTP.
+    let lease = daemon.voice.claim_download("ggml-small").unwrap();
+    lease.progress(0.25);
+    send(
+        &mut a,
+        proto::ClientMsg::VoiceModelDownload {
+            model_id: "ggml-small".to_string(),
+        },
+    )
+    .await;
+    let on_a = next_matching(&mut a, voice_model_msg).await;
+    let on_b = next_matching(&mut b, voice_model_msg).await;
+    assert_eq!(on_a, on_b);
+    assert_eq!(
+        on_a.status,
+        proto::VoiceModelStatus::Downloading { progress: 0.25 }
+    );
+
+    send(
+        &mut b,
+        proto::ClientMsg::VoiceModelDelete {
+            model_id: "ggml-small".to_string(),
+        },
+    )
+    .await;
+    let reason = next_matching(&mut b, |msg| match msg {
+        proto::ServerMsg::Error { message, .. } => Some(message),
+        proto::ServerMsg::VoiceModelState { model } => {
+            panic!("active model state must remain Downloading, got {model:?}")
+        }
+        _ => None,
+    })
+    .await;
+    assert!(
+        reason.contains("ggml-small") && reason.contains("active"),
+        "{reason}"
+    );
+    assert!(daemon.voice.download_in_flight("ggml-small"));
+    assert!(daemon.voice.claim_download("ggml-small").is_err());
+    assert_eq!(
+        daemon.voice_model_state("ggml-small").status,
+        proto::VoiceModelStatus::Downloading { progress: 0.25 }
+    );
+
+    // Publication while the lease is still held is the state a verified worker
+    // produces. A refused deletion must not prevent that worker completing.
+    let models_dir = daemon.voice_models_dir();
+    std::fs::create_dir_all(&models_dir).unwrap();
+    let installed = models_dir.join("ggml-small.bin");
+    std::fs::write(&installed, b"verified fixture").unwrap();
+    lease.finish(None);
+    send(
+        &mut a,
+        proto::ClientMsg::VoiceModelDelete {
+            model_id: "ggml-small".to_string(),
+        },
+    )
+    .await;
+    let deleted = next_matching(&mut a, voice_model_msg).await;
+    assert_eq!(deleted.status, proto::VoiceModelStatus::NotDownloaded);
+    assert!(!installed.exists());
+}
+
+#[tokio::test]
+async fn daemon_download_admission_precedes_the_spawned_workers_first_poll() {
+    let (_addr, _dir, daemon) = start_daemon_with_handle().await;
+    // No await after admission: the current-thread runtime cannot poll the worker
+    // or make a network request before the test runtime cancels it on teardown.
+    daemon.voice_model_download("ggml-small".to_string());
+    assert!(
+        daemon.voice.download_in_flight("ggml-small"),
+        "admission must be visible before the worker runs"
+    );
+    assert!(daemon.voice.claim_download("ggml-small").is_err());
+    daemon.voice_model_download("ggml-small".to_string());
+    assert!(daemon.voice.download_in_flight("ggml-small"));
 }
 
 #[tokio::test]

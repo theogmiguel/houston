@@ -82,12 +82,16 @@ enum Backend {
 }
 ```
 
-`writer` and `master` are `Option` because **a kill releases the PTY**. On Windows conhost's
-death does not propagate pipe-close, so an open master parks the reader thread in `read()`
-forever, holding a daemon `Arc` with it; dropping both at kill time is what lets the reader
-see EOF, persist its ring and exit. Unix gets that from slave-side EOF. `Backend::resize`
-returns the dimensions actually applied — an ack that only says "no error" cannot drive a
-retry ladder.
+The backend keeps writer and master ownership separate. Unix termination signals the owned
+PTY process groups before interrupting input delivery. Linux keeps the unreaped direct
+child as an identity anchor until output-reader completion; an Exited state therefore does
+not imply that descendants or the reader have finished. Close still terminates that owned
+terminal session. Reaping and master release share the same lock as termination, so a
+recycled root PID cannot be signalled through an old backend. On other platforms, cleanup
+of an Exited pane whose reader remains open is explicitly refused until PTY EOF, including
+replacement and failed-Wake rollback. Windows
+close releases the master because conhost exit alone need not close the reader pipe.
+`Backend::resize` returns the dimensions actually applied.
 
 ## Spawning a session
 
@@ -134,7 +138,12 @@ Shell panes can retain a root Claude, Codex or ZCode conversation reported by li
 hooks. Restart validates that provider's exact handle and launches the CLI from the restored
 POSIX shell with shell-quoted argv while keeping the pane classified as a shell. The shell
 is matched by file name (`sh`, `bash`, `zsh`, `dash`, `ksh`), so every Windows shell,
-including a Git Bash `bash.exe`, is refused by name. Children restore only after the parent
+including a Git Bash `bash.exe`, is refused by name. When the shell has integration, the relaunched CLI is recorded
+as the running agent from spawn, because `-c` emits no command-start marker; the shell
+reports the CLI's exit with a command-end marker before it `exec`s the prompt, which
+clears the running agent. Without integration nothing reports the exit, so no running
+agent is recorded. The `exec`ed shell does not inherit the integration token, so its own
+commands are not tracked. Children restore only after the parent
 conversation resumes; unsupported shell dialects and invalid parent conversations leave
 children deferred.
 Clean shutdown and crash both apply the same restore policy and budget, preserving the
@@ -221,7 +230,9 @@ pins the byte cap near the measured 258 KiB/12-session number this forbids blowi
 reconstructs each session on `adoption::RawMasterPty` (`portable_pty::MasterPty` has no
 `from_raw_fd` counterpart to its own `as_raw_fd`) and acks **prepared**; a refusal or failure up
 to this point is fully reversible — O un-parks every session and keeps serving, C exits having
-touched nothing durable.
+touched nothing durable. Adopted PTYs keep separate descriptors and mutexes for writes
+and terminal control. Termination can therefore signal the foreground process group while
+stdin is blocked, then interrupt the writer without losing the control descriptor.
 
 O then sends **commit**; C writes the commit record into `daemon.json` (`{pid, pid_creation,
 build, generation}`, atomic rename) *before* acking, so a lost acknowledgement still leaves O
@@ -247,8 +258,17 @@ since a headless VT parser has not landed — there is no parser to have partial
 ## The read loop
 
 One OS thread per session, named `pty-read-<id>`, loops on `reader.read(&mut buf)` with a
-fixed `PTY_READ_BUF` of 16 KiB. **There is no coalescing** — one frame per read, an accepted
-simplification recorded in the module doc.
+fixed `PTY_READ_BUF` of 16 KiB. All Unix targets block indefinitely on the retained PTY
+and an owned nonblocking Unix socket pair. Park and cancellation queue a bounded wake
+that remains readable across the state-check-to-poll race; a full socket coalesces wakes.
+Windows retains its blocking reader and master-release cancellation path. Close,
+respawn and failed-Wake rollback share ownership cleanup. Unix drains available bytes for
+at most 100 ms; cleanup allows up to one second for reader completion and a separate
+one-second root reap wait. Cleanup joins the reader before removing the registered pane; timeout or failure
+preserves registration for a retry. Replacement callbacks run after root reaping so they
+cannot wait on their own waiter. Reader wake registration is cleared before thread exit.
+Shutdown includes Exited panes with retained readers; generation handoff refuses those panes until they are closed because the live-session manifest cannot carry
+this ownership. There is no output coalescing: one frame per read.
 
 `process_chunk` fans one chunk out, in order: scrollback push (returning the stream offset)
 and the session's terminal emulator, both under one hold of the scrollback lock; the
@@ -258,12 +278,35 @@ panes, the banner sniffer, the roster activity tick, the ACP decoder. It encodes
 `proto::encode_output_frame(id, offset, chunk)` once and offers the same `Arc` to each
 per-connection tap (`FrameRegistry::offer`, `frame_queue.rs`). A hidden session
 short-circuits into `handoff_output` before any of that. Backpressure is per-connection, not a
-shared broadcast: each tap queues up to `FRAME_QUEUE_DEPTH` (4096) items or `FRAME_QUEUE_BYTES`
+shared broadcast. Hiding a session unregisters its tap and clears queued output; showing it
+creates a fresh tap while preserving the live session's attach attempt count. Session
+removal reclaims connection-owned taps, attempt counters and visibility votes. Invalid
+session IDs do not allocate attachment state. Each tap queues up to `FRAME_QUEUE_DEPTH` (4096) items or `FRAME_QUEUE_BYTES`
 (4 MiB) before it drops, and the drop becomes a `Queued::Gap` the connection loop turns into a
 gap frame — the renderer answers a gap with one fresh attach instead of the client being
 disconnected; it never stalls the PTY. `OUTBOUND_CAPACITY`'s 4096-slot `tokio::broadcast` is a
 separate channel for control messages only: a client that lags on it gets a `control_lag` error
 and is disconnected so its reconnect resyncs full state (`server.rs`).
+
+Terminal input shares one FIFO writer per session across renderer frames, daemon callers and
+emulator replies. Admission bounds active plus queued input to 4 MiB and 128 jobs; a refusal
+names both limits, their current values and the requested write. Renderer admission never
+waits for PTY delivery. Terminal replies use that same bounded FIFO directly, without
+waiting for the lifecycle lock held by ownership cleanup while it drains the reader.
+Accepted jobs
+continue after client disconnect; session termination interrupts active PTY delivery and
+returns explicit outcomes for queued jobs. PTY failures report the bytes already written.
+Handoff refuses while stdin delivery or its completion handling remains in flight, because
+queued input is not part of the adoption manifest.
+
+Off-connection control handlers use immediate admission: at most 16 per connection and
+64 per process, with no semaphore waiters. A process-owned task set retains admitted
+handlers through completion, including after disconnect; this preserves partially applied
+mutations and subprocess cleanup. Completed handles are collected at the next admission.
+Replies use a fixed 256-item queue and an 8 MiB byte budget, including the reply being sent.
+Cloning senders adds no capacity. Admission refusal names the limits and current counts.
+Reply overflow closes the connection for a full state resync; mutations already admitted
+still finish. These limits apply to off-connection handlers, not the attach-family path.
 
 ## The emulator
 
@@ -427,7 +470,21 @@ dialog was drawn is not removed unseen. A workspace mid-pass refuses a second on
 claim is released on drop so a panicking pass cannot block later ones. Removal deletes the
 recorded branch, so a tree whose checkout moved to another branch is kept: its PR lookup
 and ancestry check would describe a different branch. Each `git` and `gh` call in a pass is
-bounded by a timeout and runs without a terminal prompt.
+bounded by a timeout and runs without a terminal prompt. Bounded capture on Linux and Windows
+includes stdout/stderr EOF in that deadline and limits combined output to 8 MiB,
+returning an error above the limit. On Linux the child owns a separate process group and
+remains unreaped until group cleanup, including after a successful root exit.
+On Windows the child starts suspended, joins a private kill-on-close Job Object,
+then resumes; process and thread handles anchor setup and cleanup. Pipe reads
+consume only available bytes in the caller. No reader or stdin-copy threads survive
+capture. Linux descendants that leave the owned process group are outside its
+cancellation boundary; closing the capture pipes
+still bounds the caller's wait. Windows jobs cancel Windows descendants, including
+the `wsl.exe` client, but do not own Linux processes started inside a distro.
+File stdin is passed directly to the child, with no copier thread. OS spawn and
+termination scheduling are outside the wall-clock guarantee. Other platforms,
+including macOS, explicitly refuse bounded capture before spawning until equivalent
+process ownership is available.
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then
 a `plan/events/` GC sweep gated to `SWARM_MAIL_GC_SWEEP_INTERVAL_MS`. Mail delivery uses
 `pane_inbox` `Mail` rows and the shared inbox delivery paths. The loop lists the legacy
@@ -516,11 +573,20 @@ The developer-relevant subset.
 
 ## SSH
 
-`ssh.rs` runs **russh in-process**: no `ssh` binary, no subprocess, no argv. One tokio task
-per session, driven through an mpsc `SshCmd` queue (`Data`, `Resize`, `Close`, `Upload`).
-Scope is agent and identity-file auth with TOFU host-key verification against
-`<state dir>/known_hosts`; there is no auto-reconnect. A host-key prompt parks the handshake
-inside `check_server_key` on a `oneshot::Sender<HostKeyVerdict>` held in
+`ssh.rs` runs russh in-process without an SSH subprocess. Each session has a FIFO command
+queue bounded to 128 items and a 4 MiB input budget covering active and queued transfers.
+The session writer waits for delivery receipts outside the WebSocket task. Admission
+refuses before accepting bytes; cancellation reports zero for queued input and unknown
+partial delivery for an active channel write. Cancellation has its own watch signal,
+polled during stalled writes, and resize hints use a separate latest-value watch channel.
+The driver continues receiving output while waiting for channel window space. Up to four
+uploads are admitted, owned by the driver and cancelled with explicit outcomes; a cancelled
+active upload may leave a partial remote file. Channel close and disconnect each have a
+200 ms teardown bound. This path is shared by supported SSH platforms.
+
+Authentication supports an agent, identity file or password, with TOFU host-key verification
+against `<state dir>/known_hosts`; there is no auto-reconnect. A host-key prompt parks the
+handshake inside `check_server_key` on a `oneshot::Sender<HostKeyVerdict>` held in
 `Daemon::ssh_prompts`, keyed by request id.
 
 Passwords and passphrases live in the OS keychain (Secret Service via zbus, pure Rust) and

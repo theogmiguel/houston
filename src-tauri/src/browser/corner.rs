@@ -233,6 +233,27 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn zero_radius_with_a_border_leaves_every_page_pixel_untouched() {
+        use gtk::cairo::{Context, Format, ImageSurface};
+
+        let surface = ImageSurface::create(Format::Rgb24, 60, 40).expect("image surface");
+        let cr = Context::new(&surface).expect("cairo context");
+        cr.set_source_rgb(0.0, 1.0, 0.0);
+        cr.paint().expect("prefill");
+        surface.flush();
+        let mut before = Vec::new();
+        surface
+            .with_data(|bytes| before.extend_from_slice(bytes))
+            .expect("surface data");
+        // A nonzero border must not turn a squared corner into a paint operation.
+        paint_bottom_corners(&cr, 60.0, 40.0, &paint(0.0));
+        drop(cr);
+        let after = surface.take_data().expect("surface data");
+        assert_eq!(&*after, before.as_slice());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn painting_covers_the_corner_in_surround_and_border_and_spares_the_page() {
         use gtk::cairo::{Context, Format, ImageSurface};
 

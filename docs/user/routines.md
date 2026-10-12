@@ -20,6 +20,10 @@ A provider that the selected access does not support is listed as unavailable, w
 reason and the access it needs. Any other unsupported combination is refused with the setting
 that needs to change.
 
+Upgrading preserves routines with duplicate names from older versions. The first keeps
+its name; later duplicates receive a suffix containing their routine ID. Schedules,
+instructions and run history are preserved.
+
 ## Access and isolation
 
 **Accept edits** uses the provider's bounded unattended mode. OpenCode and ZCode have none:

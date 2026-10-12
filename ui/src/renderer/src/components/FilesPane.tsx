@@ -118,7 +118,7 @@ export function FilesPane({
   const tabScrollRef = useRef<HTMLDivElement>(null)
   const [tabsOverflow, setTabsOverflow] = useState(false)
 
-  const fileTabs = useFileTabs(workspaceDir)
+  const fileTabs = useFileTabs(workspaceDir, node.id)
   const [gitFiles, setGitFiles] = useState<GitFileStatus[]>([])
   const [mutation, setMutation] = useState<{ kind: 'file' | 'directory' | 'rename'; path: string; name: string } | null>(null)
   useEffect(() => {

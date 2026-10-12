@@ -19,6 +19,7 @@ fn no_auto_restore() -> SafeModeFlags {
 
 fn create_shell_msg(dir: &std::path::Path) -> String {
     serde_json::to_string(&proto::ClientMsg::SessionCreate {
+        request: None,
         agent: proto::AgentKind::Shell,
         project_dir: dir.display().to_string(),
         cmd: None,

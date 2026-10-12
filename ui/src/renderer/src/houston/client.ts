@@ -305,7 +305,7 @@ export class HoustonClient {
   }
 
   private markReady(session: number): void {
-    if (this.exitedSessions.has(session)) return
+    if (this.exitedSessions.has(session) || this.deadSessions.has(session)) return
     if (this.readySessions.has(session)) return
     this.readySessions.add(session)
     const waiters = this.readyWaiters.get(session)
@@ -319,7 +319,7 @@ export class HoustonClient {
 
   private clearReady(session: number): void {
     this.readySessions.delete(session)
-    this.exitedSessions.add(session)
+    if (!this.deadSessions.has(session)) this.exitedSessions.add(session)
     const waiters = this.readyWaiters.get(session)
     if (!waiters) return
     this.readyWaiters.delete(session)
@@ -330,6 +330,7 @@ export class HoustonClient {
   }
 
   waitForReady(session: number, timeoutMs = SESSION_READY_TIMEOUT_MS): Promise<boolean> {
+    if (this.deadSessions.has(session)) return Promise.resolve(false)
     if (this.readySessions.has(session)) return Promise.resolve(true)
     return new Promise<boolean>((resolve) => {
       const list = this.readyWaiters.get(session) ?? []
@@ -415,6 +416,11 @@ export class HoustonClient {
           client.latency.dropSession(msg.session)
           client.clearReady(msg.session)
           client.insertDeadSession(msg.session)
+          client.exitedSessions.delete(msg.session)
+          const resize = client.resizeLadders.get(msg.session)
+          if (resize?.timer !== undefined) clearTimeout(resize.timer)
+          client.resizeLadders.delete(msg.session)
+          client.destroyIntents.delete(msg.session)
           client.cwdCache.delete(msg.session)
           client.cwdGenerations.delete(msg.session)
           client.cwdInFlight.delete(msg.session)
@@ -425,12 +431,15 @@ export class HoustonClient {
         wsTransport.handleBinaryMessage(ev.data as ArrayBuffer)
       }
     }
-    ws.onclose = () => client.onClose()
+    ws.onclose = () => {
+      wsTransport.dispose()
+      client.onClose()
+    }
 
     client.send({ type: 'hello', token: cfg.token, protocol: PROTOCOL_VERSION })
     if (isTauri() && navigator.platform.startsWith('Win')) {
       void import('./environmentMux')
-        .then((m) => m.watchEnvironments(ws))
+        .then((m) => { if (ws.readyState === WebSocket.OPEN) m.watchEnvironments(ws) })
         .catch((err: unknown) => console.warn('houston: WSL environments are unavailable', err))
     }
     return client
@@ -1026,9 +1035,14 @@ export class HoustonClient {
     this.send({ type: 'history_count' })
   }
 
-  sendStdin(session: number, data: string): boolean {
+  sendStdin(session: number, data: string, reply = false): boolean {
     const writeStartedMs = performance.now()
-    const ok = this.terminals.write(session, data)
+    let ok: boolean
+    try { ok = reply ? this.terminals.write(session, data, true) : this.terminals.write(session, data) }
+    catch (error) {
+      this.dispatchLocal({ type: 'error', message: String((error as Error).message ?? error), context: null })
+      return false
+    }
     if (ok) this.latency.recordWrite(session, data, performance.now() - writeStartedMs)
     if (data.includes('\n') || data.includes('\r')) this.invalidateCwdCache(session)
     return ok

@@ -1314,3 +1314,139 @@ async fn k6_codex_trust_failure_rolls_back_worktree_and_branch() {
     assert!(r.rows().is_empty());
     r.daemon.close(parent.id).unwrap();
 }
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn worktree_preparation_cannot_publish_into_a_reserved_close_subtree() {
+    let _guard = SERIAL.lock().await;
+    for nested in [false, true] {
+        let r = rig("close-subtree", true).await;
+        r.daemon.set_orchestration_caps(4, 3).unwrap();
+        let root = r.pane();
+        let caller = if nested {
+            spawned_session(
+                &r.spawn(
+                    &r.token_for(root.id),
+                    serde_json::json!({"kind":"grok","prompt":"coordinate","reusable":true}),
+                )
+                .await,
+            )
+        } else {
+            root.id
+        };
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let release_rx = std::sync::Mutex::new(release_rx);
+        r.daemon
+            .set_worktree_spawn_observer_for_test(Arc::new(move |id| {
+                entered_tx.send(id).unwrap();
+                release_rx
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(15))
+                    .unwrap();
+            }));
+        let addr = r.addr;
+        let token = r.token_for(caller);
+        let spawn = tokio::spawn(async move {
+            mcp_call(
+                addr,
+                &token,
+                "pane_spawn",
+                serde_json::json!({"kind":"grok","prompt":"prepare","worktree":"closing"}),
+            )
+            .await
+        });
+        let pending = tokio::task::spawn_blocking(move || {
+            entered_rx.recv_timeout(Duration::from_secs(15)).unwrap()
+        })
+        .await
+        .unwrap();
+        let barrier = tempfile::tempdir().unwrap();
+        struct Reset(Option<std::ffi::OsString>, PathBuf);
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(self.1.join("armed"));
+                if let Some(value) = &self.0 {
+                    std::env::set_var("HOUSTON_TEST_BARRIER_DIR", value);
+                } else {
+                    std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+                }
+            }
+        }
+        let _reset = Reset(
+            std::env::var_os("HOUSTON_TEST_BARRIER_DIR"),
+            barrier.path().into(),
+        );
+        std::env::set_var("HOUSTON_TEST_BARRIER_DIR", barrier.path());
+        std::fs::write(barrier.path().join("armed"), "close-admitted").unwrap();
+        let closing = r.daemon.clone();
+        let root_id = root.id;
+        let close = tokio::task::spawn_blocking(move || closing.close(root_id));
+        let receipt = format!("close-admitted {root_id}");
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while std::fs::read_to_string(barrier.path().join("reached"))
+                .ok()
+                .as_deref()
+                != Some(receipt.as_str())
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        // First admission rejects while close is paused before backend termination.
+        let first = r
+            .daemon
+            .orchestrate_spawn(
+                caller,
+                proto::AgentKind::Grok,
+                None,
+                None,
+                "new child".to_string().into(),
+                None,
+                None,
+                None,
+            )
+            .unwrap_err();
+        assert!(
+            first
+                .to_string()
+                .contains(&format!("session {caller} is closing")),
+            "{first:#}"
+        );
+        let stdin = r.daemon.write_stdin(caller, b"MUST-NOT-WRITE").unwrap_err();
+        assert!(stdin.to_string().contains("stdin refused"), "{stdin:#}");
+        let respawn = r
+            .daemon
+            .respawn(caller, false, None, None, true)
+            .unwrap_err();
+        assert!(respawn.to_string().contains("is closing"), "{respawn:#}");
+        let concurrent_close = r.daemon.close(caller).unwrap_err();
+        assert!(
+            concurrent_close.to_string().contains("is closing"),
+            "{concurrent_close:#}"
+        );
+        release_tx.send(()).unwrap();
+        let refusal = refusal_text(&spawn.await.unwrap());
+        assert!(
+            refusal.contains(&format!("session {caller} is closing")),
+            "{refusal}"
+        );
+        assert!(!r.daemon.list().iter().any(|pane| pane.id == pending));
+        assert!(
+            !r.worktrees_dir().join("closing").exists(),
+            "only newly prepared worktree is rolled back"
+        );
+        assert!(!branch_exists(&r.ws_dir, "houston/closing"));
+        assert!(r.rows().is_empty());
+        let db = houston_core::db::Db::open(&r.db_path()).unwrap();
+        assert!(db.delegation_for_child(pending).unwrap().is_none());
+        std::fs::remove_file(barrier.path().join("armed")).unwrap();
+        close
+            .await
+            .unwrap()
+            .expect("reserved subtree closes on first attempt");
+        assert!(r.daemon.list().is_empty());
+    }
+}

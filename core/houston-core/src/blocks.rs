@@ -72,6 +72,17 @@ impl BlockTracker {
         }
     }
 
+    /// A command the shell runs before it ever draws a prompt (`-c`), so no
+    /// command-start marker announces it; the block ends at its end marker.
+    pub fn begin_unannounced_command(&mut self, cmd: &str) {
+        self.current = Some(Pending {
+            cmd: truncate_cmd(cmd.to_string()),
+            cwd: String::new(),
+            start_offset: 0,
+            started_at: now_unix(),
+        });
+    }
+
     pub fn feed(&mut self, chunk: &[u8], chunk_offset: u64) -> FeedOutcome {
         let hits = self.scanner.feed(chunk, chunk_offset);
         let mut out = FeedOutcome::default();
@@ -164,6 +175,25 @@ mod tests {
         assert_eq!(b.start_offset, 100);
         assert_eq!(b.end_offset, 500 + 9);
         assert_eq!(t.blocks().len(), 1);
+    }
+
+    #[test]
+    fn an_unannounced_command_runs_until_its_end_marker() {
+        let mut t = BlockTracker::new(TOKEN.into());
+        t.begin_unannounced_command("claude");
+        assert!(t.command_running());
+        let out = feed_str(&mut t, "output\x1b]133;D;right-token;130\x07", 0);
+        assert!(!t.command_running());
+        assert_eq!(out.completed[0].cmd, "claude");
+        assert_eq!(out.completed[0].exit, Some(130));
+    }
+
+    #[test]
+    fn an_end_marker_with_another_token_leaves_an_unannounced_command_running() {
+        let mut t = BlockTracker::new(TOKEN.into());
+        t.begin_unannounced_command("claude");
+        feed_str(&mut t, "\x1b]133;D;;0\x07", 0);
+        assert!(t.command_running());
     }
 
     #[test]

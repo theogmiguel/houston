@@ -1206,6 +1206,15 @@ impl Store {
         self.with(|inner| inner.sessions.len())
     }
 
+    /// Closing a pane releases its ring, pending card and turn metadata.
+    pub fn forget(&self, session: u32) {
+        self.with(|inner| {
+            if let Some(feed) = inner.sessions.remove(&session) {
+                inner.bytes -= feed.bytes;
+            }
+        });
+    }
+
     /// Drops rings for sessions `keep` rejects, once more than `at` are held.
     pub fn prune(&self, at: usize, keep: impl Fn(u32) -> bool) {
         self.with(|inner| {

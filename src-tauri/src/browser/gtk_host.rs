@@ -16,6 +16,8 @@ pub struct CornerShapeReport {
     pub has_native: bool,
     pub paint: crate::browser::corner::CornerPaint,
     pub paints_applied: u64,
+    // Sampled with the paint update on the GTK thread, before its queued draw.
+    pub paints_at_commit: u64,
 }
 
 pub const HOST_WIDGET_NAME: &str = "tr-browser-host";
@@ -37,12 +39,17 @@ mod linux {
         child_label: &str,
         webview: &tauri::webview::Webview,
     ) -> Result<(), String> {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_owned = app.clone();
         let window_label_owned = window_label.to_string();
         let child_label_owned = child_label.to_string();
         webview
             .with_webview(move |platform| {
+                if !dispatch.is_live() {
+                    return;
+                }
                 let result = adopt_child_on_main(
                     &app_owned,
                     &window_label_owned,
@@ -60,7 +67,7 @@ mod linux {
         rx.recv_timeout(Duration::from_secs(5)).map_err(|err| {
             format!(
                 "browser: adopting {child_label:?} into window {window_label:?}'s gtk::Layout \
-                 did not report back within 5s: {err}"
+                 did not report back within 5s; queued work cancelled, an already executing operation has unknown outcome: {err}"
             )
         })?
     }
@@ -89,12 +96,17 @@ mod linux {
         to_window: &str,
         child_label: &str,
     ) -> Result<Rect, String> {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let from_owned = from_window.to_string();
         let to_owned = to_window.to_string();
         let child_owned = child_label.to_string();
         app.run_on_main_thread(move || {
+            if !dispatch.is_live() {
+                return;
+            }
             let result = move_child_on_main(&app_for_main, &from_owned, &to_owned, &child_owned);
             let _ = tx.send(result);
         })
@@ -107,7 +119,7 @@ mod linux {
         rx.recv_timeout(Duration::from_secs(5)).map_err(|err| {
             format!(
                 "browser: moving {child_label:?} from window {from_window:?} to window \
-                 {to_window:?} did not report back within 5s: {err}"
+                 {to_window:?} did not report back within 5s; queued work cancelled, an already executing operation has unknown outcome: {err}"
             )
         })?
     }
@@ -169,11 +181,19 @@ mod linux {
         child_label: &str,
         spec: RectSpec,
     ) -> Result<Rect, String> {
+        let operation = super::super::operation::Operation::latest(
+            format!("layout:{child_label}"),
+            Duration::from_secs(5),
+        );
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let window_label_owned = window_label.to_string();
         let child_label_owned = child_label.to_string();
         app.run_on_main_thread(move || {
+            if !dispatch.is_live() {
+                return;
+            }
             let result =
                 commit_rect_on_main(&app_for_main, &window_label_owned, &child_label_owned, spec);
             let _ = tx.send(result);
@@ -197,11 +217,16 @@ mod linux {
         window_label: &str,
         widget_label: &str,
     ) -> Result<Option<(i32, i32, i32, i32)>, String> {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let window_label_owned = window_label.to_string();
         let widget_label_owned = widget_label.to_string();
         app.run_on_main_thread(move || {
+            if !dispatch.is_live() {
+                return;
+            }
             let result =
                 read_allocation_on_main(&app_for_main, &window_label_owned, &widget_label_owned);
             let _ = tx.send(result);
@@ -210,7 +235,7 @@ mod linux {
             format!("browser: could not hop to the GTK main thread to read {widget_label:?}: {err}")
         })?;
         rx.recv_timeout(Duration::from_secs(5)).map_err(|err| {
-            format!("browser: reading {widget_label:?}'s allocation did not report back within 5s: {err}")
+            format!("browser: reading {widget_label:?}'s allocation did not report back within 5s; queued work cancelled, an already executing operation has unknown outcome: {err}")
         })?
     }
 
@@ -219,17 +244,20 @@ mod linux {
         window_label: &str,
         widget_label: &str,
     ) -> Result<Option<bool>, String> {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let window_label_owned = window_label.to_string();
         let widget_label_owned = widget_label.to_string();
         app.run_on_main_thread(move || {
+            if !dispatch.is_live() { return; }
             let result = is_widget_visible_on_main(&app_for_main, &window_label_owned, &widget_label_owned);
             let _ = tx.send(result);
         })
         .map_err(|err| format!("browser: could not hop to the GTK main thread to read {widget_label:?}'s visibility: {err}"))?;
         rx.recv_timeout(Duration::from_secs(5)).map_err(|err| {
-            format!("browser: reading {widget_label:?}'s visibility did not report back within 5s: {err}")
+            format!("browser: reading {widget_label:?}'s visibility did not report back within 5s; queued work cancelled, an already executing operation has unknown outcome: {err}")
         })?
     }
 
@@ -250,8 +278,13 @@ mod linux {
     }
 
     pub fn toplevel_window_signatures(app: &AppHandle) -> Result<Vec<String>, String> {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         app.run_on_main_thread(move || {
+            if !dispatch.is_live() {
+                return;
+            }
             let mut signatures: Vec<String> = gtk::Window::list_toplevels()
                 .iter()
                 .map(|widget| format!("{}:{}", widget.type_().name(), widget.widget_name()))
@@ -267,10 +300,15 @@ mod linux {
     }
 
     pub fn focus_host(app: &AppHandle, window_label: &str) -> Result<bool, String> {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let window_label_owned = window_label.to_string();
         app.run_on_main_thread(move || {
+            if !dispatch.is_live() {
+                return;
+            }
             let _ = tx.send(focus_host_on_main(&app_for_main, &window_label_owned));
         })
         .map_err(|err| {
@@ -373,10 +411,15 @@ mod linux {
     }
 
     pub fn follow_window_resize(app: &AppHandle, window_label: &str) {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let window_label_owned = window_label.to_string();
         let hop = app.run_on_main_thread(move || {
+            if !dispatch.is_live() {
+                return;
+            }
             let result = follow_window_resize_on_main(&app_for_main, &window_label_owned);
             let _ = tx.send(result);
         });
@@ -475,10 +518,15 @@ mod linux {
     }
 
     pub fn read_host_zoom(app: &AppHandle, window_label: &str) -> Result<f64, String> {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let window_owned = window_label.to_string();
         app.run_on_main_thread(move || {
+            if !dispatch.is_live() {
+                return;
+            }
             let result = (|| -> Result<f64, String> {
                 let vbox = find_vbox(&app_for_main, &window_owned)?;
                 let layout = find_or_create_layout(&vbox);
@@ -505,10 +553,15 @@ mod linux {
         window_label: &str,
         zoom: f64,
     ) -> Result<(), String> {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let window_owned = window_label.to_string();
         app.run_on_main_thread(move || {
+            if !dispatch.is_live() {
+                return;
+            }
             let result = (|| -> Result<(), String> {
                 use webkit2gtk::WebViewExt;
                 let vbox = find_vbox(&app_for_main, &window_owned)?;
@@ -540,11 +593,14 @@ mod linux {
         window_label: &str,
         widget_label: &str,
     ) -> Result<Option<CornerShapeReport>, String> {
+        let operation = super::super::operation::Operation::new(Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let window_owned = window_label.to_string();
         let widget_owned = widget_label.to_string();
         app.run_on_main_thread(move || {
+            if !dispatch.is_live() { return; }
             let result = (|| -> Result<Option<CornerShapeReport>, String> {
                 let vbox = find_vbox(&app_for_main, &window_owned)?;
                 let Some(layout) = find_layout(&vbox) else {
@@ -568,6 +624,7 @@ mod linux {
                     has_native: widget.window().is_some_and(|w| w.has_native()),
                     paint: state.paint,
                     paints_applied: state.paints_applied,
+                    paints_at_commit: state.paints_at_commit,
                 }))
             })();
             let _ = tx.send(result);
@@ -579,7 +636,7 @@ mod linux {
         })?;
         rx.recv_timeout(Duration::from_secs(5)).map_err(|err| {
             format!(
-                "browser: reading {widget_label:?}'s corners did not report back within 5s: {err}"
+                "browser: reading {widget_label:?}'s corners did not report back within 5s; queued work cancelled, an already executing operation has unknown outcome: {err}"
             )
         })?
     }
@@ -682,6 +739,7 @@ mod linux {
     struct CornerState {
         paint: CornerPaint,
         paints_applied: u64,
+        paints_at_commit: u64,
     }
 
     thread_local! {
@@ -690,11 +748,10 @@ mod linux {
 
     fn set_corner_paint(child_label: &str, paint: CornerPaint) {
         CORNERS.with(|corners| {
-            corners
-                .borrow_mut()
-                .entry(child_label.to_string())
-                .or_default()
-                .paint = paint;
+            let mut corners = corners.borrow_mut();
+            let state = corners.entry(child_label.to_string()).or_default();
+            state.paint = paint;
+            state.paints_at_commit = state.paints_applied;
         });
     }
 

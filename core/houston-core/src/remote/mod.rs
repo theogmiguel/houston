@@ -723,17 +723,27 @@ pub(crate) struct StatusEvent {
     pub epoch: u64,
 }
 
+pub(crate) struct PendingNotification {
+    pub event: StatusEvent,
+    pub kind: ntfy::Kind,
+    pub due: tokio::time::Instant,
+}
+
 /// In-memory remote state owned by the daemon. Configuration persists in the
 /// settings table; everything here is rebuilt at boot.
 pub struct Runtime {
     pub(crate) config: Mutex<Option<Config>>,
     pub(crate) ntfy_url: Mutex<Option<zeroize::Zeroizing<String>>>,
+    pub(crate) ntfy_generation: std::sync::atomic::AtomicU64,
     pub(crate) listen: Mutex<ListenState>,
     pub(crate) reconfigured: tokio::sync::watch::Sender<u64>,
     pairing: Mutex<Option<Pairing>>,
     limiter: Mutex<HashMap<Option<IpAddr>, FailureLimiter>>,
     input_busy: Mutex<HashSet<u32>>,
     pub(crate) seen: Mutex<HashMap<u32, SeenStatus>>,
+    pub(crate) retention: Mutex<()>,
+    pub(crate) notifications: Mutex<HashMap<u32, PendingNotification>>,
+    pub(crate) notification_wake: tokio::sync::Notify,
     pub(crate) last_seen_written: Mutex<HashMap<i64, u64>>,
     status_tx: tokio::sync::mpsc::Sender<StatusEvent>,
     /// Taken by the notifier loop; transitions before it starts wait in the channel.
@@ -764,12 +774,16 @@ impl Runtime {
         Self {
             config: Mutex::new(None),
             ntfy_url: Mutex::new(None),
+            ntfy_generation: std::sync::atomic::AtomicU64::new(0),
             listen: Mutex::new(ListenState::default()),
             reconfigured: tokio::sync::watch::Sender::new(0),
             pairing: Mutex::new(None),
             limiter: Mutex::new(HashMap::new()),
             input_busy: Mutex::new(HashSet::new()),
             seen: Mutex::new(HashMap::new()),
+            retention: Mutex::new(()),
+            notifications: Mutex::new(HashMap::new()),
+            notification_wake: tokio::sync::Notify::new(),
             last_seen_written: Mutex::new(HashMap::new()),
             status_tx,
             status_rx: Mutex::new(Some(status_rx)),
@@ -962,6 +976,11 @@ impl Runtime {
                 },
             )
             .map(|s| s.status);
+        self.notifications
+            .lock()
+            .expect("remote notifications lock")
+            .remove(&session);
+        self.notification_wake.notify_one();
         let _ = self.status_tx.try_send(StatusEvent {
             session,
             from,

@@ -123,25 +123,10 @@ pub fn remove_plugin(state_dir: &Path) -> Result<()> {
 // Through a temporary file and a rename: a ZCode starting mid-write would otherwise
 // read truncated JSON and reject the whole config, the user's own settings included.
 fn write_json(path: &Path, value: &Value) -> Result<()> {
-    use std::io::Write as _;
     let mut out = serde_json::to_string_pretty(value)?;
     out.push('\n');
-    let dir = path
-        .parent()
-        .ok_or_else(|| anyhow!("{} has no parent directory", path.display()))?;
-    let mut tmp = tempfile::NamedTempFile::new_in(dir)
-        .with_context(|| format!("creating a temporary file in {}", dir.display()))?;
-    tmp.write_all(out.as_bytes())
-        .with_context(|| format!("writing a temporary file for {}", path.display()))?;
-    if let Ok(meta) = std::fs::metadata(path) {
-        tmp.as_file()
-            .set_permissions(meta.permissions())
-            .with_context(|| format!("keeping the permissions of {}", path.display()))?;
-    }
-    tmp.persist(path)
-        .map_err(|e| e.error)
-        .with_context(|| format!("replacing {}", path.display()))?;
-    Ok(())
+    crate::agent_hooks::atomic_config_write(path, out.as_bytes())
+        .with_context(|| format!("writing ZCode config {}", path.display()))
 }
 
 fn read_text(path: &Path) -> Result<Option<String>> {

@@ -181,6 +181,46 @@ pub fn signal_owned_process_group(
     Ok(SignalOutcome::Delivered)
 }
 
+/// Observe an owned child without reaping it, retaining its process-group identity.
+#[cfg(target_os = "linux")]
+pub(crate) fn unreaped_child_exited(child: &std::process::Child) -> std::io::Result<bool> {
+    let raw = checked_pid(child.id()).map_err(std::io::Error::other)?;
+    // SAFETY: info is initialized and waitid writes only this out-parameter.
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    if unsafe {
+        libc::waitid(
+            libc::P_PID,
+            raw as libc::id_t,
+            &mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    } < 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: waitid populated siginfo's child-status variant (or left si_pid zero).
+    Ok(unsafe { info.si_pid() } == raw)
+}
+
+/// Caller must retain this direct child without wait/try_wait until after delivery.
+#[cfg(target_os = "linux")]
+pub(crate) fn signal_unreaped_child_group(
+    child: &std::process::Child,
+    sig: Signal,
+) -> Result<(), SignalError> {
+    let raw = checked_pid(child.id()).map_err(SignalError::InvalidPid)?;
+    // The unreaped direct child anchors identity; verify our session and group.
+    if unsafe { libc::getpgid(raw) } != raw
+        || unsafe { libc::getsid(raw) } != unsafe { libc::getsid(0) }
+    {
+        return Err(SignalError::Os(std::io::Error::other(format!(
+            "child pid {} is not an owned process group in the caller session",
+            child.id()
+        ))));
+    }
+    signal_process_group_checked(child.id(), sig)
+}
+
 #[cfg(unix)]
 fn signal_process_group_checked(pid: u32, sig: Signal) -> Result<(), SignalError> {
     if pid == 1 {
@@ -499,6 +539,32 @@ mod tests {
     #![allow(clippy::disallowed_methods)]
     use super::*;
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn exited_child_retains_group_identity_until_cleanup() {
+        use std::os::unix::process::CommandExt;
+        let mut cmd = crate::spawn::command("sh");
+        cmd.args(["-c", "sleep 1 & exit 0"]).process_group(0);
+        let mut child = cmd.spawn().unwrap();
+        let token = process_creation_token(child.id());
+        let start = std::time::Instant::now();
+        while !unreaped_child_exited(&child).unwrap() {
+            if start.elapsed() > std::time::Duration::from_secs(2) {
+                let _ = signal_unreaped_child_group(&child, Signal::Kill);
+                let _ = child.wait();
+                panic!("fixture root did not exit");
+            }
+            std::thread::yield_now();
+        }
+        let retained = process_creation_token(child.id());
+        let cleanup = signal_unreaped_child_group(&child, Signal::Kill);
+        let status = child.wait().unwrap();
+        assert!(token.is_some());
+        assert_eq!(retained, token);
+        cleanup.unwrap();
+        assert!(status.success());
+    }
+
     const BROADCAST_VALUES: [(u32, &str); 3] = [
         (
             u32::MAX,
@@ -631,6 +697,38 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn private_job_close_cancels_its_suspended_child() {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
+        struct Fixture(std::process::Child);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = terminate_owned_child(&self.0);
+                let _ = self.0.wait();
+            }
+        }
+        let job = OwnedJob::new().unwrap();
+        let mut cmd = crate::spawn::command("cmd");
+        cmd.args(["/d", "/c", "exit 0"])
+            .creation_flags(crate::spawn::CREATE_NO_WINDOW | CREATE_SUSPENDED);
+        let mut child = Fixture(cmd.spawn().unwrap());
+        job.assign(&child.0).unwrap();
+        drop(job);
+        let start = std::time::Instant::now();
+        loop {
+            if child.0.try_wait().unwrap().is_some() {
+                break;
+            }
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(2),
+                "closing the private job must cancel its suspended child"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn exited_process_is_dead_while_its_handle_is_still_open() {
         assert!(process_is_alive(std::process::id()));
         for exit_code in [0, 259] {
@@ -682,4 +780,147 @@ fn creation_token_identity_mismatch_is_refused() {
     assert_eq!(none, SignalOutcome::Delivered);
     let _ = signal_process(pid, Signal::Kill);
     let _ = child.wait();
+}
+
+#[cfg(windows)]
+pub(crate) fn terminate_owned_child(child: &std::process::Child) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    win::terminate(child.as_raw_handle())
+}
+
+#[cfg(windows)]
+pub(crate) struct OwnedJob(std::os::windows::io::OwnedHandle);
+
+#[cfg(windows)]
+impl OwnedJob {
+    pub(crate) fn new() -> std::io::Result<Self> {
+        use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+        use windows_sys::Win32::System::JobObjects::*;
+        // SAFETY: null attributes/name create a private, non-inheritable job.
+        let raw = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if raw.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: this newly created handle is owned exactly once.
+        let job = Self(unsafe { OwnedHandle::from_raw_handle(raw) });
+        // SAFETY: this C structure permits all-zero defaults.
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // SAFETY: the job and sized information buffer remain valid for the call.
+        if unsafe {
+            SetInformationJobObject(
+                job.0.as_raw_handle(),
+                JobObjectExtendedLimitInformation,
+                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                std::mem::size_of_val(&limits) as u32,
+            )
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(job)
+    }
+
+    pub(crate) fn assign(&self, child: &std::process::Child) -> std::io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        // SAFETY: both handles are retained; the child has not been resumed.
+        if unsafe {
+            windows_sys::Win32::System::JobObjects::AssignProcessToJobObject(
+                self.0.as_raw_handle(),
+                child.as_raw_handle(),
+            )
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn terminate(&self) -> std::io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        // SAFETY: this private job contains only children assigned by its owner.
+        if unsafe {
+            windows_sys::Win32::System::JobObjects::TerminateJobObject(self.0.as_raw_handle(), 1)
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn resume_owned_child(
+    child: &std::process::Child,
+    start: std::time::Instant,
+    timeout: std::time::Duration,
+) -> std::io::Result<()> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
+    use windows_sys::Win32::System::Threading::*;
+    // std retains the process handle, but closes the primary thread handle.
+    // CREATE_SUSPENDED means this child has not yet created additional threads.
+    let raw = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if raw == INVALID_HANDLE_VALUE {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: snapshot is a newly acquired handle, closed on every exit.
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(raw) };
+    // SAFETY: THREADENTRY32 is a plain C structure with valid zero defaults.
+    let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of_val(&entry) as u32;
+    // SAFETY: snapshot and writable entry are live for enumeration.
+    let mut found = unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) };
+    let mut primary = None;
+    while found != 0 {
+        if start.elapsed() >= timeout {
+            return Err(std::io::Error::from(std::io::ErrorKind::TimedOut));
+        }
+        if entry.th32OwnerProcessID == child.id() && primary.replace(entry.th32ThreadID).is_some() {
+            return Err(std::io::Error::other(
+                "suspended child has multiple threads; expected one primary thread",
+            ));
+        }
+        entry.dwSize = std::mem::size_of_val(&entry) as u32;
+        // SAFETY: same live snapshot and entry used by Thread32First.
+        found = unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) };
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() != Some(windows_sys::Win32::Foundation::ERROR_NO_MORE_FILES as i32) {
+        return Err(error);
+    }
+    let primary = primary
+        .ok_or_else(|| std::io::Error::other("suspended child's primary thread was not found"))?;
+    // SAFETY: acquire a non-inheritable thread handle, then verify ownership.
+    let raw = unsafe {
+        OpenThread(
+            THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+            0,
+            primary,
+        )
+    };
+    if raw.is_null() {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: this newly acquired handle is owned exactly once.
+    let thread = unsafe { OwnedHandle::from_raw_handle(raw) };
+    // SAFETY: the thread and child's anchoring process handle remain open.
+    if unsafe { GetProcessIdOfThread(thread.as_raw_handle()) } != child.id() {
+        return Err(std::io::Error::other(
+            "suspended child thread ownership changed",
+        ));
+    }
+    if start.elapsed() >= timeout {
+        return Err(std::io::Error::from(std::io::ErrorKind::TimedOut));
+    }
+    // SAFETY: this is the verified sole thread of our suspended child.
+    let previous = unsafe { ResumeThread(thread.as_raw_handle()) };
+    match previous {
+        1 => Ok(()),
+        u32::MAX => Err(std::io::Error::last_os_error()),
+        other => Err(std::io::Error::other(format!(
+            "child thread suspend count was {other}; expected 1"
+        ))),
+    }
 }

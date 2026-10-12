@@ -126,6 +126,138 @@ fn boot_and_list(
     (daemon.list(), daemon.recovery_summary())
 }
 
+struct OwnedRestoreDaemon(std::sync::Arc<Daemon>);
+impl Drop for OwnedRestoreDaemon {
+    fn drop(&mut self) {
+        for session in self.0.list() {
+            if self.0.list().iter().any(|live| live.id == session.id) {
+                self.0
+                    .close(session.id)
+                    .expect("close the owned restore fixture");
+            }
+        }
+    }
+}
+
+struct LiveClaude {
+    _dir: tempfile::TempDir,
+    previous_path: Option<std::ffi::OsString>,
+}
+impl LiveClaude {
+    fn new() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("claude");
+        std::fs::write(
+            &executable,
+            "#!/bin/sh\nprintf 'RESTORE-CLAUDE-READY\\n'\nexec /bin/cat\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let previous_path = std::env::var_os("PATH");
+        let mut paths = vec![dir.path().to_path_buf()];
+        if let Some(previous) = &previous_path {
+            paths.extend(std::env::split_paths(previous));
+        }
+        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
+        Self {
+            _dir: dir,
+            previous_path,
+        }
+    }
+}
+impl Drop for LiveClaude {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous_path {
+            std::env::set_var("PATH", previous);
+        } else {
+            std::env::remove_var("PATH");
+        }
+    }
+}
+
+fn boot_owned_restore(state: &std::path::Path) -> OwnedRestoreDaemon {
+    let daemon = Daemon::new(DaemonConfig {
+        token: TOKEN.to_string(),
+        db_path: state.join("test.db"),
+    })
+    .unwrap();
+    let owned = OwnedRestoreDaemon(daemon);
+    let daemon = &owned.0;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if daemon.list().iter().any(|session| {
+            daemon
+                .session_screen_for_test(session.id)
+                .iter()
+                .any(|line| line.contains("RESTORE-CLAUDE-READY"))
+        }) {
+            return owned;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "owned Claude never became ready: {:?}",
+            daemon.list()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_refused_durable_close_keeps_the_restored_pane_retryable() {
+    let _env = env_lock();
+    let state = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed(state.path(), &[project.path()], true);
+    let path = state.path().join("test.db");
+    let daemon = Daemon::new_with_safe_mode_flags_for_test(
+        DaemonConfig {
+            token: TOKEN.to_string(),
+            db_path: path.clone(),
+        },
+        SafeModeFlags {
+            disable_auto_restore: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(daemon.list().iter().any(|s| s.id == 1));
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TRIGGER refuse_close BEFORE UPDATE OF state ON sessions
+         WHEN NEW.state = 'closed' BEGIN SELECT RAISE(ABORT, 'injected close failure'); END;",
+    )
+    .unwrap();
+    assert!(daemon
+        .close(1)
+        .unwrap_err()
+        .to_string()
+        .contains("injected close failure"));
+    assert!(
+        daemon.list().iter().any(|s| s.id == 1),
+        "a refused close must keep its retry target"
+    );
+    conn.execute_batch("DROP TRIGGER refuse_close;").unwrap();
+    daemon.close(1).unwrap();
+    assert!(!daemon.list().iter().any(|s| s.id == 1));
+    drop(daemon);
+    let reopened = Daemon::new_with_safe_mode_flags_for_test(
+        DaemonConfig {
+            token: TOKEN.to_string(),
+            db_path: path,
+        },
+        SafeModeFlags {
+            disable_auto_restore: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        !reopened.list().iter().any(|s| s.id == 1),
+        "a successful retry stays closed after restart"
+    );
+}
+
 #[test]
 fn clean_shutdown_respawns_within_budget_and_defers_the_rest() {
     let _env = env_lock();
@@ -508,6 +640,7 @@ fn an_agent_husk_comes_back_live_and_never_as_a_corpse() {
     std::env::remove_var("HOUSTON_RESTORE_BUDGET");
     std::env::remove_var("HOUSTON_SAFE_MODE");
 
+    let _provider = LiveClaude::new();
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
     seed_one(
@@ -520,7 +653,9 @@ fn an_agent_husk_comes_back_live_and_never_as_a_corpse() {
     );
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
-    let (sessions, recovery) = boot_and_list(state.path());
+    let owned = boot_owned_restore(state.path());
+    let sessions = owned.0.list();
+    let recovery = owned.0.recovery_summary();
     let husk = sessions
         .iter()
         .find(|s| s.agent == proto::AgentKind::Claude)
@@ -577,6 +712,7 @@ fn boot_defers_an_unresumable_child_when_its_parent_starts_fresh() {
     std::env::remove_var("HOUSTON_RESTORE_BUDGET");
     std::env::remove_var("HOUSTON_SAFE_MODE");
 
+    let _provider = LiveClaude::new();
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
     seed_one(
@@ -597,7 +733,9 @@ fn boot_defers_an_unresumable_child_when_its_parent_starts_fresh() {
     );
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
-    let (sessions, summary) = boot_and_list(state.path());
+    let owned = boot_owned_restore(state.path());
+    let sessions = owned.0.list();
+    let summary = owned.0.recovery_summary();
     let child = sessions
         .iter()
         .find(|s| s.title == "Husk-2")

@@ -11,6 +11,42 @@ because their environment carries the pane bearer token, and they do not rewrite
 A hook without a pane identity exits silently and writes nothing: global provider hooks also
 fire in sessions Houston did not launch.
 
+PTY startup owns the child until the session row, profile directory and gated reader/wait
+workers are ready. Failure rolls back the row, terminates the owned terminal process group and foreground
+group through a retained master descriptor, then reaps the direct child before publishing
+a pane. Windows rollback uses the owned child handle. Gating the workers does not gate the
+CLI process: a keyed spawn failure after process creation retains an uncertain receipt even
+when rollback succeeds, because the CLI may already have performed external work.
+A failure before process creation remains retryable when no other external mutation occurred.
+Respawn allocates a new ID, so failed startup leaves the previous durable pane available.
+
+Close reserves every registered session in the recursive delegation subtree before releasing
+admission locks. Admission takes lifecycle before temporary cleanup; physical termination,
+reader drain and root reap run without either lock. Both spawn phases, hook and ACP admission,
+and stdin refuse reserved sessions. Worktree preparation between spawn phases cannot publish
+into a closing parent; a refused spawn removes only the worktree it created.
+The reservation is bounded by registered sessions and releases on failure, leaving ownership
+and final output available for a Close retry. Admission projects pending child asks to the
+operator when their parent becomes unavailable, and captures the checked Close notice before
+cancelling requests. Explicit Kill and Close persist cancellation before signalling the PTY.
+A failed cleanup leaves that request cancelled and the pane available for retry. Staged
+handbacks become ready without changing cancellation into a successful or failed natural exit.
+Ownership replacement uses a separate reservation. Registry removal follows reader completion,
+root reap and a successful durable close. On Linux, exit observation retains the root with
+`WEXITED | WNOWAIT` until drain, so quiet descendants can be terminated using the same process
+identity while the pane already reports `Exited`.
+PTY input is admitted to the bounded FIFO under the relevant authorization guards. Receipt
+waits release global admission locks so Close can cancel a blocked writer. Instruction delivery
+claims the durable intent before writing, rechecks cancellation when committing each receipt,
+and retains bounded authoritative lifecycle evidence that arrives during the write.
+Activity from the existing turn cannot adopt a pasted instruction before Enter reaches
+the PTY. A distinct known prompt identity or a matching named request supplies earlier
+correlation. A named request is retained with its exact intent, allowing a Codex Steer to
+complete within the same turn identity after Enter, without treating old pre-Enter activity
+as its start. Provider SessionEnd remains authoritative while the PTY is still running:
+an unwritten intent is held, and an interrupted, partial or submitted write remains
+uncertain instead of being delivered or replayed automatically.
+
 What makes it an *agent* is
 that its own lifecycle events reach the daemon — through hooks it installed, or through a
 documented JSON-RPC stream. Everything on this page hangs off that: status is
@@ -172,7 +208,7 @@ the other providers use `agent_hooks.rs`:
 | Provider | Config |
 |---|---|
 | Claude | `~/.claude/settings.json`, overridden by `CLAUDE_CONFIG_DIR`; registered Houston account profiles also receive `settings.json` entries |
-| Codex | `~/.codex/hooks.json`, plus `~/.codex/config.toml` (parks a leftover `notify` line from before this file existed; never rewritten otherwise) |
+| Codex | `~/.codex/hooks.json`, plus `~/.codex/config.toml` (parks legacy `notify` and manages scoped hook trust) |
 | Cursor | `~/.cursor/hooks.json` |
 | OpenCode | `<config dir>/opencode/plugins/houston-notify.js` |
 | Grok | `~/.grok/hooks/houston.json` |
@@ -191,6 +227,15 @@ removes marked commands from the user config and registered account profile conf
 persists across boot refreshes. Previously written user and profile config paths are
 recorded in daemon settings so profile edits, deletions and config-directory changes
 remove obsolete marked entries too. Houston never rewrites `~/.claude.json`.
+
+Provider config updates replace a same-directory temporary file after writing it completely.
+Existing permissions and symlinks are preserved by replacing the resolved target. This
+prevents truncation on write failure; it does not serialize installers from other channels.
+
+Applied hook identities remain in memory while deletion is retried. Compaction counters
+commit with a durable receipt keyed by the drop path and payload, so restart after application cannot
+count the same drop again. Receipts expire with the ten-minute drop window. Both receipt
+sets cap at 4096 entries; saturation defers new effects rather than evicting live identities.
 
 The registered command never names the binary. It names a channel-stable launcher at
 `<state dir>/bin/claude-hook`, which the daemon repoints at its own current binary on every
@@ -235,7 +280,9 @@ Codex's `hooks.json` is the same per-event array shape Cursor and Grok's files u
 both channels' entries coexist there the same way. `config.toml`'s old `notify` key
 cannot multiplex, but Houston no longer writes one: install parks an active `notify` line
 (or, if it carries Houston's own sentinel from before `hooks.json` existed, removes it
-outright) and uninstall wakes a parked one again.
+outright) and uninstall restores it only when no active replacement exists. A replacement
+keeps precedence; Houston preserves the parked original and reports the restoration conflict.
+Proposed restoration is validated as TOML before replacement.
 
 Houston installs Codex hooks with scoped trust in a reversible `[hooks.state]` block.
 The trust check verifies every Houston definition's key, hash and enabled state;

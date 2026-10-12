@@ -62,21 +62,47 @@ checks against its own count before honouring it. The daemon sends frames only f
 this socket asked about, through a bounded per-session queue; a gap frame (kind 3) means that
 queue dropped, and the pane answers with one re-attach.
 
+Create promises use connection-local request numbers and direct `session_create_result`
+replies, including refusals. Roster broadcasts never acknowledge creation. A workspace
+action sends its command only to the session in its matching successful result. Closing
+the transport or exceeding the reply deadline rejects outstanding creates.
+
+The App connection effect owns one pending connection and one active client. Repeated
+retries share the pending attempt; replacement closes the prior client. Cleanup closes
+the active client and any late successful connection, and obsolete callbacks cannot mutate
+renderer state or start a retry.
+
+Removed sessions release readiness, attach-attempt and generation metadata. A bounded
+recent-removal set suppresses late readiness and background queries; exited sessions that
+remain in the roster keep their readiness suppression until removal.
+
 `sendStdin` is the outbound path: `term.onData` → `client.sendStdin` → the transport's
-`write`. It is not queued — a keystroke goes straight out.
+`write`. Each accepted input is sent as one binary frame, preserving paste transaction
+ordering. Paste encoding admits at most 65,536 UTF-16 code units before UTF-8/WASM
+allocation (at most 192 KiB of UTF-8), and individual input frames are capped at
+256 KiB. Socket admission caps operator backlog at 1 MiB; parser-generated replies
+have a separate 64 KiB reserve. A saturated reserve is also a visible error, never
+an unreported reply loss. These are bounded admission policies, not delivery receipts:
+WebSocket acceptance does not establish PTY consumption. Large content should use
+files; renderer input does not add a second unbounded queue.
 
 `PaneWriteQueue` (`pane/writeQueue.ts`) is the **inbound** pipeline, between arriving frames
-and the engine's synchronous `term.write`. It owns escape-safe chunking (`findSafeSplit`
-never manufactures a cut inside a CSI, OSC/DCS/PM/APC/SOS, a bare two-byte escape, or a
-multi-byte UTF-8 codepoint), a single-write-in-flight gate, a stalled-write watchdog, and
-the overflow policy. When the queue passes its cap, a synced pane whose daemon has an
+and the engine's synchronous `term.write`. It owns a hard byte chunk ceiling,
+a single-write-in-flight gate, a stalled-write watchdog, and
+the overflow policy. The persistent libghostty WASM parser retains control-sequence
+and UTF-8 state across writes; chunks can end inside either. Real-WASM regressions
+compare whole and fragmented streams, including long OSC/DCS, modes and replies.
+The byte ceiling does not establish a wall-clock responsiveness bound.
+When the queue passes its cap, a synced pane whose daemon has an
 emulator discards the backlog and reattaches from a snapshot. The daemon has parsed every
 byte, so the screen comes back exact, and stdin stays live while the snapshot is in flight.
 Without a snapshot path, the queue drops its oldest bytes and says so in the pane.
+Incoming replay views covering less than half their backing allocation are copied before
+queueing, so a small overlap tail does not retain the entire replay while waiting to drain.
 
 | Constant | Value | Reason |
 |---|---|---|
-| `DEFAULT_CHUNK_BYTES` | 256 KiB | ~8 ms of blocking parse — half a 60 Hz frame — with a yield between chunks |
+| `DEFAULT_CHUNK_BYTES` | 256 KiB | hard ceiling for synchronous parsing, with a yield between chunks |
 | `DEFAULT_MAX_QUEUED_BYTES` | 2 MiB | queue cap |
 | `DEFAULT_DROP_TARGET_FRACTION` | 0.75 | evict to 75 % of the cap so an episode is one hole, not per-frame thrash |
 | `DEFAULT_BATCH_WINDOW_MS` | 4 | a quarter-frame of write batching; small writes bypass it |
@@ -372,6 +398,19 @@ behind the `bench` feature.
 The invoke handler wraps that list with a security gate: **any command invoked from a
 content-only browser webview label is refused** — browser panes hold no app authority.
 
+Browser consent binds the current document and the actual DOM node. WebKit toolkit
+worlds are ephemeral, so globals cannot hold that identity. Private node-owned event
+listeners prove identity across evaluations without putting reusable proof keys in
+page markup. A new snapshot removes the previous snapshot's listeners; navigation
+and surface destruction also invalidate native refs and pending consent.
+
+Browser relay requests belong to their connection and have bounded concurrency and
+absolute expiry. Disconnect drains cancelled owners before reconnecting. Confirmation
+cleanup dismisses the prompt and removes its temporary capture even when the waiting
+future is cancelled. Queued native operations check cancellation and expiry before
+execution; geometry generations discard superseded positions. A timeout after native
+execution begins reports an unknown outcome rather than promising no side effect.
+
 ## The paint-freeze watchdog
 
 Two tiers. Tier 1 is Rust (`src-tauri/src/watchdog/`): a pure transition function
@@ -392,9 +431,27 @@ before the client exits. Closing a detected failed main window exits the client 
 other windows are open. Client exit leaves sessions running unless daemon shutdown was
 explicitly confirmed.
 
-Recovery remains experimental: JavaScript liveness does not prove that painting or React
-initialization recovered, and native prompt results are not yet tagged by incident.
-Linux supports native recovery confirmation and forced web-process termination. Other
+A paint incident requires a successful animation-frame report from the current page
+generation, including after reload; JavaScript probe replies cannot clear it. Paint
+reports carry the generation obtained at installation and updated on completed navigation.
+Recovery confirmation owns an incident ID, page generation and one absolute monotonic
+deadline. Queued expired dialogs never open, and cancellation targets the individual
+dialog. Selecting Wait stops automatic escalation for that incident.
+
+The supervisor coalesces native state hints and bounds ordinary receipts. Process loss,
+navigation, stop and prompt answers have reserved ingress; native callbacks never wait
+for queue space. A single poll and two native evaluations may remain outstanding;
+reload requests coalesce behind a single native dispatch slot.
+Logical probe expiry does not release those physical permits. Superseded queued probes
+check generation before execution, and unchanged titles are not reissued. Window
+destruction stops the supervisor; app exit joins it independently of GTK work.
+Logging uses a bounded writer queue and keeps a current and previous log segment.
+Queue loss is reported on stderr by the writer when it resumes. A blocked OS write can
+retain that single worker until I/O returns; it cannot block supervisor shutdown.
+
+Recovery remains experimental: animation-frame and JavaScript liveness do not establish
+successful React initialization or correct rendered pixels. Linux supports native recovery
+confirmation and forced web-process termination. Other
 platforms explicitly withhold focused recovery when native confirmation is unavailable;
 forced termination reports its lack of support and the ladder retries reload only.
 

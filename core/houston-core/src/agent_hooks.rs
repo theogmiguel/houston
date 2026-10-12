@@ -2,6 +2,62 @@ use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol as proto;
 use std::path::{Path, PathBuf};
 
+// Resolve existing symlinks so replacement updates the user's target, not the link.
+pub(crate) fn atomic_config_write(path: &Path, bytes: impl AsRef<[u8]>) -> Result<()> {
+    atomic_config_write_with(path, |file| {
+        use std::io::Write;
+        file.write_all(bytes.as_ref())
+    })
+}
+
+fn atomic_config_write_with(
+    path: &Path,
+    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> Result<()> {
+    let mut target = path.to_path_buf();
+    let mut links = 0;
+    loop {
+        match std::fs::symlink_metadata(&target) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                anyhow::ensure!(
+                    links < 40,
+                    "{}: symlink limit 40 reached while replacing config (actual {links})",
+                    path.display()
+                );
+                let link = std::fs::read_link(&target)?;
+                target = if link.is_absolute() {
+                    link
+                } else {
+                    target.parent().unwrap_or(Path::new(".")).join(link)
+                };
+                links += 1;
+            }
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let parent = target
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+    match std::fs::metadata(&target) {
+        Ok(metadata) => temporary
+            .as_file()
+            .set_permissions(metadata.permissions())?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    write(temporary.as_file_mut())
+        .with_context(|| format!("writing temporary config for {}", path.display()))?;
+    temporary.as_file().sync_all()?;
+    temporary
+        .persist(&target)
+        .with_context(|| format!("replacing {}", path.display()))?;
+    Ok(())
+}
+
 pub const PROVIDERS: [proto::AgentKind; 6] = [
     proto::AgentKind::Codex,
     proto::AgentKind::Opencode,
@@ -393,7 +449,9 @@ fn codex_park_notify(path: &Path, sentinel: &str) -> Result<()> {
     }
     let mut out = lines.join("\n");
     out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))
+    out.parse::<toml::Value>()
+        .with_context(|| format!("validating {} after parking notify", path.display()))?;
+    atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))
 }
 
 fn codex_wake_notify(path: &Path, sentinel: &str) -> Result<bool> {
@@ -403,6 +461,12 @@ fn codex_wake_notify(path: &Path, sentinel: &str) -> Result<bool> {
     }
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     let marker = parked_marker(sentinel);
+    let current = text
+        .parse::<toml::Value>()
+        .with_context(|| format!("validating {} before restoring notify", path.display()))?;
+    if lines.iter().any(|line| is_parked(line, sentinel)) && current.get("notify").is_some() {
+        bail!("{}: cannot restore parked notify: an active user replacement exists; kept the replacement and parked original", path.display());
+    }
     let mut restored = false;
     for line in lines.iter_mut() {
         if !is_parked(line, sentinel) {
@@ -425,7 +489,9 @@ fn codex_wake_notify(path: &Path, sentinel: &str) -> Result<bool> {
     }
     let mut out = lines.join("\n");
     out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
+    out.parse::<toml::Value>()
+        .with_context(|| format!("validating {} after restoring notify", path.display()))?;
+    atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))?;
     Ok(true)
 }
 
@@ -438,7 +504,8 @@ fn codex_uninstall(path: &Path, sentinel: &str) -> Result<bool> {
         if clean == text {
             return Ok(false);
         }
-        std::fs::write(&config, clean).with_context(|| format!("writing {}", config.display()))?;
+        atomic_config_write(&config, clean)
+            .with_context(|| format!("writing {}", config.display()))?;
         Ok(true)
     })();
     let restored = codex_wake_notify(&config, sentinel);
@@ -651,7 +718,8 @@ fn codex_write_trust(path: &Path, sentinel: &str) -> Result<()> {
     }
     if text != original {
         ensure_parent(&config)?;
-        std::fs::write(&config, text).with_context(|| format!("writing {}", config.display()))?;
+        atomic_config_write(&config, text)
+            .with_context(|| format!("writing {}", config.display()))?;
     }
     let saved = std::fs::read_to_string(&config)?.parse::<toml::Value>()?;
     if !codex_entries_trusted(&saved, &codex_trust_entries(path, sentinel)?) {
@@ -756,7 +824,7 @@ fn cursor_install(path: &Path, commands: &[(&str, String)], sentinel: &str) -> R
     ensure_parent(path)?;
     let mut out = serde_json::to_string_pretty(&root)?;
     out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
+    atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }
 
@@ -844,7 +912,7 @@ fn cursor_uninstall(path: &Path, sentinel: &str) -> Result<bool> {
     }
     let mut out = serde_json::to_string_pretty(&root)?;
     out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
+    atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))?;
     Ok(true)
 }
 
@@ -988,7 +1056,7 @@ fn opencode_install(path: &Path, commands: &[(&str, String)], sentinel: &str) ->
         }
     }
     ensure_parent(path)?;
-    std::fs::write(path, opencode_plugin_source(commands, sentinel))
+    atomic_config_write(path, opencode_plugin_source(commands, sentinel))
         .with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }
@@ -1096,7 +1164,7 @@ fn grok_install(
     ensure_parent(path)?;
     let mut out = serde_json::to_string_pretty(&root)?;
     out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
+    atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }
 
@@ -1144,7 +1212,7 @@ fn grok_uninstall(path: &Path, sentinel: &str) -> Result<bool> {
     }
     let mut out = serde_json::to_string_pretty(&root)?;
     out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
+    atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))?;
     Ok(true)
 }
 
@@ -1211,7 +1279,7 @@ fn antigravity_install(path: &Path, commands: &[(&str, String)], sentinel: &str)
     ensure_parent(path)?;
     let mut out = serde_json::to_string_pretty(&root)?;
     out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
+    atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }
 
@@ -1271,7 +1339,7 @@ fn antigravity_uninstall(path: &Path, sentinel: &str) -> Result<bool> {
     }
     let mut out = serde_json::to_string_pretty(&root)?;
     out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
+    atomic_config_write(path, out).with_context(|| format!("writing {}", path.display()))?;
     Ok(true)
 }
 
@@ -1326,6 +1394,58 @@ mod tests {
         }
     }
     use super::*;
+
+    #[test]
+    fn failed_temporary_write_preserves_json_and_toml() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        for (name, original) in [
+            ("hooks.json", "{\"user\":true}\n"),
+            ("config.toml", "notify = [\"user\"]\n"),
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, original).unwrap();
+            assert!(atomic_config_write_with(&path, |file| {
+                file.write_all(b"partial")?;
+                Err(std::io::Error::other("injected short write"))
+            })
+            .is_err());
+            assert_eq!(read(&path), original);
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_config_write_preserves_symlink_and_permissions() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("config");
+        std::fs::write(&target, "old").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+        symlink(&target, &link).unwrap();
+        atomic_config_write(&link, "new").unwrap();
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(read(&target), "new");
+        let absent = dir.path().join("absent");
+        let dangling = dir.path().join("dangling");
+        symlink("absent", &dangling).unwrap();
+        atomic_config_write(&dangling, "created").unwrap();
+        assert_eq!(read(&absent), "created");
+        assert!(std::fs::symlink_metadata(&dangling)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            std::fs::metadata(target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+    }
 
     fn home(dir: &tempfile::TempDir) -> ConfigHome {
         ConfigHome {
@@ -1463,6 +1583,27 @@ mod tests {
                 original,
                 "unchanged hooks must keep their trust ordinals and original formatting"
             );
+        }
+    }
+
+    #[test]
+    fn codex_uninstall_preserves_user_notify_replacement() {
+        for sentinel in [DEV, RELEASE] {
+            let dir = tempfile::tempdir().unwrap();
+            let h = home(&dir);
+            let config = codex_config_toml(&h);
+            std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+            std::fs::write(&config, "notify = [\"old\"]\n").unwrap();
+            install(proto::AgentKind::Codex, &h, &launcher(), sentinel).unwrap();
+            let text = format!("notify = [\"replacement\"]\n{}", read(&config));
+            std::fs::write(&config, text).unwrap();
+            let error = uninstall(proto::AgentKind::Codex, &h, sentinel).unwrap_err();
+            assert!(format!("{error:#}").contains("active user replacement"));
+            let saved = read(&config);
+            let parsed = saved.parse::<toml::Value>().unwrap();
+            assert_eq!(parsed["notify"][0].as_str(), Some("replacement"));
+            assert!(saved.contains(&parked_marker(sentinel)));
+            assert!(!read(&config_path(proto::AgentKind::Codex, &h).unwrap()).contains(sentinel));
         }
     }
 

@@ -3,7 +3,7 @@ import { FilesSurfaceClass, filesSurfaceClass } from '../ui/FilesSurfaceElement'
 import type { ComponentProps } from 'react'
 import type { DirEntry } from '../../env'
 import type { GitFileStatus, HoustonClient } from '../../houston/client'
-import { basename, reloadBuffer } from '../../editor/buffers'
+import { basename, checkBufferRevision, getBuffer, reloadBuffer } from '../../editor/buffers'
 import { updateFilesDiffGutter } from '../../editor/filesDiffGutter'
 import { parseFileDiffLines, type FileDiffLines } from './fileDiffLines'
 import { EditorSurfaceBody } from '../EditorSurface'
@@ -29,6 +29,7 @@ import { Icon } from '../ui/Icon'
 import '../ui/filesSurface.css'
 
 export interface FilesSurfaceProps {
+  documentOwnerId?: string
   workspaceRoot: string
   panelWidth: number
   onOpenInEditor?: (path: string) => void
@@ -247,6 +248,7 @@ function applyTreeKeyAction(
 
 export function FilesSurface({
   workspaceRoot,
+  documentOwnerId,
   panelWidth,
   onSendPath,
   onOpenFile,
@@ -257,7 +259,7 @@ export function FilesSurface({
   className = '',
 }: FilesSurfaceProps): React.JSX.Element {
   const root = workspaceRoot
-  const files = useFileTabs(root)
+  const files = useFileTabs(root, documentOwnerId)
   const [entries, setEntries] = useState<Map<string, DirEntry[]>>(new Map())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
@@ -435,7 +437,13 @@ export function FilesSurface({
       refresh()
       setFlashPaths(new Set(event.paths))
       window.setTimeout(() => setFlashPaths(new Set()), 900)
-      if (path && event.paths.includes(path)) {
+      if (path && event.rescan) {
+        void checkBufferRevision(root, path).then(() => {
+          if (disposed) return
+          setDiskChanged(Boolean(getBuffer(root, path)?.conflict))
+          if (client && relativeFilePath && isGitRepository) client.gitDiff(root, relativeFilePath)
+        }).catch((error: unknown) => { if (!disposed) onError?.(String(error)) })
+      } else if (path && event.paths.includes(path)) {
         if (files.dirty) setDiskChanged(true)
         else void reloadBuffer(root, path)
           .then(() => {

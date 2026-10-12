@@ -141,7 +141,7 @@ export function useEditorSurface(workspaceDir: string, path: string): EditorSurf
     setPreviewState({ kind: 'loading' })
     const releaseBuffer = retainBuffer(workspaceDir, path)
     import('./buffers')
-      .then(({ ensureBuffer }) => ensureBuffer(workspaceDir, path, save))
+      .then(({ ensureBuffer }) => cancelled ? undefined : ensureBuffer(workspaceDir, path, save))
       .then(() => {
         if (cancelled) return
         setPreviewState(null)

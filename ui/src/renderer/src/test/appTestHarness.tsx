@@ -43,7 +43,7 @@ let kindHandlers: Map<string, Set<(msg: never) => void>> = new Map()
 // overrides the mock.
 let rosterCwds: Map<number, string> = new Map()
 
-function makeFakeClient(): HoustonClientType {
+export function makeFakeClient(): HoustonClientType {
   kindHandlers = new Map()
   const base = {
     subscribeAll: ((handler: (msg: ServerMsg) => void) => {
@@ -206,6 +206,8 @@ function getLastClient(): HoustonClientType {
   if (!lastClient) throw new Error('no HoustonClient connected yet — call renderReadyApp() first')
   return lastClient
 }
+
+export function connectionMock(): typeof connectMock { return connectMock }
 
 export function currentClient(): HoustonClientType {
   return getLastClient()

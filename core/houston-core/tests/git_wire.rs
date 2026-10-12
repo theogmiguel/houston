@@ -507,6 +507,52 @@ async fn oversized_diff_sets_the_truncation_flag() {
     assert!(patch.len() <= 512 * 1024);
 }
 
+#[tokio::test]
+async fn excessive_git_output_reports_its_limit_and_the_socket_remains_usable() {
+    let (addr, _state) = start_daemon().await;
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    std::fs::write(
+        repo.path().join("huge.txt"),
+        "content line\n".repeat(800_000),
+    )
+    .unwrap();
+    let dir = repo.path().display().to_string();
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitDiff {
+            dir: dir.clone(),
+            path: Some("huge.txt".into()),
+            base: None,
+        },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::Error { message, .. } => {
+                assert!(message.contains("combined output limit"), "{message}");
+                assert!(message.contains("8388608"), "{message}");
+                break;
+            }
+            proto::ServerMsg::GitDiff { .. } => {
+                panic!("capture overflow must refuse, not claim a complete result")
+            }
+            _ => {}
+        }
+    }
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitStatus {
+            dir: dir.clone(),
+            base: None,
+        },
+    )
+    .await;
+    assert_eq!(expect_git_status(&mut ws).await.dir, dir);
+}
+
 // A directory without git is a normal workspace, not a failure: an error
 // envelope here surfaces as an app-wide error on every Changes refresh.
 #[tokio::test]

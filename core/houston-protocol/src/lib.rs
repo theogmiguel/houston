@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 138;
+pub const PROTOCOL_VERSION: u32 = 139;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -3331,6 +3331,9 @@ pub enum ClientMsg {
         protocol: u32,
     },
     SessionCreate {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        request: Option<u32>,
         agent: AgentKind,
         project_dir: String,
         #[serde(default)]
@@ -4576,6 +4579,11 @@ pub enum ServerMsg {
         snapshot_attach: bool,
         #[serde(default)]
         snapshot_format_version: u32,
+    },
+    SessionCreateResult {
+        request: u32,
+        info: Option<SessionInfo>,
+        error: Option<String>,
     },
     SessionCreated {
         info: SessionInfo,

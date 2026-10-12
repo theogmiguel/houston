@@ -92,20 +92,21 @@ pub async fn serve(
     };
     let local = listener.local_addr()?;
     let (tx, rx) = tokio::sync::mpsc::channel(MAX_CONNECTIONS);
-    let handshakes = tokio::spawn(accept_tls(
+    // JoinSet aborts its task on every exit, including cancellation by the
+    // daemon's bounded drain. Dropping a JoinHandle would detach the listener.
+    let mut accept_loop = tokio::task::JoinSet::new();
+    accept_loop.spawn(accept_tls(
         listener,
         tokio_rustls::TlsAcceptor::from(tls),
         Arc::new(Semaphore::new(MAX_CONNECTIONS)),
         tx,
     ));
-    let served = axum::serve(
+    axum::serve(
         TlsListener { rx, local },
         router(daemon).into_make_service_with_connect_info::<Peer>(),
     )
     .with_graceful_shutdown(shutdown)
-    .await;
-    handshakes.abort();
-    served
+    .await
 }
 
 type TlsConnection = tokio_rustls::server::TlsStream<IdleTimeoutStream>;
@@ -119,12 +120,27 @@ async fn accept_tls(
     permits: Arc<Semaphore>,
     ready: tokio::sync::mpsc::Sender<(TlsConnection, SocketAddr)>,
 ) {
+    let mut handshakes = tokio::task::JoinSet::new();
     loop {
-        let permit = Arc::clone(&permits)
-            .acquire_owned()
-            .await
-            .expect("the connection semaphore is never closed");
-        let (stream, addr) = match listener.accept().await {
+        // Completed entries also count toward this bound until reaped. Keep
+        // reaping while idle or out of permits, rather than retaining history.
+        while handshakes.try_join_next().is_some() {}
+        if handshakes.len() >= MAX_CONNECTIONS {
+            let _ = handshakes.join_next().await;
+            continue;
+        }
+        let accepted = tokio::select! {
+            biased;
+            _ = handshakes.join_next(), if !handshakes.is_empty() => continue,
+            accepted = async {
+                let permit = Arc::clone(&permits)
+                    .acquire_owned()
+                    .await
+                    .expect("the connection semaphore is never closed");
+                listener.accept().await.map(|(stream, addr)| (stream, addr, permit))
+            } => accepted,
+        };
+        let (stream, addr, permit) = match accepted {
             Ok(accepted) => accepted,
             Err(e) => {
                 tracing::debug!("remote access: accept failed: {e}");
@@ -135,7 +151,9 @@ async fn accept_tls(
         let _ = stream.set_nodelay(true);
         let acceptor = acceptor.clone();
         let ready = ready.clone();
-        tokio::spawn(async move {
+        // Aborting the accept loop drops this set, closing every handshake
+        // still in progress (including one waiting to send a ready connection).
+        handshakes.spawn(async move {
             match acceptor
                 .accept(IdleTimeoutStream::new(stream, permit))
                 .await

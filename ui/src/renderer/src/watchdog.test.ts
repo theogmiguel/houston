@@ -96,6 +96,9 @@ beforeEach(() => {
   installFakeMatchMedia()
   setVisibility('visible')
   document.hasFocus = vi.fn().mockReturnValue(true)
+  invokeMock.mockImplementation((command: string) =>
+    Promise.resolve(command === 'wd_paint_generation' ? 7 : undefined)
+  )
   invokeMock.mockClear()
   listenMock.mockClear()
   listenHandlers.clear()
@@ -139,7 +142,8 @@ describe('installWatchdog paint probe, under Tauri', () => {
     expect(invokeMock).toHaveBeenCalledWith('wd_paint_report', {
       ok: false,
       rafGapMs: 5000,
-      visibility: 'visible'
+      visibility: 'visible',
+      generation: 7
     })
     const call = invokeMock.mock.calls.find((c) => c[0] === 'wd_paint_report')
     expect(call?.[1]).toHaveProperty('rafGapMs')
@@ -268,7 +272,8 @@ describe('installWatchdog wd:wake / wd:dpr / wd:reload-imminent, under Tauri', (
     expect(invokeMock).toHaveBeenCalledWith('wd_paint_report', {
       ok: false,
       rafGapMs: 10_000,
-      visibility: 'visible'
+      visibility: 'visible',
+      generation: 7
     })
 
     dispose()
@@ -285,7 +290,7 @@ describe('installWatchdog wd:wake / wd:dpr / wd:reload-imminent, under Tauri', (
     handler?.({ payload: { reason: 'test', in_ms: 5000 } })
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('reload imminent'))
-    expect(invokeMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalledWith('wd_request_reload', expect.anything())
 
     warnSpy.mockRestore()
     dispose()
@@ -350,7 +355,7 @@ describe('installWatchdog condition 2 — focus/recent interaction (spec §7 row
     await flushMicrotasks()
 
     await vi.advanceTimersByTimeAsync(6000)
-    expect(invokeMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalledWith('wd_paint_report', expect.anything())
 
     window.dispatchEvent(new Event('pointerdown'))
     await flushMicrotasks()
@@ -371,7 +376,7 @@ describe('installWatchdog condition 2 — focus/recent interaction (spec §7 row
     await flushMicrotasks()
 
     await vi.advanceTimersByTimeAsync(6000)
-    expect(invokeMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalledWith('wd_paint_report', expect.anything())
 
     hasFocusMock.mockReturnValue(true)
     window.dispatchEvent(new Event('focus'))
@@ -402,7 +407,8 @@ describe('installWatchdog reports the measured gap, not the armed timeout (spec 
     expect(invokeMock).toHaveBeenCalledWith('wd_paint_report', {
       ok: false,
       rafGapMs: 8000,
-      visibility: 'visible'
+      visibility: 'visible',
+      generation: 7
     })
 
     nowSpy.mockRestore()
@@ -419,7 +425,7 @@ describe('installWatchdog hidden without a visibilitychange event (spec §8.3 it
     setVisibility('hidden')
     await vi.advanceTimersByTimeAsync(5000)
 
-    expect(invokeMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalledWith('wd_paint_report', expect.anything())
 
     dispose()
   })
@@ -493,5 +499,45 @@ describe('requestReload (spec §8.3 item 6)', () => {
     await requestReload('user-pressed-reload')
 
     expect(invokeMock).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('paint report page ownership', () => {
+  it('reports the first successful frame in each page generation', async () => {
+    setTauriPresent(true)
+    const dispose = installWatchdog()
+    await flushMicrotasks()
+    const first = [...rafCallbacks.values()][0]
+    rafCallbacks.clear()
+    first?.(0)
+    await flushMicrotasks()
+    expect(invokeMock).toHaveBeenCalledWith('wd_paint_report', expect.objectContaining({ ok: true, generation: 7 }))
+    invokeMock.mockClear()
+    listenHandlers.get('wd:paint-generation')?.({ payload: { generation: 8 } })
+    const next = [...rafCallbacks.values()][0]
+    rafCallbacks.clear()
+    next?.(0)
+    await flushMicrotasks()
+    expect(invokeMock).toHaveBeenCalledWith('wd_paint_report', expect.objectContaining({ ok: true, generation: 8 }))
+    dispose()
+  })
+
+  it('does not replace a navigation generation with a late installation receipt', async () => {
+    setTauriPresent(true)
+    let resolve: (generation: number) => void = () => {}
+    invokeMock.mockImplementation((command: string) => command === 'wd_paint_generation'
+      ? new Promise<number>((done) => { resolve = done }) : Promise.resolve())
+    const dispose = installWatchdog()
+    await flushMicrotasks()
+    listenHandlers.get('wd:paint-generation')?.({ payload: { generation: 8 } })
+    resolve(7)
+    await flushMicrotasks()
+    const frame = [...rafCallbacks.values()][0]
+    rafCallbacks.clear()
+    frame?.(0)
+    await flushMicrotasks()
+    expect(invokeMock).toHaveBeenCalledWith('wd_paint_report', expect.objectContaining({ ok: true, generation: 8 }))
+    dispose()
   })
 })

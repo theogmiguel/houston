@@ -324,3 +324,71 @@ async fn finished_notification_click_opens_the_session_fragment() {
     );
     daemon.kill(info.id).unwrap();
 }
+
+#[tokio::test]
+async fn status_churn_has_one_owned_deadline_and_close_releases_it() {
+    let (ntfy, inbox) = fixture_ntfy().await;
+    let (daemon, _state) = notifying_daemon(ntfy, 600, ConfigPatch::default()).await;
+    let (info, _dir) = pane(&daemon);
+    for _ in 0..300 {
+        daemon.handle_hook(info.id, "UserPromptSubmit", None);
+        daemon.handle_hook(info.id, "PermissionRequest", None);
+        tokio::task::yield_now().await;
+        assert!(daemon.remote_pending_notifications_for_test() <= 1);
+    }
+    // Allow the bounded event queue to drain, then schedule a fresh current event.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    daemon.handle_hook(info.id, "UserPromptSubmit", None);
+    daemon.handle_hook(info.id, "PermissionRequest", None);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while daemon.remote_pending_notifications_for_test() == 0 {
+        assert!(tokio::time::Instant::now() < deadline);
+        tokio::task::yield_now().await;
+    }
+    daemon.close(info.id).unwrap();
+    assert_eq!(daemon.remote_pending_notifications_for_test(), 0);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(daemon.remote_pending_notifications_for_test(), 0);
+    assert!(inbox.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn pending_finished_notification_obeys_the_current_policy_and_topic() {
+    let (ntfy, inbox) = fixture_ntfy().await;
+    let (daemon, _state) = notifying_daemon(
+        ntfy,
+        1,
+        ConfigPatch {
+            notify_finished: Some(true),
+            ..Default::default()
+        },
+    )
+    .await;
+    let (info, _dir) = pane(&daemon);
+    daemon.handle_hook(info.id, "UserPromptSubmit", None);
+    daemon.handle_hook(info.id, "Stop", None);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    daemon
+        .remote_configure(ConfigPatch {
+            notify_finished: Some(false),
+            ..Default::default()
+        })
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(1400)).await;
+    assert!(
+        inbox.lock().unwrap().is_empty(),
+        "disabled finished notifications must stay quiet"
+    );
+    daemon.handle_hook(info.id, "UserPromptSubmit", None);
+    daemon.handle_hook(info.id, "PermissionRequest", None);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    daemon
+        .remote_configure(ConfigPatch {
+            ntfy_url: Some(format!("http://{ntfy}/new-topic")),
+            ..Default::default()
+        })
+        .unwrap();
+    wait_for_posts(&inbox, 1).await;
+    assert_eq!(inbox.lock().unwrap()[0].path, "/new-topic");
+    daemon.close(info.id).unwrap();
+}

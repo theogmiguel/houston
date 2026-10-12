@@ -36,6 +36,12 @@ pub(crate) fn init(conn: &Connection) -> Result<()> {
     );
     CREATE INDEX IF NOT EXISTS prompt_intents_target ON prompt_intents(target, sequence);",
     )?;
+    add_column_if_missing(
+        conn,
+        "prompt_intents",
+        "named_adoption",
+        "named_adoption INTEGER NOT NULL DEFAULT 0",
+    )?;
     Ok(())
 }
 
@@ -49,6 +55,7 @@ pub struct InstructionRow {
     pub body: String,
     pub touched: bool,
     pub adopted: bool,
+    pub named_adoption: bool,
     pub completed: bool,
     pub dispatch_prompt_id: Option<String>,
     pub interrupt_sent: bool,
@@ -69,7 +76,7 @@ impl InstructionRow {
 
 const SELECT: &str = "SELECT sequence, id, origin, target, context, mode, state, body,
     request_id, created_at, updated_at, hold_reason, touched, adopted, completed,
-    dispatch_prompt_id, interrupt_sent, restart_ready FROM prompt_intents";
+    dispatch_prompt_id, interrupt_sent, restart_ready, named_adoption FROM prompt_intents";
 
 fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstructionRow> {
     fn decode<T: serde::de::DeserializeOwned>(
@@ -104,6 +111,7 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstructionRow> {
         body,
         touched: row.get(12)?,
         adopted: row.get(13)?,
+        named_adoption: row.get(18)?,
         completed: row.get(14)?,
         dispatch_prompt_id: row.get(15)?,
         interrupt_sent: row.get(16)?,
@@ -278,6 +286,14 @@ impl Db {
 
     pub fn instruction_restart_ready(&self, target: u32, now: u64) -> Result<()> {
         self.conn.lock().expect("db lock").execute("UPDATE prompt_intents SET restart_ready=1,updated_at=?2 WHERE target=?1 AND state='queued' AND interrupt_sent=1", params![target,now])?;
+        Ok(())
+    }
+
+    pub fn instruction_record_named_adoption(&self, id: &str, now: u64) -> Result<()> {
+        self.conn.lock().expect("db lock").execute(
+            "UPDATE prompt_intents SET named_adoption=1,updated_at=?2 WHERE id=?1 AND state IN ('uncertain','delivered')",
+            params![id, now],
+        )?;
         Ok(())
     }
 
