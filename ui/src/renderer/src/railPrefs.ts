@@ -6,7 +6,7 @@ export type RailCardMode = 'detailed' | 'compact'
 export type RailTagDisplay = 'icon' | 'dots' | 'chips'
 export type AgentActivityMode = 'compact' | 'full'
 export type RailCardProperty =
-  'status' | 'unread' | 'checkout' | 'pr' | 'ci' | 'diff' | 'tags' | 'task' | 'inline-agents' | 'context' | 'last-message'
+  'status' | 'unread' | 'checkout' | 'pr' | 'diff' | 'tags' | 'inline-agents' | 'last-message'
 export type RailFilters = { hideIdle: boolean; hideDefaultBranch: boolean; hideEmptyGrids: boolean }
 export type RailPrefs = {
   v: 1
@@ -39,7 +39,7 @@ export const DETAILED_DEFAULT: RailCardProperty[] = [
   'tags',
   'inline-agents',
 ]
-export const COMPACT_DEFAULT: RailCardProperty[] = ['status', 'unread']
+export const COMPACT_DEFAULT: RailCardProperty[] = ['status', 'unread', 'tags']
 
 export const DEFAULT_RAIL_PREFS: RailPrefs = {
   v: 1,
@@ -62,12 +62,10 @@ const properties = new Set<RailCardProperty>([
   'unread',
   'checkout',
   'pr',
-  'ci',
   'diff',
   'tags',
   'tags',
   'inline-agents',
-  'context',
   'last-message',
 ])
 function object(value: unknown): value is Record<string, unknown> {

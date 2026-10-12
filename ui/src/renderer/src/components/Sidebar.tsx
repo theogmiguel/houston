@@ -3,12 +3,9 @@ import type { AgentAttention } from '../useAgentAttention'
 import { HintKey } from './ui/ShortcutHint'
 import { SettingsNavigationGroup } from './ui/NavigationRailFooter'
 import { GLYPH_FOR_VERB } from './verbGlyphs'
-import { attentionStatus, needsUserInput } from '../sessionAttention'
 import { MascotMount } from '../mascot/MascotMount'
-import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore';
 import type { TagInfo } from "../houston/generated/TagInfo";
 import {
-  Fragment,
   Suspense,
   lazy,
   useEffect,
@@ -18,7 +15,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { HoustonClient, PrInfo, SessionInfo, Workspace } from "../houston/client";
-import { isLive } from "../houston/client";
 import type { ChromeTheme } from "../theme";
 import {
   setSettingsOpen,
@@ -95,8 +91,7 @@ import {
   type RailView,
 } from "../railView";
 import { Button } from "./ui/Button";
-import { HorizontalRule, WorkspaceGroupDivider, WorkspaceGroupLabel } from "./ui/WorkspaceGroupLabel";
-import { NavigationRailFooter, NavigationRailScroll, WorkspaceList, SettingsNavigation } from "./ui/NavigationRailFooter";
+import { NavigationRailFooter, NavigationRailScroll, SettingsNavigation } from "./ui/NavigationRailFooter";
 import {
   NavigationRail,
   NavigationRailSection,
@@ -127,12 +122,9 @@ import {
   WorkspaceTreeLabel,
   WorkspaceTreeActions,
   WorkspaceTreeAuxButton,
-  WorkspaceDropIndicator,
   EmptyListMessage,
 } from "./ui/WorkspaceTreeRow";
 import { TextInput } from "./ui/TextInput";
-import { Text } from "./ui/Text";
-import { ActivityDot } from "./ui/ActivityDot";
 import {
   canReorderRailGrid,
   GRID_PINNED_KEY,
@@ -221,18 +213,6 @@ function RailOptionsMenuHost({ anchor, prefs, onChange, onClose, selectedTagIds,
 }): React.JSX.Element | null {
   if (!anchor) return null;
   return <RailOptionsMenu anchor={anchor} prefs={prefs} onChange={onChange} onClose={onClose} selectedTagIds={selectedTagIds} selectedTagColors={selectedTagColors} onClearTagFilter={onClearTagFilter} />;
-}
-
-function RailTreeContent({ groupBy, virtualItems, compact, dragging, renderWorkspaceContent }: {
-  groupBy: RailPrefs['groupBy'];
-  virtualItems: RailVirtualItem[];
-  compact: boolean;
-  dragging: boolean;
-  renderWorkspaceContent: () => React.ReactNode;
-}): React.JSX.Element {
-  void groupBy;
-  void renderWorkspaceContent;
-  return <RailVirtualList items={virtualItems} compact={compact} dragging={dragging} />;
 }
 
 function WorkspaceRailGroupRow({
@@ -894,182 +874,6 @@ function PinIndicator(): React.JSX.Element {
   return <RailPinnedIndicator />;
 }
 
-function CollapsedGridsRow({
-  w,
-  i,
-  color,
-  renamingThis,
-  onRenameSubmit,
-  onRenameCancel,
-  on,
-  pinned,
-  dragPath,
-  dropBefore,
-  dragActiveRef,
-  startWsDrag,
-  selected,
-  onSelect,
-  toggleWsOpen,
-  openMenu,
-}: {
-  w: Workspace;
-  i: number;
-  color: string;
-  on: boolean;
-  pinned: boolean;
-  dragPath: string | null;
-  dropBefore: React.ReactNode;
-  dragActiveRef: React.RefObject<boolean>;
-  startWsDrag: (e: React.PointerEvent, path: string) => void;
-  selected: string;
-  onSelect: (path: string) => void;
-  toggleWsOpen: (path: string) => void;
-  openMenu: (e: React.MouseEvent, w: Workspace, color: string) => void;
-  renamingThis: boolean;
-  onRenameSubmit: (path: string, name: string) => void;
-  onRenameCancel: () => void;
-}): React.JSX.Element {
-  if (renamingThis) {
-    return (
-      <Fragment>
-        {dropBefore}
-        <WorkspaceRenameField
-          w={w}
-          i={i}
-          color={color}
-          onRenameSubmit={onRenameSubmit}
-          onRenameCancel={onRenameCancel}
-        />
-      </Fragment>
-    );
-  }
-  return (
-    <Fragment>
-      {dropBefore}
-      <Tooltip label={w.path}>
-        <WorkspaceTreeRow
-          kind="tree"
-          dragging={dragPath !== null}
-          dragged={dragPath === w.path}
-          role="button"
-          tabIndex={0}
-          aria-label={w.path}
-          data-ws-idx={i}
-          data-testid="ws-disclosure"
-          aria-current={on ? "true" : undefined}
-          aria-expanded={false}
-          data-dragging={dragPath === w.path || undefined}
-          onPointerDown={(e) => {
-            dragActiveRef.current = false;
-            if (e.button !== 0) return;
-            startWsDrag(e, w.path);
-          }}
-          onClick={() => {
-            if (dragActiveRef.current) {
-              dragActiveRef.current = false;
-              return;
-            }
-            if (selected !== w.path) onSelect(w.path);
-            toggleWsOpen(w.path);
-          }}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" && e.key !== " ") return;
-            e.preventDefault();
-            if (selected !== w.path) onSelect(w.path);
-            toggleWsOpen(w.path);
-          }}
-          onContextMenu={(e) => openMenu(e, w, color)}
-        >
-          <Button
-            type="button"
-            variant="disclosure-icon"
-            aria-label={`Expand ${w.name}`}
-            data-testid="ws-chevron"
-            className="flex-none"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleWsOpen(w.path);
-            }}
-          >
-            <Icon glyph={IconChevronRight} role="small" opacity="subtle" />
-          </Button>
-          <Icon glyph={IconFolder} role="ui" opacity="muted" />
-          <WorkspaceTreeLabel>
-            {w.name}
-          </WorkspaceTreeLabel>
-          <EnvironmentBadge path={w.path} />
-          <WorkspaceTreeActions>
-            {pinned && <PinIndicator />}
-          </WorkspaceTreeActions>
-        </WorkspaceTreeRow>
-      </Tooltip>
-    </Fragment>
-  );
-}
-
-type GridLifecycle =
-  | "starting"
-  | "working"
-  | "needs-input"
-  | "idle"
-  | "unavailable"
-  | "stopped";
-
-function gridLifecycle(sessions: SessionInfo[]): {
-  state: GridLifecycle;
-  label: string;
-} {
-  const live = sessions.filter((session) => isLive(session.state));
-  if (live.length === 0) return { state: "stopped", label: "No live panes" };
-
-  const count = (status: SessionInfo["status"]): number =>
-    live.filter((session) => attentionStatus(session) === status).length;
-  const needsInput = live.filter((session) => needsUserInput(session)).length;
-  const working = count("working");
-  const starting = count("spawning");
-  const idle = count("idle");
-  const unavailable = count("unavailable") + count(null) + count(undefined);
-  const state: GridLifecycle = needsInput
-    ? "needs-input"
-    : working
-      ? "working"
-      : starting
-        ? "starting"
-        : unavailable
-          ? "unavailable"
-          : "idle";
-  const parts = [
-    needsInput ? `${needsInput} need input` : "",
-    working ? `${working} working` : "",
-    starting ? `${starting} starting` : "",
-    idle ? `${idle} ready` : "",
-    unavailable ? `${unavailable} status unavailable` : "",
-  ].filter(Boolean);
-  return { state, label: parts.join(" · ") };
-}
-
-function GridStateDot({
-  state: stateProp = "stopped",
-  label: labelProp = "No live panes",
-  sessionIds,
-}: {
-  state?: GridItem["state"];
-  label?: string;
-  sessionIds?: number[];
-}): React.JSX.Element {
-  const members = useSessionsSelector(
-    (sessions) => (sessionIds ?? []).flatMap((id) => sessions.get(id) ?? []),
-    (a, b) => a === b || (a !== null && b !== null && shallowArrayEqual(a, b)),
-    null,
-  );
-  const lifecycle = members !== null && sessionIds !== undefined ? gridLifecycle(members) : null;
-  const state = lifecycle?.state ?? stateProp;
-  const label = lifecycle?.label ?? labelProp;
-  const active = state === "starting" || state === "working";
-  return <Tooltip label={label}><ActivityDot state={state} label={label} active={active} /></Tooltip>;
-}
-
 // A tab whose own and panes' tags carry no active tag leaves the rail. Unknown
 // pane membership (paneTagIds undefined) stays: never hide what it cannot see.
 function hiddenByTagFilter(
@@ -1099,258 +903,6 @@ function workspaceCarriesTag(
   );
 }
 
-function ExpandedGridsRow({
-  w,
-  i,
-  color,
-  renamingThis,
-  onRenameSubmit,
-  onRenameCancel,
-  on,
-  pinned,
-  grids,
-  activeTagIds,
-  tagById,
-  dragPath,
-  dropBefore,
-  dragActiveRef,
-  startWsDrag,
-  selected,
-  onSelect,
-  toggleWsOpen,
-  openMenu,
-  onNewWorkspaceSession,
-  selectedGridId,
-  gridRenaming,
-  onRenameGrid,
-  onRemoveGrid,
-  onSelectGrid,
-  openGridMenu,
-  setGridRenaming,
-  checkoutBranches,
-  sessions,
-  railDiffByDir,
-  railPrByDir,
-  railPrefs,
-  pinnedGridIds,
-  onOpenInspector,
-}: {
-  w: Workspace;
-  i: number;
-  color: string;
-  on: boolean;
-  pinned: boolean;
-  grids: GridItem[];
-  activeTagIds: number[];
-  tagById: ReadonlyMap<number, TagInfo>;
-  dragPath: string | null;
-  dropBefore: React.ReactNode;
-  dragActiveRef: React.RefObject<boolean>;
-  startWsDrag: (e: React.PointerEvent, path: string) => void;
-  selected: string;
-  onSelect: (path: string) => void;
-  toggleWsOpen: (path: string) => void;
-  openMenu: (e: React.MouseEvent, w: Workspace, color: string) => void;
-  onNewWorkspaceSession?: (path: string) => void;
-  selectedGridId: string | null;
-  gridRenaming: { path: string; gridId: string } | null;
-  onRenameGrid?: (path: string, gridId: string, name: string) => void;
-  onRemoveGrid?: (path: string, gridId: string) => void;
-  onSelectGrid?: (path: string, gridId: string) => void;
-  openGridMenu: (
-    e: React.MouseEvent,
-    path: string,
-    grid: GridItem,
-    canRemove: boolean,
-  ) => void;
-  checkoutBranches: ReadonlyMap<number, string>;
-  sessions: SessionInfo[];
-  railDiffByDir: ReadonlyMap<string, RailDiffTotals>;
-  railPrByDir: ReadonlyMap<string, RailPrState>;
-  railPrefs: RailPrefs;
-  pinnedGridIds: ReadonlySet<string>;
-  onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
-  setGridRenaming: (v: { path: string; gridId: string } | null) => void;
-  renamingThis: boolean;
-  onRenameSubmit: (path: string, name: string) => void;
-  onRenameCancel: () => void;
-}): React.JSX.Element {
-  return (
-    <Fragment>
-      {dropBefore}
-      {renamingThis ? (
-        <WorkspaceRenameField
-          w={w}
-          i={i}
-          color={color}
-          onRenameSubmit={onRenameSubmit}
-          onRenameCancel={onRenameCancel}
-        />
-      ) : (
-      <Tooltip label={w.path}>
-        <WorkspaceTreeRow
-          kind="tree"
-          selected={on}
-          dragging={dragPath !== null}
-          dragged={dragPath === w.path}
-          role="button"
-          tabIndex={0}
-          aria-label={w.path}
-          data-ws-idx={i}
-          data-testid="ws-disclosure"
-          aria-current={on ? "true" : undefined}
-          aria-expanded={true}
-          data-dragging={dragPath === w.path || undefined}
-          onPointerDown={(e) => {
-            dragActiveRef.current = false;
-            if (e.button !== 0) return;
-            startWsDrag(e, w.path);
-          }}
-          onClick={() => {
-            if (dragActiveRef.current) {
-              dragActiveRef.current = false;
-              return;
-            }
-            if (selected === w.path) toggleWsOpen(w.path);
-            else onSelect(w.path);
-          }}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" && e.key !== " ") return;
-            e.preventDefault();
-            if (selected === w.path) toggleWsOpen(w.path);
-            else onSelect(w.path);
-          }}
-          onContextMenu={(e) => openMenu(e, w, color)}
-        >
-          <Button
-            type="button"
-            variant="disclosure-icon"
-            aria-label={`Collapse ${w.name}`}
-            data-testid="ws-chevron"
-            className="flex-none"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleWsOpen(w.path);
-            }}
-          >
-            <Icon glyph={IconChevronRight} role="small" rotated />
-          </Button>
-          <Icon glyph={IconFolder} role="ui" opacity="muted" />
-          <WorkspaceTreeLabel>
-            {w.name}
-          </WorkspaceTreeLabel>
-          <EnvironmentBadge path={w.path} />
-          <WorkspaceTreeActions>
-            {pinned && <PinIndicator />}
-          </WorkspaceTreeActions>
-          {onNewWorkspaceSession && (
-            <Tooltip label="New session">
-              <WorkspaceTreeAuxButton
-                type="button"
-                aria-label={`New session in ${w.name}`}
-                data-testid="ws-new-session"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNewWorkspaceSession(w.path);
-                }}
-              >
-                <Icon glyph={IconPlus} role="small" />
-              </WorkspaceTreeAuxButton>
-            </Tooltip>
-          )}
-        </WorkspaceTreeRow>
-      </Tooltip>
-      )}
-      {[...grids]
-        .sort((left, right) => Number(pinnedGridIds.has(gridStorageKey(w.path, right.id))) - Number(pinnedGridIds.has(gridStorageKey(w.path, left.id))))
-        .map((g, gridIndex, orderedGrids) => {
-        if (hiddenByTagFilter(g, activeTagIds)) return null;
-        const gridOn =
-          selected === w.path && selectedGridId === g.id;
-        const stateDot = (
-          <GridStateDot
-            sessionIds={g.sessionIds}
-            state={g.state ?? undefined}
-            label={g.statusLabel ?? undefined}
-          />
-        );
-        if (
-          gridRenaming?.path === w.path &&
-          gridRenaming.gridId === g.id &&
-          onRenameGrid
-        ) {
-          return (
-            <WorkspaceTreeRow
-              key={g.id}
-              kind="child"
-              data-testid="grid-row-renaming"
-            >
-              {stateDot}
-              <Icon glyph={IconGrid} role="ui" opacity="muted" />
-              <RenameInput
-                initial={g.name}
-                onSubmit={(name) => {
-                  setGridRenaming(null);
-                  const next = name.trim();
-                  if (next && next !== g.name) onRenameGrid(w.path, g.id, next);
-                }}
-                onCancel={() => setGridRenaming(null)}
-              />
-            </WorkspaceTreeRow>
-          );
-        }
-        const onRemove = onRemoveGrid ? () => onRemoveGrid(w.path, g.id) : undefined;
-        return (
-          <Fragment key={g.id}>
-            {gridIndex === 0 && pinnedGridIds.has(gridStorageKey(w.path, g.id)) && <WorkspaceGroupLabel>Pinned</WorkspaceGroupLabel>}
-            {gridIndex > 0 && !pinnedGridIds.has(gridStorageKey(w.path, g.id)) && pinnedGridIds.has(gridStorageKey(w.path, orderedGrids[gridIndex - 1]?.id ?? '')) && (
-              <WorkspaceGroupDivider><HorizontalRule /></WorkspaceGroupDivider>
-            )}
-            <Suspense
-              fallback={
-                <GridRailRowFallback
-                  name={g.name}
-                  selected={gridOn}
-                  jumpNumber={grids.indexOf(g) + 1}
-                  onSelect={() => onSelectGrid?.(w.path, g.id)}
-                  onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid))}
-                  onRemove={onRemove}
-                />
-              }
-            >
-              <LazyGridRailRow
-          key={g.id}
-          name={g.name}
-          workspace={w.path}
-          gridId={g.id}
-          selected={gridOn}
-          pinned={pinnedGridIds.has(gridStorageKey(w.path, g.id))}
-          paneIds={g.sessionIds ?? []}
-          fallbackSessions={sessions}
-          tags={(g.tagIds ?? []).flatMap((id) => tagById.get(id) ?? [])}
-          branches={checkoutBranches}
-          diffByDir={railDiffByDir}
-          prByDir={railPrByDir}
-          cardMode={railPrefs.cardMode}
-          tagDisplay={railPrefs.tagDisplay}
-          agentActivity={railPrefs.agentActivity}
-          properties={railPrefs.properties}
-          jumpNumber={grids.indexOf(g) + 1}
-          onSelect={() => onSelectGrid?.(w.path, g.id)}
-          onRemove={onRemove}
-          onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid))}
-          onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
-              />
-            </Suspense>
-          </Fragment>
-        );
-      })}
-    </Fragment>
-  );
-}
-
 function WorkspaceRenameField({
   w,
   i,
@@ -1377,125 +929,6 @@ function WorkspaceRenameField({
         onCancel={onRenameCancel}
       />
     </WorkspaceTreeRow>
-  );
-}
-
-function RenamingWorkspaceRow({
-  w,
-  i,
-  color,
-  dropBefore,
-  onRenameSubmit,
-  onRenameCancel,
-}: {
-  w: Workspace;
-  i: number;
-  color: string;
-  dropBefore: React.ReactNode;
-  onRenameSubmit: (path: string, name: string) => void;
-  onRenameCancel: () => void;
-}): React.JSX.Element {
-  return (
-    <Fragment>
-      {dropBefore}
-      <WorkspaceRenameField
-        w={w}
-        i={i}
-        color={color}
-        onRenameSubmit={onRenameSubmit}
-        onRenameCancel={onRenameCancel}
-      />
-    </Fragment>
-  );
-}
-
-function PlainWorkspaceRow({
-  w,
-  i,
-  color,
-  on,
-  pinned,
-  dragPath,
-  dropBefore,
-  dragActiveRef,
-  startWsDrag,
-  onSelect,
-  openMenu,
-  onRemoveWorkspace,
-}: {
-  w: Workspace;
-  i: number;
-  color: string;
-  on: boolean;
-  pinned: boolean;
-  dragPath: string | null;
-  dropBefore: React.ReactNode;
-  dragActiveRef: React.RefObject<boolean>;
-  startWsDrag: (e: React.PointerEvent, path: string) => void;
-  onSelect: (path: string) => void;
-  openMenu: (e: React.MouseEvent, w: Workspace, color: string) => void;
-  onRemoveWorkspace: (path: string) => void;
-}): React.JSX.Element {
-  return (
-    <Fragment>
-      {dropBefore}
-      <Tooltip label={w.path}>
-        <WorkspaceTreeRow
-          kind="plain"
-          selected={on}
-          dragging={dragPath !== null}
-          dragged={dragPath === w.path}
-          role="button"
-          tabIndex={0}
-          aria-label={w.path}
-          data-ws-idx={i}
-          aria-current={on ? "true" : undefined}
-          data-dragging={dragPath === w.path || undefined}
-          onPointerDown={(e) => {
-            dragActiveRef.current = false;
-            if (e.button !== 0) return;
-            startWsDrag(e, w.path);
-          }}
-          onClick={() => {
-            if (dragActiveRef.current) {
-              dragActiveRef.current = false;
-              return;
-            }
-            onSelect(w.path);
-          }}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" && e.key !== " ") return;
-            e.preventDefault();
-            onSelect(w.path);
-          }}
-          onContextMenu={(e) => openMenu(e, w, color)}
-        >
-          <Icon glyph={IconFolder} role="ui" opacity="muted" />
-          <WorkspaceTreeLabel size="md">
-            {w.name}
-          </WorkspaceTreeLabel>
-          <EnvironmentBadge path={w.path} />
-          <WorkspaceTreeActions>
-            {pinned && <PinIndicator />}
-            <Tooltip label="Close workspace (stops its agents)">
-              <WorkspaceTreeAuxButton
-                type="button"
-                aria-label="Close workspace (stops its agents)"
-                selected={on}
-                style={on ? { color } : undefined}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemoveWorkspace(w.path);
-                }}
-              >
-                <Icon glyph={IconClose} role="small" />
-              </WorkspaceTreeAuxButton>
-            </Tooltip>
-          </WorkspaceTreeActions>
-        </WorkspaceTreeRow>
-      </Tooltip>
-    </Fragment>
   );
 }
 
@@ -1798,13 +1231,11 @@ function RailTree({
   filteredWorkspaces,
   workspaces,
   pinnedWorkspaces,
-  pinnedCount,
   sessions,
   colorOf,
   gridsByWorkspace,
   activeTagIds,
   tagById,
-  dropIndex,
   dragPath,
   isWsOpen,
   dragActiveRef,
@@ -1824,7 +1255,6 @@ function RailTree({
   renaming,
   onRenameSubmit,
   onRenameCancel,
-  onRemoveWorkspace,
   onOpenInspector,
   checkoutBranches,
   railDiffByDir,
@@ -1853,13 +1283,11 @@ function RailTree({
   filteredWorkspaces: Workspace[];
   workspaces: Workspace[];
   pinnedWorkspaces: ReadonlySet<string>;
-  pinnedCount: number;
   sessions: SessionInfo[];
   colorOf: (path: string) => string;
   gridsByWorkspace: Record<string, GridItem[]>;
   activeTagIds: number[];
   tagById: ReadonlyMap<number, TagInfo>;
-  dropIndex: number | null;
   dragPath: string | null;
   isWsOpen: (path: string) => boolean;
   dragActiveRef: React.RefObject<boolean>;
@@ -1885,7 +1313,6 @@ function RailTree({
   renaming: string | null;
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
-  onRemoveWorkspace: (path: string) => void;
   checkoutBranches: ReadonlyMap<number, string>;
   railDiffByDir: ReadonlyMap<string, RailDiffTotals>;
   railPrByDir: ReadonlyMap<string, RailPrState>;
@@ -1896,7 +1323,6 @@ function RailTree({
   onClearTagFilter: () => void;
   railOptionsAnchor: HTMLElement | null;
   setRailOptionsAnchor: (anchor: HTMLElement | null) => void;
-  agentCount: number;
   onAddGrid?: (path: string) => void;
   suppressGridClickRef: React.RefObject<boolean>;
   onGridPointerDown: (event: React.PointerEvent, workspace: string, gridId: string) => void;
@@ -2241,145 +1667,7 @@ function RailTree({
       </RailTreeGroupHeader>
 
       <RailActiveTagFilter tags={activeTagIds.flatMap((id) => tagById.get(id) ?? [])} onClear={onClearTagFilter} />
-      <RailTreeContent groupBy={railPrefs.groupBy} virtualItems={virtualItems} compact={railPrefs.cardMode === 'compact'} dragging={dragPath !== null} renderWorkspaceContent={() => (
-        <WorkspaceList dragging={dragPath !== null}>
-          {filteredWorkspaces.map((w, i) => {
-            const color = colorOf(w.path);
-            const on = selected === w.path;
-            const grids = gridsByWorkspace[w.path];
-            const pinned = pinnedWorkspaces.has(w.path);
-            const dropBefore = dropIndex === i &&
-              dragPath !== null &&
-              dragPath !== w.path && (
-                <WorkspaceDropIndicator />
-              );
-            const groupLabel =
-              pinnedCount === 0 ? null : i === 0 ? (
-                <WorkspaceGroupLabel key="ws-group-pinned">Pinned</WorkspaceGroupLabel>
-              ) : i === pinnedCount ? (
-                <Fragment key="ws-group-folders">
-                  <WorkspaceGroupDivider
-                    data-testid="ws-pinned-divider"
-                    role="separator"
-                  >
-                    <HorizontalRule />
-                  </WorkspaceGroupDivider>
-                  <WorkspaceGroupLabel>Folders</WorkspaceGroupLabel>
-                </Fragment>
-              ) : null;
-            let row: React.JSX.Element;
-            if (grids && grids.length > 0) {
-              if (!isWsOpen(w.path)) {
-                row = (
-                  <CollapsedGridsRow
-                    w={w}
-                    i={i}
-                    color={color}
-                    renamingThis={renaming === w.path}
-                    onRenameSubmit={onRenameSubmit}
-                    onRenameCancel={onRenameCancel}
-                    on={on}
-                    pinned={pinned}
-                    dragPath={dragPath}
-                    dropBefore={dropBefore}
-                    dragActiveRef={dragActiveRef}
-                    startWsDrag={startWsDrag}
-                    selected={selected}
-                    onSelect={onSelect}
-                    toggleWsOpen={toggleWsOpen}
-                    openMenu={openMenu}
-                  />
-                );
-              } else {
-                row = (
-                  <ExpandedGridsRow
-                    w={w}
-                    i={i}
-                    color={color}
-                    renamingThis={renaming === w.path}
-                    onRenameSubmit={onRenameSubmit}
-                    onRenameCancel={onRenameCancel}
-                    on={on}
-                    pinned={pinned}
-                    grids={grids}
-                    activeTagIds={activeTagIds}
-                    tagById={tagById}
-                    dragPath={dragPath}
-                    dropBefore={dropBefore}
-                    dragActiveRef={dragActiveRef}
-                    startWsDrag={startWsDrag}
-                    selected={selected}
-                    onSelect={onSelect}
-                    toggleWsOpen={toggleWsOpen}
-                    openMenu={openMenu}
-                    onNewWorkspaceSession={onNewWorkspaceSession}
-                    selectedGridId={selectedGridId}
-                    gridRenaming={gridRenaming}
-                    onRenameGrid={onRenameGrid}
-                    onRemoveGrid={onRemoveGrid}
-                    onSelectGrid={onSelectGrid}
-                    openGridMenu={openGridMenu}
-                    setGridRenaming={setGridRenaming}
-                    checkoutBranches={checkoutBranches}
-                    sessions={sessions}
-                    railDiffByDir={railDiffByDir}
-                    railPrByDir={railPrByDir}
-                    railPrefs={railPrefs}
-                    pinnedGridIds={pinnedGridIds}
-                    onOpenInspector={onOpenInspector}
-                  />
-                );
-              }
-            } else if (renaming === w.path) {
-              row = (
-                <RenamingWorkspaceRow
-                  w={w}
-                  i={i}
-                  color={color}
-                  dropBefore={dropBefore}
-                  onRenameSubmit={onRenameSubmit}
-                  onRenameCancel={onRenameCancel}
-                />
-              );
-            } else {
-              row = (
-                <PlainWorkspaceRow
-                  w={w}
-                  i={i}
-                  color={color}
-                  on={on}
-                  pinned={pinned}
-                  dragPath={dragPath}
-                  dropBefore={dropBefore}
-                  dragActiveRef={dragActiveRef}
-                  startWsDrag={startWsDrag}
-                  onSelect={onSelect}
-                  openMenu={openMenu}
-                  onRemoveWorkspace={onRemoveWorkspace}
-                />
-              );
-            }
-            return (
-              <Fragment key={w.path}>
-                {groupLabel}
-                {row}
-              </Fragment>
-            );
-          })}
-          {dropIndex === filteredWorkspaces.length && dragPath !== null && (
-            <WorkspaceDropIndicator />
-          )}
-          {filteredWorkspaces.length === 0 && (
-            <EmptyListMessage>
-              {workspaces.length === 0
-                ? "No workspaces yet. The + above opens a git project folder."
-                : activeFilterCount > 0
-                  ? `No tab carries ${activeFilterCount === 1 ? "that tag" : "any of those tags"}. Clear the filter in Sidebar options.`
-                  : "No workspaces match your filter."}
-            </EmptyListMessage>
-          )}
-        </WorkspaceList>
-      )} />
+      <RailVirtualList items={virtualItems} compact={railPrefs.cardMode === 'compact'} dragging={dragPath !== null} />
     </NavigationRailSection>
   );
 }
@@ -2593,7 +1881,6 @@ export function Sidebar({
   };
 
   const [dragPath, setDragPath] = useState<string | null>(null);
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
   const dropIndexRef = useRef<number | null>(null);
   const dragActiveRef = useRef(false);
 
@@ -2608,7 +1895,6 @@ export function Sidebar({
         : Math.max(idx, pinnedCount);
     const setDrop = (idx: number | null): void => {
       dropIndexRef.current = idx;
-      setDropIndex(idx);
     };
     const move = (ev: PointerEvent): void => {
       if (!active) {
@@ -2983,7 +2269,6 @@ export function Sidebar({
             onClearTagFilter={() => setTagFilter([])}
             railOptionsAnchor={railOptionsAnchor}
             setRailOptionsAnchor={setRailOptionsAnchor}
-            agentCount={sessions.filter((session) => session.state === "running").length}
             suppressGridClickRef={suppressGridClickRef}
             gridDragId={gridDragId}
             gridDrop={gridDrop}
@@ -2996,13 +2281,11 @@ export function Sidebar({
             filteredWorkspaces={filteredWorkspaces}
             workspaces={workspaces}
             pinnedWorkspaces={pinnedWorkspaces}
-            pinnedCount={pinnedCount}
             sessions={sessions}
             colorOf={colorOf}
             gridsByWorkspace={gridsByWorkspace}
             activeTagIds={activeTagIds}
             tagById={tagById}
-            dropIndex={dropIndex}
             dragPath={dragPath}
             isWsOpen={isWsOpen}
             dragActiveRef={dragActiveRef}
@@ -3022,7 +2305,6 @@ export function Sidebar({
             renaming={renaming}
             onRenameSubmit={onRenameSubmit}
             onRenameCancel={onRenameCancel}
-            onRemoveWorkspace={onRemoveWorkspace}
           />
         )}
       </NavigationRailScroll>

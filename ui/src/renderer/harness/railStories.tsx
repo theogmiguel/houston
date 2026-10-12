@@ -39,7 +39,7 @@ function seedStorage(opts: { collapsed?: string[]; tagFilter?: number[]; cardMod
       tagDisplay: opts.tagDisplay ?? 'icon',
       agentActivity: 'compact',
       properties: opts.cardMode === 'compact'
-        ? ['status', 'unread']
+        ? ['status', 'unread', 'tags']
         : ['status', 'unread', 'checkout', 'pr', 'diff', ...(opts.showTags ? ['tags'] : []), 'inline-agents'],
       filters: { hideIdle: false, hideDefaultBranch: false, hideEmptyGrids: opts.showTags ?? false },
       collapsedGroups: [],

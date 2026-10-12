@@ -68,7 +68,7 @@ function mount({ tags = [], cardMode = 'detailed' }: { tags?: TagInfo[]; cardMod
       prByDir={new Map([['/work', { gh: 'ready', pr }]])}
       cardMode={cardMode}
       tagDisplay="icon"
-      properties={['status', 'unread', 'checkout', 'pr', 'ci', 'diff', 'task', 'inline-agents', 'tags']}
+      properties={['status', 'unread', 'checkout', 'pr', 'diff', 'inline-agents', 'tags']}
       jumpNumber={1}
       onSelect={select}
       onFocusPane={focus}

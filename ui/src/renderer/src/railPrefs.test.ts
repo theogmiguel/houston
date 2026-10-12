@@ -49,6 +49,11 @@ describe('rail preferences', () => {
     expect(prefs.properties).not.toContain('invalid')
   })
 
+  it('drops dead card properties from saved preferences', () => {
+    const prefs = normalizeRailPrefs({ v: 1, properties: ['ci', 'task', 'context', 'tags'] })
+    expect(prefs.properties).toEqual(['status', 'unread', 'tags'])
+  })
+
   it('migrates tag filters once and leaves workspace collapse under its own key', () => {
     const store = storage({ 'tr-ws-collapsed': '["/repo"]', 'houston.tagFilter': '[2]' })
     const prefs = migrateRailPrefs(store)
@@ -61,7 +66,7 @@ describe('rail preferences', () => {
   it('swaps card presets only before the properties are customized', () => {
     const custom = {
       ...normalizeRailPrefs(null),
-      properties: [...DETAILED_DEFAULT, 'context' as const],
+      properties: [...DETAILED_DEFAULT, 'last-message' as const],
       customisedProperties: true,
     }
     expect(setRailCardMode(custom, 'compact').properties).toEqual(custom.properties)
