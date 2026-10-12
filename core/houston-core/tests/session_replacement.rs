@@ -265,7 +265,7 @@ fn replacement_commits_identity_ancestry_inbox_and_wake_cues_together() {
     .to_string();
     let instruction = db.instruction_accept(
         1, &context, proto::InstructionMode::Queue, "Never replay this automatically",
-        &MessageReceipt::new(1, Some("replacement-held".into()), "pane_prompt", &serde_json::json!({})),
+        &MessageReceipt::new(1, Some("replacement-held".into()), "pane_prompt", &serde_json::json!({})).unwrap(),
         1,
     ).unwrap();
     db.instruction_recover(2).unwrap();
