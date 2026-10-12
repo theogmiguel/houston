@@ -907,8 +907,7 @@ mod tests {
         file.set_len((17 + SCROLLBACK_CAP + TRIM_SLACK + 1) as u64)
             .unwrap();
         let error = Scrollback::load(&path)
-            .err()
-            .expect("invalid recovery file must be refused")
+            .expect_err("invalid recovery file must be refused")
             .to_string();
         assert!(error.contains("oversized.bin"));
         assert!(error.contains("limit"), "{error}");
@@ -925,8 +924,7 @@ mod tests {
         bytes[9..17].copy_from_slice(&u64::MAX.to_le_bytes());
         std::fs::write(&path, bytes).unwrap();
         let error = Scrollback::load(&path)
-            .err()
-            .expect("invalid recovery file must be refused")
+            .expect_err("invalid recovery file must be refused")
             .to_string();
         assert!(error.contains("overflow.bin"));
         assert!(error.contains("offset"), "{error}");

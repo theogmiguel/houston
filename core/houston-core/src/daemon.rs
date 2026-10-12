@@ -9849,7 +9849,7 @@ impl Daemon {
             scrollback_seed,
             replacement: Some(SessionReplacement {
                 id: old_id,
-                wake_cues: strict_resume.then(|| SessionWakeCues {
+                wake_cues: strict_resume.then_some(SessionWakeCues {
                     latest_prompt: retained_cues.0,
                     last_agent_message: retained_cues.1,
                     slept_at_ms: retained_cues.2,
