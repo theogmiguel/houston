@@ -11,11 +11,14 @@ export interface SectionHeadProps {
   inset?: boolean
   density?: 'default' | 'row'
   tone?: 'faint' | 'muted'
-  variant?: 'label' | 'sentence' | 'section'
+  variant?: 'label' | 'sentence' | 'section' | 'title'
+  /** Shown beside a `title` variant heading. */
+  badge?: ReactNode
   icon?: IconComponent
 }
 
-export function SectionHead({ title, count, action, inset = false, density = 'default', tone = 'faint', variant = 'label', icon }: SectionHeadProps): React.JSX.Element {
+export function SectionHead({ title, count, action, inset = false, density = 'default', tone = 'faint', variant = 'label', icon, badge }: SectionHeadProps): React.JSX.Element {
+  if (variant === 'title') return <div className="flex min-w-0 items-center gap-[var(--space-1-5)]"><h2 className="m-0 min-w-0 truncate text-[length:var(--tr-text-subhead-size)] font-[var(--tr-text-subhead-weight)] tracking-[var(--tr-text-subhead-tracking)] text-[var(--text-primary)]">{title}</h2>{badge}</div>
   if (variant === 'section') return <h2 className="m-0 flex min-w-0 items-baseline gap-[var(--space-2)] text-[length:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)]"><span>{title}</span>{count !== undefined && <span className="ml-auto text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]"><Count value={count} showZero /></span>}{action}</h2>
   const row = density === 'row'
   return (

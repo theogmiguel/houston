@@ -816,6 +816,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Metadata section heading">
           <SectionHead density="row" tone="muted" title="Status" />
+          <SectionHead variant="title" title="Weekly review" badge={<Chip variant="label" label="Built in" />} />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Usage and configuration roles">
