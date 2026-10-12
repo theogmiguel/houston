@@ -755,6 +755,20 @@ function GridContextMenu({
   const tagPopover = useTagPopover();
   const menuRef = useRef<HTMLDivElement>(null);
   const position = usePointerMenuPosition(menuRef, gridMenu.x, gridMenu.y);
+  const tagsHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openTags = (anchor: HTMLElement): void => {
+    if (tagsHoverTimer.current) clearTimeout(tagsHoverTimer.current);
+    tagsHoverTimer.current = null;
+    tagPopover.open({ anchor, gridId: gridStorageKey(gridMenu.path, gridMenu.gridId), view: 'pick', placement: 'right', onDismiss: onClose });
+  };
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    menuRef.current?.querySelector<HTMLElement>(".ctx-item:not(:disabled)")?.focus();
+    return () => {
+      if (tagsHoverTimer.current) clearTimeout(tagsHoverTimer.current);
+      if (previous?.isConnected && document.activeElement === document.body) previous.focus();
+    };
+  }, []);
   return (
     <RailContextMenu
       variant="grid-card"
@@ -789,9 +803,24 @@ function GridContextMenu({
           <span>{gridMenu.pinned ? "Unpin" : "Pin to top"}</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem role="menuitem" aria-haspopup="dialog" data-testid="menu-tags-entry" onClick={(event) => {
-          tagPopover.open({ anchor: event.currentTarget, gridId: gridStorageKey(gridMenu.path, gridMenu.gridId), view: 'pick', placement: 'right', onDismiss: onClose });
-        }}>
+        <ContextMenuItem role="menuitem" aria-haspopup="dialog" data-testid="menu-tags-entry"
+          onClick={(event) => openTags(event.currentTarget)}
+          onPointerEnter={(event) => {
+            const anchor = event.currentTarget;
+            if (tagsHoverTimer.current) clearTimeout(tagsHoverTimer.current);
+            // A short delay keeps a pointer passing over the entry from opening the picker.
+            tagsHoverTimer.current = setTimeout(() => openTags(anchor), 200);
+          }}
+          onPointerLeave={() => {
+            if (tagsHoverTimer.current) clearTimeout(tagsHoverTimer.current);
+            tagsHoverTimer.current = null;
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowRight") return;
+            event.preventDefault();
+            event.stopPropagation();
+            openTags(event.currentTarget);
+          }}>
           <Icon glyph={IconTag} role="ui" />
           <span className="flex-1">Tags</span>
           <RailMenuValue>{gridMenu.tagNames.join(", ")}<Icon glyph={IconChevronRight} role="small" /></RailMenuValue>
@@ -1251,6 +1280,7 @@ function RailTree({
   onSelectGrid,
   onFocusPane,
   openGridMenu,
+  gridMenuOpen,
   setGridRenaming,
   renaming,
   onRenameSubmit,
@@ -1302,6 +1332,7 @@ function RailTree({
   onRemoveGrid?: (path: string, gridId: string) => void;
   onSelectGrid?: (path: string, gridId: string) => void;
   onFocusPane?: (paneId: number) => void;
+  gridMenuOpen: { path: string; gridId: string } | null;
   openGridMenu: (
     e: React.MouseEvent,
     path: string,
@@ -1516,6 +1547,7 @@ function RailTree({
           onFilterTag={onFilterTag}
           onRemove={onRemove}
           onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove), jumpNumber)}
+          menuOpen={gridMenuOpen?.path === workspace.path && gridMenuOpen.gridId === grid.id}
           onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
         />
       </Suspense>
@@ -2301,6 +2333,7 @@ export function Sidebar({
             onSelectGrid={onSelectGrid}
             onFocusPane={onFocusPane}
             openGridMenu={openGridMenu}
+            gridMenuOpen={gridMenu}
             setGridRenaming={setGridRenaming}
             renaming={renaming}
             onRenameSubmit={onRenameSubmit}

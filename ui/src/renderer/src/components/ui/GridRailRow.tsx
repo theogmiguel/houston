@@ -43,6 +43,8 @@ export interface GridRailRowProps {
   onFocusPane?: (paneId: number) => void
   onSelect: () => void
   onContextMenu?: (event: React.MouseEvent) => void
+  /** True while this grid's context menu is open; the hover preview stays closed. */
+  menuOpen?: boolean
   onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
 }
 
@@ -83,6 +85,7 @@ export function GridRailRow({
   expanded: controlledExpanded,
   onToggleExpanded: controlledToggle,
   onContextMenu,
+  menuOpen = false,
   onOpenInspector,
   onRemove,
 }: GridRailRowProps): React.JSX.Element {
@@ -143,6 +146,7 @@ export function GridRailRow({
   const many = card.agents.length > 1
   const hasUnread = unread ?? card.agents.some((agent) => agent.unread)
   const startHover = (): void => {
+    if (menuOpen) return
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     if (closeTimer.current) clearTimeout(closeTimer.current)
     hoverTimer.current = setTimeout(() => {
@@ -164,6 +168,15 @@ export function GridRailRow({
     setHoverVisible(false)
     closeTimer.current = setTimeout(() => { hoverMounted.current = false; setHoverPosition(null) }, 150)
   }
+  useEffect(() => {
+    if (!menuOpen) return
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    hoverTimer.current = null
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    hoverMounted.current = false
+    setHoverVisible(false)
+    setHoverPosition(null)
+  }, [menuOpen])
   useEffect(() => {
     const hideOnScroll = (): void => {
       if (!hoverTimer.current && !hoverMounted.current) return
