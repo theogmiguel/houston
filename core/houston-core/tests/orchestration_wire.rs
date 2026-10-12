@@ -9833,6 +9833,7 @@ async fn settled_exited_children_without_retention_are_backfilled_before_restore
         .orchestrate_submit(closed_child, "parent closed".to_string().into())
         .unwrap();
     apply_hook_event(r._state.path(), closed_child, "Stop").await;
+    r.daemon.manage_shutdown().unwrap();
     let db_path = r._state.path().join("test.db");
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     conn.execute(
@@ -9887,8 +9888,6 @@ async fn settled_exited_children_without_retention_are_backfilled_before_restore
         .unwrap();
     assert_eq!(closed_state, "closed");
     reopened.close(child).unwrap();
-    r.daemon.close(parent.id).unwrap();
-    r.daemon.close(closed_parent.id).unwrap();
 }
 
 #[tokio::test]
