@@ -1000,6 +1000,9 @@ pub struct BranchInfo {
     pub remote_name: Option<String>,
     pub upstream: Option<String>,
     pub worktree_path: Option<String>,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+    pub committed_at: Option<i64>,
 }
 
 pub struct BranchList {
@@ -1022,67 +1025,98 @@ pub fn list_branches(dir: &Path) -> Result<BranchList> {
         }
     }
 
+    let remote_names = remote_names(dir);
     let raw = run_git(
         dir,
         &[
             "for-each-ref",
             "refs/heads",
-            "--format=%(refname:short)%09%(HEAD)%09%(upstream:short)",
+            "refs/remotes",
+            "--format=%(refname)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)%09%(committerdate:unix)",
         ],
     )?;
     let mut branches = Vec::new();
+    let mut remotes = Vec::new();
     let mut truncated = false;
     for line in raw.lines() {
-        let mut parts = line.splitn(3, '\t');
-        let (Some(name), Some(head), upstream) = (parts.next(), parts.next(), parts.next()) else {
+        let mut parts = line.splitn(5, '\t');
+        let (Some(full), Some(head), Some(upstream), Some(track), Some(timestamp)) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) else {
             continue;
         };
-        if branches.len() >= BRANCH_LIST_CAP {
+        let (name, is_remote) = if let Some(name) = full.strip_prefix("refs/heads/") {
+            (name, false)
+        } else if let Some(name) = full.strip_prefix("refs/remotes/") {
+            if name.ends_with("/HEAD") {
+                continue;
+            }
+            (name, true)
+        } else {
+            continue;
+        };
+        let target = if is_remote {
+            &mut remotes
+        } else {
+            &mut branches
+        };
+        if target.len() >= BRANCH_LIST_CAP {
             truncated = true;
-            break;
-        }
-        let upstream = upstream.map(str::trim).filter(|u| !u.is_empty());
-        branches.push(BranchInfo {
-            name: name.to_string(),
-            current: head.trim() == "*",
-            is_default: default_branch.as_deref() == Some(name),
-            is_remote: false,
-            remote_name: None,
-            upstream: upstream.map(str::to_string),
-            worktree_path: worktree_paths.get(name).cloned(),
-        });
-    }
-
-    let remote_names = remote_names(dir);
-    let raw = run_git(
-        dir,
-        &["for-each-ref", "refs/remotes", "--format=%(refname:short)"],
-    )?;
-    let mut remotes = Vec::new();
-    for line in raw.lines() {
-        let name = line.trim();
-        if name.is_empty() || name.ends_with("/HEAD") {
             continue;
         }
-        if remotes.len() >= BRANCH_LIST_CAP {
-            truncated = true;
-            break;
-        }
-        let remote_name = remote_names
-            .iter()
-            .find(|r| name.starts_with(&format!("{r}/")))
-            .cloned()
-            .or_else(|| name.split_once('/').map(|(r, _)| r.to_string()));
-        remotes.push(BranchInfo {
+        let upstream = (!upstream.is_empty()).then_some(upstream);
+        let (ahead, behind) = if upstream.is_some() && track != "[gone]" {
+            let mut ahead = 0;
+            let mut behind = 0;
+            for part in track.trim_matches(['[', ']']).split(", ") {
+                if let Some(value) = part.strip_prefix("ahead ") {
+                    ahead = value.parse().with_context(|| {
+                        format!("ahead count {value:?}: expected an unsigned integer")
+                    })?;
+                } else if let Some(value) = part.strip_prefix("behind ") {
+                    behind = value.parse().with_context(|| {
+                        format!("behind count {value:?}: expected an unsigned integer")
+                    })?;
+                }
+            }
+            (Some(ahead), Some(behind))
+        } else {
+            (None, None)
+        };
+        let remote_name = is_remote
+            .then(|| {
+                remote_names
+                    .iter()
+                    .find(|r| name.starts_with(&format!("{r}/")))
+                    .cloned()
+                    .or_else(|| name.split_once('/').map(|(r, _)| r.to_string()))
+            })
+            .flatten();
+        target.push(BranchInfo {
             name: name.to_string(),
-            current: false,
-            is_default: default_branch
-                .as_deref()
-                .is_some_and(|d| name.ends_with(&format!("/{d}"))),
-            is_remote: true,
+            current: !is_remote && head.trim() == "*",
+            is_default: default_branch.as_deref().is_some_and(|d| {
+                if is_remote {
+                    name.ends_with(&format!("/{d}"))
+                } else {
+                    name == d
+                }
+            }),
+            is_remote,
             remote_name,
-            upstream: None,
-            worktree_path: None,
+            upstream: upstream.map(str::to_string),
+            worktree_path: if is_remote {
+                None
+            } else {
+                worktree_paths.get(name).cloned()
+            },
+            ahead,
+            behind,
+            committed_at: timestamp.parse().ok(),
         });
     }
 

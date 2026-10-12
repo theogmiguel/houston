@@ -3538,6 +3538,9 @@ fn branch_info(b: crate::git::BranchInfo) -> proto::GitBranchInfo {
         remote_name: b.remote_name,
         upstream: b.upstream,
         worktree_path: b.worktree_path,
+        ahead: b.ahead,
+        behind: b.behind,
+        committed_at: b.committed_at,
     }
 }
 

@@ -2396,6 +2396,16 @@ pub enum GitDiscardKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct GitBranchInfo {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub ahead: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub behind: Option<u32>,
+    /// Committer time in Unix seconds.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub committed_at: Option<i64>,
     pub name: String,
     pub current: bool,
     pub is_default: bool,
