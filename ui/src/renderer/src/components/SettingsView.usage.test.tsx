@@ -143,13 +143,33 @@ describe('Usage page', () => {
     expect(agents?.querySelectorAll('[role="progressbar"]')).toHaveLength(2)
   })
 
-  it('shows 365 local calendar days with the five-step legend', () => {
+  it('shows 365 local calendar days and a labelled daily-cost legend', () => {
     render()
     expect(host.querySelectorAll('[data-testid="usage-calendar-day"]')).toHaveLength(365)
-    expect(host.querySelectorAll('[data-testid="usage-calendar"] [data-level]')).toHaveLength(370)
+    expect(host.querySelectorAll('[data-testid="usage-calendar"] [data-level]')).toHaveLength(367)
     expect(text()).toContain('Mon')
     expect(text()).toContain('Wed')
     expect(text()).toContain('Fri')
+  })
+
+  it('the year view keeps its daily-cost meaning when the chart switches to Tokens', () => {
+    render({ activity: [{ day: '2026-10-11', cost_usd: 123, totals: { uncached_input_tokens: 999, cached_input_tokens: 0, cache_creation_tokens: 0, output_tokens: 0, reasoning_tokens: 0 } }] })
+    const tokens = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Tokens')!
+    const before = q('[data-testid="usage-calendar-meaning"]')?.textContent
+    act(() => tokens.click())
+    expect(q('[data-testid="usage-calendar-meaning"]')?.textContent).toBe(before)
+    expect(before).toContain('colour shows cost per day')
+    expect(before).not.toContain('tokens')
+  })
+
+  it('aligns calendar weekdays with the Sunday-first grid and Mon label', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 2 * DAY)
+    render()
+    const grid = host.querySelector('[aria-label="Usage activity by day"]')!
+    const monday = [...grid.querySelectorAll<HTMLButtonElement>('button')].find((button) => new Date(`${button.getAttribute('aria-label')?.slice(0, 10)}T12:00:00`).getDay() === 1)!
+    const index = [...grid.children].findIndex((child) => child === monday || child.contains(monday))
+    expect(index % 7).toBe(1)
   })
 
   it('a selected day filters the breakdown to that date', () => {

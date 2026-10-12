@@ -28,7 +28,7 @@ import {
 import { Icon } from './ui/Icon'
 import { Tooltip } from './ui/Tooltip'
 import { Select } from './ui/Select'
-import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageCalendarSectionFrame, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup } from './ui'
+import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup } from './ui'
 import { Card } from './ui/Card'
 import { PageFrame } from './ui/PageFrame'
 import { PageHeader } from './ui/PageHeader'
@@ -159,13 +159,6 @@ function usageRangeLabel(
       : 'Reading transcripts…'
   }
   return formatRange(summary.since_ms, summary.until_ms, timeZone)
-}
-
-function activitySummary(metric: 'cost' | 'tokens', activity: UsageActivityDay[]): string {
-  const total = metric === 'cost'
-    ? `$${Math.round(activity.reduce((sum, day) => sum + day.cost_usd, 0)).toLocaleString('en-US')}`
-    : formatTokens(activity.reduce((sum, day) => sum + day.totals.uncached_input_tokens + day.totals.cached_input_tokens + day.totals.cache_creation_tokens + day.totals.output_tokens, 0))
-  return `${total} in the last year`
 }
 
 export function UsageSection({
@@ -323,12 +316,9 @@ export function UsageSection({
         </UsageShareGroup>
 
         {}
-        <UsageCalendarSectionFrame data-testid="usage-calendar-section">
-          <div className="flex items-center justify-between gap-[var(--space-3)]">
-            <UsageSectionHeading fullWidth aside="Follows Cost | Tokens">{activitySummary(metric, activity)}</UsageSectionHeading>
-          </div>
-          <UsageCalendar days={activity} metric={metric} selectedDay={selectedDay} caption="Houston keeps one total per day, so days older than the transcripts still count. Click a day to see its breakdown." onSelect={(day) => { setSelectedDay((current) => current === day ? null : day); setMode('day') }} />
-        </UsageCalendarSectionFrame>
+        <Card shape="card" tone="block" padding="page" data-material="inset" data-testid="usage-calendar-section">
+          <UsageCalendar days={activity} metric="cost" selectedDay={selectedDay} caption="Pick a day to see its breakdown below. Days older than the transcripts on disk keep their daily total." onSelect={(day) => { setSelectedDay((current) => current === day ? null : day); setMode('day') }} />
+        </Card>
 
         {}
         <UsageBreakdown mode={mode} onModeChange={setMode} rows={dayBreakdown(rows, selectedDay, activity)} loading={loading} />
