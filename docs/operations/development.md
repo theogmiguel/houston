@@ -467,7 +467,7 @@ committed inventory and runs in its own `licence-inventory` job.
 
 | Job | Runs on | What it does |
 |---|---|---|
-| `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | The twenty-six hermetic, sub-second text-search scripts above |
+| `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | Safety scripts, workflow syntax/contracts, plus offline release-note, CI-preflight, draft-publication and updater-signature regression tests |
 | `renderer-checks` | every PR, and every push to `main` except a docs-only change | `ui`'s `bun run typecheck` and `bun run test` |
 | `core-checks` | every PR, and every push to `main` except a docs-only change | core formatting, Clippy, unit tests, protocol compatibility, correlated session creation and Bash/Zsh restored-agent regressions |
 | `linux-native-checks` | every PR, and every push to `main` except a docs-only change | fresh renderer assets and debug sidecars, native formatting, Clippy and tests with default and `bench` features; tests use an isolated keyring |

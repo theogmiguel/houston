@@ -1,3 +1,5 @@
+name: Build Linux packages (internal)
+
 on:
   workflow_call:
     inputs:
@@ -6,7 +8,7 @@ on:
         type: string
         required: true
       ref:
-        description: 'Commit to build; a cut passes the tag it just pushed, and build-installers the ref it was given'
+        description: 'Commit to build; a cut passes its tag and Build installers passes a resolved SHA'
         type: string
         required: false
         default: ''
