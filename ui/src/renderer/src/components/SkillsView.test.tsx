@@ -343,7 +343,7 @@ describe('SkillsView — the redesigned library', () => {
       expect(headings).toHaveLength(1)
       expect(headings[0].textContent).toBe('Skills')
       const newSkill = Array.from(container.querySelectorAll('header button')).find((b) => b.textContent?.includes('New skill'))
-      expect(newSkill?.className).toContain('bg-[var(--accent)]')
+      expect(newSkill?.className).toContain('bg-[var(--primary-fill)]')
       const row = listItem('deploy')
       expect(row.textContent).toContain('/deploy')
       expect(row.textContent).toContain('project')
