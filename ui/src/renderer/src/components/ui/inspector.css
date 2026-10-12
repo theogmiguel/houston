@@ -281,9 +281,9 @@
 .pr-branch-people{display:flex;flex-direction:column;gap:var(--space-1);padding:var(--space-0-5) 0 var(--space-2-5)}
 .pr-branch-people [data-testid="pr-reviewers"],.pr-branch-people [data-testid="pr-labels"]{min-height:28px;gap:0}
 .pr-branch-people [data-testid="pr-reviewers"]>div:first-child,.pr-branch-people [data-testid="pr-labels"]>div:first-child{display:flex;min-width:0;align-items:center;gap:var(--space-2)}
-.pr-branch-people [data-testid="pr-reviewers"]>div:first-child>span:first-child,.pr-branch-people [data-testid="pr-labels"]>div:first-child>span:first-child{display:flex;flex:none;width:96px;align-items:center;gap:var(--space-1-5)}
-.pr-branch-people [data-testid="pr-reviewers"] [data-testid="pr-reviewers-value"],.pr-branch-people [data-testid="pr-labels"] [data-testid="pr-labels-value"]{flex:1;color:var(--text-muted);font-size:var(--tr-text-sm)}
-.pr-branch-people [data-testid="pr-reviewers"] [data-testid="pr-reviewers-manage"],.pr-branch-people [data-testid="pr-labels"] [data-testid="pr-labels-manage"]{width:26px;min-width:26px;height:26px;padding:0;color:var(--text-muted)}
+.pr-branch-people [data-testid="pr-reviewers"]>div:first-child>span:first-child,.pr-branch-people [data-testid="pr-labels"]>div:first-child>span:first-child{display:flex;flex:none;width:84px;align-items:center;gap:var(--space-1-5)}
+.pr-branch-people [data-testid="pr-reviewers"] [data-testid="pr-reviewers-value"],.pr-branch-people [data-testid="pr-labels"] [data-testid="pr-labels-value"]{flex:0 1 auto;color:var(--text-muted);font-size:var(--tr-text-sm)}
+.pr-branch-people [data-testid="pr-reviewers"] [data-testid="pr-reviewers-manage"],.pr-branch-people [data-testid="pr-labels"] [data-testid="pr-labels-manage"]{width:auto;min-width:0;height:auto;padding:0;color:var(--text-muted)}
 .pr-branch-people [data-testid="pr-reviewers"] [data-testid="pr-reviewers-manage"] svg,.pr-branch-people [data-testid="pr-labels"] [data-testid="pr-labels-manage"] svg{width:14px;height:14px}
 .pr-branch-summary [data-testid="disclosure"]{border:0;border-radius:0;background:transparent}
 .pr-branch-summary [data-testid="disclosure-content"]{position:relative;padding:var(--space-1) 0 var(--space-2-5);border:0}
