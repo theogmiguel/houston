@@ -14,6 +14,8 @@ export type RailPrefs = {
   sort: RailSort
   cardMode: RailCardMode
   tagDisplay: RailTagDisplay
+  /** False until the user picks a tag display; a saved value from an older default is not a choice. */
+  tagDisplayChosen: boolean
   agentActivity: AgentActivityMode
   properties: RailCardProperty[]
   filters: RailFilters
@@ -47,6 +49,7 @@ export const DEFAULT_RAIL_PREFS: RailPrefs = {
   sort: 'manual',
   cardMode: 'detailed',
   tagDisplay: 'chips',
+  tagDisplayChosen: false,
   agentActivity: 'compact',
   properties: [...DETAILED_DEFAULT],
   filters: { hideIdle: false, hideDefaultBranch: false, hideEmptyGrids: false },
@@ -100,7 +103,8 @@ export function normalizeRailPrefs(value: unknown): RailPrefs {
         ? source.sort
         : DEFAULT_RAIL_PREFS.sort,
     cardMode: source.cardMode === 'compact' ? 'compact' : 'detailed',
-    tagDisplay: source.tagDisplay === 'dots' || source.tagDisplay === 'icon' ? source.tagDisplay : 'chips',
+    tagDisplay: source.tagDisplayChosen === true && (source.tagDisplay === 'dots' || source.tagDisplay === 'icon') ? source.tagDisplay : 'chips',
+    tagDisplayChosen: source.tagDisplayChosen === true,
     agentActivity: source.agentActivity === 'full' ? 'full' : 'compact',
     properties: [...new Set<RailCardProperty>(['status', 'unread', ...list])],
     filters: {

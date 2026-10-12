@@ -191,6 +191,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     localStorage.setItem('tr-rail-prefs', JSON.stringify({
       ...DEFAULT_RAIL_PREFS,
       tagDisplay: 'icon',
+      tagDisplayChosen: true,
       properties: [...DEFAULT_RAIL_PREFS.properties, 'tags']
     }))
     render(TREE)

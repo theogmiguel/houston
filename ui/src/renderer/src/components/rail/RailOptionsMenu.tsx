@@ -65,7 +65,7 @@ function RailDisplayOptions({ prefs, onChange }: { prefs: RailPrefs; onChange: (
       {mode === 'full' ? 'Expanded' : 'Collapsed'}<RailMenuValue>{prefs.agentActivity === mode && <Icon glyph={IconCheck} role="small" />}</RailMenuValue>
     </RailMenuRow>)}
     <RailOptionsSectionLabel>Tags display</RailOptionsSectionLabel>
-    <RailTagDisplaySegment value={prefs.tagDisplay} onChange={(tagDisplay) => onChange({ ...prefs, tagDisplay })} />
+    <RailTagDisplaySegment value={prefs.tagDisplay} onChange={(tagDisplay) => onChange({ ...prefs, tagDisplay, tagDisplayChosen: true })} />
   </>
 }
 

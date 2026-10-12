@@ -54,6 +54,12 @@ describe('rail preferences', () => {
     expect(prefs.properties).toEqual(['status', 'unread', 'tags'])
   })
 
+  it('shows tag chips to users whose saved tag display was never chosen', () => {
+    expect(normalizeRailPrefs({ v: 1, tagDisplay: 'icon' }).tagDisplay).toBe('chips')
+    expect(normalizeRailPrefs({ v: 1, tagDisplay: 'icon', tagDisplayChosen: true }).tagDisplay).toBe('icon')
+    expect(normalizeRailPrefs({ v: 1, tagDisplay: 'dots', tagDisplayChosen: true }).tagDisplayChosen).toBe(true)
+  })
+
   it('gives uncustomised saved preferences the current defaults for their card mode', () => {
     const savedDefault = { v: 1, cardMode: 'detailed', properties: ['status', 'unread', 'checkout', 'pr', 'diff', 'task', 'inline-agents'], customisedProperties: false }
     expect(normalizeRailPrefs(savedDefault).properties).toEqual(DETAILED_DEFAULT)
