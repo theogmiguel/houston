@@ -7,7 +7,7 @@ import { createSessionsStore, SessionsStoreContext } from '../sessionsStore'
 import { ChildrenRoster, childGroup, childStateWord, delegationAge, glyphLabel } from './ChildrenRoster'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 
-const child = (id: number, state: SessionInfo['state'] = 'running'): SessionInfo => ({ id, state, codename: `child-${id}`, hidden: false, inbox_unread: 0, resumable: false, title: `worker ${id}`, agent: 'claude', cwd: '/tmp/p', project_dir: '/tmp/p', spawned_by: 1, status: 'working', children_waiting: 0, live_children: 0, tags: [] } as SessionInfo)
+const child = (id: number, state: SessionInfo['state'] = 'running'): SessionInfo => ({ id, state, title_source: 'prompt' as const, codename: `child-${id}`, hidden: false, inbox_unread: 0, resumable: false, title: `worker ${id}`, agent: 'claude', cwd: '/tmp/p', project_dir: '/tmp/p', spawned_by: 1, status: 'working', children_waiting: 0, live_children: 0, tags: [] } as SessionInfo)
 let root: Root
 let host: HTMLDivElement
 let children: SessionInfo[]
@@ -66,7 +66,7 @@ describe('settled children', () => {
   })
   it.each(['done', 'failed', 'unknown'] as const)('never settles or closes a live %s delegation', (state) => {
     children = [child(2, 'exited'), { ...child(3), delegation: { state } as SessionInfo['delegation'] }]
-    expect(childGroup(children[1])).toBe('Working')
+    expect(childGroup(children[1])).toBe(state === 'unknown' ? 'Working' : 'Idle')
     render(); click('Close settled (1)')
     act(() => vi.advanceTimersByTime(5000))
     expect(closeSession).toHaveBeenCalledExactlyOnceWith(2)
@@ -218,7 +218,7 @@ describe('reported child state', () => {
   })
   it('keeps a stalled working delegation out of human attention', () => {
     children = [{ ...child(2), delegation: { state: 'working', stalled: true, hold_reason: 'stalled? approval_outcome_unobserved' } as SessionInfo['delegation'] }]
-    expect(childGroup(children[0])).toBe('Working')
+    expect(childGroup(children[0])).toBe('Stalled')
     expect(childStateWord(children[0])).toBe('stalled')
     render()
     expect(host.querySelector('[aria-label="Answer 2"]')).toBeNull()
@@ -251,4 +251,18 @@ describe('reported child state', () => {
     expect(host.querySelector('.children-detail [aria-label="Result staged"]')).not.toBeNull()
     expect(host.querySelector('.children-detail [aria-label="Pending delivery"]')).not.toBeNull()
   })
+})
+
+
+it('groups parent-owned questions before working and separates idle staged and unavailable children', () => {
+  children = [withInputOwner(child(2), 'orchestrator', 'Which design?'), child(3), { ...child(4), status: 'idle' }, { ...child(5), status: 'working', delegation: { state: 'working', result_staged: true, reusable: true } as SessionInfo['delegation'] }, { ...child(6), status: 'unavailable' }]
+  expect(children.map(childGroup)).toEqual(['Waiting on orchestrator', 'Working', 'Idle', 'Idle', 'Status unavailable'])
+  render()
+  const headings = [...host.querySelectorAll('.children-group')].map((heading) => heading.textContent)
+  expect(headings[0]).toContain('Waiting on orchestrator')
+  expect(headings[1]).toContain('Working')
+  expect(host.querySelector('[aria-label="Asked orchestrator"]')).not.toBeNull()
+  expect(host.querySelector('[aria-label="Result staged"]')).not.toBeNull()
+  expect(host.querySelector('button')?.textContent).not.toContain('Close settled')
+  expect([...host.querySelectorAll('button')].find((button) => button.textContent === 'Close settled (0)')?.disabled).toBe(true)
 })

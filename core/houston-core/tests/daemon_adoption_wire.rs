@@ -173,6 +173,28 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
     .unwrap();
     let origin = expect_created(&mut ws).await.id;
     ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionRename {
+            session: origin,
+            title: "Manual handoff title".into(),
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    loop {
+        if let proto::ServerMsg::SessionRenamed {
+            session,
+            title_source,
+            ..
+        } = common::next_control(&mut ws).await
+        {
+            if session == origin {
+                assert_eq!(title_source, proto::TitleSource::User);
+                break;
+            }
+        }
+    }
+    ws.send(Message::text(
         serde_json::to_string(&proto::ClientMsg::SessionRespawn {
             session: origin,
             force: Some(true),
@@ -187,6 +209,8 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
     .unwrap();
     let replacement = expect_created(&mut ws).await;
     assert_ne!(replacement.id, origin);
+    assert_eq!(replacement.title, "Manual handoff title");
+    assert_eq!(replacement.title_source, proto::TitleSource::User);
     assert_eq!(replacement.session_origin, Some(origin));
     let session_id = replacement.id;
 
@@ -234,6 +258,8 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
                     panic!("reconnect after handoff must list session {session_id}: {sessions:?}")
                 });
             assert_eq!(adopted.session_origin, Some(origin));
+            assert_eq!(adopted.title, "Manual handoff title");
+            assert_eq!(adopted.title_source, proto::TitleSource::User);
         }
         other => panic!("expected HelloOk, got {other:?}"),
     }
@@ -259,6 +285,26 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
         seen_after.contains("after-handoff"),
         "the session must keep echoing after the handoff: {seen_after:?}"
     );
+
+    ws2.send(Message::Binary(
+        proto::encode_stdin_frame(session_id, b"\x1b]2;Later native title\x07\n").into(),
+    ))
+    .await
+    .unwrap();
+    collect_output_until(&mut ws2, session_id, "Later native title").await;
+    ws2.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionList).unwrap(),
+    ))
+    .await
+    .unwrap();
+    loop {
+        if let proto::ServerMsg::SessionList { sessions } = common::next_control(&mut ws2).await {
+            let pane = sessions.iter().find(|pane| pane.id == session_id).unwrap();
+            assert_eq!(pane.title, "Manual handoff title");
+            assert_eq!(pane.title_source, proto::TitleSource::User);
+            break;
+        }
+    }
 
     manage_shutdown(after.port, &after.token).await;
     poll_until(POLL_TIMEOUT, || {
@@ -2242,6 +2288,7 @@ fn legacy_native_input_without_snapshot(status: proto::AgentStatus, pending_sour
     let mut master = unsafe { std::fs::File::from_raw_fd(master_fd) };
     let mut slave = unsafe { std::fs::File::from_raw_fd(slave_fd) };
     let session = adoption::SessionManifest {
+        title_source: Default::default(),
         session_id: 130,
         pid: None,
         cols: 80,

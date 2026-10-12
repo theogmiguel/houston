@@ -192,7 +192,7 @@ describe('SessionPane orchestrator badge (v63)', () => {
           info={{
             id: 1,
             title: 'Plan login',
-            codename: 'Max',
+            title_source: 'prompt' as const, codename: 'Max',
             live_children: 2,
             children_waiting: 0
           } as SessionInfo}
@@ -215,7 +215,7 @@ describe('SessionPane orchestrator badge (v63)', () => {
           info={{
             id: 1,
             title: 'Max',
-            codename: 'Max',
+            title_source: 'prompt' as const, codename: 'Max',
             live_children: 2,
             children_waiting: 1
           } as SessionInfo}
@@ -230,8 +230,8 @@ describe('SessionPane orchestrator badge (v63)', () => {
 })
 
 it('updates an open delegation card from the live store with unchanged roster props', async () => {
-  const parent: SessionInfo = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', title: 'parent', codename: 'parent', hidden: false, spawned_by: null, live_children: 1, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false }
-  const child: SessionInfo = { ...parent, id: 2, spawned_by: 1, codename: 'worker', title: 'worker', live_children: 0, delegation: { parent: 1, state: 'working', stalled: false, started_at: 1000, result_staged: false, superseded: 0, turn_end_source: 'stop-hook', inbox_owed: 0, inbox_provisional: 0, reusable: true } }
+  const parent: SessionInfo = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', title: 'parent', title_source: 'prompt' as const, codename: 'parent', hidden: false, spawned_by: null, live_children: 1, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false }
+  const child: SessionInfo = { ...parent, id: 2, spawned_by: 1, title_source: 'prompt' as const, codename: 'worker', title: 'worker', live_children: 0, delegation: { parent: 1, state: 'working', stalled: false, started_at: 1000, result_staged: false, superseded: 0, turn_end_source: 'stop-hook', inbox_owed: 0, inbox_provisional: 0, reusable: true } }
   const sessions = new Map([[1, parent], [2, child]])
   const store = createSessionsStore(sessions)
   root = createRoot(container!)
@@ -250,8 +250,8 @@ it('updates an open delegation card from the live store with unchanged roster pr
 })
 
 it('shows an idle orchestrator as working in its header while a child works, and keeps its roster row idle', () => {
-  const parent: SessionInfo = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', status: 'idle', title: 'parent', codename: 'parent', hidden: false, spawned_by: null, live_children: 1, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false }
-  const child: SessionInfo = { ...parent, id: 2, spawned_by: 1, status: 'working', codename: 'worker', title: 'worker', live_children: 0 }
+  const parent: SessionInfo = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', status: 'idle', title: 'parent', title_source: 'prompt' as const, codename: 'parent', hidden: false, spawned_by: null, live_children: 1, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false }
+  const child: SessionInfo = { ...parent, id: 2, spawned_by: 1, status: 'working', title_source: 'prompt' as const, codename: 'worker', title: 'worker', live_children: 0 }
   const sessions = new Map([[1, parent], [2, child]])
   const store = createSessionsStore(sessions)
   root = createRoot(container!)
@@ -285,8 +285,7 @@ it('shows an idle orchestrator as working in its header while a child works, and
   ))
   const headerDot = container!.querySelector('[data-testid="head-identity"] .agent-dot')
   expect(headerDot?.getAttribute('aria-label')).toBe('working')
-  const rosterLabels = [...container!.querySelectorAll('[aria-label="Children roster"] .agent-dot')].map((dot) => dot.getAttribute('aria-label'))
-  expect(rosterLabels).toContain('ready')
+  expect(container!.querySelector('[aria-label="Children roster"] [role="img"][aria-label="Idle"]')).not.toBeNull()
   act(() => store.set((previous) => new Map(previous).set(2, { ...child, status: 'idle' })))
   expect(container!.querySelector('[data-testid="head-identity"] .agent-dot')?.getAttribute('aria-label')).toBe('ready')
 })
@@ -294,7 +293,7 @@ it('shows an idle orchestrator as working in its header while a child works, and
 it("counts live children in worktrees on the orchestrator's branch chip, keeping the tooltip to its own checkout", () => {
   const primary = { root: '/tmp/project', kind: 'primary', branch: 'main', head: null }
   const worktree = (slug: string) => ({ root: `/tmp/project/.houston/worktrees/${slug}`, kind: { worktree: { slug } }, branch: `houston/${slug}`, head: null })
-  const parent = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', status: 'idle', title: 'parent', codename: 'Max', hidden: false, spawned_by: null, live_children: 3, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, checkout: primary } as SessionInfo
+  const parent = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', status: 'idle', title: 'parent', title_source: 'prompt' as const, codename: 'Max', hidden: false, spawned_by: null, live_children: 3, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, checkout: primary } as SessionInfo
   const child = (id: number, codename: string, slug: string | null, state = 'running') => ({ ...parent, id, codename, title: `task-${id}`, spawned_by: 1, live_children: 0, state, checkout: slug ? worktree(slug) : primary, delegation: { role: slug ?? 'in-place' } }) as SessionInfo
   const sessions = new Map([[1, parent], [2, child(2, 'Zane', 'claude-global-hooks')], [3, child(3, 'Ivy', 'rail-status')], [4, child(4, 'Bo', null)], [5, child(5, 'Old', 'gone', 'exited')]])
   root = createRoot(container!)

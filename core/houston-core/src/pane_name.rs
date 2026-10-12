@@ -40,36 +40,46 @@ pub(crate) fn pick_codename(used: &HashSet<String>) -> String {
 
 pub fn title_from_prompt(prompt: &str, max_len: usize) -> Option<String> {
     let line = prompt.lines().map(str::trim).find(|l| !l.is_empty())?;
-    let words: Vec<String> = line
-        .split_whitespace()
-        .map(|w| {
-            w.trim_start_matches(['@', '/', '#'])
-                .replace(['-', '_'], " ")
-        })
-        .flat_map(|w| w.split_whitespace().map(str::to_owned).collect::<Vec<_>>())
-        .filter(|w| w.chars().any(|c| c.is_alphanumeric()))
-        .collect();
-    if words.is_empty() {
-        return None;
+    static PREFIX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let prefix = PREFIX.get_or_init(|| regex::Regex::new(
+        r"(?i)^(?:(?:can|could|would) you(?: please)?\s+|please\s+|help me(?: to)?\s+|(?:issue\s+)?#\d+\s*[:\-–—]?\s*)"
+    ).expect("title prefix regex"));
+    let mut line = line;
+    while let Some(found) = prefix.find(line) {
+        line = &line[found.end()..];
     }
+    let mut words = line
+        .split_whitespace()
+        .flat_map(|w| w.trim_start_matches(['@', '/', '#']).split(['-', '_']))
+        .filter(|w| w.chars().any(|c| c.is_alphanumeric()));
+    let first_word = words.next()?;
     let mut title = String::new();
-    for w in &words {
-        let next = if title.is_empty() {
-            w.clone()
-        } else {
-            format!("{title} {w}")
+    let mut used = 0usize;
+    for word in std::iter::once(first_word).chain(words) {
+        let separator = usize::from(!title.is_empty());
+        let Some(room) = max_len
+            .checked_sub(used)
+            .and_then(|n| n.checked_sub(separator))
+        else {
+            break;
         };
-        if next.chars().count() > max_len {
+        let length = word.chars().take(room.saturating_add(1)).count();
+        if length > room {
             break;
         }
-        title = next;
+        if separator != 0 {
+            title.push(' ');
+        }
+        title.push_str(word);
+        used += separator + length;
     }
     if title.is_empty() {
-        title = words[0].chars().take(max_len).collect();
+        title = first_word.chars().take(max_len).collect();
     }
     let mut chars = title.chars();
     let first = chars.next()?;
-    Some(first.to_uppercase().collect::<String>() + chars.as_str())
+    let title = first.to_uppercase().collect::<String>() + chars.as_str();
+    Some(truncate_at_word_boundary(&title, max_len))
 }
 
 /// Cuts to at most `max_len` chars. When the cut lands past roughly half of
@@ -107,6 +117,50 @@ pub fn unique(name: &str, used: &HashSet<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_char_uppercase_expansion_stays_within_title_limit() {
+        let prompt = format!("ß{}", "a".repeat(39));
+        let title = title_from_prompt(&prompt, 40).unwrap();
+        assert!(title.starts_with("SS"));
+        assert_eq!(title.chars().count(), 40);
+    }
+
+    #[test]
+    fn zero_limit_and_normalization_edges_preserve_prompt_titles() {
+        assert_eq!(title_from_prompt("useful title", 0), None);
+        assert_eq!(title_from_prompt("ß", 1).as_deref(), Some("S"));
+        assert_eq!(title_from_prompt("ß abc def", 9).as_deref(), Some("SS abc"));
+        assert_eq!(
+            title_from_prompt("\n  --@feature__#133 -- ...\nignored", 40).as_deref(),
+            Some("@feature #133")
+        );
+        assert_eq!(
+            title_from_prompt("alpha_ beta--gamma", 40).as_deref(),
+            Some("Alpha beta gamma")
+        );
+        assert_eq!(title_from_prompt("alpha beta", 5).as_deref(), Some("Alpha"));
+    }
+
+    #[test]
+    fn filler_and_issue_prefixes_leave_the_task_visible() {
+        for prompt in [
+            "Can you please fix authentication",
+            "Please help me to fix authentication",
+            "Issue #133: fix authentication",
+            "#133 — can you please fix authentication",
+        ] {
+            assert_eq!(
+                title_from_prompt(prompt, 40).as_deref(),
+                Some("Fix authentication")
+            );
+        }
+        assert_eq!(title_from_prompt("Please", 40).as_deref(), Some("Please"));
+        assert_eq!(
+            title_from_prompt("Can you explain #133 safely", 40).as_deref(),
+            Some("Explain 133 safely")
+        );
+    }
 
     #[test]
     fn the_references_own_example() {

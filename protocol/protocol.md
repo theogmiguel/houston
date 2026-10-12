@@ -1,4 +1,4 @@
-# Wire protocol v139
+# Wire protocol v140
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -102,6 +102,7 @@ failure not given a typed refusal comes back as `error`.
 | `session_resize` | `session`, `cols`, `rows` | `session_resized` (direct) |
 | `session_list` | — | `session_list` (direct) |
 | `session_attach` | `session`, `replay_bytes?` (cap the tail; omitted = whole ring), `snapshot?` (v94: ask for emulator state instead of a byte replay), `from_offset?` + `generation?` (v129: the offset the client already holds and the run it came from; with both matching the ring, `scrollback` carries only the bytes after it and `replayed_bytes = bytes_seen - from_offset`, otherwise the reply is the `replay_bytes` replay) | `scrollback` **or** `attach_snapshot` (direct), numbered by `attempt`; this socket starts receiving that session's frames, and nothing below the reply's cutoff follows it. `snapshot: true` is answered with `attach_snapshot` when the daemon has an emulator and could encode one, and with `scrollback` otherwise — a client must handle either reply |
+| `session_title_reset` | `session` | `session_renamed` (bcast); recomputes the strongest available automatic candidate |
 | `session_rename` | `session`, `title` (trimmed, non-empty, ≤ 40 chars) | `session_renamed` (bcast) |
 | `session_set_tags` | `session`, `tags: u32[]` (registry ids, ≤ `MAX_TAGS_PER_SESSION` (5), whole-set replacement) | `session_tags_set` (bcast); unknown session or tag id, or over the cap, is an `error` naming the limit and the value |
 | `tag_create` | `name` (trimmed, non-empty, ≤ `MAX_TAG_NAME_LEN` (32) chars, unique case-insensitively), `color` (any six-digit `#rrggbb`; `TAG_PALETTE` supplies presets) | `tag_list` (bcast); collisions and invalid colors are `error`s naming the offending value |
@@ -406,7 +407,7 @@ every refusal names the setting.
 | `scrollback` | `session`, `data` (base64), `generation`, `replayed_bytes`, `bytes_seen`, `attempt` (how many `session_attach` for this session this socket has sent, this one included) | direct reply to `session_attach`; honoured only when `attempt` matches the client's own count |
 | `attach_snapshot` | `session`, `generation`, `attempt`, `output_offset` (the cutoff), `format_version`, `state` (base64, the container below) | v94: direct reply to a `session_attach` that asked for a snapshot; same `attempt` rule as `scrollback` |
 | `session_resized` | `session`, `cols`, `rows` | direct reply. Dims are read back from the PTY for live local sessions; SSH and dead sessions echo the request |
-| `session_renamed` | `session`, `title` | bcast after `session_rename` |
+| `session_renamed` | `session`, `title`, `title_source: TitleSource` | bcast after a manual rename, reset or automatic title update |
 | `session_tags_set` | `session`, `tags: u32[]` | v100: bcast after `session_set_tags` — the whole set, client replaces |
 | `compactions_changed` | `session`, `compactions` | v122: bcast each time the agent's compaction hook fires; at every `HANDOFF_OFFER_AFTER_COMPACTIONS` (3) a top-level pane with children and no earlier handoff also gets one `operator_note` inbox row with reason `handoff_offer` |
 | `session_resumable` | `session`, `resumable` | v119: bcast when a live session gains its first resume handle (a turn in its root conversation) or loses it (kill, close) |
@@ -576,7 +577,7 @@ PaneEscalateRequest child: u32, reason (nonblank, at most 2000 Unicode character
 SessionInfo        checkout_root?: string | null (Git root, including ordinary shared checkouts),
                    worktree?: SessionWorktree | null; absent for SSH/non-repository sessions.
                    Group live sibling children by checkout_root to identify shared checkouts.
-                   id, agent: AgentKind, project_dir, cwd (the actual run dir), state: SessionState, title,
+                   id, agent: AgentKind, project_dir, cwd (the actual run dir), state: SessionState, title, title_source: TitleSource,
                    codename (v98: the spawn-time codename, kept when the first prompt renames
                    `title`; parent-facing labels read this. Empty from an older daemon —
                    read `title` instead),
@@ -656,7 +657,7 @@ SwarmAgentInfo        id, swarm, label, role, agent, session?, auto_approve, pla
                       custom_prompt?, cmd?, status, activity?, created_at
 
 SessionInfo           id, agent, project_dir, cwd, checkout_root?, worktree?, checkout?,
-                      activity?, state, title, codename, status?, status_since_ms?, ...
+                      activity?, state, title, title_source, codename, status?, status_since_ms?, ...
 SessionCheckout       root, kind: CheckoutKind, branch?, head?
 CheckoutKind          primary | worktree{slug} | folder
 SessionActivity       prompt?, last_message?, tool?, model?
@@ -1323,7 +1324,8 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 139 | `pr_list` replies include the cached viewer login. `Routine.kind` identifies user and harness review routines, backfilled from existing harness mappings. `GitBranchInfo` gains upstream ahead/behind counts and committer time. `usage_summary` gains optional `session_counts` (`UsageSessionCounts`): exact distinct sessions by model and by day; older replies omit it. **Amend.** `git_commit` gains `amend` (default false): rewrites HEAD instead of adding a commit, and refuses with an error naming the branch and HEAD SHA when HEAD is already contained in its upstream. |
+| 140 | `pr_list` replies include the cached viewer login. `Routine.kind` identifies user and harness review routines, backfilled from existing harness mappings. `GitBranchInfo` gains upstream ahead/behind counts and committer time. `usage_summary` gains optional `session_counts` (`UsageSessionCounts`): exact distinct sessions by model and by day; older replies omit it. **Amend.** `git_commit` gains `amend` (default false): rewrites HEAD instead of adding a commit, and refuses with an error naming the branch and HEAD SHA when HEAD is already contained in its upstream. |
+| 139 | Pane names expose `title_source` (`codename < prompt < role < cli < task < user`) in `SessionInfo` and `session_renamed`. `session_title_reset` restores the strongest stored automatic candidate without a user override. |
 | 138 | Session creation accepts a connection-local request ID and replies with `session_create_result`, correlating success or refusal without relying on broadcast order. |
 | 137 | Browser relay explicitly registers its authenticated connection; replies are scoped to the connection owning each pending call. |
 | 136 | **ZCode is a spawnable provider.** `AgentKind` gains `zcode`, accepted wherever a spawnable kind is (`session_create`, `pane_spawn`, `task_start`, task start and review settings, routine engines, `agent_hooks_set`, hook rows). ZCode panes launch `zcode` with `--mode` for auto and bypass approval, resume by `--resume <session id>` from the SessionStart hook, receive their first prompt as a paste once ZCode's composer reports focus (bracketed paste enabled, then the cursor shown; pasted regardless after 60 s), confirmed by ZCode's UserPromptSubmit hook, and refuse a non-empty `model` naming the limit. Its hooks live in ZCode's settings file, which also lists the orchestration plugin kept in the channel's state dir. Routines refuse ZCode in accept-edits access by name, and `routines` and `harness_state` gain `engine_refusals: RoutineEngineRefusal[]`, the engine and access pairs routines refuse (OpenCode and ZCode with accept edits) with the reason, so pickers show them disabled. `task_plan_start` refuses ZCode, which has no read-only launch mode, and `task_domain_state` gains `planning_refusals: PlanningRefusal[]` so the planning control shows it disabled. `HarnessProviderCoverage` counts ZCode sessions. Outside `/ws`, the task tools' `id` and `pane_pr_watch`'s `pr` are advertised as strings (an integer is still accepted). |

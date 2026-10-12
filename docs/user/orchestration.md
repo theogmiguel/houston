@@ -355,7 +355,8 @@ brief. It is refused on ordinary child spawns.
 
 ## Following delegated work
 
-The orchestrator's roster groups children into Needs you, Working and Settled. Select a
+The orchestrator's roster groups children into Needs you, Waiting on orchestrator, Working,
+Stalled, Idle, Status unavailable and Settled. Select a
 child to inspect its terminal inside the orchestrator pane; return to Orchestrator to
 see the parent. New children stay in this roster by default. Move to grid gives a child
 its own cell beside its parent, selecting the parent's grid even when another grid was
@@ -363,8 +364,9 @@ active. Return to roster reverses that placement. A headless child stays in the 
 without consuming a grid cell.
 Needs you includes requests explicitly assigned to you and children whose descendants
 are waiting on you; Answer focuses their terminal prompt. Questions awaiting a parent
-remain in Working with Asked orchestrator. Quiet children remain in Working with a
-warning indicator.
+appear under Waiting on orchestrator and count separately in Overview. Idle and staged-result children stay outside Working. Stalled carries a visible heuristic
+label and reason; children without lifecycle reports appear under Status unavailable.
+All live children still consume orchestration slots regardless of their status group.
 Show only on the Needs you heading hides the other groups until you select it again, or
 until no child needs you. The parent agent can answer routine reported questions;
 the daemon does not make decisions or approve provider prompts on your behalf.
@@ -385,7 +387,7 @@ the overview, subject to inbox retention. Review comments can be sent back to th
 
 Settled contains ended sessions. A settled child's process has exited; selecting it shows
 its saved transcript read-only, with when it ended and how long it is kept. Continue and
-Close sit under the transcript. A live resumed child stays in Working or Needs you even
+Close sit under the transcript. A live resumed child stays in a live status group even
 if its previous delegation was marked unknown. Close settled counts only ended children
 and offers five seconds to Undo; a child that resumes during that interval is preserved.
 Continue resumes a retained Claude, Codex or ZCode conversation with its earlier transcript.

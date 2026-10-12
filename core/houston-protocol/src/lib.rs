@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 139;
+pub const PROTOCOL_VERSION: u32 = 140;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -2145,6 +2145,44 @@ pub struct InstructionAcceptance {
     pub hold_reason: Option<String>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub enum TitleSource {
+    #[default]
+    Codename,
+    Prompt,
+    Role,
+    Cli,
+    Task,
+    User,
+}
+
+impl TitleSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Codename => "codename",
+            Self::Prompt => "prompt",
+            Self::Role => "role",
+            Self::Cli => "cli",
+            Self::Task => "task",
+            Self::User => "user",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "codename" => Some(Self::Codename),
+            "prompt" => Some(Self::Prompt),
+            "role" => Some(Self::Role),
+            "cli" => Some(Self::Cli),
+            "task" => Some(Self::Task),
+            "user" => Some(Self::User),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionInfo {
@@ -2166,6 +2204,8 @@ pub struct SessionInfo {
     pub activity: Option<SessionActivity>,
     pub state: SessionState,
     pub title: String,
+    #[serde(default)]
+    pub title_source: TitleSource,
     #[serde(default)]
     pub codename: String,
     #[serde(default)]
@@ -3497,6 +3537,9 @@ pub enum ClientMsg {
         session: u32,
         title: String,
     },
+    SessionTitleReset {
+        session: u32,
+    },
     SessionSetTags {
         session: u32,
         tags: Vec<u32>,
@@ -4657,6 +4700,7 @@ pub enum ServerMsg {
     SessionRenamed {
         session: u32,
         title: String,
+        title_source: TitleSource,
     },
     SessionTagsSet {
         session: u32,

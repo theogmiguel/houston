@@ -1,3 +1,4 @@
+import { childSummary } from '../childStatus'
 import { ChildInputDetails, ParentOwnedInput } from './ChildInputDetails'
 import { attentionReason, attentionStatus } from '../sessionAttention'
 import { DelegationResults } from './DelegationResults'
@@ -12,7 +13,7 @@ import { isLive } from '../houston/client'
 import type { DelegationResult } from '../houston/generated/DelegationResult'
 import type { InboxRow } from '../houston/generated/InboxRow'
 import { selectOverviewChild } from '../sidePanel'
-import { ChildStatusDot, childGroup, childStateWord, DelegationAge } from './ChildrenRoster'
+import { CHILD_GROUPS, ChildStatusDot, childGroup, childStateWord, DelegationAge } from './ChildrenRoster'
 import { pendingDeliveryStatus, sessionIdentity } from './DelegationCard'
 import { IconEye, IconGitBranch, IconStopCircle, IconRespawn, IconCornerDownRight } from './icons'
 import { StatusDot } from './SessionPane'
@@ -89,16 +90,15 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   useEffect(() => { setResults([]); setNextMessageId(null); setTruncated(false) }, [parentId])
   const childIds = new Set(children.map((child) => child.id))
   const addressed = rows.filter((row) => row.to_session === 0 && row.resolved_at == null && (row.reason === 'parent_dead' || (row.from_session != null && sessions.get(row.from_session)?.spawned_by === null)) && (row.original_to === parentId || row.from_session === parentId || (row.from_session != null && childIds.has(row.from_session))))
-  const waiting = children.filter((child) => childGroup(child) === 'Needs you').length
   const done = children.filter((child) => !isLive(child.state) && child.delegation?.state !== 'failed').length
   const failed = children.filter((child) => !isLive(child.state) && child.delegation?.state === 'failed').length
-  const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? (a.worktree?.path ?? a.checkout_root ?? a.project_dir).localeCompare(b.worktree?.path ?? b.checkout_root ?? b.project_dir) : ['Needs you', 'Working', 'Settled'].indexOf(childGroup(a)) - ['Needs you', 'Working', 'Settled'].indexOf(childGroup(b)))
+  const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? (a.worktree?.path ?? a.checkout_root ?? a.project_dir).localeCompare(b.worktree?.path ?? b.checkout_root ?? b.project_dir) : CHILD_GROUPS.indexOf(childGroup(a)) - CHILD_GROUPS.indexOf(childGroup(b)))
   const action = (label: string, onClick: () => void, summary = false): React.JSX.Element => <OrchestratorInlineAction summary={summary} onClick={onClick}>{label}</OrchestratorInlineAction>
   return <RosterOverview>
     <OrchestratorHeader><StatusDot live={!!parent && isLive(parent.state)} status={parent ? attentionStatus(parent) : undefined} />{parent && <OrchestratorAgentIcon agent={parent.detected_agent ?? parent.agent} />}<OrchestratorTitle>{parent?.title ?? `Orchestrator ${parentId}`}</OrchestratorTitle><OrchestratorIdentity>pane {parentId}</OrchestratorIdentity>{parent && <CompactionCount parent={parent} />}{action('Show terminal', () => selectOverviewChild(parentId, null))}</OrchestratorHeader>
     {(!parent || !isLive(parent.state)) && <OrchestratorSummary>Orchestrator ended.{action('Close', onClose, true)}</OrchestratorSummary>}
-    <OrchestratorSummary><OrchestratorCount needsInput={children.some((child) => childGroup(child) === 'Needs you')}>{children.length}</OrchestratorCount><Text size="small" tone="muted" className="truncate">children · {waiting > 0 ? `${waiting} needs you · ` : ''}{children.filter((child) => childGroup(child) === 'Working').length} working · {done} done · {failed} failed</Text><span className="flex-1" /><OrchestratorGroupToggle value={groupBy} onChange={setGroupBy} /></OrchestratorSummary>
-    <OrchestratorProgress>{(['Needs you', 'Working', 'Done', 'Failed'] as const).filter((group) => group === 'Done' ? done > 0 : group === 'Failed' ? failed > 0 : children.some((child) => childGroup(child) === group)).map((group) => <OrchestratorProgressSegment key={group} group={group} weight={group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length} />)}</OrchestratorProgress>
+    <OrchestratorSummary><OrchestratorCount needsInput={children.some((child) => childGroup(child) === 'Needs you')}>{children.length}</OrchestratorCount><Text size="small" tone="muted" className="truncate">{childSummary(children)}</Text><span className="flex-1" /><OrchestratorGroupToggle value={groupBy} onChange={setGroupBy} /></OrchestratorSummary>
+    <OrchestratorProgress>{(['Needs you', 'Waiting on orchestrator', 'Working', 'Stalled', 'Idle', 'Status unavailable', 'Done', 'Failed'] as const).filter((group) => group === 'Done' ? done > 0 : group === 'Failed' ? failed > 0 : children.some((child) => childGroup(child) === group)).map((group) => <OrchestratorProgressSegment key={group} group={group} weight={group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length} />)}</OrchestratorProgress>
     <OrchestratorChildList>{ordered.map((child) => <OverviewChildCard key={child.id} child={child} parent={parent} parentId={parentId} children={children} result={scopedResults.find((result) => result.child === child.id)} counts={counts} client={client} onReview={onReview} />)}</OrchestratorChildList>
     <DelegationResults parentId={parentId} results={scopedResults} nextMessageId={nextMessageId} truncated={truncated} loading={resultsLoading} onLoadMore={() => { if (nextMessageId != null) { pendingCursor.current = nextMessageId; setResultsLoading(true); client.delegationResultsList(parentId, nextMessageId) } }} client={client} />
     {addressed.length > 0 && <section aria-label="Addressed to you"><OrchestratorSectionLabel>Addressed to you</OrchestratorSectionLabel>{addressed.map((row) => <OrchestratorChildCard key={String(row.id)}><OrchestratorTask>{row.summary || row.body}</OrchestratorTask><OrchestratorActionRow>{action('Acknowledge', () => client.inboxAck(row.id))}{action('Resolve', () => client.inboxResolve(row.id))}</OrchestratorActionRow></OrchestratorChildCard>)}</section>}

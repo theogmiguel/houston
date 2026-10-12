@@ -1489,7 +1489,7 @@ function RailTree({
             onSubmit={(name) => {
               setGridRenaming(null);
               const next = name.trim();
-              if (next && next !== grid.name) onRenameGrid(workspace.path, grid.id, next);
+              onRenameGrid(workspace.path, grid.id, next);
             }}
             onCancel={() => setGridRenaming(null)}
           />

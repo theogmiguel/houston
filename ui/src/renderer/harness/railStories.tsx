@@ -322,7 +322,7 @@ const cardSession = (values: Partial<SessionInfo> & Pick<SessionInfo, 'id' | 'ag
   checkout: values.checkout ?? { root: values.project_dir, kind: 'primary', branch: 'main', head: null },
   activity: values.activity ?? { prompt: values.title, last_message: null, model: null, tool: null },
   state: values.state ?? 'running',
-  codename: values.codename ?? `agent-${values.id}`,
+  title_source: 'prompt' as const, codename: values.codename ?? `agent-${values.id}`,
   hidden: false,
   live_children: values.live_children ?? 0,
   children_waiting: values.children_waiting ?? 0,

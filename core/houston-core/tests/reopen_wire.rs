@@ -251,6 +251,7 @@ async fn respawn_refuses_a_swarm_tied_session() {
     let agent_id = {
         let db = Db::open(&db_path).unwrap();
         db.insert_session(&proto::SessionInfo {
+            title_source: Default::default(),
             checkout: None,
             activity: None,
             id: 1,

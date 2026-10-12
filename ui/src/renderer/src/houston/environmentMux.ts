@@ -101,6 +101,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   workspace_local_servers: WORKSPACE,
   session_close: SESSION,
   session_rename: SESSION,
+  session_title_reset: SESSION,
   session_set_tags: 'tags',
   tag_create: 'local',
   tag_update: 'local',

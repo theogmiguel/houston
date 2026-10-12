@@ -1150,10 +1150,23 @@ impl Db {
         &self,
         session_id: u32,
     ) -> Result<Option<SessionTaskBindingRow>> {
-        Ok(self
-            .task_bindings()?
-            .into_iter()
-            .find(|binding| binding.run.session_id == Some(session_id)))
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                &format!(
+                    "SELECT {}, {} FROM backlog_task_runs r JOIN backlog_tasks t ON t.id = r.task_id \
+                     WHERE r.session_id = ?1 ORDER BY r.id DESC LIMIT 1",
+                    prefixed_columns(TASK_RUN_COLUMNS, "r"),
+                    prefixed_columns(TASK_COLUMNS, "t"),
+                ),
+                [session_id],
+                |r| {
+                    let run = map_task_run(r)?;
+                    let task = map_task_offset(r, TASK_RUN_COLUMN_COUNT)?;
+                    Ok(SessionTaskBindingRow { task, run })
+                },
+            )
+            .optional()?)
     }
 
     /// Every session-to-task binding, newest run per session. One query for a

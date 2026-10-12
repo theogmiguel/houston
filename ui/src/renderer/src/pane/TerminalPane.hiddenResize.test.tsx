@@ -48,7 +48,7 @@ const info = (id: number, spawned_by: number | null = null): SessionInfo => ({
   title: `pane ${id}`,
   cwd: `/tmp/child${id}/sub`,
   project_dir: `/tmp/child${id}`,
-  codename: `child${id}`,
+  title_source: 'prompt' as const, codename: `child${id}`,
   tags: [],
   hidden: false,
   live_children: 0,

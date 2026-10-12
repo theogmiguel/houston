@@ -383,6 +383,7 @@ async fn interrupted_sessions_are_automatically_restored_and_restartable() {
     {
         let db = Db::open(&db_path).unwrap();
         db.insert_session(&houston_protocol::SessionInfo {
+            title_source: Default::default(),
             checkout: None,
             activity: None,
             id: 1,
@@ -488,7 +489,7 @@ async fn codenames_are_assigned_renamed_and_persisted() {
     daemon.rename(id, "Scout").unwrap();
     loop {
         match next_broadcast_control(&mut rx).await {
-            proto::ServerMsg::SessionRenamed { session, title } if session == id => {
+            proto::ServerMsg::SessionRenamed { session, title, .. } if session == id => {
                 assert_eq!(title, "Scout");
                 break;
             }

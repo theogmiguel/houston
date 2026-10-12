@@ -3351,7 +3351,7 @@ impl Daemon {
             .chars()
             .take(MAX_TITLE_LEN)
             .collect();
-        if let Err(e) = self.rename(info.id, &title) {
+        if let Err(e) = self.rename_with_source(info.id, &title, super::TitleSource::Task) {
             tracing::warn!("naming task pane {}: {e:#}", info.id);
         }
         self.db

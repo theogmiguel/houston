@@ -99,10 +99,11 @@ async fn a_session_ignoring_sighup_and_sigterm_confirms_forced_exit_before_the_m
                             state,
                             proto::SessionState::Killed | proto::SessionState::Exited
                         ));
-                        assert!(
-                            exit_code.is_some(),
-                            "the backend must confirm its exit status"
-                        );
+                        if exit_code.is_none() {
+                            // Kill reports the decision before the waiter confirms completion.
+                            assert_eq!(state, proto::SessionState::Killed);
+                            continue;
+                        }
                         break;
                     }
                 }

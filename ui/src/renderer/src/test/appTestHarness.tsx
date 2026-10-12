@@ -254,6 +254,7 @@ export function deliverClientMsg(kind: string, msg: unknown): void {
 
 export function makeSession(overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
+    title_source: 'codename',
     id: 1,
     agent: 'shell',
     project_dir: '/tmp/project',

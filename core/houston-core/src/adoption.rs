@@ -34,6 +34,8 @@ pub struct SessionManifest {
     pub cwd: String,
     pub title: String,
     #[serde(default)]
+    pub title_source: Option<houston_protocol::TitleSource>,
+    #[serde(default)]
     pub codename: String,
     #[serde(default)]
     pub tags: Vec<u32>,
@@ -356,6 +358,7 @@ mod tests {
             generation: 2,
             token: "tok".to_string(),
             sessions: vec![SessionManifest {
+                title_source: Default::default(),
                 session_id: 1,
                 pid: Some(4242),
                 cols: 80,
@@ -399,6 +402,7 @@ mod tests {
     #[test]
     fn base64_buffer_is_never_a_bare_json_number_array() {
         let m = SessionManifest {
+            title_source: Default::default(),
             session_id: 1,
             pid: None,
             cols: 80,
