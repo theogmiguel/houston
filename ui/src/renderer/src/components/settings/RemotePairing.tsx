@@ -3,6 +3,7 @@ import type { RemoteInfo } from '../../houston/generated/RemoteInfo'
 import type { UseRemote } from '../../houston/useRemote'
 import { TrustStep } from '../ConnectPhoneDialog'
 import { useCopyFeedback } from '../useCopyFeedback'
+import { IconPhone } from '../icons'
 import { Button, Inline, QrImage, Text, TextInput } from '../ui'
 import { PageHeader } from '../ui/PageHeader'
 import { PhonePairingCard, PairingStep, PairingSteps } from '../ui/PhonePairingCard'
@@ -62,7 +63,7 @@ function PairingInstructions({ pairing, remote }: Pick<UseRemote, 'pairing' | 'r
 
 function PairingActions({ pairing, pending, disabled, show, hide, onChangeRoute }: Pick<UseRemote, 'pairing'> & { pending: boolean; disabled: boolean; show: () => void; hide: () => void; onChangeRoute: () => void }): React.JSX.Element {
   const { copyState, copy } = useCopyFeedback()
-  return <><Inline gap="small" wrap>{pairing ? <><Button variant="secondary" onClick={hide}>Hide code</Button><Button variant="ghost" onClick={() => copy(pairing.url)}>{copyState === 'success' ? 'Copied' : 'Copy link instead'}</Button></> : <><Button variant="primary" disabled={pending || disabled} data-testid="settings-remote-connect-phone" onClick={show}>{pending ? 'Preparing code…' : 'Show pairing code'}</Button><Button variant="ghost" onClick={onChangeRoute}>Use another route</Button>{pending && <Button variant="ghost" onClick={hide}>Stop waiting</Button>}</>}</Inline>{pairing && copyState === 'error' && <TextInput aria-label="Pairing link" readOnly value={pairing.url} width="full" onFocus={(event) => event.currentTarget.select()} />}</>
+  return <><Inline gap="small" wrap>{pairing ? <><Button variant="secondary" onClick={hide}>Hide code</Button><Button variant="ghost" onClick={() => copy(pairing.url)}>{copyState === 'success' ? 'Copied' : 'Copy link instead'}</Button></> : <><Button variant="primary" icon={IconPhone} disabled={pending || disabled} data-testid="settings-remote-connect-phone" onClick={show}>{pending ? 'Preparing code…' : 'Show pairing code'}</Button><Button variant="ghost" onClick={onChangeRoute}>Use another route</Button>{pending && <Button variant="ghost" onClick={hide}>Stop waiting</Button>}</>}</Inline>{pairing && copyState === 'error' && <TextInput aria-label="Pairing link" readOnly value={pairing.url} width="full" onFocus={(event) => event.currentTarget.select()} />}</>
 }
 
 export function RemotePairing({ state, onChangeRoute }: { state: UseRemote; onChangeRoute: () => void }): React.JSX.Element {

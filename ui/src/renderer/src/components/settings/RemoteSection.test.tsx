@@ -154,6 +154,26 @@ describe('RemoteSection', () => {
     }
   })
 
+  it('formats paired dates in English whatever the system locale is', () => {
+    const real = Date.prototype.toLocaleDateString
+    vi.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(function (this: Date, locales, options) {
+      return real.call(this, locales ?? 'pt-BR', options)
+    })
+    const { emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [{ id: 1, name: 'Phone', created_at: Date.UTC(2026, 9, 8, 12), last_seen_at: null }] }) })
+    expect(screen.getByText('Paired Oct 8')).toBeTruthy()
+    vi.restoreAllMocks()
+  })
+
+  it('renders Revoke as an underlined link and Show pairing code with a phone glyph', () => {
+    const { emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [{ id: 7, name: 'Laptop', created_at: 1, last_seen_at: null }] }) })
+    expect(screen.getByTestId('settings-remote-revoke-7').className).toContain('underline')
+    expect(screen.getByTestId('settings-remote-connect-phone').querySelector('svg')).toBeTruthy()
+  })
+
   it('requests a route for the default loopback address rather than an unreachable phone code', () => {
     const { emit, asClient, client } = fakeClient()
     const changeRoute = renderSection(asClient)

@@ -29,7 +29,7 @@ const HTTP_WARNING =
   'Devices reach this address over plain HTTP, so their token and the pane text they read cross the network unencrypted. Use the Tailscale route, or a private network address, where Houston serves HTTPS itself.'
 
 function shortDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  return new Date(ms).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
 }
 
 type RouteKind = 'Tailscale' | 'Same Wi-Fi' | 'Custom'
@@ -260,8 +260,7 @@ function DeviceRow({
       desc={`Paired ${shortDate(device.created_at)}`}
     >
       <Inline gap="large"><Inline gap="small"><SetupDot tone={active ? 'ok' : 'muted'} /><Text size="small" tone={active ? 'success' : 'muted'}>{activity}</Text></Inline><Button
-        variant="ghost"
-        size="sm"
+        variant="muted-link"
         disabled={!enabled}
         data-testid={`settings-remote-revoke-${device.id}`}
         onClick={() => onRevoke(device)}
