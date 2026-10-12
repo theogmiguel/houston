@@ -328,6 +328,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/question': () => <LegacyQuestionStory />,
   'legacy/git-shell': () => <LegacyGitShellStory />,
   'changes/empty-message': () => <ChangesStory />,
+  'changes/split': () => <ChangesStory />,
   'changes/ready': () => <ChangesStory ready />,
   'legacy/changes-idle': () => <LegacyChangesIdleStory />,
   'legacy/timeline-states': () => <LegacyTimelineStatesStory />,

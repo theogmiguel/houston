@@ -9,10 +9,12 @@ import { EmptyState } from '../ui/ActionEmptyState'
 
 function DiffBodyArea({
   row,
-  diff
+  diff,
+  split
 }: {
   row: ChangeRow
   diff: DiffState | null
+  split?: boolean
 }): React.JSX.Element {
   if (row.blocked) {
     return (
@@ -38,7 +40,7 @@ function DiffBodyArea({
   if (diff.patch.trim().length === 0) {
     return <DiffEmptyState>No textual diff for this file.</DiffEmptyState>
   }
-  return <DiffBody patch={diff.patch} truncated={diff.truncated} />
+  return <DiffBody patch={diff.patch} truncated={diff.truncated} split={split} />
 }
 
 export function DiffArea({
@@ -47,10 +49,12 @@ export function DiffArea({
   emptySummary,
   onReview,
   reviewDisabledReason,
-  onOpenInEditor
+  onOpenInEditor,
+  split
 }: {
   row: ChangeRow | null
   diff: DiffState | null
+  split?: boolean
   emptySummary?: { headline: string; description: string }
   onReview?: () => void
   reviewDisabledReason?: string | null
@@ -83,7 +87,7 @@ export function DiffArea({
     <DiffPaneSurface selected>
       <DiffHeader path={row.path} tag={row.tag} added={row.added} deleted={row.deleted} blocked={row.blocked} onOpenInEditor={onOpenInEditor} />
       <DiffScrollArea surface="tool-code" className="flex-1">
-        <DiffBodyArea row={row} diff={diff} />
+        <DiffBodyArea row={row} diff={diff} split={split} />
       </DiffScrollArea>
     </DiffPaneSurface>
   )

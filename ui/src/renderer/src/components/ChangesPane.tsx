@@ -1078,6 +1078,7 @@ export function ChangesPane({
     <DiffArea
       row={selectedRow}
       diff={diff}
+      split={splitDiff}
       emptySummary={{
         headline: `${rows.length} file${rows.length === 1 ? '' : 's'} changed`,
         description: `+${rows.reduce((sum, row) => sum + (row.added ?? 0), 0)} added, −${rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)} removed${ahead > 0 ? ` · ${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${defaultBase ?? 'the base'}` : ''}. Pick a file to read its diff.`

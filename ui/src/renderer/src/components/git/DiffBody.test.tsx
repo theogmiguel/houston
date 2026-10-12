@@ -7,6 +7,22 @@ import { DiffBody, diffBodyLines } from './DiffBody'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('DiffBody', () => {
+  it('pairs replacements and fills the missing old side in split layout', () => {
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    const props = { patch: '@@ -10,2 +20,3 @@\n-old\n+new\n+extra\n same', truncated: false, split: true }
+    act(() => root.render(<DiffBody {...props} />))
+    const pairs = host.querySelectorAll('[data-diff-pair]')
+    expect(pairs).toHaveLength(3)
+    expect(pairs[0].querySelector('[data-side="old"]')?.textContent).toContain('old')
+    expect(pairs[0].querySelector('[data-side="new"]')?.textContent).toContain('new')
+    expect(pairs[1].querySelector('[data-side="old"]')?.getAttribute('data-filler')).toBe('true')
+    expect(pairs[1].querySelector('[data-side="new"]')?.getAttribute('data-line')).toBe('21')
+    expect(pairs[2].querySelector('[data-side="old"]')?.getAttribute('data-line')).toBe('11')
+    expect(pairs[2].querySelector('[data-side="new"]')?.getAttribute('data-line')).toBe('22')
+    act(() => root.unmount())
+  })
+
   it('starts at the first hunk and omits git file headers', () => {
     const patch = [
       'diff --git a/src/a.ts b/src/a.ts',

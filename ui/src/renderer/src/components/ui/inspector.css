@@ -237,12 +237,8 @@
 .changes-pane[data-compact="true"] .changes-inline-file .changes-file-row>.changes-file-counts{margin-left:auto}
 .changes-pane[data-compact="true"] .changes-inline-diff{overflow:hidden;background:color-mix(in srgb,var(--card-bg) 90%,var(--content-bg));}
 .changes-pane[data-compact="true"] .changes-inline-diff [role="presentation"]{width:100%;min-width:0;padding:0 0 var(--space-2);font:12px/20px var(--font-mono)}
-.changes-pane[data-compact="true"] .changes-inline-diff.is-split [role="presentation"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
-.changes-pane[data-compact="true"] .changes-inline-diff.is-split [data-kind="del"]{grid-column:1}
-.changes-pane[data-compact="true"] .changes-inline-diff.is-split [data-kind="add"]{grid-column:2}
-.changes-pane[data-compact="true"] .changes-inline-diff.is-split [data-kind="ctx"],.changes-pane[data-compact="true"] .changes-inline-diff.is-split [data-kind="hunk"],.changes-pane[data-compact="true"] .changes-inline-diff.is-split [data-kind="meta"]{grid-column:1/3}
-.changes-pane[data-compact="true"] .changes-inline-diff [data-kind]{display:grid;grid-template-columns:40px 40px 0 minmax(0,1fr);column-gap:0;padding:0;line-height:20px;white-space:pre;overflow:hidden}
-.changes-pane[data-compact="true"] .changes-inline-diff [data-kind]>span:nth-child(3){width:0;padding:0;overflow:visible;text-align:left}
+.changes-pane[data-compact="true"] .changes-inline-diff [data-kind]:not([data-side]){display:grid;grid-template-columns:40px 40px 0 minmax(0,1fr);column-gap:0;padding:0;line-height:20px;white-space:pre;overflow:hidden}
+.changes-pane[data-compact="true"] .changes-inline-diff [data-kind]:not([data-side])>span:nth-child(3){width:0;padding:0;overflow:visible;text-align:left}
 .changes-pane[data-compact="true"] .changes-inline-diff [data-line-number]{display:block;width:40px;padding-right:var(--space-2);color:var(--text-faint);text-align:right;user-select:none}
 .changes-pane[data-compact="true"] .changes-inline-diff [data-kind="hunk"]{display:flex;height:24px;align-items:center;justify-content:center;gap:var(--space-2);padding:0 var(--space-2);text-align:center;color:var(--text-muted);background:transparent;font:11px var(--font-sans)}
 .changes-pane[data-compact="true"] .changes-inline-diff [data-kind="hunk"]::before,.changes-pane[data-compact="true"] .changes-inline-diff [data-kind="hunk"]::after{content:"";height:1px;background:var(--divider);flex:1}

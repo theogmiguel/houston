@@ -67,3 +67,19 @@ export function DiffLineText({ children }: { children: ReactNode }): React.JSX.E
 export function DiffPaneSurface({ children, selected = false }: { children: ReactNode; selected?: boolean }): React.JSX.Element {
   return <div className={`flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--content-bg)] ${selected ? 'changes-diff' : ''}`}>{children}</div>
 }
+
+export function DiffSplitCode({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div data-diff-layout="split" className="w-full min-w-0 font-mono text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)]">{children}</div>
+}
+
+export function DiffSplitRow({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div data-diff-pair className="grid grid-cols-2 divide-x divide-[var(--divider)]">{children}</div>
+}
+
+export function DiffSplitCell({ side, kind, filler, number, children }: { side: 'old' | 'new'; kind: DiffLineKind; filler: boolean; number: number | null; children: ReactNode }): React.JSX.Element {
+  return <div data-side={side} data-kind={kind} data-filler={filler ? 'true' : undefined} data-line={number ?? undefined}
+    className={`flex min-w-0 overflow-hidden whitespace-pre ${filler ? 'bg-[color-mix(in_srgb,var(--text-primary)_2%,transparent)]' : DIFF_TONE[kind]}`}>
+    <span className="w-[40px] shrink-0 pr-[var(--space-1-5)] text-right text-[var(--text-faint)] select-none" aria-hidden>{number ?? ''}</span>
+    {children}
+  </div>
+}
