@@ -68,7 +68,9 @@ pub(super) fn migrate(conn: &rusqlite::Connection) -> Result<()> {
             last_error TEXT,
             receipt TEXT,
             UNIQUE(task_id, provider, action, revision)
-        );",
+        );
+        CREATE INDEX IF NOT EXISTS task_tracker_outbox_pending
+            ON task_tracker_outbox(id) WHERE receipt IS NULL;",
     )?;
     Ok(())
 }
