@@ -3,6 +3,7 @@ import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
+import { PrPanelStory } from './prPanelStories'
 import { ChangesStory } from './changesStories'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { FoundationMotionStory } from './foundationMotionStory'
@@ -328,6 +329,13 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/tags': () => <LegacyTagsStory />,
   'legacy/question': () => <LegacyQuestionStory />,
   'legacy/git-shell': () => <LegacyGitShellStory />,
+  'pr-panel/ready': () => <PrPanelStory />,
+  'pr-panel/failing': () => <PrPanelStory failing />,
+  'pr-panel/older': () => <PrPanelStory ageSeconds={172800} />,
+  'pr-panel/metadata-unavailable': () => <PrPanelStory metadataMissing />,
+  'pr-panel/draft': () => <PrPanelStory isDraft />,
+  'pr-panel/merged': () => <PrPanelStory state="merged" />,
+  'pr-panel/closed': () => <PrPanelStory state="closed" />,
   'changes/empty-message': () => <ChangesStory />,
   'changes/no-staged-files': () => <ChangesStory ready staged={false} />,
   'changes/branch-switcher': () => <ChangesStory />,

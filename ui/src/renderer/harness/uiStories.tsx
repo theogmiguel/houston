@@ -9,6 +9,7 @@ import { SettingsNavigationGroup } from '../src/components/ui/NavigationRailFoot
 import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
+import { PrHeaderSpecimen } from '../src/components/ui/PrPresentation'
 import { changeRowClass } from '../src/components/ui/inspectorChangeClasses'
 import { GitToolsTriggerSpecimen, GitCommitSpecimen } from '../src/components/ui/Changes'
 import { BranchSwitcherSpecimen } from '../src/components/ui/BranchSwitcher'
@@ -574,6 +575,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Diff toolbar overflow"><GitToolsTriggerSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Pull request header"><PrHeaderSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Commit box"><GitCommitSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Branch switcher"><BranchSwitcherSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Changes review workspace"><ChangesReviewSpecimen /></SpecimenGroup>

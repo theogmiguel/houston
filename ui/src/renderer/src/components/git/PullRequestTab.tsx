@@ -1,3 +1,5 @@
+import { PrHeaderFrame, PrHeaderActions, PrHeaderNumber, PrHeaderAvatar, PrHeaderSentence, PrStatusWord } from '../ui/PrPresentation'
+import { prRelativeAge } from './prRelativeAge'
 import { PrTab } from '../ui/PrTab'
 import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { ReviewButton } from '../ui/ReviewButtonRoles'
@@ -7,7 +9,7 @@ import { TextArea } from '../ui/TextArea'
 import { MetadataRow } from '../ui/MetadataRow'
 import { Card } from '../ui/Card'
 import { SectionHead } from '../ui/SectionHead'
-import { PullRequestState, PullRequestDescription, PullRequestReviewBody } from '../ui/PullRequestState'
+import { PullRequestDescription, PullRequestReviewBody } from '../ui/PullRequestState'
 import { materialAttrs } from '../ui/material'
 import { useEffect, useRef, useState } from 'react'
 import type {
@@ -44,7 +46,6 @@ import { PrWatchRow, PrWatchStack } from '../ui/PrWatch'
 import { PrChecksPanel } from '../prs/PrChecksPanel'
 import { ChecksList, checkKey, type CheckAgentTarget } from '../prs/ChecksList'
 import { PrChecksList, usePrChecksState } from '../prs/usePrChecksState'
-import { CopyChip } from '../ui/CopyChip'
 import { usePrWatch } from './usePrWatch'
 import {
   usePrDetail,
@@ -388,33 +389,6 @@ function PrReadError({
   )
 }
 
-/** Title, branch pair, and the edit form that rewrites them. */
-function PrHeaderMetadata({ link, detail, onOpenUrlInPane }: {
-  link: PullRequestLink
-  detail: PrDetail
-  onOpenUrlInPane?: (url: string) => void
-}): React.JSX.Element {
-  const head = detail.head_ref ?? null
-  const base = detail.base_ref ?? null
-  const branchPair = head !== null && base !== null ? `${head} → ${base}` : null
-  return <>
-    <div data-testid="pr-header-top">
-      <PullRequestState data-testid="pr-state" state={link.state} isDraft={link.is_draft}>
-        <Icon glyph={IconGitPullRequest} role="small" />{stateLabel(link)}
-      </PullRequestState>
-      <span data-testid="pr-number">#{link.number}</span>
-      {onOpenUrlInPane && <ReviewButton variant="pull-request-external-action" type="button" onClick={() => onOpenUrlInPane(link.url)}><Icon glyph={IconExternal} role="small" />Open on GitHub</ReviewButton>}
-    </div>
-    <PullRequestRole data-testid="pr-title" as="div" role="pull-request-title">{link.title ?? `Pull request #${link.number}`}</PullRequestRole>
-    <PullRequestRole data-testid="pr-sub" as="div" role="branch-summary">
-      {head && <PrTab as={CopyChip} surface="pr-head-ref" value={head}>{head}</PrTab>}{branchPair ? ` → ${base} · ` : ''}{detail.commit_count === 1 ? '1 commit' : `${detail.commit_count} commits`}
-      {' · '}<span data-testid="pr-additions">+{link.additions}</span>{' '}<span data-testid="pr-deletions">−{link.deletions}</span>
-      {detail.behind_by !== null && detail.behind_by !== undefined ? (detail.behind_by === 0 ? ' · up to date' : ` · ${detail.behind_by} behind`) : ''}
-      {detail.auto_merge_enabled === true ? ` · auto-merge ${detail.auto_merge_method ?? 'merge'}` : ''}
-    </PullRequestRole>
-  </>
-}
-
 function PrHeaderEditor({ link, detail, busy, editBusy, onEdit, onReact }: {
   link: PullRequestLink
   detail: PrDetail
@@ -448,7 +422,7 @@ function PrHeaderEditor({ link, detail, busy, editBusy, onEdit, onReact }: {
   </>
 }
 
-function PrHeader({ link, detail, busy, editBusy, onEdit, onReact, onOpenUrlInPane, compact = false }: {
+function PrHeader({ link, detail, busy, editBusy, onEdit, onReact, compact = false }: {
   link: PullRequestLink
   detail: PrDetail
   busy: boolean
@@ -460,7 +434,6 @@ function PrHeader({ link, detail, busy, editBusy, onEdit, onReact, onOpenUrlInPa
 }): React.JSX.Element {
   return <PullRequestRole as="div" role="checks-panel">
     <PullRequestRole as="div" role="edit-form">
-      <PrHeaderMetadata link={link} detail={detail} onOpenUrlInPane={onOpenUrlInPane} />
       {!compact && <PrHeaderEditor link={link} detail={detail} busy={busy} editBusy={editBusy} onEdit={onEdit} onReact={onReact} />}
     </PullRequestRole>
   </PullRequestRole>
@@ -797,52 +770,17 @@ function PrDetailToolbar({
   )
 }
 
-function PrBranchHeader({ link, detail, actionBar, condensed, foldRef, condensedRef }: {
+function PrBranchHeader({ link, detail, actionBar, onOpenUrlInPane }: {
   link: PullRequestLink
   detail: PrDetail
   actionBar: React.ReactNode
-  condensed: boolean
-  foldRef: React.RefObject<HTMLDivElement | null>
-  condensedRef: React.RefObject<HTMLDivElement | null>
+  onOpenUrlInPane?: (url: string) => void
 }): React.JSX.Element {
-  const updatedMinutes = Math.max(0, Math.floor((Date.now() / 1000 - detail.updated_at) / 60))
-  const number = (testId?: string): React.JSX.Element => <PrTab as="a" surface="pr-crumb-number" state={link.is_draft && link.state === 'open' ? 'draft' : link.state} href={link.url} data-testid={testId}>#{link.number}<Icon glyph={IconExternal} role="small" /></PrTab>
-  return <PrTab as="div" surface="pr-scroll-header" data-testid="pr-scroll-header" data-condensed={condensed}>
-    <PrTab as="div" surface="pr-branch-topline" data-testid="pr-header-top">
-      <PrTab as="div" surface="pr-crumb-cell">
-        <PrTab as="div" surface="pr-crumb-expanded" state={condensed ? 'hidden' : undefined}>
-          <PrTab as="span" surface="pr-crumb-repo">{link.repository}</PrTab><span data-testid="pr-state">{number('pr-number')}</span>
-        </PrTab>
-        <PrTab as="div" surface="pr-crumb-condensed" state={condensed ? undefined : 'hidden'}>
-          {number()}<span>{link.title ?? `Pull request #${link.number}`}</span>
-        </PrTab>
-      </PrTab>
-      {actionBar}
-    </PrTab>
-    <PrTab as="div" surface="pr-header-fold" state={condensed ? 'shut' : undefined}>
-    <div><PrTab as="div" surface="pr-branch-heading" ref={foldRef}>
-      <PullRequestRole data-testid="pr-title" as="h2" role="pull-request-title">{link.title ?? `Pull request #${link.number}`}</PullRequestRole>
-      <PrTab as="div" surface="pr-branch-author">
-        <PrTab as="span" surface="pr-branch-avatar" aria-hidden="true">{(detail.author ?? 'M').slice(0, 1).toUpperCase()}</PrTab>
-        <span>{detail.author ?? 'maintainer'}</span><span aria-hidden="true">·</span>
-        <span>updated {updatedMinutes}m ago</span>
-        <PrTab as={CopyChip} surface="pr-branch-checkout" value={`gh pr checkout ${link.number}`}>gh pr checkout {link.number}</PrTab>
-      </PrTab>
-      <PrTab as="div" surface="pr-branch-refs" data-testid="pr-sub">
-        <PrTab as="span" surface="pr-branch-ref-pair"><span>{detail.base_ref ?? 'main'}</span><span aria-hidden="true">←</span><span>{detail.head_ref ?? 'branch'}</span></PrTab>
-        <PrTab as="span" surface="pr-branch-stat"><Icon glyph={IconFile} role="small" /><span>{link.changed_files} files</span><PrTab as="span" surface="pr-branch-diff"><span>+{link.additions}</span><span>−{link.deletions}</span></PrTab></PrTab>
-      </PrTab>
-    </PrTab></div>
-    </PrTab>
-    <PrTab as="div" surface="pr-condensed-row" state={condensed ? 'open' : undefined}>
-      <div><PrTab as="div" surface="pr-condensed-inner" ref={condensedRef}>
-        <PrTab as="span" surface="pr-branch-avatar" aria-hidden="true">{(detail.author ?? 'M').slice(0, 1).toUpperCase()}</PrTab>
-        <span>{updatedMinutes}m ago</span><span aria-hidden="true">·</span>
-        <PrTab as="span" surface="pr-condensed-refs"><span>{detail.base_ref ?? 'main'}</span><span aria-hidden="true">←</span><span>{detail.head_ref ?? 'branch'}</span></PrTab>
-        <PrTab as="span" surface="pr-branch-stat"><Icon glyph={IconFile} role="small" /><span>{link.changed_files} files</span><PrTab as="span" surface="pr-branch-diff"><span>+{link.additions}</span><span>−{link.deletions}</span></PrTab></PrTab>
-      </PrTab></div>
-    </PrTab>
-  </PrTab>
+  return <PrHeaderFrame
+    top={<><PrStatusWord data-testid="pr-state" tone={link.is_draft ? "muted" : link.state === "merged" ? "info" : link.state === "closed" ? "stop" : "ok"}>{stateLabel(link)}</PrStatusWord><PrHeaderNumber>#{link.number}</PrHeaderNumber><PrHeaderActions>{onOpenUrlInPane && <ReviewButton variant="pull-request-external-action" type="button" data-testid="pr-open" onClick={() => onOpenUrlInPane(link.url)}>GitHub<Icon glyph={IconExternal} role="small" /></ReviewButton>}{actionBar}</PrHeaderActions></>}
+    title={link.title ?? `Pull request #${link.number}`}
+    sentence={<PrHeaderSentence><PrHeaderAvatar author={detail.author} /><span>{detail.author ?? 'Author unavailable'} wants to merge {detail.head_ref ?? 'source branch unavailable'} into {detail.base_ref ?? 'base branch unavailable'} · {prRelativeAge(detail.updated_at)}</span></PrHeaderSentence>}
+  />
 }
 
 function PrTimelineSummary({
@@ -1145,10 +1083,6 @@ function PrDetailView({
   const [commentDraft, setCommentDraft] = useState('')
   const commentMotion = useExitAnimation(compact && commentOpen, 150)
   const [openPicker, setOpenPicker] = useState<'reviewers' | 'labels' | 'stack' | null>(null)
-  const [condensed, setCondensed] = useState(false)
-  const condensedState = useRef(false)
-  const foldRef = useRef<HTMLDivElement | null>(null)
-  const condensedRef = useRef<HTMLDivElement | null>(null)
   const checkState = usePrChecksState({ client, dir, number: link.number, url: link.url, branch: detail.head_ref ?? null, checks: detail.checks, agents: checkAgentTargets, onPasteToAgent, onCreateAgent: onCreateCheckAgent ? (provider, text) => Promise.resolve(onCreateCheckAgent(provider, text)).then((session) => session ?? null) : undefined, onOpenUrl: onOpenUrlInPane, onOpenPane })
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const preloadedCodePr = useRef<number | null>(null)
@@ -1169,23 +1103,7 @@ function PrDetailView({
     setCommentOpen(false)
     setCommentDraft('')
     setOpenPicker(null)
-    condensedState.current = false
-    setCondensed(false)
   }, [number])
-
-  const onDetailScroll = (event: React.UIEvent<HTMLDivElement>): void => {
-    if (!compact) return
-    const scroll = event.currentTarget
-    const foldHeight = foldRef.current?.scrollHeight ?? 0
-    if (!condensedState.current && scroll.scrollTop > foldHeight + 32) {
-      condensedState.current = true
-      setCondensed(true)
-      scroll.scrollTop -= Math.max(0, foldHeight - (condensedRef.current?.scrollHeight ?? 0))
-    } else if (condensedState.current && scroll.scrollTop < 4) {
-      condensedState.current = false
-      setCondensed(false)
-    }
-  }
 
   const preloadCode = (target: EventTarget): void => {
     if (!compact || !(target instanceof Element) || !target.closest('[data-testid="pr-pane-code"]') || preloadedCodePr.current === number) return
@@ -1254,7 +1172,7 @@ function PrDetailView({
 
   return (
     <PullRequestRole data-testid="pr-tab" as="div" role="tab-frame">
-      {compact && <PrBranchHeader link={link} detail={detail} actionBar={actionBar} condensed={condensed} foldRef={foldRef} condensedRef={condensedRef} />}
+      <PrBranchHeader link={link} detail={detail} actionBar={compact ? actionBar : null} onOpenUrlInPane={onOpenUrlInPane} />
       <PrDetailToolbar
         compact={compact}
         pane={pane}
@@ -1265,8 +1183,6 @@ function PrDetailView({
         preloadCode={preloadCode}
         onChangePane={(value) => {
           setPane(value)
-          condensedState.current = false
-          setCondensed(false)
           if (scrollRef.current) scrollRef.current.scrollTop = 0
           if (value === 'files' && preloadedCodePr.current !== number) {
             preloadedCodePr.current = number
@@ -1296,7 +1212,6 @@ function PrDetailView({
         drafts={drafts}
         onAddDraft={addDraft}
         scrollRef={scrollRef}
-        onScroll={onDetailScroll}
       />
       {compact && <>
         {commentMotion.mounted && <PrTab as="div" surface="pr-comment-composer" state={commentMotion.closing ? 'closing' : undefined} data-testid="pr-comment-popover" aria-hidden={commentMotion.closing || undefined}>

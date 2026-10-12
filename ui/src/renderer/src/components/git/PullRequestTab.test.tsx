@@ -388,7 +388,7 @@ describe('PullRequestTab — reading a pull request', () => {
     expect(q('[data-testid="pr-title"]')!.textContent).toContain('a change')
     expect(q('[data-testid="pr-number"]')!.textContent).toBe('#61')
     expect(q('[data-testid="pr-sub"]')!.textContent).toContain('feat/x')
-    expect(q('[data-testid="pr-sub"]')!.textContent).toContain('→ main · 2 commits')
+    expect(q('[data-testid="pr-sub"]')!.textContent).toContain('theo wants to merge feat/x into main')
     click(q('[data-testid="pr-checks"] button'))
     expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
     expect(qa('[data-testid="pr-check-row"]').some((row) => row.textContent?.includes('1m 12s'))).toBe(true)
@@ -1301,4 +1301,27 @@ it('uses emphasis for the review counter and shows running checks in the inspect
   expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
     expect(qa('[data-testid="pr-pane-summary"]')).toHaveLength(1)
   expect(qa('[data-testid="pr-pane-files"]')).toHaveLength(0)
+})
+
+describe('shared pull request header', () => {
+  it.each([true, false])('uses a status word and a real relative age (compact=%s)', (compact) => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000)
+    try {
+      const client = mount({ compact })
+      emit(client, detailMsg({ detail: detail({ updated_at: 2_000_000_000 - 2 * 86400 }) }))
+      expect(q('[data-testid="pr-state"]')!.textContent).toBe('Open')
+      expect(q('[data-testid="pr-sub"]')!.textContent).toContain('theo wants to merge feat/x into main · 2d ago')
+      expect(qa('[data-testid="pr-title"]')).toHaveLength(1)
+    } finally { now.mockRestore() }
+  })
+
+  it('shows unavailable metadata without inventing an author or base branch', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ author: null, base_ref: null, head_ref: null }) }))
+    const sentence = q('[data-testid="pr-sub"]')!.textContent!
+    expect(sentence).not.toContain('maintainer')
+    expect(sentence).not.toContain('main')
+    expect(sentence).toContain('Author unavailable')
+    expect(sentence).toContain('base branch unavailable')
+  })
 })
