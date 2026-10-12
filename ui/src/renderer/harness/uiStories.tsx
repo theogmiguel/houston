@@ -10,8 +10,6 @@ import { GitToolsTriggerSpecimen, GitCommitSpecimen } from '../src/components/ui
 import { BranchSwitcherSpecimen } from '../src/components/ui/BranchSwitcher'
 import { ChangesReviewSpecimen } from '../src/components/ui/ChangesReview'
 import { DiffBody } from '../src/components/git/DiffBody'
-import { UsageAgentMark } from '../src/components/ui/UsageProviderRow'
-import { UsageDayFilter, UsageBreakdownActions } from '../src/components/ui/UsageChrome'
 import { IconChartArea } from '../src/components/icons'
 import { UsageDayFilter, UsageBreakdownActions, UsageSourcesLine } from '../src/components/ui/UsageChrome'
 import { UsageAgentMark, UsageShareCell, UsageSourceRow } from '../src/components/ui/UsageProviderRow'
@@ -421,10 +419,10 @@ function SkillsChromeSpecimen(): React.JSX.Element {
 }
 
 const breakdownRows = [
-  { rank: 1, model: 'claude-opus-5-5', cost: '$1,812.30', share: '72.9%', tokens: '2.9B', bar: 72.9 },
-  { rank: 2, model: 'gpt-5.5-codex', cost: '$402.10', share: '16.2%', tokens: '498M', bar: 16.2 },
-  { rank: 3, model: 'claude-sonnet-5-5', cost: '$259.10', share: '10.4%', tokens: '1.2B', bar: 10.4 },
-  { rank: 4, model: 'gpt-5.5-codex-mini', cost: '$12.80', share: '0.5%', tokens: '14M', bar: 0.5 }
+  { sessions: 96, model: 'claude-opus-5-5', cost: '$1,812.30', share: '72.9%', tokens: '2.9B', bar: 72.9 },
+  { sessions: 39, model: 'gpt-5.5-codex', cost: '$402.10', share: '16.2%', tokens: '498M', bar: 16.2 },
+  { sessions: 88, model: 'claude-sonnet-5-5', cost: '$259.10', share: '10.4%', tokens: '1.2B', bar: 10.4 },
+  { sessions: 3, model: 'gpt-5.5-codex-mini', cost: '$12.80', share: '0.5%', tokens: '14M', bar: 0.5 }
 ]
 
 const routineItems = [
@@ -802,7 +800,13 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Usage and configuration roles">
           <SpecimenRow>
-            <UsageChromeSpecimen /><UsageStatsSpecimen /><EmptyState copy="summary" icon={IconChartArea} heading="No sessions in the last 7 days" description="Usage appears after a Claude Code or Codex session writes its transcript. Older days are in the 30 and 90 day windows." /><UsageSourceRow mark={<UsageAgentMark agent="codex" />} label="Codex" description={<Text mono>~/.codex/sessions</Text>} status={<StatusLabel status="Missing" variant="detail" tone="waiting">Folder not found</StatusLabel>} /><UsageSourcesLine>Read from <Text mono>~/.claude/projects</Text> (172 sessions) and <Text mono>~/.codex/sessions</Text> (42 sessions). Costs are estimates at API list prices; a subscription is billed differently.</UsageSourcesLine><UsageBreakdownActions><UsageDayFilter label="Tue Oct 6" onClear={() => {}} /><UsageShareCell share={0.729} color="var(--claude)" /></UsageBreakdownActions><UsageLegend series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--claude)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} />
+            <UsageChromeSpecimen />
+            <UsageStatsSpecimen />
+            <EmptyState copy="summary" icon={IconChartArea} heading="No sessions in the last 7 days" description="Usage appears after a Claude Code or Codex session writes its transcript. Older days are in the 30 and 90 day windows." />
+            <UsageSourceRow mark={<UsageAgentMark agent="codex" />} label="Codex" description={<Text mono>~/.codex/sessions</Text>} status={<StatusLabel status="Missing" variant="detail" tone="waiting">Folder not found</StatusLabel>} />
+            <UsageSourcesLine>Read from <Text mono>~/.claude/projects</Text> (172 sessions) and <Text mono>~/.codex/sessions</Text> (42 sessions). Costs are estimates at API list prices; a subscription is billed differently.</UsageSourcesLine>
+            <UsageBreakdownActions><UsageDayFilter label="Tue Oct 6" onClear={() => {}} /><UsageShareCell share={0.729} color="var(--claude)" /></UsageBreakdownActions>
+            <UsageLegend series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--claude)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} />
             <MaterialSurfaceSpecimen />
             <ConfigurationDetailSpecimen />
             <Text size="subhead" weight="semibold" tone="primary">Configuration heading</Text>
@@ -1345,6 +1349,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             getRowId={(row) => row.model}
             columns={[
               { key: 'model', header: 'Model', render: (value) => <UsageModelCell mark={<UsageAgentMark agent="codex" />} name={String(value)} /> },
+              { key: 'sessions', header: 'Sessions', numeric: true, tone: 'muted', width: '80px' },
               { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '80px' },
               { key: 'cost', header: 'Cost', numeric: true, width: '100px' },
               { key: 'share', header: 'Share', width: '160px', render: (_, row) => <UsageShareCell share={row.bar / 100} color="var(--text-primary)" /> }
@@ -1375,7 +1380,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Usage chart, calendar and shares">
-          <UsageSectionHeading fullWidth aside="Premium $121.40">Cost by speed</UsageSectionHeading>
+          <UsageSectionHeading fullWidth aside="Premium $121.40">Where the cost goes</UsageSectionHeading>
           <UsageProviderRow mark={<UsageAgentMark agent="claude" />} label="Claude Code" sessions={172} amount="$2,071.40" note="4.1B tokens" share={0.833} color="var(--claude)" />
           <div style={{ maxWidth: 900 }}><UsageChart metric="cost" points={[
             { startMs: 0, key: 'Mon', byProvider: { claude: { cost: 120, tokens: 0 }, codex: { cost: 45, tokens: 0 } } },
