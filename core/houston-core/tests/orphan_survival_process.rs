@@ -100,7 +100,7 @@ fn orphan_fixture_agent() {
         .find(|pair| matches!(pair[0], "--resume" | "--session-id"))
         .map(|pair| pair[1])
         .expect("exact assigned or resumed conversation");
-    let resumed = arguments.iter().any(|argument| *argument == "--resume");
+    let resumed = arguments.contains(&"--resume");
     let transcript = records.join(format!("{native}.jsonl"));
     std::fs::write(&transcript, b"{}\n").unwrap();
     let drop_dir = records
