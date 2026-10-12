@@ -1381,7 +1381,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             { startMs: 3, key: 'Thu', byProvider: { claude: { cost: 230, tokens: 0 }, codex: { cost: 110, tokens: 0 } } }
           ]} series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--accent)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} labelFor={(point) => point.key} /></div>
           <UsageCalendar days={[]} metric="cost" selectedDay={null} onSelect={noop} />
-          <UsageShareBar heading="Cost by type" segments={[{ id: 'input', label: 'Input', value: 58 }, { id: 'cache-read', label: 'Cache read', value: 24 }, { id: 'output', label: 'Output', value: 18 }]} />
+          <UsageShareBar heading="Where the cost goes" segments={[{ id: 'cache-read', label: 'Cache read', value: 24 }, { id: 'cache-write', label: 'Cache write', value: 12 }, { id: 'output', label: 'Output', value: 18 }, { id: 'input', label: 'Input', value: 58 }]} note="Caching saved $140.00 against full input prices." />
           <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: noop }, { label: 'Delete', onSelect: noop, tone: 'danger' }]} />
         </SpecimenGroup>
 

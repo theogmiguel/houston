@@ -311,11 +311,16 @@ export function UsageSection({
           series={series}
           labelFor={labelFor}
         />
+        <UsageShareGroup>
         <Card shape="card" tone="block" data-material="inset" data-testid="usage-by-agent">
           <UsageSectionHeading inset>By agent</UsageSectionHeading>
           {displayProviders.map((p) => <UsageProviderRow key={p.provider} mark={<UsageAgentMark agent={p.provider} />} label={p.label} sessions={p.sessions} amount={formatUsd(p.cost)} note={`${formatTokens(p.tokens)} tokens`} share={p.costShare} color={PROVIDER_COLOR[p.provider]} />)}
           {summary.untracked_agents.length > 0 && <UsageCardNote>Not counted: {joinAgentNames(untrackedAgentNames(summary.untracked_agents))}. They do not write token counts Houston can read.</UsageCardNote>}
         </Card>
+        <Card shape="card" tone="block" padding="page" data-material="inset">
+          <UsageShareBar heading="Where the cost goes" segments={categoryTotals(buckets)} note={<>{buckets.length > 0 && buckets.every((bucket) => bucket.speed_rate_available) && <>Fast and Ultrafast modes added {formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}. </>}Caching saved {formatUsd(totals.cacheSavings)} against full input prices.</>} />
+        </Card>
+        </UsageShareGroup>
 
         {}
         <UsageCalendarSectionFrame data-testid="usage-calendar-section">
@@ -324,11 +329,6 @@ export function UsageSection({
           </div>
           <UsageCalendar days={activity} metric={metric} selectedDay={selectedDay} caption="Houston keeps one total per day, so days older than the transcripts still count. Click a day to see its breakdown." onSelect={(day) => { setSelectedDay((current) => current === day ? null : day); setMode('day') }} />
         </UsageCalendarSectionFrame>
-
-        {metric === 'cost' && totals.tokens > 0 && <UsageShareGroup>
-          <UsageShareBar heading="Cost by type" segments={categoryTotals(buckets)} />
-          <UsageShareBar heading="Cost by speed" aside={`Premium ${formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}`} segments={speedTotals(buckets)} />
-        </UsageShareGroup>}
 
         {}
         <UsageBreakdown mode={mode} onModeChange={setMode} rows={dayBreakdown(rows, selectedDay, activity)} loading={loading} />
@@ -360,12 +360,12 @@ function dayBreakdown(rows: BreakdownRow[], selectedDay: string | null, activity
 
 export function categoryTotals(buckets: UsageSummaryMsg['buckets']): { id: string; label: string; value: number }[] {
   return [
-    { id: 'input', label: 'Input', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.input_usd, 0) },
     { id: 'cache-read', label: 'Cache read', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.cache_read_usd, 0) },
     { id: 'cache-write', label: 'Cache write', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.cache_write_usd, 0) },
     { id: 'output', label: 'Output', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.output_usd, 0) },
+    { id: 'input', label: 'Input', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.input_usd, 0) },
     { id: 'other', label: 'Other', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.other_usd, 0) }
-  ].filter((segment) => segment.value > 0)
+  ].filter((segment) => segment.id !== 'other' || segment.value > 0)
 }
 
 export function speedTotals(buckets: UsageSummaryMsg['buckets']): { id: string; label: string; value: number }[] {

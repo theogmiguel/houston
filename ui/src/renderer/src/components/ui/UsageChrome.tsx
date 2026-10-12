@@ -68,7 +68,7 @@ export function UsageBreakdownFrame({ children, ...props }: { children: ReactNod
 }
 
 export function UsageShareGroup({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="grid grid-cols-1 gap-[var(--space-4)] pt-[var(--space-6)] md:grid-cols-2">{children}</div>
+  return <div className="grid grid-cols-1 items-start gap-[var(--space-3)] md:grid-cols-2">{children}</div>
 }
 
 export function UsageHeroColumn({ children }: { children: ReactNode }): React.JSX.Element {

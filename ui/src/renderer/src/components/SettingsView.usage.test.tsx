@@ -177,12 +177,24 @@ describe('Usage page', () => {
     expect(speedTotals(buckets).map((item) => item.label)).toEqual(['Standard', 'Fast', 'Ultrafast'])
   })
 
-  it('shows Cost by speed beside Cost by type even when every request ran at standard speed', () => {
+  it('shows ordered cost categories, shares and the cache savings explanation', () => {
     const standard = summary().buckets.map((b) => ({ ...b, fast_cost_usd: 0, ultrafast_cost_usd: 0, speed_premium_usd: 0 }))
     render({ summary: summary({ buckets: standard }) })
-    expect(text()).toContain('Cost by type')
-    expect(text()).toContain('Cost by speed')
-    expect(text()).toContain('Premium $0.00')
+    const categories = q('[data-testid="usage-share-where-the-cost-goes"]')
+    expect(categories?.textContent).toContain('Caching saved $12.00 against full input prices.')
+    expect(categories?.textContent).toContain('Fast and Ultrafast modes added $0.00.')
+    const labels = categories?.textContent ?? ''
+    expect(labels.indexOf('Cache read')).toBeLessThan(labels.indexOf('Cache write'))
+    expect(labels.indexOf('Cache write')).toBeLessThan(labels.indexOf('Output'))
+    expect(labels.indexOf('Output')).toBeLessThan(labels.indexOf('Input'))
+    expect(labels).toContain('40%$50.00')
+    expect(text()).not.toContain('Cost by speed')
+  })
+
+  it('does not present a speed cost chart when speed rates are unavailable', () => {
+    render({ summary: summary({ buckets: summary().buckets.map((bucket) => ({ ...bucket, speed_rate_available: false })) }) })
+    expect(text()).not.toContain('Cost by speed')
+    expect(text()).not.toContain('Fast and Ultrafast modes added')
   })
 
   it('reports unpriced models without assigning them a zero rate', () => {
