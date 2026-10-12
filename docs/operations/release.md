@@ -1,266 +1,197 @@
 # Releasing
 
-## The workflows
+## Cut, review and publish
 
-Seven workflow files under `.github/workflows/`, in the order a release passes
-through them:
+A new release takes two manual workflows. **Cut release** creates a draft with
+installers. **Promote draft to public** publishes it after a desktop smoke test
+and approval. Merging a PR or pushing a tag does not publish a release.
 
-| File | What it is | Trigger |
-|---|---|---|
-| `ci.yml` | the gate; never builds an installer, never reads a version | PR, and push to `main` |
-| `cut-release.yml` | the cut: version, commit, tag, builds, files a **draft** | manual |
-| `release-linux.yml` | AppImage and `.deb` per architecture, plus the headless smoke matrix | `workflow_call` |
-| `release-windows.yml` | the NSIS installer | `workflow_call` |
-| `release-publish.yml` | the one job that files a draft release and writes `latest.json` | `workflow_call` |
-| `publish-draft.yml` | promotes a smoke-tested draft to public | manual, reviewed |
-| `build-installers.yml` | builds selected OSes (both by default) and files nothing | manual |
+1. Merge the intended PRs and wait for **CI** on the current `main` commit to
+   finish successfully. Open **Actions → Cut release → Run workflow**. Leave
+   the workflow branch and `ref` on `main` for a stable release.
+2. Choose `kind`: `patch` for fixes, `minor` for features, `major` for a breaking
+   release, or `rc` for a prerelease. Keep `include_windows` checked for the normal
+   Linux and Windows release. Leave `resume_tag` empty and `preview_only` unchecked.
+3. Run the workflow. Its summary shows the source commit, next version, previous
+   public release, selected platforms and release notes. It checks source CI,
+   updates the four manifests and both lockfiles, pushes the release commit and
+   tag, builds the installers and creates a **draft**. Nothing is public yet.
+4. Follow the draft link in the summary, or open **Releases** in the repository.
+   Review the grouped notes, expand any legacy title-only entries, and save edits
+   to the draft. Download and test the installers on real desktops using the
+   [smoke-test procedure](#3-smoke-test-the-bundle). Do not click GitHub's direct
+   **Publish release** button: that bypasses manifest synchronization and checks.
+5. Open **Actions → Promote draft to public → Run workflow** on `main`. Enter the
+   exact draft tag, such as `v0.20.0`, and check `smoke_tested` after testing. Start
+   the workflow, open its run and use **Review deployments** to approve the
+   `stable-release` environment. A configured required reviewer must approve it;
+   dispatching the workflow alone does not grant approval.
+6. Promotion verifies the downloaded assets and signatures, copies the reviewed
+   draft description into `latest.json`, and then publishes the draft. The summary
+   links to the public release. Stable installations can discover the update;
+   installation still requires an explicit user action. An RC stays a prerelease
+   and is not offered through the stable update feed.
 
-Only **`publish-draft.yml`** makes a release visible. A merge to `main` ships
-nothing, and pushing a `v*` tag by hand now does nothing at all.
+To review the proposed version and notes before building, run **Cut release**
+with `preview_only` checked. It uploads a `release-notes-<tag>` Actions artifact
+and writes a preview summary, but creates no commit, tag, installer or release.
+Run again with that option unchecked when ready. A preview does not reserve its
+version; another cut or changes to `main` can change the next result.
 
-**`ci.yml`** runs six jobs — `safety-checks` (the hermetic text-search
-scripts), `renderer-checks` (`ui`'s `bun run typecheck` and `bun run test`),
-`core-checks` (`cargo fmt`, `cargo clippy`, `cargo test --lib`, against
-`core/Cargo.toml`), `windows-renderer-checks` (renderer gates on Windows),
-`windows-checks` (native gates plus portable core integrations on Windows) and `licence-inventory` (the committed third-party
-inventory still matches both dependency graphs) — on every pull request, and on
-every push to `main` except a docs-only change. Remaining integration suites,
-Linux `src-tauri` gates and load-sensitive gates still run locally by whoever
-lands the work, per [`docs/operations/development.md`](development.md).
+| Cut release input | Meaning |
+|---|---|
+| `kind` | `patch`, `minor`, `major` or `rc`; ignored when resuming |
+| `ref` | Source branch, tag or SHA; stable cuts require the current tip of `main` |
+| `include_windows` | Defaults to `true`; disabling it deliberately produces Linux packages only |
+| `preview_only` | Inspect source CI, version and notes without building or changing repository state |
+| `resume_tag` | Existing tag to rebuild without another version commit or tag |
 
-**`build-installers.yml`** is the manual dry run: by default it builds both Linux
-architectures and the Windows NSIS installer from any ref you name. Set `platform`
-to `windows` or `linux` to validate that platform alone; `windows` still builds the
-Linux bundles, because the installer carries their x86_64 daemon for WSL distros
-(artifact `wsl-linux-x86_64-<version>`). It files nothing.
-Since `ci.yml` never builds an installer, it is the only way to
-exercise the bundle pipeline without cutting a version.
+## Recover a failed attempt
 
-**`release-publish.yml`** reads only the `houston-*` artifacts. It refuses a
-bundle set that is missing an artifact or its `.sig`, generates the release notes once and reuses them, and writes
-`latest.json` with each signature embedded. It files a draft, never a public
-release.
+- If a bundle job fails after `prepare` succeeded, use the run's **Re-run failed
+  jobs** first. Successful jobs and their artifacts remain available, so they do
+  not need to be rebuilt. Avoid **Re-run all jobs** on a normal cut: it repeats
+  version allocation and can allocate another version.
+- If the version/tag was already pushed but `prepare` failed afterwards, or a
+  fresh run is needed, start **Cut release** with `resume_tag` set to that exact
+  tag. Keep the original `include_windows` selection. This checks out the tag,
+  verifies its manifest versions, rebuilds it and creates or updates its draft.
+  An existing draft keeps its identity and reviewed notes. A public release is
+  refused. Resume does not delete or move tags and does not create a new version.
+- A fresh `resume_tag` run rebuilds the packages; it does not reuse artifacts from
+  a different run. Fixes to packaging automation must be available on the workflow
+  branch. Source fixes require a new release, because the existing tag is immutable.
+- If publication fails, inspect the error, leave the release as a draft, and rerun
+  **Promote draft to public** after fixing the cause. Edited notes are read again.
+  A public release is never republished by this workflow.
 
-**Stable releases ship Linux and Windows.** Windows x86_64 installers have been
-published since v0.14.0. Select `include_windows` for a normal release: the
-dispatch input still defaults to `false`, so leaving it unchecked deliberately
-produces a Linux-only artifact set. That release offers no installer to Windows
-users. Confirm the intended platform set before starting the cut.
-
-## The rule: PRs land work, a release names a version
-
-Every change reaches `main` through a pull request, merged once CI is green and
-the author has completed the relevant local gates
-([development runbook](development.md)). This contributor policy applies even
-when GitHub does not enforce it. Verify branch protection settings before
-administering the repository; do not assume the required checks are configured.
-
-A version means an installable artifact, nothing less. Feature PRs therefore
-never bump a version, and nobody writes release notes by hand: the notes for a
-release are generated from the merged pull requests at cut time. A PR's title
-is the note its reader gets, so it is written in user voice.
-
-When it is time to ship, one **Cut release** run does the whole bump and
-nothing else — see "How a release happens" below. Ten PRs and one release in a
-week is the normal shape; traceability comes from the PR number on every merge
-commit, not from a version number nobody can install.
-
-## Versions
-
-Four files carry the version, and `build-installers.yml`'s `version-guard` job
-checks they agree before it builds anything:
-
-- `src-tauri/tauri.conf.json` (`.version`) — the bundle filenames and the
-  deb/NSIS metadata come from here
-- `src-tauri/Cargo.toml` (`version`) — the app crate
-- `ui/package.json` (`.version`) — the renderer
-- `core/Cargo.toml` (`[workspace.package] version`) — inherited by every core
-  crate, `tr-helper` included
-
-Nothing in the tree forces the four to track each other, so **nothing edits
-them by hand**:
-
-```
-./scripts/set-version.sh 0.11.0
-```
-
-writes all four plus both `Cargo.lock` files in one go, and refuses a string
-that is not `X.Y.Z` or `X.Y.Z-rc.N` before it writes anything. The lockfiles
-are updated with `cargo update --workspace`, which rewrites the workspace
-crates' own entries and no dependency, so a version bump can never become a
-dependency bump by accident.
-
-`scripts/check-manifest-versions.sh` is the check that nothing drifted: it
-reads the four, refuses an empty or disagreeing set, and prints the agreed
-version. `build-installers.yml`'s `version-guard` job runs it, and a resumed
-cut runs it against the tag's version.
-
-The script reads `core/Cargo.toml`'s version *scoped to the
-`[workspace.package]` table* — an unscoped first-match read would pick up a
-`version = ` line under `[workspace.dependencies]` instead.
-
-Tag format: `v*` (e.g. `v0.6.0`), created by **Cut release**.
+Cuts share a concurrency group. The running cut is not cancelled by a new one;
+GitHub retains only one pending run in that group and replaces an older pending
+run when another is submitted. Wait for the current cut before submitting another.
+Draft updates and promotion share a per-tag concurrency group, so the workflows
+cannot overwrite and publish the same draft at the same time. Avoid editing a
+release manually while either operation is running.
 
 ## Release notes
 
-When a release is cut, `release-publish.yml` calls GitHub's `generate-notes`
-API once for that tag, starting the range at the previous stable tag, and
-writes the answer to a notes file. That one file is the release body *and* the
-`notes` field in `latest.json`, so the two surfaces cannot disagree. If GitHub
-returns an empty body the run warns and uses one plain fallback line rather
-than filing a blank description.
+Notes start at the nearest **published stable release** in the source commit's
+history, not the highest reserved tag. An abandoned tag or an unpublished draft
+must not hide changes from the next public release. RC notes use the same stable
+baseline. Version allocation still reads all reserved tags to avoid collisions.
 
-The notes are only as good as the merged PRs: GitHub lists each one by its
-title, and the body is not part of the generated notes. A title is therefore
-the copy a reader sees on the release page.
+For each merged PR in that range, the generator reads its `## Release notes`
+section. Use category headings and one concise English bullet per change; omit
+unused categories. A PR may contribute multiple features, fixes and performance
+improvements. For example:
 
-## How a release happens
+```markdown
+## Release notes
 
-Run **Cut release** from the Actions tab. That is the whole procedure.
+### Features
 
-| Input | Value |
-|---|---|
-| `kind` | `patch`, `minor`, `major` or `rc` |
-| `ref` | what to cut from; `main` by default |
-| `resume_tag` | an existing tag whose bundle jobs failed; rebuilds it without a version bump |
-| `include_windows` | select for a normal Linux and Windows release; defaults to `false`, which produces Linux packages only |
+- Restore saved pane layouts when reopening a workspace.
 
-It reads the tags to decide the next version, writes it with
-`scripts/set-version.sh`, commits, tags, pushes and builds both Linux architectures
-in parallel. When selected, the Windows build follows the Linux build because
-it bundles the Linux daemon for WSL. The workflow then files a **draft** release
-whose body is the generated notes.
-Windows or not, a cut requires both Linux architectures, each with an AppImage
-and a `.deb`; a Windows build adds the x86_64 NSIS installer. Then you download
-the artifacts, install and run them, and promote the draft with **Promote draft
-to public** — see "Smoke-test the bundle" below. A draft is where every release
-stops until a person has run it.
+### Fixes
 
-A second cut started while one is running queues behind it
-(`concurrency: release-cut`); it is never cancelled, because a cut that has
-already pushed a tag must not be killed mid-flight. An `rc` queuing behind a
-stable cut is intended.
+- Keep a renamed pane's name after respawning its agent.
 
-Before `publish` runs, the Linux bundle workflow boots the built x86_64 AppImage
-on Ubuntu 22.04, Ubuntu 24.04, Debian 12 and current Fedora, headlessly: each
-job installs only the runtime libraries a desktop install already has, extracts
-the AppImage and runs `--version`, so a missing host dependency or a build that
-overran the glibc floor fails there. It runs for every caller of the bundle
-workflow, and `publish` waits for it. A graphical run is still a person's job:
-a runner has no display. The packaged x86_64 app and daemon also start under
-QEMU's baseline `qemu64` CPU before upload. Containers share the runner's CPU
-features, so distribution coverage alone cannot detect instructions unsupported
-by users' processors. The native terminal library is built with `-Dcpu=baseline`
-to avoid inheriting the build runner's instruction set. The Linux bundle script
-also rebuilds Whisper with native CPU detection and optional x86 extensions
-disabled; its Cargo build script does not track changes to those CMake options.
+### Performance
 
-### The lifecycle of a tag
+- Bound terminal output buffering while a pane is hidden.
+```
 
-1. **Nothing.** PRs merge to `main`. No version exists.
-2. **Tag pushed, nothing built.** `prepare` computes the version, writes the
-   four manifests, commits and pushes commit and tag atomically. From here the
-   tag is permanent; nothing deletes it.
-3. **Building.** Both bundle jobs build *the tag*, not the dispatch ref. Linux
-   builds x86_64 and aarch64 natively, each producing an AppImage and a `.deb`;
-   Windows, when selected, builds the x86_64 NSIS installer. The Linux job then
-   boots the built x86_64 AppImage headlessly on the four distributions above.
-4. **Draft filed.** `release-publish.yml` generates the notes once, verifies
-   the artifact set, writes `latest.json` and files a draft. A draft's assets
-   are not publicly downloadable, so the URLs inside `latest.json` do not
-   resolve yet — that is precisely what makes this state safe.
-5. **Smoke-tested.** A person installs the artifact and runs it on a real
-   desktop. No runner can do this; they are headless and no webview
-   initializes.
-6. **Public.** `publish-draft.yml` flips the draft after a reviewer approves
-   the `stable-release` environment. `releases/latest` serves it, the
-   `latest.json` URLs resolve, and installed copies begin to be offered the
-   update.
+The supported categories are `Features`, `Fixes`, `Performance`, `Refactoring`
+and `Other`. Write `None` or `Internal only` directly under `## Release notes`
+when a PR has no release-facing changes. Empty sections and unknown categories
+are rejected. PR CI validates a present section; editing only the PR description
+requires rerunning CI to validate the new text.
 
-An interruption between the build and the draft leaves the tag with no release.
-`resume_tag` is how that is recovered: it rebuilds the existing tag, skipping
-the version computation, the commit and the push. Re-running a plain `patch`
-cut instead computes the *next* version — the release commit's version already
-exists — and strands the tag.
+Legacy PRs without the section fall back to their conventional title. The preview
+summary and metadata identify these entries for editorial review. The generator
+does not invent details from implementation diffs or call an AI service. Each
+entry links to its PR, and the notes include a full changelog link. Review and
+improve this copy in the draft before promotion.
 
-Before any of that, it refuses a run whose secrets are missing. A real release
-needs `TAURI_SIGNING_PRIVATE_KEY` and
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to sign its artifacts, plus
-`RELEASE_PUSH_SSH_KEY` to write the version commit through protected `main`.
-The run stops before the version is computed and before anything is pushed.
+At draft creation, the release page and `latest.json` receive the same notes.
+Promotion synchronizes the manifest again using the final draft description, so
+edits made during review reach the app. Editing a release after publication does
+not synchronize the manifest; finish editorial review before promoting it.
 
-**What it refuses, and why each refusal exists.**
+## Workflow responsibilities
 
-- **Missing updater signing secrets.** A release nobody can verify is not a
-  release; the error names the missing secret and where to set it.
-- **Missing release push key.** The version commit cannot bypass protected
-  `main` without the dedicated deploy key, so the cut stops before it creates
-  a commit or tag.
-- **A stable that is not strictly greater than the latest stable tag.** The
-  arithmetic alone would not catch a repository whose tags and manifests have
-  drifted, so the comparison is explicit and the error names the computed
-  version, the latest stable and the `kind` that was asked for.
-- **A tag that already exists.** A tag is the one act here that nothing can
-  undo; re-cutting one silently would be the worst way to find that out.
-- **A stable from anything but the tip of `main`.** A release candidate may
-  come off a side ref — that is what candidates are for — but a stable is cut
-  from `main`'s tip and nothing else.
-- **Moving `main` from a ref that is not its tip.** When the cut ref is not
-  `main`'s current commit, the workflow pushes the tag and nothing else, and
-  says so in the run summary. `main` is never fast-forwarded from somewhere
-  else and is never force-pushed, under any input.
-- **A half-pushed stable cut.** The version commit and its tag are one atomic
-  push, so a rejected ref leaves neither one behind on the remote.
-- **An incomplete or mismatched artifact set.** `release-publish.yml` refuses
-  a bundle with no `.sig`, either official Linux architecture missing its
-  AppImage or deb, the Windows x86_64 installer missing when the cut included
-  Windows, a filename from another version, and any file the release does not
-  expect; the error names the offending file and what was expected.
-- **A second cut while one is running.** It queues behind the first
-  (`concurrency: release-cut`) and is never cancelled.
-- **A resume onto a published release.** Only a draft may be replaced; a
-  release that is already public is never rebuilt.
-- **A resume whose manifests disagree with its tag.** A resumed cut checks out
-  the tag it rebuilds and refuses a tree that does not carry that version.
-- **Publishing without a smoke test.** `publish-draft.yml` refuses until the
-  operator ticks the attestation, and **publishing something already public**
-  is refused for the same reason a re-cut is.
+| Actions name | File | Purpose |
+|---|---|---|
+| CI | `ci.yml` | PR and main validation; no installers or publication |
+| Cut release | `cut-release.yml` | Manual version allocation, notes, builds and draft |
+| Promote draft to public | `publish-draft.yml` | Manual publication after smoke-test attestation and environment approval |
+| Build installers | `build-installers.yml` | Manual packaging validation; no version bump, tag or release |
+| Build Linux packages (internal) | `release-linux.yml` | Reusable Linux builds and packaged runtime checks |
+| Build Windows installer (internal) | `release-windows.yml` | Reusable native compilation and subsequent NSIS packaging |
+| Create release draft (internal) | `release-publish.yml` | Reusable signature verification, updater manifest and draft creation |
 
-The `stable-release` environment reviewer is the actual control; the checkbox
-is an attestation a person makes, and `publish-draft.yml` runs unprotected
-until that environment exists.
+The three internal workflows are called by the manual workflows; their lack of
+independent runs does not mean they are unused. They are not dispatched directly.
 
-An `rc` continues an open series rather than starting a new one: if a
-`vX.Y.Z-rc.N` exists whose base is above the latest stable, the next is
-`-rc.(N+1)` on that same base. With no open series it starts at the next minor,
-`-rc.1`. The notes for a candidate span the last stable tag to the candidate.
+CI runs seven jobs: `safety-checks`, `renderer-checks`, `core-checks`,
+`linux-native-checks`, `windows-renderer-checks`, `windows-checks` and
+`licence-inventory`. Cut release requires a successful run for the exact source
+commit and successful completion of every required job. A green run for an older
+commit is insufficient. Stable cuts require main CI; RC cuts may use PR CI for
+that exact PR head targeting `main`. Main pushes limited to documentation are
+excluded by CI's path filters; manually run CI for that commit before cutting.
+See the [development runbook](development.md) for the remaining local gates.
 
-An `rc` is filed as a **prerelease** (and still as a draft, until a person
-smoke-tests it). Publishing a candidate as a normal release would make
-`releases/latest` offer it to every stable install, so the flag follows the
-`kind` that was asked for — or, for a resumed tag, the version's own `-rc.`
-suffix.
+**Build installers** accepts any source ref and resolves it once to an immutable
+commit shared by all jobs. Both platforms are selected by default. Selecting
+`windows` still builds Linux packages because Windows embeds their x86_64 daemon
+for WSL. It uploads artifacts only and is the packaging check to run before
+merging changes to the bundle pipeline.
 
-Cut release pushes through its deploy key so it can update protected `main`.
-Nothing watches the pushed tag: the run itself builds the bundles and files the
-release.
+Linux builds x86_64 and aarch64 packages. Windows native compilation starts in
+parallel with Linux; NSIS packaging waits for the Linux WSL artifact and validates
+its real daemon and helper before bundling. The intermediate Windows native
+artifact is internal to Actions and is not a release asset. This removes Linux
+build time from the start of Windows compilation without omitting WSL resources.
 
-A `v*` tag pushed by hand starts nothing. The only runs that produce artifacts
-are **Cut release** and the manual `build-installers.yml` (which files
-nothing); promoting a draft is `publish-draft.yml`.
+Before filing the draft, Linux packages run headlessly on Ubuntu 22.04, Ubuntu
+24.04, Debian 12 and current Fedora. The packaged x86_64 app and daemon also run
+under QEMU's baseline CPU. These checks catch missing runtime dependencies, ABI
+floor changes and unsupported CPU instructions. They do not replace graphical
+smoke tests on real Linux and Windows desktops.
 
-### One workflow file per OS
+## Versions and release boundaries
 
-Each OS file is self-contained: it declares its own runner pins, its own
-toolchain, its own caches and its own pinned Tauri CLI version, and takes the
-release version as an input. That is the point of the split — one OS's build
-can be re-run on its own after a flake without paying for the other, and a
-change to the Linux packaging cannot accidentally move the Windows one.
+Only a release changes versions. Feature PRs do not edit the version manifests:
 
-The two bundle workflows only read the tree and upload artifacts, so they
-carry the narrowest permissions they need; they receive the signing secrets
-through `secrets: inherit`. `release-publish.yml` is the one job that writes
-anything outward-facing, and it writes a draft.
+- `src-tauri/tauri.conf.json`
+- `src-tauri/Cargo.toml`
+- `ui/package.json`
+- `core/Cargo.toml` (`workspace.package.version`)
+
+`scripts/set-version.sh X.Y.Z` updates all four and both Cargo lockfiles using
+`cargo update --workspace`, without updating dependencies. It accepts `X.Y.Z` or
+`X.Y.Z-rc.N`. `scripts/check-manifest-versions.sh` verifies agreement and checks a
+resumed tag's expected version. Cut release runs these scripts; contributors do
+not bump versions by hand.
+
+Stable cuts require the tip of `main`, an unused tag and a version greater than
+all stable tags. The version commit and tag are pushed atomically; a rejected push
+must not leave half a release on the remote. An RC can use a side ref, in which
+case only its tag is pushed and `main` is not moved. RC allocation continues the
+highest open series above the latest stable tag; otherwise it starts the next
+minor version at `-rc.1`.
+
+A normal cut requires `RELEASE_PUSH_SSH_KEY`, `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` before changing any versions. A resume needs
+the signing secrets but does not push a new commit or tag. Preview needs neither
+signing nor push secrets. `release-publish.yml` refuses missing architectures,
+missing or invalid signatures, mismatched versions and unexpected asset files.
+Only verified bundles and their updater manifest become release assets.
+
+All changes to `main` go through PR review and CI. The automated version commit
+uses the configured release deploy key. A manually pushed `v*` tag starts no
+workflow. The `stable-release` environment's required reviewer is the publication
+control; configure it as described below rather than relying on the checkbox alone.
 
 ### Windows signing: two paths, one secret
 
@@ -303,8 +234,8 @@ app's updater reads, once at start, every six hours, and whenever the About
 panel's **Check now** is pressed, and broadcasts what it found. The panel names
 the release, shows a teaser of its notes and links to the release page, whose URL
 is built from the manifest's version. The notes are the manifest's `notes`
-field, fixed when the draft is built, so editing the release body afterwards does
-not change what the panel shows.
+field, synchronized from the reviewed draft by **Promote draft to public**. Edits
+made after publication do not change what the panel shows.
 Scheduled checks also revalidate the shared model catalog independently of the release result.
 Release checks send the last valid ETag within a daemon lifetime; a `304` reuses the cached
 release payload. Restarting the daemon performs a full release check.
@@ -406,7 +337,7 @@ the repo does not carry them.
   and store its private half as the Actions secret `RELEASE_PUSH_SSH_KEY`.
   Remove both halves together when rotating it.
 - **Secrets.** `TAURI_SIGNING_PRIVATE_KEY` and
-  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are **required**: every release workflow
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are **required**: a new signed cut or resume
   refuses a run without them, because a release without a verifiable signature
   is not a release. The six `AZURE_TRUSTED_SIGNING_*` / `AZURE_*` values are
   optional and turn on Authenticode signing of the Windows installer; with
@@ -456,7 +387,7 @@ sidecar before bundling.
 **The testbed's distro is the artifact's glibc floor.** It defaults to Ubuntu
 24.04, which builds bundles needing glibc 2.38 or newer — AppImage included,
 because the bundler copies the host's libraries — and that breaks the promise
-CI keeps by building on 22.04. Before a local cut, gate the result from the
+the release workflow keeps by building on 22.04. Before a local cut, gate the result from the
 repo root inside the VM:
 
 ```
@@ -551,10 +482,10 @@ generator requires it for signature verification:
 release_tag=v0.10.0
 release_version=${release_tag#v}
 
-notes=$(gh api --method POST \
-  "repos/theogmiguel/houston/releases/generate-notes" \
-  -f tag_name="$release_tag" --jq '.body // ""')
-printf '%s\n' "$notes" > /tmp/houston-notes.md
+python3 scripts/release-helper.py notes \
+  --repo theogmiguel/houston --source "$release_tag" --tag "$release_tag" \
+  --output /tmp/houston-notes.md --metadata /tmp/houston-notes.json
+# Review /tmp/houston-notes.md before filing the draft.
 
 python3 scripts/gen-update-manifest.py \
   --repository theogmiguel/houston --tag "$release_tag" \
@@ -562,7 +493,7 @@ python3 scripts/gen-update-manifest.py \
   --notes-file /tmp/houston-notes.md \
   --artifacts-dir <artifacts-dir> --output <artifacts-dir>/latest.json
 
-gh release create "$release_tag" --draft \
+gh release create "$release_tag" --draft --verify-tag \
   --notes-file /tmp/houston-notes.md <artifacts-dir>/*
 ```
 

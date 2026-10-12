@@ -15,6 +15,13 @@ Closes #
 <!-- If this PR changes anything visual, include before/after screenshots.
      If there are no UI changes, write N/A and say why (e.g. "backend only"). -->
 
+## Release notes
+
+<!-- List user-visible changes under the applicable ### Features, ### Fixes,
+     ### Performance, ### Refactoring or ### Other headings. Use one bullet per
+     change and remove unused categories. Write None for internal-only work.
+     See docs/operations/release.md for the format. Do not leave this empty. -->
+
 ## Testing
 
 
@@ -31,6 +38,6 @@ Closes #
 - [ ] `cargo fmt --all --check` and `cargo clippy --all-targets -- -D warnings` pass
 - [ ] `cargo test` passes
 - [ ] In `ui/`: `bun run typecheck && bun run test && bun run check:complexity && bun run build && bun run check:css && bun run check:bundle` pass, in that order (`bun run test`, never bare `bun test` — the latter is Bun's own runner and fails the suite)
-- [ ] If behaviour changed: the title says what changed for a user, in plain language — the release notes are generated from the merged PRs and list each one by its title
+- [ ] If behaviour changed: the title says what changed for a user, in plain language — the Release notes section lists its features, fixes and improvements (or explicitly says None)
 - [ ] If this is a bug fix: added a regression test that fails before the fix
 - [ ] No version bumps — only the **Cut release** workflow touches a version manifest

@@ -116,7 +116,7 @@ The [development runbook](docs/operations/development.md) contains exact command
 - Diagnose failures using the discriminator appropriate to the failure mode in
   [testing](docs/internals/testing.md); a standalone rerun is not sufficient for every case.
 - Push and PR CI runs `safety-checks`, `renderer-checks`, `core-checks`,
-  `windows-renderer-checks`, `windows-checks` and `licence-inventory`. Contributors must
+  `linux-native-checks`, `windows-renderer-checks`, `windows-checks` and `licence-inventory`. Contributors must
   also run the local integration suites.
 
 ## Pull requests and releases
@@ -125,8 +125,9 @@ The [development runbook](docs/operations/development.md) contains exact command
   CI and completed local gates. Do not assume branch protection is configured; verify
   repository settings when administering it.
 - Use conventional PR titles that describe user-visible behaviour, for example
-  `fix(panes): a renamed pane keeps its name across respawn`. Release notes list merged
-  PR titles. Documentation-only and CI-only PRs need not use a user-facing description.
+  `fix(panes): a renamed pane keeps its name across respawn`. Release notes group the
+  items in each PR's `## Release notes` section; legacy titles are a fallback. Use
+  explicit `None` for internal-only changes. See the release runbook for categories.
 - Explain the problem and resulting change in the PR body. Omit generated-by footers
   and agent session links. Keep one concern per commit. Destructive Git operations
   require explicit authorization.

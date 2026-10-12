@@ -25,18 +25,24 @@ on:
         type: string
         required: false
         default: ''
+      preview_only:
+        description: 'Preview the version and notes without committing, tagging or building'
+        type: boolean
+        default: false
       include_windows:
         description: 'Build and publish the Windows 10/11 x86_64 installer alongside Linux'
         type: boolean
-        default: false
+        default: true
         required: true
 
 permissions:
   contents: write
+  actions: read
+  pull-requests: read
 
 # One cut at a time: two cuts minutes apart both read the tags and can compute
-# the same version before either pushes. Queue, never cancel -- a cut that has
-# pushed a tag must not be killed; an rc queuing behind a stable cut is intended.
+# the same version before either pushes. Keep the running cut alive; GitHub
+# retains one pending run and replaces it if another is submitted.
 concurrency:
   group: release-cut
   cancel-in-progress: false
@@ -53,7 +59,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version || steps.resume_version.outputs.version }}
       tag: ${{ steps.version.outputs.tag || steps.resume_version.outputs.tag }}
-      previous_tag: ${{ steps.version.outputs.previous_tag || steps.resume_version.outputs.previous_tag }}
       tauri_cli_version: ${{ steps.pin.outputs.tauri_cli_version }}
     steps:
       - name: Record start time
@@ -64,14 +69,16 @@ jobs:
       # First, before the version is computed, the commit is made or the tag is
       # pushed: a cut that cannot be published signed must not move anything.
       - name: Require the release secrets
+        if: inputs.preview_only != true
         env:
+          RESUME_TAG: ${{ inputs.resume_tag }}
           RELEASE_PUSH_SSH_KEY: ${{ secrets.RELEASE_PUSH_SSH_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           missing=()
-          [ -n "$RELEASE_PUSH_SSH_KEY" ] || missing+=(RELEASE_PUSH_SSH_KEY)
+          [ -n "$RELEASE_PUSH_SSH_KEY" ] || [ -n "$RESUME_TAG" ] || missing+=(RELEASE_PUSH_SSH_KEY)
           [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY)
           [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
           if [ "${#missing[@]}" -ne 0 ]; then
@@ -79,39 +86,40 @@ jobs:
             exit 1
           fi
 
-      # A resume rebuilds an existing tag; the tag must exist on origin and must
-      # not name a release that is already public. A draft is replaceable.
-      - name: Refuse an unknown resume tag
-        if: inputs.resume_tag != ''
-        env:
-          RESUME_TAG: ${{ inputs.resume_tag }}
-        run: |
-          set -euo pipefail
-          if ! git ls-remote --exit-code --tags origin "refs/tags/$RESUME_TAG" >/dev/null 2>&1; then
-            echo "::error::resume_tag \"$RESUME_TAG\" does not exist on origin; push the tag or clear resume_tag"
-            exit 1
-          fi
-
-      - name: Refuse to resume a published release
-        if: inputs.resume_tag != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RESUME_TAG: ${{ inputs.resume_tag }}
-        run: |
-          set -euo pipefail
-          if gh release view "$RESUME_TAG" >/dev/null 2>&1; then
-            if [ "$(gh release view "$RESUME_TAG" --json isDraft --jq .isDraft)" != "true" ]; then
-              echo "::error::release $RESUME_TAG is already public; a resumed cut may only replace a draft"
-              exit 1
-            fi
-          fi
-
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          # A resume checks out the tag it rebuilds; a normal cut the dispatch ref.
-          ref: ${{ inputs.resume_tag != '' && inputs.resume_tag || inputs.ref }}
           ssh-key: ${{ secrets.RELEASE_PUSH_SSH_KEY }}
+
+      - name: Resolve and check out the source commit
+        env:
+          SOURCE_REF: ${{ inputs.resume_tag != '' && inputs.resume_tag || inputs.ref }}
+          RESUME_TAG: ${{ inputs.resume_tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp scripts/release-helper.py "$RUNNER_TEMP/release-helper.py"
+          cp scripts/release-draft.py "$RUNNER_TEMP/release-draft.py"
+          if [ -n "$RESUME_TAG" ]; then
+            python3 "$RUNNER_TEMP/release-draft.py" check-resume --repository "$GITHUB_REPOSITORY" --tag "$RESUME_TAG"
+            source_sha=$(git rev-parse --verify --end-of-options "refs/tags/$RESUME_TAG^{commit}")
+          elif git rev-parse --verify --end-of-options "refs/remotes/origin/$SOURCE_REF^{commit}" >/dev/null 2>&1; then
+            source_sha=$(git rev-parse --verify --end-of-options "refs/remotes/origin/$SOURCE_REF^{commit}")
+          else
+            source_sha=$(git rev-parse --verify --end-of-options "$SOURCE_REF^{commit}")
+          fi
+          git checkout --detach "$source_sha"
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+
+      - name: Require successful CI for the source commit
+        if: inputs.resume_tag == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KIND: ${{ inputs.kind }}
+        run: |
+          args=()
+          if [ "$KIND" = rc ]; then args+=(--rc); fi
+          python3 "$RUNNER_TEMP/release-helper.py" preflight --repo "$GITHUB_REPOSITORY" --source "$SOURCE_SHA" --metadata "$RUNNER_TEMP/release-preflight.json" "${args[@]}"
 
       - name: Resolve the refs and decide whether main may move
         if: inputs.resume_tag == ''
@@ -152,12 +160,9 @@ jobs:
             | sed -E 's/^v//' \
             | sort -V \
             | tail -n1 || true)
-          previous_tag=""
           if [ -z "$latest_stable" ]; then
             latest_stable="0.0.0"
             echo "no stable tag found; treating the latest stable as 0.0.0"
-          else
-            previous_tag="v$latest_stable"
           fi
           echo "latest stable: $latest_stable (kind=$KIND)"
           IFS=. read -r major minor patch <<< "$latest_stable"
@@ -212,11 +217,9 @@ jobs:
             echo "::error::tag $tag already exists"
             exit 1
           fi
-          echo "previous tag for the generated notes: ${previous_tag:-none}"
           {
             echo "version=$version"
             echo "tag=$tag"
-            echo "previous_tag=$previous_tag"
           } >> "$GITHUB_OUTPUT"
           echo "next version: $version (tag $tag)"
 
@@ -231,30 +234,59 @@ jobs:
           set -euo pipefail
           version="${RESUME_TAG#v}"
           ./scripts/check-manifest-versions.sh "$version" >/dev/null
-          previous=$(git tag -l 'v*' \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            | grep -vFx "$RESUME_TAG" \
-            | sort -V \
-            | tail -n1 || true)
           {
             echo "version=$version"
             echo "tag=$RESUME_TAG"
-            echo "previous_tag=$previous"
           } >> "$GITHUB_OUTPUT"
+          echo "Resuming $RESUME_TAG: no new version, commit or tag." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare the release notes and preview
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag || steps.resume_version.outputs.tag }}
+          RESUME_TAG: ${{ inputs.resume_tag }}
+          INCLUDE_WINDOWS: ${{ inputs.include_windows }}
+          PREVIEW_ONLY: ${{ inputs.preview_only }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release-notes"
+          python3 "$RUNNER_TEMP/release-helper.py" notes --repo "$GITHUB_REPOSITORY" --source "$SOURCE_SHA" --tag "$TAG" --output "$RUNNER_TEMP/release-notes/generated.md" --metadata "$RUNNER_TEMP/release-notes/metadata.json"
+          args=()
+          if [ -n "$RESUME_TAG" ]; then args+=(--resume); fi
+          python3 "$RUNNER_TEMP/release-draft.py" notes --repository "$GITHUB_REPOSITORY" --tag "$TAG" --generated "$RUNNER_TEMP/release-notes/generated.md" --output "$RUNNER_TEMP/release-notes/notes.md" "${args[@]}"
+          previous=$(jq -r '.previous_tag // ""' "$RUNNER_TEMP/release-notes/metadata.json")
           {
-            echo "resumed tag $RESUME_TAG: rebuilding only, no version computation,"
-            echo "commit or push. kind and ref are ignored on a resume."
+            echo "## Release preview: $TAG"
+            echo "Source commit: $SOURCE_SHA"
+            echo "Previous public release: ${previous:-none}"
+            echo "Platforms: Linux x86_64/aarch64; Windows: $INCLUDE_WINDOWS"
+            echo "Preview only: $PREVIEW_ONLY"
+            fallbacks=$(jq -r '.fallbacks | map("#" + tostring) | join(", ")' "$RUNNER_TEMP/release-notes/metadata.json")
+            if [ -n "$fallbacks" ]; then
+              echo "Editorial review required: $fallbacks have legacy title-only notes. Expand their details in the draft."
+            fi
+            echo
+            cat "$RUNNER_TEMP/release-notes/notes.md"
+            echo
+            echo "Review these notes in the draft, install and test the packages, then run [Promote draft to public](https://github.com/$GITHUB_REPOSITORY/actions/workflows/publish-draft.yml) with tag $TAG and smoke_tested checked. Approve the stable-release environment when prompted."
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "resuming $RESUME_TAG (version $version, previous tag ${previous:-none})"
+      - uses: actions/upload-artifact@v7
+        with:
+          overwrite: true
+          name: release-notes-${{ steps.version.outputs.tag || steps.resume_version.outputs.tag }}
+          path: ${{ runner.temp }}/release-notes/
+          if-no-files-found: error
 
       - uses: dtolnay/rust-toolchain@stable
+        if: inputs.resume_tag == '' && inputs.preview_only != true
 
       - name: Write the version into the manifests and both lockfiles
-        if: inputs.resume_tag == ''
+        if: inputs.resume_tag == '' && inputs.preview_only != true
         run: ./scripts/set-version.sh "${{ steps.version.outputs.version }}"
 
       - name: Commit and tag
-        if: inputs.resume_tag == ''
+        if: inputs.resume_tag == '' && inputs.preview_only != true
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -269,7 +301,7 @@ jobs:
           git tag -m "release: v$VERSION" "v$VERSION"
 
       - name: Push the commit and the tag
-        if: inputs.resume_tag == ''
+        if: inputs.resume_tag == '' && inputs.preview_only != true
         env:
           TAG: ${{ steps.version.outputs.tag }}
           CUT_REF: ${{ inputs.ref }}
@@ -302,6 +334,7 @@ jobs:
   # ref: the release commit holds the manifests at the new version, and building
   # anything else ships a bundle whose filename and runtime version disagree.
   linux-bundle:
+    if: inputs.preview_only != true
     needs: prepare
     uses: ./.github/workflows/release-linux.yml
     with:
@@ -311,12 +344,23 @@ jobs:
       require_signing: true
     secrets: inherit
 
-  # After the Linux bundles: the installer carries their x86_64 daemon for WSL distros.
-  windows-bundle:
-    needs: [prepare, linux-bundle]
-    if: inputs.include_windows
+  windows-compile:
+    needs: prepare
+    if: inputs.include_windows && inputs.preview_only != true
     uses: ./.github/workflows/release-windows.yml
     with:
+      stage: compile
+      ref: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
+      tauri_cli_version: ${{ needs.prepare.outputs.tauri_cli_version }}
+      require_signing: false
+
+  windows-bundle:
+    needs: [prepare, linux-bundle, windows-compile]
+    if: inputs.include_windows && inputs.preview_only != true
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      stage: bundle
       ref: ${{ needs.prepare.outputs.tag }}
       version: ${{ needs.prepare.outputs.version }}
       tauri_cli_version: ${{ needs.prepare.outputs.tauri_cli_version }}
@@ -328,7 +372,7 @@ jobs:
     # the push, so a run that stopped after the push would ship nothing.
     needs: [prepare, linux-bundle, windows-bundle]
     if: >-
-      always() &&
+      always() && inputs.preview_only != true &&
       needs.prepare.result == 'success' &&
       needs.linux-bundle.result == 'success' &&
       (inputs.include_windows != true || needs.windows-bundle.result == 'success')
@@ -337,8 +381,6 @@ jobs:
       tag: ${{ needs.prepare.outputs.tag }}
       version: ${{ needs.prepare.outputs.version }}
       title: Houston ${{ needs.prepare.outputs.tag }}
-      previous_tag: ${{ needs.prepare.outputs.previous_tag }}
-      draft: true
       include_windows: ${{ inputs.include_windows }}
       replace_existing: ${{ inputs.resume_tag != '' }}
       # An rc is a prerelease; on a resume the tag itself says so, since kind is

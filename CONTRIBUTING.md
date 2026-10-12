@@ -112,9 +112,10 @@ would actually catch the regression over one that only walks the happy path.
 - Say what changed and why, in a sentence or two.
 - One concern per PR. If the message says "also", split it.
 - Before/after screenshots for anything visual, or `N/A` with a reason.
-- When the PR changes behaviour a user would notice, its title is the note that user will
-  get — the release notes are generated from the merged PRs and list each one by its
-  title. CI-only and docs-only PRs are exempt.
+- Use a conventional title describing the resulting behaviour. Add a `## Release notes`
+  section with feature, fix and improvement bullets, or explicit `None` for internal work.
+  Releases group these items; legacy PR titles are a fallback requiring editorial review.
+  See the [release runbook](docs/operations/release.md#release-notes) for the format.
 
 ## Releases are maintainer-only
 
