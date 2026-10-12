@@ -1,6 +1,7 @@
 import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
+import { changeRowClass } from '../src/components/ui/inspectorChangeClasses'
 import { GitToolsTriggerSpecimen, GitCommitSpecimen } from '../src/components/ui/Changes'
 import { BranchSwitcherSpecimen } from '../src/components/ui/BranchSwitcher'
 import { ChangesReviewSpecimen } from '../src/components/ui/ChangesReview'
@@ -561,6 +562,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Commit box"><GitCommitSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Branch switcher"><BranchSwitcherSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Changes review workspace"><ChangesReviewSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Changes file rows"><div className="changes-pane" data-compact="true">{([true, false] as const).map((selected) => <div key={String(selected)} className="changes-inline-file"><div className={changeRowClass(selected)}><GitStatusMark className="changes-inline-status" status={selected ? "modified" : "added"}>{selected ? "M" : "A"}</GitStatusMark><span>{selected ? "Selected file.tsx" : "Added file.ts"}</span></div></div>)}</div></SpecimenGroup>
         <SpecimenGroup heading="Diff line">
           <ReviewDiffLineSpecimen />
           <DiffBody patch={"@@ -1,2 +1,3 @@\n-old\n+new\n+extra\n context"} truncated={false} split />

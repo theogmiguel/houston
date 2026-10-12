@@ -961,7 +961,7 @@ export function ChangesPane({
   }
 
   const shell = (body: React.ReactNode): React.JSX.Element => (
-    <GitChangesSurface onKeyDown={reviewKeyDown} compact={compact === true} state={paneState} reviewing={reviewing}>
+    <GitChangesSurface data-maximized={maximized} onKeyDown={reviewKeyDown} compact={compact === true} state={paneState} reviewing={reviewing}>
       {body}
       <GitToolsDialogs open={branchManageOpen ? "branches" : null} dir={repoDir} tools={tools} busy={toolsBusy} error={toolsError} fallbackBase={defaultBase} onClose={() => setBranchManageOpen(false)} onAddWorkspace={addWorkspace} />
       {reviewPickerOpen && (
