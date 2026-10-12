@@ -9711,6 +9711,29 @@ impl Daemon {
             return;
         }
         let code = exit_code.map_or_else(|| "no code".to_string(), |c| format!("code {c}"));
+        if let Some(parent) = self.parent_of(id) {
+            let reason = format!(
+                "Conversation resume failed: child {id} exited with {code} within {} s; its conversation remains available for Continue and no fresh agent was started.",
+                RESUME_EARLY_EXIT.as_secs()
+            );
+            if let Err(error) = self.inbox_write(
+                parent,
+                &self.current_workspace(id).unwrap_or_default(),
+                Some(id),
+                None,
+                orchestrate::InboxKind::OperatorNote,
+                "Child conversation resume failed",
+                &reason,
+                Vec::new(),
+                Some("resume_failed"),
+                None,
+                false,
+                true,
+            ) {
+                tracing::warn!("reporting failed child {id} resume: {error:#}");
+            }
+            return;
+        }
         let notice = format!(
             "Started a fresh CLI: the resumed agent exited with {code} within {} s",
             RESUME_EARLY_EXIT.as_secs()

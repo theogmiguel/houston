@@ -1816,6 +1816,63 @@ async fn a_resumed_cli_that_exits_cleanly_is_not_relaunched() {
 }
 
 #[tokio::test]
+async fn a_failed_child_resume_never_starts_a_fresh_agent() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "failed-child-resume");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let parent = claude_pane(&daemon, &dir, None);
+    let child = daemon
+        .orchestrate_spawn_with_options(
+            parent.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            houston_core::orchestrate::Brief::from("finish the assigned change".to_string()),
+            Some(false),
+            None,
+            Some("failed-resume".into()),
+            None,
+            true,
+            None,
+            None,
+        )
+        .unwrap();
+    let conversation = flag(&argv_of(&env, child.id).await, "--session-id").unwrap();
+    let path = transcript(&env, &conversation, b"child turn\n");
+    hook(
+        &env, &daemon, child.id, "UserPromptSubmit", PROMPT, &conversation, &path, &dir,
+    )
+    .await;
+    std::env::set_var("RESUME_FAKE_EXIT", "1");
+    let resumed = daemon.respawn(child.id, false, None, None, true).unwrap();
+    assert_eq!(resume_of(&argv_of(&env, resumed.id).await), Some(conversation.clone()));
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let reported = daemon.inbox_rows_for_test(parent.id).iter().any(|row| {
+            row.reason.as_deref() == Some("resume_failed")
+        });
+        let replaced = daemon.list().iter().any(|info| {
+            info.session_origin == Some(child.id) && info.id != resumed.id
+        });
+        if reported || replaced {
+            assert!(reported, "a failed child resume must be reported without a fresh replacement");
+            assert!(!replaced, "a child's mission cannot be replaced by an empty fresh CLI");
+            break;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "failed resume never settled");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let ended = daemon.list().into_iter().find(|info| info.id == resumed.id).unwrap();
+    assert_eq!(ended.state, proto::SessionState::Exited);
+    assert!(ended.resumable);
+    assert_eq!(handle_in(&env, ended.id).map(|handle| handle.0), Some(conversation));
+    daemon.close(ended.id).unwrap();
+    daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
 async fn a_codex_pane_restores_its_exact_thread_id() {
     let env = setup().await;
     let daemon = boot(&env);
