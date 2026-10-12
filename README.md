@@ -9,7 +9,9 @@ through Houston's local orchestration tools.
 [Download Houston](https://github.com/theogmiguel/houston/releases) ·
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
-![Houston showing a workspace with multiple persistent terminal panes](.github/assets/houston-grid.webp)
+![Houston showing a demonstration workspace with three terminal panes and the Git inspector](.github/assets/houston-grid.webp)
+
+*Demonstration workspace with illustrative terminal output.*
 
 ## Why Houston
 
