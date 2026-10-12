@@ -1839,6 +1839,8 @@ const KEYMAP_OVERRIDES_MAX_CODE_LEN: usize = 64;
 
 struct HandoffJob {
     hidden: u32,
+    source: u32,
+    provider: proto::AgentKind,
     provider_name: String,
     buffer: Vec<u8>,
     last_activity: Instant,
@@ -11158,6 +11160,9 @@ impl Daemon {
             token_file.disarm();
         }
         startup.committed = true;
+        if hidden {
+            self.handoff_started(id);
+        }
         startup.gate.finish(true);
         #[cfg(target_os = "linux")]
         if let Some(directory) = codex_runtime_dir {
@@ -13330,6 +13335,26 @@ impl Daemon {
         bail!("unknown session id {id} (expected an active or restored session)")
     }
 
+    fn handoff_started(&self, hidden: u32) {
+        let started = self
+            .handoff_jobs
+            .lock()
+            .expect("handoff lock")
+            .iter()
+            .find(|(_, job)| job.hidden == hidden)
+            .map(|(&request, job)| (request, job.source, job.provider));
+        if let Some((request, session, provider)) = started {
+            // Output and exit workers remain gated until the start is published.
+            #[cfg(feature = "test-barriers")]
+            crate::test_barriers::pause("handoff-before-started", hidden);
+            self.broadcast_control(&proto::ServerMsg::HandoffStarted {
+                request,
+                session,
+                provider,
+            });
+        }
+    }
+
     pub fn handoff_generate(
         self: &Arc<Self>,
         source: u32,
@@ -13547,6 +13572,8 @@ impl Daemon {
             request,
             HandoffJob {
                 hidden: hidden_id,
+                source,
+                provider,
                 provider_name: provider_name.clone(),
                 buffer: Vec::new(),
                 last_activity: Instant::now(),
@@ -13595,12 +13622,6 @@ impl Daemon {
             let _ = std::fs::remove_file(&prompt_path);
             return Err(e.context(format!("spawning the {provider_name} generator")));
         }
-
-        self.broadcast_control(&proto::ServerMsg::HandoffStarted {
-            request,
-            session: source,
-            provider,
-        });
 
         let weak = Arc::downgrade(self);
         let timeout = handoff_timeout();
