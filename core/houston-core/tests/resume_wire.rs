@@ -549,7 +549,7 @@ async fn a_restored_bash_hosted_claude_is_the_running_agent_until_it_exits() {
 
 #[tokio::test]
 async fn a_restored_zsh_hosted_claude_is_the_running_agent_until_it_exits() {
-    restored_cli_is_the_running_agent_until_it_exits("/usr/bin/zsh").await;
+    restored_cli_is_the_running_agent_until_it_exits("/bin/zsh").await;
 }
 
 /// Runs the real integration rc of `shell`: the resumed CLI's exit is reported by the
@@ -586,7 +586,24 @@ async fn restored_cli_is_the_running_agent_until_it_exits(shell_path: &str) {
         "the relaunch runs a command no command-start marker announces"
     );
     argv_of(&env, restored.id).await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // The CLI echoes this line, so its own output has passed through the daemon.
+    restarted.write_stdin(restored.id, b"receipt\n").unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let replay = restarted.scrollback(restored.id, None).unwrap();
+        if String::from_utf8_lossy(&replay.data)
+            .matches("receipt")
+            .count()
+            >= 2
+        {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the CLI never echoed its input"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     assert_eq!(
         running_agent_of(&restarted, restored.id).await,
         Some(proto::AgentKind::Claude),
@@ -611,6 +628,22 @@ async fn restored_cli_is_the_running_agent_until_it_exits(shell_path: &str) {
         after.detected_agent,
         Some(proto::AgentKind::Claude),
         "detection is sticky; only the running agent follows the CLI"
+    );
+    hook(
+        &env,
+        &restarted,
+        restored.id,
+        "UserPromptSubmit",
+        PROMPT,
+        conversation,
+        &transcript,
+        &dir,
+    )
+    .await;
+    assert_eq!(
+        running_agent_of(&restarted, restored.id).await,
+        None,
+        "a hook arriving after the CLI exited must not relabel the shell"
     );
     daemon.close(shell.id).unwrap();
     restarted.close(restored.id).unwrap();
