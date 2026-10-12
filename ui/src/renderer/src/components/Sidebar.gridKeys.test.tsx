@@ -108,6 +108,26 @@ describe('Sidebar — grid identity across workspaces', () => {
     expect(rows()[0].textContent).toContain('Grid 1')
   })
 
+  it('retains each grid disclosure after its workspace collapses', async () => {
+    const sessions = Array.from({ length: 8 }, (_, index) => ({
+      id: index + 1, agent: 'codex', title: `Agent ${index + 1}`, cwd: index < 4 ? '/a' : '/b',
+      project_dir: index < 4 ? '/a' : '/b', state: 'running', status: 'idle',
+      live_children: 0, children_waiting: 0, inbox_unread: 0,
+    })) as SessionInfo[]
+    render({ sessions, gridsByWorkspace: {
+      '/a': [{ id: 'g-default', name: 'Grid A', sessionIds: [1, 2, 3, 4] }],
+      '/b': [{ id: 'g-default', name: 'Grid B', sessionIds: [5, 6, 7, 8] }],
+    } })
+    await vi.waitFor(() => expect(rows()[0]?.querySelector('[aria-expanded="false"]')).not.toBeNull())
+    act(() => rows()[0].querySelector<HTMLElement>('[aria-expanded="false"]')!.click())
+    expect(rows()[1].querySelector('[aria-expanded="false"]')).not.toBeNull()
+    const header = container.querySelector<HTMLElement>('[data-testid="ws-disclosure"][aria-label="/a"]')!
+    act(() => header.click())
+    act(() => header.click())
+    await vi.waitFor(() => expect(rows()[0].querySelector('[aria-expanded="true"]')).not.toBeNull())
+    expect(rows()[1].querySelector('[aria-expanded="false"]')).not.toBeNull()
+  })
+
   it('does not render the empty placeholder grid of a workspace that never ran a session', async () => {
     render({
       gridsByWorkspace: {

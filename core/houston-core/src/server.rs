@@ -1223,7 +1223,15 @@ async fn dispatch(
                     let _ = send_msg(sink, &msg).await;
                     Ok(())
                 }
-                Err(e) => Err(e),
+                Err(e) => {
+                    send_error(
+                        sink,
+                        format!("{e:#}"),
+                        Some(USAGE_SUMMARY_ERROR_CONTEXT.into()),
+                    )
+                    .await;
+                    Ok(())
+                }
             }
         }
         proto::ClientMsg::UsageActivitySummaryGet {
@@ -1242,7 +1250,15 @@ async fn dispatch(
                     let _ = send_msg(sink, &msg).await;
                     Ok(())
                 }
-                Err(e) => Err(e),
+                Err(e) => {
+                    send_error(
+                        sink,
+                        format!("{e:#}"),
+                        Some(USAGE_ACTIVITY_ERROR_CONTEXT.into()),
+                    )
+                    .await;
+                    Ok(())
+                }
             }
         }
         proto::ClientMsg::RestoreBudgetSet { budget } => daemon
@@ -2488,9 +2504,13 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
-        proto::ClientMsg::GitCommit { dir, message } => {
+        proto::ClientMsg::GitCommit {
+            dir,
+            message,
+            amend,
+        } => {
             let d = PathBuf::from(&dir);
-            match tokio::task::spawn_blocking(move || crate::git::commit(&d, &message))
+            match tokio::task::spawn_blocking(move || crate::git::commit(&d, &message, amend))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("git commit task panicked: {e}")))
             {
@@ -3723,6 +3743,10 @@ async fn dispatch(
     }
 }
 
+// Mirrored by the renderer in App.tsx.
+const USAGE_SUMMARY_ERROR_CONTEXT: &str = "usage_summary";
+const USAGE_ACTIVITY_ERROR_CONTEXT: &str = "usage_activity";
+
 const GIT_STATUS_ERROR_CONTEXT: &str = "git_status";
 
 async fn send_git_status(
@@ -3793,6 +3817,9 @@ fn branch_info(b: crate::git::BranchInfo) -> proto::GitBranchInfo {
         remote_name: b.remote_name,
         upstream: b.upstream,
         worktree_path: b.worktree_path,
+        ahead: b.ahead,
+        behind: b.behind,
+        committed_at: b.committed_at,
     }
 }
 
@@ -4572,13 +4599,14 @@ async fn send_pr_list(
     })
     .await
     .unwrap_or_else(|e| Err(anyhow::anyhow!("pull request listing task panicked: {e}")));
-    let (items, truncated, message) = match result {
-        Ok((items, truncated)) => (items, truncated, None),
-        Err(e) => (Vec::new(), false, Some(e.to_string())),
+    let (items, truncated, viewer_login, message) = match result {
+        Ok(list) => (list.items, list.truncated, list.viewer_login, None),
+        Err(e) => (Vec::new(), false, None, Some(e.to_string())),
     };
     let _ = send_msg(
         sink,
         &proto::ServerMsg::PrList {
+            viewer_login,
             dir,
             request,
             items,

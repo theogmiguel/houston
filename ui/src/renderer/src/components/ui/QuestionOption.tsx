@@ -5,7 +5,7 @@ import { Card } from './Card'
 import { Icon } from './Icon'
 import { IconTile } from './IconTile'
 import { Text } from './Text'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 
 // The pieces of a QuestionCard: pager, prompt, option rows and their states.
 
@@ -45,7 +45,7 @@ export function SkipButton({ disabled, onClick }: { disabled: boolean; onClick?:
       data-testid="question-card-skip"
       disabled={disabled}
       onClick={onClick}
-      className={`border-0 bg-transparent rounded-[var(--tr-radius-sm)] px-[var(--space-1-5)] hover:bg-[var(--surface-hover)] active:scale-[0.96] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed ${HIT_TARGET_28}`}
+      className={`border-0 bg-transparent rounded-[var(--tr-radius-sm)] px-[var(--space-1-5)] hover:bg-[var(--surface-hover)] active:scale-[0.96] focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-50 disabled:cursor-not-allowed ${HIT_TARGET_28}`}
     >
       Skip
     </button>
@@ -73,7 +73,7 @@ export function RetryMessage({ message, onRetry }: { message: string; onRetry: (
       <button
         type="button"
         onClick={onRetry}
-        className={`bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current text-[length:var(--tr-text-small-size)] font-semibold focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${HIT_TARGET_28}`}
+        className={`bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current text-[length:var(--tr-text-small-size)] font-semibold focus-visible:outline-none ${FOCUS_HALO_CLS} ${HIT_TARGET_28}`}
       >
         Try again
       </button>
@@ -89,7 +89,7 @@ export function FreeTextArea(props: Omit<TextareaHTMLAttributes<HTMLTextAreaElem
   return (
     <textarea
       {...props}
-      className={`w-full resize-none rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--background)] px-[var(--space-2)] py-[var(--space-1-5)] text-[length:var(--tr-text-ui-size)] text-[var(--text-primary)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed`}
+      className={`w-full resize-none rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--background)] px-[var(--space-2)] py-[var(--space-1-5)] text-[length:var(--tr-text-ui-size)] text-[var(--text-primary)] focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-50 disabled:cursor-not-allowed`}
     />
   )
 }
@@ -137,7 +137,7 @@ export function OptionButton({
       aria-pressed={checked}
       disabled={disabled}
       onClick={onClick}
-      className={`border-0 flex h-[var(--h-row)] items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] px-[var(--space-1-5)] text-left hover:bg-[var(--surface-hover)] active:scale-[0.995] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent ${
+      className={`border-0 flex h-[var(--h-row)] items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] px-[var(--space-1-5)] text-left hover:bg-[var(--surface-hover)] active:scale-[0.995] focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent ${
         checked ? 'bg-[var(--accent-muted)]' : 'bg-transparent'
       }`}
     >
@@ -168,7 +168,7 @@ export function FreeTextOption({ n, disabled, onClick }: { n: number; disabled: 
       data-testid="question-card-escape-hatch"
       disabled={disabled}
       onClick={onClick}
-      className={`border-0 bg-transparent flex h-[var(--h-row)] items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] px-[var(--space-1-5)] text-left hover:bg-[var(--surface-hover)] active:scale-[0.995] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent`}
+      className={`border-0 bg-transparent flex h-[var(--h-row)] items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] px-[var(--space-1-5)] text-left hover:bg-[var(--surface-hover)] active:scale-[0.995] focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent`}
     >
       <NumberTile n={n} />
       <Text size="ui" tone="muted">Type it your own</Text>

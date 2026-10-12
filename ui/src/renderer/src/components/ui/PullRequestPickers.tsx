@@ -21,7 +21,8 @@ export function PickerFieldLabel({ children }: { children: ReactNode }): React.J
   return <Text as="span" size="small" weight="small" tone="muted" className="flex-none w-[var(--tr-stack-label-width)]">{children}</Text>
 }
 
-export function ReviewerValue({ children, ...props }: HTMLAttributes<HTMLSpanElement> & { children: ReactNode }): React.JSX.Element {
+export function ReviewerValue({ children, plain = false, ...props }: HTMLAttributes<HTMLSpanElement> & { children: ReactNode; plain?: boolean }): React.JSX.Element {
+  if (plain) return <Text {...props} size="small" tone="muted" className="min-w-0">{children}</Text>
   return <MetadataValue {...props} className={`min-w-0 flex-1 ${props.className ?? ''}`}>{children}</MetadataValue>
 }
 

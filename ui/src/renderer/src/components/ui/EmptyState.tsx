@@ -3,6 +3,7 @@ import { IconTile } from './IconTile'
 import { Button } from './Button'
 import { variants } from './variants'
 import type { HTMLAttributes, ReactNode } from 'react'
+import { Icon as GlyphIcon } from './Icon'
 import { Text } from './Text'
 
 export type EmptyStateVariant = 'panel' | 'window'
@@ -41,17 +42,25 @@ export interface EmptyStateProps {
   action?: { label: string; onClick: () => void }
   variant?: EmptyStateVariant
   fill?: boolean
-  copy?: 'standard' | 'compact'
+  copy?: 'standard' | 'compact' | 'summary'
   descriptionWidth?: 'standard' | 'compact'
   className?: string
   'data-testid'?: string
 }
 
 export function EmptyState({ icon: Icon, heading, description, action, variant = 'panel', fill = false, copy = 'standard', descriptionWidth = 'standard', className = '', 'data-testid': testId }: EmptyStateProps): React.JSX.Element {
-  const windowTitle = variant === 'window'
   return (
-    <section data-testid={testId} className={`${stateClasses({ variant })} ${fill ? 'flex-1 min-h-0 justify-center p-6' : ''} ${className}`}>
-      {Icon && <IconTile size="md" tone="muted" label={heading} icon={<Icon role="ui" />} />}
+    <section data-testid={testId} className={`${stateClasses({ variant })} ${copy === 'summary' ? 'px-[var(--space-6)] pb-[var(--space-4)] pt-[var(--space-6)]' : ''} ${fill ? 'flex-1 min-h-0 justify-center p-6' : ''} ${className}`}>
+      {Icon && (copy === 'summary' ? <span className="flex text-[var(--text-muted)]"><GlyphIcon glyph={Icon} role="ui" /></span> : <IconTile size="md" tone="muted" label={heading} icon={<Icon role="ui" />} />)}
+      <EmptyStateCopy heading={heading} description={description} variant={variant} copy={copy} descriptionWidth={descriptionWidth} />
+      {action && <Button variant="primary" onClick={action.onClick}>{action.label}</Button>}
+    </section>
+  )
+}
+
+function EmptyStateCopy({ heading, description, variant, copy, descriptionWidth }: Pick<EmptyStateProps, 'heading' | 'description' | 'variant' | 'copy' | 'descriptionWidth'>): React.JSX.Element {
+  const windowTitle = variant === 'window'
+  return <>
       {copy === 'compact' ? (
         <>
           <Text as="h2" flush size="ui" weight="ui" tone="primary">
@@ -61,13 +70,11 @@ export function EmptyState({ icon: Icon, heading, description, action, variant =
         </>
       ) : (
       <div className="grid justify-items-center gap-[var(--space-1)]">
-        <Text as="h2" flush size={windowTitle ? undefined : 'ui'} weight={windowTitle ? undefined : 'ui'} leading={windowTitle ? undefined : 'ui'} tone="primary" className={windowTitle ? 'font-[var(--tr-text-display-weight)] [font-family:var(--tr-text-display-family)] text-[length:var(--tr-text-display-size)]' : ''}>
+        <Text as="h2" flush size={windowTitle ? undefined : copy === 'summary' ? 'subhead' : 'ui'} weight={windowTitle ? undefined : copy === 'summary' ? 'semibold' : 'ui'} leading={windowTitle ? undefined : 'ui'} tone="primary" className={windowTitle ? 'font-[var(--tr-text-display-weight)] [font-family:var(--tr-text-display-family)] text-[length:var(--tr-text-display-size)]' : ''}>
           {heading}
         </Text>
-        <Text as="p" size="ui" leading="ui" tone="secondary" flush className={descriptionWidth === 'compact' ? 'max-w-[var(--tr-empty-compact-copy-max)]' : 'max-w-[var(--tr-empty-copy-max)]'}>{description}</Text>
+        <Text as="p" size="ui" leading="ui" tone="secondary" flush className={copy === 'summary' ? 'max-w-[56ch]' : descriptionWidth === 'compact' ? 'max-w-[var(--tr-empty-compact-copy-max)]' : 'max-w-[var(--tr-empty-copy-max)]'}>{description}</Text>
       </div>
       )}
-      {action && <Button variant="primary" onClick={action.onClick}>{action.label}</Button>}
-    </section>
-  )
+  </>
 }

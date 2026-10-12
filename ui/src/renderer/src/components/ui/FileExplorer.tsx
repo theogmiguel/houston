@@ -1,9 +1,10 @@
+import { ROW_STATE } from './rowState'
 import type { ButtonHTMLAttributes, FormHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode, Ref } from 'react'
 import type { IconComponent } from '../icons'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
 import { Icon } from './Icon'
 import { POP_ORIGIN_CLS } from './overlayChrome'
-import { BORDER_HAIRLINE_INSET } from './shadowChrome'
+import { BORDER_HAIRLINE_INSET, FOCUS_HALO_CLS } from './shadowChrome'
 import { Text } from './Text'
 import { Tooltip } from './Tooltip'
 import { PaneHeadButton } from './PaneControls'
@@ -48,11 +49,7 @@ export function TreeScroll({ className, ...rest }: HTMLAttributes<HTMLDivElement
 }
 
 const ROW_BASE =
-  'group/row w-full flex items-center gap-1.5 pr-2 min-h-[var(--h-ctl-mini)] text-left bg-transparent border-none ' +
-  'text-[length:var(--tr-text-sm)] text-[var(--text-secondary)] whitespace-nowrap ' +
-  'hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] hover:text-[var(--text-primary)] ' +
-  'focus-visible:outline-none focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]'
-const ROW_SELECTED = 'bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] text-[var(--text-primary)]'
+  `group/row w-full flex items-center gap-1.5 pr-2 min-h-[var(--h-ctl-mini)] text-left border-none text-[length:var(--tr-text-sm)] whitespace-nowrap focus-visible:outline-none ${FOCUS_HALO_CLS}`
 
 /** A row of the tree: indentation follows `depth`, wider in the split layout. */
 export function TreeRow({ depth, split, selected, failed, className, style, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -62,7 +59,7 @@ export function TreeRow({ depth, split, selected, failed, className, style, ...r
   failed: boolean
   ref?: Ref<HTMLButtonElement>
 }): React.JSX.Element {
-  return <button {...rest} className={join(ROW_BASE, selected && ROW_SELECTED, failed && 'text-[var(--danger)]', className)} style={{ ...style, paddingLeft: split ? 8 + depth * 14 : 6 + depth * 12 }} />
+  return <button {...rest} className={join(ROW_BASE, ROW_STATE[selected ? 'selected' : 'rest'], failed && 'text-[var(--danger)]', className)} style={{ ...style, paddingLeft: split ? 8 + depth * 14 : 6 + depth * 12 }} />
 }
 
 export function TreeToggleSlot({ className, ...rest }: HTMLAttributes<HTMLSpanElement>): React.JSX.Element {
@@ -90,7 +87,7 @@ export function PaneNoticeHint({ className, ...rest }: HTMLAttributes<HTMLDivEle
 }
 
 export function NoticeAction({ className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
-  return <button {...rest} className={join('btn', ROW_BASE, 'justify-center pl-2 rounded-[var(--tr-radius-sm)]', className)} />
+  return <button {...rest} className={join('btn', ROW_BASE, ROW_STATE.rest, 'justify-center pl-2 rounded-[var(--tr-radius-sm)]', className)} />
 }
 
 export function TreeHead({ className, ...rest }: HTMLAttributes<HTMLDivElement>): React.JSX.Element {

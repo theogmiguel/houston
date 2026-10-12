@@ -52,6 +52,7 @@ describe('Sidebar context menus — reference anatomy', () => {
     act(() => root.unmount())
     container.remove()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   function render(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}): void {
@@ -168,10 +169,10 @@ describe('Sidebar context menus — reference anatomy', () => {
     expect(onRemoveGrid).toHaveBeenCalledWith('/tmp/one', 'g1')
   })
 
-  it('closing the only grid of a workspace asks for confirmation before removing it', () => {
+  it('closing a populated grid names its agents before removing it', () => {
     const onRemoveGrid = vi.fn()
     render({
-      gridsByWorkspace: { '/tmp/one': [{ id: 'g1', name: 'Grid 1' }] },
+      gridsByWorkspace: { '/tmp/one': [{ id: 'g1', name: 'Grid 1', sessionIds: [1, 2] }] },
       onRemoveGrid
     })
     const rows = [...container.querySelectorAll('[data-testid="grid-row"]')]
@@ -180,12 +181,49 @@ describe('Sidebar context menus — reference anatomy', () => {
     expect(close).not.toBeNull()
     act(() => close!.click())
     expect(onRemoveGrid).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Close Grid 1?')
+    expect(document.body.textContent).toContain('ends its 2 agents')
     const confirm = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Close grid')
     act(() => confirm!.click())
     expect(onRemoveGrid).toHaveBeenCalledWith('/tmp/one', 'g1')
   })
 
-  it('the grid menu header names the grid', () => {
+  it('offers no disabled placeholders when branch, PR, and close actions are unavailable', () => {
+    render()
+    rightClick(container.querySelector('[data-testid="grid-row"]')!)
+    const menu = document.querySelector('.ctxmenu')!
+    expect(menu.querySelector('.ctx-item:disabled')).toBeNull()
+    expect(menu.textContent).not.toContain('GitHub unavailable')
+    expect(menu.textContent).not.toContain('Copy branch')
+    expect(menu.textContent).not.toContain('Close grid')
+  })
+
+  it('an empty grid menu says Close grid and closes without confirmation', () => {
+    const remove = vi.fn()
+    render({ onRemoveGrid: remove })
+    rightClick(container.querySelector('[data-testid="grid-row"]')!)
+    const close = [...document.querySelectorAll<HTMLButtonElement>('.ctx-item')].find((item) => item.textContent === 'Close grid')!
+    expect(close).toBeDefined()
+    act(() => close.click())
+    expect(remove).toHaveBeenCalledExactlyOnceWith('/tmp/one', 'g1')
+    expect(document.body.textContent).not.toContain('Close Grid 1?')
+  })
+
+  it('shifts the pointer-anchored grid menu inside the viewport', () => {
+    vi.stubGlobal('innerHeight', 200)
+    vi.stubGlobal('innerWidth', 320)
+    const rect = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('grid-card-menu') ? { width: 244, height: 180 } as DOMRect : rect.call(this)
+    })
+    render({ onRemoveGrid: noop })
+    rightClick(container.querySelector('[data-testid="grid-row"]')!)
+    const menu = document.querySelector<HTMLElement>('.grid-card-menu')!
+    expect(menu.style.left).toBe('40px')
+    expect(menu.style.top).toBe('12px')
+  })
+
+  it('names the grid accessibly without a redundant heading and shows its Open binding', () => {
     render({
       gridsByWorkspace: {
         '/tmp/one': [
@@ -198,7 +236,70 @@ describe('Sidebar context menus — reference anatomy', () => {
     const rows = [...container.querySelectorAll('[data-testid="grid-row"]')]
     rightClick(rows[0])
     const menu = document.querySelector('.ctxmenu')!
-    expect(menu.querySelector('.grid-card-menu-label')?.textContent).toBe('Grid 1')
+    expect(menu.querySelector('.grid-card-menu-label')).toBeNull()
+    expect(menu.getAttribute('aria-label')).toBe('Grid 1 actions')
+    expect(menu.querySelector('kbd')?.textContent).toBe('Alt 1')
   })
 
+  describe('grid card menu', () => {
+    const gridRow = (): Element => container.querySelector('[data-testid="grid-row"]')!
+    const press = (el: Element, key: string): void => {
+      act(() => { el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })) })
+    }
+    const items = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('.grid-card-menu .ctx-item')]
+
+    it('takes focus on its first item when opened and arrow keys move between items', () => {
+      render({ onRemoveGrid: noop })
+      rightClick(gridRow())
+      expect(document.activeElement).toBe(items()[0])
+      press(document.activeElement!, 'ArrowDown')
+      expect(document.activeElement).toBe(items()[1])
+      press(document.activeElement!, 'End')
+      expect(document.activeElement).toBe(items().at(-1))
+    })
+
+    it('hides the hover preview while open and does not reopen it on pointer re-entry', async () => {
+      render({ onRemoveGrid: noop })
+      await vi.waitFor(() => expect(container.querySelector('[data-card-mode]')).not.toBeNull())
+      vi.useFakeTimers()
+      try {
+        const row = gridRow()
+        act(() => { row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
+        act(() => { vi.advanceTimersByTime(200) })
+        expect(document.querySelector('[data-testid="grid-hover-card"]')).not.toBeNull()
+        rightClick(row)
+        act(() => { vi.advanceTimersByTime(400) })
+        expect(document.querySelector('[data-testid="grid-hover-card"]')).toBeNull()
+        act(() => { row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
+        act(() => { vi.advanceTimersByTime(400) })
+        expect(document.querySelector('[data-testid="grid-hover-card"]')).toBeNull()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('opens the tag picker on pointer hover after a short delay', () => {
+      vi.useFakeTimers()
+      try {
+        render({ onRemoveGrid: noop })
+        rightClick(gridRow())
+        const entry = document.querySelector('[data-testid="menu-tags-entry"]')!
+        act(() => { entry.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })) })
+        expect(document.querySelector('[data-testid="tag-popover"]')).toBeNull()
+        act(() => { vi.advanceTimersByTime(300) })
+        expect(document.querySelector('[data-testid="tag-popover"]')).not.toBeNull()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('opens the tag picker on ArrowRight from the Tags entry', () => {
+      render({ onRemoveGrid: noop })
+      rightClick(gridRow())
+      const entry = document.querySelector<HTMLElement>('[data-testid="menu-tags-entry"]')!
+      act(() => entry.focus())
+      press(entry, 'ArrowRight')
+      expect(document.querySelector('[data-testid="tag-popover"]')).not.toBeNull()
+    })
+  })
 })

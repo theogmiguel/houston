@@ -93,15 +93,12 @@
   --space-px: 1px;
   color-scheme: dark;
   --space-config-inset: 14px;
-  --opacity-usage-stale: 0.4;
   --space-choice-x: 9px;
   --w-definition-term: 76px;
   --space-result-row-y: 11px;
   --space-result-copy-gap: 3px;
   --space-form-button-gap: 7px;
   --h-form-ctl: 36px;
-  --h-usage-toolbar: 48px;
-  --w-usage-hero: 17rem;
   --w-switch-track: 30px;
   --h-switch-track: 17px;
   --h-settings-switch: 20px;
@@ -110,10 +107,6 @@
   --w-switch-knob: 11px;
   --space-switch-inset: 2px;
   --space-switch-travel: 13px;
-  --w-usage-rank: 28px;
-  --w-usage-cost: 100px;
-  --w-usage-share: 76px;
-  --w-usage-tokens: 88px;
   --space-field-label-bottom: 7px;
   --space-form-label-control-gap: 11px;
   --space-form-choice-label-gap: 13px;
@@ -387,14 +380,25 @@
   --border-active: color-mix(in srgb, var(--accent) 65%, transparent);
   --primary: var(--accent);
   --primary-foreground: #ffffff;
+  /* Filled affirmative buttons: a deeper step of the accent so the white label keeps 4.5:1
+     (#3b6fe8 / #fff = 4.54); the accent itself stays for focus, links and selection. */
+  --primary-fill: #3b6fe8;
+  --primary-fill-hover: color-mix(in srgb, #3b6fe8 88%, black);
   --secondary: color-mix(in srgb, var(--card-bg) 86%, white 8%);
   --muted: color-mix(in srgb, var(--card-bg) 78%, transparent);
   --popover: var(--elevated-surface);
   --popover-foreground: var(--text-primary);
   --accent-surface: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
   --accent-foreground: var(--text-primary);
-  --selected-fill: #ffffff1a;
-  --hover-fill: #ffffff0d;
+  /* Row states measured on the rung grounds (dL* >= 5 against rest): hover 7%, selected 14%,
+     selected+hover 16%. The previous 5% / 10% recipe failed the threshold on Graphite and Paper. */
+  --hover-fill: #ffffff12;
+  --selected-fill: #ffffff24;
+  --selected-hover-fill: #ffffff29;
+  /* Border of a control identified by its edge (number field, segmented track, off switch): a step
+     above --border-hover. Full 3:1 (#616167) read as a bright frame around every control; these
+     controls also carry a fill or a selected segment. --border stays for decorative dividers. */
+  --border-control: #4a4a52;
   --hover-strong: #ffffff14;
   --selection: var(--selected-fill);
   --elevated-surface: color-mix(in srgb, var(--card-bg) 80%, var(--text-primary) 10%);
@@ -426,6 +430,8 @@
   --color-selection: var(--selection);
   --color-selected-fill: var(--selected-fill);
   --color-hover-fill: var(--hover-fill);
+  --color-selected-hover-fill: var(--selected-hover-fill);
+  --color-border-control: var(--border-control);
   --color-elevated-surface: var(--elevated-surface);
   --color-focus-ring: var(--focus-ring);
   --color-divider: var(--divider);
@@ -433,7 +439,6 @@
   --sz-pane-status-dot: 7px;
   --h-pane-icon-button-compact: 20px;
   --h-pane-icon-button-narrow: 18px;
-  --tag-chip-text-base: #fff;
   --space-0-5: 2px;
   --w-rename-title-input: 12ch;
   --w-pane-context-menu: 180px;
@@ -596,15 +601,12 @@
   --space-px: 1px;
   color-scheme: light;
   --space-config-inset: 14px;
-  --opacity-usage-stale: 0.4;
   --space-choice-x: 9px;
   --w-definition-term: 76px;
   --space-result-row-y: 11px;
   --space-result-copy-gap: 3px;
   --space-form-button-gap: 7px;
   --h-form-ctl: 36px;
-  --h-usage-toolbar: 48px;
-  --w-usage-hero: 17rem;
   --w-switch-track: 30px;
   --h-switch-track: 17px;
   --h-settings-switch: 20px;
@@ -613,10 +615,6 @@
   --w-switch-knob: 11px;
   --space-switch-inset: 2px;
   --space-switch-travel: 13px;
-  --w-usage-rank: 28px;
-  --w-usage-cost: 100px;
-  --w-usage-share: 76px;
-  --w-usage-tokens: 88px;
   --space-field-label-bottom: 7px;
   --space-form-label-control-gap: 11px;
   --space-form-choice-label-gap: 13px;
@@ -889,14 +887,18 @@
   --border-active: color-mix(in srgb, var(--accent) 65%, transparent);
   --primary: var(--accent);
   --primary-foreground: #ffffff;
+  --primary-fill: var(--accent);
+  --primary-fill-hover: var(--accent-hover);
   --secondary: color-mix(in srgb, var(--card-bg) 86%, white 8%);
   --muted: color-mix(in srgb, var(--card-bg) 78%, transparent);
   --popover: var(--elevated-surface);
   --popover-foreground: var(--text-primary);
   --accent-surface: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
   --accent-foreground: var(--text-primary);
-  --selected-fill: #0000001a;
-  --hover-fill: #0000000d;
+  --hover-fill: #00000012;
+  --selected-fill: #00000029;
+  --selected-hover-fill: #0000002e;
+  --border-control: #b4b4bc;
   --hover-strong: #00000014;
   --selection: var(--selected-fill);
   --elevated-surface: color-mix(in srgb, var(--card-bg) 80%, var(--text-primary) 10%);
@@ -928,6 +930,8 @@
   --color-selection: var(--selection);
   --color-selected-fill: var(--selected-fill);
   --color-hover-fill: var(--hover-fill);
+  --color-selected-hover-fill: var(--selected-hover-fill);
+  --color-border-control: var(--border-control);
   --color-elevated-surface: var(--elevated-surface);
   --color-focus-ring: var(--focus-ring);
   --color-divider: var(--divider);
@@ -935,7 +939,6 @@
   --sz-pane-status-dot: 7px;
   --h-pane-icon-button-compact: 20px;
   --h-pane-icon-button-narrow: 18px;
-  --tag-chip-text-base: #fff;
   --space-0-5: 2px;
   --w-rename-title-input: 12ch;
   --w-pane-context-menu: 180px;
@@ -1253,6 +1256,7 @@
   --tr-radius-sm: 6px;
   --tr-radius-xs: 3px;
   --tr-radius-shortcut-fixed: 2px;
+  --tr-radius-legend-mark: 2px;
   --tr-radius-md: 10px;
   --tr-radius-input: 4px;
   --tr-radius-button: 8px;
@@ -1275,12 +1279,6 @@
   --tr-text-surface-micro: 9px;
   --tr-text-surface-compact: 10px;
   --tr-text-panel-launcher: 13.5px;
-  --shadow-files-menu: 0 12px 32px #0008;
-  --shadow-panel-check-popover: 0 18px 44px -18px #000c;
-  --shadow-files-explorer: -18px 0 40px -18px #000c;
-  --shadow-files-dialog: 0 8px 24px #0005;
-  --shadow-files-modal: 0 30px 70px -20px #000d;
-  --shadow-files-menu-raised: 0 10px 28px #0007;
   --shadow-files-accent-inset: inset 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent);
   --shadow-hairline-inset: inset 0 0 0 1px var(--border);
   --tr-empty-copy-max: 48ch;
@@ -1410,7 +1408,7 @@
   --text-form-default: var(--text-primary);
   /* Named dimensions retained for the reusable composer, notification and attachment roles. */
   --space-attachment-glyph-inline: 3px;
-  --space-attachment-chip-remove-reserve: calc(var(--space-2) + var(--h-tag-chip) + var(--space-1-5));
+  --space-attachment-chip-remove-reserve: calc(var(--space-1) + var(--h-tag-chip) + var(--space-1-5));
   --space-notice-inline-end: 7px;
   --space-notice-inline-start: 9px;
   --space-notice-row-gap: 7px;
@@ -1426,8 +1424,7 @@
   --w-connection-banner-viewport-max: 70vw;
   --z-notice-top-stack: calc(var(--z-leaf) + 1);
   --z-notice-pane-corner: calc(var(--z-pane) + 3);
-  --motion-notice-entry-top: notice-in-top 200ms var(--motion-menu-ease);
-  --motion-notice-entry-corner: notice-in-corner 200ms var(--motion-menu-ease);
+  --motion-notice-entry-corner: notice-in-corner var(--motion-fast-t) var(--motion-fast-ease);
   --motion-connection-pulse: dot-pulse 1.2s steps(4, end) infinite;
   --opacity-connection-dot-pulse: 0.25;
   --tr-text-task-leading: 18px;
@@ -1671,6 +1668,9 @@
   --w-panel-columns: 520px;
   --w-block-row-icon: 34px;
   --w-card-rail: 2px;
+  /* Review finding columns: widest status word ("Checking fix") and widest action pair ("Resolve" + "Keep open"). */
+  --w-finding-status: 6.5rem;
+  --w-finding-actions: 11.5rem;
   --h-block-row-icon: 34px;
   --h-block-row-meta: 24px;
   --space-block-inset: 14px;

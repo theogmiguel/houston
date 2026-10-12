@@ -148,7 +148,7 @@ export function Tooltip({ label, side = 'top', className, inline = false, openOn
               left: place?.left ?? 0,
               visibility: place ? 'visible' : 'hidden'
             }}
-            className="floating-glass floating-pop-in fixed z-[var(--z-tooltip)] pointer-events-none max-w-[280px] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.35] py-[4px] px-[7px] whitespace-pre-line"
+            className="floating-glass shadow-[var(--shadow-1)] fixed z-[var(--z-tooltip)] pointer-events-none max-w-[280px] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.35] py-[4px] px-[7px] whitespace-pre-line"
           >
             {label}
           </div>,

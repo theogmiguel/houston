@@ -10,6 +10,8 @@ import { AnimOut } from '../ui/AnimOut'
 import { PanelListHead, PanelTextInput } from '../ui/PanelControls'
 import { Button, EmptyState, Inline, ListDetail, NavSurfaceFrame, PageFrame, PageHeader, Segmented, Select, StatusLabel, Text, type ListDetailItem } from '../ui'
 import { IconChevronDown, IconChevronRight, IconFolderOpen, IconPlus, IconTasks } from '../icons'
+import { TasksSources } from '../tasks/TasksSources'
+import { TasksSuggested } from '../tasks/TasksSuggested'
 import { TaskComposer } from '../tasks/TaskComposer'
 import { TaskDetail } from '../tasks/TaskDetail'
 import { TaskProjectsDialog } from '../tasks/TaskProjectsDialog'
@@ -69,6 +71,7 @@ export function TasksSurface({
     ...allTasks.map((task) => task.workspace ?? '')
   ].filter(Boolean))], [workspace, workspaces, allTasks])
   const projectWorkspaces = useMemo(() => workspace ? [workspace] : [...new Set(allTasks.map((task) => task.workspace).filter((path): path is string => !!path))], [workspace, allTasks])
+  const suggestionWorkspaces = useMemo(() => workspace ? [{ path: workspace, name: workspaces.find((item) => item.path === workspace)?.name ?? workspace.split(/[\\/]/).filter(Boolean).at(-1) ?? workspace }] : workspaces, [workspace, workspaces])
   const projects = useTaskProjects(client, projectWorkspaces, tasks.snapshot ? allTasks : null)
   const parentOptions = useMemo(() => allTasks
     .filter((task) => task.archived_at_ms == null && task.id !== detailId)
@@ -141,6 +144,7 @@ export function TasksSurface({
           heading="Tasks"
           description="Work for you and your agents. Each task runs in its own worktree and ends in a pull request."
           actions={<Inline gap="small">
+            <TasksSources client={client} workspace={workspace} workspaces={workspaces} />
             <Button variant="secondary" icon={IconFolderOpen} data-testid="tasks-projects" disabled={!client || projectWorkspaces.length === 0} onClick={() => { projects.clearError(); setProjectsOpen(true) }}>Projects</Button>
             <Button variant="primary" icon={IconPlus} onClick={() => { setDetailId(null); setCreate(true) }}>New task</Button>
           </Inline>}
@@ -151,7 +155,7 @@ export function TasksSurface({
           selectedId={detailId === null ? null : String(detailId)}
           onSelect={(id) => { if (id === null) { tasks.closeTask(); setDetailId(null) } else open(Number(id)) }}
           backLabel="Tasks"
-          listHead={<TaskListHead query={query} onQuery={setQuery} projectFilter={projectFilter} onProjectFilter={setProjectFilter} projects={activeProjects} grouping={grouping} onGrouping={setGrouping} />}
+          listHead={<><TaskListHead query={query} onQuery={setQuery} projectFilter={projectFilter} onProjectFilter={setProjectFilter} projects={activeProjects} grouping={grouping} onGrouping={setGrouping} /><TasksSuggested client={client} workspaces={suggestionWorkspaces} /></>}
           listEmpty={<TaskListEmpty filtered={query !== '' || projectFilter !== 'all'} />}
           footSection={grouping === 'queue' ? FINISHED_GROUP_LABEL : undefined}
           listFoot={finishedCount > 0 && <Button variant="ghost" size="sm" icon={showFinished ? IconChevronDown : IconChevronRight} aria-expanded={showFinished} data-testid="tasks-show-finished" onClick={() => setShowFinished((value) => !value)}>

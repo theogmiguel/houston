@@ -7,7 +7,7 @@ import { useHarness } from '../../houston/useHarness'
 import { skillScopeLabel } from '../../houston/skillSurface'
 import { IconRefresh } from '../icons'
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { PageFrame } from '../ui/PageFrame'
+import { AgentSettingsBody } from '../ui/AgentSettingsBody'
 import { CheckedStamp } from '../ui/CheckedStamp'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
@@ -21,6 +21,7 @@ const SkillsView = lazy(() =>
 )
 
 export function SkillsSurface(props: {
+  embedded?: boolean
   client?: HoustonClient | null
   workspace?: string | null
   focusedPaneName?: string | null
@@ -39,6 +40,7 @@ export function SkillsSurface(props: {
   checkedAt?: number | null
 }): React.JSX.Element {
   const {
+    embedded = false,
     client = null,
     workspace = null,
     focusedPaneName = null,
@@ -69,13 +71,13 @@ export function SkillsSurface(props: {
     return () => { cancelled = true }
   }, [latestReview?.id, latestReview?.run_dir])
 
-  return (
-    <NavSurfaceFrame>
-      <PageFrame width="wide" className="flex-1 min-w-0">
+  const body = (
+      <AgentSettingsBody embedded={embedded}>
         <Suspense fallback={<div />}>
           <SkillsView
             dir={workspace}
             embedded
+            settingsPage={embedded}
             onChanged={onRefresh}
             tools={tools}
             pushes={pushes}
@@ -93,12 +95,12 @@ export function SkillsSurface(props: {
         </Suspense>
         <NavSurfaceContent>
           <NavSurfaceSection>
-            <SubHead>Distribution</SubHead>
+            {!embedded && <SubHead>Distribution</SubHead>}
             <SettingsList>
               <Row
                 variant="list"
-                title="Auto-push drift"
-                desc="Copy a drifted or missing skill into every tool as soon as it changes."
+                title={embedded ? "Keep copies in sync" : "Auto-push drift"}
+                desc={embedded ? "When a skill changes, copy it into every agent that reads skills from its own folder." : "Copy a drifted or missing skill into every tool as soon as it changes."}
               >
                 <div className="flex items-center gap-[var(--space-2)]">
                   <CheckedStamp at={checkedAt} />
@@ -117,11 +119,11 @@ export function SkillsSurface(props: {
               </Row>
             </SettingsList>
           </NavSurfaceSection>
-          <PanelFootnote>
+          {!embedded && <PanelFootnote>
             Open a skill to read its instructions, copy its invocation, or manage which agents can use it.
-          </PanelFootnote>
+          </PanelFootnote>}
         </NavSurfaceContent>
-      </PageFrame>
-    </NavSurfaceFrame>
+      </AgentSettingsBody>
   )
+  return embedded ? body : <NavSurfaceFrame>{body}</NavSurfaceFrame>
 }

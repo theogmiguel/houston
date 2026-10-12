@@ -317,7 +317,6 @@ export function FilesPane({
     <PaneHeader
       data-pane-focus-head={focusTier}
       divider="dividerMuted"
-      transition="surface"
       inset="compact"
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest('button')) return

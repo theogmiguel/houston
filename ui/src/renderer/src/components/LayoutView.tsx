@@ -83,7 +83,6 @@ interface Props {
   onBrowserNavigate: (id: string, url: string) => void
   onCloseEditor: (id: string) => void
   onSplitEditor: (id: string, side: SplitSide) => void
-  newPaneOrigins?: Map<PaneKey, SplitSide>
   skillDistribution?: SkillDistributionProps
   onRunSkill?: (invoke: string) => void
   onCloseSkills?: (id: string) => void
@@ -218,17 +217,6 @@ function paneSlotGeometry(rect: { x: number; y: number; w: number; h: number }):
     width: `calc(${rect.w}% - ${gutter.left} - ${gutter.right})`,
     height: `calc(${rect.h}% - ${gutter.top} - ${gutter.bottom})`
   }
-}
-
-const PANE_GROW_ORIGIN: Record<SplitSide, string> = {
-  left: 'right_center',
-  right: 'left_center',
-  top: 'center_bottom',
-  bottom: 'center_top'
-}
-
-function paneGrowCls(side: SplitSide): string {
-  return `motion-safe:[animation:term-enter_var(--motion-panel-t)_var(--motion-panel-ease)] [transform-origin:${PANE_GROW_ORIGIN[side]}]`
 }
 
 function parsePaneKey(raw: string): PaneKey {
@@ -664,8 +652,6 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
           contentVisibility: skipLayout ? 'hidden' : undefined,
           contain: skipLayout ? 'strict' : undefined
         }
-        const growSide = node.kind !== 'stack' ? props.newPaneOrigins?.get(key) : undefined
-        const growCls = growSide ? paneGrowCls(growSide) : ''
         if (node.kind === 'stack') {
           const displayIdx = (() => {
             if (props.expandedId != null) {
@@ -735,7 +721,7 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
             <PaneSlot
               column={false}
               key={node.id}
-              className={`${dragSrcCls} ${growCls}`}
+              className={dragSrcCls}
               style={style}
             >
               {renderPaneBody(node, {
@@ -755,7 +741,7 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
             <PaneSlot
               column={false}
               key={node.id}
-              className={`${dragSrcCls} ${growCls}`}
+              className={dragSrcCls}
               style={style}
             >
               {renderPaneBody(node, {
@@ -774,7 +760,7 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
           return (
             <PaneSlot
               key={node.id}
-              className={`${dragSrcCls} ${growCls}`}
+              className={dragSrcCls}
               style={style}
             >
               {renderPaneBody(node, {
@@ -795,7 +781,7 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
           <PaneSlot
             column={false}
             key={node.session}
-            className={`${dragSrcCls} ${growCls}`}
+            className={dragSrcCls}
             style={style}
           >
             {renderPaneBody(node, {

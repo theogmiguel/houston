@@ -6,7 +6,7 @@ export type RailCardMode = 'detailed' | 'compact'
 export type RailTagDisplay = 'icon' | 'dots' | 'chips'
 export type AgentActivityMode = 'compact' | 'full'
 export type RailCardProperty =
-  'status' | 'unread' | 'checkout' | 'pr' | 'ci' | 'diff' | 'tags' | 'task' | 'inline-agents' | 'context'
+  'status' | 'unread' | 'checkout' | 'pr' | 'diff' | 'tags' | 'inline-agents' | 'last-message'
 export type RailFilters = { hideIdle: boolean; hideDefaultBranch: boolean; hideEmptyGrids: boolean }
 export type RailPrefs = {
   v: 1
@@ -14,6 +14,8 @@ export type RailPrefs = {
   sort: RailSort
   cardMode: RailCardMode
   tagDisplay: RailTagDisplay
+  /** False until the user picks a tag display; a saved value from an older default is not a choice. */
+  tagDisplayChosen: boolean
   agentActivity: AgentActivityMode
   properties: RailCardProperty[]
   filters: RailFilters
@@ -36,17 +38,18 @@ export const DETAILED_DEFAULT: RailCardProperty[] = [
   'checkout',
   'pr',
   'diff',
-  'task',
+  'tags',
   'inline-agents',
 ]
-export const COMPACT_DEFAULT: RailCardProperty[] = ['status', 'unread']
+export const COMPACT_DEFAULT: RailCardProperty[] = ['status', 'unread', 'tags']
 
 export const DEFAULT_RAIL_PREFS: RailPrefs = {
   v: 1,
   groupBy: 'workspace',
   sort: 'manual',
   cardMode: 'detailed',
-  tagDisplay: 'icon',
+  tagDisplay: 'chips',
+  tagDisplayChosen: false,
   agentActivity: 'compact',
   properties: [...DETAILED_DEFAULT],
   filters: { hideIdle: false, hideDefaultBranch: false, hideEmptyGrids: false },
@@ -62,12 +65,11 @@ const properties = new Set<RailCardProperty>([
   'unread',
   'checkout',
   'pr',
-  'ci',
   'diff',
   'tags',
-  'task',
+  'tags',
   'inline-agents',
-  'context',
+  'last-message',
 ])
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -77,7 +79,12 @@ export function normalizeRailPrefs(value: unknown): RailPrefs {
   if (!object(value))
     return { ...DEFAULT_RAIL_PREFS, filters: { ...DEFAULT_RAIL_PREFS.filters }, properties: [...DETAILED_DEFAULT] }
   const source = value.v === 1 ? value : {}
-  const list = Array.isArray(source.properties)
+  const customised = source.customisedProperties === true
+  const modeDefault = source.cardMode === 'compact' ? COMPACT_DEFAULT : DETAILED_DEFAULT
+  // Uncustomised properties are a snapshot of an older default; follow the current one.
+  const list = !customised
+    ? [...modeDefault]
+    : Array.isArray(source.properties)
     ? source.properties.filter(
         (entry): entry is RailCardProperty => typeof entry === 'string' && properties.has(entry as RailCardProperty),
       )
@@ -96,7 +103,8 @@ export function normalizeRailPrefs(value: unknown): RailPrefs {
         ? source.sort
         : DEFAULT_RAIL_PREFS.sort,
     cardMode: source.cardMode === 'compact' ? 'compact' : 'detailed',
-    tagDisplay: source.tagDisplay === 'dots' || source.tagDisplay === 'chips' ? source.tagDisplay : 'icon',
+    tagDisplay: source.tagDisplayChosen === true && (source.tagDisplay === 'dots' || source.tagDisplay === 'icon') ? source.tagDisplay : 'chips',
+    tagDisplayChosen: source.tagDisplayChosen === true,
     agentActivity: source.agentActivity === 'full' ? 'full' : 'compact',
     properties: [...new Set<RailCardProperty>(['status', 'unread', ...list])],
     filters: {
@@ -108,7 +116,7 @@ export function normalizeRailPrefs(value: unknown): RailPrefs {
       ? source.collapsedGroups.filter((entry): entry is string => typeof entry === 'string')
       : [],
     tags: Array.isArray(source.tags) ? source.tags.filter((entry): entry is number => Number.isSafeInteger(entry)) : [],
-    customisedProperties: source.customisedProperties === true,
+    customisedProperties: customised,
     gridOrder: Array.isArray(source.gridOrder)
       ? [...new Set(source.gridOrder.filter((entry): entry is string => typeof entry === 'string'))]
       : [],

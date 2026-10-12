@@ -1,3 +1,4 @@
+import { PrPropertyRow } from '../ui/PrPresentation'
 import { PrTab, PR_FLOATING_CANDIDATES } from '../ui/PrTab'
 import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { MetadataRow } from '../ui/MetadataRow'
@@ -13,7 +14,7 @@ import type {
   PrReviewerCandidate
 } from '../../houston/client'
 import { Icon } from '../ui/Icon'
-import { IconCheck, IconClose, IconLoaderCircle, IconPlus, IconTag, IconUser, IconUsers } from '../icons'
+import { IconCheck, IconClose, IconLoaderCircle, IconPlus } from '../icons'
 import { Tooltip } from '../ui/Tooltip'
 import { DiffLoadingMark } from '../ui'
 import {
@@ -148,15 +149,16 @@ export function PrReviewerPicker({
     )
   }
 
+  const PickerRow = compact ? PrPropertyRow : MetadataRow
   return (
     <PickerSection data-testid="pr-reviewers">
-      <MetadataRow>
-        <PickerFieldLabel>{compact && <Icon glyph={IconUsers} role="small" />}Reviewers</PickerFieldLabel>
-        <ReviewerValue data-testid="pr-reviewers-value">
+      <PickerRow>
+        <PickerFieldLabel>Reviewers</PickerFieldLabel>
+        <ReviewerValue plain={compact} data-testid="pr-reviewers-value">
           {detail.reviewers.length === 0 ? (compact ? 'None' : 'none requested') : requestedReviewers(detail.reviewers)}
         </ReviewerValue>
         <Tooltip label={compact ? 'Add reviewer' : 'Manage reviewers'}>
-        <ReviewButton variant="compact-action"
+        <ReviewButton variant={compact ? "text-link" : "compact-action"}
           type="button"
           data-testid="pr-reviewers-manage"
           aria-label="Add reviewer"
@@ -171,11 +173,11 @@ export function PrReviewerPicker({
               <Icon glyph={IconLoaderCircle} role="small" />
             </DiffLoadingMark>
           ) : (
-            compact ? <><Icon glyph={IconUser} role="small" /><Icon glyph={IconPlus} role="small" /></> : 'Manage'
+            compact ? 'Request' : 'Manage'
           )}
         </ReviewButton>
         </Tooltip>
-      </MetadataRow>
+      </PickerRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (
         <OptionCandidateList scrollable={false} className={PR_FLOATING_CANDIDATES}
@@ -261,10 +263,11 @@ export function PrLabelPicker({
     setOpenState(next)
     onOpenChange?.(next)
   }
+  const PickerRow = compact ? PrPropertyRow : LabelSummaryRow
   return (
     <PickerSection data-testid="pr-labels">
-      <LabelSummaryRow>
-        <PickerFieldLabel>{compact && <Icon glyph={IconTag} role="small" />}Labels</PickerFieldLabel>
+      <PickerRow>
+        <PickerFieldLabel>Labels</PickerFieldLabel>
         <LabelSummary data-testid="pr-labels-value">
           {detail.labels.length === 0 ? (
             <Text size="small" tone="primary">{compact ? 'None' : 'none'}</Text>
@@ -282,7 +285,7 @@ export function PrLabelPicker({
           )}
         </LabelSummary>
         <Tooltip label={compact ? 'Add label' : 'Manage labels'}>
-        <ReviewButton variant="compact-action"
+        <ReviewButton variant={compact ? "text-link" : "compact-action"}
           type="button"
           data-testid="pr-labels-manage"
           aria-label="Add label"
@@ -297,11 +300,11 @@ export function PrLabelPicker({
               <Icon glyph={IconLoaderCircle} role="small" />
             </DiffLoadingMark>
           ) : (
-            compact ? <Icon glyph={IconTag} role="small" /> : 'Edit'
+            'Edit'
           )}
         </ReviewButton>
         </Tooltip>
-      </LabelSummaryRow>
+      </PickerRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (
         <OptionCandidateList data-testid="pr-label-candidates" className={PR_FLOATING_CANDIDATES}>

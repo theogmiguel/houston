@@ -47,12 +47,15 @@ describe('the rail foot opens Settings (charter §20 decision 5)', () => {
     expect(container.querySelector('.witem')).not.toBeNull()
   })
 
-  it('the foot button shows its own current state (a mode toggle owes one)', async () => {
+  it('the footer remains unselected while Settings shows the current section', async () => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
-    expect(footSettingsButton(container).getAttribute('aria-pressed')).toBe('false')
+    expect(footSettingsButton(container).getAttribute('aria-current')).toBeNull()
+    expect(footSettingsButton(container).className).not.toContain('bg-selected-fill')
     act(() => footSettingsButton(container).click())
-    expect(footSettingsButton(container).getAttribute('aria-pressed')).toBe('true')
+    expect(footSettingsButton(container).getAttribute('aria-current')).toBeNull()
+    expect(footSettingsButton(container).className).not.toContain('bg-selected-fill')
+    expect(container.querySelector('[data-testid="settings-section-row"][aria-current="true"]')).not.toBeNull()
   })
 })

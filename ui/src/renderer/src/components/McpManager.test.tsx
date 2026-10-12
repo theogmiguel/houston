@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '../houston/generated/McpServer'
 import type { McpToolState } from '../houston/generated/McpToolState'
@@ -38,7 +38,7 @@ afterEach(cleanup)
 describe('Connections matrix', () => {
   it('shows managed CLI columns and explains providers not managed here', () => {
     render(<McpManager {...props()} />)
-    expect(screen.getByRole('heading', { name: 'Connections' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'MCP servers' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Claude Code' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Codex' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'OpenCode' })).toBeTruthy()
@@ -67,9 +67,10 @@ describe('Connections matrix', () => {
       tools: [tool('claude'), tool('codex', []), tool('opencode', []), tool('cursor', [])],
       checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]]
     })} />)
-    expect(screen.getByTestId('mcp-cell-claude-github').textContent).toContain('Failed')
+    expect(screen.getByTestId('mcp-cell-claude-github').textContent).toContain('In sync')
+    expect(screen.getByText(/Houston can't start github/)).toBeTruthy()
     expect(screen.getByTestId('mcp-cell-codex-github').textContent).toBe('Off')
-    expect(screen.getByText('npx').tagName).toBe('CODE')
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy()
   })
 
   it('puts a bordered row action beside the overflow menu', () => {
@@ -96,4 +97,42 @@ describe('Connections matrix', () => {
     expect(document.body.textContent).toContain('Not managed here: ZCode, Grok, Antigravity.')
     expect(document.body.textContent).not.toContain('Click a cell')
   })
+})
+
+it('reports failed tests at server level and retries without duplicating the failure in agent cells', () => {
+  const onTest = vi.fn()
+  render(<McpManager {...props({ embedded: true, onTest, checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]] })} />)
+  expect(screen.getAllByText(/Houston can't start github/)).toHaveLength(1)
+  expect(screen.queryByText('Failed')).toBeNull()
+  expect(screen.queryByText('Slack')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+  expect(onTest).toHaveBeenCalledWith('github')
+  expect(document.querySelectorAll('main')).toHaveLength(0)
+})
+
+it('expands a Settings server and toggles only its owning agent destination', () => {
+  const onSync = vi.fn(), onUpsertServer = vi.fn()
+  render(<McpManager {...props({ embedded: true, onSync, onUpsertServer })} />)
+  expect(screen.queryByRole('table')).toBeNull()
+  const summary = screen.getByText('github').closest('summary')!
+  fireEvent.click(summary)
+  expect(summary.parentElement?.querySelector('input')).toBeNull()
+  fireEvent.click(screen.getByRole('switch', { name: 'github in Claude Code' }))
+  expect(onUpsertServer).toHaveBeenCalledWith('github', expect.objectContaining({ destinations: ['codex', 'opencode', 'cursor'] }))
+  expect(onSync).toHaveBeenCalledWith('claude')
+  fireEvent.click(screen.getByRole('button', { name: 'Edit command' }))
+  expect(screen.getByRole('dialog', { name: 'Edit github' })).toBeTruthy()
+})
+
+it('keeps fix guidance and Edit command inside the failure notice, and counts the filter segments', () => {
+  const onUpsertServer = vi.fn()
+  render(<McpManager {...props({ embedded: true, source: [server('github'), server('linear')], tools: [tool('claude', [server('github'), server('linear')])], onUpsertServer, checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]] })} />)
+  const notice = screen.getByRole('alert')
+  expect(notice.textContent).toContain('Install Node.js, or give the command an absolute path such as /usr/local/bin/npx.')
+  fireEvent.click(within(notice).getByRole('button', { name: 'Edit command' }))
+  expect(screen.getByRole('dialog', { name: 'Edit github' })).toBeTruthy()
+  const segments = screen.getByRole('radiogroup', { name: 'Filter servers' }).textContent
+  expect(segments).toContain('All2')
+  expect(segments).toContain('Configured2')
+  expect(segments).toContain('Problems1')
 })

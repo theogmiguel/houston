@@ -4,11 +4,6 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.08) !important;
   border: 1px solid color-mix(in srgb, var(--text-primary) 10%, transparent) !important;
   border-radius: var(--tr-radius-md) !important;
-  box-shadow: 0 18px 44px -18px #000c !important;
-}
-
-@keyframes floating-pop-in {
-  from { opacity: 0; transform: scale(.98); }
 }
 
 @keyframes floating-pop-out {
@@ -28,11 +23,9 @@
   to { background: transparent; }
 }
 
-.floating-pop-in { animation: floating-pop-in 150ms var(--motion-menu-ease); }
-.anim-out .floating-pop-in { animation: floating-pop-out 150ms var(--motion-menu-ease) forwards; }
 .grid-hover-card { opacity: 0; transform: scale(.98); pointer-events: none; }
 .grid-hover-card[data-visible='true'] { opacity: 1; transform: none; }
-.grid-card-menu { width: 208px !important; }
+.grid-card-menu { width: var(--w-context-menu) !important; max-width: calc(100vw - var(--space-4)); max-height: calc(100vh - var(--space-4)); overflow-y: auto; }
 .grid-card-menu > .grid-card-menu-label {
   margin-top: var(--space-1);
   padding: var(--space-1-5) var(--space-2) var(--space-1);
@@ -49,7 +42,6 @@
   min-height: 28px;
   height: auto !important;
   padding: var(--space-1) var(--space-2) !important;
-  color: var(--text-primary);
   font-size: var(--tr-text-ui-size);
 }
 .grid-card-menu .ctx-item > svg:first-child { color: var(--text-muted); opacity: .85; }
@@ -57,8 +49,3 @@
 .grid-card-menu .ctx-item.danger { color: var(--stop) !important; }
 .grid-card-menu .ctx-item.danger > svg:first-child { color: var(--stop); opacity: 1; }
 .grid-card-menu .ctx-sep { margin: var(--space-1) var(--space-2) !important; background: var(--divider) !important; }
-
-@media (prefers-reduced-motion: reduce) {
-  .floating-pop-in { animation: none; }
-  .anim-out .floating-pop-in { animation: none; }
-}

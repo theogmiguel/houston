@@ -12,6 +12,7 @@ const McpManager = lazy(() =>
 )
 
 export function McpSurface(props: {
+  embedded?: boolean
   source: McpServer[]
   tools: McpToolState[]
   results: McpSyncResult[]
@@ -30,6 +31,7 @@ export function McpSurface(props: {
   slackClient?: HoustonClient | null
 }): React.JSX.Element {
   const {
+    embedded = false,
     source,
     tools,
     results,
@@ -47,10 +49,10 @@ export function McpSurface(props: {
     checkedAt = null,
     slackClient = null
   } = props
-  return (
-    <MaterialSurface data-testid="nav-surface" contentEdges className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
+  const body = (
       <Suspense fallback={<div role="status">Loading…</div>}>
         <McpManager
+            embedded={embedded}
             source={source}
             tools={tools}
             results={results}
@@ -69,6 +71,6 @@ export function McpSurface(props: {
             slackClient={slackClient}
         />
       </Suspense>
-    </MaterialSurface>
   )
+  return embedded ? body : <MaterialSurface data-testid="nav-surface" contentEdges className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">{body}</MaterialSurface>
 }

@@ -1,56 +1,37 @@
-import { Tooltip } from './Tooltip'
+import type { ReactNode } from 'react'
 import { UsageSectionHeading } from './UsageSectionHeading'
+import { Text } from './Text'
 import { formatUsd } from '../../usage'
 
-const SEGMENT_COLORS = [
-  'var(--text-faint)',
-  'var(--text-muted)',
-  'var(--text-secondary)',
-  'var(--text-primary)',
-  'var(--warn)'
-] as const
-
-export interface UsageShareSegment {
-  id: string
-  label: string
-  value: number
+const SEGMENT_COLORS: Record<string, string> = {
+  'cache-read': 'color-mix(in srgb, var(--info) 75%, transparent)',
+  'cache-write': 'color-mix(in srgb, var(--info) 40%, transparent)',
+  output: 'var(--text-primary)',
+  input: 'color-mix(in srgb, var(--text-primary) 35%, transparent)',
+  other: 'var(--warn)'
 }
 
+export interface UsageShareSegment { id: string; label: string; value: number }
 export function usageShareTotal(segments: readonly UsageShareSegment[]): number {
   return segments.reduce((total, segment) => total + segment.value, 0)
 }
 
-export function UsageShareBar({
-  heading,
-  segments,
-  aside
-}: {
-  heading: string
-  segments: UsageShareSegment[]
-  aside?: string
-}): React.JSX.Element {
+export function UsageShareBar({ heading, segments, aside, note }: { heading: string; segments: UsageShareSegment[]; aside?: string; note?: ReactNode }): React.JSX.Element {
   const total = usageShareTotal(segments)
-  return (
-    <section className="grid gap-[var(--space-2)]" data-testid={`usage-share-${heading.toLowerCase().replaceAll(' ', '-')}`}>
-      <UsageSectionHeading aside={aside}>{heading}</UsageSectionHeading>
-      <div className="flex h-[8px] overflow-hidden rounded-full bg-[var(--card-hover)]" aria-label={`${heading} total ${total.toFixed(2)}`}>
-        {segments.map((segment, index) => {
-          const share = total > 0 ? segment.value / total : 0
-          return (
-            <Tooltip key={segment.id} label={`${segment.label} · ${formatUsd(segment.value)} · ${(share * 100).toFixed(1)}%`}>
-              <span aria-hidden="true" className="h-full" style={{ width: `${share * 100}%`, background: SEGMENT_COLORS[index % SEGMENT_COLORS.length] }} />
-            </Tooltip>
-          )
-        })}
-      </div>
-      <div className="flex flex-wrap gap-x-[var(--space-3)] gap-y-[var(--space-1)]">
-        {segments.map((segment, index) => (
-          <span key={segment.id} className="inline-flex items-center gap-[var(--space-1-5)] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
-            <span aria-hidden="true" className="h-[7px] w-[7px]" style={{ background: SEGMENT_COLORS[index % SEGMENT_COLORS.length] }} />
-            {segment.label} {formatUsd(segment.value)}
-          </span>
-        ))}
-      </div>
-    </section>
-  )
+  const colorFor = (id: string): string => SEGMENT_COLORS[id] ?? 'var(--text-muted)'
+  return <section className="grid gap-[var(--space-3)]" data-testid={`usage-share-${heading.toLowerCase().replaceAll(' ', '-')}`}>
+    <UsageSectionHeading aside={aside}>{heading}</UsageSectionHeading>
+    <span className="flex h-[var(--space-2-5)] w-full gap-[var(--space-0-5)] overflow-hidden rounded-[var(--tr-radius-input)]" aria-label={`${heading} total ${formatUsd(total)}`}>
+      {segments.map((segment) => <span key={segment.id} aria-hidden="true" style={{ width: `${total > 0 ? segment.value / total * 100 : 0}%`, background: colorFor(segment.id) }} />)}
+    </span>
+    <div className="grid gap-[var(--space-1-5)]">
+      {segments.map((segment) => <Text key={segment.id} size="small" className="flex items-center gap-[var(--space-2)]">
+        <span aria-hidden="true" className="inline-block size-[var(--space-2)] rounded-[var(--tr-radius-legend-mark)]" style={{ background: colorFor(segment.id) }} />
+        <Text tone="secondary" className="flex-1">{segment.label}</Text>
+        <Text tone="muted" tabular className="w-[48px] text-right">{(total > 0 ? segment.value / total * 100 : 0).toFixed(0)}%</Text>
+        <Text tone="primary" tabular className="w-[80px] text-right">{formatUsd(segment.value)}</Text>
+      </Text>)}
+    </div>
+    {note && <Text as="p" flush size="small" tone="muted" leading="small" className="border-t border-[var(--divider)] pt-[var(--space-2)]">{note}</Text>}
+  </section>
 }

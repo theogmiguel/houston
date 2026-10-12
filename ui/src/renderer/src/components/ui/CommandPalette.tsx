@@ -15,7 +15,7 @@ import { KeymapOverridesContext } from '../../layout/keymapOverridesContext'
 import { IconSearch } from '../icons'
 import type { ThemeName } from '../../theme'
 import { Icon } from './Icon'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { MATERIAL_CLS, materialAttrs } from './material'
 import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand, sessionDotClass } from './paletteHelpers'
 import { variants } from './variants'
@@ -188,7 +188,7 @@ export function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-[var(--z-palette)] flex items-start justify-center pt-16 bg-overlay motion-safe:animate-[backdrop-in_var(--animate-t-scrim)_var(--animate-ease-scrim)] [.anim-out_&]:motion-safe:animate-[backdrop-out_var(--animate-t-scrim)_var(--animate-ease-scrim)_forwards]"
+      className="fixed inset-0 z-[var(--z-palette)] flex items-start justify-center pt-16 bg-overlay [.anim-out_&]:motion-safe:animate-[backdrop-out_var(--animate-t-scrim)_var(--animate-ease-scrim)_forwards]"
       onMouseDown={onClose}
     >
       <div
@@ -197,7 +197,7 @@ export function CommandPalette({
         role="dialog"
         aria-label="Command palette"
         {...materialAttrs('overlay-glass')}
-        className={`${palettePanel()} motion-safe:animate-[menu-in_var(--animate-t-fast)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards]`}
+        className={`${palettePanel()} [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards]`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {view === 'list' ? (
@@ -212,7 +212,7 @@ export function CommandPalette({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onListKeyDown}
-                className={`flex-1 min-w-0 bg-transparent border-0 outline-none focus-visible:shadow-[${FOCUS_HALO}] rounded-[var(--tr-radius-input)] [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]`}
+                className={`flex-1 min-w-0 bg-transparent border-0 outline-none ${FOCUS_HALO_CLS} rounded-[var(--tr-radius-input)] [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]`}
               />
               <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] font-mono text-[var(--text-faint)] border border-[var(--glass-brd)] rounded px-1.5 py-0.5">
                 {escapeShortcut.keyLabel.toUpperCase()}

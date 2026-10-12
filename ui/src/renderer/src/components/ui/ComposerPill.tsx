@@ -1,13 +1,14 @@
+import { ROW_STATE } from './rowState'
 import type { ButtonHTMLAttributes, ComponentType, HTMLAttributes, LabelHTMLAttributes, ReactNode } from 'react'
 import { BTN_PRIMARY } from './buttonChrome'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from './overlayChrome'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { Text, type TextProps } from './Text'
 
 type NoClass<T> = Omit<T, 'className'>
 const TextButton = Text as ComponentType<TextProps & ButtonHTMLAttributes<HTMLButtonElement>>
 
-const PILL_BASE_CLS = `inline-flex items-center h-[var(--h-pill)] px-[var(--space-2)] border border-[var(--border)] bg-[var(--surface)] rounded-[var(--tr-radius-pill)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]`
+const PILL_BASE_CLS = `inline-flex items-center h-[var(--h-pill)] px-[var(--space-2)] border border-[var(--border)] bg-[var(--surface)] rounded-[var(--tr-radius-pill)] hover:bg-[var(--surface-hover)] focus-visible:outline-none ${FOCUS_HALO_CLS}`
 
 const PILL_VARIANT_CLS = {
   dropdown: 'gap-[var(--space-1-5)] max-w-full disabled:opacity-50 disabled:cursor-not-allowed',
@@ -38,7 +39,7 @@ export function ComposerPillCount({ children }: { children: ReactNode }): React.
 }
 
 const MENU_VARIANT_CLS = {
-  options: 'left-0 gap-[var(--space-0-5)] py-[var(--space-1)] min-w-[var(--w-composer-option-menu)]',
+  options: 'left-0 gap-[var(--space-0-5)] p-[var(--space-1)] min-w-[var(--w-composer-option-menu)]',
   fields: 'right-0 gap-[var(--space-2)] p-[var(--space-2)] min-w-[var(--w-composer-field-menu)]'
 } as const
 
@@ -70,7 +71,7 @@ export function ComposerPillOption({ selected, children, ...rest }: NoClass<Butt
     tone={selected ? 'primary' : 'secondary'}
     role="option"
     aria-selected={selected}
-    className="flex items-center px-[var(--space-3)] min-h-[var(--h-ctl)] text-left bg-transparent border-none hover:bg-[var(--surface-hover)]"
+    className={`flex items-center rounded-[var(--tr-radius-sm)] px-[var(--space-2)] min-h-[var(--h-ctl)] text-left border-none disabled:hover:bg-transparent ${ROW_STATE[selected ? 'selected' : 'rest']}`}
   >{children}</TextButton>
 }
 
@@ -119,4 +120,15 @@ export function ComposerSendButton({ loading, disabled, children, ...rest }: NoC
       {children}
     </TextButton>
   )
+}
+
+export function ComposerPillMenuSpecimen(): React.JSX.Element {
+  return <div className="grid gap-[var(--space-2)] max-w-[var(--w-composer-option-menu)]">
+    <ComposerPill variant="dropdown">Model · Opus</ComposerPill>
+    <ComposerPillMenu variant="options" role="listbox" aria-label="Composer model specimen" style={{ position: 'static' }}>
+      <ComposerPillOption selected>Opus</ComposerPillOption>
+      <ComposerPillOption selected={false}>Sonnet</ComposerPillOption>
+      <ComposerPillOption selected={false} disabled>Unavailable model</ComposerPillOption>
+    </ComposerPillMenu>
+  </div>
 }

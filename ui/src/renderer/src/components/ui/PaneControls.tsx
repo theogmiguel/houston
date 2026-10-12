@@ -115,7 +115,7 @@ export function PaneBranchChip({ className = '', ...rest }: ButtonHTMLAttributes
       as="button"
       {...rest}
       size="small" weight="small" tone="secondary" mono
-      className={`${className} inline-flex items-center gap-[var(--space-1-5)] min-w-0 flex-none max-w-[var(--w-pane-branch-chip)] px-[var(--space-1-5)] h-[var(--h-tag-chip)] rounded-[var(--tr-radius-sm)] border-0 bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] cursor-default`.trim()}
+      className={`${className} inline-flex items-center gap-[var(--space-1-5)] min-w-0 flex-none max-w-[var(--w-pane-branch-chip)] px-[var(--space-1-5)] h-[var(--h-tag-chip)] rounded-[var(--tr-radius-pill)] border-0 bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] cursor-pointer`.trim()}
     />
   )
 }
@@ -133,7 +133,7 @@ export function PaneStateChip({
       size="label"
       weight="label"
       style={{ letterSpacing: 'var(--tr-text-label-tracking)', textTransform: 'var(--tr-text-label-transform)' }}
-      className={`rounded-full py-px px-[var(--space-2)] flex-none ${className} ${state === 'exited' ? 'text-[var(--status-done-text)] bg-[var(--status-done-bg)]' : 'text-[var(--status-blocked-text)] bg-[var(--status-blocked-bg)]'}`.trim()}
+      className={`rounded-[var(--tr-radius-sm)] py-px px-[var(--space-2)] flex-none ${className} ${state === 'exited' ? 'text-[var(--status-done-text)] bg-[var(--status-done-bg)]' : 'text-[var(--status-blocked-text)] bg-[var(--status-blocked-bg)]'}`.trim()}
     />
   )
 }

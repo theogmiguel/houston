@@ -4,7 +4,7 @@ import { Icon } from './Icon'
 import { IconChevronRight } from '../icons'
 
 export function OpenInSubmenu({ children, className = '', ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
-  return <div {...props} className={`fixed min-w-[var(--w-open-in-submenu)] flex flex-col p-1 floating-glass floating-pop-in z-[var(--z-context)] ${className}`}>{children}</div>
+  return <div {...props} className={`fixed min-w-[var(--w-open-in-submenu)] flex flex-col p-1 floating-glass shadow-[var(--shadow-1)] z-[var(--z-context)] ${className}`}>{children}</div>
 }
 
 export function OpenInChevron(): React.JSX.Element {

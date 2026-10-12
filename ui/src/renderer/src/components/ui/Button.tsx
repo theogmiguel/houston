@@ -2,12 +2,13 @@ import { useContext, type ButtonHTMLAttributes, type ReactNode, type Ref } from 
 import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER, BTN_ICO, BTN_PRIMARY } from './buttonChrome'
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import './button.css'
+import { HIT_TARGET_28 } from '../hitTarget'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { Tooltip, TooltipContext } from './Tooltip'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'ghost' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'legacy-primary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'roster-open' | 'mini-primary-action' | 'action-primary' | 'surface' | 'surface-large' | 'subtle-icon' | 'compact-icon' | 'compact-icon-secondary' | 'disclosure-icon' | 'small-icon' | 'status-chip'
+export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'ghost' | 'ghost-wrap' | 'link' | 'muted-link' | 'body-link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'legacy-primary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'roster-open' | 'mini-primary-action' | 'action-primary' | 'surface' | 'surface-large' | 'subtle-icon' | 'compact-icon' | 'compact-icon-secondary' | 'disclosure-icon' | 'small-icon' | 'status-chip'
 export type ButtonSize = 'md' | 'sm' | 'lg'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -93,13 +94,16 @@ const buttonClasses = variants(
   'btn inline-flex items-center justify-center disabled:cursor-not-allowed',
   {
     variant: {
-      primary: 'border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] hover:enabled:bg-[var(--accent-hover)]',
+      primary: 'border-[var(--primary-fill)] bg-[var(--primary-fill)] text-[var(--primary-foreground)] font-semibold hover:enabled:bg-[var(--primary-fill-hover)]',
       'action-primary': `btn rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] ${BTN_PRIMARY}`,
       secondary: 'border-[var(--border)] bg-[var(--hover-fill)] text-[var(--text-secondary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--card-hover)] hover:enabled:text-[var(--text-primary)]',
       field: 'justify-start border-[var(--border)] bg-[var(--card-bg)] text-left font-normal text-[var(--text-secondary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--card-hover)] hover:enabled:text-[var(--text-primary)]',
       surface: 'border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-secondary)] font-medium hover:enabled:bg-[var(--surface-hover)] hover:enabled:text-[var(--text-primary)]',
       'surface-large': 'h-[var(--h-empty-action)] px-[var(--space-4)] gap-[var(--space-2)] rounded-[var(--tr-radius-button)] border border-[var(--border)] bg-[var(--card-bg)] [font-size:var(--tr-text-ui-size)] font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]',
       ghost: `btn ${BTN_GHOST}`,
+      'ghost-wrap': `btn ${BTN_GHOST} h-auto min-h-[var(--h-ctl-mini)] min-w-0 max-w-full px-[var(--space-2)] whitespace-normal break-words`,
+      'muted-link': `${HIT_TARGET_28} border-0 bg-transparent !px-0 !py-0 !h-auto min-h-0 align-baseline [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)] underline hover:enabled:bg-transparent hover:enabled:text-[var(--text-primary)]`,
+      'body-link': `${HIT_TARGET_28} border-0 bg-transparent !px-0 !py-0 !h-auto min-h-0 align-baseline [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)] underline hover:enabled:bg-transparent hover:enabled:text-[var(--text-primary)]`,
       link: 'border-transparent bg-transparent !px-0 !py-0 !h-auto min-h-0 align-baseline text-[length:var(--tr-text-small-size)] text-[var(--accent)] hover:enabled:bg-transparent hover:enabled:underline',
       danger: `btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER}`,
       'danger-solid': BTN_DANGER_SOLID,
@@ -116,9 +120,9 @@ const buttonClasses = variants(
       badge: 'h-auto min-h-0 border-0 bg-transparent p-0 inline-flex items-center text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] flex-none whitespace-nowrap cursor-default gap-1.5 [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px]',
       'ghost-icon': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`,
       'ghost-icon-danger': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`,
-      'confirm-primary': `h-[var(--h-ctl)] px-[var(--space-4)] rounded-[var(--tr-radius-button)] border border-[var(--accent)] bg-[var(--accent)] text-[var(--primary-foreground)] [font-size:var(--tr-text-ui-size)] font-semibold hover:opacity-90 active:scale-[0.98] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-40`,
-      'compact-outline': `bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current [font-size:var(--tr-text-small-size)] font-semibold focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] relative after:absolute after:left-1/2 after:top-1/2 after:h-[var(--h-ctl)] after:min-w-[var(--h-ctl)] after:w-full after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']`,
-      'danger-confirmation': `h-[var(--h-ctl)] px-[var(--space-3)] rounded-[var(--tr-radius-button)] border [font-size:var(--tr-text-ui-size)] font-medium whitespace-nowrap focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed`,
+      'confirm-primary': `h-[var(--h-ctl)] px-[var(--space-4)] rounded-[var(--tr-radius-button)] border border-[var(--primary-fill)] bg-[var(--primary-fill)] text-[var(--primary-foreground)] [font-size:var(--tr-text-ui-size)] font-semibold hover:opacity-90 active:scale-[0.98] focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-40`,
+      'compact-outline': `bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current [font-size:var(--tr-text-small-size)] font-semibold focus-visible:outline-none ${FOCUS_HALO_CLS} relative after:absolute after:left-1/2 after:top-1/2 after:h-[var(--h-ctl)] after:min-w-[var(--h-ctl)] after:w-full after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']`,
+      'danger-confirmation': `h-[var(--h-ctl)] px-[var(--space-3)] rounded-[var(--tr-radius-button)] border [font-size:var(--tr-text-ui-size)] font-medium whitespace-nowrap focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-50 disabled:cursor-not-allowed`,
       'mini-primary-action': `btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1-5)] disabled:opacity-55`,
       'legacy-primary': `btn ${BTN_PRIMARY}`,
       'legacy-ghost': `btn ${BTN_GHOST}`,
@@ -137,8 +141,8 @@ const buttonClasses = variants(
 )
 
 // Variants that carry their own type and padding: no button chrome, no size padding.
-const SELF_SIZED: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['icon', 'icon-selected', 'icon-structure', 'text', 'badge', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'roster-open', 'mini-primary-action', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip', 'surface-large'])
-const OWN_CHROME: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['badge', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'roster-open', 'mini-primary-action', 'surface-large', 'action-primary', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip'])
+const SELF_SIZED: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['ghost-wrap', 'muted-link', 'body-link', 'icon', 'icon-selected', 'icon-structure', 'text', 'badge', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'roster-open', 'mini-primary-action', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip', 'surface-large'])
+const OWN_CHROME: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['muted-link', 'body-link', 'badge', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'roster-open', 'mini-primary-action', 'surface-large', 'action-primary', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip'])
 const isLegacy = (variant: CoreButtonVariant): boolean => variant.startsWith('legacy-')
 
 function buttonSize(variant: CoreButtonVariant, size: ButtonSize): ButtonSize | 'icon' {

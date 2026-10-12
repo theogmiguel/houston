@@ -1,6 +1,7 @@
 import type { TagInfo } from '../../houston/generated/TagInfo'
 import { Icon } from '../ui/Icon'
 import { IconTag } from '../icons'
+import { TagChip } from '../ui/TagChip'
 import { Tooltip } from '../ui/Tooltip'
 import { TAG_POPOVER_CLS } from '../ui/TagPopoverChrome'
 
@@ -21,11 +22,7 @@ export function TagCardAffordance({
   const first = tags[0]
   if (mode === 'chips') return (
     <span data-testid="tag-chips" className={TAG_POPOVER_CLS.cardChips}>
-      {tags.slice(0, 2).map((tag) => <Tooltip key={tag.id} label={`Filter by ${tag.name}`}>
-        <button type="button" data-testid="tag-chip" className={TAG_POPOVER_CLS.cardChip} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onFilter?.(tag) }}>
-          <span className={TAG_POPOVER_CLS.cardDot} style={{ background: tag.color }} />{tag.name}
-        </button>
-      </Tooltip>)}
+      {tags.slice(0, 2).map((tag) => <TagChip key={tag.id} variant="card" tag={tag} onToggle={() => onFilter?.(tag)} />)}
       {tags.length > 2 && <Tooltip label={tags.slice(2).map((tag) => tag.name).join(' · ')}><span data-testid="tag-chips-more" className={TAG_POPOVER_CLS.cardMore}>+{tags.length - 2}</span></Tooltip>}
     </span>
   )

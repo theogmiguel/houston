@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 139;
+pub const PROTOCOL_VERSION: u32 = 140;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -185,9 +185,20 @@ pub enum ProfileChoice {
     },
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum RoutineKind {
+    #[default]
+    User,
+    HarnessReview,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct Routine {
+    #[serde(default)]
+    pub kind: RoutineKind,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u32,
     pub name: String,
@@ -2436,6 +2447,16 @@ pub enum GitDiscardKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct GitBranchInfo {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub ahead: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub behind: Option<u32>,
+    /// Committer time in Unix seconds.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub committed_at: Option<i64>,
     pub name: String,
     pub current: bool,
     pub is_default: bool,
@@ -3573,6 +3594,10 @@ pub enum ClientMsg {
     GitCommit {
         dir: String,
         message: String,
+        /// Rewrites the last commit instead of adding one. Refused when HEAD is
+        /// already contained in its upstream.
+        #[serde(default)]
+        amend: bool,
     },
     GitPush {
         dir: String,
@@ -4896,6 +4921,9 @@ pub enum ServerMsg {
         message: Option<String>,
     },
     PrList {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        viewer_login: Option<String>,
         dir: String,
         request: u32,
         #[serde(default)]
@@ -5402,6 +5430,9 @@ pub enum ServerMsg {
         read_at_ms: i64,
         buckets: Vec<UsageBucket>,
         sources: Vec<UsageSource>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        session_counts: Option<UsageSessionCounts>,
         pricing: UsagePricing,
         untracked_agents: Vec<AgentKind>,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -5520,6 +5551,29 @@ pub struct UsageBucket {
     pub ultrafast_cost_usd: f64,
     pub speed_premium_usd: f64,
     pub speed_rate_available: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageSessionCounts {
+    pub models: Vec<UsageModelSessions>,
+    pub days: Vec<UsageSessionDay>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageModelSessions {
+    pub provider: UsageProvider,
+    pub model: String,
+    pub sessions: u32,
+    pub days: Vec<UsageSessionDay>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageSessionDay {
+    pub day: String,
+    pub sessions: u32,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
@@ -6352,6 +6406,7 @@ mod tests {
     #[test]
     fn pr_list_reply_carries_rows_and_its_truncation() {
         let msg = ServerMsg::PrList {
+            viewer_login: Some("theo".into()),
             dir: "/w".into(),
             request: 5,
             items: vec![PrListItem {
@@ -6381,6 +6436,7 @@ mod tests {
             message: None,
         };
         let value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(value["viewer_login"], serde_json::json!("theo"));
         assert_eq!(value["type"], serde_json::json!("pr_list"));
         assert_eq!(value["items"][0]["is_draft"], serde_json::json!(true));
         assert_eq!(value["items"][0]["checks"], serde_json::json!("running"));

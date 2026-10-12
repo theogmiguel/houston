@@ -88,7 +88,7 @@ export interface PaletteActions {
   windowClose?: () => void
   quitAndStopDaemon?: () => void
 
-  selectNavRow: (row: 'routines' | 'skills' | 'harness' | 'mcp' | 'prs' | 'usage') => void
+  selectNavRow: (row: 'routines' | 'prs' | 'usage') => void
   openManageTags?: () => void
 
   switchWorkspace: (path: string | 'all') => void
@@ -192,9 +192,9 @@ function buildRailNavCommands(actions: PaletteActions): Command[] {
   }[] = [
     { id: 'routines', title: 'Go to Routines', keywords: ['schedule', 'cron'] },
     { id: 'skills', title: 'Go to Skills', keywords: ['library', 'commands'] },
-    { id: 'harness', title: 'Go to Harness', keywords: ['review', 'findings', 'mistakes'] },
-    { id: 'mcp', title: 'Go to Connections', keywords: ['mcp', 'servers', 'plugins', 'model context protocol'] },
-    { id: 'prs', title: 'Go to Pull Requests', keywords: ['pull requests', 'review', 'github'] },
+    { id: 'harness', title: 'Go to Review', keywords: ['review', 'findings', 'mistakes'] },
+    { id: 'mcp', title: 'Go to MCP servers', keywords: ['mcp', 'servers', 'plugins', 'model context protocol'] },
+    { id: 'prs', title: 'Go to Pull requests', keywords: ['pull requests', 'review', 'github'] },
     { id: 'usage', title: 'Go to Usage', keywords: ['tokens', 'cost', 'spend', 'limits', 'analytics'] }
   ]
   const commands: Command[] = rows.map((r) => ({
@@ -203,7 +203,12 @@ function buildRailNavCommands(actions: PaletteActions): Command[] {
     group: 'Go to' as const,
     keywords: r.keywords,
     enabled: true,
-    run: () => actions.selectNavRow(r.id)
+    run: () => {
+      if (r.id === 'skills' || r.id === 'harness' || r.id === 'mcp') {
+        setSettingsSection(r.id === 'skills' ? 'agents-skills' : r.id === 'mcp' ? 'agents-mcp' : 'agents-review')
+        setSettingsOpen(true)
+      } else actions.selectNavRow(r.id)
+    }
   }))
   commands.push({
     id: 'go-to.manage-tags',

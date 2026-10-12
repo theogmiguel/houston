@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import type { HoustonClient, SessionInfo } from '../../houston/client'
+import { sessionCheckoutRoot } from '../checkout/formatCheckout'
 import { rememberRailGitFacts } from './railGitCache'
 import { useRailGitFacts } from './useRailGitFacts'
 
@@ -8,7 +9,7 @@ import { useRailGitFacts } from './useRailGitFacts'
 export function railGitDirs(sessions: readonly SessionInfo[]): string[] {
   return [...new Set(sessions
     .filter((session) => session.agent !== 'ssh' && session.state === 'running')
-    .map((session) => session.worktree?.path ?? session.checkout_root ?? session.cwd))]
+    .map(sessionCheckoutRoot))]
 }
 
 export function GridRailGitSubscription({ client, sessions }: { client: HoustonClient | null; sessions: SessionInfo[] }): null {

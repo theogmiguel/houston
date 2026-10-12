@@ -34,8 +34,8 @@ export interface SwitchProps {
 
 export function Switch({ on, disabled, label, onChange, testId, size = 'field' }: SwitchProps): React.JSX.Element {
   const trackTone = size === 'panel'
-    ? on ? 'border-[var(--panel-switch-border-on)] bg-[var(--accent)]' : 'border-[var(--border)] bg-[var(--hover-fill)]'
-    : on ? 'border-[color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[var(--accent)]' : 'border-[var(--border)] bg-[var(--hover-fill)]'
+    ? on ? 'border-[var(--panel-switch-border-on)] bg-[var(--accent)]' : 'border-[var(--border-control)] bg-[var(--hover-fill)]'
+    : on ? 'border-[color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[var(--accent)]' : 'border-[var(--border-control)] bg-[var(--hover-fill)]'
   const thumbPosition = size === 'status'
     ? on ? 'translate-x-[var(--tr-switch-compact-travel)]' : ''
     : size === 'configuration'

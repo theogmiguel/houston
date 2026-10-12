@@ -23,6 +23,16 @@ function settings(provider: TaskTrackerProvider, repository: string | null): Tas
 
 describe('workspace tracker settings', () => {
   afterEach(cleanup)
+  it('keeps the provider requested by Sources when another provider arrives first', () => {
+    const listeners = new Set<(message: ServerMsg) => void>()
+    const client = {
+      subscribeAll: (listener: (message: ServerMsg) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
+      send: () => listeners.forEach((listener) => listener({ type: 'task_tracker_settings', settings: [settings('github_issues', 'acme/app')], refusal: null }))
+    }
+    render(<TaskTrackerSettingsSection client={client} workspace={WORKSPACE} workspaceName="Project" initialProvider="notion" />)
+    expect(screen.getByRole('combobox', { name: 'Tracker provider' }).textContent).toContain('Notion')
+    expect(screen.getByLabelText('Notion integration token')).toBeTruthy()
+  })
   it('edits each provider independently and keeps Notion credentials ephemeral', () => {
     const listeners = new Set<(message: ServerMsg) => void>()
     const sent: ClientMsg[] = []

@@ -11,7 +11,6 @@ import type {
   PrThread,
   PullRequestLink
 } from '../../houston/client'
-import { BTN_PRIMARY } from '../ui/buttonChrome'
 import {
   checkMeta,
   pendingMergeReason,
@@ -345,6 +344,10 @@ function click(el: Element | null): void {
 function openActions(): void {
   click(q('[data-testid="pr-actions-menu"]'))
 }
+function openTimelineDetails(): void {
+  click(q('[data-testid="pr-pane-timeline"]'))
+  click(q('[data-testid="pr-details"] button'))
+}
 function typeInto(input: HTMLInputElement, value: string): void {
   act(() => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
@@ -380,6 +383,55 @@ function settleWrite(client: FakeClient, request: number, kind = 'action'): void
 }
 
 describe('PullRequestTab — reading a pull request', () => {
+  it.each([false, true])('shows each CI check state in the merge box while checks are running (compact=%s)', (compact) => {
+    const client = mount({ compact })
+    emit(client, detailMsg({ detail: detail({ checks: [
+      { name: 'safety-checks', state: 'passing', url: null, duration_ms: 72000 },
+      { name: 'core-checks', state: 'running', url: null, duration_ms: null },
+      { name: 'windows-checks', state: 'queued', url: null, duration_ms: null },
+      { name: 'optional-checks', state: 'skipped', url: null, duration_ms: null }
+    ] }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    const rows = Array.from(box.querySelectorAll('[data-testid="pr-check-row"]'))
+    expect(rows).toHaveLength(4)
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('safety-checksPassed'),
+      'core-checksRunning',
+      'windows-checksQueued',
+      'optional-checksSkipped'
+    ])
+    emit(client, detailMsg({ detail: detail({ checks: [
+      { name: 'core-checks', state: 'passing', url: null, duration_ms: 60000 }
+    ], merge_disabled_reason: null }) }))
+    expect(box.querySelectorAll('[data-testid="pr-check-row"]')).toHaveLength(1)
+    expect(box.querySelector('[data-testid="pr-check-row"]')?.textContent).toContain('core-checksPassed')
+  })
+
+  it('keeps every check visible alongside failed-check log and agent actions', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ checks: [
+      { name: 'core-checks', state: 'failing', url: null, duration_ms: null },
+      { name: 'renderer-checks', state: 'failing', url: null, duration_ms: null },
+      { name: 'safety-checks', state: 'passing', url: null, duration_ms: 72000 },
+      { name: 'windows-checks', state: 'running', url: null, duration_ms: null },
+      { name: 'optional-checks', state: 'skipped', url: null, duration_ms: null }
+    ] }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    const rows = Array.from(box.querySelectorAll('[data-testid="pr-check-row"]'))
+    expect(rows).toHaveLength(4)
+    expect(box.textContent).toContain('core-checks failed')
+    expect(rows.map((row) => row.querySelector('button')?.textContent)).toEqual([
+      expect.stringContaining('renderer-checksFailed'),
+      expect.stringContaining('safety-checksPassed'),
+      'windows-checksRunning',
+      'optional-checksSkipped'
+    ])
+    click(rows[0].querySelector('button'))
+    expect(rows[0].textContent).toContain("Logs aren't available for this check")
+    click(Array.from(rows[0].querySelectorAll('button')).find((button) => button.textContent?.includes('Fix with agent'))!)
+    expect(rows[0].textContent).toContain('No agent panes in this grid')
+  })
+
   it('asks for the detail on mount and renders checks, state and the merge gate', () => {
     const presence: boolean[] = []
     const client = mount({ onPrPresenceChange: (exists) => presence.push(exists) })
@@ -388,11 +440,12 @@ describe('PullRequestTab — reading a pull request', () => {
     expect(q('[data-testid="pr-title"]')!.textContent).toContain('a change')
     expect(q('[data-testid="pr-number"]')!.textContent).toBe('#61')
     expect(q('[data-testid="pr-sub"]')!.textContent).toContain('feat/x')
-    expect(q('[data-testid="pr-sub"]')!.textContent).toContain('→ main · 2 commits')
-    click(q('[data-testid="pr-checks"] button'))
-    expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
-    expect(qa('[data-testid="pr-check-row"]').some((row) => row.textContent?.includes('1m 12s'))).toBe(true)
-    expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
+    expect(q('[data-testid="pr-sub"]')!.textContent).toContain('theo wants to merge feat/x into main')
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('Checks running')
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('core-checks')
+    openTimelineDetails()
+    expect(q('[data-testid="pr-merge"]')).toBeNull()
+    expect(q('[data-testid="pr-auto-merge"]')!.textContent).toBe('Merge when green')
     expect(q('[data-testid="pr-merge-reason"]')!.textContent).toContain(
       'Merge waits for core-checks'
     )
@@ -409,7 +462,7 @@ describe('PullRequestTab — reading a pull request', () => {
 
   it('merges with the sha on screen and the chosen method, and shows a refusal', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     click(q('[data-testid="pr-merge"]'))
     expect(client.prMergeCalls).toEqual([
       { dir: '/repo', number: 61, method: 'squash', sha: HEAD_SHA, request: 2 }
@@ -457,12 +510,10 @@ describe('PullRequestTab — housed footer primary', () => {
         client,
         detailMsg({
           link: current.link,
-          detail: detail({ merge_disabled_reason: null })
+          detail: detail({ merge_disabled_reason: null, checks: [] })
         })
       )
-      const primary = qa<HTMLButtonElement>('[data-testid="pr-actions"] button').filter((button) =>
-        button.className.includes(BTN_PRIMARY) && button.dataset.testid !== 'pr-merge-options'
-      )
+      const primary = qa<HTMLButtonElement>('[data-testid="pr-merge"], [data-testid="pr-action-ready"]')
       expect(primary, current.name).toHaveLength(current.primary)
       teardown()
     }
@@ -478,6 +529,7 @@ describe('PullRequestTab — stale replies', () => {
     expect(client.prLinkCalls).toEqual([{ dir: '/repo', number: 61, request: 2 }])
     emit(client, { type: 'pr_linked', dir: '/repo', request: 2, ok: true, message: null })
     emit(client, detailMsg({ request: 2, linked: true, link: link({ source: 'manual' }) }))
+    openActions()
     expect(q('[data-testid="pr-unlink"]')).not.toBeNull()
     emit(client, detailMsg({ request: 1, linked: false }))
     expect(q('[data-testid="pr-unlink"]')).not.toBeNull()
@@ -515,7 +567,7 @@ describe('PullRequestTab — stale replies', () => {
 
   it('ignores a refresh while a mutation is in flight so its own read lands', () => {
     const client = mount()
-    emit(client, detailMsg({ request: 1, detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ request: 1, detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     click(q('[data-testid="pr-merge"]'))
     expect(client.prMergeCalls).toEqual([
       { dir: '/repo', number: 61, method: 'squash', sha: HEAD_SHA, request: 2 }
@@ -530,7 +582,7 @@ describe('PullRequestTab — stale replies', () => {
       ok: true,
       message: null
     })
-    emit(client, detailMsg({ request: 2, detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ request: 2, detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     expect(q('[data-testid="pr-merge"]')).not.toBeNull()
   })
 
@@ -695,6 +747,7 @@ describe('PullRequestTab — empty, blocked and failed states', () => {
         detail: detail({ comments, comments_total: 43, merge_disabled_reason: null })
       })
     )
+    openTimelineDetails()
     expect(q('[data-testid="pr-comments-capped"]')!.textContent).toContain('Showing 20 of 43')
   })
 })
@@ -767,6 +820,7 @@ describe('PullRequestTab — editing, comments and reviews', () => {
   it('edits the title and description through one write', () => {
     const client = mount()
     emit(client, detailMsg({ detail: detail({ body: 'old body' }) }))
+    openTimelineDetails()
     click(q('[data-testid="pr-edit-open"]'))
     const title = q<HTMLInputElement>('[data-testid="pr-edit-title"]')!
     expect(title.value).toBe('a change')
@@ -791,6 +845,7 @@ describe('PullRequestTab — editing, comments and reviews', () => {
   it('writes a comment and an edit through the composer and the row', () => {
     const client = mount()
     emit(client, detailMsg({ detail: detail({ comments: [comment()], comments_total: 1 }) }))
+    openTimelineDetails()
     typeIntoTextarea(
       q<HTMLTextAreaElement>('[data-testid="pr-comment-composer"]')!,
       'a new remark'
@@ -812,7 +867,7 @@ describe('PullRequestTab — editing, comments and reviews', () => {
 
   it('submits one review carrying the inline drafts built on the remote diff', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     click(q('[data-testid="pr-pane-files"]'))
     expect(client.prDiffCalls).toEqual([{ number: 61, request: 2 }])
     emit(client, {
@@ -851,6 +906,7 @@ describe('PullRequestTab — editing, comments and reviews', () => {
   it('replies to and resolves a discussion by its node id', () => {
     const client = mount()
     emit(client, detailMsg({ detail: detail({ threads: [thread()] }) }))
+    openTimelineDetails()
     expect(q('[data-testid="pr-threads"]')!.textContent).toContain('rename this')
     typeIntoTextarea(q<HTMLTextAreaElement>('[data-testid="pr-thread-reply-PRT_1"]')!, 'agreed')
     click(q('[data-testid="pr-thread-reply-send-PRT_1"]'))
@@ -872,6 +928,7 @@ describe('PullRequestTab — editing, comments and reviews', () => {
       detail: detail({ reviewers: [{ id: 'reviewer', kind: 'user' }], threads: [thread()] })
     }))
 
+    if (!q('[data-review-count]')) click(q('[data-testid="pr-pane-timeline"]'))
     expect(q('[data-review-count]')?.textContent).toBe('0 / 1')
     expect(q('[data-testid="pr-thread-comment-time"]')).not.toBeNull()
     click(qa('button').find((button) => button.textContent === 'Send to orchestrator') ?? null)
@@ -888,6 +945,7 @@ describe('PullRequestTab — editing, comments and reviews', () => {
         })
       })
     )
+    openTimelineDetails()
     click(q('[data-testid="pr-reaction-add"]'))
     click(q('[data-testid="pr-reaction-pick-heart"]'))
     expect(client.prReactionCalls).toEqual([
@@ -976,9 +1034,10 @@ describe('PullRequestTab — reviewers, labels and actions', () => {
 
   it('sends a state action and shows the server’s own words', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     openActions()
     click(q('[data-testid="pr-action-close"]'))
+    click(qa('button').find((button) => button.textContent === 'Close pull request')!)
     expect(client.prActionCalls).toEqual([{ number: 61, action: 'close', request: 2 }])
     emit(client, {
       type: 'pr_mutation',
@@ -999,14 +1058,14 @@ describe('PullRequestTab — reviewers, labels and actions', () => {
     click(q('[data-testid="pr-action-close"]'))
     expect(client.prActionCalls).toHaveLength(0)
     expect(q('[data-testid="pr-action-close"]')!.getAttribute('disabled')).not.toBeNull()
+    openTimelineDetails()
     expect(q('[data-testid="pr-viewer-message"]')!.textContent).toContain('boom')
   })
 
   it('enables auto-merge with the chosen method and disables it once armed', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
-    openActions()
-    click(q('[data-testid="pr-action-auto-merge"]'))
+    emit(client, detailMsg())
+    click(q('[data-testid="pr-auto-merge"]'))
     expect(client.prActionCalls).toEqual([
       { number: 61, action: 'enable_auto_merge', mergeMethod: 'squash', request: 2 }
     ])
@@ -1022,6 +1081,7 @@ describe('PullRequestTab — reviewers, labels and actions', () => {
         })
       })
     )
+    openActions()
     expect(q('[data-testid="pr-action-auto-merge"]')!.textContent).toContain('Disable')
     click(q('[data-testid="pr-action-auto-merge"]'))
     expect(client.prActionCalls[1]).toEqual({
@@ -1037,6 +1097,7 @@ describe('PullRequestTab — browsing', () => {
   it('lists, filters and opens a row as a browsed pull request', () => {
     const client = mount()
     emit(client, detailMsg())
+    openTimelineDetails()
     click(q('[data-testid="pr-browse-open"]'))
     expect(client.prListCalls).toEqual([
       { state: 'open', involvement: 'all', query: null, limit: 25, request: 2 }
@@ -1073,6 +1134,7 @@ describe('PullRequestTab — browsing', () => {
   it('asks for a bigger page when Load more is pressed', () => {
     const client = mount()
     emit(client, detailMsg())
+    openTimelineDetails()
     click(q('[data-testid="pr-browse-open"]'))
     emit(client, {
       type: 'pr_list',
@@ -1114,8 +1176,10 @@ describe('PullRequestTab — stacks', () => {
 
   it('loads the stack on demand and merges it with the layer heads it showed', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
+    openTimelineDetails()
     expect(q('[data-testid="pr-stack-value"]')!.textContent).toContain('not checked')
+    if (!q('[data-testid="pr-stack-load"]')) openTimelineDetails()
     click(q('[data-testid="pr-stack-load"]'))
     expect(client.prStackCalls).toEqual([{ number: 61, request: 2 }])
     emit(client, stackReply())
@@ -1136,7 +1200,8 @@ describe('PullRequestTab — stacks', () => {
 
   it('says so when the host serves no stack', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
+    if (!q('[data-testid="pr-stack-load"]')) openTimelineDetails()
     click(q('[data-testid="pr-stack-load"]'))
     emit(client, { type: 'pr_stack', dir: '/repo', request: 2, stack: null, message: null })
     expect(q('[data-testid="pr-stack-none"]')!.textContent).toContain('no stack')
@@ -1145,7 +1210,8 @@ describe('PullRequestTab — stacks', () => {
 
   it('refuses to merge a stack whose layer is still a draft', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null }) }))
+    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
+    if (!q('[data-testid="pr-stack-load"]')) openTimelineDetails()
     click(q('[data-testid="pr-stack-load"]'))
     emit(
       client,
@@ -1203,22 +1269,14 @@ describe('compact side panel pull request', () => {
     expect(scroller.scrollTop).toBe(3)
   })
 
-  it('opens the Checks popover from the summary strip without moving the scroll', () => {
+  it('keeps readiness above the tabs without moving the summary scroll', () => {
     const client = mount({ compact: true })
-    emit(client, detailMsg({ detail: detail({ checks: [{ ...detail().checks[0], state: 'failing' }] }) }))
+    emit(client, detailMsg())
     const scroller = q<HTMLElement>('[data-testid="pr-scroll-area"]')!
-    scroller.scrollTop = 180
-    click(q('[data-testid="pr-check-strip-summary"]'))
-    const checks = q<HTMLElement>('[data-testid="pr-check-popover"]')
-    expect(checks).not.toBeNull()
-    expect(q('[data-testid="pr-check-strip-summary"]')?.getAttribute('aria-expanded')).toBe('true')
-    expect(scroller.scrollTop).toBe(180)
-    expect(checks!.querySelectorAll('[data-testid="pr-check-row"]')).toHaveLength(1)
-    const toggle = (): Element | null => checks!.querySelector('[data-testid="pr-check-row"] [aria-expanded]')
-    const before = toggle()?.getAttribute('aria-expanded')
-    click(toggle())
-    expect(toggle()?.getAttribute('aria-expanded')).toBe(before === 'true' ? 'false' : 'true')
-    expect(q('[role="dialog"][aria-label="Pull request checks"]')).toBeNull()
+    scroller.scrollTop = 40
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('Checks running')
+    expect(q('[data-testid="pr-check-strip-summary"]')).toBeNull()
+    expect(scroller.scrollTop).toBe(40)
   })
 
   it('matches the board and keeps full review controls inside collapsed Details', () => {
@@ -1238,22 +1296,19 @@ describe('compact side panel pull request', () => {
         { ...thread(), id: 'closed-thread', resolved: true, comments: [{ ...thread().comments[0], id: 'closed-comment' }] }
       ]
     }) }))
-    click(q('[data-testid="pr-checks"] button'))
-    expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
-    expect(q('[data-testid="pr-check-summary"]')?.textContent).toBe('1 passed')
-    expect(q('[data-testid="pr-check-strip-summary"]')?.textContent).toContain('All checks passed')
-    click(q('[data-testid="pr-check-strip-summary"]'))
-    expect(q('[data-testid="pr-check-popover"]')).not.toBeNull()
-    expect(q('[data-testid="pr-checks"] [aria-expanded="true"]')).not.toBeNull()
-    expect(q('[data-testid="pr-check-row"]')?.textContent).toContain('running 6m')
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('Checks running')
+    expect(q('[data-testid="pr-details"]')).toBeNull()
+    click(q('[data-testid="pr-pane-timeline"]'))
     expect(q('[data-testid="pr-header-top"]')!.compareDocumentPosition(q('[data-testid="pr-watch-row"]')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
-    expect(q('[data-testid="pr-pane-files"]')).toBeNull()
-    expect(q('[data-testid="pr-browse-open"]')).toBeNull()
+    expect(q('[data-testid="pr-merge"]')).toBeNull()
+    expect(q('[data-testid="pr-auto-merge"]')!.textContent).toBe('Merge when green')
+    expect(q('[data-testid="pr-pane-files"]')!.textContent).toContain('Files2')
+    expect(q('[data-testid="pr-details"] [data-testid="pr-browse-open"]')).not.toBeNull()
     expect(q('[data-testid="pr-inspector-review"] [data-testid="disclosure"]')).toBeNull()
     expect(qa('[data-testid="pr-inspector-comment"]')).toHaveLength(1)
     expect(q('[data-testid="pr-inspector-review"] [data-testid="pr-thread-resolve-thread-1"]')).toBeNull()
     expect(q('[data-testid="pr-inspector-review"] [data-testid="pr-thread-reply-PRT_1"]')).toBeNull()
+    if (!q('[data-review-count]')) click(q('[data-testid="pr-pane-timeline"]'))
     expect(q('[data-review-count]')?.textContent).toBe('0 / 1')
     expect(q('[data-review-count]')?.className).toContain('pr-inspector-review-count')
     click(q('[data-testid="pr-thread-reply-open-PRRC_1"]'))
@@ -1293,12 +1348,136 @@ describe('pending merge check names', () => {
   })
 })
 
-it('uses emphasis for the review counter and shows running checks in the inspector board', () => {
+it('shows review discussion on Timeline and running checks in the merge box', () => {
   const client = mount({ compact: true })
   emit(client, detailMsg())
+  expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('Checks running')
+  expect(q('[data-review-count]')).toBeNull()
+  click(q('[data-testid="pr-pane-timeline"]'))
   expect(q('[data-review-count]')!.className).toContain('pr-inspector-review-count')
-  click(q('[data-testid="pr-checks"] button'))
-  expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
-    expect(qa('[data-testid="pr-pane-summary"]')).toHaveLength(1)
-  expect(qa('[data-testid="pr-pane-files"]')).toHaveLength(0)
+})
+
+describe('shared pull request header', () => {
+  it.each([true, false])('uses a status word and a real relative age (compact=%s)', (compact) => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000)
+    try {
+      const client = mount({ compact })
+      emit(client, detailMsg({ detail: detail({ updated_at: 2_000_000_000 - 2 * 86400 }) }))
+      expect(q('[data-testid="pr-state"]')!.textContent).toBe('Open')
+      expect(q('[data-testid="pr-sub"]')!.textContent).toContain('theo wants to merge feat/x into main · 2d ago')
+      expect(qa('[data-testid="pr-title"]')).toHaveLength(1)
+    } finally { now.mockRestore() }
+  })
+
+  it('shows unavailable metadata without inventing an author or base branch', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ author: null, base_ref: null, head_ref: null }) }))
+    const sentence = q('[data-testid="pr-sub"]')!.textContent!
+    expect(sentence).not.toContain('maintainer')
+    expect(sentence).not.toContain('main')
+    expect(sentence).toContain('Author unavailable')
+    expect(sentence).toContain('base branch unavailable')
+  })
+})
+
+describe('merge readiness box', () => {
+  it('places readiness before the tabs and uses only the reported review decision', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ link: link({ review_decision: 'REVIEW_REQUIRED' }), detail: detail({ reviewers: [{ id: 'alice', kind: 'user' }] }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    expect(box).not.toBeNull()
+    expect(box.textContent).toContain('Review required before merging')
+    expect(box.textContent).not.toContain('approval')
+    expect(box.textContent).not.toContain('No conflicts with main')
+    expect(box.compareDocumentPosition(q('[data-testid="pr-pane-summary"]')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('shows no rows for a review or conflict state that does not block', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ link: link({ review_decision: null }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    expect(box.textContent).not.toContain('No review required')
+    expect(box.textContent).not.toContain('No conflicts with')
+  })
+
+  it('names a conflict with the base in the merge line', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ mergeable: 'conflicting' }) }))
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('Conflicts with main; resolve them before merging')
+  })
+
+  it('lists a failing check once, with a single Fix with agent action, and the remaining checks below', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ checks: [{ name: 'core-checks', state: 'failing', url: null, duration_ms: 252000 }, { name: 'renderer', state: 'passing', url: null, duration_ms: 60000 }], merge_disabled_reason: 'core-checks failed' }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    expect(box.textContent!.match(/core-checks/g)).toHaveLength(1)
+    expect(box.textContent).toContain('4m 12s')
+    expect(box.textContent).toContain("Logs aren't available for this check")
+    expect(Array.from(box.querySelectorAll('button')).filter((button) => button.textContent?.includes('Fix with agent'))).toHaveLength(1)
+    expect(box.querySelectorAll('[data-testid="pr-check-row"]')).toHaveLength(1)
+    expect(box.textContent).toContain('renderer')
+    expect(box.textContent).not.toContain('×')
+  })
+
+  it('offers auto-merge and log/agent actions when a check fails', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ checks: [{ name: 'core-checks', state: 'failing', url: null, duration_ms: 252000 }], merge_disabled_reason: 'core-checks failed' }) }))
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('core-checks failed')
+    expect(q('[data-testid="pr-merge"]')).toBeNull()
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain("Logs aren't available for this check")
+    click(Array.from(q('[data-testid="pr-merge-box"]')!.querySelectorAll('button')).find((button) => button.textContent === 'Fix with agent')!)
+    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('No agent panes in this grid')
+    click(q('[data-testid="pr-auto-merge"]'))
+    expect(client.prActionCalls.at(-1)).toMatchObject({ number: 61, action: 'enable_auto_merge', mergeMethod: 'squash' })
+  })
+})
+
+describe('pull request navigation', () => {
+  it('shows counted Summary, Timeline and Files tabs', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg())
+    expect(q('[data-testid="pr-pane-timeline"]')!.textContent).toBe('Timeline2')
+    expect(q('[data-testid="pr-pane-files"]')!.textContent).toBe('Files2')
+    click(q('[data-testid="pr-pane-files"]'))
+    expect(client.prDiffCalls).toHaveLength(1)
+  })
+})
+
+describe('pull request summary hierarchy', () => {
+  it('uses plain property labels and text actions', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ body: '# Problem\n\nA description.' }) }))
+    expect(q('[data-testid="pr-reviewers-manage"]')!.textContent).toBe('Request')
+    expect(q('[data-testid="pr-labels-manage"]')!.textContent).toBe('Edit')
+    expect(q('[data-testid="pr-reviewers"] svg')).toBeNull()
+    expect(q('[data-testid="pr-labels"] svg')).toBeNull()
+  })
+})
+
+describe('pull request overflow menu', () => {
+  it('orders the verbs and confirms before closing', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ linked: true }))
+    openActions()
+    const ids = Array.from(q('[data-testid="pr-actions-items"]')!.querySelectorAll('[role="menuitem"]')).map((item) => item.getAttribute('data-testid'))
+    expect(ids).toEqual(['pr-copy-checkout', 'pr-copy-url', 'pr-action-update-branch', 'pr-action-draft', 'pr-action-close', 'pr-unlink'])
+    click(q('[data-testid="pr-action-close"]'))
+    expect(client.prActionCalls).toHaveLength(0)
+    click(qa('button').find((button) => button.textContent === 'Close pull request')!)
+    expect(client.prActionCalls.at(-1)).toMatchObject({ number: 61, action: 'close' })
+  })
+})
+
+it('waits for close confirmation without sending a mutation on the menu click', () => {
+  const client = mount({ compact: true })
+  emit(client, detailMsg())
+  openActions()
+  click(q('[data-testid="pr-action-close"]'))
+  expect(client.prActionCalls).toHaveLength(0)
+})
+
+it('keeps the compact reviewer value in the shared left value column', () => {
+  const client = mount({ compact: true })
+  emit(client, detailMsg())
+  expect(q('[data-testid="pr-reviewers-value"]')!.className).not.toContain('ml-auto')
 })

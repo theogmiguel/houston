@@ -38,8 +38,13 @@ export interface GridRailRowProps {
   onFilterTag?: (tag: TagInfo) => void
   jumpNumber?: number
   onRemove?: () => void
+  expanded?: boolean
+  onToggleExpanded?: () => void
+  onFocusPane?: (paneId: number) => void
   onSelect: () => void
   onContextMenu?: (event: React.MouseEvent) => void
+  /** True while this grid's context menu is open; the hover preview stays closed. */
+  menuOpen?: boolean
   onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
 }
 
@@ -64,9 +69,9 @@ export function GridRailRow({
   diffByDir,
   prByDir,
   cardMode = 'detailed',
-  tagDisplay = 'icon',
+  tagDisplay = 'chips',
   agentActivity = 'compact',
-  properties = ['status', 'unread', 'checkout', 'pr', 'diff', 'task', 'inline-agents'],
+  properties = ['status', 'unread', 'checkout', 'pr', 'diff', 'tags', 'inline-agents'],
   jumpNumber,
   unread,
   dragPosition = null,
@@ -76,7 +81,11 @@ export function GridRailRow({
   onToggleUnread,
   onFilterTag,
   onSelect,
+  onFocusPane,
+  expanded: controlledExpanded,
+  onToggleExpanded: controlledToggle,
   onContextMenu,
+  menuOpen,
   onOpenInspector,
   onRemove,
 }: GridRailRowProps): React.JSX.Element {
@@ -137,6 +146,7 @@ export function GridRailRow({
   const many = card.agents.length > 1
   const hasUnread = unread ?? card.agents.some((agent) => agent.unread)
   const startHover = (): void => {
+    if (menuOpen) return
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     if (closeTimer.current) clearTimeout(closeTimer.current)
     hoverTimer.current = setTimeout(() => {
@@ -158,6 +168,15 @@ export function GridRailRow({
     setHoverVisible(false)
     closeTimer.current = setTimeout(() => { hoverMounted.current = false; setHoverPosition(null) }, 150)
   }
+  useEffect(() => {
+    if (!menuOpen) return
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    hoverTimer.current = null
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    hoverMounted.current = false
+    setHoverVisible(false)
+    setHoverPosition(null)
+  }, [menuOpen])
   useEffect(() => {
     const hideOnScroll = (): void => {
       if (!hoverTimer.current && !hoverMounted.current) return
@@ -207,9 +226,10 @@ export function GridRailRow({
     }
   }, [jumpNumber, onSelect])
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
-      const rows = [...(rowRef.current?.parentElement?.querySelectorAll<HTMLElement>('[data-testid="grid-row"]') ?? [])]
+      const rows = [...((rowRef.current?.closest('[data-rail-grid-list]') ?? rowRef.current?.parentElement)?.querySelectorAll<HTMLElement>('[data-testid="grid-row"]') ?? [])]
       const index = rows.indexOf(rowRef.current!)
       rows[index + (event.key === 'ArrowDown' ? 1 : -1)]?.focus()
     } else if (event.key === 'Enter' || event.key === ' ') {
@@ -239,6 +259,7 @@ export function GridRailRow({
       jumpNumber={jumpNumber}
       onRemove={onRemove}
       onSelect={onSelect}
+      onFocusPane={onFocusPane}
       onContextMenu={onContextMenu}
       onOpenInspector={onOpenInspector}
       card={card}
@@ -249,14 +270,14 @@ export function GridRailRow({
       altHeld={altHeld}
       hoverPosition={hoverPosition}
       hoverVisible={hoverVisible}
-      expanded={expanded}
+      expanded={controlledExpanded ?? expanded}
       now={now}
       rowRef={rowRef}
       closeTimer={closeTimer}
       openTagPopover={openTagPopover}
       startHover={startHover}
       closeHover={closeHover}
-      onToggleExpanded={() => setExpanded((value) => !value)}
+      onToggleExpanded={controlledToggle ?? (() => setExpanded((value) => !value))}
       onKeyDown={onKeyDown}
     />
   )

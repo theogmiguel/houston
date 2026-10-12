@@ -55,7 +55,7 @@ describe('AgentStatusSection', () => {
   }
 
   function select(provider: AgentKind): void {
-    const button = rowFor(provider).closest('[data-testid="list-detail-item"]')!
+    const button = rowFor(provider).querySelector('button')!
     act(() => button.dispatchEvent(new MouseEvent('click', { bubbles: true })))
   }
 
@@ -94,7 +94,7 @@ describe('AgentStatusSection', () => {
 
     const claude = rowFor('claude')
     expect(claude.textContent).toContain('Claude Code')
-    expect(claude.closest('[data-testid="list-detail-item"]')?.textContent).toContain('2.1.263')
+    expect(claude.textContent).toContain('2.1.263')
     expect(claude.getAttribute('data-status')).toBe('ok')
 
     const codex = rowFor('codex')
@@ -116,17 +116,17 @@ describe('AgentStatusSection', () => {
       ]
     })
     const sub = (provider: AgentKind): string =>
-      rowFor(provider).parentElement!.parentElement!.textContent ?? ''
-    expect(sub('claude')).toContain('Hooks on')
+      rowFor(provider).textContent ?? ''
+    expect(sub('claude')).toContain('Reporting status')
     expect(sub('codex')).toContain('Hooks off')
-    expect(sub('cursor')).toContain('Not found on PATH')
-    expect(sub('grok')).toContain('Hooks need attention')
+    expect(sub('cursor')).toContain('cursor-agent is not on PATH')
+    expect(sub('grok')).toContain('Hooks need repair')
   })
 
-  it('carries a StatusIcon per row, matching the row state', () => {
+  it('carries a severity dot per row matching the reported state', () => {
     render({ providers: [state({ provider: 'cursor', present: false, version: null })] })
-    const mark = container.querySelector('[data-testid="status-icon"]')!
-    expect(mark.getAttribute('data-state')).toBe('absent')
+    const mark = container.querySelector('[data-tone]')!
+    expect(mark.getAttribute('data-tone')).toBe('muted')
   })
 
   it('flips a provider from its detail, naming that provider', () => {
@@ -154,12 +154,11 @@ describe('AgentStatusSection', () => {
     expect(sw.disabled).toBe(true)
   })
 
-  it('shows nothing but a prompt until a provider is picked', () => {
+  it('keeps details closed until a provider is picked', () => {
     render({ providers: [state()] })
     expect(container.querySelector('[data-testid="agent-status-detail"]')).toBeNull()
-    expect(container.querySelector('[data-testid="list-detail-detail"]')?.textContent).toContain(
-      'Nothing selected'
-    )
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.querySelector('[data-testid="list-detail-detail"]')).toBeNull()
   })
 
   it('names what ZCode\'s switch also turns on before it is flipped', () => {

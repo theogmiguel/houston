@@ -1,5 +1,5 @@
 import type { HoustonClient, PrListItem } from '../src/houston/client'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../src/components/ui/Icon'
 import { IconChevronLeft, IconGrid, IconSearch } from '../src/components/icons'
 import { PullRequestsScreen } from '../src/components/prs/PullRequestsScreen'
@@ -19,7 +19,7 @@ const pullRequests: PrListItem[] = [
     state: 'open',
     is_draft: false,
     author: 'maintainer',
-    head_ref: 'fix/pane-content',
+    head_ref: 'inspector-polish',
     base_ref: 'main',
     updated_at: now - 12 * 60,
     created_at: now - 50 * 60,
@@ -36,17 +36,17 @@ const pullRequests: PrListItem[] = [
     number: 93,
     title: 'fix(codex): Codex panes start again with Codex CLI 0.160',
     url: 'https://github.com/owner/houston/pull/93',
-    state: 'merged',
+    state: 'open',
     is_draft: false,
     author: 'maintainer',
-    head_ref: 'fix/codex-restart',
+    head_ref: 'fix/codex-native-startup',
     base_ref: 'main',
     updated_at: now - 13 * 60,
     created_at: now - 70 * 60,
     additions: 156,
     deletions: 15,
     review_decision: null,
-    checks: 'passing',
+    checks: 'failing',
     labels: [],
     comments: 4,
     review_requested: false,
@@ -54,7 +54,7 @@ const pullRequests: PrListItem[] = [
   },
   {
     number: 92,
-    title: 'feat(remote): follow and answer agents from a paired phone or another computer',
+    title: 'feat(remote): follow and answer agents from a paired phone',
     url: 'https://github.com/owner/houston/pull/92',
     state: 'open',
     is_draft: false,
@@ -74,7 +74,7 @@ const pullRequests: PrListItem[] = [
   },
   {
     number: 79,
-    title: 'feat(agents): ZCode runs in a pane with reported status, pane tools and resume',
+    title: 'feat(agents): ZCode runs in a pane with reported status',
     url: 'https://github.com/owner/houston/pull/79',
     state: 'open',
     is_draft: false,
@@ -96,7 +96,7 @@ const pullRequests: PrListItem[] = [
     number: 90,
     title: 'refactor(ui): every screen composes components/ui roles',
     url: 'https://github.com/owner/houston/pull/90',
-    state: 'merged',
+    state: 'open',
     is_draft: false,
     author: 'maintainer',
     head_ref: 'refactor/ui-roles',
@@ -106,7 +106,7 @@ const pullRequests: PrListItem[] = [
     additions: 3410,
     deletions: 2987,
     review_decision: null,
-    checks: 'passing',
+    checks: 'running',
     labels: [
       { name: 'ui', color: '3b82f6' },
       { name: 'refactor', color: 'a855f7' },
@@ -143,7 +143,7 @@ function PrRail(): React.JSX.Element {
   )
 }
 
-type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'sort' | 'filters' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded'
+type PrsStoryMode = 'populated' | 'empty' | 'loading' | 'hover' | 'selected' | 'timeline' | 'code' | 'draft' | 'closed' | 'folded'
 
 export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStoryMode }): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -152,18 +152,16 @@ export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStor
     : pullRequests
   const items = mode === 'folded' ? [...baseItems, ...Array.from({ length: 12 }, (_, index) => ({ ...pullRequests[3], number: 300 + index, title: `feat(agents): review pane lifecycle ${index + 1}`, updated_at: now - (index + 2) * 24 * 60 * 60 }))] : baseItems
   const selectedNumber = ['selected', 'timeline', 'code'].includes(mode) ? 93 : ['draft', 'closed'].includes(mode) ? 95 : null
-  const client = useMemo(() => new InspectorClient(false, false, { number: selectedNumber ?? 95, state: mode === 'closed' ? 'closed' : selectedNumber === 93 ? 'merged' : 'open', isDraft: mode === 'draft' }) as unknown as HoustonClient, [mode, selectedNumber])
+  const client = useMemo(() => new InspectorClient(false, false, { number: selectedNumber ?? 95, state: mode === 'closed' ? 'closed' : 'open', isDraft: mode === 'draft' }) as unknown as HoustonClient, [mode, selectedNumber])
   useEffect(() => {
     const screen = rootRef.current?.querySelector('[data-testid="pull-requests-screen"]')
-    if (mode === 'sort') Array.from(screen?.querySelectorAll('button') ?? []).find((button) => button.textContent?.trim() === 'Sort')?.click()
-    if (mode === 'filters') Array.from(screen?.querySelectorAll('button') ?? []).find((button) => button.textContent?.includes('Filters'))?.click()
     if (mode === 'folded') {
       const timer = window.setTimeout(() => { const scroller = screen?.querySelector<HTMLElement>('[data-testid="pr-list-scroll"]'); if (scroller) scroller.scrollTop = 90 }, 200)
       return () => window.clearTimeout(timer)
     }
     if (mode === 'timeline' || mode === 'code') {
       const timer = window.setInterval(() => {
-        const button = screen?.querySelector<HTMLButtonElement>(mode === 'timeline' ? '[data-testid="pr-pane-timeline"]' : '[data-testid="pr-pane-code"]')
+        const button = screen?.querySelector<HTMLButtonElement>(mode === 'timeline' ? '[data-testid="pr-pane-timeline"]' : '[data-testid="pr-pane-files"]')
         if (button) { button.click(); window.clearInterval(timer) }
       }, 400)
       return () => window.clearInterval(timer)
@@ -176,7 +174,7 @@ export function PullRequestsScreenStory({ mode = 'populated' }: { mode?: PrsStor
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 text-[12px] text-[var(--text-muted)]"><span className="h-4 w-4 rounded-[5px] bg-gradient-to-br from-[#9b63ff] to-[#4e74ff]" /><span className="font-semibold text-[var(--text-primary)]">Houston</span><span className="ml-[150px]">◫</span><span className="ml-auto">▦　◫　−</span></header>
       <div className="flex min-h-0 flex-1">
         <PrRail />
-        <PullRequestsScreen repoName="owner/houston" workspace="/workspace/houston" currentUser="maintainer" items={items} client={client} directory="/repo" selectedNumber={selectedNumber} state={mode === 'filters' ? 'open' : 'all'} loading={mode === 'loading'} onRefresh={noop} onOpenPullRequest={noop} />
+        <PullRequestsScreen repoName="owner/houston" workspace="/workspace/houston" currentUser="maintainer" items={items} client={client} directory="/repo" selectedNumber={selectedNumber} state={mode === 'closed' ? 'closed' : 'open'} loading={mode === 'loading'} workspaces={[{ path: '/workspace/houston', name: 'Houston' }, { path: '/workspace/other', name: 'Other project' }]} onWorkspaceChange={noop} onOpenUrlInPane={noop} onRefresh={noop} onOpenPullRequest={noop} />
       </div>
       </div>
     </div>
@@ -190,7 +188,7 @@ export function PullRequestDetailStory({ width, tab = 'summary', state = 'open' 
   useEffect(() => {
     if (tab === 'summary') return
     const timer = window.setInterval(() => {
-      const button = rootRef.current?.querySelector<HTMLButtonElement>(tab === 'timeline' ? '[data-testid="pr-pane-timeline"]' : '[data-testid="pr-pane-code"]')
+      const button = rootRef.current?.querySelector<HTMLButtonElement>(tab === 'timeline' ? '[data-testid="pr-pane-timeline"]' : '[data-testid="pr-pane-files"]')
       if (button) { button.click(); window.clearInterval(timer) }
     }, 400)
     return () => window.clearInterval(timer)
@@ -201,4 +199,12 @@ export function PullRequestDetailStory({ width, tab = 'summary', state = 'open' 
       <div className="pane-inspector-content"><PullRequestTab client={client} dir="/repo" compact requestedPr={{ number, nonce: 1 }} /></div>
     </aside>
   </div>
+}
+
+export function PrPageStory({ mode = 'populated' }: { mode?: 'populated' | 'selected' | 'empty' | 'loading' | 'viewer-unavailable' }): React.JSX.Element {
+  const [workspace, setWorkspace] = useState('/workspace/houston')
+  const [selected, setSelected] = useState(mode === 'selected' ? 95 : null as number | null)
+  const client = useMemo(() => new InspectorClient(selected === 93, true, { number: selected ?? 95, state: 'open' }) as unknown as HoustonClient, [selected])
+  const rows = mode === 'empty' || mode === 'loading' || workspace !== '/workspace/houston' ? [] : pullRequests
+  return <PullRequestsScreen repoName="Houston" workspace={workspace} workspaces={[{ path: '/workspace/houston', name: 'Houston' }, { path: '/workspace/other', name: 'Other project' }]} onWorkspaceChange={setWorkspace} currentUser={mode === 'viewer-unavailable' ? '' : 'maintainer'} items={rows} client={client} directory={workspace} selectedNumber={selected} loading={mode === 'loading'} onOpenPullRequest={(item) => setSelected(item.number)} onOpenUrlInPane={noop} />
 }

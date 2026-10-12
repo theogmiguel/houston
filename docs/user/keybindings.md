@@ -83,7 +83,7 @@ All of the following are rebindable from Settings ▸ Shortcuts unless noted.
 | Back to the last workspace (after the prefix) | Tab |
 | Previous / next grid in this workspace | , / . |
 | Open the command palette (after the prefix) | Space |
-| New browser tab / Open Files / Diff / Pull request / Linked pull requests (after the prefix) | B / F / D / P / L |
+| New browser tab / Open Files / Changes / Pull request / Linked pull requests (after the prefix) | B / F / D / P / L |
 | Open the Pull Requests screen (after the prefix) | R |
 | Move the selected rail card up / down (Manual sort) | Mod+Shift+↑ / Mod+Shift+↓ |
 | Open Files Quick Open outside a terminal | Mod+P |
@@ -121,3 +121,11 @@ elsewhere.
 Workspace actions can optionally bind a shortcut when you add or edit them. The shortcut
 runs the saved command in a new shell pane in the current workspace. A chord already owned
 by Houston or another workspace action is refused with its owner named.
+
+## Reviewing Changes
+
+In maximized Changes, `/` focuses the filename filter and `J`/`K` move through matching
+files. These keys do not navigate while you type into a field or use a menu. **Esc**
+restores the panel's previous width. In branch search, **Enter** creates a new branch
+from the default base; **Ctrl+Enter** creates its worktree in a new pane. These local
+review and search shortcuts are separate from the terminal prefix key.

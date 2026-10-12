@@ -1,9 +1,38 @@
+import { PhonePairingCard, PairingStep, PairingSteps } from '../src/components/ui/PhonePairingCard'
+import { ReviewSummary } from '../src/components/ui/ReviewSummary'
+import { SettingsDisclosure } from '../src/components/ui/SettingsDisclosure'
+import { AgentConnectionGrid, AgentConnectionTile } from '../src/components/ui/AgentConnectionTile'
+import { SettingsToolbar } from '../src/components/ui/SettingsToolbar'
+import { AgentCliRow, ProviderGlyphTile } from '../src/components/ui/AgentCliRow'
+import { AgentSetupRow, SetupDot } from '../src/components/ui/AgentSetupRow'
+import { SettingsFooterItem } from '../src/components/ui/SettingsFooterItem'
+import { AgentSettingsBody } from '../src/components/ui/AgentSettingsBody'
+import { SettingsNavigationGroup } from '../src/components/ui/NavigationRailFooter'
+import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
+import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
+import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
+import { PrPageSpecimen } from '../src/components/ui/PrPage'
+import { MarkdownDocument } from '../src/components/markdownPipeline'
+import { PrHeaderSpecimen, PrMergeSpecimen, PrViewTabs, PrChangeStats, PrMenuSpecimen } from '../src/components/ui/PrPresentation'
+import { changeRowClass } from '../src/components/ui/inspectorChangeClasses'
+import { GitToolsTriggerSpecimen, GitCommitSpecimen } from '../src/components/ui/Changes'
+import { BranchSwitcherSpecimen } from '../src/components/ui/BranchSwitcher'
+import { ChangesReviewSpecimen } from '../src/components/ui/ChangesReview'
+import { DiffBody } from '../src/components/git/DiffBody'
+import { IconChartArea } from '../src/components/icons'
+import { UsageDayFilter, UsageBreakdownActions, UsageSourcesLine } from '../src/components/ui/UsageChrome'
+import { UsageAgentMark, UsageShareCell, UsageSourceRow } from '../src/components/ui/UsageProviderRow'
+import { UsageLegend } from '../src/components/ui/UsageChart'
+import { UsageStatsSpecimen } from '../src/components/ui/UsageChrome'
+import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { SpinnerSpecimen } from '../src/components/ui/Spinner'
 import { OrchestrationContentSpecimen } from '../src/components/ui/OrchestrationContent'
 import { ChildPaneLayoutSpecimen } from '../src/components/ui/ChildPaneLayout'
 import { MascotDockSlot } from '../src/components/ui/MascotDockSlot'
 import { MascotArtSpecimen } from '../src/components/ui/MascotArt'
 import { MascotRigSpecimen } from '../src/components/ui/MascotRig'
+import { ListDetailMeta } from '../src/components/ui/ListDetail'
+import { IconSparkles } from '../src/components/icons'
 import React, { useState } from 'react'
 import { DiffEmptyState } from '../src/components/ui/Diff'
 import { GitBranchBadge, GitBranchDeleteMenu, GitBranchRow } from '../src/components/ui/Branch'
@@ -380,7 +409,7 @@ function SkillsChromeSpecimen(): React.JSX.Element {
         <NavSurfaceFrame><NavSurfaceContent><NavSurfaceSection><PanelFootnote>Distribution status</PanelFootnote></NavSurfaceSection></NavSurfaceContent></NavSurfaceFrame>
       </div>
       <PaneFrame kind="skills" focusTier="none" active={false}>
-        <PaneHeader data-pane-focus-head="none" divider="borderMuted" transition="surface" inset="compact">
+        <PaneHeader data-pane-focus-head="none" divider="borderMuted" inset="compact">
           <Text tone="muted" className="flex-none"><Icon glyph={IconTerminal} role="ui" /></Text>
           <PaneTitle>Skills</PaneTitle>
           <PaneHeadActions><PaneHeadButton ladder={false} tone="danger" aria-label="Close"><IconClose /></PaneHeadButton></PaneHeadActions>
@@ -401,17 +430,17 @@ function SkillsChromeSpecimen(): React.JSX.Element {
 }
 
 const breakdownRows = [
-  { rank: 1, model: 'claude-opus-5-5', cost: '$1,812.30', share: '72.9%', tokens: '2.9B', bar: 72.9 },
-  { rank: 2, model: 'gpt-5.5-codex', cost: '$402.10', share: '16.2%', tokens: '498M', bar: 16.2 },
-  { rank: 3, model: 'claude-sonnet-5-5', cost: '$259.10', share: '10.4%', tokens: '1.2B', bar: 10.4 },
-  { rank: 4, model: 'gpt-5.5-codex-mini', cost: '$12.80', share: '0.5%', tokens: '14M', bar: 0.5 }
+  { sessions: 96, model: 'claude-opus-5-5', cost: '$1,812.30', share: '72.9%', tokens: '2.9B', bar: 72.9 },
+  { sessions: 39, model: 'gpt-5.5-codex', cost: '$402.10', share: '16.2%', tokens: '498M', bar: 16.2 },
+  { sessions: 88, model: 'claude-sonnet-5-5', cost: '$259.10', share: '10.4%', tokens: '1.2B', bar: 10.4 },
+  { sessions: 3, model: 'gpt-5.5-codex-mini', cost: '$12.80', share: '0.5%', tokens: '14M', bar: 0.5 }
 ]
 
 const routineItems = [
-  { id: 'harness', title: 'Harness review · houston', sub: 'Working' },
-  { id: 'nightly', title: 'Nightly dependency check', sub: 'Waiting for a slot' },
-  { id: 'weekly', title: 'Weekly changelog draft', sub: 'Idle · Fri 17:00' },
-  { id: 'flaky', title: 'Flaky test sweep', sub: 'Paused' }
+  { id: 'harness', title: 'Weekly review', section: 'Built in', subLayout: 'full-width' as const, sub: <ListDetailMeta left="Mondays 09:00 · Houston" right={<StatusLabel status="Running" />} /> },
+  { id: 'nightly', title: 'Nightly dependency check', section: 'Yours', subLayout: 'full-width' as const, sub: <ListDetailMeta left="Daily 02:00 · finex" right={<StatusLabel status="Waiting for a slot" />} /> },
+  { id: 'weekly', title: 'Weekly changelog draft', section: 'Yours', subLayout: 'full-width' as const, sub: <ListDetailMeta left="Fridays 17:00 · Houston" right={<StatusLabel status="Idle">Next Fri 17:00</StatusLabel>} /> },
+  { id: 'flaky', title: 'Flaky test sweep', section: 'Yours', subLayout: 'full-width' as const, sub: <ListDetailMeta left="Paused" right={<StatusLabel status="Paused" />} /> }
 ]
 const sectionedItems = [
   { id: 'hou-45', title: 'Rename Harness review to Harness', sub: 'Needs input · HOU-45', section: 'Your turn' },
@@ -549,8 +578,21 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <MotionThemeSpecimens theme="paper" reducedMotion />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Diff toolbar overflow"><GitToolsTriggerSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Pull request merge readiness"><PrMergeSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Pull request tabs"><PrViewTabs value="summary" timelineCount={5} fileCount={4} onChange={() => {}} onPreload={() => {}} /></SpecimenGroup>
+        <SpecimenGroup heading="Pull request page"><PrPageSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Pull request actions menu"><PrMenuSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Pull request property actions"><ReviewButton variant="text-link">Request</ReviewButton><ReviewButton variant="text-link">Edit</ReviewButton><ReviewButton variant="text-link">Show full description</ReviewButton><PrChangeStats additions={91} deletions={12} files={4} commits={5} /></SpecimenGroup>
+        <SpecimenGroup heading="Panel Markdown"><MarkdownDocument variant="panel" source={"# Problem\n\nPanel headings stay below the title.\n\n## Changes\n\nUse `fit()` and a bounded preview."} /></SpecimenGroup>
+        <SpecimenGroup heading="Pull request header"><PrHeaderSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Commit box"><GitCommitSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Branch switcher"><BranchSwitcherSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Changes review workspace"><ChangesReviewSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Changes file rows"><div className="changes-pane" data-compact="true">{([true, false] as const).map((selected) => <div key={String(selected)} className="changes-inline-file"><div className={changeRowClass(selected)}><GitStatusMark className="changes-inline-status" status={selected ? "modified" : "added"}>{selected ? "M" : "A"}</GitStatusMark><span>{selected ? "Selected file.tsx" : "Added file.ts"}</span></div></div>)}</div></SpecimenGroup>
         <SpecimenGroup heading="Diff line">
           <ReviewDiffLineSpecimen />
+          <DiffBody patch={"@@ -1,2 +1,3 @@\n-old\n+new\n+extra\n context"} truncated={false} split />
         </SpecimenGroup>
         <SpecimenGroup heading="Metadata row">
           <MetadataRowSpecimen />
@@ -596,6 +638,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </SpecimenRow>
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Row states"><RowStateSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Embedded agent content"><AgentSettingsBody embedded><Text>Agent content inside the Settings page frame</Text></AgentSettingsBody></SpecimenGroup>
+        <SpecimenGroup heading="Settings footer"><SettingsFooterItem attention={3} onClick={noop} /><ReviewSummary heading="Repeated mistakes fell from 41 to 18 per 100 sessions" detail="Last review read 38 sessions" action={<Button variant="primary">Review now</Button>} /><SettingsDisclosure heading="Server" detail="Server command" open><AgentConnectionGrid><AgentConnectionTile agent="claude" label="Claude Code" server="github" checked status="On" onChange={noop} testId="connection-tile-specimen" /></AgentConnectionGrid></SettingsDisclosure><SettingsToolbar actions={<Button variant="primary">New skill</Button>}><TextInput placeholder="Search skills" /></SettingsToolbar><AgentCliRow provider="claude" name="Claude Code" version="2.1" detail="2 accounts" mark="ok" status="Reporting status" tone="ok" pending={false} onOpen={noop} /><ProviderGlyphTile agent="codex" state="differs" /><ProviderGlyphTile agent="cursor" state="off" /><AgentSetupRow heading="MCP servers" detail="3 servers · github can’t start" tone="danger" status="1 failing" onClick={noop} /></SpecimenGroup>
+        <SpecimenGroup heading="Grouped settings navigation"><SettingsNavigationGroup label="Agents"><SettingsRailRow kind="section" icon={IconTerminal} label="CLIs" trailing={<Count value={1} from="warn" />} /><SettingsRailRow kind="section" icon={IconSearch} label="MCP servers" selected trailing={<Count value={1} from="stop" />} /></SettingsNavigationGroup></SpecimenGroup>
         <SpecimenGroup heading="Settings navigation and scope">
           <SpecimenRow>
             <SettingsRailRow kind="section" icon={IconTerminal} label="Terminal" selected />
@@ -603,7 +649,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <div className="w-72"><SettingsSearch inputRef={React.createRef<HTMLInputElement>()} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={noop} /></div>
           </SpecimenRow>
           <SpecimenRow>
-            <SettingsBreadcrumb open section="Terminal" />
+            <SettingsBreadcrumb open section="Terminal" /><SettingsBreadcrumb open section="Agents / CLIs" />
             <SettingsScope workspace="houston" />
             <SettingsScope workspace={null} scope="global" />
           </SpecimenRow>
@@ -660,9 +706,12 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="surface-large">Large surface</Button>
             <Button variant="action-primary" size="lg">Large primary</Button>
             <BrowserButton variant="outline">Outline</BrowserButton>
+            <div className="max-w-[180px]"><Button variant="ghost-wrap" size="sm">Copy Claude’s version to Antigravity</Button></div>
             <Button variant="ghost">Ghost</Button>
             <BrowserButton variant="label">Label action</BrowserButton>
             <Button variant="link">Link</Button>
+            <Button variant="muted-link">Muted text action</Button>
+            <Button variant="body-link">Body text link</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
             <Button variant="danger-solid" icon={IconAlertTriangle}>Danger solid</Button>
@@ -768,11 +817,18 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Metadata section heading">
           <SectionHead density="row" tone="muted" title="Status" />
+          <SectionHead variant="title" title="Weekly review" badge={<Chip variant="label" label="Built in" />} />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Usage and configuration roles">
           <SpecimenRow>
             <UsageChromeSpecimen />
+            <UsageStatsSpecimen />
+            <EmptyState copy="summary" icon={IconChartArea} heading="No sessions in the last 7 days" description="Usage appears after a Claude Code or Codex session writes its transcript. Older days are in the 30 and 90 day windows." />
+            <UsageSourceRow mark={<UsageAgentMark agent="codex" />} label="Codex" description={<Text mono>~/.codex/sessions</Text>} status={<StatusLabel status="Missing" variant="detail" tone="waiting">Folder not found</StatusLabel>} />
+            <UsageSourcesLine>Read from <Text mono>~/.claude/projects</Text> (172 sessions) and <Text mono>~/.codex/sessions</Text> (42 sessions). Costs are estimates at API list prices; a subscription is billed differently.</UsageSourcesLine>
+            <UsageBreakdownActions><UsageDayFilter label="Tue Oct 6" onClear={() => {}} /><UsageShareCell share={0.729} color="var(--claude)" /></UsageBreakdownActions>
+            <UsageLegend series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--claude)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} />
             <MaterialSurfaceSpecimen />
             <ConfigurationDetailSpecimen />
             <Text size="subhead" weight="semibold" tone="primary">Configuration heading</Text>
@@ -833,6 +889,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Popover panel">
           <PopoverPanelSpecimen />
+          <PopoverPanelSpecimen width="wide" />
+          <PopoverPanelSpecimen width="list" />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Choice tiles">
@@ -1004,6 +1062,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </Card>
           <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
+          <Card shape="inset" borderStyle="dashed"><SectionHead variant="sentence" density="row" icon={IconSparkles} title="Suggested" count={2} action={<Text size="small" tone="muted">from Review</Text>} /><Card.Row layout="meta-actions" heading="Codex retries the same failing migration" meta="5 of 38 sessions" action={<Inline gap="small"><Button variant="muted-link">Dismiss</Button><Button variant="muted-link">Add to queue</Button></Inline>} /></Card>
+          <Card><Card.Row layout="source" heading="Weekly review" meta="Findings wait for your decision." status={<StatusLabel status="On" />} action={<Button variant="muted-link">Routines</Button>} /></Card>
           <Card tone="material-inset" shape="inset" padding="md">Pull request details</Card>
         </SpecimenGroup>
 
@@ -1023,8 +1083,12 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Launch preset outline">
           <LaunchPresetOutlineSpecimen />
         </SpecimenGroup>
+        <SpecimenGroup heading="Action glyphs"><VerbGlyphSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Chip values and actions"><ChipShapeSpecimen />
+          <Chip variant="label" label="Built in" /></SpecimenGroup>
+        <SpecimenGroup heading="Composer menu rows"><ComposerPillMenuSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Launch slot card">
-          <LaunchSlotCardSpecimen />
+          <LaunchSlotCardSpecimen /><LaunchSlotCardSpecimen custom />
           <FieldLabel size="compact">Compact field label</FieldLabel>
         </SpecimenGroup>
 
@@ -1039,7 +1103,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
                 <AttachmentRemoveButton filename="notes.md" onRemove={noop} />
               </span>
               <AttachmentChipFrame pressable={false}>
-                <AttachmentTypeGlyph extension="png" />
+                <AttachmentTypeGlyph extension="png" imageUrl="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
                 image.png
               </AttachmentChipFrame>
               <AttachmentPreviewCard filename="notes.md" extension="md" />
@@ -1142,7 +1206,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <ConnectionCell status="Off" server="linear" agent="Cursor" onClick={noop} />
           </SpecimenRow>
           <RoutineDetail
-            routine={{ id: 1, name: 'Nightly dependency check', prompt: 'Check packages', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), last_run_at_ms: null, permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}
+            routine={{ kind: 'user', id: 1, name: 'Nightly dependency check', prompt: 'Check packages', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), last_run_at_ms: null, permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}
             runs={[]}
             runsLoading={false}
             now={Date.now()}
@@ -1157,6 +1221,16 @@ export function UiPrimitivesStory(): React.JSX.Element {
             onUpdateEngine={noop}
             onOpenSession={noop}
           />
+          <RoutineDetail
+            routine={{ kind: 'harness_review', id: 2, name: 'Weekly review', prompt: 'Review sessions', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}
+            heading="Weekly review"
+            description={<Text size="small" tone="secondary">Sessions in Houston since the previous review.</Text>}
+            activity={<Notice tone="info" variant="routine" action={{ label: 'Open pane', onClick: noop }}>Reading sessions in Houston · started 3 min ago in a background pane</Notice>}
+            settings={<Card layout="fields" shape="card"><Card.Field label="Schedule"><Segmented aria-label="Review schedule" value="weekly" options={[{ value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }, { value: 'off', label: 'Only when I run it' }]} /><Text size="small" tone="muted">Mondays at 09:00</Text></Card.Field><Card.Field label="Reads">Sessions in Houston since the previous review.</Card.Field><Card.Field label="Runs with"><Text>Claude Code</Text><Button variant="muted-link">Change</Button></Card.Field><Card.Field label="Enabled"><Toggle on onChange={noop} aria-label="Weekly review enabled" /></Card.Field></Card>}
+            history={<div className="grid gap-[var(--space-2)]"><SectionHead variant="sentence" title="Recent runs" /><Card><Card.Row heading="Mon Oct 6 · 38 sessions" meta="3 findings" action={<Button variant="muted-link" size="sm">Open report</Button>} /></Card></div>}
+            runsLoading={false} now={Date.now()} running={false} pending={false} atLimit={null}
+            onRunNow={noop} onToggleEnabled={noop} onEdit={noop} onDelete={noop} onUpdateSchedule={noop} onUpdateEngine={noop} onOpenSession={noop}
+          />
         </SpecimenGroup>
 
         <SpecimenGroup heading="PageFrame, PageHeader and SectionHead">
@@ -1166,7 +1240,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </PageFrame>
           <PageFrame width="wide" style={{ border: '1px dashed var(--border)' }}>
             <PageHeader heading="Wide width" />
-            <SectionHead title="Empty count" count={0} />
+            <SectionHead title="Empty count" count={0} /><SectionHead variant="section" title="Paired devices" count={2} />
           </PageFrame>
         </SpecimenGroup>
 
@@ -1194,6 +1268,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpinnerSpecimen />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Phone pairing card"><PhonePairingSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="QrImage">
           <SpecimenRow>
             <QrImage label="Pairing code" svg={QR_SPECIMEN_SVG} />
@@ -1220,6 +1295,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="DataTable and Disclosure">
+          <DataTable variant="dense" aria-label="Expandable dense rows" rows={[{ name: '/code-review', copies: '4/6' }]} getRowId={row => row.name} onRowClick={noop} expandedRowId="/code-review" renderExpanded={() => <Text size="small">Inline agent copies and actions</Text>} columns={[{ key: 'skill', header: 'Skill', width: '190px', render: row => row.name }, { key: 'copies', header: 'Copies', render: row => row.copies }]} />
           <DataTable aria-label="Provider coverage" rows={[{ name: 'Claude Code', state: 'Available' }, { name: 'Codex', state: 'Available' }]} getRowId={(row) => row.name} columns={[{ key: 'name', header: 'Provider', render: (row) => row.name }, { key: 'state', header: 'State', render: (row) => row.state }]} />
           <DefinitionTable rows={[{ label: 'Workspace', value: 'houston' }, { label: 'Account ID', value: '118273645' }, { label: 'Secret', value: 'secret-value', mask: true }]} />
           <Disclosure summary="Recent checks" count={2} defaultOpen>
@@ -1305,19 +1381,19 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Table — Usage breakdown">
-          <Table
+          <Card shape="card" tone="block" data-material="inset"><Table
             aria-label="Usage breakdown by model"
-            layout="fixed"
+            variant="inset"
             rows={breakdownRows}
             getRowId={(row) => row.model}
             columns={[
-              { key: 'rank', header: '#', tone: 'faint', width: 'var(--space-5)' },
-              { key: 'model', header: 'Model', render: (value, row) => <UsageModelCell mark="◎" name={String(value)} share={row.bar / 100} color="var(--text-primary)" /> },
+              { key: 'model', header: 'Model', render: (value) => <UsageModelCell mark={<UsageAgentMark agent="codex" />} name={String(value)} /> },
+              { key: 'sessions', header: 'Sessions', numeric: true, tone: 'muted', width: '80px' },
+              { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '80px' },
               { key: 'cost', header: 'Cost', numeric: true, width: '100px' },
-              { key: 'share', header: 'Share', numeric: true, tone: 'muted', width: '64px' },
-              { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '64px' }
+              { key: 'share', header: 'Share', width: '160px', render: (_, row) => <UsageShareCell share={row.bar / 100} color="var(--text-primary)" /> }
             ]}
-          />
+          /></Card>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Table — Muted row">
@@ -1343,8 +1419,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Usage chart, calendar and shares">
-          <UsageSectionHeading fullWidth aside="Premium $121.40">Cost by speed</UsageSectionHeading>
-          <UsageProviderRow mark="✳" label="Claude Code" sessions={172} amount="$2,071.40" note="83.3% of cost · 4.1B tokens" color="var(--claude)" />
+          <UsageSectionHeading fullWidth aside="Premium $121.40">Where the cost goes</UsageSectionHeading>
+          <UsageProviderRow mark={<UsageAgentMark agent="claude" />} label="Claude Code" sessions={172} amount="$2,071.40" note="4.1B tokens" share={0.833} color="var(--claude)" />
           <div style={{ maxWidth: 900 }}><UsageChart metric="cost" points={[
             { startMs: 0, key: 'Mon', byProvider: { claude: { cost: 120, tokens: 0 }, codex: { cost: 45, tokens: 0 } } },
             { startMs: 1, key: 'Tue', byProvider: { claude: { cost: 180, tokens: 0 }, codex: { cost: 90, tokens: 0 } } },
@@ -1352,7 +1428,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             { startMs: 3, key: 'Thu', byProvider: { claude: { cost: 230, tokens: 0 }, codex: { cost: 110, tokens: 0 } } }
           ]} series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--accent)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} labelFor={(point) => point.key} /></div>
           <UsageCalendar days={[]} metric="cost" selectedDay={null} onSelect={noop} />
-          <UsageShareBar heading="Cost by type" segments={[{ id: 'input', label: 'Input', value: 58 }, { id: 'cache-read', label: 'Cache read', value: 24 }, { id: 'output', label: 'Output', value: 18 }]} />
+          <UsageShareBar heading="Where the cost goes" segments={[{ id: 'cache-read', label: 'Cache read', value: 24 }, { id: 'cache-write', label: 'Cache write', value: 12 }, { id: 'output', label: 'Output', value: 18 }, { id: 'input', label: 'Input', value: 58 }]} note="Caching saved $140.00 against full input prices." />
           <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: noop }, { label: 'Delete', onSelect: noop, tone: 'danger' }]} />
         </SpecimenGroup>
 
@@ -1373,6 +1449,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <PageFrame width="wide" className="p-0">
             <ListDetail
               items={routineItems}
+              sectionStyle="plain"
               selectedId={selectedRoutine}
               onSelect={setSelectedRoutine}
               backLabel="Back to routines"
@@ -1633,4 +1710,8 @@ export function StaleWorktreesStory(): React.JSX.Element {
       />
     </div>
   )
+}
+
+export function PhonePairingSpecimen(): React.JSX.Element {
+  return <PageFrame width="settingsForm" padding="settings" scroll={false}><PhonePairingCard><Text as="h2" size="subhead">Connect a phone</Text><PairingSteps><PairingStep number={1} heading="Show a pairing code" detail="Choose how your phone reaches this computer." /><PairingStep number={2} done heading="Listener ready" detail="The daemon reported its address." /></PairingSteps><Button variant="primary">Show pairing code</Button></PhonePairingCard><PhonePairingCard code={<QrImage label="Pairing code" svg={QR_SPECIMEN_SVG} />}><Text as="h2" size="subhead">Scan with your phone</Text><Text size="small" tone="muted">Single use · expires in 9:41</Text></PhonePairingCard><SectionHead variant="section" title="Paired devices" count={2} /><Inline gap="small"><SetupDot tone="ok" /><Text size="small" tone="success">Active now</Text></Inline></PageFrame>
 }

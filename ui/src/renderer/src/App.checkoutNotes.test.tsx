@@ -49,7 +49,7 @@ describe('checkout header identity', () => {
 
     expect(paneChip(appHarness, 1)?.textContent).toContain('primary · feat/rebalancing')
     expect(paneChip(appHarness, 2)?.textContent).toContain('primary · feat/rebalancing')
-    act(() => paneChip(appHarness, 1)?.dispatchEvent(new FocusEvent('focusin', { bubbles: true })))
+    act(() => paneChip(appHarness, 1)?.querySelector('button')?.dispatchEvent(new FocusEvent('focusin', { bubbles: true })))
     const tooltip = document.body.querySelector('[role="tooltip"]')
     expect(tooltip?.textContent).toContain('primary · feat/rebalancing')
     expect(tooltip?.textContent).not.toContain('Also in this checkout')

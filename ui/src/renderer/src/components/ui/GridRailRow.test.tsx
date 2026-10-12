@@ -43,9 +43,13 @@ function withTagPopover(children: React.ReactNode): React.JSX.Element {
 }
 
 function mount({ tags = [], cardMode = 'detailed' }: { tags?: TagInfo[]; cardMode?: 'detailed' | 'compact' } = {}): {
+  focus: ReturnType<typeof vi.fn>
+  select: ReturnType<typeof vi.fn>
   inspector: ReturnType<typeof vi.fn>
   contextMenu: ReturnType<typeof vi.fn>
 } {
+  const focus = vi.fn()
+  const select = vi.fn()
   const inspector = vi.fn()
   const contextMenu = vi.fn()
   const store = createSessionsStore(new Map([[session.id, session]]))
@@ -63,14 +67,16 @@ function mount({ tags = [], cardMode = 'detailed' }: { tags?: TagInfo[]; cardMod
       diffByDir={new Map()}
       prByDir={new Map([['/work', { gh: 'ready', pr }]])}
       cardMode={cardMode}
-      properties={['status', 'unread', 'checkout', 'pr', 'ci', 'diff', 'task', 'inline-agents', 'tags']}
+      tagDisplay="icon"
+      properties={['status', 'unread', 'checkout', 'pr', 'diff', 'inline-agents', 'tags']}
       jumpNumber={1}
-      onSelect={() => {}}
+      onSelect={select}
+      onFocusPane={focus}
       onContextMenu={contextMenu}
       onOpenInspector={inspector}
     />
   </SessionsStoreContext.Provider>)))
-  return { inspector, contextMenu }
+  return { inspector, contextMenu, focus, select }
 }
 
 beforeEach(() => {
@@ -85,6 +91,38 @@ afterEach(() => {
 })
 
 describe('grid rail row interactions', () => {
+  it('moves keyboard focus across separately wrapped grid rows', () => {
+    mount()
+    const row = container.querySelector<HTMLElement>('[data-testid="grid-row"]')!
+    const list = document.createElement('div')
+    list.dataset.railGridList = ''
+    const wrapper = document.createElement('div')
+    row.parentElement!.append(list)
+    list.append(wrapper)
+    wrapper.append(row)
+    const otherWrapper = document.createElement('div')
+    const next = document.createElement('div')
+    next.dataset.testid = 'grid-row'
+    next.tabIndex = 0
+    list.append(otherWrapper)
+    otherWrapper.append(next)
+    act(() => row.focus())
+    act(() => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
+    expect(document.activeElement).toBe(next)
+    wrapper.parentElement!.parentElement!.append(row)
+    list.remove()
+  })
+
+  it('selects the grid and focuses the clicked agent, once each', () => {
+    const { focus, select } = mount()
+    const agent = container.querySelector<HTMLElement>('[aria-label="Focus Rail task"]')!
+    act(() => agent.click())
+    expect(select).toHaveBeenCalledOnce()
+    expect(focus).toHaveBeenCalledExactlyOnceWith(session.id)
+    act(() => agent.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(select).toHaveBeenCalledOnce()
+  })
+
   it('opens and closes its hover card after the hover delay', async () => {
     vi.useFakeTimers()
     mount({ cardMode: 'compact' })
@@ -159,7 +197,7 @@ describe('GridRailRowFallback', () => {
 
   it('shows PR checks alongside the PR link', () => {
     mount()
-    expect(container.textContent).toContain('passing')
+    expect(container.querySelector('[aria-label="Checks passing"]')).not.toBeNull()
   })
 
   it('shows the cached PR title in the compact hover card', async () => {

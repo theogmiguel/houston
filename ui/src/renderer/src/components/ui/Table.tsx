@@ -29,7 +29,7 @@ export interface TableProps<T, K extends keyof T = keyof T> {
   onRowClick?: (row: T) => void
   empty?: { heading: string; description: string; icon?: IconComponent }
   error?: TableError
-  variant?: 'plain' | 'framed' | 'card'
+  variant?: 'plain' | 'framed' | 'card' | 'inset'
   className?: string
   density?: 'default' | 'compact'
   layout?: 'auto' | 'fixed'
@@ -41,6 +41,7 @@ const CELL_CLS = 'border-t border-[var(--divider)] px-[var(--space-1-5)] py-[var
 const HEADER_CLS = 'px-[var(--space-1-5)] pb-[var(--space-2-5)] text-left align-bottom text-[length:var(--tr-text-small-size)] font-normal text-[var(--text-muted)] whitespace-nowrap'
 const VARIANT_CLS = {
   plain: { frame: '', edge: 'first:pl-0 last:pr-0', header: '' },
+  inset: { frame: '', edge: 'first:pl-[var(--space-4)] last:pr-[var(--space-4)]', header: 'pt-[var(--space-2)] pb-[var(--space-2)]' },
   framed: {
     frame: 'rounded-[var(--tr-radius-button)] border border-[var(--divider)]',
     edge: 'first:pl-[var(--space-2-5)] last:pr-[var(--space-2-5)]',

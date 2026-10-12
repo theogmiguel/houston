@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { openConnectPhone } from '../../connectPhone'
 import type { HoustonClient } from '../../houston/client'
 import { REMOTE_NOTIFY_DELAY_MAX_SECS } from '../../houston/generated/DEFAULTS'
 import type { RemoteDevice } from '../../houston/generated/RemoteDevice'
@@ -12,6 +11,12 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { NumberField, NumberFieldUnit } from '../ui/NumberField'
 import { Button, CheckStateDot, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle, Field, Notice, Text, TextInput } from '../ui'
 import { Row, SubHead } from './shared'
+import { RemotePairing, deviceActivity } from './RemotePairing'
+import { SettingsDisclosure } from '../ui/SettingsDisclosure'
+import { Card } from '../ui/Card'
+import { SectionHead } from '../ui/SectionHead'
+import { Inline } from '../ui/Inline'
+import { SetupDot } from '../ui/AgentSetupRow'
 
 const DETAIL_OPTIONS: SelectOption[] = [
   { value: 'generic', label: 'Generic message' },
@@ -23,18 +28,8 @@ const OFF_REASON = 'Turn on remote access first.'
 const HTTP_WARNING =
   'Devices reach this address over plain HTTP, so their token and the pane text they read cross the network unencrypted. Use the Tailscale route, or a private network address, where Houston serves HTTPS itself.'
 
-function relative(ms: number | null | undefined): string {
-  if (!ms) return 'never'
-  const minutes = Math.max(0, Math.round((Date.now() - ms) / 60_000))
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes} min ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 48) return `${hours} h ago`
-  return new Date(ms).toLocaleDateString()
-}
-
 function shortDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  return new Date(ms).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
 }
 
 type RouteKind = 'Tailscale' | 'Same Wi-Fi' | 'Custom'
@@ -51,7 +46,7 @@ export function routeKind(remote: Pick<RemoteInfo, 'bind' | 'public_url' | 'tls'
 }
 
 function routeDescription(remote: RemoteInfo, kind: RouteKind): string {
-  if (kind === 'Tailscale') return 'Tailscale serves Houston over HTTPS to your own devices.'
+  if (kind === 'Tailscale') return 'Uses the configured HTTPS address. Tailscale requires both devices on the same tailnet and HTTPS enabled.'
   if (kind === 'Same Wi-Fi') {
     return remote.tls
       ? "Devices on this network open Houston over HTTPS, with this computer's certificate."
@@ -249,31 +244,34 @@ function DelaySetting({
 function DeviceRow({
   device,
   enabled,
-  onRevoke
+  onRevoke,
+  now
 }: {
+  now: number
   device: RemoteDevice
   enabled: boolean
   onRevoke: (device: RemoteDevice) => void
 }): React.JSX.Element {
+  const activity = deviceActivity(device.last_seen_at, now)
+  const active = activity === 'Active now'
   return (
     <Row
       title={device.name}
-      desc={`Paired ${shortDate(device.created_at)} · seen ${relative(device.last_seen_at)}`}
+      desc={`Paired ${shortDate(device.created_at)}`}
     >
-      <Button
-        variant="ghost"
-        size="sm"
+      <Inline gap="large"><Inline gap="small"><SetupDot tone={active ? 'ok' : 'muted'} /><Text size="small" tone={active ? 'success' : 'muted'}>{activity}</Text></Inline><Button
+        variant="muted-link"
         disabled={!enabled}
         data-testid={`settings-remote-revoke-${device.id}`}
         onClick={() => onRevoke(device)}
       >
         Revoke…
-      </Button>
+      </Button></Inline>
     </Row>
   )
 }
 
-/// Settings ▸ Remote access: the listener, paired devices and ntfy notifications.
+/// Settings ▸ Phone & remote access: the listener, devices and ntfy notifications.
 /// `onChangeRoute` opens the Connect phone dialog on its route step.
 export function RemoteSection({
   client,
@@ -282,7 +280,8 @@ export function RemoteSection({
   client: HoustonClient | null
   onChangeRoute: () => void
 }): React.JSX.Element {
-  const { remote, error, configure, revoke, regenerateCertificate } = useRemote(client)
+  const state = useRemote(client)
+  const { remote, error, configure, revoke, regenerateCertificate } = state
   const [regenerating, setRegenerating] = useState(false)
   const [editingBind, setEditingBind] = useState(false)
   const [editingNtfy, setEditingNtfy] = useState(false)
@@ -292,7 +291,9 @@ export function RemoteSection({
   }, [remote])
 
   return (
-    <>
+    <div className="grid gap-[var(--space-4)]">
+      <RemotePairing state={state} onChangeRoute={onChangeRoute} />
+      {remote?.enabled && plainHttpOffLoopback(remote) && <Notice tone="warn">{HTTP_WARNING}</Notice>}
       {error && (
         <div data-testid="settings-remote-error">
           <Notice tone="danger">{error}</Notice>
@@ -352,19 +353,11 @@ export function RemoteSection({
           </Text>
         </ConfirmDialog>
       )}
-    </>
+    </div>
   )
 }
 
-function RemoteGroups({
-  remote,
-  onConfigure,
-  onChangeRoute,
-  onEditBind,
-  onEditNtfy,
-  onRevoke,
-  onRegenerate
-}: {
+type RemoteGroupProps = {
   remote: RemoteInfo
   onConfigure: ReturnType<typeof useRemote>['configure']
   onChangeRoute: () => void
@@ -372,7 +365,26 @@ function RemoteGroups({
   onEditNtfy: () => void
   onRevoke: (device: RemoteDevice) => void
   onRegenerate: () => void
-}): React.JSX.Element {
+}
+
+function RemoteGroups(props: RemoteGroupProps): React.JSX.Element {
+  const { remote, onRevoke } = props
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    // Last-seen labels age without polling; minute precision matches their displayed units.
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+  return <>
+    <SectionHead variant="section" title="Paired devices" count={remote.devices.length} />
+    <SettingsList>{remote.devices.length ? remote.devices.map((device) => <DeviceRow key={device.id} device={device} enabled={remote.enabled} now={now} onRevoke={onRevoke} />) : <Row title="No devices paired" desc="Show a code above to pair your first device." />}</SettingsList>
+    <Card shape="card"><SettingsDisclosure heading="Phone notifications" status={<Text size="small" tone="muted">{remote.ntfy_server ? `${remote.ntfy_server} · after ${remote.notify_delay_secs}s waiting` : 'Off'}</Text>}><RemoteNotifications {...props} /></SettingsDisclosure></Card>
+    <Card shape="card"><SettingsDisclosure heading="Route and address" status={<Text size="small" tone="muted">{routeKind(remote)} · {remote.bind}</Text>}><RemoteRoute {...props} /></SettingsDisclosure></Card>
+    <Card shape="card"><SettingsDisclosure heading="Dictation" status={<Text size="small" tone="muted">{remote.dictation && remote.enabled ? 'On' : 'Off'}</Text>}><RemoteDictation {...props} /></SettingsDisclosure></Card>
+  </>
+}
+
+function RemoteRoute({ remote, onConfigure, onChangeRoute, onEditBind, onRegenerate }: RemoteGroupProps): React.JSX.Element {
   const kind = routeKind(remote)
   const plainHttp = remote.enabled && plainHttpOffLoopback(remote)
   const status = !remote.enabled ? (
@@ -390,8 +402,7 @@ function RemoteGroups({
     <span data-testid="settings-remote-status">Starting.</span>
   )
 
-  return (
-    <>
+  return <>
       <SubHead>Access</SubHead>
       <SettingsList>
         <Row title="Allow remote access" desc={status}>
@@ -458,28 +469,11 @@ function RemoteGroups({
         </>
       )}
 
-      <SubHead>Devices</SubHead>
-      <SettingsList>
-        {remote.devices.map((device) => (
-          <DeviceRow key={device.id} device={device} enabled={remote.enabled} onRevoke={onRevoke} />
-        ))}
-        <Row
-          title="Connect a phone"
-          desc={remote.enabled ? 'Shows a single-use code that expires after 10 minutes.' : `Off. ${OFF_REASON}`}
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!remote.enabled}
-            data-testid="settings-remote-connect-phone"
-            onClick={openConnectPhone}
-          >
-            Connect phone…
-          </Button>
-        </Row>
-      </SettingsList>
+  </>
+}
 
-      <SubHead>Dictation</SubHead>
+function RemoteDictation({ remote, onConfigure }: RemoteGroupProps): React.JSX.Element {
+  return <>
       <SettingsList>
         <Row
           title="Allow dictation from paired devices"
@@ -502,7 +496,11 @@ function RemoteGroups({
         With the local engine, each recording goes from the device to this computer only and is discarded after transcription. With Groq, each recording is also sent to Groq.
       </Text>
 
-      <SubHead>Phone notifications</SubHead>
+  </>
+}
+
+function RemoteNotifications({ remote, onConfigure, onEditNtfy }: RemoteGroupProps): React.JSX.Element {
+  return <>
       <SettingsList>
         <Row
           title="ntfy topic"
@@ -557,6 +555,5 @@ function RemoteGroups({
       <Text as="p" size="small" tone="muted">
         ntfy receives the title Houston, the message and a link to this listener. Terminal content, commands and paths are never sent. Anyone who knows the topic URL can read these messages.
       </Text>
-    </>
-  )
+  </>
 }

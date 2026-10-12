@@ -13,7 +13,7 @@ export function SettingsSearch({
   onKeyDown: InputHTMLAttributes<HTMLInputElement>['onKeyDown']
 }): React.JSX.Element {
   return (
-    <label className="flex h-8 items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] border border-transparent px-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)] focus-within:border-[var(--accent)] focus-within:bg-hover-fill">
+    <label className="mx-[var(--space-2)] flex h-8 items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)] focus-within:border-[var(--accent)] focus-within:bg-hover-fill">
       <IconSearch className="h-[14px] w-[14px] flex-none text-[var(--text-faint)]" />
       <input
         ref={inputRef}
@@ -21,7 +21,7 @@ export function SettingsSearch({
         value={value}
         onChange={onChange}
         onKeyDown={onKeyDown}
-        placeholder="Search"
+        placeholder="Search settings"
         aria-label="Search settings"
         className="min-w-0 flex-1 bg-transparent text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:outline focus-visible:outline-[var(--accent)]"
       />

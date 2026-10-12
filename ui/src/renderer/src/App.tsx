@@ -1,3 +1,5 @@
+import { useAgentSettingsReads } from './useAgentSettingsReads'
+import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
 import { openConnectPhone } from './connectPhone';
@@ -117,12 +119,9 @@ import {
 } from "./usePreferences";
 import { MANAGE_TAGS_EVENT, Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
-import { SkillsSurface } from "./components/nav/SkillsSurface";
 import { focusedSkillAgent, paneSkillAgent, skillInvocationFor, skillRunBlocker } from "./houston/skillSurface";
-import { McpSurface } from "./components/nav/McpSurface";
 import { setSettingsSection, settingsSectionLabel, shouldIgnoreInputKey, useSettingsSection } from "./settingsNav";
-import { RoutinesSurface } from "./components/nav/RoutinesSurface";
-import { HarnessView, useHarnessActions } from "./components/nav/HarnessView";
+import { useHarnessActions } from "./components/nav/useHarnessActions";
 import { useHarnessSignals } from "./houston/useHarnessSignals";
 import type { Routine, RoutineRefusal, RoutineRun } from "./houston/routineTypes";
 import type { RoutineEngineRefusal } from "./houston/generated/RoutineEngineRefusal";
@@ -368,6 +367,9 @@ const SettingsView = lazy(() =>
     default: m.SettingsView,
   })),
 );
+const RoutinesSurface = lazy(() =>
+  import("./components/nav/RoutinesSurface").then((m) => ({ default: m.RoutinesSurface })),
+);
 const UsageSection = lazy(() =>
   import("./components/UsageSection").then((m) => ({ default: m.UsageSection })),
 );
@@ -423,13 +425,15 @@ const SPLIT_INTENT_TTL_MS = 10_000;
 // a pane; 60s covers a slow checkout without letting a refused Start linger.
 const TASK_START_INTENT_TTL_MS = 60_000;
 
-const PANE_GROW_TTL_MS = 1_000;
-
 // The daemon tags git_status failures so background polls stay out of notices.
 const GIT_STATUS_ERROR_CONTEXT = "git_status";
 
 // Background git_status polls fail for workspaces whose folder is gone; the
 // Changes panel shows that error where it was asked for, not as a notice.
+// Mirrored by the daemon in server.rs.
+const USAGE_SUMMARY_ERROR_CONTEXT = "usage_summary";
+const USAGE_ACTIVITY_ERROR_CONTEXT = "usage_activity";
+
 function pushGlobalError(msg: { message: string; context?: string | null }, push: (message: string) => void): void {
   if (msg.context !== GIT_STATUS_ERROR_CONTEXT) push(msg.message);
 }
@@ -587,17 +591,7 @@ const RECONNECT_MS = 1000;
 const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
 
-// Connections before its first `mcp_state` shows empty lists, not a missing view.
-function mcpSurfaceLists(mcp: McpStateView | null) {
-  return {
-    source: mcp?.source ?? [],
-    tools: mcp?.tools ?? [],
-    results: mcp?.results ?? [],
-    checks: mcp?.checks ?? [],
-    loaded: mcp !== null,
-    sourcePath: mcp?.sourcePath ?? null,
-  };
-}
+
 
 function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent, activeId: number | null, layerArmed: boolean): boolean {
   if (activeId === null || layerArmed) return false;
@@ -804,6 +798,7 @@ export function App(): React.JSX.Element {
   const [voiceDevices, setVoiceDevices] = useState<VoiceDevice[]>([]);
   const [mcp, setMcp] = useState<McpStateView | null>(null);
   const [skills, setSkills] = useState<SkillToolState[] | null>(null);
+  const agentAttention = useAgentAttention({ agentHooks, skills, checks: mcp?.checks ?? null, serverCount: mcp?.source.length, reviews: harnessOverview });
   const [skillPushes, setSkillPushes] = useState<SkillPushRecord[]>([]);
   const [skillAutoPush, setSkillAutoPush] = useState(false);
   const [agentProfiles, setAgentProfiles] = useState<AgentProfileState | null>(
@@ -884,21 +879,7 @@ export function App(): React.JSX.Element {
     if (settings) setRailView(null);
   }, [settings]);
 
-  useEffect(() => {
-    if (settings && settingsSection === "agents" && conn.kind === "ready") {
-      conn.client.agentHooks();
-    }
-  }, [settings, settingsSection, conn]);
-
-  // Keyed on railView opening only: these read ~/.claude.json under the
-  // read-only carve-out in docs/internals/invariants.md — surface open,
-  // explicit refresh, or boot only, never a timer.
-  useEffect(() => {
-    if (conn.kind !== "ready") return;
-    if (railView === "mcp") conn.client.mcpState();
-    if (railView === "skills") conn.client.skillSync();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railView]);
+  useAgentSettingsReads(readyClient(conn), settings, settingsSection);
   const [composer, setComposer] = useState<"current-grid" | "new-grid" | null>(
     null,
   );
@@ -1090,7 +1071,6 @@ export function App(): React.JSX.Element {
   const taskStartIntents = useRef<
     { taskId: number; anchor: number | null; ws: string; ts: number }[]
   >([]);
-  const newPaneOrigins = useRef<Map<PaneKey, SplitSide>>(new Map());
   const reviewIntents = useRef<
     { projectDir: string; data: ReviewDiffsData; ts: number }[]
   >([]);
@@ -1407,11 +1387,6 @@ export function App(): React.JSX.Element {
               q.shift();
               const newId = msg.info.id;
               const headKey = keyForRef(head.ws);
-              newPaneOrigins.current.set(newId, head.side);
-              setTimeout(
-                () => newPaneOrigins.current.delete(newId),
-                PANE_GROW_TTL_MS,
-              );
               setLayouts((prev) => {
                 const cur = prev.get(headKey) ?? loadLayout(headKey);
                 if (
@@ -1644,10 +1619,12 @@ export function App(): React.JSX.Element {
             setHistoryCount(msg.count);
             break;
           case "error": {
-            if (msg.message.startsWith(USAGE_WINDOW_REFUSED)) {
+            if (msg.context === USAGE_SUMMARY_ERROR_CONTEXT || msg.context === USAGE_ACTIVITY_ERROR_CONTEXT || msg.message.startsWith(USAGE_WINDOW_REFUSED)) {
               setUsageLoading(false);
               setUsageError(
-                msg.message.slice(USAGE_WINDOW_REFUSED.length).trim(),
+                msg.message.startsWith(USAGE_WINDOW_REFUSED)
+                  ? msg.message.slice(USAGE_WINDOW_REFUSED.length).trim()
+                  : msg.message,
               );
               break;
             }
@@ -2033,7 +2010,7 @@ export function App(): React.JSX.Element {
     return stop;
   }, [conn]);
 
-  // Settings → Usage's only ingress, deliberately not on a timer: a scan
+  // Usage scans are deliberate, never on a timer: a scan
   // reads transcript files Houston does not own, and a repeat window would
   // re-read gigabytes for a number that moves on human timescales.
   const requestUsage = useCallback(
@@ -2289,7 +2266,7 @@ export function App(): React.JSX.Element {
     const closing = preorderSessions((layoutsRef.current.get(key) ?? loadLayout(key)).tree);
     if (!before.some((g) => g.id === gridId)) return;
     const next = removeGrid(path, gridId);
-    if (before.length === 1) closeGridSessions(readyClient(conn), closing);
+    closeGridSessions(readyClient(conn), closing);
     setGridsByWs((prev) => new Map(prev).set(path, next));
     setLayouts((prev) => {
       const key = gridStorageKey(path, gridId);
@@ -2565,11 +2542,6 @@ export function App(): React.JSX.Element {
           id: `e${Date.now()}-${++editorLeafSeq.current}`,
           path: pane.path,
         };
-        newPaneOrigins.current.set(node.id, side);
-        setTimeout(
-          () => newPaneOrigins.current.delete(node.id),
-          PANE_GROW_TTL_MS,
-        );
         return insertBeside(t, id, node, side);
       });
     },
@@ -3603,6 +3575,7 @@ export function App(): React.JSX.Element {
               }
               updateVersion={offeredUpdate(update, dismissedUpdate)}
               harnessAttention={harnessAttention}
+              agentAttention={agentAttention}
               taskTurnCount={taskTurnCount}
               onRemoveWorkspace={removeWorkspace}
               onOpenExternalError={pushError}
@@ -3639,6 +3612,7 @@ export function App(): React.JSX.Element {
                 workspacesEmptyOpen ? null : activeGridId(selectedWs)
               }
               onSelectGrid={handleSelectGrid}
+              onFocusPane={focusPane}
               onAddGrid={handleAddGrid}
               onNewWorkspaceSession={(path) => {
                 setSelectedWs(path);
@@ -3823,7 +3797,6 @@ export function App(): React.JSX.Element {
                     onBrowserNavigate={browserNavigate}
                     onCloseEditor={closeEditor}
                     onSplitEditor={handleSplitEditor}
-                    newPaneOrigins={newPaneOrigins.current}
                     onHandoff={openPaneHandoff}
                     onSwapAdjacent={
                       paneCount > 1 ? swapPaneAdjacent : undefined
@@ -3928,7 +3901,6 @@ export function App(): React.JSX.Element {
                               onBrowserNavigate={browserNavigate}
                               onCloseEditor={closeEditor}
                               onSplitEditor={handleSplitEditor}
-                              newPaneOrigins={newPaneOrigins.current}
                               onHandoff={openPaneHandoff}
                               onSwapAdjacent={
                                 paneCount > 1 ? swapPaneAdjacent : undefined
@@ -4041,6 +4013,9 @@ export function App(): React.JSX.Element {
                       repoName={pullRequestRepositoryName(workspaces, prListDir)}
                       workspace={pullRequestWorkspace(prListDir)}
                       currentUser={prScreen.viewerLogin}
+                      workspaces={workspaces}
+                      onWorkspaceChange={setSelectedWs}
+                      onOpenUrlInPane={(url: string) => { if (prListDir) openBrowserPane(prListDir, null, url); }}
                       items={prScreen.items}
                       client={conn.kind === "ready" ? conn.client : null}
                       directory={prListDir}
@@ -4079,67 +4054,10 @@ export function App(): React.JSX.Element {
                         onOpenExternal={(url) => void openExternal(url)}
                       />
                     </Suspense>
-                  ) : railView === "skills" ? (
-                    <SkillsSurface
-                      client={conn.kind === "ready" ? conn.client : null}
-                      workspace={selectedWs === "all" ? null : selectedWs}
-                      focusedPaneName={activeId === null ? null : sessions.get(activeId)?.title ?? null}
-                      focusedPaneAgent={focusedSkillAgent(sessions, activeId)}
-                      runBlockedReason={skillRunBlocker(sessions, activeId, selectedWs, conn.kind)}
-                      onRunSkill={runSkill}
-                      tools={skills}
-                      pushes={skillPushes}
-                      autoPushEnabled={skillAutoPush}
-                      onRefresh={() => {
-                        if (conn.kind === "ready") conn.client.skillSync();
-                      }}
-                      onPush={(tool, skill) => {
-                        if (conn.kind === "ready")
-                          conn.client.skillPush(tool, skill);
-                      }}
-                      onPushUndo={(tool, skill) => {
-                        if (conn.kind === "ready")
-                          conn.client.skillPushUndo(tool, skill);
-                      }}
-                      onAutoPushSet={(enabled) => {
-                        if (conn.kind === "ready")
-                          conn.client.skillAutoPushSet(enabled);
-                      }}
-                      checkedAt={skillsCheckedAt}
-                    />
-                  ) : railView === "mcp" ? (
-                    <McpSurface
-                      {...mcpSurfaceLists(mcp)}
-                      onRefresh={() => {
-                        if (conn.kind === "ready") conn.client.mcpState();
-                      }}
-                      onSync={(tool) => {
-                        if (conn.kind === "ready") conn.client.mcpSync(tool);
-                      }}
-                      onImport={(tool) => {
-                        if (conn.kind === "ready") conn.client.mcpImport(tool);
-                      }}
-                      onSetEnabled={(name, enabled) => {
-                        if (conn.kind === "ready")
-                          conn.client.mcpSetEnabled(name, enabled);
-                      }}
-                      onUpsertServer={(previousName, server) => {
-                        if (conn.kind === "ready") conn.client.mcpServerUpsert(previousName, server);
-                      }}
-                      onRemoveServer={(name) => {
-                        if (conn.kind === "ready") conn.client.mcpServerRemove(name);
-                      }}
-                      onTest={(name) => {
-                        if (conn.kind === "ready") conn.client.mcpTest(name);
-                      }}
-                      onOpenSource={() => {
-                        if (mcp) void showItemInFolder(mcp.sourcePath);
-                      }}
-                      checkedAt={mcpCheckedAt}
-                      slackClient={readyClient(conn)}
-                    />
                   ) : railView === "routines" ? (
+                    <Suspense fallback={<div className="flex-1" />}>
                     <RoutinesSurface
+                      client={readyClient(conn)}
                       routines={routines}
                       running={routinesRunning}
                       engineRefusals={routineEngineRefusals}
@@ -4181,19 +4099,7 @@ export function App(): React.JSX.Element {
                       }}
                       now={Date.now()}
                     />
-                  ) : railView === "harness" ? (
-                    <HarnessView
-                      client={harness.client}
-                      workspaces={workspaces.map((w) => ({
-                        id: w.path,
-                        name: w.name,
-                      }))}
-                      selectedWorkspace={selectedWs}
-                      routinesRunning={routinesRunning}
-                      onOpenFile={harness.openFile}
-                      onReveal={harness.reveal}
-                      attentionRows={harnessOverview}
-                    />
+                    </Suspense>
                   ) : railView === "usage" ? (
                     <Suspense fallback={<div className="flex-1" />}>
                       <UsageSection
@@ -4210,6 +4116,13 @@ export function App(): React.JSX.Element {
                   ) : (
                   <Suspense fallback={<div className="flex-1" />}>
                     <SettingsView
+                      agentAttention={agentAttention}
+                      onMcpTest={(name) => readyClient(conn)?.mcpTest(name)}
+                      agentPageInputs={{
+                        client: readyClient(conn), mcp, mcpCheckedAt,
+                        skills: { workspace: selectedWs === 'all' ? null : selectedWs, focusedPaneName: activeId === null ? null : sessions.get(activeId)?.title ?? null, focusedPaneAgent: focusedSkillAgent(sessions, activeId), runBlockedReason: skillRunBlocker(sessions, activeId, selectedWs, conn.kind), onRunSkill: runSkill, tools: skills, pushes: skillPushes, autoPushEnabled: skillAutoPush, checkedAt: skillsCheckedAt },
+                        review: { client: harness.client, workspaces: workspaces.map((w) => ({ id: w.path, name: w.name })), selectedWorkspace: selectedWs, routinesRunning, onOpenFile: harness.openFile, onReveal: harness.reveal, attentionRows: harnessOverview }
+                      }}
                       daemonClient={scmProps.client}
                       chromeTheme={chromeTheme}
                       onChromeTheme={(theme, origin) =>
@@ -4352,10 +4265,6 @@ export function App(): React.JSX.Element {
                           conn.client.sessionPolicySet(next);
                       }}
                       hostInfo={hostInfo}
-                      usage={usage}
-                      usageLoading={usageLoading}
-                      usageError={usageError}
-                      onUsageRequest={requestUsage}
                       onRestoreBudgetSet={(n) => {
                         if (conn.kind === "ready")
                           conn.client.restoreBudgetSet(n);

@@ -1,3 +1,4 @@
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { createElement, forwardRef, type HTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { CopyChip } from './CopyChip'
 import { Button } from './Button'
@@ -77,7 +78,7 @@ const SHELL_CLASS: Record<ShellRole, string> = {
   'task-activity-content': 'grid gap-[var(--space-2)] p-[var(--space-3)]',
   'task-description-heading': 'group flex items-center',
   'task-description-edit-button': 'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
-  'task-description-editor': 'block w-full resize-none border-0 bg-transparent p-[var(--space-3)] text-[var(--text-primary)] outline-none focus-visible:shadow-[var(--focus-halo)]',
+  'task-description-editor': `block w-full resize-none border-0 bg-transparent p-[var(--space-3)] text-[var(--text-primary)] outline-none ${FOCUS_HALO_CLS}`,
   'task-description-empty': 'flex items-center justify-between gap-[var(--space-2)] p-[var(--space-3)]',
   'task-description-empty-label': 'text-[var(--text-muted)]',
   'appearance-hidden-empty': 'px-[var(--space-3)] py-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]',
@@ -105,7 +106,7 @@ export const ShellBrowserRoot = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDi
 })
 
 export function ShellBranchCopyChip({ value, children }: { value: string; children: ReactNode }): React.JSX.Element {
-  return <CopyChip value={value} className="h-5 rounded-[var(--tr-radius-xs)] px-[var(--space-1-5)] font-mono [font-size:var(--tr-text-label-size)]">{children}</CopyChip>
+  return <CopyChip value={value} className="h-5 px-[var(--space-1-5)] font-mono [font-size:var(--tr-text-label-size)]">{children}</CopyChip>
 }
 
 export function ShellTaskDescriptionEditButton({ onClick }: { onClick: () => void }): React.JSX.Element {

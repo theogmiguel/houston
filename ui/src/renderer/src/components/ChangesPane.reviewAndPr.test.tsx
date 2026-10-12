@@ -278,7 +278,7 @@ describe('Changes pane — the scope toggle', () => {
     const h = mount({})
     h.status([file()], { default_base: 'origin/develop' })
     expect(q('[data-testid="changes-scope-branch"]')!.textContent).toContain(
-      'Branch vs origin/develop'
+      'vs origin/develop'
     )
   })
 
@@ -286,7 +286,7 @@ describe('Changes pane — the scope toggle', () => {
     const h = mount({})
     h.status([file()], { default_base: null })
     const branch = q<HTMLButtonElement>('[data-testid="changes-scope-branch"]')!
-    expect(branch.textContent).toContain('Branch vs base')
+    expect(branch.textContent).toContain('vs base')
     expect(branch.disabled).toBe(true)
   })
 

@@ -11,6 +11,7 @@ import { TerminalPane, type TermActions } from '../src/pane/TerminalPane'
 import { TagsContext } from '../src/layout/tagsContext'
 import { prefixLayer } from '../src/prefixLayer'
 import { leaf, stackPane } from '../src/layout/tree'
+import { rememberRailGitFacts } from '../src/components/git/railGitCache'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 
 const noop = (): void => {}
@@ -107,6 +108,42 @@ export function PaneOrchestratorHeaderStory(): React.JSX.Element {
       <SessionsStoreContext.Provider value={store}>
         <div style={{ height: '100%', padding: 12, display: 'flex' }}>
           <PaneFor info={parent} branch="main" />
+        </div>
+      </SessionsStoreContext.Provider>
+    </TagsContext.Provider>
+  )
+}
+
+export function PaneWorktreePopoverStory(): React.JSX.Element {
+  const root = '/home/dev/code/houston'
+  const primary = { root, kind: 'primary', branch: 'fix/orchestration-explicit-bypass', head: null }
+  const worktree = (slug: string, branch: string): unknown => ({ root: `${root}/.houston/worktrees/${slug}`, kind: { worktree: { slug } }, branch, head: null })
+  const parent = mkInfo({ id: 701, title: 'orchestration', codename: 'Max', status: 'working', live_children: 3, tags: [], checkout: primary } as Partial<SessionInfo>)
+  const child = (id: number, agent: string, codename: string, slug: string, branch: string): SessionInfo => mkInfo({ id, agent, codename, title: slug, cwd: `${root}/.houston/worktrees/${slug}`, spawned_by: 701, tags: [], checkout: worktree(slug, branch), delegation: { parent: 701, role: slug, state: 'working', stalled: false, started_at: Date.now(), result_staged: false, superseded: 0, inbox_owed: 0, inbox_provisional: 0, reusable: false } } as unknown as Partial<SessionInfo>)
+  const children = [
+    child(702, 'claude', 'Rey', 'recovery-persistence', 'houston/recovery-persistence'),
+    child(703, 'codex', 'Roan', 'recovery-providers', 'houston/recovery-provider-resume'),
+    child(704, 'claude', 'Cruz', 'recovery-hook-metadata', 'houston/recovery-hook-metadata')
+  ]
+  const store = React.useMemo(() => createSessionsStore(new Map([[701, parent], ...children.map((c): [number, SessionInfo] => [c.id, c])])), [])
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    rememberRailGitFacts(new Map([
+      [`${root}/.houston/worktrees/recovery-persistence`, { added: 184, deleted: 22, ahead: 3, behind: 0, changedFiles: 6 }],
+      [`${root}/.houston/worktrees/recovery-providers`, { added: 41, deleted: 9, ahead: 1, behind: 0, changedFiles: 2 }],
+      [`${root}/.houston/worktrees/recovery-hook-metadata`, { added: 0, deleted: 0, ahead: 0, behind: 0, changedFiles: 0 }]
+    ]))
+    // The pane header mounts lazily; open the popover once it has settled.
+    const timer = window.setTimeout(() => {
+      ref.current?.querySelector<HTMLButtonElement>('button[aria-label$="child worktrees"]')?.click()
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [])
+  return (
+    <TagsContext.Provider value={TAGS}>
+      <SessionsStoreContext.Provider value={store}>
+        <div ref={ref} style={{ height: '100%', padding: 12, display: 'flex' }}>
+          <PaneFor info={parent} branch="fix/orchestration-explicit-bypass" />
         </div>
       </SessionsStoreContext.Provider>
     </TagsContext.Provider>

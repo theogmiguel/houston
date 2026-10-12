@@ -1,9 +1,10 @@
+import { ROW_STATE } from './rowState'
 import { BTN_GHOST } from './buttonChrome'
 import { RING_ACCENT_ICON, RING_ACCENT_INSET_45 } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 
 const SECTION_HEAD_CLS = 'flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-3)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] tracking-[0.1em] uppercase text-[var(--text-muted)]'
-const SCM_ROW_CLS = 'group/row relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-3)] text-[length:var(--tr-text-small-size)] text-[var(--text-secondary)] hover:bg-[var(--hover-fill)]'
+const SCM_ROW_CLS = 'group/row relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-3)] text-[length:var(--tr-text-small-size)]'
 
 export const changeFileClasses = {
   list: `min-h-0 overflow-y-auto [scrollbar-width:thin] py-1 focus-visible:outline-none focus-visible:shadow-[${RING_ACCENT_INSET_45}]`,
@@ -28,7 +29,7 @@ export function changeGroupHeadingClass(group: string): string {
 }
 
 export function changeRowClass(selected: boolean): string {
-  return `changes-file-row ${SCM_ROW_CLS} ${selected ? 'bg-[var(--selected-fill)] text-[var(--text-primary)]' : ''}`
+  return `changes-file-row ${SCM_ROW_CLS} ${selected ? ROW_STATE.selected : ROW_STATE.rest}`
 }
 
 export function changeMarkClass(tone: string): string {

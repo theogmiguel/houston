@@ -5,6 +5,7 @@ import { Icon } from './Icon'
 
 export interface PanelTabProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
   label: string
+  badge?: ReactNode
   ariaLabel?: string
   icon: ReactNode
   active: boolean
@@ -13,6 +14,7 @@ export interface PanelTabProps extends Omit<ButtonHTMLAttributes<HTMLButtonEleme
 
 export function PanelTab({
   label,
+  badge,
   ariaLabel,
   icon,
   active,
@@ -46,6 +48,7 @@ export function PanelTab({
         </span>
       </span>
       <span className="panel-tab-label">{label}</span>
+      {badge}
       {onClose && <span className="sr-only">Close tab</span>}
     </button>
   )
@@ -55,7 +58,7 @@ export function PanelTabSpecimen(): React.JSX.Element {
   return (
     <div className="side-panel-header">
       <div className="side-panel-tabs" role="tablist" aria-label="Panel surface specimen">
-        <PanelTab label="Diff" icon={<Icon glyph={IconCode} role="label" />} active />
+        <PanelTab label="Changes 4" icon={<Icon glyph={IconCode} role="label" />} active />
         <PanelTab label="Pull request" icon={<Icon glyph={IconGitPullRequest} role="label" />} active={false} />
       </div>
     </div>

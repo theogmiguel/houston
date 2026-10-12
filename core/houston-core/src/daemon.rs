@@ -5993,6 +5993,7 @@ impl Daemon {
 
     fn routine_row_to_wire(row: crate::db::RoutineRow) -> proto::Routine {
         proto::Routine {
+            kind: row.kind,
             id: row.id,
             name: row.name,
             prompt: row.prompt,
@@ -16141,6 +16142,7 @@ impl Daemon {
             until_ms,
             read_at_ms: crate::usage::time::now_ms(),
             buckets: outcome.buckets,
+            session_counts: Some(outcome.session_counts),
             sources: outcome.sources,
             pricing: outcome.pricing,
             untracked_agents: crate::usage::untracked_agents(),

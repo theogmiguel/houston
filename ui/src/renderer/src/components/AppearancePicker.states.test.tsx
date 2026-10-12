@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppearancePicker } from './AppearancePicker'
 import { THEMES, type ThemeName } from '../theme'
 
+;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
 describe('AppearancePicker — state matrix', () => {
   let container: HTMLDivElement
   let root: Root
@@ -28,13 +30,13 @@ describe('AppearancePicker — state matrix', () => {
     return container.querySelectorAll('[data-testid="appearance-picker-row"]')
   }
 
-  function picker(): HTMLElement {
-    return container.querySelector('[data-testid="appearance-picker"]') as HTMLElement
+  function searchInput(): HTMLElement {
+    return container.querySelector('[data-testid="appearance-picker-search"]') as HTMLElement
   }
 
   function pressArrowDown(): void {
     act(() => {
-      picker().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+      searchInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
     })
   }
 
@@ -59,11 +61,23 @@ describe('AppearancePicker — state matrix', () => {
     expect(selected).not.toBeNull()
   })
 
-  it('Hover — a row carries hover treatment in its class list', () => {
+  it('Hover — pointer and keys move the same highlight while the current palette keeps its check', () => {
     act(() => {
       root.render(<AppearancePicker currentTheme={original} onPreview={() => {}} onCommit={() => {}} />)
     })
-    expect(rows()[0]?.className).toContain('hover:bg-')
+    const search = container.querySelector<HTMLInputElement>('[data-testid="appearance-picker-search"]')!
+    act(() => rows()[1].dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect(container.querySelector('[data-highlighted="true"]')).toBe(rows()[1])
+    pressArrowDown()
+    expect(container.querySelectorAll('.bg-selected-fill')).toHaveLength(1)
+    expect(container.querySelector('[data-highlighted="true"]')).toBe(rows()[2])
+    expect(search.getAttribute('aria-activedescendant')).toBe(rows()[2].id)
+    expect(document.activeElement).toBe(search)
+    expect(rows()[0].getAttribute('aria-selected')).toBe('true')
+    expect(rows()[0].querySelector('svg')).not.toBeNull()
+    expect(rows()[2].querySelector('svg')).toBeNull()
+    expect(Array.from(rows()).every((row) => !row.className.includes('hover:bg-'))).toBe(true)
+    expect(Array.from(rows()).every((row) => (row as HTMLElement).tabIndex === -1)).toBe(true)
   })
 
   it('Focus — the search input carries a visible focus ring', () => {
@@ -74,20 +88,23 @@ describe('AppearancePicker — state matrix', () => {
     expect(search?.className).toContain('focus-visible:shadow-')
   })
 
-  it('Active — a row carries a press-scale treatment', () => {
+  it('Active — pointer press preserves input focus', () => {
     act(() => {
       root.render(<AppearancePicker currentTheme={original} onPreview={() => {}} onCommit={() => {}} />)
     })
-    expect(rows()[0]?.className).toContain('active:scale-')
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    act(() => rows()[0].dispatchEvent(press))
+    expect(press.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(container.querySelector('[data-testid="appearance-picker-search"]'))
   })
 
-  it('Selected — the highlighted row is aria-selected and carries accent styling', () => {
+  it('Selected — the initial current row has a check and neutral highlight', () => {
     act(() => {
       root.render(<AppearancePicker currentTheme={original} onPreview={() => {}} onCommit={() => {}} />)
     })
     const el = container.querySelector('[data-testid="appearance-picker-row"][aria-selected="true"]')
     expect(el).not.toBeNull()
-    expect(el?.className).toContain('bg-[var(--accent-muted)]')
+    expect(el?.className).toContain('bg-selected-fill')
   })
 
   it('Disabled — N/A: every catalog entry is always selectable; nothing in the 24-palette list has a disablement condition to represent.', () => {
@@ -131,6 +148,31 @@ describe('AppearancePicker — state matrix', () => {
     expect(rows().length).toBe(0)
   })
 
+  it('filter changes reset the index and empty Enter cannot commit a hidden palette', () => {
+    const onCommit = vi.fn()
+    act(() => root.render(<AppearancePicker currentTheme={original} onPreview={() => {}} onCommit={onCommit} />))
+    pressArrowDown()
+    const search = container.querySelector<HTMLInputElement>('[data-testid="appearance-picker-search"]')!
+    typeInto(search, other)
+    expect(container.querySelectorAll('[data-highlighted="true"]')).toHaveLength(1)
+    expect(document.getElementById(search.getAttribute('aria-activedescendant')!)?.getAttribute('data-highlighted')).toBe('true')
+    typeInto(search, 'zzz-no-palette')
+    expect(search.hasAttribute('aria-activedescendant')).toBe(false)
+    act(() => searchInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    expect(onCommit).not.toHaveBeenCalled()
+    typeInto(search, '')
+    expect(container.querySelectorAll('[data-highlighted="true"]')).toHaveLength(1)
+  })
+
+  it('keeps the committed check on the original palette when a live preview updates currentTheme', () => {
+    const onPreview = vi.fn()
+    act(() => root.render(<AppearancePicker currentTheme={original} onPreview={onPreview} onCommit={() => {}} />))
+    pressArrowDown()
+    act(() => root.render(<AppearancePicker currentTheme={other} onPreview={onPreview} onCommit={() => {}} />))
+    expect(rows()[0].getAttribute('aria-selected')).toBe('true')
+    expect(rows()[1].getAttribute('data-highlighted')).toBe('true')
+  })
+
   it('ACCEPTANCE — Escape after highlighting three different palettes restores the ORIGINAL, not the last-highlighted one', () => {
     const onPreview = vi.fn()
     act(() => {
@@ -145,7 +187,7 @@ describe('AppearancePicker — state matrix', () => {
     expect(onPreview.mock.calls.at(-1)?.[0]).not.toBe(original)
 
     act(() => {
-      picker().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      searchInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     })
     expect(onPreview).toHaveBeenLastCalledWith(original)
   })
@@ -171,7 +213,7 @@ describe('AppearancePicker — state matrix', () => {
     })
     pressArrowDown()
     act(() => {
-      picker().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      searchInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     })
     expect(onCommit).toHaveBeenCalledWith(other)
     const callsBeforeUnmount = onPreview.mock.calls.length

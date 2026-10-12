@@ -45,6 +45,11 @@ const OFF: SlackInfo = {
 }
 
 describe('Connections integrations', () => {
+  it('names the owner reaction that starts a pending Slack request', () => {
+    const { client } = fakeClient()
+    render(<ConnectionsIntegrations client={client} />)
+    expect(screen.getByText(/owner.*:white_check_mark:/)).toBeTruthy()
+  })
   it('shows the connected card and connects with both tokens without retaining them', () => {
     const { client, receive, calls } = fakeClient()
     render(<ConnectionsIntegrations client={client} />)

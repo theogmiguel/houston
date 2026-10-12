@@ -1,5 +1,10 @@
 import { cloneElement, useId, type ElementType, type ReactElement } from 'react'
-import type { LabelHTMLAttributes, ReactNode } from 'react'
+import { IconSearch } from '../icons'
+import { Icon } from './Icon'
+import { HintKey } from './ShortcutHint'
+import { TextInput } from './TextInput'
+import { FOCUS_WITHIN_HALO_CLS } from './shadowChrome'
+import type { InputHTMLAttributes, LabelHTMLAttributes, ReactNode, Ref } from 'react'
 
 export function FieldLabel({ children, size = 'default', id, as: Tag = 'span', htmlFor, className = '', ...props }: Omit<LabelHTMLAttributes<HTMLLabelElement>, 'children' | 'id' | 'htmlFor' | 'className'> & { children: ReactNode; size?: 'default' | 'compact' | 'form'; id?: string; as?: ElementType; htmlFor?: string; className?: string }): React.JSX.Element {
   const classes = size === 'compact'
@@ -42,4 +47,13 @@ export function Field({ label, hint, error, size = 'default', align, children }:
       {message && <p id={messageId} className={`m-0 text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] ${error ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'}`}>{message}</p>}
     </div>
   )
+}
+
+/** A single search control whose trailing key hint shares its field and focus halo. */
+export function SearchField({ inputRef, hint, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size' | 'height'> & { inputRef?: Ref<HTMLInputElement>; hint?: string }): React.JSX.Element {
+  return <div className={`flex h-[var(--h-ctl)] items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] border border-[var(--border-control)] px-[var(--space-2)] text-[var(--text-muted)] ${FOCUS_WITHIN_HALO_CLS}`}>
+    <Icon glyph={IconSearch} role="small" />
+    <TextInput {...props} ref={inputRef} variant="unstyled" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[length:var(--tr-text-ui-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus-visible:outline-0" />
+    {hint && <HintKey size="compact">{hint}</HintKey>}
+  </div>
 }

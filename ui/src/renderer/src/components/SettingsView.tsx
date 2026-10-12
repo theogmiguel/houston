@@ -1,6 +1,9 @@
+import { agentAttentionFor, type AgentAttention, type AgentSetupSection } from '../useAgentAttention'
+import { AgentsOverview } from './settings/AgentsOverview'
+import { SETTINGS_SECTIONS } from '../settingsSections'
 import { openConnectPhoneRoute } from '../connectPhone'
 import type { HoustonClient } from '../houston/client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import type { ChromeTheme, TerminalPaletteChoice } from '../theme'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentKind } from '../houston/generated/AgentKind'
@@ -18,7 +21,7 @@ import type { McpSyncResult } from '../houston/generated/McpSyncResult'
 import { useSettingsSection } from '../settingsNav'
 import type { SettingsSectionId } from '../settingsSections'
 import { consumeSettingsRowJump } from '../settingsRowJump'
-import { PageFrame } from './ui/PageFrame'
+import { PageFrame, type PageWidth } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
 import { AppearanceSection } from './settings/AppearanceSection'
@@ -41,9 +44,9 @@ import type { AgentProfileActive } from '../houston/generated/AgentProfileActive
 import type { SessionPolicy } from '../houston/generated/SessionPolicy'
 import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../houston/generated/AcpAgentInfo'
-import type { UsageSummaryMsg } from './UsageSection'
 import { TERMINAL_LINE_HEIGHT_DEFAULT, TERMINAL_SCROLLBACK_DEFAULT } from '../usePreferences'
 import { SettingsPageSurface } from './ui/SettingsPageSurface'
+import { agentSettingsPages, type AgentSettingsPagesInput } from './settings/agentSettingsPages'
 
 export interface AgentProfileState {
   profiles: AgentProfile[]
@@ -67,6 +70,11 @@ export interface McpStateView {
 }
 
 export interface Props {
+  agentPages?: Partial<Record<AgentSetupSection, ReactNode>>
+  agentPageInputs?: AgentSettingsPagesInput
+  agentReviewStates?: import('../houston/useHarness').HarnessState[]
+  agentAttention?: AgentAttention
+  onMcpTest?: (name: string) => void
   daemonClient?: HoustonClient | null
 
   chromeTheme: ChromeTheme
@@ -156,10 +164,6 @@ export interface Props {
   onMailboxRetentionSet: (hours: number) => void
 
   hostInfo: HostInfo | null
-  usage: UsageSummaryMsg | null
-  usageLoading: boolean
-  usageError: string | null
-  onUsageRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean) => void
   agentHooks: AgentHookState[] | null
   agentHooksCheckedAt?: number | null
   onAgentHooksSet: (provider: AgentKind, enabled: boolean) => void
@@ -271,7 +275,7 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'mascot' && <MascotSettings />}
+        {section === 'appearance' && <MascotSettings />}
 
         {section === 'terminal' && (
           <TerminalSection
@@ -326,7 +330,7 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'agents' && (
+        {section === 'agents-clis' && (
           <>
             <AgentStatusSection
               providers={agentHooks}
@@ -457,6 +461,16 @@ function NotificationsSlot(props: NotificationsSlotProps): React.JSX.Element | n
   )
 }
 
+function settingsPageWidth(section: SettingsSectionId): PageWidth {
+  if (section === 'remote') return 'settingsForm'
+  return SETTINGS_SECTIONS.find((entry) => entry.id === section)?.width === 'wide' ? 'wide' : 'settings'
+}
+
+function agentPageFor(props: Props, section: AgentSetupSection): ReactNode {
+  const pages: Partial<Record<AgentSetupSection, ReactNode>> | undefined = props.agentPages ?? (props.agentPageInputs && agentSettingsPages(props.agentPageInputs))
+  return pages?.[section]
+}
+
 export function SettingsView(props: Props): React.JSX.Element {
   const section = useSettingsSection()
   const terminalLineHeight = props.terminalLineHeight ?? TERMINAL_LINE_HEIGHT_DEFAULT
@@ -486,8 +500,8 @@ export function SettingsView(props: Props): React.JSX.Element {
   return (
     <SettingsPageSurface ref={columnRef} className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       {}
-      <PageFrame width={section === 'agents' ? 'settingsWide' : 'settings'} scroll={false} padding="settings">
-        <SectionDispatch
+      <PageFrame width={settingsPageWidth(section)} scroll={false} padding="settings">
+        {section === 'agents-overview' ? <AgentsOverview reviewStates={props.agentReviewStates} client={props.daemonClient ?? null} workspace={props.historyWorkspace} attention={props.agentAttention ?? agentAttentionFor({ agentHooks: props.agentHooks, skills: null, checks: null, reviews: [] })} onRepair={props.onAgentHooksSet} onCheck={props.onMcpTest ?? NOOP} /> : agentPageFor(props, section as AgentSetupSection) ?? <SectionDispatch
           {...props}
           section={section}
           terminalLineHeight={terminalLineHeight}
@@ -496,7 +510,7 @@ export function SettingsView(props: Props): React.JSX.Element {
           onTerminalCursorBlink={onTerminalCursorBlink}
           terminalScrollbackLines={terminalScrollbackLines}
           onTerminalScrollbackLines={onTerminalScrollbackLines}
-        />
+        />}
       </PageFrame>
     </SettingsPageSurface>
   )

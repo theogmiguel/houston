@@ -24,6 +24,9 @@ counts="$(perl -e '
     my $n = 0;
     while ($src =~ /shadow-\[([^\]]*)\]/g) {
       my $content = $1;
+      # The shared focus class must be literal for Tailwind discovery.
+      next if $f =~ m{components/ui/shadowChrome\.ts$}
+        && $content eq "0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)";
       # Strip every destination-shaped term: a var() whose fallback may
       # nest parens or an interpolation one level deep, then a bare
       # `${CONSTANT}` on its own, as a multi-shadow composite spells it.

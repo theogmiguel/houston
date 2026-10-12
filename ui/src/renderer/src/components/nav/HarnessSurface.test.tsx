@@ -15,6 +15,7 @@ const WS = '/home/dev/proj'
 function routine(overrides: Partial<Routine> = {}): Routine {
   return {
     id: 7,
+    kind: 'harness_review',
     engine: 'claude',
     name: 'Harness review · proj',
     prompt: '[houston harness review]',
@@ -149,6 +150,17 @@ describe('HarnessSurface', () => {
     act(() => el.click())
   }
 
+  it('embeds Review without a schedule form and routes first-run setup to Routines', () => {
+    props = { ...props, embedded: true, state: harnessState({ routine: null }), onOpenRoutines: vi.fn() }
+    act(() => root.render(<HarnessSurface {...props} />))
+    expect(container.querySelector('h1')?.textContent).toBe('Review')
+    expect(container.querySelector('form')).toBeNull()
+    expect(container.querySelector('main')).toBeNull()
+    const open = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Open Routines')!
+    act(() => open.click())
+    expect(props.onOpenRoutines).toHaveBeenCalledOnce()
+  })
+
   it('asks for a workspace when none is chosen, and switching one reports it', () => {
     render({ workspace: null, state: null })
     expect(container.textContent).toContain('Choose a workspace to see its Harness reviews')
@@ -272,4 +284,36 @@ describe('HarnessSurface', () => {
     expect(container.textContent).toContain('Repeated mistakes per 100 sessions: 41 → 18 over 4 reviews')
     expect(container.textContent).toContain('41 sessions · 2 new · 1 gone')
   })
+  it('keeps the page header above the new-review banner and gives findings aligned status and action columns', () => {
+    render({ embedded: true, attention: { latest_published_review_id: 3, seen_review_id: 0 } as HarnessSurfaceProps['attention'], state: harnessState({ routine: routine({ enabled: true }) }) })
+    const heading = container.querySelector('h1')!
+    const banner = Array.from(container.querySelectorAll('[role="note"]')).find((node) => node.textContent?.includes('Review #3 found'))!
+    expect(heading.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const status = container.querySelector('section[aria-label="Harness findings"] [class*="--w-finding-status"]')!
+    expect(status.nextElementSibling?.className).toContain('--w-finding-actions')
+  })
+  it('puts the reported Settings review summary and its actions in one card', () => {
+    render({ embedded: true, onOpenRoutines: vi.fn(), state: harnessState({ routine: routine({ enabled: true }), reviews: [review({ sessions: 38, finding_count: 7 }), review({ id: 2, sessions: 41, finding_count: 17 })] }) })
+    const summary = container.querySelector('[data-testid="review-summary"]')!
+    expect(summary).not.toBeNull()
+    expect(summary.textContent).toContain('Repeated mistakes fell from 41 to 18 per 100 sessions')
+    expect(summary.textContent).toContain('38 sessions')
+    click(button('Review now'))
+    expect(props.onRunNow).toHaveBeenCalledWith(7)
+    click(button('Edit schedule in Routines'))
+    expect(props.onOpenRoutines).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('Open findings')
+    expect(container.textContent).toContain('New')
+    expect(container.querySelector('form')).toBeNull()
+  })
+  it('does not turn an unreported review session total into a zero trend', () => {
+    render({ embedded: true, state: harnessState({ reviews: [review({ sessions: null })] }) })
+    expect(container.textContent).not.toContain('Repeated mistakes per 100 sessions: 0')
+    const summary = container.querySelector('[data-testid="review-summary"]')!
+    expect(summary).not.toBeNull()
+    expect(summary.textContent).toContain('Session total not reported')
+    expect(summary.textContent).not.toContain('per 100 sessions')
+    expect(container.textContent).not.toContain('6 of 6 sessions')
+  })
+
 })

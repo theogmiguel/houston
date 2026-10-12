@@ -1,3 +1,8 @@
+import { BranchSwitcher, type CheckoutPane } from './git/BranchSwitcher'
+import { ChangesBranchLine } from './ui/BranchSwitcher'
+import { GitToolsDialogs } from './git/GitToolsDialogs'
+import { ChangesReviewWorkspace, ChangesFileFilter, ChangesReviewFooter } from './ui/ChangesReview'
+import { useGitComparisonCounts } from './git/useGitComparisonCounts'
 import { GitPrOpenAction, LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
 import { DiffLoadingMark } from './ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -12,6 +17,7 @@ import {
   discardConfirmMessage,
   discardKindFor,
   flatRows,
+  toRow,
   pushDisabledReason,
   paneStateFor,
   prChecksLabel,
@@ -42,17 +48,9 @@ import {
   IconLoaderCircle,
   IconEllipsis,
   IconSparkles,
-  IconChevronDown,
-  IconCollapse,
-  IconExpand,
-  IconRefresh,
-  IconSplitDown,
-  IconSplitRight,
-  IconFolderOpen,
-  IconWrapText,
   IconCheck,
-  IconPlus,
-  IconMinus
+  IconSliders,
+  IconArrowUp
 } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { Icon } from './ui/Icon'
@@ -74,6 +72,7 @@ import {
   GitCommitMessageRow,
   GitCommitPanel,
   GitCommitStagedCount,
+  GitCompactToolsTrigger,
   GitCompactToolsAnchor,
   GitCompactToolsSurface,
   GitPrSummaryLabel,
@@ -85,7 +84,7 @@ import { SplitButton } from './ui/SplitButton'
 import { ChangesFileList } from './git/ChangesFileList'
 import { BranchCommits } from './git/BranchCommits'
 import { changeListKeyDown } from './git/changeListKeyboard'
-import { canCommit as canCommitForState, offerCreatePr as offerPrCreateForState, openSelectedFile, pushBlockedReason, reviewDisabledReason } from './git/changesPaneDerived'
+import { commitBlockedReason, canCommit as canCommitForState, offerCreatePr as offerPrCreateForState, openSelectedFile, pushBlockedReason, reviewDisabledReason } from './git/changesPaneDerived'
 
 export interface ChangesReview {
   session: number
@@ -105,6 +104,9 @@ export interface ChangesSummary {
 
 export interface ChangesPaneProps {
   compact?: boolean
+  maximized?: boolean
+  checkoutPanes?: CheckoutPane[]
+  onOpenPane?: (id: number) => void
   checkoutLabel?: string
   client: HoustonClient | null
   dir: string | null
@@ -124,8 +126,11 @@ function prToneForSummary(pr: PrState | null): 'ok' | 'warn' | 'stop' {
   return 'ok'
 }
 
-function useInlineDiffSubscription(client: HoustonClient | null, repoDir: string | null, base: string | null, setInlineDiffs: React.Dispatch<React.SetStateAction<Map<string, DiffState>>>): void {
+function useInlineDiffSubscription(client: HoustonClient | null, repoDir: string | null, base: string | null, expandedPaths: Set<string>, setInlineDiffs: React.Dispatch<React.SetStateAction<Map<string, DiffState>>>): void {
+  const expandedRef = useRef(expandedPaths)
+  expandedRef.current = expandedPaths
   useEffect(() => {
+    setInlineDiffs(new Map())
     if (!client || !repoDir) return
     const offDiff = client.subscribe('git_diff', (message) => {
       if (message.dir !== repoDir || (message.base ?? null) !== base || !message.path) return
@@ -133,7 +138,12 @@ function useInlineDiffSubscription(client: HoustonClient | null, repoDir: string
         path: message.path!, patch: message.patch, truncated: message.truncated
       }))
     })
-    return offDiff
+    const offStatus = client.subscribe('git_status', (message) => {
+      if (message.dir !== repoDir || (message.base ?? null) !== base) return
+      message.files.filter((file) => !file.is_sensitive && expandedRef.current.has(file.path))
+        .forEach((file) => client.gitDiff(repoDir, file.path, base))
+    })
+    return () => { offDiff(); offStatus() }
   }, [client, repoDir, base, setInlineDiffs])
 }
 
@@ -157,6 +167,7 @@ function visibleFilesFor(files: GitFileStatus[] | null, stagedOnly: boolean): Gi
 }
 
 function ChangesStrip({
+  counts,
   scope,
   setScope,
   defaultBase,
@@ -172,6 +183,7 @@ function ChangesStrip({
   onAddWorkspace,
   compact
 }: {
+  counts?: { working: number | null; branch: number | null }
   scope: 'working' | 'branch'
   setScope: (scope: 'working' | 'branch') => void
   defaultBase: string | null
@@ -187,7 +199,7 @@ function ChangesStrip({
   onAddWorkspace: (path: string) => void
   compact: boolean
 }): React.JSX.Element {
-  const labels = scopeLabels(defaultBase)
+  const labels = counts ? { working: `Uncommitted ${counts.working ?? "…"}`, branch: `vs ${defaultBase ?? "base"} ${counts.branch ?? "…"}` } : scopeLabels(defaultBase)
   if (compact) {
     const compareItem = (value: 'working' | 'branch', label: string, testId: string, disabledReason?: string): React.JSX.Element => (
       <Tooltip label={disabledReason} className="w-full">
@@ -307,6 +319,7 @@ function CommitBox({
   ahead,
   doPush,
   canCommit,
+  blockedReason,
   doCommit,
   offerCreatePr,
   prBusy,
@@ -324,7 +337,8 @@ function CommitBox({
   ahead: number
   doPush: () => void
   canCommit: boolean
-  doCommit: (thenPush: boolean) => void
+  blockedReason: string | null
+  doCommit: (thenPush: boolean, amend?: boolean) => void
   offerCreatePr: boolean
   prBusy: boolean
   onCreatePr: () => void
@@ -334,23 +348,22 @@ function CommitBox({
 }): React.JSX.Element {
   return (
     <GitCommitPanel>
-      {hasChanges && <GitCommitMessageRow>
+      {(hasChanges || compact) && <GitCommitMessageRow>
         <GitCommitMessageField
           data-testid="changes-commit-message"
           aria-label="Commit message"
           value={commitMsg}
           onChange={(event) => setCommitMsg(event.target.value)}
-          placeholder="Commit message"
+          placeholder="Describe what changed"
           rows={compact ? 3 : 2}
         />
       </GitCommitMessageRow>}
       <GitCommitActionRow>
         <GitCommitStagedCount compact={compact}>
-          {staged} file{staged === 1 ? '' : 's'} staged
+          {blockedReason ?? <>{staged} file{staged === 1 ? '' : 's'} to <Text mono>{target}</Text></>}
         </GitCommitStagedCount>
-        {compact && target && <span data-testid="changes-commit-target">to {target}</span>}
         <GitCommitButtonGroup>
-          <Tooltip label={pushBlocked ?? undefined} className="inline-flex">
+          {!compact && <Tooltip label={pushBlocked ?? undefined} className="inline-flex">
             <LazyLegacyButton
               variant="legacy-secondary"
               data-testid="changes-push"
@@ -364,8 +377,8 @@ function CommitBox({
               )}
               {pushLabel(ahead)}
             </LazyLegacyButton>
-          </Tooltip>
-          {offerCreatePr && (
+          </Tooltip>}
+          {offerCreatePr && !compact && (
             <>
               <Button
                 variant="legacy-primary"
@@ -377,15 +390,16 @@ function CommitBox({
               </Button>
             </>
           )}
-          {!offerCreatePr && (
+          {(!offerCreatePr || compact) && (
             <SplitButton
-              label={compact ? `Commit ${staged} file${staged === 1 ? '' : 's'}` : 'Commit'}
+              label="Commit"
               testId="changes-commit"
               disabled={!canCommit}
+              disabledReason={blockedReason ?? undefined}
               onClick={() => doCommit(false)}
               items={[
                 { label: 'Commit & push', testId: 'changes-commit-push', disabled: !canCommit, onClick: () => doCommit(true) },
-                { label: 'Amend last commit', disabled: !canCommit, onClick: () => doCommit(false) }
+                { label: 'Amend', testId: 'changes-commit-amend', disabled: !canCommit, onClick: () => doCommit(false, true) }
               ]}
             />
           )}
@@ -479,7 +493,8 @@ function ChangesErrorLines({ reviewError, commitError, prMessage }: { reviewErro
   </>
 }
 
-function CompactInlineDiffs({ visibleRows, expandedPaths, inlineDiffs, treeVisible, fileList }: {
+function CompactInlineDiffs({ splitDiff, visibleRows, expandedPaths, inlineDiffs, treeVisible, fileList }: {
+  splitDiff: boolean
   visibleRows: ChangeRow[]
   expandedPaths: Set<string>
   inlineDiffs: Map<string, DiffState>
@@ -487,11 +502,12 @@ function CompactInlineDiffs({ visibleRows, expandedPaths, inlineDiffs, treeVisib
   fileList: React.ReactNode
 }): React.JSX.Element {
   return <PrTab as="div" surface="changes-inline-list" state={treeVisible ? null : 'hidden'}>
-    {treeVisible ? fileList : <CompactDetachedDiffs visibleRows={visibleRows} expandedPaths={expandedPaths} inlineDiffs={inlineDiffs} />}
+    {treeVisible ? fileList : <CompactDetachedDiffs splitDiff={splitDiff} visibleRows={visibleRows} expandedPaths={expandedPaths} inlineDiffs={inlineDiffs} />}
   </PrTab>
 }
 
-function CompactDetachedDiffs({ visibleRows, expandedPaths, inlineDiffs }: {
+function CompactDetachedDiffs({ splitDiff, visibleRows, expandedPaths, inlineDiffs }: {
+  splitDiff: boolean
   visibleRows: ChangeRow[]
   expandedPaths: Set<string>
   inlineDiffs: Map<string, DiffState>
@@ -499,11 +515,12 @@ function CompactDetachedDiffs({ visibleRows, expandedPaths, inlineDiffs }: {
   if (expandedPaths.size === 0) return <PrTab as="div" surface="changes-inline-empty">File tree hidden</PrTab>
   return <>{visibleRows.filter((row) => expandedPaths.has(row.path)).map((row) => {
     const inline = inlineDiffs.get(row.path)
-    return <PrTab as="div" surface="changes-inline-diff" state="detached" key={row.path} data-path={row.path}>{inline ? <DiffBody patch={inline.patch} truncated={inline.truncated} /> : 'Loading diff…'}</PrTab>
+    return <PrTab as="div" surface="changes-inline-diff" state="detached" key={row.path} data-path={row.path}>{inline ? <DiffBody patch={inline.patch} truncated={inline.truncated} split={splitDiff} /> : 'Loading diff…'}</PrTab>
   })}</>
 }
 
-function CompactChangesBody({ toolbar, notice, toolsNotice, toolsError, reviewError, commitError, prMessage, visibleRows, expandedPaths, inlineDiffs, treeVisible, fileList, commitBox }: {
+function CompactChangesBody({ splitDiff, toolbar, notice, toolsNotice, toolsError, reviewError, commitError, prMessage, visibleRows, expandedPaths, inlineDiffs, treeVisible, fileList, commitBox }: {
+  splitDiff: boolean
   toolbar: React.ReactNode
   notice: React.ReactNode
   toolsNotice: string | null
@@ -523,7 +540,7 @@ function CompactChangesBody({ toolbar, notice, toolsNotice, toolsError, reviewEr
     {notice}
     <ToolsNoticeLine notice={toolsNotice} error={toolsError} />
     <ChangesErrorLines reviewError={reviewError} commitError={commitError} prMessage={prMessage} />
-    <CompactInlineDiffs visibleRows={visibleRows} expandedPaths={expandedPaths} inlineDiffs={inlineDiffs} treeVisible={treeVisible} fileList={fileList} />
+    <CompactInlineDiffs splitDiff={splitDiff} visibleRows={visibleRows} expandedPaths={expandedPaths} inlineDiffs={inlineDiffs} treeVisible={treeVisible} fileList={fileList} />
     {commitBox}
   </>
 }
@@ -580,90 +597,48 @@ function ReadyChangesBody({ toolbar, notice, toolsNotice, toolsError, reviewErro
   </>
 }
 
-function CompactDiffToolbar({ scope, setScope, stagedOnly, setStagedOnly, scopeMenuOpen, setScopeMenuOpen, defaultBase, branch, checkoutLabel, stageAll, unstageAll, bulkForGroup, visibleAdded, visibleDeleted, expanded, toggleAllDiffs, splitDiff, setSplitDiff, wrapDiff, setWrapDiff, treeVisible, setTreeVisible, refresh, strip }: {
-  scope: 'working' | 'branch'
-  setScope: (scope: 'working' | 'branch') => void
-  stagedOnly: boolean
-  setStagedOnly: (staged: boolean) => void
-  scopeMenuOpen: boolean
-  setScopeMenuOpen: React.Dispatch<React.SetStateAction<boolean>>
-  defaultBase: string | null
-  branch: string | null
-  checkoutLabel?: string
-  stageAll: string[]
-  unstageAll: string[]
-  bulkForGroup: (group: ChangeRow['group'], paths: string[]) => void
-  visibleAdded: number
-  visibleDeleted: number
-  expanded: boolean
-  toggleAllDiffs: () => void
-  splitDiff: boolean
-  setSplitDiff: (split: boolean) => void
-  wrapDiff: boolean
-  setWrapDiff: React.Dispatch<React.SetStateAction<boolean>>
-  treeVisible: boolean
-  setTreeVisible: React.Dispatch<React.SetStateAction<boolean>>
-  refresh: () => void
-  strip: React.ReactNode
+function ComparisonChoices({ counts, scope, setScope, defaultBase }: {
+  counts: { working: number | null; branch: number | null }; scope: 'working' | 'branch'; setScope: (scope: 'working' | 'branch') => void; defaultBase: string | null
 }): React.JSX.Element {
-  const scopeMenuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!scopeMenuOpen) return
-    const closeOutside = (event: MouseEvent): void => {
-      if (!scopeMenuRef.current?.contains(event.target as Node)) setScopeMenuOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setScopeMenuOpen(false)
-    }
-    document.addEventListener('mousedown', closeOutside)
-    document.addEventListener('keydown', closeOnEscape, true)
-    return () => {
-      document.removeEventListener('mousedown', closeOutside)
-      document.removeEventListener('keydown', closeOnEscape, true)
-    }
-  }, [scopeMenuOpen, setScopeMenuOpen])
-  const scopeLabel = scope === 'branch' ? 'Branch' : stagedOnly ? 'Staged' : 'Changes'
-  const head = branch ?? checkoutLabel ?? null
-  // Refs only mean something for a branch diff, and only when the two sides differ.
-  const refs = scope === 'branch' && defaultBase && head && defaultBase !== head ? { base: defaultBase, head } : null
-  const pickScope = (next: 'working' | 'branch', staged: boolean): void => {
-    setScope(next)
-    setStagedOnly(staged)
-    setScopeMenuOpen(false)
+  return <Segmented aria-label="Compare" size="xs" value={scope} onChange={setScope} options={[
+    { value: 'working', label: `Uncommitted ${counts.working ?? '…'}`, testId: 'changes-scope-working' },
+    { value: 'branch', label: `vs ${defaultBase ?? 'base'} ${counts.branch ?? '…'}`, testId: 'changes-scope-branch', disabled: !defaultBase, disabledReason: 'This repository has no base branch to compare against' }
+  ]} />
+}
+
+function DiffLayoutChoices({ split, setSplit, view }: { split: boolean; setSplit: (split: boolean) => void; view: React.ReactNode }): React.JSX.Element {
+  return <div className="flex items-center gap-[var(--space-1)]">
+    <Segmented aria-label="Diff layout" size="xs" value={split ? 'split' : 'unified'} onChange={(value) => setSplit(value === 'split')} options={[
+      { value: 'unified', label: 'Unified', testId: 'changes-layout-unified' }, { value: 'split', label: 'Split', testId: 'changes-layout-split' }
+    ]} />
+    {view}
+  </div>
+}
+
+function changesEmptySummary(rows: ChangeRow[], ahead: number, base: string | null): { headline: string; description: string } {
+  return {
+    headline: `${rows.length} file${rows.length === 1 ? '' : 's'} changed`,
+    description: `+${rows.reduce((sum, row) => sum + (row.added ?? 0), 0)} added, −${rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)} removed${ahead > 0 ? ` · ${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${base ?? 'the base'}` : ''}. Pick a file to read its diff.`
   }
-  const bulkItems = <>
-    <GitToolMenuItem data-testid="changes-overflow-stage-all" disabled={stageAll.length === 0} onClick={() => bulkForGroup('unstaged', stageAll)}><Icon glyph={IconPlus} role="small" />Stage all</GitToolMenuItem>
-    <GitToolMenuItem data-testid="changes-overflow-unstage-all" disabled={unstageAll.length === 0} onClick={() => bulkForGroup('staged', unstageAll)}><Icon glyph={IconMinus} role="small" />Unstage all</GitToolMenuItem>
-  </>
-  return <PrTab as="div" surface="changes-diff-toolbar" data-testid="changes-diff-toolbar">
-    <PrTab as="div" surface="changes-diff-scope-wrap" ref={scopeMenuRef}>
-      <PrTab as="button" surface="changes-diff-scope" type="button" aria-label="Choose diff scope" aria-haspopup="menu" aria-expanded={scopeMenuOpen} onClick={() => setScopeMenuOpen((open) => !open)}>
-        {scopeLabel} <Icon glyph={IconChevronDown} role="small" />
-      </PrTab>
-      {scopeMenuOpen && <PrTab as="div" surface="changes-diff-scope-menu" role="menu">
-        <button role="menuitemradio" aria-checked={scope === 'working' && !stagedOnly} onClick={() => pickScope('working', false)}>Uncommitted changes</button>
-        <button role="menuitemradio" aria-checked={scope === 'working' && stagedOnly} onClick={() => pickScope('working', true)}>Staged changes</button>
-        <button role="menuitemradio" aria-checked={scope === 'branch'} disabled={!defaultBase} onClick={() => pickScope('branch', false)}>Branch changes</button>
-      </PrTab>}
-    </PrTab>
-    {refs && <PrTab as="div" surface="changes-diff-refs" data-testid="changes-diff-refs"><span>{refs.base}</span><span aria-hidden>←</span><span>{refs.head}</span></PrTab>}
-    <PrTab as="span" surface="changes-diff-stat"><span data-tone="added">+{visibleAdded}</span><span data-tone="deleted">−{visibleDeleted}</span></PrTab>
-    <PrTab as="div" surface="changes-diff-actions">
-      <PrTab as="span" surface="changes-diff-group">
-        <Tooltip label="Refresh diff"><button type="button" aria-label="Refresh diff" onClick={refresh}><Icon glyph={IconRefresh} role="small" /></button></Tooltip>
-        <Tooltip label={expanded ? 'Collapse all' : 'Expand all'}><button type="button" aria-label={expanded ? 'Collapse all' : 'Expand all'} onClick={toggleAllDiffs}><Icon glyph={expanded ? IconCollapse : IconExpand} role="small" /></button></Tooltip>
-      </PrTab>
-      <PrTab as="span" surface="changes-diff-segment" role="group" aria-label="Diff layout">
-        <Tooltip label="Stacked diff"><button type="button" aria-label="Stacked diff" aria-pressed={!splitDiff} onClick={() => setSplitDiff(false)}><Icon glyph={IconSplitDown} role="small" /></button></Tooltip>
-        <Tooltip label="Split diff"><button type="button" aria-label="Split diff" aria-pressed={splitDiff} onClick={() => setSplitDiff(true)}><Icon glyph={IconSplitRight} role="small" /></button></Tooltip>
-      </PrTab>
-      <PrTab as="span" surface="changes-diff-group">
-        <Tooltip label={wrapDiff ? 'Disable line wrapping' : 'Wrap lines'}><button type="button" aria-label="Wrap lines" aria-pressed={wrapDiff} onClick={() => setWrapDiff((value) => !value)}><Icon glyph={IconWrapText} role="small" /></button></Tooltip>
-        <Tooltip label={treeVisible ? 'Hide file tree' : 'Show file tree'}><button type="button" aria-label="File tree" aria-pressed={treeVisible} onClick={() => setTreeVisible((value) => !value)}><Icon glyph={IconFolderOpen} role="small" /></button></Tooltip>
-      </PrTab>
-      <ChangesToolbar compact strip={strip} items={bulkItems} />
-    </PrTab>
-  </PrTab>
+}
+
+function ChangesPanelFileList({ compact, maximized, files, rows, visibleFiles, visibleRows, inlineDiffs, expandedPaths, togglePath, onKeyDown, ...props }: Parameters<typeof ChangesFileList>[0] & { maximized: boolean; visibleFiles: GitFileStatus[] | null; visibleRows: ChangeRow[] }): React.JSX.Element {
+  const inline = compact && !maximized
+  return <ChangesFileList {...props} basenameOnly={maximized} compact={compact} flat={compact || maximized} files={compact ? visibleFiles : files} rows={compact ? visibleRows : rows} inlineDiffs={inline ? inlineDiffs : undefined} expandedPaths={inline ? expandedPaths : undefined} togglePath={inline ? togglePath : undefined} onKeyDown={onKeyDown} />
+}
+
+function ChangesBranchHeader({ client, dir, branch, base, tools, busy, error, panes, onOpenPane, onManage, upstream, behind, pushBlocked, pushing, ahead, maximized, doPush, onAddWorkspace }: {
+  client: HoustonClient | null; dir: string; branch: string | null; base: string | null; tools: GitTools; busy: boolean; error: string | null; panes: ChangesPaneProps['checkoutPanes']; onOpenPane: ChangesPaneProps['onOpenPane']; onManage: () => void; upstream: string | null; behind: number; pushBlocked: string | null; pushing: boolean; ahead: number; maximized: boolean; doPush: () => void; onAddWorkspace: (path: string) => void
+}): React.JSX.Element {
+  const pushLabel = pushing ? 'Pushing…' : ahead > 0 ? maximized ? `Push ${ahead}` : `Push ${ahead} commit${ahead === 1 ? '' : 's'}` : 'Push'
+  return <ChangesBranchLine>
+    <BranchSwitcher client={client} dir={dir} branch={branch} base={base} tools={tools} busy={busy} error={error} panes={panes} onOpenPane={onOpenPane} onManage={onManage} />
+    <span className="flex flex-1 justify-end gap-[var(--space-1)]">
+      <PullQuickButton upstream={upstream} behind={behind} busy={busy} onPull={tools.pull} />
+      <Tooltip label={pushBlocked ?? undefined}><Button variant="secondary" size="sm" icon={IconArrowUp} data-testid="changes-push" disabled={pushBlocked !== null} onClick={doPush}>{pushLabel}</Button></Tooltip>
+      <ChangesToolbar compact triggerLabel="Git tools: fetch, worktrees, checkpoints" strip={<GitToolsBar clientReady={client !== null} dir={dir} tools={tools} busy={busy} error={error} behind={behind} upstream={upstream} fallbackBase={base} onAddWorkspace={onAddWorkspace} compact />} />
+    </span>
+  </ChangesBranchLine>
 }
 
 export function ChangesPane({
@@ -676,9 +651,16 @@ export function ChangesPane({
   review = null,
   onSummary,
   refreshSignal = 0,
+  maximized = false,
+  checkoutPanes,
+  onOpenPane,
   compact
 }: ChangesPaneProps): React.JSX.Element {
+  const [branchManageOpen, setBranchManageOpen] = useState(false)
   const repoDir = dir
+  const filterRef = useRef<HTMLInputElement>(null)
+  const [fileFilter, setFileFilter] = useState("")
+  useEffect(() => { if (maximized) setSplitDiff(true) }, [maximized])
 
   const [files, setFiles] = useState<GitFileStatus[] | null>(null)
   const [branch, setBranch] = useState<string | null>(null)
@@ -686,10 +668,10 @@ export function ChangesPane({
   const [behind, setBehind] = useState(0)
   const [upstream, setUpstream] = useState<string | null>(null)
   const [defaultBase, setDefaultBase] = useState<string | null>(null)
+  const counts = useGitComparisonCounts(client, repoDir, defaultBase)
   const [notARepo, setNotARepo] = useState(false)
   const [scope, setScope] = useState<'working' | 'branch'>('working')
   const [stagedOnly, setStagedOnly] = useState(false)
-  const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
   const [inlineDiffs, setInlineDiffs] = useState<Map<string, DiffState>>(() => new Map())
   const [wrapDiff, setWrapDiff] = useState(false)
@@ -736,7 +718,7 @@ export function ChangesPane({
     pushAfterCommitRef.current = pushAfterCommit
   }, [pushAfterCommit])
 
-  const rows = useMemo(() => (files ? flatRows(files) : []), [files])
+  const rows = useMemo(() => (files ? compact ? files.map(toRow) : flatRows(files) : []), [files, compact])
   const selectedRow = useMemo(
     () => rows.find((r) => r.path === selected) ?? null,
     [rows, selected]
@@ -757,7 +739,7 @@ export function ChangesPane({
     if (selected === null && rows.length > 0) {
       const initialPath = compact && files?.[0] ? files[0].path : rows[0].path
       setSelected(initialPath)
-      if (compact) setExpandedPaths(new Set([initialPath]))
+      if (compact) setExpandedPaths((current) => new Set(current).add(initialPath))
     }
   }, [rows, files, selected, compact])
   refreshRef.current = refresh
@@ -776,12 +758,12 @@ export function ChangesPane({
       branch,
       ahead,
       behind,
-      changed: rows.length,
+      changed: counts.working ?? 0,
       hasPr: pr?.pr != null,
       prNumber: pr?.pr?.number,
       prTone: prToneForSummary(pr)
     })
-  }, [branch, ahead, behind, rows.length, pr])
+  }, [branch, ahead, behind, counts.working, pr])
 
   useGitStatusSubscription({
     client,
@@ -808,7 +790,7 @@ export function ChangesPane({
     setCommitMsg
   })
 
-  useInlineDiffSubscription(client, repoDir, base, setInlineDiffs)
+  useInlineDiffSubscription(client, repoDir, base, expandedPaths, setInlineDiffs)
 
   usePrSubscription({ client, repoDir, base, setPr, setPrBusy, setPrMessage })
 
@@ -939,7 +921,7 @@ export function ChangesPane({
   )
 
   const doCommit = useCallback(
-    (thenPush: boolean): void => {
+    (thenPush: boolean, amend = false): void => {
       if (!client || !repoDir || committing || staged === 0) return
       const message = commitMsg.trim()
       if (message.length === 0) return
@@ -948,7 +930,8 @@ export function ChangesPane({
       setPushAfterCommit(thenPush)
       pushAfterCommitRef.current = thenPush
       pendingCommit.current = repoDir
-      client.gitCommit(repoDir, message)
+      if (amend) client.gitCommit(repoDir, message, { amend: true })
+      else client.gitCommit(repoDir, message)
     },
     [client, repoDir, committing, staged, commitMsg]
   )
@@ -987,14 +970,35 @@ export function ChangesPane({
   const pushBlocked = pushBlockedReason(client !== null, repoDir !== null, upstream, ahead, pushing)
   const offerCreatePr = offerPrCreateForState(pr)
 
-  const visibleRows = useMemo(() => visibleRowsFor(rows, stagedOnly), [rows, stagedOnly])
-  const visibleFiles = useMemo(() => visibleFilesFor(files, stagedOnly), [files, stagedOnly])
-  const visibleAdded = visibleRows.reduce((sum, row) => sum + (row.added ?? 0), 0)
-  const visibleDeleted = visibleRows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)
+  const visibleRows = useMemo(() => visibleRowsFor(rows, stagedOnly).filter((row, index, all) => (!compact || all.findIndex((other) => other.path === row.path) === index) && (!maximized || row.path.toLowerCase().includes(fileFilter.toLowerCase()))), [rows, stagedOnly, maximized, fileFilter, compact])
+  const visibleFiles = useMemo(() => visibleFilesFor(files, stagedOnly)?.filter((file) => !maximized || file.path.toLowerCase().includes(fileFilter.toLowerCase())) ?? null, [files, stagedOnly, maximized, fileFilter])
+  useEffect(() => {
+    if (maximized && !visibleRows.some((row) => row.path === selected)) {
+      setSelected(visibleRows[0]?.path ?? null)
+      setDiff(null)
+    }
+  }, [maximized, visibleRows, selected])
+
+  const reviewKeyDown = (event: React.KeyboardEvent): void => {
+    if (!maximized || event.ctrlKey || event.metaKey || event.altKey) return
+    if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="menu"]')) return
+    if (event.key === '/') {
+      event.preventDefault()
+      filterRef.current?.focus()
+    } else if (event.key.toLowerCase() === 'j' || event.key.toLowerCase() === 'k') {
+      event.preventDefault()
+      event.stopPropagation()
+      if (visibleRows.length === 0) return
+      const current = visibleRows.findIndex((row) => row.path === selected)
+      const next = Math.max(0, Math.min(visibleRows.length - 1, current + (event.key.toLowerCase() === 'j' ? 1 : -1)))
+      select(visibleRows[next].path)
+    }
+  }
 
   const shell = (body: React.ReactNode): React.JSX.Element => (
-    <GitChangesSurface compact={compact === true} state={paneState} reviewing={reviewing}>
+    <GitChangesSurface data-maximized={maximized} onKeyDown={reviewKeyDown} compact={compact === true} state={paneState} reviewing={reviewing}>
       {body}
+      <GitToolsDialogs open={branchManageOpen ? "branches" : null} dir={repoDir} tools={tools} busy={toolsBusy} error={toolsError} fallbackBase={defaultBase} onClose={() => setBranchManageOpen(false)} onAddWorkspace={addWorkspace} />
       {reviewPickerOpen && (
         <ReviewProviderModal
           onCancel={() => setReviewPickerOpen(false)}
@@ -1019,6 +1023,7 @@ export function ChangesPane({
 
   const strip = (
     <ChangesStrip
+      counts={counts}
       scope={scope}
       setScope={setScope}
       defaultBase={defaultBase}
@@ -1040,17 +1045,20 @@ export function ChangesPane({
 
   const notice = <ReviewNoticeLine reviewNotice={reviewNotice} />
   const fileList = (
-    <ChangesFileList
+    <ChangesPanelFileList
       compact={compact}
-      files={compact ? visibleFiles : files}
-      rows={compact ? visibleRows : rows}
+      maximized={maximized}
+      files={files}
+      rows={rows}
+      visibleFiles={visibleFiles}
+      visibleRows={visibleRows}
       branch={branch}
       scope={scope}
       defaultBase={defaultBase}
       ahead={ahead}
       offerCreatePr={offerCreatePr}
       listRef={listRef}
-      onKeyDown={onKeyDown}
+      onKeyDown={maximized ? changeListKeyDown(visibleRows, selected, setSelected, select, stageToggle) : onKeyDown}
       selected={selected}
       menuFor={menuFor}
       select={select}
@@ -1063,22 +1071,32 @@ export function ChangesPane({
       unstageAll={unstageAll}
       bulkForGroup={bulkForGroup}
       setStatusError={setStatusError}
-      inlineDiffs={compact ? inlineDiffs : undefined}
-      expandedPaths={compact ? expandedPaths : undefined}
-      togglePath={compact ? togglePath : undefined}
+      inlineDiffs={inlineDiffs}
+      expandedPaths={expandedPaths}
+      togglePath={togglePath}
       wrapDiff={wrapDiff}
       splitDiff={splitDiff}
     />
   )
 
+  const viewMenu = <ChangesToolbar compact triggerLabel="View" items={<>
+    <GitToolMenuItem onClick={refresh}>Refresh diff</GitToolMenuItem>
+    <GitToolMenuItem onClick={toggleAllDiffs}>{expandedPaths.size === rows.length ? 'Collapse all' : 'Expand all'}</GitToolMenuItem>
+    <GitToolMenuItem aria-pressed={wrapDiff} onClick={() => setWrapDiff((value) => !value)}>Wrap lines</GitToolMenuItem>
+    <GitToolMenuItem aria-pressed={treeVisible} onClick={() => setTreeVisible((value) => !value)}>File tree</GitToolMenuItem>
+    <GitToolMenuItem aria-pressed={stagedOnly} onClick={() => setStagedOnly((value) => !value)}>Staged files only</GitToolMenuItem>
+    <GitToolMenuItem data-testid="changes-overflow-stage-all" disabled={stageAll.length === 0} onClick={() => bulkForGroup('unstaged', stageAll)}>Stage all</GitToolMenuItem>
+    <GitToolMenuItem data-testid="changes-overflow-unstage-all" disabled={unstageAll.length === 0} onClick={() => bulkForGroup('staged', unstageAll)}>Unstage all</GitToolMenuItem>
+  </>} strip={<GitToolMenuItem data-testid="changes-review" disabled={!client || reviewBusy} onClick={openReviewPicker}>Review with agent</GitToolMenuItem>} />
+  const layoutChoices = <DiffLayoutChoices split={splitDiff} setSplit={setSplitDiff} view={viewMenu} />
+
   const diffPane = (
     <DiffArea
       row={selectedRow}
       diff={diff}
-      emptySummary={{
-        headline: `${rows.length} file${rows.length === 1 ? '' : 's'} changed`,
-        description: `+${rows.reduce((sum, row) => sum + (row.added ?? 0), 0)} added, −${rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)} removed${ahead > 0 ? ` · ${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${defaultBase ?? 'the base'}` : ''}. Pick a file to read its diff.`
-      }}
+      split={splitDiff}
+      controls={maximized ? layoutChoices : undefined}
+      emptySummary={changesEmptySummary(rows, ahead, defaultBase)}
       onOpenInEditor={openSelectedFile(onOpenFileInEditor, activeRepoDir, selectedRow)}
       onReview={openReviewPicker}
       reviewDisabledReason={reviewDisabledReason(client !== null, reviewBusy)}
@@ -1096,6 +1114,7 @@ export function ChangesPane({
       ahead={ahead}
       doPush={doPush}
       canCommit={canCommit}
+      blockedReason={commitBlockedReason(staged, commitMsg, committing)}
       doCommit={doCommit}
       offerCreatePr={offerCreatePr}
       prBusy={prBusy}
@@ -1107,23 +1126,29 @@ export function ChangesPane({
       }}
       hasChanges={rows.length > 0}
       compact={compact === true}
-      target={checkoutLabel ?? (repoDir ? repoDir.split(/[\\/]/).filter(Boolean).at(-1) : undefined)}
+      target={branch ?? checkoutLabel}
     />
   )
 
   const prLine = <PrLine pr={pr} onOpenUrlInPane={onOpenUrlInPane} hidden={compact} />
 
-  const compactToolbar = compact ? <CompactDiffToolbar
-    scope={scope} setScope={setScope} stagedOnly={stagedOnly} setStagedOnly={setStagedOnly}
-    scopeMenuOpen={scopeMenuOpen} setScopeMenuOpen={setScopeMenuOpen} defaultBase={defaultBase}
-    branch={branch} checkoutLabel={checkoutLabel} stageAll={stageAll} unstageAll={unstageAll}
-    bulkForGroup={bulkForGroup} visibleAdded={visibleAdded} visibleDeleted={visibleDeleted}
-    expanded={expandedPaths.size === rows.length} toggleAllDiffs={toggleAllDiffs} splitDiff={splitDiff}
-    setSplitDiff={setSplitDiff} wrapDiff={wrapDiff} setWrapDiff={setWrapDiff} treeVisible={treeVisible}
-    setTreeVisible={setTreeVisible} refresh={refresh} strip={strip}
-  /> : null
+  const branchHeader = <ChangesBranchHeader client={client} dir={activeRepoDir} branch={branch} base={defaultBase} tools={tools} busy={toolsBusy} error={toolsError} panes={checkoutPanes} onOpenPane={onOpenPane} onManage={() => setBranchManageOpen(true)} upstream={upstream} behind={behind} pushBlocked={pushBlocked} pushing={pushing} ahead={ahead} maximized={maximized} doPush={doPush} onAddWorkspace={addWorkspace} />
+  const compactToolbar = <GitChangesToolbarSurface>
+    <ComparisonChoices counts={counts} scope={scope} setScope={(value) => { setScope(value); setStagedOnly(false) }} defaultBase={defaultBase} />
+    {!maximized && <span className="flex flex-1 justify-end">{layoutChoices}</span>}
+  </GitChangesToolbarSurface>
 
-  const body = compact ? <CompactChangesBody toolbar={compactToolbar} notice={notice} toolsNotice={toolsNotice} toolsError={toolsError} reviewError={reviewError} commitError={commitError} prMessage={prMessage} visibleRows={visibleRows} expandedPaths={expandedPaths} inlineDiffs={inlineDiffs} treeVisible={treeVisible} fileList={fileList} commitBox={commitBox} />
+  const body = maximized ? <ChangesReviewWorkspace left={<>
+      {branchHeader}
+      {compactToolbar}
+      <ChangesFileFilter inputRef={filterRef} value={fileFilter} onChange={(event) => setFileFilter(event.target.value)} />
+      <GitChangesFileListFrame>{fileList}</GitChangesFileListFrame>
+      {commitBox}
+    </>}>
+      <ChangesErrorLines reviewError={reviewError} commitError={commitError} prMessage={prMessage} />
+      {diffPane}
+      <ChangesReviewFooter index={visibleRows.length === 0 ? 0 : visibleRows.findIndex((row) => row.path === selected) + 1} count={visibleRows.length} />
+    </ChangesReviewWorkspace> : compact ? <CompactChangesBody splitDiff={splitDiff} toolbar={<>{branchHeader}{compactToolbar}</>} notice={notice} toolsNotice={toolsNotice} toolsError={toolsError} reviewError={reviewError} commitError={commitError} prMessage={prMessage} visibleRows={visibleRows} expandedPaths={expandedPaths} inlineDiffs={inlineDiffs} treeVisible={treeVisible} fileList={fileList} commitBox={commitBox} />
     : paneState === 'loading' || paneState === 'empty'
       ? <LoadingChangesBody toolbar={stripChrome} toolsNotice={toolsNotice} toolsError={toolsError} commitError={commitError} fileList={fileList} commitBox={commitBox} prLine={prLine} />
       : <ReadyChangesBody toolbar={stripChrome} notice={notice} toolsNotice={toolsNotice} toolsError={toolsError} reviewError={reviewError} commitError={commitError} prMessage={prMessage} fileList={fileList} commitBox={commitBox} prLine={prLine} diffPane={diffPane} client={client} repoDir={activeRepoDir} compact={compact} />
@@ -1131,7 +1156,7 @@ export function ChangesPane({
   return shell(body)
 }
 
-function ChangesToolbar({ compact, strip, items }: { compact: boolean; strip: React.ReactNode; items?: React.ReactNode }): React.JSX.Element {
+function ChangesToolbar({ compact, strip, items, triggerLabel = "Git actions and diff scope" }: { compact: boolean; strip: React.ReactNode; items?: React.ReactNode; triggerLabel?: string }): React.JSX.Element {
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -1155,19 +1180,19 @@ function ChangesToolbar({ compact, strip, items }: { compact: boolean; strip: Re
   }, [anchor])
   if (!compact) return <>{strip}</>
   return (
-    <GitCompactToolsAnchor>
-      <Tooltip label="Git actions and diff scope">
-        <button
+    <GitCompactToolsAnchor view={triggerLabel !== "Git actions and diff scope"}>
+      <Tooltip label={triggerLabel}>
+        <GitCompactToolsTrigger
           ref={trigger}
-          aria-label="Git actions and diff scope"
+          aria-label={triggerLabel}
           aria-expanded={anchor !== null}
           onClick={() => {
             const rect = trigger.current!.getBoundingClientRect()
             setAnchor(anchor ? null : { top: rect.bottom, right: window.innerWidth - rect.right })
           }}
         >
-          <Icon glyph={IconEllipsis} role="ui" />
-        </button>
+          {triggerLabel === "View" ? <><Icon glyph={IconSliders} role="small" />View</> : <Icon glyph={IconEllipsis} role="ui" />}
+        </GitCompactToolsTrigger>
       </Tooltip>
       {anchor && createPortal(
         <GitCompactToolsSurface

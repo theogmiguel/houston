@@ -80,9 +80,9 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
 
   it('starts at the shipped width and clamps a drag at the 220px floor', async () => {
     harness = await renderReadyApp()
-    expect(railWidthVar(harness)).toBe('240px')
+    expect(railWidthVar(harness)).toBe('264px')
 
-    down(240)
+    down(264)
     move(180)
     flush()
 
@@ -93,7 +93,7 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
   it('clamps a drag at the ceiling', async () => {
     harness = await renderReadyApp()
 
-    down(240)
+    down(264)
     move(900)
     flush()
 
@@ -104,7 +104,7 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
   it('coalesces a burst of moves into one frame', async () => {
     harness = await renderReadyApp()
 
-    down(240)
+    down(264)
     move(300)
     move(360)
     move(400)
@@ -118,7 +118,7 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
   it('a drag under the collapse threshold hides the rail and remembers the last width', async () => {
     harness = await renderReadyApp()
 
-    down(240)
+    down(264)
     move(320)
     flush()
     expect(railWidthVar(harness)).toBe('320px')
@@ -133,7 +133,7 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
   it('expand brings the rail back at the remembered width', async () => {
     harness = await renderReadyApp()
 
-    down(240)
+    down(264)
     move(320)
     flush()
     move(120)
@@ -149,7 +149,7 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
   it('double-clicking the handle resets the width to the default', async () => {
     harness = await renderReadyApp()
 
-    down(240)
+    down(264)
     move(360)
     flush()
     up(360)
@@ -159,7 +159,7 @@ describe('rail resize — the rail can be dragged wider or narrower', () => {
       handle(harness!).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     })
 
-    expect(railWidthVar(harness)).toBe('240px')
-    expect(localStorage.getItem('tr-rail-width')).toBe('240')
+    expect(railWidthVar(harness)).toBe('264px')
+    expect(localStorage.getItem('tr-rail-width')).toBe('264')
   })
 })

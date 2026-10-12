@@ -66,7 +66,8 @@ export function setSettingsSection(next: SettingsSectionId | string): void {
 }
 
 export function settingsSectionLabel(): string {
-  return NAVIGABLE_SETTINGS_SECTIONS.find((item) => item.id === section)?.label ?? ''
+  const item = NAVIGABLE_SETTINGS_SECTIONS.find((item) => item.id === section)
+  return item?.group === 'agents' ? item.id === 'agents-overview' ? 'Agents' : `Agents / ${item.label}` : item?.label ?? ''
 }
 
 export function shouldIgnoreInputKey(target: HTMLElement, event: KeyboardEvent, settingsOpen: boolean): boolean {

@@ -70,7 +70,7 @@ export function countByState(findings: HarnessFinding[]): Record<HarnessFindingS
 }
 
 export function formatDay(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, {
+  return new Date(ms).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric'

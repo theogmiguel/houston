@@ -288,3 +288,23 @@ export const FilesSurfaceMarkdown732 = (): React.JSX.Element => <FilesSurfaceFra
 export const FilesSurfaceImage470 = (): React.JSX.Element => <FilesSurfaceFrame width={470} state="image" />
 export const FilesSurfaceImage732 = (): React.JSX.Element => <FilesSurfaceFrame width={732} state="image" />
 export const FilesSurfaceDelete470 = (): React.JSX.Element => <FilesSurfaceFrame width={470} state="delete" />
+
+export function FilesSurfaceQuickOpenHighlighted(): React.JSX.Element {
+  useEffect(() => {
+    const showHighlight = (): boolean => {
+      const rows = document.querySelectorAll('.files-qrow')
+      const input = document.querySelector<HTMLInputElement>('[role="combobox"][aria-label="Search files"]')
+      if (rows.length < 2 || !input) return false
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+      return true
+    }
+    const observer = new MutationObserver(() => {
+      if (document.querySelectorAll('.files-qrow').length < 2) return
+      observer.disconnect()
+      showHighlight()
+    })
+    if (!showHighlight()) observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
+  return <FilesSurfaceFrame width={470} state="quick" />
+}

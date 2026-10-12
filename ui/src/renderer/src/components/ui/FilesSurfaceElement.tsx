@@ -1,7 +1,8 @@
+import { ROW_HIGHLIGHT } from './rowState'
 import { createElement, type ComponentPropsWithoutRef, type ElementType, type ReactNode } from 'react'
 
 export const FilesSurfaceClass = {
-  floatingGlass: 'floating-glass',
+  floatingGlass: 'floating-glass shadow-[var(--shadow-1)]',
   banner: 'files-banner', bannerGhost: 'files-banner-ghost', context: 'files-context', contextSeparator: 'files-context-separator',
   crumbs: 'files-crumbs', crumbMore: 'files-crumb-more', crumbMenu: 'files-crumbmenu', deleteActions: 'files-delete-actions',
   dirty: 'files-dirty', divider: 'files-divider', explorer: 'files-explorer', explorerHead: 'files-explorer-head',
@@ -36,4 +37,8 @@ export function FilesSurfaceElement<T extends ElementType>({
   ...props
 }: { as: T; role: FilesSurfaceClassName; children?: ReactNode } & Omit<ComponentPropsWithoutRef<T>, 'className' | 'children'>): React.JSX.Element {
   return createElement(as, { ...props, className: filesSurfaceClass(FilesSurfaceClass[role]) }, children)
+}
+
+export function QuickOpenRow({ highlighted, ...props }: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & { highlighted: boolean }): React.JSX.Element {
+  return <button {...props} className={`${filesSurfaceClass(FilesSurfaceClass.quickOpenRow, highlighted && FilesSurfaceClass.highlighted)} ${ROW_HIGHLIGHT[highlighted ? 'selected' : 'rest']}`} />
 }

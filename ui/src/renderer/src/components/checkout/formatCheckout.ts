@@ -1,4 +1,5 @@
 import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
+import type { SessionInfo } from '../../houston/client'
 
 export function formatCheckout(
   checkout: SessionCheckout | null | undefined,
@@ -46,4 +47,16 @@ export function formatCheckout(
     branch: null,
     text: `${isWorktree ? `wt/${slug}` : isPrimary ? 'primary' : 'unknown'} · ${badge}`,
   }
+}
+
+// The directory whose git facts describe the checkout a session runs in. Rail fetching and
+// rail/popover reads must share it, or a card looks up a key that was never polled.
+export function sessionCheckoutRoot(session: Pick<SessionInfo, 'cwd' | 'checkout_root' | 'worktree' | 'checkout'>): string {
+  return session.checkout?.root ?? session.worktree?.path ?? session.checkout_root ?? session.cwd
+}
+
+// Shortens a path under the user's home directory to `~`. The renderer does not know the
+// home directory, so the common `/home/<user>`, `/Users/<user>` and `C:\Users\<user>` shapes are matched.
+export function tildePath(path: string): string {
+  return path.replace(/^(?:\/home\/[^/]+|\/Users\/[^/]+|[A-Za-z]:[\\/]Users[\\/][^\\/]+)(?=[\\/]|$)/, '~')
 }
