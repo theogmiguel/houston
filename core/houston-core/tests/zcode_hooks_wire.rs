@@ -15,6 +15,91 @@ use std::path::{Path, PathBuf};
 
 const CHANNEL: &str = "zchooks";
 
+#[cfg(unix)]
+#[test]
+fn zcode_settings_edits_preserve_chained_symlinks_and_target_permissions() {
+    use houston_core::agent_hooks::{self, ConfigHome};
+    use std::os::unix::fs::{symlink, PermissionsExt};
+
+    for filename in houston_core::zcode_config::SETTINGS_FILES {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join(".zcode/cli");
+        let dotfiles = home.path().join("dotfiles");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&dotfiles).unwrap();
+        let target = dotfiles.join("settings.json");
+        let original = serde_json::json!({
+            "theme": "user-theme",
+            "hooks": {"enabled": true, "events": {
+                "Stop": [{"hooks": [{"type": "command", "command": "echo user-hook"}]}]
+            }}
+        });
+        std::fs::write(&target, serde_json::to_vec(&original).unwrap()).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let alias = home.path().join("settings-link.json");
+        let path = dir.join(filename);
+        symlink("dotfiles/settings.json", &alias).unwrap();
+        symlink("../../settings-link.json", &path).unwrap();
+        let config_home = ConfigHome {
+            home: home.path().to_path_buf(),
+            xdg_config: None,
+        };
+        let sentinel = houston_core::claude_hooks::sentinel_for(Some("symlink-test"));
+        let launcher = home.path().join(".houston-symlink-test/hooks/launcher");
+        agent_hooks::install(proto::AgentKind::Zcode, &config_home, &launcher, &sentinel).unwrap();
+        assert!(
+            std::fs::symlink_metadata(&path)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "install replaced the user's {filename} symlink"
+        );
+        assert_eq!(
+            std::fs::read_link(&path).unwrap(),
+            Path::new("../../settings-link.json")
+        );
+        assert_eq!(
+            std::fs::read_link(&alias).unwrap(),
+            Path::new("dotfiles/settings.json")
+        );
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        assert!(agent_hooks::is_installed(
+            proto::AgentKind::Zcode,
+            &config_home,
+            &sentinel
+        ));
+        let installed: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&target).unwrap()).unwrap();
+        assert_eq!(installed["theme"], original["theme"]);
+        assert_eq!(
+            installed["hooks"]["events"]["Stop"][0],
+            original["hooks"]["events"]["Stop"][0]
+        );
+        assert_eq!(
+            installed["hooks"]["events"]["Stop"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(agent_hooks::uninstall(proto::AgentKind::Zcode, &config_home, &sentinel).unwrap());
+        let restored: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&target).unwrap()).unwrap();
+        assert_eq!(restored, original);
+        assert!(std::fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+    }
+}
+
 fn fixture(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/hooks/zcode")
