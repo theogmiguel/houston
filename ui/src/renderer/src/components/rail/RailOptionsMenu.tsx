@@ -15,7 +15,7 @@ const CARD_PROPERTIES: { keys: RailCardProperty[]; label: string; hint?: string 
   { keys: ['tags'], label: 'Tags' },
   { keys: ['pr'], label: 'Pull request and checks' },
   { keys: ['checkout', 'diff'], label: 'Branch and changes' },
-  { keys: ['inline-agents'], label: 'Agents', hint: 'up to 3' },
+  { keys: ['inline-agents'], label: 'Agents', hint: 'summary past 2' },
   { keys: ['last-message'], label: 'Last message' },
 ]
 const SORT_LABEL = { smart: 'Agent activity', manual: 'Manual', recent: 'Recent', name: 'Name' }
