@@ -11,7 +11,7 @@ it('a correlated scan failure clears loading and lets Usage refresh again', asyn
   harness = await renderReadyApp()
   const { container } = harness
   await act(async () => {
-    ;(container.querySelector('.railfoot button[aria-label="Usage"]') as HTMLButtonElement).click()
+    ;(container.querySelector('[data-testid="rail-nav-row"][data-view="usage"]') as HTMLButtonElement).click()
     await import('./components/UsageSection')
   })
   await settleLazySurface(() => container.querySelector('[data-testid="usage-refresh"]') !== null, 'usage')
