@@ -151,6 +151,7 @@ function RailFixture({
         chromeTheme={chromeTheme}
         onToggleChromeTheme={noop}
         onSelectGrid={noop}
+        onFocusPane={(paneId) => document.documentElement.dataset.focusedRailPane = String(paneId)}
         onAddGrid={noop}
         onNewWorkspaceSession={noop}
         onRenameGrid={noop}
@@ -460,6 +461,7 @@ function WorkspacesEmptyStory({ variant }: { variant: 'plain' | 'pending' | 'ref
 }
 
 export const RAIL_STORIES: Record<string, () => React.JSX.Element> = {
+  'rail/agent-focus': () => <RailCardModes />,
   'rail/card-modes': () => <RailCardModes />,
   'rail/card-modes-options': () => <RailCardModes openOptions />,
   'rail/card-modes-options-sort': () => <RailCardModes optionsPanel="sort" />,

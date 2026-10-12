@@ -44,12 +44,12 @@ function ageLabel(session: SessionInfo, now: number): string {
   return `${hours}h`
 }
 
-function AgentRow({ agent, now }: { agent: RailAgentRow; now: number }): React.JSX.Element {
+function AgentRow({ agent, now, onFocusPane }: { agent: RailAgentRow; now: number; onFocusPane?: (paneId: number) => void }): React.JSX.Element {
   const context = agent.session.context?.used_percent
   const warnContext = context != null && context >= 80
   const shellLabel = agent.session.agent === 'shell' ? ` · ${agent.agent}` : ''
   return (
-    <div key={agent.session.id} className="flex h-[var(--h-agent-row)] min-w-0 items-center gap-[5px] rounded px-1 text-[length:var(--tr-text-xs)] leading-none hover:bg-hover-fill">
+    <button type="button" aria-label={`Focus ${agent.leading}`} onClick={(event) => { event.stopPropagation(); onFocusPane?.(agent.session.id) }} className="flex h-[var(--h-agent-row)] w-full min-w-0 items-center gap-[5px] rounded px-1 text-[length:var(--tr-text-xs)] leading-none hover:bg-hover-fill">
       <AgentStatusDot session={agent.session} now={now} />
       <span className="flex flex-none text-[var(--text-muted)]"><IconAgent agent={agent.agent} role="small" brand /></span>
       <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
@@ -58,7 +58,7 @@ function AgentRow({ agent, now }: { agent: RailAgentRow; now: number }): React.J
       {warnContext && <span className="font-mono text-[var(--warn)]">{Math.round(context!)}%</span>}
       {!warnContext && attentionStatus(agent.session) !== 'needs-input' && agent.model && <span className="max-w-[76px] truncate font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">{agent.model}</span>}
       <time className="min-w-[22px] flex-none text-right text-[length:var(--tr-text-xs)] tabular-nums text-[var(--text-muted)]">{ageLabel(agent.session, now)}</time>
-    </div>
+    </button>
   )
 }
 
@@ -69,6 +69,7 @@ export function GridRailAgentRows({
   expanded,
   onToggleExpanded,
   now,
+  onFocusPane,
 }: {
   agents: RailAgentRow[]
   cardMode: RailCardMode
@@ -77,6 +78,7 @@ export function GridRailAgentRows({
   expanded: boolean
   onToggleExpanded: () => void
   now: number
+  onFocusPane?: (paneId: number) => void
 }): React.JSX.Element | null {
   if (cardMode !== 'detailed') return null
   const many = agents.length > 3
@@ -85,7 +87,7 @@ export function GridRailAgentRows({
   const hiddenWorking = agents.slice(2).filter(({ session }) => attentionStatus(session) === 'working').length
   return (
     <>
-      {visible.map((agent) => <AgentRow key={agent.session.id} agent={agent} now={now} />)}
+      {visible.map((agent) => <AgentRow key={agent.session.id} agent={agent} now={now} onFocusPane={onFocusPane} />)}
       {many && <button type="button" aria-expanded={showFullList} onClick={(event) => { event.stopPropagation(); onToggleExpanded() }} className="flex h-5 items-center gap-1 px-1 text-[length:var(--tr-text-xs)] text-[var(--text-muted)] hover:text-[var(--text-primary)]">
         <Icon glyph={IconChevronRight} role="small" className={showFullList ? 'rotate-90' : ''} />
         {showFullList ? 'Show fewer agents' : `${agents.length - 2} more agents${hiddenWorking ? ` · ${hiddenWorking} working` : ''}`}

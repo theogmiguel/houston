@@ -111,7 +111,7 @@ export function RailFilterButton({ children, active = true, ...props }: ButtonHT
 }
 
 export function RailVirtualViewport({ children, dragging, ...props }: ComponentProps<'div'> & { dragging: boolean; children: ReactNode }): React.JSX.Element {
-  return <div {...props} className={`wlist flex min-h-0 flex-1 flex-col gap-[var(--space-1)] overflow-y-auto px-[var(--space-1-5)] pt-[var(--space-0-5)] pb-[var(--space-2)] ${dragging ? 'cursor-grabbing' : 'cursor-pointer'}`}>{children}</div>
+  return <div {...props} data-rail-grid-list className={`wlist flex min-h-0 flex-1 flex-col gap-[var(--space-1)] overflow-y-auto px-[var(--space-1-5)] pt-[var(--space-0-5)] pb-[var(--space-2)] ${dragging ? 'cursor-grabbing' : 'cursor-pointer'}`}>{children}</div>
 }
 
 export function RailWorkspaceGroupRow(props: ComponentProps<typeof WorkspaceTreeRow>): React.JSX.Element {

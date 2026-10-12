@@ -3589,6 +3589,7 @@ export function App(): React.JSX.Element {
                 workspacesEmptyOpen ? null : activeGridId(selectedWs)
               }
               onSelectGrid={handleSelectGrid}
+              onFocusPane={focusPane}
               onAddGrid={handleAddGrid}
               onNewWorkspaceSession={(path) => {
                 setSelectedWs(path);

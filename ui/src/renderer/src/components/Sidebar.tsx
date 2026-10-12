@@ -478,6 +478,7 @@ interface Props {
   onTagUpdate?: (tag: number, name: string, color: string) => void;
   onTagDelete?: (tag: number) => void;
   onSelectGrid?: (path: string, gridId: string) => void;
+  onFocusPane?: (paneId: number) => void;
   selectedGridId?: string | null;
 
   onAddGrid?: (path: string) => void;
@@ -1810,6 +1811,7 @@ function RailTree({
   onRenameGrid,
   onRemoveGrid,
   onSelectGrid,
+  onFocusPane,
   openGridMenu,
   setGridRenaming,
   renaming,
@@ -1864,6 +1866,7 @@ function RailTree({
   onRenameGrid?: (path: string, gridId: string, name: string) => void;
   onRemoveGrid?: (path: string, gridId: string) => void;
   onSelectGrid?: (path: string, gridId: string) => void;
+  onFocusPane?: (paneId: number) => void;
   openGridMenu: (
     e: React.MouseEvent,
     path: string,
@@ -1896,6 +1899,7 @@ function RailTree({
   isGridUnread: (gridId: string, agents: ReturnType<typeof buildRailCard>['agents']) => { unread: boolean; signature: string };
   onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
 }): React.JSX.Element {
+  const [expandedGrids, setExpandedGrids] = useState<ReadonlySet<string>>(() => new Set());
   const tagPopover = useTagPopover();
   const optionsTriggerRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -2046,6 +2050,13 @@ function RailTree({
           workspace={workspace.path}
           gridId={grid.id}
           selected={selectedCard}
+          onFocusPane={onFocusPane}
+          expanded={expandedGrids.has(key)}
+          onToggleExpanded={() => setExpandedGrids((current) => {
+            const next = new Set(current);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+          })}
           pinned={pinnedGridIds.has(key)}
           paneIds={paneIds}
           tags={(grid.tagIds ?? []).flatMap((id) => tagById.get(id) ?? [])}
@@ -2389,6 +2400,7 @@ export function Sidebar({
   onOpenInspector,
   gridsByWorkspace = {},
   onSelectGrid,
+  onFocusPane,
   selectedGridId = null,
   onNewWorkspaceSession,
   onAddGrid,
@@ -2990,6 +3002,7 @@ export function Sidebar({
             onRenameGrid={onRenameGrid}
             onRemoveGrid={removeGrid}
             onSelectGrid={onSelectGrid}
+            onFocusPane={onFocusPane}
             openGridMenu={openGridMenu}
             setGridRenaming={setGridRenaming}
             renaming={renaming}

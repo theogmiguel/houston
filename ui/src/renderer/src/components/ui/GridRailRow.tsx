@@ -38,6 +38,9 @@ export interface GridRailRowProps {
   onFilterTag?: (tag: TagInfo) => void
   jumpNumber?: number
   onRemove?: () => void
+  expanded?: boolean
+  onToggleExpanded?: () => void
+  onFocusPane?: (paneId: number) => void
   onSelect: () => void
   onContextMenu?: (event: React.MouseEvent) => void
   onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
@@ -76,6 +79,9 @@ export function GridRailRow({
   onToggleUnread,
   onFilterTag,
   onSelect,
+  onFocusPane,
+  expanded: controlledExpanded,
+  onToggleExpanded: controlledToggle,
   onContextMenu,
   onOpenInspector,
   onRemove,
@@ -207,9 +213,10 @@ export function GridRailRow({
     }
   }, [jumpNumber, onSelect])
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
-      const rows = [...(rowRef.current?.parentElement?.querySelectorAll<HTMLElement>('[data-testid="grid-row"]') ?? [])]
+      const rows = [...((rowRef.current?.closest('[data-rail-grid-list]') ?? rowRef.current?.parentElement)?.querySelectorAll<HTMLElement>('[data-testid="grid-row"]') ?? [])]
       const index = rows.indexOf(rowRef.current!)
       rows[index + (event.key === 'ArrowDown' ? 1 : -1)]?.focus()
     } else if (event.key === 'Enter' || event.key === ' ') {
@@ -239,6 +246,7 @@ export function GridRailRow({
       jumpNumber={jumpNumber}
       onRemove={onRemove}
       onSelect={onSelect}
+      onFocusPane={onFocusPane}
       onContextMenu={onContextMenu}
       onOpenInspector={onOpenInspector}
       card={card}
@@ -249,14 +257,14 @@ export function GridRailRow({
       altHeld={altHeld}
       hoverPosition={hoverPosition}
       hoverVisible={hoverVisible}
-      expanded={expanded}
+      expanded={controlledExpanded ?? expanded}
       now={now}
       rowRef={rowRef}
       closeTimer={closeTimer}
       openTagPopover={openTagPopover}
       startHover={startHover}
       closeHover={closeHover}
-      onToggleExpanded={() => setExpanded((value) => !value)}
+      onToggleExpanded={controlledToggle ?? (() => setExpanded((value) => !value))}
       onKeyDown={onKeyDown}
     />
   )
