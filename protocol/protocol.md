@@ -1,4 +1,4 @@
-# Wire protocol v137
+# Wire protocol v138
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -1311,6 +1311,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 138 | Session creation accepts a connection-local request ID and replies with `session_create_result`, correlating success or refusal without relying on broadcast order. |
 | 137 | Browser relay explicitly registers its authenticated connection; replies are scoped to the connection owning each pending call. |
 | 136 | **ZCode is a spawnable provider.** `AgentKind` gains `zcode`, accepted wherever a spawnable kind is (`session_create`, `pane_spawn`, `task_start`, task start and review settings, routine engines, `agent_hooks_set`, hook rows). ZCode panes launch `zcode` with `--mode` for auto and bypass approval, resume by `--resume <session id>` from the SessionStart hook, receive their first prompt as a paste once ZCode's composer reports focus (bracketed paste enabled, then the cursor shown; pasted regardless after 60 s), confirmed by ZCode's UserPromptSubmit hook, and refuse a non-empty `model` naming the limit. Its hooks live in ZCode's settings file, which also lists the orchestration plugin kept in the channel's state dir. Routines refuse ZCode in accept-edits access by name, and `routines` and `harness_state` gain `engine_refusals: RoutineEngineRefusal[]`, the engine and access pairs routines refuse (OpenCode and ZCode with accept edits) with the reason, so pickers show them disabled. `task_plan_start` refuses ZCode, which has no read-only launch mode, and `task_domain_state` gains `planning_refusals: PlanningRefusal[]` so the planning control shows it disabled. `HarnessProviderCoverage` counts ZCode sessions. Outside `/ws`, the task tools' `id` and `pane_pr_watch`'s `pr` are advertised as strings (an integer is still accepted). |
 | 135 | **The daemon assembles dictated text.** `voice_transcript` gains `insert`, the text the renderer puts in the prompt; the agent preamble and its once-per-pane rule moved from the renderer to the daemon, so desktop and remote dictation share them. `RemoteInfo.dictation` and `remote_configure.dictation?` turn on dictation from paired devices (`POST /api/sessions/{id}/dictate`). The remote listener serves HTTPS itself with a local certificate authority when devices reach it directly on a private address: `RemoteInfo.tls`, `RemoteInfo.ca_fingerprint` and `remote_ca_regenerate`; `url` and allowed origins use `https://` then, and `public_url` must be an https origin the authority can certify. A loopback bind (the Tailscale route) is unchanged |
