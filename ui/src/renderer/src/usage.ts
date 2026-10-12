@@ -256,18 +256,19 @@ export function breakdownRows(
   const toDay = makeDayKey(timeZone)
   const acc = new Map<
     string,
-    { provider: UsageProvider | null; cost: number; tokens: number; records: number; unpriced: number }
+    { id: string; provider: UsageProvider | null; cost: number; tokens: number; records: number; unpriced: number }
   >()
   for (const b of buckets) {
-    const key = mode === 'model' ? b.model : toDay(b.hour_start_ms)
+    const id = mode === 'model' ? b.model : toDay(b.hour_start_ms)
+    const key = mode === 'model' ? `${b.provider}:${id}` : id
     const row = acc.get(key) ?? {
+      id,
       provider: mode === 'model' ? b.provider : null,
       cost: 0,
       tokens: 0,
       records: 0,
       unpriced: 0
     }
-    if (mode === 'model' && row.provider !== b.provider) row.provider = b.provider
     row.cost += b.cost_usd
     row.tokens += bucketTokens(b)
     row.records += b.records
@@ -275,8 +276,8 @@ export function breakdownRows(
     acc.set(key, row)
   }
   const totalCost = [...acc.values()].reduce((a, v) => a + v.cost, 0)
-  const rows: BreakdownRow[] = [...acc.entries()].map(([id, v]) => ({
-    id,
+  const rows: BreakdownRow[] = [...acc.values()].map((v) => ({
+    id: v.id,
     provider: v.provider,
     cost: v.cost,
     tokens: v.tokens,

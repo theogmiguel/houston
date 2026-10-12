@@ -265,6 +265,39 @@ describe('Usage page', () => {
     expect(q('[data-testid="usage-breakdown"] tbody')?.textContent).toContain('$42.00')
   })
 
+  it('uses distinct window and daily Sessions counts, never hourly bucket sums', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 3 * DAY)
+    const key = (ms: number): string => { const date = new Date(ms); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
+    const firstDay = key(DAY0 + HOUR)
+    const secondDay = key(DAY0 + DAY + HOUR)
+    const exact = summary({
+      buckets: [bucket({ hour_start_ms: DAY0 + HOUR, sessions: 1 }), bucket({ hour_start_ms: DAY0 + 2 * HOUR, sessions: 1 }), bucket({ hour_start_ms: DAY0 + DAY + HOUR, sessions: 2 })],
+      session_counts: { models: [{ provider: 'claude', model: 'claude-opus-5', sessions: 2, days: [{ day: firstDay, sessions: 1 }, { day: secondDay, sessions: 2 }] }], days: [{ day: firstDay, sessions: 1 }, { day: secondDay, sessions: 2 }] }
+    })
+    render({ summary: exact })
+    expect([...host.querySelectorAll('[data-testid="usage-breakdown"] th')].map((cell) => cell.textContent)).toEqual(['Model', 'Sessions', 'Tokens', 'Cost', 'Share'])
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('2')
+    act(() => q(`[data-testid="usage-calendar-day"][aria-label^="${firstDay}:"]`)?.click())
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('1')
+    act(() => q('button[aria-label="Show the whole window"]')?.click())
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('2')
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'By day')?.click())
+    expect([...host.querySelectorAll('[data-testid="usage-breakdown"] tbody tr')].map((row) => row.children[1].textContent)).toEqual(['2', '1'])
+  })
+
+  it('shows unavailable Sessions for older replies and retained days without source detail', () => {
+    render({ summary: summary({ session_counts: undefined }) })
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('—')
+    const retained = new Date(DAY0 - 10 * DAY)
+    const retainedKey = `${retained.getFullYear()}-${String(retained.getMonth() + 1).padStart(2, '0')}-${String(retained.getDate()).padStart(2, '0')}`
+    render({ summary: summary({ session_counts: undefined }), activity: [{ day: retainedKey, cost_usd: 42, totals: summary().buckets[0].totals }] })
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'By day')?.click())
+    act(() => q(`[data-testid="usage-calendar-day"][aria-label^="${retainedKey}:"]`)?.click())
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('—')
+    expect(q('[data-testid="usage-breakdown"] tbody tr')?.textContent).toContain('$42.00')
+  })
+
   it('offers only Cost and Tokens, without a placeholder Limits option', () => {
     render()
     const limits = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Limits')

@@ -133,7 +133,7 @@ function UsageBreakdown({
 }: {
   mode: BreakdownMode
   onModeChange: (mode: BreakdownMode) => void
-  rows: BreakdownRow[]
+  rows: (BreakdownRow & { sessions: number | null })[]
   loading: boolean
   selectedDay: string | null
   onClearDay: () => void
@@ -154,10 +154,11 @@ function UsageBreakdown({
           variant="inset"
           aria-label="Usage breakdown"
           rows={rows}
-          getRowId={(row) => row.id}
+          getRowId={(row) => row.provider ? `${row.provider}:${row.id}` : row.id}
           empty={{ heading: retainedDay && mode === 'model' ? 'Model details no longer available for this day' : loading ? 'Reading transcripts…' : 'No activity in this window.', description: retainedDay ? `Daily total: ${formatUsd(retainedDay.cost_usd)}. The source transcripts are no longer on disk.` : '' }}
           columns={[
             { key: 'id', header: mode === 'model' ? 'Model' : 'Day', render: (id, row) => mode === 'model' ? <UsageModelCell mark={row.provider ? <UsageAgentMark agent={row.provider} /> : null} name={String(id)} /> : <Text size="ui" tone="secondary">{String(id)}</Text> },
+            { key: 'sessions', header: 'Sessions', width: '80px', numeric: true, tone: 'muted', render: (sessions) => sessions === null ? '—' : Number(sessions).toLocaleString('en-US') },
             { key: 'tokens', header: 'Tokens', width: '80px', numeric: true, tone: 'muted', render: (tokens) => formatTokens(Number(tokens)) },
             { key: 'cost', header: 'Cost', width: '100px', numeric: true, render: (cost, row) => row.unpriced ? <Tooltip label="No published rate for this model"><span>not priced</span></Tooltip> : formatUsd(Number(cost)) },
             { key: 'share', header: 'Share', width: '160px', render: (share, row) => row.unpriced ? <Text size="small" tone="muted">—</Text> : <UsageShareCell share={Number(share)} color={row.provider ? PROVIDER_COLOR[row.provider] : 'var(--text-muted)'} /> }
@@ -258,7 +259,17 @@ export function UsageSection({
 
   const selectedBuckets = useMemo(() => selectedDay ? buckets.filter((bucket) => makeDayKey(timeZone)(bucket.hour_start_ms) === selectedDay) : buckets, [buckets, selectedDay, timeZone])
   const retainedDay = selectedDay && selectedBuckets.length === 0 ? activity.find((day) => day.day === selectedDay) : undefined
-  const rows = useMemo(() => breakdownRows(selectedBuckets, mode, timeZone), [selectedBuckets, mode, timeZone])
+  const rows = useMemo(() => {
+    const grouped = breakdownRows(selectedBuckets, mode, timeZone)
+    const displayed = mode === 'day' ? dayBreakdown(grouped, selectedDay, activity) : grouped
+    return displayed.map((row) => {
+      const model = summary?.session_counts?.models.find((item) => item.provider === row.provider && item.model === row.id)
+      const sessions = mode === 'day'
+        ? summary?.session_counts?.days.find((day) => day.day === row.id)?.sessions
+        : selectedDay ? model?.days.find((day) => day.day === selectedDay)?.sessions : model?.sessions
+      return { ...row, sessions: sessions ?? null }
+    })
+  }, [selectedBuckets, mode, timeZone, selectedDay, activity, summary])
 
   const series: UsageSeries[] = providers
     .map((p) => ({ provider: p.provider, label: p.label, color: PROVIDER_COLOR[p.provider] }))
@@ -315,7 +326,6 @@ export function UsageSection({
           <UsageEmpty summary={summary} windowLabel={windowDef.id === '24h' ? '24 hours' : windowDef.label} />
         ) : (
           <>
-        {}
         <UsageStats totals={totals} sessions={sessions} days={windowDef.days} />
         {totals.unpricedRecords > 0 && <Notice tone="warn">{totals.unpricedRecords} records have no published model rate. Their tokens are included; their cost is not priced.</Notice>}
         <UsageDailyChart
@@ -338,18 +348,15 @@ export function UsageSection({
         </Card>
         </UsageShareGroup>
 
-        {}
         <Card shape="card" tone="block" padding="page" data-material="inset" data-testid="usage-calendar-section">
           <UsageCalendar days={activity} metric="cost" selectedDay={selectedDay} caption="Pick a day to see its breakdown below. Days older than the transcripts on disk keep their daily total." onSelect={(day) => setSelectedDay((current) => current === day ? null : day)} />
         </Card>
 
-        {}
-        <UsageBreakdown mode={mode} onModeChange={setMode} rows={mode === 'day' ? dayBreakdown(rows, selectedDay, activity) : rows} loading={loading} selectedDay={selectedDay} onClearDay={() => setSelectedDay(null)} retainedDay={retainedDay} />
+        <UsageBreakdown mode={mode} onModeChange={setMode} rows={rows} loading={loading} selectedDay={selectedDay} onClearDay={() => setSelectedDay(null)} retainedDay={retainedDay} />
         <UsageSources sources={summary.sources} />
           </>
         )}
 
-        {}
       </UsageBody>
       </PageFrame>
     </div>

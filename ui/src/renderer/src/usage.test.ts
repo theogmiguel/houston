@@ -296,6 +296,11 @@ describe('usageTotals', () => {
 })
 
 describe('breakdownRows', () => {
+  it('keeps provider identities separate when they report the same model name', () => {
+    const out = breakdownRows([bucket({ hour_start_ms: 0, provider: 'claude', model: 'shared-model', cost_usd: 10 }), bucket({ hour_start_ms: 0, provider: 'codex', model: 'shared-model', cost_usd: 20 })], 'model', UTC)
+    expect(out.map((row) => [row.provider, row.id, row.cost])).toEqual([['codex', 'shared-model', 20], ['claude', 'shared-model', 10]])
+  })
+
   const day0 = Date.UTC(2026, 7, 20)
   const rows = (): UsageBucket[] => [
     bucket({ hour_start_ms: day0, model: 'claude-opus-5', cost_usd: 80, records: 4 }),
