@@ -23,11 +23,11 @@ describe('fidelity primitives', () => {
     expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('75')
   })
 
-  it('uses the UI section heading and names models above their colored share bars', () => {
+  it('uses the UI section heading and uses mono model names with shares in their own column', () => {
     const { container } = render(<><UsageSectionHeading>Breakdown</UsageSectionHeading><UsageModelCell mark={<span>◎</span>} name="gpt-5.5-codex" share={0.4} color="var(--text-primary)" /></>)
     expect(screen.getByRole('heading', { name: 'Breakdown' }).className).toContain('tr-text-ui-size')
-    expect(screen.getByText('gpt-5.5-codex').className).not.toContain('font-mono')
-    expect(container.querySelector('span[aria-hidden="true"] span')?.getAttribute('style')).toContain('linear-gradient')
+    expect(screen.getByText('gpt-5.5-codex').className).toContain('font-mono')
+    expect(container.querySelector('span[aria-hidden="true"] span')).toBeNull()
   })
 
   it('formats share amounts with grouped currency and square swatches', () => {

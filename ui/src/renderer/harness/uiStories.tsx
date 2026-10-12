@@ -11,6 +11,8 @@ import { BranchSwitcherSpecimen } from '../src/components/ui/BranchSwitcher'
 import { ChangesReviewSpecimen } from '../src/components/ui/ChangesReview'
 import { DiffBody } from '../src/components/git/DiffBody'
 import { UsageAgentMark } from '../src/components/ui/UsageProviderRow'
+import { UsageDayFilter, UsageBreakdownActions } from '../src/components/ui/UsageChrome'
+import { UsageAgentMark, UsageShareCell } from '../src/components/ui/UsageProviderRow'
 import { UsageLegend } from '../src/components/ui/UsageChart'
 import { UsageStatsSpecimen } from '../src/components/ui/UsageChrome'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
@@ -798,7 +800,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Usage and configuration roles">
           <SpecimenRow>
-            <UsageChromeSpecimen /><UsageStatsSpecimen /><UsageLegend series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--claude)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} />
+            <UsageChromeSpecimen /><UsageStatsSpecimen /><UsageBreakdownActions><UsageDayFilter label="Tue Oct 6" onClear={() => {}} /><UsageShareCell share={0.729} color="var(--claude)" /></UsageBreakdownActions><UsageLegend series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--claude)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} />
             <MaterialSurfaceSpecimen />
             <ConfigurationDetailSpecimen />
             <Text size="subhead" weight="semibold" tone="primary">Configuration heading</Text>
@@ -1334,19 +1336,18 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Table — Usage breakdown">
-          <Table
+          <Card shape="card" tone="block" data-material="inset"><Table
             aria-label="Usage breakdown by model"
-            layout="fixed"
+            variant="inset"
             rows={breakdownRows}
             getRowId={(row) => row.model}
             columns={[
-              { key: 'rank', header: '#', tone: 'faint', width: 'var(--space-5)' },
-              { key: 'model', header: 'Model', render: (value, row) => <UsageModelCell mark="◎" name={String(value)} share={row.bar / 100} color="var(--text-primary)" /> },
+              { key: 'model', header: 'Model', render: (value) => <UsageModelCell mark={<UsageAgentMark agent="codex" />} name={String(value)} /> },
+              { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '80px' },
               { key: 'cost', header: 'Cost', numeric: true, width: '100px' },
-              { key: 'share', header: 'Share', numeric: true, tone: 'muted', width: '64px' },
-              { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '64px' }
+              { key: 'share', header: 'Share', width: '160px', render: (_, row) => <UsageShareCell share={row.bar / 100} color="var(--text-primary)" /> }
             ]}
-          />
+          /></Card>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Table — Muted row">

@@ -6,13 +6,13 @@ import { Segmented } from './ui/SegmentedControl'
 import { UsageChart, UsageLegend, type UsageSeries } from './ui/UsageChart'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
 import type { AgentKind } from '../houston/generated/AgentKind'
-import { UsageAgentMark } from './ui/UsageProviderRow'
+import { UsageAgentMark, UsageShareCell } from './ui/UsageProviderRow'
 import type { UsageProvider } from '../houston/generated/UsageProvider'
 import {
   breakdownRows,
   foldSeries,
+  makeDayKey,
   formatRange,
-  formatShare,
   formatTokens,
   formatUsd,
   providerSummaries,
@@ -28,12 +28,12 @@ import {
 import { Icon } from './ui/Icon'
 import { Tooltip } from './ui/Tooltip'
 import { Select } from './ui/Select'
-import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup } from './ui'
+import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageBreakdownHeading, UsageBreakdownSection, UsageShareGroup } from './ui'
 import { Card } from './ui/Card'
 import { PageFrame } from './ui/PageFrame'
 import { PageHeader } from './ui/PageHeader'
 import { Notice } from './ui/Notice'
-import { UsageMetaLine, UsageStatCard, UsageChartHeader, UsageTotalsStrip, UsageCardNote } from './ui/UsageChrome'
+import { UsageMetaLine, UsageStatCard, UsageChartHeader, UsageTotalsStrip, UsageCardNote, UsageDayFilter, UsageBreakdownActions } from './ui/UsageChrome'
 import { calendarStartMs } from './ui/UsageCalendar'
 import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'
 
@@ -42,11 +42,6 @@ export type UsageSummaryMsg = Extract<ServerMsg, { type: 'usage_summary' }>
 const PROVIDER_COLOR: Record<UsageProvider, string> = {
   claude: 'var(--claude)',
   codex: 'color-mix(in srgb, var(--text-primary) 55%, transparent)'
-}
-
-const PROVIDER_MARK: Record<UsageProvider, string> = {
-  claude: '✳',
-  codex: '◎'
 }
 
 function UsageDailyChart({ metric, onMetricChange, hourly, points, series, labelFor }: {
@@ -100,49 +95,44 @@ function UsageBreakdown({
   mode,
   onModeChange,
   rows,
-  loading
+  loading,
+  selectedDay,
+  onClearDay,
+  retainedDay
 }: {
   mode: BreakdownMode
   onModeChange: (mode: BreakdownMode) => void
   rows: BreakdownRow[]
   loading: boolean
+  selectedDay: string | null
+  onClearDay: () => void
+  retainedDay?: UsageActivityDay
 }): React.JSX.Element {
   return (
     <UsageBreakdownSection>
       <UsageBreakdownHeading>
         <UsageSectionHeading>Breakdown</UsageSectionHeading>
-        <Segmented
-          aria-label="Breakdown grouping"
-          options={[
-            { value: 'model', label: 'Model' },
-            { value: 'day', label: 'Day' }
-          ]}
-          value={mode}
-          onChange={onModeChange}
-        />
+        <UsageBreakdownActions>
+          {selectedDay && <UsageDayFilter label={new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(`${selectedDay}T12:00:00`))} onClear={onClearDay} />}
+          <Segmented aria-label="Breakdown" size="xs" options={[{ value: 'model', label: 'By model' }, { value: 'day', label: 'By day' }]} value={mode} onChange={onModeChange} />
+        </UsageBreakdownActions>
       </UsageBreakdownHeading>
 
-      <UsageBreakdownFrame data-testid="usage-breakdown">
+      <Card shape="card" tone="block" data-material="inset" data-testid="usage-breakdown">
         <Table
-          variant="plain"
+          variant="inset"
           aria-label="Usage breakdown"
-          rows={rows.map((row, index) => ({ ...row, rank: index + 1 }))}
+          rows={rows}
           getRowId={(row) => row.id}
-          empty={{ heading: loading ? 'Reading transcripts…' : 'No activity in this window.', description: '' }}
+          empty={{ heading: retainedDay && mode === 'model' ? 'Model details no longer available for this day' : loading ? 'Reading transcripts…' : 'No activity in this window.', description: retainedDay ? `Daily total: ${formatUsd(retainedDay.cost_usd)}. The source transcripts are no longer on disk.` : '' }}
           columns={[
-            { key: 'rank', header: '#', width: 'var(--w-usage-rank)', tone: 'faint' },
-            { key: 'id', header: mode === 'model' ? 'Model' : 'Day', render: (id, row) => {
-              const mark = row.provider ? PROVIDER_MARK[row.provider] : null
-              return mode === 'model'
-                ? <UsageModelCell mark={mark} name={String(id)} share={row.share} color={row.provider ? PROVIDER_COLOR[row.provider] : 'var(--text-muted)'} />
-                : <span>{id}</span>
-            } },
-            { key: 'cost', header: 'Cost', width: 'var(--w-usage-cost)', numeric: true, weight: 'regular', render: (cost, row) => row.unpriced ? <Tooltip label="No published rate for this model"><span>not priced</span></Tooltip> : formatUsd(Number(cost)) },
-            { key: 'share', header: 'Share', width: 'var(--w-usage-share)', numeric: true, tone: 'muted', render: (share) => formatShare(Number(share)) },
-            { key: 'tokens', header: 'Tokens', width: 'var(--w-usage-tokens)', numeric: true, tone: 'muted', render: (tokens) => formatTokens(Number(tokens)) }
+            { key: 'id', header: mode === 'model' ? 'Model' : 'Day', render: (id, row) => mode === 'model' ? <UsageModelCell mark={row.provider ? <UsageAgentMark agent={row.provider} /> : null} name={String(id)} /> : <Text size="ui" tone="secondary">{String(id)}</Text> },
+            { key: 'tokens', header: 'Tokens', width: '80px', numeric: true, tone: 'muted', render: (tokens) => formatTokens(Number(tokens)) },
+            { key: 'cost', header: 'Cost', width: '100px', numeric: true, render: (cost, row) => row.unpriced ? <Tooltip label="No published rate for this model"><span>not priced</span></Tooltip> : formatUsd(Number(cost)) },
+            { key: 'share', header: 'Share', width: '160px', render: (share, row) => row.unpriced ? <Text size="small" tone="muted">—</Text> : <UsageShareCell share={Number(share)} color={row.provider ? PROVIDER_COLOR[row.provider] : 'var(--text-muted)'} /> }
           ]}
         />
-      </UsageBreakdownFrame>
+      </Card>
     </UsageBreakdownSection>
   )
 }
@@ -232,7 +222,9 @@ export function UsageSection({
   const displayProviders = providers
     .map((provider) => ({ ...provider, sessions: sessionsByProvider.get(provider.provider) ?? 0 }))
 
-  const rows = useMemo(() => breakdownRows(buckets, mode, timeZone), [buckets, mode, timeZone])
+  const selectedBuckets = useMemo(() => selectedDay ? buckets.filter((bucket) => makeDayKey(timeZone)(bucket.hour_start_ms) === selectedDay) : buckets, [buckets, selectedDay, timeZone])
+  const retainedDay = selectedDay && selectedBuckets.length === 0 ? activity.find((day) => day.day === selectedDay) : undefined
+  const rows = useMemo(() => breakdownRows(selectedBuckets, mode, timeZone), [selectedBuckets, mode, timeZone])
 
   const series: UsageSeries[] = providers
     .map((p) => ({ provider: p.provider, label: p.label, color: PROVIDER_COLOR[p.provider] }))
@@ -317,11 +309,11 @@ export function UsageSection({
 
         {}
         <Card shape="card" tone="block" padding="page" data-material="inset" data-testid="usage-calendar-section">
-          <UsageCalendar days={activity} metric="cost" selectedDay={selectedDay} caption="Pick a day to see its breakdown below. Days older than the transcripts on disk keep their daily total." onSelect={(day) => { setSelectedDay((current) => current === day ? null : day); setMode('day') }} />
+          <UsageCalendar days={activity} metric="cost" selectedDay={selectedDay} caption="Pick a day to see its breakdown below. Days older than the transcripts on disk keep their daily total." onSelect={(day) => setSelectedDay((current) => current === day ? null : day)} />
         </Card>
 
         {}
-        <UsageBreakdown mode={mode} onModeChange={setMode} rows={dayBreakdown(rows, selectedDay, activity)} loading={loading} />
+        <UsageBreakdown mode={mode} onModeChange={setMode} rows={mode === 'day' ? dayBreakdown(rows, selectedDay, activity) : rows} loading={loading} selectedDay={selectedDay} onClearDay={() => setSelectedDay(null)} retainedDay={retainedDay} />
           </>
         )}
 

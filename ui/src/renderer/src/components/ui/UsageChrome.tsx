@@ -2,6 +2,9 @@ import type { ReactNode } from 'react'
 import { PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
 import { Text } from './Text'
 import { Card } from './Card'
+import { Button } from './Button'
+import { Tooltip } from './Tooltip'
+import { IconClose } from '../icons'
 
 export function UsageToolbar({ children }: { children: ReactNode }): React.JSX.Element {
   return <div className="flex min-h-[var(--h-usage-toolbar)] flex-wrap items-center gap-[var(--space-2)] border-b border-[var(--divider)] px-[var(--space-3)] py-[var(--space-2)]" data-testid="usage-toolbar">{children}</div>
@@ -60,7 +63,7 @@ export function UsageBreakdownHeading({ children }: { children: ReactNode }): Re
 }
 
 export function UsageBreakdownSection({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="grid gap-[var(--space-2)] pt-[var(--space-5)]">{children}</div>
+  return <div className="grid gap-[var(--space-2)]">{children}</div>
 }
 
 export function UsageBreakdownFrame({ children, ...props }: { children: ReactNode; 'data-testid'?: string }): React.JSX.Element {
@@ -112,4 +115,14 @@ export function UsageStatsSpecimen(): React.JSX.Element {
 
 export function UsageCardNote({ children }: { children: ReactNode }): React.JSX.Element {
   return <Text as="div" size="small" leading="small" tone="muted" className="border-t border-[var(--divider)] px-[var(--space-4)] py-[var(--space-2-5)]">{children}</Text>
+}
+
+export function UsageDayFilter({ label, onClear }: { label: string; onClear: () => void }): React.JSX.Element {
+  return <span className="inline-flex items-center gap-[var(--space-1)] rounded-full border border-[var(--border)] pl-[var(--space-2)] pr-[var(--space-1)]">
+    <Text size="small" tone="secondary">{label}</Text><Tooltip label="Show the whole window"><Button variant="ghost-icon" size="sm" icon={IconClose} aria-label="Show the whole window" onClick={onClear} /></Tooltip>
+  </span>
+}
+
+export function UsageBreakdownActions({ children }: { children: ReactNode }): React.JSX.Element {
+  return <span className="flex items-center gap-[var(--space-2)]">{children}</span>
 }

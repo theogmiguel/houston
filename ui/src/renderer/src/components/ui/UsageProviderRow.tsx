@@ -30,3 +30,7 @@ export function UsageProviderRow({ mark, label, sessions, amount, note, color, s
     <UsageShareTrack share={share} color={color} label={`${label} share of cost`} />
   </div>
 }
+
+export function UsageShareCell({ share, color }: { share: number; color: string }): React.JSX.Element {
+  return <span className="flex items-center gap-[var(--space-2)]"><UsageShareTrack share={share} color={color} /><Text size="small" tone="muted" tabular className="w-[44px] flex-none text-right">{(share * 100).toFixed(1)}%</Text></span>
+}

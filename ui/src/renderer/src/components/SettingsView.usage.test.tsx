@@ -179,9 +179,41 @@ describe('Usage page', () => {
     const expectedDay = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(DAY0 + DAY))
     const day = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="usage-calendar-day"]')].find((button) => button.getAttribute('aria-label')?.startsWith(expectedDay))
     act(() => day?.click())
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'By day')?.click())
     const rows = [...host.querySelectorAll('[data-testid="usage-breakdown"] tbody tr')]
     expect(rows).toHaveLength(1)
     expect(rows[0].textContent).toContain(expectedDay)
+  })
+
+  it('keeps model grouping for a selected day and clears the day without losing grouping', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 2 * DAY)
+    render()
+    const key = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(DAY0 + DAY)
+    const day = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="usage-calendar-day"]')].find((button) => button.getAttribute('aria-label')?.startsWith(key))!
+    act(() => day.click())
+    expect([...host.querySelectorAll('[data-testid="usage-breakdown"] th')].find((cell) => ['Model', 'Day'].includes(cell.textContent ?? ''))?.textContent).toBe('Model')
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('gpt-5-codex')
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).not.toContain('claude-opus-5')
+    const clear = host.querySelector<HTMLButtonElement>('[aria-label="Show the whole window"]')
+    expect(clear).not.toBeNull()
+    act(() => clear?.click())
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('claude-opus-5')
+    expect(host.querySelector('[aria-label="Show the whole window"]')).toBeNull()
+  })
+
+  it('retained days show the daily total without placing a date in the Model column', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 2 * DAY)
+    const key = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(DAY0 - DAY)
+    render({ activity: [{ day: key, cost_usd: 42, totals: { uncached_input_tokens: 1000, cached_input_tokens: 0, cache_creation_tokens: 0, output_tokens: 0, reasoning_tokens: 0 } }] })
+    const day = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="usage-calendar-day"]')].find((button) => button.getAttribute('aria-label')?.startsWith(key))!
+    act(() => day.click())
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('Model details no longer available')
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('Daily total: $42.00')
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'By day')?.click())
+    expect(q('[data-testid="usage-breakdown"] tbody')?.textContent).toContain(key)
+    expect(q('[data-testid="usage-breakdown"] tbody')?.textContent).toContain('$42.00')
   })
 
   it('offers only Cost and Tokens, without a placeholder Limits option', () => {
