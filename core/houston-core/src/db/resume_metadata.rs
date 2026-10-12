@@ -50,6 +50,19 @@ impl Db {
         )?)
     }
 
+    pub fn root_hook_recovery_session_ids(&self) -> Result<Vec<u32>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT id FROM sessions WHERE state IN ('interrupted', 'exited')
+                AND agent IN ('claude', 'codex', 'zcode', 'shell') AND acp IS NULL
+                AND NOT EXISTS(SELECT 1 FROM routine_runs WHERE session_id = sessions.id)
+                AND NOT EXISTS(SELECT 1 FROM swarm_agents WHERE session_id = sessions.id)",
+        )?;
+        let ids = statement.query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<u32>, _>>()?;
+        Ok(ids)
+    }
+
     /// Commit only root conversation metadata. Recovery never applies lifecycle or input.
     pub fn record_root_hook_metadata(
         &self,
@@ -76,7 +89,7 @@ impl Db {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
         let row = tx.query_row(
-            "SELECT agent, detected_agent, cwd, state, created_at, acp, native_session_id,
+            "SELECT agent, detected_agent, cwd, state, acp, native_session_id,
                     transcript_path, resume_session_id, resume_agent, resume_cwd,
                     root_hook_ms, root_hook_seq, profile_config_dir,
                     EXISTS(SELECT 1 FROM routine_runs WHERE session_id = sessions.id),
@@ -84,22 +97,22 @@ impl Db {
              FROM sessions WHERE id = ?1",
             [drop.session],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?,
-                r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, u64>(4)?,
-                r.get::<_, Option<String>>(5)?, r.get::<_, Option<String>>(6)?,
-                r.get::<_, Option<String>>(7)?, r.get::<_, Option<String>>(8)?,
-                r.get::<_, Option<String>>(9)?, r.get::<_, Option<String>>(10)?,
-                r.get::<_, Option<u64>>(11)?, r.get::<_, Option<u32>>(12)?,
-                r.get::<_, Option<String>>(13)?, r.get::<_, bool>(14)?, r.get::<_, bool>(15)?)),
+                r.get::<_, String>(2)?, r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?, r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?, r.get::<_, Option<String>>(7)?,
+                r.get::<_, Option<String>>(8)?, r.get::<_, Option<String>>(9)?,
+                r.get::<_, Option<u64>>(10)?, r.get::<_, Option<u32>>(11)?,
+                r.get::<_, Option<String>>(12)?, r.get::<_, bool>(13)?, r.get::<_, bool>(14)?)),
         ).optional()?;
-        let Some((agent, detected, old_cwd, state, created, acp, old_conversation,
+        let Some((agent, detected, old_cwd, state, acp, old_conversation,
             old_transcript, old_handle, bound_agent, bound_cwd, last_ms, last_seq,
             old_profile, routine, swarm)) = row else { return Ok(None); };
         let slug = crate::agent_hooks::provider_slug(provider);
         let effective = if agent == "shell" { detected.as_deref() } else { Some(agent.as_str()) };
         if (agent != "shell" && agent != slug) || acp.is_some() || routine || swarm
-            || (recovery && state != "interrupted")
-            || (!recovery && !matches!(state.as_str(), "running" | "working" | "awaiting_input" | "awaiting_approval"))
-            || order.session != drop.session || order.ms < created.saturating_mul(1000)
+            || (recovery && !matches!(state.as_str(), "interrupted" | "exited"))
+            || (!recovery && !matches!(state.as_str(), "running" | "working" | "awaiting_input" | "awaiting_approval" | "exited"))
+            || order.session != drop.session
             || last_ms.is_some_and(|ms| order.ms < ms
                 || ((recovery || last_seq == Some(u32::MAX))
                     && (order.ms, order.seq) <= (ms, last_seq.unwrap_or(0))))

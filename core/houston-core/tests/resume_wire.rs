@@ -3278,6 +3278,122 @@ async fn a_subagent_hook_cannot_move_the_root_cwd_or_resume_binding() {
     daemon.close(pane.id).unwrap();
 }
 
+fn overflow_recovery_fixture(env: &Env, id: u32, ws: &Path) -> (String, PathBuf, Vec<PathBuf>) {
+    let prior = uuid::Uuid::new_v4().to_string();
+    let prior_path = transcript(env, &prior, b"{}\n");
+    seed_claude(env, id, ws, ws, Some((&prior, Some(&prior_path))));
+    let final_root = uuid::Uuid::new_v4().to_string();
+    let path = transcript(env, &final_root, b"{}\n");
+    let sampled = houston_core::hook_drop::now_ms() - 2 * houston_core::hook_drop::MAX_AGE_MS;
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    conn.execute("UPDATE sessions SET created_at = ?1 WHERE id = ?2", rusqlite::params![sampled / 1000 - 1, id]).unwrap();
+    let dir = houston_core::hook_drop::drop_dir(env.state.path());
+    let drop = HookDrop {
+        session: id, event: "Stop".into(), cwd: Some(ws.display().to_string()),
+        session_id: Some(final_root.clone()), transcript_path: Some(path), ..HookDrop::default()
+    };
+    let pending = houston_core::hook_drop::write_drop(&dir, &drop, sampled).unwrap();
+    let mut noise = Vec::new();
+    for seq in 2..=4097 {
+        let path = dir.join(format!("{sampled:013}-{seq:06}-s{id}.json"));
+        std::fs::write(&path, b"{}").unwrap();
+        noise.push(path);
+    }
+    (final_root, pending, noise)
+}
+
+#[tokio::test]
+async fn over_limit_recovery_keeps_daemon_available_and_resume_blocked_until_retry_succeeds() {
+    let env = setup().await;
+    let ws = project(&env, "recovery-limit");
+    let (conversation, pending, noise) = overflow_recovery_fixture(&env, 41, &ws);
+    clean_shutdown(&env);
+    let daemon = boot(&env);
+    let husk = daemon.list().into_iter().find(|info| info.id == 41).unwrap();
+    assert_eq!(husk.state, proto::SessionState::Interrupted);
+    assert_eq!(husk.restore_deferred, Some(proto::RestoreReason::SpawnFailed));
+    assert!(!husk.resumable);
+    assert!(husk.resume_notice.as_deref().unwrap().contains("4096"));
+    assert_eq!(daemon.recovery_summary().unwrap().respawned, 0);
+    assert_eq!(std::fs::read_dir(env.argv.path()).unwrap().count(), 0, "no fake CLI was launched");
+    let error = daemon.respawn(41, false, None, None, false).unwrap_err();
+    assert!(error.to_string().contains("metadata recovery remains incomplete"), "{error:#}");
+    assert!(pending.exists(), "ordinary seed drain must retain old metadata for retry");
+    for path in noise { std::fs::remove_file(path).unwrap(); }
+    let resumed = daemon.respawn(41, false, None, None, false).unwrap();
+    assert_eq!(resume_of(&argv_of(&env, resumed.id).await).as_deref(), Some(conversation.as_str()));
+    assert!(!pending.exists());
+    daemon.close(resumed.id).unwrap();
+}
+
+#[tokio::test]
+async fn blocked_metadata_recovery_still_allows_explicit_fresh_and_close() {
+    let env = setup().await;
+    let ws = project(&env, "recovery-explicit");
+    overflow_recovery_fixture(&env, 41, &ws);
+    seed_claude(&env, 42, &ws, &ws, None);
+    clean_shutdown(&env);
+    let daemon = boot(&env);
+    daemon.close(42).unwrap();
+    let fresh = daemon.respawn_with(41, false, None, None, false, houston_core::daemon::RespawnConversation::Fresh).unwrap();
+    assert_eq!(resume_of(&argv_of(&env, fresh.id).await), None);
+    assert_eq!(handle_in(&env, fresh.id), None);
+    daemon.close(fresh.id).unwrap();
+}
+
+#[tokio::test]
+async fn an_undrained_final_root_hook_is_recovered_after_natural_exit_without_auto_launch() {
+    let env = setup().await;
+    let ws = project(&env, "natural-exit");
+    seed_claude(&env, 41, &ws, &ws, None);
+    let db = Db::open(&env.db_path()).unwrap();
+    db.update_session_state(41, proto::SessionState::Exited, Some(0)).unwrap();
+    let conversation = uuid::Uuid::new_v4().to_string();
+    let path = transcript(&env, &conversation, b"{}\n");
+    let drop = HookDrop {
+        session: 41, event: "Stop".into(), session_id: Some(conversation.clone()),
+        transcript_path: Some(path.clone()), cwd: Some(ws.display().to_string()),
+        ..HookDrop::default()
+    };
+    let pending = houston_core::hook_drop::write_drop(&houston_core::hook_drop::drop_dir(env.state.path()), &drop, houston_core::hook_drop::now_ms()).unwrap();
+    clean_shutdown(&env);
+    let _daemon = boot(&env);
+    assert_eq!(handle_in(&env, 41), Some((conversation, Some(path))));
+    assert_eq!(db.session_resume_binding(41).unwrap(), Some(("claude".into(), ws.display().to_string())));
+    assert!(!pending.exists());
+    assert_eq!(std::fs::read_dir(env.argv.path()).unwrap().count(), 0);
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    let state: String = conn.query_row("SELECT state FROM sessions WHERE id = 41", [], |row| row.get(0)).unwrap();
+    assert_eq!(state, "exited", "metadata recovery must not replay lifecycle");
+}
+
+#[tokio::test]
+async fn a_mismatched_provider_hook_cannot_change_the_validated_profile_namespace() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "profile-root");
+    let trusted = project(&env, "trusted-profile");
+    let other = project(&env, "other-provider-profile");
+    let proto::ServerMsg::AgentProfileState { profiles, .. } = daemon.agent_profile_upsert(
+        None, proto::AgentKind::Claude, "trusted", trusted.to_str().unwrap(),
+    ).unwrap() else { panic!("profile upsert must return state"); };
+    let profile = profiles.iter().find(|profile| profile.agent == proto::AgentKind::Claude && profile.name == "trusted").unwrap().id;
+    let pane = claude_pane(&daemon, &ws, Some(profile));
+    assert_eq!(config_dir_of(&argv_of(&env, pane.id).await), trusted.display().to_string());
+    let db = Db::open(&env.db_path()).unwrap();
+    let drop = HookDrop {
+        session: pane.id, agent: Some("codex".into()), event: "UserPromptSubmit".into(),
+        session_id: Some(uuid::Uuid::new_v4().to_string()), cwd: Some(ws.display().to_string()),
+        resume_evidence: Some(houston_core::hook_drop::ResumeHookEvidence {
+            source: None, profile_dir: Some(other.display().to_string()),
+        }), ..HookDrop::default()
+    };
+    houston_core::hook_drop::write_drop(&houston_core::hook_drop::drop_dir(env.state.path()), &drop, houston_core::hook_drop::now_ms()).unwrap();
+    assert_eq!(daemon.hook_drop_tick_for_test(), 1);
+    assert_eq!(db.session_profile_config_dir(pane.id).unwrap().as_deref(), trusted.to_str());
+    daemon.close(pane.id).unwrap();
+}
+
 #[tokio::test]
 async fn an_incompatible_shell_handle_is_never_rebound_during_fresh_restore() {
     for resume_enabled in [false, true] {

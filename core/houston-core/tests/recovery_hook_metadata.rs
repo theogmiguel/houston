@@ -169,3 +169,42 @@ fn a_bounded_recovery_scan_refuses_partial_application() {
     assert_eq!(out.applied, 0);
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 4097);
 }
+
+#[test]
+fn an_early_native_hook_is_not_rejected_by_the_later_row_creation_timestamp() {
+    let fixture = Fixture::new("claude", None);
+    let conn = rusqlite::Connection::open(fixture.state.path().join("test.db")).unwrap();
+    // A process starts and writes its hook while its startup transaction is delayed.
+    conn.execute("UPDATE sessions SET created_at = ?1 WHERE id = 7", [fixture.now / 1000 + 2]).unwrap();
+    let update = fixture.db.record_root_hook_metadata(&fixture.drop("UserPromptSubmit", "early-root"), AgentKind::Claude, fixture.order(1), false).unwrap();
+    assert!(update.is_some());
+    assert_eq!(fixture.db.session_resume_handle(7).unwrap().unwrap().0, "early-root");
+}
+
+#[test]
+fn a_natural_exit_accepts_final_root_metadata_but_kill_and_close_do_not() {
+    let fixture = Fixture::new("claude", None);
+    fixture.db.update_session_state(7, houston_protocol::SessionState::Exited, Some(0)).unwrap();
+    assert!(fixture.db.record_root_hook_metadata(&fixture.drop("Stop", "final-root"), AgentKind::Claude, fixture.order(1), false).unwrap().is_some());
+    assert_eq!(fixture.db.session_resume_handle(7).unwrap().unwrap().0, "final-root");
+    assert!(fixture.db.root_hook_recovery_session_ids().unwrap().contains(&7));
+    fixture.db.update_session_state(7, houston_protocol::SessionState::Killed, None).unwrap();
+    assert!(!fixture.db.root_hook_recovery_session_ids().unwrap().contains(&7));
+    assert!(fixture.db.record_root_hook_metadata(&fixture.drop("Stop", "must-not-return"), AgentKind::Claude, fixture.order(2), true).unwrap().is_none());
+    fixture.db.mark_closed(7).unwrap();
+    assert!(!fixture.db.root_hook_recovery_session_ids().unwrap().contains(&7));
+}
+
+#[test]
+fn blocked_recovery_metadata_survives_the_ordinary_seed_age_limit() {
+    let fixture = Fixture::new("claude", None);
+    let sampled = fixture.now - 2 * hook_drop::MAX_AGE_MS;
+    let dir = hook_drop::drop_dir(fixture.state.path());
+    let path = hook_drop::write_drop(&dir, &fixture.drop("Stop", "final-root"), sampled).unwrap();
+    let mut state = hook_drop::DropDirState::new();
+    state.protect_sessions([7]);
+    let out = hook_drop::run_pass(&dir, &mut state, fixture.now, hook_drop::Pass::Seed, |_| panic!("blocked metadata applied as lifecycle"));
+    assert_eq!(out.collected, 0);
+    assert_eq!(out.kept, 1);
+    assert!(path.exists());
+}

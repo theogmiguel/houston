@@ -408,11 +408,15 @@ pub enum DropVerdict {
 pub struct DropDirState {
     warned: HashSet<OsString>,
     applied: HashSet<OsString>,
+    protected_sessions: HashSet<u32>,
 }
 
 impl DropDirState {
     pub fn new() -> Self {
         Self::default()
+    }
+    pub fn protect_sessions(&mut self, sessions: impl IntoIterator<Item = u32>) {
+        self.protected_sessions = sessions.into_iter().collect();
     }
     pub fn warned_len(&self) -> usize {
         self.warned.len()
@@ -549,6 +553,10 @@ pub fn run_pass_with_name_io(
     files.sort_by_key(|(n, _, _)| (n.ms, n.seq, n.session));
 
     for (parsed, path, name) in files {
+        if pass != Pass::RecoveryMetadata && state.protected_sessions.contains(&parsed.session) {
+            out.kept += 1;
+            continue;
+        }
         if pass != Pass::RecoveryMetadata && now_ms.saturating_sub(parsed.ms) > MAX_AGE_MS {
             state.applied.remove(&name);
             match remove(&path) {

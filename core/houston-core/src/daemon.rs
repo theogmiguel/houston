@@ -1727,6 +1727,7 @@ pub struct Daemon {
     hook_state_lock: Mutex<()>,
     hook_drop_states: Mutex<HashMap<PathBuf, crate::hook_drop::DropDirState>>,
     dirty_shell_cwds: Mutex<HashMap<u32, (String, u64)>>,
+    recovery_metadata_blocked: Mutex<HashMap<u32, String>>,
     hook_drop_watch: Arc<crate::fs_watch::MailWatchState>,
     _hook_drop_watcher: Mutex<Option<notify::RecommendedWatcher>>,
     port: Mutex<Option<u16>>,
@@ -3498,6 +3499,7 @@ impl Daemon {
             port: Mutex::new(bound_port),
             hook_drop_states: Mutex::new(HashMap::new()),
             dirty_shell_cwds: Mutex::new(HashMap::new()),
+            recovery_metadata_blocked: Mutex::new(HashMap::new()),
             hook_drop_watch: crate::fs_watch::MailWatchState::new(swarm_mail_wake),
             _hook_drop_watcher: Mutex::new(None),
             update_state: Mutex::new(proto::UpdateState::Unknown),
@@ -3518,7 +3520,9 @@ impl Daemon {
         if adopted.is_none() {
             daemon.close_delegations_lost_to_the_restart();
             daemon.reconcile_task_runs();
-            daemon.recover_root_hook_metadata()?;
+            if let Err(error) = daemon.recover_root_hook_metadata() {
+                daemon.defer_metadata_recovery(&error);
+            }
             daemon.run_restore_policy(startup_cause);
             let live_sessions: Vec<u32> = daemon
                 .sessions
@@ -3576,9 +3580,7 @@ impl Daemon {
     }
 
     fn recover_root_hook_metadata(&self) -> Result<()> {
-        let candidates: HashSet<u32> = self.dead.lock().expect("dead lock").values()
-            .filter(|info| info.state == proto::SessionState::Interrupted)
-            .map(|info| info.id).collect();
+        let candidates: HashSet<u32> = self.db.root_hook_recovery_session_ids()?.into_iter().collect();
         if candidates.is_empty() { return Ok(()); }
         for dir in self.hook_drop_dirs() {
             let mut failure = None;
@@ -3610,6 +3612,41 @@ impl Daemon {
         for info in self.db.list_interrupted()? {
             if dead.contains_key(&info.id) { dead.insert(info.id, info); }
         }
+        Ok(())
+    }
+
+    fn defer_metadata_recovery(&self, error: &anyhow::Error) {
+        let reason = format!("Conversation metadata recovery is incomplete: {error:#}. Resume is blocked; retry after fixing recovery, or choose Fresh or Close.");
+        tracing::warn!("{reason}");
+        let ids = self.db.root_hook_recovery_session_ids().unwrap_or_else(|_| {
+            self.dead.lock().expect("dead lock").values()
+                .filter(|info| matches!(info.state, proto::SessionState::Interrupted | proto::SessionState::Exited))
+                .map(|info| info.id).collect()
+        });
+        let ids: HashSet<u32> = ids.into_iter().collect();
+        {
+            let mut blocked = self.recovery_metadata_blocked.lock().expect("recovery metadata lock");
+            for id in &ids { blocked.insert(*id, reason.clone()); }
+        }
+        let mut dead = self.dead.lock().expect("dead lock");
+        for info in dead.values_mut().filter(|info| ids.contains(&info.id)) {
+            info.restore_deferred = Some(proto::RestoreReason::SpawnFailed);
+            info.resume_notice = Some(reason.clone());
+            info.resumable = false;
+        }
+    }
+
+    fn recover_metadata_for_resume(&self, id: u32, conversation: &RespawnConversation) -> Result<()> {
+        if *conversation == RespawnConversation::Fresh
+            || !self.recovery_metadata_blocked.lock().expect("recovery metadata lock").contains_key(&id)
+        {
+            return Ok(());
+        }
+        if let Err(error) = self.recover_root_hook_metadata() {
+            self.defer_metadata_recovery(&error);
+            bail!("Resume refused for session {id}: conversation metadata recovery remains incomplete: {error:#}. Choose Fresh or Close explicitly.");
+        }
+        self.recovery_metadata_blocked.lock().expect("recovery metadata lock").clear();
         Ok(())
     }
 
@@ -3661,6 +3698,8 @@ impl Daemon {
             tracing::info!("boot restore: deferred all {total} husk(s) (safe mode)");
             return;
         }
+
+        candidates.retain(|candidate| !self.recovery_metadata_blocked.lock().expect("recovery metadata lock").contains_key(&candidate.id));
 
         candidates.retain(|c| {
             if c.agent == proto::AgentKind::Ssh {
@@ -8556,7 +8595,8 @@ impl Daemon {
                         hold,
                     )
                 });
-                info.resumable = self.db.session_has_bound_resume_handle(info.id).unwrap_or(false);
+                info.resumable = !self.recovery_metadata_blocked.lock().expect("recovery metadata lock").contains_key(&info.id)
+                    && self.db.session_has_bound_resume_handle(info.id).unwrap_or(false);
                 info.compactions = self.compactions_of(info);
                 info.inbox_unread = self.db.inbox_pending_count(info.id).unwrap_or_else(|e| {
                     tracing::warn!("reading inbox_unread for session {}: {e}", info.id);
@@ -9190,6 +9230,7 @@ impl Daemon {
             force,
             conversation.clone(),
         )?;
+        self.recovery_metadata_blocked.lock().expect("recovery metadata lock").remove(&old_id);
         let mut notices = Vec::new();
         let mut count = 0;
         let parent_conversation_resumed = conversation != RespawnConversation::Fresh
@@ -9275,6 +9316,7 @@ impl Daemon {
         force: bool,
         conversation: RespawnConversation,
     ) -> Result<proto::SessionInfo> {
+        self.recover_metadata_for_resume(old_id, &conversation)?;
         self.ensure_not_closing(old_id, "respawn")?;
         if self.dead.lock().expect("dead lock").contains_key(&old_id) {
             self.db.check_previous_process_stopped(old_id)?;
@@ -10051,9 +10093,6 @@ impl Daemon {
                 .profile_dir
                 .as_deref()
                 .filter(|value| value.len() <= 4096);
-            if let Err(e) = self.db.set_session_profile_config_dir(id, profile_dir) {
-                tracing::warn!("recording effective profile for session {id}: {e:#}");
-            }
             let label = profile_dir
                 .filter(|directory| {
                     Path::new(directory).is_absolute() && Path::new(directory).is_dir()
@@ -10068,8 +10107,12 @@ impl Daemon {
                         })
                         .map(|profile| profile.name)
                 });
-            if let Err(e) = self.db.set_session_profile_label(id, label.as_deref()) {
-                tracing::warn!("recording effective profile label for session {id}: {e:#}");
+            // An existing selected name remains the launch intent when its
+            // definition changes while the old CLI finishes in its old directory.
+            if let Some(label) = label {
+                if let Err(e) = self.db.set_session_profile_label(id, Some(&label)) {
+                    tracing::warn!("recording effective profile label for session {id}: {e:#}");
+                }
             }
         }
     }
@@ -13436,6 +13479,7 @@ impl Daemon {
         // Keep the pane available for a retry if storage refuses the close.
         // A late waiter cannot overwrite this durable state (update_session_state guards it).
         self.db.mark_closed(id)?;
+        self.recovery_metadata_blocked.lock().expect("recovery metadata lock").remove(&id);
         self.escalate_child_inputs_locked(id, proto::ChildInputEscalationReason::ParentUnavailable);
         self.operator_ended
             .lock()
@@ -14607,6 +14651,7 @@ impl Daemon {
                                 });
                             }
                             self.mark_detected(d.session, &session, provider);
+                            self.note_resume_profile(d.session, &session, provider, d);
                         }
                         Ok(None) => {
                             match self.db.root_hook_is_newer(d.session, order) {
@@ -14637,7 +14682,6 @@ impl Daemon {
             } else {
                 self.mark_running(d.session, &session, provider);
             }
-            self.note_resume_profile(d.session, &session, provider, d);
             let restore = self.confirm_shell_resume(d.session, provider, d);
             if let Some(reservation) = restore {
                 drop(lifecycle.take());
@@ -15926,6 +15970,7 @@ impl Daemon {
         let (mut applied, mut all_listed) = (0usize, true);
         for dir in &dirs {
             let state = states.entry(dir.clone()).or_default();
+            state.protect_sessions(self.recovery_metadata_blocked.lock().expect("recovery metadata lock").keys().copied());
             let out = crate::hook_drop::run_pass_with_name_io(
                 dir,
                 state,
