@@ -1,3 +1,4 @@
+import { SettingsScreen } from './settingsStories'
 import React from 'react'
 import { HooksSurface } from '../src/components/nav/HooksSurface'
 import { McpSurface } from '../src/components/nav/McpSurface'
@@ -231,7 +232,7 @@ function OpenSkillStory({ children }: { children: React.ReactNode }): React.JSX.
   return <div ref={ref} style={{ display: 'flex', flex: 1, minWidth: 0 }}>{children}</div>
 }
 
-export function NavSkills(): React.JSX.Element {
+export function NavSkills({ inSettings = false }: { inSettings?: boolean } = {}): React.JSX.Element {
   installSkillFixture()
   const client = React.useMemo(() => {
     const handlers = new Map<string, (message: unknown) => void>()
@@ -263,10 +264,10 @@ export function NavSkills(): React.JSX.Element {
       }
     } as unknown as HoustonClient
   }, [])
-  return (
-    <Frame active="Skills">
+  const content = (
       <OpenSkillStory>
         <SkillsSurface
+          embedded={inSettings}
           tools={[
             skillColumn('claude', ['tdd', 'ui-tokens']),
             skillColumn('codex', ['ui-tokens']),
@@ -287,8 +288,8 @@ export function NavSkills(): React.JSX.Element {
           onAutoPushSet={noop}
         />
       </OpenSkillStory>
-    </Frame>
   )
+  return inSettings ? <SettingsScreen section="agents-skills" props={{ agentPages: { 'agents-skills': content } }} /> : <Frame active="Skills">{content}</Frame>
 }
 
 function mcpServer(name: string, fingerprint: string, o: Partial<McpServer> = {}): McpServer {
@@ -312,10 +313,10 @@ function mcpColumn(tool: McpToolState['tool'], servers: McpServer[], detected = 
   return { tool, path: `/home/dev/.${tool}/config.json`, detected, servers, error: null }
 }
 
-export function NavMcp({ slackClient = null, results = [] }: { slackClient?: HoustonClient | null; results?: McpSyncResult[] } = {}): React.JSX.Element {
-  return (
-    <Frame active="Connections">
+export function NavMcp({ slackClient = null, results = [], inSettings = false }: { slackClient?: HoustonClient | null; results?: McpSyncResult[]; inSettings?: boolean } = {}): React.JSX.Element {
+  const content = (
       <McpSurface
+        embedded={inSettings}
         source={[mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]}
         tools={[
           mcpColumn('claude', [mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]),
@@ -336,8 +337,8 @@ export function NavMcp({ slackClient = null, results = [] }: { slackClient?: Hou
         onOpenSource={noop}
         slackClient={slackClient}
       />
-    </Frame>
   )
+  return inSettings ? <SettingsScreen section="agents-mcp" props={{ agentPages: { 'agents-mcp': content } }} /> : <Frame active="Connections">{content}</Frame>
 }
 
 export function NavMcpDetail(): React.JSX.Element {
@@ -461,7 +462,7 @@ function harnessFinding(overrides: Partial<HarnessFinding>): HarnessFinding {
   }
 }
 
-export function HarnessPageStory({ firstRun = false, noReviews = false }: { firstRun?: boolean; noReviews?: boolean }): React.JSX.Element {
+export function HarnessPageStory({ firstRun = false, noReviews = false, inSettings = false }: { firstRun?: boolean; noReviews?: boolean; inSettings?: boolean }): React.JSX.Element {
   const latest = harnessReview(13, 38, 7)
   const reviews = [latest, harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12))]
   const findings = [
@@ -512,6 +513,38 @@ export function HarnessPageStory({ firstRun = false, noReviews = false }: { firs
   }
   const shown: HarnessState = firstRun || noReviews ? { ...state, routine: firstRun ? null : state.routine, reviews: [], findings: [], providerCoverage: [] } : state
 
+  if (inSettings) return <SettingsScreen section="agents-review" props={{ agentPages: { 'agents-review': (<HarnessSurface embedded onOpenRoutines={noop}
+        workspaces={[{ id: HARNESS_WS, name: 'auth-refactor' }]}
+        workspace={HARNESS_WS}
+        onWorkspace={noop}
+        state={shown}
+        report={null}
+        running={false}
+        error={null}
+        onCreateRoutine={noop}
+        onRunNow={noop}
+        onDecide={noop}
+        attention={firstRun || noReviews ? null : {
+          workspace: HARNESS_WS,
+          open: 1,
+          fixing: 2,
+          awaiting_verification: 1,
+          not_seen: 1,
+          resolved: 1,
+          dismissed: 1,
+          latest_published_review_id: 13,
+          seen_review_id: 12,
+          attention: 4
+        }}
+        onSeen={noop}
+        onCreateTask={noop}
+        onLoadReport={noop}
+        onOpenFile={noop}
+        onReveal={noop}
+        trendValues={[41, 33, 25, 18]}
+        trendReviewCount={4}
+        historyDeltaOverrides={{ 12: { new: 2, gone: 1 } }}
+        />) } }} />
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', minWidth: 0 }}>
       <div style={{ display: 'flex', width: 'calc(100% - 16px)', height: 'calc(100% - 8px)', margin: '0 8px 8px', border: '1px solid var(--divider)', borderRadius: 10, overflow: 'hidden' }}>

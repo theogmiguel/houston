@@ -38,7 +38,7 @@ afterEach(cleanup)
 describe('Connections matrix', () => {
   it('shows managed CLI columns and explains providers not managed here', () => {
     render(<McpManager {...props()} />)
-    expect(screen.getByRole('heading', { name: 'Connections' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'MCP servers' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Claude Code' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Codex' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'OpenCode' })).toBeTruthy()
@@ -67,9 +67,10 @@ describe('Connections matrix', () => {
       tools: [tool('claude'), tool('codex', []), tool('opencode', []), tool('cursor', [])],
       checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]]
     })} />)
-    expect(screen.getByTestId('mcp-cell-claude-github').textContent).toContain('Failed')
+    expect(screen.getByTestId('mcp-cell-claude-github').textContent).toContain('In sync')
+    expect(screen.getByText(/Houston can't start github/)).toBeTruthy()
     expect(screen.getByTestId('mcp-cell-codex-github').textContent).toBe('Off')
-    expect(screen.getByText('npx').tagName).toBe('CODE')
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy()
   })
 
   it('puts a bordered row action beside the overflow menu', () => {
@@ -96,4 +97,15 @@ describe('Connections matrix', () => {
     expect(document.body.textContent).toContain('Not managed here: ZCode, Grok, Antigravity.')
     expect(document.body.textContent).not.toContain('Click a cell')
   })
+})
+
+it('reports failed tests at server level and retries without duplicating the failure in agent cells', () => {
+  const onTest = vi.fn()
+  render(<McpManager {...props({ embedded: true, onTest, checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]] })} />)
+  expect(screen.getAllByText(/Houston can't start github/)).toHaveLength(1)
+  expect(screen.queryByText('Failed')).toBeNull()
+  expect(screen.queryByText('Slack')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+  expect(onTest).toHaveBeenCalledWith('github')
+  expect(document.querySelectorAll('main')).toHaveLength(0)
 })

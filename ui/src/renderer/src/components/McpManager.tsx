@@ -16,11 +16,12 @@ import type { HoustonClient } from '../houston/client'
 import type { McpTransport } from '../houston/generated/McpTransport'
 import { buildRows, cellFor, maskSecret, type MatrixRow } from '../houston/mcpRows'
 import { Icon } from './ui/Icon'
-import { Button, Caption, Card, ConnectionCell, Drawer, PageFrame, PageHeader, Table, Text, TextInput, FieldLabel, Chip, ChoiceGroup, ConfigurationDetail, ResultList, ResultRow, Footnote, type TableColumn } from './ui'
+import { Button, Caption, Card, ConnectionCell, Drawer, PageHeader, Notice, Table, Text, TextInput, FieldLabel, Chip, ChoiceGroup, ConfigurationDetail, ResultList, ResultRow, Footnote, type TableColumn } from './ui'
 import { Switch } from './ui/Switch'
 import { ActionMenu } from './ui/ActionMenu'
 import { TASK_AGENTS } from './tasks/format'
 import { ConnectionsIntegrations } from './ConnectionsIntegrations'
+import { AgentSettingsBody } from './ui/AgentSettingsBody'
 
 const TOOL_LABEL: Partial<Record<AgentKind, string>> = {
   claude: 'Claude Code',
@@ -57,9 +58,8 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
   const cell = (row: MatrixRow, tool: AgentKind): React.ReactNode => {
     const toolState = props.tools.find((item) => item.tool === tool)
     const syncResult = props.results.find((result) => result.tool === tool)
-    const check = checkFor(row.name, props.checks)
     const current = cellFor(row, tool)
-    const reason = (current.kind !== 'absent' && check.state === 'failed' ? check.message : undefined) ?? toolState?.error ?? syncResult?.error ?? undefined
+    const reason = toolState?.error ?? syncResult?.error ?? undefined
     const status = reason
       ? 'Failed'
       : current.kind === 'drifted' && row.source && row.byTool[tool]?.fingerprint !== row.source.fingerprint
@@ -89,16 +89,20 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
   const unmanaged = TASK_AGENTS.filter((agent) => !DESTINATIONS.includes(agent)).reverse().map(label).join(', ')
 
   if (!props.loaded) {
-    return <PageFrame width="wide" className="flex-1 min-w-0" data-testid="mcp-manager"><PageHeader heading="Connections" description="MCP servers your agents can use. Houston writes them into each agent's own config." /><p role="status">Opening servers…</p><ConnectionsIntegrations client={props.slackClient ?? null} /></PageFrame>
+    return <AgentSettingsBody embedded={props.embedded} data-testid="mcp-manager"><PageHeader heading="MCP servers" description="MCP servers your agents can use. Houston writes them into each agent's own config." /><p role="status">Opening servers…</p>{!props.embedded && props.slackClient && <ConnectionsIntegrations client={props.slackClient} />}</AgentSettingsBody>
   }
 
   return (
-    <PageFrame width="wide" className="flex-1 min-w-0" data-testid="mcp-manager">
+    <AgentSettingsBody embedded={props.embedded} data-testid="mcp-manager">
       <PageHeader
-        heading="Connections"
+        heading="MCP servers"
         description="MCP servers your agents can use. Houston writes them into each agent's own config."
         actions={<Button variant="primary" icon={IconPlus} onClick={() => setForm({ previousName: null })}>Add server</Button>}
       />
+      {listed.map((row) => {
+        const check = checkFor(row.name, props.checks)
+        return check.state === 'failed' ? <Notice key={row.name} tone="danger" action={{ label: 'Check again', onClick: () => props.onTest(row.name) }}>Houston can&apos;t start {row.name}: {check.message}</Notice> : null
+      })}
       <Table
         aria-label="MCP server connections"
         variant="card"
@@ -126,7 +130,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
         {DESTINATIONS.filter((tool) => selectedDiff.byTool[tool] && selectedDiff.byTool[tool]!.fingerprint !== selectedDiff.source!.fingerprint).map((tool) => <DetailCard key={tool} title={label(tool)} server={selectedDiff.byTool[tool]!} />)}
       </Card></section>}
       <Caption tone="faint">Not managed here: {unmanaged}.{listed.length > 0 ? ' Click a cell to turn a server on or off for that agent.' : ''}</Caption>
-      <ConnectionsIntegrations client={props.slackClient ?? null} />
+      {!props.embedded && props.slackClient && <ConnectionsIntegrations client={props.slackClient} />}
       <Drawer open={form !== null} heading={form?.previousName ? `Edit ${form.previousName}` : 'Add server'} onClose={() => setForm(null)}>
         {form && <McpServerForm
           previousName={form.previousName}
@@ -138,7 +142,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
         />}
       </Drawer>
       {confirmRemove && <ConfirmModal title="REMOVE SERVER" message={`Remove ${confirmRemove} from your list and every tool it was applied to?`} confirmLabel="Remove" onCancel={() => setConfirmRemove(null)} onConfirm={() => { props.onRemoveServer(confirmRemove); props.onSync(null); setConfirmRemove(null) }} />}
-    </PageFrame>
+    </AgentSettingsBody>
   )
 }
 
@@ -573,6 +577,7 @@ function McpServerForm({
 }
 
 export interface McpManagerProps {
+  embedded?: boolean
   source: McpServer[]
   tools: McpToolState[]
   results: McpSyncResult[]

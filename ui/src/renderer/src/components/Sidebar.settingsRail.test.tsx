@@ -98,7 +98,8 @@ describe('Sidebar rail — Settings mode state matrix', () => {
 
   it('D2: no "SETTINGS" header renders above the first group, and the filter is visible without any hover or click', () => {
     render()
-    expect(container.textContent).not.toContain('Settings')
+    expect(container.querySelector('[aria-label="Settings sections"]')?.textContent).not.toContain('Settings')
+    expect(container.querySelector('[data-testid="rail-settings"]')?.textContent).toContain('Settings')
     const input = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement | null
     expect(input).not.toBeNull()
     expect(container.querySelector('[data-testid="tree-filter-toggle"]')).toBeNull()
@@ -182,19 +183,22 @@ describe('Sidebar rail — Settings mode state matrix', () => {
       container.querySelectorAll('[data-testid="settings-section-row"]')
     ).map((r) => r.getAttribute('data-section-id'))
     expect(ids).toEqual([
+      'agents-overview',
+      'agents-clis',
+      'agents-skills',
+      'agents-mcp',
+      'agents-review',
       'appearance',
-      'mascot',
       'terminal',
       'shortcuts',
-      'agents',
       'notifications',
       'workspaces',
       'orchestration',
       'tasks',
       'dictation',
+      'remote',
       'privacy',
       'daemon',
-      'remote',
       'about'
     ])
   })

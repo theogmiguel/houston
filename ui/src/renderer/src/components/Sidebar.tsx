@@ -1,3 +1,4 @@
+import { SettingsFooterItem } from './ui/SettingsFooterItem'
 import type { AgentAttention } from '../useAgentAttention'
 import { HintKey } from './ui/ShortcutHint'
 import { SettingsNavigationGroup } from './ui/NavigationRailFooter'
@@ -46,7 +47,6 @@ import {
   IconEyeOff,
   IconFolder,
   IconFolderPlus,
-  IconGear,
   IconGitFork,
   IconGitPullRequest,
   IconGrid,
@@ -1688,32 +1688,26 @@ function SettingsTree({
           }}
         />
       <SettingsNavigation>
-        {query ? rowHits.length > 0 ? rowHits.map(({ section: s, title }) => {
-          const Icon = SETTINGS_ICON_MAP[s.icon] ?? IconInfo;
-          return (
-            <SettingsRailRow
-              key={`${s.id}:${title}`}
-              kind="search"
-              icon={Icon}
-              label={title}
-              subtitle={s.label}
-              sectionId={s.id}
-              rowTitle={title}
-              onClick={() => {
-                requestSettingsRowJump(s.id, title)
-                setSettingsSection(s.id)
-                setTreeFilter(null)
-              }}
-            />
-          )
-        }) : sections.length ? sections.map((section) => <SettingsRailRow key={section.id} kind="search" icon={SETTINGS_ICON_MAP[section.icon] ?? IconInfo} label={section.label} subtitle={section.group === 'agents' ? 'Agents' : 'Settings'} sectionId={section.id} onClick={() => { setSettingsSection(section.id); setTreeFilter(null); }} />) : <EmptyListMessage kind="settings">No settings match your search.</EmptyListMessage> : (['agents', 'app', 'work', 'devices', 'system'] as const).map((group) => <SettingsNavigationGroup key={group} label={group === 'agents' ? 'Agents' : group[0].toUpperCase() + group.slice(1)}>{sections.filter((s) => s.group === group).map((s) => {
-          const Icon = SETTINGS_ICON_MAP[s.icon] ?? IconInfo;
-          const count = s.id === 'agents-overview' ? attention?.total ?? 0 : s.group === 'agents' ? attention?.counts[s.id as keyof AgentAttention['counts']] ?? 0 : 0;
-          return <SettingsRailRow key={s.id} kind="section" icon={Icon} label={s.label} selected={activeSettingsSection === s.id} sectionId={s.id} trailing={count > 0 ? <Count value={count} from={s.id === 'agents-mcp' ? 'stop' : 'warn'} /> : undefined} onClick={() => setSettingsSection(s.id)} />;
-        })}</SettingsNavigationGroup>)}
+        {query ? <SettingsTreeSearch rows={rowHits} sections={sections} onDone={() => setTreeFilter(null)} /> : <SettingsTreeGroups sections={sections} active={activeSettingsSection} attention={attention} />}
+
       </SettingsNavigation>
     </div>
   );
+}
+
+function SettingsTreeSearch({ rows, sections, onDone }: { rows: ReturnType<typeof searchSettingsRows>; sections: readonly SettingsSectionDef[]; onDone: () => void }): React.JSX.Element {
+  if (rows.length) return <>{rows.map(({ section, title }) => <SettingsRailRow key={`${section.id}:${title}`} kind="search" icon={SETTINGS_ICON_MAP[section.icon] ?? IconInfo} label={title} subtitle={section.label} sectionId={section.id} rowTitle={title} onClick={() => { requestSettingsRowJump(section.id, title); setSettingsSection(section.id); onDone(); }} />)}</>;
+  if (sections.length) return <>{sections.map((section) => <SettingsRailRow key={section.id} kind="search" icon={SETTINGS_ICON_MAP[section.icon] ?? IconInfo} label={section.label} subtitle={section.group === 'agents' ? 'Agents' : 'Settings'} sectionId={section.id} onClick={() => { setSettingsSection(section.id); onDone(); }} />)}</>;
+  return <EmptyListMessage kind="settings">No settings match your search.</EmptyListMessage>;
+}
+
+function SettingsTreeGroups({ sections, active, attention }: { sections: readonly SettingsSectionDef[]; active: string; attention?: AgentAttention }): React.JSX.Element {
+  return <>{(['agents', 'app', 'work', 'devices', 'system'] as const).map((group) => <SettingsNavigationGroup key={group} label={group === 'agents' ? 'Agents' : group[0].toUpperCase() + group.slice(1)}>{sections.filter((section) => section.group === group).map((section) => <SettingsTreeSection key={section.id} section={section} active={active} attention={attention} />)}</SettingsNavigationGroup>)}</>;
+}
+
+function SettingsTreeSection({ section, active, attention }: { section: SettingsSectionDef; active: string; attention?: AgentAttention }): React.JSX.Element {
+  const count = section.id === 'agents-overview' ? attention?.total ?? 0 : attention?.counts[section.id as keyof AgentAttention['counts']] ?? 0;
+  return <SettingsRailRow kind="section" icon={SETTINGS_ICON_MAP[section.icon] ?? IconInfo} label={section.label} selected={active === section.id} sectionId={section.id} trailing={count > 0 ? <Count value={count} from={section.id === 'agents-mcp' ? 'stop' : 'warn'} /> : undefined} onClick={() => setSettingsSection(section.id)} />;
 }
 
 function AddWorkspaceMenu({ onAddWorkspace, onSshConnect }: {
@@ -3008,7 +3002,7 @@ export function Sidebar({
 
       <MascotMount existingUser={workspaces.length > 0} firstRun={mascotFirstRun} workspacesEmpty={mascotWorkspacesEmpty} />
       <NavigationRailFooter>
-        <NavigationRailItem icon={IconGear} label="Settings" aria-label="Settings" data-testid="rail-settings" selected={false} onClick={onOpenSettings} trailing={<span className="flex items-center gap-[var(--space-1)]">{(agentAttention?.total ?? 0) > 0 && <span aria-label={`${agentAttention!.total} agent settings need you`}><Count value={agentAttention!.total} from="warn" /></span>}<HintKey size="compact">Ctrl ,</HintKey></span>} />
+        <SettingsFooterItem attention={agentAttention?.total} onClick={onOpenSettings} />
         <Tooltip label={chromeTheme === "paper" ? "Switch to dark theme" : "Switch to light theme"}>
           <Button
             variant="subtle-icon"

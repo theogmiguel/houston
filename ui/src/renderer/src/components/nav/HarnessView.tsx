@@ -17,9 +17,13 @@ export function HarnessView({
   routinesRunning,
   onOpenFile,
   onReveal,
-  attentionRows
+  attentionRows,
+  embedded = false,
+  onOpenRoutines
 }: {
   client: HoustonClient | null
+  embedded?: boolean
+  onOpenRoutines?: () => void
   workspaces: { id: string; name: string }[]
   /** The app's selected workspace, or `all` when none is. */
   selectedWorkspace: string
@@ -55,6 +59,8 @@ export function HarnessView({
 
   return (
     <HarnessSurface
+      embedded={embedded}
+      onOpenRoutines={onOpenRoutines}
       error={error}
       onDismissError={() => setError(null)}
       workspaces={workspaces}

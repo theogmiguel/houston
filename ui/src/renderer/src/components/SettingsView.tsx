@@ -21,6 +21,7 @@ import type { McpSyncResult } from '../houston/generated/McpSyncResult'
 import { useSettingsSection } from '../settingsNav'
 import type { SettingsSectionId } from '../settingsSections'
 import { consumeSettingsRowJump } from '../settingsRowJump'
+import { PageHeader } from './ui/PageHeader'
 import { PageFrame } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
@@ -334,6 +335,7 @@ function SectionDispatch({
 
         {section === 'agents-clis' && (
           <>
+            <PageHeader heading="CLIs" description="The agent CLIs Houston can launch, whether they report status, and the accounts new panes use." />
             <AgentStatusSection
               providers={agentHooks}
               onSet={onAgentHooksSet}
@@ -492,7 +494,7 @@ export function SettingsView(props: Props): React.JSX.Element {
   return (
     <SettingsPageSurface ref={columnRef} className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       {}
-      <PageFrame width={SETTINGS_SECTIONS.find((entry) => entry.id === section)?.width === 'wide' ? 'settingsWide' : 'settings'} scroll={false} padding="settings">
+      <PageFrame width={SETTINGS_SECTIONS.find((entry) => entry.id === section)?.width === 'wide' ? 'wide' : 'settings'} scroll={false} padding="settings">
         {section === 'agents-overview' ? <AgentsOverview attention={props.agentAttention ?? agentAttentionFor({ agentHooks: props.agentHooks, skills: null, checks: null, reviews: [] })} onRepair={props.onAgentHooksSet} onCheck={props.onMcpTest ?? NOOP} /> : props.agentPages?.[section as AgentSetupSection] ?? <SectionDispatch
           {...props}
           section={section}

@@ -150,6 +150,17 @@ describe('HarnessSurface', () => {
     act(() => el.click())
   }
 
+  it('embeds Review without a schedule form and routes first-run setup to Routines', () => {
+    props = { ...props, embedded: true, state: harnessState({ routine: null }), onOpenRoutines: vi.fn() }
+    act(() => root.render(<HarnessSurface {...props} />))
+    expect(container.querySelector('h1')?.textContent).toBe('Review')
+    expect(container.querySelector('form')).toBeNull()
+    expect(container.querySelector('main')).toBeNull()
+    const open = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Open Routines')!
+    act(() => open.click())
+    expect(props.onOpenRoutines).toHaveBeenCalledOnce()
+  })
+
   it('asks for a workspace when none is chosen, and switching one reports it', () => {
     render({ workspace: null, state: null })
     expect(container.textContent).toContain('Choose a workspace to see its Harness reviews')

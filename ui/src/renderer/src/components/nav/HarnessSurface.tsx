@@ -9,7 +9,7 @@ import type { RoutineEngineRefusal } from '../../houston/generated/RoutineEngine
 import type { ChatPermissionMode } from '../../houston/generated/ChatPermissionMode'
 import type { HarnessReport, HarnessReportError, HarnessState } from '../../houston/useHarness'
 import { Select } from '../ui/Select'
-import { BarSparkline, Button, Caption, Card, Field, NavSurfaceFrame, Notice, PageFrame, PageHeader, Segmented, TextInput } from '../ui'
+import { BarSparkline, Button, Caption, Card, Field, NavSurfaceFrame, Notice, PageHeader, Segmented, TextInput } from '../ui'
 import { BulletList, FieldGrid, SectionTitle } from '../ui/navText'
 import { engineLabel } from '../engineLabel'
 import { routineEngineOptions } from './routineEngines'
@@ -20,6 +20,7 @@ import {
   scheduleFields,
   type HarnessSchedule
 } from './harnessFormat'
+import { AgentSettingsBody } from '../ui/AgentSettingsBody'
 import { nextUpTimeLabel } from './routineFormat'
 import { formatHarnessDate } from './harnessFormat'
 
@@ -31,6 +32,8 @@ export interface HarnessSetupValue {
 }
 
 export interface HarnessSurfaceProps {
+  embedded?: boolean
+  onOpenRoutines?: () => void
   workspaces: { id: string; name: string }[]
   workspace: string | null
   onWorkspace: (id: string) => void
@@ -65,14 +68,14 @@ export function HarnessSurface(props: HarnessSurfaceProps): React.JSX.Element {
     }
   }, [state, onRunNow])
 
-  return (
-    <NavSurfaceFrame>
-      <PageFrame width="wide" className="flex-1 min-w-0">
+  const body = (
+      <AgentSettingsBody embedded={props.embedded}>
         <HarnessHeader {...props} routine={props.workspace ? (state?.routine ?? null) : null} />
+        {props.embedded && <Caption>The schedule lives in Routines. <Button variant="text" onClick={props.onOpenRoutines}>Edit schedule in Routines</Button></Caption>}
         <HarnessWorkspaceContent props={props} pendingRun={pendingRun} />
-      </PageFrame>
-    </NavSurfaceFrame>
+      </AgentSettingsBody>
   )
+  return props.embedded ? body : <NavSurfaceFrame>{body}</NavSurfaceFrame>
 }
 
 function HarnessHeader({
@@ -84,7 +87,9 @@ function HarnessHeader({
   onRunNow,
   onSeen,
   error,
-  onDismissError
+  onDismissError,
+  embedded,
+  onOpenRoutines
 }: HarnessSurfaceProps & { routine: Routine | null }): React.JSX.Element {
   const firstRun = workspace !== null && state !== null && state.routine === null
   const noticeReviewId = attention?.latest_published_review_id ?? null
@@ -100,15 +105,20 @@ function HarnessHeader({
         </Notice>
       )}
       <PageHeader
-        heading="Harness"
+        heading={embedded ? 'Review' : 'Harness'}
         description="Reads your agents' sessions and turns repeated mistakes into tasks. The next review checks whether each fix worked."
-        actions={routine
-          ? <Button data-testid="harness-run" variant="primary" disabled={running} onClick={() => onRunNow(routine.id)}>{running ? 'Review running…' : 'Run review now'}</Button>
-          : firstRun ? <Button type="submit" form={FIRST_RUN_FORM_ID} variant="primary">Run first review</Button> : undefined}
+        actions={<HarnessHeaderAction routine={routine} running={running} firstRun={firstRun} embedded={embedded} onRunNow={onRunNow} onOpenRoutines={onOpenRoutines} />}
       />
       {error && <Notice tone="danger" className="w-full" action={{ label: 'Dismiss', onClick: onDismissError ?? (() => {}) }}>{error}</Notice>}
     </>
   )
+}
+
+function HarnessHeaderAction({ routine, running, firstRun, embedded, onRunNow, onOpenRoutines }: { routine: Routine | null; running: boolean; firstRun: boolean; embedded?: boolean; onRunNow: (id: number) => void; onOpenRoutines?: () => void }): React.JSX.Element | null {
+  if (routine) return <Button data-testid="harness-run" variant="primary" disabled={running} onClick={() => onRunNow(routine.id)}>{running ? 'Review running…' : 'Run review now'}</Button>
+  if (!firstRun) return null
+  if (embedded) return <Button variant="secondary" onClick={onOpenRoutines}>Set up in Routines</Button>
+  return <Button type="submit" form={FIRST_RUN_FORM_ID} variant="primary">Run first review</Button>
 }
 
 function HarnessWorkspaceContent({
@@ -129,6 +139,7 @@ function HarnessWorkspaceContent({
   }
   if (!state) return <p role="status" aria-busy="true">Reading this workspace&apos;s reviews…</p>
   if (!state.routine) {
+    if (props.embedded) return <Notice tone="info" action={{ label: 'Open Routines', onClick: props.onOpenRoutines ?? (() => {}) }}>No reviews yet. Create a weekly review in Routines.</Notice>
     return <FirstRun models={state.models} engineRefusals={state.engineRefusals} onStart={(value) => { pendingRun.current = workspace; props.onCreateRoutine(value) }} />
   }
   const published = state.reviews.filter((review) => review.status === 'published')

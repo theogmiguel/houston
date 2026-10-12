@@ -1,3 +1,4 @@
+import { agentSettingsPages, useAgentSettingsReads } from './components/settings/agentSettingsPages'
 import { useAgentAttention } from './useAgentAttention'
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
 import { openConnectPhone } from './connectPhone';
@@ -117,12 +118,10 @@ import {
 } from "./usePreferences";
 import { MANAGE_TAGS_EVENT, Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
-import { SkillsSurface } from "./components/nav/SkillsSurface";
 import { focusedSkillAgent, paneSkillAgent, skillInvocationFor, skillRunBlocker } from "./houston/skillSurface";
-import { McpSurface } from "./components/nav/McpSurface";
 import { setSettingsSection, settingsSectionLabel, shouldIgnoreInputKey, useSettingsSection } from "./settingsNav";
 import { RoutinesSurface } from "./components/nav/RoutinesSurface";
-import { HarnessView, useHarnessActions } from "./components/nav/HarnessView";
+import { useHarnessActions } from "./components/nav/HarnessView";
 import { useHarnessSignals } from "./houston/useHarnessSignals";
 import type { Routine, RoutineRefusal, RoutineRun } from "./houston/routineTypes";
 import type { RoutineEngineRefusal } from "./houston/generated/RoutineEngineRefusal";
@@ -585,17 +584,7 @@ const RECONNECT_MS = 1000;
 const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
 
-// Connections before its first `mcp_state` shows empty lists, not a missing view.
-function mcpSurfaceLists(mcp: McpStateView | null) {
-  return {
-    source: mcp?.source ?? [],
-    tools: mcp?.tools ?? [],
-    results: mcp?.results ?? [],
-    checks: mcp?.checks ?? [],
-    loaded: mcp !== null,
-    sourcePath: mcp?.sourcePath ?? null,
-  };
-}
+
 
 function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent, activeId: number | null, layerArmed: boolean): boolean {
   if (activeId === null || layerArmed) return false;
@@ -883,12 +872,7 @@ export function App(): React.JSX.Element {
     if (settings) setRailView(null);
   }, [settings]);
 
-  useEffect(() => {
-    if (!settings || conn.kind !== 'ready') return;
-    if (settingsSection === 'agents-overview' || settingsSection === 'agents-clis') conn.client.agentHooks();
-    if (settingsSection === 'agents-overview' || settingsSection === 'agents-mcp') conn.client.mcpState();
-    if (settingsSection === 'agents-overview' || settingsSection === 'agents-skills') conn.client.skillSync();
-  }, [settings, settingsSection, conn]);
+  useAgentSettingsReads(readyClient(conn), settings, settingsSection);
   const [composer, setComposer] = useState<"current-grid" | "new-grid" | null>(
     null,
   );
@@ -4097,77 +4081,12 @@ export function App(): React.JSX.Element {
                   <Suspense fallback={<div className="flex-1" />}>
                     <SettingsView
                       agentAttention={agentAttention}
-                      onMcpTest={(name) => { if (conn.kind === "ready") conn.client.mcpTest(name); }}
-                      agentPages={{
-                        'agents-skills': (<SkillsSurface
-                      client={conn.kind === "ready" ? conn.client : null}
-                      workspace={selectedWs === "all" ? null : selectedWs}
-                      focusedPaneName={activeId === null ? null : sessions.get(activeId)?.title ?? null}
-                      focusedPaneAgent={focusedSkillAgent(sessions, activeId)}
-                      runBlockedReason={skillRunBlocker(sessions, activeId, selectedWs, conn.kind)}
-                      onRunSkill={runSkill}
-                      tools={skills}
-                      pushes={skillPushes}
-                      autoPushEnabled={skillAutoPush}
-                      onRefresh={() => {
-                        if (conn.kind === "ready") conn.client.skillSync();
-                      }}
-                      onPush={(tool, skill) => {
-                        if (conn.kind === "ready")
-                          conn.client.skillPush(tool, skill);
-                      }}
-                      onPushUndo={(tool, skill) => {
-                        if (conn.kind === "ready")
-                          conn.client.skillPushUndo(tool, skill);
-                      }}
-                      onAutoPushSet={(enabled) => {
-                        if (conn.kind === "ready")
-                          conn.client.skillAutoPushSet(enabled);
-                      }}
-                      checkedAt={skillsCheckedAt}
-                    />),
-                        'agents-mcp': (<McpSurface
-                      {...mcpSurfaceLists(mcp)}
-                      onRefresh={() => {
-                        if (conn.kind === "ready") conn.client.mcpState();
-                      }}
-                      onSync={(tool) => {
-                        if (conn.kind === "ready") conn.client.mcpSync(tool);
-                      }}
-                      onImport={(tool) => {
-                        if (conn.kind === "ready") conn.client.mcpImport(tool);
-                      }}
-                      onSetEnabled={(name, enabled) => {
-                        if (conn.kind === "ready")
-                          conn.client.mcpSetEnabled(name, enabled);
-                      }}
-                      onUpsertServer={(previousName, server) => {
-                        if (conn.kind === "ready") conn.client.mcpServerUpsert(previousName, server);
-                      }}
-                      onRemoveServer={(name) => {
-                        if (conn.kind === "ready") conn.client.mcpServerRemove(name);
-                      }}
-                      onTest={(name) => {
-                        if (conn.kind === "ready") conn.client.mcpTest(name);
-                      }}
-                      onOpenSource={() => {
-                        if (mcp) void showItemInFolder(mcp.sourcePath);
-                      }}
-                      checkedAt={mcpCheckedAt}
-                    />),
-                        'agents-review': (<HarnessView
-                      client={harness.client}
-                      workspaces={workspaces.map((w) => ({
-                        id: w.path,
-                        name: w.name,
-                      }))}
-                      selectedWorkspace={selectedWs}
-                      routinesRunning={routinesRunning}
-                      onOpenFile={harness.openFile}
-                      onReveal={harness.reveal}
-                      attentionRows={harnessOverview}
-                    />),
-                      }}
+                      onMcpTest={(name) => readyClient(conn)?.mcpTest(name)}
+                      agentPages={agentSettingsPages({
+                        client: readyClient(conn), mcp, mcpCheckedAt,
+                        skills: { workspace: selectedWs === 'all' ? null : selectedWs, focusedPaneName: activeId === null ? null : sessions.get(activeId)?.title ?? null, focusedPaneAgent: focusedSkillAgent(sessions, activeId), runBlockedReason: skillRunBlocker(sessions, activeId, selectedWs, conn.kind), onRunSkill: runSkill, tools: skills, pushes: skillPushes, autoPushEnabled: skillAutoPush, checkedAt: skillsCheckedAt },
+                        review: { client: harness.client, workspaces: workspaces.map((w) => ({ id: w.path, name: w.name })), selectedWorkspace: selectedWs, routinesRunning, onOpenFile: harness.openFile, onReveal: harness.reveal, attentionRows: harnessOverview }
+                      })}
                       daemonClient={scmProps.client}
                       chromeTheme={chromeTheme}
                       onChromeTheme={(theme, origin) =>

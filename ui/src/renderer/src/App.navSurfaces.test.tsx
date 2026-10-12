@@ -43,6 +43,16 @@ describe('the rail nav rows drive the content area', () => {
     expect(surface(container)!.className).toMatch(/(^|\s)(flex-1|w-full)(\s|$)/)
   })
 
+  it.each([['agents-skills', 'Skills'], ['agents-mcp', 'MCP servers'], ['agents-review', 'Review']] as const)('opens %s through Settings with one page frame', async (section, heading) => {
+    harness = await renderReadyApp()
+    const { act } = await import('react')
+    act(() => setSettingsNavForTests({ open: true, section }))
+    await waitFor(() => expect(harness!.container.querySelector('h1')?.textContent).toBe(heading))
+    expect(harness.container.querySelector('[data-testid="settings-page"]')!.querySelectorAll('main')).toHaveLength(1)
+    expect(harness.container.querySelector('[data-view="skills"]')).toBeNull()
+    if (section === 'agents-mcp') expect(harness.container.textContent).not.toContain('Slack')
+  })
+
   it('choosing a grid in the rail leaves the open page for that grid', async () => {
     harness = await renderReadyApp()
     const { container } = harness

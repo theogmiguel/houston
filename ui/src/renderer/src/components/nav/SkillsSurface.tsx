@@ -7,7 +7,7 @@ import { useHarness } from '../../houston/useHarness'
 import { skillScopeLabel } from '../../houston/skillSurface'
 import { IconRefresh } from '../icons'
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { PageFrame } from '../ui/PageFrame'
+import { AgentSettingsBody } from '../ui/AgentSettingsBody'
 import { CheckedStamp } from '../ui/CheckedStamp'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
@@ -21,6 +21,7 @@ const SkillsView = lazy(() =>
 )
 
 export function SkillsSurface(props: {
+  embedded?: boolean
   client?: HoustonClient | null
   workspace?: string | null
   focusedPaneName?: string | null
@@ -39,6 +40,7 @@ export function SkillsSurface(props: {
   checkedAt?: number | null
 }): React.JSX.Element {
   const {
+    embedded = false,
     client = null,
     workspace = null,
     focusedPaneName = null,
@@ -69,9 +71,8 @@ export function SkillsSurface(props: {
     return () => { cancelled = true }
   }, [latestReview?.id, latestReview?.run_dir])
 
-  return (
-    <NavSurfaceFrame>
-      <PageFrame width="wide" className="flex-1 min-w-0">
+  const body = (
+      <AgentSettingsBody embedded={embedded}>
         <Suspense fallback={<div />}>
           <SkillsView
             dir={workspace}
@@ -121,7 +122,7 @@ export function SkillsSurface(props: {
             Open a skill to read its instructions, copy its invocation, or manage which agents can use it.
           </PanelFootnote>
         </NavSurfaceContent>
-      </PageFrame>
-    </NavSurfaceFrame>
+      </AgentSettingsBody>
   )
+  return embedded ? body : <NavSurfaceFrame>{body}</NavSurfaceFrame>
 }
