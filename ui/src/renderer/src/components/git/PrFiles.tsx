@@ -1,3 +1,4 @@
+import { GLYPH_FOR_VERB } from '../verbGlyphs'
 import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { Button } from '../ui/Button'
@@ -10,7 +11,7 @@ import { EmptyFilesMessage, FileErrorMessage, FileRetryPanel } from '../ui/FileP
 import { useMemo, useState } from 'react'
 import type { PrDiffSide, PrReviewDraft } from '../../houston/client'
 import { Icon } from '../ui/Icon'
-import { IconCheck, IconChevronDown, IconCode, IconFile, IconLoaderCircle, IconPlus, IconSplitDown, IconSplitRight, IconCollapse, IconExpand } from '../icons'
+import { IconCheck, IconChevronDown, IconFile, IconLoaderCircle, IconPlus, IconSplitDown, IconSplitRight, IconCollapse, IconExpand } from '../icons'
 import { DiffLoadingMark } from '../ui'
 import { PrTab } from '../ui/PrTab'
 import { Tooltip } from '../ui/Tooltip'
@@ -217,8 +218,8 @@ export function PrFiles({
           <Tooltip label="Hide whitespace changes"><PrTab as="button" surface="pr-code-action" type="button" aria-pressed={hideWhitespace} onClick={() => setHideWhitespace((value) => !value)}>¶</PrTab></Tooltip>
           <Tooltip label={allClosed ? 'Expand all' : 'Collapse all'}><PrTab as="button" surface="pr-code-action" type="button" onClick={() => setOpenOverrides(new Map<string, boolean>(files.map((file) => [file.path, allClosed])))}><Icon glyph={allClosed ? IconExpand : IconCollapse} role="small" /></PrTab></Tooltip>
           <PrTab as="span" surface="pr-code-layout" role="group" aria-label="Diff layout"><Tooltip label="Stacked diff"><PrTab as="button" surface="pr-code-action" type="button" aria-label="Stacked diff" aria-pressed={!split} onClick={() => setSplit(false)}><Icon glyph={IconSplitDown} role="small" /></PrTab></Tooltip><Tooltip label="Split diff"><PrTab as="button" surface="pr-code-action" type="button" aria-label="Split diff" aria-pressed={split} onClick={() => setSplit(true)}><Icon glyph={IconSplitRight} role="small" /></PrTab></Tooltip></PrTab>
-          <Tooltip label={wrapped ? 'Disable line wrapping' : 'Wrap lines'}><PrTab as="button" surface="pr-code-action" type="button" aria-pressed={wrapped} onClick={() => setWrapped((value) => !value)}><Icon glyph={IconCode} role="small" /></PrTab></Tooltip>
-          <Tooltip label="File tree"><PrTab as="button" surface="pr-code-action" type="button" aria-expanded={treeOpen} onClick={() => setTreeOpen((value) => !value)}><Icon glyph={IconFile} role="small" /></PrTab></Tooltip>
+          <Tooltip label={wrapped ? 'Disable line wrapping' : 'Wrap lines'}><PrTab as="button" surface="pr-code-action" type="button" aria-pressed={wrapped} onClick={() => setWrapped((value) => !value)}><Icon glyph={GLYPH_FOR_VERB['wrap-lines']} role="small" /></PrTab></Tooltip>
+          <Tooltip label="File tree"><PrTab as="button" surface="pr-code-action" type="button" aria-expanded={treeOpen} onClick={() => setTreeOpen((value) => !value)}><Icon glyph={GLYPH_FOR_VERB['toggle-file-tree']} role="small" /></PrTab></Tooltip>
         </PrTab>
       </PrTab>
       {treeOpen && <PrTab as="div" surface="pr-code-tree" role="menu" aria-label="Changed files">{files.map((file) => <PrTab as="button" surface="pr-code-tree-item" type="button" role="menuitem" key={file.path} onClick={() => { setTreeOpen(false); document.getElementById(`pr-file-${encodeURIComponent(file.path)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}>{file.path}</PrTab>)}</PrTab>}

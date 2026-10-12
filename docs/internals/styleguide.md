@@ -138,6 +138,11 @@ AgentStatus maps as:
 `needs-input` is static on purpose: it is settled-until-addressed, not transient.
 Only the two genuinely indeterminate states move.
 
+Action glyphs are keyed by verb in `components/verbGlyphs.ts`. Notifications and
+About, file-tree visibility and line wrapping, file-manager reveal, memory measurement
+and overview each have a distinct glyph. Related surfaces use `GLYPH_FOR_VERB` and
+choose the size through the shared `Icon` role.
+
 ### Provider brand marks, diff and tool colors
 
 Every provider Houston can spawn has a brand token, in two tiers. **Chromatic** marks

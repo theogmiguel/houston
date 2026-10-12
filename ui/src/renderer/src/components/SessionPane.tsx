@@ -1,3 +1,4 @@
+import { GLYPH_FOR_VERB } from './verbGlyphs'
 import { ChildInputBanner } from './ChildInputDetails'
 import { askedOrchestrator, attentionStatus, needsUserInput } from '../sessionAttention'
 import { PaneFrame } from './ui/PaneFrame'
@@ -40,7 +41,6 @@ import {
   IconCopy,
   IconEllipsis,
   IconEraser,
-  IconFolder,
   IconMaximize,
   IconMinimize,
   IconMoon,
@@ -440,7 +440,7 @@ function SessionLifecycleMenuItems({
       <CtxRow glyph={IconRespawn} label="Wake conversation" onClick={menuItem(() => client.send({ type: 'session_wake', session: info.id }))} />
       <CtxRow glyph={IconRespawn} label="Start fresh conversation" onClick={menuItem(() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true))} />
     </>}
-    {!sleeping && <CtxRow glyph={IconFolder} label="Measure process memory" onClick={menuItem(() => {
+    {!sleeping && <CtxRow glyph={GLYPH_FOR_VERB['measure-memory']} label="Measure process memory" onClick={menuItem(() => {
       setMemoryResult(null)
       client.send({ type: 'session_memory_get', session: info.id })
     })} />}
@@ -626,7 +626,7 @@ function SessionPaneImpl({
           {lifecycleError && <Notice tone="danger">{lifecycleError}</Notice>}
           <SessionLifecycleMenuItems info={info} live={live} sleeping={sleeping} shellIntegration={shellIntegration} client={client} menuItem={menuItem} setMemoryResult={setMemoryResult} />
           <PaneContextMenuSeparator />
-          {children.length > 0 && <CtxRow glyph={IconFolder} label="Overview" onClick={menuItem(() => openSideOverview(info.id))} />}
+          {children.length > 0 && <CtxRow glyph={GLYPH_FOR_VERB['overview']} label="Overview" onClick={menuItem(() => openSideOverview(info.id))} />}
           {info.spawned_by != null && onReturnChildToRoster && <CtxRow glyph={IconArrowUpRight} label="Return to roster" onClick={menuItem(() => onReturnChildToRoster(info.id))} />}
           <CtxRow
             glyph={IconSplitRight}
@@ -717,7 +717,7 @@ function SessionPaneImpl({
           ))}
           <PaneContextMenuSeparator />
           <CtxRow
-            glyph={IconFolder}
+            glyph={GLYPH_FOR_VERB['reveal-in-file-manager']}
             label="Reveal in file manager"
             onClick={menuItem(() => {
               void showItemInFolder(cwd).then((res) => {

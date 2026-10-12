@@ -1,3 +1,4 @@
+import { GLYPH_FOR_VERB } from './verbGlyphs'
 import { attentionStatus, needsUserInput } from '../sessionAttention'
 import { MascotMount } from '../mascot/MascotMount'
 import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore';
@@ -174,7 +175,7 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   terminal: IconTerminal,
   keyboard: IconKeyboard,
   user: IconUser,
-  bell: IconInfo,
+  bell: GLYPH_FOR_VERB.notifications,
   folder: IconFolder,
   fork: IconGitFork,
   tasks: IconTasks,
