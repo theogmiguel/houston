@@ -75,6 +75,6 @@
 .tag-card-dots { display: inline-flex; align-items: center; gap: var(--space-0-75); padding: var(--space-0-75) var(--space-0-5) var(--space-0-75) var(--space-0-75); background: transparent; border: 0; }
 .tag-card-icon:hover, .tag-card-dots:hover, .tag-card-chip:hover { background: var(--hover-fill); }
 .tag-card-dot { display: block; width: 6px; height: 6px; flex: none; border-radius: var(--tr-radius-surface-circle); box-shadow: 0 0 0 1.5px var(--rail-bg); }
-.tag-card-more { margin-left: var(--space-px); color: var(--text-muted); font-size: var(--tr-text-xs); }
-.tag-card-chips { display: flex; align-items: center; gap: var(--space-1); }
+.tag-card-more { flex: none; margin-left: var(--space-px); color: var(--text-muted); font-size: var(--tr-text-xs); }
+.tag-card-chips { display: flex; min-width: 0; max-width: 100%; align-items: center; gap: var(--space-1); }
 .tag-card-chip { display: inline-flex; align-items: center; gap: var(--space-1); height: 16px; padding: 0 var(--space-tag-chip-x); border: 0; border-radius: var(--tr-radius-xs); background: transparent; color: var(--text-secondary); font-size: var(--tr-text-xs); transition: background-color 150ms; }

@@ -17,12 +17,14 @@ export function TagChip({
   tag,
   onToggle,
   tooltip,
-  compact = false
+  compact = false,
+  variant = 'default'
 }: {
   tag: TagInfo
   onToggle?: () => void
   tooltip?: string
   compact?: boolean
+  variant?: 'default' | 'card'
 }): React.JSX.Element {
   const style = compact
     ? { ['--tag' as string]: tag.color }
@@ -41,9 +43,10 @@ export function TagChip({
     </>
   )
   const radius = onToggle ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'
+  const sizing = variant === 'card' ? 'min-w-0 shrink max-w-[var(--w-tag-form-preview-chip)]' : 'flex-none max-w-[var(--tag-chip-max,var(--w-tag-chip-max))]'
   const classes = compact
     ? 'inline-flex items-center justify-center flex-none w-[var(--h-tag-chip)] h-[var(--h-tag-chip)]' + ` ${radius}`
-    : 'inline-flex items-center gap-[var(--space-tag-chip-gap)] flex-none max-w-[var(--tag-chip-max,var(--w-tag-chip-max))] h-[var(--h-tag-chip)] px-[var(--space-tag-chip-padding)] leading-none whitespace-nowrap' + ` ${radius}`
+    : `inline-flex w-fit items-center gap-[var(--space-tag-chip-gap)] ${sizing} h-[var(--h-tag-chip)] px-[var(--space-tag-chip-padding)] leading-none whitespace-nowrap ${radius}`
   if (!onToggle) {
     const chip = <span className={classes} style={style} data-testid="tag-chip">{children}</span>
     return tooltip ? <Tooltip label={tooltip}>{chip}</Tooltip> : chip

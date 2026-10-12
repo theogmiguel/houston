@@ -22,7 +22,7 @@ export function TagCardAffordance({
   const first = tags[0]
   if (mode === 'chips') return (
     <span data-testid="tag-chips" className={TAG_POPOVER_CLS.cardChips}>
-      {tags.slice(0, 2).map((tag) => <TagChip key={tag.id} tag={tag} onToggle={() => onFilter?.(tag)} />)}
+      {tags.slice(0, 2).map((tag) => <TagChip key={tag.id} variant="card" tag={tag} onToggle={() => onFilter?.(tag)} />)}
       {tags.length > 2 && <Tooltip label={tags.slice(2).map((tag) => tag.name).join(' · ')}><span data-testid="tag-chips-more" className={TAG_POPOVER_CLS.cardMore}>+{tags.length - 2}</span></Tooltip>}
     </span>
   )
