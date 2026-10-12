@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../houston/client'
+import { isLive } from '../houston/client'
 import { ConfirmModal } from './ConfirmModal'
 import { Icon } from './ui/Icon'
 import { IconClose, IconHistory, IconRespawn, type IconComponent } from './icons'
@@ -30,6 +31,10 @@ export interface RestartEntry {
   glyph: IconComponent
   label: string
   run: () => void
+}
+
+function recoveryHusk(info: SessionInfo, live: boolean): boolean {
+  return !live && (info.restore_deferred != null || info.resume_notice != null)
 }
 
 /** The pane menu's Restart rows. A live pane confirms first; an ended one restarts at once. */
@@ -63,14 +68,18 @@ export function restartEntries({
   })
   return info.resumable === true
     ? [entry(IconHistory, 'resume'), entry(IconRespawn, 'fresh')]
-    : [entry(IconRespawn, 'restart')]
+    : recoveryHusk(info, live)
+      ? [entry(IconRespawn, 'restart'), entry(IconRespawn, 'fresh')]
+      : [entry(IconRespawn, 'restart')]
 }
 
 export function restartTooltip(info: SessionInfo): string {
   if (info.agent === 'ssh') return 'Reconnect (opens the SSH dialog prefilled)'
   return info.resumable === true
     ? 'Restart in the same conversation'
-    : 'Restart (a fresh CLI in the same folder)'
+    : recoveryHusk(info, isLive(info.state))
+      ? 'Retry session recovery'
+      : 'Restart (a fresh CLI in the same folder)'
 }
 
 export function RestartConfirm({
