@@ -32,6 +32,22 @@ fn subprocess_fixture() {
             let side_effect = mode == "side-effect";
             let mut child = fixture(if side_effect { "marker" } else { "sleep" });
             if side_effect {
+                use std::os::windows::io::AsRawHandle;
+                use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT};
+                // Redirecting the child's streams does not clear inheritance on
+                // this fixture's original pipe handles. Exclude those as well.
+                for handle in [
+                    std::io::stdout().as_raw_handle(),
+                    std::io::stderr().as_raw_handle(),
+                ] {
+                    // SAFETY: these live handles belong to this isolated fixture.
+                    assert_ne!(
+                        unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) },
+                        0,
+                        "cannot clear pipe inheritance: {}",
+                        std::io::Error::last_os_error()
+                    );
+                }
                 child.stdout(Stdio::null()).stderr(Stdio::null());
             }
             let _descendant = child.spawn().unwrap();
@@ -150,11 +166,17 @@ fn success_cancels_descendants_without_pipes() {
     let marker = dir.path().join("late-side-effect");
     let mut cmd = fixture("side-effect");
     cmd.env("HOUSTON_FIXTURE_MARKER", &marker);
+    let start = Instant::now();
     assert!(output_within(cmd, Duration::from_secs(5))
         .unwrap()
         .unwrap()
         .status
         .success());
+    assert!(
+        start.elapsed() < Duration::from_millis(2500),
+        "capture waited for the pipe-free descendant: {:?}",
+        start.elapsed()
+    );
     std::thread::sleep(Duration::from_millis(3500));
     assert!(!marker.exists(), "owned descendant survived job cleanup");
 }
