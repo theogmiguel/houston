@@ -642,6 +642,7 @@ fn migrate_routine_schema(conn: &Connection) -> Result<()> {
     }
     migrate_routines_to_first_class(&tx)?;
     migrate_routines_to_standalone(&tx)?;
+    add_column_if_missing(&tx, "routines", "kind", "kind TEXT NOT NULL DEFAULT 'user'")?;
     disambiguate_routine_names(&tx)?;
     // Deleted routines retain run history. Never reuse their IDs after a rebuild.
     let history_id: i64 = tx.query_row(
@@ -1904,12 +1905,6 @@ impl Db {
         remote::migrate(&conn)?;
         intake::migrate(&conn)?;
         migrate_routine_schema(&conn)?;
-        add_column_if_missing(
-            &conn,
-            "routines",
-            "kind",
-            "kind TEXT NOT NULL DEFAULT 'user'",
-        )?;
         conn.execute(
             "UPDATE routines SET kind = 'harness_review' \
              WHERE id IN (SELECT routine_id FROM harness_routines) AND kind = 'user'",
