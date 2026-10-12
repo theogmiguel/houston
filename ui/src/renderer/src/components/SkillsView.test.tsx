@@ -430,16 +430,27 @@ describe('SkillsView — the redesigned library', () => {
     })
   })
   it('shows a flat Settings library with searchable skill descriptions and details on demand', async () => {
-    render({ embedded: true, settingsPage: true, tools: [{ tool: 'claude', path: '/claude', detected: true, inherits_claude: false, error: null, skills: [{ name: 'deploy', path: '/deploy', digest: 'a' }] }, { tool: 'codex', path: '/codex', detected: true, inherits_claude: false, error: null, skills: [{ name: 'deploy', path: '/copy', digest: 'b' }] }] })
+    render({ embedded: true, settingsPage: true, onPush: vi.fn(), onPushUndo: vi.fn(), tools: [{ tool: 'claude', path: '/claude', detected: true, inherits_claude: false, error: null, skills: [{ name: 'deploy', path: '/deploy', digest: 'a' }] }, { tool: 'codex', path: '/codex', detected: true, inherits_claude: false, error: null, skills: [{ name: 'deploy', path: '/copy', digest: 'b' }] }] })
     await flush()
     expect(container.querySelector('[data-testid="list-detail-item"]')).toBeNull()
     expect(container.textContent).toContain('Ships the current branch to staging')
-    expect(container.textContent).toContain('Codex copy differs')
-    const row = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('/deploy'))!
+    expect(container.textContent).toContain('Review')
+    const row = [...container.querySelectorAll<HTMLTableRowElement>('tr[data-testid="data-table-row"]')].find(row => row.textContent?.includes('/deploy'))!
     act(() => row.click())
     await flush()
-    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.querySelector('table[aria-label="Agent copies of deploy"]')).not.toBeNull()
     expect(document.body.textContent).toContain('Instructions')
+    expect(byLabel('Edit deploy')).toBeDefined()
+    expect(byLabel('Delete deploy')).toBeDefined()
+    const compare = [...container.querySelectorAll('button')].find(button => button.textContent === 'View difference')!
+    act(() => compare.click())
+    await flush()
+    expect(container.textContent).toContain('Claude Code vs Codex')
+    act(() => byLabel('Edit deploy')!.click())
+    await flush()
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.body.querySelector('textarea')).not.toBeNull()
   })
 
 })

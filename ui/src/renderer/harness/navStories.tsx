@@ -1,3 +1,4 @@
+import { LIBRARY_SKILLS, LIBRARY_TOOLS } from './skillsStories'
 import { SettingsScreen, settingsAgentAttentionFixture } from './settingsStories'
 import React from 'react'
 import { HooksSurface } from '../src/components/nav/HooksSurface'
@@ -24,8 +25,6 @@ import type { McpToolState } from '../src/houston/generated/McpToolState'
 import type { Routine } from '../src/houston/routineTypes'
 import type { RoutineRun } from '../src/houston/generated/RoutineRun'
 import type { RoutineEngineRefusal } from '../src/houston/generated/RoutineEngineRefusal'
-import type { SkillToolState } from '../src/houston/generated/SkillToolState'
-import type { Skill } from '../src/env'
 import type { ServerMsg } from '../src/houston/generated/ServerMsg'
 import type { HoustonClient } from '../src/houston/client'
 
@@ -206,32 +205,7 @@ export function NavRoutinesEmpty(): React.JSX.Element {
 }
 
 function installSkillFixture(): void {
-  const skills: Skill[] = [
-    {
-      agent: 'claude',
-      source: 'user',
-      name: 'tdd',
-      path: '/home/dev/.claude/skills/tdd/SKILL.md',
-      invoke: '/tdd',
-      description: 'Red-green-refactor loop with an integration test first.'
-    },
-    {
-      agent: 'claude',
-      source: 'project',
-      name: 'ui-tokens',
-      path: '/home/dev/code/auth-refactor/.claude/skills/ui-tokens/SKILL.md',
-      invoke: '/ui-tokens',
-      description: 'Use theme tokens and shared chrome constants in the renderer.'
-    },
-    {
-      agent: 'codex',
-      source: 'user',
-      name: 'lint-sweep',
-      path: '/home/dev/.codex/skills/lint-sweep/SKILL.md',
-      invoke: '/lint-sweep',
-      description: ''
-    }
-  ]
+  const skills = LIBRARY_SKILLS
   const w = window as unknown as { houston?: Record<string, unknown> }
   w.houston = {
     ...(w.houston ?? {}),
@@ -242,23 +216,12 @@ function installSkillFixture(): void {
   }
 }
 
-function skillColumn(tool: SkillToolState['tool'], names: string[], inherits = false): SkillToolState {
-  return {
-    tool,
-    path: `/home/dev/.${tool}/skills`,
-    detected: true,
-    inherits_claude: inherits,
-    skills: names.map((name) => ({ name, path: `/skills/${name}`, digest: name === 'tdd' ? 'A' : 'B' })),
-    error: null
-  }
-}
-
 export function OpenSkillStory({ children, open = true }: { children: React.ReactNode; open?: boolean }): React.JSX.Element {
   const ref = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
     if (!open) return
     const timer = window.setInterval(() => {
-      const button = [...(ref.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+      const button = [...(ref.current?.querySelectorAll<HTMLElement>('button, tr[data-testid="data-table-row"]') ?? [])]
         .find((candidate) => candidate.textContent?.includes('ui-tokens'))
       if (!button) return
       button.click()
@@ -305,13 +268,7 @@ export function NavSkills({ inSettings = false, detail = false }: { inSettings?:
       <OpenSkillStory open={!inSettings || detail}>
         <SkillsSurface
           embedded={inSettings}
-          tools={[
-            skillColumn('claude', ['tdd', 'ui-tokens']),
-            { ...skillColumn('codex', ['tdd', 'ui-tokens', 'lint-sweep']), skills: [{ name: 'tdd', path: '/codex/tdd', digest: 'A' }, { name: 'ui-tokens', path: '/codex/ui-tokens', digest: 'C' }, { name: 'lint-sweep', path: '/codex/lint-sweep', digest: 'B' }] },
-            skillColumn('opencode', [], true),
-            skillColumn('cursor', [], true),
-            skillColumn('grok', [], true)
-          ]}
+          tools={LIBRARY_TOOLS}
           client={client}
           workspace="/home/dev/code/auth-refactor"
           focusedPaneName="auth-refactor"

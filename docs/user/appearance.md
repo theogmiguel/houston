@@ -23,6 +23,19 @@ settings search, then returns to workspaces.
 Skills, MCP servers and Review are configured under Settings ▸ Agents. Tasks, Pull
 requests, Routines and Usage remain work destinations in the rail.
 
+## Settings ▸ Agents ▸ Skills
+
+Search your skills and filter by Yours or This workspace. Copy counts show how many
+reported agents can use each skill. Select a skill or its copy count to expand the
+per-agent status and instructions inline. The expanded detail also provides editing,
+deleting, comparing copies and undoing a previous copy operation.
+
+**Sync all** fills missing copies using the Claude Code source for every eligible
+skill in the library, including skills hidden by search or the scope filter. Skills
+with differing copies are excluded; expand them and compare instructions before
+choosing which copy to keep. Agents that read Claude Code’s skills directly do not
+need a separate copy. **Sync this skill** fills only that skill’s missing copies.
+
 ## Settings ▸ Appearance
 
 **Chrome theme** — pick between two overall themes, Graphite (the default) and Paper.

@@ -608,7 +608,10 @@ panel with other content. Rows highlight on hover. Row actions remain in their o
 Enter and Space and ignores events from nested controls. Empty results use
 `EmptyState`; failures use `Notice` with an optional retry action. `DataTable` remains
 for existing callers that need its loading state, sticky head and bounded body scroll;
-it does not provide the row keyboard and action-column behaviour of `Table`.
+its clickable rows support Enter/Space and Up/Down navigation. The `dense` variant
+uses fixed columns and control-height rows for compact libraries. Expanded details
+occupy a separate row spanning every column; keep actions inside that detail so they
+remain independent of the row toggle.
 
 `DefinitionTable` is a lookup surface, not a form: a 160px label column on `--panel`
 with a small muted icon tile, a mono value column with optional middle-truncation, and

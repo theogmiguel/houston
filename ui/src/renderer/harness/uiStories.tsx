@@ -1291,6 +1291,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="DataTable and Disclosure">
+          <DataTable variant="dense" aria-label="Expandable dense rows" rows={[{ name: '/code-review', copies: '4/6' }]} getRowId={row => row.name} onRowClick={noop} expandedRowId="/code-review" renderExpanded={() => <Text size="small">Inline agent copies and actions</Text>} columns={[{ key: 'skill', header: 'Skill', width: '190px', render: row => row.name }, { key: 'copies', header: 'Copies', render: row => row.copies }]} />
           <DataTable aria-label="Provider coverage" rows={[{ name: 'Claude Code', state: 'Available' }, { name: 'Codex', state: 'Available' }]} getRowId={(row) => row.name} columns={[{ key: 'name', header: 'Provider', render: (row) => row.name }, { key: 'state', header: 'State', render: (row) => row.state }]} />
           <DefinitionTable rows={[{ label: 'Workspace', value: 'houston' }, { label: 'Account ID', value: '118273645' }, { label: 'Secret', value: 'secret-value', mask: true }]} />
           <Disclosure summary="Recent checks" count={2} defaultOpen>

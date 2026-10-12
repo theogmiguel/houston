@@ -1151,7 +1151,7 @@ export function SkillsView({
                 />
               )
     }
-    if (settingsPage) return <SkillsSettingsLibrary skills={filtered} search={search} onSearch={setSearch} tools={tools} actions={actions} onOpen={(skill) => setSelectedKey(skillKey(skill))} detail={renderSelection(selectedKey)} onClose={() => { setSelectedKey(null); setForm(null) }} modalOpen={hasSkillSelection(selectedKey, form)} error={skillLibraryError(skills !== null, loadError, refresh)}><SkillActionError message={actionError} onDismiss={() => setActionError(null)} />{deleteModal}{installModal}</SkillsSettingsLibrary>
+    if (settingsPage) return <SkillsSettingsLibrary allSkills={all} skills={filtered} search={search} onSearch={setSearch} tools={tools} onPush={onPush} onPushUndo={onPushUndo} pushes={pushes} actions={actions} onOpen={(skill) => setSelectedKey(skillKey(skill))} detail={renderSelection(selectedKey)} onClose={() => { setSelectedKey(null); setForm(null) }} modalOpen={form !== null} error={skillLibraryError(skills !== null, loadError, refresh)}><SkillActionError message={actionError} onDismiss={() => setActionError(null)} />{deleteModal}{installModal}</SkillsSettingsLibrary>
     return (
       <div data-testid="skills-library" className="grid gap-[var(--space-3)]">
         <PageHeader heading="Skills" description="Reusable instructions your agents can use." actions={actions} />
@@ -1331,7 +1331,6 @@ export function SkillsView({
 }
 
 function isCreatingSkill(form: SkillFormState | null): boolean { return form !== null && form.path === null }
-function hasSkillSelection(key: string | null, form: SkillFormState | null): boolean { return key !== null || form !== null }
 function skillLibraryError(loaded: boolean, error: string | null, retry: () => void): React.JSX.Element | undefined {
   if (error) return <PanelEmpty title="Couldn't load skills" icon={<Icon glyph={IconFile} role="ui" />} testId="skills-load-error" action={<PanelButton onClick={retry}>Try again</PanelButton>}>{error}</PanelEmpty>
   if (!loaded) return <p role="status">Reading skills…</p>
