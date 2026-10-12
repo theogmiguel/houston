@@ -1,6 +1,9 @@
 import { ContextMenu, ContextMenuItem, ContextMenuItems, ContextMenuSeparator } from './ContextMenu'
 import type { ReactNode } from 'react'
 import { Text } from './Text'
+import { Icon } from './Icon'
+import { PrTab } from './PrTab'
+import { IconClose } from '../icons'
 
 export function PrHeaderFrame({ top, title, sentence }: { top: ReactNode; title: ReactNode; sentence: ReactNode }): React.JSX.Element {
   return <header data-testid="pr-scroll-header" className="grid flex-none gap-[var(--space-1-5)] px-[var(--space-4)] pb-[var(--space-3)] pt-[var(--space-3)]">
@@ -40,7 +43,7 @@ export function PrMergeFrame({ children }: { children: ReactNode }): React.JSX.E
 
 export function PrReadinessRow({ tone, heading, detail, actions }: { tone: 'ok' | 'stop' | 'warn' | 'muted'; heading: ReactNode; detail?: ReactNode; actions?: ReactNode }): React.JSX.Element {
   return <div className="flex items-start gap-[var(--space-2-5)] border-b border-[var(--divider)] px-[var(--space-3)] py-[var(--space-2)]">
-    <span aria-hidden style={{ color: `var(--${tone === 'muted' ? 'text-muted' : tone})` }}>{tone === 'ok' ? '✓' : tone === 'stop' ? '×' : '·'}</span>
+    {tone === 'stop' ? <PrTab as="span" surface="pr-check-state-icon" state="failing" aria-hidden="true"><Icon glyph={IconClose} role="small" /></PrTab> : <span aria-hidden style={{ color: `var(--${tone === 'muted' ? 'text-muted' : tone})` }}>{tone === 'ok' ? '✓' : '·'}</span>}
     <div className="grid min-w-0 flex-1 gap-[var(--space-0-5)]"><Text size="ui" tone="primary">{heading}</Text>{detail && <Text size="small" tone="muted">{detail}</Text>}</div>{actions}
   </div>
 }
@@ -68,7 +71,7 @@ export function PrViewTabs({ value, timelineCount, fileCount, onChange, onPreloa
 }
 
 export function PrDescriptionFrame({ clamped, children }: { clamped: boolean; children: ReactNode }): React.JSX.Element {
-  return <div data-testid="pr-description" data-clamped={clamped} className={`relative ${clamped ? 'max-h-[calc(var(--space-6)*4)] overflow-hidden after:absolute after:inset-x-0 after:bottom-0 after:h-[var(--space-6)] after:pointer-events-none after:bg-gradient-to-t after:from-[var(--rail-bg)] after:to-transparent' : ''}`}>{children}</div>
+  return <div data-testid="pr-description" data-clamped={clamped} className={`relative ${clamped ? 'max-h-[calc(var(--space-6)*4)] overflow-hidden after:absolute after:inset-x-0 after:bottom-0 after:h-[var(--space-6)] after:pointer-events-none after:bg-gradient-to-t after:from-[var(--content-bg)] after:to-transparent' : ''}`}>{children}</div>
 }
 
 export function PrPropertyRow({ children }: { children: ReactNode }): React.JSX.Element {

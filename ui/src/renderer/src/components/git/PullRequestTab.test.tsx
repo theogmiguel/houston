@@ -418,18 +418,18 @@ describe('PullRequestTab — reading a pull request', () => {
     ] }) }))
     const box = q('[data-testid="pr-merge-box"]')!
     const rows = Array.from(box.querySelectorAll('[data-testid="pr-check-row"]'))
-    expect(rows).toHaveLength(5)
+    expect(rows).toHaveLength(4)
+    expect(box.textContent).toContain('core-checks failed')
     expect(rows.map((row) => row.querySelector('button')?.textContent)).toEqual([
-      expect.stringContaining('core-checksFailed'),
       expect.stringContaining('renderer-checksFailed'),
       expect.stringContaining('safety-checksPassed'),
       'windows-checksRunning',
       'optional-checksSkipped'
     ])
-    click(rows[1].querySelector('button'))
-    expect(rows[1].textContent).toContain("Logs aren't available for this check")
-    click(Array.from(rows[1].querySelectorAll('button')).find((button) => button.textContent?.includes('Fix with agent'))!)
-    expect(rows[1].textContent).toContain('No agent panes in this grid')
+    click(rows[0].querySelector('button'))
+    expect(rows[0].textContent).toContain("Logs aren't available for this check")
+    click(Array.from(rows[0].querySelectorAll('button')).find((button) => button.textContent?.includes('Fix with agent'))!)
+    expect(rows[0].textContent).toContain('No agent panes in this grid')
   })
 
   it('asks for the detail on mount and renders checks, state and the merge gate', () => {
@@ -1406,13 +1406,24 @@ describe('merge readiness box', () => {
     expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('Conflicts with main; resolve them before merging')
   })
 
+  it('lists a failing check once, with a single Fix with agent action, and the remaining checks below', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ detail: detail({ checks: [{ name: 'core-checks', state: 'failing', url: null, duration_ms: 252000 }, { name: 'renderer', state: 'passing', url: null, duration_ms: 60000 }], merge_disabled_reason: 'core-checks failed' }) }))
+    const box = q('[data-testid="pr-merge-box"]')!
+    expect(box.textContent!.match(/core-checks/g)).toHaveLength(1)
+    expect(box.textContent).toContain('4m 12s')
+    expect(box.textContent).toContain("Logs aren't available for this check")
+    expect(Array.from(box.querySelectorAll('button')).filter((button) => button.textContent?.includes('Fix with agent'))).toHaveLength(1)
+    expect(box.querySelectorAll('[data-testid="pr-check-row"]')).toHaveLength(1)
+    expect(box.textContent).toContain('renderer')
+    expect(box.textContent).not.toContain('×')
+  })
+
   it('offers auto-merge and log/agent actions when a check fails', () => {
     const client = mount({ compact: true })
     emit(client, detailMsg({ detail: detail({ checks: [{ name: 'core-checks', state: 'failing', url: null, duration_ms: 252000 }], merge_disabled_reason: 'core-checks failed' }) }))
     expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('core-checks failed')
     expect(q('[data-testid="pr-merge"]')).toBeNull()
-    expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('Fix with agent')
-    click(Array.from(q('[data-testid="pr-merge-box"]')!.querySelectorAll('button')).find((button) => button.textContent === 'Log')!)
     expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain("Logs aren't available for this check")
     click(Array.from(q('[data-testid="pr-merge-box"]')!.querySelectorAll('button')).find((button) => button.textContent === 'Fix with agent')!)
     expect(q('[data-testid="pr-merge-box"]')!.textContent).toContain('No agent panes in this grid')
