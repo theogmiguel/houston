@@ -93,12 +93,16 @@ function fixtureActivity(): UsageActivityDay[] {
   })
 }
 
-export function UsagePageStory({ state = 'normal' }: { state?: 'normal' | 'error' | 'stale' | 'reading' | 'empty' | 'loading' }): React.JSX.Element {
+export function UsagePageStory({ state = 'normal' }: { state?: 'normal' | 'error' | 'stale' | 'reading' | 'empty' | 'loading' | 'unpriced' }): React.JSX.Element {
   const summary = fixtureSummary()
   if (state === 'stale') summary.since_ms = summary.until_ms - DAY
   if (state === 'empty') {
     summary.buckets = []
     summary.sources = summary.sources.map((source) => ({ ...source, distinct_sessions: 0, status: source.provider === 'codex' ? 'missing' as const : 'ok' as const }))
+  }
+  if (state === 'unpriced') {
+    summary.pricing = { status: 'unavailable', source: 'model catalog', fetched_at_ms: null, known_models: 0, message: 'The model catalog could not be read. Token totals are still available.' }
+    summary.buckets = summary.buckets.map((bucket) => ({ ...bucket, cost_usd: 0, cost_source: 'unpriced', unpriced_records: bucket.records, cache_savings_usd: 0, category_cost_usd: { input_usd: 0, output_usd: 0, cache_read_usd: 0, cache_write_usd: 0, other_usd: 0 }, speed_rate_available: false, speed_premium_usd: 0, fast_cost_usd: 0, ultrafast_cost_usd: 0 }))
   }
   return (
     <div data-story-state={state} className="flex h-full min-h-0 bg-[var(--content-bg)]">

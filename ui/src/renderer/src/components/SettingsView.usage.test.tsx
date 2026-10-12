@@ -298,6 +298,19 @@ describe('Usage page', () => {
     expect(text()).not.toContain('Fast and Ultrafast modes added')
   })
 
+  it('does not present entirely unpriced usage as zero dollars', () => {
+    const unpriced = bucket({ hour_start_ms: DAY0, cost_usd: 0, records: 5, unpriced_records: 5, cost_source: 'unpriced', cache_savings_usd: 0, category_cost_usd: { input_usd: 0, cache_read_usd: 0, cache_write_usd: 0, output_usd: 0, other_usd: 0 } })
+    render({ summary: summary({ buckets: [unpriced], pricing: { status: 'unavailable', source: 'model catalog', known_models: 0, fetched_at_ms: null, message: 'Catalog could not be read' } }) })
+    expect(q('[data-testid="usage-headline"]')?.textContent).toBe('Not priced')
+    expect(q('[data-testid="usage-chart"]')).toBeNull()
+    expect(text()).toContain('Model catalog prices unavailable')
+    expect(text()).toContain('Catalog could not be read')
+    expect(text()).toContain('Tokens are still counted')
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Tokens')?.click())
+    expect(q('[data-testid="usage-chart"]')).not.toBeNull()
+    expect(text()).toContain('Tokens per day')
+  })
+
   it('reports unpriced models without assigning them a zero rate', () => {
     render()
     expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('<synthetic>')

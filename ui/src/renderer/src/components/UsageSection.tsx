@@ -45,10 +45,11 @@ const PROVIDER_COLOR: Record<UsageProvider, string> = {
   codex: 'color-mix(in srgb, var(--text-primary) 55%, transparent)'
 }
 
-function UsageDailyChart({ metric, onMetricChange, hourly, points, series, labelFor }: {
+function UsageDailyChart({ metric, onMetricChange, hourly, points, series, labelFor, costAvailable }: {
   metric: 'cost' | 'tokens'
   onMetricChange: (metric: 'cost' | 'tokens') => void
   hourly: boolean
+  costAvailable: boolean
   points: SeriesPoint[]
   series: UsageSeries[]
   labelFor: (point: SeriesPoint) => string
@@ -59,7 +60,7 @@ function UsageDailyChart({ metric, onMetricChange, hourly, points, series, label
         <UsageSectionHeading>{metric === 'cost' ? 'Cost' : 'Tokens'} per {hourly ? 'hour' : 'day'}</UsageSectionHeading>
         <UsageLegend series={series} />
       </UsageChartHeader>
-      <UsageChart points={points} series={series} metric={metric} labelFor={labelFor} />
+      {metric === 'cost' && !costAvailable ? <Text as="p" size="small" tone="muted" flush>Cost per day is unavailable without published model rates. Tokens are still counted.</Text> : <UsageChart points={points} series={series} metric={metric} labelFor={labelFor} />}
     </div>
   </Card>
 }
@@ -67,10 +68,10 @@ function UsageDailyChart({ metric, onMetricChange, hourly, points, series, label
 function UsageStats({ totals, sessions, days }: { totals: UsageTotals; sessions: number; days: number }): React.JSX.Element {
   const roundedUsd = (value: number): string => `$${Math.round(value).toLocaleString('en-US')}`
   return <UsageTotalsStrip>
-    <UsageStatCard label="API-equivalent cost" value={formatUsd(totals.cost)} note={`${sessions.toLocaleString('en-US')} sessions · ${roundedUsd(totals.cost / days)} a day`} headline />
+    <UsageStatCard label="API-equivalent cost" value={totals.records > 0 && totals.unpricedRecords === totals.records ? 'Not priced' : formatUsd(totals.cost)} note={totals.records > 0 && totals.unpricedRecords === totals.records ? `${sessions.toLocaleString('en-US')} sessions · model rates unavailable` : `${sessions.toLocaleString('en-US')} sessions · ${roundedUsd(totals.cost / days)} a day`} headline />
     <UsageStatCard label="Tokens processed" value={formatTokens(totals.tokens)} note={`${Math.round(100 * totals.cachedInput / Math.max(1, totals.tokens))}% read from cache`} />
     <UsageStatCard label="Output tokens" value={formatTokens(totals.output)} note={`${formatTokens(totals.uncachedInput)} uncached input`} />
-    <UsageStatCard label="Saved by caching" value={roundedUsd(totals.cacheSavings)} note="against full input prices" />
+    <UsageStatCard label="Saved by caching" value={totals.records > 0 && totals.unpricedRecords === totals.records ? '—' : roundedUsd(totals.cacheSavings)} note="against full input prices" />
   </UsageTotalsStrip>
 }
 
@@ -248,8 +249,12 @@ export function UsageSection({
     for (const source of summary?.sources ?? []) counts.set(source.provider, (counts.get(source.provider) ?? 0) + source.distinct_sessions)
     return counts
   }, [summary])
-  const displayProviders = providers
-    .map((provider) => ({ ...provider, sessions: sessionsByProvider.get(provider.provider) ?? 0 }))
+  const displayProviders = providers.map((provider) => {
+    const observed = buckets.filter((bucket) => bucket.provider === provider.provider)
+    const unpriced = observed.length > 0 && observed.every((bucket) => bucket.records > 0 && bucket.unpriced_records === bucket.records)
+    const unreadSource = summary?.sources.find((source) => source.provider === provider.provider && source.status !== 'ok')
+    return { ...provider, sessions: sessionsByProvider.get(provider.provider) ?? 0, amount: unpriced ? 'Not priced' : observed.length === 0 && unreadSource ? '—' : formatUsd(provider.cost), note: observed.length === 0 && unreadSource ? sourceStatus(unreadSource) : `${formatTokens(provider.tokens)} tokens`, share: unpriced ? null : provider.costShare }
+  })
 
   const selectedBuckets = useMemo(() => selectedDay ? buckets.filter((bucket) => makeDayKey(timeZone)(bucket.hour_start_ms) === selectedDay) : buckets, [buckets, selectedDay, timeZone])
   const retainedDay = selectedDay && selectedBuckets.length === 0 ? activity.find((day) => day.day === selectedDay) : undefined
@@ -279,6 +284,7 @@ export function UsageSection({
 
   const reading = loading || !summary && !error
 
+  const costAvailable = totals.records === 0 || totals.unpricedRecords < totals.records
   const sessions = [...sessionsByProvider.values()].reduce((sum, count) => sum + count, 0)
   const noUsage = summary !== null && sessions === 0
   const rangeLabel = usageRangeLabel(summary, asked, timeZone)
@@ -293,7 +299,7 @@ export function UsageSection({
           <Tooltip label="Read transcripts again"><Button variant="icon" aria-label="Refresh usage" data-testid="usage-refresh" onClick={refresh} disabled={loading} icon={IconRefresh} /></Tooltip>
         </>
       } />
-      <UsageMetaLine range={rangeLabel.replace(' to ', ' – ')} readAge={summary ? readAge(summary.read_at_ms) : null} duration={summary ? `${(summary.scan_duration_ms / 1000).toFixed(1)} s` : null} reading={reading} pricing={summary?.pricing.fetched_at_ms ? `Prices from the model catalog, updated ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(summary.pricing.fetched_at_ms)}` : 'Model catalog prices unavailable'} />
+      <UsageMetaLine range={rangeLabel.replace(' to ', ' – ')} readAge={summary ? readAge(summary.read_at_ms) : null} duration={summary ? `${(summary.scan_duration_ms / 1000).toFixed(1)} s` : null} reading={reading} pricing={summary?.pricing.status !== 'unavailable' && summary?.pricing.fetched_at_ms ? `Prices from the model catalog, updated ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(summary.pricing.fetched_at_ms)}` : summary ? 'Model catalog prices unavailable' : 'Prices from the model catalog'} />
       {error && (
         <Notice tone="danger" data-testid="usage-error">
           {error}
@@ -301,6 +307,7 @@ export function UsageSection({
       )}
 
       {}
+      {summary?.pricing.message && <Notice tone="warn">{summary.pricing.message}</Notice>}
       <UsageBody reading={reading}>
         {!summary ? (
           <Text as="p" role="status" size="ui" tone="secondary">{error ? 'No usage result available.' : 'Reading transcripts…'}</Text>
@@ -315,6 +322,7 @@ export function UsageSection({
           metric={metric}
           onMetricChange={setMetric}
           hourly={windowDef.hourly}
+          costAvailable={costAvailable}
           points={points}
           series={series}
           labelFor={labelFor}
@@ -322,11 +330,11 @@ export function UsageSection({
         <UsageShareGroup>
         <Card shape="card" tone="block" data-material="inset" data-testid="usage-by-agent">
           <UsageSectionHeading inset>By agent</UsageSectionHeading>
-          {displayProviders.map((p) => <UsageProviderRow key={p.provider} mark={<UsageAgentMark agent={p.provider} />} label={p.label} sessions={p.sessions} amount={formatUsd(p.cost)} note={`${formatTokens(p.tokens)} tokens`} share={p.costShare} color={PROVIDER_COLOR[p.provider]} />)}
+          {displayProviders.map((p) => <UsageProviderRow key={p.provider} mark={<UsageAgentMark agent={p.provider} />} label={p.label} sessions={p.sessions} amount={p.amount} note={p.note} share={p.share} color={PROVIDER_COLOR[p.provider]} />)}
           {summary.untracked_agents.length > 0 && <UsageCardNote>Not counted: {joinAgentNames(untrackedAgentNames(summary.untracked_agents))}. They do not write token counts Houston can read.</UsageCardNote>}
         </Card>
         <Card shape="card" tone="block" padding="page" data-material="inset">
-          <UsageShareBar heading="Where the cost goes" segments={categoryTotals(buckets)} note={<>{buckets.length > 0 && buckets.every((bucket) => bucket.speed_rate_available) && <>Fast and Ultrafast modes added {formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}. </>}Caching saved {formatUsd(totals.cacheSavings)} against full input prices.</>} />
+          {costAvailable ? <UsageShareBar heading="Where the cost goes" segments={categoryTotals(buckets)} note={<>{buckets.length > 0 && buckets.every((bucket) => bucket.speed_rate_available) && <>Fast and Ultrafast modes added {formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}. </>}Caching saved {formatUsd(totals.cacheSavings)} against full input prices.</>} /> : <><UsageSectionHeading>Where the cost goes</UsageSectionHeading><Text as="p" size="small" tone="muted">Cost categories are unavailable without published model rates.</Text></>}
         </Card>
         </UsageShareGroup>
 
