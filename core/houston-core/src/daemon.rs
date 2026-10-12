@@ -7799,11 +7799,10 @@ impl Daemon {
         event: &str,
         cwd: Option<&str>,
     ) -> bool {
-        let _cleanup = self
-            .temporary_cleanup_lock
-            .lock()
-            .expect("temporary cleanup lock");
-        if self.ensure_not_closing(id, "hook").is_err() {
+        // In-memory permission holds precede lifecycle persistence. Fence hook
+        // admission against close reservation without waiting on persistence's guard.
+        let closing = self.closing_sessions.lock().expect("closing sessions lock");
+        if closing.contains(&id) {
             return false;
         }
         let sessions = self.sessions.lock().expect("sessions lock");
