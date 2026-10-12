@@ -8891,9 +8891,8 @@ impl Daemon {
         )
     }
 
-    /// `env` adds to the profile's environment, `spawn_args` follow the provider's own,
-    /// `prompt_label` names the prompt file, `cwd` starts the process outside `project_dir`
-    /// and `prefill_follows` says the caller pastes a prompt once the session is up.
+    /// `env` extends the profile, `spawn_args` follow provider flags, and `cwd` may differ from `project_dir`.
+    /// `prompt_label` names the prompt file; `prefill_follows` means the caller pastes after startup.
     /// `launch_override` carries typed choices when the caller already assembled flags.
     #[allow(clippy::too_many_arguments)]
     fn create_session_with_env(

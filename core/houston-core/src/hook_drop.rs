@@ -446,10 +446,9 @@ pub enum Pass {
     RecoveryMetadata,
 }
 
-// An unparseable name accumulates forever by design — the alternative is
-// deleting a file Houston does not own — and is warned once, not per pass.
-// Ordinary passes collect files older than MAX_AGE_MS. RecoveryMetadata reads
-// bounded durable metadata across long downtime; its callback must not replay lifecycle.
+// Unparseable names are retained and warned once, since Houston cannot claim them.
+// Ordinary passes expire files after MAX_AGE_MS; recovery reads bounded metadata across downtime.
+// Recovery callbacks must not replay lifecycle effects.
 pub fn run_pass(
     dir: &Path,
     state: &mut DropDirState,
