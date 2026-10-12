@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '../houston/generated/McpServer'
 import type { McpToolState } from '../houston/generated/McpToolState'
@@ -122,4 +122,17 @@ it('expands a Settings server and toggles only its owning agent destination', ()
   expect(onSync).toHaveBeenCalledWith('claude')
   fireEvent.click(screen.getByRole('button', { name: 'Edit command' }))
   expect(screen.getByRole('dialog', { name: 'Edit github' })).toBeTruthy()
+})
+
+it('keeps fix guidance and Edit command inside the failure notice, and counts the filter segments', () => {
+  const onUpsertServer = vi.fn()
+  render(<McpManager {...props({ embedded: true, source: [server('github'), server('linear')], tools: [tool('claude', [server('github'), server('linear')])], onUpsertServer, checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]] })} />)
+  const notice = screen.getByRole('alert')
+  expect(notice.textContent).toContain('Install Node.js, or give the command an absolute path such as /usr/local/bin/npx.')
+  fireEvent.click(within(notice).getByRole('button', { name: 'Edit command' }))
+  expect(screen.getByRole('dialog', { name: 'Edit github' })).toBeTruthy()
+  const segments = screen.getByRole('radiogroup', { name: 'Filter servers' }).textContent
+  expect(segments).toContain('All2')
+  expect(segments).toContain('Configured2')
+  expect(segments).toContain('Problems1')
 })

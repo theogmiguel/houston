@@ -7,11 +7,11 @@ import { SettingsButton } from './ui/SettingsButtonRoles'
 import { useState } from 'react'
 import {
   IconPlus,
+  IconRefresh,
   IconServer,
   IconTrash
 } from './icons'
 import { ConfirmModal } from './ConfirmModal'
-import { Segmented } from './ui/SegmentedControl'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { McpConnectionCheck } from '../houston/generated/McpConnectionCheck'
 import type { McpServer } from '../houston/generated/McpServer'
@@ -21,7 +21,7 @@ import type { HoustonClient } from '../houston/client'
 import type { McpTransport } from '../houston/generated/McpTransport'
 import { buildRows, cellFor, maskSecret, type MatrixRow } from '../houston/mcpRows'
 import { Icon } from './ui/Icon'
-import { Button, Caption, Card, ConnectionCell, Drawer, PageHeader, Notice, Table, Text, TextInput, FieldLabel, Chip, ChoiceGroup, ConfigurationDetail, ResultList, ResultRow, Footnote, type TableColumn } from './ui'
+import { Button, Caption, Card, ConnectionCell, Drawer, PageHeader, Notice, Table, Text, TextInput, FieldLabel, Chip, ChoiceGroup, ConfigurationDetail, Segmented, ResultList, ResultRow, Footnote, type TableColumn } from './ui'
 import { Switch } from './ui/Switch'
 import { ActionMenu } from './ui/ActionMenu'
 import { TASK_AGENTS } from './tasks/format'
@@ -165,8 +165,10 @@ function mcpRowStatus(row: MatrixRow, check: McpConnectionCheck): { label: strin
 }
 function SettingsMcpList({ props, rows, onAdd, onToggle, onEdit, onDiff, onRemove }: { props: McpManagerProps; rows: MatrixRow[]; onAdd: () => void; onToggle: (row: MatrixRow, tool: AgentKind) => void; onEdit: (name: string) => void; onDiff: (name: string) => void; onRemove: (name: string) => void }): React.JSX.Element {
   const [filter, setFilter] = useState<'all' | 'configured' | 'problems'>('all')
-  const visible = rows.filter((row) => filter === 'all' || (filter === 'problems' ? row.hasDrift || checkFor(row.name, props.checks).state === 'failed' : DESTINATIONS.some((tool) => row.byTool[tool]?.enabled)))
-  return <div className="grid gap-[var(--space-3)]"><SettingsToolbar actions={<><Button variant="ghost" aria-label="Check all servers" onClick={() => { props.onRefresh(); rows.forEach((row) => props.onTest(row.name)) }}>Check again</Button><Button variant="primary" icon={IconPlus} onClick={onAdd}>Add server</Button></>}><Segmented aria-label="Filter servers" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All' }, { value: 'configured', label: 'Configured' }, { value: 'problems', label: 'Problems' }]} /></SettingsToolbar><Card shape="card">{visible.map((row) => <SettingsMcpServer key={row.name} row={row} props={props} onToggle={onToggle} onEdit={onEdit} onDiff={onDiff} onRemove={onRemove} />)}{!visible.length && <Card.Row heading="No MCP servers" meta="Add an MCP server to connect it to your agents." />}</Card></div>
+  const matches = (row: MatrixRow, value: typeof filter): boolean => value === 'all' || (value === 'problems' ? row.hasDrift || checkFor(row.name, props.checks).state === 'failed' : DESTINATIONS.some((tool) => row.byTool[tool]?.enabled))
+  const visible = rows.filter((row) => matches(row, filter))
+  const count = (value: typeof filter): number => rows.filter((row) => matches(row, value)).length
+  return <div className="grid gap-[var(--space-3)]"><SettingsToolbar actions={<><Button variant="ghost" icon={IconRefresh} aria-label="Check all servers" onClick={() => { props.onRefresh(); rows.forEach((row) => props.onTest(row.name)) }}>Check again</Button><Button variant="primary" icon={IconPlus} onClick={onAdd}>Add server</Button></>}><Segmented aria-label="Filter servers" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All', count: count('all') }, { value: 'configured', label: 'Configured', count: count('configured') }, { value: 'problems', label: 'Problems', count: count('problems') }]} /></SettingsToolbar><Card shape="card">{visible.map((row) => <SettingsMcpServer key={row.name} row={row} props={props} onToggle={onToggle} onEdit={onEdit} onDiff={onDiff} onRemove={onRemove} />)}{!visible.length && <Card.Row heading="No MCP servers" meta="Add an MCP server to connect it to your agents." />}</Card></div>
 }
 function SettingsMcpServer({ row, props, onToggle, onEdit, onDiff, onRemove }: { row: MatrixRow } & Omit<React.ComponentProps<typeof SettingsMcpList>, 'rows' | 'onAdd'>): React.JSX.Element {
   const check = checkFor(row.name, props.checks)
@@ -174,10 +176,19 @@ function SettingsMcpServer({ row, props, onToggle, onEdit, onDiff, onRemove }: {
   const source = row.source!
   const command = source.transport === 'stdio' ? [source.command, ...source.args].join(' ') : source.url
   return <SettingsDisclosure heading={row.name} detail={<Text mono>{command}</Text>} open={check.state === 'failed'} status={<span className="flex items-center gap-[var(--space-3)]"><span className="flex items-center gap-[var(--space-1)]">{DESTINATIONS.map((tool) => <ProviderGlyphTile key={tool} agent={tool} state={!row.byTool[tool]?.enabled ? 'off' : row.byTool[tool]?.fingerprint !== source.fingerprint ? 'differs' : 'on'} />)}</span><span className="flex items-center gap-[var(--space-1-5)]"><SetupDot tone={status.tone} /><Text size="small" tone={status.tone}>{status.label}</Text></span></span>}>
-    {check.state === 'failed' && <Notice tone="danger" action={{ label: 'Check again', onClick: () => props.onTest(row.name) }}>Houston can&apos;t start {row.name}: {check.message}</Notice>}
+    {check.state === 'failed' && <Notice tone="danger" detail={startGuidance(source, check.message)} secondaryAction={{ label: 'Edit command', onClick: () => onEdit(row.name) }} action={{ label: 'Check again', onClick: () => props.onTest(row.name) }}>Houston can&apos;t start {row.name}: {check.message}</Notice>}
     <AgentConnectionGrid>{DESTINATIONS.map((tool) => { const current = cellFor(row, tool); const reason = props.tools.find((item) => item.tool === tool)?.error ?? props.results.find((item) => item.tool === tool)?.error ?? undefined; return <AgentConnectionTile key={tool} agent={tool} label={label(tool)} server={row.name} checked={current.kind !== 'absent' && current.kind !== 'disabled'} status={reason ? 'Failed' : current.kind === 'absent' || current.kind === 'disabled' ? 'Off' : row.byTool[tool]?.fingerprint !== source.fingerprint ? 'Differs' : 'On'} reason={reason} onChange={() => onToggle(row, tool)} testId={`mcp-cell-${tool}-${row.name}`} /> })}</AgentConnectionGrid>
-    <SettingsToolbar actions={<Button variant="ghost" onClick={() => onRemove(row.name)}>Remove server…</Button>}><Text size="small" tone="muted">Written to each agent's own config, inside a managed block.</Text><Button variant="ghost" onClick={() => onEdit(row.name)}>Edit command</Button><Button variant="ghost" onClick={() => onDiff(row.name)}>Show what Houston writes</Button></SettingsToolbar>
+    <SettingsToolbar actions={<Button variant="body-link" onClick={() => onRemove(row.name)}>Remove server…</Button>}><Text size="small" tone="muted">Written to each agent's own config, inside a managed block.</Text>{check.state !== 'failed' && <Button variant="body-link" onClick={() => onEdit(row.name)}>Edit command</Button>}<Button variant="body-link" onClick={() => onDiff(row.name)}>Show what Houston writes</Button></SettingsToolbar>
   </SettingsDisclosure>
+}
+
+const NODE_COMMANDS = new Set(['npx', 'node', 'npm', 'pnpm', 'bunx'])
+function startGuidance(server: McpServer, message: string): string | null {
+  if (server.transport !== 'stdio' || !server.command || !/not found|PATH/i.test(message)) return null
+  const command = server.command
+  const install = NODE_COMMANDS.has(command) ? 'Node.js' : command
+  const example = command.startsWith('/') ? command : `/usr/local/bin/${command}`
+  return `Houston runs the command from your login shell. Install ${install}, or give the command an absolute path such as ${example}.`
 }
 
 function emptyFormServer(): McpServer {

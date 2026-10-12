@@ -711,6 +711,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <BrowserButton variant="label">Label action</BrowserButton>
             <Button variant="link">Link</Button>
             <Button variant="muted-link">Muted text action</Button>
+            <Button variant="body-link">Body text link</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
             <Button variant="danger-solid" icon={IconAlertTriangle}>Danger solid</Button>
