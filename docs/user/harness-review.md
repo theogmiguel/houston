@@ -35,7 +35,8 @@ first review. To review with either, switch the routine to isolated full access 
 
 The first time, choose the provider, an optional model and a schedule, then **Run first
 review**. Afterwards, **Run review now** starts a run. Change its provider, model or schedule
-in **Routines**. Every run spends tokens, so a review runs only when you press the button or
+in **Routines**. Its schedule choices are Daily, Weekly and Only when I run it; an
+explicit Run now starts the same review path. Every run spends tokens, so a review runs only when you press the button or
 after you choose a schedule.
 
 For Claude and Codex, model choices use Houston's local model catalog, shared with Usage and

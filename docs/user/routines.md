@@ -37,7 +37,7 @@ execution path used by the schedule; the button shows **Starting…** until Hous
 the run. Pause a routine to keep its definition and stop future scheduled runs. The detail
 view shows when all three run slots are occupied and a due routine is waiting.
 
-The run table shows each run's start time, result and duration. A run with a session link can
+For routines in **Yours**, run history reports each run's start time, result and duration. A run with a session link can
 reopen its pane. Runs do not reuse a previous conversation or context.
 
 Houston runs at most three routines at once and queues due work until a slot is free. If the
@@ -51,10 +51,16 @@ recent agent sessions and recommends improvements to the workspace's agent confi
 **Set up Weekly review** chooses its provider, optional model and schedule without starting
 a run immediately. Settings ▸ Agents ▸ Review also supports setup and an explicit first run.
 
-Select the workspace's Weekly review to change its schedule, provider or model, enable or
-pause it, or run it now. Manual mode keeps the routine available for explicit runs without
-a schedule. Its recent runs report session and finding counts and let you read the published
-report. A failed report read can be retried. Findings are available in Review and in
+Select the workspace's Weekly review and choose **Daily**, **Weekly** or **Only when I
+run it**. Daily runs at 09:00; Weekly runs on Mondays at 09:00. Only when I run it turns
+scheduled runs off while retaining the saved cadence. **Run now** starts an explicit run.
+**Enabled** pauses or resumes scheduling without deleting the routine; provider and model
+can be changed separately.
+
+During a run, Houston reports the workspace and any available session count and lets you
+open its pane. Recent runs report their session and finding counts, or say when those
+counts were not reported. **Open report** reads a published result; failed reads can be
+retried, and a truncated report points to the complete copy in the workspace. Findings are available in Review and in
 Tasks' Suggested work; creating a task from one does not start implementation.
 
 Reviews read from the previous review checkpoint, subject to the review window limits;
