@@ -230,10 +230,11 @@ impl Db {
             && bound_agent.as_deref() == effective
             && bound_cwd.as_deref() == Some(old_cwd.as_str());
         let same_binding = effective == Some(slug) && old_cwd == cwd && old_profile == profile;
-        let turn = eligible && matches!(
-            event,
-            Some(AgentEvent::PromptSubmitted | AgentEvent::TurnEnded)
-        );
+        let turn = eligible
+            && matches!(
+                event,
+                Some(AgentEvent::PromptSubmitted | AgentEvent::TurnEnded)
+            );
         let retained = eligible && was_resumable && same_binding;
         // A fresh startup has no turn. An older handle stays eligible only in
         // the same namespace; preserve rejected handles for diagnostics and retry.
