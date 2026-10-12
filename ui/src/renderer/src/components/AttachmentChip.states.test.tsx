@@ -29,6 +29,15 @@ describe('AttachmentChip — state matrix', () => {
     expect(container.querySelector('[data-testid="attachment-glyph"]')?.textContent).toBe('MD')
   })
 
+  it('uses fully rounded glyphs and uniform five-pixel visual insets', () => {
+    act(() => root.render(<AttachmentChip filename="notes.md" extension="md" onRemove={() => {}} />))
+    expect(container.querySelector('[data-testid="attachment-glyph"]')?.className).toContain('rounded-full')
+    expect(container.querySelector('[data-testid="attachment-chip"]')?.className).toContain('pl-[var(--space-1)]')
+    expect((container.querySelector('[aria-label="Remove notes.md"]') as HTMLElement).style.right).toBe('calc(var(--space-1) + var(--space-pixel))')
+    act(() => root.render(<AttachmentChip filename="shot.png" extension="png" imageUrl="data:image/png;base64,x" />))
+    expect(container.querySelector('img')?.className).toContain('rounded-full')
+  })
+
   it('Filled — .pdf is --danger-toned, distinct from .md', () => {
     act(() => {
       root.render(<AttachmentChip filename="report.pdf" extension="pdf" />)

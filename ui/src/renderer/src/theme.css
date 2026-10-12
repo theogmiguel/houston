@@ -1416,7 +1416,7 @@
   --text-form-default: var(--text-primary);
   /* Named dimensions retained for the reusable composer, notification and attachment roles. */
   --space-attachment-glyph-inline: 3px;
-  --space-attachment-chip-remove-reserve: calc(var(--space-2) + var(--h-tag-chip) + var(--space-1-5));
+  --space-attachment-chip-remove-reserve: calc(var(--space-1) + var(--h-tag-chip) + var(--space-1-5));
   --space-notice-inline-end: 7px;
   --space-notice-inline-start: 9px;
   --space-notice-row-gap: 7px;

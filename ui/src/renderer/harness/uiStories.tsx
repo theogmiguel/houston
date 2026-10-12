@@ -1041,7 +1041,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
                 <AttachmentRemoveButton filename="notes.md" onRemove={noop} />
               </span>
               <AttachmentChipFrame pressable={false}>
-                <AttachmentTypeGlyph extension="png" />
+                <AttachmentTypeGlyph extension="png" imageUrl="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
                 image.png
               </AttachmentChipFrame>
               <AttachmentPreviewCard filename="notes.md" extension="md" />

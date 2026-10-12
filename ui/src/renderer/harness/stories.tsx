@@ -478,6 +478,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'composer/controls-open': () => <ComposerControlsOpen />,
   'composer/controls-overflow': () => <ComposerControlsOverflow />,
   'composer/controls-states': () => <ComposerControlsStates />,
+  'ui-primitives/attachment-chips': () => <AttachmentChips />,
   'composer/attachment-chips': () => <AttachmentChips />,
   'composer/attachment-previews': () => <AttachmentPreviews />,
   'new-session/routes': () => <NewSessionWithRoutes />,
