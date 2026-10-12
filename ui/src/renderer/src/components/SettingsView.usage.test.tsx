@@ -154,6 +154,23 @@ describe('Usage page', () => {
     expect(agents?.querySelectorAll('[role="progressbar"]')).toHaveLength(2)
   })
 
+  it('shows actual source paths, distinct sessions and the subscription caveat', () => {
+    const result = summary()
+    render({ summary: summary({ sources: [...result.sources].reverse() }) })
+    const sources = q('[data-testid="usage-sources"]')!
+    expect(sources.textContent).toContain('Read from /home/u/.claude/projects (31 sessions) and /home/u/.codex/sessions (12 sessions).')
+    expect(sources.textContent).toContain('Costs are estimates at API list prices; a subscription is billed differently.')
+    expect([...sources.querySelectorAll('span')].filter((span) => span.className.includes('font-mono'))).toHaveLength(2)
+  })
+
+  it('makes source failures visible alongside an existing result', () => {
+    const result = summary()
+    render({ summary: summary({ sources: result.sources.map((source) => source.provider === 'codex' ? { ...source, status: 'partial', failed_files: 3, message: 'Cannot parse records in /home/u/.codex/sessions' } : source) }) })
+    const sources = q('[data-testid="usage-sources"]')?.textContent
+    expect(sources).toContain('Scan incomplete · 3 files could not be read')
+    expect(sources).toContain('Cannot parse records in /home/u/.codex/sessions')
+  })
+
   it('shows 365 local calendar days and a labelled daily-cost legend', () => {
     render()
     expect(host.querySelectorAll('[data-testid="usage-calendar-day"]')).toHaveLength(365)

@@ -126,3 +126,7 @@ export function UsageDayFilter({ label, onClear }: { label: string; onClear: () 
 export function UsageBreakdownActions({ children }: { children: ReactNode }): React.JSX.Element {
   return <span className="flex items-center gap-[var(--space-2)]">{children}</span>
 }
+
+export function UsageSourcesLine({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="p" flush size="small" leading="small" tone="muted" className="px-[var(--space-1)]" data-testid="usage-sources">{children}</Text>
+}

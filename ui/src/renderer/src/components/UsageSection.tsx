@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 import { IconChartArea, IconRefresh } from './icons'
 import { EmptyState } from './ui/ActionEmptyState'
@@ -7,6 +7,7 @@ import { UsageChart, UsageLegend, type UsageSeries } from './ui/UsageChart'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import { UsageAgentMark, UsageShareCell } from './ui/UsageProviderRow'
+import type { UsageSource } from '../houston/generated/UsageSource'
 import type { UsageProvider } from '../houston/generated/UsageProvider'
 import {
   breakdownRows,
@@ -33,7 +34,7 @@ import { Card } from './ui/Card'
 import { PageFrame } from './ui/PageFrame'
 import { PageHeader } from './ui/PageHeader'
 import { Notice } from './ui/Notice'
-import { UsageMetaLine, UsageStatCard, UsageChartHeader, UsageTotalsStrip, UsageCardNote, UsageDayFilter, UsageBreakdownActions } from './ui/UsageChrome'
+import { UsageMetaLine, UsageStatCard, UsageChartHeader, UsageTotalsStrip, UsageCardNote, UsageDayFilter, UsageBreakdownActions, UsageSourcesLine } from './ui/UsageChrome'
 import { calendarStartMs } from './ui/UsageCalendar'
 import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'
 
@@ -89,6 +90,26 @@ function readAge(readAt: number): string {
   if (minutes < 60) return `${minutes} min ago`
   if (minutes < 1440) return `${Math.floor(minutes / 60)} h ago`
   return `${Math.floor(minutes / 1440)} days ago`
+}
+
+function orderedSources(sources: UsageSource[]): UsageSource[] {
+  return [...sources].sort((a, b) => a.provider === b.provider ? 0 : a.provider === 'claude' ? -1 : 1)
+}
+
+function sourceStatus(source: UsageSource): string {
+  if (source.status === 'missing') return 'Folder not found'
+  if (source.status === 'failed') return 'Could not read transcripts'
+  if (source.status === 'partial') return `Scan incomplete · ${source.failed_files} files could not be read`
+  return source.distinct_sessions === 0 ? 'No sessions in this window' : `${source.distinct_sessions.toLocaleString('en-US')} sessions`
+}
+
+function UsageSources({ sources }: { sources: UsageSource[] }): React.JSX.Element {
+  const ordered = orderedSources(sources)
+  return <UsageSourcesLine>
+    Read from {ordered.map((source, index) => <Fragment key={`${source.provider}:${source.path}`}>
+      {index > 0 && (index === ordered.length - 1 ? ' and ' : ', ')}<Text mono>{source.path}</Text> ({source.status === 'ok' ? `${source.distinct_sessions.toLocaleString('en-US')} sessions` : sourceStatus(source)}){source.status !== 'ok' && source.message && <> · {source.message}</>}
+    </Fragment>)}. Costs are estimates at API list prices; a subscription is billed differently.
+  </UsageSourcesLine>
 }
 
 function UsageBreakdown({
@@ -312,6 +333,7 @@ export function UsageSection({
 
         {}
         <UsageBreakdown mode={mode} onModeChange={setMode} rows={mode === 'day' ? dayBreakdown(rows, selectedDay, activity) : rows} loading={loading} selectedDay={selectedDay} onClearDay={() => setSelectedDay(null)} retainedDay={retainedDay} />
+        <UsageSources sources={summary.sources} />
           </>
         )}
 
