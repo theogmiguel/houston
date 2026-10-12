@@ -3,13 +3,14 @@
 ## Opening Diff and Pull request
 
 Open the side panel and choose **Diff** or **Pull request**, or press the prefix key followed
-by `D` or `P` in a terminal. Diff shows working tree changes for the focused checkout;
+by `D` or `P` in a terminal. Diff shows working tree changes for the panel's checkout;
 Pull request shows the current branch's PR summary and details. Drag the panel edge to
 resize it; double-click the edge to reset the width. Closing the panel leaves your
 terminal sessions running.
 
-The panel follows the selected workspace. In All workspaces, it follows the
-focused terminal's workspace. Check the workspace in the header before acting.
+The panel uses the selected workspace's checkout. In **All workspaces**, it follows the
+focused terminal's checkout. Reviewing an agent's work can target that run's worktree.
+Check the checkout in the header before acting.
 
 ## What Diff shows
 
@@ -152,15 +153,6 @@ to GitHub through your own `gh`. When the PR's head commit is not in your reposi
 also fetches that one ref, `refs/pull/<number>/head`, from the remote whose URL is the
 PR's repository, using your own git credentials. Without `gh`, a check sends nothing and
 fetches nothing.
-
-### Idle worktrees
-
-Clean worktrees with no unpushed commits or active panes are marked **Stale** halfway to
-the idle-removal threshold. Each Stale row can be removed early; its confirmation keeps
-the branch. When **Remove worktrees automatically** is on, Houston removes idle worktrees
-after the threshold and keeps their branches. Set the threshold in Settings → Workspaces
-→ **Remove idle worktrees after** (1–365 days; default 30). Worktrees with uncommitted
-changes, unpushed commits or a pane inside them stay.
 
 ## Fetching and pulling
 

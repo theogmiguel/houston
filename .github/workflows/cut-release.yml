@@ -26,7 +26,7 @@ on:
         required: false
         default: ''
       include_windows:
-        description: 'Build and publish the Windows installer (currently not at parity; expect it to fail)'
+        description: 'Build and publish the Windows 10/11 x86_64 installer alongside Linux'
         type: boolean
         default: false
         required: true

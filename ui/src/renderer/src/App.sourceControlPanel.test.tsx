@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { browserTabUrl, loadInspectorTabs } from './scmPanel'
 import { act } from 'react'
 import { waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -12,7 +13,8 @@ import {
   makeSession,
   makeWorkspace,
   renderReadyApp,
-  resetHarness
+  resetHarness,
+  settleLazySurface
 } from './test/appTestHarness'
 
 const WS = '/tmp/project'
@@ -218,11 +220,12 @@ describe('source control panel — shell integration', () => {
     await waitFor(() => expect(panel()?.getAttribute('data-state')).toBe('closing'))
     press('g')
     expect(panel()).not.toBeNull()
-    await settlePanel()
+    await settleLazySurface(() => harness!.container.querySelector('.browser-surface') !== null, 'BrowserSurface')
     const tree = storedTree()
     expect(hasKind(tree, 'git')).toBe(false)
     expect(hasKind(tree, 'browser')).toBe(false)
-    expect(localStorage.getItem(`tr-side:${WS}`)).toContain('https://example.test')
+    const browser = loadInspectorTabs(WS).openTabs.find((tab) => tab.startsWith('browser:'))!
+    expect(browserTabUrl(WS, browser.slice(8))).toBe('https://example.test')
     expect(sessionsIn(loadLayout(GRID_KEY).tree).sort()).toEqual([1, 2])
   })
 

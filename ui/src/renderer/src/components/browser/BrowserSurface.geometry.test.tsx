@@ -4,18 +4,18 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { isTauriMock } = vi.hoisted(() => ({ isTauriMock: vi.fn(() => true) }))
-vi.mock('../houston/host', () => ({ isTauri: () => isTauriMock() }))
+vi.mock('../../houston/host', () => ({ isTauri: () => isTauriMock() }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
 
-const { BrowserPane } = await import('./BrowserPane')
-const { WEBVIEW_HOST_CLS } = await import('./ui/panelChrome')
+const { BrowserSurface } = await import('./BrowserSurface')
+const { WEBVIEW_HOST_CLS } = await import('../ui/panelChrome')
 const { __resetNativeSuppressionForTests, setSuppressionSink } = await import(
-  '../layout/nativeSuppression'
+  '../../layout/nativeSuppression'
 )
-const { __resetBrowserSurfaceRegistryForTests } = await import('../houston/browserSurfaceRegistry')
+const { __resetBrowserSurfaceRegistryForTests } = await import('../../houston/browserSurfaceRegistry')
 
 const RECT = { x: 0, y: 0, width: 400, height: 300 }
 const LEAF_ID = 'leaf-geometry'
@@ -55,12 +55,9 @@ describe('the grid browser pane fills its leaf (M6)', () => {
   it('carries height across the portal slot, same chain as the right panel', () => {
     act(() => {
       root.render(
-        <BrowserPane
-          node={{ kind: 'browser', id: LEAF_ID, url: 'https://example.test/' }}
-          workspaceDir="/tmp/tr-test-ws"
-          onNavigate={() => {}}
-          onClose={() => {}}
-          onHeaderPointerDown={() => {}}
+        <BrowserSurface
+          tabId={LEAF_ID} initialUrl="https://example.test/" active onTitleChange={() => {}}
+          workspace="/tmp/tr-test-ws"
         />
       )
     })
@@ -84,7 +81,7 @@ describe('native browser device presets', () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(500)
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(900)
     await act(async () => {
-      root.render(<BrowserPane node={{ kind: 'browser', id: LEAF_ID, url: 'https://example.test/' }} workspaceDir="/tmp/tr-test-ws" onNavigate={() => {}} onClose={() => {}} onHeaderPointerDown={() => {}} />)
+      root.render(<BrowserSurface tabId={LEAF_ID} initialUrl="https://example.test/" active onTitleChange={() => {}} workspace="/tmp/tr-test-ws" />)
     })
   }
 

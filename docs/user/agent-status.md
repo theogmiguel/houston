@@ -100,12 +100,12 @@ it off removes exactly what Houston added:
   or `settings.json` in `CLAUDE_CONFIG_DIR` and Houston account profile directories.
   Hook installation requires an absolute config directory. Houston expands `~` and
   `$HOME` in account profile paths; directories that remain relative are skipped and
-  reported in Agent status. Use an absolute profile path for status reporting.
+  reported in Settings ▸ Agents. Use an absolute profile path for status reporting.
   Claude started from any directory inside a Houston pane reports status. The commands
   exit silently when `TR_SESSION` is empty, so they do nothing outside Houston.
   Your other settings and hooks are preserved. Houston removes its old workspace entries
   from `.claude/settings.local.json` during migration to avoid duplicate events.
-  Turn Claude off in Settings → Agent status → Claude to remove its global entries;
+  Turn Claude off in Settings ▸ Agents ▸ Claude to remove its global entries;
   the setting stays off across restarts. Claude status hook installation is unsupported
   on Windows because these commands require POSIX `sh`.
 - **Codex** — writes `~/.codex/hooks.json`, one entry per lifecycle event. An existing
@@ -121,7 +121,7 @@ it off removes exactly what Houston added:
   Launches using another Codex config directory check that directory's hooks and trust.
   A new pane with hooks off, missing hooks or unconfirmed trust immediately shows
   **Unavailable**, with an operator note naming the cause. Repair the setup in
-  Settings → Agent status → Codex and reopen the pane.
+  Settings ▸ Agents ▸ Codex and reopen the pane.
 - **OpenCode** — drops a small plugin file Houston owns; if one is already there and
   Houston did not write it, install refuses rather than overwriting it.
 - **Cursor** — adds one entry to each of your `sessionStart`, `beforeSubmitPrompt` and

@@ -212,18 +212,11 @@ describe('pane detach drop-target recognition (Phase 6 item 2, D18)', () => {
     })
   })
 
-  it('dragging a browser pane over a sidebar row never offers a drop target (no cwd to detach with)', async () => {
+  it('omits retired browser leaves from the grid and its drag targets', async () => {
     const onDetach = vi.fn()
     renderGrid(BROWSER_AND_EDITOR_TREE, makeSessions(), onDetach)
     await flush()
-
-    const head = container.querySelector('[data-panekey="b1"] .pane-head')
-    if (!(head instanceof HTMLElement)) throw new Error('no draggable browser header rendered')
-
-    elementFromPointResult = sidebarRow
-    drag(head)
-    await flush()
-
+    expect(container.querySelector('[data-panekey="b1"]')).toBeNull()
     expect(onDetach).not.toHaveBeenCalled()
   })
 

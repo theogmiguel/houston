@@ -583,6 +583,7 @@ fn main() {
             browser::browser_capture,
             browser::browser_capture_placeholder,
             browser::browser_set_workspace,
+            browser::browser_set_active,
             browser::browser_confirm_respond,
             browser::browser_confirm_screenshot,
             browser::browser_confirm_trusted,

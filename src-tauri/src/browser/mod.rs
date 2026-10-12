@@ -1,6 +1,7 @@
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
 pub mod confirm;
+mod console;
 mod corner;
 mod gtk_host;
 pub(crate) mod id;
@@ -180,6 +181,8 @@ struct ChildEntry {
     tool_refs: tool_refs::RefStore,
     #[allow(dead_code)]
     generation: u64,
+    registered_seq: u64,
+    console: console::Buffer,
     picker: Option<PickerState>,
 }
 
@@ -193,6 +196,9 @@ struct PickerState {
 struct RegistryState {
     children: BTreeMap<String, ChildEntry>,
     generations: BTreeMap<String, u64>,
+    active_by_workspace: BTreeMap<String, String>,
+    next_registered_seq: u64,
+    opened_by_session: BTreeMap<String, u32>,
 }
 
 #[derive(Default)]
@@ -262,6 +268,40 @@ pub fn browser_set_workspace(
         .ok_or_else(|| format!("browser: no live browser surface with id {id:?} to re-scope"))?;
     entry.workspace_id = workspace_id;
     Ok(())
+}
+
+#[tauri::command]
+pub fn browser_set_active(
+    registry: State<'_, BrowserRegistry>,
+    id: String,
+    workspace_id: String,
+) -> Result<(), String> {
+    id::validate_surface_id(&id)?;
+    validate_workspace_id(Some(workspace_id.clone()), &id)?;
+    let mut state = lock_registry(&registry)?;
+    if let Some(entry) = state.children.get(&id) {
+        if entry.workspace_id.as_deref() != Some(&workspace_id) {
+            return Err(format!("browser_set_active refuses tab {id:?} in workspace {workspace_id:?}: tab belongs to {:?}", entry.workspace_id));
+        }
+    }
+    state.active_by_workspace.insert(workspace_id, id);
+    Ok(())
+}
+
+fn resolve_default_surface(state: &RegistryState, workspace: &str) -> Option<String> {
+    let live =
+        |entry: &ChildEntry| !entry.closing && entry.workspace_id.as_deref() == Some(workspace);
+    if let Some(id) = state.active_by_workspace.get(workspace) {
+        if state.children.get(id).is_some_and(live) {
+            return Some(id.clone());
+        }
+    }
+    state
+        .children
+        .iter()
+        .filter(|(_, entry)| live(entry))
+        .max_by_key(|(_, entry)| entry.registered_seq)
+        .map(|(id, _)| id.clone())
 }
 
 pub fn surfaces_in(app: &AppHandle, workspace_id: &str) -> Vec<String> {
@@ -575,7 +615,9 @@ pub fn browser_mount(
             .focused(false)
             .data_directory(child_data_dir_for(&state_dir));
     #[cfg(target_os = "linux")]
-    let builder = builder.user_agent(webkit::CHILD_USER_AGENT);
+    let builder = builder
+        .user_agent(webkit::CHILD_USER_AGENT)
+        .initialization_script(include_str!("console.js"));
     #[cfg(target_os = "windows")]
     let builder = builder.initialization_script(webview2_commands::IPC_NEUTER_SCRIPT);
     let builder = builder.on_navigation({
@@ -662,8 +704,10 @@ pub fn browser_mount(
         *counter += 1;
         *counter
     };
+    state.next_registered_seq += 1;
+    let registered_seq = state.next_registered_seq;
     state.children.insert(
-        id,
+        id.clone(),
         ChildEntry {
             label,
             window_label: HOST_WINDOW.to_string(),
@@ -677,10 +721,19 @@ pub fn browser_mount(
             sticky: state::Sticky::default(),
             fullscreen,
             generation,
+            registered_seq,
+            console: console::Buffer::default(),
             picker: None,
             tool_refs: tool_refs::RefStore::default(),
         },
     );
+    drop(state);
+    #[cfg(target_os = "linux")]
+    if let Err(err) = webkit::install_console(&webview, &id, app.clone()) {
+        let _ = webview.close();
+        lock_registry(&registry)?.children.remove(&id);
+        return Err(err);
+    }
     Ok(committed)
 }
 
@@ -718,6 +771,8 @@ pub fn browser_destroy(
         .children
         .remove(&id)
         .map_or(window_label, |entry| entry.window_label);
+    state.opened_by_session.remove(&id);
+    state.active_by_workspace.retain(|_, active| active != &id);
     drop(state);
     if let Some(window_label) = detached_window_to_close(&window_label) {
         match app.get_window(window_label) {
@@ -1134,6 +1189,9 @@ pub fn browser_reload(
     bypass_cache: bool,
 ) -> Result<(), String> {
     let webview = live_webview(&app, &registry, &id, "reloading")?;
+    if let Some(entry) = lock_registry(&registry)?.children.get_mut(&id) {
+        entry.tool_refs.clear_for_navigation();
+    }
     webkit::reload(&webview, &id, bypass_cache)
 }
 
@@ -1644,5 +1702,146 @@ mod tests {
             "{DETACHED_WINDOW_URL:?} must parse as a URL"
         );
         assert_eq!(parsed.unwrap().scheme(), "data");
+    }
+}
+
+#[cfg(test)]
+mod active_tests {
+    use super::*;
+    fn entry(workspace: &str, registered_seq: u64) -> ChildEntry {
+        ChildEntry {
+            label: "tr-browser-test".into(),
+            window_label: HOST_WINDOW.into(),
+            workspace_id: Some(workspace.into()),
+            last_rect: Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            rect_spec: None,
+            device_zoom: None,
+            suppressed: suppress::SuppressionSet::new(),
+            closing: false,
+            fullscreen: false,
+            sticky: state::Sticky::default(),
+            last_state: None,
+            tool_refs: tool_refs::RefStore::default(),
+            generation: 1,
+            registered_seq,
+            console: console::Buffer::default(),
+            picker: None,
+        }
+    }
+    #[test]
+    fn first_load_uses_requested_url_with_document_start_console_capture() {
+        let source = include_str!("mod.rs");
+        let mount = source
+            .split("pub fn browser_mount(")
+            .nth(1)
+            .unwrap()
+            .split("pub fn browser_destroy(")
+            .next()
+            .unwrap();
+        assert!(mount.contains("WebviewUrl::External(parsed_url)"));
+        assert!(mount.contains(r#"initialization_script(include_str!("console.js"))"#));
+        assert!(!mount.contains("webkit::navigate("));
+    }
+
+    #[test]
+    fn default_target_uses_registration_order_instead_of_map_order() {
+        let mut state = RegistryState::default();
+        state
+            .children
+            .insert("a-first".into(), entry("/workspace", 1));
+        state
+            .children
+            .insert("z-last".into(), entry("/workspace", 2));
+        state.children.insert("other".into(), entry("/other", 3));
+        assert_eq!(
+            resolve_default_surface(&state, "/workspace").as_deref(),
+            Some("z-last")
+        );
+    }
+    #[test]
+    fn close_refuses_user_tabs_and_another_sessions_tabs() {
+        let mut state = RegistryState::default();
+        assert!(mcp_tools::require_session_opened(&state, "user-tab", 1)
+            .unwrap_err()
+            .0
+            .contains("browser_close_tab refuses"));
+        state.opened_by_session.insert("agent-tab".into(), 1);
+        assert!(mcp_tools::require_session_opened(&state, "agent-tab", 1).is_ok());
+        assert!(mcp_tools::require_session_opened(&state, "agent-tab", 2).is_err());
+    }
+
+    #[test]
+    fn explicit_target_refuses_foreign_tabs_and_lists_workspace_ids_and_urls() {
+        let mut state = RegistryState::default();
+        let mut local = entry("/workspace", 1);
+        local.last_state = Some(state::merge(
+            "local",
+            state::LiveProps {
+                url: Some("https://local.test".into()),
+                ..Default::default()
+            },
+            &state::Sticky::default(),
+        ));
+        state.children.insert("local".into(), local);
+        state.children.insert("foreign".into(), entry("/other", 2));
+        let scope = houston_core::mcp_creds::McpScope {
+            session_id: 1,
+            workspace_id: "/workspace".into(),
+        };
+        let error =
+            mcp_tools::resolve_target(&state, &scope, &serde_json::json!({"tabId": "foreign"}))
+                .unwrap_err()
+                .0;
+        assert!(
+            error.contains("foreign")
+                && error.contains("local")
+                && error.contains("https://local.test")
+        );
+        assert_eq!(
+            mcp_tools::resolve_target(&state, &scope, &serde_json::json!({"tabId": "local"}))
+                .unwrap()
+                .as_deref(),
+            Some("local")
+        );
+        state.children.get_mut("local").unwrap().closing = true;
+        assert!(
+            mcp_tools::resolve_target(&state, &scope, &serde_json::json!({"tabId": "local"}))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn active_target_wins_and_stale_or_foreign_target_falls_back() {
+        let mut state = RegistryState::default();
+        state
+            .active_by_workspace
+            .insert("/workspace".into(), "a-first".into());
+        assert_eq!(resolve_default_surface(&state, "/workspace"), None);
+        state
+            .children
+            .insert("a-first".into(), entry("/workspace", 1));
+        state
+            .children
+            .insert("z-last".into(), entry("/workspace", 2));
+        assert_eq!(
+            resolve_default_surface(&state, "/workspace").as_deref(),
+            Some("a-first")
+        );
+        state.children.get_mut("a-first").unwrap().closing = true;
+        assert_eq!(
+            resolve_default_surface(&state, "/workspace").as_deref(),
+            Some("z-last")
+        );
+        state.children.get_mut("a-first").unwrap().closing = false;
+        state.children.get_mut("a-first").unwrap().workspace_id = Some("/other".into());
+        assert_eq!(
+            resolve_default_surface(&state, "/workspace").as_deref(),
+            Some("z-last")
+        );
     }
 }

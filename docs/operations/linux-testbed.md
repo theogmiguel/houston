@@ -1,6 +1,6 @@
 # Linux testbed (WSL2)
 
-Houston is Linux-first; developing from Windows means everything behind
+Houston supports Linux and Windows. When developing on Windows, code behind
 `#[cfg(target_os = "linux")]` (`gtk_host.rs`, `webkit.rs`,
 `watchdog/gtk_signals.rs`, …) never compiles on the host machine — only a
 Linux compile catches a break there. `scripts/linux-vm.sh` drives a WSL2
@@ -72,14 +72,9 @@ shielded), `ui` (`bun install --frozen-lockfile`, `typecheck`, `test`,
 `build`, `check:css`, `check:bundle` — build before `check:bundle`, since
 that reads `bundle-stats.json`, which build emits).
 
-**Drift**: after the crate/UI steps, `gate` loops over only **seven**
-safety scripts — `check-watchdog`, `check-dev-channel`, `check-kill-guard`,
-`check-protocol-sync`, `check-loop-spawn-sync`, `check-title-tooltip-guard`,
-`check-spawn-window` — missing eighteen more that CI's `safety-checks` job
-runs, `check-icon-imports` and `check-native-select` among them. A green
-`linux-vm.sh gate` is not a green CI; it silently skips those eighteen
-checks. See `docs/operations/development.md` for the full twenty-five and
-`docs/operations/release.md` for where this bites a local release.
+`gate` runs only a subset of CI's safety scripts. Passing it does not establish
+that the complete CI gate passes. Use the full safety-script list in the
+[development runbook](development.md) before integration or a release.
 
 `set -uo pipefail`, not `-e`: every step runs regardless of earlier
 failures, so one `gate` run reports everything wrong instead of stopping at

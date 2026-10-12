@@ -47,5 +47,6 @@ CLI's own maintainer.
 
 ## What to expect
 
-Houston has a single maintainer. Expect an acknowledgement within a few days and a fix
-timeline once the report is understood — there is no bounty program.
+Houston's maintainers review vulnerability reports privately. Expect an acknowledgement
+within a few days and a fix timeline once the report is understood. There is no bounty
+program.

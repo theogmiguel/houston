@@ -13,7 +13,6 @@ import { PaneDragScrim, PaneDropIndicator, PaneDropLabel, PaneGridSurface, PaneS
 // chunk; `bundle-budget.json` names them so a static import fails with a cause.
 const FilesPane = lazy(() => import('./FilesPane').then((m) => ({ default: m.FilesPane })))
 
-const BrowserPane = lazy(() => import('./BrowserPane').then((m) => ({ default: m.BrowserPane })))
 import { SkillsLeaf, type SkillDistributionProps } from './SkillsLeaf'
 import { ExpandedContext } from '../layout/expandedContext'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
@@ -257,33 +256,10 @@ function renderPaneBody(node: PaneNode, opts: PaneBodyOpts): React.JSX.Element |
     props,
     expanded,
     onHeaderPointerDown,
-    onSessionHeaderPointerDown = (_id, e) => onHeaderPointerDown(e),
-    hiddenByExpand = false,
-    dropzoneActive = false
+    onSessionHeaderPointerDown = (_id, e) => onHeaderPointerDown(e)
   } = opts
   const workspaceDir = props.workspaceDir
-  if (node.kind === 'browser') {
-    return (
-      <SurfaceBoundary label="Browser">
-        <Suspense fallback={<div className="flex-1" />}>
-          <BrowserPane
-            node={node}
-            workspaceDir={workspaceDir}
-            client={props.client}
-            onNavigate={(url) => props.onBrowserNavigate(node.id, url)}
-            onClose={() => props.onCloseBrowser(node.id)}
-            onHeaderPointerDown={onHeaderPointerDown}
-            active={props.activeLeafId === node.id}
-            hiddenByExpand={hiddenByExpand}
-            dropzoneActive={dropzoneActive}
-            onSendToTerminal={props.onSendToTerminal}
-            onNativeError={props.onNativeError}
-            focusUrlRequest={props.focusUrlRequest}
-          />
-        </Suspense>
-      </SurfaceBoundary>
-    )
-  }
+  if (node.kind === 'browser') return null
   if (node.kind === 'editor') {
     return (
       <SurfaceBoundary label="Editor">
@@ -753,29 +729,7 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
             </PaneSlot>
           )
         }
-        if (node.kind === 'browser') {
-          const browserCollapsed = props.expandedId != null && !isExpandedLeaf
-          return (
-            <PaneSlot
-              column={false}
-              key={node.id}
-              className={`${dragSrcCls} ${growCls}`}
-              style={style}
-            >
-              {renderPaneBody(node, {
-                props,
-                expanded: isExpandedLeaf,
-                onHeaderPointerDown: (e) => {
-                  if ((e.target as HTMLElement).closest('button, input')) return
-                  startPaneDrag(node.id, 'browser', e)
-                },
-                hiddenByExpand: browserCollapsed,
-                dropzoneActive: dragKey !== null
-              })}
-              <PaneDragOverlay drop={slotDrop} source={dragKey === key} />
-            </PaneSlot>
-          )
-        }
+        if (node.kind === 'browser') return null
         if (node.kind === 'editor') {
           return (
             <PaneSlot

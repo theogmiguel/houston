@@ -283,6 +283,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   command_history_ignore_globs_set: 'local',
   usage_summary_get: 'local',
   usage_activity_summary_get: 'local',
+  browser_relay_register: 'local',
   browser_tool_result: 'local'
 }
 

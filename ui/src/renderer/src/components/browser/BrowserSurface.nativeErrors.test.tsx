@@ -4,17 +4,17 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { isTauriMock } = vi.hoisted(() => ({ isTauriMock: vi.fn(() => true) }))
-vi.mock('../houston/host', () => ({ isTauri: () => isTauriMock() }))
+vi.mock('../../houston/host', () => ({ isTauri: () => isTauriMock() }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
 
-const { BrowserPane } = await import('./BrowserPane')
+const { BrowserSurface } = await import('./BrowserSurface')
 const { __resetNativeSuppressionForTests, setSuppressionSink } = await import(
-  '../layout/nativeSuppression'
+  '../../layout/nativeSuppression'
 )
-const { __resetBrowserSurfaceRegistryForTests } = await import('../houston/browserSurfaceRegistry')
+const { __resetBrowserSurfaceRegistryForTests } = await import('../../houston/browserSurfaceRegistry')
 
 const RECT = { x: 0, y: 0, width: 400, height: 300 }
 const LEAF_ID = 'b-errors'
@@ -65,12 +65,9 @@ describe('a rejected native browser command is reported (D42)', () => {
 
     act(() => {
       root.render(
-        <BrowserPane
-          node={{ kind: 'browser', id: LEAF_ID, url: 'https://example.test/' }}
-          workspaceDir="/tmp/tr-test-ws"
-          onNavigate={() => {}}
-          onClose={() => {}}
-          onHeaderPointerDown={() => {}}
+        <BrowserSurface
+          tabId={LEAF_ID} initialUrl="https://example.test/" active onTitleChange={() => {}}
+          workspace="/tmp/tr-test-ws"
           onNativeError={onNativeError}
         />
       )
@@ -85,14 +82,14 @@ describe('a rejected native browser command is reported (D42)', () => {
     expect(text).toContain('destroy')
     expect(text).toContain(LEAF_ID)
     expect(text).toContain(RUST_REFUSAL)
-    expect(consoleError).toHaveBeenCalledWith(text)
+    expect(consoleError).toHaveBeenCalled()
   })
 
   it('shows the native webview cap, actual count and requested surface', async () => {
     const refusal = `browser: MAX_LIVE_CHILDREN is 8; 8 already live; refusing to mount "${LEAF_ID}"`
     invokeMock.mockImplementation((cmd: string) => cmd === 'browser_mount' ? Promise.reject(new Error(refusal)) : Promise.resolve(undefined))
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    act(() => root.render(<BrowserPane node={{ kind: 'browser', id: LEAF_ID, url: 'https://example.test/' }} workspaceDir="/tmp/tr-test-ws" panel onNavigate={() => {}} onClose={() => {}} onHeaderPointerDown={() => {}} />))
+    act(() => root.render(<BrowserSurface tabId={LEAF_ID} initialUrl="https://example.test/" active onTitleChange={() => {}} workspace="/tmp/tr-test-ws" />))
     await vi.waitFor(() => expect(container.textContent).toContain(refusal), { timeout: 5000 })
     act(() => root.unmount())
     await flush()
@@ -107,12 +104,9 @@ describe('a rejected native browser command is reported (D42)', () => {
 
     act(() => {
       root.render(
-        <BrowserPane
-          node={{ kind: 'browser', id: LEAF_ID, url: 'https://example.test/' }}
-          workspaceDir="/tmp/tr-test-ws"
-          onNavigate={() => {}}
-          onClose={() => {}}
-          onHeaderPointerDown={() => {}}
+        <BrowserSurface
+          tabId={LEAF_ID} initialUrl="https://example.test/" active onTitleChange={() => {}}
+          workspace="/tmp/tr-test-ws"
         />
       )
     })

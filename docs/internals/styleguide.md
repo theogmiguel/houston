@@ -7,7 +7,7 @@ rules* for using them.
 
 ## Overview & identity
 
-Houston is a Linux-first desktop shell that hosts other people's tools — agent
+Houston is a desktop shell for Linux and Windows that hosts other people's tools — agent
 CLIs in PTY terminals, a browser pane, an editor, a diff viewer. Its own chrome
 should recede and frame; the panes are the product. The identity in one line:
 **quiet monochrome chrome, three ground colours, accent spent only on focus and the

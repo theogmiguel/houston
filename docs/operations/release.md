@@ -41,18 +41,19 @@ bundle set that is missing an artifact or its `.sig`, generates the release note
 `latest.json` with each signature embedded. It files a draft, never a public
 release.
 
-**Stable releases currently ship Linux only.** The Windows installer is not at
-parity, so `cut-release.yml`'s `include_windows` defaults off: a Windows
-install is offered no update, and its updater reports that the release carries
-no installer for its platform. Ticking `include_windows` still works, and the
-default flips back once a Windows cut reaches parity.
+**Stable releases ship Linux and Windows.** Windows x86_64 installers have been
+published since v0.14.0. Select `include_windows` for a normal release: the
+dispatch input still defaults to `false`, so leaving it unchecked deliberately
+produces a Linux-only artifact set. That release offers no installer to Windows
+users. Confirm the intended platform set before starting the cut.
 
 ## The rule: PRs land work, a release names a version
 
-Every change reaches `main` through a pull request, merged once
-`safety-checks` is green and the author has run the full local gates
-(`docs/operations/development.md`). Branch protection requires a pull request
-and the four CI jobs before `main` can move.
+Every change reaches `main` through a pull request, merged once CI is green and
+the author has completed the relevant local gates
+([development runbook](development.md)). This contributor policy applies even
+when GitHub does not enforce it. Verify branch protection settings before
+administering the repository; do not assume the required checks are configured.
 
 A version means an installable artifact, nothing less. Feature PRs therefore
 never bump a version, and nobody writes release notes by hand: the notes for a
@@ -122,11 +123,13 @@ Run **Cut release** from the Actions tab. That is the whole procedure.
 | `kind` | `patch`, `minor`, `major` or `rc` |
 | `ref` | what to cut from; `main` by default |
 | `resume_tag` | an existing tag whose bundle jobs failed; rebuilds it without a version bump |
-| `include_windows` | build Windows too; off by default, because the installer is not at parity |
+| `include_windows` | select for a normal Linux and Windows release; defaults to `false`, which produces Linux packages only |
 
 It reads the tags to decide the next version, writes it with
-`scripts/set-version.sh`, commits, tags, pushes, builds the selected bundle jobs
-in parallel and files a **draft** release whose body is the generated notes.
+`scripts/set-version.sh`, commits, tags, pushes and builds both Linux architectures
+in parallel. When selected, the Windows build follows the Linux build because
+it bundles the Linux daemon for WSL. The workflow then files a **draft** release
+whose body is the generated notes.
 Windows or not, a cut requires both Linux architectures, each with an AppImage
 and a `.deb`; a Windows build adds the x86_64 NSIS installer. Then you download
 the artifacts, install and run them, and promote the draft with **Promote draft
@@ -427,7 +430,7 @@ Linux, from a Windows host, via the WSL2 testbed:
 Or natively on Linux, the same commands `docs/operations/development.md` names for
 `core`/`src-tauri`/`ui`.
 
-`linux-vm.sh gate` runs seven of the twenty-five CI safety scripts. It does
+`linux-vm.sh gate` runs only a subset of the CI safety scripts. It does
 not replace the complete local gate in
 [`docs/operations/development.md`](development.md); a release must run the
 remaining checks as well.
@@ -484,18 +487,23 @@ Bundle output: `src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`
 
 Windows:
 
-```
+```powershell
+$env:HOUSTON_WSL_LINUX_BIN_DIR = '<Linux core/target/release>'
 ./scripts/build-app.ps1
-cargo tauri build --bundles nsis      # documented extra step
+cd src-tauri
+cargo tauri bundle --bundles nsis --ci
 ```
 
-`build-app.ps1` runs the full renderer gate (`typecheck`, `test`, `build`,
-`check:css`), the same `check-renderer-fresh.sh` via Git Bash, stages
-`tr-helper.exe` and `houston-core.exe` under `src-tauri\binaries` with the
-host target triple (before the app build, for the same reason the bash script
-does), then `cargo build --release` (`CARGO_BUILD_JOBS=6`) and copies
-`houston-tauri.exe` → `houston.exe`. It stops short of bundling by
-design — the NSIS step above is the documented extra.
+Build the Linux `houston-core`, `tr-helper` and `houston-supervisor` at the same
+commit inside WSL first, and point `HOUSTON_WSL_LINUX_BIN_DIR` to that output.
+The script requires these resources and validates them before building the app.
+See [Windows artifacts](development.md#windows) for the prerequisite build.
+
+`build-app.ps1` runs the renderer gates, stages the native sidecars from one
+locked Cargo build, and builds the production app through
+`cargo tauri build --no-bundle --ci -- --locked`, with three Cargo jobs.
+The separate bundle step packages that build without recompiling it. A release
+requires updater signing keys; a local unsigned build can use `--no-sign`.
 
 Bundle output: `src-tauri/target/release/bundle/nsis/*.exe`.
 
@@ -506,9 +514,14 @@ makes it visible. CI proves the built x86_64 AppImage *loads and answers* on
 the four distributions above, but not that the window opens: runners are
 headless, so no webview ever initializes there. Manual smoke-test is a hard
 requirement before promoting or handing anything out, local release or not:
-install the artifact and run it (`./scripts/linux-vm.sh app` on the testbed)
-first. The graphical test is Linux only while cuts are Linux only; it extends
-to Windows on the first cut that ships a Windows installer.
+install the artifact and run it (`./scripts/linux-vm.sh app` on the Linux testbed)
+first. Smoke-test every platform included in the draft before promotion.
+
+For Windows, install the NSIS artifact on Windows 10 or 11 and launch it on an
+isolated test channel. Verify terminal input and coloured output, browser navigation,
+task startup in a worktree and child-pane orchestration. Close and reopen the app
+to confirm that its detached daemon and sessions remain available. Verify the
+update flow separately: Windows updates stop sessions before replacing the daemon.
 
 A Windows installer also gets a WSL pass, because no CI job reaches a real distro.
 Install it, then on a test channel (for example `houston.exe --channel wslt`, so

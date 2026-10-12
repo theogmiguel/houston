@@ -1,6 +1,5 @@
 //! The browser tools an agent hosted in a Houston pane can call over MCP.
-//! Scoping is a resolution step, not a check: no tool takes a surface id from the
-//! model, and each call resolves its target through the workspace baked into its credential.
+//! Targets are restricted to live surfaces in the credential workspace.
 use houston_core::mcp_creds::McpScope;
 use houston_core::mcp_server::{BoxFuture, ToolError, ToolOutput, ToolProvider, ToolSpec};
 use serde_json::{json, Value};
@@ -10,6 +9,19 @@ use super::{confirm, BrowserRegistry};
 
 pub struct BrowserTools {
     app: AppHandle,
+}
+
+fn requires_reveal(name: &str) -> bool {
+    matches!(
+        name,
+        "browser_capture"
+            | "browser_select_tab"
+            | "browser_click"
+            | "browser_type"
+            | "browser_hover"
+            | "browser_press_key"
+            | "browser_select_option"
+    )
 }
 
 impl BrowserTools {
@@ -23,10 +35,39 @@ impl BrowserTools {
 // nothing after that is a named error, never a silent no-op.
 const OPEN_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
 
-fn existing_surface(app: &AppHandle, scope: &McpScope) -> Option<String> {
-    super::surfaces_in(app, &scope.workspace_id)
-        .into_iter()
-        .next()
+fn existing_surface(
+    app: &AppHandle,
+    scope: &McpScope,
+    args: &Value,
+) -> Result<Option<String>, ToolError> {
+    let registry = app.state::<BrowserRegistry>();
+    let state = super::lock_registry(&registry).map_err(ToolError)?;
+    resolve_target(&state, scope, args)
+}
+
+pub(super) fn resolve_target(
+    state: &super::RegistryState,
+    scope: &McpScope,
+    args: &Value,
+) -> Result<Option<String>, ToolError> {
+    if let Some(value) = args.get("tabId") {
+        let id = value
+            .as_str()
+            .ok_or_else(|| ToolError(format!("tabId must be a string, got {value}")))?;
+        if state.children.get(id).is_some_and(|entry| {
+            !entry.closing && entry.workspace_id.as_deref() == Some(&scope.workspace_id)
+        }) {
+            return Ok(Some(id.to_string()));
+        }
+        let available: Vec<_> = state.children.iter().filter(|(_, e)| !e.closing && e.workspace_id.as_deref() == Some(&scope.workspace_id))
+            .map(|(id, e)| json!({"tabId": id, "url": e.last_state.as_ref().and_then(|s| s.url.as_deref())})).collect();
+        return Err(ToolError(format!(
+            "tabId {id:?} is not live in workspace {:?}; available tabs: {}",
+            scope.workspace_id,
+            json!(available)
+        )));
+    }
+    Ok(super::resolve_default_surface(state, &scope.workspace_id))
 }
 
 // A browser pane registers a surface only once it has a page, so the open request must
@@ -35,28 +76,58 @@ async fn open_surface_at(
     app: &AppHandle,
     scope: &McpScope,
     url: &str,
+    operation: &str,
 ) -> Result<String, ToolError> {
+    let surface_id = format!("agent-{}", uuid::Uuid::new_v4());
+    {
+        let registry = app.state::<BrowserRegistry>();
+        let state = super::lock_registry(&registry).map_err(ToolError)?;
+        let live_ids: Vec<_> = state.children.keys().cloned().collect();
+        super::check_cap(&live_ids, &surface_id, super::MAX_LIVE_CHILDREN)
+            .map_err(|err| ToolError(format!("{operation}: {err}")))?;
+    }
     if let Err(err) = app.emit(
         super::state::OPEN_REQUEST_EVENT,
-        &json!({ "workspaceId": scope.workspace_id, "url": url }),
+        &json!({ "workspaceId": scope.workspace_id, "action": "open", "surfaceId": surface_id, "url": url }),
     ) {
         return Err(ToolError(format!(
-            "no browser pane in workspace {:?}, and asking the app to open one failed: {err}",
+            "browser_open_failed: requested {operation}: no browser pane in workspace {:?}, and asking the app to open one failed: {err}",
             scope.workspace_id
         )));
     }
-    let deadline = std::time::Instant::now() + OPEN_WAIT;
-    while std::time::Instant::now() < deadline {
-        tokio::time::sleep(WAIT_POLL).await;
-        if let Some(id) = existing_surface(app, scope) {
-            return Ok(id);
-        }
+    if wait_for_exact_surface(&surface_id, OPEN_WAIT, || {
+        super::surfaces_in(app, &scope.workspace_id)
+    })
+    .await
+    {
+        let registry = app.state::<BrowserRegistry>();
+        super::lock_registry(&registry)
+            .map_err(ToolError)?
+            .opened_by_session
+            .insert(surface_id.clone(), scope.session_id);
+        return Ok(surface_id);
     }
-    Err(ToolError(no_pane_after_wait(
-        &scope.workspace_id,
-        url,
-        OPEN_WAIT,
+    Err(ToolError(format!(
+        "{} Requested surfaceId {surface_id:?}.",
+        no_pane_after_wait(&scope.workspace_id, url, OPEN_WAIT, operation)
     )))
+}
+
+async fn wait_for_exact_surface(
+    id: &str,
+    timeout: std::time::Duration,
+    mut live: impl FnMut() -> Vec<String>,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if live().iter().any(|surface| surface == id) {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep_until((tokio::time::Instant::now() + WAIT_POLL).min(deadline)).await;
+    }
 }
 
 // Reveal must finish promptly even if the renderer never acknowledges the requested tab.
@@ -76,18 +147,21 @@ async fn reveal_surface(
     app: &AppHandle,
     scope: &McpScope,
     surface: &str,
-    url: &str,
+    operation: &str,
 ) -> Result<(), ToolError> {
+    let url = super::last_state_for(app, surface)
+        .and_then(|state| state.url)
+        .unwrap_or_default();
     reveal_when_hidden(
         &scope.workspace_id,
         surface,
-        url,
+        &format!("{operation} at {url}"),
         REVEAL_TIMEOUT,
         || surface_visible(app, surface),
         || {
             app.emit(
                 super::state::OPEN_REQUEST_EVENT,
-                &json!({"workspaceId": scope.workspace_id, "url": url, "surfaceId": surface}),
+                &json!({"workspaceId": scope.workspace_id, "surfaceId": surface, "action": "reveal"}),
             )
             .map_err(|err| err.to_string())
         },
@@ -103,9 +177,10 @@ async fn reveal_when_hidden(
     mut visible: impl FnMut() -> Result<bool, String>,
     request: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), ToolError> {
+    let started = tokio::time::Instant::now();
     let failure = |reason: String| {
         ToolError(format!(
-        "browser_reveal_failed: browser_navigate workspace {workspace:?}, surface {surface:?}, url {url:?}: {reason} (REVEAL_TIMEOUT={}ms)", timeout.as_millis()
+        "browser_reveal_failed: requested operation {url:?}, workspace {workspace:?}, surface {surface:?}: {reason} (REVEAL_TIMEOUT={}ms, actual={}ms)", timeout.as_millis(), started.elapsed().as_millis()
     ))
     };
     if visible().map_err(failure)? {
@@ -124,12 +199,17 @@ async fn reveal_when_hidden(
     }
 }
 
-fn no_pane_after_wait(workspace_id: &str, url: &str, waited: std::time::Duration) -> String {
+fn no_pane_after_wait(
+    workspace_id: &str,
+    url: &str,
+    waited: std::time::Duration,
+    operation: &str,
+) -> String {
     format!(
-        "no browser pane in workspace {workspace_id:?} — asked the app to open one at {url:?} \
+        "browser_open_failed: OPEN_WAIT limit={}ms, actual={}ms, requested {operation}: no browser pane in workspace {workspace_id:?} — asked the app to open one at {url:?} \
          and none appeared within {}s. Open a browser pane in this workspace and retry. \
          (Browser tools only ever reach panes in the workspace this agent session runs in.)",
-        waited.as_secs()
+        waited.as_millis(), waited.as_millis(), waited.as_secs()
     )
 }
 
@@ -140,6 +220,19 @@ fn no_page_open(workspace_id: &str, tool: &str) -> String {
          workspace has none. (Browser tools only ever reach panes in the workspace this agent \
          session runs in.)"
     )
+}
+
+pub(super) fn require_session_opened(
+    state: &super::RegistryState,
+    surface: &str,
+    session: u32,
+) -> Result<(), ToolError> {
+    if state.opened_by_session.get(surface) == Some(&session) {
+        return Ok(());
+    }
+    Err(ToolError(format!(
+        "browser_close_tab refuses tab {surface:?}: session {session} did not open it"
+    )))
 }
 
 impl ToolProvider for BrowserTools {
@@ -162,22 +255,113 @@ impl ToolProvider for BrowserTools {
         args: &'a Value,
     ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
         Box::pin(async move {
+            #[cfg(not(target_os = "linux"))]
+            if matches!(name, "browser_console_messages" | "browser_scroll") {
+                return Err(ToolError(format!(
+                    "{name} is unsupported on {}: native page instrumentation is unavailable",
+                    std::env::consts::OS
+                )));
+            }
+            if name == "browser_tabs" {
+                let registry = self.app.state::<BrowserRegistry>();
+                let state = super::lock_registry(&registry).map_err(ToolError)?;
+                let active = super::resolve_default_surface(&state, &scope.workspace_id);
+                let tabs: Vec<_> = state.children.iter()
+                    .filter(|(_, e)| !e.closing && e.workspace_id.as_deref() == Some(&scope.workspace_id))
+                    .map(|(id, e)| json!({"tabId": id, "url": e.last_state.as_ref().and_then(|s| s.url.as_deref()),
+                        "title": e.last_state.as_ref().and_then(|s| s.title.as_deref()), "active": active.as_ref() == Some(id),
+                        "openedBySession": state.opened_by_session.get(id) == Some(&scope.session_id)})).collect();
+                return Ok(ToolOutput::structured(json!({"tabs": tabs})));
+            }
+            if name == "browser_new_tab" {
+                let url = navigate_url(args)?;
+                let surface = open_surface_at(&self.app, scope, url, name).await?;
+                return Ok(navigated(&surface, url));
+            }
             if name == "browser_navigate" {
                 let url = navigate_url(args)?;
-                return match existing_surface(&self.app, scope) {
-                    Some(surface) => {
-                        reveal_surface(&self.app, scope, &surface, url).await?;
-                        navigate(&self.app, &surface, url)
-                    }
+                return match existing_surface(&self.app, scope, args)? {
+                    Some(surface) => navigate(&self.app, &surface, url),
                     None => {
-                        let surface = open_surface_at(&self.app, scope, url).await?;
+                        let surface = open_surface_at(&self.app, scope, url, name).await?;
                         Ok(navigated(&surface, url))
                     }
                 };
             }
-            let surface = existing_surface(&self.app, scope)
+            if matches!(name, "browser_select_tab" | "browser_close_tab")
+                && args.get("tabId").is_none()
+            {
+                return Err(ToolError(format!(
+                    "{name} requires a string tabId; use browser_tabs to list available ids"
+                )));
+            }
+            let surface = existing_surface(&self.app, scope, args)?
                 .ok_or_else(|| ToolError(no_page_open(&scope.workspace_id, name)))?;
+            if name == "browser_close_tab" {
+                let registry = self.app.state::<BrowserRegistry>();
+                require_session_opened(
+                    &*super::lock_registry(&registry).map_err(ToolError)?,
+                    &surface,
+                    scope.session_id,
+                )?;
+                self.app.emit(super::state::OPEN_REQUEST_EVENT, json!({"workspaceId": scope.workspace_id, "action": "close", "surfaceId": surface})).map_err(|e| ToolError(e.to_string()))?;
+                return Ok(ToolOutput::structured(
+                    json!({"surfaceId": surface, "action": "close"}),
+                ));
+            }
+            if requires_reveal(name) {
+                reveal_surface(&self.app, scope, &surface, name).await?;
+            }
             match name {
+                "browser_select_tab" => {
+                    super::browser_set_active(
+                        self.app.state::<BrowserRegistry>(),
+                        surface.clone(),
+                        scope.workspace_id.clone(),
+                    )
+                    .map_err(ToolError)?;
+                    // A visible background tab still needs selection.
+                    self.app.emit(super::state::OPEN_REQUEST_EVENT, json!({"workspaceId": scope.workspace_id, "action": "reveal", "surfaceId": surface})).map_err(|e| ToolError(e.to_string()))?;
+                    Ok(ToolOutput::structured(
+                        json!({"surfaceId": surface, "selected": true}),
+                    ))
+                }
+                "browser_reload" => {
+                    let bypass = match args.get("bypassCache") {
+                        None => false,
+                        Some(v) => v.as_bool().ok_or_else(|| {
+                            ToolError(format!(
+                                "browser_reload bypassCache must be a boolean, got {v}"
+                            ))
+                        })?,
+                    };
+                    super::browser_reload(
+                        self.app.clone(),
+                        self.app.state::<BrowserRegistry>(),
+                        surface.clone(),
+                        bypass,
+                    )
+                    .map_err(ToolError)?;
+                    Ok(ToolOutput::structured(
+                        json!({"surfaceId": surface, "reloaded": true, "bypassCache": bypass}),
+                    ))
+                }
+                "browser_scroll" => {
+                    let delta = match args.get("deltaY") {
+                        None => 600.0,
+                        Some(v) => v.as_f64().filter(|d| d.is_finite() && d.abs() <= 100_000.0)
+                            .ok_or_else(|| ToolError(format!("browser_scroll deltaY {v} exceeds the 100000 pixel limit or is not a finite number")))?,
+                    };
+                    let op = if args.get("ref").is_some() {
+                        let element = required_ref(args, name)?;
+                        let locator = locator_for(&self.app, &surface, &element)?;
+                        locator_op("scroll", &element, &locator, json!({"deltaY": delta}))
+                    } else {
+                        json!({"kind": "scroll", "deltaY": delta})
+                    };
+                    page_op(&self.app, &surface, op).await
+                }
+                "browser_console_messages" => console_messages(&self.app, &surface, args),
                 "browser_current_page" => current_page(&self.app, &surface),
                 "browser_capture" => capture(&self.app, &surface).await,
                 "browser_snapshot" => snapshot(&self.app, &surface).await,
@@ -348,6 +532,60 @@ impl ToolProvider for BrowserTools {
                 other => Err(ToolError(format!("browser provider has no tool {other:?}"))),
             }
         })
+    }
+}
+
+fn console_messages(app: &AppHandle, surface: &str, args: &Value) -> Result<ToolOutput, ToolError> {
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, surface, args);
+        Err(ToolError(format!(
+            "browser_console_messages is unsupported on {}",
+            std::env::consts::OS
+        )))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let level = match args.get("level") {
+            None => None,
+            Some(v) => Some(v.as_str().filter(|l| matches!(*l, "log" | "debug" | "info" | "warn" | "error"))
+                .ok_or_else(|| ToolError(format!("browser_console_messages level {v} must be log, debug, info, warn or error")))?),
+        };
+        let since = args
+            .get("sinceId")
+            .map(|v| {
+                v.as_u64().ok_or_else(|| {
+                    ToolError(format!(
+                        "browser_console_messages sinceId must be a non-negative integer, got {v}"
+                    ))
+                })
+            })
+            .transpose()?
+            .unwrap_or(0);
+        let limit = args
+            .get("limit")
+            .map(|v| {
+                v.as_u64()
+                    .filter(|n| *n > 0 && *n <= super::console::MAX_MESSAGES as u64)
+                    .ok_or_else(|| {
+                        ToolError(format!(
+                            "browser_console_messages limit {v} must be 1..={} (MAX_MESSAGES)",
+                            super::console::MAX_MESSAGES
+                        ))
+                    })
+            })
+            .transpose()?
+            .unwrap_or(100) as usize;
+        let registry = app.state::<BrowserRegistry>();
+        let state = super::lock_registry(&registry).map_err(ToolError)?;
+        let entry = state.children.get(surface).ok_or_else(|| {
+            ToolError(format!(
+                "browser_console_messages tab {surface:?} disappeared"
+            ))
+        })?;
+        Ok(ToolOutput::structured(
+            json!({"surfaceId": surface, "trust": "untrusted page content", "messages": entry.console.read(level, since, limit)}),
+        ))
     }
 }
 
@@ -769,6 +1007,42 @@ mod tests {
     use super::*;
     use houston_core::browser_relay::{tool_specs, INSTRUCTIONS};
 
+    #[test]
+    fn background_page_tools_do_not_reveal_but_pixels_and_confirmation_do() {
+        for name in [
+            "browser_current_page",
+            "browser_snapshot",
+            "browser_console_messages",
+            "browser_wait_for",
+            "browser_tabs",
+            "browser_navigate",
+            "browser_go_back",
+            "browser_go_forward",
+            "browser_reload",
+            "browser_scroll",
+            "browser_close_tab",
+        ] {
+            assert!(
+                !requires_reveal(name),
+                "{name} must preserve the selected workspace and panel"
+            );
+        }
+        for name in [
+            "browser_capture",
+            "browser_select_tab",
+            "browser_click",
+            "browser_type",
+            "browser_hover",
+            "browser_press_key",
+            "browser_select_option",
+        ] {
+            assert!(
+                requires_reveal(name),
+                "{name} needs pixels or human confirmation"
+            );
+        }
+    }
+
     fn scope() -> McpScope {
         McpScope {
             session_id: 1,
@@ -778,7 +1052,12 @@ mod tests {
 
     #[test]
     fn the_no_pane_error_names_the_workspace_the_wait_and_the_fix() {
-        let msg = no_pane_after_wait(&scope().workspace_id, "http://localhost:4388/", OPEN_WAIT);
+        let msg = no_pane_after_wait(
+            &scope().workspace_id,
+            "http://localhost:4388/",
+            OPEN_WAIT,
+            "browser_navigate",
+        );
         assert!(msg.contains("/home/dev/proj"));
         assert!(msg.contains("asked the app to open one at \"http://localhost:4388/\""));
         assert!(msg.contains("within 8s"));
@@ -923,6 +1202,14 @@ mod tests {
                 "browser_go_back",
                 "browser_go_forward",
                 "browser_wait_for",
+                "browser_tabs",
+                "browser_new_tab",
+                "browser_select_tab",
+                "browser_close_tab",
+                "browser_reload",
+                "browser_scroll",
+                "browser_console_messages",
+                "browser_local_servers",
             ]
         );
     }
@@ -1027,8 +1314,8 @@ mod tests {
              codex gateway {gateway_bytes} B / {gateway_count} tools"
         );
 
-        assert_eq!(enabled_count, 47, "{enabled_specs:?}");
-        assert_eq!(disabled_count, 29, "{disabled_specs:?}");
+        assert_eq!(enabled_count, 55, "{enabled_specs:?}");
+        assert_eq!(disabled_count, 37, "{disabled_specs:?}");
         assert_eq!(gateway_count, 2, "{gateway_specs:?}");
         assert!(
             enabled_bytes < 28_000,
@@ -1051,7 +1338,24 @@ mod reveal_tests {
     use std::cell::Cell;
 
     #[tokio::test]
-    async fn hidden_surface_requests_reveal_before_navigation_can_proceed() {
+    async fn opening_waits_for_exact_host_chosen_surface_not_another_workspace_tab() {
+        assert!(
+            !wait_for_exact_surface("agent-new", std::time::Duration::ZERO, || vec![
+                "user-existing".into()
+            ])
+            .await
+        );
+        assert!(
+            wait_for_exact_surface("agent-new", std::time::Duration::ZERO, || vec![
+                "user-existing".into(),
+                "agent-new".into()
+            ])
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn hidden_surface_requests_reveal_before_capture_can_proceed() {
         let requested = Cell::new(false);
         let checks = Cell::new(0);
         reveal_when_hidden(
@@ -1108,7 +1412,7 @@ mod reveal_tests {
             "https://example.test",
             REVEAL_TIMEOUT,
             || Ok(true),
-            || panic!("visible surface must navigate directly"),
+            || panic!("visible surface must proceed directly"),
         )
         .await
         .unwrap();

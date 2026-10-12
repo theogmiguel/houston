@@ -2,10 +2,12 @@
 
 > For maintainers. Using Houston? Start at the [README](../../README.md).
 
-Houston is two processes: a Tauri app, and a `houston-core` daemon it connects to over a
-loopback WebSocket (spawning one, detached, if none is running for the channel). The daemon
-is the execution boundary — every PTY, agent process, git call, hook and MCP request happens
-there, and it outlives the app: quitting Houston closes the socket, not the daemon. The
+Houston runs one Tauri app, with one detached `houston-core` daemon per channel in each
+enabled environment. The app connects to its local daemon over a loopback WebSocket,
+spawning one if none is running. On Windows, enabled WSL distros each run an additional
+Linux daemon reached through the WSL relay. Each daemon is the execution boundary for
+its environment's PTYs, agent processes, Git calls, hooks and MCP requests, and it outlives
+the app: quitting Houston closes the connection, not the daemon. The
 renderer is a built Vite bundle embedded in the app binary that talks to the daemon over that
 WebSocket and a handful of Tauri commands. Agent CLIs run as children of the daemon and talk
 back to it over MCP. The control endpoint stays on loopback; remote access is a separate,
@@ -411,7 +413,8 @@ channel shares it. Off Windows the commands refuse by name and Settings lists no
   delivery compares the creation token first.
 - **Browser panes hold no authority.** The invoke handler refuses any Tauri command coming
   from a content-only webview label. Destructive agent actions in the browser
-  (`browser_click`, `browser_type`) pass a human confirmation gate.
+  (`browser_click`, `browser_type`, `browser_hover`, `browser_press_key`,
+  `browser_select_option`) pass a human confirmation gate.
 - **Secrets never touch the DB.** SSH passwords, passphrases, the Groq key and the ntfy topic
   URL live in the OS keychain (Secret Service via zbus); the DB holds a reference. `sanitize.rs` redacts
   known secret shapes from anything persisted or shown to another agent.
@@ -517,7 +520,7 @@ no pane virtualization, no unix-socket transport (the browser WebSocket API cann
 
 ## Platform notes
 
-- Linux (WebKitGTK) is lead. Browser panes need tauri's `unstable` feature for
+- Linux uses Unix PTYs and WebKitGTK. Browser panes need Tauri's `unstable` feature for
   `Window::add_child` and a GTK escape hatch because `Webview::set_bounds` is a no-op there.
 - Windows builds and ships (ConPTY, WebView2, NSIS). A kill *releases* the PTY because
   conhost's death does not propagate pipe-close. `whisper-rs` is unix-only; the Windows local

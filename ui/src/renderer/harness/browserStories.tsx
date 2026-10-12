@@ -1,33 +1,25 @@
 import React from 'react'
-import { BrowserPane } from '../src/components/BrowserPane'
+import { BrowserSurface } from '../src/components/browser/BrowserSurface'
 import { BrowserActConfirm, BrowserActConfirmModal } from '../src/components/BrowserActConfirm'
 import { BrowserFullscreen } from '../src/components/BrowserFullscreen'
 import { PickerStrip, type PickerController } from '../src/components/BrowserPicker'
-import { tabsStorageKey } from '../src/components/browserTabsKey'
+import { SurfaceBrowserTabs } from './inspectorStories'
 import type { ConfirmRequest } from '../src/houston/browserConfirm'
 
 const noop = (): void => {}
 const NODE_ID = 'story-browser'
 
-function seedTabs(urls: string[], activeIndex = 0): void {
-  const tabs = urls.map((url, i) => ({ id: i + 1, url }))
-  localStorage.setItem(tabsStorageKey(NODE_ID), JSON.stringify({ tabs, activeTabId: tabs[activeIndex].id }))
-}
-
 interface PaneStoryProps {
   url?: string
   active?: boolean
   width?: number
-  tabs?: string[]
   click?: string
   failStorage?: boolean
 }
 
-function PaneStory({ url = 'https://example.test/', active = false, width = 640, tabs, click, failStorage = false }: PaneStoryProps): React.JSX.Element {
+function PaneStory({ url = 'https://example.test/', active = true, width = 640, click, failStorage = false }: PaneStoryProps): React.JSX.Element {
   const ref = React.useRef<HTMLDivElement>(null)
   const [ready] = React.useState(() => {
-    localStorage.removeItem(tabsStorageKey(NODE_ID))
-    if (tabs) seedTabs(tabs)
     if (failStorage) {
       Storage.prototype.setItem = function (): void {
         throw new Error('quota exceeded')
@@ -45,15 +37,7 @@ function PaneStory({ url = 'https://example.test/', active = false, width = 640,
   if (!ready) return <></>
   return (
     <div ref={ref} className="flex" style={{ width, height: 560, padding: 12, background: 'var(--content-bg)', boxSizing: 'border-box' }}>
-      <BrowserPane
-        node={{ kind: 'browser', id: NODE_ID, url }}
-        workspaceDir="/work/acme"
-        onNavigate={noop}
-        onClose={noop}
-        onHeaderPointerDown={noop}
-        active={active}
-        onSendToTerminal={noop}
-      />
+      <BrowserSurface tabId={NODE_ID} initialUrl={url} workspace="/work/acme" active={active} onTitleChange={noop} onSendToTerminal={noop} />
     </div>
   )
 }
@@ -65,9 +49,7 @@ export const BrowserPaneNarrow = (): React.JSX.Element => <PaneStory width={260}
 export const BrowserPaneInsecure = (): React.JSX.Element => <PaneStory url="http://example.test/" />
 export const BrowserPanePhone = (): React.JSX.Element => <PaneStory click='[aria-label="Phone 393 × 852"]' />
 export const BrowserPaneTablet = (): React.JSX.Element => <PaneStory click='[aria-label="Tablet 820 × 1180"]' />
-export const BrowserPaneTabs = (): React.JSX.Element => (
-  <PaneStory tabs={['https://example.test/', 'https://docs.example.test/guide', 'http://localhost:5173/']} click='[aria-label="3 tabs"]' />
-)
+export const BrowserPaneTabs = (): React.JSX.Element => <SurfaceBrowserTabs />
 export const BrowserPanePersistError = (): React.JSX.Element => <PaneStory failStorage />
 
 const pickerBase: PickerController = {

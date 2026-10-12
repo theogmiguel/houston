@@ -10,7 +10,8 @@ Open the side panel and choose **Browser**, **Files**, **Diff**, **Pull request*
 overviews. Use the launcher keys `B`, `F`, `D`, `P` and `L` while the empty launcher is
 focused, or press the prefix key followed by the matching letter from a terminal. Tabs
 remain available per workspace. Drag the panel divider to resize it; double-click resets
-its width. The panel can expand over the grid; Escape restores its previous width.
+its width. Maximize the panel for more room; restore it to return to its previous width. Escape
+returns focus to the grid.
 
 Ctrl-click a file path in a terminal to open it in Files at the linked line and column.
 Files uses that session's workspace, including when the session belongs to a different
@@ -79,9 +80,17 @@ closing the side panel hides browser surfaces without closing them; closing a br
 releases its webview. Up to eight native webviews can be open at once. A refusal names the
 limit, current count and requested browser; close a browser tab before retrying.
 
-When an agent asks to open its first page, Houston opens a browser tab in the side panel.
-Navigation to an existing hidden browser reveals that exact tab before loading the page.
-Agent browser requests reveal a hidden browser automatically before operating on it.
+Opening a URL from a terminal link, source control, the launcher or an agent creates a
+new browser tab and loads the requested page. Add Browser again, or press the prefix
+key followed by `B`, to open another tab.
+Browser tabs and their URLs are remembered separately for each workspace. Page popups
+open another side-panel tab. Agents reveal the exact tab when opening or selecting a tab,
+capturing it or requesting confirmation for an element action. Reading, navigating,
+reloading and scrolling existing tabs keep your selected workspace and panel in place.
+Closing a tab also removes its saved state.
+
+Use Shift-click on Reload to bypass the page cache, or open the current page in the
+system browser. Full screen expands the current browser; Escape returns to the panel.
 
 If a page cannot be reached, the browser shows the failed host and a retry action in the
 page area. For a refused loopback connection, it names the port and suggests starting the

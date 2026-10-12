@@ -79,7 +79,7 @@ five attempts, and the status line names it.
    any required Plan, add at least one verifiable acceptance criterion and make sure the
    task is ready.
 2. The owner starts a ready task with **Accept**, by reacting with ✅ to the request, or
-   with **Start** in the Tasks tab. An attempt to accept an unready task does not start it:
+   with **Start** on the Tasks page. An attempt to accept an unready task does not start it:
    the request stays pending, gets ⚠️ and the owner receives the missing readiness criteria.
    Fix the task in Houston, then retry. A ✅ or a click
    from anyone else does nothing. **Refuse** asks for an optional reason: the reason is

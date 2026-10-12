@@ -751,6 +751,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::TaskTrackerLinksGet { .. }
             | proto::ClientMsg::KeymapGet
             | proto::ClientMsg::WaitForIdle { .. }
+            | proto::ClientMsg::BrowserRelayRegister { .. }
             | proto::ClientMsg::BrowserToolResult { .. }
             | proto::ClientMsg::InboxList { .. }
             | proto::ClientMsg::DelegationResultsList { .. }
@@ -3604,6 +3605,10 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
+        proto::ClientMsg::BrowserRelayRegister {} => {
+            daemon.browser_relay.register(conn_id);
+            Ok(())
+        }
         proto::ClientMsg::BrowserToolResult {
             request_id,
             ok,
@@ -3612,7 +3617,7 @@ async fn dispatch(
         } => {
             daemon
                 .browser_relay
-                .deliver_result(request_id, ok, output, error);
+                .deliver_result(conn_id, request_id, ok, output, error);
             Ok(())
         }
         proto::ClientMsg::RemoteGet => {

@@ -61,7 +61,7 @@ mod linux {
     use std::time::Duration;
 
     use gtk::glib::object::Cast;
-    use tauri::{AppHandle, Emitter, EventTarget};
+    use tauri::{AppHandle, Emitter, EventTarget, Manager};
     use webkit2gtk::{
         LoadEvent, NavigationAction, NavigationPolicyDecision, NavigationPolicyDecisionExt,
         PolicyDecisionExt, PolicyDecisionType, URIRequestExt, WebProcessTerminationReason,
@@ -574,6 +574,14 @@ mod linux {
                 )
             })?;
             manager.remove_all_scripts();
+            // Restore only console capture after discarding application initialization scripts.
+            manager.add_script(&webkit2gtk::UserScript::new(
+                include_str!("console.js"),
+                webkit2gtk::UserContentInjectedFrames::TopFrame,
+                webkit2gtk::UserScriptInjectionTime::Start,
+                &[],
+                &[],
+            ));
             manager.unregister_script_message_handler("ipc");
             let blocked = block_wrys_unfiltered_receiver(&manager);
             if blocked > 0 {
@@ -951,6 +959,56 @@ mod linux {
             self.0.cancel();
         }
     }
+
+    pub fn install_console(
+        webview: &tauri::webview::Webview,
+        id: &str,
+        app: AppHandle,
+    ) -> Result<(), String> {
+        let id_owned = id.to_string();
+        run_on_view(webview, id, "capture console messages from", move |view| {
+            use webkit2gtk::UserContentManagerExt;
+            let manager = view.user_content_manager().ok_or_else(|| {
+                format!("browser_console_messages: no content manager for {id_owned:?}")
+            })?;
+            if !manager.register_script_message_handler("trConsole") {
+                return Err(format!(
+                    "browser_console_messages: could not register handler for {id_owned:?}"
+                ));
+            }
+            let handler_id = id_owned.clone();
+            manager.connect_script_message_received(Some("trConsole"), move |_, result| {
+                use javascriptcore::ValueExt;
+                let Some(value) = result.js_value() else {
+                    return;
+                };
+                let raw = value.to_str().to_string();
+                if raw.len() > crate::browser::console::MAX_RAW_MESSAGE_BYTES {
+                    return;
+                }
+                let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                    return;
+                };
+                let Some(registry) = app.try_state::<crate::browser::BrowserRegistry>() else {
+                    return;
+                };
+                if let Ok(mut state) = registry.0.lock() {
+                    if let Some(entry) = state.children.get_mut(&handler_id) {
+                        entry.console.push(&value);
+                    }
+                };
+            });
+            view.evaluate_javascript(
+                "window.__trConsoleFlush?.()",
+                None,
+                None,
+                None::<&gtk::gio::Cancellable>,
+                |_| {},
+            );
+            Ok(())
+        })
+    }
+
     pub async fn eval_tools(
         webview: &tauri::webview::Webview,
         id: &str,
@@ -1190,8 +1248,9 @@ pub(crate) use linux::eval_tools_with_timeout;
 pub use linux::{
     allow_automatic_popups_for_selftest, capture_rgba, clear_picker_selection, disable_picker,
     dispatch_mousedown_for_selftest, enable_console_logging_if_asked, enable_picker, eval_tools,
-    forget_picker_state, go_back, go_forward, navigate, picker_defence_is_armed, reload,
-    sever_ipc_transport, submit_picker_prompt, terminate_web_process_for_selftest, wire_signals,
+    forget_picker_state, go_back, go_forward, install_console, navigate, picker_defence_is_armed,
+    reload, sever_ipc_transport, submit_picker_prompt, terminate_web_process_for_selftest,
+    wire_signals,
 };
 
 #[cfg(target_os = "windows")]

@@ -407,6 +407,11 @@
     else if (op.kind === 'press') result = press(op)
     else if (op.kind === 'selectOption') result = selectOption(op)
     else if (op.kind === 'exists') result = exists(op)
+    else if (op.kind === 'scroll') {
+      const target = op.ref ? locate(op) : window
+      target.scrollBy(0, op.deltaY)
+      result = { scrolled: true, deltaY: op.deltaY }
+    }
     else throw new Error(`unknown page operation ${JSON.stringify(op.kind)}`)
     return JSON.stringify({ ok: true, result })
   } catch (err) {
