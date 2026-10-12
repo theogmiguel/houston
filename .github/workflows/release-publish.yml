@@ -1,8 +1,8 @@
-name: File release (internal)
+name: Create release draft (internal)
 
 # The one job that writes outward-facing state: it verifies the artifact set
-# both bundle workflows uploaded, generates the release notes once and reuses
-# them, and files the release with latest.json built from the signatures.
+# both bundle workflows uploaded, preserves the prepared or reviewed notes,
+# and files the draft with latest.json built from verified signatures.
 on:
   workflow_call:
     inputs:
@@ -18,21 +18,12 @@ on:
         description: 'Release title'
         type: string
         required: true
-      previous_tag:
-        description: 'Tag the generated notes start from; empty lets GitHub pick the previous release'
-        type: string
-        required: false
-        default: ''
-      draft:
-        description: 'File as a draft; a stable cut stops here until a person smoke-tests it'
-        type: boolean
-        required: true
       prerelease:
         description: 'Mark as a prerelease; releases/latest is documented to skip those'
         type: boolean
         required: true
       replace_existing:
-        description: 'Delete the release already filed under `tag` immediately before filing the new one; a resumed cut replaces its own partial draft'
+        description: 'Resume an existing draft, preserving its reviewed notes and release identity'
         type: boolean
         required: false
         default: false
@@ -41,11 +32,6 @@ on:
         type: boolean
         required: false
         default: true
-      notes_header:
-        description: 'One sentence prepended to the generated notes; the release body and latest.json.notes carry the same text'
-        type: string
-        required: false
-        default: ''
 
 permissions:
   contents: write
@@ -53,6 +39,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-state-${{ inputs.tag }}
+      cancel-in-progress: false
     steps:
       - name: Record start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
@@ -70,31 +59,20 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      # One call, one notes body: the release body and latest.json.notes read
-      # the same file below, so the two surfaces can never disagree.
-      - name: Generate the release notes once
+      - name: Download the prepared release notes
+        uses: actions/download-artifact@v7
+        with:
+          name: release-notes-${{ inputs.tag }}
+          path: prepared-notes
+      - name: Preserve any reviewed draft description
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
-          PREVIOUS_TAG: ${{ inputs.previous_tag }}
-          HEADER: ${{ inputs.notes_header }}
+          RESUME: ${{ inputs.replace_existing }}
         run: |
-          set -euo pipefail
-          args=(-f tag_name="$TAG")
-          if [ -n "$PREVIOUS_TAG" ]; then
-            args+=(-f previous_tag_name="$PREVIOUS_TAG")
-          fi
-          body=$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq '.body // ""')
-          if [ -z "$body" ]; then
-            echo "::warning::GitHub generated an empty notes body for $TAG; using a fallback line"
-            body="No pull requests or commits were attributed to this release."
-          fi
-          if [ -n "$HEADER" ]; then
-            printf '%s\n\n%s\n' "$HEADER" "$body" > notes.md
-          else
-            printf '%s\n' "$body" > notes.md
-          fi
-          wc -l notes.md
+          args=()
+          if [ "$RESUME" = true ]; then args+=(--resume); fi
+          python3 scripts/release-draft.py notes --repository "$GITHUB_REPOSITORY" --tag "$TAG" --generated prepared-notes/notes.md --output notes.md "${args[@]}"
 
       # The generator below is the gate that decides what ships; its focused
       # tests run first so a broken refusal cannot be discovered by an artifact
@@ -121,33 +99,24 @@ jobs:
           fi
           python3 scripts/gen-update-manifest.py "${args[@]}"
 
-      - name: File the release
+      - name: Create or update the draft
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
           TITLE: ${{ inputs.title }}
-          DRAFT: ${{ inputs.draft }}
           PRERELEASE: ${{ inputs.prerelease }}
-          REPLACE_EXISTING: ${{ inputs.replace_existing }}
+          RESUME: ${{ inputs.replace_existing }}
         run: |
-          set -euo pipefail
-          ls -lh artifacts
-          # A resumed cut replaces the draft its failed run left under the same
-          # tag: after the notes and manifest are already good, so a failure
-          # before this point leaves that draft in place.
-          if [ "$REPLACE_EXISTING" = "true" ] && gh release view "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --yes
-          fi
-          # --verify-tag: the release is filed against a tag some other job
-          # already pushed; filing must never create one.
-          flags=(--title "$TITLE" --notes-file notes.md --verify-tag)
-          if [ "$DRAFT" = "true" ]; then
-            flags+=(--draft)
-          fi
-          if [ "$PRERELEASE" = "true" ]; then
-            flags+=(--prerelease)
-          fi
-          gh release create "$TAG" "${flags[@]}" artifacts/*
+          args=()
+          if [ "$RESUME" = true ]; then args+=(--resume); fi
+          if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
+          python3 scripts/release-draft.py file --repository "$GITHUB_REPOSITORY" --tag "$TAG" --title "$TITLE" --notes-file notes.md --artifacts artifacts "${args[@]}"
+          {
+            echo "## Draft ready: $TAG"
+            echo "Open the [draft](https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG), review its notes, and download and test the installers."
+            echo "Then run [Promote draft to public](https://github.com/$GITHUB_REPOSITORY/actions/workflows/publish-draft.yml) with tag $TAG and smoke_tested checked. Approve stable-release when prompted."
+            echo "Publishing synchronizes the reviewed notes with latest.json; editing the draft alone does not publish it."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record job timing
         if: always()
