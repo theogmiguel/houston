@@ -88,7 +88,7 @@ export function DiffArea({
   return (
     <DiffPaneSurface selected>
       <DiffHeader controls={controls} status={row.state} path={row.path} tag={row.tag} added={row.added} deleted={row.deleted} blocked={row.blocked} onOpenInEditor={onOpenInEditor} />
-      <DiffScrollArea surface="tool-code" className="flex-1">
+      <DiffScrollArea className="flex-1">
         <DiffBodyArea row={row} diff={diff} split={split} />
       </DiffScrollArea>
     </DiffPaneSurface>

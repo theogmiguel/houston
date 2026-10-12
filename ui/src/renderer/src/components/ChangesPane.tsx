@@ -360,7 +360,7 @@ function CommitBox({
       </GitCommitMessageRow>}
       <GitCommitActionRow>
         <GitCommitStagedCount compact={compact}>
-          {blockedReason ?? <>{staged} file{staged === 1 ? '' : 's'} to {target}</>}
+          {blockedReason ?? <>{staged} file{staged === 1 ? '' : 's'} to <Text mono>{target}</Text></>}
         </GitCommitStagedCount>
         <GitCommitButtonGroup>
           {!compact && <Tooltip label={pushBlocked ?? undefined} className="inline-flex">

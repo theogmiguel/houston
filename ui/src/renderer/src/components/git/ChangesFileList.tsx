@@ -301,7 +301,7 @@ function FileRow({
   const discard = discardKindFor(row)
   return (
     <div
-      className={changeRowClass(selected)}
+      className={changeRowClass(selected && !compact)}
       onContextMenu={(e) => {
         e.preventDefault()
         onToggleMenu()

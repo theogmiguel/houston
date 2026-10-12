@@ -92,6 +92,7 @@ describe('Changes pane — state matrix (§14)', () => {
     h.status([file({ staged: true })], { branch: 'inbox-api' })
     typeCommitMessage('Update inbox')
     expect(q('[data-testid="changes-staged-count"]')?.textContent).toBe('1 file to inbox-api')
+    expect(q('[data-testid="changes-staged-count"] .font-mono')?.textContent).toBe('inbox-api')
   })
 
   it('counts only staged files for commit and keeps the PR link out of Changes', () => {

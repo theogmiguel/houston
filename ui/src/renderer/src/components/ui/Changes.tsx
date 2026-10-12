@@ -89,7 +89,7 @@ export function GitCommitSpecimen(): React.JSX.Element {
     <GitCommitPanel>
       <GitCommitMessageRow><GitCommitMessageField readOnly rows={3} value="fix(panes): repaint in the same frame after a resize" aria-label="Commit message specimen" /></GitCommitMessageRow>
       <GitCommitActionRow>
-        <GitCommitStagedCount compact>4 files to inspector-polish</GitCommitStagedCount>
+        <GitCommitStagedCount compact>4 files to <Text mono>inspector-polish</Text></GitCommitStagedCount>
         <GitCommitButtonGroup><SplitButton label="Commit" testId="changes-commit" onClick={() => {}} items={[{ label: 'Amend', onClick: () => {} }]} /></GitCommitButtonGroup>
       </GitCommitActionRow>
     </GitCommitPanel>

@@ -55,7 +55,7 @@ export function DiffBlockedMark({ children }: { children: ReactNode }): React.JS
 }
 
 export function DiffCode({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="block min-w-full w-max pt-1 px-0 pb-2 font-mono text-[length:var(--tr-text-xs)] leading-[1.55]" role="presentation">{children}</div>
+  return <div className="block w-full min-w-0 pt-1 px-0 pb-2 font-mono text-[length:var(--tr-text-xs)] leading-[1.55]" role="presentation">{children}</div>
 }
 
 export function DiffPlainText({ children }: { children: ReactNode }): React.JSX.Element {
@@ -71,11 +71,11 @@ export function DiffGutter({ children }: { children?: ReactNode }): React.JSX.El
 }
 
 export function DiffLineText({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span className="flex-1 min-w-0">{children}</span>
+  return <span className="flex-1 min-w-0 overflow-hidden text-ellipsis">{children}</span>
 }
 
 export function DiffPaneSurface({ children, selected = false }: { children: ReactNode; selected?: boolean }): React.JSX.Element {
-  return <div className={`flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--content-bg)] ${selected ? 'changes-diff' : ''}`}>{children}</div>
+  return <div className={`flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--rail-bg)] ${selected ? 'changes-diff' : ''}`}>{children}</div>
 }
 
 export function DiffSplitCode({ children }: { children: ReactNode }): React.JSX.Element {
@@ -83,7 +83,7 @@ export function DiffSplitCode({ children }: { children: ReactNode }): React.JSX.
 }
 
 export function DiffSplitRow({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div data-diff-pair className="grid grid-cols-2 divide-x divide-[var(--divider)]">{children}</div>
+  return <div data-diff-pair className="grid grid-cols-2 divide-x divide-[var(--border)]">{children}</div>
 }
 
 export function DiffSplitCell({ side, kind, filler, number, children }: { side: 'old' | 'new'; kind: DiffLineKind; filler: boolean; number: number | null; children: ReactNode }): React.JSX.Element {
