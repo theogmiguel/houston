@@ -2454,7 +2454,7 @@ mod shell_hosted_resume_tests {
     fn the_resume_command_reports_the_provider_exit_with_the_shells_own_token() {
         let argv = ["sh".to_string(), "-c".to_string(), "exit 3".to_string()];
         let command = shell_hosted_resume_command("/bin/sh", &argv, true).unwrap();
-        let output = std::process::Command::new("/bin/sh")
+        let output = crate::spawn::command("/bin/sh")
             .arg("-c")
             .arg(&command)
             .env("__tr_token", "tok")

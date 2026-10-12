@@ -8,7 +8,7 @@ use houston_core::hook_drop::{drop_dir, parse_drop_name};
 use serde_json::{json, Value};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 const CHANNEL: &str = "wintest";
 
@@ -23,7 +23,7 @@ fn git_bash() -> PathBuf {
 }
 
 fn run_in_git_bash(command: &str, home: &Path, session: Option<u32>, stdin: &str) -> Output {
-    let mut cmd = Command::new(git_bash());
+    let mut cmd = houston_core::spawn::command(git_bash());
     cmd.arg("-c")
         .arg(command)
         .env("HOME", home)

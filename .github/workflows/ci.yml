@@ -1,7 +1,8 @@
 name: CI
 
 # Public and fork-gated: a PR runs the renderer and core suites too, not just the
-# safety scripts. Remaining integration suites and load-sensitive gates stay local
+# safety scripts. Selected integration regressions run here; remaining suites and
+# load-sensitive gates stay local
 # (docs/operations/development.md); Windows also runs portable ConPTY regressions.
 on:
   pull_request: {}
@@ -160,9 +161,8 @@ jobs:
             echo "| ${{ github.job }} | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Fork PRs need the core crate gates too. --lib only: the integration suites
-  # under core/houston-core/tests need a real PTY, a keyring and an unlocked
-  # session, none of which a runner has — they stay local (docs/operations/development.md).
+  # Fork PRs need the core crate gates too. The library tests and selected restored-shell
+  # regressions run here; other integration suites need local resources (see the runbook).
   core-checks:
     runs-on: ubuntu-latest
     env:
