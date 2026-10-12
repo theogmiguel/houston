@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { HoustonClient } from '../../houston/client'
 import type { SlackInfo } from '../../houston/generated/SlackInfo'
 import type { TaskTrackerWorkspaceSettings } from '../../houston/generated/TaskTrackerWorkspaceSettings'
-import { useHarness } from '../../houston/useHarness'
+import { useHarness, type HarnessState } from '../../houston/useHarness'
 import { setRailView } from '../../railView'
 import { ConnectionsIntegrations } from '../ConnectionsIntegrations'
 import { TaskTrackerSettingsSection } from '../settings/TaskTrackerSettingsSection'
@@ -80,35 +80,72 @@ export function TasksSources({ client, workspace, workspaces }: {
     }
   }, [open, dismiss])
   const configure = (source: Exclude<Setup, null>): void => { dismiss(); setSetup(source) }
-  const trackerState = (provider: 'github_issues' | 'notion'): React.JSX.Element => {
-    if (!activeWorkspace) return <Text size="small" tone="muted">Choose a workspace</Text>
-    if (!trackers) return <Text size="small" tone="muted">Loading…</Text>
-    const setting = trackers.find((item) => item.provider === provider)
-    return <StatusLabel size="small" status={setting?.last_error ? 'Failed' : setting?.enabled ? 'Watching' : 'Off'} />
-  }
   return <>
     <Button ref={trigger} variant="secondary" icon={IconPlug} data-testid="tasks-sources" aria-expanded={open} aria-controls={open ? 'task-sources' : undefined} onClick={() => setOpen((value) => !value)}>Sources</Button>
     {open && createPortal(<PopoverPanel ref={panel} width="wide" top={position.top} left={position.left} visible aria-label="Where tasks come from" id="task-sources">
       <PopoverHeader><PopoverTitle>Where tasks come from</PopoverTitle></PopoverHeader>
-      <PopoverBody>
-        {!workspace && <Select aria-label="Sources workspace" value={activeWorkspace} onChange={setChosenWorkspace} options={workspaces.map((item) => ({ value: item.path, label: item.name }))} />}
-        <Card>
-          <Card.Row heading="Slack" meta="Mention the bot in a mapped channel to file a pending task. The owner starts it with a :white_check_mark: reaction."
-            status={slack ? <StatusLabel size="small" status={!slack.enabled ? 'Off' : slack.connection === 'connected' ? 'Connected' : 'Reconnecting'} /> : <Text size="small" tone="muted">Loading…</Text>}
-            action={<Button variant="link" size="sm" disabled={!client} data-testid="task-source-slack" onClick={() => configure('slack')}>Set up</Button>} />
-          <Card.Row heading="GitHub issues" meta="Issues with a label you choose in this workspace’s repository." status={trackerState('github_issues')}
-            action={<Button variant="link" size="sm" disabled={!client || !activeWorkspace} data-testid="task-source-github_issues" onClick={() => configure('github_issues')}>Set up</Button>} />
-          <Card.Row heading="Notion" meta="Pages in a database you choose." status={trackerState('notion')}
-            action={<Button variant="link" size="sm" disabled={!client || !activeWorkspace} data-testid="task-source-notion" onClick={() => configure('notion')}>Set up</Button>} />
-          <Card.Row heading="Review" meta="Findings arrive as Suggested; you decide what becomes a task."
-            status={state ? <StatusLabel size="small" status={state.routine?.enabled ? 'Watching' : 'Off'} /> : <Text size="small" tone="muted">{activeWorkspace ? 'Loading…' : 'Choose a workspace'}</Text>}
-            action={<Button variant="link" size="sm" onClick={() => { dismiss(); setRailView('routines') }}>Set up</Button>} />
-        </Card>
-      </PopoverBody>
+      <TaskSourcesContent clientConnected={!!client} workspace={workspace} workspaces={workspaces} activeWorkspace={activeWorkspace}
+        onWorkspace={setChosenWorkspace} slack={slack} trackers={trackers} harness={state} onConfigure={configure}
+        onReview={() => { dismiss(); setRailView('routines') }} />
     </PopoverPanel>, document.body)}
-    {setup === 'slack' && <ConnectionsIntegrations client={client} setupOnly onClose={() => { setSetup(null); trigger.current?.focus() }} />}
-    <Drawer open={setup === 'github_issues' || setup === 'notion'} heading="Task sources" onClose={() => { setSetup(null); trigger.current?.focus() }}>
-      {setup && setup !== 'slack' && <TaskTrackerSettingsSection client={client} workspace={activeWorkspace || null} workspaceName={activeName || null} initialProvider={setup} />}
+    <TaskSourceSetup setup={setup} client={client} workspace={activeWorkspace} workspaceName={activeName}
+      onClose={() => { setSetup(null); trigger.current?.focus() }} />
+  </>
+}
+
+function TrackerSourceState({ workspace, trackers, provider }: {
+  workspace: string
+  trackers: TaskTrackerWorkspaceSettings[] | null
+  provider: 'github_issues' | 'notion'
+}): React.JSX.Element {
+  if (!workspace) return <Text size="small" tone="muted">Choose a workspace</Text>
+  if (!trackers) return <Text size="small" tone="muted">Loading…</Text>
+  const setting = trackers.find((item) => item.provider === provider)
+  return <StatusLabel size="small" status={setting?.last_error ? 'Failed' : setting?.enabled ? 'Watching' : 'Off'} />
+}
+
+function TaskSourcesContent({ clientConnected, workspace, workspaces, activeWorkspace, onWorkspace, slack, trackers, harness, onConfigure, onReview }: {
+  clientConnected: boolean
+  workspace: string
+  workspaces: { path: string; name: string }[]
+  activeWorkspace: string
+  onWorkspace: (workspace: string) => void
+  slack: SlackInfo | null
+  trackers: TaskTrackerWorkspaceSettings[] | null
+  harness: HarnessState | null
+  onConfigure: (source: Exclude<Setup, null>) => void
+  onReview: () => void
+}): React.JSX.Element {
+  return (
+    <PopoverBody>
+      {!workspace && <Select aria-label="Sources workspace" value={activeWorkspace} onChange={onWorkspace} options={workspaces.map((item) => ({ value: item.path, label: item.name }))} />}
+      <Card>
+        <Card.Row heading="Slack" meta="Mention the bot in a mapped channel to file a pending task. The owner starts it with a :white_check_mark: reaction."
+          status={slack ? <StatusLabel size="small" status={!slack.enabled ? 'Off' : slack.connection === 'connected' ? 'Connected' : 'Reconnecting'} /> : <Text size="small" tone="muted">Loading…</Text>}
+          action={<Button variant="link" size="sm" disabled={!clientConnected} data-testid="task-source-slack" onClick={() => onConfigure('slack')}>Set up</Button>} />
+        <Card.Row heading="GitHub issues" meta="Issues with a label you choose in this workspace’s repository." status={<TrackerSourceState workspace={activeWorkspace} trackers={trackers} provider="github_issues" />}
+          action={<Button variant="link" size="sm" disabled={!clientConnected || !activeWorkspace} data-testid="task-source-github_issues" onClick={() => onConfigure('github_issues')}>Set up</Button>} />
+        <Card.Row heading="Notion" meta="Pages in a database you choose." status={<TrackerSourceState workspace={activeWorkspace} trackers={trackers} provider="notion" />}
+          action={<Button variant="link" size="sm" disabled={!clientConnected || !activeWorkspace} data-testid="task-source-notion" onClick={() => onConfigure('notion')}>Set up</Button>} />
+        <Card.Row heading="Review" meta="Findings arrive as Suggested; you decide what becomes a task."
+          status={harness ? <StatusLabel size="small" status={harness.routine?.enabled ? 'Watching' : 'Off'} /> : <Text size="small" tone="muted">{activeWorkspace ? 'Loading…' : 'Choose a workspace'}</Text>}
+          action={<Button variant="link" size="sm" onClick={onReview}>Set up</Button>} />
+      </Card>
+    </PopoverBody>
+  )
+}
+
+function TaskSourceSetup({ setup, client, workspace, workspaceName, onClose }: {
+  setup: Setup
+  client: HoustonClient | null
+  workspace: string
+  workspaceName: string
+  onClose: () => void
+}): React.JSX.Element {
+  return <>
+    {setup === 'slack' && <ConnectionsIntegrations client={client} setupOnly onClose={onClose} />}
+    <Drawer open={setup === 'github_issues' || setup === 'notion'} heading="Task sources" onClose={onClose}>
+      {setup && setup !== 'slack' && <TaskTrackerSettingsSection client={client} workspace={workspace || null} workspaceName={workspaceName || null} initialProvider={setup} />}
     </Drawer>
   </>
 }
