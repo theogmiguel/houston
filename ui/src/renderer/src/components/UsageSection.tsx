@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 import { IconChartArea, IconRefresh } from './icons'
-import { EmptyState } from './ui/ActionEmptyState'
+import { EmptyState } from './ui/EmptyState'
+import { StatusLabel } from './ui/StatusLabel'
 import { Segmented } from './ui/SegmentedControl'
 import { UsageChart, UsageLegend, type UsageSeries } from './ui/UsageChart'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
 import type { AgentKind } from '../houston/generated/AgentKind'
-import { UsageAgentMark, UsageShareCell } from './ui/UsageProviderRow'
+import { UsageAgentMark, UsageShareCell, UsageSourceRow } from './ui/UsageProviderRow'
 import type { UsageSource } from '../houston/generated/UsageSource'
 import type { UsageProvider } from '../houston/generated/UsageProvider'
 import {
@@ -26,7 +27,6 @@ import {
   type UsageTotals,
   type UsageWindowId
 } from '../usage'
-import { Icon } from './ui/Icon'
 import { Tooltip } from './ui/Tooltip'
 import { Select } from './ui/Select'
 import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageBreakdownHeading, UsageBreakdownSection, UsageShareGroup } from './ui'
@@ -110,6 +110,15 @@ function UsageSources({ sources }: { sources: UsageSource[] }): React.JSX.Elemen
       {index > 0 && (index === ordered.length - 1 ? ' and ' : ', ')}<Text mono>{source.path}</Text> ({source.status === 'ok' ? `${source.distinct_sessions.toLocaleString('en-US')} sessions` : sourceStatus(source)}){source.status !== 'ok' && source.message && <> · {source.message}</>}
     </Fragment>)}. Costs are estimates at API list prices; a subscription is billed differently.
   </UsageSourcesLine>
+}
+
+function UsageEmpty({ summary, windowLabel }: { summary: UsageSummaryMsg; windowLabel: string }): React.JSX.Element {
+  const names = untrackedAgentNames(summary.untracked_agents)
+  return <Card shape="card" tone="block" data-material="inset" data-testid="usage-empty">
+    <EmptyState copy="summary" icon={IconChartArea} heading={`No sessions in the last ${windowLabel}`} description="Usage appears after a Claude Code or Codex session writes its transcript. Older days are in the 30 and 90 day windows." />
+    {orderedSources(summary.sources).map((source) => <UsageSourceRow key={`${source.provider}:${source.path}`} mark={<UsageAgentMark agent={source.provider} />} label={`${source.provider === 'claude' ? 'Claude Code' : 'Codex'}${source.profile_name ? ` · ${source.profile_name}` : ''}`} description={<Text mono>{source.path}</Text>} status={<StatusLabel variant="detail" status={source.status === 'failed' ? 'Failed' : source.status === 'missing' ? 'Missing' : 'Ready'} tone={source.status === 'missing' || source.status === 'partial' ? 'waiting' : source.status === 'failed' ? 'failed' : 'unknown'}>{sourceStatus(source)}</StatusLabel>} message={source.message} />)}
+    {names.length > 0 && <UsageSourceRow mark={<UsageAgentMark agent="opencode" inactive />} label={names.join(', ')} description="They do not write token counts Houston can read." status={<StatusLabel variant="detail" status="Off">Not counted</StatusLabel>} />}
+  </Card>
 }
 
 function UsageBreakdown({
@@ -296,12 +305,7 @@ export function UsageSection({
         {!summary ? (
           <Text as="p" role="status" size="ui" tone="secondary">{error ? 'No usage result available.' : 'Reading transcripts…'}</Text>
         ) : noUsage ? (
-          <EmptyState
-            headline="No usage recorded yet"
-            description="Houston hasn't scanned any Claude Code or Codex sessions in this window."
-            action={{ label: 'Refresh', onClick: refresh }}
-            icon={<Icon glyph={IconChartArea} role="display" />}
-          />
+          <UsageEmpty summary={summary} windowLabel={windowDef.id === '24h' ? '24 hours' : windowDef.label} />
         ) : (
           <>
         {}

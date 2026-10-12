@@ -171,6 +171,27 @@ describe('Usage page', () => {
     expect(sources).toContain('Cannot parse records in /home/u/.codex/sessions')
   })
 
+  it('explains an empty window with each actual source status and untracked agents', () => {
+    const sources = summary().sources.map((source) => ({ ...source, distinct_sessions: 0, status: source.provider === 'codex' ? 'missing' as const : 'ok' as const }))
+    render({ summary: summary({ buckets: [], sources }) })
+    const empty = q('[data-testid="usage-empty"]')!
+    expect(empty.textContent).toContain('No sessions in the last 7 days')
+    expect(empty.textContent).toContain('Usage appears after a Claude Code or Codex session writes its transcript.')
+    expect(empty.textContent).toContain('/home/u/.claude/projects')
+    expect(empty.textContent).toContain('No sessions in this window')
+    expect(empty.textContent).toContain('/home/u/.codex/sessions')
+    expect(empty.textContent).toContain('Folder not found')
+    expect(empty.textContent).toContain('OpenCode, Cursor, Grok, Antigravity')
+    expect(empty.textContent).toContain('Not counted')
+    expect(q('[data-testid="usage-headline"]')).toBeNull()
+  })
+
+  it.each(['partial', 'failed'] as const)('empty scans expose %s source diagnostics', (status) => {
+    render({ summary: summary({ buckets: [], sources: [{ ...summary().sources[0], distinct_sessions: 0, status, failed_files: 4, message: 'Cannot read /home/u/.claude/projects' }] }) })
+    expect(q('[data-testid="usage-empty"]')?.textContent).toContain(status === 'partial' ? 'Scan incomplete · 4 files could not be read' : 'Could not read transcripts')
+    expect(q('[data-testid="usage-empty"]')?.textContent).toContain('Cannot read /home/u/.claude/projects')
+  })
+
   it('shows 365 local calendar days and a labelled daily-cost legend', () => {
     render()
     expect(host.querySelectorAll('[data-testid="usage-calendar-day"]')).toHaveLength(365)

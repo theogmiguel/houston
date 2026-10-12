@@ -12,8 +12,9 @@ import { ChangesReviewSpecimen } from '../src/components/ui/ChangesReview'
 import { DiffBody } from '../src/components/git/DiffBody'
 import { UsageAgentMark } from '../src/components/ui/UsageProviderRow'
 import { UsageDayFilter, UsageBreakdownActions } from '../src/components/ui/UsageChrome'
+import { IconChartArea } from '../src/components/icons'
 import { UsageDayFilter, UsageBreakdownActions, UsageSourcesLine } from '../src/components/ui/UsageChrome'
-import { UsageAgentMark, UsageShareCell } from '../src/components/ui/UsageProviderRow'
+import { UsageAgentMark, UsageShareCell, UsageSourceRow } from '../src/components/ui/UsageProviderRow'
 import { UsageLegend } from '../src/components/ui/UsageChart'
 import { UsageStatsSpecimen } from '../src/components/ui/UsageChrome'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
@@ -801,7 +802,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Usage and configuration roles">
           <SpecimenRow>
-            <UsageChromeSpecimen /><UsageStatsSpecimen /><UsageSourcesLine>Read from <Text mono>~/.claude/projects</Text> (172 sessions) and <Text mono>~/.codex/sessions</Text> (42 sessions). Costs are estimates at API list prices; a subscription is billed differently.</UsageSourcesLine><UsageBreakdownActions><UsageDayFilter label="Tue Oct 6" onClear={() => {}} /><UsageShareCell share={0.729} color="var(--claude)" /></UsageBreakdownActions><UsageLegend series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--claude)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} />
+            <UsageChromeSpecimen /><UsageStatsSpecimen /><EmptyState copy="summary" icon={IconChartArea} heading="No sessions in the last 7 days" description="Usage appears after a Claude Code or Codex session writes its transcript. Older days are in the 30 and 90 day windows." /><UsageSourceRow mark={<UsageAgentMark agent="codex" />} label="Codex" description={<Text mono>~/.codex/sessions</Text>} status={<StatusLabel status="Missing" variant="detail" tone="waiting">Folder not found</StatusLabel>} /><UsageSourcesLine>Read from <Text mono>~/.claude/projects</Text> (172 sessions) and <Text mono>~/.codex/sessions</Text> (42 sessions). Costs are estimates at API list prices; a subscription is billed differently.</UsageSourcesLine><UsageBreakdownActions><UsageDayFilter label="Tue Oct 6" onClear={() => {}} /><UsageShareCell share={0.729} color="var(--claude)" /></UsageBreakdownActions><UsageLegend series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--claude)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} />
             <MaterialSurfaceSpecimen />
             <ConfigurationDetailSpecimen />
             <Text size="subhead" weight="semibold" tone="primary">Configuration heading</Text>

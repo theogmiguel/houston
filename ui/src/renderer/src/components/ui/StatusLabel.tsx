@@ -73,7 +73,8 @@ const PILL_TONE: Record<PillTone, string> = {
   unknown: 'bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] text-[var(--text-muted)]'
 }
 
-export function StatusLabel({ status, size = 'ui', variant = 'default', tone = 'unknown', children }: { status: StatusLabelValue; size?: 'ui' | 'small'; variant?: 'default' | 'pill' | 'dot'; tone?: PillTone; children?: React.ReactNode }): React.JSX.Element {
+export function StatusLabel({ status, size = 'ui', variant = 'default', tone = 'unknown', children }: { status: StatusLabelValue; size?: 'ui' | 'small'; variant?: 'default' | 'pill' | 'dot' | 'detail'; tone?: PillTone; children?: React.ReactNode }): React.JSX.Element {
+  if (variant === 'detail') return <span className={`inline-flex items-center gap-[var(--space-1-5)] text-[length:var(--tr-text-small-size)] ${tone === 'waiting' ? 'text-[var(--warn)]' : tone === 'failed' ? 'text-[var(--stop)]' : 'text-[var(--text-muted)]'}`}><span aria-hidden="true" className="size-[var(--space-1-5)] flex-none rounded-full" style={{ background: tone === 'waiting' ? 'var(--warn)' : tone === 'failed' ? 'var(--stop)' : 'var(--text-faint)' }} />{children ?? status}</span>
   if (variant === 'pill') return <span className={`${PILL_CLASS} ${PILL_TONE[tone]}`}>{children ?? status}</span>
   const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off' || status === 'Kept'
   return (

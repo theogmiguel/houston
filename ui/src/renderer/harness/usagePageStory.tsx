@@ -98,7 +98,7 @@ export function UsagePageStory({ state = 'normal' }: { state?: 'normal' | 'error
   if (state === 'stale') summary.since_ms = summary.until_ms - DAY
   if (state === 'empty') {
     summary.buckets = []
-    summary.sources = summary.sources.map((source) => ({ ...source, distinct_sessions: 0 }))
+    summary.sources = summary.sources.map((source) => ({ ...source, distinct_sessions: 0, status: source.provider === 'codex' ? 'missing' as const : 'ok' as const }))
   }
   return (
     <div data-story-state={state} className="flex h-full min-h-0 bg-[var(--content-bg)]">
