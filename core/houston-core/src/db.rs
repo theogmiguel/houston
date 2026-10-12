@@ -53,6 +53,7 @@ pub struct MessageReceipt {
 #[derive(Default)]
 pub struct SessionStartupMetadata<'a> {
     pub launch_selections: Option<&'a crate::launch::SessionLaunchSelections>,
+    pub command_override: bool,
     pub resume_handle: Option<(&'a str, Option<&'a str>)>,
     pub transcript_path: Option<&'a str>,
     pub native_session_id: Option<&'a str>,
@@ -1715,6 +1716,7 @@ impl Db {
         )?;
         add_column_if_missing(&conn, "sessions", "approval_mode", "approval_mode TEXT")?;
         add_column_if_missing(&conn, "sessions", "launch_selections", "launch_selections TEXT")?;
+        add_column_if_missing(&conn, "sessions", "command_override", "command_override INTEGER NOT NULL DEFAULT 0")?;
         add_column_if_missing(&conn, "sessions", "transcript_path", "transcript_path TEXT")?;
         add_column_if_missing(
             &conn,
@@ -2527,8 +2529,8 @@ impl Db {
         let tx = conn.transaction()?;
         Self::insert_session_on(&tx, info, Some(title_source))?;
         tx.execute(
-            "UPDATE sessions SET profile_config_dir = ?2 WHERE id = ?1",
-            rusqlite::params![info.id, profile],
+            "UPDATE sessions SET profile_config_dir = ?2, command_override = ?3 WHERE id = ?1",
+            rusqlite::params![info.id, profile, metadata.command_override],
         )?;
         Self::set_session_launch_selections_on(&tx, info.id, metadata.launch_selections)?;
         tx.execute(
@@ -2594,6 +2596,11 @@ impl Db {
                 .with_context(|| format!("session {id} launch selections must be typed provider choices"))
         })
         .transpose()
+    }
+
+    pub(crate) fn session_has_command_override(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row("SELECT command_override FROM sessions WHERE id = ?1", [id], |row| row.get(0))?)
     }
     pub fn save_ssh_profile(&self, p: &proto::SshProfile) -> Result<()> {
         let (auth_kind, identity_file, passphrase_profile) = match &p.auth {

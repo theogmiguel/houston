@@ -3635,6 +3635,25 @@ impl Daemon {
             ok
         });
 
+        candidates.retain(|candidate| {
+            let refusal = match self.db.session_has_command_override(candidate.id) {
+                Ok(false) => return true,
+                Ok(true) => format!(
+                    "Automatic restore refused for {:?} session {}: its explicit command override was not persisted. Choose Start fresh explicitly to launch the default provider command.",
+                    candidate.agent, candidate.id
+                ),
+                Err(error) => format!(
+                    "Automatic restore refused for {:?} session {}: checking command override metadata failed: {error:#}",
+                    candidate.agent, candidate.id
+                ),
+            };
+            if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&candidate.id) {
+                info.restore_deferred = Some(R::SpawnFailed);
+                info.resume_notice = Some(refusal);
+            }
+            false
+        });
+
         let children: Vec<_> = self
             .dead
             .lock()
@@ -9192,6 +9211,14 @@ impl Daemon {
         conversation: RespawnConversation,
     ) -> Result<proto::SessionInfo> {
         self.ensure_not_closing(old_id, "respawn")?;
+        if conversation != RespawnConversation::Fresh {
+            let dead_provider = self.dead.lock().expect("dead lock").get(&old_id).map(|info| info.agent);
+            if let Some(provider) = dead_provider {
+                if self.db.session_has_command_override(old_id)? {
+                    bail!("Resume refused for {provider:?} session {old_id}: its explicit command override was not persisted. Choose Start fresh explicitly to launch the default provider command.");
+                }
+            }
+        }
         if let Some(dir) = &cwd_override {
             if !dir.is_dir() {
                 bail!(
@@ -9244,7 +9271,7 @@ impl Daemon {
                 a.swarm
             );
         }
-        // Read before a forced restart kills the pane, which clears the handle.
+        // Read the conversation before stopping a forced replacement's process.
         let handle = self.db.session_resume_handle(old_id).unwrap_or_else(|e| {
             tracing::warn!("reading session {old_id}'s resume handle: {e:#}");
             None
@@ -10692,6 +10719,7 @@ impl Daemon {
             replacement,
             pastes_first_prompt,
         } = p;
+        let command_override = custom_cmd.as_ref().is_some_and(|argv| !argv.is_empty());
         let pty = native_pty_system();
         let pair = pty
             .openpty(PtySize {
@@ -11401,6 +11429,7 @@ impl Daemon {
                     Self::agent_profile_config_dir(agent, &extra_env),
                     crate::db::SessionStartupMetadata {
                         launch_selections: launch_selections.as_ref(),
+                        command_override,
                         resume_handle: resume_handle.as_ref().map(|(conversation, transcript)| {
                             (conversation.as_str(), transcript.as_deref())
                         }),

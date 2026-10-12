@@ -2204,6 +2204,55 @@ async fn legacy_rows_retain_their_recorded_approval_mode() {
 }
 
 #[tokio::test]
+async fn a_known_provider_command_override_is_deferred_until_explicit_fresh_start() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "command-override-refusal");
+    daemon.set_restore_budget(1).unwrap();
+    let ordinary = claude_pane(&daemon, &dir, None);
+    let overridden = daemon.create_session(CreateParams {
+        agent: proto::AgentKind::Claude,
+        project_dir: dir.clone(),
+        cmd: Some(vec![shim_dir().join("claude").display().to_string(), "--custom-wrapper-option".into()]),
+        cols: 80, rows: 24, cwd_from: None, shell_integration: false,
+        auto_approve: false, acp: None, profile: None, prompt: None, model: None, effort: None,
+    }).unwrap();
+    assert!(argv_of(&env, overridden.id).await.iter().any(|arg| arg == "--custom-wrapper-option"));
+    let live = daemon.respawn(overridden.id, false, None, None, true).unwrap();
+    assert!(argv_of(&env, live.id).await.iter().any(|arg| arg == "--custom-wrapper-option"),
+        "live Restart can still use the in-memory command");
+    let path = transcript(&env, "custom-wrapper-conversation", b"wrapper turn\n");
+    apply_drop(&env, &daemon, HookDrop {
+        event: "UserPromptSubmit".into(), session: live.id, agent: Some("claude".into()),
+        session_id: Some("custom-wrapper-conversation".into()), transcript_path: Some(path),
+        ..Default::default()
+    }).await;
+    let after = reboot(&env, &daemon);
+    let sessions = after.list();
+    let deferred = sessions.iter().find(|info| info.id == live.id)
+        .expect("an override must keep its husk rather than silently launch the stock CLI");
+    assert_eq!(deferred.restore_deferred, Some(proto::RestoreReason::SpawnFailed));
+    let notice = deferred.resume_notice.as_deref().unwrap();
+    assert!(notice.contains("Claude") && notice.contains("command override"), "{notice}");
+    assert!(deferred.resumable);
+    let restored_ordinary = restored_from(&sessions, ordinary.id).clone();
+    assert!(restored_ordinary.state.is_live(), "refusal must not consume restore budget or halt other panes");
+    let error = after.respawn(live.id, false, None, None, false).unwrap_err().to_string();
+    assert!(error.contains("Claude") && error.contains("Start fresh"), "{error}");
+    assert_eq!(handle_in(&env, live.id).unwrap().0, "custom-wrapper-conversation");
+    let fresh = after.respawn_with(live.id, false, None, None, false,
+        houston_core::daemon::RespawnConversation::Fresh).unwrap();
+    assert!(!argv_of(&env, fresh.id).await.iter().any(|arg| arg == "--custom-wrapper-option"));
+    assert!(!fresh.resumable);
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    assert!(!conn.query_row("SELECT command_override FROM sessions WHERE id = ?1", [fresh.id], |row| row.get::<_, bool>(0)).unwrap());
+    after.close(fresh.id).unwrap();
+    after.close(restored_ordinary.id).unwrap();
+    daemon.close(live.id).unwrap();
+    daemon.close(ordinary.id).unwrap();
+}
+
+#[tokio::test]
 async fn wake_preserves_the_explicit_model_effort_and_approval_choices() {
     let env = setup().await;
     let daemon = boot(&env);
