@@ -56,12 +56,20 @@ Orchestration:
 
 Both caps can be raised (up to a fixed ceiling in Settings). They limit child delegations;
 a top-level pane's explicit handoff creates an independent pane outside those per-parent
-caps. A child pane cannot hand off, and the approval ceiling still applies.
+caps. A child pane cannot hand off.
 
-A related but separate rule: a spawned child never gets a wider permission bypass than
-its parent holds. If a parent tries to spawn a child at the full approval bypass while
-the parent itself is not at that bypass, the spawn is refused — a pane cannot hand a
-child a permission it does not itself have.
+Children use their provider's Auto mode by default. To request a different mode, the
+orchestrator uses `auto_approve: true` (`hs-pane spawn --bypass`) for Bypass or
+`auto_approve: false` (`--ask`) for the provider's ordinary approval prompts. The child's
+mode is selected independently of the parent's mode: a Claude pane in Auto can create
+a Codex pane in Bypass when you authorize that launch.
+
+Codex Auto uses an operating-system sandbox, even when its configuration normally
+selects full access. Codex Bypass disables that sandbox and approval prompts, allowing
+commands to write outside the worktree and use the network with your terminal's
+permissions. Claude Auto does not impose the same operating-system sandbox. Choose
+the child's mode for the task's required access; a worktree isolates Git changes,
+not operating-system permissions.
 
 ## Getting a result back
 

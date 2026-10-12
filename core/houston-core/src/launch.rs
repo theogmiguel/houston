@@ -608,10 +608,7 @@ pub fn model_blocks_auto_mode(agent: proto::AgentKind, model: &str) -> bool {
     }
 }
 
-// Declaration order IS the ladder: `derive(PartialOrd, Ord)` compares by
-// position, so `Default < Auto < Bypass` falls out of this order. Do not
-// reorder the variants without re-checking every comparison.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApprovalMode {
     Default,
     Auto,
@@ -1074,13 +1071,6 @@ mod tests {
             assert_eq!(ApprovalMode::parse(mode.as_str()), Some(mode));
         }
         assert_eq!(ApprovalMode::parse("bogus"), None);
-    }
-
-    #[test]
-    fn approval_mode_ladder_orders_least_to_most_permissive() {
-        assert!(ApprovalMode::Default < ApprovalMode::Auto);
-        assert!(ApprovalMode::Auto < ApprovalMode::Bypass);
-        assert!(ApprovalMode::Default < ApprovalMode::Bypass);
     }
 
     #[test]

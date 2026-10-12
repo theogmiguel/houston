@@ -179,7 +179,6 @@
   function avatar(s) {
     var wrap = el("span", "avatar");
     wrap.appendChild(providerMark(s.kind));
-    wrap.appendChild(el("span", "sdot " + statusOf(s).cls));
     return wrap;
   }
 
@@ -622,9 +621,11 @@
 
   // ---- Panes tab: workspaces, then the grids the desktop shows ----
 
+  function rootSessions() { return S.sessions.filter(function (s) { return s.parent == null; }); }
+
   function workspaces() {
     var seen = {}, out = [];
-    S.sessions.forEach(function (s) {
+    rootSessions().forEach(function (s) {
       if (!seen[s.workspace.path]) { seen[s.workspace.path] = true; out.push(s.workspace); }
     });
     return out;
@@ -637,7 +638,7 @@
     root.replaceChildren();
     if (list.length < 2) return;
     [{ name: "All", path: null }].concat(list).forEach(function (w) {
-      var group = S.sessions.filter(function (s) { return !w.path || s.workspace.path === w.path; });
+      var group = rootSessions().filter(function (s) { return !w.path || s.workspace.path === w.path; });
       var b = button("chip", null, function () {
         if (S.filter === w.path) return;
         S.filter = w.path; S.swapIn = true;
@@ -721,7 +722,7 @@
   function renderPanes(root) {
     renderChips();
     if (!S.loaded) { skeleton(root, "tile", 4); return; }
-    var visible = S.sessions.filter(function (s) { return !S.filter || s.workspace.path === S.filter; });
+    var visible = rootSessions().filter(function (s) { return !S.filter || s.workspace.path === S.filter; });
     if (!visible.length) { emptyState(root, "grid", "No panes open", S.filter ? "Nothing is running in this workspace." : "Panes you open in Houston on the computer appear here."); return; }
     var need = visible.filter(needsYou).length, summary = el("p", "summary");
     summary.appendChild(document.createTextNode(plural(visible.length, "pane", "panes")));
@@ -831,7 +832,7 @@
   }
 
   function renderAllClear(root) {
-    var working = byAttention(S.sessions.filter(function (s) { return s.state === "running" && s.status === "working"; }));
+    var working = byAttention(rootSessions().filter(function (s) { return s.state === "running" && s.status === "working"; }));
     var clear = el("div", "all-clear");
     var i = el("span", "clear-icon"); i.appendChild(icon("check")); clear.appendChild(i);
     clear.appendChild(el("p", "empty-title", "All clear"));
@@ -843,7 +844,7 @@
       working.forEach(function (s) { rows.appendChild(row(s, lastStepText(s.last_step) || kindName(s.kind) + " is working", true)); });
       root.appendChild(rows);
     }
-    var idle = S.sessions.filter(function (s) { return s.state === "running" && s.status === "idle" && s.last_reply_excerpt; }).sort(function (a, b) { return (b.status_since || 0) - (a.status_since || 0); }).slice(0, 3);
+    var idle = rootSessions().filter(function (s) { return s.state === "running" && s.status === "idle" && s.last_reply_excerpt; }).sort(function (a, b) { return (b.status_since || 0) - (a.status_since || 0); }).slice(0, 3);
     if (idle.length) {
       root.appendChild(el("h2", "section-head", "Last finished"));
       var done = el("div", "card rows");

@@ -17172,7 +17172,7 @@ impl Daemon {
     }
 
     /// A handoff pane is a top-level pane with no delegation, so the caller stays free to
-    /// close. Orchestration and the approval ceiling still apply; only a parentless pane
+    /// close. Orchestration must still be enabled; only a parentless pane
     /// may hand off, so a child cannot escape its parent's caps through it.
     #[allow(clippy::too_many_arguments)]
     pub fn orchestrate_handoff(
@@ -17289,7 +17289,7 @@ impl Daemon {
                 "spawn refused: agent spawning is switched off (asked from workspace \"{ws}\") - \
                  the operator turns it on in Settings → Orchestration → Enable orchestration; \
                  it is off by default because agents spawning agents spends money \
-                 and runs code unattended - a spawned pane starts in its CLI's auto \
+                 and runs code unattended - a spawned pane defaults to its CLI's auto \
                  mode, so it does not stop for routine approvals"
             );
         }
@@ -17377,11 +17377,6 @@ impl Daemon {
             Some(false) => crate::launch::ApprovalMode::Default,
             None => crate::launch::ApprovalMode::Auto,
         };
-        if let orchestrate::SpawnVerdict::Refused(msg) =
-            orchestrate::approval_ceiling_verdict(self.approval_mode_of(caller), requested_mode)
-        {
-            bail!("{msg}");
-        }
         let mode_args = requested_mode.args(kind).unwrap_or_default();
         let (argv_prompt, first_prompt, prompt_file) = if crate::launch::prompt_in_argv(kind) {
             (prompt.as_str(), None, None)
