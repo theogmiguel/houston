@@ -396,9 +396,9 @@ describe('PullRequestTab — reading a pull request', () => {
     expect(rows).toHaveLength(4)
     expect(rows.map((row) => row.textContent)).toEqual([
       expect.stringContaining('safety-checksPassed'),
-      expect.stringContaining('core-checksrunning'),
-      expect.stringContaining('windows-checksqueued'),
-      expect.stringContaining('optional-checksskipped')
+      'core-checksRunning',
+      'windows-checksQueued',
+      'optional-checksSkipped'
     ])
     emit(client, detailMsg({ detail: detail({ checks: [
       { name: 'core-checks', state: 'passing', url: null, duration_ms: 60000 }
@@ -423,8 +423,8 @@ describe('PullRequestTab — reading a pull request', () => {
       expect.stringContaining('core-checksFailed'),
       expect.stringContaining('renderer-checksFailed'),
       expect.stringContaining('safety-checksPassed'),
-      expect.stringContaining('windows-checksrunning'),
-      expect.stringContaining('optional-checksskipped')
+      'windows-checksRunning',
+      'optional-checksSkipped'
     ])
     click(rows[1].querySelector('button'))
     expect(rows[1].textContent).toContain("Logs aren't available for this check")

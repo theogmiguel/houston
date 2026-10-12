@@ -41,17 +41,19 @@ export function checkKey(check: PrCheck): string {
   return check.run_id == null ? `${check.name}:${check.url ?? ''}` : String(check.run_id)
 }
 
-function checkDuration(check: PrCheck): string {
-  if (check.duration_ms == null) return check.state
+function checkDuration(check: PrCheck): string | null {
+  if (check.duration_ms == null) return null
   const minutes = Math.floor(check.duration_ms / 60000)
   const seconds = Math.floor((check.duration_ms % 60000) / 1000)
   return `${minutes}m${seconds > 0 ? ` ${seconds}s` : ''}`
 }
 
-function checkSummary(check: PrCheck, duration: string): string {
-  if (check.state === 'failing') return `Failed · ${duration}`
-  if (check.state === 'passing') return `Passed · ${duration}`
-  return `${check.state} ${duration}`
+const CHECK_STATE_LABEL: Partial<Record<PrCheck['state'], string>> = { failing: 'Failed', passing: 'Passed' }
+
+export function checkSummary(check: PrCheck): string {
+  const label = CHECK_STATE_LABEL[check.state] ?? `${check.state.charAt(0).toUpperCase()}${check.state.slice(1)}`
+  const duration = checkDuration(check)
+  return duration ? `${label} · ${duration}` : label
 }
 
 export function CheckLog({
@@ -201,7 +203,6 @@ function CheckRow({
   sent: string | undefined
 }): React.JSX.Element {
   const failed = check.state === 'failing'
-  const duration = checkDuration(check)
   return (
     <div
       className={`${PRS_CLASSES.PRS_CHECK_ROW} ${expanded ? PRS_CLASSES.PRS_CHECK_ROW_EXPANDED : ''}`}
@@ -219,7 +220,7 @@ function CheckRow({
           : <CheckStateDot state={check.state} size="check" />}
         <span className={PRS_CLASSES.PRS_CLASS_66}>{check.name}</span>
         <span className={PRS_CLASSES.PRS_CLASS_67}>
-          {checkSummary(check, duration)}
+          {checkSummary(check)}
         </span>
         {failed && (
           <Icon
