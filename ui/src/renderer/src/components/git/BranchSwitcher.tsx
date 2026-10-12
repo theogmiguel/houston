@@ -18,7 +18,7 @@ function BranchSwitcherOptions({ create, id, selected, busy, name, defaultBase, 
         {create && <>
           <BranchSwitcherGroup>Create</BranchSwitcherGroup>
           <BranchSwitcherRow id={`${id}-0`} role="option" aria-selected={selected === 0} active={selected === 0} kind="create" shortcut="Enter" disabled={busy} onMouseMove={() => setActive(0)} onClick={() => createBranch(false)}>Branch <strong>{name}</strong> from {defaultBase ?? 'HEAD'}</BranchSwitcherRow>
-          <BranchSwitcherRow id={`${id}-1`} role="option" aria-selected={selected === 1} active={selected === 1} kind="worktree" shortcut="Ctrl Enter" disabled={busy || worktreeTaken} onMouseMove={() => setActive(1)} onClick={() => createBranch(true)}>Worktree <strong>{worktreeBranch}</strong> in a new pane</BranchSwitcherRow>
+          <BranchSwitcherRow id={`${id}-1`} role="option" aria-selected={selected === 1} active={selected === 1} kind="worktree" shortcut="Ctrl Enter" disabled={busy || worktreeTaken} onMouseMove={() => setActive(1)} onClick={() => createBranch(true)}><span className="flex min-w-0"><span className="flex-none">Worktree&nbsp;</span><strong className="min-w-0 truncate">{worktreeBranch}</strong><span className="flex-none">&nbsp;in a new pane</span></span></BranchSwitcherRow>
         </>}
         <BranchSwitcherGroup>Branches</BranchSwitcherGroup>
         {shown.map((item, index) => {
@@ -116,10 +116,10 @@ export function BranchSwitcher({ client, dir, branch, base, tools, busy, error, 
     }
   }
   const worktreeLabel = (item: GitBranchInfo): string | null => {
-    if (item.current && currentWorktree) return 'Worktree in this pane'
+    if (item.current && currentWorktree) return 'worktree · this pane'
     if (!item.worktree_path) return null
     const pane = panes.find((pane) => pane.path === item.worktree_path)
-    return pane ? `Open worktree in pane ${pane.id}` : `Open worktree ${item.worktree_path}`
+    return pane ? `worktree · open in pane ${pane.id}` : `worktree · ${item.worktree_path.split(/[\\/]/).filter(Boolean).pop() ?? item.worktree_path}`
   }
   return <>
     <ChangesBranchChip ref={trigger} data-testid="changes-branch-chip" aria-label={`Branch: ${branch ?? 'Detached HEAD'}`} aria-haspopup="dialog" aria-expanded={open} disabled={!client} branch={branch ?? 'Detached HEAD'} worktree={currentWorktree} onClick={() => {
@@ -148,7 +148,7 @@ export function BranchSwitcher({ client, dir, branch, base, tools, busy, error, 
       <BranchSwitcherOptions create={create} id={id} selected={selected} busy={busy} name={name} defaultBase={defaultBase} worktreeBranch={worktreeBranch} worktreeTaken={worktreeTaken} shown={shown} truncated={tools.branchesTruncated} setActive={setActive} createBranch={createBranch} chooseBranch={chooseBranch} worktreeLabel={worktreeLabel} />
       <BranchSwitcherFooter>
         <span>Switching keeps uncommitted changes or refuses with the files that block it.</span>
-        <Button variant="link" size="sm" onClick={() => { setOpen(false); onManage() }}>Manage…</Button>
+        <Button variant="muted-link" onClick={() => { setOpen(false); onManage() }}>Manage…</Button>
       </BranchSwitcherFooter>
     </BranchSwitcherSurface>, document.body)}
   </>

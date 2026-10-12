@@ -51,18 +51,23 @@ describe('Changes branch switcher', () => {
     expect(input.className).toContain('focus-visible:outline-0')
   })
 
-  it('marks worktrees with a glyph while preserving sync metadata', () => {
+  it('labels worktree rows in words while preserving sync metadata', () => {
     const h = open()
     act(() => h.client.emit({ type: 'git_branches', dir: '/repo', branches: [
       branch('topic', { current: true }),
       branch('tree', { worktree_path: '/other/tree', ahead: 1, behind: 2, committed_at: 1_800_000_000 - 10800 })
     ], remotes: [], default_branch: 'main', truncated: false }))
     const row = qa('[role="dialog"] [role="option"]')[1]
-    expect(row.textContent).toBe('tree1 ahead · 2 behind · 3h')
-    expect(row.querySelector('[data-tooltip="Open worktree /other/tree"] svg')).not.toBeNull()
-    expect(row.textContent).not.toContain('worktree')
+    expect(row.textContent).toBe('treeworktree · tree · 1 ahead · 2 behind · 3h')
     click(row)
     expect(h.client.createSessionCalls).toEqual([{ agent: 'shell', project_dir: '/other/tree' }])
+  })
+
+  it('renders Manage as a muted link, not the accent link', () => {
+    open()
+    const manage = qa('[role="dialog"] button').find((item) => item.textContent === 'Manage…')!
+    expect(manage.className).toContain('text-[var(--text-muted)]')
+    expect(manage.className).not.toContain('text-[var(--accent)]')
   })
 
   it('pins current then orders recent commits with sync and age metadata', () => {
@@ -110,7 +115,8 @@ describe('Changes branch switcher', () => {
   it('Ctrl+Enter creates a worktree and opens one shell pane only after its receipt', () => {
     const h = open()
     const input = typeName('feat/tree')
-    expect(q('[role="dialog"]')?.textContent).toContain('Worktree houston/feat-tree in a new pane')
+    expect(q('[role="dialog"]')?.textContent?.replace(/\u00a0/g, ' ')).toContain('Worktree houston/feat-tree in a new pane')
+    expect(q('[role="dialog"] strong.truncate')?.textContent).toBe('houston/feat-tree')
     key(input, 'Enter', true)
     expect(h.client.gitWorktreeCreateCalls).toEqual([{ dir: '/repo', name: 'feat-tree', base: 'main' }])
     expect(h.client.createSessionCalls).toHaveLength(0)

@@ -6,7 +6,6 @@ import { FOCUS_HALO_CLS } from './shadowChrome'
 import { HintKey } from './ShortcutHint'
 import { SearchField } from './Field'
 import { ContextMenuItem } from './ContextMenu'
-import { Tooltip } from './Tooltip'
 
 export function ChangesBranchLine({ children }: { children: ReactNode }): React.JSX.Element {
   return <div className="flex flex-none items-center gap-[var(--space-2)] px-[var(--space-3)] pt-[var(--space-2-5)]">{children}</div>
@@ -34,8 +33,7 @@ export function BranchSwitcherRow({ active, current, kind = 'branch', note, shor
   return <ContextMenuItem {...props} variant="picker" active={active}>
     <span className="flex w-[14px] flex-none">{kind === 'create' ? <Icon glyph={IconGitBranch} role="small" /> : kind === 'worktree' ? <Icon glyph={IconGitFork} role="small" /> : current ? <Icon glyph={IconCheck} role="small" /> : null}</span>
     <span className="min-w-0 flex-1 truncate">{children}</span>
-    {worktreeLabel && <Tooltip label={worktreeLabel}><span className="flex flex-none text-[var(--text-muted)]" aria-label={worktreeLabel}><Icon glyph={IconGitFork} role="small" /></span></Tooltip>}
-    {note && <span className="flex-none max-w-[190px] truncate text-[var(--text-muted)]">{note}</span>}
+    {(worktreeLabel || note) && <span className="flex-none max-w-[190px] truncate text-[var(--text-muted)]">{[worktreeLabel, note].filter(Boolean).join(' · ')}</span>}
     {shortcut && <HintKey size="compact">{shortcut}</HintKey>}
   </ContextMenuItem>
 }
@@ -55,7 +53,7 @@ export function BranchSwitcherSpecimen(): React.JSX.Element {
     <BranchSwitcherRow active kind="create" shortcut="Enter">Branch feat/agents-overview from main</BranchSwitcherRow>
     <BranchSwitcherRow active={false} kind="worktree" shortcut="Ctrl Enter">Worktree houston/feat-agents-overview in a new pane</BranchSwitcherRow>
     <BranchSwitcherGroup>Branches</BranchSwitcherGroup>
-    <BranchSwitcherRow active={false} current worktreeLabel="Worktree in this pane" note="1h">inspector-polish</BranchSwitcherRow>
+    <BranchSwitcherRow active={false} current worktreeLabel="worktree · this pane">inspector-polish</BranchSwitcherRow>
     <BranchSwitcherRow active={false} note="2 behind · 3h">feature/source-control</BranchSwitcherRow>
   </div>
 }
