@@ -14,7 +14,10 @@ fire in sessions Houston did not launch.
 PTY startup owns the child until the session row, profile directory and gated reader/wait
 workers are ready. Failure rolls back the row, terminates the owned terminal process group and foreground
 group through a retained master descriptor, then reaps the direct child before publishing
-a pane. Windows rollback uses the owned child handle.
+a pane. Windows rollback uses the owned child handle. Gating the workers does not gate the
+CLI process: a keyed spawn failure after process creation retains an uncertain receipt even
+when rollback succeeds, because the CLI may already have performed external work.
+A failure before process creation remains retryable when no other external mutation occurred.
 Respawn allocates a new ID, so failed startup leaves the previous durable pane available.
 
 Close reserves every registered session in the recursive delegation subtree before releasing

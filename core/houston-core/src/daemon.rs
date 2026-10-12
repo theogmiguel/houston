@@ -10823,7 +10823,8 @@ impl Daemon {
             }
         }
         #[cfg(feature = "test-barriers")]
-        self.startup_fault("after-spawn")?;
+        self.startup_fault("after-spawn")
+            .context(orchestrate::MutationMayHaveActed)?;
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
         let unavailable_cause = (!hidden && agent == proto::AgentKind::Codex && acp.is_none())
@@ -11102,14 +11103,16 @@ impl Daemon {
             Ok(())
         };
         if hidden {
-            prepare()?;
+            prepare().context(orchestrate::MutationMayHaveActed)?;
         } else {
-            self.db.insert_session_for_startup(
-                &info,
-                title_source.as_str(),
-                Self::agent_profile_config_dir(agent, &extra_env),
-                prepare,
-            )?;
+            self.db
+                .insert_session_for_startup(
+                    &info,
+                    title_source.as_str(),
+                    Self::agent_profile_config_dir(agent, &extra_env),
+                    prepare,
+                )
+                .context(orchestrate::MutationMayHaveActed)?;
         }
         // No fallible setup remains. Publish before releasing output/exit workers.
         self.sessions

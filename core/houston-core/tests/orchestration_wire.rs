@@ -11957,6 +11957,19 @@ async fn keyed_spawn_error_after_process_creation_keeps_an_uncertain_receipt() {
             spawns.fetch_add(1, Ordering::SeqCst);
         }
     }));
+    #[cfg(feature = "test-barriers")]
+    let physical_spawns = Arc::new(AtomicUsize::new(0));
+    #[cfg(feature = "test-barriers")]
+    r.daemon.set_startup_test(
+        None,
+        Box::new({
+            let physical_spawns = physical_spawns.clone();
+            move |_, pid| {
+                assert!(pid > 0);
+                physical_spawns.fetch_add(1, Ordering::SeqCst);
+            }
+        }),
+    );
     let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
     conn.execute_batch("CREATE TRIGGER refuse_child_session BEFORE INSERT ON sessions WHEN NEW.spawned_by IS NOT NULL BEGIN SELECT RAISE(FAIL, 'child persistence refused'); END;").unwrap();
     let request =
@@ -11967,9 +11980,21 @@ async fn keyed_spawn_error_after_process_creation_keeps_an_uncertain_receipt() {
         .as_str()
         .unwrap()
         .contains("child persistence refused"));
+    #[cfg(feature = "test-barriers")]
+    assert_eq!(
+        physical_spawns.load(Ordering::SeqCst),
+        1,
+        "the refused INSERT must follow actual process creation"
+    );
     conn.execute_batch("DROP TRIGGER refuse_child_session;")
         .unwrap();
     let (status, retry) = r.post_spawn(&token, request).await;
+    #[cfg(feature = "test-barriers")]
+    assert_eq!(
+        physical_spawns.load(Ordering::SeqCst),
+        1,
+        "post-creation retry launched another physical process"
+    );
     assert!(status >= 400, "{retry}");
     assert!(retry["error"]
         .as_str()
@@ -15325,4 +15350,57 @@ async fn explicit_kill_cancels_before_signalling_the_live_child() {
     .await
     .unwrap();
     assert_eq!(r.daemon.delegation_of(child).unwrap().state, "cancelled");
+}
+
+#[tokio::test]
+async fn keyed_pre_spawn_storage_refusal_releases_the_receipt_for_retry() {
+    let _guard = serial().await;
+    let r = rig("retry-pre-spawn-storage").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    r.daemon.set_spawn_observer_for_test(Arc::new({
+        let attempts = attempts.clone();
+        move |_| {
+            attempts.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+    #[cfg(feature = "test-barriers")]
+    let physical = Arc::new(AtomicUsize::new(0));
+    #[cfg(feature = "test-barriers")]
+    r.daemon.set_startup_test(
+        None,
+        Box::new({
+            let physical = physical.clone();
+            move |_, pid| {
+                assert!(pid > 0);
+                physical.fetch_add(1, Ordering::SeqCst);
+            }
+        }),
+    );
+    let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+    conn.execute_batch("CREATE TRIGGER refuse_pre_spawn BEFORE INSERT ON delegations BEGIN SELECT RAISE(FAIL, 'pre-spawn persistence refused'); END;").unwrap();
+    let request = serde_json::json!({"kind":"claude","prompt":"work","client_request_id":"pre-spawn-storage"});
+    let token = r.token_for(parent.id);
+    let (status, failure) = r.post_spawn(&token, request.clone()).await;
+    assert!(
+        status >= 400
+            && failure["error"]
+                .as_str()
+                .unwrap()
+                .contains("pre-spawn persistence refused"),
+        "{failure}"
+    );
+    assert_eq!(attempts.load(Ordering::SeqCst), 0);
+    #[cfg(feature = "test-barriers")]
+    assert_eq!(physical.load(Ordering::SeqCst), 0);
+    assert_eq!(conn.query_row("SELECT COUNT(*) FROM orchestration_receipts WHERE client_request_id='pre-spawn-storage'", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+    conn.execute_batch("DROP TRIGGER refuse_pre_spawn;")
+        .unwrap();
+    let (status, success) = r.post_spawn(&token, request).await;
+    assert_eq!(status, 200, "{success}");
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    #[cfg(feature = "test-barriers")]
+    assert_eq!(physical.load(Ordering::SeqCst), 1);
 }
