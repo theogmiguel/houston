@@ -43,6 +43,8 @@
   --color-selection: var(--selection);
   --color-selected-fill: var(--selected-fill);
   --color-hover-fill: var(--hover-fill);
+  --color-selected-hover-fill: var(--selected-hover-fill);
+  --color-border-control: var(--border-control);
   --color-elevated-surface: var(--elevated-surface);
   --color-overlay: var(--overlay);
   --color-focus-ring: var(--focus-ring);

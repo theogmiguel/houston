@@ -393,8 +393,14 @@
   --popover-foreground: var(--text-primary);
   --accent-surface: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
   --accent-foreground: var(--text-primary);
-  --selected-fill: #ffffff1a;
-  --hover-fill: #ffffff0d;
+  /* Row states measured on the rung grounds (dL* >= 5 against rest): hover 7%, selected 14%,
+     selected+hover 16%. The previous 5% / 10% recipe failed the threshold on Graphite and Paper. */
+  --hover-fill: #ffffff12;
+  --selected-fill: #ffffff24;
+  --selected-hover-fill: #ffffff29;
+  /* Border of a control that is identified only by its edge (number field, segmented track, off
+     switch): 3:1 against the control's ground (WCAG 1.4.11). --border stays for decorative dividers. */
+  --border-control: #616167;
   --hover-strong: #ffffff14;
   --selection: var(--selected-fill);
   --elevated-surface: color-mix(in srgb, var(--card-bg) 80%, var(--text-primary) 10%);
@@ -426,6 +432,8 @@
   --color-selection: var(--selection);
   --color-selected-fill: var(--selected-fill);
   --color-hover-fill: var(--hover-fill);
+  --color-selected-hover-fill: var(--selected-hover-fill);
+  --color-border-control: var(--border-control);
   --color-elevated-surface: var(--elevated-surface);
   --color-focus-ring: var(--focus-ring);
   --color-divider: var(--divider);
@@ -895,8 +903,10 @@
   --popover-foreground: var(--text-primary);
   --accent-surface: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
   --accent-foreground: var(--text-primary);
-  --selected-fill: #0000001a;
-  --hover-fill: #0000000d;
+  --hover-fill: #00000012;
+  --selected-fill: #00000029;
+  --selected-hover-fill: #0000002e;
+  --border-control: #848488;
   --hover-strong: #00000014;
   --selection: var(--selected-fill);
   --elevated-surface: color-mix(in srgb, var(--card-bg) 80%, var(--text-primary) 10%);
@@ -928,6 +938,8 @@
   --color-selection: var(--selection);
   --color-selected-fill: var(--selected-fill);
   --color-hover-fill: var(--hover-fill);
+  --color-selected-hover-fill: var(--selected-hover-fill);
+  --color-border-control: var(--border-control);
   --color-elevated-surface: var(--elevated-surface);
   --color-focus-ring: var(--focus-ring);
   --color-divider: var(--divider);
