@@ -65,29 +65,25 @@ describe('Sidebar railfoot — navigation actions', () => {
     return container.querySelector('.railfoot') as HTMLElement
   }
 
-  it('renders Settings, Pull requests, Usage and Theme without a hide control or a Connect phone button', () => {
+  it('renders labelled Settings and Theme without a hide control or a Connect phone button', () => {
     render()
     const buttons = foot().querySelectorAll('button')
-    expect(buttons).toHaveLength(4)
+    expect(buttons).toHaveLength(2)
     expect(foot().querySelector('button[aria-label="Connect phone"]')).toBeNull()
-    expect(foot().textContent).not.toContain('Settings')
+    expect(foot().textContent).toContain('Settings')
     expect(foot().querySelector('button[aria-label="Hide sidebar"]')).toBeNull()
-    expect(foot().querySelector('[data-testid="rail-footer-pull-requests"]')).not.toBeNull()
-    expect(foot().querySelector('button[aria-label="Usage"]')).not.toBeNull()
+    expect(foot().querySelector('[data-testid="rail-footer-pull-requests"]')).toBeNull()
+    expect(foot().querySelector('button[aria-label="Usage"]')).toBeNull()
   })
 
-  it('footer actions use 28px squares over the topbar-sized ui glyph', () => {
+  it('uses a labelled row for Settings and keeps the theme action compact', () => {
     render()
-    for (const button of Array.from(foot().querySelectorAll('button'))) {
-      const cls = button.className
-      expect(cls).toContain('h-[var(--h-ctl)]')
-      expect(cls).toContain('w-[var(--h-ctl)]')
-      expect(cls).not.toContain('w-[18px]')
-      expect(cls).not.toContain('after:absolute')
-      expect(cls).toContain('hover:bg-[var(--card-hover)]')
-      const glyph = button.querySelector('svg')!
-      expect(glyph.getAttribute('class')).toContain('var(--tr-icon-ui-size)')
-    }
+    const settings = foot().querySelector('[data-testid="rail-settings"]')!
+    expect(settings.className).toContain('h-[var(--h-row)]')
+    expect(settings.textContent).toContain('Ctrl ,')
+    const theme = foot().querySelector('button[aria-label="Switch to light theme"]')!
+    expect(theme.className).toContain('h-[var(--h-ctl)]')
+    expect(theme.querySelector('svg')?.getAttribute('class')).toContain('var(--tr-icon-ui-size)')
   })
 
   it('the foot draws no rule above itself', () => {
@@ -125,15 +121,15 @@ describe('Sidebar railfoot — navigation actions', () => {
   it('renders nothing for an update nobody offered -- no third button, no reserved space', () => {
     render()
     expect(foot().querySelector('[data-testid="rail-update-available"]')).toBeNull()
-    expect(foot().querySelectorAll('button')).toHaveLength(4)
+    expect(foot().querySelectorAll('button')).toHaveLength(2)
     expect(foot().querySelector('button[aria-label="Connect phone"]')).toBeNull()
   })
 
   it('offers one worded chip carrying the glyph and the version, pushed to the far end', () => {
     render({ updateVersion: '1.2.3' })
     const buttons = Array.from(foot().querySelectorAll('button'))
-    expect(buttons).toHaveLength(5)
-    const indicator = buttons[4]
+    expect(buttons).toHaveLength(3)
+    const indicator = buttons[2]
     expect(indicator.getAttribute('data-testid')).toBe('rail-update-available')
     expect(indicator.getAttribute('aria-label')).toBe('Houston v1.2.3 is available. Open to install')
     expect(indicator.textContent).toBe('1.2.3 available')
@@ -172,13 +168,13 @@ describe('Sidebar railfoot — navigation actions', () => {
     expect(chip.className).toContain('--warn')
   })
 
-  it('the Settings button reflects settingsOpen with aria-pressed', () => {
+  it('the Settings footer stays unselected while the tree owns selection', () => {
     setSettingsNavForTests({ open: false })
     render()
     const gear = foot().querySelector('button[aria-label="Settings"]') as HTMLButtonElement
-    expect(gear.getAttribute('aria-pressed')).toBe('false')
+    expect(gear.getAttribute('aria-pressed')).toBeNull()
 
     act(() => setSettingsNavForTests({ open: true }))
-    expect(gear.getAttribute('aria-pressed')).toBe('true')
+    expect(gear.getAttribute('aria-pressed')).toBeNull()
   })
 })

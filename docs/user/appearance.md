@@ -1,8 +1,7 @@
 # Appearance, mascot and terminal settings
 
-Three settings sections cover presentation: **Settings ▸ Appearance** for the app
-chrome and window, **Settings → Mascot** for the companion, and **Settings ▸ Terminal**
-for how panes render and behave.
+Two settings sections cover presentation: **Settings ▸ Appearance** for the app
+chrome, window and mascot, and **Settings ▸ Terminal** for how panes render and behave.
 
 ## Settings ▸ Appearance
 
@@ -45,9 +44,9 @@ the sidebar.
 **App zoom** — scales the whole app: 90%, 100%, 110%, or 125%. Ctrl+/Ctrl− do the same
 thing from the keyboard.
 
-## Settings → Mascot
+## Settings ▸ Appearance ▸ Mascot
 
-Settings → Mascot controls Houston's companion in the rail or floating
+Settings ▸ Appearance ▸ Mascot controls Houston's companion in the rail or floating
 inside the Houston window. It is on by default and keeps you company; it never
 reports agent status or reads terminal text or hooks. Turn Mascot off to remove its artwork and interactions.
 
@@ -66,7 +65,7 @@ Click to say hello, rub the mascot to pet it, or double-click to flip. Drag Hous
 anywhere inside the window and release it to leave it floating. Its usual
 moods, outfits, speech and idle activities continue there. During a drag, the rail
 shows a docking target; drop Houston onto that slot to return it with a boing.
-Position in Settings → Mascot shows Rail or Floating and offers Return
+Position in Settings ▸ Appearance ▸ Mascot shows Rail or Floating and offers Return
 to rail. While floating, the command palette also offers Return mascot to rail.
 Position is remembered relative to the window and kept on screen when the window
 resizes. Drops over a native browser pane move to the nearest available position

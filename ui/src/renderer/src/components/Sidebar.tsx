@@ -1,3 +1,6 @@
+import type { AgentAttention } from '../useAgentAttention'
+import { HintKey } from './ui/ShortcutHint'
+import { SettingsNavigationGroup } from './ui/NavigationRailFooter'
 import { GLYPH_FOR_VERB } from './verbGlyphs'
 import { attentionStatus, needsUserInput } from '../sessionAttention'
 import { MascotMount } from '../mascot/MascotMount'
@@ -34,7 +37,10 @@ import {
   IconAlertTriangle,
   IconArrowDown,
   IconChevronRight,
+  IconChevronLeft,
   IconClose,
+  IconCompass,
+  IconPlug,
   IconCodeXml,
   IconDatabase,
   IconEyeOff,
@@ -67,7 +73,6 @@ import {
   IconChartArea,
   IconTerminal,
   IconZap,
-  IconGlobe,
   IconClock,
   type IconProps,
 } from "./icons";
@@ -188,6 +193,10 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   wrench: IconWrench,
   server: IconServer,
   phone: IconPhone,
+  compass: IconCompass,
+  sparkles: IconZap,
+  plug: IconPlug,
+  history: IconClock,
 };
 
 const GridRailGitSubscription = lazy(() =>
@@ -486,6 +495,7 @@ interface Props {
   onToggleChromeTheme: (origin: HTMLElement) => void;
   updateVersion?: string | null;
   harnessAttention?: number;
+  agentAttention?: AgentAttention;
   taskTurnCount?: number;
 
   className?: string;
@@ -1516,10 +1526,7 @@ function RailHead({
 const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Element>> =
   Object.freeze({
     tasks: IconTasks,
-    skills: IconZap,
     routines: IconClock,
-    harness: IconTarget,
-    mcp: IconGlobe,
     prs: IconGitPullRequest,
     usage: IconChartArea,
   });
@@ -1532,7 +1539,6 @@ function RailNav({
   onOpenPalette,
   onSelect,
   onRowMenu,
-  harnessAttention,
 }: {
   view: RailView | null;
   hidden: ReadonlySet<RailView>;
@@ -1541,9 +1547,8 @@ function RailNav({
   onOpenPalette: (() => void) | undefined;
   onSelect: (v: RailView) => void;
   onRowMenu: (e: React.MouseEvent, v: RailView) => void;
-  harnessAttention?: number;
 }): React.JSX.Element {
-  const shown = RAIL_VIEWS.filter((v) => v !== "prs" && v !== "usage" && !hidden.has(v));
+  const shown = RAIL_VIEWS.filter((v) => !hidden.has(v));
   return (
     <NavigationRail>
       <Tooltip label={paletteChord ? `Search (${paletteChord})` : "Search"}>
@@ -1562,8 +1567,7 @@ function RailNav({
             onClick={() => onSelect(v)}
             onContextMenu={(e) => onRowMenu(e, v)}
             trailing={
-              v === "harness" ? <Count value={harnessAttention ?? 0} from="accent" /> :
-                v === "tasks" && taskTurnCount > 0 ? <Count value={taskTurnCount} from="accent" /> : null
+v === "tasks" && taskTurnCount > 0 ? <Count value={taskTurnCount} from="warn" /> : null
             }
           />
         );
@@ -1624,6 +1628,7 @@ function SettingsTree({
   setTreeFilter,
   settingsSections,
   activeSettingsSection,
+  attention,
 }: {
   treeFilter: string | null;
   setTreeFilter: (
@@ -1631,10 +1636,19 @@ function SettingsTree({
   ) => void;
   settingsSections: readonly SettingsSectionDef[];
   activeSettingsSection: string;
+  attention?: AgentAttention;
 }): React.JSX.Element {
   const filterRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        if (e.target instanceof HTMLElement && e.target.closest('[role="dialog"]')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (treeFilter) setTreeFilter(null);
+        else setSettingsOpen(false);
+        return;
+      }
       if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target;
       if (
@@ -1645,9 +1659,9 @@ function SettingsTree({
       e.preventDefault();
       filterRef.current?.focus();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [treeFilter, setTreeFilter]);
   const query = (treeFilter ?? '').trim().toLowerCase();
   const rowHits = query ? searchSettingsRows(query) : [];
   const sections = settingsSections.filter((section) =>
@@ -1657,6 +1671,7 @@ function SettingsTree({
   );
   return (
     <div className="grid gap-[var(--space-1)]">
+      <NavigationRailItem icon={IconChevronLeft} label="Back to workspaces" trailing={<HintKey size="compact">Esc</HintKey>} onClick={() => { setTreeFilter(null); setSettingsOpen(false); }} />
       <SettingsSearch
           inputRef={filterRef}
           value={treeFilter ?? ""}
@@ -1691,21 +1706,11 @@ function SettingsTree({
               }}
             />
           )
-        }) : <EmptyListMessage kind="settings">No settings match your search.</EmptyListMessage> : sections.map((s) => {
-              const Icon = SETTINGS_ICON_MAP[s.icon] ?? IconInfo;
-              const on = activeSettingsSection === s.id;
-              return (
-                <SettingsRailRow
-                  key={s.id}
-                  kind="section"
-                  icon={Icon}
-                  label={s.label}
-                  selected={on}
-                  sectionId={s.id}
-                  onClick={() => setSettingsSection(s.id)}
-                />
-              );
-            })}
+        }) : sections.length ? sections.map((section) => <SettingsRailRow key={section.id} kind="search" icon={SETTINGS_ICON_MAP[section.icon] ?? IconInfo} label={section.label} subtitle={section.group === 'agents' ? 'Agents' : 'Settings'} sectionId={section.id} onClick={() => { setSettingsSection(section.id); setTreeFilter(null); }} />) : <EmptyListMessage kind="settings">No settings match your search.</EmptyListMessage> : (['agents', 'app', 'work', 'devices', 'system'] as const).map((group) => <SettingsNavigationGroup key={group} label={group === 'agents' ? 'Agents' : group[0].toUpperCase() + group.slice(1)}>{sections.filter((s) => s.group === group).map((s) => {
+          const Icon = SETTINGS_ICON_MAP[s.icon] ?? IconInfo;
+          const count = s.id === 'agents-overview' ? attention?.total ?? 0 : s.group === 'agents' ? attention?.counts[s.id as keyof AgentAttention['counts']] ?? 0 : 0;
+          return <SettingsRailRow key={s.id} kind="section" icon={Icon} label={s.label} selected={activeSettingsSection === s.id} sectionId={s.id} trailing={count > 0 ? <Count value={count} from={s.id === 'agents-mcp' ? 'stop' : 'warn'} /> : undefined} onClick={() => setSettingsSection(s.id)} />;
+        })}</SettingsNavigationGroup>)}
       </SettingsNavigation>
     </div>
   );
@@ -2396,7 +2401,6 @@ export function Sidebar({
   onRenameGrid,
   onRemoveGrid,
   onOpenSettings,
-  onOpenPullRequests,
   currentRailView,
   onOpenPalette,
   paletteChord,
@@ -2404,7 +2408,7 @@ export function Sidebar({
   chromeTheme,
   onToggleChromeTheme,
   updateVersion,
-  harnessAttention,
+  agentAttention,
   taskTurnCount = 0,
   className = "",
   gridArea,
@@ -2928,7 +2932,6 @@ export function Sidebar({
           onOpenPalette={onOpenPalette ?? (() => {})}
           onSelect={selectRailView}
           onRowMenu={openNavMenu}
-          harnessAttention={harnessAttention}
         />
       )}
       <NavigationRailScroll>
@@ -2938,6 +2941,7 @@ export function Sidebar({
             setTreeFilter={setTreeFilter}
             settingsSections={settingsSections}
             activeSettingsSection={activeSettingsSection}
+            attention={agentAttention}
           />
         ) : (
           <RailTree
@@ -3004,39 +3008,7 @@ export function Sidebar({
 
       <MascotMount existingUser={workspaces.length > 0} firstRun={mascotFirstRun} workspacesEmpty={mascotWorkspacesEmpty} />
       <NavigationRailFooter>
-        <Tooltip label="Settings">
-          <Button
-            variant="subtle-icon"
-            aria-label="Settings"
-            aria-pressed={settingsOpen}
-            selected={settingsOpen}
-            onClick={onOpenSettings}
-          >
-            <Icon glyph={IconGear} role="ui" />
-          </Button>
-        </Tooltip>
-        <Tooltip label="Pull requests">
-          <Button
-            variant="subtle-icon"
-            aria-label="Pull requests"
-            aria-current={activeRailView === "prs" ? "page" : undefined}
-            selected={activeRailView === "prs"}
-            data-testid="rail-footer-pull-requests"
-            onClick={onOpenPullRequests}
-          >
-            <Icon glyph={IconGitPullRequest} role="ui" />
-          </Button>
-        </Tooltip>
-        <Tooltip label="Usage">
-          <Button
-            variant="subtle-icon"
-            aria-label="Usage"
-            aria-current={activeRailView === "usage" ? "page" : undefined}
-            onClick={() => selectRailView("usage")}
-          >
-            <Icon glyph={IconChartArea} role="ui" />
-          </Button>
-        </Tooltip>
+        <NavigationRailItem icon={IconGear} label="Settings" aria-label="Settings" data-testid="rail-settings" selected={false} onClick={onOpenSettings} trailing={<span className="flex items-center gap-[var(--space-1)]">{(agentAttention?.total ?? 0) > 0 && <span aria-label={`${agentAttention!.total} agent settings need you`}><Count value={agentAttention!.total} from="warn" /></span>}<HintKey size="compact">Ctrl ,</HintKey></span>} />
         <Tooltip label={chromeTheme === "paper" ? "Switch to dark theme" : "Switch to light theme"}>
           <Button
             variant="subtle-icon"

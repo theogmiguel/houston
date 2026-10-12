@@ -1,9 +1,10 @@
+import { agentAttentionFor } from '../useAgentAttention'
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Sidebar, preloadRailOptionsMenu } from './Sidebar'
-import { setSettingsNavForTests } from '../settingsNav'
+import { setSettingsNavForTests, isSettingsOpen } from '../settingsNav'
 import { RAIL_VIEWS, setRailViewForTests } from '../railView'
 import type { TagInfo } from '../houston/generated/TagInfo'
 import type { SessionInfo, Workspace } from '../houston/client'
@@ -107,29 +108,43 @@ describe('the rail nav block', () => {
     expect(q('[data-testid="rail-search"]')?.textContent?.trim()).toBe('Search')
   })
 
-  it('navigation rows leave Pull requests and Usage in the footer', () => {
+  it('navigation rows label all four work views', () => {
     render()
-    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(RAIL_VIEWS.filter((view) => view !== 'usage' && view !== 'prs'))
-    expect(rows().map((r) => r.textContent)).toEqual(['Tasks', 'Skills', 'Routines', 'Harness', 'Connections'])
-    expect(q('.railfoot button[aria-label="Usage"]')).not.toBeNull()
+    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(RAIL_VIEWS)
+    expect(rows().map((r) => r.textContent)).toEqual(['Tasks', 'Pull requests', 'Routines', 'Usage'])
+    expect(q('.railfoot button[aria-label="Usage"]')).toBeNull()
   })
 
-  it('shows the task turn count in accent ink and omits zero', () => {
+  it('shows the task turn count in warning ink and omits zero', () => {
     render({ taskTurnCount: 2 })
     const count = rows().find((row) => row.getAttribute('data-view') === 'tasks')?.querySelector('.tabular-nums')
     expect(count?.textContent).toBe('2')
-    expect(count?.className).toContain('text-[var(--accent)]')
+    expect(count?.className).toContain('text-[var(--warn)]')
     render({ taskTurnCount: 0 })
     expect(rows().find((row) => row.getAttribute('data-view') === 'tasks')?.textContent).toBe('Tasks')
   })
 
-  it('shows the current Harness attention count in the rail row', () => {
-    render({ harnessAttention: 4 })
-    const harness = rows().find((r) => r.getAttribute('data-view') === 'harness')!
-    expect(harness.textContent).toContain('Harness')
-    expect(harness.textContent).toContain('4')
-    render({ harnessAttention: 0 })
-    expect(rows().find((r) => r.getAttribute('data-view') === 'harness')?.textContent).not.toContain('0')
+  it('puts setup attention on the labelled Settings footer rather than a retired Harness row', () => {
+    render({ agentAttention: agentAttentionFor({ agentHooks: null, skills: null, reviews: [], checks: [['github', { state: 'failed', message: 'missing npx' }]] }) })
+    expect(q('[data-testid="rail-settings"]')?.textContent).toContain('Settings')
+    expect(q('[aria-label="1 agent settings need you"]')?.textContent).toBe('1')
+    expect(rows().some((row) => row.getAttribute('data-view') === 'harness')).toBe(false)
+  })
+
+  it('groups Settings with one highlight and Escape clears the filter before leaving', () => {
+    setSettingsNavForTests({ open: true, section: 'agents-mcp' })
+    render()
+    expect(Array.from(container.querySelectorAll('[aria-label="Settings sections"] h3')).map((node) => node.textContent)).toEqual(['Agents', 'App', 'Work', 'Devices', 'System'])
+    expect(q('[data-testid="rail-settings"]')?.getAttribute('aria-current')).toBeNull()
+    expect(container.querySelectorAll('[data-testid="settings-section-row"][aria-current]')).toHaveLength(1)
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Search settings"]')!
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    act(() => { setter.call(input, 'font'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+    act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(input.value).toBe('')
+    expect(isSettingsOpen()).toBe(true)
+    act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(isSettingsOpen()).toBe(false)
   })
 
   it('the open one is marked, and only it', () => {
@@ -141,7 +156,7 @@ describe('the rail nav block', () => {
 
   it('right-click offers Hide from sidebar, and taking it removes the row', () => {
     render()
-    const skills = rows().find((r) => r.getAttribute('data-view') === 'skills')!
+    const skills = rows().find((r) => r.getAttribute('data-view') === 'routines')!
     act(() => {
       skills.dispatchEvent(
         new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 90 })
@@ -152,8 +167,8 @@ describe('the rail nav block', () => {
     expect(hide.textContent).toContain('Hide from sidebar')
 
     act(() => hide.click())
-    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['tasks', 'routines', 'harness', 'mcp'])
-    expect(localStorage.getItem('tr-rail-views-hidden')).toContain('skills')
+    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['tasks', 'prs', 'usage'])
+    expect(localStorage.getItem('tr-rail-views-hidden')).toContain('routines')
   })
 
   it('Settings mode shows only its sections, and the rows come back when Settings closes', () => {

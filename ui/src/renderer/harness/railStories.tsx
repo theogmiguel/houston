@@ -1,3 +1,4 @@
+import { agentAttentionFor } from '../src/useAgentAttention'
 import React from 'react'
 import { Sidebar } from '../src/components/Sidebar'
 import { RailResizeHandle } from '../src/components/RailResizeHandle'
@@ -158,7 +159,7 @@ function RailFixture({
         onOpenPalette={noop}
         onHideRail={noop}
         paletteChord="Ctrl K"
-        harnessAttention={2}
+        agentAttention={agentAttentionFor({ agentHooks: null, skills: null, reviews: [], checks: [['github', { state: 'failed', message: 'npx is not on PATH' }]] })}
         taskTurnCount={3}
         updateVersion={updateVersion}
       />

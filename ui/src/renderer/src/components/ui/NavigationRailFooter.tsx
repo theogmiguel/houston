@@ -1,3 +1,4 @@
+import { Text } from './Text'
 import type { HTMLAttributes, ReactNode } from 'react'
 
 export function NavigationRailFooter({ children, className = '', ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
@@ -14,4 +15,8 @@ export function WorkspaceList({ children, dragging = false }: { children: ReactN
 
 export function SettingsNavigation({ children }: { children: ReactNode }): React.JSX.Element {
   return <nav className="flex flex-col gap-[var(--space-1)] px-[var(--space-2)] pb-[var(--space-2)]" aria-label="Settings sections">{children}</nav>
+}
+
+export function SettingsNavigationGroup({ label, children }: { label: string; children: ReactNode }): React.JSX.Element {
+  return <section className="grid gap-[var(--space-0-5)] pb-[var(--space-1-5)]"><Text as="h3" size="label" weight="label" tone="faint" flush className="px-[var(--space-2)] pb-[var(--space-0-5)]">{label}</Text>{children}</section>
 }

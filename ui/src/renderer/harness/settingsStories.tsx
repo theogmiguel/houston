@@ -1,3 +1,4 @@
+import { agentAttentionFor } from '../src/useAgentAttention'
 import React from 'react'
 import { SettingsView, type OrchestrationStateView } from '../src/components/SettingsView'
 import { Sidebar } from '../src/components/Sidebar'
@@ -59,6 +60,7 @@ export function SettingsScreen({
           chromeTheme="graphite"
           onToggleChromeTheme={noop}
           onOpenSettings={noop}
+          agentAttention={props?.agentAttention}
         />
       </div>
       <div style={{ display: 'flex', flex: '1 1 0', minWidth: 0, flexDirection: 'column' }}>
@@ -82,7 +84,7 @@ export function SettingsAppearance(): React.JSX.Element {
 }
 
 export function SettingsMascot(): React.JSX.Element {
-  return <SettingsScreen section="mascot" />
+  return <SettingsScreen section="appearance" />
 }
 
 export function SettingsAppearanceCustom(): React.JSX.Element {
@@ -341,7 +343,7 @@ export function SettingsRemoteOff(): React.JSX.Element {
 }
 
 export function SettingsAgentSetup(): React.JSX.Element {
-  return <SettingsScreen section="agents" props={{
+  return <SettingsScreen section="agents-clis" props={{
     agentHooks: agentHookFixture,
     agentProfiles: {
       profiles: [
@@ -354,11 +356,11 @@ export function SettingsAgentSetup(): React.JSX.Element {
 }
 
 export function SettingsAgentStatusLoading(): React.JSX.Element {
-  return <SettingsScreen section="agents" props={{ agentHooks: null }} />
+  return <SettingsScreen section="agents-clis" props={{ agentHooks: null }} />
 }
 
 export function SettingsAgentStatusEmpty(): React.JSX.Element {
-  return <SettingsScreen section="agents" props={{ agentHooks: [] }} />
+  return <SettingsScreen section="agents-clis" props={{ agentHooks: [] }} />
 }
 
 export function SettingsOrchestration(): React.JSX.Element {
@@ -573,4 +575,9 @@ export function SettingsSearchStory(): React.JSX.Element {
     input.dispatchEvent(new Event('input', { bubbles: true }))
   }, [])
   return <SettingsScreen section="workspaces" />
+}
+
+export function SettingsAgentsOverview({ healthy = false }: { healthy?: boolean } = {}): React.JSX.Element {
+  const attention = agentAttentionFor({ agentHooks: healthy ? [] : [{ provider: 'opencode', path: '/home/dev/.config/opencode/plugins/houston.ts', scope: 'global', present: true, enabled: true, installed: false, error: 'The managed hook block differs.', version: '1.18', trust: null }], skills: [], checks: healthy ? [] : [['github', { state: 'failed', message: 'npx is not on PATH' }]], reviews: healthy ? [] : [{ workspace: '/home/dev/code/houston', attention: 1, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, seen_review_id: 0 }] })
+  return <SettingsScreen section="agents-overview" props={{ agentAttention: attention }} />
 }

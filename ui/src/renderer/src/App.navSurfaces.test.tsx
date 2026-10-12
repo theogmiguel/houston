@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { waitFor } from '@testing-library/react'
 import { renderReadyApp, resetHarness, type AppHarness } from './test/appTestHarness'
-import { setSettingsNavForTests } from './settingsNav'
+import { setSettingsNavForTests, isSettingsOpen } from './settingsNav'
 import { RAIL_VIEWS } from './railView'
 
 let harness: AppHarness | null = null
@@ -24,8 +24,6 @@ function navRow(container: HTMLElement, view: string): HTMLButtonElement {
 }
 
 function destinationButton(container: HTMLElement, view: string): HTMLButtonElement {
-  if (view === 'prs') return container.querySelector('[data-testid="rail-footer-pull-requests"]') as HTMLButtonElement
-  if (view === 'usage') return container.querySelector('.railfoot button[aria-label="Usage"]') as HTMLButtonElement
   return navRow(container, view)
 }
 
@@ -66,7 +64,7 @@ describe('the rail nav rows drive the content area', () => {
     const search = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
     search.focus()
     act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true, bubbles: true, cancelable: true })))
-    expect(gear.getAttribute('aria-pressed')).toBe('false')
+    expect(isSettingsOpen()).toBe(false)
   })
 
   it('Escape clears and leaves search first, then closes Settings on the next press', async () => {
@@ -83,10 +81,10 @@ describe('the rail nav rows drive the content area', () => {
     })
     search.focus()
     act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-    expect(gear.getAttribute('aria-pressed')).toBe('true')
+    expect(isSettingsOpen()).toBe(true)
     expect(search.value).toBe('')
     act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-    expect(gear.getAttribute('aria-pressed')).toBe('false')
+    expect(isSettingsOpen()).toBe(false)
   })
 
   it('each destination opens a surface — none of them opens onto nothing', async () => {
@@ -112,11 +110,11 @@ describe('the rail nav rows drive the content area', () => {
     const { container } = harness
     const { act } = await import('react')
 
-    act(() => navRow(container, 'skills').click())
+    act(() => navRow(container, 'routines').click())
     expect(surface(container)).not.toBeNull()
-    act(() => navRow(container, 'skills').click())
+    act(() => navRow(container, 'routines').click())
     expect(surface(container)).toBeNull()
-    expect(navRow(container, 'skills').getAttribute('aria-current')).toBeNull()
+    expect(navRow(container, 'routines').getAttribute('aria-current')).toBeNull()
   })
 
   it('the rows leave the rail while Settings is open and drive the content area once it closes', async () => {
@@ -131,9 +129,9 @@ describe('the rail nav rows drive the content area', () => {
 
     act(() => (container.querySelector('.railfoot button[aria-label="Settings"]') as HTMLButtonElement).click())
     expect(container.querySelectorAll('[data-testid="rail-nav-row"]').length).toBe(
-      RAIL_VIEWS.length - 2
+      RAIL_VIEWS.length
     )
-    act(() => navRow(container, 'mcp').click())
+    act(() => navRow(container, 'tasks').click())
     expect(container.querySelector('[aria-label="Settings sections"]')).toBeNull()
     expect(surface(container)).not.toBeNull()
   })
@@ -143,7 +141,7 @@ describe('the rail nav rows drive the content area', () => {
     const { container } = harness
     const { act } = await import('react')
 
-    act(() => navRow(container, 'mcp').click())
+    act(() => navRow(container, 'tasks').click())
     const slot = container.querySelector('.grid-slot')
     expect(slot).not.toBeNull()
     expect(slot?.className).toContain('grid-hidden')
@@ -154,7 +152,7 @@ describe('the rail nav rows drive the content area', () => {
     const { container } = harness
     const { act } = await import('react')
 
-    act(() => navRow(container, 'mcp').click())
+    act(() => navRow(container, 'tasks').click())
     expect(surface(container)).not.toBeNull()
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -169,7 +167,7 @@ describe('the rail nav rows drive the content area', () => {
     const { setRailViewHidden } = await import('./railView')
 
     expect(container.querySelectorAll('[data-testid="rail-nav-row"]').length).toBe(
-      RAIL_VIEWS.length - 2
+      RAIL_VIEWS.length
     )
     act(() => setRailViewHidden('routines', true))
     expect(container.querySelector('[data-testid="rail-nav-row"][data-view="routines"]')).toBeNull()
@@ -186,9 +184,9 @@ describe('the rail nav rows drive the content area', () => {
     const { act } = await import('react')
     const { setRailViewHidden } = await import('./railView')
 
-    act(() => navRow(container, 'skills').click())
+    act(() => navRow(container, 'routines').click())
     expect(surface(container)).not.toBeNull()
-    act(() => setRailViewHidden('skills', true))
+    act(() => setRailViewHidden('routines', true))
     expect(surface(container)).toBeNull()
   })
 })

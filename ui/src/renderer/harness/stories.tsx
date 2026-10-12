@@ -1,3 +1,4 @@
+import { SettingsAgentsOverview } from './settingsStories'
 import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
@@ -453,8 +454,11 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'rail/grid-row-paper-200': () => <RailGridRowStory theme="paper" width={200} />,
   'rail/grid-row-paper-240': () => <RailGridRowStory theme="paper" width={240} />,
   'rail/grid-row-paper-420': () => <RailGridRowStory theme="paper" width={420} />,
+  'settings/agents-overview': () => <SettingsAgentsOverview />,
+  'settings/agents-overview-healthy': () => <SettingsAgentsOverview healthy />,
+  'settings/agents-clis': () => <SettingsAgentSetup />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
-  'settings/agents': () => <SettingsAgentSetup />,
+  'settings/agents': () => <SettingsAgentsOverview />,
   'settings/agents-loading': () => <SettingsAgentStatusLoading />,
   'settings/agents-empty': () => <SettingsAgentStatusEmpty />,
   'settings/appearance': () => <SettingsAppearance />,

@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { NAVIGABLE_SETTINGS_SECTIONS, SETTINGS_SECTIONS, settingsSectionsFor } from './settingsSections'
 
 describe('settingsSections', () => {
-  it('provides the approved flat navigation order with Notifications built', () => {
+  it('provides the grouped navigation order with Notifications built', () => {
     expect(settingsSectionsFor('Linux x86_64').map(({ id, label }) => [id, label])).toEqual([
-      ['appearance', 'Appearance'], ['mascot', 'Mascot'], ['terminal', 'Terminal'], ['shortcuts', 'Shortcuts'],
-      ['agents', 'Agents'], ['notifications', 'Notifications'], ['workspaces', 'Workspaces'],
-      ['orchestration', 'Orchestration'], ['tasks', 'Tasks'], ['dictation', 'Dictation'],
-      ['privacy', 'Privacy & data'], ['daemon', 'Daemon'], ['remote', 'Remote access'], ['about', 'About']
+      ['agents-overview', 'Overview'], ['agents-clis', 'CLIs'], ['agents-skills', 'Skills'], ['agents-mcp', 'MCP servers'], ['agents-review', 'Review'],
+      ['appearance', 'Appearance'], ['terminal', 'Terminal'], ['shortcuts', 'Shortcuts'], ['notifications', 'Notifications'],
+      ['workspaces', 'Workspaces'], ['orchestration', 'Orchestration'], ['tasks', 'Tasks'], ['dictation', 'Dictation'],
+      ['remote', 'Phone & remote access'], ['privacy', 'Privacy & data'], ['daemon', 'Daemon'], ['about', 'About']
     ])
     expect(SETTINGS_SECTIONS.find(({ id }) => id === 'notifications')?.pending).toBeUndefined()
     expect(NAVIGABLE_SETTINGS_SECTIONS).toBe(SETTINGS_SECTIONS)

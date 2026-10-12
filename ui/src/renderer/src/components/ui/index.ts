@@ -26,7 +26,7 @@ export { WorkspaceTreeRow, WorkspaceTreeLabel, WorkspaceTreeActions, WorkspaceTr
 export { TagFieldGroup, TagFieldLabel, TagFormActions, TagFormPreview, TagHint, TagList, TagListName, TagListRow, TagListUsage, TagRowIconButton, TagTextInput } from './TagList'
 export { TagSwatchButton, TagSwatchDot, TagSwatchGrid } from './TagSwatch'
 export { WorkspaceGroupLabel, WorkspaceGroupLabelSpecimen, WorkspaceGroupDivider, HorizontalRule } from './WorkspaceGroupLabel'
-export { NavigationRailFooter, NavigationRailScroll, WorkspaceList, SettingsNavigation } from './NavigationRailFooter'
+export { NavigationRailFooter, NavigationRailScroll, WorkspaceList, SettingsNavigation, SettingsNavigationGroup } from './NavigationRailFooter'
 export { NavigationRail, NavigationRailHeader, NavigationRailSection, NavigationRailSearch, NavigationRailItem, NavigationRailSpecimen, RailSurface } from './NavigationRail'
 export { ActivityDot, ActivityDotSpecimen } from './ActivityDot'
 export { ScreenRegion } from './ScreenRegion'

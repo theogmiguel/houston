@@ -80,7 +80,7 @@ no report content to an external service. The support-probe reply returns throug
 the session's existing terminal connection, including SSH for remote sessions. A terminal
 multiplexer may suppress the probe or reports; then the program cannot negotiate this fallback.
 
-## Settings ▸ Agents
+## Settings ▸ Agents ▸ CLIs
 
 This screen lists every CLI Houston knows how to wire, and what each row means:
 
@@ -100,12 +100,12 @@ it off removes exactly what Houston added:
   or `settings.json` in `CLAUDE_CONFIG_DIR` and Houston account profile directories.
   Hook installation requires an absolute config directory. Houston expands `~` and
   `$HOME` in account profile paths; directories that remain relative are skipped and
-  reported in Settings ▸ Agents. Use an absolute profile path for status reporting.
+  reported in Settings ▸ Agents ▸ CLIs. Use an absolute profile path for status reporting.
   Claude started from any directory inside a Houston pane reports status. The commands
   exit silently when `TR_SESSION` is empty, so they do nothing outside Houston.
   Your other settings and hooks are preserved. Houston removes its old workspace entries
   from `.claude/settings.local.json` during migration to avoid duplicate events.
-  Turn Claude off in Settings ▸ Agents ▸ Claude to remove its global entries;
+  Turn Claude off in Settings ▸ Agents ▸ CLIs ▸ Claude to remove its global entries;
   the setting stays off across restarts. Claude status hook installation is unsupported
   on Windows because these commands require POSIX `sh`.
 - **Codex** — writes `~/.codex/hooks.json`, one entry per lifecycle event. An existing
@@ -118,7 +118,7 @@ it off removes exactly what Houston added:
   Launches using another Codex config directory check that directory's hooks and trust.
   A new pane with hooks off, missing hooks or unconfirmed trust immediately shows
   **Unavailable**, with an operator note naming the cause. Repair the setup in
-  Settings ▸ Agents ▸ Codex and reopen the pane.
+  Settings ▸ Agents ▸ CLIs ▸ Codex and reopen the pane.
 - **OpenCode** — drops a small plugin file Houston owns; if one is already there and
   Houston did not write it, install refuses rather than overwriting it.
 - **Cursor** — adds one entry to each of your `sessionStart`, `beforeSubmitPrompt` and
@@ -149,3 +149,15 @@ it off removes exactly what Houston added:
 To repair a broken setup, use "Check again" to have Houston re-read every CLI's hooks,
 then flip the switch off and back on for a row that shows "needs attention" — that
 reruns the install.
+
+## Agent setup
+
+Open **Settings ▸ Agents ▸ Overview** to see reported setup problems across CLIs,
+skills, MCP servers and reviews. The Settings row carries the combined attention
+count; each Agents page carries its own count. Repair hooks and Check again run
+the existing hook installation and MCP test actions. Other fixes open their owning page.
+
+Agent accounts and hook settings live in **Agents ▸ CLIs**. Skills, MCP servers and
+Review have separate pages in the same group. Review schedules live in Routines.
+The work rail contains Tasks, Pull requests, Routines and Usage. In Settings, Escape
+clears the navigation filter first, then returns to workspaces.

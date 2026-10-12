@@ -1,3 +1,4 @@
+import { useAgentAttention } from './useAgentAttention'
 import { ConnectPhoneHost } from './components/ConnectPhoneDialog';
 import { openConnectPhone } from './connectPhone';
 import { inputEpisode, ownUserInput } from './sessionAttention';
@@ -801,6 +802,7 @@ export function App(): React.JSX.Element {
   const [voiceDevices, setVoiceDevices] = useState<VoiceDevice[]>([]);
   const [mcp, setMcp] = useState<McpStateView | null>(null);
   const [skills, setSkills] = useState<SkillToolState[] | null>(null);
+  const agentAttention = useAgentAttention({ agentHooks, skills, checks: mcp?.checks ?? null, reviews: harnessOverview });
   const [skillPushes, setSkillPushes] = useState<SkillPushRecord[]>([]);
   const [skillAutoPush, setSkillAutoPush] = useState(false);
   const [agentProfiles, setAgentProfiles] = useState<AgentProfileState | null>(
@@ -882,20 +884,11 @@ export function App(): React.JSX.Element {
   }, [settings]);
 
   useEffect(() => {
-    if (settings && settingsSection === "agents" && conn.kind === "ready") {
-      conn.client.agentHooks();
-    }
+    if (!settings || conn.kind !== 'ready') return;
+    if (settingsSection === 'agents-overview' || settingsSection === 'agents-clis') conn.client.agentHooks();
+    if (settingsSection === 'agents-overview' || settingsSection === 'agents-mcp') conn.client.mcpState();
+    if (settingsSection === 'agents-overview' || settingsSection === 'agents-skills') conn.client.skillSync();
   }, [settings, settingsSection, conn]);
-
-  // Keyed on railView opening only: these read ~/.claude.json under the
-  // read-only carve-out in docs/internals/invariants.md — surface open,
-  // explicit refresh, or boot only, never a timer.
-  useEffect(() => {
-    if (conn.kind !== "ready") return;
-    if (railView === "mcp") conn.client.mcpState();
-    if (railView === "skills") conn.client.skillSync();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railView]);
   const [composer, setComposer] = useState<"current-grid" | "new-grid" | null>(
     null,
   );
@@ -3569,6 +3562,7 @@ export function App(): React.JSX.Element {
               }
               updateVersion={offeredUpdate(update, dismissedUpdate)}
               harnessAttention={harnessAttention}
+              agentAttention={agentAttention}
               taskTurnCount={taskTurnCount}
               onRemoveWorkspace={removeWorkspace}
               onOpenExternalError={pushError}
@@ -4043,65 +4037,6 @@ export function App(): React.JSX.Element {
                         onOpenExternal={(url) => void openExternal(url)}
                       />
                     </Suspense>
-                  ) : railView === "skills" ? (
-                    <SkillsSurface
-                      client={conn.kind === "ready" ? conn.client : null}
-                      workspace={selectedWs === "all" ? null : selectedWs}
-                      focusedPaneName={activeId === null ? null : sessions.get(activeId)?.title ?? null}
-                      focusedPaneAgent={focusedSkillAgent(sessions, activeId)}
-                      runBlockedReason={skillRunBlocker(sessions, activeId, selectedWs, conn.kind)}
-                      onRunSkill={runSkill}
-                      tools={skills}
-                      pushes={skillPushes}
-                      autoPushEnabled={skillAutoPush}
-                      onRefresh={() => {
-                        if (conn.kind === "ready") conn.client.skillSync();
-                      }}
-                      onPush={(tool, skill) => {
-                        if (conn.kind === "ready")
-                          conn.client.skillPush(tool, skill);
-                      }}
-                      onPushUndo={(tool, skill) => {
-                        if (conn.kind === "ready")
-                          conn.client.skillPushUndo(tool, skill);
-                      }}
-                      onAutoPushSet={(enabled) => {
-                        if (conn.kind === "ready")
-                          conn.client.skillAutoPushSet(enabled);
-                      }}
-                      checkedAt={skillsCheckedAt}
-                    />
-                  ) : railView === "mcp" ? (
-                    <McpSurface
-                      {...mcpSurfaceLists(mcp)}
-                      onRefresh={() => {
-                        if (conn.kind === "ready") conn.client.mcpState();
-                      }}
-                      onSync={(tool) => {
-                        if (conn.kind === "ready") conn.client.mcpSync(tool);
-                      }}
-                      onImport={(tool) => {
-                        if (conn.kind === "ready") conn.client.mcpImport(tool);
-                      }}
-                      onSetEnabled={(name, enabled) => {
-                        if (conn.kind === "ready")
-                          conn.client.mcpSetEnabled(name, enabled);
-                      }}
-                      onUpsertServer={(previousName, server) => {
-                        if (conn.kind === "ready") conn.client.mcpServerUpsert(previousName, server);
-                      }}
-                      onRemoveServer={(name) => {
-                        if (conn.kind === "ready") conn.client.mcpServerRemove(name);
-                      }}
-                      onTest={(name) => {
-                        if (conn.kind === "ready") conn.client.mcpTest(name);
-                      }}
-                      onOpenSource={() => {
-                        if (mcp) void showItemInFolder(mcp.sourcePath);
-                      }}
-                      checkedAt={mcpCheckedAt}
-                      slackClient={readyClient(conn)}
-                    />
                   ) : railView === "routines" ? (
                     <RoutinesSurface
                       routines={routines}
@@ -4145,19 +4080,6 @@ export function App(): React.JSX.Element {
                       }}
                       now={Date.now()}
                     />
-                  ) : railView === "harness" ? (
-                    <HarnessView
-                      client={harness.client}
-                      workspaces={workspaces.map((w) => ({
-                        id: w.path,
-                        name: w.name,
-                      }))}
-                      selectedWorkspace={selectedWs}
-                      routinesRunning={routinesRunning}
-                      onOpenFile={harness.openFile}
-                      onReveal={harness.reveal}
-                      attentionRows={harnessOverview}
-                    />
                   ) : railView === "usage" ? (
                     <Suspense fallback={<div className="flex-1" />}>
                       <UsageSection
@@ -4174,6 +4096,78 @@ export function App(): React.JSX.Element {
                   ) : (
                   <Suspense fallback={<div className="flex-1" />}>
                     <SettingsView
+                      agentAttention={agentAttention}
+                      onMcpTest={(name) => { if (conn.kind === "ready") conn.client.mcpTest(name); }}
+                      agentPages={{
+                        'agents-skills': (<SkillsSurface
+                      client={conn.kind === "ready" ? conn.client : null}
+                      workspace={selectedWs === "all" ? null : selectedWs}
+                      focusedPaneName={activeId === null ? null : sessions.get(activeId)?.title ?? null}
+                      focusedPaneAgent={focusedSkillAgent(sessions, activeId)}
+                      runBlockedReason={skillRunBlocker(sessions, activeId, selectedWs, conn.kind)}
+                      onRunSkill={runSkill}
+                      tools={skills}
+                      pushes={skillPushes}
+                      autoPushEnabled={skillAutoPush}
+                      onRefresh={() => {
+                        if (conn.kind === "ready") conn.client.skillSync();
+                      }}
+                      onPush={(tool, skill) => {
+                        if (conn.kind === "ready")
+                          conn.client.skillPush(tool, skill);
+                      }}
+                      onPushUndo={(tool, skill) => {
+                        if (conn.kind === "ready")
+                          conn.client.skillPushUndo(tool, skill);
+                      }}
+                      onAutoPushSet={(enabled) => {
+                        if (conn.kind === "ready")
+                          conn.client.skillAutoPushSet(enabled);
+                      }}
+                      checkedAt={skillsCheckedAt}
+                    />),
+                        'agents-mcp': (<McpSurface
+                      {...mcpSurfaceLists(mcp)}
+                      onRefresh={() => {
+                        if (conn.kind === "ready") conn.client.mcpState();
+                      }}
+                      onSync={(tool) => {
+                        if (conn.kind === "ready") conn.client.mcpSync(tool);
+                      }}
+                      onImport={(tool) => {
+                        if (conn.kind === "ready") conn.client.mcpImport(tool);
+                      }}
+                      onSetEnabled={(name, enabled) => {
+                        if (conn.kind === "ready")
+                          conn.client.mcpSetEnabled(name, enabled);
+                      }}
+                      onUpsertServer={(previousName, server) => {
+                        if (conn.kind === "ready") conn.client.mcpServerUpsert(previousName, server);
+                      }}
+                      onRemoveServer={(name) => {
+                        if (conn.kind === "ready") conn.client.mcpServerRemove(name);
+                      }}
+                      onTest={(name) => {
+                        if (conn.kind === "ready") conn.client.mcpTest(name);
+                      }}
+                      onOpenSource={() => {
+                        if (mcp) void showItemInFolder(mcp.sourcePath);
+                      }}
+                      checkedAt={mcpCheckedAt}
+                    />),
+                        'agents-review': (<HarnessView
+                      client={harness.client}
+                      workspaces={workspaces.map((w) => ({
+                        id: w.path,
+                        name: w.name,
+                      }))}
+                      selectedWorkspace={selectedWs}
+                      routinesRunning={routinesRunning}
+                      onOpenFile={harness.openFile}
+                      onReveal={harness.reveal}
+                      attentionRows={harnessOverview}
+                    />),
+                      }}
                       daemonClient={scmProps.client}
                       chromeTheme={chromeTheme}
                       onChromeTheme={(theme, origin) =>

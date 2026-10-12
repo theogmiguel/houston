@@ -1,3 +1,4 @@
+import { SettingsNavigationGroup } from '../src/components/ui/NavigationRailFooter'
 import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
@@ -612,6 +613,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Row states"><RowStateSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Grouped settings navigation"><SettingsNavigationGroup label="Agents"><SettingsRailRow kind="section" icon={IconTerminal} label="CLIs" trailing={<Count value={1} from="warn" />} /><SettingsRailRow kind="section" icon={IconSearch} label="MCP servers" selected trailing={<Count value={1} from="stop" />} /></SettingsNavigationGroup></SpecimenGroup>
         <SpecimenGroup heading="Settings navigation and scope">
           <SpecimenRow>
             <SettingsRailRow kind="section" icon={IconTerminal} label="Terminal" selected />

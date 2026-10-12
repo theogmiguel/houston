@@ -1,6 +1,9 @@
+import { agentAttentionFor, type AgentAttention, type AgentSetupSection } from '../useAgentAttention'
+import { AgentsOverview } from './settings/AgentsOverview'
+import { SETTINGS_SECTIONS } from '../settingsSections'
 import { openConnectPhoneRoute } from '../connectPhone'
 import type { HoustonClient } from '../houston/client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import type { ChromeTheme, TerminalPaletteChoice } from '../theme'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentKind } from '../houston/generated/AgentKind'
@@ -67,6 +70,9 @@ export interface McpStateView {
 }
 
 export interface Props {
+  agentPages?: Partial<Record<AgentSetupSection, ReactNode>>
+  agentAttention?: AgentAttention
+  onMcpTest?: (name: string) => void
   daemonClient?: HoustonClient | null
 
   chromeTheme: ChromeTheme
@@ -271,7 +277,7 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'mascot' && <MascotSettings />}
+        {section === 'appearance' && <MascotSettings />}
 
         {section === 'terminal' && (
           <TerminalSection
@@ -326,7 +332,7 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'agents' && (
+        {section === 'agents-clis' && (
           <>
             <AgentStatusSection
               providers={agentHooks}
@@ -486,8 +492,8 @@ export function SettingsView(props: Props): React.JSX.Element {
   return (
     <SettingsPageSurface ref={columnRef} className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       {}
-      <PageFrame width={section === 'agents' ? 'settingsWide' : 'settings'} scroll={false} padding="settings">
-        <SectionDispatch
+      <PageFrame width={SETTINGS_SECTIONS.find((entry) => entry.id === section)?.width === 'wide' ? 'settingsWide' : 'settings'} scroll={false} padding="settings">
+        {section === 'agents-overview' ? <AgentsOverview attention={props.agentAttention ?? agentAttentionFor({ agentHooks: props.agentHooks, skills: null, checks: null, reviews: [] })} onRepair={props.onAgentHooksSet} onCheck={props.onMcpTest ?? NOOP} /> : props.agentPages?.[section as AgentSetupSection] ?? <SectionDispatch
           {...props}
           section={section}
           terminalLineHeight={terminalLineHeight}
@@ -496,7 +502,7 @@ export function SettingsView(props: Props): React.JSX.Element {
           onTerminalCursorBlink={onTerminalCursorBlink}
           terminalScrollbackLines={terminalScrollbackLines}
           onTerminalScrollbackLines={onTerminalScrollbackLines}
-        />
+        />}
       </PageFrame>
     </SettingsPageSurface>
   )

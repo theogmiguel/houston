@@ -1,5 +1,5 @@
 import { ROW_STATE } from './rowState'
-import type { ButtonHTMLAttributes, ComponentType } from 'react'
+import type { ButtonHTMLAttributes, ComponentType, ReactNode } from 'react'
 import type { IconProps } from '../icons'
 import { variants } from './variants'
 
@@ -20,6 +20,7 @@ type SettingsRailRowProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   icon: ComponentType<IconProps>
   label: string
   subtitle?: string
+  trailing?: ReactNode
   selected?: boolean
   sectionId?: string
   rowTitle?: string
@@ -30,6 +31,7 @@ export function SettingsRailRow({
   icon: Icon,
   label,
   subtitle,
+  trailing,
   selected = false,
   sectionId,
   rowTitle,
@@ -53,6 +55,7 @@ export function SettingsRailRow({
           <span className="block text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">{subtitle}</span>
         </span>
       ) : <span className="min-w-0 flex-1 truncate">{label}</span>}
+      {trailing && <span className="ml-auto flex-none">{trailing}</span>}
     </button>
   )
 }
