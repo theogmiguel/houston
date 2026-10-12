@@ -59,6 +59,9 @@ The tree continues refreshing during sustained filesystem activity. Large change
 trigger a rescan; open files are checked against disk without replacing unsaved edits.
 Search returns a completed scan even if more changes arrive while it runs. It reports
 an error when indexing exceeds its file, traversal, path-storage or Git time limits.
+Overlapping searches share the same index scan. Houston allows two index scans and
+two searches at a time; when these limits are reached, Quick Open shows the error.
+Choose **Retry** after the current work finishes, or refine the query.
 
 ## Editor pane
 

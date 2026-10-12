@@ -20,7 +20,10 @@ behind its upstream. A scope toggle switches between "Working tree" (your uncomm
 changes) and "Branch vs `<base>`" (everything your branch has that the base branch
 doesn't). A repository with no upstream, or a detached HEAD, is shown as such rather
 than left blank. Below the files, On this branch lists the commits your upstream does
-not have yet, newest first; View all expands the list.
+not have yet, newest first; View all expands the list. Added and deleted line counts
+follow the staged and unstaged versions separately, including renamed files and
+filenames with non-ASCII characters or control characters. Binary changes have no
+line counts.
 
 ## Reviewing a diff
 
