@@ -255,8 +255,17 @@ impl Scrollback {
     }
 
     pub fn load(path: &Path) -> Result<Self> {
-        let raw = std::fs::read(path)
+        use std::io::Read;
+        let limit = 17 + SCROLLBACK_CAP + TRIM_SLACK;
+        let mut raw = Vec::new();
+        std::fs::File::open(path)
+            .with_context(|| format!("opening persisted scrollback at {}", path.display()))?
+            .take(limit as u64 + 1)
+            .read_to_end(&mut raw)
             .with_context(|| format!("reading persisted scrollback at {}", path.display()))?;
+        if raw.len() > limit {
+            bail!("scrollback file {} exceeds recovery size limit {limit} bytes (read at least {} bytes)", path.display(), raw.len());
+        }
         if raw.len() < 17 || &raw[..4] != PERSIST_MAGIC {
             bail!(
                 "corrupt scrollback file {}: expected TRSB header, got {} byte(s)",
@@ -273,6 +282,13 @@ impl Scrollback {
         }
         let generation = u32::from_le_bytes(raw[5..9].try_into().expect("4 bytes"));
         let start = u64::from_le_bytes(raw[9..17].try_into().expect("8 bytes"));
+        if start.checked_add((raw.len() - 17) as u64).is_none() {
+            bail!(
+                "scrollback file {} has invalid offset {start} for {} retained bytes",
+                path.display(),
+                raw.len() - 17
+            );
+        }
         let mut buf: VecDeque<u8> = raw[17..].to_vec().into();
         if buf.capacity() < SCROLLBACK_CAP + TRIM_SLACK {
             buf.reserve_exact(SCROLLBACK_CAP + TRIM_SLACK - buf.len());
@@ -881,5 +897,38 @@ mod tests {
         std::fs::write(&path, b"nope").unwrap();
         let err = Scrollback::load(&path).unwrap_err().to_string();
         assert!(err.contains("bad.bin"), "error must name the file: {err}");
+    }
+    #[test]
+    fn load_rejects_oversized_recovery_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("oversized.bin");
+        Scrollback::new().persist(&path).unwrap();
+        let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_len((17 + SCROLLBACK_CAP + TRIM_SLACK + 1) as u64)
+            .unwrap();
+        let error = Scrollback::load(&path)
+            .err()
+            .expect("invalid recovery file must be refused")
+            .to_string();
+        assert!(error.contains("oversized.bin"));
+        assert!(error.contains("limit"), "{error}");
+    }
+
+    #[test]
+    fn load_rejects_overflowing_recovery_offsets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("overflow.bin");
+        let mut ring = Scrollback::new();
+        ring.push(b"data");
+        ring.persist(&path).unwrap();
+        let mut bytes = std::fs::read(&path).unwrap();
+        bytes[9..17].copy_from_slice(&u64::MAX.to_le_bytes());
+        std::fs::write(&path, bytes).unwrap();
+        let error = Scrollback::load(&path)
+            .err()
+            .expect("invalid recovery file must be refused")
+            .to_string();
+        assert!(error.contains("overflow.bin"));
+        assert!(error.contains("offset"), "{error}");
     }
 }
