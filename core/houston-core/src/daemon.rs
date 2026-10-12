@@ -10855,7 +10855,10 @@ impl Daemon {
                     &launcher,
                     &directory.path().join("server.sock"),
                     &crate::hook_drop::drop_dir(&self.state_dir),
-                    resume_handle.as_ref().map(|handle| handle.0.as_str()),
+                    resume_handle
+                        .as_ref()
+                        .filter(|_| resumed)
+                        .map(|handle| handle.0.as_str()),
                 )?;
                 Some(directory)
             } else {

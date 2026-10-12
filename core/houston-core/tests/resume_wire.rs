@@ -1930,6 +1930,72 @@ async fn a_codex_pane_restores_its_exact_thread_id() {
     assert_eq!(restored.resume_notice, None);
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_fresh_codex_restore_does_not_pin_its_observer_to_the_retry_handle() {
+    for resume_enabled in [false, true] {
+        let env = setup().await;
+        let daemon = boot(&env);
+        let dir = project(&env, "fresh-codex-observer");
+        let pane = daemon
+            .create_session(CreateParams {
+                agent: proto::AgentKind::Codex,
+                project_dir: dir.clone(),
+                cmd: None,
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+                model: None,
+                effort: None,
+            })
+            .unwrap();
+        argv_of(&env, pane.id).await;
+        let path = transcript(&env, "observer-retry-thread", b"turn\n");
+        apply_drop(
+            &env,
+            &daemon,
+            HookDrop {
+                event: "UserPromptSubmit".into(),
+                session: pane.id,
+                agent: Some("codex".into()),
+                session_id: Some("observer-retry-thread".into()),
+                transcript_path: Some(path.clone()),
+                ..Default::default()
+            },
+        )
+        .await;
+        daemon.set_restore_resume(resume_enabled).unwrap();
+        if resume_enabled {
+            std::fs::remove_file(path).unwrap();
+        }
+        daemon.mark_clean_shutdown().unwrap();
+        // The shim records the full native launch argv without running a CLI,
+        // observer, systemd scope or network service.
+        let restored_daemon = Daemon::new_bound_with_session_launcher(
+            DaemonConfig {
+                token: TOKEN.to_string(),
+                db_path: env.db_path(),
+            },
+            1,
+            Some(shim_dir().join("claude")),
+        )
+        .unwrap();
+        let restored = restored_from(&restored_daemon.list(), pane.id).clone();
+        let argv = argv_of(&env, restored.id).await;
+        let helper = argv.iter().position(|arg| arg == "codex-exec").unwrap();
+        assert_eq!(argv[helper + 3], "-", "fresh launch must discover its own thread: {argv:?}");
+        assert_eq!(resume_of(&argv), None);
+        assert_eq!(handle_in(&env, restored.id).unwrap().0, "observer-retry-thread");
+        restored_daemon.close(restored.id).unwrap();
+        daemon.close(pane.id).unwrap();
+    }
+}
+
 async fn respawn_over_the_wire(
     addr: std::net::SocketAddr,
     session: u32,
