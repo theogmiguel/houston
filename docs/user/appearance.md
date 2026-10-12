@@ -11,9 +11,9 @@ Settings groups configuration by purpose:
 |---|---|
 | Agents | Overview, CLIs, Skills, MCP servers and Review |
 | App | Appearance, Terminal, Shortcuts and Notifications |
-| Work | Workspaces, Orchestration, Tasks and Dictation |
-| Devices | Phone and remote access |
-| System | Privacy & data, Daemon, WSL on Windows, and About |
+| Work | Workspaces, Tasks, Orchestration and Dictation |
+| Devices | Phone and remote access, and WSL on Windows |
+| System | Privacy & data, Daemon, and About |
 
 Use Agents ▸ Overview to resolve reported hook, skill, server or
 review issues; it opens the owning configuration page. Search Settings by feature or

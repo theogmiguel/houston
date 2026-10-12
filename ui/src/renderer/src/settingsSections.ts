@@ -58,13 +58,13 @@ const ALL_SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard', group: 'app', keywords: ['keyboard', 'keybind', 'rebind', 'hotkey', 'keys', 'keymap', 'vim', 'emacs'] },
   { id: 'notifications', label: 'Notifications', icon: 'bell', group: 'app', keywords: ['desktop', 'desktop notifications', 'in-app', 'in-app notices', 'sound', 'taskbar', 'finished', 'needs input'] },
   { id: 'workspaces', label: 'Workspaces', icon: 'folder', group: 'work', keywords: ['workspace defaults', 'restore budget', 'open links', 'browser pane', 'background sessions', 'close idle', 'reap'] },
-  { id: 'orchestration', label: 'Orchestration', icon: 'fork', group: 'work', keywords: ['spawn', 'children', 'child panes', 'depth', 'hs-pane', 'caps', 'mailbox'] },
   { id: 'tasks', label: 'Tasks', icon: 'tasks', group: 'work', keywords: ['backlog', 'task', 'access', 'read only', 'agent access', 'todo', 'key prefix'] },
+  { id: 'orchestration', label: 'Orchestration', icon: 'fork', group: 'work', keywords: ['spawn', 'children', 'child panes', 'depth', 'hs-pane', 'caps', 'mailbox'] },
   { id: 'dictation', label: 'Dictation', icon: 'mic', group: 'work', keywords: ['dictation', 'voice', 'speech', 'microphone', 'whisper', 'transcribe', 'stt', 'push to talk', 'language'] },
   { id: 'privacy', label: 'Privacy & data', icon: 'database', group: 'system', keywords: ['telemetry', 'history', 'ignore patterns', 'browsing data', 'session database', 'transcripts', 'clear'] },
   { id: 'daemon', label: 'Daemon', icon: 'server', group: 'system', keywords: ['diagnostics', 'channel', 'state directory', 'pid', 'port', 'protocol version', 'uptime', 'logs', 'stop daemon', 'live sessions'] },
-  { id: 'wsl', label: 'WSL', icon: 'server', group: 'system', keywords: ['wsl', 'linux', 'distro', 'ubuntu', 'environment', 'experimental'] },
   { id: 'remote', label: 'Phone & remote access', icon: 'phone', group: 'devices', keywords: ['phone', 'mobile', 'remote', 'pair', 'device', 'tailscale', 'ntfy', 'push', 'qr', 'revoke', 'another computer', 'certificate', 'https', 'dictation'] },
+  { id: 'wsl', label: 'WSL', icon: 'server', group: 'devices', keywords: ['wsl', 'linux', 'distro', 'ubuntu', 'environment', 'experimental'] },
   { id: 'about', label: 'About', icon: 'info', group: 'system', keywords: ['version', 'build', 'third-party notices', 'release notes', 'licences'] }
 ] as const
 

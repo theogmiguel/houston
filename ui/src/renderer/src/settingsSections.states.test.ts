@@ -6,7 +6,7 @@ describe('settingsSections', () => {
     expect(settingsSectionsFor('Linux x86_64').map(({ id, label }) => [id, label])).toEqual([
       ['agents-overview', 'Overview'], ['agents-clis', 'CLIs'], ['agents-skills', 'Skills'], ['agents-mcp', 'MCP servers'], ['agents-review', 'Review'],
       ['appearance', 'Appearance'], ['terminal', 'Terminal'], ['shortcuts', 'Shortcuts'], ['notifications', 'Notifications'],
-      ['workspaces', 'Workspaces'], ['orchestration', 'Orchestration'], ['tasks', 'Tasks'], ['dictation', 'Dictation'],
+      ['workspaces', 'Workspaces'], ['tasks', 'Tasks'], ['orchestration', 'Orchestration'], ['dictation', 'Dictation'],
       ['remote', 'Phone & remote access'], ['privacy', 'Privacy & data'], ['daemon', 'Daemon'], ['about', 'About']
     ])
     expect(SETTINGS_SECTIONS.find(({ id }) => id === 'notifications')?.pending).toBeUndefined()
@@ -16,7 +16,7 @@ describe('settingsSections', () => {
   it('lists wsl only on windows', () => {
     const windows = settingsSectionsFor('Win32').map(({ id }) => id)
     expect(windows).toContain('wsl')
-    expect(windows.indexOf('wsl')).toBe(windows.indexOf('daemon') + 1)
+    expect(windows.indexOf('wsl')).toBe(windows.indexOf('remote') + 1)
     expect(settingsSectionsFor('Linux x86_64').map(({ id }) => id)).not.toContain('wsl')
     expect(settingsSectionsFor('MacIntel').map(({ id }) => id)).not.toContain('wsl')
   })
