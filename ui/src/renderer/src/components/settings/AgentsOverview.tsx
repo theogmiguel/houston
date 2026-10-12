@@ -45,7 +45,7 @@ export function AgentsOverview({ attention, onRepair, onCheck, client = null, wo
   return <div className="grid gap-[var(--space-6)]" data-testid="agents-overview">
     <PageHeader heading="Agents" description="The CLIs Houston launches and what they run with: skills, MCP servers, and a weekly review of how the sessions went." />
     <section className="grid gap-[var(--space-3)]"><Text as="h2" size="ui" weight="semibold" flush>Needs you</Text><Card shape="card">
-      {attention.issues.filter((issue) => issue.section !== 'agents-review').map((issue) => <AgentSetupRow key={issue.key} heading={issueHeading(issue)} detail={`${issue.detail} · ${LABEL[issue.section]}`} tone={issue.section === 'agents-mcp' ? 'danger' : 'warn'} action={<Button variant="secondary" onClick={() => {
+      {attention.issues.filter((issue) => issue.section !== 'agents-review').sort((a, b) => Number(b.section === 'agents-mcp') - Number(a.section === 'agents-mcp')).map((issue) => <AgentSetupRow key={issue.key} heading={issueHeading(issue)} detail={`${issue.detail} · ${LABEL[issue.section]}`} tone={issue.section === 'agents-mcp' ? 'danger' : 'warn'} action={<Button variant="secondary" onClick={() => {
         if (issue.action === 'repair-hooks' && issue.provider) onRepair(issue.provider, true)
         else if (issue.action === 'check-again' && issue.server) onCheck(issue.server)
         else setSettingsSection(issue.section)

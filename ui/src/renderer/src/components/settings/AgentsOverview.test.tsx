@@ -37,3 +37,11 @@ it('shows each open review finding with severity and session evidence, and makes
   expect(settingsSectionLabel()).toBe('Agents / MCP servers')
   expect(screen.queryByText('1 review finding needs you')).toBeNull()
 })
+
+it('lists the failing MCP server before warning-level issues', () => {
+  const attention = agentAttentionFor({ agentHooks: [{ provider: 'opencode', path: '/hooks', scope: 'global', present: true, enabled: true, installed: false, error: 'edited hooks', trust: null, version: '1' }], skills: null, checks: [['github', { state: 'failed', message: 'npx not on PATH' }]], reviews: [] })
+  render(<AgentsOverview attention={attention} onRepair={vi.fn()} onCheck={vi.fn()} />)
+  const buttons = screen.getAllByRole('button').map((button) => button.textContent)
+  expect(buttons.indexOf('Check again')).toBeGreaterThanOrEqual(0)
+  expect(buttons.indexOf('Check again')).toBeLessThan(buttons.indexOf('Repair hooks'))
+})
