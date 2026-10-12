@@ -75,8 +75,23 @@ stack, or open a new cell instead.
 
 ## Renaming a pane
 
-A pane's session can be renamed; the name is what you and the sidebar chips use to
-identify it, independent of which agent CLI is running underneath.
+Houston names panes automatically from a codename, a cleaned first prompt, a delegated role,
+the CLI's native title or a bound task, in that order of precedence. Automatic/manual
+provenance appears beside the name. A name you type wins and survives Restart, application
+reopen and daemon handoff. Choose **Reset to automatic** beside a manually renamed pane to
+restore the strongest available automatic name. Older panes may only retain their codename
+and current role or task; Houston cannot recover titles that were never stored. Older
+non-codename names without recorded provenance stay protected until you reset them.
+
+Claude, Codex and OpenCode native titles are adopted when their CLIs provide contextual
+window titles; supported ACP agents can also provide session titles. Product labels are
+ignored. Antigravity's status-bearing window title is excluded. First-prompt cleanup and
+native-title adoption add no transmission beyond the agent CLI's existing operation.
+
+Automatic grid names follow the first pane's meaningful title, then its task key, an already loaded pull-request title or worktree
+branch, with the agent label as a fallback. A grid name you type stays fixed. Clear the grid
+name while renaming it to return to automatic naming. Older grids locked to an agent label
+migrate to automatic naming; other custom legacy names remain fixed.
 
 Agent panes involved in orchestration also have a stable codename. Houston shows the
 codename beside the task name in the pane header and uses it in the orchestration

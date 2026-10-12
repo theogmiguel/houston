@@ -732,11 +732,25 @@ async fn restart_interrupts_once_and_waits_for_authoritative_completion_before_d
         !output.contains("\u{1b}\u{1b}\u{1b}[200~"),
         "retry sent the interrupt twice: {output:?}"
     );
-    let detail = fixture
-        .daemon
-        .instruction_get(Some(parent), child, &accepted.instruction_id)
-        .unwrap();
-    assert_eq!(detail.instruction.state, proto::InstructionState::Delivered);
+    // PTY output can precede the durable commit after the Enter write receipt.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let detail = loop {
+        let detail = fixture
+            .daemon
+            .instruction_get(Some(parent), child, &accepted.instruction_id)
+            .unwrap();
+        if detail.instruction.state == proto::InstructionState::Delivered {
+            break detail;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "instruction {} did not reach Delivered: state={:?}, hold_reason={:?}",
+            accepted.instruction_id,
+            detail.instruction.state,
+            detail.instruction.hold_reason
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
     assert_eq!(detail.instruction.request_id, Some(2));
     fixture
         .codex_hook(child, PROMPT, Some("RESTART-AFTER-STOP"))

@@ -70,7 +70,7 @@ const DETAIL: TaskDetailData = {
 
 const SESSIONS: ReadonlyMap<number, SessionInfo> = new Map([[442, {
   id: 442, agent: 'claude', project_dir: RUN.worktree_path!, cwd: RUN.worktree_path!, state: 'exited',
-  title: 'HOU-42 Block bun test in agent settings', codename: 'tests', hidden: false,
+  title: 'HOU-42 Block bun test in agent settings', title_source: 'prompt' as const, codename: 'tests', hidden: false,
   live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: true
 }]])
 

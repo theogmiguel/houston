@@ -135,6 +135,20 @@ impl AcpDecoder {
     }
 }
 
+pub fn title_for_message(message: &serde_json::Value) -> Option<&str> {
+    if message.get("method")?.as_str()? != "session/update" {
+        return None;
+    }
+    let update = message.get("params")?.get("update")?;
+    if update.get("sessionUpdate")?.as_str()? != "session_info_update" {
+        return None;
+    }
+    update
+        .get("title")?
+        .as_str()
+        .filter(|title| !title.trim().is_empty())
+}
+
 pub fn status_for_message(message: &serde_json::Value) -> Option<proto::AgentStatus> {
     event_for_message(message).map(crate::agent_events::AgentEvent::status)
 }
@@ -171,6 +185,15 @@ pub fn agent_kind_for(agent: &KnownAcpAgent) -> proto::AgentKind {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn session_info_title_is_metadata_only() {
+        let message = serde_json::json!({"method":"session/update", "params":{"sessionId":"s1", "update":{"sessionUpdate":"session_info_update", "title":"Review authentication"}}});
+        assert_eq!(title_for_message(&message), Some("Review authentication"));
+        assert_eq!(status_for_message(&message), None);
+        let unrelated = serde_json::json!({"method":"session/update", "params":{"update":{"sessionUpdate":"plan", "title":"Not a session title"}}});
+        assert_eq!(title_for_message(&unrelated), None);
+    }
 
     #[test]
     fn a_rows_agent_kind_follows_its_command_not_its_slug() {

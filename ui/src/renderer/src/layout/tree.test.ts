@@ -763,7 +763,7 @@ describe('grids (step 05 hazard 1: the storage re-key must not lose a layout)', 
     })
     localStorage.setItem('tr-layout:/ws/pre-grid', raw)
     const grids = loadGrids('/ws/pre-grid')
-    expect(grids).toEqual([{ id: DEFAULT_GRID_ID, name: 'Grid 1' }])
+    expect(grids).toEqual([{ id: DEFAULT_GRID_ID, name: 'Grid 1', nameSource: 'auto' }])
     expect(localStorage.getItem('tr-layout:' + gridStorageKey('/ws/pre-grid', DEFAULT_GRID_ID))).toBe(raw)
     expect(localStorage.getItem('tr-layout:/ws/pre-grid')).toBe(raw)
     const loaded = loadLayout(gridStorageKey('/ws/pre-grid', DEFAULT_GRID_ID))
@@ -776,7 +776,7 @@ describe('grids (step 05 hazard 1: the storage re-key must not lose a layout)', 
       JSON.stringify({ cols: 2, tree: { kind: 'leaf', session: 7 } })
     )
     const grids = loadGrids('/ws/pre-grid-no-ids')
-    expect(grids).toEqual([{ id: DEFAULT_GRID_ID, name: 'Grid 1' }])
+    expect(grids).toEqual([{ id: DEFAULT_GRID_ID, name: 'Grid 1', nameSource: 'auto' }])
     const loaded = loadLayout(gridStorageKey('/ws/pre-grid-no-ids', DEFAULT_GRID_ID))
     expect(preorderSessions(loaded.tree)).toEqual([7])
   })
@@ -784,14 +784,14 @@ describe('grids (step 05 hazard 1: the storage re-key must not lose a layout)', 
   it('a malformed legacy value does not crash migration — starts with one empty default grid', () => {
     localStorage.setItem('tr-layout:/ws/pre-grid-garbage', '{not json')
     const grids = loadGrids('/ws/pre-grid-garbage')
-    expect(grids).toEqual([{ id: DEFAULT_GRID_ID, name: 'Grid 1' }])
+    expect(grids).toEqual([{ id: DEFAULT_GRID_ID, name: 'Grid 1', nameSource: 'auto' }])
     const loaded = loadLayout(gridStorageKey('/ws/pre-grid-garbage', DEFAULT_GRID_ID))
     expect(loaded).toEqual({ tree: null, cols: 2 })
   })
 
   it('a brand-new workspace (no legacy key at all) gets one empty default grid', () => {
     const grids = loadGrids('/ws/brand-new')
-    expect(grids).toEqual([{ id: DEFAULT_GRID_ID, name: 'Grid 1' }])
+    expect(grids).toEqual([{ id: DEFAULT_GRID_ID, name: 'Grid 1', nameSource: 'auto' }])
     expect(localStorage.getItem(gridStorageKey('/ws/brand-new', DEFAULT_GRID_ID))).toBeNull()
   })
 
@@ -844,16 +844,16 @@ describe('grid auto-naming (the tab-naming rule)', () => {
     expect(isAutoNameable({ id: 'g-x', name: 'review' })).toBe(false)
   })
 
-  it('autoNameGrid applies the name and locks the grid against further auto-naming', () => {
+  it('autoNameGrid keeps following automatic names', () => {
     const grids = addGrid('/ws/auto-apply', 'Untitled')
     const g = grids[grids.length - 1]
     const after = autoNameGrid('/ws/auto-apply', g.id, 'Terminal')
     const updated = after.find((x) => x.id === g.id)!
     expect(updated.name).toBe('Terminal')
-    expect(isAutoNameable(updated)).toBe(false)
+    expect(isAutoNameable(updated)).toBe(true)
 
     const again = autoNameGrid('/ws/auto-apply', g.id, 'Claude Code')
-    expect(again.find((x) => x.id === g.id)?.name).toBe('Terminal')
+    expect(again.find((x) => x.id === g.id)?.name).toBe('Claude Code')
   })
 
   it('renameGrid (a user rename) locks the grid against auto-naming too', () => {
@@ -1068,4 +1068,13 @@ describe('savedGrids', () => {
     expect(calls).toBe(seen)
     localStorage.clear()
   })
+})
+
+
+it('migrates locked engine labels, preserves custom legacy names and resets user names', () => {
+  localStorage.setItem('tr-grids:/ws/migrate-names', JSON.stringify([{ id: 'engine', name: 'Claude Code', named: true }, { id: 'custom', name: 'Parser review', named: true }]))
+  expect(loadGrids('/ws/migrate-names').map((g) => g.nameSource)).toEqual(['auto', 'user'])
+  renameGrid('/ws/migrate-names', 'custom', '')
+  autoNameGrid('/ws/migrate-names', 'custom', 'Native parser title')
+  expect(loadGrids('/ws/migrate-names')[1]).toMatchObject({ name: 'Native parser title', nameSource: 'auto' })
 })

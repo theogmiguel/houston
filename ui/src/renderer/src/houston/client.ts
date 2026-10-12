@@ -629,6 +629,10 @@ export class HoustonClient {
     this.send({ type: 'session_rename', session, title })
   }
 
+  resetSessionTitle(session: number): void {
+    this.send({ type: 'session_title_reset', session })
+  }
+
   setSessionTags(session: number, tags: number[]): void {
     this.send({ type: 'session_set_tags', session, tags })
   }

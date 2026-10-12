@@ -73,7 +73,7 @@ it('skips duplicate status updates and isolates roster fields while preserving s
   expect(counts).toEqual({ App: 0, Sidebar: 0, LayoutView: 0, unrelatedSessionPane: 0, SidebarRowB: 0 })
   expect(app.container.querySelector('[data-panekey="1"] .agent-dot')?.className).toContain('--warn')
   expect(app.container.querySelector('[aria-label="Children need input"]')).toBeNull()
-  deliverControl({ type: 'session_renamed', session: 1, title: 'Renamed' })
+  deliverControl({ type: 'session_renamed', session: 1, title: 'Renamed', title_source: 'user' })
   expect(counts.App).toBeGreaterThan(0)
   expect(app.container.querySelector('[data-panekey="1"]')?.textContent).toContain('Renamed')
 })

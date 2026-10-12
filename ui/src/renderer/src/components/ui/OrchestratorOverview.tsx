@@ -26,7 +26,7 @@ export function OrchestratorProgress({ children }: { children: ReactNode }): Rea
 }
 
 export function OrchestratorProgressSegment({ group, weight }: { group: string; weight: number }): React.JSX.Element {
-  const backgroundColor = group === 'Needs you' ? 'var(--warn)' : group === 'Settled' || group === 'Done' ? 'var(--ok)' : group === 'Failed' ? 'var(--stop)' : 'var(--info)'
+  const backgroundColor = group === 'Needs you' ? 'var(--warn)' : group === 'Settled' || group === 'Done' ? 'var(--ok)' : group === 'Failed' ? 'var(--stop)' : group === 'Working' ? 'var(--info)' : 'var(--text-muted)'
   return <i data-group={group} style={{ flex: weight, minWidth: 'var(--space-1)', height: '100%', borderRadius: 'calc(var(--tr-radius-input) / 2)', backgroundColor }} className="block" />
 }
 

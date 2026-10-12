@@ -2155,6 +2155,12 @@ async fn dispatch(
             .await
             .unwrap_or_else(|e| Err(anyhow::anyhow!("close task panicked: {e}")))
         }
+        proto::ClientMsg::SessionTitleReset { session } => {
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || daemon.reset_title(session))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("title reset task panicked: {e}")))
+        }
         proto::ClientMsg::SessionRename { session, title } => {
             let daemon = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || daemon.rename(session, &title))

@@ -217,6 +217,22 @@ mod tests {
     }
 
     #[test]
+    fn claude_context_title_observed_in_live_capture_is_adopted() {
+        assert_eq!(sanitize("✳ Claude Code", Some("Claude"), 40), None);
+        for glyph in ["◑", "◐", "✳"] {
+            assert_eq!(
+                sanitize(
+                    &format!("{glyph} Pane title across daemon handoff"),
+                    Some("Claude"),
+                    40
+                )
+                .as_deref(),
+                Some("Pane title across daemon handoff")
+            );
+        }
+    }
+
+    #[test]
     fn osc_0_and_osc_2_are_both_titles_with_either_terminator() {
         assert_eq!(feed_one(b"\x1b]0;hello\x07").as_deref(), Some("hello"));
         assert_eq!(feed_one(b"\x1b]2;hello\x07").as_deref(), Some("hello"));
