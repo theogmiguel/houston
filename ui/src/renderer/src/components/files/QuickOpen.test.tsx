@@ -59,6 +59,29 @@ describe('QuickOpen', () => {
     )
   })
 
+  it('shows indexing failures and clears the error after a successful query', async () => {
+    search.mockRejectedValueOnce(new Error('active index builds limit 2; actual 2'))
+    search.mockResolvedValue({ items: [item('src/a.ts', 'a.ts', [0])], total: 1, truncated: false })
+    render(<QuickOpen root="/ws" workspaceName="workspace" onOpen={vi.fn()} onClose={vi.fn()} />)
+    expect((await screen.findByRole('alert')).textContent).toContain('active index builds limit 2; actual 2')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search files' }), { target: { value: 'a' } })
+    await screen.findByRole('option', { name: /a\.ts/ })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('retries the same query after search capacity becomes available', async () => {
+    search.mockRejectedValueOnce('search limit 2; actual 2; refused query "a"')
+    search.mockResolvedValue({ items: [item('src/a.ts', 'a.ts', [0])], total: 1, truncated: false })
+    render(<QuickOpen root="/ws" workspaceName="workspace" onOpen={vi.fn()} onClose={vi.fn()} />)
+    const input = screen.getByRole('textbox', { name: 'Search files' })
+    fireEvent.change(input, { target: { value: 'a' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+    await screen.findByRole('option', { name: /a\.ts/ })
+    expect(search.mock.calls).toEqual([['/ws', 'a', 200], ['/ws', 'a', 200]])
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(document.activeElement).toBe(input)
+  })
+
   it('moves the active highlight with mouse hover', async () => {
     search.mockResolvedValue({
       items: [item('src/a.ts', 'a.ts', [0]), item('src/b.ts', 'b.ts', [0])],
