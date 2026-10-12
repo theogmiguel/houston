@@ -138,6 +138,16 @@ class DraftTests(unittest.TestCase):
         self.assertIn("--draft", self.commands[0])
         self.assertIn("--verify-tag", self.commands[0])
 
+    def test_draft_is_found_although_the_tag_endpoint_hides_it(self):
+        def github(args, **kwargs):
+            if any("releases/tags/" in arg for arg in args):
+                return m.subprocess.CompletedProcess(args, 1, "", "gh: Not Found (HTTP 404)")
+            listed = [dict(self.draft, tag_name="v1.2.2", id=0), dict(self.draft, tag_name="v1.2.3")]
+            selected = [json.dumps(r) for r in listed if '"v1.2.3"' in args[-1] and r["tag_name"] == "v1.2.3"]
+            return m.subprocess.CompletedProcess(args, 0, "\n".join(selected) + "\n", "")
+        with patch.object(m.subprocess, "run", side_effect=github):
+            self.assertEqual(m.release("owner/repo", "v1.2.3")["id"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
