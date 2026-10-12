@@ -102,10 +102,9 @@ describe('the rail nav block', () => {
 
   it('the chord rides inside the row, split into caps, and is simply absent when unknown', () => {
     render({ paletteChord: 'Ctrl+K' })
-    expect(q('[data-testid="rail-search"]')?.textContent).toContain('Ctrl')
-    expect(q('[data-testid="rail-search"]')?.textContent).toContain('K')
+    expect(q('[data-testid="rail-search"]')?.textContent).toContain('Ctrl K')
     render({ paletteChord: null })
-    expect(q('[data-testid="rail-search"]')?.textContent?.trim()).toBe('Search')
+    expect(q('[data-testid="rail-search"]')?.textContent?.trim()).toBe('Search or run a command')
   })
 
   it('navigation rows label all four work views', () => {
