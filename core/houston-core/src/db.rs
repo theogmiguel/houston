@@ -1705,6 +1705,7 @@ impl Db {
             "session_origin INTEGER",
         )?;
         add_column_if_missing(&conn, "sessions", "approval_mode", "approval_mode TEXT")?;
+        add_column_if_missing(&conn, "sessions", "launch_selections", "launch_selections TEXT")?;
         add_column_if_missing(&conn, "sessions", "transcript_path", "transcript_path TEXT")?;
         add_column_if_missing(
             &conn,
@@ -2500,16 +2501,49 @@ impl Db {
         profile: Option<&str>,
         prepare: impl FnOnce() -> Result<()>,
     ) -> Result<()> {
+        self.insert_session_for_startup_with_launch(info, title_source, profile, None, prepare)
+    }
+
+    pub(crate) fn insert_session_for_startup_with_launch(
+        &self,
+        info: &proto::SessionInfo,
+        title_source: &str,
+        profile: Option<&str>,
+        launch: Option<&crate::launch::SessionLaunchSelections>,
+        prepare: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
         Self::insert_session_on(&tx, info, Some(title_source))?;
         tx.execute(
-            "UPDATE sessions SET profile_config_dir = ?2 WHERE id = ?1",
-            rusqlite::params![info.id, profile],
+            "UPDATE sessions SET profile_config_dir = ?2, launch_selections = ?3,
+                approval_mode = ?4 WHERE id = ?1",
+            rusqlite::params![
+                info.id,
+                profile,
+                launch.map(serde_json::to_string).transpose()?,
+                launch.map_or("default", |selections| selections.approval.as_str()),
+            ],
         )?;
         prepare()?;
         tx.commit()?;
         Ok(())
+    }
+
+    pub(crate) fn session_launch_selections(
+        &self,
+        id: u32,
+    ) -> Result<Option<crate::launch::SessionLaunchSelections>> {
+        let conn = self.conn.lock().expect("db lock");
+        let json: Option<String> = conn
+            .query_row("SELECT launch_selections FROM sessions WHERE id = ?1", [id], |row| row.get(0))
+            .optional()?
+            .flatten();
+        json.map(|value| {
+            serde_json::from_str(&value)
+                .with_context(|| format!("session {id} launch selections must be typed provider choices"))
+        })
+        .transpose()
     }
     pub fn save_ssh_profile(&self, p: &proto::SshProfile) -> Result<()> {
         let (auth_kind, identity_file, passphrase_profile) = match &p.auth {

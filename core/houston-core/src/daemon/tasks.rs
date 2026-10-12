@@ -3316,6 +3316,13 @@ impl Daemon {
             false,
             None,
             pasted_prefill,
+            Some(crate::launch::SessionLaunchSelections {
+                provider: agent,
+                model: None,
+                effort: None,
+                approval: mode,
+                dialogue: false,
+            }),
         );
         let info = match spawned {
             Ok(info) => info,
@@ -3336,7 +3343,6 @@ impl Daemon {
                 ));
             }
         };
-        self.record_approval_mode(info.id, mode);
         if matches!(delivery, proto::TaskPromptDelivery::Prefill) {
             // Prefill types the brief into the CLI's input box without the
             // submitting Enter; the user reviews and sends it. A CLI that takes

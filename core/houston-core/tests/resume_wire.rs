@@ -48,7 +48,7 @@ exec cat
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["claude", "codex", "zcode"] {
+        for name in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok", "zcode"] {
             let path = dir.join(name);
             std::fs::write(&path, FAKE_CLI).unwrap();
             use std::os::unix::fs::PermissionsExt;
@@ -502,6 +502,9 @@ async fn shell_hosted_claude_hook_is_recorded_and_restart_resumes_inside_shell()
         Some(conversation),
         "the restored shell must relaunch the exact Claude conversation"
     );
+    assert!(!argv.iter().any(|arg| matches!(arg.as_str(),
+        "--model" | "--effort" | "--permission-mode" | "--dangerously-skip-permissions"
+    )), "a manually launched shell CLI has no explicit Houston selections: {argv:?}");
     let settings_file = flag(&argv, "--settings").expect(
         "shell recovery must carry pane identity in Claude arguments, even if its daemon drops env",
     );
@@ -2036,6 +2039,195 @@ async fn restart_over_the_wire_resumes_by_default() {
         Some(conversation),
         "the forced kill does not clear the handle it carries"
     );
+}
+
+#[tokio::test]
+async fn fresh_restore_preserves_typed_launch_choices_for_every_provider() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "typed-provider-launches");
+    daemon.set_restore_budget(16).unwrap();
+    let mut panes = Vec::new();
+    for agent in [
+        proto::AgentKind::Claude,
+        proto::AgentKind::Codex,
+        proto::AgentKind::Antigravity,
+        proto::AgentKind::Opencode,
+        proto::AgentKind::Cursor,
+        proto::AgentKind::Grok,
+        proto::AgentKind::Zcode,
+    ] {
+        let model = (agent != proto::AgentKind::Zcode).then(|| "fixture-model".to_string());
+        let effort = matches!(agent,
+            proto::AgentKind::Claude | proto::AgentKind::Codex
+                | proto::AgentKind::Antigravity | proto::AgentKind::Grok
+        ).then_some(proto::ChatEffort::High);
+        let pane = daemon.create_session(CreateParams {
+            agent,
+            project_dir: dir.clone(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: true,
+            acp: None,
+            profile: None,
+            prompt: Some("initial prompt must not be replayed".into()),
+            model: model.clone(),
+            effort,
+        }).unwrap();
+        argv_of(&env, pane.id).await;
+        if matches!(agent, proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Zcode) {
+            let conversation = format!("typed-provider-{}", pane.id);
+            let path = transcript(&env, &conversation, b"completed turn\n");
+            let provider = match agent {
+                proto::AgentKind::Claude => "claude",
+                proto::AgentKind::Codex => "codex",
+                _ => "zcode",
+            };
+            apply_drop(&env, &daemon, HookDrop {
+                event: "UserPromptSubmit".into(), session: pane.id,
+                agent: Some(provider.into()), session_id: Some(conversation),
+                transcript_path: Some(path.clone()), ..Default::default()
+            }).await;
+            if agent != proto::AgentKind::Zcode {
+                std::fs::remove_file(path).unwrap();
+            }
+        }
+        panes.push((pane, model, effort));
+    }
+    let restored_daemon = reboot(&env, &daemon);
+    for (pane, model, effort) in panes {
+        let restored = restored_from(&restored_daemon.list(), pane.id).clone();
+        let argv = argv_of(&env, restored.id).await;
+        for argument in houston_core::launch::auto_approve_args(pane.agent).unwrap() {
+            assert!(argv.contains(&argument), "{:?} lost bypass selection: {argv:?}", pane.agent);
+        }
+        if let Some(model) = model {
+            assert!(argv.contains(&model), "{:?} lost model: {argv:?}", pane.agent);
+        }
+        if effort.is_some() {
+            let expected = if pane.agent == proto::AgentKind::Codex {
+                "model_reasoning_effort=\"high\""
+            } else { "high" };
+            assert!(argv.iter().any(|arg| arg == expected), "lost effort: {argv:?}");
+        }
+        assert!(!argv.iter().any(|arg| arg.contains("initial prompt must not be replayed")));
+        assert_eq!(Db::open(&env.db_path()).unwrap().session_approval_mode(restored.id).unwrap().as_deref(), Some("bypass"));
+        restored_daemon.close(restored.id).unwrap();
+        daemon.close(pane.id).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn restored_auto_children_keep_choices_dialogue_rules_and_codex_activity() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "typed-child-launches");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let (parent, _, _) = pane_with_a_turn(&env, &daemon, &dir, None).await;
+    let mut children = Vec::new();
+    for agent in [proto::AgentKind::Claude, proto::AgentKind::Codex] {
+        let child = daemon.orchestrate_spawn_with_options(
+            parent.id, agent, Some("fixture-model".into()), None,
+            houston_core::orchestrate::Brief::from("retain the assigned mission".to_string()),
+            None, None, None, None, true, Some(proto::ChatEffort::High), None,
+        ).unwrap();
+        argv_of(&env, child.id).await;
+        let conversation = format!("typed-child-{}", child.id);
+        let path = transcript(&env, &conversation, b"child turn\n");
+        apply_drop(&env, &daemon, HookDrop {
+            event: "UserPromptSubmit".into(),
+            session: child.id,
+            agent: Some(if agent == proto::AgentKind::Claude { "claude" } else { "codex" }.into()),
+            session_id: Some(conversation),
+            transcript_path: Some(path),
+            ..Default::default()
+        }).await;
+        children.push(child);
+    }
+    let restored_daemon = reboot(&env, &daemon);
+    let restored_parent = restored_from(&restored_daemon.list(), parent.id).clone();
+    for child in children {
+        let restored = restored_from(&restored_daemon.list(), child.id).clone();
+        let argv = argv_of(&env, restored.id).await;
+        assert!(resume_of(&argv).is_some());
+        assert!(argv.iter().any(|arg| arg == "fixture-model"), "{argv:?}");
+        for argument in houston_core::launch::auto_mode_args(child.agent).unwrap() {
+            assert!(argv.contains(&argument), "lost Auto mode: {argv:?}");
+        }
+        for argument in houston_core::launch::dialogue_permission_args(child.agent) {
+            assert!(argv.contains(&argument), "lost dialogue rule: {argv:?}");
+        }
+        assert_eq!(Db::open(&env.db_path()).unwrap().session_approval_mode(restored.id).unwrap().as_deref(), Some("auto"));
+        if child.agent == proto::AgentKind::Codex {
+            for event in ["UserPromptSubmit", "PermissionRequest"] {
+                apply_drop(&env, &restored_daemon, HookDrop {
+                    event: event.into(), session: restored.id,
+                    agent: Some("codex".into()), ..Default::default()
+                }).await;
+            }
+            let status = restored_daemon.list().into_iter().find(|info| info.id == restored.id).unwrap().status;
+            assert_eq!(status, Some(proto::AgentStatus::Working), "bare Auto PermissionRequest is activity");
+        }
+        let again = restored_daemon.respawn(restored.id, false, None, None, true).unwrap();
+        let again_argv = argv_of(&env, again.id).await;
+        assert_eq!(resume_of(&again_argv), resume_of(&argv));
+        for argument in houston_core::launch::auto_mode_args(child.agent).unwrap()
+            .into_iter().chain(houston_core::launch::dialogue_permission_args(child.agent))
+            .chain(["fixture-model".to_string()])
+        {
+            assert!(again_argv.contains(&argument), "manual Restart lost choices: {again_argv:?}");
+        }
+        assert_eq!(Db::open(&env.db_path()).unwrap().session_approval_mode(again.id).unwrap().as_deref(), Some("auto"));
+        restored_daemon.close(again.id).unwrap();
+        daemon.close(child.id).unwrap();
+    }
+    restored_daemon.close(restored_parent.id).unwrap();
+    daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn legacy_rows_retain_their_recorded_approval_mode() {
+    let env = setup().await;
+    let dir = project(&env, "legacy-launch-choices");
+    seed_claude(&env, 5, &dir, &dir, None);
+    Db::open(&env.db_path()).unwrap().session_set_approval_mode(5, "bypass").unwrap();
+    let daemon = boot(&env);
+    let restored = restored_from(&daemon.list(), 5).clone();
+    let argv = argv_of(&env, restored.id).await;
+    assert!(argv.iter().any(|arg| arg == "--dangerously-skip-permissions"), "{argv:?}");
+    assert_eq!(Db::open(&env.db_path()).unwrap().session_approval_mode(restored.id).unwrap().as_deref(), Some("bypass"));
+    daemon.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn wake_preserves_the_explicit_model_effort_and_approval_choices() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "typed-wake-launch");
+    let pane = daemon.create_session(CreateParams {
+        agent: proto::AgentKind::Claude,
+        project_dir: dir.clone(), cmd: None, cols: 80, rows: 24, cwd_from: None,
+        shell_integration: false, auto_approve: true, acp: None, profile: None,
+        prompt: None, model: Some("fixture-model".into()), effort: Some(proto::ChatEffort::High),
+    }).unwrap();
+    let conversation = flag(&argv_of(&env, pane.id).await, "--session-id").unwrap();
+    let path = transcript(&env, &conversation, b"completed turn\n");
+    for event in ["UserPromptSubmit", "Stop"] {
+        hook(&env, &daemon, pane.id, event, if event == "Stop" { STOP } else { PROMPT }, &conversation, &path, &dir).await;
+    }
+    daemon.sleep_session(pane.id).unwrap();
+    let woken = daemon.wake_session(pane.id).unwrap();
+    let argv = argv_of(&env, woken.id).await;
+    assert_eq!(resume_of(&argv), Some(conversation));
+    assert!(argv.iter().any(|arg| arg == "--dangerously-skip-permissions"), "{argv:?}");
+    assert_eq!(flag(&argv, "--model").as_deref(), Some("fixture-model"));
+    assert_eq!(flag(&argv, "--effort").as_deref(), Some("high"));
+    assert_eq!(Db::open(&env.db_path()).unwrap().session_approval_mode(woken.id).unwrap().as_deref(), Some("bypass"));
+    daemon.close(woken.id).unwrap();
 }
 
 #[tokio::test]

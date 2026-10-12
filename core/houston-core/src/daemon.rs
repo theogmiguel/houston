@@ -2489,6 +2489,7 @@ struct SpawnParams {
     swarm_agent: Option<u64>,
     spawned_by: Option<u32>,
     extra_args: Vec<String>,
+    launch_selections: Option<crate::launch::SessionLaunchSelections>,
     shell_startup: Option<Vec<String>>,
     extra_env: Vec<(String, String)>,
     wrap: Option<Vec<String>>,
@@ -6750,6 +6751,13 @@ impl Daemon {
             false,
             None,
             false,
+            Some(crate::launch::SessionLaunchSelections {
+                provider: row.engine,
+                model: row.model.clone(),
+                effort: row.effort,
+                approval,
+                dialogue: false,
+            }),
         );
         let session = match spawned {
             Ok(info) => info,
@@ -6763,7 +6771,6 @@ impl Daemon {
                 return Ok(());
             }
         };
-        self.record_approval_mode(session.id, approval);
         self.harness_review_session(run_id, session.id);
         if let Err(e) = self.db.set_routine_run_session(run_id, session.id) {
             tracing::warn!("recording routine {}'s pane session: {e:#}", row.id);
@@ -8545,7 +8552,7 @@ impl Daemon {
     }
 
     pub fn create_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
-        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false, None, false)
+        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None, false, None, false, None)
     }
 
     pub(crate) fn create_task_plan_session(
@@ -8563,12 +8570,14 @@ impl Daemon {
             true,
             Some((task_id, expected_revision)),
             false,
+            None,
         )
     }
 
     /// `env` adds to the profile's environment, `spawn_args` follow the provider's own,
     /// `prompt_label` names the prompt file, `cwd` starts the process outside `project_dir`
     /// and `prefill_follows` says the caller pastes a prompt once the session is up.
+    /// `launch_override` carries typed choices when the caller already assembled flags.
     #[allow(clippy::too_many_arguments)]
     fn create_session_with_env(
         self: &Arc<Self>,
@@ -8580,6 +8589,7 @@ impl Daemon {
         plan_mode: bool,
         plan_binding: Option<(i64, i64)>,
         prefill_follows: bool,
+        launch_override: Option<crate::launch::SessionLaunchSelections>,
     ) -> Result<proto::SessionInfo> {
         if self.refusing_mutations() {
             bail!("refused: daemon is shutting down");
@@ -8673,11 +8683,23 @@ impl Daemon {
         let (profile_env, profile_label) =
             self.resolve_spawn_profile(p.agent, p.profile.as_ref())?;
         let extra_env = profile_env.into_iter().chain(env).collect::<Vec<_>>();
-        let approval = if p.auto_approve {
+        let approval = if plan_mode {
+            crate::launch::ApprovalMode::Plan
+        } else if p.auto_approve {
             crate::launch::ApprovalMode::Bypass
         } else {
             crate::launch::ApprovalMode::Default
         };
+        let launch_selections = launch_override.or_else(|| {
+            (p.acp.is_none() && crate::launch::SessionLaunchSelections::supports(p.agent))
+                .then(|| crate::launch::SessionLaunchSelections {
+                    provider: p.agent,
+                    model: p.model.clone(),
+                    effort: p.effort,
+                    approval,
+                    dialogue: false,
+                })
+        });
         if let Some((task_id, expected_revision)) = plan_binding {
             if !self
                 .db
@@ -8704,6 +8726,7 @@ impl Daemon {
             swarm_agent: None,
             spawned_by: None,
             extra_args,
+            launch_selections,
             shell_startup: None,
             extra_env,
             wrap: None,
@@ -8725,20 +8748,10 @@ impl Daemon {
                 return Err(error);
             }
         };
-        self.record_approval_mode(info.id, approval);
         if let Some(text) = first_prompt {
             self.deliver_first_prompt(info.id, text, None, true);
         }
         Ok(info)
-    }
-
-    fn record_approval_mode(&self, id: u32, mode: crate::launch::ApprovalMode) {
-        if let Err(e) = self.db.session_set_approval_mode(id, mode.as_str()) {
-            tracing::warn!(
-                "recording approval mode {} for session {id}: {e}",
-                mode.as_str()
-            );
-        }
     }
 
     fn approval_mode_of(&self, id: u32) -> crate::launch::ApprovalMode {
@@ -9134,6 +9147,8 @@ impl Daemon {
         } else {
             None
         };
+        let stored_launch_selections = self.db.session_launch_selections(old_id)?;
+        let recorded_approval = self.approval_mode_of(old_id);
         let from_live = self
             .sessions
             .lock()
@@ -9234,6 +9249,22 @@ impl Daemon {
         } else {
             bail!("unknown session id {old_id} (expected an active or restored session)");
         };
+        // Legacy rows retain their known approval mode, but manually launched shell
+        // CLIs have no typed selections: use provider defaults rather than guess argv.
+        let launch_selections = stored_launch_selections
+            .or_else(|| {
+                (acp.is_none() && crate::launch::SessionLaunchSelections::supports(agent))
+                    .then_some(crate::launch::SessionLaunchSelections {
+                        provider: agent,
+                        model: None,
+                        effort: None,
+                        approval: recorded_approval,
+                        dialogue: spawned_by.is_some(),
+                    })
+            })
+            .filter(|selections| {
+                agent != proto::AgentKind::Shell || resume_agent == Some(selections.provider)
+            });
         if shell_override.is_some() && agent != proto::AgentKind::Shell {
             bail!(
                 "reopen-with-shell only applies to shell sessions; session {old_id} is {agent:?}"
@@ -9319,7 +9350,7 @@ impl Daemon {
                     })
             })
             .unwrap_or((None, None, None, None));
-        let (extra_args, resume_handle, resume_notice) = match conversation {
+        let (mut extra_args, resume_handle, resume_notice) = match conversation {
             RespawnConversation::Fresh => (Vec::new(), None, None),
             RespawnConversation::Fallback(notice) => (Vec::new(), handle, Some(notice)),
             RespawnConversation::Restore if !self.restore_resume() => (Vec::new(), handle, None),
@@ -9377,6 +9408,16 @@ impl Daemon {
         let resume_handle = resume_handle.filter(|_| {
             missing_profile.is_none() && !profile_changed && cwd == Path::new(&recorded_cwd)
         });
+        if agent != proto::AgentKind::Shell || !extra_args.is_empty() {
+            if let Some(selections) = &launch_selections {
+                let provider = if agent == proto::AgentKind::Shell {
+                    resume_agent.unwrap_or(agent)
+                } else {
+                    agent
+                };
+                extra_args.extend(selections.args(provider)?);
+            }
+        }
         let scrollback_seed = if spawned_by.is_some() || strict_resume {
             from_live
                 .as_ref()
@@ -9428,6 +9469,7 @@ impl Daemon {
             swarm_agent: None,
             spawned_by,
             extra_args,
+            launch_selections,
             shell_startup,
             extra_env,
             wrap: None,
@@ -10558,6 +10600,7 @@ impl Daemon {
             swarm_agent,
             spawned_by,
             extra_args,
+            launch_selections,
             shell_startup,
             extra_env,
             wrap,
@@ -11244,10 +11287,11 @@ impl Daemon {
             prepare().context(orchestrate::MutationMayHaveActed)?;
         } else {
             self.db
-                .insert_session_for_startup(
+                .insert_session_for_startup_with_launch(
                     &info,
                     title_source.as_str(),
                     Self::agent_profile_config_dir(agent, &extra_env),
+                    launch_selections.as_ref(),
                     prepare,
                 )
                 .context(orchestrate::MutationMayHaveActed)?;
@@ -13708,6 +13752,7 @@ impl Daemon {
             swarm_agent: None,
             spawned_by: None,
             extra_args: Vec::new(),
+            launch_selections: None,
             shell_startup: None,
             extra_env: Vec::new(),
             wrap: None,
@@ -18914,6 +18959,13 @@ impl Daemon {
             swarm_agent: None,
             spawned_by: (!handoff).then_some(caller),
             extra_args,
+            launch_selections: Some(crate::launch::SessionLaunchSelections {
+                provider: kind,
+                model,
+                effort,
+                approval: requested_mode,
+                dialogue: !handoff,
+            }),
             shell_startup: None,
             extra_env,
             wrap: None,
@@ -18953,7 +19005,6 @@ impl Daemon {
                 };
             }
         };
-        self.record_approval_mode(sid, requested_mode);
         if let Some(text) = first_prompt {
             self.deliver_first_prompt(sid, text, Some(caller), true);
         }
