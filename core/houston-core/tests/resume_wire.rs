@@ -63,6 +63,7 @@ fn shim_dir() -> PathBuf {
 
 struct Env {
     _serial: tokio::sync::MutexGuard<'static, ()>,
+    _home: tempfile::TempDir,
     argv: tempfile::TempDir,
     state: tempfile::TempDir,
 }
@@ -76,6 +77,9 @@ impl Env {
 async fn setup() -> Env {
     let serial = SERIAL.lock().await;
     shim_dir();
+    // Real shell startup must not source the runner's or contributor's configuration.
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("HOME", home.path());
     let argv = tempfile::tempdir().unwrap();
     std::env::set_var("RESUME_ARGV_DIR", argv.path());
     std::env::set_var("SHELL", "/bin/sh");
@@ -91,11 +95,17 @@ async fn setup() -> Env {
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
         "CLAUDE_CODE_NO_FLICKER",
+        "ZDOTDIR",
+        "HOUSTON_USER_ZDOTDIR",
+        "BASH_ENV",
+        "ENV",
+        "skip_global_compinit",
     ] {
         std::env::remove_var(var);
     }
     Env {
         _serial: serial,
+        _home: home,
         argv,
         state: tempfile::tempdir().unwrap(),
     }
@@ -126,6 +136,10 @@ fn reboot(env: &Env, before: &Daemon) -> Arc<Daemon> {
 }
 
 async fn argv_of(env: &Env, id: u32) -> Vec<String> {
+    argv_with_diagnostics(env, id, None).await
+}
+
+async fn argv_with_diagnostics(env: &Env, id: u32, daemon: Option<&Daemon>) -> Vec<String> {
     let path = env.argv.path().join(id.to_string());
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     loop {
@@ -134,9 +148,26 @@ async fn argv_of(env: &Env, id: u32) -> Vec<String> {
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "session {id} never launched its CLI"
+            "session {id} never launched its CLI{}",
+            daemon
+                .map(|daemon| pty_diagnostics(daemon, id))
+                .unwrap_or_default()
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+fn pty_diagnostics(daemon: &Daemon, id: u32) -> String {
+    // The daemon removes the shell capability before storing PTY output; strip OSCs
+    // and redact other secrets too before emitting a bounded failure diagnostic.
+    match daemon.scrollback(id, Some(4096)) {
+        Ok(replay) => {
+            let text = houston_core::agents::strip_ansi(&String::from_utf8_lossy(&replay.data));
+            let text = houston_core::sanitize::redact_review_secrets(&text).0;
+            let text = houston_core::sanitize::redact_secrets(&text).0;
+            format!("; redacted PTY tail: {text:?}")
+        }
+        Err(_) => "; PTY scrollback unavailable".into(),
     }
 }
 
@@ -528,6 +559,126 @@ async fn shell_hosted_claude_hook_is_recorded_and_restart_resumes_inside_shell()
             .unwrap()
             .status,
         Some(proto::AgentStatus::Working)
+    );
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
+
+async fn running_agent_of(daemon: &Arc<Daemon>, id: u32) -> Option<proto::AgentKind> {
+    daemon
+        .list()
+        .into_iter()
+        .find(|pane| pane.id == id)
+        .unwrap_or_else(|| panic!("session {id} is not listed"))
+        .running_agent
+}
+
+#[tokio::test]
+async fn a_restored_bash_hosted_claude_is_the_running_agent_until_it_exits() {
+    restored_cli_is_the_running_agent_until_it_exits("/bin/bash").await;
+}
+
+#[tokio::test]
+async fn a_restored_zsh_hosted_claude_is_the_running_agent_until_it_exits() {
+    restored_cli_is_the_running_agent_until_it_exits("/bin/zsh").await;
+}
+
+/// Runs the real integration rc of `shell`: the resumed CLI's exit is reported by the
+/// initial shell, since the `exec`ed replacement holds neither the token nor `--rcfile`.
+async fn restored_cli_is_the_running_agent_until_it_exits(shell_path: &str) {
+    if !Path::new(shell_path).exists() {
+        return;
+    }
+    let env = setup().await;
+    std::env::set_var("SHELL", shell_path);
+    if shell_path == "/bin/zsh" {
+        // Ubuntu's global zshrc otherwise prompts about completion directory permissions.
+        std::env::set_var("skip_global_compinit", "1");
+    }
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-running-agent");
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "00000000-0000-4000-8000-000000000128";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        conversation,
+        &transcript,
+        &dir,
+    )
+    .await;
+
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    assert_eq!(restored.agent, proto::AgentKind::Shell);
+    assert_eq!(
+        restored.running_agent,
+        Some(proto::AgentKind::Claude),
+        "the relaunch runs a command no command-start marker announces"
+    );
+    argv_with_diagnostics(&env, restored.id, Some(&restarted)).await;
+    // The CLI echoes this line, so its own output has passed through the daemon.
+    restarted.write_stdin(restored.id, b"receipt\n").unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let replay = restarted.scrollback(restored.id, None).unwrap();
+        if String::from_utf8_lossy(&replay.data)
+            .matches("receipt")
+            .count()
+            >= 2
+        {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the CLI never echoed its input"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        running_agent_of(&restarted, restored.id).await,
+        Some(proto::AgentKind::Claude),
+        "the CLI's own output must not clear the running agent"
+    );
+
+    restarted.write_stdin(restored.id, b"\x04").unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while running_agent_of(&restarted, restored.id).await.is_some() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the running agent outlived the CLI: the shell prompt has returned"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let after = restarted
+        .list()
+        .into_iter()
+        .find(|pane| pane.id == restored.id)
+        .unwrap();
+    assert_eq!(
+        after.detected_agent,
+        Some(proto::AgentKind::Claude),
+        "detection is sticky; only the running agent follows the CLI"
+    );
+    hook(
+        &env,
+        &restarted,
+        restored.id,
+        "UserPromptSubmit",
+        PROMPT,
+        conversation,
+        &transcript,
+        &dir,
+    )
+    .await;
+    assert_eq!(
+        running_agent_of(&restarted, restored.id).await,
+        None,
+        "a hook arriving after the CLI exited must not relabel the shell"
     );
     daemon.close(shell.id).unwrap();
     restarted.close(restored.id).unwrap();
