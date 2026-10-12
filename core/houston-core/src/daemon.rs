@@ -3622,6 +3622,9 @@ impl Daemon {
             }
             dead.values()
                 .filter(|info| info.state != proto::SessionState::Sleeping)
+                .filter(|info| {
+                    info.state != proto::SessionState::Exited || info.spawned_by.is_some()
+                })
                 .cloned()
                 .collect()
         };

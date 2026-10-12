@@ -2286,13 +2286,17 @@ impl Db {
 
     pub fn list_interrupted(&self) -> Result<Vec<proto::SessionInfo>> {
         let conn = self.conn.lock().expect("db lock");
+        // Legacy replacements left exited predecessors; retain only the current root slot.
         let mut stmt = conn.prepare(
             "SELECT id, agent, project_dir, cwd, title, codename, title_source, detected_agent, ssh_host,
                     (SELECT sa.id FROM swarm_agents sa WHERE sa.session_id = sessions.id),
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id),
                     latest_prompt, last_agent_message, slept_at_ms, state, context_json
              FROM sessions
-             WHERE (state IN ('interrupted', 'sleeping') OR (state = 'exited' AND spawned_by IS NOT NULL)) AND agent != 'custom'
+             WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom'
+                   AND (state != 'exited' OR spawned_by IS NOT NULL OR id IN (
+                       SELECT MAX(id) FROM sessions GROUP BY COALESCE(session_origin, id)
+                   ))
                    AND NOT EXISTS (SELECT 1 FROM swarm_agents sa WHERE sa.session_id = sessions.id)
              ORDER BY id",
         )?;
