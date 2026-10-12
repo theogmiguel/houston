@@ -10,6 +10,7 @@ import { AnimOut } from '../ui/AnimOut'
 import { PanelListHead, PanelTextInput } from '../ui/PanelControls'
 import { Button, EmptyState, Inline, ListDetail, NavSurfaceFrame, PageFrame, PageHeader, Segmented, Select, StatusLabel, Text, type ListDetailItem } from '../ui'
 import { IconChevronDown, IconChevronRight, IconFolderOpen, IconPlus, IconTasks } from '../icons'
+import { TasksSources } from '../tasks/TasksSources'
 import { TasksSuggested } from '../tasks/TasksSuggested'
 import { TaskComposer } from '../tasks/TaskComposer'
 import { TaskDetail } from '../tasks/TaskDetail'
@@ -143,6 +144,7 @@ export function TasksSurface({
           heading="Tasks"
           description="Work for you and your agents. Each task runs in its own worktree and ends in a pull request."
           actions={<Inline gap="small">
+            <TasksSources client={client} workspace={workspace} workspaces={workspaces} />
             <Button variant="secondary" icon={IconFolderOpen} data-testid="tasks-projects" disabled={!client || projectWorkspaces.length === 0} onClick={() => { projects.clearError(); setProjectsOpen(true) }}>Projects</Button>
             <Button variant="primary" icon={IconPlus} onClick={() => { setDetailId(null); setCreate(true) }}>New task</Button>
           </Inline>}

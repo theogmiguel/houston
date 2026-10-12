@@ -18,14 +18,15 @@ export function mergeTrackerSettings(current: TaskTrackerWorkspaceSettings[], in
   return [...merged.values()]
 }
 
-export function TaskTrackerSettingsSection({ client, workspace, workspaceName }: {
+export function TaskTrackerSettingsSection({ client, workspace, workspaceName, initialProvider }: {
   client: Pick<HoustonClient, 'subscribeAll' | 'send'> | null
   workspace: string | null
   workspaceName: string | null
+  initialProvider?: TaskTrackerProvider
 }): React.JSX.Element {
   const [settings, setSettings] = useState<TaskTrackerWorkspaceSettings[]>([])
   const [settingsLoaded, setSettingsLoaded] = useState(false)
-  const [provider, setProvider] = useState<TaskTrackerProvider>('github_issues')
+  const [provider, setProvider] = useState<TaskTrackerProvider>(initialProvider ?? 'github_issues')
   const [draft, setDraft] = useState<TaskTrackerWorkspaceSettings | null>(null)
   const [token, setToken] = useState('')
   const [syncState, setSyncState] = useState<Partial<Record<TaskTrackerProvider, { at: number | null; error: string | null }>>>({})
@@ -47,7 +48,7 @@ export function TaskTrackerSettingsSection({ client, workspace, workspaceName }:
         const incoming = message.settings.filter((item) => item.workspace === workspace)
         setSettings((current) => mergeTrackerSettings(current, incoming))
         setSettingsLoaded(true)
-        if (!receivedSettings.current && incoming.length > 0) setProvider(incoming[0].provider)
+        if (!initialProvider && !receivedSettings.current && incoming.length > 0) setProvider(incoming[0].provider)
         receivedSettings.current = true
         if (message.refusal) setError(message.refusal)
       }
@@ -56,7 +57,7 @@ export function TaskTrackerSettingsSection({ client, workspace, workspaceName }:
     })
     sendTaskWire(client, { type: 'task_tracker_settings_get', workspace })
     return off
-  }, [client, workspace])
+  }, [client, workspace, initialProvider])
 
   useEffect(() => setDraft(setting), [setting])
   useEffect(() => setToken(''), [provider, workspace])

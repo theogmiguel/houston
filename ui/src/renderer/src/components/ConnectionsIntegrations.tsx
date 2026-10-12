@@ -26,7 +26,7 @@ function relativeTime(timestamp: number): string {
 }
 
 function slackCaption(info: SlackInfo | null, workspaces: Workspace[]): string {
-  if (!info || !info.enabled) return 'A mention of the bot in a mapped channel becomes a pending task.'
+  if (!info || !info.enabled) return 'A mention of the bot in a mapped channel becomes a pending task; the owner starts it with a :white_check_mark: reaction.'
   if (info.connection === 'retrying' || info.connection === 'connecting') {
     return info.error ?? 'Waiting for Slack to reconnect.'
   }
@@ -45,7 +45,7 @@ function statusFor(info: SlackInfo | null): 'Off' | 'Connected' | 'Reconnecting'
   return info.connection === 'connected' ? 'Connected' : 'Reconnecting'
 }
 
-export function ConnectionsIntegrations({ client }: { client: HoustonClient | null }): React.JSX.Element {
+export function ConnectionsIntegrations({ client, setupOnly = false, onClose }: { client: HoustonClient | null; setupOnly?: boolean; onClose?: () => void }): React.JSX.Element {
   const [info, setInfo] = useState<SlackInfo | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -110,23 +110,27 @@ export function ConnectionsIntegrations({ client }: { client: HoustonClient | nu
     client?.slackConfigure(info?.owner_user_id ?? null, info?.channels ?? [], next)
   }
 
+  const closeSetup = (): void => { setDrawerOpen(false); onClose?.() }
+
   return (
-    <ContentSection heading="Integrations" description="Outside services that bring work into Houston. Tokens stay in the OS keychain." data-testid="slack-integrations">
-      <IntegrationCard
-        icon={<IconMessageSquare />}
-        title="Slack"
-        status={status}
-        caption={status === 'Reconnecting' && info?.error ? info.error : slackCaption(info, workspaces)}
-        actions={status === 'Off' ? (
-          <Button variant="primary" onClick={() => setDrawerOpen(true)}>Connect</Button>
-        ) : (
-          <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(true)}>Configure</Button>
-            <Button variant="ghost" onClick={() => client?.slackDisconnect()}>Disconnect</Button>
-          </>
-        )}
-      />
-      <Drawer open={drawerOpen} heading="Slack" onClose={() => setDrawerOpen(false)}>
+    <>
+      {!setupOnly && <ContentSection heading="Integrations" description="Outside services that bring work into Houston. Tokens stay in the OS keychain." data-testid="slack-integrations">
+        <IntegrationCard
+          icon={<IconMessageSquare />}
+          title="Slack"
+          status={status}
+          caption={status === 'Reconnecting' && info?.error ? info.error : slackCaption(info, workspaces)}
+          actions={status === 'Off' ? (
+            <Button variant="primary" onClick={() => setDrawerOpen(true)}>Connect</Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setDrawerOpen(true)}>Configure</Button>
+              <Button variant="ghost" onClick={() => client?.slackDisconnect()}>Disconnect</Button>
+            </>
+          )}
+        />
+      </ContentSection>}
+      <Drawer open={setupOnly || drawerOpen} heading="Slack" onClose={closeSetup}>
         <div className="grid gap-[var(--space-4)]">
           <Notice tone="info">Tokens go to the OS keychain and are never shown again. Leave them empty to keep the saved ones.</Notice>
           {error && <Notice tone="danger">{error}</Notice>}
@@ -137,7 +141,7 @@ export function ConnectionsIntegrations({ client }: { client: HoustonClient | nu
           <Field label="Bot token" hint="xoxb-">
             <TextInput type="password" font="mono" spellCheck={false} autoComplete="off" maxLength={SLACK_TOKEN_LEN_MAX} placeholder={info?.has_tokens ? '••••••••••••' : 'xoxb-…'} value={botToken} onChange={(event) => setBotToken(event.target.value)} />
           </Field>
-          <Field label="Owner" hint="The only member whose ✅ starts a request (U…)">
+          <Field label="Owner" hint="The only member whose :white_check_mark: reaction starts a request (U…)">
             <TextInput font="mono" width="md" spellCheck={false} placeholder="U…" value={owner} onChange={(event) => setOwner(event.target.value)} />
           </Field>
           <Field label="Language" hint="What Houston writes in Slack">
@@ -156,10 +160,11 @@ export function ConnectionsIntegrations({ client }: { client: HoustonClient | nu
           </div>
           <div className="flex items-center gap-[var(--space-2)]">
             <Button variant="primary" disabled={!client || hasPartialToken} onClick={save}>Save</Button>
-            <Button variant="ghost" onClick={() => setDrawerOpen(false)}>Cancel</Button>
+            <Button variant="ghost" onClick={closeSetup}>Cancel</Button>
+            {setupOnly && info?.enabled && <Button variant="ghost" onClick={() => client?.slackDisconnect()}>Disconnect</Button>}
           </div>
         </div>
       </Drawer>
-    </ContentSection>
+    </>
   )
 }

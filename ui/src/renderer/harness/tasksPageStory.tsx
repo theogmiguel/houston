@@ -87,6 +87,8 @@ function fixtureClient(): HoustonClient {
       return () => everyone.delete(handler)
     },
     send: (message: ClientMsg) => {
+      if (message.type === 'task_tracker_settings_get') emit('task_tracker_settings', { type: 'task_tracker_settings', settings: [], refusal: null })
+      if (message.type === 'workspace_list') emit('workspace_list', { type: 'workspace_list', workspaces: [{ path: WORKSPACE, name: 'houston' }] })
       if (message.type === 'task_projects_list') emit('task_projects_state', { type: 'task_projects_state', workspace: message.workspace, projects: PROJECTS })
       if (message.type === 'task_domain_get') emit('task_domain_state', { type: 'task_domain_state', domain: domain(message.id), planning_refusals: [] })
     },
@@ -96,6 +98,7 @@ function fixtureClient(): HoustonClient {
       handlers.set(kind, set)
       return () => set.delete(handler)
     },
+    slackGet: () => emit('slack', { type: 'slack', refusal: null, info: { enabled: true, has_tokens: true, connection: 'connected', team: 'Houston', owner_user_id: 'UOWNER', channels: [{ channel_id: 'CBUGS', workspace: WORKSPACE }], language: 'en' } }),
     harnessState: (workspace: string) => emit('harness_state', { type: 'harness_state', workspace, routine: null, reviews: [], models: [], provider_coverage: [], engine_refusals: [], findings: [{ review_id: 7, last_seen_review_id: 7, key: 'repeated-migration', title: 'Codex retries the same failing migration', category: 'instructions', confidence: 'high', sessions: ['one'], count: 5, quotes: [], recommendation_kind: 'instruction', target: 'AGENTS.md', recommendation: 'Document the migration prerequisite.', apply_prompt: 'Fix the migration prerequisite.', state: 'open', recurred: false, phase: 'open' }] }),
     taskSnapshot: (scope: string) => emit('task_snapshot', { type: 'task_snapshot', scope, tasks: TASKS, counts: { ready: 2, backlog: 1, todo: 1, in_progress: 3, in_review: 1, done: 1, canceled: 0 } }),
     taskGet: (id: number) => emit('task_detail', { type: 'task_detail', ...DETAIL, task: { ...DETAIL.task, id, number: id, key: `HOU-${id}` } }),
@@ -127,11 +130,16 @@ function useClickWhenReady(testId: string | null): void {
 }
 
 export function TasksByProjectStory(): React.JSX.Element { return <TasksPageStory click="tasks-group-project" /> }
+export function TasksSourcesStory(): React.JSX.Element { return <TasksPageStory click="tasks-sources" /> }
+export function TasksSlackSetupStory(): React.JSX.Element { return <TasksPageStory click="tasks-sources" thenClick="task-source-slack" /> }
+export function TasksNotionSetupStory(): React.JSX.Element { return <TasksPageStory click="tasks-sources" thenClick="task-source-notion" /> }
+export function TasksGitHubSetupStory(): React.JSX.Element { return <TasksPageStory click="tasks-sources" thenClick="task-source-github_issues" /> }
 export function TasksProjectsDialogStory(): React.JSX.Element { return <TasksPageStory click="tasks-projects" /> }
 
-export function TasksPageStory({ click = null }: { click?: string | null }): React.JSX.Element {
+export function TasksPageStory({ click = null, thenClick = null }: { click?: string | null; thenClick?: string | null }): React.JSX.Element {
   const client = React.useMemo(fixtureClient, [])
   useClickWhenReady(click)
+  useClickWhenReady(thenClick)
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--content-bg)' }}>
       <aside style={{ width: 148, flex: 'none', padding: 8, background: 'var(--rail-bg)', color: 'var(--text-secondary)' }}>

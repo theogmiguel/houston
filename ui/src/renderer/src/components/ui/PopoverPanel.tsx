@@ -21,12 +21,14 @@ export function PopoverPanel({
   top,
   left,
   visible,
+  width = 'default',
   ref,
   ...props
 }: {
   top: number
   left: number
   visible: boolean
+  width?: 'default' | 'wide'
   ref?: Ref<HTMLDivElement>
 } & Omit<HTMLAttributes<HTMLDivElement>, 'className' | 'style'>): React.JSX.Element {
   const style: CSSProperties = {
@@ -41,10 +43,14 @@ export function PopoverPanel({
       ref={ref}
       role="dialog"
       {...OVERLAY_RAISED_ATTRS}
-      className={`${OVERLAY_RAISED_CLS} fixed z-[var(--z-overlay)] w-[var(--w-popover-content)] overflow-hidden`}
+      className={`${OVERLAY_RAISED_CLS} fixed z-[var(--z-overlay)] ${width === 'wide' ? 'w-[420px] max-w-[calc(100vw_-_var(--space-4))] max-h-[calc(100vh_-_var(--space-4))] overflow-auto' : 'w-[var(--w-popover-content)] overflow-hidden'}`}
       style={style}
     />
   )
+}
+
+export function PopoverBody({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="grid gap-[var(--space-2)] p-[var(--space-2)]">{children}</div>
 }
 
 export function PopoverHeader({ children, trailing }: { children: ReactNode; trailing?: ReactNode }): React.JSX.Element {
@@ -195,13 +201,14 @@ export function BadgeSeparator({ children }: { children: ReactNode }): React.JSX
   return <Text className="px-px" tone="muted">{children}</Text>
 }
 
-export function PopoverPanelSpecimen(): React.JSX.Element {
+export function PopoverPanelSpecimen({ width = 'default' }: { width?: 'default' | 'wide' }): React.JSX.Element {
   return (
-    <div className="w-[var(--w-popover-content)] overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--elevated-surface)]">
+    <div className={`${width === 'wide' ? 'w-[420px] max-w-full' : 'w-[var(--w-popover-content)]'} overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--elevated-surface)]`}>
       <PopoverHeader trailing={<PopoverDescription>1 waiting</PopoverDescription>}>
         <PopoverTitle>Review</PopoverTitle>
         <PopoverDescription>Review API changes</PopoverDescription>
       </PopoverHeader>
+      {width === 'wide' && <PopoverBody><Text size="small" tone="muted">Workspace sources</Text></PopoverBody>}
       <IdentityLine>
         claude
         <InlineSeparator />

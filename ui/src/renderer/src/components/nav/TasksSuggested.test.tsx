@@ -15,7 +15,7 @@ const finding = (key: string, extra: Partial<HarnessFinding> = {}): HarnessFindi
 it('suggests only open findings without tasks in scope and routes actions to their workspace', () => {
   const handlers = new Map<string, Set<(message: ServerMsg) => void>>()
   const harnessState = vi.fn(), harnessFixTask = vi.fn(), harnessDecide = vi.fn()
-  const base = { harnessState, harnessFixTask, harnessDecide,
+  const base = { harnessState, harnessFixTask, harnessDecide, subscribeAll: () => () => {},
     subscribe: (type: string, callback: (message: ServerMsg) => void) => {
       const set = handlers.get(type) ?? new Set(); set.add(callback); handlers.set(type, set)
       return () => set.delete(callback)

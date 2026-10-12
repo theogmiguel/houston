@@ -142,7 +142,7 @@ import { PaneLifecycleStory, TasksChipsStory, TasksComposerStory, TasksDetailSta
 import { RenameTitleStory } from './renameTitleStories'
 
 document.documentElement.setAttribute('data-motion-paused', '')
-import { TasksByProjectStory, TasksPageStory, TasksProjectsDialogStory } from './tasksPageStory'
+import { TasksByProjectStory, TasksPageStory, TasksProjectsDialogStory, TasksSourcesStory, TasksSlackSetupStory, TasksNotionSetupStory, TasksGitHubSetupStory } from './tasksPageStory'
 import { TrackerSettingsStory } from './projectsStories'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
@@ -575,6 +575,10 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'usage/loading': () => <UsagePageStory state="loading" />,
   'usage/stale': () => <UsagePageStory state="stale" />,
   'usage/empty': () => <UsagePageStory state="empty" />,
+  'tasks/sources': () => <TasksSourcesStory />,
+  'tasks/source-slack': () => <TasksSlackSetupStory />,
+  'tasks/source-notion': () => <TasksNotionSetupStory />,
+  'tasks/source-github': () => <TasksGitHubSetupStory />,
   'tasks/page': () => <TasksPageStory />,
   'tasks/by-project': () => <TasksByProjectStory />,
   'tasks/projects-dialog': () => <TasksProjectsDialogStory />,
