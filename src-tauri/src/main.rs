@@ -437,7 +437,7 @@ fn main() {
         builder = builder.manage(bench::BenchState::new(bench_scenarios));
         builder = builder.manage(boot_stamps.clone());
     }
-    builder = builder.manage(host::ConnectionCell::new(connection_rx));
+    builder = builder.manage(host::ConnectionCell::new(connection_rx, state_dir.clone()));
     builder = builder.manage(fs_allowlist::AllowedRoots::new());
     builder = builder.manage(shells::ShellsCache::new());
     builder = builder.manage(browser::BrowserRegistry::new());

@@ -863,7 +863,7 @@ pub async fn env_list(
     wsl: tauri::State<'_, WslManager>,
     connection: tauri::State<'_, crate::host::ConnectionCell>,
 ) -> Result<Vec<EnvEntry>, ()> {
-    let local = connection.get().await;
+    let local = connection.get().await.map_err(|_| ())?;
     let mut entries = vec![EnvEntry {
         id: "local".to_string(),
         kind: "local",
