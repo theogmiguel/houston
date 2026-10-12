@@ -145,7 +145,13 @@ pub fn scan(request: &ScanRequest) -> ScanOutcome {
             scanned_files += 1;
 
             for record in &records {
-                if aggregator.add(record) && !record.session_id.is_empty() {
+                if aggregator.add(record)
+                    && request
+                        .workspace_filter
+                        .as_ref()
+                        .is_none_or(|workspace| record.workspace_path.as_ref() == Some(workspace))
+                    && !record.session_id.is_empty()
+                {
                     session_ids.insert(record.session_id.clone());
                 }
             }

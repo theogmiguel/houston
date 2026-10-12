@@ -223,3 +223,41 @@ async fn a_refused_window_travels_back_as_an_error_not_an_empty_summary() {
         other => panic!("expected an Error, got {other:?}"),
     }
 }
+
+#[test]
+fn workspace_filter_counts_only_sessions_in_that_workspace() {
+    use houston_core::usage::{scan, ScanRequest, SourceSpec};
+    let state = tempfile::tempdir().unwrap();
+    let root = state.path().join("projects");
+    std::fs::create_dir_all(&root).unwrap();
+    for (session, workspace) in [("s1", "/project/one"), ("s2", "/project/two")] {
+        let record = serde_json::json!({
+            "type": "assistant", "timestamp": "2026-08-27T10:00:00Z",
+            "sessionId": session, "cwd": workspace, "requestId": session,
+            "message": {"id": session, "model": "claude-opus-5",
+                "usage": {"input_tokens": 10, "output_tokens": 50}}
+        });
+        std::fs::write(root.join(format!("{session}.jsonl")), format!("{record}\n")).unwrap();
+    }
+    let mut request = ScanRequest {
+        since_ms: 0,
+        until_ms: i64::MAX / 2,
+        catalog: houston_core::model_catalog::ModelCatalog::new(state.path()).load(false, false),
+        state_dir: state.path().to_path_buf(),
+        sources: vec![SourceSpec {
+            provider: proto::UsageProvider::Claude,
+            root,
+            profile_name: None,
+        }],
+        workspaces: vec!["/project/one".into(), "/project/two".into()],
+        workspace_filter: Some("/project/one".into()),
+    };
+    let out = scan(&request);
+    assert_eq!(out.buckets.len(), 1);
+    assert_eq!(out.sources[0].distinct_sessions, 1);
+    // Repeat from the transcript cache with a different selection.
+    request.workspace_filter = Some("/project/missing".into());
+    assert_eq!(scan(&request).sources[0].distinct_sessions, 0);
+    request.workspace_filter = None;
+    assert_eq!(scan(&request).sources[0].distinct_sessions, 2);
+}
