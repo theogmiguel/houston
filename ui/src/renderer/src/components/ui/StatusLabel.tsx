@@ -74,7 +74,7 @@ const PILL_TONE: Record<PillTone, string> = {
 }
 
 export function StatusLabel({ status, size = 'ui', variant = 'default', tone = 'unknown', children }: { status: StatusLabelValue; size?: 'ui' | 'small'; variant?: 'default' | 'pill' | 'dot' | 'detail'; tone?: PillTone; children?: React.ReactNode }): React.JSX.Element {
-  if (variant === 'detail') return <span className={`inline-flex items-center gap-[var(--space-1-5)] text-[length:var(--tr-text-small-size)] ${tone === 'waiting' ? 'text-[var(--warn)]' : tone === 'failed' ? 'text-[var(--stop)]' : 'text-[var(--text-muted)]'}`}><span aria-hidden="true" className="size-[var(--space-1-5)] flex-none rounded-full" style={{ background: tone === 'waiting' ? 'var(--warn)' : tone === 'failed' ? 'var(--stop)' : 'var(--text-faint)' }} />{children ?? status}</span>
+  if (variant === 'detail') return <StatusDetail status={status} tone={tone}>{children}</StatusDetail>
   if (variant === 'pill') return <span className={`${PILL_CLASS} ${PILL_TONE[tone]}`}>{children ?? status}</span>
   const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off' || status === 'Kept'
   return (
@@ -89,4 +89,19 @@ export function StatusLabel({ status, size = 'ui', variant = 'default', tone = '
       {variant === 'default' && status}
     </span>
   )
+}
+
+const DETAIL_TONE: Record<PillTone, { text: string; dot: string }> = {
+  waiting: { text: 'text-[var(--warn)]', dot: 'var(--warn)' },
+  failed: { text: 'text-[var(--stop)]', dot: 'var(--stop)' },
+  done: { text: 'text-[var(--text-muted)]', dot: 'var(--text-faint)' },
+  working: { text: 'text-[var(--text-muted)]', dot: 'var(--text-faint)' },
+  unknown: { text: 'text-[var(--text-muted)]', dot: 'var(--text-faint)' }
+}
+
+function StatusDetail({ status, tone, children }: { status: StatusLabelValue; tone: PillTone; children?: React.ReactNode }): React.JSX.Element {
+  const colour = DETAIL_TONE[tone]
+  return <span className={`inline-flex items-center gap-[var(--space-1-5)] text-[length:var(--tr-text-small-size)] ${colour.text}`}>
+    <span aria-hidden="true" className="size-[var(--space-1-5)] flex-none rounded-full" style={{ background: colour.dot }} />{children ?? status}
+  </span>
 }

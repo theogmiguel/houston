@@ -49,10 +49,18 @@ export interface EmptyStateProps {
 }
 
 export function EmptyState({ icon: Icon, heading, description, action, variant = 'panel', fill = false, copy = 'standard', descriptionWidth = 'standard', className = '', 'data-testid': testId }: EmptyStateProps): React.JSX.Element {
-  const windowTitle = variant === 'window'
   return (
     <section data-testid={testId} className={`${stateClasses({ variant })} ${copy === 'summary' ? 'px-[var(--space-6)] pb-[var(--space-4)] pt-[var(--space-6)]' : ''} ${fill ? 'flex-1 min-h-0 justify-center p-6' : ''} ${className}`}>
       {Icon && (copy === 'summary' ? <span className="flex text-[var(--text-muted)]"><GlyphIcon glyph={Icon} role="ui" /></span> : <IconTile size="md" tone="muted" label={heading} icon={<Icon role="ui" />} />)}
+      <EmptyStateCopy heading={heading} description={description} variant={variant} copy={copy} descriptionWidth={descriptionWidth} />
+      {action && <Button variant="primary" onClick={action.onClick}>{action.label}</Button>}
+    </section>
+  )
+}
+
+function EmptyStateCopy({ heading, description, variant, copy, descriptionWidth }: Pick<EmptyStateProps, 'heading' | 'description' | 'variant' | 'copy' | 'descriptionWidth'>): React.JSX.Element {
+  const windowTitle = variant === 'window'
+  return <>
       {copy === 'compact' ? (
         <>
           <Text as="h2" flush size="ui" weight="ui" tone="primary">
@@ -68,7 +76,5 @@ export function EmptyState({ icon: Icon, heading, description, action, variant =
         <Text as="p" size="ui" leading="ui" tone="secondary" flush className={copy === 'summary' ? 'max-w-[56ch]' : descriptionWidth === 'compact' ? 'max-w-[var(--tr-empty-compact-copy-max)]' : 'max-w-[var(--tr-empty-copy-max)]'}>{description}</Text>
       </div>
       )}
-      {action && <Button variant="primary" onClick={action.onClick}>{action.label}</Button>}
-    </section>
-  )
+  </>
 }

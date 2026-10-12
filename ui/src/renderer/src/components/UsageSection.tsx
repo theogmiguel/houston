@@ -76,6 +76,29 @@ function UsageStats({ totals, sessions, days }: { totals: UsageTotals; sessions:
   </UsageTotalsStrip>
 }
 
+type DisplayProvider = ReturnType<typeof providerSummaries>[number] & { sessions: number; amount: string; note: string; share: number | null }
+
+function UsageAgentsAndCosts({ providers, untracked, buckets, totals, costAvailable }: {
+  providers: DisplayProvider[]
+  untracked: AgentKind[]
+  buckets: UsageSummaryMsg['buckets']
+  totals: UsageTotals
+  costAvailable: boolean
+}): React.JSX.Element {
+  return (
+        <UsageShareGroup>
+        <Card shape="card" tone="block" data-material="inset" data-testid="usage-by-agent">
+          <UsageSectionHeading inset>By agent</UsageSectionHeading>
+          {providers.map((p) => <UsageProviderRow key={p.provider} mark={<UsageAgentMark agent={p.provider} />} label={p.label} sessions={p.sessions} amount={p.amount} note={p.note} share={p.share} color={PROVIDER_COLOR[p.provider]} />)}
+          {untracked.length > 0 && <UsageCardNote>Not counted: {joinAgentNames(untrackedAgentNames(untracked))}. They do not write token counts Houston can read.</UsageCardNote>}
+        </Card>
+        <Card shape="card" tone="block" padding="page" data-material="inset">
+          {costAvailable ? <UsageShareBar heading="Where the cost goes" segments={categoryTotals(buckets)} note={<>{buckets.length > 0 && buckets.every((bucket) => bucket.speed_rate_available) && <>Fast and Ultrafast modes added {formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}. </>}Caching saved {formatUsd(totals.cacheSavings)} against full input prices.</>} /> : <><UsageSectionHeading>Where the cost goes</UsageSectionHeading><Text as="p" size="small" tone="muted">Cost categories are unavailable without published model rates.</Text></>}
+        </Card>
+        </UsageShareGroup>
+  )
+}
+
 function untrackedAgentNames(agents: AgentKind[]): string[] {
   const order: AgentKind[] = ['opencode', 'cursor', 'grok', 'antigravity', 'zcode', 'droid', 'copilot', 'aider', 'custom', 'claude', 'codex', 'shell', 'ssh']
   const names: Partial<Record<AgentKind, string>> = { opencode: 'OpenCode', zcode: 'ZCode', claude: 'Claude Code', ssh: 'SSH' }
@@ -181,6 +204,28 @@ function usageRangeLabel(
       : 'Reading transcripts…'
   }
   return formatRange(summary.since_ms, summary.until_ms, timeZone)
+}
+
+function pricingMetadata(summary: UsageSummaryMsg | null): string {
+  if (!summary) return 'Prices from the model catalog'
+  if (summary.pricing.status === 'unavailable' || !summary.pricing.fetched_at_ms) return 'Model catalog prices unavailable'
+  return `Prices from the model catalog, updated ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(summary.pricing.fetched_at_ms)}`
+}
+
+function UsageMetadata({ summary, asked, timeZone, reading }: {
+  summary: UsageSummaryMsg | null
+  asked: { sinceMs: number; untilMs: number } | null
+  timeZone: string
+  reading: boolean
+}): React.JSX.Element {
+  return <UsageMetaLine range={usageRangeLabel(summary, asked, timeZone).replace(' to ', ' – ')} readAge={summary ? readAge(summary.read_at_ms) : null} duration={summary ? `${(summary.scan_duration_ms / 1000).toFixed(1)} s` : null} reading={reading} pricing={pricingMetadata(summary)} />
+}
+
+function UsageScanNotices({ summary, error }: { summary: UsageSummaryMsg | null; error: string | null }): React.JSX.Element {
+  return <>
+    {error && <Notice tone="danger" data-testid="usage-error">{error}</Notice>}
+    {summary?.pricing.message && <Notice tone="warn">{summary.pricing.message}</Notice>}
+  </>
 }
 
 export function UsageSection({
@@ -299,7 +344,6 @@ export function UsageSection({
   const costAvailable = totals.records === 0 || totals.unpricedRecords < totals.records
   const sessions = [...sessionsByProvider.values()].reduce((sum, count) => sum + count, 0)
   const noUsage = summary !== null && sessions === 0
-  const rangeLabel = usageRangeLabel(summary, asked, timeZone)
 
   return (
     <div className="h-full min-h-0 w-full overflow-y-auto" data-testid="nav-surface" data-page="usage">
@@ -311,15 +355,8 @@ export function UsageSection({
           <Tooltip label="Read transcripts again"><Button variant="icon" aria-label="Refresh usage" data-testid="usage-refresh" onClick={refresh} disabled={loading} icon={IconRefresh} /></Tooltip>
         </>
       } />
-      <UsageMetaLine range={rangeLabel.replace(' to ', ' – ')} readAge={summary ? readAge(summary.read_at_ms) : null} duration={summary ? `${(summary.scan_duration_ms / 1000).toFixed(1)} s` : null} reading={reading} pricing={summary?.pricing.status !== 'unavailable' && summary?.pricing.fetched_at_ms ? `Prices from the model catalog, updated ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(summary.pricing.fetched_at_ms)}` : summary ? 'Model catalog prices unavailable' : 'Prices from the model catalog'} />
-      {error && (
-        <Notice tone="danger" data-testid="usage-error">
-          {error}
-        </Notice>
-      )}
-
-      {}
-      {summary?.pricing.message && <Notice tone="warn">{summary.pricing.message}</Notice>}
+      <UsageMetadata summary={summary} asked={asked} timeZone={timeZone} reading={reading} />
+      <UsageScanNotices summary={summary} error={error} />
       <UsageBody reading={reading}>
         {!summary ? (
           <Text as="p" role="status" size="ui" tone="secondary">{error ? 'No usage result available.' : 'Reading transcripts…'}</Text>
@@ -338,16 +375,7 @@ export function UsageSection({
           series={series}
           labelFor={labelFor}
         />
-        <UsageShareGroup>
-        <Card shape="card" tone="block" data-material="inset" data-testid="usage-by-agent">
-          <UsageSectionHeading inset>By agent</UsageSectionHeading>
-          {displayProviders.map((p) => <UsageProviderRow key={p.provider} mark={<UsageAgentMark agent={p.provider} />} label={p.label} sessions={p.sessions} amount={p.amount} note={p.note} share={p.share} color={PROVIDER_COLOR[p.provider]} />)}
-          {summary.untracked_agents.length > 0 && <UsageCardNote>Not counted: {joinAgentNames(untrackedAgentNames(summary.untracked_agents))}. They do not write token counts Houston can read.</UsageCardNote>}
-        </Card>
-        <Card shape="card" tone="block" padding="page" data-material="inset">
-          {costAvailable ? <UsageShareBar heading="Where the cost goes" segments={categoryTotals(buckets)} note={<>{buckets.length > 0 && buckets.every((bucket) => bucket.speed_rate_available) && <>Fast and Ultrafast modes added {formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}. </>}Caching saved {formatUsd(totals.cacheSavings)} against full input prices.</>} /> : <><UsageSectionHeading>Where the cost goes</UsageSectionHeading><Text as="p" size="small" tone="muted">Cost categories are unavailable without published model rates.</Text></>}
-        </Card>
-        </UsageShareGroup>
+        <UsageAgentsAndCosts providers={displayProviders} untracked={summary.untracked_agents} buckets={buckets} totals={totals} costAvailable={costAvailable} />
 
         <Card shape="card" tone="block" padding="page" data-material="inset" data-testid="usage-calendar-section">
           <UsageCalendar days={activity} metric="cost" selectedDay={selectedDay} caption="Pick a day to see its breakdown below. Days older than the transcripts on disk keep their daily total." onSelect={(day) => setSelectedDay((current) => current === day ? null : day)} />
