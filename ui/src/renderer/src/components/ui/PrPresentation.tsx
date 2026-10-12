@@ -1,3 +1,4 @@
+import { ContextMenu, ContextMenuItem, ContextMenuItems, ContextMenuSeparator } from './ContextMenu'
 import type { ReactNode } from 'react'
 import { Text } from './Text'
 
@@ -88,4 +89,12 @@ export function PrHeaderAuthor({ children }: { children: ReactNode }): React.JSX
 
 export function PrHeaderRef({ children }: { children: ReactNode }): React.JSX.Element {
   return <span className="font-mono text-[var(--text-muted)]">{children}</span>
+}
+
+export function PrMenuCommand({ children }: { children: ReactNode }): React.JSX.Element {
+  return <span className="ml-auto font-mono text-[var(--text-muted)]">{children}</span>
+}
+
+export function PrMenuSpecimen(): React.JSX.Element {
+  return <div className="pr-header-actions"><ContextMenu role="menu" data-testid="pr-actions-items" data-pr-actions-menu style={{ position: 'relative', top: 0 }}><ContextMenuItems><ContextMenuItem>Copy checkout command<PrMenuCommand>gh pr checkout 95</PrMenuCommand></ContextMenuItem><ContextMenuItem>Copy link</ContextMenuItem><ContextMenuItem>Update branch from main</ContextMenuItem><ContextMenuItem>Convert to draft</ContextMenuItem><ContextMenuSeparator /><ContextMenuItem>Close pull request…</ContextMenuItem><ContextMenuItem danger>Unlink from this pane</ContextMenuItem></ContextMenuItems></ContextMenu></div>
 }

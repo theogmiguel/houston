@@ -480,6 +480,7 @@ describe('PullRequestTab — stale replies', () => {
     expect(client.prLinkCalls).toEqual([{ dir: '/repo', number: 61, request: 2 }])
     emit(client, { type: 'pr_linked', dir: '/repo', request: 2, ok: true, message: null })
     emit(client, detailMsg({ request: 2, linked: true, link: link({ source: 'manual' }) }))
+    openActions()
     expect(q('[data-testid="pr-unlink"]')).not.toBeNull()
     emit(client, detailMsg({ request: 1, linked: false }))
     expect(q('[data-testid="pr-unlink"]')).not.toBeNull()
@@ -987,6 +988,7 @@ describe('PullRequestTab — reviewers, labels and actions', () => {
     emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
     openActions()
     click(q('[data-testid="pr-action-close"]'))
+    click(qa('button').find((button) => button.textContent === 'Close pull request')!)
     expect(client.prActionCalls).toEqual([{ number: 61, action: 'close', request: 2 }])
     emit(client, {
       type: 'pr_mutation',
@@ -1013,9 +1015,8 @@ describe('PullRequestTab — reviewers, labels and actions', () => {
 
   it('enables auto-merge with the chosen method and disables it once armed', () => {
     const client = mount()
-    emit(client, detailMsg({ detail: detail({ merge_disabled_reason: null, checks: [] }) }))
-    openActions()
-    click(q('[data-testid="pr-action-auto-merge"]'))
+    emit(client, detailMsg())
+    click(q('[data-testid="pr-auto-merge"]'))
     expect(client.prActionCalls).toEqual([
       { number: 61, action: 'enable_auto_merge', mergeMethod: 'squash', request: 2 }
     ])
@@ -1031,6 +1032,7 @@ describe('PullRequestTab — reviewers, labels and actions', () => {
         })
       })
     )
+    openActions()
     expect(q('[data-testid="pr-action-auto-merge"]')!.textContent).toContain('Disable')
     click(q('[data-testid="pr-action-auto-merge"]'))
     expect(client.prActionCalls[1]).toEqual({
@@ -1376,4 +1378,26 @@ describe('pull request summary hierarchy', () => {
     expect(q('[data-testid="pr-reviewers"] svg')).toBeNull()
     expect(q('[data-testid="pr-labels"] svg')).toBeNull()
   })
+})
+
+describe('pull request overflow menu', () => {
+  it('orders the verbs and confirms before closing', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg({ linked: true }))
+    openActions()
+    const ids = Array.from(q('[data-testid="pr-actions-items"]')!.querySelectorAll('[role="menuitem"]')).map((item) => item.getAttribute('data-testid'))
+    expect(ids).toEqual(['pr-copy-checkout', 'pr-copy-url', 'pr-action-update-branch', 'pr-action-draft', 'pr-action-close', 'pr-unlink'])
+    click(q('[data-testid="pr-action-close"]'))
+    expect(client.prActionCalls).toHaveLength(0)
+    click(qa('button').find((button) => button.textContent === 'Close pull request')!)
+    expect(client.prActionCalls.at(-1)).toMatchObject({ number: 61, action: 'close' })
+  })
+})
+
+it('waits for close confirmation without sending a mutation on the menu click', () => {
+  const client = mount({ compact: true })
+  emit(client, detailMsg())
+  openActions()
+  click(q('[data-testid="pr-action-close"]'))
+  expect(client.prActionCalls).toHaveLength(0)
 })
