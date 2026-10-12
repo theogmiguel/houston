@@ -2,6 +2,7 @@ import type { PrInfo, SessionInfo } from '../../houston/client'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionActivity } from '../../houston/generated/SessionActivity'
 import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
+import { sessionCheckoutRoot } from '../checkout/formatCheckout'
 import { gridStatus, liftDelegatedWork, type GridStatusModel } from '../ui/railRows'
 import { orderGridPanes } from '../ui/railRowModel'
 
@@ -64,7 +65,7 @@ function checkoutIdentity(session: SessionInfo, branches: ReadonlyMap<number, st
   if (worktree || session.worktree) {
     return {
       kind: 'worktree',
-      root: checkout?.root ?? session.worktree?.path ?? session.checkout_root ?? session.cwd,
+      root: sessionCheckoutRoot(session),
       slug: worktree?.slug ?? session.worktree?.branch ?? 'worktree',
       branch,
       detached: branch === null,
@@ -73,12 +74,12 @@ function checkoutIdentity(session: SessionInfo, branches: ReadonlyMap<number, st
   if (checkoutKind === 'primary' || session.checkout_root) {
     return {
       kind: 'primary',
-      root: checkout?.root ?? session.checkout_root ?? session.cwd,
+      root: sessionCheckoutRoot(session),
       branch,
       detached: branch === null,
     }
   }
-  if (checkoutKind === 'folder') return { kind: 'folder', root: checkout?.root ?? session.cwd }
+  if (checkoutKind === 'folder') return { kind: 'folder', root: sessionCheckoutRoot(session) }
   return { kind: 'folder', root: session.cwd }
 }
 
