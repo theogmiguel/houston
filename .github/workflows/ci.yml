@@ -1,9 +1,8 @@
 name: CI
 
-# Public and fork-gated: a PR runs the renderer and core suites too, not just the
-# safety scripts. Selected integration regressions run here; remaining suites and
-# load-sensitive gates stay local
-# (docs/operations/development.md); Windows also runs portable ConPTY regressions.
+# Public and fork-gated: PRs run safety scripts, renderer/core suites and selected integrations.
+# Remaining suites and load-sensitive gates stay local (docs/operations/development.md).
+# Windows also runs portable ConPTY regressions.
 on:
   pull_request: {}
   push:
