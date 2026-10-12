@@ -96,6 +96,7 @@ function fixtureClient(): HoustonClient {
       handlers.set(kind, set)
       return () => set.delete(handler)
     },
+    harnessState: (workspace: string) => emit('harness_state', { type: 'harness_state', workspace, routine: null, reviews: [], models: [], provider_coverage: [], engine_refusals: [], findings: [{ review_id: 7, last_seen_review_id: 7, key: 'repeated-migration', title: 'Codex retries the same failing migration', category: 'instructions', confidence: 'high', sessions: ['one'], count: 5, quotes: [], recommendation_kind: 'instruction', target: 'AGENTS.md', recommendation: 'Document the migration prerequisite.', apply_prompt: 'Fix the migration prerequisite.', state: 'open', recurred: false, phase: 'open' }] }),
     taskSnapshot: (scope: string) => emit('task_snapshot', { type: 'task_snapshot', scope, tasks: TASKS, counts: { ready: 2, backlog: 1, todo: 1, in_progress: 3, in_review: 1, done: 1, canceled: 0 } }),
     taskGet: (id: number) => emit('task_detail', { type: 'task_detail', ...DETAIL, task: { ...DETAIL.task, id, number: id, key: `HOU-${id}` } }),
     tasksAccessGet: (workspace: string) => emit('tasks_access', { type: 'tasks_access', workspace, access: 'write' }),
