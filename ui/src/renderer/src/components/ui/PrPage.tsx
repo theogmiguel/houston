@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Icon } from './Icon'
 import { IconFolder, IconSearch } from '../icons'
-import { Text } from './Text'
+import { PageHeader } from './PageHeader'
 import { Select } from './Select'
 import { Segmented } from './SegmentedControl'
 import { ROW_STATE } from './rowState'
@@ -11,7 +11,7 @@ export function PrPageContent({ children, ...props }: HTMLAttributes<HTMLDivElem
 }
 
 export function PrPageHeader({ workspace, options, onWorkspaceChange }: { workspace: string; options: { value: string; label: string }[]; onWorkspaceChange: (workspace: string) => void }): React.JSX.Element {
-  return <header className="grid gap-[var(--space-1)]"><div className="flex items-center gap-[var(--space-2)]"><Text as="h1" size="heading" weight="subhead" tone="primary" flush className="flex-1">Pull requests</Text><Select aria-label="Workspace" value={workspace} options={options} onChange={onWorkspaceChange} variant="property-field" prefix={<Icon glyph={IconFolder} role="small" />} /></div><Text as="p" size="ui" tone="secondary" flush>Open pull requests in this workspace’s repository, grouped by who has to act next.</Text></header>
+  return <PageHeader heading="Pull requests" description="Open pull requests in this workspace’s repository, grouped by who has to act next." actions={<Select aria-label="Workspace" value={workspace} options={options} onChange={onWorkspaceChange} variant="property-field" prefix={<Icon glyph={IconFolder} role="small" />} />} />
 }
 
 export function PrPageFilters({ query, onQueryChange, state, openCount, onStateChange }: { query: string; onQueryChange: (query: string) => void; state: 'open' | 'merged' | 'closed'; openCount: number | null; onStateChange: (state: 'open' | 'merged' | 'closed') => void }): React.JSX.Element {
