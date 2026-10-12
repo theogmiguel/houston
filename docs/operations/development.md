@@ -469,10 +469,10 @@ committed inventory and runs in its own `licence-inventory` job.
 |---|---|---|
 | `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | The twenty-six hermetic, sub-second text-search scripts above |
 | `renderer-checks` | every PR, and every push to `main` except a docs-only change | `ui`'s `bun run typecheck` and `bun run test` |
-| `core-checks` | every PR, and every push to `main` except a docs-only change | core formatting, Clippy, unit tests, protocol compatibility and correlated session creation regressions |
+| `core-checks` | every PR, and every push to `main` except a docs-only change | core formatting, Clippy, unit tests, protocol compatibility, correlated session creation and Bash/Zsh restored-agent regressions |
 | `linux-native-checks` | every PR, and every push to `main` except a docs-only change | fresh renderer assets and debug sidecars, native formatting, Clippy and tests with default and `bench` features; tests use an isolated keyring |
 | `windows-renderer-checks` | every PR, and every push to `main` except a docs-only change | renderer tests, typecheck, complexity, CSS and bundle gates on Windows 2022 |
-| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus protocol compatibility, subprocess deadlines, stalled SSH, Git, management, shutdown, environment, Tasks wire, non-ASCII/long-path ConPTY and orchestration worktree regressions on Windows 2022 |
+| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus protocol compatibility, Windows Claude hooks, subprocess deadlines, stalled SSH, Git, management, shutdown, environment, Tasks wire, non-ASCII/long-path ConPTY and orchestration worktree regressions on Windows 2022 |
 | `licence-inventory` | every PR, and every push to `main` except a docs-only change | regenerates `src-tauri/resources/third-party-licenses.json` and diffs it against the committed copy (`scripts/check-third-party-licenses.sh`) |
 
 The remaining integration suites in `core/houston-core/tests/`, graphical tests

@@ -129,8 +129,10 @@ const PANE_ROUTING: &str = concat!(
     "delegated task needs. Go down to `sonnet`, not below it: Claude Code cannot run auto mode ",
     "on `haiku`, so that spawn is refused rather than demoted to a pane that blocks on ",
     "approvals nobody is there to answer. ",
-    "A spawned pane starts in its CLI's AUTO mode — Claude's \"auto mode on\" — so it does not ",
-    "stop for routine approvals. Every actual permission wait goes to the parent first; deny or escalate, never approve.",
+    "A spawned pane defaults to its CLI's AUTO mode — Claude's \"auto mode on\" — so it does not ",
+    "stop for routine approvals. Explicit `auto_approve: true` selects Bypass regardless of ",
+    "the parent's launch mode; false selects Ask. Use the mode authorized by the operator ",
+    "for the task. Every actual permission wait goes to the parent first; deny or escalate, never approve.",
 );
 
 /// A pane that HAS a parent is told its end-of-turn obligation by the daemon,
@@ -893,7 +895,7 @@ impl OrchestrationTools {
                         "auto_approve": {
                             "type": "boolean",
                             "description":
-                                "Default Auto; true Bypass; false Ask. No parent approvals.",
+                                "Default Auto; true Bypass; false Ask, independently of parent mode. Use access authorized by the operator. No parent approvals.",
                         },
                         "profile": {
                             "type": "string",

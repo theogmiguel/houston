@@ -106,8 +106,8 @@ it off removes exactly what Houston added:
   Your other settings and hooks are preserved. Houston removes its old workspace entries
   from `.claude/settings.local.json` during migration to avoid duplicate events.
   Turn Claude off in Settings ▸ Agents ▸ Claude to remove its global entries;
-  the setting stays off across restarts. Claude status hook installation is unsupported
-  on Windows because these commands require POSIX `sh`.
+  the setting stays off across restarts. On Windows, Claude runs these commands through
+  Git Bash, so install Git for Windows before turning Claude on.
 - **Codex** — writes `~/.codex/hooks.json`, one entry per lifecycle event. An existing
   `notify` line in your `config.toml` is parked (commented out) rather than overwritten,
   and restored when you turn the hook off. If you add a replacement `notify` while

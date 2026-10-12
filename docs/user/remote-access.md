@@ -1,7 +1,7 @@
 # Remote access
 
 Remote access lets you follow and answer your panes from a phone or another computer. A
-paired device lists every pane with its reported status, panes that need you first, and
+paired device lists root agents and ordinary terminals with their reported status and
 shows each pane as a conversation: your prompts, the agent's replies, its tool steps, and
 the questions and permission requests it is waiting on, which you answer with a tap. The
 pane menu offers **View screen**, and you can type a message or press keys such as
@@ -35,6 +35,11 @@ An exited pane keeps its conversation until it is closed or respawned.
 Activity lists recent finished turns, requests that need you and answers across panes.
 Answers identify whether they came from the phone or the terminal. Like conversations,
 activity is kept only in memory while remote access is on and clears when it is turned off.
+
+The Panes grid, workspace filters and the Inbox's working and last-finished lists show
+root agents and ordinary terminals. Open an orchestrator to see and open its children,
+including children in separate worktrees. Child requests that need you still appear in
+the Inbox. Provider avatars show the provider alone; status appears beside them.
 
 ## Turn it on
 
