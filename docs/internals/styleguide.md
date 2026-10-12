@@ -312,10 +312,11 @@ Six values, in `ui/src/renderer/src/theme.css`:
 | `--tr-radius-card` | 12px | Cards |
 | `--tr-radius-pill` | 9999px | Full capsule |
 
-**The rule: rounded = a value, capsule = pressable.** A status pill, a tag, a count
-badge is a *value* and gets a rounded radius. A segmented group, a filter chip, a
-removable chip is *pressable* and gets the full capsule. Getting these backwards is
-why some interfaces have controls that don't read as controls.
+**The rule: rounded = a value, capsule = pressable.** For chip-sized plates, a status, tag or count is a value and uses
+`--tr-radius-sm`. A choice, filter, copy or removable chip is pressable and uses
+`--tr-radius-pill`. Clickable tags follow the pressable recipe; read-only tags keep
+the value recipe. Fields, menus, ordinary buttons and segmented controls retain the
+radii assigned to their roles in the table.
 
 For cards containing fields, use `--tr-radius-card` with `--space-2` padding and
 `--tr-radius-input` fields. The 1px border plus padding gives a 9px inset; the
@@ -566,11 +567,12 @@ controls means a full focus trap.
 
 ### Chips, badges and tiles
 
-`Chip` has five variants (`state`, `provider`, `count`, `compound`, `removable`) and
+`Chip` has six variants (`state`, `provider`, `count`, `compound`, `removable`, `choice`) and
 five tones: neutral plus the four status tones. Shell: 26px, `--space-2` padding,
 `small` type. Radius follows the meaning rule — `removable` or clickable → capsule,
-everything else → `--tr-radius-sm`. A selected chip may use `--accent-muted` and an
-accent border. A `count` chip distinguishes "no value yet" from a known zero —
+everything else → `--tr-radius-sm`. Choice controls are 28px; other chips are 26px.
+Selected pressable chips use the shared neutral row fill and a `--border-hover`
+border cue. A `count` chip distinguishes "no value yet" from a known zero —
 render an empty-set label, never a bare `0`, for the latter. `IconTile` comes in
 24/32/40px with six tones, including accent; its interactive variant adds a hover
 surface and a small active scale. A selected tile may also use `--accent-muted` and

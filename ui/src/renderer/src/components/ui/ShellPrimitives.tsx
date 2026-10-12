@@ -106,7 +106,7 @@ export const ShellBrowserRoot = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDi
 })
 
 export function ShellBranchCopyChip({ value, children }: { value: string; children: ReactNode }): React.JSX.Element {
-  return <CopyChip value={value} className="h-5 rounded-[var(--tr-radius-xs)] px-[var(--space-1-5)] font-mono [font-size:var(--tr-text-label-size)]">{children}</CopyChip>
+  return <CopyChip value={value} className="h-5 px-[var(--space-1-5)] font-mono [font-size:var(--tr-text-label-size)]">{children}</CopyChip>
 }
 
 export function ShellTaskDescriptionEditButton({ onClick }: { onClick: () => void }): React.JSX.Element {

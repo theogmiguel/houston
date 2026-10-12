@@ -1,3 +1,4 @@
+import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { SpinnerSpecimen } from '../src/components/ui/Spinner'
@@ -1026,6 +1027,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Launch preset outline">
           <LaunchPresetOutlineSpecimen />
         </SpecimenGroup>
+        <SpecimenGroup heading="Chip values and actions"><ChipShapeSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Composer menu rows"><ComposerPillMenuSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Launch slot card">
           <LaunchSlotCardSpecimen /><LaunchSlotCardSpecimen custom />

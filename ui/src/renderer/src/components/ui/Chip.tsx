@@ -56,8 +56,8 @@ function CountContent({ loading, count, emptySetLabel }: Pick<ChipProps, 'loadin
   return <span className="tabular-nums">{count}</span>
 }
 
-function choiceClass(selected: boolean): string {
-  return `btn min-h-[var(--h-ctl)] px-[var(--space-choice-x)] rounded-[var(--tr-radius-sm)] border ${selected ? 'border-[var(--border-hover)]' : 'border-[var(--border)]'} [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default disabled:opacity-60 disabled:pointer-events-none ${ROW_STATE[selected ? 'selected' : 'rest']}`
+function choiceClass(selected: boolean, isPressable: boolean): string {
+  return `btn min-h-[var(--h-ctl)] px-[var(--space-choice-x)] ${isPressable ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'} border ${selected ? 'border-[var(--border-hover)]' : 'border-[var(--border)]'} [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default disabled:opacity-60 disabled:pointer-events-none ${ROW_STATE[selected ? 'selected' : 'rest']}`
 }
 
 function pillClass(tone: ChipTone, isPressable: boolean, selected: boolean): string {
@@ -68,7 +68,7 @@ function pillClass(tone: ChipTone, isPressable: boolean, selected: boolean): str
 }
 
 function chipClass({ variant, tone, selected, disabled, isPressable }: { variant: ChipVariant; tone: ChipTone; selected: boolean; disabled: boolean; isPressable: boolean }): string {
-  const shape = variant === 'choice' ? choiceClass(selected) : pillClass(tone, isPressable, selected)
+  const shape = variant === 'choice' ? choiceClass(selected, isPressable) : pillClass(tone, isPressable, selected)
   return `${shape} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} focus-visible:outline-none ${FOCUS_HALO_CLS}`
 }
 

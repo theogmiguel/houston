@@ -2,7 +2,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
 import { variants } from './variants'
 
-const labelClasses = variants('px-1.5 rounded-[var(--tr-radius-pill)] border border-[var(--border)]', {
+const labelClasses = variants('px-1.5 rounded-[var(--tr-radius-sm)] border border-[var(--border)]', {
   selected: { false: 'text-[var(--text-muted)]', true: 'text-[var(--text-primary)]' }
 }, { selected: 'false' })
 

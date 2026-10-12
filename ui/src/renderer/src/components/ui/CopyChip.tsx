@@ -26,7 +26,7 @@ export function CopyChip({
   return (
     <button
       type="button"
-      className={`relative inline-flex max-w-full items-center gap-[var(--space-1-5)] rounded-[var(--tr-radius-sm)] bg-[var(--hover-fill)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-strong)] ${className}`}
+      className={`relative inline-flex max-w-full items-center gap-[var(--space-1-5)] rounded-[var(--tr-radius-pill)] bg-[var(--hover-fill)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-strong)] ${className}`}
       onClick={() => {
         void navigator.clipboard.writeText(value)
         setCopied(true)

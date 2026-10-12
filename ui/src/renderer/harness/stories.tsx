@@ -1,3 +1,4 @@
+import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
 import { LaunchSlotCardSpecimen } from '../src/components/ui/LaunchSlotCard'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
@@ -357,6 +358,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'orchestration/archived-results': () => <ArchivedResultsStory />,
   'orchestration/instruction-recovery': () => <InstructionRecoveryStory />,
   'ui-primitives/launch-fields-custom': () => <div className="p-6 max-w-[560px]"><LaunchSlotCardSpecimen custom /></div>,
+  'ui-primitives/chip-shapes': () => <ChipShapeSpecimen />,
   'ui-primitives/composer-menu': () => <div className="p-6"><ComposerPillMenuSpecimen /></div>,
   'ui-primitives/launch-fields': () => <div className="p-6 max-w-[560px]"><LaunchSlotCardSpecimen /></div>,
   'ui-primitives/row-states': () => <RowStateSpecimen />,
