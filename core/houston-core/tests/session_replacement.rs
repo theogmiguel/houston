@@ -184,6 +184,8 @@ fn replacement_storage_failures_preserve_the_original_and_owned_processes() {
         "BEFORE UPDATE OF launch_selections ON sessions WHEN NEW.id != 1",
         "BEFORE UPDATE OF approval_mode ON sessions WHEN NEW.id != 1",
         "BEFORE UPDATE OF resume_session_id ON sessions WHEN NEW.id != 1",
+        "BEFORE UPDATE OF resume_agent ON sessions WHEN NEW.id != 1",
+        "BEFORE UPDATE OF resume_cwd ON sessions WHEN NEW.id != 1",
         "BEFORE UPDATE OF transcript_path ON sessions WHEN NEW.id != 1",
         "BEFORE UPDATE OF parent_session ON delegations",
         "BEFORE UPDATE OF to_session ON pane_inbox",

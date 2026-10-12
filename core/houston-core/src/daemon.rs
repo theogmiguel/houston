@@ -1726,6 +1726,7 @@ pub struct Daemon {
     self_weak: Mutex<std::sync::Weak<Daemon>>,
     hook_state_lock: Mutex<()>,
     hook_drop_states: Mutex<HashMap<PathBuf, crate::hook_drop::DropDirState>>,
+    dirty_shell_cwds: Mutex<HashMap<u32, (String, u64)>>,
     hook_drop_watch: Arc<crate::fs_watch::MailWatchState>,
     _hook_drop_watcher: Mutex<Option<notify::RecommendedWatcher>>,
     port: Mutex<Option<u16>>,
@@ -3496,6 +3497,7 @@ impl Daemon {
             hook_state_lock: Mutex::new(()),
             port: Mutex::new(bound_port),
             hook_drop_states: Mutex::new(HashMap::new()),
+            dirty_shell_cwds: Mutex::new(HashMap::new()),
             hook_drop_watch: crate::fs_watch::MailWatchState::new(swarm_mail_wake),
             _hook_drop_watcher: Mutex::new(None),
             update_state: Mutex::new(proto::UpdateState::Unknown),
@@ -3516,6 +3518,7 @@ impl Daemon {
         if adopted.is_none() {
             daemon.close_delegations_lost_to_the_restart();
             daemon.reconcile_task_runs();
+            daemon.recover_root_hook_metadata()?;
             daemon.run_restore_policy(startup_cause);
             let live_sessions: Vec<u32> = daemon
                 .sessions
@@ -3570,6 +3573,44 @@ impl Daemon {
         }
         daemon.reap_reevaluate();
         Ok(daemon)
+    }
+
+    fn recover_root_hook_metadata(&self) -> Result<()> {
+        let candidates: HashSet<u32> = self.dead.lock().expect("dead lock").values()
+            .filter(|info| info.state == proto::SessionState::Interrupted)
+            .map(|info| info.id).collect();
+        if candidates.is_empty() { return Ok(()); }
+        for dir in self.hook_drop_dirs() {
+            let mut failure = None;
+            let out = crate::hook_drop::run_pass_with_name_io(
+                &dir, &mut crate::hook_drop::DropDirState::new(),
+                crate::hook_drop::now_ms(), crate::hook_drop::Pass::RecoveryMetadata,
+                |drop, _, order| {
+                    if !candidates.contains(&drop.session) {
+                        return crate::hook_drop::DropVerdict::NoSession;
+                    }
+                    let provider = drop.agent.as_deref()
+                        .map(crate::agent_hooks::provider_from_slug)
+                        .unwrap_or(Ok(proto::AgentKind::Claude));
+                    if let Ok(provider) = provider {
+                        if let Err(error) = self.db.record_root_hook_metadata(drop, provider, order, true) {
+                            failure = Some(error);
+                            return crate::hook_drop::DropVerdict::Retry;
+                        }
+                    }
+                    // Old session IDs retain no lifecycle/input effects after restart.
+                    crate::hook_drop::DropVerdict::Applied
+                },
+                |path| std::fs::remove_file(path),
+            );
+            if let Some(error) = failure { return Err(error.context("recovering root hook metadata before restore")); }
+            anyhow::ensure!(out.listed_ok, "hook metadata recovery could not fully list {}; restore refused", dir.display());
+        }
+        let mut dead = self.dead.lock().expect("dead lock");
+        for info in self.db.list_interrupted()? {
+            if dead.contains_key(&info.id) { dead.insert(info.id, info); }
+        }
+        Ok(())
     }
 
     fn run_restore_policy(self: &Arc<Self>, cause: StartupCause) {
@@ -3994,6 +4035,7 @@ impl Daemon {
     }
 
     pub fn checkpoint_scrollback(&self) -> Result<()> {
+        self.flush_shell_cwd_metadata()?;
         let _guard = self.checkpoint_lock.lock().expect("checkpoint lock");
         let ids: Vec<u32> = self
             .sessions
@@ -8055,7 +8097,7 @@ impl Daemon {
         }
         let mut recorded_cwd = None;
         let mut hook_cwd = s.hook_cwd.lock().expect("hook_cwd lock");
-        if let Some(cwd) = cwd {
+        if let Some(cwd) = cwd.filter(|_| crate::agent_events::names_root_conversation(provider, event)) {
             if Path::new(cwd).is_absolute() && Path::new(cwd).is_dir() {
                 *hook_cwd = Some(cwd.to_string());
                 recorded_cwd = Some(cwd.to_string());
@@ -8491,7 +8533,7 @@ impl Daemon {
                         hold,
                     )
                 });
-                info.resumable = matches!(self.db.session_resume_handle(info.id), Ok(Some(_)));
+                info.resumable = self.db.session_has_bound_resume_handle(info.id).unwrap_or(false);
                 info.compactions = self.compactions_of(info);
                 info.inbox_unread = self.db.inbox_pending_count(info.id).unwrap_or_else(|e| {
                     tracing::warn!("reading inbox_unread for session {}: {e}", info.id);
@@ -9447,6 +9489,16 @@ impl Daemon {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let recorded_cwd = cwd;
         let cwd = Self::respawn_cwd(cwd_override, &recorded_cwd, &project_dir);
+        let resume_provider = if agent == proto::AgentKind::Shell {
+            resume_agent.unwrap_or(agent)
+        } else {
+            agent
+        };
+        let binding_check = if handle.is_some() {
+            self.db.check_session_resume_binding(old_id, resume_provider, &cwd)
+        } else {
+            Ok(())
+        };
         let strict_resume = conversation == RespawnConversation::Wake;
         let restore_scrollback = conversation == RespawnConversation::Restore;
         if strict_resume && (handle.is_none() || acp.is_some()) {
@@ -9490,7 +9542,9 @@ impl Daemon {
             RespawnConversation::Fallback(notice) => (Vec::new(), handle, Some(notice)),
             RespawnConversation::Restore if !self.restore_resume() => (Vec::new(), handle, None),
             RespawnConversation::Resume | RespawnConversation::Wake | RespawnConversation::Restore => match &handle {
-                Some(h) if acp.is_none() => match if profile_changed && missing_profile.is_none() {
+                Some(h) if acp.is_none() => match if let Err(reason) = &binding_check {
+                    Err(reason.clone())
+                } else if profile_changed && missing_profile.is_none() {
                     Err(format!(
                         "agent profile {:?} configuration changed from {:?} to {:?}, so conversation {} is not resumed on another account",
                         profile_label.as_deref().unwrap_or("default"),
@@ -9501,7 +9555,7 @@ impl Daemon {
                 } else {
                     self.resume_check(
                         old_id,
-                        resume_agent.unwrap_or(agent),
+                        resume_provider,
                         h,
                         &recorded_cwd,
                         &cwd,
@@ -9541,7 +9595,8 @@ impl Daemon {
         };
         // A fresh launch in another conversation namespace cannot carry its old handle.
         let resume_handle = resume_handle.filter(|_| {
-            missing_profile.is_none() && !profile_changed && cwd == Path::new(&recorded_cwd)
+            binding_check.is_ok() && missing_profile.is_none() && !profile_changed
+                && cwd == Path::new(&recorded_cwd)
         });
         if agent != proto::AgentKind::Shell || !extra_args.is_empty() {
             if let Some(selections) = &launch_selections {
@@ -9715,6 +9770,7 @@ impl Daemon {
         missing_profile: Option<&str>,
     ) -> std::result::Result<Vec<String>, String> {
         let (conversation, transcript) = handle;
+        self.db.check_session_resume_binding(old_id, agent, cwd)?;
         let args = crate::launch::resume_args(agent, conversation).map_err(|e| format!("{e:#}"))?;
         if let Some(label) = missing_profile {
             return Err(format!(
@@ -9927,9 +9983,8 @@ impl Daemon {
         Ok(())
     }
 
-    /// Promotes the pane's current root conversation to its resume handle once that
-    /// conversation has a turn: a startup or `/clear` id without one has no transcript.
-    fn note_resume_turn(
+    /// Resolve the display label for the effective profile reported by a root turn.
+    fn note_resume_profile(
         &self,
         id: u32,
         session: &Session,
@@ -9987,62 +10042,6 @@ impl Daemon {
             if let Err(e) = self.db.set_session_profile_label(id, label.as_deref()) {
                 tracing::warn!("recording effective profile label for session {id}: {e:#}");
             }
-        }
-        let Some(conversation) = d.session_id.as_deref().filter(|c| !c.is_empty()) else {
-            return;
-        };
-        let resumable_agent = if session.info.agent == proto::AgentKind::Shell {
-            session
-                .detected
-                .lock()
-                .expect("detected lock")
-                .filter(|kind| *kind == provider)
-        } else {
-            (session.info.agent == provider).then_some(provider)
-        };
-        if !resumable_agent.is_some_and(crate::launch::resumes_conversations)
-            || crate::launch::resume_args(provider, conversation).is_err()
-        {
-            return;
-        }
-        let (transcript, current) = self
-            .transcript_links
-            .lock()
-            .expect("transcript links lock")
-            .get(&id)
-            .cloned()
-            .unwrap_or_default();
-        if current.as_deref() != Some(conversation) {
-            return;
-        }
-        match self.db.is_routine_run_session(id) {
-            Ok(false) => {}
-            Ok(true) => return,
-            Err(e) => {
-                tracing::warn!("checking whether session {id} is a routine run: {e:#}");
-                return;
-            }
-        }
-        let previous = self.db.session_resume_handle(id).unwrap_or_else(|e| {
-            tracing::warn!("reading session {id}'s resume handle: {e:#}");
-            None
-        });
-        let next = (conversation.to_string(), transcript);
-        if previous.as_ref() == Some(&next) {
-            return;
-        }
-        if let Err(e) = self
-            .db
-            .set_session_resume_handle(id, Some((&next.0, next.1.as_deref())))
-        {
-            tracing::warn!("recording session {id}'s resume handle: {e:#}");
-            return;
-        }
-        if previous.is_none() {
-            self.broadcast_control(&proto::ServerMsg::SessionResumable {
-                session: id,
-                resumable: true,
-            });
         }
     }
 
@@ -10236,7 +10235,23 @@ impl Daemon {
                 .expect("blocks lock")
                 .feed(raw_chunk, raw_offset);
             if let Some(cwd) = outcome.cwd {
-                *session.osc_cwd.lock().expect("osc_cwd lock") = Some(PathBuf::from(cwd));
+                let changed = {
+                    let mut current = session.osc_cwd.lock().expect("osc_cwd lock");
+                    if current.as_deref() == Some(Path::new(&cwd)) {
+                        false
+                    } else {
+                        *current = Some(PathBuf::from(&cwd));
+                        true
+                    }
+                };
+                if changed && session.info.agent == proto::AgentKind::Shell
+                    && cwd.len() <= 4096 && Path::new(&cwd).is_absolute() && Path::new(&cwd).is_dir()
+                {
+                    *session.hook_cwd.lock().expect("hook_cwd lock") = Some(cwd.clone());
+                    // Coalesce one dirty cwd per session; SQLite runs on the control path.
+                    self.dirty_shell_cwds.lock().expect("dirty shell cwd lock")
+                        .insert(id, (cwd, crate::hook_drop::now_ms()));
+                }
             }
             for block in outcome.completed {
                 let entry = LedgerEntry {
@@ -10347,8 +10362,13 @@ impl Daemon {
             .expect("sessions lock")
             .contains_key(&id);
         if changed && still_present {
+            let was_resumable = self.db.session_has_bound_resume_handle(id).unwrap_or(false);
             if let Err(e) = self.db.update_session_detected(id, kind) {
                 tracing::warn!("persisting detected agent of session {id}: {e}");
+            }
+            let resumable = self.db.session_has_bound_resume_handle(id).unwrap_or(false);
+            if was_resumable != resumable {
+                self.broadcast_control(&proto::ServerMsg::SessionResumable { session: id, resumable });
             }
             self.broadcast_control(&proto::ServerMsg::AgentDetected {
                 session: id,
@@ -14370,9 +14390,9 @@ impl Daemon {
     fn apply_hook_drop(
         self: &Arc<Self>,
         d: &crate::hook_drop::HookDrop,
-        receipt: Option<(&str, u64)>,
+        receipt: Option<(&str, crate::hook_drop::DropName)>,
     ) -> crate::hook_drop::DropVerdict {
-        if self.ensure_not_sleeping(d.session).is_err() {
+        if self.preserving_session(d.session) || self.ensure_not_sleeping(d.session).is_err() {
             return crate::hook_drop::DropVerdict::Retry;
         }
         if self.ensure_not_shell_restoring(d.session).is_err() {
@@ -14385,7 +14405,7 @@ impl Daemon {
             }
             Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
         });
-        if self.ensure_not_sleeping(d.session).is_err() {
+        if self.preserving_session(d.session) || self.ensure_not_sleeping(d.session).is_err() {
             return crate::hook_drop::DropVerdict::Retry;
         }
         if self.ensure_not_shell_restoring(d.session).is_err() {
@@ -14404,6 +14424,20 @@ impl Daemon {
                 }
             },
         };
+        if crate::agent_events::names_root_conversation(provider, &d.event)
+            && d.agent_id.is_none() && d.subagent_type.is_none()
+        {
+            if let Some((_, order)) = receipt {
+                match self.db.root_hook_is_newer(d.session, order) {
+                    Ok(false) => return crate::hook_drop::DropVerdict::Applied,
+                    Ok(true) => {}
+                    Err(error) => {
+                        tracing::warn!("checking hook metadata order for session {}: {error:#}", d.session);
+                        return crate::hook_drop::DropVerdict::Retry;
+                    }
+                }
+            }
+        }
         if provider == proto::AgentKind::Grok
             && d.event == "SessionEnd"
             && d.subagent_type.is_some()
@@ -14513,7 +14547,52 @@ impl Daemon {
             .get(&d.session)
             .cloned();
         if let Some(session) = session {
-            self.mark_detected(d.session, &session, provider);
+            let root = crate::agent_events::names_root_conversation(provider, &d.event)
+                && d.agent_id.is_none() && d.subagent_type.is_none();
+            let metadata_event = crate::launch::resumes_conversations(provider)
+                && matches!(crate::agent_events::AgentEvent::from_provider(provider, &d.event),
+                    Some(crate::agent_events::AgentEvent::SessionStarted
+                        | crate::agent_events::AgentEvent::PromptSubmitted
+                        | crate::agent_events::AgentEvent::TurnEnded));
+            if root && metadata_event {
+                if session.removed.load(Ordering::Acquire)
+                    || self.operator_ended.lock().expect("operator_ended lock").contains(&d.session)
+                {
+                    return crate::hook_drop::DropVerdict::Applied;
+                }
+                if let Some((_, order)) = receipt {
+                    match self.db.record_root_hook_metadata(d, provider, order, false) {
+                        Ok(Some(metadata)) => {
+                            *session.hook_cwd.lock().expect("hook_cwd lock") = Some(metadata.cwd);
+                            self.transcript_links.lock().expect("transcript links lock")
+                                .insert(d.session, (metadata.transcript_path, Some(metadata.conversation)));
+                            if metadata.resumable != metadata.was_resumable {
+                                self.broadcast_control(&proto::ServerMsg::SessionResumable {
+                                    session: d.session, resumable: metadata.resumable,
+                                });
+                            }
+                            self.mark_detected(d.session, &session, provider);
+                        }
+                        Ok(None) => {
+                            match self.db.root_hook_is_newer(d.session, order) {
+                                Ok(false) => return crate::hook_drop::DropVerdict::Applied,
+                                Ok(true) => self.mark_detected(d.session, &session, provider),
+                                Err(error) => {
+                                    tracing::warn!("checking root metadata order for session {}: {error:#}", d.session);
+                                    return crate::hook_drop::DropVerdict::Retry;
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!("recording root metadata for session {}: {error:#}", d.session);
+                            return crate::hook_drop::DropVerdict::Retry;
+                        }
+                    }
+                }
+            } else if root {
+                self.mark_detected(d.session, &session, provider);
+                self.note_transcript_link(d.session, provider, d);
+            }
             if matches!(d.event.as_str(), "SessionEnd")
                 && matches!(provider, proto::AgentKind::Codex | proto::AgentKind::Grok)
                 && d.agent_id.is_none()
@@ -14523,8 +14602,7 @@ impl Daemon {
             } else {
                 self.mark_running(d.session, &session, provider);
             }
-            self.note_transcript_link(d.session, provider, d);
-            self.note_resume_turn(d.session, &session, provider, d);
+            self.note_resume_profile(d.session, &session, provider, d);
             let restore = self.confirm_shell_resume(d.session, provider, d);
             if let Some(reservation) = restore {
                 drop(lifecycle.take());
@@ -14544,14 +14622,14 @@ impl Daemon {
                 if self.ensure_not_closing(d.session, "hook").is_err() {
                     return crate::hook_drop::DropVerdict::Retry;
                 }
-                if self.ensure_not_sleeping(d.session).is_err() {
+                if self.preserving_session(d.session) || self.ensure_not_sleeping(d.session).is_err() {
                     return crate::hook_drop::DropVerdict::Retry;
                 }
             }
             if crate::agent_events::compaction_event(provider) == Some(d.event.as_str())
                 && d.subagent_type.is_none()
                 && d.agent_id.is_none()
-                && !self.note_compaction(d.session, receipt)
+                && !self.note_compaction(d.session, receipt.map(|(identity, order)| (identity, order.ms)))
             {
                 return crate::hook_drop::DropVerdict::Retry;
             }
@@ -14608,7 +14686,7 @@ impl Daemon {
             }
         }
         if d.internal_prompt {
-            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return crate::hook_drop::DropVerdict::NoSession;
             }
             if let Some(ev) = crate::agent_events::AgentEvent::from_provider(provider, &d.event) {
@@ -14630,7 +14708,7 @@ impl Daemon {
             d.session,
             provider,
             &d.event,
-            d.cwd.as_deref(),
+            d.root_cwd(provider),
             ambiguous,
             d.prompt_id.as_deref(),
         );
@@ -14706,7 +14784,7 @@ impl Daemon {
                     repeated
                 };
                 if repeated {
-                    if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+                    if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                         return Some(crate::hook_drop::DropVerdict::NoSession);
                     }
                     tracing::debug!(
@@ -14749,7 +14827,7 @@ impl Daemon {
         };
         if provider == proto::AgentKind::Opencode {
             if let Some(kind) = opencode_input_kind {
-                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 let opens = matches!(
@@ -14816,7 +14894,7 @@ impl Daemon {
                     .get(&d.session)
                     .is_some_and(|episodes| episodes.open_count() > 0)
             {
-                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -14843,7 +14921,7 @@ impl Daemon {
         }
 
         if correlates && matches!(d.event.as_str(), "SubagentStart" | "SubagentStop") {
-            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             self.feed_subagent_evidence(d, now);
@@ -14851,7 +14929,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "PreToolUse" {
-            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let blocks = match provider {
@@ -14897,7 +14975,7 @@ impl Daemon {
         }
 
         if correlates && matches!(d.event.as_str(), "PostToolUse" | "PostToolUseFailure") {
-            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             // ZCode cancels its own hook runner with the turn, so an `is_interrupt` failure
@@ -15005,7 +15083,7 @@ impl Daemon {
                 }
             };
             if let Some(why) = held {
-                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 tracing::debug!(
@@ -15025,7 +15103,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "PermissionRequest" {
-            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
@@ -15073,7 +15151,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "PermissionDenied" {
-            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let resumed = self.resolve_permission_episodes(
@@ -15099,7 +15177,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "Elicitation" {
-            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
@@ -15123,7 +15201,7 @@ impl Daemon {
         }
 
         if correlates && d.event == "ElicitationResult" {
-            if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let resumed = self.resolve_permission_episodes(
@@ -15155,7 +15233,7 @@ impl Daemon {
                         "session {}: notification {kind:?} is not a block",
                         d.session
                     );
-                    if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+                    if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                         return Some(crate::hook_drop::DropVerdict::NoSession);
                     }
                     return Some(crate::hook_drop::DropVerdict::Applied);
@@ -15189,7 +15267,7 @@ impl Daemon {
             }
             if attached {
                 drop(episodes);
-                if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
+                if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
                 if waiting_permission {
@@ -15284,7 +15362,7 @@ impl Daemon {
                     d.session,
                     proto::AgentKind::Antigravity,
                     &d.event,
-                    d.cwd.as_deref(),
+                    None,
                 ) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
@@ -15303,7 +15381,7 @@ impl Daemon {
                 d.session,
                 proto::AgentKind::Antigravity,
                 &d.event,
-                d.cwd.as_deref(),
+                d.root_cwd(proto::AgentKind::Antigravity),
             ) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
@@ -15319,7 +15397,7 @@ impl Daemon {
                 d.session,
                 proto::AgentKind::Antigravity,
                 &d.event,
-                d.cwd.as_deref(),
+                d.root_cwd(proto::AgentKind::Antigravity),
             ) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
@@ -15341,7 +15419,7 @@ impl Daemon {
                     d.session,
                     proto::AgentKind::Antigravity,
                     &d.event,
-                    d.cwd.as_deref(),
+                    d.root_cwd(proto::AgentKind::Antigravity),
                 ) {
                     return Some(crate::hook_drop::DropVerdict::NoSession);
                 }
@@ -15384,7 +15462,7 @@ impl Daemon {
                 d.session,
                 proto::AgentKind::Antigravity,
                 &d.event,
-                d.cwd.as_deref(),
+                d.root_cwd(proto::AgentKind::Antigravity),
             ) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
@@ -15776,10 +15854,36 @@ impl Daemon {
         }
     }
 
+    /// Flush on the control path and at orderly checkpoints, never on PTY readers.
+    pub fn flush_shell_cwd_metadata(&self) -> Result<()> {
+        let pending = std::mem::take(&mut *self.dirty_shell_cwds.lock().expect("dirty shell cwd lock"));
+        let mut failure = None;
+        for (id, (cwd, observed)) in pending {
+            match self.db.record_shell_cwd(id, &cwd, observed) {
+                Ok(true) => self.broadcast_control(&proto::ServerMsg::SessionResumable {
+                    session: id, resumable: self.db.session_has_bound_resume_handle(id).unwrap_or(false),
+                }),
+                Ok(false) => {}
+                Err(error) => {
+                    self.dirty_shell_cwds.lock().expect("dirty shell cwd lock")
+                        .entry(id).and_modify(|current| {
+                            if current.1 < observed { *current = (cwd.clone(), observed); }
+                        }).or_insert((cwd, observed));
+                    failure = Some(error);
+                }
+            }
+        }
+        match failure { Some(error) => Err(error), None => Ok(()) }
+    }
+
     fn hook_drop_tick(self: &Arc<Self>, pass: crate::hook_drop::Pass) -> (usize, bool) {
         let Ok(_native_input) = self.native_input_mutation_guard() else {
             return (0, true);
         };
+        if let Err(error) = self.flush_shell_cwd_metadata() {
+            tracing::warn!("flushing shell cwd metadata before hooks: {error:#}");
+            return (0, false);
+        }
         let dirs = self.hook_drop_dirs();
         let mut states = self.hook_drop_states.lock().expect("hook_drop_states lock");
         states.retain(|dir, _| dirs.contains(dir));
@@ -15787,12 +15891,12 @@ impl Daemon {
         let (mut applied, mut all_listed) = (0usize, true);
         for dir in &dirs {
             let state = states.entry(dir.clone()).or_default();
-            let out = crate::hook_drop::run_pass_with_io(
+            let out = crate::hook_drop::run_pass_with_name_io(
                 dir,
                 state,
                 now,
                 pass,
-                |d, identity, event_ms| {
+                |d, identity, order| {
                     match self.db.hook_compaction_seen(identity) {
                         Ok(true) => return crate::hook_drop::DropVerdict::Applied,
                         Ok(false) => {}
@@ -15801,7 +15905,7 @@ impl Daemon {
                             return crate::hook_drop::DropVerdict::Retry;
                         }
                     }
-                    let verdict = self.apply_hook_drop(d, Some((identity, event_ms)));
+                    let verdict = self.apply_hook_drop(d, Some((identity, order)));
                     if verdict == crate::hook_drop::DropVerdict::Applied {
                         self.remote_feed_hook(d);
                     }

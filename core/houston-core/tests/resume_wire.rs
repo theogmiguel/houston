@@ -3136,3 +3136,129 @@ async fn restarting_in_another_existing_folder_discards_the_previous_conversatio
     assert_eq!(resume_of(&argv_of(&env, next.id).await), None);
     assert_eq!(handle_in(&env, next.id), None);
 }
+
+#[tokio::test]
+async fn undrained_root_metadata_is_recovered_before_restore_even_after_long_downtime() {
+    let env = setup().await;
+    let ws = project(&env, "backlog");
+    let conversation = uuid::Uuid::new_v4().to_string();
+    let path = transcript(&env, &conversation, b"{}\n");
+    seed_claude(&env, 41, &ws, &ws, None);
+    // This row and its drop predate the ordinary lifecycle TTL, as after a long reboot.
+    let sampled = houston_core::hook_drop::now_ms() - 2 * houston_core::hook_drop::MAX_AGE_MS;
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    conn.execute("UPDATE sessions SET created_at = ?1 WHERE id = 41", [sampled / 1000 - 1]).unwrap();
+    let drop = HookDrop {
+        session: 41, event: "UserPromptSubmit".into(), cwd: Some(ws.display().to_string()),
+        session_id: Some(conversation.clone()), transcript_path: Some(path.clone()),
+        prompt: Some("old prompt must not become a new task".into()),
+        last_message: Some("old message must not be replayed".into()),
+        ..HookDrop::default()
+    };
+    let pending = houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()), &drop, sampled,
+    ).unwrap();
+    let permission = HookDrop {
+        event: "PermissionRequest".into(), tool_use_id: Some("tool-old".into()),
+        permission_command: Some("old command".into()), ..drop.clone()
+    };
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()), &permission, sampled + 1,
+    ).unwrap();
+    clean_shutdown(&env);
+    let daemon = boot(&env);
+    let restored = restored_from(&daemon.list(), 41).clone();
+    assert_eq!(resume_of(&argv_of(&env, restored.id).await).as_deref(), Some(conversation.as_str()));
+    assert_eq!(handle_in(&env, restored.id), Some((conversation, Some(path))));
+    assert!(!pending.exists());
+    assert_ne!(restored.status, Some(proto::AgentStatus::NeedsInput));
+    assert_eq!(restored.latest_prompt, None);
+    assert_eq!(restored.last_agent_message, None);
+    assert_eq!(daemon.last_hook_message(restored.id), None);
+    daemon.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn an_unprompted_provider_switch_in_a_shell_cannot_reuse_the_previous_handle() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "switch");
+    let pane = shell_pane(&daemon, &ws);
+    let codex = uuid::Uuid::new_v4().to_string();
+    let claude = uuid::Uuid::new_v4().to_string();
+    let path = transcript(&env, &codex, b"{}\n");
+    let dir = houston_core::hook_drop::drop_dir(env.state.path());
+    let first = HookDrop {
+        session: pane.id, agent: Some("codex".into()), event: "UserPromptSubmit".into(),
+        cwd: Some(ws.display().to_string()), session_id: Some(codex.clone()),
+        transcript_path: Some(path), ..HookDrop::default()
+    };
+    houston_core::hook_drop::write_drop(&dir, &first, houston_core::hook_drop::now_ms()).unwrap();
+    assert_eq!(daemon.hook_drop_tick_for_test(), 1);
+    assert_eq!(handle_in(&env, pane.id).unwrap().0, codex);
+    let second = HookDrop {
+        agent: None, event: "SessionStart".into(), session_id: Some(claude),
+        transcript_path: None, ..first
+    };
+    // The timestamp is sampled after the first hook is applied, like a new CLI start.
+    tokio::time::sleep(Duration::from_millis(2)).await;
+    houston_core::hook_drop::write_drop(&dir, &second, houston_core::hook_drop::now_ms()).unwrap();
+    assert_eq!(daemon.hook_drop_tick_for_test(), 1);
+    assert_eq!(daemon.list().into_iter().find(|info| info.id == pane.id).unwrap().detected_agent, Some(proto::AgentKind::Claude));
+    assert_eq!(handle_in(&env, pane.id).unwrap().0, codex);
+    let db = Db::open(&env.db_path()).unwrap();
+    let refusal = db.check_session_resume_binding(pane.id, proto::AgentKind::Claude, &ws).unwrap_err();
+    assert!(refusal.contains("belongs to codex"), "{refusal}");
+    assert!(!db.session_has_bound_resume_handle(pane.id).unwrap());
+    daemon.close(pane.id).unwrap();
+}
+
+#[tokio::test]
+async fn a_subagent_hook_cannot_move_the_root_cwd_or_resume_binding() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "root");
+    let other = project(&env, "subagent");
+    let (pane, conversation, path) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    let root_handle = handle_in(&env, pane.id);
+    let drop = HookDrop {
+        session: pane.id, event: "SubagentStop".into(), cwd: Some(other.display().to_string()),
+        session_id: Some(uuid::Uuid::new_v4().to_string()), agent_id: Some("agent-child".into()),
+        transcript_path: Some(path), ..HookDrop::default()
+    };
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()), &drop, houston_core::hook_drop::now_ms(),
+    ).unwrap();
+    assert_eq!(daemon.hook_drop_tick_for_test(), 1);
+    assert_eq!(daemon.last_hook_cwd(pane.id).as_deref(), ws.to_str());
+    assert_eq!(handle_in(&env, pane.id), root_handle);
+    assert_eq!(native_in(&env, pane.id).as_deref(), Some(conversation.as_str()));
+    daemon.close(pane.id).unwrap();
+}
+
+#[tokio::test]
+async fn an_incompatible_shell_handle_is_never_rebound_during_fresh_restore() {
+    for resume_enabled in [false, true] {
+        let env = setup().await;
+        let daemon = boot(&env);
+        let first_dir = project(&env, "bound-shell-first");
+        let next_dir = project(&env, "bound-shell-next");
+        let shell = shell_pane(&daemon, &first_dir);
+        let first = uuid::Uuid::new_v4().to_string();
+        let path = transcript(&env, &first, b"first conversation turn\n");
+        hook(&env, &daemon, shell.id, "UserPromptSubmit", PROMPT, &first, &path, &first_dir).await;
+        let next = uuid::Uuid::new_v4().to_string();
+        let next_path = transcript(&env, &next, b"unprompted startup\n");
+        hook(&env, &daemon, shell.id, "SessionStart", START, &next, &next_path, &next_dir).await;
+        assert_eq!(handle_in(&env, shell.id).unwrap().0, first);
+        daemon.set_restore_resume(resume_enabled).unwrap();
+        let after = reboot(&env, &daemon);
+        let restored = restored_from(&after.list(), shell.id).clone();
+        assert_eq!(restored.cwd, next_dir.display().to_string());
+        assert_eq!(handle_in(&env, restored.id), None,
+            "a fresh launch must not stamp the old folder's handle with the new folder binding");
+        assert!(!restored.resumable);
+        after.close(restored.id).unwrap();
+        daemon.close(shell.id).unwrap();
+    }
+}

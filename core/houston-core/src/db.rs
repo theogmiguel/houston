@@ -24,6 +24,8 @@ pub use intake::{
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
 mod remote;
+mod resume_metadata;
+pub use resume_metadata::RootHookMetadata;
 mod task_trackers;
 pub use remote::RemoteDeviceRow;
 mod tasks;
@@ -1736,6 +1738,25 @@ impl Db {
             "resume_transcript_path",
             "resume_transcript_path TEXT",
         )?;
+        let binding_tx = conn.unchecked_transaction()?;
+        let has_resume_binding: bool = binding_tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('sessions') WHERE name = 'resume_agent')",
+            [], |row| row.get(0),
+        )?;
+        add_column_if_missing(&binding_tx, "sessions", "resume_agent", "resume_agent TEXT")?;
+        add_column_if_missing(&binding_tx, "sessions", "resume_cwd", "resume_cwd TEXT")?;
+        add_column_if_missing(&binding_tx, "sessions", "root_hook_ms", "root_hook_ms INTEGER")?;
+        add_column_if_missing(&binding_tx, "sessions", "root_hook_seq", "root_hook_seq INTEGER")?;
+        if !has_resume_binding {
+            // Fixed-provider rows retain their existing recorded namespace. A shell
+            // can host several providers, so its historical handle stays unbound.
+            binding_tx.execute(
+                "UPDATE sessions SET resume_agent = agent, resume_cwd = cwd
+                 WHERE resume_session_id IS NOT NULL AND agent IN ('claude', 'codex', 'zcode')",
+                [],
+            )?;
+        }
+        binding_tx.commit()?;
         add_column_if_missing(&conn, "sessions", "latest_prompt", "latest_prompt TEXT")?;
         add_column_if_missing(
             &conn,
@@ -2533,9 +2554,17 @@ impl Db {
             rusqlite::params![info.id, profile, metadata.command_override],
         )?;
         Self::set_session_launch_selections_on(&tx, info.id, metadata.launch_selections)?;
+        let resume_provider = metadata.resume_handle.and_then(|_| {
+            if info.agent == proto::AgentKind::Shell {
+                info.detected_agent
+            } else {
+                Some(info.agent)
+            }
+        });
         tx.execute(
             "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3,
-                    transcript_path = ?4, native_session_id = ?5, detected_agent = ?6
+                    transcript_path = ?4, native_session_id = ?5, detected_agent = ?6,
+                    resume_agent = ?7, resume_cwd = ?8
              WHERE id = ?1",
             rusqlite::params![
                 info.id,
@@ -2547,13 +2576,16 @@ impl Db {
                     .map(|agent| serde_json::to_string(&agent))
                     .transpose()?
                     .map(|agent| agent.trim_matches('"').to_string()),
+                resume_provider.map(crate::agent_hooks::provider_slug),
+                metadata.resume_handle.map(|_| info.cwd.as_str()),
             ],
         )?;
         if let Some((old, now)) = metadata.replacement {
             Self::delegation_rebind_on(&tx, old, info.id, info.spawned_by, now)?;
             let retired = tx.execute(
                 "UPDATE sessions SET state = 'closed', resume_session_id = NULL,
-                        resume_transcript_path = NULL WHERE id = ?1 AND state != 'closed'",
+                        resume_transcript_path = NULL, resume_agent = NULL, resume_cwd = NULL
+                 WHERE id = ?1 AND state != 'closed'",
                 [old],
             )?;
             anyhow::ensure!(
@@ -2733,7 +2765,12 @@ impl Db {
     pub fn update_session_detected(&self, id: u32, agent: proto::AgentKind) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         let n = conn.execute(
-            "UPDATE sessions SET detected_agent = ?2 WHERE id = ?1",
+            "UPDATE sessions SET detected_agent = ?2,
+                transcript_path = CASE WHEN agent = 'shell' AND detected_agent IS NOT ?2 THEN NULL ELSE transcript_path END,
+                native_session_id = CASE WHEN agent = 'shell' AND detected_agent IS NOT ?2 THEN NULL ELSE native_session_id END,
+                profile_config_dir = CASE WHEN agent = 'shell' AND detected_agent IS NOT ?2 THEN NULL ELSE profile_config_dir END,
+                profile_label = CASE WHEN agent = 'shell' AND detected_agent IS NOT ?2 THEN NULL ELSE profile_label END
+             WHERE id = ?1",
             rusqlite::params![id, serde_json::to_string(&agent)?.trim_matches('"')],
         )?;
         if n == 0 {
@@ -2859,7 +2896,9 @@ impl Db {
     ) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3 WHERE id = ?1",
+            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3,
+                resume_agent = CASE WHEN ?2 IS NULL THEN NULL WHEN agent = 'shell' THEN detected_agent ELSE agent END,
+                resume_cwd = CASE WHEN ?2 IS NULL THEN NULL ELSE cwd END WHERE id = ?1",
             rusqlite::params![id, handle.map(|h| h.0), handle.and_then(|h| h.1)],
         )?;
         Ok(())
