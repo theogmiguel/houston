@@ -1,3 +1,4 @@
+import { ROW_STATE } from './rowState'
 import { FOCUS_HALO_CLS } from './shadowChrome'
 import './prs.css'
 
@@ -91,8 +92,9 @@ export const PRS_CLASSES = {
   PRS_CHECK_CHEVRON: 'text-[var(--text-muted)] transition-transform duration-150',
   PRS_ROTATE: 'transition-transform duration-150',
   PRS_ROTATE_CLOSED: '-rotate-90',
-  PRS_PR_ROW: 'group flex w-full min-w-0 cursor-pointer items-center rounded-[var(--tr-radius-button)] px-3 py-[10px] text-left transition-colors duration-150 hover:bg-[var(--hover-fill)]',
-  PRS_PR_ROW_SELECTED: 'prs-pr-row-selected',
+  PRS_PR_ROW: 'group flex w-full min-w-0 cursor-pointer items-center rounded-[var(--tr-radius-button)] px-3 py-[10px] text-left',
+  PRS_PR_ROW_SELECTED: ROW_STATE.selected,
+  PRS_PR_ROW_REST: ROW_STATE.rest,
   PRS_PR_STATE: 'relative prs-mr-2 prs-mt-nudge w-4 shrink-0',
   PRS_PR_STATE_MERGED: 'text-[color-mix(in_srgb,var(--accent)_60%,var(--stop))]',
   PRS_PR_STATE_CLOSED: 'text-[var(--text-muted)]',

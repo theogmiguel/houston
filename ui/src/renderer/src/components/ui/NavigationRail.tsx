@@ -1,3 +1,4 @@
+import { ROW_STATE } from './rowState'
 import { useMascotPrefs } from '../../mascot/mascotPrefs'
 import { MASCOT_FILTERS } from '../../mascot/mascotColors'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
@@ -36,7 +37,7 @@ export function NavigationRailSearch({ paletteChord, onClick }: { paletteChord?:
 }
 
 export function NavigationRailItem({ icon, label, selected = false, trailing, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { icon: IconComponent; label: string; selected?: boolean; trailing?: ReactNode }): React.JSX.Element {
-  return <button {...props} type="button" aria-current={selected ? 'page' : undefined} className={`btn flex w-full items-center gap-[9px] h-[var(--h-row)] px-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 ${selected ? 'bg-selected-fill text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)]'} [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-nav-weight)] tracking-[-0.01em] text-left hover:bg-hover-fill hover:text-[var(--text-primary)]`}><span className={`flex flex-none ${selected ? 'text-[var(--accent)]' : 'text-[var(--text-faint)]'}`}><Icon glyph={icon} role="ui" /></span><span className="min-w-0 truncate">{label}</span>{trailing && <span className="ml-auto">{trailing}</span>}</button>
+  return <button {...props} type="button" aria-current={selected ? 'page' : undefined} className={`btn flex w-full items-center gap-[9px] h-[var(--h-row)] px-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 ${ROW_STATE[selected ? 'selected' : 'rest']} [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-nav-weight)] tracking-[-0.01em] text-left`}><span className={`flex flex-none ${selected ? 'text-[var(--text-primary)]' : 'text-[var(--text-faint)]'}`}><Icon glyph={icon} role="ui" /></span><span className="min-w-0 truncate">{label}</span>{trailing && <span className="ml-auto">{trailing}</span>}</button>
 }
 
 export function NavigationRailSpecimen(): React.JSX.Element {

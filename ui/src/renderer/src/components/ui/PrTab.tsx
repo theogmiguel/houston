@@ -1,3 +1,4 @@
+import { ROW_STATE } from './rowState'
 import * as React from 'react'
 import type { JSX } from 'react'
 import './floatingSurface.css'
@@ -155,5 +156,6 @@ export function PrTab<T extends React.ElementType>({
   const activeStates = [...(state ? [state] : []), ...states]
   const modifier = activeStates.map((value) => ` ${STATE_CLASSES[value] ?? (value.startsWith('is-') ? value : `is-${value}`)}`).join('')
   const className = enabled ? `${SURFACE_CLASSES[surface]}${modifier}${baseClass ? ` ${baseClass}` : ''}` : baseClass
-  return React.createElement(as, { ...props, className })
+  const rowState = surface === 'pr-code-action' || surface === 'pr-code-tree-item' ? ROW_STATE[(props as React.ButtonHTMLAttributes<HTMLButtonElement>)['aria-pressed'] === true ? 'selected' : 'rest'] : ''
+  return React.createElement(as, { ...props, className: `${className} ${rowState}` })
 }

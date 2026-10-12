@@ -1105,15 +1105,8 @@
   padding: var(--space-1) var(--space-2);
   border: 0;
   border-radius: var(--tr-radius-sm);
-  background: none;
-  color: var(--text-primary);
   font: inherit;
   text-align: left;
-}
-.ctxmenu.files-context .ctx-item:hover,
-.ctxmenu.files-context .ctx-item:focus-visible {
-  background: var(--hover-fill);
-  color: var(--text-primary);
 }
 .ctxmenu.files-context .ctx-item > svg:first-child {
   color: var(--text-muted);

@@ -1,3 +1,4 @@
+import { ROW_STATE } from './rowState'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import './floatingSurface.css'
 
@@ -11,7 +12,7 @@ export function GitToolMenuSection({ children }: { children: ReactNode }): React
 }
 
 export function GitToolMenuItem({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
-  return <button {...props} type="button" role="menuitem" className="flex items-center gap-2 w-full text-left px-2.5 py-1.5 text-[length:var(--tr-text-sm)] bg-transparent border-0 text-[var(--text-secondary)] enabled:hover:bg-[var(--card-hover)] disabled:opacity-45 disabled:cursor-not-allowed whitespace-nowrap">{children}</button>
+  return <button {...props} type="button" role="menuitem" className={`flex items-center gap-2 w-full text-left px-2.5 py-1.5 text-[length:var(--tr-text-sm)] border-0 disabled:opacity-45 disabled:cursor-not-allowed whitespace-nowrap disabled:hover:bg-transparent ${ROW_STATE.rest}`}>{children}</button>
 }
 
 export function GitToolMenuSeparator(): React.JSX.Element {

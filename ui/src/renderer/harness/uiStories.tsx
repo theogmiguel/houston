@@ -1,3 +1,4 @@
+import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { SpinnerSpecimen } from '../src/components/ui/Spinner'
 import { OrchestrationContentSpecimen } from '../src/components/ui/OrchestrationContent'
 import { ChildPaneLayoutSpecimen } from '../src/components/ui/ChildPaneLayout'
@@ -596,6 +597,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </SpecimenRow>
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Row states"><RowStateSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Settings navigation and scope">
           <SpecimenRow>
             <SettingsRailRow kind="section" icon={IconTerminal} label="Terminal" selected />

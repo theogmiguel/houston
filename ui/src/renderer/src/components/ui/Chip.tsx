@@ -1,3 +1,4 @@
+import { ROW_STATE } from './rowState'
 import { IconClose } from '../icons'
 import { FOCUS_HALO_CLS } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
@@ -56,14 +57,14 @@ function CountContent({ loading, count, emptySetLabel }: Pick<ChipProps, 'loadin
 }
 
 function choiceClass(selected: boolean): string {
-  return `btn min-h-[var(--h-ctl)] px-[var(--space-choice-x)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default disabled:opacity-60 ${selected ? 'bg-[var(--selected-fill)] font-semibold text-[var(--text-primary)]' : 'bg-[var(--hover-fill)] font-medium text-[var(--text-secondary)] hover:not-disabled:bg-[var(--selected-fill)] hover:not-disabled:text-[var(--text-primary)]'}`
+  return `btn min-h-[var(--h-ctl)] px-[var(--space-choice-x)] rounded-[var(--tr-radius-sm)] border ${selected ? 'border-[var(--border-hover)]' : 'border-[var(--border)]'} [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default disabled:opacity-60 disabled:pointer-events-none ${ROW_STATE[selected ? 'selected' : 'rest']}`
 }
 
 function pillClass(tone: ChipTone, isPressable: boolean, selected: boolean): string {
   const shapeRadius = isPressable ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'
-  const press = isPressable ? 'cursor-pointer hover:bg-[var(--surface-hover)] active:scale-[0.96]' : ''
-  const pressed = selected ? 'border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--text-primary)]' : ''
-  return `inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-pill)] max-w-full px-[var(--space-2)] border text-[length:var(--tr-text-small-size)] font-medium leading-[var(--tr-text-small-leading)] ${shapeRadius} ${TONE_CLASS[tone]} ${press} ${pressed}`
+  const press = isPressable ? 'cursor-pointer active:scale-[0.96]' : ''
+  const paint = isPressable ? `${ROW_STATE[selected ? 'selected' : 'rest']} ${selected ? 'border-[var(--border-hover)]' : 'border-[var(--border)]'}` : TONE_CLASS[tone]
+  return `inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-pill)] max-w-full px-[var(--space-2)] border text-[length:var(--tr-text-small-size)] font-medium leading-[var(--tr-text-small-leading)] ${shapeRadius} ${paint} ${press}`
 }
 
 function chipClass({ variant, tone, selected, disabled, isPressable }: { variant: ChipVariant; tone: ChipTone; selected: boolean; disabled: boolean; isPressable: boolean }): string {

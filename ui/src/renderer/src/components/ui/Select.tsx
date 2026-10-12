@@ -1,3 +1,4 @@
+import { ROW_HIGHLIGHT } from './rowState'
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { useNativeOverlaySuppression } from '../../layout/nativeSuppression'
 import { IconCheck, IconChevronDown } from '../icons'
@@ -322,8 +323,8 @@ export function Select({
                       o.disabled
                         ? 'opacity-45 cursor-not-allowed text-[var(--text-muted)]'
                         : i === active
-                          ? 'bg-[var(--surface-hover)] text-[var(--text-primary)]'
-                          : 'text-[var(--text-secondary)]'
+                          ? ROW_HIGHLIGHT.selected
+                          : ROW_HIGHLIGHT.rest
                     }`}
                   >
                     {}

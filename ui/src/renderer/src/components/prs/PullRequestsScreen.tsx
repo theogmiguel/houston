@@ -111,7 +111,8 @@ function PrRow({
     <div
       role="button"
       tabIndex={0}
-      className={`${PRS_CLASSES.PRS_PR_ROW} ${selected ? PRS_CLASSES.PRS_PR_ROW_SELECTED : ''}`}
+      className={`${PRS_CLASSES.PRS_PR_ROW} ${selected ? PRS_CLASSES.PRS_PR_ROW_SELECTED : PRS_CLASSES.PRS_PR_ROW_REST}`}
+      aria-current={selected ? 'true' : undefined}
       data-testid={`pr-row-${item.number}`}
       onClick={onOpen}
       onKeyDown={(event) => {

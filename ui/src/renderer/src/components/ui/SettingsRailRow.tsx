@@ -1,15 +1,16 @@
+import { ROW_STATE } from './rowState'
 import type { ButtonHTMLAttributes, ComponentType } from 'react'
 import type { IconProps } from '../icons'
 import { variants } from './variants'
 
 const rowClasses = variants(
-  'treerow relative flex w-full items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 text-left hover:bg-hover-fill hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-focus)]',
+  'treerow relative flex w-full items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-focus)]',
   {
     kind: {
       section: 'h-[var(--h-row)] px-[var(--space-2)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)]',
       search: 'min-h-10 items-start px-[var(--space-2)] py-[var(--space-1-5)] [font-size:var(--tr-text-small-size)]'
     },
-    selected: { true: 'bg-selected-fill text-[var(--text-primary)]', false: 'bg-transparent text-[var(--text-secondary)]' }
+    selected: { true: ROW_STATE.selected, false: ROW_STATE.rest }
   },
   { kind: 'section', selected: 'false' }
 )
@@ -48,7 +49,7 @@ export function SettingsRailRow({
       <Icon className={`h-[14px] w-[14px] flex-none ${selected ? 'text-[var(--text-primary)]' : 'text-[var(--text-faint)]'}`} />
       {kind === 'search' ? (
         <span className="min-w-0 flex-1 grid gap-[var(--space-1)]">
-          <span className="block truncate text-[var(--text-primary)]">{label}</span>
+          <span className="block truncate">{label}</span>
           <span className="block text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">{subtitle}</span>
         </span>
       ) : <span className="min-w-0 flex-1 truncate">{label}</span>}

@@ -70,7 +70,8 @@ describe('PullRequestsScreen', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('pr-row-42'))
-    expect(screen.getByTestId('pr-row-42').className).toContain('prs-pr-row-selected')
+    expect(screen.getByTestId('pr-row-42').className).toContain('bg-selected-fill')
+    expect(screen.getByTestId('pr-row-42').getAttribute('aria-current')).toBe('true')
     expect(screen.getByTestId('pr-screen-detail')).toBeTruthy()
     expect(screen.getByTestId('pull-requests-screen')).toBeTruthy()
     fireEvent.click(screen.getByTestId('pr-screen-detail').querySelector('.panel-tab-close')!)
