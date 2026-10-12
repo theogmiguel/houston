@@ -5,7 +5,7 @@ import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 
-export type ChipVariant = 'state' | 'provider' | 'count' | 'compound' | 'removable' | 'choice'
+export type ChipVariant = 'state' | 'provider' | 'count' | 'compound' | 'removable' | 'choice' | 'label'
 export type ChipTone = 'default' | 'info' | 'success' | 'warning' | 'danger'
 
 export interface ChipProps {
@@ -68,6 +68,7 @@ function pillClass(tone: ChipTone, isPressable: boolean, selected: boolean): str
 }
 
 function chipClass({ variant, tone, selected, disabled, isPressable }: { variant: ChipVariant; tone: ChipTone; selected: boolean; disabled: boolean; isPressable: boolean }): string {
+  if (variant === 'label') return 'inline-flex flex-none items-center rounded-[var(--tr-radius-input)] border border-[var(--border)] px-[var(--space-1-5)] text-[length:var(--tr-text-label-size)] font-normal text-[var(--text-muted)]'
   const shape = variant === 'choice' ? choiceClass(selected, isPressable) : pillClass(tone, isPressable, selected)
   return `${shape} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} focus-visible:outline-none ${FOCUS_HALO_CLS}`
 }

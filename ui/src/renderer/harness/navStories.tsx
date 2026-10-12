@@ -84,11 +84,11 @@ export function NavRoutines({ selectedRoutineId = 1, setup = false, report = fal
     ...Array.from({ length: 27 }, (_, index) => run(27 - index, 'ok', new Date(2026, 8, 30 - index, 2).getTime(), 13 + index))
   ]
   const routines = [
-    routine({ id: 1, kind: 'harness_review', name: 'Weekly review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW - 120_000, last_run_at_ms: NOW - 60_000 }),
-    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000, workspace_id: '/home/dev/code/finex' }),
+    routine({ id: 1, kind: 'harness_review', name: 'Weekly review', model: 'sonnet', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: new Date(2026, 9, 5, 9).getTime(), last_run_at_ms: NOW - 3 * 60_000, last_run_session_id: 42 }),
+    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: new Date(2026, 9, 4, 2).getTime(), workspace_id: '/home/dev/code/finex' }),
     routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: new Date(2026, 9, 9, 17).getTime(), last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok', workspace_id: '/home/dev/code/houston' }),
     routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: null, next_run_at_ms: NOW + 7 * 24 * 3600_000 }),
-    ...(!setup ? [routine({ id: 5, kind: 'harness_review', name: 'Weekly review', workspace_id: '/home/dev/code/finex', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] } })] : [])
+    ...(!setup ? [routine({ id: 5, kind: 'harness_review', name: 'Weekly review', workspace_id: '/home/dev/code/finex', next_run_at_ms: new Date(2026, 9, 5, 9).getTime(), cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] } })] : [])
   ]
   const client = React.useMemo(() => {
     const handlers = new Map<string, Set<(message: ServerMsg) => void>>()
@@ -100,7 +100,8 @@ export function NavRoutines({ selectedRoutineId = 1, setup = false, report = fal
       },
       harnessState: (workspace: string) => emit({ type: 'harness_state', workspace, routine: routines.find((item) => item.kind === 'harness_review' && item.workspace_id === workspace) ?? null,
         reviews: workspace === '/home/dev/code/houston' ? [{ id: 8, workspace, routine_id: 1, run_id: 8, session_id: 42, status: 'running', started_at_ms: NOW - 3 * 60_000, sessions: null, finding_count: 0, run_dir: `${workspace}/.houston/harness/r8` },
-          { id: 7, workspace, routine_id: 1, run_id: 7, status: 'published', started_at_ms: NOW - 7 * 24 * 3600_000, sessions: 38, finding_count: 3, run_dir: `${workspace}/.houston/harness/r7`, summary: '3 repeated mistakes to address' }] : [],
+          { id: 7, workspace, routine_id: 1, run_id: 7, status: 'published', started_at_ms: new Date(2026, 8, 28, 9).getTime(), sessions: 38, finding_count: 3, run_dir: `${workspace}/.houston/harness/r7`, summary: 'Repeated mistakes to address' },
+          { id: 6, workspace, routine_id: 1, run_id: 6, status: 'published', started_at_ms: new Date(2026, 8, 21, 9).getTime(), sessions: 41, finding_count: 2, run_dir: `${workspace}/.houston/harness/r6` }] : [],
         findings: [], models: [], provider_coverage: [], engine_refusals: ENGINE_REFUSALS }),
       harnessReport: (reviewId: number) => emit({ type: 'harness_report', review_id: reviewId, markdown: '# Weekly review\n\n38 sessions reviewed. Three repeated mistakes are ready for triage in Tasks.', truncated: false }),
       harnessRoutineCreate: noop

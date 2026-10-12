@@ -70,9 +70,10 @@ describe('Routines page', () => {
       { ...routine(3, 'My review'), prompt: '[houston harness review] a user prompt' }
     ], workspaces: [{ id: '/a', name: 'A' }, { id: '/b', name: 'B' }], selectedRoutineId: 3 }))
     const sections = screen.getAllByTestId('list-detail-section')
-    expect(sections.map((node) => node.textContent)).toEqual(['Built in2', 'Yours1'])
-    expect(screen.getByText('Weekly review · A')).toBeTruthy()
-    expect(screen.getByText('Weekly review · B')).toBeTruthy()
+    expect(sections.map((node) => node.textContent)).toEqual(['Built in', 'Yours'])
+    expect(screen.getAllByText('Weekly review')).toHaveLength(2)
+    expect(screen.getByText('Daily 09:00 · A')).toBeTruthy()
+    expect(screen.getByText('Daily 09:00 · B')).toBeTruthy()
   })
   it("Runs on disables an engine the routine's access refuses and offers it once the access allows it", async () => {
     const isolated = { ...routine(2), permission_mode: 'bypass_permissions' as const, isolate: true }

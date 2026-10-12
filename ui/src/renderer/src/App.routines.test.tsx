@@ -91,14 +91,14 @@ describe('App — Routines wiring', () => {
     expect(container.textContent).toContain('Schedule')
   })
 
-  it('a run in flight shows the Working status', async () => {
+  it('a run in flight shows the Running status', async () => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
     await openRoutines(container)
     act(() => deliverControl({ type: 'routines', running: [1], routines: [routine()], engine_refusals: [] }))
-    await waitFor(() => container.textContent?.includes('Working') ?? false)
-    expect(container.textContent).toContain('Working')
+    await waitFor(() => container.textContent?.includes('Running') ?? false)
+    expect(container.textContent).toContain('Running')
   })
 
   it('loads a routine\'s history and opens the delivered run pane', async () => {
@@ -129,8 +129,8 @@ describe('App — Routines wiring', () => {
         run: run({ id: 6, status: 'running', ended_at_ms: null })
       })
     )
-    await waitFor(() => container.textContent?.includes('Working') ?? false)
+    await waitFor(() => container.textContent?.includes('Running') ?? false)
     expect(container.querySelectorAll('[data-testid="table-row"]')).toHaveLength(1)
-    expect(container.textContent).toContain('Working')
+    expect(container.textContent).toContain('Running')
   })
 })

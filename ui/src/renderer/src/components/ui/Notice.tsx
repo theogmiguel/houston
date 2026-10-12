@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react'
 import { Icon } from './Icon'
 import { IconAlertTriangle, IconInfo } from '../icons'
+import { StatusLabel } from './StatusLabel'
+import { Text } from './Text'
 import { Button } from './Button'
 
 export type NoticeTone = 'info' | 'warn' | 'danger'
 
 export interface NoticeProps {
   tone: NoticeTone
-  variant?: 'default' | 'callout'
+  variant?: 'default' | 'callout' | 'routine'
   indicator?: 'icon' | 'dot'
   children: ReactNode
   action?: { label: string; onClick: () => void }
@@ -23,6 +25,7 @@ const TONE_CLS: Record<NoticeTone, string> = {
 }
 
 export function Notice({ tone, variant = 'default', indicator = 'icon', children, action, className = '', inset = 'none', 'data-testid': testId }: NoticeProps): React.JSX.Element {
+  if (variant === 'routine') return <RoutineNotice action={action}>{children}</RoutineNotice>
   const icon = tone === 'info' ? IconInfo : IconAlertTriangle
   const callout = variant === 'callout'
   return (
@@ -32,4 +35,11 @@ export function Notice({ tone, variant = 'default', indicator = 'icon', children
       {action && <Button size="sm" variant="ghost" onClick={action.onClick}>{action.label}</Button>}
     </div>
   )
+}
+
+function RoutineNotice({ children, action }: { children: ReactNode; action?: NoticeProps['action'] }): React.JSX.Element {
+  return <div role="status" className="flex min-w-0 flex-wrap items-center gap-[var(--space-3)] rounded-[var(--tr-radius-sm)] bg-[color-mix(in_srgb,var(--info)_10%,transparent)] px-[var(--space-3)] py-[var(--space-2)]">
+    <StatusLabel status="Running" size="small" /><Text size="small" tone="secondary" className="min-w-0 flex-1">{children}</Text>
+    {action && <Button variant="muted-link" size="sm" onClick={action.onClick}>{action.label}</Button>}
+  </div>
 }

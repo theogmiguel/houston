@@ -4,8 +4,9 @@ import type { HoustonClient } from '../../houston/client'
 import { WeeklyReviewDetail, WeeklyReviewSetup } from './WeeklyReviewDetail'
 import { Text } from '../ui'
 import { IconClock, IconPlus } from '../icons'
-import { scheduleFields } from './harnessFormat'
-import { formatRoutineError, nextUpTimeLabel } from './routineFormat'
+import { ListDetailMeta } from '../ui/ListDetail'
+import { scheduleFields, scheduleLabel } from './harnessFormat'
+import { formatRoutineError, nextUpTimeLabel, formatCadence } from './routineFormat'
 import { RoutineEditor, type RoutineFormValue } from './RoutineEditor'
 import type {
   Routine,
@@ -31,10 +32,10 @@ export function sortRoutines(routines: Routine[]): Routine[] {
 type Panel = { mode: 'create' } | { mode: 'edit'; routine: Routine } | { mode: 'review-setup'; workspace: RoutineWorkspaceOption } | null
 
 function routineStatus(routine: Routine, running: boolean, waiting: boolean, now: number): React.JSX.Element {
-  if (running) return <StatusLabel status="Working" />
-  if (waiting) return <StatusLabel status="Waiting for a slot" />
-  if (!routine.enabled) return <StatusLabel status="Paused" />
-  return <span className="flex min-w-0 items-center gap-[var(--space-2)]"><StatusLabel status="Idle" /><span className="truncate">{nextUpTimeLabel(routine.next_run_at_ms, now)}</span></span>
+  if (running) return <StatusLabel status="Running" size="small" />
+  if (waiting) return <StatusLabel status="Waiting for a slot" size="small" />
+  if (!routine.enabled) return <StatusLabel status="Paused" size="small" />
+  return <StatusLabel status="Idle" size="small">{`Next ${nextUpTimeLabel(routine.next_run_at_ms, now)}`}</StatusLabel>
 }
 
 export function RoutinesSurface(props: {
@@ -77,14 +78,15 @@ export function RoutinesSurface(props: {
   const routineItems: Array<ListDetailItem & { routine: Routine | null; setupWorkspace?: RoutineWorkspaceOption }> = sortRoutines(routines).map((routine) => ({
     id: String(routine.id),
     section: routine.kind === 'harness_review' ? 'Built in' : 'Yours',
-    title: <>{routine.kind === 'harness_review' ? 'Weekly review' : routine.name}{routine.workspace_id ? ` · ${workspaceById.get(routine.workspace_id)?.name ?? routine.workspace_id}` : ''}</>,
-    sub: routineStatus(routine, running.includes(routine.id), slotsFull && waitingIds.has(routine.id), now),
+    title: routine.kind === 'harness_review' ? 'Weekly review' : routine.name,
+    subLayout: 'full-width',
+    sub: <ListDetailMeta left={routineMeta(routine, routine.workspace_id ? workspaceById.get(routine.workspace_id)?.name ?? routine.workspace_id : null)} right={routineStatus(routine, running.includes(routine.id), slotsFull && waitingIds.has(routine.id), now)} />,
     routine
   }))
   const setupItems = client ? workspaces.filter((workspace) => !routines.some((routine) => routine.kind === 'harness_review' && routine.workspace_id === workspace.id)).map((workspace) => ({
-    id: `setup:${workspace.id}`, section: 'Built in', title: `Weekly review · ${workspace.name}`,
-    sub: <Text size="small" tone="muted">Not set up</Text>, routine: null, setupWorkspace: workspace,
-    right: <Button variant="link" size="sm" data-testid={`review-setup-${workspace.id}`} onClick={() => { onDismissError(); setPanel({ mode: 'review-setup', workspace }) }}>Set up Weekly review</Button>
+    id: `setup:${workspace.id}`, section: 'Built in', title: 'Weekly review',
+    sub: <Text size="small" tone="muted">{workspace.name} · Not set up</Text>, routine: null, setupWorkspace: workspace,
+    right: <Button variant="muted-link" size="sm" data-testid={`review-setup-${workspace.id}`} onClick={() => { onDismissError(); setPanel({ mode: 'review-setup', workspace }) }}>Set up Weekly review</Button>
   })) : []
   const items = [...routineItems.filter((item) => item.section === 'Built in'), ...setupItems, ...routineItems.filter((item) => item.section === 'Yours')]
   const selected = items.find((item) => item.id === selectedId)?.routine ?? null
@@ -206,6 +208,7 @@ export function RoutinesSurface(props: {
       {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
       <ListDetail
         items={items}
+        sectionStyle="plain"
         selectedId={selectedId}
         onSelect={selectRoutine}
         backLabel="Routines"
@@ -256,4 +259,10 @@ export function RoutinesSurface(props: {
 const EMPTY_DRAFT = {
   name: '', prompt: '', workspaceId: null, permissionMode: 'accept_edits' as const,
   isolate: false, cadence: { type: 'interval' as const, seconds: 900 }
+}
+
+function routineMeta(routine: Routine, workspaceName: string | null): string {
+  const cadence = !routine.enabled ? 'Paused' : routine.kind === 'harness_review' ? scheduleLabel(routine) : formatCadence(routine.cadence)
+  const label = cadence.charAt(0).toUpperCase() + cadence.slice(1)
+  return `${label}${workspaceName ? ` · ${workspaceName}` : ''}`
 }

@@ -24,6 +24,7 @@ import { ChildPaneLayoutSpecimen } from '../src/components/ui/ChildPaneLayout'
 import { MascotDockSlot } from '../src/components/ui/MascotDockSlot'
 import { MascotArtSpecimen } from '../src/components/ui/MascotArt'
 import { MascotRigSpecimen } from '../src/components/ui/MascotRig'
+import { ListDetailMeta } from '../src/components/ui/ListDetail'
 import { IconSparkles } from '../src/components/icons'
 import React, { useState } from 'react'
 import { DiffEmptyState } from '../src/components/ui/Diff'
@@ -429,10 +430,10 @@ const breakdownRows = [
 ]
 
 const routineItems = [
-  { id: 'harness', title: 'Harness review · houston', sub: 'Working' },
-  { id: 'nightly', title: 'Nightly dependency check', sub: 'Waiting for a slot' },
-  { id: 'weekly', title: 'Weekly changelog draft', sub: 'Idle · Fri 17:00' },
-  { id: 'flaky', title: 'Flaky test sweep', sub: 'Paused' }
+  { id: 'harness', title: 'Weekly review', section: 'Built in', subLayout: 'full-width' as const, sub: <ListDetailMeta left="Mondays 09:00 · Houston" right={<StatusLabel status="Running" />} /> },
+  { id: 'nightly', title: 'Nightly dependency check', section: 'Yours', subLayout: 'full-width' as const, sub: <ListDetailMeta left="Daily 02:00 · finex" right={<StatusLabel status="Waiting for a slot" />} /> },
+  { id: 'weekly', title: 'Weekly changelog draft', section: 'Yours', subLayout: 'full-width' as const, sub: <ListDetailMeta left="Fridays 17:00 · Houston" right={<StatusLabel status="Idle">Next Fri 17:00</StatusLabel>} /> },
+  { id: 'flaky', title: 'Flaky test sweep', section: 'Yours', subLayout: 'full-width' as const, sub: <ListDetailMeta left="Paused" right={<StatusLabel status="Paused" />} /> }
 ]
 const sectionedItems = [
   { id: 'hou-45', title: 'Rename Harness review to Harness', sub: 'Needs input · HOU-45', section: 'Your turn' },
@@ -1065,7 +1066,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <LaunchPresetOutlineSpecimen />
         </SpecimenGroup>
         <SpecimenGroup heading="Action glyphs"><VerbGlyphSpecimen /></SpecimenGroup>
-        <SpecimenGroup heading="Chip values and actions"><ChipShapeSpecimen /></SpecimenGroup>
+        <SpecimenGroup heading="Chip values and actions"><ChipShapeSpecimen />
+          <Chip variant="label" label="Built in" /></SpecimenGroup>
         <SpecimenGroup heading="Composer menu rows"><ComposerPillMenuSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Launch slot card">
           <LaunchSlotCardSpecimen /><LaunchSlotCardSpecimen custom />
@@ -1205,8 +1207,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
             routine={{ kind: 'harness_review', id: 2, name: 'Weekly review', prompt: 'Review sessions', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}
             heading="Weekly review"
             description={<Text size="small" tone="secondary">Sessions in Houston since the previous review.</Text>}
-            scheduleControl={<Select aria-label="Review schedule" value="weekly" options={[{ value: 'off', label: 'Only when I run it' }, { value: 'weekly', label: 'Mondays 09:00' }, { value: 'daily', label: 'Daily 09:00' }]} onChange={noop} />}
-            history={<div className="grid gap-[var(--space-2)]"><SectionHead title="Recent runs" /><Card><Card.Row heading="38 sessions" meta="3 findings" action={<Button variant="link" size="sm">Open report</Button>} /></Card></div>}
+            activity={<Notice tone="info" variant="routine" action={{ label: 'Open pane', onClick: noop }}>Reading sessions in Houston · started 3 min ago in a background pane</Notice>}
+            settings={<Card layout="fields" shape="card"><Card.Field label="Schedule"><Segmented aria-label="Review schedule" value="weekly" options={[{ value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }, { value: 'off', label: 'Only when I run it' }]} /><Text size="small" tone="muted">Mondays at 09:00</Text></Card.Field><Card.Field label="Reads">Sessions in Houston since the previous review.</Card.Field><Card.Field label="Runs with"><Text>Claude Code</Text><Button variant="muted-link">Change</Button></Card.Field><Card.Field label="Enabled"><Toggle on onChange={noop} aria-label="Weekly review enabled" /></Card.Field></Card>}
+            history={<div className="grid gap-[var(--space-2)]"><SectionHead variant="sentence" title="Recent runs" /><Card><Card.Row heading="Mon Oct 6 · 38 sessions" meta="3 findings" action={<Button variant="muted-link" size="sm">Open report</Button>} /></Card></div>}
             runsLoading={false} now={Date.now()} running={false} pending={false} atLimit={null}
             onRunNow={noop} onToggleEnabled={noop} onEdit={noop} onDelete={noop} onUpdateSchedule={noop} onUpdateEngine={noop} onOpenSession={noop}
           />
@@ -1426,6 +1429,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <PageFrame width="wide" className="p-0">
             <ListDetail
               items={routineItems}
+              sectionStyle="plain"
               selectedId={selectedRoutine}
               onSelect={setSelectedRoutine}
               backLabel="Back to routines"

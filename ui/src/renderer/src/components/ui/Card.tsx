@@ -28,7 +28,7 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   shape?: 'button' | 'md' | 'card' | 'inset'
   padding?: 'none' | 'page' | 'md' | 'sm' | 'invocation' | 'note' | 'roomy'
   className?: string
-  layout?: 'default' | 'center-stack' | 'sleeping-session' | 'scrolling-copy'
+  layout?: 'default' | 'center-stack' | 'sleeping-session' | 'scrolling-copy' | 'fields'
 }
 
 export interface CardContentProps {
@@ -87,6 +87,7 @@ function CardRow({ heading, meta, status, action, rail, compact = false, classNa
 function CardBase({ children, tone = 'default', shape = 'button', padding = 'none', disabled = false, borderStyle = 'solid', clip = true, className = '', layout = 'default', ...props }: CardProps): React.JSX.Element {
   const layoutClass = {
     default: '',
+    fields: '@container',
     'center-stack': 'flex flex-col items-center gap-[var(--space-4)]',
     'sleeping-session': 'mx-auto grid w-full max-w-[70ch] gap-[var(--space-2)] text-center',
     'scrolling-copy': 'max-h-[16rem] overflow-auto whitespace-pre-wrap text-left'
@@ -102,4 +103,11 @@ function CardGroup({ children, rail }: CardGroupProps): React.JSX.Element {
   return <section className={`grid gap-[var(--space-1)] ${rail ? railClasses({ rail }) : ''}`}>{children}</section>
 }
 
-export const Card = Object.assign(CardBase, { Row: CardRow, Content: CardContent, Group: CardGroup })
+function CardField({ label, children }: { label: ReactNode; children: ReactNode }): React.JSX.Element {
+  return <div className="grid grid-cols-1 items-center gap-[var(--space-2)] px-[var(--space-4)] py-[var(--space-2-5)] [&+&]:border-t [&+&]:border-[var(--divider)] [@container_(min-width:560px)]:grid-cols-[140px_minmax(0,1fr)]">
+    <Text size="small" tone="muted">{label}</Text>
+    <div className="flex min-w-0 flex-wrap items-center gap-[var(--space-2)]">{children}</div>
+  </div>
+}
+
+export const Card = Object.assign(CardBase, { Row: CardRow, Content: CardContent, Group: CardGroup, Field: CardField })

@@ -1,5 +1,6 @@
-import { Chip, Text, Button, Field, Notice, SectionHead, Segmented, Select, StatusLabel, Table, type TableColumn } from './index'
+import { Card, Chip, Button, Notice, SectionHead, Segmented, Select, StatusLabel, Table, type TableColumn } from './index'
 import { ActionMenu } from './ActionMenu'
+import { IconPlay } from '../icons'
 import { Toggle } from './settingsPrimitives'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { Routine, RoutineRun } from '../../houston/routineTypes'
@@ -31,7 +32,7 @@ function cadenceFor(choice: Exclude<ScheduleChoice, 'manual'>, routine: Routine)
 
 function runResult(run: RoutineRun): React.JSX.Element {
   const state = run.status === 'running'
-    ? 'Working'
+    ? 'Running'
     : run.status === 'ok'
       ? 'Done'
       : 'Failed'
@@ -67,13 +68,17 @@ export function RoutineDetail({
   heading,
   description,
   scheduleControl,
-  history
+  history,
+  settings,
+  activity
 }: {
   routine: Routine
   heading?: string
   description?: React.ReactNode
   scheduleControl?: React.ReactElement
   history?: React.ReactNode
+  settings?: React.ReactNode
+  activity?: React.ReactNode
   engineRefusals?: readonly RoutineEngineRefusal[]
   runs?: RoutineRun[]
   runsLoading: boolean
@@ -99,43 +104,11 @@ export function RoutineDetail({
 
   return (
     <div className="grid min-w-0 gap-[var(--space-3)]" data-testid="routine-detail">
-      <div className="flex min-w-0 items-center gap-[var(--space-2)]">
-        <h2 className="m-0 min-w-0 flex-1 truncate text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] text-[var(--text-primary)]">{displayName}</h2>
-        {routine.kind === 'harness_review' && <Chip variant="state" label="Built in" />}
-        <Button variant="secondary" size="sm" data-testid="routine-run-now" disabled={running || pending} onClick={onRunNow}>{pending ? 'Starting…' : 'Run now'}</Button>
-        <Toggle on={routine.enabled} onChange={onToggleEnabled} data-testid="routine-enabled" aria-label={`Enable ${displayName}`} />
-        <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: onEdit }, { label: 'Delete', onSelect: onDelete, tone: 'danger' }]} />
-      </div>
-      {description}
+      <RoutineDetailHeader routine={routine} displayName={displayName} description={description} running={running} pending={pending} onRunNow={onRunNow} onEdit={onEdit} onDelete={onDelete} />
+      {activity}
       {atLimit && <Notice tone="warn" className="w-full"><span data-testid="routine-limit-notice">{atLimit.running} of {atLimit.limit} running. Routines run {atLimit.limit} at a time (Settings › Routines).</span></Notice>}
-      <div className="grid grid-cols-1 gap-[var(--space-3)] [@container_(min-width:560px)]:grid-cols-2">
-        <Field label="Schedule">
-          {scheduleControl ?? <Segmented
-            aria-label="Schedule"
-            value={scheduleChoice(routine)}
-            onChange={(value) => {
-              if (value !== 'manual') onUpdateSchedule(cadenceFor(value, routine))
-            }}
-            options={[
-              { value: 'manual', label: 'Manual', disabled: true },
-              { value: 'daily', label: 'Daily' },
-              { value: 'weekly', label: 'Weekly' }
-            ]}
-          />}
-        </Field>
-        <div className="grid gap-[var(--space-1)]"><Field label={routine.kind === 'harness_review' ? 'Runs with' : 'Runs on'} hint="Only agents that can run unattended are listed.">
-          <Select
-            aria-label={routine.kind === 'harness_review' ? 'Runs with' : 'Runs on'}
-            data-testid="routine-detail-engine"
-            value={routine.engine}
-            options={routineEngineOptions(engineRefusals, routine.permission_mode, "Change the routine's access with Edit first.")}
-            onChange={(value) => onUpdateEngine(value as AgentKind)}
-            width="full"
-          />
-        </Field>
-          {routine.kind === 'harness_review' && <Text size="small" mono>{routine.model ?? "The provider's default"}</Text>}
-        </div>
-      </div>
+      {settings ?? <RoutineSettings routine={routine} engineRefusals={engineRefusals} scheduleControl={scheduleControl}
+        onUpdateSchedule={onUpdateSchedule} onUpdateEngine={onUpdateEngine} onToggleEnabled={onToggleEnabled} displayName={displayName} />}
       {history ?? <>
         <SectionHead title="Runs" count={runs?.length ?? 0} />
         {runsLoading ? <p role="status" className="m-0 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">Loading runs…</p> : (
@@ -154,4 +127,43 @@ export function RoutineDetail({
       <span className="sr-only">Current schedule: {formatCadence(routine.cadence)}.</span>
     </div>
   )
+}
+
+function RoutineDetailHeader({ routine, displayName, description, running, pending, onRunNow, onEdit, onDelete }: {
+  routine: Routine
+  displayName: string
+  description?: React.ReactNode
+  running: boolean
+  pending: boolean
+  onRunNow: () => void
+  onEdit: () => void
+  onDelete: () => void
+}): React.JSX.Element {
+  return <header data-testid="routine-detail-header" className="flex min-w-0 items-start gap-[var(--space-3)]">
+    <div className="grid min-w-0 flex-1 gap-[var(--space-1)]">
+      <div className="flex min-w-0 items-center gap-[var(--space-1-5)]">
+        <h2 className="m-0 min-w-0 truncate text-[length:var(--tr-text-subhead-size)] font-[var(--tr-text-subhead-weight)] tracking-[var(--tr-text-subhead-tracking)] text-[var(--text-primary)]">{displayName}</h2>
+        {routine.kind === 'harness_review' && <Chip variant="label" label="Built in" />}
+      </div>
+      {description}
+    </div>
+    <Button variant="secondary" icon={IconPlay} data-testid="routine-run-now" disabled={running || pending} onClick={onRunNow} className="flex-none">{pending ? 'Starting…' : 'Run now'}</Button>
+    <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: onEdit }, { label: 'Delete', onSelect: onDelete, tone: 'danger' }]} />
+  </header>
+}
+
+function RoutineSettings({ routine, displayName, engineRefusals, scheduleControl, onUpdateSchedule, onUpdateEngine, onToggleEnabled }: {
+  routine: Routine
+  displayName: string
+  engineRefusals: readonly RoutineEngineRefusal[]
+  scheduleControl?: React.ReactElement
+  onUpdateSchedule: (cadence: Routine['cadence']) => void
+  onUpdateEngine: (engine: AgentKind) => void
+  onToggleEnabled: () => void
+}): React.JSX.Element {
+  return <Card layout="fields" shape="card" role="group" aria-label="Routine settings">
+    <Card.Field label="Schedule">{scheduleControl ?? <Segmented aria-label="Schedule" value={scheduleChoice(routine)} onChange={(value) => { if (value !== 'manual') onUpdateSchedule(cadenceFor(value, routine)) }} options={[{ value: 'manual', label: 'Manual', disabled: true }, { value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }]} />}</Card.Field>
+    <Card.Field label="Runs on"><Select aria-label="Runs on" data-testid="routine-detail-engine" value={routine.engine} options={routineEngineOptions(engineRefusals, routine.permission_mode, "Change the routine's access with Edit first.")} onChange={(value) => onUpdateEngine(value as AgentKind)} width="full" /></Card.Field>
+    <Card.Field label="Enabled"><Toggle on={routine.enabled} onChange={onToggleEnabled} data-testid="routine-enabled" aria-label={`Enable ${displayName}`} /></Card.Field>
+  </Card>
 }

@@ -1,4 +1,5 @@
 export const STATUS_LABELS = [
+  'Running',
   'Working',
   'Needs input',
   'Asked orchestrator',
@@ -31,6 +32,7 @@ export const STATUS_LABELS = [
 export type StatusLabelValue = (typeof STATUS_LABELS)[number]
 
 const STATUS_DOT: Record<StatusLabelValue, string> = {
+  Running: 'var(--info)',
   Working: 'var(--info)',
   'Needs input': 'var(--warn)',
   'Asked orchestrator': 'var(--text-muted)',
@@ -63,7 +65,11 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
 const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {
   Off: 'text-[var(--text-muted)]',
   On: 'text-[var(--ok)]',
-  Connected: 'text-[var(--ok)]'
+  Connected: 'text-[var(--ok)]',
+  Running: 'text-[var(--info)]',
+  'Waiting for a slot': 'text-[var(--warn)]',
+  Paused: 'text-[var(--text-muted)]',
+  Idle: 'text-[var(--text-muted)]'
 }
 
 type PillTone = 'waiting' | 'failed' | 'done' | 'working' | 'unknown'
@@ -82,7 +88,7 @@ export function StatusLabel({ status, size = 'ui', variant = 'default', tone = '
   if (variant === 'pill') return <span className={`${PILL_CLASS} ${PILL_TONE[tone]}`}>{children ?? status}</span>
   const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off' || status === 'Kept'
   return (
-    <span role={variant === 'dot' ? 'img' : undefined} aria-label={status} className={`inline-flex items-center gap-[var(--space-1-5)] ${STATUS_TEXT[status] ?? 'text-[var(--text-secondary)]'} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
+    <span role={variant === 'dot' ? 'img' : undefined} aria-label={typeof children === 'string' ? children : status} className={`inline-flex items-center gap-[var(--space-1-5)] ${STATUS_TEXT[status] ?? 'text-[var(--text-secondary)]'} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
       <span
         aria-hidden="true"
         className="agent-dot h-[var(--space-1-5)] w-[var(--space-1-5)] flex-none rounded-full"
@@ -90,7 +96,7 @@ export function StatusLabel({ status, size = 'ui', variant = 'default', tone = '
           ? { backgroundColor: 'transparent', border: '1px solid var(--text-faint)' }
           : { backgroundColor: STATUS_DOT[status] }}
       />
-      {variant === 'default' && status}
+      {variant === 'default' && (children ?? status)}
     </span>
   )
 }

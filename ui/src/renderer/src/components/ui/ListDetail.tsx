@@ -8,7 +8,8 @@ export interface ListDetailItem {
   title: ReactNode
   sub?: ReactNode
   right?: ReactNode
-  /** Consecutive items sharing a section render under one counted heading. */
+  subLayout?: 'default' | 'full-width'
+  /** Consecutive items sharing a section render under one heading. */
   section?: string
 }
 
@@ -21,6 +22,7 @@ export interface ListDetailProps<T extends ListDetailItem> {
   listFoot?: ReactNode
   /** Items in this section render after `listFoot`, which then heads them in place of a section heading. */
   footSection?: string
+  sectionStyle?: 'counted' | 'plain'
   backLabel: string
   renderDetail: (item: T | null) => ReactNode
   className?: string
@@ -34,6 +36,7 @@ export function ListDetail<T extends ListDetailItem>({
   listEmpty,
   listFoot,
   footSection,
+  sectionStyle = 'counted',
   backLabel,
   renderDetail,
   className = ''
@@ -118,7 +121,7 @@ export function ListDetail<T extends ListDetailItem>({
             const section = item.section !== leading[index - 1]?.section ? item.section : undefined
             return (
               <Fragment key={item.id}>
-                {section !== undefined && <div data-testid="list-detail-section" className={`px-[var(--space-2-5)] pb-[var(--space-0-5)] ${index === 0 ? 'pt-[var(--space-1)]' : 'pt-[var(--space-3)]'}`}><SectionHead title={section} count={sectionCounts.get(section)} /></div>}
+                {section !== undefined && <div data-testid="list-detail-section" className={`px-[var(--space-2-5)] pb-[var(--space-0-5)] ${index === 0 ? 'pt-[var(--space-1)]' : 'pt-[var(--space-3)]'}`}><SectionHead title={section} variant={sectionStyle === 'plain' ? 'sentence' : 'label'} tone="muted" count={sectionStyle === 'plain' ? undefined : sectionCounts.get(section)} /></div>}
                 {row(item)}
               </Fragment>
             )
@@ -156,9 +159,13 @@ function ListDetailRow({ item, selected, itemRef, onSelect, onKeyDown }: {
         className={`btn min-w-0 flex-1 grid grid-cols-1 justify-items-start gap-[var(--space-1)] rounded-[var(--tr-radius-sm)] border-0 bg-transparent py-[var(--space-2)] pl-[var(--space-2-5)] text-left ${item.right ? 'pr-[var(--space-1)]' : 'pr-[var(--space-2-5)]'}`}
       >
         <span className="block max-w-full truncate text-[length:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)]">{item.title}</span>
-        {item.sub && <span className="block max-w-full truncate text-[length:var(--tr-text-small-size)] font-[var(--tr-text-small-weight)] text-[var(--text-muted)]">{item.sub}</span>}
+        {item.sub && <span className={`block max-w-full truncate text-[length:var(--tr-text-small-size)] font-[var(--tr-text-small-weight)] text-[var(--text-muted)] ${item.subLayout === 'full-width' ? 'w-full' : ''}`}>{item.sub}</span>}
       </button>
       {item.right && <span className="flex-none pr-[var(--space-2-5)]">{item.right}</span>}
     </div>
   )
+}
+
+export function ListDetailMeta({ left, right }: { left: ReactNode; right: ReactNode }): React.JSX.Element {
+  return <span className="flex w-full min-w-0 items-center justify-between gap-[var(--space-2)]"><span className="min-w-0 truncate">{left}</span><span className="flex-none">{right}</span></span>
 }
