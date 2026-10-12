@@ -2,7 +2,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { PAGE_COLUMN_CLS, PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
 import { variants } from './variants'
 
-export type PageWidth = 'form' | 'wide' | 'settings' | 'settingsWide'
+export type PageWidth = 'form' | 'wide' | 'settings' | 'settingsWide' | 'settingsForm'
 
 const frameClasses = variants(
   'grid w-full content-start',
@@ -11,6 +11,8 @@ const frameClasses = variants(
       form: PAGE_COLUMN_CLS,
       wide: PAGE_COLUMN_WIDE_CLS,
       settings: 'max-w-[896px]',
+      // A 760px settings form plus the two space-6 gutters.
+      settingsForm: 'max-w-[808px]',
       settingsWide: 'max-w-[1024px]'
     },
     scroll: { true: 'overflow-y-auto', false: '' },

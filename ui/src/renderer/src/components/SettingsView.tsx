@@ -21,7 +21,7 @@ import type { McpSyncResult } from '../houston/generated/McpSyncResult'
 import { useSettingsSection } from '../settingsNav'
 import type { SettingsSectionId } from '../settingsSections'
 import { consumeSettingsRowJump } from '../settingsRowJump'
-import { PageFrame } from './ui/PageFrame'
+import { PageFrame, type PageWidth } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
 import { AppearanceSection } from './settings/AppearanceSection'
@@ -459,6 +459,11 @@ function NotificationsSlot(props: NotificationsSlotProps): React.JSX.Element | n
   )
 }
 
+function settingsPageWidth(section: SettingsSectionId): PageWidth {
+  if (section === 'remote') return 'settingsForm'
+  return SETTINGS_SECTIONS.find((entry) => entry.id === section)?.width === 'wide' ? 'wide' : 'settings'
+}
+
 export function SettingsView(props: Props): React.JSX.Element {
   const section = useSettingsSection()
   const terminalLineHeight = props.terminalLineHeight ?? TERMINAL_LINE_HEIGHT_DEFAULT
@@ -488,7 +493,7 @@ export function SettingsView(props: Props): React.JSX.Element {
   return (
     <SettingsPageSurface ref={columnRef} className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       {}
-      <PageFrame width={SETTINGS_SECTIONS.find((entry) => entry.id === section)?.width === 'wide' ? 'wide' : 'settings'} scroll={false} padding="settings">
+      <PageFrame width={settingsPageWidth(section)} scroll={false} padding="settings">
         {section === 'agents-overview' ? <AgentsOverview reviewStates={props.agentReviewStates} client={props.daemonClient ?? null} workspace={props.historyWorkspace} attention={props.agentAttention ?? agentAttentionFor({ agentHooks: props.agentHooks, skills: null, checks: null, reviews: [] })} onRepair={props.onAgentHooksSet} onCheck={props.onMcpTest ?? NOOP} /> : props.agentPages?.[section as AgentSetupSection] ?? <SectionDispatch
           {...props}
           section={section}

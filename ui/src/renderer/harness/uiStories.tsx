@@ -1,9 +1,10 @@
+import { PhonePairingCard, PairingStep, PairingSteps } from '../src/components/ui/PhonePairingCard'
 import { ReviewSummary } from '../src/components/ui/ReviewSummary'
 import { SettingsDisclosure } from '../src/components/ui/SettingsDisclosure'
 import { AgentConnectionGrid, AgentConnectionTile } from '../src/components/ui/AgentConnectionTile'
 import { SettingsToolbar } from '../src/components/ui/SettingsToolbar'
 import { AgentCliRow, ProviderGlyphTile } from '../src/components/ui/AgentCliRow'
-import { AgentSetupRow } from '../src/components/ui/AgentSetupRow'
+import { AgentSetupRow, SetupDot } from '../src/components/ui/AgentSetupRow'
 import { SettingsFooterItem } from '../src/components/ui/SettingsFooterItem'
 import { AgentSettingsBody } from '../src/components/ui/AgentSettingsBody'
 import { SettingsNavigationGroup } from '../src/components/ui/NavigationRailFooter'
@@ -1235,7 +1236,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </PageFrame>
           <PageFrame width="wide" style={{ border: '1px dashed var(--border)' }}>
             <PageHeader heading="Wide width" />
-            <SectionHead title="Empty count" count={0} />
+            <SectionHead title="Empty count" count={0} /><SectionHead variant="section" title="Paired devices" count={2} />
           </PageFrame>
         </SpecimenGroup>
 
@@ -1263,6 +1264,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpinnerSpecimen />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Phone pairing card"><PhonePairingSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="QrImage">
           <SpecimenRow>
             <QrImage label="Pairing code" svg={QR_SPECIMEN_SVG} />
@@ -1703,4 +1705,8 @@ export function StaleWorktreesStory(): React.JSX.Element {
       />
     </div>
   )
+}
+
+export function PhonePairingSpecimen(): React.JSX.Element {
+  return <PageFrame width="settingsForm" padding="settings" scroll={false}><PhonePairingCard><Text as="h2" size="subhead">Connect a phone</Text><PairingSteps><PairingStep number={1} heading="Show a pairing code" detail="Choose how your phone reaches this computer." /><PairingStep number={2} done heading="Listener ready" detail="The daemon reported its address." /></PairingSteps><Button variant="primary">Show pairing code</Button></PhonePairingCard><PhonePairingCard code={<QrImage label="Pairing code" svg={QR_SPECIMEN_SVG} />}><Text as="h2" size="subhead">Scan with your phone</Text><Text size="small" tone="muted">Single use · expires in 9:41</Text></PhonePairingCard><SectionHead variant="section" title="Paired devices" count={2} /><Inline gap="small"><SetupDot tone="ok" /><Text size="small" tone="success">Active now</Text></Inline></PageFrame>
 }

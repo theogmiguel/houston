@@ -41,12 +41,16 @@ the Inbox. Provider avatars show the provider alone; status appears beside them.
 
 ## Turn it on
 
-Choose **Connect phone** from the command palette, or open
-**Settings ▸ Remote access ▸ Devices ▸ Connect phone…**. The dialog notes the access a paired
-device receives. Choose a route, enter its address, then choose **Turn on and show code**.
-You can also turn on **Allow remote access** directly in Settings ▸ Remote access. By default, Houston listens on
+Open **Settings ▸ Phone & remote access** and choose **Show pairing code**. The code
+appears inline when the daemon confirms that the configured listener is ready. If a route
+has not been configured, Houston opens the route dialog first; choose a route, enter its
+address, then choose **Turn on and show code**. **Use another route** opens that dialog
+at any time. The command palette's **Connect phone** command also opens the dialog.
+
+Under the collapsed **Route and address** row, **Allow remote access** turns the listener
+on or off and shows its reported address or error. By default, Houston listens on
 `127.0.0.1:47823` (`127.0.0.1:47824` for a development build), which only this computer can
-reach. Under **Allow remote access**, Settings shows the address devices open, or why Houston could not listen.
+reach. Houston does not detect or install Tailscale.
 
 ### Reach it from your phone with Tailscale (recommended)
 
@@ -58,7 +62,7 @@ devices can open, without opening a port to the internet:
 2. On this computer, run `tailscale serve --bg 47823`. Tailscale prints an address such as
    `https://machine.tailnet.ts.net`. On Linux, running it without root needs
    `sudo tailscale set --operator=$USER` once.
-3. Paste that address into the public URL field of **Settings ▸ Remote access ▸ Route ▸ Change…**.
+3. Paste that address into **Address** in **Settings ▸ Phone & remote access ▸ Route and address ▸ Route ▸ Change…**.
 
 The machine name becomes part of a public certificate log; rename the machine in Tailscale
 first if its name is sensitive. Do not use `tailscale funnel`: it would publish the
@@ -66,7 +70,7 @@ listener to the whole internet.
 
 ### Other addresses
 
-**Settings ▸ Remote access ▸ Listen address ▸ Edit…** accepts another `IP:PORT`, such
+**Settings ▸ Phone & remote access ▸ Route and address ▸ Listen address ▸ Edit…** accepts another `IP:PORT`, such
 as this computer's Tailscale or LAN address. Listening on every interface (`0.0.0.0`) requires a public URL, set under **Route**, that names the
 address devices open. The **Route** row reads Tailscale, Same Wi-Fi or Custom. On a private
 address (`10.x`, `172.16–31.x`, `192.168.x`, or a `.local` name for a listener on every
@@ -78,7 +82,7 @@ warning.
 ### Connect phone
 
 When remote access is already on with a public URL, the dialog opens on the code;
-**Settings ▸ Remote access ▸ Route ▸ Change…** opens it on the route.
+**Settings ▸ Phone & remote access ▸ Route and address ▸ Route ▸ Change…** opens it on the route.
 
 **Connect a phone.** Choose a **Route**:
 
@@ -107,8 +111,8 @@ the page and follow **Trust this computer** there.
 
 **Connected.** Confirm on the phone to see **<device> is connected** on the desktop.
 Choose **Connect another** for another code or **Done** to close. Closing the dialog keeps
-remote access on. The route and listen address remain available under **Settings ▸ Remote access ▸
-Route** and **Listen address**.
+remote access on. The route and listen address remain available under **Settings ▸ Phone & remote access ▸
+Route and address**.
 
 The paired device can show this computer's name and Houston version, together with the
 remote access address and whether that address uses HTTPS.
@@ -120,7 +124,7 @@ serves remote access over HTTPS only, with a certificate signed by a certificate
 creates the first time it is needed. The authority's private key stays in the OS keychain. It
 can certify only private network addresses (`10.x`, `172.16–31.x`, `192.168.x`, loopback and
 IPv6 unique-local) and `.local` names, so it cannot be used to impersonate a public website.
-Its fingerprint is shown under **Settings ▸ Remote access ▸ Certificate**. With the Tailscale
+Its fingerprint is shown under **Settings ▸ Phone & remote access ▸ Route and address ▸ Certificate**. With the Tailscale
 route, Tailscale provides the HTTPS certificate and none of this applies.
 
 A device trusts the authority once; when the listen address changes, Houston issues a new
@@ -139,7 +143,7 @@ On the pairing page, compare the fingerprint it shows with Settings, then:
 
 The same downloads are in the phone's **Computer** tab.
 
-**Settings ▸ Remote access ▸ Certificate ▸ Regenerate…** replaces the authority: every
+**Settings ▸ Phone & remote access ▸ Route and address ▸ Certificate ▸ Regenerate…** replaces the authority: every
 device must trust the new one, and the old one stops working. To remove a trusted authority
 from a device:
 
@@ -150,14 +154,20 @@ from a device:
 
 ## Pair a device
 
-1. In Settings ▸ Remote access ▸ Devices, choose **Connect phone…**. Houston shows a QR code and a
-   link that work once and expire after 10 minutes.
+1. In **Settings ▸ Phone & remote access**, choose **Show pairing code**. Houston shows a
+   QR code and a link that work once and expire after 10 minutes.
 2. Scan the code with the phone's camera, or open the link on the other computer.
 3. Check the address and connection shown, confirm the suggested device name or enter
    another, then choose **Connect**.
-   The device is listed under **Devices** with the time it was last seen.
+   The device is listed under **Paired devices**. **Active now** means the daemon last saw
+   it less than two minutes ago; otherwise Houston shows **Last seen** with its age. This
+   is recent activity, rather than a live connection indicator.
 4. Follow the browser-specific installation steps if you want a home-screen shortcut,
    then choose **Open Houston**. Until Houston is installed, the steps are also in **Computer**.
+
+**Hide code** removes the inline code from this screen; it does not turn off the listener
+or invalidate a code that has already been copied. A new device or expiry removes it
+automatically. **Phone notifications** and **Route and address** start collapsed.
 
 On a phone, use the browser's **Add to Home Screen** to open Houston like an app. Each
 browser keeps its own pairing; a device that lost its pairing (for example, after clearing
@@ -250,7 +260,7 @@ box. Houston transcribes with the engine chosen in **Settings ▸ Dictation** (s
 [Dictation](voice.md)), using its language, vocabulary and English output settings, and
 returns the text to the device; nothing reaches the pane until you send it.
 
-1. In **Settings ▸ Remote access ▸ Dictation**, turn on **Allow dictation from paired
+1. In **Settings ▸ Phone & remote access ▸ Dictation**, turn on **Allow dictation from paired
    devices**. It is off by default and does not depend on desktop dictation being on: the
    computer's own microphone is never opened for it. With the local engine, download its
    model in Settings ▸ Dictation first; with Groq, store the API key there.
@@ -284,7 +294,7 @@ recording over the limit.
 1. Install the ntfy app on your phone and subscribe to a topic with a long, unguessable
    name. Anyone who knows the topic name can read its messages.
 2. Paste the topic URL, such as `https://ntfy.sh/<topic>`, in
-   **Settings ▸ Remote access ▸ Phone notifications ▸ ntfy topic ▸ Set up…** and choose **Save**.
+   **Settings ▸ Phone & remote access ▸ Phone notifications ▸ ntfy topic ▸ Set up…** and choose **Save**.
    The URL is kept in the OS keychain; the settings show only the server. **Change…** replaces
    it and **Remove** turns notifications off.
 3. Adjust **Delay** (30 seconds by default, up to 600). A pane must keep waiting for that
@@ -308,15 +318,14 @@ them on your server.
 ## Revoke a device or turn it off
 
 **Computer ▸ Disconnect this phone** forgets this browser's token and clears its displayed
-conversations. It does not revoke the token on the computer: use **Settings ▸ Remote
-access ▸ Devices ▸ Revoke…** there to revoke access. Pair again to reconnect this browser.
+conversations. It does not revoke the token on the computer: use **Settings ▸ Phone & remote
+access ▸ Paired devices ▸ Revoke…** there to revoke access. Pair again to reconnect this browser.
 
 Choose **Revoke…** next to a device (and confirm) to end its access immediately, including a
 page it has open. A connected phone receives an explicit reason when its device is revoked
 or remote access is disabled. Turning off **Allow remote access** stops the listener, closes open pages'
 live updates, clears the conversations and stops notifications; paired devices stay listed
-and work again when you turn it back on. To stop notifications only, choose **Turn off**
-next to the topic URL.
+and work again when you turn it back on. To stop notifications only, open the **ntfy topic** dialog and choose **Remove**.
 
 ## Platforms
 

@@ -1,3 +1,4 @@
+import { ConnectPhoneHost } from '../src/components/ConnectPhoneDialog'
 import { RAIL_DEFAULT } from '../src/railWidth'
 import { agentAttentionFor } from '../src/useAgentAttention'
 import React from 'react'
@@ -297,15 +298,29 @@ function routingClient(routes: RoleRoute[]): HoustonClient {
   }) as unknown as HoustonClient
 }
 
-function remoteClient(remote: RemoteInfo): HoustonClient {
-  let listener: ((message: ServerMsg) => void) | null = null
+export function remoteClient(initial: RemoteInfo, pairing = false): HoustonClient {
+  const handlers = new Map<string, Set<(message: ServerMsg) => void>>()
+  let remote = initial
+  const emit = (message: ServerMsg): void => { for (const handler of handlers.get(message.type) ?? []) handler(message) }
+  const showCode = (): void => emit({ type: 'remote_pairing', url: `${remote.url}/#pair=story`, qr_svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1z" fill="#000"/></svg>', expires_at: Date.now() + 9 * 60_000 + 41_000 })
   return new Proxy({
     subscribe(type: string, handler: (message: ServerMsg) => void) {
-      if (type === 'remote_state') listener = handler
-      return () => { listener = null }
+      const set = handlers.get(type) ?? new Set()
+      set.add(handler)
+      handlers.set(type, set)
+      return () => { set.delete(handler) }
     },
     remoteGet() {
-      queueMicrotask(() => listener?.({ type: 'remote_state', remote }))
+      queueMicrotask(() => { emit({ type: 'remote_state', remote }); if (pairing) showCode() })
+    },
+    remoteConfigure(patch: Partial<RemoteInfo>) {
+      remote = { ...remote, ...patch, url: patch.public_url ?? remote.url, listening: patch.enabled ?? remote.enabled }
+      queueMicrotask(() => emit({ type: 'remote_state', remote }))
+    },
+    remotePairStart() { queueMicrotask(showCode) },
+    remoteDeviceRevoke(id: number) {
+      remote = { ...remote, devices: remote.devices.filter((device) => device.id !== id) }
+      queueMicrotask(() => emit({ type: 'remote_state', remote }))
     }
   }, {
     get(target, property, receiver) {
@@ -335,12 +350,19 @@ const remoteFixture: RemoteInfo = {
   ]
 }
 
-export function SettingsRemote(): React.JSX.Element {
-  return <SettingsScreen section="remote" props={{ daemonClient: remoteClient(remoteFixture) }} />
+export function SettingsRemote({ pairing = false }: { pairing?: boolean } = {}): React.JSX.Element {
+  const client = React.useMemo(() => remoteClient({ ...remoteFixture, devices: remoteFixture.devices.map((device, index) => ({ ...device, last_seen_at: Date.now() - (index === 0 ? 30_000 : 26 * 3_600_000) })) }, pairing), [pairing])
+  return <><SettingsScreen section="remote" props={{ daemonClient: client }} /><ConnectPhoneHost client={client} /></>
 }
 
 export function SettingsRemoteOff(): React.JSX.Element {
-  return <SettingsScreen section="remote" props={{ daemonClient: remoteClient({ ...remoteFixture, enabled: false, listening: false, public_url: null, url: 'http://127.0.0.1:47823', ntfy_server: null }) }} />
+  const client = React.useMemo(() => remoteClient({ ...remoteFixture, enabled: false, listening: false, devices: [], ntfy_server: null }), [])
+  return <><SettingsScreen section="remote" props={{ daemonClient: client }} /><ConnectPhoneHost client={client} /></>
+}
+
+export function SettingsRemoteUnconfigured(): React.JSX.Element {
+  const client = React.useMemo(() => remoteClient({ ...remoteFixture, enabled: false, listening: false, devices: [], public_url: null, url: 'http://127.0.0.1:47823', ntfy_server: null }), [])
+  return <><SettingsScreen section="remote" props={{ daemonClient: client }} /><ConnectPhoneHost client={client} /></>
 }
 
 export function SettingsAgentSetup({ detail = false, rename = false }: { detail?: boolean; rename?: boolean } = {}): React.JSX.Element {

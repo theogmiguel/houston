@@ -6,7 +6,7 @@ import type { RemoteInfo } from '../../houston/generated/RemoteInfo'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import { plainHttpOffLoopback } from '../../houston/useRemote'
 import { bindError, RemoteSection, routeKind } from './RemoteSection'
-import { CONNECT_PHONE_EVENT } from '../../connectPhone'
+import { deviceActivity } from './RemotePairing'
 
 const renderSection = (client: HoustonClient, onChangeRoute = vi.fn()) => {
   render(<RemoteSection client={client} onChangeRoute={onChangeRoute} />)
@@ -56,7 +56,7 @@ function fakeClient() {
   return { client, emit, asClient: client as unknown as HoustonClient }
 }
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('RemoteSection', () => {
   it('asks for the state, then shows the listener off with its reason and disabled actions', () => {
@@ -66,10 +66,11 @@ describe('RemoteSection', () => {
     expect(screen.getByText(/Asking the daemon/)).toBeTruthy()
     emit({ type: 'remote_state', remote: info({ devices: [{ id: 7, name: 'Laptop', created_at: 1, last_seen_at: null }] }) })
     expect(screen.getByTestId('settings-remote-status').textContent).toBe('Off. Nothing listens and nothing is sent.')
-    for (const id of ['settings-remote-connect-phone', 'settings-remote-revoke-7', 'settings-remote-ntfy-edit', 'settings-remote-delay', 'settings-remote-detail', 'settings-remote-finished', 'settings-remote-dictation']) {
+    for (const id of ['settings-remote-revoke-7', 'settings-remote-ntfy-edit', 'settings-remote-delay', 'settings-remote-detail', 'settings-remote-finished', 'settings-remote-dictation']) {
       expect((screen.getByTestId(id) as HTMLButtonElement).disabled).toBe(true)
     }
-    expect(screen.getByText('Connect a phone').closest('[data-testid="settings-row"]')?.textContent).toContain('Turn on remote access first.')
+    expect((screen.getByTestId('settings-remote-connect-phone') as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText(/Showing a code turns it on/)).toBeTruthy()
     fireEvent.click(screen.getByTestId('settings-remote-enabled'))
     expect(client.remoteConfigure).toHaveBeenCalledWith({ enabled: true })
   })
@@ -93,6 +94,7 @@ describe('RemoteSection', () => {
     const onChangeRoute = renderSection(asClient)
     emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, public_url: 'https://box.ts.net' }) })
     expect(screen.getByTestId('settings-remote-route').textContent).toBe('Tailscale')
+    fireEvent.click(screen.getByText('Route and address'))
     fireEvent.click(screen.getByTestId('settings-remote-route-change'))
     expect(onChangeRoute).toHaveBeenCalledOnce()
   })
@@ -105,6 +107,7 @@ describe('RemoteSection', () => {
     const { client, emit, asClient } = fakeClient()
     renderSection(asClient)
     emit({ type: 'remote_state', remote: info() })
+    fireEvent.click(screen.getByText('Route and address'))
     fireEvent.click(screen.getByTestId('settings-remote-bind-edit'))
     fireEvent.change(screen.getByTestId('settings-remote-bind-input'), { target: { value: 'nope' } })
     fireEvent.click(screen.getByTestId('settings-remote-bind-save'))
@@ -116,22 +119,109 @@ describe('RemoteSection', () => {
     expect(screen.queryByTestId('settings-remote-bind-input')).toBeNull()
   })
 
-  it('opens Connect phone from the Devices group', () => {
+  it('shows the pairing code inline after the daemon confirms listening', () => {
     const { emit, asClient, client } = fakeClient()
-    const opened = vi.fn()
-    window.addEventListener(CONNECT_PHONE_EVENT, opened)
     renderSection(asClient)
-    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
+    const remote = info({ public_url: 'https://box.ts.net', url: 'https://box.ts.net' })
+    emit({ type: 'remote_state', remote })
     fireEvent.click(screen.getByTestId('settings-remote-connect-phone'))
-    expect(opened).toHaveBeenCalledOnce()
+    expect(client.remoteConfigure).toHaveBeenCalledWith({ enabled: true })
     expect(client.remotePairStart).not.toHaveBeenCalled()
-    window.removeEventListener(CONNECT_PHONE_EVENT, opened)
+    emit({ type: 'remote_state', remote: { ...remote, enabled: true, listening: true } })
+    expect(client.remotePairStart).toHaveBeenCalledOnce()
+    emit({ type: 'remote_pairing', url: 'https://box.ts.net/pair?code=fixture', qr_svg: '<svg/>', expires_at: Date.now() + 600_000 })
+    expect(screen.getByRole('img', { name: 'Pairing code' })).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText('Scan with your phone')).toBeTruthy()
+    emit({ type: 'remote_state', remote: { ...remote, enabled: true, listening: true, devices: [{ id: 7, name: 'Phone', created_at: Date.now(), last_seen_at: Date.now() }] } })
+    expect(screen.queryByRole('img', { name: 'Pairing code' })).toBeNull()
+    expect(screen.getByText('Phone')).toBeTruthy()
+  })
+
+  it('reports activity from last_seen_at and starts with the advanced rows collapsed', () => {
+    const { emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [
+      { id: 1, name: 'Phone', created_at: 1, last_seen_at: Date.now() - 30_000 },
+      { id: 2, name: 'Laptop', created_at: 1, last_seen_at: Date.now() - 3 * 3_600_000 },
+      { id: 3, name: 'Unknown', created_at: 1, last_seen_at: null }
+    ] }) })
+    expect(screen.getByText('Active now')).toBeTruthy()
+    expect(screen.getByText('Last seen 3h ago')).toBeTruthy()
+    expect(screen.getByText('Last seen not reported')).toBeTruthy()
+    for (const label of ['Phone notifications', 'Route and address']) {
+      expect(screen.getByText(label).closest('details')?.open).toBe(false)
+    }
+  })
+
+  it('requests a route for the default loopback address rather than an unreachable phone code', () => {
+    const { emit, asClient, client } = fakeClient()
+    const changeRoute = renderSection(asClient)
+    emit({ type: 'remote_state', remote: info() })
+    fireEvent.click(screen.getByTestId('settings-remote-connect-phone'))
+    expect(changeRoute).toHaveBeenCalledOnce()
+    expect(client.remotePairStart).not.toHaveBeenCalled()
+    expect(client.remoteConfigure).not.toHaveBeenCalled()
+  })
+
+  it('gives Paired devices primary medium heading chrome and a right-aligned count', () => {
+    const { emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ devices: [{ id: 1, name: 'Phone', created_at: 1, last_seen_at: null }] }) })
+    const heading = screen.getByRole('heading', { name: /Paired devices/ })
+    expect(heading.classList.contains('text-[var(--text-primary)]')).toBe(true)
+    expect(heading.classList.contains('font-medium')).toBe(true)
+    expect(heading.lastElementChild?.classList.contains('ml-auto')).toBe(true)
+    expect(heading.lastElementChild?.textContent).toBe('1')
+  })
+
+  it('paints Active now text in the success tone and retains the access warning', () => {
+    const { emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, devices: [{ id: 1, name: 'Phone', created_at: 1, last_seen_at: Date.now() }] }) })
+    expect(screen.getByText('Active now').classList.contains('text-[var(--success)]')).toBe(true)
+    expect(screen.getByText(/A paired device can read and type into any pane/)).toBeTruthy()
+  })
+
+  it('ages activity at the two-minute boundary and removes expired codes', () => {
+    vi.useFakeTimers()
+    const now = 1_790_000_000_000
+    vi.setSystemTime(now)
+    expect(deviceActivity(now - 119_999, now)).toBe('Active now')
+    expect(deviceActivity(now - 120_000, now)).toBe('Last seen 2m ago')
+    const { emit, asClient } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, devices: [{ id: 1, name: 'Phone', created_at: 1, last_seen_at: now - 60_000 }] }) })
+    expect(screen.getByText('Active now')).toBeTruthy()
+    emit({ type: 'remote_pairing', url: 'https://box.ts.net/#pair=fixture', qr_svg: '<svg/>', expires_at: now + 60_000 })
+    expect(screen.getByRole('img', { name: 'Pairing code' })).toBeTruthy()
+    act(() => vi.advanceTimersByTime(60_000))
+    expect(screen.getByText('Last seen 2m ago')).toBeTruthy()
+    expect(screen.queryByRole('img', { name: 'Pairing code' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Show pairing code' })).toBeTruthy()
+  })
+
+  it('ends a pending request on a daemon refusal and hides codes without stopping the listener', () => {
+    const { emit, asClient, client } = fakeClient()
+    renderSection(asClient)
+    emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, public_url: 'https://box.ts.net' }) })
+    fireEvent.click(screen.getByTestId('settings-remote-connect-phone'))
+    emit({ type: 'error', context: 'remote', message: 'Could not issue a code' })
+    expect(screen.getByTestId('settings-remote-error').textContent).toContain('Could not issue a code')
+    expect((screen.getByTestId('settings-remote-connect-phone') as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByTestId('settings-remote-connect-phone'))
+    emit({ type: 'remote_pairing', url: 'https://box.ts.net/#pair=fixture', qr_svg: '<svg/>', expires_at: Date.now() + 600_000 })
+    fireEvent.click(screen.getByRole('button', { name: 'Hide code' }))
+    expect(screen.queryByRole('img', { name: 'Pairing code' })).toBeNull()
+    expect(client.remoteConfigure).not.toHaveBeenCalled()
+    expect(client.remoteDeviceRevoke).not.toHaveBeenCalled()
   })
 
   it('shows dictation from devices off by default, with what it sends, and turns it on', () => {
     const { client, emit, asClient } = fakeClient()
     renderSection(asClient)
     emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
+    fireEvent.click(screen.getByText('Dictation'))
     const toggle = screen.getByTestId('settings-remote-dictation')
     expect(toggle.getAttribute('aria-checked')).toBe('false')
     expect(screen.getByTestId('settings-remote-dictation-disclosure').textContent).toContain('sent to Groq')
@@ -166,6 +256,7 @@ describe('RemoteSection', () => {
     const { client, emit, asClient } = fakeClient()
     renderSection(asClient)
     emit({ type: 'remote_state', remote: info({ enabled: true, listening: true }) })
+    fireEvent.click(screen.getByText('Phone notifications'))
     expect(screen.getByTestId('settings-remote-ntfy-server').textContent).toBe('Off')
     fireEvent.click(screen.getByTestId('settings-remote-ntfy-edit'))
     expect(screen.queryByTestId('settings-remote-ntfy-clear')).toBeNull()
@@ -211,6 +302,7 @@ describe('RemoteSection', () => {
     expect(screen.getByTestId('settings-remote-ca-fingerprint').textContent).toContain('first serves HTTPS')
     emit({ type: 'remote_state', remote: info({ enabled: true, listening: true, bind: '192.168.1.20:47823', tls: true, ca_fingerprint: 'AB:CD' }) })
     expect(screen.getByTestId('settings-remote-ca-fingerprint').textContent).toBe('AB:CD')
+    fireEvent.click(screen.getByText('Route and address'))
     fireEvent.click(screen.getByTestId('settings-remote-ca-regenerate'))
     expect(client.remoteCaRegenerate).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('Regenerate', { selector: 'button *' }))

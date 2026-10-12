@@ -11,11 +11,12 @@ export interface SectionHeadProps {
   inset?: boolean
   density?: 'default' | 'row'
   tone?: 'faint' | 'muted'
-  variant?: 'label' | 'sentence'
+  variant?: 'label' | 'sentence' | 'section'
   icon?: IconComponent
 }
 
 export function SectionHead({ title, count, action, inset = false, density = 'default', tone = 'faint', variant = 'label', icon }: SectionHeadProps): React.JSX.Element {
+  if (variant === 'section') return <h2 className="m-0 flex min-w-0 items-baseline gap-[var(--space-2)] text-[length:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)]"><span>{title}</span>{count !== undefined && <span className="ml-auto text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]"><Count value={count} showZero /></span>}{action}</h2>
   const row = density === 'row'
   return (
     <h2 className={`m-0 flex min-w-0 items-center gap-[var(--space-2)] ${row ? 'h-[var(--h-row)] px-[var(--space-3)]' : ''} ${inset ? 'pl-[var(--space-2-5)]' : ''}`}>

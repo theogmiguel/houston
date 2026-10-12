@@ -60,6 +60,7 @@ describe('ConnectPhoneDialog', () => {
     expect(screen.getByText(/as much access as a shell/)).toBeTruthy()
     expect(screen.getByDisplayValue('tailscale serve --bg 47823')).toBeTruthy()
     expect(screen.getByText('Paste the HTTPS address the command prints.')).toBeTruthy()
+    expect(screen.getByText('Requires Tailscale on this computer and your phone, on the same tailnet, with HTTPS enabled.')).toBeTruthy()
     expect(client.remoteConfigure).not.toHaveBeenCalled()
     expect(client.remotePairStart).not.toHaveBeenCalled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Address' }), { target: { value: 'https://box.ts.net' } })
