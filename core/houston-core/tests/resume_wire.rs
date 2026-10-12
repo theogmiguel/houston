@@ -2253,6 +2253,48 @@ async fn a_known_provider_command_override_is_deferred_until_explicit_fresh_star
 }
 
 #[tokio::test]
+async fn failed_forced_shell_restart_flushes_its_final_cwd_before_replacement() {
+    let env = setup().await;
+    std::env::set_var("SHELL", "/bin/bash");
+    let daemon = boot(&env);
+    let dir = project(&env, "forced-shell-cwd");
+    let changed = dir.join("changed");
+    std::fs::create_dir(&changed).unwrap();
+    let shell = daemon.create_session(CreateParams {
+        agent: proto::AgentKind::Shell,
+        project_dir: dir.clone(), cmd: None, cols: 80, rows: 24, cwd_from: None,
+        shell_integration: true, auto_approve: false, acp: None, profile: None,
+        prompt: None, model: None, effort: None,
+    }).unwrap();
+    let path = transcript(&env, "shell-before-cd", b"shell root turn\n");
+    apply_drop(&env, &daemon, HookDrop {
+        event: "UserPromptSubmit".into(), session: shell.id, agent: Some("claude".into()),
+        session_id: Some("shell-before-cd".into()), cwd: Some(dir.display().to_string()),
+        transcript_path: Some(path), ..Default::default()
+    }).await;
+    daemon.write_stdin(shell.id, b"cd changed\n").unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while daemon.last_hook_cwd(shell.id).as_deref() != changed.to_str() {
+        assert!(tokio::time::Instant::now() < deadline, "shell did not report its new cwd");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    let stored_cwd = || conn.query_row("SELECT cwd FROM sessions WHERE id = ?1", [shell.id],
+        |row| row.get::<_, String>(0)).unwrap();
+    assert_eq!(stored_cwd(), dir.display().to_string(), "PTY cwd writes stay coalesced until a control checkpoint");
+    conn.execute_batch("CREATE TRIGGER replacement_failure BEFORE INSERT ON sessions
+        BEGIN SELECT RAISE(ABORT, 'forced shell replacement failure'); END;").unwrap();
+    assert!(daemon.respawn(shell.id, true, None, None, true).is_err());
+    assert_eq!(stored_cwd(), changed.display().to_string(), "failed replacement must leave the final drained cwd durable");
+    let db = Db::open(&env.db_path()).unwrap();
+    assert_eq!(db.session_final(shell.id).unwrap().unwrap().0, proto::SessionState::Interrupted);
+    assert_eq!(db.session_resume_handle(shell.id).unwrap().unwrap().0, "shell-before-cd");
+    assert!(db.list_interrupted().unwrap().iter().any(|info| info.id == shell.id && info.cwd == changed.display().to_string()));
+    conn.execute_batch("DROP TRIGGER replacement_failure").unwrap();
+    daemon.close(shell.id).unwrap();
+}
+
+#[tokio::test]
 async fn wake_preserves_the_explicit_model_effort_and_approval_choices() {
     let env = setup().await;
     let daemon = boot(&env);

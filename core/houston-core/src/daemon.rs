@@ -9372,6 +9372,9 @@ impl Daemon {
             }
             ownership = Some(self.reserve_ownership_replacement(old_id)?);
             self.cleanup_session_ownership(old_id, old)?;
+            // The drained reader may have supplied a final shell cwd. Commit its
+            // watermark before validating a handle or attempting replacement.
+            self.flush_shell_cwd_metadata()?;
             (
                 old.info.agent,
                 old.project_dir.lock().expect("project_dir lock").clone(),
