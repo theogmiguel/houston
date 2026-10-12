@@ -1026,7 +1026,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <LaunchPresetOutlineSpecimen />
         </SpecimenGroup>
         <SpecimenGroup heading="Launch slot card">
-          <LaunchSlotCardSpecimen />
+          <LaunchSlotCardSpecimen /><LaunchSlotCardSpecimen custom />
           <FieldLabel size="compact">Compact field label</FieldLabel>
         </SpecimenGroup>
 

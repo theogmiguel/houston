@@ -306,7 +306,7 @@ Six values, in `ui/src/renderer/src/theme.css`:
 | Token | Value | Meaning |
 |---|---|---|
 | `--tr-radius-input` | 4px | Inputs, select triggers |
-| `--tr-radius-sm` | 6px | Chips, small tiles, menu option rows, inputs, badges, banners, mini icon buttons |
+| `--tr-radius-sm` | 6px | Value chips, small tiles, menu option rows, badges, banners, mini icon buttons |
 | `--tr-radius-button` | 8px | Buttons, segmented track |
 | `--tr-radius-md` | 10px | Panes, overlays, modals, the command palette |
 | `--tr-radius-card` | 12px | Cards |
@@ -316,6 +316,12 @@ Six values, in `ui/src/renderer/src/theme.css`:
 badge is a *value* and gets a rounded radius. A segmented group, a filter chip, a
 removable chip is *pressable* and gets the full capsule. Getting these backwards is
 why some interfaces have controls that don't read as controls.
+
+For cards containing fields, use `--tr-radius-card` with `--space-2` padding and
+`--tr-radius-input` fields. The 1px border plus padding gives a 9px inset; the
+12px outer radius stays within 1px of the 4px inner radius plus that inset.
+Launch slot selects, typed model IDs and checkout readouts share `FIELD_CLS` in
+`selectChrome.ts`: 28px height, canvas fill and UI type size.
 
 Match the neighbouring primitive rather than introducing a new step.
 
