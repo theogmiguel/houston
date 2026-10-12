@@ -134,7 +134,12 @@ Shell panes can retain a root Claude, Codex or ZCode conversation reported by li
 hooks. Restart validates that provider's exact handle and launches the CLI from the restored
 POSIX shell with shell-quoted argv while keeping the pane classified as a shell. The shell
 is matched by file name (`sh`, `bash`, `zsh`, `dash`, `ksh`), so every Windows shell,
-including a Git Bash `bash.exe`, is refused by name. Children restore only after the parent
+including a Git Bash `bash.exe`, is refused by name. When the shell has integration, the relaunched CLI is recorded
+as the running agent from spawn, because `-c` emits no command-start marker; the shell
+reports the CLI's exit with a command-end marker before it `exec`s the prompt, which
+clears the running agent. Without integration nothing reports the exit, so no running
+agent is recorded. The `exec`ed shell does not inherit the integration token, so its own
+commands are not tracked. Children restore only after the parent
 conversation resumes; unsupported shell dialects and invalid parent conversations leave
 children deferred.
 Clean shutdown and crash both apply the same restore policy and budget, preserving the

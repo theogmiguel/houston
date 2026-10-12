@@ -533,6 +533,89 @@ async fn shell_hosted_claude_hook_is_recorded_and_restart_resumes_inside_shell()
     restarted.close(restored.id).unwrap();
 }
 
+async fn running_agent_of(daemon: &Arc<Daemon>, id: u32) -> Option<proto::AgentKind> {
+    daemon
+        .list()
+        .into_iter()
+        .find(|pane| pane.id == id)
+        .unwrap_or_else(|| panic!("session {id} is not listed"))
+        .running_agent
+}
+
+#[tokio::test]
+async fn a_restored_bash_hosted_claude_is_the_running_agent_until_it_exits() {
+    restored_cli_is_the_running_agent_until_it_exits("/bin/bash").await;
+}
+
+#[tokio::test]
+async fn a_restored_zsh_hosted_claude_is_the_running_agent_until_it_exits() {
+    restored_cli_is_the_running_agent_until_it_exits("/usr/bin/zsh").await;
+}
+
+/// Runs the real integration rc of `shell`: the resumed CLI's exit is reported by the
+/// initial shell, since the `exec`ed replacement holds neither the token nor `--rcfile`.
+async fn restored_cli_is_the_running_agent_until_it_exits(shell_path: &str) {
+    if !Path::new(shell_path).exists() {
+        return;
+    }
+    let env = setup().await;
+    std::env::set_var("SHELL", shell_path);
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-running-agent");
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "00000000-0000-4000-8000-000000000128";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        conversation,
+        &transcript,
+        &dir,
+    )
+    .await;
+
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    assert_eq!(restored.agent, proto::AgentKind::Shell);
+    assert_eq!(
+        restored.running_agent,
+        Some(proto::AgentKind::Claude),
+        "the relaunch runs a command no command-start marker announces"
+    );
+    argv_of(&env, restored.id).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        running_agent_of(&restarted, restored.id).await,
+        Some(proto::AgentKind::Claude),
+        "the CLI's own output must not clear the running agent"
+    );
+
+    restarted.write_stdin(restored.id, b"\x04").unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while running_agent_of(&restarted, restored.id).await.is_some() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the running agent outlived the CLI: the shell prompt has returned"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let after = restarted
+        .list()
+        .into_iter()
+        .find(|pane| pane.id == restored.id)
+        .unwrap();
+    assert_eq!(
+        after.detected_agent,
+        Some(proto::AgentKind::Claude),
+        "detection is sticky; only the running agent follows the CLI"
+    );
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
+
 #[tokio::test]
 async fn shell_hook_profile_is_captured_and_reused_when_daemon_profile_switches() {
     let env = setup().await;

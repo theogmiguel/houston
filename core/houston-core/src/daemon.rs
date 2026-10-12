@@ -2358,7 +2358,10 @@ fn resolve_session_shell(shell_override: Option<&str>) -> (String, Vec<String>) 
     )
 }
 
-fn shell_hosted_resume_command(shell: &str, argv: &[String]) -> Result<String> {
+/// `report_exit` appends a command-end marker once the provider returns, built
+/// from the shell integration's own token variable so the token never appears
+/// in argv. The shell is `exec`ed afterwards and does not carry that token over.
+fn shell_hosted_resume_command(shell: &str, argv: &[String], report_exit: bool) -> Result<String> {
     let name = Path::new(shell)
         .file_name()
         .and_then(|name| name.to_str())
@@ -2372,12 +2375,28 @@ fn shell_hosted_resume_command(shell: &str, argv: &[String]) -> Result<String> {
         .map(|arg| quote(arg))
         .collect::<Vec<_>>()
         .join(" ");
-    Ok(format!("{command}; exec {} -i", quote(shell)))
+    let end_marker = if report_exit {
+        r#" printf '\033]133;D;%s;%s\007' "${__tr_token-}" "$?";"#
+    } else {
+        ""
+    };
+    Ok(format!("{command};{end_marker} exec {} -i", quote(shell)))
+}
+
+/// The provider a shell-hosted resume relaunches, from the head of its argv.
+fn shell_startup_provider(argv: &[String]) -> Option<proto::AgentKind> {
+    match argv.first()?.as_str() {
+        "claude" => Some(proto::AgentKind::Claude),
+        "codex" => Some(proto::AgentKind::Codex),
+        "zcode" => Some(proto::AgentKind::Zcode),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
 mod shell_hosted_resume_tests {
-    use super::shell_hosted_resume_command;
+    use super::{shell_hosted_resume_command, shell_startup_provider};
+    use houston_protocol as proto;
 
     #[test]
     fn shell_resume_quotes_each_argument_and_refuses_named_non_posix_shells() {
@@ -2388,14 +2407,66 @@ mod shell_hosted_resume_tests {
                 "--resume".into(),
                 "id'; touch /tmp/no".into(),
             ],
+            false,
         )
         .unwrap();
         assert!(command.contains("'id'\\''; touch /tmp/no'"));
         assert!(command.ends_with("; exec '/bin/bash' -i"));
-        assert!(shell_hosted_resume_command("/bin/fish", &["claude".into()])
-            .unwrap_err()
-            .to_string()
-            .contains("detected shell \"/bin/fish\""));
+        assert!(
+            shell_hosted_resume_command("/bin/fish", &["claude".into()], false)
+                .unwrap_err()
+                .to_string()
+                .contains("detected shell \"/bin/fish\"")
+        );
+    }
+
+    #[test]
+    fn the_provider_is_named_by_the_head_of_the_argv() {
+        let argv = |program: &str| vec![program.to_string(), "--resume".to_string()];
+        assert_eq!(
+            shell_startup_provider(&argv("claude")),
+            Some(proto::AgentKind::Claude)
+        );
+        assert_eq!(
+            shell_startup_provider(&argv("codex")),
+            Some(proto::AgentKind::Codex)
+        );
+        assert_eq!(
+            shell_startup_provider(&argv("zcode")),
+            Some(proto::AgentKind::Zcode)
+        );
+        assert_eq!(shell_startup_provider(&argv("vim")), None);
+        assert_eq!(shell_startup_provider(&[]), None);
+    }
+
+    #[test]
+    fn the_end_marker_is_only_added_when_the_shell_has_integration() {
+        let argv = ["claude".to_string()];
+        let plain = shell_hosted_resume_command("/bin/bash", &argv, false).unwrap();
+        assert_eq!(plain, "'claude'; exec '/bin/bash' -i");
+        let marked = shell_hosted_resume_command("/bin/bash", &argv, true).unwrap();
+        assert!(marked.starts_with("'claude'; printf "), "{marked}");
+        assert!(marked.ends_with("; exec '/bin/bash' -i"), "{marked}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_resume_command_reports_the_provider_exit_with_the_shells_own_token() {
+        let argv = ["sh".to_string(), "-c".to_string(), "exit 3".to_string()];
+        let command = shell_hosted_resume_command("/bin/sh", &argv, true).unwrap();
+        let output = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(&command)
+            .env("__tr_token", "tok")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "\u{1b}]133;D;tok;3\u{7}",
+            "the marker names the shell's token and the provider's exit code; stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 
@@ -10043,7 +10114,7 @@ impl Daemon {
                 )?);
             }
             let shell = cmd.get_argv()[0].to_string_lossy();
-            let command = shell_hosted_resume_command(&shell, &argv)?;
+            let command = shell_hosted_resume_command(&shell, &argv, shellint_token.is_some())?;
             cmd.args(["-i", "-c", &command]);
         }
         #[cfg(target_os = "linux")]
@@ -10153,6 +10224,13 @@ impl Daemon {
                 proto::AgentStatus::Spawning
             });
         let status_since_ms = initial_status.map(|_| now_ms());
+        // The provider relaunched through `-c` is a command in flight that no
+        // command-start marker announces. Without shell integration nothing
+        // would report its end, so it is not recorded as running.
+        let hosted_provider = shell_startup
+            .as_deref()
+            .and_then(shell_startup_provider)
+            .filter(|_| shellint_token.is_some());
         let mut info = proto::SessionInfo {
             checkout: None,
             activity: None,
@@ -10164,7 +10242,7 @@ impl Daemon {
             title: title.clone(),
             codename: codename.clone(),
             detected_agent,
-            running_agent: None,
+            running_agent: hosted_provider,
             hidden,
             ssh_host: None,
             restore_deferred: None,
@@ -10202,10 +10280,14 @@ impl Daemon {
             title: Mutex::new(title),
             project_dir: Mutex::new(project_dir.display().to_string()),
             detected: Mutex::new(detected_agent),
-            running: Mutex::new(None),
-            blocks: shellint_token
-                .as_ref()
-                .map(|token| Mutex::new(BlockTracker::new(token.clone()))),
+            running: Mutex::new(hosted_provider),
+            blocks: shellint_token.as_ref().map(|token| {
+                let mut tracker = BlockTracker::new(token.clone());
+                if let Some(provider) = hosted_provider {
+                    tracker.begin_unannounced_command(crate::agent_hooks::provider_slug(provider));
+                }
+                Mutex::new(tracker)
+            }),
             shell_token_redactor: shellint_token
                 .as_deref()
                 .map(shellint::TokenRedactor::new)
