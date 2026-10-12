@@ -61,11 +61,22 @@ jobs:
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
         shell: bash
 
-      - uses: actions/checkout@v5
+      - name: Check out packaging automation
+        uses: actions/checkout@v5
+      - name: Preserve packaging scripts when rebuilding an older tag
+        shell: pwsh
+        run: |
+          Copy-Item scripts/build-app.ps1 "$env:RUNNER_TEMP/release-build-app.ps1"
+          Copy-Item scripts/stage-wsl.ps1 "$env:RUNNER_TEMP/release-stage-wsl.ps1"
+      - name: Check out the application source
+        uses: actions/checkout@v5
         with:
-          # A cut's default checkout is the pre-bump dispatch SHA, so it hands
-          # its new tag through here; empty means the triggering ref.
           ref: ${{ inputs.ref }}
+      - name: Use the workflow's packaging scripts
+        shell: pwsh
+        run: |
+          Copy-Item "$env:RUNNER_TEMP/release-build-app.ps1" scripts/build-app.ps1 -Force
+          Copy-Item "$env:RUNNER_TEMP/release-stage-wsl.ps1" scripts/stage-wsl.ps1 -Force
 
       - name: Require the checked-out tree to carry the release version
         shell: bash
@@ -186,11 +197,22 @@ jobs:
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
         shell: bash
 
-      - uses: actions/checkout@v5
+      - name: Check out packaging automation
+        uses: actions/checkout@v5
+      - name: Preserve packaging scripts when rebuilding an older tag
+        shell: pwsh
+        run: |
+          Copy-Item scripts/build-app.ps1 "$env:RUNNER_TEMP/release-build-app.ps1"
+          Copy-Item scripts/stage-wsl.ps1 "$env:RUNNER_TEMP/release-stage-wsl.ps1"
+      - name: Check out the application source
+        uses: actions/checkout@v5
         with:
-          # A cut's default checkout is the pre-bump dispatch SHA, so it hands
-          # its new tag through here; empty means the triggering ref.
           ref: ${{ inputs.ref }}
+      - name: Use the workflow's packaging scripts
+        shell: pwsh
+        run: |
+          Copy-Item "$env:RUNNER_TEMP/release-build-app.ps1" scripts/build-app.ps1 -Force
+          Copy-Item "$env:RUNNER_TEMP/release-stage-wsl.ps1" scripts/stage-wsl.ps1 -Force
 
       - name: Require the checked-out tree to carry the release version
         shell: bash
