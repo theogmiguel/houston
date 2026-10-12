@@ -10,8 +10,7 @@ export function popOriginStyle(x: string, y: string): CSSProperties {
 
 const OVERLAY_STRUCTURE_CLS =
   'rounded-[var(--tr-radius-md)] [-webkit-app-region:no-drag] select-text ' +
-  `${POP_ORIGIN_CLS} ` +
-  'floating-pop-in'
+  `${POP_ORIGIN_CLS}`
 
 export const OVERLAY_RAISED_CLS = `${OVERLAY_STRUCTURE_CLS} ${MATERIAL_CLS.raised} floating-glass`
 

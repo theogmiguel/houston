@@ -1,7 +1,7 @@
 .pane-inspector{container-type:inline-size;position:relative;display:flex;flex:none;flex-direction:column;min-width:0;min-height:0;background:var(--rail-bg)}
 .pane-inspector[data-state="entering"]{animation:inspector-slide-in var(--motion-panel-t) var(--motion-panel-ease) both}
 .pane-inspector[data-state="closing"]{animation:inspector-slide-out var(--motion-panel-t) var(--motion-panel-ease) both}
-@media (prefers-reduced-motion: reduce){.pane-inspector[data-state="entering"],.pane-inspector[data-state="closing"]{animation:none;transform:none}}
+
 .inspector-tabs{display:flex;align-items:center;gap:var(--space-1);height:30px;min-height:30px;padding:0 var(--space-2);border-bottom:1px solid var(--divider)}
 .inspector-tab{display:inline-flex;align-items:center;gap:var(--space-1);height:22px;padding:0 var(--space-2);border:0;border-radius:var(--tr-radius-sm);background:transparent;color:var(--text-secondary);font:inherit;font-size:var(--tr-text-small-size);white-space:nowrap}
 .inspector-tab:hover{background:var(--hover-fill);color:var(--text-primary)}
@@ -235,7 +235,7 @@
 .changes-pane[data-compact="true"] .changes-inline-file .changes-file-label>span:first-child{margin-left:0}
 .changes-pane[data-compact="true"] .changes-inline-file .changes-file-status{display:inline-flex}
 .changes-pane[data-compact="true"] .changes-inline-file .changes-file-row>.changes-file-counts{margin-left:auto}
-.changes-pane[data-compact="true"] .changes-inline-diff{overflow:hidden;background:color-mix(in srgb,var(--card-bg) 90%,var(--content-bg));animation:changes-diff-enter 200ms ease both}
+.changes-pane[data-compact="true"] .changes-inline-diff{overflow:hidden;background:color-mix(in srgb,var(--card-bg) 90%,var(--content-bg));}
 .changes-pane[data-compact="true"] .changes-inline-diff [role="presentation"]{width:100%;min-width:0;padding:0 0 var(--space-2);font:12px/20px var(--font-mono)}
 .changes-pane[data-compact="true"] .changes-inline-diff.is-split [role="presentation"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
 .changes-pane[data-compact="true"] .changes-inline-diff.is-split [data-kind="del"]{grid-column:1}
@@ -263,7 +263,6 @@
 @container (max-width: 380px){.changes-pane[data-compact="true"] .changes-diff-refs{flex:0 1 64px;min-width:64px}.changes-pane[data-compact="true"] .changes-diff-actions{gap:0}.changes-pane[data-compact="true"] .changes-diff-actions>button,.changes-pane[data-compact="true"] .changes-diff-segment button,.changes-pane[data-compact="true"] .changes-diff-actions .changes-compact-tools>span>button{width:22px;min-width:22px;height:22px}.changes-pane[data-compact="true"] .changes-diff-actions .changes-compact-tools{order:-1}.changes-pane[data-compact="true"] .changes-diff-actions>button[aria-label="Wrap lines"],.changes-pane[data-compact="true"] .changes-diff-actions>button[aria-label="File tree"]{display:none}}
 .changes-pane[data-compact="true"] .changes-inline-loading,.changes-pane[data-compact="true"] .changes-inline-empty{padding:var(--space-3) var(--space-4);color:var(--text-muted);font-size:var(--tr-text-sm)}
 .changes-pane[data-compact="true"] .changes-inline-diff.is-detached{border-bottom:1px solid var(--divider)}
-@keyframes changes-diff-enter{from{opacity:0}to{opacity:1}}
 @media(max-width:400px){.changes-pane[data-compact="true"] .changes-diff-toolbar{gap:var(--space-1);padding-inline:var(--space-1-5)}.changes-pane[data-compact="true"] .changes-diff-refs{display:block;white-space:normal;max-height:27px}.changes-pane[data-compact="true"] .changes-diff-refs span{display:inline}.changes-pane[data-compact="true"] .changes-diff-refs span:last-child{display:block}.changes-pane[data-compact="true"] .changes-diff-stat{gap:var(--space-0-5)}}
 
 .pane-inspector-content [data-testid="pr-tab"]{flex:1;min-height:0;min-width:0}
@@ -377,3 +376,7 @@
 [data-testid="pr-check-strip-summary"]{margin-left:auto}
 [data-pr-actions-menu]{position:absolute;bottom:calc(100% - var(--space-1));right:var(--space-2-5);z-index:var(--z-sticky)}
 [data-pr-menu-field]{padding:var(--space-1) var(--space-menu-item-x)}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-inspector[data-state="entering"], .pane-inspector[data-state="closing"] { transform: none; }
+}

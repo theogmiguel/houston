@@ -422,8 +422,6 @@ const SPLIT_INTENT_TTL_MS = 10_000;
 // a pane; 60s covers a slow checkout without letting a refused Start linger.
 const TASK_START_INTENT_TTL_MS = 60_000;
 
-const PANE_GROW_TTL_MS = 1_000;
-
 // The daemon tags git_status failures so background polls stay out of notices.
 const GIT_STATUS_ERROR_CONTEXT = "git_status";
 
@@ -1089,7 +1087,6 @@ export function App(): React.JSX.Element {
   const taskStartIntents = useRef<
     { taskId: number; anchor: number | null; ws: string; ts: number }[]
   >([]);
-  const newPaneOrigins = useRef<Map<PaneKey, SplitSide>>(new Map());
   const reviewIntents = useRef<
     { projectDir: string; data: ReviewDiffsData; ts: number }[]
   >([]);
@@ -1402,11 +1399,6 @@ export function App(): React.JSX.Element {
               q.shift();
               const newId = msg.info.id;
               const headKey = keyForRef(head.ws);
-              newPaneOrigins.current.set(newId, head.side);
-              setTimeout(
-                () => newPaneOrigins.current.delete(newId),
-                PANE_GROW_TTL_MS,
-              );
               setLayouts((prev) => {
                 const cur = prev.get(headKey) ?? loadLayout(headKey);
                 if (
@@ -2544,11 +2536,6 @@ export function App(): React.JSX.Element {
           id: `e${Date.now()}-${++editorLeafSeq.current}`,
           path: pane.path,
         };
-        newPaneOrigins.current.set(node.id, side);
-        setTimeout(
-          () => newPaneOrigins.current.delete(node.id),
-          PANE_GROW_TTL_MS,
-        );
         return insertBeside(t, id, node, side);
       });
     },
@@ -3802,7 +3789,6 @@ export function App(): React.JSX.Element {
                     onBrowserNavigate={browserNavigate}
                     onCloseEditor={closeEditor}
                     onSplitEditor={handleSplitEditor}
-                    newPaneOrigins={newPaneOrigins.current}
                     onHandoff={openPaneHandoff}
                     onSwapAdjacent={
                       paneCount > 1 ? swapPaneAdjacent : undefined
@@ -3907,7 +3893,6 @@ export function App(): React.JSX.Element {
                               onBrowserNavigate={browserNavigate}
                               onCloseEditor={closeEditor}
                               onSplitEditor={handleSplitEditor}
-                              newPaneOrigins={newPaneOrigins.current}
                               onHandoff={openPaneHandoff}
                               onSwapAdjacent={
                                 paneCount > 1 ? swapPaneAdjacent : undefined

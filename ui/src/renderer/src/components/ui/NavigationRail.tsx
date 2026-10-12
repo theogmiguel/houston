@@ -28,7 +28,7 @@ export function NavigationRailHeader({ logo, children, action, ...props }: HTMLA
 }
 
 export function NavigationRailSection({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
-  return <div {...props} className="flex flex-col motion-safe:animate-[rail-slide-in-right_var(--animate-t-panel)_var(--animate-ease-panel)]">{children}</div>
+  return <div {...props} className="flex flex-col">{children}</div>
 }
 
 export function NavigationRailSearch({ paletteChord, onClick }: { paletteChord?: string | null; onClick?: () => void }): React.JSX.Element {

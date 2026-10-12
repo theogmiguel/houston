@@ -4,8 +4,8 @@ import './floatingSurface.css'
 import './prs.css'
 import { MATERIAL_CLS } from './material'
 
-export const PR_FLOATING_MENU = `${MATERIAL_CLS['raised-glass']} floating-glass floating-pop-in`
-export const PR_FLOATING_CANDIDATES = MATERIAL_CLS.inset
+export const PR_FLOATING_MENU = `${MATERIAL_CLS['raised-glass']} floating-glass`
+export const PR_FLOATING_CANDIDATES = `${MATERIAL_CLS['raised-glass']} floating-glass`
 
 const SURFACE_CLASSES = {
   'pr-number': 'font-mono text-[var(--text-secondary)]',
@@ -87,7 +87,7 @@ const SURFACE_CLASSES = {
   'pr-code-line': 'pr-code-line',
   'pr-code-viewed': 'pr-code-viewed',
   'pr-code-viewed-box': 'pr-code-viewed-box',
-  'pr-code-tree': 'pr-code-tree floating-glass shadow-[var(--shadow-1)] floating-pop-in',
+  'pr-code-tree': 'pr-code-tree floating-glass shadow-[var(--shadow-1)]',
   'pr-code-tree-item': 'pr-code-tree-item',
   'pr-check-popover': 'panel-pr-check-popover',
   'pr-check-popover-title': 'pr-check-popover-title',

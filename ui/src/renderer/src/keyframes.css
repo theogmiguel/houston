@@ -1,3 +1,5 @@
+@import './components/ui/loopMotion.css';
+
 html[data-motion-paused] .loop-anim {
   animation-play-state: paused;
 }
@@ -80,10 +82,7 @@ html[data-motion-paused] .loop-anim {
 .anim-out { pointer-events: none; }
 .anim-out > [role='menu'], .anim-out > [role='listbox'] { animation: menu-out var(--motion-fast-t) var(--motion-fast-ease) forwards; }
 
-@media (prefers-reduced-motion: reduce) {
-  .popover-view-out, .popover-view-in, .popover-header-in, .popover-body-in,
-  .anim-out > [role='menu'], .anim-out > [role='listbox'] { animation: none; }
-}
+
 
 @keyframes dot-pulse {
   0%,
@@ -168,25 +167,11 @@ html[data-motion-paused] .loop-anim {
   }
 }
 
-@keyframes notice-in-top {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-}
-
 /* Directional rail transitions keep navigation changes spatially legible. */
 @keyframes rail-slide-in-left {
   from {
     opacity: 0;
     transform: translateX(-14px);
-  }
-}
-
-@keyframes rail-slide-in-right {
-  from {
-    opacity: 0;
-    transform: translateX(14px);
   }
 }
 

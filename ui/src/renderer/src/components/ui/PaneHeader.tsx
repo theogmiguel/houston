@@ -8,16 +8,9 @@ const DIVIDER = {
   dividerMuted: 'border-b-[var(--pane-head-divider-muted)]'
 } as const
 
-const TRANSITION = {
-  background: '[transition:background_0.2s]',
-  surface: '[transition:background_0.2s,border-color_0.2s]',
-  browser: '[transition:background_0.2s,border-color_0.15s_ease]'
-} as const
-
 /** A draggable header row for a pane, with its focus surface supplied by PaneFocus. */
-export function PaneHeader({ divider = 'solid', transition = 'background', inset = 'default', dragCursor = false, onPointerDown, children, ...props }: HTMLAttributes<HTMLElement> & {
+export function PaneHeader({ divider = 'solid', inset = 'default', dragCursor = false, onPointerDown, children, ...props }: HTMLAttributes<HTMLElement> & {
   divider?: keyof typeof DIVIDER
-  transition?: keyof typeof TRANSITION
   inset?: 'default' | 'compact'
   dragCursor?: boolean
   children: ReactNode
@@ -28,7 +21,7 @@ export function PaneHeader({ divider = 'solid', transition = 'background', inset
     <header
       {...props}
       onPointerDown={onPointerDown}
-      className={`group pane-head touch-none select-none [&_input]:select-text flex items-center gap-2 pr-1 ${padding} h-[30px] min-h-[30px] border-b ${DIVIDER[divider]} flex-none cursor-grab active:cursor-grabbing ${dragging} ${TRANSITION[transition]} @container`}
+      className={`group pane-head touch-none select-none [&_input]:select-text flex items-center gap-2 pr-1 ${padding} h-[30px] min-h-[30px] border-b ${DIVIDER[divider]} flex-none cursor-grab active:cursor-grabbing ${dragging} @container`}
     >
       {children}
     </header>

@@ -8,7 +8,7 @@
   transition: width 150ms var(--motion-panel-ease), height 150ms var(--motion-panel-ease);
 }
 .tag-popover-dialog > [data-view] { position: absolute; left: 0; top: 0; width: 100%; padding: var(--space-1); }
-.tag-popover-opening { animation: floating-pop-in 150ms var(--motion-menu-ease); }
+.tag-popover-opening {  }
 .tag-popover-closing { opacity: 0; transition: opacity 100ms !important; pointer-events: none; }
 .tag-popover-view-motion[data-direction='forward'] { animation: floating-view-forward 150ms var(--motion-menu-ease) both; }
 .tag-popover-view-motion[data-direction='back'] { animation: floating-view-back 150ms var(--motion-menu-ease) both; }
@@ -78,6 +78,3 @@
 .tag-card-more { margin-left: var(--space-px); color: var(--text-muted); font-size: var(--tr-text-xs); }
 .tag-card-chips { display: flex; align-items: center; gap: var(--space-1); }
 .tag-card-chip { display: inline-flex; align-items: center; gap: var(--space-1); height: 16px; padding: 0 var(--space-tag-chip-x); border: 0; border-radius: var(--tr-radius-xs); background: transparent; color: var(--text-secondary); font-size: var(--tr-text-xs); transition: background-color 150ms; }
-@media (prefers-reduced-motion: reduce) {
-  .tag-popover-dialog, .tag-popover-prompt, .tag-popover-swatch { animation: none; transition: none; }
-}

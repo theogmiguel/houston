@@ -1432,8 +1432,7 @@
   --w-connection-banner-viewport-max: 70vw;
   --z-notice-top-stack: calc(var(--z-leaf) + 1);
   --z-notice-pane-corner: calc(var(--z-pane) + 3);
-  --motion-notice-entry-top: notice-in-top 200ms var(--motion-menu-ease);
-  --motion-notice-entry-corner: notice-in-corner 200ms var(--motion-menu-ease);
+  --motion-notice-entry-corner: notice-in-corner var(--motion-fast-t) var(--motion-fast-ease);
   --motion-connection-pulse: dot-pulse 1.2s steps(4, end) infinite;
   --opacity-connection-dot-pulse: 0.25;
   --tr-text-task-leading: 18px;

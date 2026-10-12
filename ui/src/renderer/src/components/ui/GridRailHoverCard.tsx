@@ -50,7 +50,7 @@ export function GridRailHoverCard({
   const firstPane = card.agents[0]?.session.id
   return createPortal(
     <div
-      className={`grid-hover-card floating-glass shadow-[var(--shadow-1)] ${visible ? 'floating-pop-in' : ''} fixed z-[var(--z-tooltip)] grid w-[300px] gap-[var(--space-2)]
+      className={`grid-hover-card floating-glass shadow-[var(--shadow-1)] fixed z-[var(--z-tooltip)] grid w-[300px] gap-[var(--space-2)]
         p-[var(--space-3)] text-[length:var(--tr-text-small-size)]
         transition-[opacity,transform,top] duration-150 ease-out`}
       style={{ ...position, transformOrigin: 'left top' }}

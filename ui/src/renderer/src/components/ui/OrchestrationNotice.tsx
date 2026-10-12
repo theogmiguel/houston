@@ -21,7 +21,7 @@ export function OrchestrationNotice({
     <div
       data-testid="orchestration-notice"
       role="status"
-      className="pointer-events-auto motion-safe:[animation:notice-in-corner_200ms_var(--motion-menu-ease)] flex items-center gap-[var(--space-2-5)] w-[min(400px,calc(100vw-24px))] min-w-0 p-[var(--space-2-5)] border border-[var(--border)] rounded-[var(--tr-radius-md)] bg-[var(--elevated-surface)] shadow-[var(--shadow-1)]"
+      className="pointer-events-auto motion-safe:[animation:var(--motion-notice-entry-corner)] flex items-center gap-[var(--space-2-5)] w-[min(400px,calc(100vw-24px))] min-w-0 p-[var(--space-2-5)] border border-[var(--border)] rounded-[var(--tr-radius-md)] bg-[var(--elevated-surface)] shadow-[var(--shadow-1)]"
     >
       <span className={`flex-none ${needsInput ? 'text-[var(--warn)]' : 'text-[var(--success)]'}`}>
         <StatusIcon className={ICON_ROLE_CLS.ui} />

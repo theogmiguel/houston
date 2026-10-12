@@ -830,19 +830,7 @@
 .files-surface[data-panel-crumb-collapsed="true"] .files-trail {
   display: none;
 }
-@media (prefers-reduced-motion: reduce) {
-  .files-explorer,
-  .files-explorer.sheet,
-  .files-tw,
-  .files-view,
-  .files-qo,
-  .files-qoscrim,
-  .files-banner,
-  .files-row {
-    transition: none !important;
-    animation: none;
-  }
-}
+
 .files-row.ign {
   opacity: 0.5;
 }
@@ -1182,15 +1170,7 @@
 .files-surface[data-panel-crumb-collapsed="true"] .files-trail {
   display: none;
 }
-@media (prefers-reduced-motion: reduce) {
-  .files-kids,
-  .files-row.collapsing,
-  .files-delete-confirm.collapsing,
-  .files-refreshing svg {
-    transition: none !important;
-    animation: none;
-  }
-}
+
 .files-qtext > .files-qname {
   color: var(--text-primary) !important;
 }

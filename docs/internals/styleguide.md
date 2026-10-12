@@ -378,8 +378,8 @@ tiers on top of the ladder — use a constant, don't hand-roll a shadow:
 | `OVERLAY_GLASS_OVERLAY_CLS` + `OVERLAY_GLASS_OVERLAY_ATTRS` | `overlay-glass` |
 
 All four add the shared structure the ladder does not carry: `--tr-radius-md`,
-`no-drag`, `select-text`, and a `motion-safe:` `menu-in` entrance. The scrim under
-the `overlay` rung is a sibling element at the call site, not part of the class.
+`no-drag` and `select-text`. Floating menus and popovers appear immediately.
+The scrim under the `overlay` rung is a sibling element at the call site, not part of the class.
 
 ### A rung's own ink, and its receipt
 
@@ -818,8 +818,8 @@ The rules:
    same visual as `transform: scale()` + `opacity` on a pseudo-element.
 2. **Exits are faster than entrances.** Enforced at the call site: enter at Menu,
    exit at Fast.
-3. **Motion communicates origin.** A toast enters from the corner it lives in, not
-   from nowhere.
+3. **Motion communicates origin.** Corner toasts enter from their anchor in Fast;
+   top-centred notices, the command palette and rail sections appear immediately.
 4. **Nothing loops but a genuine indeterminate.** Only `working` and `spawning`
    pulse; a running process has no known end time. `needs-input` is static.
    The optional mascot companion is a scoped exception: its reference idle and
@@ -833,7 +833,8 @@ The rules:
    are confined to mascot primitives; ordinary app controls keep the shared recipes.
 5. **Reduced motion shows a settled frame, not a broken one.** Under
    `prefers-reduced-motion: reduce`, a pulse jumps to its mid-pulse frame rather
-   than disappearing.
+   than disappearing. One global rule in `base.css` disables animations and
+   transitions, including pseudo-elements, and supplies the settled loading poses.
 6. **Everything is `motion-safe:`-gated.**
 7. **No animation library.** Interruptible springs, layout tracking and gesture
    physics are exactly what rules 1–4 forbid; there is no Framer/Motion dependency.
@@ -842,8 +843,8 @@ The rules:
 Popover anchors use the trigger's start edge and clamp only to the viewport; a trigger label
 changing width never recentres an open menu. Houston does not use RTL. A popover with multiple
 views keeps the largest view's bounds and crossfades the outgoing view in Fast (120ms) before
-the incoming view in Menu (160ms). Its container enters in Menu with `menu-in`; header and body
-rise 4px with opacity, 40ms apart. The complete popover exits once with `menu-out` in Fast.
+the incoming view in Menu (160ms). Its container appears immediately. The complete
+popover exits once with `menu-out` in Fast.
 Reduced motion removes the stagger and view crossfade and shows each settled state immediately.
 
 Keyframes live in `keyframes.css` — global and unlayered by necessity, since Tailwind

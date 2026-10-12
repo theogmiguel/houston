@@ -128,10 +128,10 @@ describe('NoticeStack rows', () => {
     expect(onClick).toHaveBeenCalledOnce()
   })
 
-  it('drops the top stack in from its own edge, behind motion-safe', () => {
+  it('shows the top stack immediately', () => {
     render(<NoticeStack anchor="workspace-top" label="L" store={store([rec({ code: 'a', title: 'a' })])} />)
     const row = screen.getByRole('status')
-    expect(row.className).toContain('motion-safe:[animation:var(--motion-notice-entry-top)]')
+    expect(row.className).not.toMatch(/animate-|animation:/)
     expect(row.className).not.toMatch(/(^|\s)\[animation:/)
   })
 

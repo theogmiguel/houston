@@ -72,7 +72,7 @@ export function SplitButton({
       {open && (
         <div
           role="menu"
-          className={`absolute right-0 z-[var(--z-sticky)] min-w-[180px] flex flex-col p-[var(--space-1)] rounded-[var(--tr-radius-sm)] ${menuSide === 'below' ? 'top-[calc(100%+var(--space-1))]' : 'bottom-[calc(100%+var(--space-1))]'} ${glass ? 'floating-glass shadow-[var(--shadow-1)] floating-pop-in' : MATERIAL_CLS.raised}`}
+          className={`absolute right-0 z-[var(--z-sticky)] min-w-[180px] flex flex-col p-[var(--space-1)] rounded-[var(--tr-radius-sm)] ${menuSide === 'below' ? 'top-[calc(100%+var(--space-1))]' : 'bottom-[calc(100%+var(--space-1))]'} ${glass ? 'floating-glass shadow-[var(--shadow-1)]' : MATERIAL_CLS.raised}`}
           {...materialAttrs(glass ? 'overlay-glass' : 'raised')}
         >
           {items.map((item) => (

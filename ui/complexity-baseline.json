@@ -40,8 +40,8 @@
       "over": 1
     },
     "src/renderer/src/components/LayoutView.tsx": {
-      "total": 171,
-      "worst": 26,
+      "total": 168,
+      "worst": 23,
       "over": 1
     },
     "src/renderer/src/components/QuestionCard.tsx": {

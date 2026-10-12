@@ -561,7 +561,6 @@ function SessionPaneImpl({
       <PaneHeader
         data-pane-focus-head={focusTier}
         divider="solid"
-        transition="background"
         dragCursor
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button, input, [data-pane-head-control]')) return

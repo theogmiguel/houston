@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import './floatingSurface.css'
 
 export function GitToolMenuSurface({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div role="menu" data-testid="git-tools-items" className="absolute right-0 top-[calc(100%+4px)] z-[var(--z-sticky)] min-w-[190px] flex flex-col floating-glass shadow-[var(--shadow-1)] floating-pop-in py-1 [transform-origin:right_top]">{children}</div>
+  return <div role="menu" data-testid="git-tools-items" className="absolute right-0 top-[calc(100%+4px)] z-[var(--z-sticky)] min-w-[190px] flex flex-col floating-glass shadow-[var(--shadow-1)] py-1 [transform-origin:right_top]">{children}</div>
 }
 
 /** The Git tools items without their floating surface, for hosts that already provide one. */

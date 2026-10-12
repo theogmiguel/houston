@@ -1,3 +1,4 @@
+import { FoundationMotionStory } from './foundationMotionStory'
 import { Segmented as SegmentedControl } from '../src/components/ui/SegmentedControl'
 import { MascotStory } from './mascotStories'
 import React from 'react'
@@ -352,6 +353,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'orchestration/parent-first-attention': () => <ParentFirstAttentionStory />,
   'orchestration/archived-results': () => <ArchivedResultsStory />,
   'orchestration/instruction-recovery': () => <InstructionRecoveryStory />,
+  'ui-primitives/motion': () => <FoundationMotionStory />,
   'ui-primitives/focus-halo': () => <div className="p-6"><SegmentedControl aria-label="Focus halo specimen" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} value="one" /></div>,
   'ui-primitives': () => <UiPrimitivesStory />,
   'git/worktree-stale': () => <StaleWorktreesStory />,

@@ -188,7 +188,7 @@ export function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-[var(--z-palette)] flex items-start justify-center pt-16 bg-overlay motion-safe:animate-[backdrop-in_var(--animate-t-scrim)_var(--animate-ease-scrim)] [.anim-out_&]:motion-safe:animate-[backdrop-out_var(--animate-t-scrim)_var(--animate-ease-scrim)_forwards]"
+      className="fixed inset-0 z-[var(--z-palette)] flex items-start justify-center pt-16 bg-overlay [.anim-out_&]:motion-safe:animate-[backdrop-out_var(--animate-t-scrim)_var(--animate-ease-scrim)_forwards]"
       onMouseDown={onClose}
     >
       <div
@@ -197,7 +197,7 @@ export function CommandPalette({
         role="dialog"
         aria-label="Command palette"
         {...materialAttrs('overlay-glass')}
-        className={`${palettePanel()} motion-safe:animate-[menu-in_var(--animate-t-fast)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards]`}
+        className={`${palettePanel()} [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards]`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {view === 'list' ? (

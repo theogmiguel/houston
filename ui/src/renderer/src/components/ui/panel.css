@@ -372,14 +372,3 @@
   transform-origin: top right;
   animation: panel-checks-pop-in 150ms var(--motion-menu-ease) both;
 }
-@media (prefers-reduced-motion: reduce) {
-  .side-panel-surface [role="dialog"][aria-label="Pull request checks"] {
-    animation: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .panel-tab,
-  .panel-launcher-row {
-    transition: none;
-  }
-}

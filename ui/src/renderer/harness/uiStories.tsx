@@ -380,7 +380,7 @@ function SkillsChromeSpecimen(): React.JSX.Element {
         <NavSurfaceFrame><NavSurfaceContent><NavSurfaceSection><PanelFootnote>Distribution status</PanelFootnote></NavSurfaceSection></NavSurfaceContent></NavSurfaceFrame>
       </div>
       <PaneFrame kind="skills" focusTier="none" active={false}>
-        <PaneHeader data-pane-focus-head="none" divider="borderMuted" transition="surface" inset="compact">
+        <PaneHeader data-pane-focus-head="none" divider="borderMuted" inset="compact">
           <Text tone="muted" className="flex-none"><Icon glyph={IconTerminal} role="ui" /></Text>
           <PaneTitle>Skills</PaneTitle>
           <PaneHeadActions><PaneHeadButton ladder={false} tone="danger" aria-label="Close"><IconClose /></PaneHeadButton></PaneHeadActions>
