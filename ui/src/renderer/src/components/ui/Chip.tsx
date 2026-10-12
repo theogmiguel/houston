@@ -1,5 +1,5 @@
 import { IconClose } from '../icons'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
@@ -68,7 +68,7 @@ function pillClass(tone: ChipTone, isPressable: boolean, selected: boolean): str
 
 function chipClass({ variant, tone, selected, disabled, isPressable }: { variant: ChipVariant; tone: ChipTone; selected: boolean; disabled: boolean; isPressable: boolean }): string {
   const shape = variant === 'choice' ? choiceClass(selected) : pillClass(tone, isPressable, selected)
-  return `${shape} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]`
+  return `${shape} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} focus-visible:outline-none ${FOCUS_HALO_CLS}`
 }
 
 export function Chip({
@@ -122,7 +122,7 @@ export function Chip({
                 e.stopPropagation()
                 onRemove?.()
               }}
-              className={`border-0 bg-transparent flex-none inline-flex items-center justify-center h-[var(--h-chip-dismiss)] w-[var(--h-chip-dismiss)] rounded-full hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed ${HIT_TARGET_28}`}
+              className={`border-0 bg-transparent flex-none inline-flex items-center justify-center h-[var(--h-chip-dismiss)] w-[var(--h-chip-dismiss)] rounded-full hover:bg-[var(--surface-hover)] focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-50 disabled:cursor-not-allowed ${HIT_TARGET_28}`}
             >
               <Icon glyph={IconClose} role="label" />
             </button>

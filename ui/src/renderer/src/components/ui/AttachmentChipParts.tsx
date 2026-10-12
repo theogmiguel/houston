@@ -3,7 +3,7 @@ import { HIT_TARGET_28 } from '../hitTarget'
 import { IconClose } from '../icons'
 import { Icon } from './Icon'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from './overlayChrome'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { Text, type TextTone } from './Text'
 import { Tooltip } from './Tooltip'
 
@@ -64,7 +64,7 @@ export function AttachmentChipFrame({ pressable, hasRemove = false, className = 
       type={pressable ? 'button' : undefined}
       className={`inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-pill)] max-w-full ${hasRemove ? 'pl-[var(--space-2)] pr-[var(--space-attachment-chip-remove-reserve)]' : 'px-[var(--space-2)]'} border border-[var(--border)] bg-[var(--surface)] rounded-[var(--tr-radius-pill)] ${
         pressable ? 'cursor-pointer hover:bg-[var(--surface-hover)]' : ''
-      } focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${className}`}
+      } focus-visible:outline-none ${FOCUS_HALO_CLS} ${className}`}
     >
       <Text as="span" size="small" weight="medium" tone="secondary" leading="small" className="contents">{children}</Text>
     </Tag>
@@ -82,7 +82,7 @@ export function AttachmentRemoveButton({ filename, onRemove }: { filename: strin
         onRemove()
       }}
       style={{ position: 'absolute', right: 'calc(var(--space-2) + var(--space-pixel))', top: '50%', transform: 'translateY(-50%)' }}
-      className={`border-0 bg-transparent flex-none inline-flex items-center justify-center h-[var(--h-tag-chip)] w-[var(--h-tag-chip)] rounded-[var(--tr-radius-pill)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${HIT_TARGET_28}`}
+      className={`border-0 bg-transparent flex-none inline-flex items-center justify-center h-[var(--h-tag-chip)] w-[var(--h-tag-chip)] rounded-[var(--tr-radius-pill)] hover:bg-[var(--surface-hover)] focus-visible:outline-none ${FOCUS_HALO_CLS} ${HIT_TARGET_28}`}
     >
       <Icon glyph={IconClose} role="label" />
     </button></Tooltip>

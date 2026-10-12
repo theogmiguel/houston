@@ -2,7 +2,7 @@ import { useContext, type ButtonHTMLAttributes, type ReactNode, type Ref } from 
 import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER, BTN_ICO, BTN_PRIMARY } from './buttonChrome'
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import './button.css'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { Tooltip, TooltipContext } from './Tooltip'
@@ -116,9 +116,9 @@ const buttonClasses = variants(
       badge: 'h-auto min-h-0 border-0 bg-transparent p-0 inline-flex items-center text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] flex-none whitespace-nowrap cursor-default gap-1.5 [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px]',
       'ghost-icon': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`,
       'ghost-icon-danger': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`,
-      'confirm-primary': `h-[var(--h-ctl)] px-[var(--space-4)] rounded-[var(--tr-radius-button)] border border-[var(--accent)] bg-[var(--accent)] text-[var(--primary-foreground)] [font-size:var(--tr-text-ui-size)] font-semibold hover:opacity-90 active:scale-[0.98] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-40`,
-      'compact-outline': `bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current [font-size:var(--tr-text-small-size)] font-semibold focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] relative after:absolute after:left-1/2 after:top-1/2 after:h-[var(--h-ctl)] after:min-w-[var(--h-ctl)] after:w-full after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']`,
-      'danger-confirmation': `h-[var(--h-ctl)] px-[var(--space-3)] rounded-[var(--tr-radius-button)] border [font-size:var(--tr-text-ui-size)] font-medium whitespace-nowrap focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed`,
+      'confirm-primary': `h-[var(--h-ctl)] px-[var(--space-4)] rounded-[var(--tr-radius-button)] border border-[var(--accent)] bg-[var(--accent)] text-[var(--primary-foreground)] [font-size:var(--tr-text-ui-size)] font-semibold hover:opacity-90 active:scale-[0.98] focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-40`,
+      'compact-outline': `bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current [font-size:var(--tr-text-small-size)] font-semibold focus-visible:outline-none ${FOCUS_HALO_CLS} relative after:absolute after:left-1/2 after:top-1/2 after:h-[var(--h-ctl)] after:min-w-[var(--h-ctl)] after:w-full after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']`,
+      'danger-confirmation': `h-[var(--h-ctl)] px-[var(--space-3)] rounded-[var(--tr-radius-button)] border [font-size:var(--tr-text-ui-size)] font-medium whitespace-nowrap focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-50 disabled:cursor-not-allowed`,
       'mini-primary-action': `btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1-5)] disabled:opacity-55`,
       'legacy-primary': `btn ${BTN_PRIMARY}`,
       'legacy-ghost': `btn ${BTN_GHOST}`,

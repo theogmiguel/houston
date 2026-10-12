@@ -1,3 +1,4 @@
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import './floatingSurface.css'
 import './tagPopoverChrome.css'
 
@@ -9,7 +10,7 @@ export const TAG_POPOVER_CLS = {
   cardChip: 'tag-card-chip',
   cardDot: 'tag-card-dot',
   cardMore: 'tag-card-more',
-  affordance: 'inline-flex items-center text-[var(--text-muted)] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]',
+  affordance: `inline-flex items-center text-[var(--text-muted)] focus-visible:outline-none ${FOCUS_HALO_CLS}`,
   prompt: 'tag-popover-prompt floating-glass fixed z-[var(--z-context)] text-[var(--text-primary)]',
   promptTitle: 'tag-popover-prompt-title text-[length:var(--tr-text-ui-size)] leading-[var(--tr-text-ui-leading)] font-semibold',
   promptCopy: '[font-size:var(--tr-text-sm)] leading-relaxed text-[var(--text-secondary)]',
@@ -24,8 +25,8 @@ export const TAG_POPOVER_CLS = {
   pickList: 'tag-popover-pick-list overflow-auto',
   emptyPick: 'tag-popover-empty text-[var(--text-muted)]',
   divider: 'tag-popover-divider',
-  menuAction: 'tag-popover-menu-action flex w-full items-center text-left focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]',
-  pickRow: 'tag-popover-pick-row flex w-full items-center text-left focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]',
+  menuAction: `tag-popover-menu-action flex w-full items-center text-left focus-visible:outline-none ${FOCUS_HALO_CLS}`,
+  pickRow: `tag-popover-pick-row flex w-full items-center text-left focus-visible:outline-none ${FOCUS_HALO_CLS}`,
   selected: 'tag-popover-highlight',
   tagName: 'min-w-0 flex-1 truncate text-[length:var(--tr-text-ui-size)]',
   manageName: 'min-w-0 flex-1 truncate text-[length:var(--tr-text-ui-size)] leading-[var(--tr-text-ui-leading)]',
@@ -34,7 +35,7 @@ export const TAG_POPOVER_CLS = {
   title: 'truncate text-[length:var(--tr-text-ui-size)]',
   manageTitle: 'flex-1 text-[length:var(--tr-text-ui-size)]',
   body: 'tag-popover-body grid',
-  nameInput: 'tag-popover-input outline-none focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]',
+  nameInput: `tag-popover-input outline-none ${FOCUS_HALO_CLS}`,
   fieldLabel: 'tag-popover-field-label text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]',
   swatchList: 'tag-popover-swatches flex flex-wrap',
   colorSwatch: 'tag-popover-swatch rounded-full',
@@ -47,7 +48,7 @@ export const TAG_POPOVER_CLS = {
   colorEditor: 'tag-popover-color-editor grid',
   colorValueRow: 'tag-popover-hex-row flex items-center',
   colorPreview: 'tag-popover-color-preview flex-none',
-  hexInput: 'tag-popover-hex-input min-w-0 flex-1 font-mono outline-none focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]',
+  hexInput: `tag-popover-hex-input min-w-0 flex-1 font-mono outline-none ${FOCUS_HALO_CLS}`,
   error: '[font-size:var(--tr-text-sm)] leading-4 text-[var(--stop)]',
   previewRow: 'tag-popover-preview-row flex items-center',
   quietText: '[font-size:var(--tr-text-sm)] leading-4 text-[var(--text-muted)]',

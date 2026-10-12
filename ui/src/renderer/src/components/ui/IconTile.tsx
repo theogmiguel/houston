@@ -1,4 +1,4 @@
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 
 export type IconTileSize = 'sm' | 'md' | 'lg' | 'xl'
 export type IconTileTone = 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'danger-outline' | 'muted' | 'surface-muted'
@@ -44,7 +44,7 @@ function Spinner({ size = 12 }: { size?: number | string }): React.JSX.Element {
 
 function tileClass({ radius, tone, interactive, selected, disabled, empty }: Required<Pick<IconTileProps, 'radius' | 'tone' | 'interactive' | 'selected' | 'disabled'>> & { empty: boolean }): string {
   const shape = radius === 'medium' ? 'rounded-[var(--tr-radius-md)]' : 'rounded-[var(--tr-radius-button)]'
-  const hover = interactive ? `cursor-pointer hover:bg-[var(--surface-hover)] active:scale-[0.96] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]` : ''
+  const hover = interactive ? `cursor-pointer hover:bg-[var(--surface-hover)] active:scale-[0.96] focus-visible:outline-none ${FOCUS_HALO_CLS}` : ''
   const pressed = selected ? 'border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--accent)]' : ''
   return `inline-flex flex-none items-center justify-center border ${shape} ${TONE_CLASS[tone]} ${hover} ${pressed} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${empty ? 'border-dashed' : ''}`
 }

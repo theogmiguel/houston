@@ -1,13 +1,13 @@
 import type { ButtonHTMLAttributes, ComponentType, HTMLAttributes, LabelHTMLAttributes, ReactNode } from 'react'
 import { BTN_PRIMARY } from './buttonChrome'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from './overlayChrome'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { Text, type TextProps } from './Text'
 
 type NoClass<T> = Omit<T, 'className'>
 const TextButton = Text as ComponentType<TextProps & ButtonHTMLAttributes<HTMLButtonElement>>
 
-const PILL_BASE_CLS = `inline-flex items-center h-[var(--h-pill)] px-[var(--space-2)] border border-[var(--border)] bg-[var(--surface)] rounded-[var(--tr-radius-pill)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]`
+const PILL_BASE_CLS = `inline-flex items-center h-[var(--h-pill)] px-[var(--space-2)] border border-[var(--border)] bg-[var(--surface)] rounded-[var(--tr-radius-pill)] hover:bg-[var(--surface-hover)] focus-visible:outline-none ${FOCUS_HALO_CLS}`
 
 const PILL_VARIANT_CLS = {
   dropdown: 'gap-[var(--space-1-5)] max-w-full disabled:opacity-50 disabled:cursor-not-allowed',

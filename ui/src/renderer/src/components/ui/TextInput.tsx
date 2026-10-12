@@ -1,5 +1,5 @@
 import { forwardRef, type InputHTMLAttributes } from 'react'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 
 export type TextInputWidth = 'md' | 'full' | 'port' | 'setting-number' | 'task-number' | 'compact' | 'number' | 'medium' | 'long' | 'wide'
 export type TextInputPadding = 'default' | 'compact'
@@ -28,7 +28,7 @@ const WIDTH_CLS: Record<TextInputWidth, string> = {
 }
 const FORM_SIZE_CLS = 'h-[var(--h-form-ctl)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] text-[var(--text-primary)] font-medium outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[0.72]'
 /** A rename field that takes over a row's label in place. */
-const INLINE_EDIT_CLS = `flex-1 min-w-0 bg-[var(--content-bg)] border border-[var(--accent)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-family:inherit] [font-weight:inherit] [font-style:inherit] [line-height:inherit] text-[length:var(--tr-text-md)] px-[var(--space-1-5)] py-[var(--space-0-5)] outline-none focus-visible:shadow-[${FOCUS_HALO}]`
+const INLINE_EDIT_CLS = `flex-1 min-w-0 bg-[var(--content-bg)] border border-[var(--accent)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-family:inherit] [font-weight:inherit] [font-style:inherit] [line-height:inherit] text-[length:var(--tr-text-md)] px-[var(--space-1-5)] py-[var(--space-0-5)] outline-none ${FOCUS_HALO_CLS}`
 const FORM_CLS = 'w-full min-w-0 h-[var(--h-ssh-input)] px-[var(--space-2-5)] bg-background border border-border rounded-[var(--tr-radius-sm)] text-text-primary text-[length:var(--tr-text-base)]'
 const PANEL_INPUT = 'w-full px-[var(--space-panel-control-x)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--card-bg)] [font-size:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)] outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[var(--panel-disabled-opacity)]'
 const PANE_INPUT = 'w-full bg-[var(--panel-field-fill)] border border-[var(--panel-field-border)] text-text-primary outline-none focus:border-[var(--border-hover)] focus:bg-surface focus-visible:border-[var(--border-hover)] py-2 px-3 rounded-[var(--tr-radius-md)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]'

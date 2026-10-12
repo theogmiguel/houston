@@ -1,5 +1,5 @@
 import { IconTile } from './IconTile'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Tooltip } from './Tooltip'
 
@@ -88,7 +88,7 @@ export function DefinitionTable({
         <button
           type="button"
           onClick={error.onRetry}
-          className={`bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current font-semibold focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${HIT_TARGET_28}`}
+          className={`bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current font-semibold focus-visible:outline-none ${FOCUS_HALO_CLS} ${HIT_TARGET_28}`}
         >
           Try again
         </button>

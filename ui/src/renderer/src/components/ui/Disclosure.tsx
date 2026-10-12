@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO_CLS } from './shadowChrome'
 import { IconChevronDown } from '../icons'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from './Icon'
@@ -119,7 +119,7 @@ export function Disclosure({
           aria-expanded={open}
           disabled={disabled}
           onClick={toggle}
-          className={`border-0 bg-transparent w-full flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-3)] text-left text-[length:var(--tr-text-ui-size)] font-medium hover:bg-[var(--surface-hover)] active:scale-[0.995] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent ${
+          className={`border-0 bg-transparent w-full flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-3)] text-left text-[length:var(--tr-text-ui-size)] font-medium hover:bg-[var(--surface-hover)] active:scale-[0.995] focus-visible:outline-none ${FOCUS_HALO_CLS} disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent ${
             error ? 'text-[var(--status-blocked-text)]' : 'text-[var(--text-primary)]'
           }`}
         >
@@ -170,7 +170,7 @@ export function Disclosure({
                   <button
                     type="button"
                     onClick={error.onRetry}
-                    className={`bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current font-semibold focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${HIT_TARGET_28}`}
+                    className={`bg-transparent rounded-[var(--tr-radius-button)] px-[var(--space-2)] h-[var(--h-ctl-mini)] border border-current font-semibold focus-visible:outline-none ${FOCUS_HALO_CLS} ${HIT_TARGET_28}`}
                   >
                     Try again
                   </button>
