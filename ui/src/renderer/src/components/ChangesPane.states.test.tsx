@@ -59,8 +59,8 @@ describe('Changes pane — state matrix (§14)', () => {
       expect.stringContaining('text-[var(--ok)]'),
       expect.stringContaining('text-[var(--stop)]')
     ])
-    expect(q('[data-testid="changes-diff-toolbar"] .changes-diff-stat [data-tone="added"]')?.textContent).toBe('+67')
-    expect(q('[data-testid="changes-diff-toolbar"] .changes-diff-stat [data-tone="deleted"]')?.textContent).toBe('−16')
+    expect(q('[data-testid="changes-list"]')?.textContent).toContain('+64')
+    expect(q('[data-testid="changes-list"]')?.textContent).toContain('−12')
   })
 
   it('names the compared refs only for a branch diff between two different refs', () => {
@@ -68,7 +68,7 @@ describe('Changes pane — state matrix (§14)', () => {
     h.status([file({ path: 'src/a.ts' })], { branch: 'feat/tags', default_base: 'main' })
     expect(q('[data-testid="changes-diff-refs"]')).toBeNull()
     click(q('[data-testid="changes-scope-branch"]'))
-    expect(q('[data-testid="changes-diff-refs"]')?.textContent).toBe('main←feat/tags')
+    expect(q('[data-testid="changes-scope-branch"]')?.textContent).toContain('vs main')
     h.status([file({ path: 'src/a.ts' })], { branch: 'main', default_base: 'main', base: 'main' })
     expect(q('[data-testid="changes-diff-refs"]')).toBeNull()
   })
@@ -77,8 +77,10 @@ describe('Changes pane — state matrix (§14)', () => {
     const h = mount({ compact: true })
     h.status([file({ path: 'src/a.ts', staged: false })])
     expect(q('[data-testid="changes-overflow-stage-all"]')).toBeNull()
-    expect(q('[aria-label="Wrap lines"] svg')).not.toBeNull()
-    click(q('[aria-label="Git actions and diff scope"]')!)
+    click(q('[aria-label="View"]'))
+    expect(qa('[role="menuitem"]').some((item) => item.textContent === 'Wrap lines')).toBe(true)
+    click(q('[aria-label="View"]'))
+    click(q('[aria-label="View"]')!)
     const stageAll = document.querySelector<HTMLButtonElement>('[data-testid="changes-overflow-stage-all"]')!
     expect(stageAll.disabled).toBe(false)
     click(stageAll)

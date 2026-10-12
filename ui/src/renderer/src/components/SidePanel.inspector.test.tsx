@@ -55,6 +55,18 @@ function props(sessions: ReadonlyMap<number, SessionInfo>, activeSessionId: numb
 }
 
 describe('pane inspector focus', () => {
+  it('Escape restores a maximized panel to its previous width', () => {
+    localStorage.setItem('tr-scm-width', '384')
+    const initial = props(new Map([[1, session(1, 'session')]]), 1)
+    const view = render(<SidePanel {...initial} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Maximize panel' }))
+    const width = vi.mocked(initial.onWidth).mock.calls[0][0]
+    view.rerender(<SidePanel {...initial} width={width} />)
+    fireEvent.keyDown(screen.getByTestId('side-panel'), { key: 'Escape' })
+    expect(initial.onWidth).toHaveBeenLastCalledWith(384)
+    expect(initial.onFocusGrid).not.toHaveBeenCalled()
+  })
+
   it('shows the uncommitted count and a PR status dot in panel tabs', () => {
     localStorage.setItem('tr-inspector-tabs:/repo', JSON.stringify({ openTabs: ['diff', 'pull-request'], active: 'diff' }))
     render(<SidePanel {...props(new Map([[1, session(1, 'session')]]), 1)} />)

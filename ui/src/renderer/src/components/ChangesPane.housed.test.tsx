@@ -19,6 +19,24 @@ describe('Changes pane — housed ground', () => {
 
 
 describe('compact side panel changes', () => {
+  it('maximized changes use a review workspace and navigate only filtered files', () => {
+    const h = mount({ compact: true, maximized: true })
+    h.status([file({ path: 'a.ts' }), file({ path: 'b.ts' })])
+    expect(q('[data-testid="changes-review-workspace"]')).not.toBeNull()
+    const pane = q('[data-testid="changes-pane"]')!
+    act(() => pane.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true })))
+    expect(q('[data-testid="changes-file-position"]')?.textContent).toBe('File 2 of 2')
+    act(() => pane.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true })))
+    const filter = q<HTMLInputElement>('[aria-label="Filter files"]')!
+    expect(document.activeElement).toBe(filter)
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(filter, 'a.ts')
+      filter.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(q('[data-testid="changes-file-position"]')?.textContent).toBe('File 1 of 1')
+    expect(q('[data-path="b.ts"]')).toBeNull()
+  })
+
   it('shows independent distinct-path comparison counts and ignores other repositories', () => {
     const h = mount({ compact: true })
     h.status([file(), file({ staged: true }), file({ path: 'b.ts' })])
@@ -35,9 +53,9 @@ describe('compact side panel changes', () => {
     h.status([file()])
     expect(q('[aria-label="Compare"]')).not.toBeNull()
     expect(q('[aria-label="Diff scope"]')).toBeNull()
-    click(q('[aria-label="Git actions and diff scope"]'))
+    click(q('[aria-label="View"]'))
     expect(q('[aria-label="Diff scope"]')).not.toBeNull()
-    click(q('[aria-label="Git actions and diff scope"]'))
+    click(q('[aria-label="View"]'))
     expect(q('[aria-label="Diff scope"]')).toBeNull()
   })
 })
@@ -47,7 +65,7 @@ describe('compact actions popover', () => {
   function open(): HTMLButtonElement {
     const h = mount({ compact: true })
     h.status([file()])
-    const trigger = q('[aria-label="Git actions and diff scope"]') as HTMLButtonElement
+    const trigger = q('[aria-label="View"]') as HTMLButtonElement
     trigger.getBoundingClientRect = () => ({ right: 420, bottom: 80 } as DOMRect)
     click(trigger)
     return trigger
@@ -55,9 +73,9 @@ describe('compact actions popover', () => {
 
   it('keeps the trigger in place and anchors an out-of-flow overlay to its right edge', () => {
     const trigger = open()
-    const wrapper = trigger.closest('.changes-compact-tools')!
+    const wrapper = trigger.closest('[data-changes-view]')!
     const popover = document.querySelector<HTMLElement>('.changes-compact-tools-body')!
-    expect(q('[aria-label="Git actions and diff scope"]')).toBe(trigger)
+    expect(q('[aria-label="View"]')).toBe(trigger)
     expect(wrapper.contains(popover)).toBe(false)
     expect(popover.style.position).toBe('fixed')
     expect(popover.style.top).toBe('80px')

@@ -187,6 +187,7 @@ export function mount(
     review?: ChangesReview | null
     onSummary?: (s: never) => void
     compact?: boolean
+    maximized?: boolean
     checkoutLabel?: string
     refreshSignal?: number
   } = {}
@@ -207,6 +208,7 @@ export function mount(
         review={opts.review ?? null}
         onSummary={opts.onSummary as never}
         compact={opts.compact}
+        maximized={opts.maximized}
         checkoutLabel={opts.checkoutLabel}
         refreshSignal={opts.refreshSignal ?? 0}
       />

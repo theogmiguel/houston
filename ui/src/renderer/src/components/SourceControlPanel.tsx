@@ -32,6 +32,7 @@ const PullRequestTab = lazy(() =>
 )
 
 export interface SourceControlPanelProps {
+  maximized?: boolean
   onChangedCount?: (count: number) => void
   hideHeader?: boolean
   onSummaryChange?: (summary: ChangesSummary) => void
@@ -208,6 +209,7 @@ export function ScmResizeHandle({
 }
 
 export function SourceControlPanel({
+  maximized,
   onChangedCount,
   hideHeader = false,
   onSummaryChange,
@@ -346,6 +348,7 @@ export function SourceControlPanel({
               onReviewPacket={onReviewPacket}
               review={review}
               compact={embedded}
+              maximized={maximized}
               checkoutLabel={checkoutLabel}
               onSummary={onSummary}
               refreshSignal={changesRefresh}

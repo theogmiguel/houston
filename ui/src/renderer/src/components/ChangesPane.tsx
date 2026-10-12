@@ -1,3 +1,4 @@
+import { ChangesReviewWorkspace, ChangesFileFilter, ChangesReviewFooter } from './ui/ChangesReview'
 import { useGitComparisonCounts } from './git/useGitComparisonCounts'
 import { GitPrOpenAction, LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
 import { DiffLoadingMark } from './ui'
@@ -43,16 +44,8 @@ import {
   IconLoaderCircle,
   IconEllipsis,
   IconSparkles,
-  IconCollapse,
-  IconExpand,
-  IconRefresh,
-  IconSplitDown,
-  IconSplitRight,
-  IconFolderOpen,
-  IconWrapText,
   IconCheck,
-  IconPlus,
-  IconMinus
+  IconSliders
 } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { Icon } from './ui/Icon'
@@ -105,6 +98,7 @@ export interface ChangesSummary {
 
 export interface ChangesPaneProps {
   compact?: boolean
+  maximized?: boolean
   checkoutLabel?: string
   client: HoustonClient | null
   dir: string | null
@@ -584,84 +578,22 @@ function ReadyChangesBody({ toolbar, notice, toolsNotice, toolsError, reviewErro
   </>
 }
 
-function CompactDiffToolbar({ counts, scope, setScope, setStagedOnly, scopeMenuOpen, setScopeMenuOpen, defaultBase, branch, checkoutLabel, stageAll, unstageAll, bulkForGroup, visibleAdded, visibleDeleted, expanded, toggleAllDiffs, splitDiff, setSplitDiff, wrapDiff, setWrapDiff, treeVisible, setTreeVisible, refresh, strip }: {
-  counts?: { working: number | null; branch: number | null }
-  scope: 'working' | 'branch'
-  setScope: (scope: 'working' | 'branch') => void
-  stagedOnly: boolean
-  setStagedOnly: (staged: boolean) => void
-  scopeMenuOpen: boolean
-  setScopeMenuOpen: React.Dispatch<React.SetStateAction<boolean>>
-  defaultBase: string | null
-  branch: string | null
-  checkoutLabel?: string
-  stageAll: string[]
-  unstageAll: string[]
-  bulkForGroup: (group: ChangeRow['group'], paths: string[]) => void
-  visibleAdded: number
-  visibleDeleted: number
-  expanded: boolean
-  toggleAllDiffs: () => void
-  splitDiff: boolean
-  setSplitDiff: (split: boolean) => void
-  wrapDiff: boolean
-  setWrapDiff: React.Dispatch<React.SetStateAction<boolean>>
-  treeVisible: boolean
-  setTreeVisible: React.Dispatch<React.SetStateAction<boolean>>
-  refresh: () => void
-  strip: React.ReactNode
+function ComparisonChoices({ counts, scope, setScope, defaultBase }: {
+  counts: { working: number | null; branch: number | null }; scope: 'working' | 'branch'; setScope: (scope: 'working' | 'branch') => void; defaultBase: string | null
 }): React.JSX.Element {
-  const scopeMenuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!scopeMenuOpen) return
-    const closeOutside = (event: MouseEvent): void => {
-      if (!scopeMenuRef.current?.contains(event.target as Node)) setScopeMenuOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setScopeMenuOpen(false)
-    }
-    document.addEventListener('mousedown', closeOutside)
-    document.addEventListener('keydown', closeOnEscape, true)
-    return () => {
-      document.removeEventListener('mousedown', closeOutside)
-      document.removeEventListener('keydown', closeOnEscape, true)
-    }
-  }, [scopeMenuOpen, setScopeMenuOpen])
-  const head = branch ?? checkoutLabel ?? null
-  // Refs only mean something for a branch diff, and only when the two sides differ.
-  const refs = scope === 'branch' && defaultBase && head && defaultBase !== head ? { base: defaultBase, head } : null
-  const pickScope = (next: 'working' | 'branch', staged: boolean): void => {
-    setScope(next)
-    setStagedOnly(staged)
-    setScopeMenuOpen(false)
-  }
-  const bulkItems = <>
-    <GitToolMenuItem data-testid="changes-overflow-stage-all" disabled={stageAll.length === 0} onClick={() => bulkForGroup('unstaged', stageAll)}><Icon glyph={IconPlus} role="small" />Stage all</GitToolMenuItem>
-    <GitToolMenuItem data-testid="changes-overflow-unstage-all" disabled={unstageAll.length === 0} onClick={() => bulkForGroup('staged', unstageAll)}><Icon glyph={IconMinus} role="small" />Unstage all</GitToolMenuItem>
-  </>
-  return <PrTab as="div" surface="changes-diff-toolbar" data-testid="changes-diff-toolbar">
-    <Segmented aria-label="Compare" size="xs" value={scope} onChange={(value) => pickScope(value, false)} options={[
-      { value: 'working', label: `Uncommitted ${counts?.working ?? '…'}`, testId: 'changes-scope-working' },
-      { value: 'branch', label: `vs ${defaultBase ?? 'base'} ${counts?.branch ?? '…'}`, testId: 'changes-scope-branch', disabled: !defaultBase, disabledReason: 'This repository has no base branch to compare against' }
+  return <Segmented aria-label="Compare" size="xs" value={scope} onChange={setScope} options={[
+    { value: 'working', label: `Uncommitted ${counts.working ?? '…'}`, testId: 'changes-scope-working' },
+    { value: 'branch', label: `vs ${defaultBase ?? 'base'} ${counts.branch ?? '…'}`, testId: 'changes-scope-branch', disabled: !defaultBase, disabledReason: 'This repository has no base branch to compare against' }
+  ]} />
+}
+
+function DiffLayoutChoices({ split, setSplit, view }: { split: boolean; setSplit: (split: boolean) => void; view: React.ReactNode }): React.JSX.Element {
+  return <div className="flex items-center gap-[var(--space-1)]">
+    <Segmented aria-label="Diff layout" size="xs" value={split ? 'split' : 'unified'} onChange={(value) => setSplit(value === 'split')} options={[
+      { value: 'unified', label: 'Unified', testId: 'changes-layout-unified' }, { value: 'split', label: 'Split', testId: 'changes-layout-split' }
     ]} />
-    {refs && <PrTab as="div" surface="changes-diff-refs" data-testid="changes-diff-refs"><span>{refs.base}</span><span aria-hidden>←</span><span>{refs.head}</span></PrTab>}
-    <PrTab as="span" surface="changes-diff-stat"><span data-tone="added">+{visibleAdded}</span><span data-tone="deleted">−{visibleDeleted}</span></PrTab>
-    <PrTab as="div" surface="changes-diff-actions">
-      <PrTab as="span" surface="changes-diff-group">
-        <Tooltip label="Refresh diff"><button type="button" aria-label="Refresh diff" onClick={refresh}><Icon glyph={IconRefresh} role="small" /></button></Tooltip>
-        <Tooltip label={expanded ? 'Collapse all' : 'Expand all'}><button type="button" aria-label={expanded ? 'Collapse all' : 'Expand all'} onClick={toggleAllDiffs}><Icon glyph={expanded ? IconCollapse : IconExpand} role="small" /></button></Tooltip>
-      </PrTab>
-      <PrTab as="span" surface="changes-diff-segment" role="group" aria-label="Diff layout">
-        <Tooltip label="Stacked diff"><button type="button" aria-label="Stacked diff" aria-pressed={!splitDiff} onClick={() => setSplitDiff(false)}><Icon glyph={IconSplitDown} role="small" /></button></Tooltip>
-        <Tooltip label="Split diff"><button type="button" aria-label="Split diff" aria-pressed={splitDiff} onClick={() => setSplitDiff(true)}><Icon glyph={IconSplitRight} role="small" /></button></Tooltip>
-      </PrTab>
-      <PrTab as="span" surface="changes-diff-group">
-        <Tooltip label={wrapDiff ? 'Disable line wrapping' : 'Wrap lines'}><button type="button" aria-label="Wrap lines" aria-pressed={wrapDiff} onClick={() => setWrapDiff((value) => !value)}><Icon glyph={IconWrapText} role="small" /></button></Tooltip>
-        <Tooltip label={treeVisible ? 'Hide file tree' : 'Show file tree'}><button type="button" aria-label="File tree" aria-pressed={treeVisible} onClick={() => setTreeVisible((value) => !value)}><Icon glyph={IconFolderOpen} role="small" /></button></Tooltip>
-      </PrTab>
-      <ChangesToolbar compact strip={strip} items={bulkItems} />
-    </PrTab>
-  </PrTab>
+    {view}
+  </div>
 }
 
 export function ChangesPane({
@@ -674,9 +606,13 @@ export function ChangesPane({
   review = null,
   onSummary,
   refreshSignal = 0,
+  maximized = false,
   compact
 }: ChangesPaneProps): React.JSX.Element {
   const repoDir = dir
+  const filterRef = useRef<HTMLInputElement>(null)
+  const [fileFilter, setFileFilter] = useState("")
+  useEffect(() => { if (maximized) setSplitDiff(true) }, [maximized])
 
   const [files, setFiles] = useState<GitFileStatus[] | null>(null)
   const [branch, setBranch] = useState<string | null>(null)
@@ -688,7 +624,6 @@ export function ChangesPane({
   const [notARepo, setNotARepo] = useState(false)
   const [scope, setScope] = useState<'working' | 'branch'>('working')
   const [stagedOnly, setStagedOnly] = useState(false)
-  const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
   const [inlineDiffs, setInlineDiffs] = useState<Map<string, DiffState>>(() => new Map())
   const [wrapDiff, setWrapDiff] = useState(false)
@@ -987,13 +922,33 @@ export function ChangesPane({
   const pushBlocked = pushBlockedReason(client !== null, repoDir !== null, upstream, ahead, pushing)
   const offerCreatePr = offerPrCreateForState(pr)
 
-  const visibleRows = useMemo(() => visibleRowsFor(rows, stagedOnly), [rows, stagedOnly])
-  const visibleFiles = useMemo(() => visibleFilesFor(files, stagedOnly), [files, stagedOnly])
-  const visibleAdded = visibleRows.reduce((sum, row) => sum + (row.added ?? 0), 0)
-  const visibleDeleted = visibleRows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)
+  const visibleRows = useMemo(() => visibleRowsFor(rows, stagedOnly).filter((row) => !maximized || row.path.toLowerCase().includes(fileFilter.toLowerCase())), [rows, stagedOnly, maximized, fileFilter])
+  const visibleFiles = useMemo(() => visibleFilesFor(files, stagedOnly)?.filter((file) => !maximized || file.path.toLowerCase().includes(fileFilter.toLowerCase())) ?? null, [files, stagedOnly, maximized, fileFilter])
+  useEffect(() => {
+    if (maximized && !visibleRows.some((row) => row.path === selected)) {
+      setSelected(visibleRows[0]?.path ?? null)
+      setDiff(null)
+    }
+  }, [maximized, visibleRows, selected])
+
+  const reviewKeyDown = (event: React.KeyboardEvent): void => {
+    if (!maximized || event.ctrlKey || event.metaKey || event.altKey) return
+    if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="menu"]')) return
+    if (event.key === '/') {
+      event.preventDefault()
+      filterRef.current?.focus()
+    } else if (event.key.toLowerCase() === 'j' || event.key.toLowerCase() === 'k') {
+      event.preventDefault()
+      event.stopPropagation()
+      if (visibleRows.length === 0) return
+      const current = visibleRows.findIndex((row) => row.path === selected)
+      const next = Math.max(0, Math.min(visibleRows.length - 1, current + (event.key.toLowerCase() === 'j' ? 1 : -1)))
+      select(visibleRows[next].path)
+    }
+  }
 
   const shell = (body: React.ReactNode): React.JSX.Element => (
-    <GitChangesSurface compact={compact === true} state={paneState} reviewing={reviewing}>
+    <GitChangesSurface onKeyDown={reviewKeyDown} compact={compact === true} state={paneState} reviewing={reviewing}>
       {body}
       {reviewPickerOpen && (
         <ReviewProviderModal
@@ -1043,6 +998,7 @@ export function ChangesPane({
   const fileList = (
     <ChangesFileList
       compact={compact}
+      flat={maximized}
       files={compact ? visibleFiles : files}
       rows={compact ? visibleRows : rows}
       branch={branch}
@@ -1051,7 +1007,7 @@ export function ChangesPane({
       ahead={ahead}
       offerCreatePr={offerCreatePr}
       listRef={listRef}
-      onKeyDown={onKeyDown}
+      onKeyDown={maximized ? changeListKeyDown(visibleRows, selected, setSelected, select, stageToggle) : onKeyDown}
       selected={selected}
       menuFor={menuFor}
       select={select}
@@ -1064,19 +1020,31 @@ export function ChangesPane({
       unstageAll={unstageAll}
       bulkForGroup={bulkForGroup}
       setStatusError={setStatusError}
-      inlineDiffs={compact ? inlineDiffs : undefined}
-      expandedPaths={compact ? expandedPaths : undefined}
-      togglePath={compact ? togglePath : undefined}
+      inlineDiffs={compact && !maximized ? inlineDiffs : undefined}
+      expandedPaths={compact && !maximized ? expandedPaths : undefined}
+      togglePath={compact && !maximized ? togglePath : undefined}
       wrapDiff={wrapDiff}
       splitDiff={splitDiff}
     />
   )
+
+  const viewMenu = <ChangesToolbar compact triggerLabel="View" items={<>
+    <GitToolMenuItem onClick={refresh}>Refresh diff</GitToolMenuItem>
+    <GitToolMenuItem onClick={toggleAllDiffs}>{expandedPaths.size === rows.length ? 'Collapse all' : 'Expand all'}</GitToolMenuItem>
+    <GitToolMenuItem aria-pressed={wrapDiff} onClick={() => setWrapDiff((value) => !value)}>Wrap lines</GitToolMenuItem>
+    <GitToolMenuItem aria-pressed={treeVisible} onClick={() => setTreeVisible((value) => !value)}>File tree</GitToolMenuItem>
+    <GitToolMenuItem aria-pressed={stagedOnly} onClick={() => setStagedOnly((value) => !value)}>Staged files only</GitToolMenuItem>
+    <GitToolMenuItem data-testid="changes-overflow-stage-all" disabled={stageAll.length === 0} onClick={() => bulkForGroup('unstaged', stageAll)}>Stage all</GitToolMenuItem>
+    <GitToolMenuItem data-testid="changes-overflow-unstage-all" disabled={unstageAll.length === 0} onClick={() => bulkForGroup('staged', unstageAll)}>Unstage all</GitToolMenuItem>
+  </>} strip={strip} />
+  const layoutChoices = <DiffLayoutChoices split={splitDiff} setSplit={setSplitDiff} view={viewMenu} />
 
   const diffPane = (
     <DiffArea
       row={selectedRow}
       diff={diff}
       split={splitDiff}
+      controls={maximized ? layoutChoices : undefined}
       emptySummary={{
         headline: `${rows.length} file${rows.length === 1 ? '' : 's'} changed`,
         description: `+${rows.reduce((sum, row) => sum + (row.added ?? 0), 0)} added, −${rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)} removed${ahead > 0 ? ` · ${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${defaultBase ?? 'the base'}` : ''}. Pick a file to read its diff.`
@@ -1116,18 +1084,21 @@ export function ChangesPane({
 
   const prLine = <PrLine pr={pr} onOpenUrlInPane={onOpenUrlInPane} hidden={compact} />
 
-  const compactToolbar = compact ? <CompactDiffToolbar
-    counts={counts}
-    scope={scope} setScope={setScope} stagedOnly={stagedOnly} setStagedOnly={setStagedOnly}
-    scopeMenuOpen={scopeMenuOpen} setScopeMenuOpen={setScopeMenuOpen} defaultBase={defaultBase}
-    branch={branch} checkoutLabel={checkoutLabel} stageAll={stageAll} unstageAll={unstageAll}
-    bulkForGroup={bulkForGroup} visibleAdded={visibleAdded} visibleDeleted={visibleDeleted}
-    expanded={expandedPaths.size === rows.length} toggleAllDiffs={toggleAllDiffs} splitDiff={splitDiff}
-    setSplitDiff={setSplitDiff} wrapDiff={wrapDiff} setWrapDiff={setWrapDiff} treeVisible={treeVisible}
-    setTreeVisible={setTreeVisible} refresh={refresh} strip={strip}
-  /> : null
+  const compactToolbar = <GitChangesToolbarSurface>
+    <ComparisonChoices counts={counts} scope={scope} setScope={(value) => { setScope(value); setStagedOnly(false) }} defaultBase={defaultBase} />
+    {!maximized && <span className="flex flex-1 justify-end">{layoutChoices}</span>}
+  </GitChangesToolbarSurface>
 
-  const body = compact ? <CompactChangesBody toolbar={compactToolbar} notice={notice} toolsNotice={toolsNotice} toolsError={toolsError} reviewError={reviewError} commitError={commitError} prMessage={prMessage} visibleRows={visibleRows} expandedPaths={expandedPaths} inlineDiffs={inlineDiffs} treeVisible={treeVisible} fileList={fileList} commitBox={commitBox} />
+  const body = maximized ? <ChangesReviewWorkspace left={<>
+      {compactToolbar}
+      <ChangesFileFilter inputRef={filterRef} value={fileFilter} onChange={(event) => setFileFilter(event.target.value)} />
+      <GitChangesFileListFrame>{fileList}</GitChangesFileListFrame>
+      {commitBox}
+    </>}>
+      <ChangesErrorLines reviewError={reviewError} commitError={commitError} prMessage={prMessage} />
+      {diffPane}
+      <ChangesReviewFooter index={visibleRows.length === 0 ? 0 : visibleRows.findIndex((row) => row.path === selected) + 1} count={visibleRows.length} />
+    </ChangesReviewWorkspace> : compact ? <CompactChangesBody toolbar={compactToolbar} notice={notice} toolsNotice={toolsNotice} toolsError={toolsError} reviewError={reviewError} commitError={commitError} prMessage={prMessage} visibleRows={visibleRows} expandedPaths={expandedPaths} inlineDiffs={inlineDiffs} treeVisible={treeVisible} fileList={fileList} commitBox={commitBox} />
     : paneState === 'loading' || paneState === 'empty'
       ? <LoadingChangesBody toolbar={stripChrome} toolsNotice={toolsNotice} toolsError={toolsError} commitError={commitError} fileList={fileList} commitBox={commitBox} prLine={prLine} />
       : <ReadyChangesBody toolbar={stripChrome} notice={notice} toolsNotice={toolsNotice} toolsError={toolsError} reviewError={reviewError} commitError={commitError} prMessage={prMessage} fileList={fileList} commitBox={commitBox} prLine={prLine} diffPane={diffPane} client={client} repoDir={activeRepoDir} compact={compact} />
@@ -1135,7 +1106,7 @@ export function ChangesPane({
   return shell(body)
 }
 
-function ChangesToolbar({ compact, strip, items }: { compact: boolean; strip: React.ReactNode; items?: React.ReactNode }): React.JSX.Element {
+function ChangesToolbar({ compact, strip, items, triggerLabel = "Git actions and diff scope" }: { compact: boolean; strip: React.ReactNode; items?: React.ReactNode; triggerLabel?: string }): React.JSX.Element {
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -1159,19 +1130,19 @@ function ChangesToolbar({ compact, strip, items }: { compact: boolean; strip: Re
   }, [anchor])
   if (!compact) return <>{strip}</>
   return (
-    <GitCompactToolsAnchor>
-      <Tooltip label="Git actions and diff scope">
-        <button
+    <GitCompactToolsAnchor view={triggerLabel === "View"}>
+      <Tooltip label={triggerLabel}>
+        <Button variant="ghost" size="sm"
           ref={trigger}
-          aria-label="Git actions and diff scope"
+          aria-label={triggerLabel}
           aria-expanded={anchor !== null}
           onClick={() => {
             const rect = trigger.current!.getBoundingClientRect()
             setAnchor(anchor ? null : { top: rect.bottom, right: window.innerWidth - rect.right })
           }}
         >
-          <Icon glyph={IconEllipsis} role="ui" />
-        </button>
+          {triggerLabel === "View" ? <><Icon glyph={IconSliders} role="small" />View</> : <Icon glyph={IconEllipsis} role="ui" />}
+        </Button>
       </Tooltip>
       {anchor && createPortal(
         <GitCompactToolsSurface

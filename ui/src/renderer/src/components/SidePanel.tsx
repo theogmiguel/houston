@@ -723,7 +723,7 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
     recordAction()
   }
   const onKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
-    if (event.key === 'Escape' && !(event.target as HTMLElement).closest('[role="dialog"], .ctx-menu')) { event.stopPropagation(); props.onFocusGrid(); return }
+    if (event.key === 'Escape' && !(event.target as HTMLElement).closest('[role="dialog"], .ctx-menu')) { event.stopPropagation(); if (maximized) onToggleMaximize(); else props.onFocusGrid(); return }
     if (openTabs.length === 0 && 'bfdpl'.includes(event.key.toLowerCase()) && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) {
       const shortcut = Object.entries(SURFACE_META).find(([, item]) => item.shortcut.toLowerCase() === event.key.toLowerCase())
       if (shortcut && !surfaceDisabledReason(shortcut[0] as SurfaceKind, props, links)) {
@@ -751,7 +751,7 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element | null {
   }, [props.proactiveDiffEnabled, props.proactiveDiffRequest, props.onUserActionCounterChange])
 
   if (!mounted && !props.keepMounted && !openTabs.some(isBrowserSurface)) return null
-  return <SidePanelFrame open={open} entering={entering} mounted={mounted} props={{ ...props, onSummaryChange: onChangesSummary }} openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} links={links} openSurface={openSurface} icons={icons} rendered={rendered} requested={requested} hostWidth={hostWidth} finishExit={finishExit} onKeyDown={onKeyDown} isOrchestrator={isOrchestrator} filesRoot={filesRoot} onTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} setEntering={setEntering} maximized={maximized} onToggleMaximize={onToggleMaximize} />
+  return <SidePanelFrame open={open} entering={entering} mounted={mounted} props={{ ...props, maximized, onSummaryChange: onChangesSummary }} openTabs={openTabs} active={active} tabsRef={tabsRef} overflowing={overflowing} dragTab={dragTab} metaFor={metaFor} selectSurface={selectSurface} closeSurface={closeSurface} reorderSurface={reorderSurface} addOpen={addOpen} setAddOpen={setAddOpen} links={links} openSurface={openSurface} icons={icons} rendered={rendered} requested={requested} hostWidth={hostWidth} finishExit={finishExit} onKeyDown={onKeyDown} isOrchestrator={isOrchestrator} filesRoot={filesRoot} onTitleChange={onTitleChange} onFilesTabTitleChange={onFilesTabTitleChange} checkAgentTargets={checkAgentTargets} requestedPrForTab={requestedPrForTab} overviewTarget={overviewTarget} setOverviewTarget={setOverviewTarget} setEntering={setEntering} maximized={maximized} onToggleMaximize={onToggleMaximize} />
 }
 
 export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: sessionsProp, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: Omit<SourceControlPanelProps, 'onCreateCheckAgent' | 'requestedPr'> & {

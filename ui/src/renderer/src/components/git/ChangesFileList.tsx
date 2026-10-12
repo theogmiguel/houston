@@ -26,6 +26,7 @@ const MARK_GLYPH: Record<GitFileStatus['status'], string> = {
 
 export function ChangesFileList({
   compact = false,
+  flat = false,
   files,
   rows,
   branch,
@@ -54,6 +55,7 @@ export function ChangesFileList({
   splitDiff
 }: {
   compact?: boolean
+  flat?: boolean
   files: GitFileStatus[] | null
   rows: ChangeRow[]
   branch: string | null
@@ -82,10 +84,10 @@ export function ChangesFileList({
   splitDiff?: boolean
 }): React.JSX.Element {
   const statusGroups = files ? groupRows(files) : []
-  const showCompactGroups = compact && statusGroups.length > 1
+  const showCompactGroups = !flat && compact && statusGroups.length > 1
   const groups = files
-    ? compact && !showCompactGroups
-      ? [{ group: 'unstaged' as const, rows: files.map(toRow) }]
+    ? (flat || compact) && !showCompactGroups
+      ? [{ group: 'unstaged' as const, rows: files.filter((file, index) => !flat || files.findIndex((other) => other.path === file.path) === index).map(toRow) }]
       : statusGroups
     : []
   if (files === null) {

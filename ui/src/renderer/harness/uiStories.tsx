@@ -1,6 +1,7 @@
 import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
+import { ChangesReviewSpecimen } from '../src/components/ui/ChangesReview'
 import { DiffBody } from '../src/components/git/DiffBody'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
 import { SpinnerSpecimen } from '../src/components/ui/Spinner'
@@ -554,6 +555,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <MotionThemeSpecimens theme="paper" reducedMotion />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Changes review workspace"><ChangesReviewSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Diff line">
           <ReviewDiffLineSpecimen />
           <DiffBody patch={"@@ -1,2 +1,3 @@\n-old\n+new\n+extra\n context"} truncated={false} split />

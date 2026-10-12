@@ -4,7 +4,7 @@ import { OVERLAY_GLASS_OVERLAY_CLS } from './overlayChrome'
 import { Text } from './Text'
 
 export function GitChangesToolbarSurface({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="flex items-center gap-[var(--space-2)] px-[var(--space-2-5)] py-[var(--space-1-5)] border-b border-b-[var(--divider)] flex-none flex-wrap">{children}</div>
+  return <div data-testid="changes-diff-toolbar" className="flex items-center gap-[var(--space-2)] px-[var(--space-2-5)] py-[var(--space-1-5)] border-b border-b-[var(--divider)] flex-none flex-wrap">{children}</div>
 }
 
 export function GitCommitPanel({ children }: { children: ReactNode }): React.JSX.Element {
@@ -35,8 +35,8 @@ export function GitPrSummaryLabel({ children }: { children: ReactNode }): React.
   return <Text size="xs" tone="muted" className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{children}</Text>
 }
 
-export function GitChangesSurface({ children, compact, state, reviewing }: { children: ReactNode; compact: boolean; state: string; reviewing: boolean }): React.JSX.Element {
-  return <section className={`changes-pane flex-1 min-w-0 min-h-0 relative flex flex-col overflow-hidden ${MATERIAL_CLS.shell}`} data-testid="changes-pane" data-compact={compact} data-state={state} data-reviewing={reviewing ? 'true' : undefined} {...materialAttrs('shell')}>{children}</section>
+export function GitChangesSurface({ children, compact, state, reviewing, ...props }: HTMLAttributes<HTMLElement> & { children: ReactNode; compact: boolean; state: string; reviewing: boolean }): React.JSX.Element {
+  return <section {...props} className={`changes-pane flex-1 min-w-0 min-h-0 relative flex flex-col overflow-hidden ${MATERIAL_CLS.shell}`} data-testid="changes-pane" data-compact={compact} data-state={state} data-reviewing={reviewing ? 'true' : undefined} {...materialAttrs('shell')}>{children}</section>
 }
 
 export function GitChangesBody({ children }: { children: ReactNode }): React.JSX.Element {
@@ -59,8 +59,8 @@ export function GitChangesNarrowActions({ children }: { children: ReactNode }): 
   return <div className="flex-none flex flex-col [@container_(min-width:720px)]:hidden">{children}</div>
 }
 
-export function GitCompactToolsAnchor({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="changes-compact-tools">{children}</div>
+export function GitCompactToolsAnchor({ children, view = false }: { children: ReactNode; view?: boolean }): React.JSX.Element {
+  return <div data-changes-view={view ? "true" : undefined} className={view ? "relative inline-flex" : "changes-compact-tools"}>{children}</div>
 }
 
 export function GitCompactToolsSurface({ children, ...props }: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
