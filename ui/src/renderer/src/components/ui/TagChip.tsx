@@ -31,7 +31,7 @@ export function TagChip({
     : {
         ['--tag' as string]: tag.color,
         background: 'color-mix(in srgb, var(--tag) 13%, transparent)',
-        color: 'color-mix(in srgb, var(--tag) 72%, var(--tag-chip-text-base))',
+        color: 'var(--text-secondary)',
         border: '1px solid color-mix(in srgb, var(--tag) 26%, transparent)'
       }
   const children: ReactNode = compact ? (
