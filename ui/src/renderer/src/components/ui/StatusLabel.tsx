@@ -13,6 +13,7 @@ export const STATUS_LABELS = [
   'In sync',
   'Waiting for a slot',
   'Differs',
+  'On',
   'Off',
   'Connected',
   'Reconnecting',
@@ -44,6 +45,7 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   'In sync': 'var(--ok)',
   'Waiting for a slot': 'var(--warn)',
   Differs: 'var(--warn)',
+  On: 'var(--ok)',
   Off: 'var(--text-faint)',
   Connected: 'var(--ok)',
   Reconnecting: 'var(--warn)',
@@ -59,7 +61,9 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
 }
 
 const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {
-  Off: 'text-[var(--text-muted)]'
+  Off: 'text-[var(--text-muted)]',
+  On: 'text-[var(--ok)]',
+  Connected: 'text-[var(--ok)]'
 }
 
 type PillTone = 'waiting' | 'failed' | 'done' | 'working' | 'unknown'
@@ -78,7 +82,7 @@ export function StatusLabel({ status, size = 'ui', variant = 'default', tone = '
   if (variant === 'pill') return <span className={`${PILL_CLASS} ${PILL_TONE[tone]}`}>{children ?? status}</span>
   const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off' || status === 'Kept'
   return (
-    <span role={variant === 'dot' ? 'img' : undefined} aria-label={status} className={`inline-flex items-center gap-[var(--space-1-5)] text-[var(--text-secondary)] ${STATUS_TEXT[status] ?? ''} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
+    <span role={variant === 'dot' ? 'img' : undefined} aria-label={status} className={`inline-flex items-center gap-[var(--space-1-5)] ${STATUS_TEXT[status] ?? 'text-[var(--text-secondary)]'} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
       <span
         aria-hidden="true"
         className="agent-dot h-[var(--space-1-5)] w-[var(--space-1-5)] flex-none rounded-full"

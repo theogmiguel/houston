@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import type { HoustonClient } from '../../houston/client'
 import type { HarnessFinding } from '../../houston/generated/HarnessFinding'
 import type { AgentKind } from '../../houston/generated/AgentKind'
+import { IconSparkles } from '../icons'
 import { Button, Card, Inline, SectionHead, Text } from '../ui'
 
-type Suggestions = { workspace: string; name: string; finding: HarnessFinding; agent: AgentKind }[]
+type Suggestions = { workspace: string; name: string; finding: HarnessFinding; reviewSessions: number | null; agent: AgentKind }[]
 
 export function TasksSuggested({ client, workspaces }: {
   client: HoustonClient | null
@@ -22,7 +23,7 @@ export function TasksSuggested({ client, workspaces }: {
       const name = scope.get(message.workspace)
       if (name === undefined) return
       const rows = message.findings.filter((finding) => finding.phase === 'open' && !finding.task)
-        .map((finding) => ({ workspace: message.workspace, name, finding, agent: message.routine?.engine ?? 'claude' as AgentKind }))
+        .map((finding) => ({ workspace: message.workspace, name, finding, reviewSessions: message.reviews.find((review) => review.id === finding.review_id)?.sessions ?? null, agent: message.routine?.engine ?? 'claude' as AgentKind }))
       setSuggestions((current) => [...current.filter((item) => item.workspace !== message.workspace), ...rows])
     })
     const offChanged = client.subscribe('harness_changed', (message) => {
@@ -33,14 +34,14 @@ export function TasksSuggested({ client, workspaces }: {
   }, [client, scopeKey])
   if (!suggestions.length) return null
   return (
-    <Card shape="inset" data-testid="tasks-suggested">
-      <SectionHead title="Suggested" count={suggestions.length} density="row" action={<Text size="small" tone="muted">from Review</Text>} />
-      {suggestions.map(({ workspace, name, finding, agent }) => (
-        <Card.Row key={`${workspace}:${finding.key}`} heading={finding.title}
-          meta={`${name} · ${finding.count} ${finding.count === 1 ? 'session' : 'sessions'}`}
+    <Card shape="inset" borderStyle="dashed" data-testid="tasks-suggested">
+      <SectionHead title="Suggested" count={suggestions.length} density="row" variant="sentence" icon={IconSparkles} tone="muted" action={<Text size="small" tone="muted">from Review</Text>} />
+      {suggestions.map(({ workspace, name, finding, reviewSessions, agent }) => (
+        <Card.Row layout="meta-actions" key={`${workspace}:${finding.key}`} heading={finding.title}
+          meta={`${finding.count}${reviewSessions ? ` of ${reviewSessions}` : ''} ${finding.count === 1 ? 'session' : 'sessions'}${workspaces.length > 1 ? ` · ${name}` : ''}`}
           action={<Inline gap="small">
-            <Button variant="ghost" size="sm" onClick={() => client?.harnessDecide(workspace, finding.key, 'dismissed')}>Dismiss</Button>
-            <Button variant="link" size="sm" onClick={() => client?.harnessFixTask(workspace, finding.key, agent, finding.apply_prompt)}>Add to queue</Button>
+            <Button variant="muted-link" size="sm" onClick={() => client?.harnessDecide(workspace, finding.key, 'dismissed')}>Dismiss</Button>
+            <Button variant="muted-link" size="sm" onClick={() => client?.harnessFixTask(workspace, finding.key, agent, finding.apply_prompt)}>Add to queue</Button>
           </Inline>} />
       ))}
     </Card>

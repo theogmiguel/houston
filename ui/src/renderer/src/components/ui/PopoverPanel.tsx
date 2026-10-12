@@ -53,10 +53,10 @@ export function PopoverBody({ children }: { children: ReactNode }): React.JSX.El
   return <div className="grid gap-[var(--space-2)] p-[var(--space-2)]">{children}</div>
 }
 
-export function PopoverHeader({ children, trailing }: { children: ReactNode; trailing?: ReactNode }): React.JSX.Element {
+export function PopoverHeader({ children, trailing, description }: { children: ReactNode; trailing?: ReactNode; description?: ReactNode }): React.JSX.Element {
   return (
     <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
-      {children}
+      {description ? <div className="grid min-w-0 gap-[var(--space-0-5)]">{children}<Text size="small" tone="muted">{description}</Text></div> : children}
       <span className="ml-auto" />
       {trailing}
     </div>

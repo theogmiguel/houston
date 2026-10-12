@@ -64,3 +64,19 @@ it('keeps subscriptions and findings when an equivalent workspace array is recre
   expect(screen.queryByText('Retained fix')).toBeNull()
   expect(harnessState).toHaveBeenLastCalledWith('/b')
 })
+
+it('gives each suggested title its own line and puts review counts beside its actions', () => {
+  const handlers = new Map<string, (message: ServerMsg) => void>()
+  const client = { harnessState: vi.fn(), subscribe: (type: string, callback: (message: ServerMsg) => void) => { handlers.set(type, callback); return () => {} } } as unknown as HoustonClient
+  render(<TasksSuggested client={client} workspaces={[{ path: '/a', name: 'A' }]} />)
+  act(() => handlers.get('harness_state')?.({ type: 'harness_state', workspace: '/a', findings: [finding('Codex retries the same failing migration', { count: 5 })], routine: null, reviews: [{ id: 7, workspace: '/a', routine_id: 1, run_id: 7, status: 'published', started_at_ms: 1, sessions: 38, finding_count: 1, run_dir: '/a/.houston/harness/r7' }], models: [], provider_coverage: [], engine_refusals: [] }))
+  const title = screen.getByText('Codex retries the same failing migration')
+  const row = title.closest('[data-card-row-layout="meta-actions"]')
+  expect(row).not.toBeNull()
+  expect(row?.firstElementChild?.textContent).toBe('Codex retries the same failing migration')
+  expect(row?.lastElementChild?.textContent).toContain('5 of 38 sessions')
+  expect(row?.lastElementChild?.textContent).toContain('DismissAdd to queue')
+  const group = screen.getByTestId('tasks-suggested')
+  expect(group.className).toContain('border-dashed')
+  expect(screen.getByRole('heading', { name: /Suggested/ }).querySelector('svg')).not.toBeNull()
+})

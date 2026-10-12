@@ -79,11 +79,12 @@ export function TasksSources({ client, workspace, workspaces }: {
       window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true)
     }
   }, [open, dismiss])
+  const connected = hasConnectedSources(slack, trackers, state)
   const configure = (source: Exclude<Setup, null>): void => { dismiss(); setSetup(source) }
   return <>
-    <Button ref={trigger} variant="secondary" icon={IconPlug} data-testid="tasks-sources" aria-expanded={open} aria-controls={open ? 'task-sources' : undefined} onClick={() => setOpen((value) => !value)}>Sources</Button>
+    <Button ref={trigger} variant="secondary" icon={IconPlug} data-testid="tasks-sources" aria-expanded={open} aria-controls={open ? 'task-sources' : undefined} onClick={() => setOpen((value) => !value)}>Sources{connected && <span aria-hidden="true"><StatusLabel status="Connected" variant="dot" /></span>}</Button>
     {open && createPortal(<PopoverPanel ref={panel} width="wide" top={position.top} left={position.left} visible aria-label="Where tasks come from" id="task-sources">
-      <PopoverHeader><PopoverTitle>Where tasks come from</PopoverTitle></PopoverHeader>
+      <PopoverHeader description="Slack requests wait for the owner’s ✅ before an agent starts; review findings wait for your decision."><PopoverTitle>Where tasks come from</PopoverTitle></PopoverHeader>
       <TaskSourcesContent clientConnected={!!client} workspace={workspace} workspaces={workspaces} activeWorkspace={activeWorkspace}
         onWorkspace={setChosenWorkspace} slack={slack} trackers={trackers} harness={state} onConfigure={configure}
         onReview={() => { dismiss(); setRailView('routines') }} />
@@ -101,7 +102,7 @@ function TrackerSourceState({ workspace, trackers, provider }: {
   if (!workspace) return <Text size="small" tone="muted">Choose a workspace</Text>
   if (!trackers) return <Text size="small" tone="muted">Loading…</Text>
   const setting = trackers.find((item) => item.provider === provider)
-  return <StatusLabel size="small" status={setting?.last_error ? 'Failed' : setting?.enabled ? 'Watching' : 'Off'} />
+  return <StatusLabel size="small" status={setting?.last_error ? 'Failed' : setting?.enabled ? 'On' : 'Off'} />
 }
 
 function TaskSourcesContent({ clientConnected, workspace, workspaces, activeWorkspace, onWorkspace, slack, trackers, harness, onConfigure, onReview }: {
@@ -119,18 +120,18 @@ function TaskSourcesContent({ clientConnected, workspace, workspaces, activeWork
   return (
     <PopoverBody>
       {!workspace && <Select aria-label="Sources workspace" value={activeWorkspace} onChange={onWorkspace} options={workspaces.map((item) => ({ value: item.path, label: item.name }))} />}
-      <Card>
-        <Card.Row heading="Slack" meta="Mention the bot in a mapped channel to file a pending task. The owner starts it with a :white_check_mark: reaction."
+      <div className="grid">
+        <Card.Row layout="source" heading="Slack" meta={slackSourceCaption(slack, activeWorkspace)}
           status={slack ? <StatusLabel size="small" status={!slack.enabled ? 'Off' : slack.connection === 'connected' ? 'Connected' : 'Reconnecting'} /> : <Text size="small" tone="muted">Loading…</Text>}
-          action={<Button variant="link" size="sm" disabled={!clientConnected} data-testid="task-source-slack" onClick={() => onConfigure('slack')}>Set up</Button>} />
-        <Card.Row heading="GitHub issues" meta="Issues with a label you choose in this workspace’s repository." status={<TrackerSourceState workspace={activeWorkspace} trackers={trackers} provider="github_issues" />}
-          action={<Button variant="link" size="sm" disabled={!clientConnected || !activeWorkspace} data-testid="task-source-github_issues" onClick={() => onConfigure('github_issues')}>Set up</Button>} />
-        <Card.Row heading="Notion" meta="Pages in a database you choose." status={<TrackerSourceState workspace={activeWorkspace} trackers={trackers} provider="notion" />}
-          action={<Button variant="link" size="sm" disabled={!clientConnected || !activeWorkspace} data-testid="task-source-notion" onClick={() => onConfigure('notion')}>Set up</Button>} />
-        <Card.Row heading="Review" meta="Findings arrive as Suggested; you decide what becomes a task."
-          status={harness ? <StatusLabel size="small" status={harness.routine?.enabled ? 'Watching' : 'Off'} /> : <Text size="small" tone="muted">{activeWorkspace ? 'Loading…' : 'Choose a workspace'}</Text>}
-          action={<Button variant="link" size="sm" onClick={onReview}>Set up</Button>} />
-      </Card>
+          action={<Button variant="muted-link" size="sm" disabled={!clientConnected} data-testid="task-source-slack" onClick={() => onConfigure('slack')}>{slack?.enabled ? 'Edit' : 'Set up…'}</Button>} />
+        <Card.Row layout="source" heading="GitHub issues" meta="Issues with a label you choose in this workspace’s repository." status={<TrackerSourceState workspace={activeWorkspace} trackers={trackers} provider="github_issues" />}
+          action={<Button variant="muted-link" size="sm" disabled={!clientConnected || !activeWorkspace} data-testid="task-source-github_issues" onClick={() => onConfigure('github_issues')}>Set up…</Button>} />
+        <Card.Row layout="source" heading="Notion" meta="Pages in a database you choose." status={<TrackerSourceState workspace={activeWorkspace} trackers={trackers} provider="notion" />}
+          action={<Button variant="muted-link" size="sm" disabled={!clientConnected || !activeWorkspace} data-testid="task-source-notion" onClick={() => onConfigure('notion')}>Set up…</Button>} />
+        <Card.Row layout="source" heading="Weekly review" meta="Findings arrive as Suggested; you decide what becomes a task."
+          status={harness ? <StatusLabel size="small" status={harness.routine?.kind === 'harness_review' && harness.routine.enabled ? 'On' : 'Off'} /> : <Text size="small" tone="muted">{activeWorkspace ? 'Loading…' : 'Choose a workspace'}</Text>}
+          action={<Button variant="muted-link" size="sm" onClick={onReview}>{harness?.routine?.kind === 'harness_review' ? 'Routines' : 'Set up…'}</Button>} />
+      </div>
     </PopoverBody>
   )
 }
@@ -148,4 +149,16 @@ function TaskSourceSetup({ setup, client, workspace, workspaceName, onClose }: {
       {setup && setup !== 'slack' && <TaskTrackerSettingsSection client={client} workspace={workspace || null} workspaceName={workspaceName || null} initialProvider={setup} />}
     </Drawer>
   </>
+}
+
+function slackSourceCaption(info: SlackInfo | null, workspace: string): string {
+  const channels = info?.channels.filter((channel) => channel.workspace === workspace).map((channel) => channel.channel_id) ?? []
+  const prefix = channels.length ? `${channels.join(', ')} · ` : ''
+  return `${prefix}Mention the bot in a mapped channel to file a task; the owner starts it with :white_check_mark:.`
+}
+
+function hasConnectedSources(slack: SlackInfo | null, trackers: TaskTrackerWorkspaceSettings[] | null, harness: HarnessState | null): boolean {
+  if (slack?.enabled && slack.connection === 'connected') return true
+  if (trackers?.some((tracker) => tracker.enabled && !tracker.last_error)) return true
+  return harness?.routine?.kind === 'harness_review' && harness.routine.enabled
 }

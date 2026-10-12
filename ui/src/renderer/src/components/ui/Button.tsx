@@ -4,10 +4,11 @@ import type { IconComponent } from '../icons'
 import { variants } from './variants'
 import { FOCUS_HALO_CLS } from './shadowChrome'
 import './button.css'
+import { HIT_TARGET_28 } from '../hitTarget'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { Tooltip, TooltipContext } from './Tooltip'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'ghost' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'legacy-primary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'roster-open' | 'mini-primary-action' | 'action-primary' | 'surface' | 'surface-large' | 'subtle-icon' | 'compact-icon' | 'compact-icon-secondary' | 'disclosure-icon' | 'small-icon' | 'status-chip'
+export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'ghost' | 'link' | 'muted-link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'legacy-primary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'roster-open' | 'mini-primary-action' | 'action-primary' | 'surface' | 'surface-large' | 'subtle-icon' | 'compact-icon' | 'compact-icon-secondary' | 'disclosure-icon' | 'small-icon' | 'status-chip'
 export type ButtonSize = 'md' | 'sm' | 'lg'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -100,6 +101,7 @@ const buttonClasses = variants(
       surface: 'border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-secondary)] font-medium hover:enabled:bg-[var(--surface-hover)] hover:enabled:text-[var(--text-primary)]',
       'surface-large': 'h-[var(--h-empty-action)] px-[var(--space-4)] gap-[var(--space-2)] rounded-[var(--tr-radius-button)] border border-[var(--border)] bg-[var(--card-bg)] [font-size:var(--tr-text-ui-size)] font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]',
       ghost: `btn ${BTN_GHOST}`,
+      'muted-link': `${HIT_TARGET_28} border-0 bg-transparent !px-0 !py-0 !h-auto min-h-0 align-baseline [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)] underline hover:enabled:bg-transparent hover:enabled:text-[var(--text-primary)]`,
       link: 'border-transparent bg-transparent !px-0 !py-0 !h-auto min-h-0 align-baseline text-[length:var(--tr-text-small-size)] text-[var(--accent)] hover:enabled:bg-transparent hover:enabled:underline',
       danger: `btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER}`,
       'danger-solid': BTN_DANGER_SOLID,
@@ -137,8 +139,8 @@ const buttonClasses = variants(
 )
 
 // Variants that carry their own type and padding: no button chrome, no size padding.
-const SELF_SIZED: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['icon', 'icon-selected', 'icon-structure', 'text', 'badge', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'roster-open', 'mini-primary-action', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip', 'surface-large'])
-const OWN_CHROME: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['badge', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'roster-open', 'mini-primary-action', 'surface-large', 'action-primary', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip'])
+const SELF_SIZED: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['muted-link', 'icon', 'icon-selected', 'icon-structure', 'text', 'badge', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'roster-open', 'mini-primary-action', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip', 'surface-large'])
+const OWN_CHROME: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['muted-link', 'badge', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'roster-open', 'mini-primary-action', 'surface-large', 'action-primary', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip'])
 const isLegacy = (variant: CoreButtonVariant): boolean => variant.startsWith('legacy-')
 
 function buttonSize(variant: CoreButtonVariant, size: ButtonSize): ButtonSize | 'icon' {

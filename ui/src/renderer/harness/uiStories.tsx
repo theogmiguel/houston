@@ -22,6 +22,7 @@ import { ChildPaneLayoutSpecimen } from '../src/components/ui/ChildPaneLayout'
 import { MascotDockSlot } from '../src/components/ui/MascotDockSlot'
 import { MascotArtSpecimen } from '../src/components/ui/MascotArt'
 import { MascotRigSpecimen } from '../src/components/ui/MascotRig'
+import { IconSparkles } from '../src/components/icons'
 import React, { useState } from 'react'
 import { DiffEmptyState } from '../src/components/ui/Diff'
 import { GitBranchBadge, GitBranchDeleteMenu, GitBranchRow } from '../src/components/ui/Branch'
@@ -691,6 +692,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="ghost">Ghost</Button>
             <BrowserButton variant="label">Label action</BrowserButton>
             <Button variant="link">Link</Button>
+            <Button variant="muted-link">Muted text action</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
             <Button variant="danger-solid" icon={IconAlertTriangle}>Danger solid</Button>
@@ -1039,6 +1041,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </Card>
           <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
+          <Card shape="inset" borderStyle="dashed"><SectionHead variant="sentence" density="row" icon={IconSparkles} title="Suggested" count={2} action={<Text size="small" tone="muted">from Review</Text>} /><Card.Row layout="meta-actions" heading="Codex retries the same failing migration" meta="5 of 38 sessions" action={<Inline gap="small"><Button variant="muted-link">Dismiss</Button><Button variant="muted-link">Add to queue</Button></Inline>} /></Card>
+          <Card><Card.Row layout="source" heading="Weekly review" meta="Findings wait for your decision." status={<StatusLabel status="On" />} action={<Button variant="muted-link">Routines</Button>} /></Card>
           <Card tone="material-inset" shape="inset" padding="md">Pull request details</Card>
         </SpecimenGroup>
 

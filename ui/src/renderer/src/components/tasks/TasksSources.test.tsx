@@ -55,7 +55,29 @@ it('selects a workspace before tracker setup and sends Review setup to Routines'
   fireEvent.mouseUp(screen.getByRole('option', { name: 'B' }))
   expect(send).toHaveBeenCalledWith({ type: 'task_tracker_settings_get', workspace: '/b' })
   act(() => emit({ type: 'harness_state', workspace: '/b', routine: null, reviews: [], findings: [], models: [], provider_coverage: [], engine_refusals: [] }))
-  const row = screen.getByText('Review').closest('[class]')!.parentElement!.parentElement!
-  fireEvent.click(within(row).getByRole('button', { name: 'Set up' }))
+  const row = screen.getByText('Weekly review').closest('[class]')!.parentElement!.parentElement!
+  fireEvent.click(within(row).getByRole('button', { name: 'Set up…' }))
+  expect(getRailView()).toBe('routines')
+})
+
+it('marks connected sources and names the configured Slack channel with an Edit action', () => {
+  const { client, emit } = fixture()
+  render(<TasksSources client={client} workspace="/a" workspaces={[{ path: '/a', name: 'A' }]} />)
+  act(() => emit({ type: 'slack', refusal: null, info: { enabled: true, has_tokens: true, connection: 'connected', channels: [{ channel_id: 'C1234', workspace: '/a' }], language: 'en' } }))
+  const trigger = screen.getByRole('button', { name: 'Sources' })
+  expect(trigger.querySelector('[aria-label="Connected"]')).not.toBeNull()
+  fireEvent.click(trigger)
+  expect(screen.getByTestId('task-source-slack').textContent).toBe('Edit')
+  expect(screen.getByText(/C1234.*owner.*:white_check_mark:/)).toBeTruthy()
+  expect(screen.getByText(/Slack requests wait for/)).toBeTruthy()
+})
+it('shows an enabled built-in review as On with its Routines action', () => {
+  const { client, emit } = fixture()
+  render(<TasksSources client={client} workspace="/a" workspaces={[{ path: '/a', name: 'A' }]} />)
+  act(() => emit({ type: 'harness_state', workspace: '/a', routine: { kind: 'harness_review', id: 1, name: 'Harness review', prompt: 'Review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, enabled: true, engine: 'claude', next_run_at_ms: 1, permission_mode: 'accept_edits', isolate: false, revision: 'r1' }, reviews: [], findings: [], models: [], provider_coverage: [], engine_refusals: [] }))
+  fireEvent.click(screen.getByRole('button', { name: 'Sources' }))
+  expect(screen.getByText('Weekly review')).toBeTruthy()
+  expect(screen.getByText('On')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Routines' }))
   expect(getRailView()).toBe('routines')
 })
