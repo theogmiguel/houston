@@ -583,6 +583,7 @@ pub struct Session {
     composer_watch: AtomicBool,
     cli_title: Mutex<CliTitleState>,
     title_source: Mutex<TitleSource>,
+    transient_title_candidates: Mutex<Vec<(TitleSource, String)>>,
     tags: Mutex<Vec<u32>>,
     acp: Option<Mutex<crate::acp::AcpDecoder>>,
     scrollback: Mutex<Scrollback>,
@@ -4918,6 +4919,7 @@ impl Daemon {
             composer_watch: AtomicBool::new(false),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(title_source),
+            transient_title_candidates: Mutex::new(Vec::new()),
             tags: Mutex::new(m.tags.clone()),
             acp: None,
             scrollback: Mutex::new(Scrollback::new()),
@@ -11026,6 +11028,7 @@ impl Daemon {
             composer_watch: AtomicBool::new(pastes_first_prompt),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(title_source),
+            transient_title_candidates: Mutex::new(Vec::new()),
             tags: Mutex::new(p_tags),
             acp: acp
                 .as_ref()
@@ -11568,6 +11571,7 @@ impl Daemon {
             composer_watch: AtomicBool::new(false),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(TitleSource::Codename),
+            transient_title_candidates: Mutex::new(Vec::new()),
             tags: Mutex::new(Vec::new()),
             osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
             acp: None,
@@ -13199,30 +13203,41 @@ impl Daemon {
             .get(&id)
             .cloned();
         let info = live
+            .as_ref()
             .map(|session| session.snapshot_info())
             .or_else(|| self.dead.lock().expect("dead lock").get(&id).cloned())
             .ok_or_else(|| {
                 anyhow::anyhow!("unknown session id {id} (expected an active or restored session)")
             })?;
-        let mut candidates = self.db.session_title_candidates(id)?;
+        let mut candidates = if let Some(session) = live.as_ref().filter(|s| s.info.hidden) {
+            session
+                .transient_title_candidates
+                .lock()
+                .expect("transient title candidates lock")
+                .clone()
+        } else {
+            self.db.session_title_candidates(id)?
+        };
         if info.title_source != TitleSource::User {
             candidates.push((info.title_source, info.title.clone()));
         }
-        if let Some(role) = self.db.delegation_for_child(id)?.and_then(|d| d.role) {
-            candidates.push((
-                TitleSource::Role,
-                crate::pane_name::truncate_at_word_boundary(&role, MAX_TITLE_LEN),
-            ));
-        }
-        if let Some(binding) = self.db.task_binding_for_session(id)? {
-            let task = tasks::binding_to_session_task(&binding);
-            candidates.push((
-                TitleSource::Task,
-                crate::pane_name::truncate_at_word_boundary(
-                    &format!("{} {}", task.key, task.title),
-                    MAX_TITLE_LEN,
-                ),
-            ));
+        if !info.hidden {
+            if let Some(role) = self.db.delegation_for_child(id)?.and_then(|d| d.role) {
+                candidates.push((
+                    TitleSource::Role,
+                    crate::pane_name::truncate_at_word_boundary(&role, MAX_TITLE_LEN),
+                ));
+            }
+            if let Some(binding) = self.db.task_binding_for_session(id)? {
+                let task = tasks::binding_to_session_task(&binding);
+                candidates.push((
+                    TitleSource::Task,
+                    crate::pane_name::truncate_at_word_boundary(
+                        &format!("{} {}", task.key, task.title),
+                        MAX_TITLE_LEN,
+                    ),
+                ));
+            }
         }
         candidates.push((TitleSource::Codename, info.codename.clone()));
         let (source, title) = candidates
@@ -13248,23 +13263,41 @@ impl Daemon {
                 "invalid session title {title:?}: expected non-empty and \u{2264} {MAX_TITLE_LEN} chars, got {len}"
             );
         }
-        let known = self
+        let live = self
             .sessions
             .lock()
             .expect("sessions lock")
-            .contains_key(&id)
-            || self.dead.lock().expect("dead lock").contains_key(&id);
+            .get(&id)
+            .cloned();
+        let known = live.is_some() || self.dead.lock().expect("dead lock").contains_key(&id);
         if !known {
             bail!("unknown session id {id} (expected an active or restored session)");
         }
         let candidate;
         let title = if source != TitleSource::User {
-            candidate = self.db.save_title_candidate(id, source, title)?;
+            candidate = if let Some(session) = live.as_ref().filter(|s| s.info.hidden) {
+                // Hidden generators have no durable row; retain at most one bounded title per source.
+                let mut candidates = session
+                    .transient_title_candidates
+                    .lock()
+                    .expect("transient title candidates lock");
+                if let Some((_, saved)) = candidates.iter_mut().find(|(kind, _)| *kind == source) {
+                    if source != TitleSource::Prompt {
+                        *saved = title.to_string();
+                    }
+                    saved.clone()
+                } else {
+                    candidates.push((source, title.to_string()));
+                    title.to_string()
+                }
+            } else {
+                self.db.save_title_candidate(id, source, title)?
+            };
             candidate.as_str()
         } else {
             title
         };
-        if let Some(s) = self.sessions.lock().expect("sessions lock").get(&id) {
+        if let Some(s) = live {
             let mut current = s.title_source.lock().expect("title source lock");
             if !reset && source < *current {
                 return Ok(());
@@ -13272,8 +13305,10 @@ impl Daemon {
             if source == *current && *s.title.lock().expect("title lock") == title {
                 return Ok(());
             }
-            self.db
-                .update_session_title_with_source(id, title, Some(source.as_str()))?;
+            if !s.info.hidden {
+                self.db
+                    .update_session_title_with_source(id, title, Some(source.as_str()))?;
+            }
             *current = source;
             *s.title.lock().expect("title lock") = title.to_string();
         } else if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&id) {

@@ -489,6 +489,7 @@ async fn hidden_handoff_pane_can_reset_its_manual_title() {
         proto::AgentKind::Custom,
         Some(vec!["sh".into(), "-c".into(), "exec cat".into()]),
     );
+    let identity = state.path().join("hidden-generator-session");
     let request = daemon
         .handoff_generate(
             source.id,
@@ -496,15 +497,27 @@ async fn hidden_handoff_pane_can_reset_its_manual_title() {
             Some(vec![
                 "sh".into(),
                 "-c".into(),
-                "read -r release; printf '<<<START>>>\\n## Summary\\nfixture\\n<<<END>>>\\n'"
+                "printf '%s' \"$HOUSTON_SESSION\" > \"$1\"; read -r release; printf '<<<START>>>\\n## Summary\\nfixture\\n<<<END>>>\\n'"
                     .into(),
+                "handoff-reset-fixture".into(),
+                identity.display().to_string(),
             ]),
         )
         .unwrap();
-    let conn = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
-    let hidden: u32 = conn
-        .query_row("SELECT id FROM sessions WHERE hidden = 1", [], |r| r.get(0))
-        .unwrap();
+    wait_until(
+        "the hidden generator to publish its actual session id",
+        || {
+            std::fs::read_to_string(&identity)
+                .ok()
+                .and_then(|id| id.parse::<u32>().ok())
+                .is_some()
+        },
+    )
+    .await;
+    let hidden: u32 = std::fs::read_to_string(identity).unwrap().parse().unwrap();
+    let detail = daemon.orchestrate_get(hidden, hidden).unwrap();
+    assert!(detail.info.hidden);
+    assert_eq!(detail.info.codename, "handoff-custom");
     assert!(!daemon.list().iter().any(|info| info.id == hidden));
     daemon.rename(hidden, "Manual handoff name").unwrap();
     let detail = daemon.orchestrate_get(hidden, hidden).unwrap();
@@ -513,6 +526,25 @@ async fn hidden_handoff_pane_can_reset_its_manual_title() {
     let detail = daemon.orchestrate_get(hidden, hidden).unwrap();
     assert_eq!(detail.info.title, "handoff-custom");
     assert_eq!(detail.info.title_source, proto::TitleSource::Codename);
+    assert_eq!(
+        daemon
+            .name_pane_from_prompt(hidden, "First hidden prompt")
+            .as_deref(),
+        Some("First hidden prompt")
+    );
+    daemon.rename(hidden, "Manual override again").unwrap();
+    daemon.name_pane_from_prompt(hidden, "Later hidden prompt");
+    assert_eq!(
+        daemon.orchestrate_get(hidden, hidden).unwrap().info.title,
+        "Manual override again"
+    );
+    daemon.reset_title(hidden).unwrap();
+    let detail = daemon.orchestrate_get(hidden, hidden).unwrap();
+    assert_eq!(detail.info.title, "First hidden prompt");
+    assert_eq!(detail.info.title_source, proto::TitleSource::Prompt);
+    let db = Db::open(&state.path().join("test.db")).unwrap();
+    assert_eq!(db.session_final(hidden).unwrap(), None);
+    assert!(db.session_title_candidates(hidden).unwrap().is_empty());
     let mut observer = daemon.observe();
     daemon.write_stdin(hidden, b"done\n").unwrap();
     loop {
@@ -527,6 +559,9 @@ async fn hidden_handoff_pane_can_reset_its_manual_title() {
             _ => {}
         }
     }
+    assert!(daemon.orchestrate_get(hidden, hidden).is_err());
+    assert_eq!(db.session_final(hidden).unwrap(), None);
+    assert!(db.session_title_candidates(hidden).unwrap().is_empty());
     daemon.close(source.id).unwrap();
 }
 

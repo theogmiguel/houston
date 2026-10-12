@@ -378,6 +378,8 @@ available candidate, including stored role and task identity. Older rows cannot 
 first prompt or native title that was never stored; reset uses available candidates or the
 codename. Legacy rows without a recorded source protect non-codename names as user
 names until an explicit reset; their spelling cannot reliably identify who named them.
+Hidden generators retain bounded automatic title candidates only in memory and discard
+those candidates when the generator finishes.
 
 CLI-title repaints have a one-second write floor; the latest title inside the floor is
 retained and applied when it expires. Product-only titles are rejected. A live capture of
