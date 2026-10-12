@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { rememberRailPr } from './components/git/railPrCache'
 import { DEFAULT_GRID_ID } from './layout/tree'
 import {
   type AppHarness,
@@ -39,6 +40,14 @@ describe('grid auto-naming (tab-naming rule)', () => {
       )
       await Promise.resolve()
     })
+  }
+
+  async function renameFirstGrid(name: string): Promise<void> {
+    await act(async () => { gridRows()[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 90 })); await Promise.resolve() })
+    const rename = [...document.querySelectorAll<HTMLElement>('.ctxmenu .ctx-item')].find((item) => item.textContent?.includes('Rename'))!
+    await act(async () => { rename.click(); await Promise.resolve() })
+    const input = q<HTMLInputElement>('[data-testid="grid-row-renaming"] input')!
+    await act(async () => { input.value = name; input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); await Promise.resolve() })
   }
 
   it('a fresh workspace\'s default grid picks up its first session\'s name, not "Grid 1"', async () => {
@@ -142,4 +151,50 @@ describe('grid auto-naming (tab-naming rule)', () => {
     const legacyRow = gridRows().find((r) => r.textContent?.includes('Antigravity') || r.textContent?.includes('Grid 1'))
     expect(legacyRow?.textContent).toContain('Antigravity')
   })
+
+  it('follows pane title changes, preserves a user grid name and resumes after clearing it', async () => {
+    harness = await renderReadyApp({ sessions: [makeSession({ id: 1, title: 'Initial task', title_source: 'prompt' })] })
+    await act(async () => { await Promise.resolve() })
+    expect(gridRows()[0].textContent).toContain('Initial task')
+    deliverControl({ type: 'session_renamed', session: 1, title: 'Native task', title_source: 'cli' })
+    await act(async () => { await Promise.resolve() })
+    expect(gridRows()[0].textContent).toContain('Native task')
+    await renameFirstGrid('My grid')
+    deliverControl({ type: 'session_renamed', session: 1, title: 'Updated task', title_source: 'cli' })
+    await act(async () => { await Promise.resolve() })
+    expect(gridRows()[0].textContent).toContain('My grid')
+    await renameFirstGrid('')
+    expect(gridRows()[0].textContent).toContain('Updated task')
+    expect(JSON.parse(localStorage.getItem(`tr-grids:${WS}`)!)[0].nameSource).toBe('auto')
+  })
+
+  it('claims an unchanged automatic grid name and keeps it through later pane title changes', async () => {
+    harness = await renderReadyApp({ sessions: [makeSession({ id: 1, title: 'Initial task', title_source: 'prompt' })] })
+    await act(async () => { await Promise.resolve() })
+    expect(gridRows()[0].textContent).toContain('Initial task')
+    await renameFirstGrid('Initial task')
+    expect(JSON.parse(localStorage.getItem(`tr-grids:${WS}`)!)[0].nameSource).toBe('user')
+    deliverControl({ type: 'session_renamed', session: 1, title: 'Native task', title_source: 'cli' })
+    await act(async () => { await Promise.resolve() })
+    expect(gridRows()[0].querySelector('[data-testid="grid-name"]')?.textContent).toBe('Initial task')
+  })
+
+  it('uses task and worktree identity before a placeholder engine name', async () => {
+    harness = await renderReadyApp({ sessions: [makeSession({ id: 1, title_source: 'codename', title: 'Max', worktree: { path: '/work/tree', branch: 'fix/parser', repo_common_dir: '/work/.git' } })] })
+    await act(async () => { await Promise.resolve() })
+    expect(gridRows()[0].textContent).toContain('fix/parser')
+  })
+
+
+  it('uses an already loaded PR title for an unnamed pane and follows cache changes', async () => {
+    const dir = '/tmp/grid-title-pr-fixture'
+    const pr = { number: 33, url: 'https://example.test/pr/33', state: 'open', title: 'Fix authentication', head_ref: 'fix/auth', additions: 1, deletions: 0, is_draft: false, review_decision: null, checks: 'passing' as const }
+    rememberRailPr(dir, { gh: 'ready', pr })
+    harness = await renderReadyApp({ sessions: [makeSession({ id: 1, cwd: dir, title_source: 'codename', title: 'Max' })] })
+    await act(async () => { await Promise.resolve() })
+    expect(gridRows()[0].textContent).toContain('Fix authentication')
+    await act(async () => { rememberRailPr(dir, { gh: 'ready', pr: { ...pr, title: 'Fix authentication and restore' } }); await Promise.resolve() })
+    expect(gridRows()[0].textContent).toContain('Fix authentication and restore')
+  })
+
 })

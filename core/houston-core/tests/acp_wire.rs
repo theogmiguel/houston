@@ -20,6 +20,7 @@ fn shim_dir() -> PathBuf {
         {
             let ps1 = r#"$ErrorActionPreference = 'Stop'
 Write-Output ("ARGV:" + ($args -join ' '))
+Write-Output '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture","update":{"sessionUpdate":"session_info_update","title":"ACP authentication task"}}}'
 # Not JSON-RPC, and an empty line: the driver must skip both and keep going.
 Write-Output ''
 Write-Output 'not json at all'
@@ -57,6 +58,7 @@ while ($true) { Start-Sleep -Seconds 3600 }
 # fixture was launched as plain `opencode` - right binary, wrong mode - and
 # a shim that only echoes stdin cannot tell the two apart.
 echo "ARGV:$*"
+echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture","update":{"sessionUpdate":"session_info_update","title":"ACP authentication task"}}}'
 # Not JSON-RPC, and an empty line: the driver must skip both and keep going.
 echo ''
 echo 'not json at all'
@@ -119,6 +121,24 @@ async fn an_acp_stream_drives_agent_status_without_hooks_or_scraping() {
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
+    let listed = daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == pane.id)
+        .unwrap();
+    assert_eq!(listed.title, "ACP authentication task");
+    assert_eq!(listed.title_source, proto::TitleSource::Cli);
+    daemon.rename(pane.id, "My ACP title").unwrap();
+    daemon.reset_title(pane.id).unwrap();
+    assert_eq!(
+        daemon
+            .list()
+            .into_iter()
+            .find(|info| info.id == pane.id)
+            .unwrap()
+            .title_source,
+        proto::TitleSource::Cli
+    );
     assert!(
         needs_input,
         "session/request_permission must surface as NeedsInput; status was {:?}",

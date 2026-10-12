@@ -1,16 +1,20 @@
 import { useState } from 'react'
-import { IconPencil } from './icons'
+import { IconPencil, IconUndo } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { Icon } from './ui/Icon'
+import { Text } from './ui/Text'
+import type { TitleSource } from '../houston/generated/TitleSource'
 import { PaneTitle } from './ui'
 import { RenameActionButton, RenameTitleInput } from './ui/TitleEditControls'
 
 interface Props {
   title: string
   onRename: (title: string) => void
+  titleSource?: TitleSource
+  onReset?: () => void
 }
 
-export function RenameTitle({ title, onRename }: Props): React.JSX.Element {
+export function RenameTitle({ title, onRename, titleSource, onReset }: Props): React.JSX.Element {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(title)
 
@@ -23,11 +27,13 @@ export function RenameTitle({ title, onRename }: Props): React.JSX.Element {
   if (!editing) {
     return (
       <>
-        <Tooltip label="Double-click to rename">
+        <Tooltip label={titleSource ? `${titleSource === 'user' ? 'Manual' : 'Automatic'} name (${titleSource}). Double-click to rename` : 'Double-click to rename'}>
           <PaneTitle editable onDoubleClick={startEditing}>
             {title}
           </PaneTitle>
         </Tooltip>
+        {titleSource && <Text size="xs" tone="faint">{titleSource === 'user' ? 'Manual' : 'Auto'}</Text>}
+        {onReset && titleSource === 'user' && <Tooltip label="Reset to automatic"><RenameActionButton aria-label="Reset to automatic" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onReset() }}><Icon glyph={IconUndo} role="label" /></RenameActionButton></Tooltip>}
         <Tooltip label="Rename">
           <RenameActionButton
             aria-label="Rename"
@@ -43,7 +49,7 @@ export function RenameTitle({ title, onRename }: Props): React.JSX.Element {
 
   const commit = (): void => {
     const next = draft.trim()
-    if (next && next !== title) onRename(next)
+    if (next && (next !== title || (titleSource && titleSource !== 'user'))) onRename(next)
     setEditing(false)
   }
 

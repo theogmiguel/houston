@@ -1310,10 +1310,17 @@ impl Session {
         guard
     }
 
+    fn snapshot_title(&self) -> (String, TitleSource) {
+        // Match the writer's lock order and keep provenance with its title.
+        let source = self.title_source.lock().expect("title source lock");
+        let title = self.title.lock().expect("title lock");
+        (title.clone(), *source)
+    }
+
     fn snapshot_info(&self) -> proto::SessionInfo {
         let mut info = self.info.clone();
         info.state = *self.state.lock().expect("state lock");
-        info.title = self.title.lock().expect("title lock").clone();
+        (info.title, info.title_source) = self.snapshot_title();
         info.project_dir = self.project_dir.lock().expect("project_dir lock").clone();
         info.detected_agent = *self.detected.lock().expect("detected lock");
         info.running_agent = *self.running.lock().expect("running lock");
@@ -2279,49 +2286,19 @@ pub struct CreateParams {
     pub effort: Option<proto::ChatEffort>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum TitleSource {
-    Codename,
-    Prompt,
-    Role,
-    Cli,
-    User,
-}
+use proto::TitleSource;
 
-impl TitleSource {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Codename => "codename",
-            Self::Prompt => "prompt",
-            Self::Role => "role",
-            Self::Cli => "cli",
-            Self::User => "user",
-        }
+pub(crate) fn restored_title_source(stored: Option<&str>, title: &str) -> TitleSource {
+    if let Some(source) = stored.and_then(TitleSource::parse) {
+        return source;
     }
-
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "codename" => Some(Self::Codename),
-            "prompt" => Some(Self::Prompt),
-            "role" => Some(Self::Role),
-            "cli" => Some(Self::Cli),
-            "user" => Some(Self::User),
-            _ => None,
-        }
+    if crate::pane_name::is_codename(title) {
+        return TitleSource::Codename;
     }
-
-    fn restored(stored: Option<&str>, title: &str) -> Self {
-        if let Some(source) = stored.and_then(Self::parse) {
-            return source;
-        }
-        if crate::pane_name::is_codename(title) {
-            return Self::Codename;
-        }
-        if crate::pane_name::title_from_prompt(title, MAX_TITLE_LEN).as_deref() == Some(title) {
-            return Self::Prompt;
-        }
-        Self::User
+    if crate::pane_name::title_from_prompt(title, MAX_TITLE_LEN).as_deref() == Some(title) {
+        return TitleSource::Prompt;
     }
+    TitleSource::User
 }
 
 #[derive(Debug, Default)]
@@ -3125,6 +3102,13 @@ impl Daemon {
             let session = Arc::get_mut(session).expect("adoption owns the reconstructed session");
             session.info.spawned_by = parent;
             session.info.profile_label = profile;
+            let stored = db.session_title_source(session.info.id)?;
+            let source = stored
+                .as_deref()
+                .and_then(TitleSource::parse)
+                .unwrap_or(session.info.title_source);
+            session.info.title_source = source;
+            *session.title_source.lock().expect("title source lock") = source;
             // The checkout watcher recomputes a missing checkout on every wake-up.
             Self::checkout_metadata(&db, &mut session.info);
         }
@@ -4863,7 +4847,15 @@ impl Daemon {
 
     #[cfg(unix)]
     fn adopted_session(m: &crate::adoption::SessionManifest, backend: Backend) -> Arc<Session> {
+        let title_source = m.title_source.unwrap_or_else(|| {
+            if m.title == m.codename || crate::pane_name::is_codename(&m.title) {
+                TitleSource::Codename
+            } else {
+                TitleSource::User
+            }
+        });
         let info = proto::SessionInfo {
+            title_source,
             checkout: None,
             activity: None,
             id: m.session_id,
@@ -4928,7 +4920,7 @@ impl Daemon {
             composer_ready: None,
             composer_watch: AtomicBool::new(false),
             cli_title: Mutex::new(CliTitleState::default()),
-            title_source: Mutex::new(TitleSource::Codename),
+            title_source: Mutex::new(title_source),
             tags: Mutex::new(m.tags.clone()),
             acp: None,
             scrollback: Mutex::new(Scrollback::new()),
@@ -5052,6 +5044,7 @@ impl Daemon {
                         workspace_id: scope.workspace_id,
                         remaining_secs: remaining.as_secs(),
                     });
+            let (title, title_source) = s.snapshot_title();
             out.push(adoption::SessionManifest {
                 session_id: *id,
                 pid: s.pid,
@@ -5063,7 +5056,8 @@ impl Daemon {
                 hidden: s.info.hidden,
                 project_dir: s.project_dir.lock().expect("project dir lock").clone(),
                 cwd: s.info.cwd.clone(),
-                title: s.title.lock().expect("title lock").clone(),
+                title,
+                title_source: Some(title_source),
                 codename: s.info.codename.clone(),
                 tags: s.tags.lock().expect("tags lock").clone(),
                 agent: s.info.agent,
@@ -8752,35 +8746,38 @@ impl Daemon {
 
     pub fn name_pane_from_prompt(&self, id: u32, prompt: &str) -> Option<String> {
         let name = crate::pane_name::title_from_prompt(prompt, MAX_TITLE_LEN)?;
-        let mut used: HashSet<String> = HashSet::new();
-        let mut still_codename = false;
-        {
-            let sessions = self.sessions.lock().expect("sessions lock");
-            for (sid, s) in sessions.iter() {
-                let title = s.title.lock().expect("title lock").clone();
-                if *sid == id {
-                    still_codename =
-                        *s.title_source.lock().expect("title source lock") == TitleSource::Codename;
-                } else {
-                    used.insert(title);
-                }
-            }
-        }
-        if !still_codename {
-            return None;
-        }
+        let mut used: HashSet<String> = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .iter()
+            .filter(|(sid, _)| **sid != id)
+            .map(|(_, session)| session.title.lock().expect("title lock").clone())
+            .collect();
         used.extend(
             self.dead
                 .lock()
                 .expect("dead lock")
                 .values()
-                .map(|i| i.title.clone()),
+                .filter(|info| info.id != id)
+                .map(|info| info.title.clone()),
         );
         let applied = crate::pane_name::unique(&name, &used);
         match self.rename_with_source(id, &applied, TitleSource::Prompt) {
             Ok(()) => {
-                tracing::info!("pane {id} named from its first prompt: {applied:?}");
-                Some(applied)
+                let sessions = self.sessions.lock().expect("sessions lock");
+                if let Some(session) = sessions.get(&id) {
+                    let source = *session.title_source.lock().expect("title source lock");
+                    return (source == TitleSource::Prompt)
+                        .then(|| session.title.lock().expect("title lock").clone());
+                }
+                drop(sessions);
+                self.dead
+                    .lock()
+                    .expect("dead lock")
+                    .get(&id)
+                    .filter(|info| info.title_source == TitleSource::Prompt)
+                    .map(|info| info.title.clone())
             }
             Err(e) => {
                 tracing::warn!("naming pane {id} from its first prompt ({applied:?}): {e:#}");
@@ -8789,18 +8786,22 @@ impl Daemon {
         }
     }
 
-    fn name_pane_from_cli_title(self: &Arc<Self>, id: u32, session: &Arc<Session>, raw: &str) {
+    fn name_pane_from_cli_title(self: &Arc<Self>, id: u32, session: &Session, raw: &str) {
+        if session.info.agent == proto::AgentKind::Antigravity {
+            return;
+        }
         let app = format!("{:?}", session.info.agent);
         let Some(name) = crate::osc_title::sanitize(raw, Some(&app), MAX_TITLE_LEN) else {
             return;
         };
-        let current = session.title.lock().expect("title lock").clone();
+        let (current, source) = session.snapshot_title();
+        let already_cli = source == TitleSource::Cli;
         let now = self.started.elapsed().as_millis() as u64;
         let mut state = session.cli_title.lock().expect("cli title state lock");
         let inside_floor = state.last_applied_ms != 0
             && now.saturating_sub(state.last_applied_ms) < CLI_TITLE_MIN_GAP_MS;
         if !inside_floor {
-            if current == name {
+            if current == name && already_cli {
                 return;
             }
             state.last_applied_ms = now.max(1);
@@ -8809,7 +8810,7 @@ impl Daemon {
             return;
         }
 
-        state.pending = (current != name).then_some(name);
+        state.pending = (current != name || !already_cli).then_some(name);
         if state.pending.is_none() || state.flush_scheduled {
             return;
         }
@@ -9178,6 +9179,7 @@ impl Daemon {
             }
             ownership = Some(self.reserve_ownership_replacement(old_id)?);
             self.cleanup_session_ownership(old_id, old)?;
+            let (title, title_source) = old.snapshot_title();
             (
                 old.info.agent,
                 old.project_dir.lock().expect("project_dir lock").clone(),
@@ -9187,8 +9189,8 @@ impl Daemon {
                     .clone()
                     .unwrap_or_else(|| old.info.cwd.clone()),
                 old.custom_cmd.clone(),
-                old.title.lock().expect("title lock").clone(),
-                *old.title_source.lock().expect("title source lock"),
+                title,
+                title_source,
                 old.info.codename.clone(),
                 old.info.spawned_by,
                 old.info.acp.clone(),
@@ -9217,7 +9219,7 @@ impl Daemon {
                 info.cwd,
                 None,
                 info.title.clone(),
-                TitleSource::restored(stored_title_source.as_deref(), &info.title),
+                restored_title_source(stored_title_source.as_deref(), &info.title),
                 if info.codename.is_empty() {
                     info.title.clone()
                 } else {
@@ -9451,6 +9453,7 @@ impl Daemon {
                 return Err(error);
             }
         };
+        self.db.copy_title_candidates(old_id, spawned.id)?;
         if strict_resume {
             spawned.latest_prompt = retained_cues.0.clone();
             spawned.last_agent_message = retained_cues.1.clone();
@@ -10951,6 +10954,7 @@ impl Daemon {
             .and_then(shell_startup_provider)
             .filter(|_| shellint_token.is_some());
         let mut info = proto::SessionInfo {
+            title_source,
             checkout: None,
             activity: None,
             id,
@@ -11502,6 +11506,7 @@ impl Daemon {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let title = self.next_codename();
         let info = proto::SessionInfo {
+            title_source: Default::default(),
             checkout: None,
             activity: None,
             id,
@@ -13178,11 +13183,56 @@ impl Daemon {
         bail!("unknown session id {id} (expected an active or restored session)")
     }
 
+    pub fn reset_title(&self, id: u32) -> Result<()> {
+        let live = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .get(&id)
+            .cloned();
+        let info = live
+            .map(|session| session.snapshot_info())
+            .or_else(|| self.dead.lock().expect("dead lock").get(&id).cloned())
+            .ok_or_else(|| {
+                anyhow::anyhow!("unknown session id {id} (expected an active or restored session)")
+            })?;
+        let mut candidates = self.db.session_title_candidates(id)?;
+        if info.title_source != TitleSource::User {
+            candidates.push((info.title_source, info.title.clone()));
+        }
+        if let Some(role) = self.db.delegation_for_child(id)?.and_then(|d| d.role) {
+            candidates.push((
+                TitleSource::Role,
+                crate::pane_name::truncate_at_word_boundary(&role, MAX_TITLE_LEN),
+            ));
+        }
+        if let Some(binding) = self.db.task_binding_for_session(id)? {
+            let task = tasks::binding_to_session_task(&binding);
+            candidates.push((
+                TitleSource::Task,
+                crate::pane_name::truncate_at_word_boundary(
+                    &format!("{} {}", task.key, task.title),
+                    MAX_TITLE_LEN,
+                ),
+            ));
+        }
+        candidates.push((TitleSource::Codename, info.codename.clone()));
+        let (source, title) = candidates
+            .into_iter()
+            .max_by_key(|(source, _)| *source)
+            .expect("codename candidate");
+        self.apply_title(id, &title, source, true)
+    }
+
     pub fn rename(&self, id: u32, title: &str) -> Result<()> {
         self.rename_with_source(id, title, TitleSource::User)
     }
 
     fn rename_with_source(&self, id: u32, title: &str, source: TitleSource) -> Result<()> {
+        self.apply_title(id, title, source, false)
+    }
+
+    fn apply_title(&self, id: u32, title: &str, source: TitleSource, reset: bool) -> Result<()> {
         let title = title.trim();
         let len = title.chars().count();
         if title.is_empty() || len > MAX_TITLE_LEN {
@@ -13199,9 +13249,19 @@ impl Daemon {
         if !known {
             bail!("unknown session id {id} (expected an active or restored session)");
         }
+        let candidate;
+        let title = if source != TitleSource::User {
+            candidate = self.db.save_title_candidate(id, source, title)?;
+            candidate.as_str()
+        } else {
+            title
+        };
         if let Some(s) = self.sessions.lock().expect("sessions lock").get(&id) {
             let mut current = s.title_source.lock().expect("title source lock");
-            if source < *current {
+            if !reset && source < *current {
+                return Ok(());
+            }
+            if source == *current && *s.title.lock().expect("title lock") == title {
                 return Ok(());
             }
             self.db
@@ -13209,13 +13269,18 @@ impl Daemon {
             *current = source;
             *s.title.lock().expect("title lock") = title.to_string();
         } else if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&id) {
+            if !reset && source < info.title_source {
+                return Ok(());
+            }
             self.db
                 .update_session_title_with_source(id, title, Some(source.as_str()))?;
+            info.title_source = source;
             info.title = title.to_string();
         }
         self.broadcast_control(&proto::ServerMsg::SessionRenamed {
             session: id,
             title: title.to_string(),
+            title_source: source,
         });
         Ok(())
     }
@@ -16853,6 +16918,9 @@ impl Daemon {
         for outcome in outcomes {
             match outcome {
                 crate::acp::AcpDecodeOutcome::Message(msg) => {
+                    if let Some(title) = crate::acp::title_for_message(&msg) {
+                        self.name_pane_from_cli_title(id, session, title);
+                    }
                     if let Some(event) = crate::acp::event_for_message(&msg) {
                         if event == crate::agent_events::AgentEvent::NeedsInput {
                             let _cleanup = self
@@ -19724,7 +19792,7 @@ impl Daemon {
         let mut info = s.info.clone();
         info.status = *s.status.lock().expect("status lock");
         info.state = *s.state.lock().expect("state lock");
-        info.title = s.title.lock().expect("title lock").clone();
+        (info.title, info.title_source) = s.snapshot_title();
         let (live_children, children_waiting) = self.child_counts_of(target);
         info.children_waiting = children_waiting;
         Ok(orchestrate::PaneDetail {
@@ -25089,6 +25157,7 @@ mod handoff_refusal_tests {
 
     fn manifest_entry(id: u32) -> crate::adoption::SessionManifest {
         crate::adoption::SessionManifest {
+            title_source: Default::default(),
             session_id: id,
             pid: None,
             cols: 80,
@@ -25130,6 +25199,34 @@ mod handoff_refusal_tests {
             .expect("sessions lock")
             .insert(id, session.clone());
         session
+    }
+
+    #[test]
+    fn legacy_adoption_keeps_an_unclassified_manual_title_locked() {
+        let (daemon, state) = test_daemon();
+        let mut manifest = manifest_entry(17);
+        manifest.agent = proto::AgentKind::Ssh;
+        manifest.title = "My stable title".into();
+        manifest.codename = "Max".into();
+        let mut json = serde_json::to_value(&manifest).unwrap();
+        json.as_object_mut().unwrap().remove("title_source");
+        let legacy = serde_json::from_value(json).unwrap();
+        let session = Daemon::adopted_session(&legacy, Backend::Ssh(crate::ssh::SshHandle::stub()));
+        daemon
+            .db
+            .insert_session_with_title_source(&session.info, Some("user"))
+            .unwrap();
+        daemon
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .insert(17, session);
+        daemon.name_pane_from_prompt(17, "A later prompt");
+        let listed = daemon.list().into_iter().find(|s| s.id == 17).unwrap();
+        assert_eq!(listed.title, "My stable title");
+        assert_eq!(listed.title_source, TitleSource::User);
+        drop(daemon);
+        drop(state);
     }
 
     #[test]

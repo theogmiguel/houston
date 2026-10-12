@@ -40,6 +40,14 @@ pub(crate) fn pick_codename(used: &HashSet<String>) -> String {
 
 pub fn title_from_prompt(prompt: &str, max_len: usize) -> Option<String> {
     let line = prompt.lines().map(str::trim).find(|l| !l.is_empty())?;
+    static PREFIX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let prefix = PREFIX.get_or_init(|| regex::Regex::new(
+        r"(?i)^(?:(?:can|could|would) you(?: please)?\s+|please\s+|help me(?: to)?\s+|(?:issue\s+)?#\d+\s*[:\-–—]?\s*)"
+    ).expect("title prefix regex"));
+    let mut line = line;
+    while let Some(found) = prefix.find(line) {
+        line = &line[found.end()..];
+    }
     let words: Vec<String> = line
         .split_whitespace()
         .map(|w| {
@@ -107,6 +115,26 @@ pub fn unique(name: &str, used: &HashSet<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filler_and_issue_prefixes_leave_the_task_visible() {
+        for prompt in [
+            "Can you please fix authentication",
+            "Please help me to fix authentication",
+            "Issue #133: fix authentication",
+            "#133 — can you please fix authentication",
+        ] {
+            assert_eq!(
+                title_from_prompt(prompt, 40).as_deref(),
+                Some("Fix authentication")
+            );
+        }
+        assert_eq!(title_from_prompt("Please", 40).as_deref(), Some("Please"));
+        assert_eq!(
+            title_from_prompt("Can you explain #133 safely", 40).as_deref(),
+            Some("Explain 133 safely")
+        );
+    }
 
     #[test]
     fn the_references_own_example() {

@@ -1687,6 +1687,19 @@ impl Db {
         add_column_if_missing(&conn, "sessions", "title", "title TEXT")?;
         add_column_if_missing(&conn, "sessions", "codename", "codename TEXT")?;
         add_column_if_missing(&conn, "sessions", "title_source", "title_source TEXT")?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS session_title_candidates (
+            session_id INTEGER NOT NULL, source TEXT NOT NULL, title TEXT NOT NULL,
+            PRIMARY KEY(session_id, source));
+            INSERT OR IGNORE INTO session_title_candidates (session_id, source, title)
+                SELECT id, title_source, title FROM sessions
+                WHERE title_source IS NOT NULL AND title_source != 'user' AND title IS NOT NULL AND title != '' AND state != 'closed';
+            DELETE FROM session_title_candidates WHERE session_id NOT IN (SELECT id FROM sessions WHERE state != 'closed');
+            CREATE TRIGGER IF NOT EXISTS title_candidates_closed AFTER UPDATE OF state ON sessions
+                WHEN NEW.state = 'closed' BEGIN DELETE FROM session_title_candidates WHERE session_id = NEW.id; END;
+            CREATE TRIGGER IF NOT EXISTS title_candidates_deleted AFTER DELETE ON sessions
+                BEGIN DELETE FROM session_title_candidates WHERE session_id = OLD.id; END;",
+        )?;
         add_column_if_missing(&conn, "sessions", "detected_agent", "detected_agent TEXT")?;
         add_column_if_missing(&conn, "sessions", "ssh_host", "ssh_host TEXT")?;
         add_column_if_missing(&conn, "sessions", "spawned_by", "spawned_by INTEGER")?;
@@ -2349,6 +2362,7 @@ impl Db {
                         "exited" => proto::SessionState::Exited,
                         _ => proto::SessionState::Interrupted,
                     },
+                    title_source: crate::daemon::restored_title_source(title_source.as_deref(), &title),
                     title,
                     codename,
                     detected_agent: detected.and_then(|d| {
@@ -2485,6 +2499,9 @@ impl Db {
                 info.context.map(|context| serde_json::to_string(&context)).transpose()?,
             ],
         )?;
+        if let Some(source) = title_source.filter(|source| *source != "user") {
+            conn.execute("INSERT OR IGNORE INTO session_title_candidates (session_id, source, title) VALUES (?1, ?2, ?3)", rusqlite::params![info.id, source, info.title])?;
+        }
         Ok(())
     }
 
@@ -2667,6 +2684,50 @@ impl Db {
         if n == 0 {
             anyhow::bail!("no session row with id {id} to rename to {title:?}");
         }
+        Ok(())
+    }
+
+    pub fn save_title_candidate(
+        &self,
+        id: u32,
+        source: proto::TitleSource,
+        title: &str,
+    ) -> Result<String> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute("INSERT INTO session_title_candidates (session_id, source, title) SELECT ?1, ?2, ?3 WHERE EXISTS (SELECT 1 FROM sessions WHERE id = ?1 AND state != 'closed')
+            ON CONFLICT(session_id, source) DO UPDATE SET title = excluded.title WHERE excluded.source != 'prompt'",
+            rusqlite::params![id, source.as_str(), title])?;
+        Ok(conn.query_row(
+            "SELECT title FROM session_title_candidates WHERE session_id = ?1 AND source = ?2",
+            rusqlite::params![id, source.as_str()],
+            |r| r.get(0),
+        )?)
+    }
+
+    pub fn session_title_candidates(&self, id: u32) -> Result<Vec<(proto::TitleSource, String)>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn
+            .prepare("SELECT source, title FROM session_title_candidates WHERE session_id = ?1")?;
+        let rows = stmt.query_map([id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut candidates = Vec::new();
+        for row in rows {
+            let (source, title) = row?;
+            if let Some(source) = proto::TitleSource::parse(&source) {
+                candidates.push((source, title));
+            }
+        }
+        Ok(candidates)
+    }
+
+    pub fn copy_title_candidates(&self, old: u32, new: u32) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT OR IGNORE INTO session_title_candidates (session_id, source, title)
+            SELECT ?2, source, title FROM session_title_candidates WHERE session_id = ?1",
+            [old, new],
+        )?;
         Ok(())
     }
 
@@ -6435,6 +6496,7 @@ mod tests {
 
     fn info(id: u32, state: proto::SessionState) -> proto::SessionInfo {
         proto::SessionInfo {
+            title_source: Default::default(),
             checkout: None,
             activity: None,
             id,
@@ -6555,6 +6617,33 @@ mod tests {
         let restored = db.list_interrupted().unwrap();
         assert_eq!(restored.len(), 1);
         assert_eq!(restored[0].title, "Kai");
+    }
+
+    #[test]
+    fn title_candidates_keep_first_prompt_and_are_removed_on_close_or_delete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("candidates.db")).unwrap();
+        for id in [1, 2] {
+            db.insert_session(&info(id, proto::SessionState::Running))
+                .unwrap();
+            db.save_title_candidate(id, proto::TitleSource::Prompt, "First task")
+                .unwrap();
+            assert_eq!(
+                db.save_title_candidate(id, proto::TitleSource::Prompt, "Later task")
+                    .unwrap(),
+                "First task"
+            );
+            db.save_title_candidate(id, proto::TitleSource::Cli, "Native title")
+                .unwrap();
+        }
+        db.mark_closed(1).unwrap();
+        assert!(db.session_title_candidates(1).unwrap().is_empty());
+        db.conn
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM sessions WHERE id = 2", [])
+            .unwrap();
+        assert!(db.session_title_candidates(2).unwrap().is_empty());
     }
 
     #[test]

@@ -6,7 +6,7 @@ import type { SessionInfo } from './houston/client'
 import { createSessionsStore, SessionsStoreContext, useSession, useSessionIds, useLayoutSessions } from './sessionsStore'
 
 function session(id: number): SessionInfo {
-  return { id, agent: 'claude', project_dir: '/project', cwd: '/project', state: 'running', title: `Pane ${id}`, codename: `pane-${id}`, hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, status: 'working' }
+  return { id, agent: 'claude', project_dir: '/project', cwd: '/project', state: 'running', title: `Pane ${id}`, title_source: 'prompt' as const, codename: `pane-${id}`, hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, status: 'working' }
 }
 
 describe('sessions selectors', () => {

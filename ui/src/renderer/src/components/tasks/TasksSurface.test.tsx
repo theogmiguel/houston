@@ -217,7 +217,7 @@ describe('Tasks surface and drawer', () => {
     expect(onComment).toHaveBeenCalledWith(7, 'New note')
   })
   it('reviews the live session after leaf events while task cards follow the task run stream', () => {
-    const session: SessionInfo = { id: 1, agent: 'claude', state: 'running', status: 'working', codename: 'worker', title: 'worker', project_dir: '/project', cwd: '/project', hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, task: { task_id: 7, key: 'HOU-7', title: 'Global task', status: 'in_progress', run_id: 3, run_state: 'running' } }
+    const session: SessionInfo = { id: 1, agent: 'claude', state: 'running', status: 'working', title_source: 'prompt' as const, codename: 'worker', title: 'worker', project_dir: '/project', cwd: '/project', hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, task: { task_id: 7, key: 'HOU-7', title: 'Global task', status: 'in_progress', run_id: 3, run_state: 'running' } }
     const sessions = new Map([[1, session]])
     const store = createSessionsStore(sessions)
     const onReview = vi.fn()
@@ -242,7 +242,7 @@ describe('Tasks surface and drawer', () => {
     const onOpenSession = vi.fn()
     const onRunControl = vi.fn()
     const onCheck = vi.fn()
-    const session: SessionInfo = { id: 1, agent: 'claude', state: 'exited', title: 'HOU-7', codename: 'worker', project_dir: '/project', cwd: '/project', hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: true }
+    const session: SessionInfo = { id: 1, agent: 'claude', state: 'exited', title: 'HOU-7', title_source: 'prompt' as const, codename: 'worker', project_dir: '/project', cwd: '/project', hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: true }
     const run: TaskRun = { id: 3, task_id: 7, attempt: 1, kind: 'implementation', state: 'cancelled', provider: 'claude', session_id: 1, branch: 'houston/task/hou-7', initial_revision: 1, started_at_ms: 1, ended_at_ms: 1 }
     act(() => root.render(<TaskDetail
       detail={{ task: { ...TASK, workspace: '/project', origin: { kind: 'harness_finding', workspace: '/project', key: 'bun-test', review_id: 1 } }, acceptance: [{ id: 5, position: 0, text: 'Run bun run test', checked_at_ms: null, checked_by: null }], comments: [], history: [], runs: [run] }}
