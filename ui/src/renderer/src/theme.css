@@ -391,9 +391,10 @@
   --hover-fill: #ffffff12;
   --selected-fill: #ffffff24;
   --selected-hover-fill: #ffffff29;
-  /* Border of a control that is identified only by its edge (number field, segmented track, off
-     switch): 3:1 against the control's ground (WCAG 1.4.11). --border stays for decorative dividers. */
-  --border-control: #616167;
+  /* Border of a control identified by its edge (number field, segmented track, off switch): a step
+     above --border-hover. Full 3:1 (#616167) read as a bright frame around every control; these
+     controls also carry a fill or a selected segment. --border stays for decorative dividers. */
+  --border-control: #4a4a52;
   --hover-strong: #ffffff14;
   --selection: var(--selected-fill);
   --elevated-surface: color-mix(in srgb, var(--card-bg) 80%, var(--text-primary) 10%);
@@ -892,7 +893,7 @@
   --hover-fill: #00000012;
   --selected-fill: #00000029;
   --selected-hover-fill: #0000002e;
-  --border-control: #848488;
+  --border-control: #b4b4bc;
   --hover-strong: #00000014;
   --selection: var(--selected-fill);
   --elevated-surface: color-mix(in srgb, var(--card-bg) 80%, var(--text-primary) 10%);

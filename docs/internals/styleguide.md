@@ -102,6 +102,7 @@ There is no `--ink-*` family. `--text-*` is the naming.
 |---|---|
 | `--border` | Every ordinary hairline: card edges, input outlines, control borders |
 | `--border-hover` | The same hairline under hover |
+| `--border-control` | Controls read by their edge: number fields, segmented tracks, off switches, the branch chip. One step above `--border-hover`, not a bright frame |
 | `--divider` | Row separators *inside* a container — deliberately fainter than `--border` |
 | `--hairline` | The divider equivalent on a custom surface |
 | `--border-focus` | The active-pane ring. A luminance step, no hue |
