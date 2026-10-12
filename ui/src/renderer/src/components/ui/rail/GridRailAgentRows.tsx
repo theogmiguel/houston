@@ -49,7 +49,7 @@ function AgentRow({ agent, now, onFocusPane, lastMessage }: { agent: RailAgentRo
   const warnContext = context != null && context >= 80
   const shellLabel = agent.session.agent === 'shell' ? ` · ${agent.agent}` : ''
   return (
-    <button type="button" aria-label={`Focus ${agent.leading}`} onClick={(event) => { event.stopPropagation(); onFocusPane?.(agent.session.id) }} className="flex min-h-[var(--h-agent-row)] w-full min-w-0 items-center gap-[5px] rounded px-1 text-[length:var(--tr-text-xs)] leading-none hover:bg-hover-fill">
+    <button type="button" aria-label={`Focus ${agent.leading}`} onClick={(event) => { event.stopPropagation(); onFocusPane?.(agent.session.id) }} className="flex min-h-[var(--h-agent-row)] w-full min-w-0 items-center gap-[5px] rounded px-1 text-left text-[length:var(--tr-text-xs)] leading-none hover:bg-hover-fill">
       <AgentStatusDot session={agent.session} now={now} />
       <span className="flex flex-none text-[var(--text-muted)]"><IconAgent agent={agent.agent} role="small" brand /></span>
       <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
@@ -58,7 +58,7 @@ function AgentRow({ agent, now, onFocusPane, lastMessage }: { agent: RailAgentRo
       </span>
       {warnContext && <span className="font-mono text-[var(--warn)]">{Math.round(context!)}%</span>}
       {!warnContext && attentionStatus(agent.session) !== 'needs-input' && agent.model && <span className="max-w-[76px] truncate font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">{agent.model}</span>}
-      <time className="min-w-[22px] flex-none text-right text-[length:var(--tr-text-xs)] tabular-nums text-[var(--text-muted)]">{ageLabel(agent.session, now)}</time>
+      <time className={`min-w-[22px] flex-none text-right text-[length:var(--tr-text-xs)] tabular-nums ${attentionStatus(agent.session) === 'needs-input' ? 'text-[var(--warn)]' : 'text-[var(--text-muted)]'}`}>{ageLabel(agent.session, now)}</time>
     </button>
   )
 }

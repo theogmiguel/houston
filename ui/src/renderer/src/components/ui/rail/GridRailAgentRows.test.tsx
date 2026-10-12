@@ -51,6 +51,7 @@ describe('rail agent card content', () => {
   it('shows Waiting and replaces the model at the context warning threshold', () => {
     rowDot('needs-input', 1, 80)
     expect(host!.textContent).toContain('Waiting')
+    expect(host!.querySelector('time')?.className).toContain('text-[var(--warn)]')
     expect(host!.textContent).toContain('80%')
     expect(host!.textContent).not.toContain('test-model')
   })

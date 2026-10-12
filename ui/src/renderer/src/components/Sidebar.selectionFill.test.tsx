@@ -74,6 +74,15 @@ describe('Sidebar — D2 full-row selection fill, no SelectionBar', () => {
     expect(grid?.querySelector('.w-\\[2px\\]')).toBeNull()
   })
 
+  it('keeps the workspace group plain when its selected grid carries the fill', () => {
+    render({ workspaces: [ws('/a', 'alpha')], selected: '/a',
+      gridsByWorkspace: { '/a': [{ id: 'g1', name: 'Main', sessionIds: [1] }] },
+      selectedGridId: 'g1', onSelectGrid: noop })
+    const row = container.querySelector('[data-testid="ws-disclosure"]')!
+    expect(row.className).not.toContain('bg-selected-fill')
+    expect(container.querySelector('[data-testid="grid-row"]')?.className).toContain('bg-selected-fill')
+  })
+
   it('a selected settings-section row carries the fill', () => {
     setSettingsNavForTests({ open: true, section: 'appearance' })
     render({})

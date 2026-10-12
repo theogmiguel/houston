@@ -263,7 +263,7 @@ function WorkspaceRailGroupRow({
     <Tooltip label={workspace.path}>
       <RailWorkspaceGroupRow
         kind="tree"
-        selected={selected}
+        selected={selected && !hasGrids}
         dragging={dragging}
         dragged={dragged}
         role="button"
