@@ -77,6 +77,25 @@ describe('Routines page', () => {
     expect(screen.queryByRole('button', { name: 'Set up Weekly review' })).toBeNull()
   })
 
+  it('shows Running on the Weekly review row while any workspace review runs', () => {
+    const { rerender } = render(surface({ client, routines: reviews, workspaces, running: [], selectedRoutineId: 10 }))
+    expect(within(screen.getAllByTestId('list-detail-item')[0]).queryByText('Running')).toBeNull()
+    rerender(surface({ client, routines: reviews, workspaces, running: [reviews[1].id], selectedRoutineId: 10 }))
+    const row = screen.getAllByTestId('list-detail-item')[0]
+    expect(within(row).getByText('Running')).toBeTruthy()
+    expect(row.textContent).toContain('On in 2 of 7 workspaces')
+  })
+
+  it('makes Weekly review the page heading and each workspace a sub-heading', () => {
+    render(surface({ client, routines: reviews, workspaces, selectedRoutineId: 10 }))
+    const detail = screen.getByTestId('list-detail-detail')
+    const page = within(detail).getByRole('heading', { name: 'Weekly review' })
+    expect(page.tagName).toBe('H2')
+    expect(within(detail).getByText('Built in')).toBeTruthy()
+    expect(within(detail).getByRole('heading', { name: 'Workspace 0' }).tagName).toBe('H3')
+    expect(within(detail).getAllByText('Built in')).toHaveLength(1)
+  })
+
   it('lists only configured workspaces and offers only the remainder for setup', () => {
     const { container } = render(surface({ client, routines: reviews, workspaces, selectedRoutineId: 11 }))
     const detail = screen.getByTestId('list-detail-detail')

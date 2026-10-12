@@ -243,7 +243,9 @@ function routineItems(routines: Routine[], reviews: Routine[], workspaces: Routi
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace.name]))
   const active = reviews.filter((routine) => routine.enabled).length
   const summary = reviews.length === 0 ? 'Not set up' : `On in ${active} of ${workspaces.length} workspaces`
-  return [{ id: REVIEW_SELECTION, section: 'Built in', title: 'Weekly review', sub: summary, routine: null },
+  const reviewRunning = reviews.some((routine) => running.includes(routine.id))
+  const reviewSub = reviewRunning ? <ListDetailMeta left={summary} right={<StatusLabel status="Running" size="small" />} /> : summary
+  return [{ id: REVIEW_SELECTION, section: 'Built in', title: 'Weekly review', sub: reviewSub, ...(reviewRunning ? { subLayout: 'full-width' as const } : {}), routine: null },
     ...sortRoutines(routines).filter((routine) => routine.kind !== 'harness_review').map((routine) => ({
       id: String(routine.id), section: 'Yours', title: routine.name, subLayout: 'full-width' as const,
       sub: <ListDetailMeta left={routineMeta(routine, routine.workspace_id ? workspaceById.get(routine.workspace_id) ?? routine.workspace_id : null)} right={routineStatus(routine, running.includes(routine.id), slotsFull && routine.enabled && !running.includes(routine.id) && routine.next_run_at_ms <= now, now)} />,

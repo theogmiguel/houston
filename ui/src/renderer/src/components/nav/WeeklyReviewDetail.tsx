@@ -44,7 +44,7 @@ export function WeeklyReviewDetail({ client = null, workspaceName, onUpdateRevie
   const workspaceLabel = workspaceName ?? workspace ?? 'an unavailable workspace'
   const currentReview = state?.reviews.find((review) => review.status === 'running')
   return <>
-    <RoutineDetail {...props} heading={grouped ? workspaceLabel : 'Weekly review'}
+    <RoutineDetail {...props} heading={grouped ? workspaceLabel : 'Weekly review'} subheading={grouped}
       description={grouped ? <div className="grid gap-[var(--space-1)]">
         <Text size="small" tone="muted">Next run: {routine.enabled ? nextUpTimeLabel(routine.next_run_at_ms, now) : 'Paused'}</Text>
         <Text size="small" tone="muted">Last run: {routine.last_run_at_ms == null ? 'Never' : formatRunTime(routine.last_run_at_ms, now)}</Text>

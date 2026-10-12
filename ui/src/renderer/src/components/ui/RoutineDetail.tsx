@@ -66,6 +66,7 @@ export function RoutineDetail({
   onUpdateEngine,
   onOpenSession,
   heading,
+  subheading = false,
   description,
   scheduleControl,
   history,
@@ -74,6 +75,8 @@ export function RoutineDetail({
 }: {
   routine: Routine
   heading?: string
+  /** Renders the title as a sub-heading of a page that already carries the main heading. */
+  subheading?: boolean
   description?: React.ReactNode
   scheduleControl?: React.ReactElement
   history?: React.ReactNode
@@ -104,7 +107,7 @@ export function RoutineDetail({
 
   return (
     <div className="grid min-w-0 gap-[var(--space-3)]" data-testid="routine-detail">
-      <RoutineDetailHeader routine={routine} displayName={displayName} description={description} running={running} pending={pending} onRunNow={onRunNow} onEdit={onEdit} onDelete={onDelete} />
+      <RoutineDetailHeader routine={routine} displayName={displayName} subheading={subheading} description={description} running={running} pending={pending} onRunNow={onRunNow} onEdit={onEdit} onDelete={onDelete} />
       {activity}
       {atLimit && <Notice tone="warn" className="w-full"><span data-testid="routine-limit-notice">{atLimit.running} of {atLimit.limit} running. Routines run {atLimit.limit} at a time (Settings › Routines).</span></Notice>}
       {settings ?? <RoutineSettings routine={routine} engineRefusals={engineRefusals} scheduleControl={scheduleControl}
@@ -129,9 +132,10 @@ export function RoutineDetail({
   )
 }
 
-function RoutineDetailHeader({ routine, displayName, description, running, pending, onRunNow, onEdit, onDelete }: {
+function RoutineDetailHeader({ routine, displayName, subheading, description, running, pending, onRunNow, onEdit, onDelete }: {
   routine: Routine
   displayName: string
+  subheading: boolean
   description?: React.ReactNode
   running: boolean
   pending: boolean
@@ -142,8 +146,10 @@ function RoutineDetailHeader({ routine, displayName, description, running, pendi
   return <header data-testid="routine-detail-header" className="flex min-w-0 items-start gap-[var(--space-3)]">
     <div className="grid min-w-0 flex-1 gap-[var(--space-1)]">
       <div className="flex min-w-0 items-center gap-[var(--space-1-5)]">
-        <h2 className="m-0 min-w-0 truncate text-[length:var(--tr-text-subhead-size)] font-[var(--tr-text-subhead-weight)] tracking-[var(--tr-text-subhead-tracking)] text-[var(--text-primary)]">{displayName}</h2>
-        {routine.kind === 'harness_review' && <Chip variant="label" label="Built in" />}
+        {subheading
+          ? <h3 className="m-0 min-w-0 truncate text-[length:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)]">{displayName}</h3>
+          : <h2 className="m-0 min-w-0 truncate text-[length:var(--tr-text-subhead-size)] font-[var(--tr-text-subhead-weight)] tracking-[var(--tr-text-subhead-tracking)] text-[var(--text-primary)]">{displayName}</h2>}
+        {routine.kind === 'harness_review' && !subheading && <Chip variant="label" label="Built in" />}
       </div>
       {description}
     </div>
