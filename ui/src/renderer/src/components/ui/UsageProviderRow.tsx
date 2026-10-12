@@ -1,30 +1,32 @@
 import type { ReactNode } from 'react'
+import { IconAgent } from '../icons'
+import { ICON_ROLE_CLS } from './Icon'
+import { Text } from './Text'
 
-export function UsageProviderRow({
-  mark,
-  label,
-  sessions,
-  amount,
-  note,
-  color
-}: {
+export function UsageAgentMark({ agent }: { agent: string }): React.JSX.Element {
+  return <span aria-hidden="true" className="inline-flex size-[var(--h-ctl-mini)] flex-none items-center justify-center rounded-[var(--tr-radius-sm)] border border-[var(--border)]"><IconAgent agent={agent} brand className={ICON_ROLE_CLS.ui} /></span>
+}
+
+export function UsageShareTrack({ share, color, label }: { share: number; color: string; label?: string }): React.JSX.Element {
+  const percent = Math.max(0, Math.min(1, share)) * 100
+  return <span className="block h-[var(--space-1)] w-full overflow-hidden rounded-full bg-[var(--divider)]" role={label ? 'progressbar' : undefined} aria-label={label} aria-valuenow={label ? percent : undefined} aria-valuemin={label ? 0 : undefined} aria-valuemax={label ? 100 : undefined}><span className="block h-full rounded-full" style={{ width: `${percent}%`, background: color }} /></span>
+}
+
+export function UsageProviderRow({ mark, label, sessions, amount, note, color, share = 0 }: {
   mark: ReactNode
   label: string
   sessions: number
   amount: string
   note: string
   color: string
+  share?: number
 }): React.JSX.Element {
-  return (
-    <div className="grid min-w-0 gap-[var(--space-1)]" data-testid="usage-provider-row">
-      <div className="flex min-w-0 items-baseline gap-[var(--space-1-5)]">
-        <span aria-hidden="true" className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: color }} />
-        <span className="shrink-0" style={{ color }}>{mark}</span>
-        <span className="truncate text-[length:var(--tr-text-md)] text-[var(--text-primary)]">{label}</span>
-        <span className="text-[length:var(--tr-text-small-size)] text-[var(--text-faint)]">{sessions} sessions</span>
-        <span className="ml-auto shrink-0 tabular-nums text-[length:var(--tr-text-md)] font-medium text-[var(--text-primary)]">{amount}</span>
-      </div>
-      <div className="pl-[var(--space-3)] text-[length:var(--tr-text-small-size)] text-[var(--text-faint)]">{note}</div>
+  return <div className="grid min-w-0 gap-[var(--space-1-5)] px-[var(--space-4)] py-[var(--space-2-5)] [&+&]:border-t [&+&]:border-[var(--divider)]" data-testid="usage-provider-row">
+    <div className="flex min-w-0 items-center gap-[var(--space-2-5)]">
+      {mark}
+      <span className="grid min-w-0 flex-1"><Text size="ui" weight="medium" tone="primary">{label}</Text><Text size="small" tone="muted">{sessions.toLocaleString('en-US')} sessions · {note}</Text></span>
+      <span className="grid text-right"><Text size="ui" weight="medium" tone="primary" tabular>{amount}</Text><Text size="small" tone="muted" tabular>{(share * 100).toFixed(1)}%</Text></span>
     </div>
-  )
+    <UsageShareTrack share={share} color={color} label={`${label} share of cost`} />
+  </div>
 }

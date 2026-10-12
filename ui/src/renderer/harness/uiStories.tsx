@@ -10,6 +10,7 @@ import { GitToolsTriggerSpecimen, GitCommitSpecimen } from '../src/components/ui
 import { BranchSwitcherSpecimen } from '../src/components/ui/BranchSwitcher'
 import { ChangesReviewSpecimen } from '../src/components/ui/ChangesReview'
 import { DiffBody } from '../src/components/git/DiffBody'
+import { UsageAgentMark } from '../src/components/ui/UsageProviderRow'
 import { UsageLegend } from '../src/components/ui/UsageChart'
 import { UsageStatsSpecimen } from '../src/components/ui/UsageChrome'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
@@ -1372,7 +1373,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Usage chart, calendar and shares">
           <UsageSectionHeading fullWidth aside="Premium $121.40">Cost by speed</UsageSectionHeading>
-          <UsageProviderRow mark="✳" label="Claude Code" sessions={172} amount="$2,071.40" note="83.3% of cost · 4.1B tokens" color="var(--claude)" />
+          <UsageProviderRow mark={<UsageAgentMark agent="claude" />} label="Claude Code" sessions={172} amount="$2,071.40" note="4.1B tokens" share={0.833} color="var(--claude)" />
           <div style={{ maxWidth: 900 }}><UsageChart metric="cost" points={[
             { startMs: 0, key: 'Mon', byProvider: { claude: { cost: 120, tokens: 0 }, codex: { cost: 45, tokens: 0 } } },
             { startMs: 1, key: 'Tue', byProvider: { claude: { cost: 180, tokens: 0 }, codex: { cost: 90, tokens: 0 } } },

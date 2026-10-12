@@ -5,6 +5,8 @@ import { EmptyState } from './ui/ActionEmptyState'
 import { Segmented } from './ui/SegmentedControl'
 import { UsageChart, UsageLegend, type UsageSeries } from './ui/UsageChart'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
+import type { AgentKind } from '../houston/generated/AgentKind'
+import { UsageAgentMark } from './ui/UsageProviderRow'
 import type { UsageProvider } from '../houston/generated/UsageProvider'
 import {
   breakdownRows,
@@ -26,12 +28,12 @@ import {
 import { Icon } from './ui/Icon'
 import { Tooltip } from './ui/Tooltip'
 import { Select } from './ui/Select'
-import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageProviderList, UsageCalendarSectionFrame, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup } from './ui'
+import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageBody, UsageCalendarSectionFrame, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup } from './ui'
 import { Card } from './ui/Card'
 import { PageFrame } from './ui/PageFrame'
 import { PageHeader } from './ui/PageHeader'
 import { Notice } from './ui/Notice'
-import { UsageMetaLine, UsageStatCard, UsageChartHeader, UsageTotalsStrip } from './ui/UsageChrome'
+import { UsageMetaLine, UsageStatCard, UsageChartHeader, UsageTotalsStrip, UsageCardNote } from './ui/UsageChrome'
 import { calendarStartMs } from './ui/UsageCalendar'
 import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'
 
@@ -74,6 +76,16 @@ function UsageStats({ totals, sessions, days }: { totals: UsageTotals; sessions:
     <UsageStatCard label="Output tokens" value={formatTokens(totals.output)} note={`${formatTokens(totals.uncachedInput)} uncached input`} />
     <UsageStatCard label="Saved by caching" value={roundedUsd(totals.cacheSavings)} note="against full input prices" />
   </UsageTotalsStrip>
+}
+
+function untrackedAgentNames(agents: AgentKind[]): string[] {
+  const order: AgentKind[] = ['opencode', 'cursor', 'grok', 'antigravity', 'zcode', 'droid', 'copilot', 'aider', 'custom', 'claude', 'codex', 'shell', 'ssh']
+  const names: Partial<Record<AgentKind, string>> = { opencode: 'OpenCode', zcode: 'ZCode', claude: 'Claude Code', ssh: 'SSH' }
+  return order.filter((agent) => agents.includes(agent)).map((agent) => names[agent] ?? agent[0].toUpperCase() + agent.slice(1))
+}
+
+function joinAgentNames(names: string[]): string {
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
 function readAge(readAt: number): string {
@@ -226,7 +238,7 @@ export function UsageSection({
   }, [summary])
   const displayProviders = providers
     .map((provider) => ({ ...provider, sessions: sessionsByProvider.get(provider.provider) ?? 0 }))
-    .sort((a, b) => a.provider === 'codex' ? -1 : b.provider === 'codex' ? 1 : 0)
+
   const rows = useMemo(() => breakdownRows(buckets, mode, timeZone), [buckets, mode, timeZone])
 
   const series: UsageSeries[] = providers
@@ -299,7 +311,11 @@ export function UsageSection({
           series={series}
           labelFor={labelFor}
         />
-        <UsageProviderList>{displayProviders.map((p) => <UsageProviderRow key={p.provider} mark={PROVIDER_MARK[p.provider]} label={p.label} sessions={p.sessions} amount={formatUsd(p.cost)} note={`${formatShare(p.costShare)} of cost · ${formatTokens(p.tokens)} tokens`} color={PROVIDER_COLOR[p.provider]} />)}</UsageProviderList>
+        <Card shape="card" tone="block" data-material="inset" data-testid="usage-by-agent">
+          <UsageSectionHeading inset>By agent</UsageSectionHeading>
+          {displayProviders.map((p) => <UsageProviderRow key={p.provider} mark={<UsageAgentMark agent={p.provider} />} label={p.label} sessions={p.sessions} amount={formatUsd(p.cost)} note={`${formatTokens(p.tokens)} tokens`} share={p.costShare} color={PROVIDER_COLOR[p.provider]} />)}
+          {summary.untracked_agents.length > 0 && <UsageCardNote>Not counted: {joinAgentNames(untrackedAgentNames(summary.untracked_agents))}. They do not write token counts Houston can read.</UsageCardNote>}
+        </Card>
 
         {}
         <UsageCalendarSectionFrame data-testid="usage-calendar-section">

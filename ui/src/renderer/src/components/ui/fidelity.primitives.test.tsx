@@ -16,11 +16,11 @@ describe('fidelity primitives', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('renders a provider bullet and summary without a share bar', () => {
-    const { container } = render(<UsageProviderRow mark={<span>✳</span>} label="Claude Code" sessions={3} amount="$12.00" note="75% of cost · 20K tokens" color="var(--claude)" />)
+  it('renders a provider summary and accessible share bar', () => {
+    const { container } = render(<UsageProviderRow mark={<span>✳</span>} label="Claude Code" sessions={3} amount="$12.00" note="20K tokens" share={0.75} color="var(--claude)" />)
     expect(screen.getByText('Claude Code')).toBeTruthy()
-    expect(container.querySelector('[data-testid="usage-provider-row"]')?.querySelectorAll('span.rounded-full')).toHaveLength(1)
-    expect(container.querySelector('[role="progressbar"]')).toBeNull()
+    expect(container.textContent).toContain('3 sessions · 20K tokens')
+    expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('75')
   })
 
   it('uses the UI section heading and names models above their colored share bars', () => {

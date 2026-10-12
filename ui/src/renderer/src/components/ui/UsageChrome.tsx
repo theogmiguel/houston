@@ -109,3 +109,7 @@ export function UsageStatCard({ label, value, note, headline = false }: { label:
 export function UsageStatsSpecimen(): React.JSX.Element {
   return <div className="grid gap-[var(--space-3)]"><UsageMetaLine range="Oct 5 – Oct 11" readAge="2 min ago" duration="1.2 s" pricing="Prices from the model catalog, updated Oct 9" reading={false} /><UsageMetaLine range="Oct 5 – Oct 11" readAge="2 min ago" duration="1.2 s" pricing="Prices from the model catalog, updated Oct 9" reading /><UsageTotalsStrip><UsageStatCard label="API-equivalent cost" value="$2,486.30" note="214 sessions · $355 a day" /></UsageTotalsStrip></div>
 }
+
+export function UsageCardNote({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="div" size="small" leading="small" tone="muted" className="border-t border-[var(--divider)] px-[var(--space-4)] py-[var(--space-2-5)]">{children}</Text>
+}

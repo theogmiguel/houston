@@ -130,6 +130,19 @@ describe('Usage page', () => {
     expect(text()).toContain('against full input prices')
   })
 
+  it('lists counted agents in chart order and names only the reported untracked agents', () => {
+    render({ summary: summary({ untracked_agents: ['grok', 'opencode', 'zcode'] }) })
+    const agents = q('[data-testid="usage-by-agent"]')
+    const rows = agents?.querySelectorAll('[data-testid="usage-provider-row"]')
+    expect(rows?.[0].textContent).toContain('Claude Code')
+    expect(rows?.[1].textContent).toContain('Codex')
+    expect(rows?.[0].textContent).toContain('31 sessions')
+    expect(rows?.[1].textContent).toContain('12 sessions')
+    expect(agents?.textContent).toContain('Not counted: OpenCode, Grok and ZCode.')
+    expect(agents?.textContent).not.toContain('Cursor')
+    expect(agents?.querySelectorAll('[role="progressbar"]')).toHaveLength(2)
+  })
+
   it('shows 365 local calendar days with the five-step legend', () => {
     render()
     expect(host.querySelectorAll('[data-testid="usage-calendar-day"]')).toHaveLength(365)
