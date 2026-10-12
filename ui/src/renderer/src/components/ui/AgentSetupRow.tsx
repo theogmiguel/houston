@@ -4,9 +4,9 @@ import { Icon } from './Icon'
 import { Text } from './Text'
 import { ROW_STATE } from './rowState'
 
-export type SetupTone = 'danger' | 'warn' | 'ok' | 'muted'
+export type SetupTone = 'danger' | 'warn' | 'ok' | 'muted' | 'info'
 export function SetupDot({ tone }: { tone: SetupTone }): React.JSX.Element {
-  return <span aria-hidden="true" data-tone={tone} className={`h-[var(--space-1-5)] w-[var(--space-1-5)] flex-none rounded-full ${ { danger: 'bg-[var(--danger)]', warn: 'bg-[var(--warn)]', ok: 'bg-[var(--ok)]', muted: 'bg-[var(--text-faint)]' }[tone]}`} />
+  return <span aria-hidden="true" data-tone={tone} className={`h-[var(--space-1-5)] w-[var(--space-1-5)] flex-none rounded-full ${ { danger: 'bg-[var(--danger)]', warn: 'bg-[var(--warn)]', ok: 'bg-[var(--ok)]', muted: 'bg-[var(--text-faint)]', info: 'bg-[var(--info)]' }[tone]}`} />
 }
 export function AgentSetupRow({ heading, detail, tone, action, onClick, status, leading, beforeStatus, chevron = true }: { heading: ReactNode; detail: ReactNode; tone: SetupTone; action?: ReactNode; onClick?: () => void; status?: string; leading?: ReactNode; beforeStatus?: ReactNode; chevron?: boolean }): React.JSX.Element {
   const content = <>{leading ?? (!onClick && <SetupDot tone={tone} />)}<span className="grid min-w-0 flex-1 gap-[var(--space-1)]"><Text size="ui" weight="medium" tone="primary">{heading}</Text><Text size="small" tone="muted">{detail}</Text></span>{beforeStatus}{onClick ? <span className="flex flex-none items-center gap-[var(--space-2)]"><SetupDot tone={tone} /><Text size="small" tone={tone}>{status}</Text>{chevron && <Icon glyph={IconChevronRight} role="small" />}</span> : action}</>

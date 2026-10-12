@@ -469,6 +469,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/agents-skills': () => <NavSkills inSettings />,
   'settings/agents-mcp': () => <NavMcp inSettings />,
   'settings/agents-review': () => <HarnessPageStory inSettings />,
+  'settings/agents-review-no-reviews': () => <HarnessPageStory inSettings noReviews />,
   'settings/agents-review-first': () => <HarnessPageStory inSettings firstRun />,
   'settings/agents-overview': () => <SettingsAgentsOverview />,
   'settings/agents-overview-healthy': () => <SettingsAgentsOverview healthy />,

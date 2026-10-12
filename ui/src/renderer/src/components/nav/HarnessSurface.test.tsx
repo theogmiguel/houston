@@ -284,4 +284,28 @@ describe('HarnessSurface', () => {
     expect(container.textContent).toContain('Repeated mistakes per 100 sessions: 41 → 18 over 4 reviews')
     expect(container.textContent).toContain('41 sessions · 2 new · 1 gone')
   })
+  it('puts the reported Settings review summary and its actions in one card', () => {
+    render({ embedded: true, onOpenRoutines: vi.fn(), state: harnessState({ routine: routine({ enabled: true }), reviews: [review({ sessions: 38, finding_count: 7 }), review({ id: 2, sessions: 41, finding_count: 17 })] }) })
+    const summary = container.querySelector('[data-testid="review-summary"]')!
+    expect(summary).not.toBeNull()
+    expect(summary.textContent).toContain('Repeated mistakes fell from 41 to 18 per 100 sessions')
+    expect(summary.textContent).toContain('38 sessions')
+    click(button('Review now'))
+    expect(props.onRunNow).toHaveBeenCalledWith(7)
+    click(button('Edit schedule in Routines'))
+    expect(props.onOpenRoutines).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('Open findings')
+    expect(container.textContent).toContain('New')
+    expect(container.querySelector('form')).toBeNull()
+  })
+  it('does not turn an unreported review session total into a zero trend', () => {
+    render({ embedded: true, state: harnessState({ reviews: [review({ sessions: null })] }) })
+    expect(container.textContent).not.toContain('Repeated mistakes per 100 sessions: 0')
+    const summary = container.querySelector('[data-testid="review-summary"]')!
+    expect(summary).not.toBeNull()
+    expect(summary.textContent).toContain('Session total not reported')
+    expect(summary.textContent).not.toContain('per 100 sessions')
+    expect(container.textContent).not.toContain('6 of 6 sessions')
+  })
+
 })

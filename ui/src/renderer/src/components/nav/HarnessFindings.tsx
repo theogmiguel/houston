@@ -1,3 +1,6 @@
+import { SetupDot } from '../ui/AgentSetupRow'
+import { Text } from '../ui/Text'
+import { SettingsToolbar } from '../ui/SettingsToolbar'
 import { useState } from 'react'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { HarnessFinding } from '../../houston/generated/HarnessFinding'
@@ -27,6 +30,7 @@ export function phaseStatus(phase: HarnessFindingPhase): StatusLabelValue {
 }
 
 export interface HarnessFindingsProps {
+  settings?: boolean
   workspace: string
   findings: HarnessFinding[]
   defaultEngine: AgentKind
@@ -38,6 +42,7 @@ export interface HarnessFindingsProps {
 }
 
 export function HarnessFindings({
+  settings = false,
   findings,
   defaultEngine,
   latestReviewId,
@@ -55,24 +60,29 @@ export function HarnessFindings({
   }
   const shown = findings.filter((f) => filter === 'active' ? isActive(f) : f.phase === filter)
 
-  return (
-    <section className="grid gap-[var(--space-2)]" aria-label="Harness findings">
-      <Segmented<HarnessFilter>
+  const phaseControl = (
+<Segmented<HarnessFilter>
         aria-label="Finding phase"
         value={filter}
         onChange={setFilter}
         options={[
-          { value: 'active', label: 'Active', count: counts.active || undefined, testId: 'harness-filter-active' },
+          { value: 'active', label: settings ? 'Open' : 'Active', count: counts.active || undefined, testId: 'harness-filter-active' },
           { value: 'resolved', label: 'Resolved', count: counts.resolved || undefined, testId: 'harness-filter-resolved' },
           { value: 'dismissed', label: 'Dismissed', count: counts.dismissed || undefined, testId: 'harness-filter-dismissed' }
         ]}
-        className="justify-self-start"
+
       />
+  )
+
+  return (
+    <section className="grid gap-[var(--space-2)]" aria-label="Harness findings">
+      <SettingsToolbar actions={settings ? phaseControl : undefined}>{settings ? <Text as="h2" size="ui" weight="medium" flush>Open findings</Text> : phaseControl}</SettingsToolbar>
       {shown.length ? (
-        <Card>
+        <Card shape={settings ? 'card' : 'button'}>
           {shown.map((finding) => (
             <FindingRow
               key={finding.key}
+              settings={settings}
               finding={finding}
               latestReviewId={latestReviewId}
               latestReviewSessions={latestReviewSessions}
@@ -92,14 +102,15 @@ export function HarnessFindings({
 
 function FindingRow({
   finding: f,
+  settings,
   latestReviewId,
   latestReviewSessions,
   defaultEngine,
   onDecide,
   onCreateTask,
   onVerifyNow
-}: Pick<HarnessFindingsProps, 'latestReviewId' | 'latestReviewSessions' | 'defaultEngine' | 'onDecide' | 'onCreateTask' | 'onVerifyNow'> & { finding: HarnessFinding }): React.JSX.Element {
-  const reviewSessions = latestReviewSessions ?? f.count
+}: Pick<HarnessFindingsProps, 'settings' | 'latestReviewId' | 'latestReviewSessions' | 'defaultEngine' | 'onDecide' | 'onCreateTask' | 'onVerifyNow'> & { finding: HarnessFinding }): React.JSX.Element {
+  const sessionLine = latestReviewSessions == null ? `${f.count} sessions` : `${f.count} of ${latestReviewSessions} sessions`
   const task = f.task
   const linkedTask = task && (
     <Button size="sm" variant="link" onClick={() => openSideTasks(false, task.task_id)}>
@@ -107,11 +118,11 @@ function FindingRow({
     </Button>
   )
   const meta = f.phase === 'open' ? (
-    <>{f.count} of {reviewSessions} sessions · target <code>{f.target}</code> · new in review #{f.review_id}</>
+    <>{sessionLine} · target <code>{f.target}</code> · new in review #{f.review_id}</>
   ) : f.phase === 'fixing' ? (
-    <>{f.count} of {reviewSessions} sessions · {linkedTask} {task?.status.replace('_', ' ')} · checked again after it merges</>
+    <>{sessionLine} · {linkedTask} {task?.status.replace('_', ' ')} · checked again after it merges</>
   ) : f.phase === 'awaiting_verification' ? (
-    <>{linkedTask} merged {task?.landed_at_ms ? formatHarnessDate(task.landed_at_ms) : ''} · {f.verification?.sessions_after ?? 0} sessions since · verdict in the next review</>
+    <>{linkedTask} merged {task?.landed_at_ms ? formatHarnessDate(task.landed_at_ms) : ''} · {f.verification?.sessions_after == null ? 'Verification pending' : `${f.verification.sessions_after} sessions since`} · verdict in the next review</>
   ) : f.phase === 'not_seen' ? (
     <>No task · not raised by review #{latestReviewId ?? f.review_id} · last seen in #{f.last_seen_review_id} ({f.count} sessions)</>
   ) : (
@@ -121,7 +132,7 @@ function FindingRow({
     <Card.Row
       heading={f.title}
       meta={meta}
-      status={<StatusLabel status={phaseStatus(f.phase)} size="small" />}
+      status={settings ? <ReviewFindingStatus phase={f.phase} /> : <StatusLabel status={phaseStatus(f.phase)} size="small" />}
       action={<InlineCluster gap="sm">{phaseActions(f.phase).map((action) => (
         <FindingActionButton
           key={action}
@@ -168,4 +179,9 @@ function FindingActionButton({
     case 'reopen':
       return <Button variant="ghost" onClick={() => onDecide(finding.key, 'open')}>Reopen</Button>
   }
+}
+
+function ReviewFindingStatus({ phase }: { phase: HarnessFindingPhase }): React.JSX.Element {
+  const value = { open: { label: 'New', tone: 'warn' }, fixing: { label: 'Fixing', tone: 'info' }, awaiting_verification: { label: 'Checking fix', tone: 'info' }, not_seen: { label: 'Not seen', tone: 'warn' }, resolved: { label: 'Resolved', tone: 'ok' }, dismissed: { label: 'Dismissed', tone: 'muted' } } as const
+  return <span className="flex items-center gap-[var(--space-1-5)]"><SetupDot tone={value[phase].tone} /><Text size="small" tone={value[phase].tone}>{value[phase].label}</Text></span>
 }
