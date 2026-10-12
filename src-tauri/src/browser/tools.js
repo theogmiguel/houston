@@ -1,6 +1,5 @@
-// Evaluated fresh per call and STATELESS by hard requirement: WebKitGTK hands every
-// `evaluate_javascript` call a fresh ephemeral world even under the same world name,
-// so refs must live on the Rust side and be re-resolved against the live document.
+// Globals do not persist across WebKit evaluations. Node-owned DOM listeners prove
+// identity across worlds; cloning markup copies attributes but never listeners.
 (() => {
   const MAX_ELEMENTS = 500
   const MAX_TEXT = 300
@@ -128,6 +127,28 @@
     return entry
   }
 
+  const provesIdentity = (node, identity) => {
+    if (!node || typeof identity !== 'string' || !identity) return false
+    return !node.dispatchEvent(new Event(identity, { cancelable: true }))
+  }
+  const identityOf = (node, owned) => {
+    // The event name is private to the isolated toolkit and Rust's locator store.
+    // Page markup receives no token it could clone or use to forge a listener.
+    const bytes = crypto.getRandomValues(new Uint32Array(4))
+    const identity = `houston-identity-${Array.from(bytes, n => n.toString(16)).join('-')}`
+    const listener = (event) => {
+      if (event.target !== node) return
+      if (event.cancelable) event.preventDefault()
+      else {
+        for (const [target, name, callback] of owned) target.removeEventListener(name, callback)
+        owned.length = 0
+      }
+    }
+    owned.push([node, identity, listener])
+    node.addEventListener(identity, listener)
+    return identity
+  }
+
   const locatorOf = (el) => {
     const path = []
     const tags = []
@@ -148,7 +169,20 @@
     return { path, tags }
   }
 
-  const snapshot = (startSeq) => {
+  const snapshot = (startSeq, cleanupIdentity) => {
+    const root = document.documentElement
+    if (typeof cleanupIdentity === 'string') root.dispatchEvent(new Event(cleanupIdentity))
+    const owned = []
+    if (typeof cleanupIdentity === 'string') {
+      const cleanup = (event) => {
+        if (event.target !== root) return
+        for (const [target, name, callback] of owned) target.removeEventListener(name, callback)
+        owned.length = 0
+      }
+      root.addEventListener(cleanupIdentity, cleanup)
+      owned.push([root, cleanupIdentity, cleanup])
+    }
+    let documentIdentity = null
     let seq = typeof startSeq === 'number' && startSeq >= 0 ? startSeq : 0
     const seen = new Set()
     const elements = []
@@ -167,6 +201,9 @@
         if (!locator) continue
         seen.add(el)
         const ref = `e${++seq}`
+        if (!documentIdentity) documentIdentity = identityOf(document.documentElement, owned)
+        locator.documentIdentity = documentIdentity
+        locator.elementIdentity = identityOf(el, owned)
         locators[ref] = locator
         const entry = describe(el, ref, kind)
         entry.kind = kind
@@ -202,10 +239,12 @@
       )
     }
     let node = document.documentElement
+    if (!provesIdentity(node, op.documentIdentity)) throw stale()
     for (let i = 0; i < op.path.length; i++) {
       node = node.children[op.path[i]]
       if (!node || node.tagName.toLowerCase() !== op.tags[i]) throw stale()
     }
+    if (!provesIdentity(node, op.elementIdentity)) throw stale()
     return node
   }
 
@@ -359,7 +398,7 @@
   try {
     const op = __TR_TOOLS_OP__
     let result
-    if (op.kind === 'snapshot') result = snapshot(op.startSeq)
+    if (op.kind === 'snapshot') result = snapshot(op.startSeq, op.cleanupIdentity)
     else if (op.kind === 'describe') result = describe_(op)
     else if (op.kind === 'click') result = click(op)
     else if (op.kind === 'type') result = type(op)

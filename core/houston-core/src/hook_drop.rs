@@ -309,7 +309,10 @@ pub(crate) fn write_drop_with(
     use std::sync::atomic::{AtomicU64, Ordering};
     static N: AtomicU64 = AtomicU64::new(0);
     ensure_dir(dir)?;
-    let bytes = serde_json::to_vec(drop).context("serializing the hook drop payload")?;
+    // Draining can reuse a filename in the same millisecond; each write needs its own identity.
+    let mut payload = serde_json::to_value(drop).context("serializing the hook drop payload")?;
+    payload["_houston_drop_id"] = uuid::Uuid::new_v4().to_string().into();
+    let bytes = serde_json::to_vec(&payload).context("serializing the hook drop payload")?;
     let tmp = dir.join(format!(
         "hook{TMP_INFIX}{}.{}",
         std::process::id(),
@@ -396,6 +399,7 @@ pub enum DropVerdict {
 #[derive(Debug, Default)]
 pub struct DropDirState {
     warned: HashSet<OsString>,
+    applied: HashSet<OsString>,
 }
 
 impl DropDirState {
@@ -431,12 +435,32 @@ pub fn run_pass(
     pass: Pass,
     mut apply: impl FnMut(&HookDrop) -> DropVerdict,
 ) -> PassOutcome {
+    run_pass_with_io(
+        dir,
+        state,
+        now_ms,
+        pass,
+        |drop, _, _| apply(drop),
+        |path| std::fs::remove_file(path),
+    )
+}
+
+/// The stable directory/name identity also covers replay after a daemon restart.
+pub fn run_pass_with_io(
+    dir: &Path,
+    state: &mut DropDirState,
+    now_ms: u64,
+    pass: Pass,
+    mut apply: impl FnMut(&HookDrop, &str, u64) -> DropVerdict,
+    mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+) -> PassOutcome {
     let mut out = PassOutcome::default();
     let entries = match std::fs::read_dir(dir) {
         Ok(rd) => rd,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             out.listed_ok = true;
             state.warned.clear();
+            state.applied.clear();
             return out;
         }
         Err(e) => {
@@ -481,12 +505,14 @@ pub fn run_pass(
         files.push((parsed, entry.path(), name));
     }
     state.warned.retain(|n| present.contains(n));
+    state.applied.retain(|n| present.contains(n));
 
     files.sort_by_key(|(n, _, _)| (n.ms, n.seq, n.session));
 
     for (parsed, path, name) in files {
         if now_ms.saturating_sub(parsed.ms) > MAX_AGE_MS {
-            match std::fs::remove_file(&path) {
+            state.applied.remove(&name);
+            match remove(&path) {
                 Ok(()) => out.collected += 1,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => out.collected += 1,
                 Err(e) => {
@@ -494,6 +520,27 @@ pub fn run_pass(
                     out.kept += 1;
                 }
             }
+            continue;
+        }
+        if state.applied.contains(&name) {
+            if remove(&path).is_ok() {
+                state.applied.remove(&name);
+                out.collected += 1;
+            } else {
+                out.kept += 1;
+            }
+            continue;
+        }
+        // Bound receipts without evicting identities whose drops can still be replayed.
+        if state.applied.len() >= 4096 {
+            let count = state.applied.len();
+            warn_once(state, &mut present, &name, || {
+                tracing::warn!(
+                    "hook receipt limit 4096 reached (actual {count}); deferring application of {}",
+                    path.display()
+                );
+            });
+            out.kept += 1;
             continue;
         }
         let bytes = match std::fs::read(&path) {
@@ -528,12 +575,22 @@ pub fn run_pass(
                 continue;
             }
         };
-        match apply(&drop) {
+        use sha2::Digest;
+        let mut digest = sha2::Sha256::new();
+        let path_bytes = path.as_os_str().as_encoded_bytes();
+        digest.update((path_bytes.len() as u64).to_be_bytes());
+        digest.update(path_bytes);
+        digest.update(&bytes);
+        let identity = format!("{:x}", digest.finalize());
+        match apply(&drop, &identity, parsed.ms) {
             DropVerdict::Applied => {
-                if let Err(e) = std::fs::remove_file(&path) {
+                state.applied.insert(name.clone());
+                if let Err(e) = remove(&path) {
                     if e.kind() != std::io::ErrorKind::NotFound {
                         tracing::warn!("hook drop pass: removing applied {}: {e}", path.display());
                     }
+                } else {
+                    state.applied.remove(&name);
                 }
                 out.applied += 1;
             }

@@ -4,7 +4,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const TOOLS_JS = resolve(process.cwd(), '../src-tauri/src/browser/tools.js')
+const TOOLS_JS = process.env.HOUSTON_BROWSER_TOOLS_SOURCE ||
+  resolve(process.cwd(), '../src-tauri/src/browser/tools.js')
 if (!existsSync(TOOLS_JS)) {
   throw new Error(
     `browserPageTools.test.ts cannot find the page toolkit at ${TOOLS_JS} (resolved from ` +
@@ -23,10 +24,10 @@ function runOp(op: Record<string, unknown>): Envelope {
 }
 
 function snapshot(startSeq = 0): Envelope {
-  return runOp({ kind: 'snapshot', startSeq })
+  return runOp({ kind: 'snapshot', startSeq, cleanupIdentity: 'test-snapshot-cleanup' })
 }
 
-type Locator = { path: number[]; tags: string[] }
+type Locator = { path: number[]; tags: string[]; documentIdentity: string; elementIdentity: string }
 
 function opFor(
   snap: Envelope,
@@ -37,7 +38,7 @@ function opFor(
   const locators = snap.result!.locators as Record<string, Locator>
   const locator = locators[ref]
   expect(locator, `snapshot reported no locator for ${ref}`).toBeTruthy()
-  return { kind, ref, path: locator.path, tags: locator.tags, ...extra }
+  return { kind, ref, ...locator, ...extra }
 }
 
 type Element_ = {
@@ -522,6 +523,44 @@ describe('reveal', () => {
   })
 })
 
+
+describe('consent identity', () => {
+  it('cleans the old snapshot listeners and rejects an in-flight old locator', () => {
+    document.body.innerHTML = '<button>Send</button>'
+    const old = snapshot()
+    const ref = elements(old)[0].ref
+    const oldAction = opFor(old, ref, 'click')
+    const fresh = snapshot()
+    expect(runOp(oldAction).ok).toBe(false)
+    expect(runOp(opFor(fresh, elements(fresh)[0].ref, 'click')).ok).toBe(true)
+  })
+
+  it('rejects identical replacement markup even when identity attributes are cloned', () => {
+    document.body.innerHTML = '<button>Send</button>'
+    const snap = snapshot()
+    const ref = elements(snap)[0].ref
+    const old = document.querySelector('button')!
+    const replacement = old.cloneNode(true)
+    old.replaceWith(replacement)
+    const effects = vi.fn()
+    replacement.addEventListener('click', effects)
+    expect(runOp(opFor(snap, ref, 'click')).ok).toBe(false)
+    expect(effects).not.toHaveBeenCalled()
+    const fresh = snapshot()
+    expect(runOp(opFor(fresh, elements(fresh)[0].ref, 'describe')).ok).toBe(true)
+  })
+  it('rejects a same-URL replacement document', () => {
+    document.body.innerHTML = '<button>Send</button>'
+    const snap = snapshot()
+    const action = opFor(snap, elements(snap)[0].ref, 'click')
+    const root = document.documentElement.cloneNode(true)
+    document.documentElement.replaceWith(root)
+    const effects = vi.fn()
+    document.querySelector('button')!.addEventListener('click', effects)
+    expect(runOp(action).ok).toBe(false)
+    expect(effects).not.toHaveBeenCalled()
+  })
+})
 
 describe('hidden native document operations', () => {
   it('snapshots and checks wait text without needing a visible document', () => {

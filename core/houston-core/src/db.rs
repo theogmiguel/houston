@@ -484,6 +484,194 @@ fn migrate_pending_swarm_mail_into_the_inbox(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+// Older builds committed each rebuild statement separately. Restore an untouched
+// source, or retire it only after proving its copied rows are present.
+fn recover_routine_rebuild(conn: &Connection, table: &str, backup: &str) -> Result<()> {
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+        [backup],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Ok(());
+    }
+    let count: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))?;
+    if count == 0 {
+        conn.execute_batch(&format!(
+            "DROP TABLE {table}; ALTER TABLE {backup} RENAME TO {table};"
+        ))?;
+        return Ok(());
+    }
+    // These columns survive both conversions unchanged. Execution settings are
+    // inherited in the first conversion; archive outcomes are translated later.
+    let columns = if table == "routines" {
+        "id, name, name_folded, prompt, cadence, enabled, next_run_at_ms,
+         last_run_at_ms, last_run_session_id, revision, permission_mode, isolate,
+         created_at, updated_at"
+    } else {
+        "id, routine_id, trigger, session_id, started_at_ms, ended_at_ms"
+    };
+    let missing: i64 = conn.query_row(
+        &format!(
+            "SELECT COUNT(*) FROM (SELECT {columns} FROM {backup}
+             EXCEPT SELECT {columns} FROM {table})"
+        ),
+        [],
+        |row| row.get(0),
+    )?;
+    anyhow::ensure!(
+        missing == 0,
+        "cannot recover interrupted routine migration: {backup} contains {missing} row(s) \
+         absent or different in {table}; both tables have been preserved for recovery"
+    );
+    conn.execute_batch(&format!("DROP TABLE {backup}"))?;
+    Ok(())
+}
+
+fn disambiguate_routine_names(conn: &Connection) -> Result<()> {
+    let rows = conn
+        .prepare("SELECT id, name, name_folded FROM routines ORDER BY id")?
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut reserved: HashSet<String> = rows.iter().map(|(_, _, folded)| folded.clone()).collect();
+    let mut seen = HashSet::new();
+    for (id, name, folded) in rows {
+        if seen.insert(folded) {
+            continue;
+        }
+        let mut attempt = 0_u64;
+        let (name, folded) = loop {
+            let suffix = if attempt == 0 {
+                format!(" ({id})")
+            } else {
+                format!(" ({id}-{attempt})")
+            };
+            let prefix: String = name
+                .chars()
+                .take(proto::ROUTINE_NAME_MAX - suffix.chars().count())
+                .collect();
+            let candidate = format!("{}{suffix}", prefix.trim_end());
+            let folded = crate::routines::fold_name(&candidate);
+            if reserved.insert(folded.clone()) {
+                break (candidate, folded);
+            }
+            attempt += 1;
+        };
+        let row = conn.query_row(
+            &format!("{ROUTINE_SELECT} WHERE id = ?1"),
+            [id],
+            map_routine_row,
+        )?;
+        let revision = crate::routines::revision(
+            &name,
+            &row.prompt,
+            &row.cadence,
+            row.enabled,
+            row.workspace_id.as_deref(),
+            row.engine,
+            row.model.as_deref(),
+            row.effort,
+            row.permission_mode,
+            row.isolate,
+        );
+        conn.execute(
+            "UPDATE routines SET name = ?1, name_folded = ?2, revision = ?3 WHERE id = ?4",
+            rusqlite::params![name, folded, revision, id],
+        )?;
+    }
+    Ok(())
+}
+
+fn migrate_routine_schema(conn: &Connection) -> Result<()> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    let routine_sequence: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(seq), 0) FROM sqlite_sequence
+         WHERE name IN ('routines', 'routines_legacy', 'routines_bot_owned')",
+        [],
+        |r| r.get(0),
+    )?;
+    let run_sequence: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(seq), 0) FROM sqlite_sequence
+         WHERE name IN ('routine_runs', 'routine_runs_threaded')",
+        [],
+        |r| r.get(0),
+    )?;
+    recover_routine_rebuild(&tx, "routines", "routines_legacy")?;
+    recover_routine_rebuild(&tx, "routines", "routines_bot_owned")?;
+    recover_routine_rebuild(&tx, "routine_runs", "routine_runs_threaded")?;
+    add_column_if_missing(
+        &tx,
+        "routines",
+        "permission_mode",
+        "permission_mode TEXT NOT NULL DEFAULT 'accept_edits'",
+    )?;
+    add_column_if_missing(
+        &tx,
+        "routines",
+        "isolate",
+        "isolate INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(&tx, "routines", "last_outcome", "last_outcome TEXT")?;
+    add_column_if_missing(
+        &tx,
+        "routines",
+        "engine",
+        "engine TEXT NOT NULL DEFAULT 'claude'",
+    )?;
+    add_column_if_missing(&tx, "routines", "model", "model TEXT")?;
+    add_column_if_missing(&tx, "routines", "effort", "effort TEXT")?;
+    let bot_owned: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('routines') WHERE name = 'agent_id')",
+        [],
+        |r| r.get(0),
+    )?;
+    if bot_owned {
+        add_column_if_missing(
+            &tx,
+            "routines",
+            "continue_context",
+            "continue_context INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(&tx, "routines", "thread_id", "thread_id INTEGER")?;
+    }
+    migrate_routines_to_first_class(&tx)?;
+    migrate_routines_to_standalone(&tx)?;
+    disambiguate_routine_names(&tx)?;
+    // Deleted routines retain run history. Never reuse their IDs after a rebuild.
+    let history_id: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(routine_id), 0) FROM routine_runs",
+        [],
+        |r| r.get(0),
+    )?;
+    for (table, minimum) in [
+        ("routines", routine_sequence.max(history_id)),
+        ("routine_runs", run_sequence),
+    ] {
+        if tx.execute(
+            "UPDATE sqlite_sequence SET seq = MAX(seq, ?2) WHERE name = ?1",
+            rusqlite::params![table, minimum],
+        )? == 0
+        {
+            tx.execute(
+                "INSERT INTO sqlite_sequence (name, seq) VALUES (?1, ?2)",
+                rusqlite::params![table, minimum],
+            )?;
+        }
+    }
+    tx.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_routines_name ON routines(name_folded);
+        CREATE INDEX IF NOT EXISTS idx_routine_runs_routine ON routine_runs(routine_id, id DESC);",
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Rebuilds an old `routines` table (`agent_id` `NOT NULL`) with the
 /// first-class shape, backfilled from each owning bot in the same statement.
 /// A nullable table is left alone, so running twice re-inherits nothing.
@@ -553,7 +741,7 @@ fn migrate_routines_to_first_class(conn: &Connection) -> Result<()> {
 
 /// Rebuilds `routines` without the bot columns and `routine_runs` without
 /// `thread_id`, then drops the five bot tables. The data is copied, never
-/// re-derived; keyed on `agent_id`'s presence, so a second open is a no-op.
+/// re-derived. Also removes obsolete columns re-added by older open paths.
 fn migrate_routines_to_standalone(conn: &Connection) -> Result<()> {
     let has_column = |table: &str, column: &str| -> Result<bool> {
         Ok(conn.query_row(
@@ -562,7 +750,11 @@ fn migrate_routines_to_standalone(conn: &Connection) -> Result<()> {
             |r| r.get::<_, i64>(0).map(|c| c > 0),
         )?)
     };
-    if has_column("routines", "agent_id")? {
+    if has_column("routines", "agent_id")?
+        || has_column("routines", "thread_id")?
+        || has_column("routines", "continue_context")?
+        || has_column("routines", "author")?
+    {
         conn.execute_batch(
             "ALTER TABLE routines RENAME TO routines_bot_owned;
              CREATE TABLE routines (
@@ -601,9 +793,7 @@ fn migrate_routines_to_standalone(conn: &Connection) -> Result<()> {
                     CASE WHEN last_outcome = 'archive_full' THEN 'failed' ELSE last_outcome END,
                     created_at, updated_at
              FROM routines_bot_owned;
-             DROP TABLE routines_bot_owned;
-             CREATE UNIQUE INDEX IF NOT EXISTS idx_routines_name
-                 ON routines(name_folded);",
+             DROP TABLE routines_bot_owned;",
         )?;
         tracing::info!("routines are standalone now: bot ownership dropped, execution fields kept");
     }
@@ -1436,6 +1626,11 @@ impl Db {
         conn.pragma_update(None, "temp_store", "MEMORY")
             .with_context(|| format!("setting temp_store on {}", path.display()))?;
         conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS hook_compaction_receipts (
+            identity TEXT PRIMARY KEY, event_ms INTEGER NOT NULL
+        )",
+        )?;
+        conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS orchestration_receipts (
             caller INTEGER NOT NULL,
             client_request_id TEXT NOT NULL,
@@ -1679,8 +1874,6 @@ impl Db {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_routines_name
-                ON routines(name_folded);
             CREATE TABLE IF NOT EXISTS routine_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 routine_id INTEGER NOT NULL,
@@ -1699,38 +1892,7 @@ impl Db {
         task_trackers::migrate(&conn)?;
         remote::migrate(&conn)?;
         intake::migrate(&conn)?;
-        add_column_if_missing(
-            &conn,
-            "routines",
-            "permission_mode",
-            "permission_mode TEXT NOT NULL DEFAULT 'accept_edits'",
-        )?;
-        add_column_if_missing(
-            &conn,
-            "routines",
-            "isolate",
-            "isolate INTEGER NOT NULL DEFAULT 0",
-        )?;
-        add_column_if_missing(&conn, "routines", "last_outcome", "last_outcome TEXT")?;
-        add_column_if_missing(
-            &conn,
-            "routines",
-            "engine",
-            "engine TEXT NOT NULL DEFAULT 'claude'",
-        )?;
-        add_column_if_missing(&conn, "routines", "model", "model TEXT")?;
-        add_column_if_missing(&conn, "routines", "effort", "effort TEXT")?;
-        // A pre-PR-68 table predates these two; the first-class migration reads
-        // them, so they must exist before it runs. Both are dropped again below.
-        add_column_if_missing(
-            &conn,
-            "routines",
-            "continue_context",
-            "continue_context INTEGER NOT NULL DEFAULT 0",
-        )?;
-        add_column_if_missing(&conn, "routines", "thread_id", "thread_id INTEGER")?;
-        migrate_routines_to_first_class(&conn)?;
-        migrate_routines_to_standalone(&conn)?;
+        migrate_routine_schema(&conn)?;
         close_stale_routine_runs(&conn)?;
         harness::close_stale_reviews(&conn)?;
         conn.execute_batch(
@@ -2289,6 +2451,14 @@ impl Db {
         title_source: Option<&str>,
     ) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
+        Self::insert_session_on(&conn, info, title_source)
+    }
+
+    fn insert_session_on(
+        conn: &Connection,
+        info: &proto::SessionInfo,
+        title_source: Option<&str>,
+    ) -> Result<()> {
         conn.execute(
             "INSERT INTO sessions (id, agent, project_dir, cwd, state, title, codename, title_source,
                                    ssh_host, spawned_by, acp, profile_label, tags, session_origin,
@@ -2315,6 +2485,26 @@ impl Db {
                 info.context.map(|context| serde_json::to_string(&context)).transpose()?,
             ],
         )?;
+        Ok(())
+    }
+
+    /// Startup workers remain gated until both persistence and thread creation succeed.
+    pub fn insert_session_for_startup(
+        &self,
+        info: &proto::SessionInfo,
+        title_source: &str,
+        profile: Option<&str>,
+        prepare: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        Self::insert_session_on(&tx, info, Some(title_source))?;
+        tx.execute(
+            "UPDATE sessions SET profile_config_dir = ?2 WHERE id = ?1",
+            rusqlite::params![info.id, profile],
+        )?;
+        prepare()?;
+        tx.commit()?;
         Ok(())
     }
     pub fn save_ssh_profile(&self, p: &proto::SshProfile) -> Result<()> {
@@ -5286,6 +5476,58 @@ impl Db {
         )?)
     }
 
+    pub fn hook_compaction_seen(&self, identity: &str) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM hook_compaction_receipts WHERE identity = ?1)",
+            [identity],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Receipt and counter commit together; expired drop files cannot be replayed.
+    pub fn session_note_compaction_once(
+        &self,
+        id: u32,
+        identity: &str,
+        event_ms: u64,
+        now: u64,
+    ) -> Result<Option<u32>> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM hook_compaction_receipts WHERE event_ms < ?1",
+            [now.saturating_sub(crate::hook_drop::MAX_AGE_MS) as i64],
+        )?;
+        if tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM hook_compaction_receipts WHERE identity = ?1)",
+            [identity],
+            |row| row.get::<_, bool>(0),
+        )? {
+            return Ok(None);
+        }
+        // At capacity keep the drop retryable rather than evicting a live receipt.
+        let count: u32 =
+            tx.query_row("SELECT COUNT(*) FROM hook_compaction_receipts", [], |row| {
+                row.get(0)
+            })?;
+        anyhow::ensure!(
+            count < 4096,
+            "hook compaction receipt limit 4096 reached (actual {count}); retry compaction later"
+        );
+        tx.execute(
+            "INSERT INTO hook_compaction_receipts VALUES (?1, ?2)",
+            rusqlite::params![identity, event_ms as i64],
+        )?;
+        let count = tx.query_row(
+            "UPDATE sessions SET compactions = compactions + 1 WHERE id = ?1 RETURNING compactions",
+            [id],
+            |row| row.get(0),
+        )?;
+        tx.commit()?;
+        Ok(Some(count))
+    }
+
     pub fn session_compactions(&self, id: u32) -> Result<u32> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn
@@ -5998,6 +6240,43 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn routine_rebuild_rolls_back_when_storage_cannot_allocate_the_new_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../tests/fixtures/routines/legacy.sql"))
+            .unwrap();
+        conn.execute_batch(
+            "ALTER TABLE routines ADD COLUMN engine TEXT NOT NULL DEFAULT 'claude';
+             ALTER TABLE routines ADD COLUMN model TEXT;
+             ALTER TABLE routines ADD COLUMN effort TEXT;
+             ALTER TABLE routines ADD COLUMN thread_id INTEGER;",
+        )
+        .unwrap();
+        let pages: i64 = conn
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap();
+        conn.pragma_update(None, "max_page_count", pages).unwrap();
+        let error = migrate_routine_schema(&conn).unwrap_err();
+        assert!(error.to_string().contains("full"), "{error:#}");
+        let source: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('routines') WHERE name = 'agent_id' AND \"notnull\" = 1",
+            [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(source, 1, "the original table remains active");
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM routines", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 1);
+        let backups: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('routines_legacy', 'routines_bot_owned', 'routine_runs_threaded')",
+            [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(backups, 0, "a failed rebuild must not strand backup tables");
+        conn.pragma_update(None, "max_page_count", pages + 100)
+            .unwrap();
+        migrate_routine_schema(&conn).unwrap();
+    }
 
     #[test]
     fn an_existing_sessions_table_gains_the_resume_handle_column() {

@@ -38,7 +38,15 @@ pub fn hermetic_command(
         use std::os::unix::fs::PermissionsExt;
         let shims = home.join("provider-shims");
         std::fs::create_dir_all(&shims).unwrap();
-        for name in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
+        for name in [
+            "claude",
+            "codex",
+            "agy",
+            "opencode",
+            "cursor-agent",
+            "grok",
+            "zcode",
+        ] {
             let path = shims.join(name);
             if !path.exists() {
                 std::fs::write(
@@ -226,6 +234,7 @@ async fn collect_output(ws: &mut WsStream, session: u32, needle: &str, attach: b
 
 pub fn create_custom_msg(cmd: Vec<&str>, dir: &std::path::Path) -> String {
     serde_json::to_string(&proto::ClientMsg::SessionCreate {
+        request: None,
         agent: proto::AgentKind::Custom,
         project_dir: dir.display().to_string(),
         cmd: Some(cmd.into_iter().map(String::from).collect()),
@@ -264,6 +273,23 @@ pub async fn collect_broadcast_until(
     session: u32,
     needle: &str,
 ) -> String {
+    collect_broadcast_matching(rx, session, needle, false).await
+}
+
+pub async fn collect_broadcast_envelope(
+    rx: &mut houston_core::frame_queue::Observer,
+    session: u32,
+    needle: &str,
+) -> String {
+    collect_broadcast_matching(rx, session, needle, true).await
+}
+
+async fn collect_broadcast_matching(
+    rx: &mut houston_core::frame_queue::Observer,
+    session: u32,
+    needle: &str,
+    complete_envelope: bool,
+) -> String {
     let mut acc = String::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     loop {
@@ -286,7 +312,9 @@ pub async fn collect_broadcast_until(
             if let Some((id, _offset, payload)) = proto::decode_output_frame(&buf) {
                 if id == session {
                     acc.push_str(&String::from_utf8_lossy(payload));
-                    if acc.contains(needle) {
+                    if acc.find(needle).is_some_and(|at| {
+                        !complete_envelope || acc[at..].contains("--- End Inbox ---")
+                    }) {
                         return acc;
                     }
                 }

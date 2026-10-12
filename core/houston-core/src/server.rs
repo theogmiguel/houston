@@ -498,15 +498,25 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
     let mut frames_wanted = AttachSet::new(Arc::clone(&daemon), Arc::clone(&wake));
     let conn_id = daemon.conn_register();
 
-    let (reply_tx, mut reply_rx) = futures_channel::mpsc::channel::<Message>(CONTROL_REPLY_QUEUE);
+    let (reply_tx, mut reply_rx) = tokio::sync::mpsc::channel::<ControlReply>(CONTROL_REPLY_QUEUE);
+    let replies = ReplySink {
+        tx: reply_tx,
+        bytes: Arc::new(tokio::sync::Semaphore::new(CONTROL_REPLY_BYTES)),
+        failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        wake: Arc::clone(&wake),
+    };
+    let handlers = Arc::new(tokio::sync::Semaphore::new(CONTROL_HANDLERS_PER_CONNECTION));
     loop {
         tokio::select! {
-            Some(reply) = reply_rx.next() => {
-                if sink.send(reply).await.is_err() {
+            Some(reply) = reply_rx.recv() => {
+                if sink.send(reply.message).await.is_err() {
                     break;
                 }
             }
             _ = wake.notified() => {
+                if replies.failed.load(std::sync::atomic::Ordering::Acquire) {
+                    break;
+                }
                 if !flush_frames(&mut sink, &frames_wanted).await {
                     break;
                 }
@@ -515,6 +525,10 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 Ok(Outbound::Frame(_)) => {
                 }
                 Ok(Outbound::Control(json)) => {
+                    if let Some(session) = removed_session(&json) {
+                        frames_wanted.forget(session);
+                        daemon.conn_set_visibility(conn_id, session, true);
+                    }
                     if sink.send(Message::Text(json.as_str().to_owned().into())).await.is_err() {
                         break;
                     }
@@ -547,13 +561,13 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
             },
             incoming = stream.next() => match incoming {
                 Some(Ok(Message::Text(text))) => {
-                    handle_control(&daemon, &mut sink, &reply_tx, &text, &mut frames_wanted, conn_id)
+                    handle_control(&daemon, &mut sink, &replies, &handlers, &text, &mut frames_wanted, conn_id)
                         .await;
                 }
                 Some(Ok(Message::Binary(buf))) => {
                     if let Some((id, payload)) = proto::decode_stdin_frame(&buf) {
                         daemon.note_operator_keystroke(id, payload);
-                        if let Err(e) = daemon.write_stdin_from_renderer(id, payload) {
+                        if let Err(e) = daemon.enqueue_stdin_from_renderer(id, payload, conn_id) {
                             send_error(&mut sink, e.to_string(), Some("stdin".into())).await;
                         }
                     }
@@ -596,9 +610,23 @@ async fn flush_frames(sink: &mut (impl SinkExt<Message> + Unpin), taps: &AttachS
     !fed || sink.flush().await.is_ok()
 }
 
+fn removed_session(json: &str) -> Option<u32> {
+    #[derive(serde::Deserialize)]
+    struct Header<'a> {
+        #[serde(rename = "type", borrow)]
+        kind: &'a str,
+        session: Option<u32>,
+    }
+    let header: Header<'_> = serde_json::from_str(json).ok()?;
+    (header.kind == "session_removed")
+        .then_some(header.session)
+        .flatten()
+}
+
 struct AttachSet {
     taps: std::collections::HashMap<u32, Arc<FrameTap>>,
     visible: std::collections::HashSet<u32>,
+    attempts: std::collections::HashMap<u32, u32>,
     daemon: Arc<Daemon>,
     wake: Arc<Notify>,
 }
@@ -608,13 +636,14 @@ impl AttachSet {
         Self {
             taps: std::collections::HashMap::new(),
             visible: std::collections::HashSet::new(),
+            attempts: std::collections::HashMap::new(),
             daemon,
             wake,
         }
     }
 
     fn insert(&mut self, session: u32) {
-        if !self.visible.insert(session) {
+        if !self.daemon.has_session(session) || !self.visible.insert(session) {
             return;
         }
         let tap = self
@@ -630,17 +659,29 @@ impl AttachSet {
         if !self.visible.remove(&session) {
             return;
         }
-        if let Some(tap) = self.taps.get(&session) {
-            self.daemon.frame_taps().unregister(tap);
+        if let Some(tap) = self.taps.remove(&session) {
+            self.daemon.frame_taps().unregister(&tap);
+            tap.clear();
         }
         self.daemon.ws_detach(session);
     }
 
+    fn forget(&mut self, session: u32) {
+        self.remove(session);
+        self.attempts.remove(&session);
+    }
+
     fn attach(&mut self, session: u32, bytes_seen: Option<u64>) -> u32 {
         self.insert(session);
+        let attempts = &mut self.attempts;
         self.taps
             .get(&session)
-            .map(|tap| tap.attach(bytes_seen))
+            .map(|tap| {
+                tap.attach(bytes_seen);
+                let attempt = attempts.entry(session).or_default();
+                *attempt = attempt.saturating_add(1);
+                *attempt
+            })
             .unwrap_or(0)
     }
 
@@ -730,10 +771,146 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
     )
 }
 
-// How many replies one connection's off-task handlers may queue before
-// they wait on the socket: a reconnect burst is a few dozen, so 256 leaves
-// headroom without letting a stalled socket hoard memory behind it.
+// Finite reconnect bursts fit while stalled clients cannot retain arbitrary work.
 const CONTROL_REPLY_QUEUE: usize = 256;
+const CONTROL_REPLY_BYTES: usize = 8 * 1024 * 1024;
+const CONTROL_HANDLERS_PER_CONNECTION: usize = 16;
+const CONTROL_HANDLERS_PROCESS: usize = 64;
+
+fn control_handlers() -> &'static Arc<tokio::sync::Semaphore> {
+    static LIMIT: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    LIMIT.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(CONTROL_HANDLERS_PROCESS)))
+}
+
+fn control_tasks() -> &'static std::sync::Mutex<tokio::task::JoinSet<()>> {
+    static TASKS: std::sync::OnceLock<std::sync::Mutex<tokio::task::JoinSet<()>>> =
+        std::sync::OnceLock::new();
+    TASKS.get_or_init(|| std::sync::Mutex::new(tokio::task::JoinSet::new()))
+}
+
+#[cfg(feature = "test-barriers")]
+pub struct ControlTestGate {
+    pub started: std::sync::atomic::AtomicUsize,
+    pub finished: std::sync::atomic::AtomicUsize,
+    pub release: tokio::sync::Semaphore,
+}
+
+#[cfg(feature = "test-barriers")]
+impl Default for ControlTestGate {
+    fn default() -> Self {
+        Self {
+            started: std::sync::atomic::AtomicUsize::new(0),
+            finished: std::sync::atomic::AtomicUsize::new(0),
+            release: tokio::sync::Semaphore::new(0),
+        }
+    }
+}
+
+#[cfg(feature = "test-barriers")]
+type ControlFixture = Option<(std::sync::Weak<Daemon>, Arc<ControlTestGate>)>;
+#[cfg(feature = "test-barriers")]
+static CONTROL_FIXTURE: std::sync::Mutex<ControlFixture> = std::sync::Mutex::new(None);
+
+#[cfg(feature = "test-barriers")]
+#[doc(hidden)]
+pub fn active_control_handlers_for_test() -> usize {
+    CONTROL_HANDLERS_PROCESS - control_handlers().available_permits()
+}
+
+#[cfg(feature = "test-barriers")]
+#[doc(hidden)]
+pub fn set_control_test(daemon: &Arc<Daemon>, fixture: Arc<ControlTestGate>) {
+    *CONTROL_FIXTURE.lock().expect("control fixture lock") =
+        Some((Arc::downgrade(daemon), fixture));
+}
+
+#[cfg(feature = "test-barriers")]
+fn control_fixture(daemon: &Daemon, msg: &proto::ClientMsg) -> Option<Arc<ControlTestGate>> {
+    if !matches!(msg, proto::ClientMsg::SessionList) {
+        return None;
+    }
+    CONTROL_FIXTURE
+        .lock()
+        .expect("control fixture lock")
+        .as_ref()
+        .and_then(|(owner, fixture)| {
+            owner
+                .upgrade()
+                .filter(|owner| std::ptr::eq(owner.as_ref(), daemon))
+                .map(|_| Arc::clone(fixture))
+        })
+}
+
+struct ControlReply {
+    message: Message,
+    _bytes: tokio::sync::OwnedSemaphorePermit,
+}
+
+#[derive(Clone)]
+struct ReplySink {
+    tx: tokio::sync::mpsc::Sender<ControlReply>,
+    bytes: Arc<tokio::sync::Semaphore>,
+    failed: Arc<std::sync::atomic::AtomicBool>,
+    wake: Arc<Notify>,
+}
+
+impl futures_util::Sink<Message> for ReplySink {
+    type Error = std::io::Error;
+
+    fn poll_ready(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: std::pin::Pin<&mut Self>, message: Message) -> Result<(), Self::Error> {
+        let size = match &message {
+            Message::Text(text) => text.len(),
+            Message::Binary(bytes) | Message::Ping(bytes) | Message::Pong(bytes) => bytes.len(),
+            Message::Close(Some(frame)) => frame.reason.len() + 2,
+            Message::Close(None) => 2,
+        }
+        .max(1);
+        let permit = u32::try_from(size)
+            .ok()
+            .and_then(|size| Arc::clone(&self.bytes).try_acquire_many_owned(size).ok());
+        if let Some(permit) = permit {
+            if self
+                .tx
+                .try_send(ControlReply {
+                    message,
+                    _bytes: permit,
+                })
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+        self.failed
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.wake.notify_one();
+        Err(std::io::Error::other(format!(
+            "control reply limits: {CONTROL_REPLY_QUEUE} items, {CONTROL_REPLY_BYTES} bytes; actual {} items, {} bytes; requested 1 reply of {size} bytes; reconnect to resync",
+            CONTROL_REPLY_QUEUE - self.tx.capacity(),
+            CONTROL_REPLY_BYTES - self.bytes.available_permits(),
+        )))
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.poll_flush(cx)
+    }
+}
 
 // Attach-family messages run on the connection task because they mutate its
 // own `AttachSet`; everything else runs off-task. An awaited handler would
@@ -752,7 +929,8 @@ fn runs_on_connection_task(msg: &proto::ClientMsg) -> bool {
 async fn handle_control(
     daemon: &Arc<Daemon>,
     sink: &mut (impl SinkExt<Message> + Unpin),
-    reply_tx: &futures_channel::mpsc::Sender<Message>,
+    reply_tx: &ReplySink,
+    handlers: &Arc<tokio::sync::Semaphore>,
     text: &str,
     frames_wanted: &mut AttachSet,
     conn_id: u64,
@@ -803,9 +981,44 @@ async fn handle_control(
         report(sink, result).await;
         return;
     }
+    let local = Arc::clone(handlers).try_acquire_owned();
+    let global = Arc::clone(control_handlers()).try_acquire_owned();
+    let (Ok(local), Ok(global)) = (local, global) else {
+        send_error(sink, format!(
+            "control handler limits: connection {CONTROL_HANDLERS_PER_CONNECTION}, process {CONTROL_HANDLERS_PROCESS}; active connection {}, process {}; refused control request",
+            CONTROL_HANDLERS_PER_CONNECTION - handlers.available_permits(),
+            CONTROL_HANDLERS_PROCESS - control_handlers().available_permits(),
+        ), Some("control_admission".into())).await;
+        return;
+    };
     let daemon = Arc::clone(daemon);
     let mut tx = reply_tx.clone();
-    tokio::spawn(async move {
+    let mut tasks = control_tasks().lock().expect("control task lock");
+    while let Some(result) = tasks.try_join_next() {
+        if let Err(error) = result {
+            tracing::warn!("control handler failed: {error}");
+        }
+    }
+    // Admitted operations finish even on disconnect. Retain permits through blocking
+    // mutations and subprocess cleanup; aborting their async wrapper is not cancellation.
+    #[cfg(feature = "test-barriers")]
+    let fixture = control_fixture(daemon.as_ref(), &msg);
+    tasks.spawn(async move {
+        let _permits = (local, global);
+        #[cfg(feature = "test-barriers")]
+        if let Some(fixture) = fixture {
+            fixture
+                .started
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let _ = fixture
+                .release
+                .acquire()
+                .await
+                .map(|permit| permit.forget());
+            fixture
+                .finished
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
         let result = dispatch(&daemon, &mut tx, msg, None, conn_id).await;
         report(&mut tx, result).await;
     });
@@ -838,6 +1051,7 @@ async fn dispatch(
         }
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
         proto::ClientMsg::SessionCreate {
+            request,
             agent,
             project_dir,
             cmd,
@@ -870,12 +1084,30 @@ async fn dispatch(
                 model,
                 effort,
             };
-            tokio::task::spawn_blocking(move || daemon.create_session(params))
+            let result = tokio::task::spawn_blocking(move || daemon.create_session(params))
                 .await
-                .unwrap_or_else(|e| Err(anyhow::anyhow!("create task panicked: {e}")))
-                .map(|info| {
-                    frames_wanted.insert(info.id);
-                })
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("create task panicked: {e}")));
+            if let Ok(info) = &result {
+                frames_wanted.insert(info.id);
+            }
+            if let Some(request) = request {
+                let (info, error) = match result {
+                    Ok(info) => (Some(info), None),
+                    Err(error) => (None, Some(format!("{error:#}"))),
+                };
+                send_msg(
+                    sink,
+                    &proto::ServerMsg::SessionCreateResult {
+                        request,
+                        info,
+                        error,
+                    },
+                )
+                .await
+                .map_err(|_| anyhow::anyhow!("sending create result failed"))
+            } else {
+                result.map(|_| ())
+            }
         }
         proto::ClientMsg::SessionKill {
             session,
@@ -1742,7 +1974,7 @@ async fn dispatch(
             Ok(())
         }
         proto::ClientMsg::VoiceModelDelete { model_id } => {
-            daemon.broadcast_control(&daemon.voice_model_delete(&model_id));
+            daemon.broadcast_control(&daemon.voice_model_delete(&model_id)?);
             daemon.broadcast_control(&daemon.voice_settings_reply());
             Ok(())
         }
@@ -3277,6 +3509,10 @@ async fn dispatch(
             Ok(())
         }
         proto::ClientMsg::SessionVisibility { session, visible } => {
+            anyhow::ensure!(
+                daemon.has_session(session),
+                "unknown session id {session} (expected an active or restored session)"
+            );
             let frames_wanted =
                 frames_wanted.expect("an attach-family message runs on the connection task");
             if visible {
@@ -5641,22 +5877,144 @@ mod frame_flush_tests {
         }
     }
 
+    struct LiveSession {
+        daemon: Arc<Daemon>,
+        id: u32,
+        _state: tempfile::TempDir,
+    }
+
+    impl LiveSession {
+        fn new() -> Self {
+            let state = tempfile::tempdir().unwrap();
+            let daemon = Daemon::new(crate::daemon::DaemonConfig {
+                token: "token".into(),
+                db_path: state.path().join("test.db"),
+            })
+            .unwrap();
+            let id = daemon
+                .create_session(crate::daemon::CreateParams {
+                    agent: proto::AgentKind::Custom,
+                    project_dir: state.path().to_path_buf(),
+                    cmd: Some(if cfg!(windows) {
+                        vec!["cmd.exe".into(), "/d".into(), "/c".into(), "more".into()]
+                    } else {
+                        vec!["cat".into()]
+                    }),
+                    cols: 80,
+                    rows: 24,
+                    cwd_from: None,
+                    shell_integration: false,
+                    auto_approve: false,
+                    acp: None,
+                    profile: None,
+                    prompt: None,
+                    model: None,
+                    effort: None,
+                })
+                .unwrap()
+                .id;
+            Self {
+                daemon,
+                id,
+                _state: state,
+            }
+        }
+    }
+
+    impl Drop for LiveSession {
+        fn drop(&mut self) {
+            let _ = self.daemon.close(self.id);
+        }
+    }
+
+    #[test]
+    fn hiding_releases_queued_bytes_and_keeps_attach_attempts_and_cutoffs() {
+        let fixture = LiveSession::new();
+        let id = fixture.id;
+        let mut taps = AttachSet::new(Arc::clone(&fixture.daemon), Arc::new(Notify::new()));
+        assert_eq!(taps.attach(id, Some(0)), 1);
+        let tap = Arc::clone(taps.taps.get(&id).unwrap());
+        let payload = vec![b'x'; 16 * 1024];
+        let cutoff = 1024 * 1024;
+        for offset in (0..cutoff).step_by(payload.len()) {
+            tap.offer(
+                offset as u64,
+                payload.len(),
+                &Arc::new(proto::encode_output_frame(id, offset as u64, &payload)),
+            );
+        }
+        // A live ConPTY can also enqueue startup control sequences. The retained
+        // payload is a lower bound; hide and close must still clear every byte.
+        assert!(tap.queued_bytes_for_test() >= cutoff);
+        taps.remove(id);
+        assert_eq!(
+            tap.queued_bytes_for_test(),
+            0,
+            "hide immediately clears queued output"
+        );
+        assert!(!taps.taps.contains_key(&id));
+        assert_eq!(
+            taps.attach(id, Some(cutoff as u64)),
+            2,
+            "reattach numbers remain monotonic for the live session"
+        );
+        let shown = taps.taps.get(&id).unwrap();
+        shown.offer(
+            0,
+            8,
+            &Arc::new(proto::encode_output_frame(id, 0, b"old-data")),
+        );
+        shown.offer(
+            cutoff as u64,
+            3,
+            &Arc::new(proto::encode_output_frame(id, cutoff as u64, b"new")),
+        );
+        let frames = shown.drain();
+        assert_eq!(frames.len(), 1);
+        let Queued::Frame(frame) = &frames[0] else {
+            panic!("expected output")
+        };
+        assert_eq!(
+            proto::decode_output_frame(frame).unwrap(),
+            (id, cutoff as u64, b"new".as_slice())
+        );
+        shown.offer(
+            cutoff as u64 + 3,
+            4,
+            &Arc::new(proto::encode_output_frame(id, cutoff as u64 + 3, b"held")),
+        );
+        let retained = Arc::clone(shown);
+        fixture.daemon.close(id).unwrap();
+        assert_eq!(
+            retained.queued_bytes_for_test(),
+            0,
+            "close clears output even before the connection receives removal"
+        );
+        taps.forget(id);
+        assert!(!taps.attempts.contains_key(&id));
+        taps.insert(id + 1000);
+        assert!(
+            !taps.taps.contains_key(&(id + 1000)),
+            "invalid IDs do not allocate taps"
+        );
+    }
+
     #[tokio::test]
     async fn drained_frames_are_fed_in_order_before_a_single_flush() {
-        let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(crate::daemon::DaemonConfig {
-            token: "token".into(),
-            db_path: state.path().join("test.db"),
-        })
-        .unwrap();
-        let mut taps = AttachSet::new(daemon, Arc::new(Notify::new()));
-        taps.insert(7);
-        let tap = taps.taps.get(&7).unwrap();
+        let fixture = LiveSession::new();
+        let id = fixture.id;
+        let mut taps = AttachSet::new(Arc::clone(&fixture.daemon), Arc::new(Notify::new()));
+        taps.insert(id);
+        let tap = taps.taps.get(&id).unwrap();
+        // This checks socket flushing of controlled frames, independently of PTY
+        // startup output. Unregister before clearing to exclude concurrent offers.
+        fixture.daemon.frame_taps().unregister(tap);
+        tap.clear();
         for (offset, payload) in [(0, b"first".as_slice()), (10, b"second".as_slice())] {
             tap.offer(
                 offset,
                 payload.len(),
-                &Arc::new(proto::encode_output_frame(7, offset, payload)),
+                &Arc::new(proto::encode_output_frame(id, offset, payload)),
             );
         }
 
@@ -5699,5 +6057,60 @@ mod pr_surface_tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("32") && error.contains("33") && error.contains("request"));
+    }
+}
+
+#[cfg(test)]
+mod reply_admission_tests {
+    use super::*;
+
+    fn sink(items: usize, bytes: usize) -> (ReplySink, tokio::sync::mpsc::Receiver<ControlReply>) {
+        let (tx, rx) = tokio::sync::mpsc::channel(items);
+        (
+            ReplySink {
+                tx,
+                bytes: Arc::new(tokio::sync::Semaphore::new(bytes)),
+                failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                wake: Arc::new(Notify::new()),
+            },
+            rx,
+        )
+    }
+
+    #[tokio::test]
+    async fn cloned_reply_senders_cannot_expand_item_or_byte_admission() {
+        let (sink, mut rx) = sink(2, 10);
+        sink.clone()
+            .send(Message::Text("12345".into()))
+            .await
+            .unwrap();
+        sink.clone()
+            .send(Message::Text("12345".into()))
+            .await
+            .unwrap();
+        for _ in 0..1000 {
+            assert!(sink.clone().send(Message::Text("x".into())).await.is_err());
+        }
+        assert_eq!(rx.len(), 2);
+        assert_eq!(sink.bytes.available_permits(), 0);
+        let active = rx.recv().await.unwrap();
+        assert_eq!(
+            sink.bytes.available_permits(),
+            0,
+            "socket-active reply remains byte admitted"
+        );
+        drop(active);
+        assert_eq!(sink.bytes.available_permits(), 5);
+        sink.clone()
+            .send(Message::Text("12345".into()))
+            .await
+            .unwrap();
+        assert!(sink
+            .clone()
+            .send(Message::Text("123456".into()))
+            .await
+            .is_err());
+        drop(rx);
+        assert_eq!(sink.bytes.available_permits(), 10);
     }
 }

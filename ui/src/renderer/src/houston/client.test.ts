@@ -1307,3 +1307,63 @@ describe('HoustonClient usage filters', () => {
     client.close()
   })
 })
+
+describe('workspace action targeting', () => {
+  it('sends only to the correlated shell and reports a refusal without sending to a foreign pane', async () => {
+    const { client, ws } = await connectFakeClient()
+    const action = { id: 'build', name: 'Build', command: 'make deploy', shortcut: null }
+    const write = vi.spyOn(getTransport(client), 'write').mockReturnValue(true)
+    const run = client.runWorkspaceAction(action, '/project', true)
+    const create = JSON.parse(ws.sent.at(-1) as string)
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_created', info: { id: 999, agent: 'shell', project_dir: '/project' } }) })
+    await Promise.resolve()
+    expect(write).not.toHaveBeenCalled()
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_create_result', request: create.request, info: { id: 42 }, error: null }) })
+    await run
+    expect(write).toHaveBeenCalledExactlyOnceWith(42, 'make deploy\r')
+    write.mockClear()
+    const failed = client.runWorkspaceAction(action, '/missing', true)
+    const refusal = expect(failed).rejects.toThrow('missing workspace')
+    const request = JSON.parse(ws.sent.at(-1) as string).request
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_create_result', request, info: null, error: 'missing workspace' }) })
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_created', info: { id: 1000 } }) })
+    await refusal
+    expect(write).not.toHaveBeenCalled()
+    client.close()
+  })
+})
+
+it('bounds removed-session bookkeeping through real control delivery and suppresses late readiness', async () => {
+  const { client, ws } = await connectFakeClient()
+  for (let session = 1; session <= 2000; session++) {
+    client.dispatchFrame(session, 0, new Uint8Array([65]))
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_state', session, state: 'exited', exit_code: 0 }) })
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_removed', session }) })
+  }
+  const state = client as unknown as { exitedSessions: Set<number>; readySessions: Set<number>; deadSessions: Set<number> }
+  expect(state.exitedSessions.size).toBe(0)
+  expect(state.readySessions.size).toBe(0)
+  expect(state.deadSessions.size).toBeLessThanOrEqual(512)
+  client.dispatchFrame(2000, 1, new Uint8Array([66]))
+  ws.onmessage?.({ data: JSON.stringify({ type: 'session_state', session: 2000, state: 'exited', exit_code: 0 }) })
+  expect(state.exitedSessions.size).toBe(0)
+  await expect(client.waitForReady(2000)).resolves.toBe(false)
+  // Respawn receives a distinct ID and can become ready normally.
+  client.dispatchFrame(2001, 0, new Uint8Array([65]))
+  await expect(client.waitForReady(2001)).resolves.toBe(true)
+  client.close()
+})
+
+it('surfaces refused input and parser replies through the visible error subscription', async () => {
+  const { client } = await connectFakeClient()
+  const transport = getTransport(client)
+  const error = vi.fn()
+  client.subscribe('error', error)
+  const write = vi.spyOn(transport, 'write').mockImplementation(() => { throw new Error('Input refused: current 1048576; requested 12; limit 1048576') })
+  expect(client.sendStdin(7, 'paste')).toBe(false)
+  expect(client.sendStdin(7, '\x1b[1;1R', true)).toBe(false)
+  expect(write).toHaveBeenLastCalledWith(7, '\x1b[1;1R', true)
+  expect(error).toHaveBeenCalledTimes(2)
+  expect(error.mock.calls[0][0].message).toContain('requested 12')
+  client.close()
+})

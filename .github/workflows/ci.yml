@@ -160,12 +160,13 @@ jobs:
             echo "| ${{ github.job }} | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Fork PRs need the core crate gates too. The library tests and selected restored-shell
-  # regressions run here; other integration suites need local resources (see the runbook).
+  # Core unit tests and selected wire regressions run with an isolated keyring.
+  # Remaining integration and load-sensitive gates stay local.
   core-checks:
     runs-on: ubuntu-latest
     env:
       HOUSTON_CHANNEL: dev
+      CARGO_BUILD_JOBS: 3
     steps:
       - name: Record job start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
@@ -206,6 +207,8 @@ jobs:
           dbus-run-session -- bash -c '
             eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)"
             cargo test --lib --manifest-path core/Cargo.toml'
+      - name: Test protocol compatibility and correlated creation
+        run: bash scripts/with-test-keyring.sh cargo test --locked --manifest-path core/Cargo.toml -p houston-core --test protocol_version_wire --test session_create_result_wire
       # The restored-CLI regressions run real bash and zsh integration rc files.
       - name: cargo test restored shell-hosted CLI
         run: >
@@ -223,6 +226,56 @@ jobs:
             echo "|---|---|"
             echo "| ${{ github.job }} | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  linux-native-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HOUSTON_CHANNEL: dev
+      CARGO_BUILD_JOBS: 3
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev \
+            libasound2-dev libdbus-1-dev libudev-dev \
+            clang libclang-dev cmake nasm gnome-keyring dbus-x11 zsh
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core
+            src-tauri
+          key: linux-native-checks
+      - name: Cache the pinned libghostty-vt source and Zig
+        uses: actions/cache@v5
+        with:
+          path: core/target/ghostty-vt
+          key: ghostty-vt-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock') }}
+      - uses: oven-sh/setup-bun@v2
+      - name: Build renderer assets for native compilation
+        working-directory: ui
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+      - name: Stage debug sidecars
+        run: |
+          bash scripts/stage-helper.sh
+          bash scripts/stage-helper.sh --bin houston-core
+          bash scripts/stage-helper.sh --bin houston-supervisor
+      - name: Check native formatting and Clippy
+        run: |
+          cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
+          cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
+          cargo clippy --locked --all-targets --features bench --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - name: Test native application
+        run: |
+          bash scripts/with-test-keyring.sh cargo test --locked --manifest-path src-tauri/Cargo.toml -- --test-threads=3
+          bash scripts/with-test-keyring.sh cargo test --locked --features bench --manifest-path src-tauri/Cargo.toml -- --test-threads=3
 
   windows-renderer-checks:
     runs-on: windows-2022
@@ -308,7 +361,9 @@ jobs:
         run: |
           cargo test --locked -p houston-core --lib -- --test-threads=3
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked -p houston-core --test env_hygiene_wire --test nonascii_longpath_wire --test checkpoints_wire --test git_discard_wire --test git_tools_wire --test git_wire --test manage_wire --test shutdown_drain_wire --test tasks_wire --test windows_claude_hooks_wire --test windows_orchestration_wire --test wsl_wire -- --test-threads=3
+          cargo test --locked --no-fail-fast -p houston-core --test protocol_version_wire --test env_hygiene_wire --test nonascii_longpath_wire --test checkpoints_wire --test git_discard_wire --test git_tools_wire --test git_wire --test manage_wire --test shutdown_drain_wire --test subprocess_deadlines_windows --test tasks_wire --test windows_claude_hooks_wire --test windows_orchestration_wire --test wsl_wire -- --test-threads=3
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -p houston-core --features test-barriers --test ssh_stalled_window -- --test-threads=3
           exit $LASTEXITCODE
       - name: Stage debug sidecars
         run: |

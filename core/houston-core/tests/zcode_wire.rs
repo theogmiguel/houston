@@ -45,12 +45,12 @@ for a in "$@"; do printf '%s\n' "$a" >> "$out.tmp"; done
 env | grep -e '^ZCODE_HOUSTON_MCP_URL' -e '^ZCODE_DISABLE_UPDATE_CHECK' | sed 's/^/env:/' >> "$out.tmp"
 mv "$out.tmp" "$out"
 echo FAKE-ZCODE-BOOTING
-stty -echo -icanon 2>/dev/null
+stty -echo -icanon -icrnl 2>/dev/null
 printf '\033[?2004h\033[?25l'
 if [ -n "$ZCODE_FAKE_BOOT_SECS" ]; then timeout --foreground "$ZCODE_FAKE_BOOT_SECS" cat > /dev/null; fi
 echo FAKE-ZCODE-READY
 printf '\033[?25h'
-exec cat
+exec tee "$out.input"
 "#;
 
 fn shim_dir() -> PathBuf {
@@ -243,6 +243,45 @@ fn status(daemon: &Daemon, id: u32) -> Option<proto::AgentStatus> {
     daemon.session_status(id).unwrap()
 }
 
+async fn received_prompt(env: &Env, id: u32, marker: &str, enters: usize) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let bytes = std::fs::read(env.argv.path().join(format!("{id}.input"))).unwrap_or_default();
+        let input = String::from_utf8_lossy(&bytes);
+        if let Some(end) = input.find("\x1b[201~") {
+            let after = &input[end + "\x1b[201~".len()..];
+            if after.matches('\r').count() >= enters {
+                assert_eq!(
+                    input.matches(marker).count(),
+                    1,
+                    "one received brief: {input:?}"
+                );
+                assert_eq!(
+                    input.matches("\x1b[200~").count(),
+                    1,
+                    "one paste start: {input:?}"
+                );
+                assert_eq!(
+                    input.matches("\x1b[201~").count(),
+                    1,
+                    "one paste end: {input:?}"
+                );
+                assert_eq!(
+                    after.matches('\r').count(),
+                    enters,
+                    "received Enter count: {input:?}"
+                );
+                return;
+            }
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "pane {id} did not receive {marker:?} with {enters} Enters: {input:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 async fn screen_shows(daemon: &Daemon, id: u32, needle: &str) -> Vec<String> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
     loop {
@@ -358,7 +397,7 @@ async fn a_spawned_zcode_child_gets_its_mode_its_mcp_url_and_its_brief_pasted() 
         "{url}"
     );
 
-    screen_shows(&daemon, child, "ZCODE-BRIEF-MARKER").await;
+    received_prompt(&env, child, "ZCODE-BRIEF-MARKER", 1).await;
 }
 
 /// ZCode's `-p` defaults to yolo and exits on `--mode plan`. A handoff runs it in build
@@ -541,12 +580,7 @@ async fn an_unconfirmed_first_prompt_gets_one_more_enter_never_a_second_paste() 
         text.contains("not pasted again") && !text.contains("secret mission"),
         "the note explains without carrying the prompt: {text}"
     );
-    let screen = daemon.session_screen_for_test(child).join("\n");
-    assert_eq!(
-        screen.matches("UNCONFIRMED-MARKER").count(),
-        1,
-        "pasted once: {screen}"
-    );
+    received_prompt(&env, child, "UNCONFIRMED-MARKER", 2).await;
 }
 
 /// A cold Windows start leaves ZCode silent for seconds after the PTY has drawn, and

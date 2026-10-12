@@ -118,6 +118,7 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        self.ensure_not_closing(request.child, "deny")?;
         self.assert_orchestration_target(caller, request.child)?;
         let session = self.get(request.child)?;
         let state = *session.state.lock().expect("state lock");
@@ -182,14 +183,23 @@ impl Daemon {
         {
             return Ok(pending_reply(true));
         }
-        if let Err(error) = self.write_stdin_counting(request.child, bytes) {
+        let receipt = self.admit_stdin_counting(request.child, bytes);
+        drop(episodes);
+        drop(_guard);
+        drop(_native_input);
+        let outcome = Self::wait_stdin_receipt(request.child, receipt);
+        let _guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        if let Err(error) = outcome {
             if error.nothing_written() {
                 self.db
                     .child_permission_retry_zero_write(request.child, &input.id)?;
             }
             return Err(anyhow!("deny attempt for {provider:?}, child {}, episode {} failed: {error}; pending until provider evidence", request.child, input.id));
         }
-        drop(episodes);
+        self.ensure_not_closing(request.child, "deny completion")?;
         // Sending denial is an attempt, not provider evidence that the modal resolved.
         self.cancel_temporary_cleanup_locked(request.child);
         Ok(pending_reply(false))
@@ -208,6 +218,7 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        self.ensure_not_closing(request.child, "escalate")?;
         self.assert_orchestration_target(caller, request.child)?;
         let child = self.get(request.child)?;
         let state = *child.state.lock().expect("state lock");

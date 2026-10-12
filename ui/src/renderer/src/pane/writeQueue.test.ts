@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { findSafeSplit, PaneWriteQueue } from './writeQueue'
+import { PaneWriteQueue } from './writeQueue'
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
@@ -7,105 +7,6 @@ const dec = new TextDecoder()
 function bytes(s: string): Uint8Array {
   return enc.encode(s)
 }
-
-describe('findSafeSplit', () => {
-  it('returns the full length when data already fits', () => {
-    const data = bytes('hello')
-    expect(findSafeSplit(data, 256)).toBe(data.length)
-  })
-
-  it('splits at maxLen when the boundary lands on plain text', () => {
-    const data = bytes('a'.repeat(300))
-    expect(findSafeSplit(data, 256)).toBe(256)
-  })
-
-  it('backs off before a CSI sequence straddling the boundary', () => {
-    const prefix = 'x'.repeat(250)
-    const csi = '\x1b[38;5;196m'
-    const data = bytes(prefix + csi + 'rest')
-    const split = findSafeSplit(data, 256)
-    expect(split).toBeLessThanOrEqual(250)
-    const chunk = data.subarray(0, split)
-    expect(dec.decode(chunk)).not.toContain('\x1b[38')
-  })
-
-  it('backs off before an OSC sequence (BEL-terminated) straddling the boundary', () => {
-    const prefix = 'y'.repeat(250)
-    const osc = '\x1b]0;window title' + '\x07'
-    const data = bytes(prefix + osc + 'tail')
-    const split = findSafeSplit(data, 256)
-    expect(split).toBeLessThanOrEqual(250)
-  })
-
-  it('backs off before an OSC sequence (ST-terminated) straddling the boundary', () => {
-    const prefix = 'z'.repeat(250)
-    const osc = '\x1b]0;window title\x1b\\'
-    const data = bytes(prefix + osc + 'tail')
-    const split = findSafeSplit(data, 256)
-    expect(split).toBeLessThanOrEqual(250)
-  })
-
-  it('never splits a bare 2-byte escape sequence', () => {
-    const prefix = 'w'.repeat(255)
-    const data = bytes(prefix + '\x1bc' + 'more')
-    const split = findSafeSplit(data, 256)
-    expect(split).toBeLessThanOrEqual(255)
-  })
-
-  it('hands back the whole buffer unsplit if a sequence never closes', () => {
-    const data = bytes('\x1b[' + '1;'.repeat(200))
-    expect(findSafeSplit(data, 64)).toBe(data.length)
-  })
-
-  it('backs off before a 3-byte UTF-8 codepoint straddling the boundary', () => {
-    const prefix = 'x'.repeat(255)
-    const data = bytes(prefix + '€' + 'tail')
-    const split = findSafeSplit(data, 256)
-    expect(split).toBeLessThanOrEqual(255)
-    expect(() =>
-      new TextDecoder('utf-8', { fatal: true }).decode(data.subarray(0, split))
-    ).not.toThrow()
-    expect(data[split]).toBe(0xe2)
-  })
-
-  it('backs off before a 4-byte UTF-8 codepoint straddling the boundary', () => {
-    const prefix = 'x'.repeat(254)
-    const data = bytes(prefix + '😀' + 'tail')
-    const split = findSafeSplit(data, 256)
-    expect(split).toBeLessThanOrEqual(254)
-    expect(() =>
-      new TextDecoder('utf-8', { fatal: true }).decode(data.subarray(0, split))
-    ).not.toThrow()
-    expect(data[split]).toBe(0xf0)
-  })
-
-  it('cuts normally at maxLen when a UTF-8 codepoint appears earlier but well clear of the boundary', () => {
-    const data = bytes('€'.repeat(10) + 'a'.repeat(300))
-    expect(findSafeSplit(data, 256)).toBe(256)
-  })
-
-  it('resyncs after an invalid UTF-8 continuation byte instead of treating the rest as perpetually open', () => {
-    const data = new Uint8Array([0xe2, ...bytes('x'.repeat(300))])
-    expect(findSafeSplit(data, 256)).toBe(256)
-  })
-
-  it('backs off before a 2-byte UTF-8 codepoint straddling the boundary', () => {
-    const prefix = 'x'.repeat(255)
-    const data = bytes(prefix + 'é' + 'tail')
-    const split = findSafeSplit(data, 256)
-    expect(split).toBeLessThanOrEqual(255)
-    expect(() =>
-      new TextDecoder('utf-8', { fatal: true }).decode(data.subarray(0, split))
-    ).not.toThrow()
-    expect(data[split]).toBe(0xc3)
-  })
-
-  it('resyncs (and defers the whole buffer) when a bogus UTF-8 lead byte is immediately followed by an unterminated CSI sequence', () => {
-    const data = new Uint8Array([0xe2, 0x1b, 0x5b, ...bytes('1;'.repeat(140))])
-    expect(data.length).toBe(283)
-    expect(findSafeSplit(data, 256)).toBe(283)
-  })
-})
 
 describe('PaneWriteQueue', () => {
   beforeEach(() => {
@@ -149,13 +50,7 @@ describe('PaneWriteQueue', () => {
       await Promise.resolve()
       const full = dec.decode(concat(calls))
       expect(full).toBe(prefix + csi + 'DONE')
-      for (const c of calls) {
-        const s = dec.decode(c)
-        const escIdx = s.indexOf('\x1b[')
-        if (escIdx === -1) continue
-        const rest = s.slice(escIdx)
-        expect(/\x1b\[[0-9;]*[a-zA-Z]/.test(rest)).toBe(true)
-      }
+      expect(calls.every(c => c.byteLength <= chunk)).toBe(true)
     })
   })
 
@@ -433,10 +328,11 @@ describe('PaneWriteQueue', () => {
     })
     const prefix = 'x'.repeat(250)
     const csi = '\x1b[38;5;196m'
-    q.enqueue(bytes(prefix + csi + 'tail'))
+    const payload = bytes(prefix + csi + 'tail')
+    q.enqueue(payload)
     expect(calls.length).toBe(2)
     const residualChunk = calls[1]
-    expect(residualChunk.byteLength).toBe(15)
+    expect(residualChunk.byteLength).toBe(payload.byteLength - 256)
     expect(residualChunk.buffer.byteLength).toBe(residualChunk.byteLength)
   })
 
@@ -723,4 +619,48 @@ describe('batch window under a clamping host', () => {
     expect(stats.batchWindowsDisabled).toBe(before + 1)
     expect(stats.batchDelayMaxMs).toBeGreaterThanOrEqual(1000)
   })
+})
+
+it('owns a small overlapping replay tail while preserving zero-copy full frames', () => {
+  const completions: (() => void)[] = []
+  const written: Uint8Array[] = []
+  const queue = new PaneWriteQueue({ batchWindowMs: 0, write: (data, done) => { written.push(data); if (done) completions.push(done) } })
+  queue.enqueue(new Uint8Array([65]))
+  // The normal foreground replay budget, with all but its final 1 KiB already seen.
+  const replay = new Uint8Array(2 * 1024 * 1024).fill(66)
+  const tail = replay.subarray(replay.length - 1024)
+  queue.enqueue(tail, true)
+  const frame = new Uint8Array(16 * 1024).fill(67)
+  queue.enqueue(frame)
+  const state = queue as unknown as { queue: { data: Uint8Array }[]; queuedBytes: number }
+  expect(state.queuedBytes).toBe(1024 + frame.length)
+  expect(state.queue[0].data.buffer.byteLength).toBe(1024)
+  expect(state.queue[0].data).toEqual(tail)
+  expect(state.queue[1].data).toBe(frame)
+  completions.shift()!()
+  expect(written[1].subarray(0, 1024)).toEqual(tail)
+  queue.dispose()
+  expect(state.queue).toHaveLength(0)
+})
+
+it.each(['\x1b]52;c;', '\x1bP'])('enforces a hard chunk budget for long control strings beginning %j', prefix => {
+  const calls: Uint8Array[] = []
+  const completions: Array<() => void> = []
+  const queue = new PaneWriteQueue({ batchWindowMs: 0, chunkBytes: 256 * 1024, write: (bytes, done) => { calls.push(bytes); completions.push(done) } })
+  const data = bytes(prefix + 'a'.repeat(1024 * 1024) + '\x1b\\after')
+  queue.enqueue(data, true)
+  while (completions.length) completions.shift()!()
+  expect(Math.max(...calls.map(bytes => bytes.length))).toBeLessThanOrEqual(256 * 1024)
+  expect(Buffer.compare(Buffer.from(concat(calls)), Buffer.from(data))).toBe(0)
+  queue.dispose()
+})
+
+it('applies the chunk ceiling even on the small-write fast path', () => {
+  const calls: Uint8Array[] = []
+  const completions: Array<() => void> = []
+  const queue = new PaneWriteQueue({ batchWindowMs: 0, chunkBytes: 4, write: (bytes, done) => { calls.push(bytes); completions.push(done) } })
+  queue.enqueue(bytes('123456789'))
+  while (completions.length) completions.shift()!()
+  expect(calls.map(bytes => bytes.length)).toEqual([4, 4, 1])
+  queue.dispose()
 })

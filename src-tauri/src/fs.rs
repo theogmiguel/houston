@@ -3,7 +3,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Mutex, OnceLock};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{Emitter, State};
 
@@ -56,16 +56,90 @@ fn is_ignored_entry(name: &str) -> bool {
 const MAX_PATH_SEARCH_RESULTS: usize = 200;
 // Bounds retained path strings for large monorepos while covering ordinary workspaces.
 const MAX_INDEXED_PATHS: usize = 100_000;
+// Allow directory traversal overhead while bounding empty-directory trees and path storage.
+const MAX_INDEX_SCANNED_ENTRIES: usize = 4 * MAX_INDEXED_PATHS;
+const MAX_INDEX_PATH_BYTES: usize = 16 * 1024 * 1024;
+// Interactive search must release a stalled Git metadata command so a later request can retry.
+const INDEX_GIT_TIMEOUT: Duration = Duration::from_secs(30);
 // Expanded folders in one tree fit within this watcher budget; overflow can refresh manually.
 const MAX_WATCHED_DIRS: usize = 256;
 // Coalesces filesystem bursts into one UI refresh while keeping edits responsive.
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(150);
+// Larger bursts need a root rescan; retaining every path does not improve that refresh.
+const WATCH_CHANGED_PATHS_MAX: usize = 1024;
+const WATCH_CHANGED_BYTES_MAX: usize = 512 * 1024;
 
-// inotify also reports opens and reads; reading a file is not a change, and forwarding
-// it lets the reload that a change triggers retrigger itself.
-fn changed_paths(result: notify::Result<notify::Event>) -> Option<Vec<PathBuf>> {
-    let event = result.ok()?;
-    (!event.kind.is_access()).then_some(event.paths)
+#[derive(Default)]
+struct PendingChanges {
+    paths: HashSet<PathBuf>,
+    bytes: usize,
+    rescan: bool,
+}
+
+impl PendingChanges {
+    fn rescan(&mut self) {
+        self.paths.clear();
+        self.bytes = 0;
+        self.rescan = true;
+    }
+
+    fn add(&mut self, result: notify::Result<notify::Event>) -> bool {
+        let event = match result {
+            Ok(event) if event.kind.is_access() => return false,
+            Ok(event) => event,
+            Err(_) => {
+                self.rescan();
+                return true;
+            }
+        };
+        if event.need_rescan() || event.paths.is_empty() {
+            self.rescan();
+        }
+        if self.rescan {
+            return true;
+        }
+        for path in event.paths {
+            if self.paths.contains(&path) {
+                continue;
+            }
+            let bytes = path.as_os_str().len();
+            if self.paths.len() >= WATCH_CHANGED_PATHS_MAX
+                || bytes > WATCH_CHANGED_BYTES_MAX.saturating_sub(self.bytes)
+            {
+                self.rescan();
+                break;
+            }
+            self.bytes += bytes;
+            self.paths.insert(path);
+        }
+        true
+    }
+}
+
+fn publish_watch_batches(
+    receiver: mpsc::Receiver<()>,
+    pending: Arc<Mutex<PendingChanges>>,
+    mut publish: impl FnMut(PendingChanges),
+) {
+    while receiver.recv().is_ok() {
+        // A fixed deadline ensures continuous writes cannot postpone refresh forever.
+        let deadline = std::time::Instant::now() + WATCH_DEBOUNCE;
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match receiver.recv_timeout(remaining) {
+                Ok(()) => {}
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+        let changes = std::mem::take(&mut *pending.lock().expect("watch pending changes"));
+        if changes.rescan || !changes.paths.is_empty() {
+            publish(changes);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -96,6 +170,43 @@ struct IndexedPath {
 struct PathIndexCache {
     generations: HashMap<PathBuf, u64>,
     indexes: HashMap<PathBuf, (u64, Vec<IndexedPath>)>,
+    recent: std::collections::VecDeque<PathBuf>,
+    next_generation: u64,
+}
+
+// Keep several active projects warm without retaining every project ever opened.
+const MAX_CACHED_ROOTS: usize = 8;
+
+impl PathIndexCache {
+    fn touch(&mut self, root: &Path) -> u64 {
+        self.recent.retain(|path| path != root);
+        self.recent.push_back(root.to_path_buf());
+        while self.recent.len() > MAX_CACHED_ROOTS {
+            let oldest = self.recent.pop_front().expect("nonempty cache");
+            self.generations.remove(&oldest);
+            self.indexes.remove(&oldest);
+        }
+        if !self.generations.contains_key(root) {
+            self.next_generation = self.next_generation.wrapping_add(1);
+            self.generations
+                .insert(root.to_path_buf(), self.next_generation);
+        }
+        self.generations[root]
+    }
+
+    fn invalidate(&mut self, root: &Path) {
+        if let Some(generation) = self.generations.get_mut(root) {
+            self.next_generation = self.next_generation.wrapping_add(1);
+            *generation = self.next_generation;
+        }
+        self.indexes.remove(root);
+    }
+
+    fn forget(&mut self, root: &Path) {
+        self.generations.remove(root);
+        self.indexes.remove(root);
+        self.recent.retain(|path| path != root);
+    }
 }
 
 static PATH_INDEX: OnceLock<Mutex<PathIndexCache>> = OnceLock::new();
@@ -170,12 +281,19 @@ fn search_index(index: &[IndexedPath], query: &str, limit: usize) -> PathSearchR
 }
 
 fn collect_git_paths(root: &Path) -> Result<Option<(Vec<IndexedPath>, usize)>, String> {
-    let output = match houston_core::spawn::command("git")
+    let mut command = houston_core::spawn::command("git");
+    command
         .args(["ls-files", "-co", "--exclude-standard", "-z"])
-        .current_dir(root)
-        .output()
-    {
-        Ok(output) => output,
+        .current_dir(root);
+    let output = match houston_core::spawn::output_within(command, INDEX_GIT_TIMEOUT) {
+        Ok(Some(output)) => output,
+        Ok(None) => {
+            return Err(format!(
+                "fs_search_paths: git ls-files in {} exceeded the {:?} indexing deadline",
+                root.display(),
+                INDEX_GIT_TIMEOUT,
+            ))
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
             return Err(format!(
@@ -189,6 +307,7 @@ fn collect_git_paths(root: &Path) -> Result<Option<(Vec<IndexedPath>, usize)>, S
     }
     let mut paths = Vec::new();
     let mut count = 0;
+    let mut path_bytes = 0;
     for raw in output
         .stdout
         .split(|byte| *byte == 0)
@@ -202,27 +321,56 @@ fn collect_git_paths(root: &Path) -> Result<Option<(Vec<IndexedPath>, usize)>, S
         };
         if !metadata.is_dir() {
             count += 1;
-            if paths.len() < MAX_INDEXED_PATHS {
-                paths.push(IndexedPath {
-                    relative,
-                    is_dir: false,
-                });
-            }
+            validate_index_count(root, count)?;
+            path_bytes += relative.len();
+            check_index_budget(
+                root,
+                "retained path bytes",
+                MAX_INDEX_PATH_BYTES,
+                path_bytes,
+            )?;
+            paths.push(IndexedPath {
+                relative,
+                is_dir: false,
+            });
         }
     }
     Ok(Some((paths, count)))
 }
 
 fn collect_walk_paths(root: &Path) -> Result<(Vec<IndexedPath>, usize), String> {
+    collect_walk_paths_with_limits(root, MAX_INDEX_SCANNED_ENTRIES, MAX_INDEX_PATH_BYTES)
+}
+
+fn check_index_budget(root: &Path, name: &str, limit: usize, actual: usize) -> Result<(), String> {
+    if actual > limit {
+        return Err(format!(
+            "fs_search_paths: indexing {} exceeded the {name} limit {limit}; actual {actual}",
+            root.display(),
+        ));
+    }
+    Ok(())
+}
+
+fn collect_walk_paths_with_limits(
+    root: &Path,
+    max_entries: usize,
+    max_bytes: usize,
+) -> Result<(Vec<IndexedPath>, usize), String> {
     let mut pending = vec![root.to_path_buf()];
     let mut paths = Vec::new();
     let mut count = 0;
+    let mut visited = 0;
+    let mut bytes = root.as_os_str().len();
     while let Some(dir) = pending.pop() {
+        bytes -= dir.as_os_str().len();
         let entries =
             std::fs::read_dir(&dir).map_err(|e| format!("cannot walk {}: {e}", dir.display()))?;
         for entry in entries {
             let entry =
                 entry.map_err(|e| format!("cannot read entry under {}: {e}", dir.display()))?;
+            visited += 1;
+            check_index_budget(root, "scanned entries", max_entries, visited)?;
             let name = entry.file_name().to_string_lossy().into_owned();
             if is_ignored_entry(&name) {
                 continue;
@@ -231,21 +379,24 @@ fn collect_walk_paths(root: &Path) -> Result<(Vec<IndexedPath>, usize), String> 
                 .file_type()
                 .map_err(|e| format!("cannot inspect {}: {e}", entry.path().display()))?;
             let entry_path = entry.path();
-            let relative = entry_path
-                .strip_prefix(root)
-                .unwrap_or(&entry_path)
-                .to_string_lossy()
-                .replace('\\', "/");
             if file_type.is_dir() {
-                pending.push(entry.path());
+                bytes += entry_path.as_os_str().len();
+                check_index_budget(root, "retained path bytes", max_bytes, bytes)?;
+                pending.push(entry_path);
             } else {
                 count += 1;
-                if paths.len() < MAX_INDEXED_PATHS {
-                    paths.push(IndexedPath {
-                        relative,
-                        is_dir: false,
-                    });
-                }
+                validate_index_count(root, count)?;
+                let relative = entry_path
+                    .strip_prefix(root)
+                    .unwrap_or(&entry_path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                bytes += relative.len();
+                check_index_budget(root, "retained path bytes", max_bytes, bytes)?;
+                paths.push(IndexedPath {
+                    relative,
+                    is_dir: false,
+                });
             }
         }
     }
@@ -264,7 +415,7 @@ fn build_path_index(root: &Path) -> Result<Vec<IndexedPath>, String> {
 fn validate_index_count(root: &Path, count: usize) -> Result<(), String> {
     if count > MAX_INDEXED_PATHS {
         return Err(format!(
-            "fs_search_paths: {} contains {count} paths, exceeding MAX_INDEXED_PATHS ({MAX_INDEXED_PATHS})",
+            "fs_search_paths: {} contains at least {count} paths, exceeding MAX_INDEXED_PATHS ({MAX_INDEXED_PATHS})",
             root.display()
         ));
     }
@@ -301,34 +452,38 @@ pub async fn fs_search_paths(
             real_root.display()
         ));
     }
-    let index = loop {
-        let generation = {
-            let cache = path_index()
-                .lock()
-                .map_err(|_| "path index lock poisoned".to_string())?;
-            let generation = *cache.generations.get(&real_root).unwrap_or(&0);
-            if let Some((cached_generation, index)) = cache.indexes.get(&real_root) {
-                if *cached_generation == generation {
-                    break index.clone();
-                }
-            }
-            generation
-        };
-        let index_root = real_root.clone();
-        let index = tokio::task::spawn_blocking(move || build_path_index(&index_root))
-            .await
-            .map_err(|e| format!("fs_search_paths indexing task failed: {e}"))??;
+    let index = load_path_index(real_root, |root| build_path_index(&root)).await?;
+    Ok(search_index(&index, &query, limit))
+}
+
+async fn load_path_index<F>(real_root: PathBuf, builder: F) -> Result<Vec<IndexedPath>, String>
+where
+    F: FnOnce(PathBuf) -> Result<Vec<IndexedPath>, String> + Send + 'static,
+{
+    let generation = {
         let mut cache = path_index()
             .lock()
             .map_err(|_| "path index lock poisoned".to_string())?;
-        if *cache.generations.get(&real_root).unwrap_or(&0) == generation {
-            cache
-                .indexes
-                .insert(real_root.clone(), (generation, index.clone()));
-            break index;
+        let generation = cache.touch(&real_root);
+        if let Some((cached_generation, index)) = cache.indexes.get(&real_root) {
+            if *cached_generation == generation {
+                return Ok(index.clone());
+            }
         }
+        generation
     };
-    Ok(search_index(&index, &query, limit))
+    let index_root = real_root.clone();
+    let index = tokio::task::spawn_blocking(move || builder(index_root))
+        .await
+        .map_err(|e| format!("fs_search_paths indexing task failed: {e}"))??;
+    let mut cache = path_index()
+        .lock()
+        .map_err(|_| "path index lock poisoned".to_string())?;
+    if cache.generations.get(&real_root) == Some(&generation) {
+        cache.indexes.insert(real_root, (generation, index.clone()));
+    }
+    // Return the completed snapshot; a changed generation must not cache it.
+    Ok(index)
 }
 
 struct RootWatcher {
@@ -342,6 +497,7 @@ struct RootWatcher {
 struct FsChangedPayload {
     root: String,
     paths: Vec<String>,
+    rescan: bool,
 }
 
 #[tauri::command]
@@ -409,11 +565,16 @@ pub async fn fs_watch_dirs(
         return Ok(());
     }
     let root_for_events = real_root.clone();
-    let (sender, receiver) = mpsc::channel::<Vec<PathBuf>>();
-    let event_sender = sender.clone();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let pending = Arc::new(Mutex::new(PendingChanges::default()));
+    let pending_events = pending.clone();
     let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-        if let Some(paths) = changed_paths(result) {
-            let _ = event_sender.send(paths);
+        if pending_events
+            .lock()
+            .expect("watch pending changes")
+            .add(result)
+        {
+            let _ = sender.try_send(());
         }
     })
     .map_err(|e| format!("cannot create watcher for {}: {e}", real_root.display()))?;
@@ -430,35 +591,24 @@ pub async fn fs_watch_dirs(
         path_counts.insert(path.clone(), 1);
     }
     std::thread::spawn(move || {
-        while let Ok(first) = receiver.recv() {
-            let mut changed = first.into_iter().collect::<HashSet<_>>();
-            loop {
-                match receiver.recv_timeout(WATCH_DEBOUNCE) {
-                    Ok(paths) => changed.extend(paths),
-                    Err(mpsc::RecvTimeoutError::Timeout) => break,
-                    Err(mpsc::RecvTimeoutError::Disconnected) => return,
-                }
-            }
-            let mut paths = changed.into_iter().collect::<Vec<_>>();
+        publish_watch_batches(receiver, pending, |changed| {
+            let mut paths = changed.paths.into_iter().collect::<Vec<_>>();
             paths.sort();
             if let Ok(mut cache) = path_index().lock() {
-                *cache
-                    .generations
-                    .entry(root_for_events.clone())
-                    .or_insert(0) += 1;
-                cache.indexes.remove(&root_for_events);
+                cache.invalidate(&root_for_events);
             }
             let _ = app.emit(
                 "fs://changed",
                 FsChangedPayload {
                     root: root_for_events.to_string_lossy().into_owned(),
+                    rescan: changed.rescan,
                     paths: paths
                         .into_iter()
                         .map(|path| path.to_string_lossy().into_owned())
                         .collect(),
                 },
             );
-        }
+        });
     });
     watchers.insert(
         real_root,
@@ -501,6 +651,10 @@ pub async fn fs_unwatch(root: String, state: State<'_, AllowedRoots>) -> Result<
         }
         if watcher.leases.is_empty() {
             watchers.remove(&real_root);
+            path_index()
+                .lock()
+                .map_err(|_| "path index lock poisoned".to_string())?
+                .forget(&real_root);
         }
     }
     Ok(())
@@ -1092,7 +1246,7 @@ async fn count_entries_under(real: &Path, cap: u64) -> Result<EntryCount, String
 fn save_path_for(state_dir: &Path, dir_name: &str, ext: &str, millis: u128) -> PathBuf {
     let dir = state_dir.join(dir_name);
     let safe_ext = sanitize_ext(ext);
-    dir.join(format!("{millis}.{safe_ext}"))
+    dir.join(format!("{millis}-{}.{safe_ext}", uuid::Uuid::new_v4()))
 }
 
 async fn save_bytes_under_base(
@@ -1114,11 +1268,35 @@ async fn save_bytes_under_base(
         .await
         .map_err(|e| format!("cannot create directory {path}: {e}", path = dir.display()))?;
     set_dir_mode_0700(&dir).await?;
-    tokio::fs::write(&file, bytes)
-        .await
-        .map_err(|e| format!("cannot write file {path}: {e}", path = file.display()))?;
-    set_file_mode_0600(&file).await?;
+    write_new_saved_file(&file, bytes).await?;
     Ok(file.to_string_lossy().into_owned())
+}
+
+async fn write_new_saved_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
+        .open(path)
+        .await
+        .map_err(|e| format!("cannot create new file {}: {e}", path.display()))?;
+    // Once creation succeeds, a failed or cancelled write owns only this file.
+    let temporary = tempfile::TempPath::try_from_path(path)
+        .map_err(|e| format!("cannot track new file {}: {e}", path.display()))?;
+    file.write_all(bytes)
+        .await
+        .map_err(|e| format!("cannot write file {}: {e}", path.display()))?;
+    file.flush()
+        .await
+        .map_err(|e| format!("cannot finish writing file {}: {e}", path.display()))?;
+    drop(file);
+    temporary
+        .keep()
+        .map_err(|e| format!("cannot keep saved file {}: {e}", path.display()))?;
+    Ok(())
 }
 
 const MAX_CAPTURE_BYTES: u64 = 32 * 1024 * 1024;
@@ -1679,6 +1857,185 @@ async fn set_file_mode_0600(_file: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn indexing_refuses_large_empty_directory_trees_and_path_backlogs() {
+        let root = tempfile::tempdir().unwrap();
+        for id in 0..10 {
+            std::fs::create_dir(root.path().join(format!("directory-{id}"))).unwrap();
+        }
+        let entries = super::collect_walk_paths_with_limits(root.path(), 4, usize::MAX)
+            .err()
+            .expect("empty directories still consume the scan budget");
+        assert!(
+            entries.contains("scanned entries limit 4; actual 5"),
+            "{entries}"
+        );
+        let bytes = super::collect_walk_paths_with_limits(root.path(), usize::MAX, 1)
+            .err()
+            .expect("pending directory paths must fit the byte budget");
+        assert!(
+            bytes.contains("retained path bytes limit 1; actual"),
+            "{bytes}"
+        );
+    }
+
+    #[tokio::test]
+    async fn index_changed_during_build_returns_once_without_caching_a_stale_generation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("file.txt"), "content").unwrap();
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let builder = {
+            let calls = calls.clone();
+            move |root: std::path::PathBuf| {
+                if calls.fetch_add(1, Ordering::Relaxed) >= 3 {
+                    return Err(
+                        "indexing was restarted repeatedly during continuous changes".into(),
+                    );
+                }
+                let paths = super::build_path_index(&root)?;
+                // The watcher's invalidation arrives after this scan and before publication.
+                let mut cache = super::path_index().lock().unwrap();
+                cache.invalidate(&root);
+                Ok(paths)
+            }
+        };
+        let index = super::load_path_index(root.path().to_path_buf(), builder.clone())
+            .await
+            .unwrap();
+        assert_eq!(index.len(), 1);
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert!(!super::path_index()
+            .lock()
+            .unwrap()
+            .indexes
+            .contains_key(root.path()));
+        // The next request reads again rather than reusing the invalidated snapshot.
+        super::load_path_index(root.path().to_path_buf(), builder)
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        super::path_index().lock().unwrap().forget(root.path());
+    }
+
+    #[test]
+    fn path_index_cache_releases_old_roots_and_rejects_evicted_build_generations() {
+        let mut cache = super::PathIndexCache::default();
+        let first = std::path::PathBuf::from("first-project");
+        let original = cache.touch(&first);
+        for n in 0..super::MAX_CACHED_ROOTS * 3 {
+            let path = std::path::PathBuf::from(format!("project-{n}"));
+            let generation = cache.touch(&path);
+            cache.indexes.insert(
+                path,
+                (
+                    generation,
+                    vec![super::IndexedPath {
+                        relative: "file.txt".into(),
+                        is_dir: false,
+                    }],
+                ),
+            );
+            assert!(cache.indexes.len() <= super::MAX_CACHED_ROOTS);
+            assert!(cache.generations.len() <= super::MAX_CACHED_ROOTS);
+        }
+        assert!(!cache.generations.contains_key(&first));
+        assert_ne!(
+            cache.touch(&first),
+            original,
+            "an evicted build cannot publish into a new lease"
+        );
+        cache.forget(&first);
+        cache.invalidate(&first);
+        assert!(
+            !cache.generations.contains_key(&first),
+            "a late watcher must not recreate a forgotten root"
+        );
+        assert!(!cache.recent.contains(&first));
+    }
+
+    #[test]
+    fn watcher_overflow_requests_a_rescan_with_bounded_retained_paths() {
+        let mut pending = super::PendingChanges::default();
+        for id in 0..=super::WATCH_CHANGED_PATHS_MAX {
+            pending.add(Ok(notify::Event::new(notify::EventKind::Any)
+                .add_path(std::path::PathBuf::from(format!("file-{id}")))));
+        }
+        assert!(pending.rescan);
+        assert!(pending.paths.is_empty());
+        assert_eq!(pending.bytes, 0);
+
+        let mut pending = super::PendingChanges::default();
+        for id in 0..super::WATCH_CHANGED_PATHS_MAX {
+            let path = format!("{}file-{id}", "directory/".repeat(100));
+            pending
+                .add(Ok(notify::Event::new(notify::EventKind::Any)
+                    .add_path(std::path::PathBuf::from(path))));
+            assert!(pending.bytes <= super::WATCH_CHANGED_BYTES_MAX);
+        }
+        assert!(pending.rescan, "the byte budget also bounds deep paths");
+        assert!(pending.paths.is_empty());
+    }
+
+    #[test]
+    fn watcher_errors_rescan_and_duplicate_paths_consume_one_slot() {
+        let mut pending = super::PendingChanges::default();
+        for _ in 0..100 {
+            pending.add(Ok(notify::Event::new(notify::EventKind::Any)
+                .add_path(std::path::PathBuf::from("file"))));
+        }
+        assert_eq!(pending.paths.len(), 1);
+        assert_eq!(pending.bytes, 4);
+        pending.add(Err(notify::Error::generic("event queue overflow")));
+        assert!(pending.rescan);
+        assert!(pending.paths.is_empty());
+    }
+
+    #[test]
+    fn continuous_watch_changes_publish_before_the_producer_stops() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let pending = std::sync::Arc::new(std::sync::Mutex::new(super::PendingChanges::default()));
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let (published, receipt) = std::sync::mpsc::channel();
+        let worker = {
+            let pending = pending.clone();
+            std::thread::spawn(move || {
+                super::publish_watch_batches(receiver, pending, |batch| {
+                    published.send(batch.paths.len()).unwrap();
+                })
+            })
+        };
+        let producer = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                let mut count = 0;
+                while !stop.load(Ordering::Acquire) {
+                    pending
+                        .lock()
+                        .unwrap()
+                        .add(Ok(notify::Event::new(notify::EventKind::Any)
+                            .add_path(std::path::PathBuf::from(format!("file-{count}")))));
+                    let _ = sender.try_send(());
+                    count += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                count
+            })
+        };
+        let result = receipt.recv_timeout(std::time::Duration::from_secs(5));
+        let still_producing = !producer.is_finished();
+        stop.store(true, Ordering::Release);
+        let count = producer.join().unwrap();
+        worker.join().unwrap();
+        assert!(
+            result.is_ok(),
+            "continuous writes must not starve refresh: {result:?}"
+        );
+        assert!(still_producing);
+        assert!(count > 1);
+    }
+
+    #[test]
     fn reading_a_watched_file_reports_no_change_but_writing_does() {
         use notify::Watcher as _;
         let dir = tempfile::tempdir().unwrap();
@@ -1686,8 +2043,9 @@ mod tests {
         std::fs::write(&file, "before").unwrap();
         let (sender, receiver) = std::sync::mpsc::channel();
         let mut watcher = notify::recommended_watcher(move |result| {
-            if let Some(paths) = super::changed_paths(result) {
-                let _ = sender.send(paths);
+            let mut changes = super::PendingChanges::default();
+            if changes.add(result) {
+                let _ = sender.send(changes.paths);
             }
         })
         .unwrap();
@@ -3317,6 +3675,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn captures_saved_in_the_same_clock_tick_keep_independent_contents() {
+        let state_dir = tempdir().unwrap();
+        let directory = state_dir.path().join("pastes");
+        tokio::fs::create_dir_all(&directory).await.unwrap();
+        let first = save_path_for(state_dir.path(), "pastes", "png", 42);
+        let second = save_path_for(state_dir.path(), "pastes", "png", 42);
+        assert_ne!(
+            first, second,
+            "separate captures must never share a filename"
+        );
+        let (a, b) = tokio::join!(
+            write_new_saved_file(&first, b"first capture"),
+            write_new_saved_file(&second, b"second capture"),
+        );
+        a.unwrap();
+        b.unwrap();
+        tokio::fs::remove_file(first).await.unwrap();
+        assert_eq!(tokio::fs::read(second).await.unwrap(), b"second capture");
+    }
+
+    #[tokio::test]
+    async fn a_saved_file_collision_preserves_the_previous_contents() {
+        let state_dir = tempdir().unwrap();
+        let path = state_dir.path().join("existing.png");
+        tokio::fs::write(&path, b"previous capture").await.unwrap();
+        let error = write_new_saved_file(&path, b"replacement")
+            .await
+            .unwrap_err();
+        assert!(error.contains("cannot create new file"), "{error}");
+        assert_eq!(tokio::fs::read(path).await.unwrap(), b"previous capture");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_saved_file_refuses_a_preexisting_symlink() {
+        let state_dir = tempdir().unwrap();
+        let target = state_dir.path().join("target");
+        let path = state_dir.path().join("capture.png");
+        tokio::fs::write(&target, b"untouched").await.unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        assert!(write_new_saved_file(&path, b"capture").await.is_err());
+        assert_eq!(tokio::fs::read(target).await.unwrap(), b"untouched");
+        assert!(tokio::fs::symlink_metadata(path)
+            .await
+            .unwrap()
+            .is_symlink());
+    }
+
+    #[tokio::test]
     async fn save_bytes_under_base_writes_inside_the_given_state_dir() {
         let state_dir = tempdir().unwrap();
         let returned = save_bytes_under_base(state_dir.path(), "pastes", "png", &[1, 2, 3])
@@ -3336,6 +3743,18 @@ mod tests {
         );
         let content = tokio::fs::read(&returned_path).await.unwrap();
         assert_eq!(content, vec![1, 2, 3]);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&returned_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
     }
 
     #[cfg(unix)]

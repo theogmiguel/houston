@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{collect_broadcast_until, start_daemon_with_handle, TOKEN};
+use common::{
+    collect_broadcast_envelope, collect_broadcast_until, start_daemon_with_handle, TOKEN,
+};
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::mcp_creds::McpScope;
 use houston_protocol as proto;
@@ -277,7 +279,7 @@ fn shim_dir() -> PathBuf {
                 let path = dir.join(name);
                 std::fs::write(
                     &path,
-                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
+                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_BLOCK_STDIN\" ]; then stty raw -echo; echo FIXTURE-READY; exec sleep 60; fi\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
                 )
                 .unwrap();
                 use std::os::unix::fs::PermissionsExt;
@@ -7761,7 +7763,7 @@ async fn a_delivered_provisional_result_gets_a_correction_row_naming_it() {
     let mut rx = r.daemon.observe();
     let kid =
         child_with_a_provisional_result(&r, &token, &state, "GUESSED-RESULT the answer").await;
-    let acc = collect_broadcast_until(&mut rx, pane.id, "a correction may follow").await;
+    let acc = collect_broadcast_envelope(&mut rx, pane.id, "GUESSED-RESULT").await;
     assert!(acc.contains("GUESSED-RESULT"), "{acc:?}");
     wait_row_delivered(&r.daemon, pane.id).await;
 
@@ -7773,6 +7775,7 @@ async fn a_delivered_provisional_result_gets_a_correction_row_naming_it() {
     assert!(guessed.provisional, "it went out marked: {delivered:?}");
     let guessed_id = guessed.id;
 
+    let mut correction_rx = r.daemon.observe();
     apply_drop(
         &state,
         HookDrop {
@@ -7815,8 +7818,8 @@ async fn a_delivered_provisional_result_gets_a_correction_row_naming_it() {
         "the row it corrects survives"
     );
 
-    let mut rx = r.daemon.observe();
-    let acc = collect_broadcast_until(&mut rx, pane.id, "as stale").await;
+    wait_row_delivered(&r.daemon, pane.id).await;
+    let acc = collect_broadcast_until(&mut correction_rx, pane.id, "as stale").await;
     assert!(
         acc.contains(&format!("corrects #{guessed_id}")),
         "the delivery names the row it revises: {acc:?}"
@@ -9050,6 +9053,7 @@ async fn k1_cancelling_a_child_releases_its_staged_result() {
         .orchestrate_submit(child, "durable answer".to_string().into())
         .unwrap();
     r.daemon.orchestrate_kill(parent.id, child, false).unwrap();
+    assert_eq!(r.daemon.delegation_of(child).unwrap().state, "cancelled");
     let rows = r.daemon.inbox_rows_for_test(parent.id);
     let result = rows.iter().find(|row| row.kind == "result").unwrap();
     assert!(result.ready_at.is_some(), "{rows:?}");
@@ -12009,6 +12013,19 @@ async fn keyed_spawn_error_after_process_creation_keeps_an_uncertain_receipt() {
             spawns.fetch_add(1, Ordering::SeqCst);
         }
     }));
+    #[cfg(feature = "test-barriers")]
+    let physical_spawns = Arc::new(AtomicUsize::new(0));
+    #[cfg(feature = "test-barriers")]
+    r.daemon.set_startup_test(
+        None,
+        Box::new({
+            let physical_spawns = physical_spawns.clone();
+            move |_, pid| {
+                assert!(pid > 0);
+                physical_spawns.fetch_add(1, Ordering::SeqCst);
+            }
+        }),
+    );
     let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
     conn.execute_batch("CREATE TRIGGER refuse_child_session BEFORE INSERT ON sessions WHEN NEW.spawned_by IS NOT NULL BEGIN SELECT RAISE(FAIL, 'child persistence refused'); END;").unwrap();
     let request =
@@ -12019,9 +12036,21 @@ async fn keyed_spawn_error_after_process_creation_keeps_an_uncertain_receipt() {
         .as_str()
         .unwrap()
         .contains("child persistence refused"));
+    #[cfg(feature = "test-barriers")]
+    assert_eq!(
+        physical_spawns.load(Ordering::SeqCst),
+        1,
+        "the refused INSERT must follow actual process creation"
+    );
     conn.execute_batch("DROP TRIGGER refuse_child_session;")
         .unwrap();
     let (status, retry) = r.post_spawn(&token, request).await;
+    #[cfg(feature = "test-barriers")]
+    assert_eq!(
+        physical_spawns.load(Ordering::SeqCst),
+        1,
+        "post-creation retry launched another physical process"
+    );
     assert!(status >= 400, "{retry}");
     assert!(retry["error"]
         .as_str()
@@ -14903,4 +14932,874 @@ async fn input_policy_permission_tool_hint_uses_deny_and_escalate() {
         "{hint}"
     );
     assert!(!hint.contains("pane_send_keys"), "{hint}");
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test]
+async fn orchestrated_live_child_first_close_drains_and_reaps_exact_root() {
+    let _guard = serial().await;
+    let r = rig("close-admission").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let (status, spawned) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    assert_eq!(status, 200, "{spawned}");
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+    let (pid, creation) = r.daemon.pty_root_identity_for_test(child).unwrap();
+    let completed = r.daemon.pty_reader_completion_for_test(child).unwrap();
+    assert!(r
+        .daemon
+        .list()
+        .iter()
+        .any(|pane| pane.id == child && pane.state.is_live()));
+    let closing = r.daemon.clone();
+    tokio::task::spawn_blocking(move || closing.orchestrate_kill(parent.id, child, false))
+        .await
+        .unwrap()
+        .expect("first orchestrated Close must complete without timeout retry");
+    assert!(completed(), "Close must join the reader before returning");
+    assert_ne!(
+        houston_core::pid::process_creation_token(pid),
+        Some(creation),
+        "exact root must be reaped"
+    );
+    assert!(!r.daemon.list().iter().any(|pane| pane.id == child));
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    assert!(db.session_is_closed(child).unwrap());
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn retention_first_close_allows_unfinished_root_waiter_to_publish_and_reap() {
+    let _guard = serial().await;
+    let r = rig("retention-close-admission").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(&token, serde_json::json!({"kind":"codex","prompt":"work"}))
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+    let root = r.daemon.pty_root_identity_for_test(child).unwrap();
+    let completed = r.daemon.pty_reader_completion_for_test(child).unwrap();
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+    let barrier = tempfile::tempdir().unwrap();
+    struct Reset(Option<std::ffi::OsString>, PathBuf);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(self.1.join("armed"));
+            if let Some(value) = &self.0 {
+                std::env::set_var("HOUSTON_TEST_BARRIER_DIR", value);
+            } else {
+                std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+            }
+        }
+    }
+    let _reset = Reset(
+        std::env::var_os("HOUSTON_TEST_BARRIER_DIR"),
+        barrier.path().into(),
+    );
+    std::env::set_var("HOUSTON_TEST_BARRIER_DIR", barrier.path());
+    std::fs::write(barrier.path().join("armed"), "pty-exit-observed").unwrap();
+    r.daemon
+        .orchestrate_submit(child, "Completed work".to_string().into())
+        .unwrap();
+    apply_codex_hook_event(r._state.path(), child, "Stop").await;
+    let received = mcp_call(
+        r.addr,
+        &token,
+        "pane_wait",
+        serde_json::json!({"session":child,"timeout_ms":100}),
+    )
+    .await;
+    assert_eq!(received["isError"], false, "{received}");
+    r.daemon
+        .delegation_watch_tick_at(houston_core::hook_drop::now_ms() + 60_000);
+    assert!(r.daemon.delegation_of(child).unwrap().settled_at.is_some());
+    assert_eq!(
+        r.daemon
+            .list()
+            .iter()
+            .find(|pane| pane.id == child)
+            .unwrap()
+            .state,
+        proto::SessionState::Exited
+    );
+    let receipt = format!("pty-exit-observed {child}");
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while std::fs::read_to_string(barrier.path().join("reached"))
+            .ok()
+            .as_deref()
+            != Some(receipt.as_str())
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        houston_core::pid::process_creation_token(root.0),
+        Some(root.1)
+    );
+    let closing = r.daemon.clone();
+    let tick = tokio::task::spawn_blocking(move || {
+        closing.delegation_watch_tick_with_clocks_for_test(0, u64::MAX / 2)
+    });
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while !r.daemon.pty_cleanup_started_for_test(child) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    std::fs::remove_file(barrier.path().join("armed")).unwrap();
+    tick.await.unwrap();
+    assert!(completed());
+    assert_ne!(
+        houston_core::pid::process_creation_token(root.0),
+        Some(root.1)
+    );
+    assert!(
+        !r.daemon.list().iter().any(|pane| pane.id == child),
+        "first expiry pass must remove the retained child"
+    );
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    assert!(db.session_is_closed(child).unwrap());
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn orchestrated_input_receipts_do_not_prevent_close_of_a_blocked_pty_writer() {
+    let _guard = serial().await;
+    for prompt in [false, true] {
+        let r = rig("blocked-orchestration-input").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        std::env::set_var("HOUSTON_TEST_BLOCK_STDIN", "1");
+        let spawned = r
+            .post_spawn(
+                &r.token_for(parent.id),
+                serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+            )
+            .await;
+        std::env::remove_var("HOUSTON_TEST_BLOCK_STDIN");
+        assert_eq!(spawned.0, 200, "{}", spawned.1);
+        let child = spawned.1["session_id"].as_u64().unwrap() as u32;
+        await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+        apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+        let root = r.daemon.pty_root_identity_for_test(child).unwrap();
+        let completed = r.daemon.pty_reader_completion_for_test(child).unwrap();
+        let filling = r.daemon.clone();
+        let fill = tokio::task::spawn_blocking(move || {
+            filling.write_stdin_counting(child, &vec![b'x'; 1024 * 1024])
+        });
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while r.daemon.stdin_jobs_for_test(child).unwrap() != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let writing = r.daemon.clone();
+        let parent_id = parent.id;
+        let operation = tokio::task::spawn_blocking(move || {
+            if prompt {
+                writing
+                    .orchestrate_instruction_request(parent_id, child, "next", None, Some("steer"))
+                    .map(|_| ())
+            } else {
+                writing.orchestrate_send_keys(parent_id, child, &["enter".into()])
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while r.daemon.stdin_jobs_for_test(child).unwrap() != 2 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(
+            !operation.is_finished(),
+            "orchestration must still await its queued write receipt"
+        );
+        let closing = r.daemon.clone();
+        let mut close =
+            tokio::task::spawn_blocking(move || closing.orchestrate_kill(parent_id, child, false));
+        let first = tokio::time::timeout(Duration::from_secs(3), &mut close).await;
+        let admitted = first.is_ok();
+        let closed = match first {
+            Ok(result) => result.unwrap(),
+            Err(_) => {
+                // Unwind the pre-fix lock cycle using only this fixture's exact root.
+                houston_core::pid::signal_process_checked_identity(
+                    root.0,
+                    houston_core::pid::Signal::Kill,
+                    Some(root.1),
+                )
+                .unwrap();
+                close.await.unwrap()
+            }
+        };
+        let fill = fill.await.unwrap().unwrap_err();
+        let result = operation.await.unwrap();
+        assert!(
+            fill.written.is_some(),
+            "cancelled filler retains byte-count evidence"
+        );
+        if !prompt {
+            assert!(
+                result.is_err(),
+                "cancelled send_keys returns its real write failure"
+            );
+        }
+        closed.expect("first Close must cancel the writer and finish ownership cleanup");
+        assert!(
+            admitted,
+            "Close must admit while the orchestration call awaits its PTY receipt"
+        );
+        assert!(completed());
+        assert_ne!(
+            houston_core::pid::process_creation_token(root.0),
+            Some(root.1)
+        );
+        assert!(!r.daemon.list().iter().any(|pane| pane.id == child));
+        if prompt {
+            let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+            let rows = db.instruction_rows(child).unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].info.state, proto::InstructionState::HeldAfterRecovery,
+                "zero-byte cancellation must retain the untouched intent without reopening the closed target");
+            assert!(!rows[0].touched);
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn instruction_start_and_end_before_enter_receipt_are_retained() {
+    let _guard = serial().await;
+    let r = rig("early-instruction-evidence").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, spawned) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+    let barrier = tempfile::tempdir().unwrap();
+    struct Reset(Option<std::ffi::OsString>, PathBuf);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(self.1.join("armed"));
+            if let Some(value) = &self.0 {
+                std::env::set_var("HOUSTON_TEST_BARRIER_DIR", value);
+            } else {
+                std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+            }
+        }
+    }
+    let _reset = Reset(
+        std::env::var_os("HOUSTON_TEST_BARRIER_DIR"),
+        barrier.path().into(),
+    );
+    std::env::set_var("HOUSTON_TEST_BARRIER_DIR", barrier.path());
+    std::fs::write(barrier.path().join("armed"), "stdin-enter-receipt").unwrap();
+    let writing = r.daemon.clone();
+    let parent_id = parent.id;
+    let instruction = tokio::task::spawn_blocking(move || {
+        writing.orchestrate_instruction_request(parent_id, child, "followup", None, Some("steer"))
+    });
+    let receipt = format!("stdin-enter-receipt {child}");
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while std::fs::read_to_string(barrier.path().join("reached"))
+            .ok()
+            .as_deref()
+            != Some(receipt.as_str())
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // Enter reached the real PTY; its caller has not received the write receipt yet.
+    for event in ["UserPromptSubmit", "Stop"] {
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some("codex".into()),
+                event: event.into(),
+                prompt_id: Some("early-followup".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+    std::fs::remove_file(barrier.path().join("armed")).unwrap();
+    let accepted = instruction.await.unwrap().unwrap().0;
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    let row = db
+        .instruction_row(&accepted.instruction_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.info.state, proto::InstructionState::Delivered);
+    assert!(
+        row.adopted && row.completed,
+        "supported events during the receipt wait must finish the exact claimed instruction"
+    );
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+struct InstructionReceiptBarrier {
+    directory: tempfile::TempDir,
+    previous: Option<std::ffi::OsString>,
+    point: &'static str,
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+impl InstructionReceiptBarrier {
+    fn new(point: &'static str) -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("HOUSTON_TEST_BARRIER_DIR");
+        std::env::set_var("HOUSTON_TEST_BARRIER_DIR", directory.path());
+        std::fs::write(directory.path().join("armed"), point).unwrap();
+        Self {
+            directory,
+            previous,
+            point,
+        }
+    }
+
+    async fn reached(&self, child: u32) {
+        let receipt = format!("{} {child}", self.point);
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while std::fs::read_to_string(self.directory.path().join("reached"))
+                .ok()
+                .as_deref()
+                != Some(receipt.as_str())
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("instruction did not reach its real PTY receipt barrier");
+    }
+
+    fn release(&self) {
+        let _ = std::fs::remove_file(self.directory.path().join("armed"));
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+impl Drop for InstructionReceiptBarrier {
+    fn drop(&mut self) {
+        self.release();
+        if let Some(previous) = &self.previous {
+            std::env::set_var("HOUSTON_TEST_BARRIER_DIR", previous);
+        } else {
+            std::env::remove_var("HOUSTON_TEST_BARRIER_DIR");
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn old_turn_activity_before_enter_cannot_adopt_or_complete_a_steer() {
+    let _guard = serial().await;
+    for zero_paste in [false, true] {
+        let r = rig("old-turn-before-enter").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        let child = input_policy_child(&r, parent.id, "opencode", None).await;
+        let round = r.daemon.delegation_round_of(child).unwrap();
+        let barrier = InstructionReceiptBarrier::new(if zero_paste {
+            "stdin-paste-receipt"
+        } else {
+            "instruction-before-enter"
+        });
+        if zero_paste {
+            r.daemon.fail_next_stdin_write_after_for_test(child, 0);
+        }
+        let writing = r.daemon.clone();
+        let parent_id = parent.id;
+        let operation = tokio::task::spawn_blocking(move || {
+            writing.orchestrate_instruction_request(
+                parent_id,
+                child,
+                "new steer",
+                None,
+                Some("steer"),
+            )
+        });
+        barrier.reached(child).await;
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some("opencode".into()),
+                event: "session.status".into(),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            r.daemon.delegation_round_of(child),
+            Some(round),
+            "existing-turn activity before Enter cannot adopt the next request"
+        );
+        let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+        let active = db.instruction_rows(child).unwrap().remove(0);
+        assert!(!active.adopted && !active.completed);
+        if zero_paste {
+            // A real old-turn permission keeps the untouched intent from retrying
+            // automatically after its zero-byte receipt is released.
+            input_policy_permission(&r, child, "opencode", "old-turn-permission").await;
+        } else {
+            let answer = r
+                .daemon
+                .orchestrate_submit(
+                    child,
+                    houston_core::orchestrate::Submission {
+                        body: "old request answer".into(),
+                        summary: None,
+                        artifacts: vec![],
+                        request_id: Some(round),
+                    },
+                )
+                .unwrap();
+            assert_eq!(answer.reason, None, "the old request must still be current");
+            apply_drop(
+                r._state.path(),
+                houston_core::hook_drop::HookDrop {
+                    session: child,
+                    agent: Some("opencode".into()),
+                    event: "session.idle".into(),
+                    ..Default::default()
+                },
+            )
+            .await;
+        }
+        barrier.release();
+        let accepted = operation.await.unwrap().unwrap().0;
+        let row = db
+            .instruction_row(&accepted.instruction_id)
+            .unwrap()
+            .unwrap();
+        assert!(
+            !row.adopted && !row.completed,
+            "old-turn end cannot complete the newly claimed steer"
+        );
+        assert_eq!(r.daemon.delegation_round_of(child), Some(round));
+        if zero_paste {
+            assert_eq!(row.info.state, proto::InstructionState::Queued);
+            assert!(!row.touched);
+            r.daemon
+                .instruction_cancel(Some(parent.id), child, &accepted.instruction_id)
+                .unwrap();
+        } else {
+            assert_eq!(row.info.state, proto::InstructionState::Delivered);
+            for event in ["message.updated", "session.idle"] {
+                apply_drop(
+                    r._state.path(),
+                    houston_core::hook_drop::HookDrop {
+                        session: child,
+                        agent: Some("opencode".into()),
+                        event: event.into(),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            }
+            let row = db
+                .instruction_row(&accepted.instruction_id)
+                .unwrap()
+                .unwrap();
+            assert!(row.adopted && row.completed);
+            assert_eq!(r.daemon.delegation_round_of(child), Some(round + 1));
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn provider_session_end_during_receipts_cannot_deliver_or_requeue_an_intent() {
+    let _guard = serial().await;
+    struct RawEnv(Option<std::ffi::OsString>);
+    impl Drop for RawEnv {
+        fn drop(&mut self) {
+            if let Some(value) = &self.0 {
+                std::env::set_var("HOUSTON_TEST_RAW_PTY", value);
+            } else {
+                std::env::remove_var("HOUSTON_TEST_RAW_PTY");
+            }
+        }
+    }
+    let _raw = RawEnv(std::env::var_os("HOUSTON_TEST_RAW_PTY"));
+    std::env::set_var("HOUSTON_TEST_RAW_PTY", "1");
+    for (mode, partial, point) in [
+        ("steer", None, "stdin-enter-receipt"),
+        ("steer", Some(0), "stdin-paste-receipt"),
+        ("steer", Some(4), "stdin-paste-receipt"),
+        ("restart", None, "stdin-interrupt-receipt"),
+    ] {
+        let r = rig("provider-ended-during-receipt").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        let child = input_policy_child(&r, parent.id, "grok", None).await;
+        let barrier = InstructionReceiptBarrier::new(point);
+        if let Some(cap) = partial {
+            r.daemon.fail_next_stdin_write_after_for_test(child, cap);
+        }
+        let writing = r.daemon.clone();
+        let parent_id = parent.id;
+        let operation = tokio::task::spawn_blocking(move || {
+            writing.orchestrate_instruction_request(
+                parent_id,
+                child,
+                "pending receipt",
+                None,
+                Some(mode),
+            )
+        });
+        barrier.reached(child).await;
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some("grok".into()),
+                event: "SessionEnd".into(),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            info_of(&r.daemon, child).state,
+            proto::SessionState::Running,
+            "provider SessionEnd must precede the independent physical PTY exit"
+        );
+        barrier.release();
+        let accepted = operation.await.unwrap().unwrap().0;
+        let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+        let row = db
+            .instruction_row(&accepted.instruction_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            row.info.state,
+            if partial == Some(0) {
+                proto::InstructionState::HeldAfterRecovery
+            } else {
+                proto::InstructionState::Uncertain
+            },
+            "authoritative SessionEnd before receipt cannot produce Delivered or replay"
+        );
+        assert!(!row.adopted && !row.completed);
+        assert_eq!(row.touched, partial != Some(0));
+        assert_eq!(
+            r.daemon
+                .instruction_queue(Some(parent.id), child)
+                .unwrap()
+                .queued_count,
+            0
+        );
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_matching_named_request_before_enter_preserves_exact_intent_adoption() {
+    let _guard = serial().await;
+    let r = rig("named-proof-before-enter").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let child = input_policy_child(&r, parent.id, "grok", None).await;
+    let request = r.daemon.delegation_round_of(child).unwrap() + 1;
+    let barrier = InstructionReceiptBarrier::new("instruction-before-enter");
+    let writing = r.daemon.clone();
+    let parent_id = parent.id;
+    let operation = tokio::task::spawn_blocking(move || {
+        writing.orchestrate_instruction_request(
+            parent_id,
+            child,
+            "named receipt",
+            None,
+            Some("steer"),
+        )
+    });
+    barrier.reached(child).await;
+    let answer = r
+        .daemon
+        .orchestrate_submit(
+            child,
+            houston_core::orchestrate::Submission {
+                body: "matching request proof".into(),
+                summary: None,
+                artifacts: vec![],
+                request_id: Some(request),
+            },
+        )
+        .unwrap();
+    assert_eq!(answer.reason, None);
+    assert_eq!(r.daemon.delegation_round_of(child), Some(request));
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("grok".into()),
+            event: "Stop".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    barrier.release();
+    let accepted = operation.await.unwrap().unwrap().0;
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    let row = db
+        .instruction_row(&accepted.instruction_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.info.state, proto::InstructionState::Delivered);
+    assert!(
+        row.adopted && !row.completed,
+        "named proof is retained but an unattributed pre-Enter end cannot complete it"
+    );
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn explicit_close_cancels_before_reap_and_retains_retryable_ownership() {
+    let _guard = serial().await;
+    for staged in [false, true] {
+        let r = rig("close-cancellation-admission").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        let child = input_policy_child(&r, parent.id, "grok", None).await;
+        if staged {
+            r.daemon
+                .orchestrate_submit(child, "retained handback".to_string().into())
+                .unwrap();
+        }
+        let barrier = InstructionReceiptBarrier::new("pty-exit-observed");
+        let closing = r.daemon.clone();
+        let operation =
+            tokio::task::spawn_blocking(move || closing.orchestrate_kill(parent.id, child, false));
+        barrier.reached(child).await;
+        assert_eq!(
+            r.daemon.delegation_of(child).unwrap().state,
+            "cancelled",
+            "explicit close must durably cancel before the waiter is allowed to finish"
+        );
+        if staged {
+            assert!(r
+                .daemon
+                .inbox_rows_for_test(parent.id)
+                .iter()
+                .any(|row| row.kind == "result" && row.ready_at.is_some()));
+        }
+        let error = operation.await.unwrap().unwrap_err();
+        assert!(
+            error.to_string().contains("cleanup reap limit 1000 ms"),
+            "{error:#}"
+        );
+        assert!(r.daemon.list().iter().any(|info| info.id == child));
+        barrier.release();
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while info_of(&r.daemon, child).state.is_live() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        r.daemon
+            .orchestrate_kill(parent.id, child, false)
+            .expect("retry drains retained ownership");
+        assert!(!r.daemon.list().iter().any(|info| info.id == child));
+        assert_eq!(r.daemon.delegation_of(child).unwrap().state, "cancelled");
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_named_codex_steer_completes_with_the_existing_turn_identity() {
+    let _guard = serial().await;
+    for during_receipt in [false, true] {
+        let r = rig("named-codex-steer-same-turn").await;
+        let _cleanup = SessionCleanup(r.daemon.clone());
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        let child = input_policy_child(&r, parent.id, "codex", None).await;
+        await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some("codex".into()),
+                event: "UserPromptSubmit".into(),
+                prompt_id: Some("existing-turn".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let request = r.daemon.delegation_round_of(child).unwrap() + 1;
+        let barrier = InstructionReceiptBarrier::new("stdin-enter-receipt");
+        let writing = r.daemon.clone();
+        let parent_id = parent.id;
+        let operation = tokio::task::spawn_blocking(move || {
+            writing.orchestrate_instruction_request(
+                parent_id,
+                child,
+                "steer the current turn",
+                None,
+                Some("steer"),
+            )
+        });
+        barrier.reached(child).await;
+        r.daemon
+            .orchestrate_submit(
+                child,
+                houston_core::orchestrate::Submission {
+                    body: "exact named proof".into(),
+                    summary: None,
+                    artifacts: vec![],
+                    request_id: Some(request),
+                },
+            )
+            .unwrap();
+        if !during_receipt {
+            barrier.release();
+        }
+        let stop = houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("codex".into()),
+            event: "Stop".into(),
+            prompt_id: Some("existing-turn".into()),
+            ..Default::default()
+        };
+        if during_receipt {
+            apply_drop(r._state.path(), stop.clone()).await;
+            barrier.release();
+        }
+        let accepted = operation.await.unwrap().unwrap().0;
+        if !during_receipt {
+            apply_drop(r._state.path(), stop).await;
+        }
+        let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+        let row = db
+            .instruction_row(&accepted.instruction_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.dispatch_prompt_id.as_deref(), Some("existing-turn"));
+        assert!(
+            row.named_adoption && row.adopted && row.completed,
+            "the exact named Steer request can complete within the same Codex turn"
+        );
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "test-barriers"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn explicit_kill_cancels_before_signalling_the_live_child() {
+    let _guard = serial().await;
+    let r = rig("kill-cancellation-admission").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let child = input_policy_child(&r, parent.id, "grok", None).await;
+    let barrier = InstructionReceiptBarrier::new("kill-admitted");
+    let mut events = r.daemon.observe();
+    let killing = r.daemon.clone();
+    let operation = tokio::task::spawn_blocking(move || killing.session_kill_checked(child, false));
+    barrier.reached(child).await;
+    assert!(info_of(&r.daemon, child).state.is_live());
+    assert_eq!(
+        r.daemon.delegation_of(child).unwrap().state,
+        "cancelled",
+        "Kill admission must cancel the request before its signal can wake the waiter"
+    );
+    barrier.release();
+    operation.await.unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if let houston_core::daemon::Outbound::Control(json) = events.recv().await.unwrap() {
+                if matches!(serde_json::from_str::<proto::ServerMsg>(&json),
+                    Ok(proto::ServerMsg::SessionState { session, state: proto::SessionState::Killed, exit_code: Some(_) }) if session == child) {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(r.daemon.delegation_of(child).unwrap().state, "cancelled");
+}
+
+#[tokio::test]
+async fn keyed_pre_spawn_storage_refusal_releases_the_receipt_for_retry() {
+    let _guard = serial().await;
+    let r = rig("retry-pre-spawn-storage").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    r.daemon.set_spawn_observer_for_test(Arc::new({
+        let attempts = attempts.clone();
+        move |_| {
+            attempts.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+    #[cfg(feature = "test-barriers")]
+    let physical = Arc::new(AtomicUsize::new(0));
+    #[cfg(feature = "test-barriers")]
+    r.daemon.set_startup_test(
+        None,
+        Box::new({
+            let physical = physical.clone();
+            move |_, pid| {
+                assert!(pid > 0);
+                physical.fetch_add(1, Ordering::SeqCst);
+            }
+        }),
+    );
+    let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+    conn.execute_batch("CREATE TRIGGER refuse_pre_spawn BEFORE INSERT ON delegations BEGIN SELECT RAISE(FAIL, 'pre-spawn persistence refused'); END;").unwrap();
+    let request = serde_json::json!({"kind":"claude","prompt":"work","client_request_id":"pre-spawn-storage"});
+    let token = r.token_for(parent.id);
+    let (status, failure) = r.post_spawn(&token, request.clone()).await;
+    assert!(
+        status >= 400
+            && failure["error"]
+                .as_str()
+                .unwrap()
+                .contains("pre-spawn persistence refused"),
+        "{failure}"
+    );
+    assert_eq!(attempts.load(Ordering::SeqCst), 0);
+    #[cfg(feature = "test-barriers")]
+    assert_eq!(physical.load(Ordering::SeqCst), 0);
+    assert_eq!(conn.query_row("SELECT COUNT(*) FROM orchestration_receipts WHERE client_request_id='pre-spawn-storage'", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+    conn.execute_batch("DROP TRIGGER refuse_pre_spawn;")
+        .unwrap();
+    let (status, success) = r.post_spawn(&token, request).await;
+    assert_eq!(status, 200, "{success}");
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    #[cfg(feature = "test-barriers")]
+    assert_eq!(physical.load(Ordering::SeqCst), 1);
 }

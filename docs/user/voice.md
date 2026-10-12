@@ -24,6 +24,22 @@ Desktop dictation records nothing and never opens this computer's microphone whi
 is off. Once enabled, it follows the activation and microphone settings below. The
 paired-device setting controls uploaded recordings independently of desktop dictation.
 
+## Local model downloads
+
+In **Settings → Dictation**, download the local model before selecting the local
+engine. Downloads contact Hugging Face and its download hosts to retrieve the model;
+they do not send microphone audio. Houston checks the catalog's exact byte count and
+SHA-256 digest before installing a model.
+
+Each model has one active download. Repeated requests use the existing download;
+deletion is refused until it finishes. A failed or interrupted transfer removes its
+partial file and can be retried. Downloads stop after 30 seconds without response
+headers or new body bytes, or after 30 minutes overall. After three consecutive
+failures, retries pause for five minutes, including across daemon restarts.
+
+Deleting a downloaded model frees its disk space. Download it again before using the
+local engine.
+
 ## The API key, and where it is stored
 
 The cloud engine needs a Groq API key, entered in its own row in this settings section.

@@ -821,3 +821,16 @@ describe('surface fit scheduling', () => {
     }
   })
 })
+
+it('reports paste encoding refusal visibly and delivers no partial input', () => {
+  const refused = vi.fn()
+  const onData = vi.fn()
+  const surface = {
+    disposed: false, pasteShortcutToken: 0,
+    core: { encodePaste: () => { throw new Error('Paste refused: requested 65537; limit 65536; current 0') } },
+    options: { onInputRefused: refused, onData }
+  }
+  GhosttyTerminalSurface.prototype.paste.call(surface as unknown as GhosttyTerminalSurface, 'oversized')
+  expect(refused).toHaveBeenCalledWith('Paste refused: requested 65537; limit 65536; current 0')
+  expect(onData).not.toHaveBeenCalled()
+})

@@ -80,6 +80,11 @@ impl Manager {
     }
 
     pub fn cooldown_remaining(&self, models_dir: &Path, id: &str) -> Option<Duration> {
+        find(id)?;
+        self.cooldown_for_id(models_dir, id)
+    }
+
+    fn cooldown_for_id(&self, models_dir: &Path, id: &str) -> Option<Duration> {
         let _guard = self.lock.lock().expect("model download failures lock");
         let ledger = Self::read_ledger(models_dir);
         let state = ledger.get(id)?;
@@ -160,6 +165,10 @@ fn final_model_path(models_dir: &Path, id: &str) -> PathBuf {
     models_dir.join(format!("{id}.bin"))
 }
 
+// Allow slow model transfers, but stop stalled peers and endless trickle responses.
+const DOWNLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
 #[allow(clippy::too_many_arguments)]
 async fn download_verified(
     client: &reqwest::Client,
@@ -168,107 +177,141 @@ async fn download_verified(
     url: &str,
     expected_sha256: &str,
     published_size: u64,
-    mut on_progress: impl FnMut(u64, u64),
+    on_progress: impl FnMut(u64, u64),
 ) -> Result<PathBuf, ModelError> {
-    std::fs::create_dir_all(models_dir).map_err(|source| ModelError::Io {
-        path: models_dir.to_path_buf(),
-        source,
-    })?;
-    sweep_stale_temp_files(models_dir)?;
+    download_with_limits(
+        client,
+        models_dir,
+        id,
+        url,
+        expected_sha256,
+        published_size,
+        on_progress,
+        DOWNLOAD_IDLE_TIMEOUT,
+        DOWNLOAD_TIMEOUT,
+    )
+    .await
+}
 
-    let temp_path = models_dir.join(format!("{id}.{}.part", std::process::id()));
-    let final_path = final_model_path(models_dir, id);
-
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|source| ModelError::Network {
-            url: url.to_string(),
+#[allow(clippy::too_many_arguments)]
+async fn download_with_limits(
+    client: &reqwest::Client,
+    models_dir: &Path,
+    id: &str,
+    url: &str,
+    expected_sha256: &str,
+    published_size: u64,
+    mut on_progress: impl FnMut(u64, u64),
+    idle_timeout: Duration,
+    whole_timeout: Duration,
+) -> Result<PathBuf, ModelError> {
+    let timeout_error = |stage: &'static str, limit| ModelError::Timeout {
+        id: id.to_string(),
+        stage,
+        limit,
+    };
+    let transfer = async {
+        std::fs::create_dir_all(models_dir).map_err(|source| ModelError::Io {
+            path: models_dir.to_path_buf(),
             source,
         })?;
-    if !resp.status().is_success() {
-        return Err(ModelError::Http {
-            url: url.to_string(),
-            status: resp.status().as_u16(),
-        });
-    }
+        let final_path = final_model_path(models_dir, id);
+        let resp = tokio::time::timeout(idle_timeout, client.get(url).send())
+            .await
+            .map_err(|_| timeout_error("response headers", idle_timeout))?
+            .map_err(|source| ModelError::Network {
+                url: url.to_string(),
+                source,
+            })?;
+        if !resp.status().is_success() {
+            return Err(ModelError::Http {
+                url: url.to_string(),
+                status: resp.status().as_u16(),
+            });
+        }
+        if let Some(actual) = resp.content_length() {
+            if actual != published_size {
+                return Err(ModelError::SizeMismatch {
+                    id: id.to_string(),
+                    expected: published_size,
+                    actual,
+                });
+            }
+        }
 
-    let mut file = tokio::fs::File::create(&temp_path)
-        .await
-        .map_err(|source| ModelError::Io {
-            path: temp_path.clone(),
-            source,
-        })?;
-    let mut hasher = Sha256::new();
-    let mut stream = resp.bytes_stream();
-    {
+        // Exclusive random names and TempPath ownership prevent concurrent clobbering
+        // and remove this transfer's partial file on errors, cancellation and unwinding.
+        let temp = tempfile::Builder::new()
+            .prefix("voice-")
+            .suffix(".part")
+            .tempfile_in(models_dir)
+            .map_err(|source| ModelError::Io {
+                path: models_dir.to_path_buf(),
+                source,
+            })?;
+        let (file, temp_path) = temp.into_parts();
+        let mut file = tokio::fs::File::from_std(file);
+        let mut hasher = Sha256::new();
+        let mut stream = resp.bytes_stream();
+        let mut downloaded = 0u64;
         use tokio::io::AsyncWriteExt;
-        let mut downloaded: u64 = 0;
-        while let Some(chunk) = stream.next().await {
+        while let Some(chunk) = tokio::time::timeout(idle_timeout, stream.next())
+            .await
+            .map_err(|_| timeout_error("response body idle", idle_timeout))?
+        {
             let chunk = chunk.map_err(|source| ModelError::Network {
                 url: url.to_string(),
                 source,
             })?;
-            hasher.update(&chunk);
+            let actual = downloaded.saturating_add(chunk.len() as u64);
+            if actual > published_size {
+                return Err(ModelError::SizeMismatch {
+                    id: id.to_string(),
+                    expected: published_size,
+                    actual,
+                });
+            }
             file.write_all(&chunk)
                 .await
                 .map_err(|source| ModelError::Io {
-                    path: temp_path.clone(),
+                    path: temp_path.to_path_buf(),
                     source,
                 })?;
-            downloaded += chunk.len() as u64;
+            hasher.update(&chunk);
+            downloaded = actual;
             on_progress(downloaded, published_size);
         }
+        if downloaded != published_size {
+            return Err(ModelError::SizeMismatch {
+                id: id.to_string(),
+                expected: published_size,
+                actual: downloaded,
+            });
+        }
         file.flush().await.map_err(|source| ModelError::Io {
-            path: temp_path.clone(),
+            path: temp_path.to_path_buf(),
             source,
         })?;
-    }
-    drop(file);
-
-    let actual = format!("{:x}", hasher.finalize());
-    if !actual.eq_ignore_ascii_case(expected_sha256) {
-        let _ = std::fs::remove_file(&temp_path);
-        return Err(ModelError::HashMismatch {
-            id: id.to_string(),
-            expected: expected_sha256.to_string(),
-            actual,
-        });
-    }
-
-    std::fs::rename(&temp_path, &final_path).map_err(|source| ModelError::Io {
-        path: final_path.clone(),
-        source,
-    })?;
-    Ok(final_path)
-}
-
-pub fn sweep_stale_temp_files(models_dir: &Path) -> Result<u64, ModelError> {
-    let mut removed = 0u64;
-    let entries = match std::fs::read_dir(models_dir) {
-        Ok(e) => e,
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-        Err(source) => {
-            return Err(ModelError::Io {
-                path: models_dir.to_path_buf(),
-                source,
-            })
+        drop(file);
+        let actual = format!("{:x}", hasher.finalize());
+        if !actual.eq_ignore_ascii_case(expected_sha256) {
+            return Err(ModelError::HashMismatch {
+                id: id.to_string(),
+                expected: expected_sha256.to_string(),
+                actual,
+            });
         }
+        temp_path
+            .persist(&final_path)
+            .map_err(|err| ModelError::Io {
+                path: final_path.clone(),
+                source: err.error,
+            })?;
+        Ok(final_path)
     };
-    for entry in entries {
-        let entry = entry.map_err(|source| ModelError::Io {
-            path: models_dir.to_path_buf(),
-            source,
-        })?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("part")
-            && std::fs::remove_file(&path).is_ok()
-        {
-            removed += 1;
-        }
-    }
-    Ok(removed)
+    tokio::time::timeout(whole_timeout, transfer)
+        .await
+        .map_err(|_| timeout_error("whole request", whole_timeout))?
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -278,6 +321,9 @@ pub enum ModelStatus {
 }
 
 pub fn status(models_dir: &Path, id: &str) -> ModelStatus {
+    if find(id).is_none() {
+        return ModelStatus::NotDownloaded;
+    }
     match std::fs::metadata(final_model_path(models_dir, id)) {
         Ok(meta) => ModelStatus::Downloaded {
             size_bytes: meta.len(),
@@ -287,6 +333,7 @@ pub fn status(models_dir: &Path, id: &str) -> ModelStatus {
 }
 
 pub fn delete(models_dir: &Path, id: &str) -> Result<u64, ModelError> {
+    find(id).ok_or_else(|| ModelError::UnknownModel { id: id.to_string() })?;
     let path = final_model_path(models_dir, id);
     match std::fs::metadata(&path) {
         Ok(meta) => {
@@ -314,6 +361,19 @@ pub fn disk_usage(models_dir: &Path) -> u64 {
 
 #[derive(Debug)]
 pub enum ModelError {
+    DownloadActive {
+        id: String,
+    },
+    Timeout {
+        id: String,
+        stage: &'static str,
+        limit: Duration,
+    },
+    SizeMismatch {
+        id: String,
+        expected: u64,
+        actual: u64,
+    },
     UnknownModel {
         id: String,
     },
@@ -343,6 +403,9 @@ pub enum ModelError {
 impl fmt::Display for ModelError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ModelError::DownloadActive { id } => write!(f, "model {id:?} download is active; wait for it to finish before deleting or starting another download"),
+            ModelError::Timeout { id, stage, limit } => write!(f, "model {id:?} download exceeded the {stage} limit of {}ms; retry the download", limit.as_millis()),
+            ModelError::SizeMismatch { id, expected, actual } => write!(f, "model {id:?} download size mismatch: expected {expected} bytes, got {actual} bytes"),
             ModelError::UnknownModel { id } => {
                 let known: Vec<&str> = CATALOG.iter().map(|m| m.id).collect();
                 write!(
@@ -472,10 +535,8 @@ mod tests {
             "no temp file may survive a successful download"
         );
         assert_eq!(
-            status(dir.path(), "fixture-model"),
-            ModelStatus::Downloaded {
-                size_bytes: payload.len() as u64
-            }
+            std::fs::metadata(&path).unwrap().len(),
+            payload.len() as u64
         );
         let seen = progress.lock().unwrap();
         assert!(
@@ -493,6 +554,7 @@ mod tests {
     async fn a_hash_mismatch_is_refused_and_leaves_no_installed_file() {
         let payload = fixture_payload();
         let expected = fixture_sha256(&payload);
+        let size = payload.len() as u64;
         let base = start_fixture_server(payload, true).await;
         let dir = tempfile::tempdir().unwrap();
         let client = reqwest::Client::new();
@@ -503,7 +565,7 @@ mod tests {
             "fixture-model",
             &format!("{base}/model.bin"),
             &expected,
-            0,
+            size,
             |_, _| {},
         )
         .await
@@ -521,9 +583,8 @@ mod tests {
             }
             other => panic!("expected HashMismatch, got {other:?}"),
         }
-        assert_eq!(
-            status(dir.path(), "fixture-model"),
-            ModelStatus::NotDownloaded,
+        assert!(
+            !dir.path().join("fixture-model.bin").exists(),
             "a hash-mismatched download must never be installed"
         );
         assert!(
@@ -560,33 +621,274 @@ mod tests {
             }
             other => panic!("expected Http, got {other:?}"),
         }
-        assert_eq!(
-            status(dir.path(), "fixture-model"),
-            ModelStatus::NotDownloaded
-        );
-    }
-
-    #[tokio::test]
-    async fn sweep_stale_temp_files_removes_part_files_but_not_installed_models() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("orphan.123.part"), b"leftover").unwrap();
-        std::fs::write(dir.path().join("ggml-small.bin"), b"a real installed model").unwrap();
-
-        let removed = sweep_stale_temp_files(dir.path()).unwrap();
-
-        assert_eq!(removed, 1);
-        assert!(!dir.path().join("orphan.123.part").exists());
-        assert!(
-            dir.path().join("ggml-small.bin").exists(),
-            "sweeping temp files must never touch an installed model"
-        );
+        assert!(!dir.path().join("fixture-model.bin").exists());
     }
 
     #[test]
-    fn sweep_on_a_directory_that_does_not_exist_yet_is_not_an_error() {
+    fn delete_rejects_unknown_traversal_and_absolute_ids_before_filesystem_access() {
         let dir = tempfile::tempdir().unwrap();
-        let never_created = dir.path().join("models");
-        assert_eq!(sweep_stale_temp_files(&never_created).unwrap(), 0);
+        let models_dir = dir.path().join("models");
+        let outside = dir.path().join("victim.bin");
+        std::fs::write(&outside, b"keep").unwrap();
+        let absolute_id = outside.with_extension("").to_str().unwrap().to_string();
+        for id in ["../victim", absolute_id.as_str(), "unknown"] {
+            assert!(matches!(
+                delete(&models_dir, id),
+                Err(ModelError::UnknownModel { .. })
+            ));
+            assert_eq!(status(&models_dir, id), ModelStatus::NotDownloaded);
+            assert_eq!(std::fs::read(&outside).unwrap(), b"keep");
+            assert!(!models_dir.exists());
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum Connection {
+        Idle,
+        Trickle,
+        Disconnect,
+    }
+
+    async fn raw_server(
+        response: &'static [u8],
+        connection: Connection,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/model.bin", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 4096];
+            assert!(socket.read(&mut request).await.unwrap() > 0);
+            socket.write_all(response).await.unwrap();
+            if matches!(connection, Connection::Trickle) {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    if socket.write_all(b"1\r\nx\r\n").await.is_err() {
+                        break;
+                    }
+                }
+            } else if matches!(connection, Connection::Idle) {
+                std::future::pending::<()>().await;
+            }
+        });
+        (url, task)
+    }
+
+    fn assert_no_parts(dir: &Path) {
+        assert!(std::fs::read_dir(dir).unwrap().all(|entry| entry
+            .unwrap()
+            .path()
+            .extension()
+            .is_none_or(|ext| ext != "part")));
+    }
+
+    #[tokio::test]
+    async fn header_body_idle_and_whole_request_timeouts_cleanup_partial_files() {
+        for (response, connection, stage) in [
+            (&b""[..], Connection::Idle, "response headers"),
+            (
+                &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\nx\r\n"[..],
+                Connection::Idle,
+                "response body idle",
+            ),
+            (
+                &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"[..],
+                Connection::Trickle,
+                "whole request",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let (url, task) = raw_server(response, connection).await;
+            let err = download_with_limits(
+                &reqwest::Client::new(),
+                dir.path(),
+                "fixture",
+                &url,
+                "irrelevant",
+                1000,
+                |_, _| {},
+                Duration::from_millis(500),
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap_err();
+            task.abort();
+            let _ = task.await;
+            assert!(
+                matches!(err, ModelError::Timeout { stage: actual, .. } if actual == stage),
+                "{err:?}"
+            );
+            assert_no_parts(dir.path());
+            assert!(!dir.path().join("fixture.bin").exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn advertised_and_streamed_size_mismatches_are_rejected_without_publication() {
+        for (response, expected, actual) in [
+            (
+                &b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndata"[..],
+                3,
+                4,
+            ),
+            (
+                &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\ndata\r\n0\r\n\r\n"[..],
+                3,
+                4,
+            ),
+            (
+                &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nda\r\n0\r\n\r\n"[..],
+                3,
+                2,
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let (url, task) = raw_server(response, Connection::Idle).await;
+            let progress = Mutex::new(Vec::new());
+            let err = download_verified(
+                &reqwest::Client::new(),
+                dir.path(),
+                "fixture",
+                &url,
+                "irrelevant",
+                expected,
+                |done, _| progress.lock().unwrap().push(done),
+            )
+            .await
+            .unwrap_err();
+            task.abort();
+            let _ = task.await;
+            assert!(
+                matches!(err, ModelError::SizeMismatch { expected: e, actual: a, .. }
+                if e == expected && a == actual),
+                "{err:?}"
+            );
+            assert!(progress
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|done| *done <= expected));
+            assert_no_parts(dir.path());
+            assert!(!dir.path().join("fixture.bin").exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn disconnected_body_and_panicking_progress_remove_their_partial_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let (url, server) = raw_server(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nx",
+            Connection::Disconnect,
+        )
+        .await;
+        let err = download_verified(
+            &reqwest::Client::new(),
+            dir.path(),
+            "fixture",
+            &url,
+            "irrelevant",
+            3,
+            |_, _| {},
+        )
+        .await
+        .unwrap_err();
+        server.await.unwrap();
+        assert!(matches!(err, ModelError::Network { .. }), "{err:?}");
+        assert_no_parts(dir.path());
+        assert!(!dir.path().join("fixture.bin").exists());
+
+        let (url, server) = raw_server(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc",
+            Connection::Disconnect,
+        )
+        .await;
+        let download_dir = dir.path().to_path_buf();
+        let task = tokio::spawn(async move {
+            download_verified(
+                &reqwest::Client::new(),
+                &download_dir,
+                "fixture",
+                &url,
+                "irrelevant",
+                3,
+                |_, _| panic!("synthetic progress callback panic"),
+            )
+            .await
+        });
+        assert!(task.await.unwrap_err().is_panic());
+        server.await.unwrap();
+        assert_no_parts(dir.path());
+        assert!(!dir.path().join("fixture.bin").exists());
+    }
+
+    #[tokio::test]
+    async fn concurrent_transfers_have_exclusive_parts_and_abort_cleans_only_its_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let (url, server) = raw_server(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\nx\r\n",
+            Connection::Idle,
+        )
+        .await;
+        let (progress_tx, progress_rx) = tokio::sync::oneshot::channel();
+        let download_dir = dir.path().to_path_buf();
+        let task = tokio::spawn(async move {
+            let mut progress_tx = Some(progress_tx);
+            download_verified(
+                &reqwest::Client::new(),
+                &download_dir,
+                "fixture",
+                &url,
+                "irrelevant",
+                3,
+                |_, _| {
+                    if let Some(tx) = progress_tx.take() {
+                        let _ = tx.send(());
+                    }
+                },
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(3), progress_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        let parts: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(parts.len(), 1);
+        let payload = fixture_payload();
+        let expected = fixture_sha256(&payload);
+        let base = start_fixture_server(payload.clone(), false).await;
+        download_verified(
+            &reqwest::Client::new(),
+            dir.path(),
+            "fixture",
+            &format!("{base}/model.bin"),
+            &expected,
+            payload.len() as u64,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+        assert!(
+            parts[0].exists(),
+            "another transfer must not sweep an active part"
+        );
+        assert_eq!(
+            std::fs::read(dir.path().join("fixture.bin")).unwrap(),
+            payload
+        );
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        server.abort();
+        let _ = server.await;
+        assert_no_parts(dir.path());
+        assert_eq!(
+            std::fs::read(dir.path().join("fixture.bin")).unwrap(),
+            payload
+        );
     }
 
     #[test]
@@ -654,7 +956,7 @@ mod tests {
         let models_dir = dir.path();
         let manager = Manager::new();
         assert_eq!(
-            manager.cooldown_remaining(models_dir, "x"),
+            manager.cooldown_for_id(models_dir, "x"),
             None,
             "no attempts yet: no cooldown"
         );
@@ -662,15 +964,20 @@ mod tests {
             manager.record_failure(models_dir, "x");
         }
         assert_eq!(
-            manager.cooldown_remaining(models_dir, "x"),
+            manager.cooldown_for_id(models_dir, "x"),
             None,
             "fewer than {MAX_CONSECUTIVE_FAILURES} failures must not cool down yet"
         );
         manager.record_failure(models_dir, "x");
         let remaining = manager
-            .cooldown_remaining(models_dir, "x")
+            .cooldown_for_id(models_dir, "x")
             .expect("MAX_CONSECUTIVE_FAILURES in a row must engage the cooldown");
         assert!(remaining <= COOLDOWN && remaining > Duration::ZERO);
+        assert_eq!(
+            manager.cooldown_remaining(models_dir, "x"),
+            None,
+            "public cooldown lookup must ignore IDs outside the catalog"
+        );
     }
 
     #[test]
@@ -681,16 +988,16 @@ mod tests {
         for _ in 0..MAX_CONSECUTIVE_FAILURES {
             first.record_failure(models_dir, "x");
         }
-        assert!(first.cooldown_remaining(models_dir, "x").is_some());
+        assert!(first.cooldown_for_id(models_dir, "x").is_some());
 
         let restarted = Manager::new();
         assert!(
-            restarted.cooldown_remaining(models_dir, "x").is_some(),
+            restarted.cooldown_for_id(models_dir, "x").is_some(),
             "a restarted daemon must not hand back a clean slate"
         );
 
         let other = tempfile::tempdir().unwrap();
-        assert_eq!(restarted.cooldown_remaining(other.path(), "x"), None);
+        assert_eq!(restarted.cooldown_for_id(other.path(), "x"), None);
     }
 
     #[test]
@@ -698,7 +1005,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(FAILURES_FILE), "{ not json").unwrap();
         let manager = Manager::new();
-        assert_eq!(manager.cooldown_remaining(dir.path(), "x"), None);
+        assert_eq!(manager.cooldown_for_id(dir.path(), "x"), None);
     }
 
     #[test]
@@ -709,10 +1016,10 @@ mod tests {
         for _ in 0..MAX_CONSECUTIVE_FAILURES {
             manager.record_failure(models_dir, "x");
         }
-        assert!(manager.cooldown_remaining(models_dir, "x").is_some());
+        assert!(manager.cooldown_for_id(models_dir, "x").is_some());
         manager.record_success(models_dir, "x");
         assert_eq!(
-            manager.cooldown_remaining(models_dir, "x"),
+            manager.cooldown_for_id(models_dir, "x"),
             None,
             "a subsequent success must clear the cooldown, not just decay it"
         );

@@ -53,6 +53,7 @@ async fn flood_throughput_floor() {
     let flood_bin = env!("CARGO_BIN_EXE_ansi_flood");
     let tmp = tempfile::tempdir().unwrap();
     let create = serde_json::to_string(&proto::ClientMsg::SessionCreate {
+        request: None,
         agent: proto::AgentKind::Custom,
         project_dir: tmp.path().display().to_string(),
         cmd: Some(vec![flood_bin.to_string(), FLOOD_MIB.to_string()]),
@@ -152,6 +153,7 @@ async fn daemon_rss_at_ten_sessions() {
     let tmp = tempfile::tempdir().unwrap();
     for _ in 0..RSS_SESSIONS {
         let create = serde_json::to_string(&proto::ClientMsg::SessionCreate {
+            request: None,
             agent: proto::AgentKind::Custom,
             project_dir: tmp.path().display().to_string(),
             cmd: Some(vec![

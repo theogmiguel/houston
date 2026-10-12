@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const bridge = vi.hoisted(() => ({
@@ -27,11 +27,16 @@ const tabs = vi.hoisted(() => ({
     markMissing: vi.fn(),
   },
 }))
+const buffers = vi.hoisted(() => ({
+  checkBufferRevision: vi.fn(),
+  getBuffer: vi.fn(),
+}))
 vi.mock('../../houston/bridge', () => bridge)
 vi.mock('./useFileTabs', () => ({ useFileTabs: () => tabs.state }))
 vi.mock('../../editor/buffers', () => ({
   basename: (path: string) => path.split('/').pop() ?? path,
   reloadBuffer: vi.fn(),
+  ...buffers,
 }))
 vi.mock('../EditorSurface', () => ({ EditorSurfaceBody: () => <div data-testid="editor-body" /> }))
 vi.mock('../MarkdownPreview', () => ({ MarkdownPreview: () => <div /> }))
@@ -43,6 +48,8 @@ beforeEach(() => {
   tabs.state.activePath = null
   tabs.state.dirty = false
   tabs.state.activeBuf = undefined
+  buffers.checkBufferRevision.mockResolvedValue(undefined)
+  buffers.getBuffer.mockReturnValue(undefined)
   bridge.readDir.mockResolvedValue([
     { name: 'src', path: '/ws/src', dir: true, ignored: false },
     { name: 'a.ts', path: '/ws/a.ts', dir: false, ignored: false },
@@ -179,5 +186,22 @@ describe('FilesSurface', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('changed on disk while you were editing')
     fireEvent.click(screen.getByRole('button', { name: 'Keep mine' }))
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it.each([false, true])('checks the active file after watcher overflow, conflict=%s', async (conflict) => {
+    tabs.state.activePath = '/ws/a.ts'
+    tabs.state.dirty = true
+    buffers.getBuffer.mockReturnValue({ conflict })
+    let changed: ((value: { root: string; paths: string[]; rescan?: boolean }) => void) | undefined
+    bridge.onFilesChanged.mockImplementation(async (handler: typeof changed) => {
+      changed = handler
+      return () => {}
+    })
+    render(<FilesSurface workspaceRoot="/ws" panelWidth={600} />)
+    await waitFor(() => expect(changed).toBeDefined())
+    await act(async () => { changed?.({ root: '/ws', paths: [], rescan: true }) })
+    await waitFor(() => expect(buffers.checkBufferRevision).toHaveBeenCalledWith('/ws', '/ws/a.ts'))
+    if (conflict) expect((await screen.findByRole('alert')).textContent).toContain('changed on disk while you were editing')
+    else expect(screen.queryByRole('alert')).toBeNull()
   })
 })

@@ -82,6 +82,8 @@ mod linux {
         host_label: &str,
         webview: &tauri::webview::Webview,
     ) -> Result<(), String> {
+        let operation = super::super::operation::Operation::new(std::time::Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         let app_owned = app.clone();
         let id_owned = id.to_string();
@@ -89,6 +91,9 @@ mod linux {
         let id_for_err = id.to_string();
         webview
             .with_webview(move |platform| {
+                if !dispatch.is_live() {
+                    return;
+                }
                 wire_signals_on_main(&app_owned, &id_owned, &host_owned, &platform.inner());
                 let _ = tx.send(());
             })
@@ -123,6 +128,7 @@ mod linux {
                     _ => {}
                 });
                 if matches!(event, LoadEvent::Started) {
+                    crate::browser::invalidate_document(&app, &id);
                     last_progress.set(-1.0);
                 }
                 let Some(sticky) = sticky else { return };
@@ -587,8 +593,8 @@ mod linux {
                     set.borrow_mut().remove(&id_owned);
                 });
                 eprintln!(
-                    "browser: child {id_owned:?} mounted, but g_signal_handlers_block_matched \
-                     matched 0 unfiltered \"script-message-received\" handlers on its \
+                    "browser: child {id_owned:?} mounted, but signal receiver defence found 0 unfiltered \
+                     \"script-message-received\" handlers on its \
                      UserContentManager (expected at least 1 with wry \
                      {WRY_VERSION_THIS_DEFENCE_MATCHES}); the picker will refuse to enable on \
                      this surface (P4-X1)"
@@ -621,7 +627,6 @@ mod linux {
     // panics (aborting the process) on a data:/file:/blob: page.
     fn block_wrys_unfiltered_receiver(manager: &webkit2gtk::UserContentManager) -> u32 {
         use gtk::glib::gobject_ffi;
-        use gtk::glib::object::ObjectType;
         use gtk::glib::translate::IntoGlib;
         use gtk::glib::StaticType;
 
@@ -636,20 +641,7 @@ mod linux {
         if signal_id == 0 {
             return 0;
         }
-        let instance = manager.as_ptr() as *mut gobject_ffi::GObject;
-        // SAFETY: `instance` is a live `WebKitUserContentManager`, which is a
-        // valid GObject for as long as `manager` is borrowed here.
-        unsafe {
-            gobject_ffi::g_signal_handlers_block_matched(
-                instance,
-                gobject_ffi::G_SIGNAL_MATCH_ID | gobject_ffi::G_SIGNAL_MATCH_DETAIL,
-                signal_id,
-                0,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        }
+        super::super::signal_receiver::block_unfiltered_receiver(manager, signal_id)
     }
 
     pub fn picker_defence_is_armed(
@@ -706,7 +698,7 @@ mod linux {
             return Err(format!(
                 "browser: refusing to enable the picker for surface {id:?}: wry's unfiltered \
                  \"script-message-received\" handler was not blocked on this child's \
-                 UserContentManager at mount (g_signal_handlers_block_matched matched 0 handlers \
+                 UserContentManager at mount (signal receiver defence found 0 handlers \
                  with detail 0; at least 1 expected with wry \
                  {WRY_VERSION_THIS_DEFENCE_MATCHES}). With it live, the first picker message from \
                  a page whose URI does not parse as an http::Uri -- every data:, file: and blob: \
@@ -960,6 +952,14 @@ mod linux {
         }
     }
 
+    struct CancelEvaluation(gtk::gio::Cancellable);
+    impl Drop for CancelEvaluation {
+        fn drop(&mut self) {
+            use gtk::gio::prelude::CancellableExt;
+            self.0.cancel();
+        }
+    }
+
     pub fn install_console(
         webview: &tauri::webview::Webview,
         id: &str,
@@ -1014,20 +1014,37 @@ mod linux {
         id: &str,
         op: &str,
     ) -> Result<String, String> {
+        eval_tools_with_timeout(webview, id, op, TOOLS_EVAL_TIMEOUT).await
+    }
+
+    pub async fn eval_tools_with_timeout(
+        webview: &tauri::webview::Webview,
+        id: &str,
+        op: &str,
+        timeout: std::time::Duration,
+    ) -> Result<String, String> {
         const TEMPLATE: &str = include_str!("tools.js");
         let source = TEMPLATE.replace("__TR_TOOLS_OP__", op);
 
+        let operation = super::super::operation::Operation::new(timeout);
+        let dispatch = operation.dispatch();
+        let cancellable = gtk::gio::Cancellable::new();
+        let _cancel = CancelEvaluation(cancellable.clone());
         let (tx, rx) = tokio::sync::oneshot::channel();
         let id_owned = id.to_string();
         webview
             .with_webview(move |platform| {
+                if !dispatch.is_live() || tx.is_closed() {
+                    let _ = tx.send(Err("browser: page operation expired or was cancelled before native dispatch; nothing was performed".into()));
+                    return;
+                }
                 use javascriptcore::ValueExt;
                 let view = platform.inner();
                 view.evaluate_javascript(
                     &source,
                     Some(TOOLS_WORLD),
                     None,
-                    None::<&gtk::gio::Cancellable>,
+                    Some(&cancellable),
                     move |result| {
                         let answer = match result {
                             Ok(value) => {
@@ -1059,7 +1076,7 @@ mod linux {
                      id {id:?}: {err}"
                 )
             })?;
-        match tokio::time::timeout(TOOLS_EVAL_TIMEOUT, rx).await {
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(answer)) => answer,
             Ok(Err(_)) => Err(format!(
                 "browser: the page-operation callback for id {id:?} was dropped without \
@@ -1067,7 +1084,7 @@ mod linux {
             )),
             Err(_) => Err(format!(
                 "browser: a page operation on id {id:?} did not complete within \
-                 {TOOLS_EVAL_TIMEOUT:?}"
+                 {timeout:?}; queued work cancelled, an already executing action has unknown outcome; do not automatically retry"
             )),
         }
     }
@@ -1076,16 +1093,26 @@ mod linux {
         webview: &tauri::webview::Webview,
         id: &str,
     ) -> Result<Capture, String> {
+        let operation = super::super::operation::Operation::new(CAPTURE_TIMEOUT);
+        let dispatch = operation.dispatch();
+        let cancellable = gtk::gio::Cancellable::new();
+        let _cancel = CancelEvaluation(cancellable.clone());
         let (tx, rx) = tokio::sync::oneshot::channel();
         let id_owned = id.to_string();
         webview
             .with_webview(move |platform| {
+                if !dispatch.is_live() || tx.is_closed() {
+                    return;
+                }
                 let view = platform.inner();
                 view.snapshot(
                     webkit2gtk::SnapshotRegion::Visible,
                     webkit2gtk::SnapshotOptions::NONE,
-                    None::<&gtk::gio::Cancellable>,
+                    Some(&cancellable),
                     move |result| {
+                        if tx.is_closed() {
+                            return;
+                        }
                         let capture = result
                             .map_err(|err| {
                                 format!(
@@ -1195,9 +1222,14 @@ mod linux {
         what: &str,
         op: impl FnOnce(&webkit2gtk::WebView) -> Result<(), String> + Send + 'static,
     ) -> Result<(), String> {
+        let operation = super::super::operation::Operation::new(std::time::Duration::from_secs(5));
+        let dispatch = operation.dispatch();
         let (tx, rx) = channel();
         webview
             .with_webview(move |platform| {
+                if !dispatch.is_live() {
+                    return;
+                }
                 let _ = tx.send(op(&platform.inner()));
             })
             .map_err(|err| {
@@ -1208,6 +1240,9 @@ mod linux {
         })?
     }
 }
+
+#[cfg(target_os = "linux")]
+pub(crate) use linux::eval_tools_with_timeout;
 
 #[cfg(target_os = "linux")]
 pub use linux::{

@@ -597,6 +597,7 @@ pub struct Session {
     removed: AtomicBool,
     backend_exited: AtomicBool,
     stdin_writes_in_flight: AtomicU32,
+    stdin_queue: Mutex<StdinQueue>,
     lifecycle_hook_seen: AtomicBool,
     #[cfg(unix)]
     native_input_recovery: Option<adoption::NativeInputSnapshot>,
@@ -617,18 +618,24 @@ pub struct Session {
     backend: Backend,
     supervisor_wait: Mutex<SupervisorWaitState>,
     park: Arc<ParkState>,
+    reader_done: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    pty_reaped: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    reader_cancel: AtomicBool,
+    reader_worker: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 #[derive(Default)]
 struct ParkState {
     inner: Mutex<ParkInner>,
     cond: std::sync::Condvar,
+    #[cfg(all(unix, feature = "test-barriers"))]
+    poll_returns: AtomicU64,
 }
 
 #[derive(Default)]
 struct ParkInner {
     #[cfg(unix)]
-    reader_tid: Option<u64>,
+    reader_wake: Option<Arc<ReaderWake>>,
     requested: bool,
     parked: bool,
     generation: u64,
@@ -640,16 +647,9 @@ impl ParkState {
         let mut guard = self.inner.lock().expect("park lock");
         guard.requested = true;
         guard.generation = guard.generation.wrapping_add(1);
-        #[cfg(unix)]
-        if let Some(tid) = guard.reader_tid {
-            // SAFETY: `tid` is this session's own PTY-reader thread, which outlives the
-            // session and is never joined or reused; SIGUSR1 has a process-wide noop
-            // handler installed below, so a signal that misses its target is harmless.
-            unsafe {
-                libc::pthread_kill(tid as libc::pthread_t, libc::SIGUSR1);
-            }
-        }
-        if guard.reader_tid.is_none() {
+        if let Some(wake) = &guard.reader_wake {
+            wake.notify();
+        } else {
             return true;
         }
         let deadline = std::time::Instant::now() + timeout;
@@ -689,11 +689,56 @@ impl ParkState {
         guard.requested = false;
         guard.generation = guard.generation.wrapping_add(1);
         self.cond.notify_all();
+        if let Some(wake) = &guard.reader_wake {
+            wake.notify();
+        }
+    }
+}
+
+// All Unix targets use owned socket descriptors: queued bytes survive the state-check
+// to poll race, without process-wide signals or periodic idle wakeups.
+#[cfg(unix)]
+struct ReaderWake {
+    read: std::os::unix::net::UnixStream,
+    write: std::os::unix::net::UnixStream,
+}
+
+#[cfg(unix)]
+impl ReaderWake {
+    fn new() -> std::io::Result<Self> {
+        let (read, write) = std::os::unix::net::UnixStream::pair()?;
+        read.set_nonblocking(true)?;
+        write.set_nonblocking(true)?;
+        Ok(Self { read, write })
     }
 
-    #[cfg(unix)]
-    fn set_reader_tid(&self, tid: libc::pthread_t) {
-        self.inner.lock().expect("park lock").reader_tid = Some(tid);
+    fn notify(&self) {
+        let mut writer = &self.write;
+        loop {
+            match writer.write(&[1]) {
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                // A full socket already holds a wake; notifications may coalesce.
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => tracing::warn!("PTY reader wake failed: {error}"),
+                Ok(_) => {}
+            }
+            break;
+        }
+    }
+
+    fn consume(&self) {
+        let mut reader = &self.read;
+        let mut bytes = [0; 256];
+        // One bounded read suffices; leftover notifications stay readable.
+        match reader.read(&mut bytes) {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(error) => tracing::warn!("PTY reader wake consumption failed: {error}"),
+            Ok(_) => {}
+        }
     }
 }
 
@@ -728,6 +773,10 @@ impl WriteInterrupt {
         *self.thread.lock().expect("write thread lock") =
             Some(unsafe { libc::pthread_self() } as usize);
         WriteThread(self)
+    }
+
+    pub(crate) fn active_for_test(&self) -> bool {
+        self.thread.lock().expect("write thread lock").is_some()
     }
 
     pub(crate) fn cancelled(&self) -> bool {
@@ -786,6 +835,12 @@ impl Drop for WriteThread<'_> {
         *self.0.thread.lock().expect("write thread lock") = None;
     }
 }
+
+// Allow final output while bounding teardown of descendants that continue writing.
+#[cfg(unix)]
+const PTY_READER_FINAL_DRAIN: Duration = Duration::from_millis(100);
+// Includes scrollback persistence and a cold reader scheduling turn.
+const PTY_READER_CLOSE_WAIT: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
 struct SupervisorWaitState {
@@ -882,11 +937,139 @@ pub(crate) fn write_all_counting(
     Ok(())
 }
 
-impl Backend {
-    fn write_stdin(&self, id: u32, data: &[u8]) -> Result<()> {
-        self.write_stdin_counting(id, data).map_err(|e| e.error)
+// Includes active delivery, so an unread PTY cannot hide bytes outside the queue budget.
+const STDIN_QUEUE_BYTES: usize = 4 * 1024 * 1024;
+// Also bounds tiny writes, callbacks and completion receivers.
+const STDIN_QUEUE_JOBS: usize = 128;
+
+type StdinOutcome = std::result::Result<(), StdinWriteError>;
+type StdinReceipt = std::sync::mpsc::Receiver<StdinOutcome>;
+type StdinCompletion = Box<dyn FnOnce(StdinOutcome) + Send>;
+type StdinWritten = Box<dyn FnOnce(&StdinOutcome) + Send>;
+struct StdinJob {
+    data: Vec<u8>,
+    partial_after: Option<usize>,
+    completion: StdinCompletion,
+    written: Option<StdinWritten>,
+    admission: StdinWriteAdmission,
+}
+#[derive(Default)]
+struct StdinQueue {
+    sender: Option<std::sync::mpsc::SyncSender<StdinJob>>,
+    bytes: usize,
+    jobs: usize,
+}
+
+impl Session {
+    fn cancel_pty_reader(&self) {
+        self.reader_cancel.store(true, Ordering::Release);
+        #[cfg(unix)]
+        self.park.resume();
     }
 
+    fn has_retained_reader(&self) -> bool {
+        matches!(self.backend, Backend::Pty { .. })
+            && !*self.reader_done.0.lock().expect("reader done lock")
+    }
+
+    fn enqueue_stdin(
+        self: &Arc<Self>,
+        id: u32,
+        data: &[u8],
+        partial_after: Option<usize>,
+        completion: StdinCompletion,
+        prepare: Option<Box<dyn FnOnce() + Send>>,
+        written: Option<StdinWritten>,
+    ) -> std::result::Result<(), StdinWriteError> {
+        let mut queue = self.stdin_queue.lock().expect("stdin queue lock");
+        if data.len() > STDIN_QUEUE_BYTES.saturating_sub(queue.bytes)
+            || queue.jobs >= STDIN_QUEUE_JOBS
+        {
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} stdin admission refused: byte limit {STDIN_QUEUE_BYTES}, actual {}, requested {}; job limit {STDIN_QUEUE_JOBS}, actual {}, requested 1",
+                queue.bytes, data.len(), queue.jobs
+            )));
+        }
+        if queue.sender.is_none() {
+            let (sender, receiver) = std::sync::mpsc::sync_channel::<StdinJob>(STDIN_QUEUE_JOBS);
+            let session = Arc::downgrade(self);
+            std::thread::Builder::new()
+                .name(format!("stdin-{id}"))
+                .spawn(move || {
+                    while let Ok(job) = receiver.recv() {
+                        let Some(session) = session.upgrade() else {
+                            break;
+                        };
+                        let result = if let Some(cap) = job.partial_after {
+                            let head = cap.min(job.data.len());
+                            match session.backend.write_stdin_counting(id, &job.data[..head]) {
+                                Ok(()) => Err(StdinWriteError {
+                                    written: Some(head),
+                                    error: anyhow!("injected partial write for session {id}"),
+                                }),
+                                Err(error) => Err(error),
+                            }
+                        } else {
+                            session.backend.write_stdin_counting(id, &job.data)
+                        };
+                        if let Some(written) = job.written {
+                            written(&result);
+                        }
+                        #[cfg(feature = "test-barriers")]
+                        if job.data == b"\r" {
+                            crate::test_barriers::pause("stdin-enter-receipt", id);
+                        }
+                        #[cfg(feature = "test-barriers")]
+                        if job.data.starts_with(b"\x1b[200~") {
+                            crate::test_barriers::pause("stdin-paste-receipt", id);
+                        }
+                        #[cfg(feature = "test-barriers")]
+                        if job.data == b"\x03" || job.data == b"\x1b" {
+                            crate::test_barriers::pause("stdin-interrupt-receipt", id);
+                        }
+                        let bytes = job.data.len();
+                        drop(job.data);
+                        {
+                            let mut queue = session.stdin_queue.lock().expect("stdin queue lock");
+                            queue.bytes -= bytes;
+                            queue.jobs -= 1;
+                        }
+                        (job.completion)(result);
+                        drop(job.admission);
+                    }
+                })
+                .map_err(|error| {
+                    StdinWriteError::nothing(anyhow!(
+                        "session {id}: starting stdin writer: {error}"
+                    ))
+                })?;
+            queue.sender = Some(sender);
+        }
+        self.stdin_writes_in_flight.fetch_add(1, Ordering::AcqRel);
+        queue.bytes += data.len();
+        queue.jobs += 1;
+        if let Some(prepare) = prepare {
+            prepare();
+        }
+        let job = StdinJob {
+            data: data.to_vec(),
+            partial_after,
+            completion,
+            written,
+            admission: StdinWriteAdmission(Arc::clone(self)),
+        };
+        if let Err(error) = queue.sender.as_ref().expect("stdin sender").try_send(job) {
+            queue.bytes -= data.len();
+            queue.jobs -= 1;
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} stdin writer unavailable: {error}"
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl Backend {
     fn write_stdin_counting(
         &self,
         id: u32,
@@ -924,15 +1107,15 @@ impl Backend {
                 w.flush().ok();
                 Ok(())
             }
-            Backend::Ssh(h) => h.write_stdin(data).map_err(|e| {
-                StdinWriteError::unknown(e.context(format!("writing stdin to ssh session {id}")))
-            }),
+            Backend::Ssh(h) => h.write_stdin(data),
             #[cfg(unix)]
-            Backend::AdoptedPty(raw) => raw.write_all(data).map_err(|e| {
-                StdinWriteError::unknown(
-                    e.context(format!("writing stdin to adopted session {id}")),
-                )
-            }),
+            Backend::AdoptedPty(raw) => {
+                raw.write_all_counting(data)
+                    .map_err(|(written, error)| StdinWriteError {
+                        written: Some(written),
+                        error: error.context(format!("writing stdin to adopted session {id}")),
+                    })
+            }
         }
     }
 
@@ -1009,6 +1192,9 @@ impl Backend {
                         let _ = &killer;
                         let master = master.lock().expect("master lock");
                         let fd = master.as_ref().and_then(|master| master.as_raw_fd());
+                        if fd.is_none() {
+                            return Ok(());
+                        }
                         match pid {
                             Some(pid) => {
                                 let by_pty = || {
@@ -1359,7 +1545,61 @@ impl Drop for SpawnReservation<'_> {
     }
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum InstructionWritePhase {
+    Interrupt,
+    #[default]
+    Paste,
+    PreEnter,
+    Submitted,
+}
+
+#[derive(Default, Clone)]
+struct InstructionWriteEvidence {
+    instruction_id: String,
+    phase: InstructionWritePhase,
+    started: bool,
+    ended: bool,
+    restart_ready: bool,
+    session_ended: bool,
+}
+
+struct InstructionWriteReservation<'a> {
+    daemon: &'a Daemon,
+    target: u32,
+}
+impl Drop for InstructionWriteReservation<'_> {
+    fn drop(&mut self) {
+        self.daemon
+            .instruction_writes
+            .lock()
+            .expect("instruction writes lock")
+            .remove(&self.target);
+    }
+}
+
+struct CloseReservation<'a> {
+    daemon: &'a Daemon,
+    // Postorder, with one entry per registered session; never pending spawn IDs.
+    ids: Vec<u32>,
+}
+
+impl Drop for CloseReservation<'_> {
+    fn drop(&mut self) {
+        let mut closing = self
+            .daemon
+            .closing_sessions
+            .lock()
+            .expect("closing sessions lock");
+        for id in &self.ids {
+            closing.remove(id);
+        }
+    }
+}
+
 pub struct Daemon {
+    #[cfg(feature = "test-barriers")]
+    startup_test: Mutex<StartupTest>,
     pub token: String,
     pub mcp_creds: crate::mcp_creds::Registry,
     pub mcp_notify: crate::mcp_server::NotifierRegistry,
@@ -1436,6 +1676,7 @@ pub struct Daemon {
     composer_occupied: Mutex<HashMap<u32, ComposerKeystroke>>,
     orchestration_retry_lock: Mutex<()>,
     instruction_dispatch_lock: Mutex<()>,
+    instruction_writes: Mutex<HashMap<u32, InstructionWriteEvidence>>,
     instruction_wake_active: Mutex<HashSet<u32>>,
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
     first_prompts: Mutex<HashMap<u32, FirstPrompt>>,
@@ -1451,6 +1692,7 @@ pub struct Daemon {
     inbox_waiting: Mutex<HashMap<u32, Arc<InboxWaitState>>>,
     inbox_delivering: Mutex<HashMap<String, u32>>,
     temporary_cleanup_lock: Mutex<()>,
+    closing_sessions: Mutex<HashSet<u32>>,
     spawn_reservations: Mutex<HashMap<u32, (u32, Option<String>)>>,
     worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
     pending_cleanup_cancellations: Mutex<HashSet<u32>>,
@@ -1597,6 +1839,8 @@ const KEYMAP_OVERRIDES_MAX_CODE_LEN: usize = 64;
 
 struct HandoffJob {
     hidden: u32,
+    source: u32,
+    provider: proto::AgentKind,
     provider_name: String,
     buffer: Vec<u8>,
     last_activity: Instant,
@@ -2085,6 +2329,145 @@ struct CliTitleState {
     last_applied_ms: u64,
     pending: Option<String>,
     flush_scheduled: bool,
+}
+
+#[derive(Default)]
+struct StartupGate {
+    // None is preparing, Some(false) aborts, Some(true) releases both workers.
+    state: Mutex<Option<bool>>,
+    changed: std::sync::Condvar,
+}
+
+impl StartupGate {
+    fn wait(&self) -> bool {
+        let mut state = self.state.lock().expect("startup gate lock");
+        while state.is_none() {
+            state = self.changed.wait(state).expect("startup gate lock");
+        }
+        state.unwrap_or(false)
+    }
+
+    fn finish(&self, committed: bool) {
+        *self.state.lock().expect("startup gate lock") = Some(committed);
+        self.changed.notify_all();
+    }
+}
+
+struct SessionStartup {
+    daemon: Arc<Daemon>,
+    id: u32,
+    child: Arc<Mutex<Option<Box<dyn portable_pty::Child + Send + Sync>>>>,
+    gate: Arc<StartupGate>,
+    workers: Vec<std::thread::JoinHandle<()>>,
+    session: Option<Arc<Session>>,
+    previous_credential: Option<(String, crate::mcp_creds::McpScope, std::time::Duration)>,
+    previous_settings: Option<Vec<u8>>,
+    committed: bool,
+    #[cfg(unix)]
+    master: Option<std::os::fd::OwnedFd>,
+}
+
+impl SessionStartup {
+    fn new(daemon: &Arc<Daemon>, id: u32) -> Result<Self> {
+        let previous_settings = match std::fs::read(daemon.claude_settings_path(id)) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        Ok(Self {
+            daemon: Arc::clone(daemon),
+            id,
+            child: Arc::new(Mutex::new(None)),
+            gate: Arc::new(StartupGate::default()),
+            workers: Vec::new(),
+            session: None,
+            previous_credential: daemon.mcp_creds.export_for_session(id),
+            previous_settings,
+            committed: false,
+            #[cfg(unix)]
+            master: None,
+        })
+    }
+}
+
+impl Drop for SessionStartup {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        self.gate.finish(false);
+        if let Some(mut child) = self.child.lock().expect("startup child lock").take() {
+            #[cfg(unix)]
+            let killed = match child.process_id() {
+                // The gated waiter has not reaped this child, so its PID cannot be recycled.
+                Some(pid) => crate::pid::terminate_pty_session(
+                    pid,
+                    self.master.as_ref().map(std::os::fd::AsRawFd::as_raw_fd),
+                    crate::pid::process_creation_token(pid),
+                )
+                .map_err(std::io::Error::other),
+                None => child.kill(),
+            };
+            #[cfg(not(unix))]
+            let killed = child.kill();
+            if let Err(error) = killed {
+                #[cfg(unix)]
+                if let Some(pid) = child.process_id() {
+                    let _ = crate::pid::signal_process_checked(pid, crate::pid::Signal::Kill);
+                }
+                tracing::warn!(
+                    "killing owned startup process for session {}: {error}",
+                    self.id
+                );
+            }
+            if let Err(error) = child.wait() {
+                tracing::warn!(
+                    "reaping owned startup process for session {}: {error}",
+                    self.id
+                );
+            }
+        }
+        if let Some(session) = &self.session {
+            session.backend.release_pty();
+            if let Some(worker) = session
+                .reader_worker
+                .lock()
+                .expect("reader worker lock")
+                .take()
+            {
+                let _ = worker.join();
+            }
+        }
+        for worker in self.workers.drain(..) {
+            let _ = worker.join();
+        }
+        let settings = self.daemon.claude_settings_path(self.id);
+        let cleanup = match &self.previous_settings {
+            Some(bytes) => crate::agent_hooks::atomic_config_write(&settings, bytes),
+            None => match std::fs::remove_file(&settings) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.into()),
+            },
+        };
+        if let Err(error) = cleanup {
+            tracing::warn!(
+                "restoring startup settings for session {}: {error:#}",
+                self.id
+            );
+        }
+        self.daemon.mcp_creds.revoke_session(self.id);
+        if let Some((hash, scope, remaining)) = self.previous_credential.take() {
+            self.daemon.mcp_creds.import_hashed(hash, scope, remaining);
+        }
+    }
+}
+
+#[cfg(feature = "test-barriers")]
+#[derive(Default)]
+struct StartupTest {
+    fault: Option<&'static str>,
+    spawned: Option<Box<dyn Fn(u32, u32) + Send + Sync>>,
 }
 
 struct SpawnParams {
@@ -2923,6 +3306,8 @@ impl Daemon {
             tags: Mutex::new(tag_registry),
             dead: Mutex::new(dead),
             dead_geometry: Mutex::new(HashMap::new()),
+            #[cfg(feature = "test-barriers")]
+            startup_test: Mutex::new(StartupTest::default()),
             respawned_as: Mutex::new(HashMap::new()),
             workspace_membership: Mutex::new(()),
             session_lifecycle_lock: Mutex::new(()),
@@ -2984,6 +3369,7 @@ impl Daemon {
             inbox_waiting: Mutex::new(HashMap::new()),
             inbox_delivering: Mutex::new(HashMap::new()),
             temporary_cleanup_lock: Mutex::new(()),
+            closing_sessions: Mutex::new(HashSet::new()),
             spawn_reservations: Mutex::new(HashMap::new()),
             worktree_branch_reservations: Mutex::new(HashMap::new()),
             pending_cleanup_cancellations: Mutex::new(HashSet::new()),
@@ -2996,6 +3382,7 @@ impl Daemon {
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),
             instruction_dispatch_lock: Mutex::new(()),
+            instruction_writes: Mutex::new(HashMap::new()),
             instruction_wake_active: Mutex::new(HashSet::new()),
             paste_confirmations: Mutex::new(HashMap::new()),
             first_prompts: Mutex::new(HashMap::new()),
@@ -3763,6 +4150,20 @@ impl Daemon {
         }
     }
 
+    #[cfg(unix)]
+    fn retained_exited_readers(&self) -> Vec<u32> {
+        self.sessions
+            .lock()
+            .expect("sessions lock")
+            .iter()
+            .filter(|(_, session)| {
+                !session.state.lock().expect("state lock").is_live()
+                    && session.has_retained_reader()
+            })
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     fn handoff_support_summary(&self) -> proto::ManageHandoffInfo {
         #[cfg(unix)]
         {
@@ -3791,6 +4192,10 @@ impl Daemon {
                     reason: "this daemon was not started with a transferable listener/lock"
                         .to_string(),
                 };
+            }
+            let pending = self.retained_exited_readers();
+            if !pending.is_empty() {
+                return proto::ManageHandoffInfo { supported: false, reason: format!("exited PTY session(s) {pending:?} retain output readers; close them before handoff") };
             }
             let live_ssh: Vec<u32> = self
                 .sessions
@@ -3828,7 +4233,7 @@ impl Daemon {
             remaining.retain(|id| {
                 let sessions = self.sessions.lock().expect("sessions lock");
                 match sessions.get(id) {
-                    Some(s) => !s.backend_exited.load(Ordering::Acquire),
+                    Some(s) => !s.backend_exited.load(Ordering::Acquire) || s.has_retained_reader(),
                     None => false,
                 }
             });
@@ -3878,7 +4283,9 @@ impl Daemon {
             .lock()
             .expect("sessions lock")
             .iter()
-            .filter(|(_, s)| s.state.lock().expect("state lock").is_live())
+            .filter(|(_, s)| {
+                s.state.lock().expect("state lock").is_live() || s.has_retained_reader()
+            })
             .map(|(id, _)| *id)
             .collect();
         match guard {
@@ -4126,6 +4533,10 @@ impl Daemon {
         let _reap = self.handoff_reap.lock().expect("handoff reap lock");
 
         let candidate = handoff_binary(candidate_bin)?;
+        let pending = self.retained_exited_readers();
+        if !pending.is_empty() {
+            return Err(format!("exited PTY session(s) {pending:?} retain output readers; close them before handoff"));
+        }
 
         let live_ssh: Vec<u32> = {
             let sessions = self.sessions.lock().expect("sessions lock");
@@ -4295,6 +4706,7 @@ impl Daemon {
             {
                 parked.push(*id);
             } else {
+                session.park.resume();
                 abort_reason = Some(format!(
                     "session {id} did not quiesce within {}ms",
                     adoption::QUIESCE_PARK_TIMEOUT_MS
@@ -4307,8 +4719,8 @@ impl Daemon {
             return Err(refuse(&mut sock, reason));
         }
 
-        // Readers are parked (including ACP delivery). Drain any hook pass or operator
-        // write admitted before handoff, then retain this fence through CommitAck.
+        // Fence native episode mutations through CommitAck; the manifest below refuses
+        // any admitted stdin job whose delivery or completion remains in flight.
         let _native_input = self
             .native_input_handoff
             .lock()
@@ -4531,6 +4943,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(
                 m.native_input
                     .as_ref()
@@ -4563,6 +4976,10 @@ impl Daemon {
             backend,
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
         })
     }
 
@@ -4621,6 +5038,11 @@ impl Daemon {
             else {
                 continue;
             };
+            if s.stdin_writes_in_flight.load(Ordering::Acquire) != 0 {
+                return Err(format!(
+                    "handoff refused for session {id}: stdin delivery is still in progress"
+                ));
+            }
             let (cols, rows) = s.geometry();
             let mcp_cred =
                 self.mcp_creds
@@ -7477,6 +7899,12 @@ impl Daemon {
         event: &str,
         cwd: Option<&str>,
     ) -> bool {
+        // In-memory permission holds precede lifecycle persistence. Fence hook
+        // admission against close reservation without waiting on persistence's guard.
+        let closing = self.closing_sessions.lock().expect("closing sessions lock");
+        if closing.contains(&id) {
+            return false;
+        }
         let sessions = self.sessions.lock().expect("sessions lock");
         let Some(s) = sessions.get(&id) else {
             return false;
@@ -7518,10 +7946,17 @@ impl Daemon {
         deliver_delegation: bool,
         prompt_id: Option<&str>,
     ) {
+        #[cfg(feature = "test-barriers")]
+        if event == "ACP" {
+            crate::test_barriers::pause("acp-event", id);
+        }
         let input_guard = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        if self.ensure_not_closing(id, "agent event").is_err() {
+            return;
+        }
         if ev == crate::agent_events::AgentEvent::NeedsInput {
             let episodes = self
                 .permission_episodes
@@ -7624,6 +8059,13 @@ impl Daemon {
             }
         }
         if ev.status() == proto::AgentStatus::Idle {
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            if self.ensure_not_closing(id, "retain delegation").is_err() {
+                return;
+            }
             if let Some(row) = self
                 .delegation_of(id)
                 .filter(|r| r.state == "done" && r.reusable)
@@ -8629,6 +9071,7 @@ impl Daemon {
         force: bool,
         conversation: RespawnConversation,
     ) -> Result<proto::SessionInfo> {
+        self.ensure_not_closing(old_id, "respawn")?;
         if let Some(dir) = &cwd_override {
             if !dir.is_dir() {
                 bail!(
@@ -8697,6 +9140,7 @@ impl Daemon {
             .expect("sessions lock")
             .get(&old_id)
             .cloned();
+        let mut ownership = None;
         #[allow(clippy::type_complexity)]
         let (
             agent,
@@ -8732,6 +9176,8 @@ impl Daemon {
                 );
                 }
             }
+            ownership = Some(self.reserve_ownership_replacement(old_id)?);
+            self.cleanup_session_ownership(old_id, old)?;
             (
                 old.info.agent,
                 old.project_dir.lock().expect("project_dir lock").clone(),
@@ -9059,16 +9505,20 @@ impl Daemon {
             }
             self.write_run_state();
         }
+        self.remote_forget_session(old_id);
         self.remove_persisted_scrollback(old_id);
         self.respawned_as
             .lock()
             .expect("respawned_as lock")
             .insert(old_id, spawned.id);
         self.voice.forget_session(old_id);
+        self.frame_taps.forget_session(old_id);
+        self.forget_session_visibility(old_id);
         self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: old_id });
         if let Some(parent) = spawned.spawned_by {
             self.broadcast_live_children(parent);
         }
+        drop(ownership);
         Ok(spawned)
     }
 
@@ -9209,7 +9659,7 @@ impl Daemon {
 
     /// A resumed CLI that exits non-zero within `RESUME_EARLY_EXIT` is relaunched fresh
     /// in its slot, once: the relaunch has no `--resume`, so it cannot loop.
-    fn resume_exited(self: &Arc<Self>, id: u32, exit_code: Option<i32>) {
+    fn resume_exited(self: &Arc<Self>, id: u32, exit_code: Option<i32>, exited_at: Instant) {
         if let Some(launched) = self
             .wake_launches
             .lock()
@@ -9220,7 +9670,7 @@ impl Daemon {
                 .lock()
                 .expect("resume launches lock")
                 .remove(&id);
-            let elapsed = launched.elapsed();
+            let elapsed = exited_at.saturating_duration_since(launched);
             if exit_code != Some(0) && elapsed < RESUME_EARLY_EXIT && !self.is_shutting_down() {
                 let reason = format!(
                     "Wake failed because the resumed CLI exited with {} within {} seconds; the exact conversation remains asleep.",
@@ -9243,7 +9693,7 @@ impl Daemon {
         else {
             return;
         };
-        let elapsed = launched.elapsed();
+        let elapsed = exited_at.saturating_duration_since(launched);
         if exit_code == Some(0) || elapsed >= RESUME_EARLY_EXIT || self.is_shutting_down() {
             self.wake_launches
                 .lock()
@@ -9283,8 +9733,11 @@ impl Daemon {
             .session_lifecycle_lock
             .lock()
             .expect("session lifecycle lock");
+        self.ensure_not_closing(id, "restore Wake placeholder")?;
         self.ensure_not_sleeping(id)?;
         let session = self.get(id)?;
+        let _ownership = self.reserve_ownership_replacement(id)?;
+        self.cleanup_session_ownership(id, &session)?;
         self.persist_scrollback_result(id)?;
         *session.state.lock().expect("state lock") = proto::SessionState::Sleeping;
         *session.sleep_notice.lock().expect("sleep notice lock") = Some(notice.to_string());
@@ -9673,12 +10126,45 @@ impl Daemon {
         true
     }
 
-    fn answer_terminal_queries(&self, id: u32, session: &Session, replies: &[u8]) {
+    fn answer_terminal_queries(&self, id: u32, session: &Arc<Session>, replies: &[u8]) {
         if replies.is_empty() {
             return;
         }
-        if let Err(e) = session.backend.write_stdin(id, replies) {
-            tracing::debug!("session {id}: answering a terminal query failed: {e}");
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("terminal-query", id);
+        // Reader replies bypass lifecycle admission so ownership transitions can
+        // drain them. The same bounded FIFO still serializes all PTY writes;
+        // termination interrupts its writer, including replies admitted concurrently.
+        if self.refusing_mutations()
+            || session.reader_cancel.load(Ordering::Acquire)
+            || session.removed.load(Ordering::Acquire)
+            || !session.state.lock().expect("state lock").is_live()
+        {
+            return;
+        }
+        let tx = self.tx.clone();
+        let result = session.enqueue_stdin(
+            id,
+            replies,
+            None,
+            Box::new(move |result| {
+                if let Err(error) = result {
+                    let msg = proto::ServerMsg::Error {
+                        message: format!("session {id} terminal reply delivery failed: {error}"),
+                        context: Some("stdin".into()),
+                    };
+                    let json = serde_json::to_string(&msg).expect("ServerMsg serializes");
+                    let _ = tx.send(Outbound::Control(Arc::new(json)));
+                }
+            }),
+            None,
+            None,
+        );
+        if let Err(error) = result {
+            self.broadcast_control(&proto::ServerMsg::Error {
+                message: format!("session {id} terminal reply admission failed: {error}"),
+                context: Some("stdin".into()),
+            });
         }
     }
 
@@ -9771,27 +10257,202 @@ impl Daemon {
         }
     }
 
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn pty_reader_active_for_test(&self, id: u32) -> bool {
+        self.get(id)
+            .is_ok_and(|session| session.has_retained_reader())
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn pty_reader_completion_for_test(
+        &self,
+        id: u32,
+    ) -> Result<Box<dyn Fn() -> bool + Send + Sync>> {
+        let done = Arc::clone(&self.get(id)?.reader_done);
+        Ok(Box::new(move || *done.0.lock().expect("reader done lock")))
+    }
+
+    #[cfg(all(target_os = "linux", feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn pty_root_identity_for_test(&self, id: u32) -> Result<(u32, u64)> {
+        let pid = self
+            .get(id)?
+            .pid
+            .ok_or_else(|| anyhow!("session {id}: no PTY root"))?;
+        let creation = crate::pid::process_creation_token(pid)
+            .ok_or_else(|| anyhow!("session {id}: PTY root {pid} missing"))?;
+        Ok((pid, creation))
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn stdin_jobs_for_test(&self, id: u32) -> Result<usize> {
+        let session = self.get(id)?;
+        let jobs = session.stdin_queue.lock().expect("stdin queue lock").jobs;
+        Ok(jobs)
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn pty_cleanup_started_for_test(&self, id: u32) -> bool {
+        self.get(id)
+            .is_ok_and(|session| session.reader_cancel.load(Ordering::Acquire))
+    }
+
+    #[cfg(all(unix, feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn cancel_pty_reader_for_test(&self, id: u32) -> Result<()> {
+        self.get(id)?.cancel_pty_reader();
+        Ok(())
+    }
+
+    #[cfg(all(unix, feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn pty_reader_poll_returns_for_test(&self, id: u32) -> Result<u64> {
+        Ok(self.get(id)?.park.poll_returns.load(Ordering::Relaxed))
+    }
+
+    #[cfg(all(unix, feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn park_pty_reader_for_test(&self, id: u32, timeout: Duration) -> Result<bool> {
+        Ok(self.get(id)?.park.request_and_wait(timeout))
+    }
+
+    #[cfg(all(unix, feature = "test-barriers"))]
+    #[doc(hidden)]
+    pub fn resume_pty_reader_for_test(&self, id: u32) -> Result<()> {
+        self.get(id)?.park.resume();
+        Ok(())
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn mark_wake_launch_for_test(&self, id: u32) {
+        self.wake_launches
+            .lock()
+            .expect("wake launches lock")
+            .insert(id, Instant::now());
+    }
+
     fn spawn_pty_reader_thread(
         self: &Arc<Self>,
         id: u32,
         session: &Arc<Session>,
         reader: Box<dyn Read + Send>,
     ) {
+        let worker = self
+            .prepare_pty_reader_thread(id, session, reader, None)
+            .expect("spawn pty reader thread");
+        *session.reader_worker.lock().expect("reader worker lock") = Some(worker);
+    }
+
+    fn prepare_pty_reader_thread(
+        self: &Arc<Self>,
+        id: u32,
+        session: &Arc<Session>,
+        reader: Box<dyn Read + Send>,
+        gate: Option<Arc<StartupGate>>,
+    ) -> std::io::Result<std::thread::JoinHandle<()>> {
         #[cfg(unix)]
-        ensure_quiesce_signal_installed();
+        let wake = Arc::new(ReaderWake::new()?);
+        #[cfg(unix)]
+        let poll_fd = session
+            .backend
+            .adoption_master_fd()
+            .map(|fd| {
+                // SAFETY: the backend retains its master throughout reader preparation.
+                unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()
+            })
+            .transpose()?
+            .ok_or_else(|| {
+                std::io::Error::other(format!(
+                    "session {id}: Unix PTY reader requires a pollable master descriptor"
+                ))
+            })?;
         let daemon = Arc::clone(self);
         let reader_session = Arc::clone(session);
         std::thread::Builder::new()
             .name(format!("pty-read-{id}"))
             .spawn(move || {
+                if gate.is_some_and(|gate| !gate.wait()) {
+                    return;
+                }
                 #[cfg(unix)]
-                // SAFETY: `pthread_self` takes no arguments and has no preconditions.
-                reader_session
-                    .park
-                    .set_reader_tid(unsafe { libc::pthread_self() });
+                {
+                    reader_session
+                        .park
+                        .inner
+                        .lock()
+                        .expect("park lock")
+                        .reader_wake = Some(Arc::clone(&wake));
+                }
                 let mut reader = reader;
                 let mut buf = vec![0u8; PTY_READ_BUF];
+                #[cfg(unix)]
+                let mut drain_started = None;
                 loop {
+                    #[cfg(unix)]
+                    reader_session.park.check_and_wait_if_requested();
+                    #[cfg(unix)]
+                    {
+                        use std::os::fd::AsRawFd;
+                        let fd = &poll_fd;
+                        let cancelling = reader_session.reader_cancel.load(Ordering::Acquire);
+                        if cancelling && drain_started.is_none() {
+                            drain_started = Some(Instant::now());
+                        }
+                        if drain_started
+                            .is_some_and(|start: Instant| start.elapsed() >= PTY_READER_FINAL_DRAIN)
+                        {
+                            break;
+                        }
+                        let mut polls = [
+                            libc::pollfd {
+                                fd: fd.as_raw_fd(),
+                                events: libc::POLLIN,
+                                revents: 0,
+                            },
+                            libc::pollfd {
+                                fd: wake.read.as_raw_fd(),
+                                events: libc::POLLIN,
+                                revents: 0,
+                            },
+                        ];
+                        // SAFETY: both entries and their owned descriptors remain valid throughout poll.
+                        let ready = unsafe {
+                            libc::poll(
+                                polls.as_mut_ptr(),
+                                polls.len() as libc::nfds_t,
+                                if cancelling { 0 } else { -1 },
+                            )
+                        };
+                        #[cfg(feature = "test-barriers")]
+                        reader_session
+                            .park
+                            .poll_returns
+                            .fetch_add(1, Ordering::Relaxed);
+                        if ready == 0 && cancelling {
+                            break;
+                        }
+                        if ready < 0 {
+                            if std::io::Error::last_os_error().kind()
+                                == std::io::ErrorKind::Interrupted
+                            {
+                                continue;
+                            }
+                            break;
+                        }
+                        if polls[1].revents != 0 {
+                            wake.consume();
+                            // Recheck park/cancel before consuming PTY bytes.
+                            continue;
+                        }
+                        if polls[0].revents == 0 {
+                            continue;
+                        }
+                    }
                     match reader.read(&mut buf) {
                         Ok(0) => break,
                         Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
@@ -9800,6 +10461,15 @@ impl Daemon {
                         Ok(_) => {}
                     }
                     reader_session.park.check_and_wait_if_requested();
+                }
+                #[cfg(unix)]
+                {
+                    reader_session
+                        .park
+                        .inner
+                        .lock()
+                        .expect("park lock")
+                        .reader_wake = None;
                 }
                 daemon.flush_shell_token_redactor(id, &reader_session);
                 let is_hidden = daemon
@@ -9814,8 +10484,35 @@ impl Daemon {
                     daemon.persist_scrollback(id);
                     daemon.note_backend_eof_for_supervisor(id);
                 }
+                drop(reader);
+                #[cfg(unix)]
+                drop(poll_fd);
+                let (done, changed) = &*reader_session.reader_done;
+                *done.lock().expect("reader done lock") = true;
+                changed.notify_all();
             })
-            .expect("spawn pty reader thread");
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn set_startup_test(
+        &self,
+        fault: Option<&'static str>,
+        spawned: Box<dyn Fn(u32, u32) + Send + Sync>,
+    ) {
+        *self.startup_test.lock().expect("startup test lock") = StartupTest {
+            fault,
+            spawned: Some(spawned),
+        };
+    }
+
+    #[cfg(feature = "test-barriers")]
+    fn startup_fault(&self, point: &str) -> Result<()> {
+        anyhow::ensure!(
+            self.startup_test.lock().expect("startup test lock").fault != Some(point),
+            "injected startup failure at {point}"
+        );
+        Ok(())
     }
 
     fn spawn_session(self: &Arc<Self>, p: SpawnParams) -> Result<proto::SessionInfo> {
@@ -10013,6 +10710,7 @@ impl Daemon {
         if let Some(conversation) = &preassigned {
             cmd.args(["--session-id", conversation]);
         }
+        let mut startup = SessionStartup::new(self, id)?;
         let mcp = self.mint_mcp_launch(id, agent, &project_dir);
         for a in &mcp.args {
             cmd.arg(a);
@@ -10159,6 +10857,39 @@ impl Daemon {
                 id,
             );
         }
+        #[cfg(feature = "test-barriers")]
+        self.startup_fault("reader-handle")?;
+        let reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| anyhow!("cloning PTY reader: {e}"))?;
+        #[cfg(unix)]
+        let writer: Box<dyn Write + Send> = {
+            let fd = pair
+                .master
+                .as_raw_fd()
+                .ok_or_else(|| anyhow!("session {id}: PTY master requires a file descriptor"))?;
+            // SAFETY: pair.master owns fd throughout duplication; the resulting File closes without a blocking EOF write.
+            let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()?;
+            Box::new(std::fs::File::from(owned))
+        };
+        #[cfg(not(unix))]
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| anyhow!("taking PTY writer: {e}"))?;
+
+        #[cfg(unix)]
+        {
+            let fd = pair
+                .master
+                .as_raw_fd()
+                .ok_or_else(|| anyhow!("session {id}: missing startup PTY descriptor"))?;
+            // SAFETY: pair.master retains the descriptor during duplication.
+            startup.master =
+                Some(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()?);
+        }
+
         #[cfg(windows)]
         let shell_spawn_fallbacks = if agent == proto::AgentKind::Shell && injected_shell.is_none()
         {
@@ -10169,43 +10900,31 @@ impl Daemon {
             Vec::new()
         };
         #[cfg(windows)]
-        let mut child = spawn_with_shell_fallback(&*pair.slave, cmd, shell_spawn_fallbacks, id)?;
+        let child = spawn_with_shell_fallback(&*pair.slave, cmd, shell_spawn_fallbacks, id)?;
         #[cfg(not(windows))]
-        let mut child = pair
+        let child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| anyhow!("spawning agent for session {id} failed: {e}"))?;
-        #[cfg(target_os = "linux")]
-        if let Some(directory) = codex_runtime_dir {
-            let _ = directory.keep();
-        }
         drop(pair.slave);
-
         let pid = child.process_id();
         let killer = child.clone_killer();
-        let reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| anyhow!("cloning PTY reader: {e}"))
-            .context(orchestrate::MutationMayHaveActed)?;
-        #[cfg(unix)]
-        let writer: Box<dyn Write + Send> = {
-            let fd = pair
-                .master
-                .as_raw_fd()
-                .ok_or_else(|| anyhow!("session {id}: PTY master requires a file descriptor"))
-                .context(orchestrate::MutationMayHaveActed)?;
-            // SAFETY: pair.master owns fd throughout duplication; the resulting File closes without a blocking EOF write.
-            let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }
-                .try_clone_to_owned()
-                .context(orchestrate::MutationMayHaveActed)?;
-            Box::new(std::fs::File::from(owned))
-        };
-        #[cfg(not(unix))]
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| anyhow!("taking PTY writer: {e}"))
+        *startup.child.lock().expect("startup child lock") = Some(child);
+        #[cfg(feature = "test-barriers")]
+        {
+            if let (Some(pid), Some(spawned)) = (
+                pid,
+                self.startup_test
+                    .lock()
+                    .expect("startup test lock")
+                    .spawned
+                    .as_ref(),
+            ) {
+                spawned(id, pid);
+            }
+        }
+        #[cfg(feature = "test-barriers")]
+        self.startup_fault("after-spawn")
             .context(orchestrate::MutationMayHaveActed)?;
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
@@ -10322,6 +11041,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(false),
             #[cfg(unix)]
             native_input_recovery: None,
@@ -10350,7 +11070,163 @@ impl Daemon {
             },
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
         });
+        startup.session = Some(Arc::clone(&session));
+        let prepare = || -> Result<()> {
+            #[cfg(feature = "test-barriers")]
+            self.startup_fault("reader-thread")?;
+            let worker = self
+                .prepare_pty_reader_thread(id, &session, reader, Some(Arc::clone(&startup.gate)))
+                .context("starting PTY reader worker")?;
+            *session.reader_worker.lock().expect("reader worker lock") = Some(worker);
+            let daemon = Arc::clone(self);
+            let child = Arc::clone(&startup.child);
+            let owned_session = Arc::clone(&session);
+            let gate = Arc::clone(&startup.gate);
+            #[cfg(feature = "test-barriers")]
+            self.startup_fault("wait-thread")?;
+            let worker = std::thread::Builder::new()
+                .name(format!("pty-wait-{id}"))
+                .spawn(move || {
+                    if !gate.wait() {
+                        return;
+                    }
+                    let mut child = child
+                        .lock()
+                        .expect("startup child lock")
+                        .take()
+                        .expect("owned startup child");
+                    #[cfg(target_os = "linux")]
+                    let observed = {
+                        use nix::sys::wait::{waitid, Id, WaitPidFlag};
+                        if let Some(pid) = pid {
+                            loop {
+                                match waitid(
+                                    Id::Pid(nix::unistd::Pid::from_raw(pid as i32)),
+                                    WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
+                                ) {
+                                    Err(nix::errno::Errno::EINTR) => continue,
+                                    status => break status,
+                                }
+                            }
+                        } else {
+                            Err(nix::errno::Errno::ECHILD)
+                        }
+                    };
+                    #[cfg(target_os = "linux")]
+                    let _reap = {
+                        let guard = daemon.handoff_reap.lock().expect("handoff reap lock");
+                        if daemon.has_handed_off() {
+                            return;
+                        }
+                        guard
+                    };
+                    #[cfg(target_os = "linux")]
+                    let exit_code = match observed {
+                        Ok(nix::sys::wait::WaitStatus::Exited(_, code)) => Some(code),
+                        Ok(nix::sys::wait::WaitStatus::Signaled(_, signal, _)) => {
+                            Some(128 + signal as i32)
+                        }
+                        _ => None,
+                    };
+                    #[cfg(not(target_os = "linux"))]
+                    let exit_code = child.wait().ok().map(|status| status.exit_code() as i32);
+
+                    #[cfg(all(target_os = "linux", feature = "test-barriers"))]
+                    crate::test_barriers::pause("pty-exit-observed", id);
+                    let exited_at = Instant::now();
+                    if hidden {
+                        daemon.handoff_exit(id, exit_code);
+                    } else {
+                        let parent = daemon.parent_of(id);
+                        let state = daemon.finish_session(id, exit_code);
+                        daemon.broadcast_control(&proto::ServerMsg::SessionState {
+                            session: id,
+                            state,
+                            exit_code,
+                        });
+                        if let Some(parent) = parent {
+                            daemon.broadcast_live_children(parent);
+                        }
+                        daemon.delegation_child_exited(id);
+                        daemon.routine_pane_exited(id);
+                    }
+                    #[cfg(target_os = "linux")]
+                    drop(_reap);
+                    // A failed resume may have a quiet descendant retaining the slave.
+                    // Drain before reaping, then invoke replacement callbacks only after
+                    // publishing reap completion: they can wait for ownership themselves.
+                    let failed_resume = exit_code != Some(0)
+                        && [&daemon.wake_launches, &daemon.resume_launches].iter().any(
+                            |launches| {
+                                launches
+                                    .lock()
+                                    .expect("resume launches lock")
+                                    .get(&id)
+                                    .is_some_and(|launched| exited_at.saturating_duration_since(*launched) < RESUME_EARLY_EXIT)
+                            },
+                        );
+                    if failed_resume {
+                        if let Err(error) = daemon.drain_session_reader(id, &owned_session) {
+                            tracing::error!(
+                                "session {id}: failed resume cleanup retains ownership: {error:#}"
+                            );
+                        }
+                    }
+                    {
+                        let session = owned_session;
+                        #[cfg(target_os = "linux")]
+                        {
+                            let (done, changed) = &*session.reader_done;
+                            let mut done = done.lock().expect("reader done lock");
+                            while !*done {
+                                done = changed.wait(done).expect("reader done wait");
+                            }
+                            drop(done);
+                            let _reap = daemon.handoff_reap.lock().expect("handoff reap lock");
+                            if daemon.has_handed_off() {
+                                return;
+                            }
+                            // Holding master excludes close/kill while the root anchor is reaped.
+                            if let Backend::Pty { master, .. } = &session.backend {
+                                let mut master = master.lock().expect("master lock");
+                                if let Err(error) = child.wait() {
+                                    tracing::error!("session {id}: PTY root reap failed; ownership remains registered: {error}");
+                                    return;
+                                }
+                                *master = None;
+                            }
+                        }
+                        session.backend.release_pty();
+                        let (done, changed) = &*session.pty_reaped;
+                        *done.lock().expect("PTY reap lock") = true;
+                        changed.notify_all();
+                    }
+                    if !hidden {
+                        daemon.resume_exited(id, exit_code, exited_at);
+                    }
+                })
+                .context("starting PTY wait worker")?;
+            startup.workers.push(worker);
+            Ok(())
+        };
+        if hidden {
+            prepare().context(orchestrate::MutationMayHaveActed)?;
+        } else {
+            self.db
+                .insert_session_for_startup(
+                    &info,
+                    title_source.as_str(),
+                    Self::agent_profile_config_dir(agent, &extra_env),
+                    prepare,
+                )
+                .context(orchestrate::MutationMayHaveActed)?;
+        }
+        // No fallible setup remains. Publish before releasing output/exit workers.
         self.sessions
             .lock()
             .expect("sessions lock")
@@ -10358,19 +11234,22 @@ impl Daemon {
         self.write_run_state();
         self.reap_reevaluate();
         if !hidden {
-            self.db
-                .insert_session_with_title_source(&info, Some(title_source.as_str()))
-                .context(orchestrate::MutationMayHaveActed)?;
-            self.db
-                .set_session_profile_config_dir(
-                    id,
-                    Self::agent_profile_config_dir(agent, &extra_env),
-                )
-                .context(orchestrate::MutationMayHaveActed)?;
             self.record_launch_conversation(id, resumed, preassigned, resume_handle);
             let mut created = info.clone();
             created.compactions = self.compactions_of(&created);
             self.broadcast_control(&proto::ServerMsg::SessionCreated { info: created });
+        }
+        if let Some(token_file) = shellint_token_file {
+            token_file.disarm();
+        }
+        startup.committed = true;
+        if hidden {
+            self.handoff_started(id);
+        }
+        startup.gate.finish(true);
+        #[cfg(target_os = "linux")]
+        if let Some(directory) = codex_runtime_dir {
+            let _ = directory.keep();
         }
 
         if let Some(parent) = spawned_by {
@@ -10384,54 +11263,6 @@ impl Daemon {
                 );
             }
         }
-        self.spawn_pty_reader_thread(id, &session, reader);
-
-        let daemon = Arc::clone(self);
-        std::thread::Builder::new()
-            .name(format!("pty-wait-{id}"))
-            .spawn(move || {
-                #[cfg(target_os = "linux")]
-                let _reap = {
-                    if let Some(pid) = pid {
-                        use nix::sys::wait::{waitid, Id, WaitPidFlag};
-                        // Observe exit without consuming it: a committed handoff leaves
-                        // the zombie for the supervisor to reap and report to its new owner.
-                        while let Err(nix::errno::Errno::EINTR) = waitid(
-                            Id::Pid(nix::unistd::Pid::from_raw(pid as i32)),
-                            WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
-                        ) {}
-                    }
-                    let guard = daemon.handoff_reap.lock().expect("handoff reap lock");
-                    if daemon.has_handed_off() {
-                        return;
-                    }
-                    guard
-                };
-                let status = child.wait();
-                if let Some(s) = daemon.sessions.lock().expect("sessions lock").get(&id) {
-                    s.backend.release_pty();
-                }
-                let exit_code = status.as_ref().ok().map(|s| s.exit_code() as i32);
-                if hidden {
-                    daemon.handoff_exit(id, exit_code);
-                    return;
-                }
-                let parent = daemon.parent_of(id);
-                let state = daemon.finish_session(id, exit_code);
-                daemon.broadcast_control(&proto::ServerMsg::SessionState {
-                    session: id,
-                    state,
-                    exit_code,
-                });
-                if let Some(parent) = parent {
-                    daemon.broadcast_live_children(parent);
-                }
-                daemon.delegation_child_exited(id);
-                daemon.routine_pane_exited(id);
-                daemon.resume_exited(id, exit_code);
-            })
-            .expect("spawn pty wait thread");
-
         if let Some((code, cause)) = unavailable_cause {
             self.note_codex_status_unavailable(id, code, cause);
         }
@@ -10445,10 +11276,6 @@ impl Daemon {
             }
         }
 
-        if let Some(token_file) = shellint_token_file {
-            token_file.disarm();
-        }
-
         Ok(info)
     }
 
@@ -10460,8 +11287,7 @@ impl Daemon {
         if let Some(session) = self.sessions.lock().expect("sessions lock").get(&id) {
             session.remove_shell_token_file();
             if session.removed.load(Ordering::Acquire) {
-                // Temporary cleanup marks the session before closing its durable row. Do not let
-                // a concurrent PTY/supervisor completion overwrite that closed state with exited.
+                // A removed pane has already committed its durable close.
                 return proto::SessionState::Exited;
             }
         }
@@ -10749,6 +11575,7 @@ impl Daemon {
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             stdin_writes_in_flight: AtomicU32::new(0),
+            stdin_queue: Mutex::new(StdinQueue::default()),
             lifecycle_hook_seen: AtomicBool::new(false),
             #[cfg(unix)]
             native_input_recovery: None,
@@ -10769,6 +11596,10 @@ impl Daemon {
             backend: Backend::Ssh(handle),
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
+            reader_done: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            pty_reaped: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            reader_cancel: AtomicBool::new(false),
+            reader_worker: Mutex::new(None),
         });
         self.sessions
             .lock()
@@ -10805,7 +11636,16 @@ impl Daemon {
             crate::ssh::post_connect_directory(params.default_dir.as_deref())
         };
         for line in lines {
-            if let Err(e) = self.write_stdin(id, line.as_bytes()) {
+            if let Err(e) = self.enqueue_stdin(
+                id,
+                line.as_bytes(),
+                Box::new(move |result| {
+                    if let Err(error) = result {
+                        tracing::warn!("SSH post-connect delivery failed on session {id}: {error}");
+                    }
+                }),
+                None,
+            ) {
                 tracing::warn!("SSH post-connect line failed on session {id}: {e}");
                 break;
             }
@@ -11420,7 +12260,70 @@ impl Daemon {
     }
 
     pub fn write_stdin(&self, id: u32, data: &[u8]) -> Result<()> {
-        self.write_stdin_counting(id, data).map_err(|e| e.error)
+        self.write_stdin_counting(id, data)
+            .map_err(|error| anyhow!("{error}"))
+    }
+
+    fn stdin_session(&self, id: u32) -> std::result::Result<Arc<Session>, StdinWriteError> {
+        self.ensure_not_sleeping(id)
+            .map_err(StdinWriteError::nothing)?;
+        if self.dead.lock().expect("dead lock").contains_key(&id) {
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} is not running (restored after a daemon restart) — respawn it"
+            )));
+        }
+        let session = self.get(id).map_err(StdinWriteError::nothing)?;
+        let state = *session.state.lock().expect("state lock");
+        if !state.is_live() {
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} is {state:?}; stdin requires a live session"
+            )));
+        }
+        Ok(session)
+    }
+
+    fn enqueue_stdin(
+        &self,
+        id: u32,
+        data: &[u8],
+        completion: StdinCompletion,
+        prepare: Option<Box<dyn FnOnce() + Send>>,
+    ) -> std::result::Result<(), StdinWriteError> {
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.enqueue_stdin_admitted(id, data, completion, prepare, None)
+    }
+
+    // The caller owns cleanup admission. Never take lifecycle from inside cleanup:
+    // hooks and ownership replacement acquire those locks in the opposite order.
+    fn enqueue_stdin_admitted(
+        &self,
+        id: u32,
+        data: &[u8],
+        completion: StdinCompletion,
+        prepare: Option<Box<dyn FnOnce() + Send>>,
+        written: Option<StdinWritten>,
+    ) -> std::result::Result<(), StdinWriteError> {
+        self.ensure_not_closing(id, "stdin")
+            .map_err(StdinWriteError::nothing)?;
+        if self.refusing_mutations() {
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} stdin admission refused while daemon is handing off or shutting down"
+            )));
+        }
+        let session = self.stdin_session(id)?;
+        let cap = self
+            .stdin_partial_after
+            .lock()
+            .expect("stdin partial lock")
+            .remove(&id);
+        session.enqueue_stdin(id, data, cap, completion, prepare, written)
     }
 
     pub fn write_stdin_counting(
@@ -11428,50 +12331,133 @@ impl Daemon {
         id: u32,
         data: &[u8],
     ) -> std::result::Result<(), StdinWriteError> {
-        let session = {
-            let _lifecycle = self
-                .session_lifecycle_lock
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.enqueue_stdin(
+            id,
+            data,
+            Box::new(move |result| {
+                let _ = tx.send(result);
+            }),
+            None,
+        )?;
+        rx.recv().unwrap_or_else(|error| {
+            Err(StdinWriteError::unknown(anyhow!(
+                "session {id} stdin completion unavailable: {error}"
+            )))
+        })
+    }
+
+    fn admit_stdin_counting(
+        &self,
+        id: u32,
+        data: &[u8],
+    ) -> std::result::Result<StdinReceipt, StdinWriteError> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.enqueue_stdin_admitted(
+            id,
+            data,
+            Box::new(move |result| {
+                let _ = tx.send(result);
+            }),
+            None,
+            None,
+        )?;
+        Ok(rx)
+    }
+
+    fn wait_stdin_receipt(
+        id: u32,
+        receipt: std::result::Result<StdinReceipt, StdinWriteError>,
+    ) -> std::result::Result<(), StdinWriteError> {
+        receipt?.recv().unwrap_or_else(|error| {
+            Err(StdinWriteError::unknown(anyhow!(
+                "session {id} stdin completion unavailable: {error}"
+            )))
+        })
+    }
+
+    fn enqueue_renderer_stdin(
+        self: &Arc<Self>,
+        id: u32,
+        data: &[u8],
+        completion: StdinCompletion,
+    ) -> Result<()> {
+        let session = self.get(id)?;
+        let operator_input = !data.is_empty() && !is_terminal_report_only(data);
+        let _native_input = operator_input
+            .then(|| self.native_input_mutation_guard())
+            .transpose()?;
+        let marked = Arc::new(AtomicBool::new(false));
+        let prepare_marked = Arc::clone(&marked);
+        let prepare_daemon = Arc::clone(self);
+        let prepare = operator_input.then(|| {
+            Box::new(move || {
+                prepare_marked.store(
+                    prepare_daemon.note_input_intervention(id),
+                    Ordering::Release,
+                );
+            }) as Box<dyn FnOnce() + Send>
+        });
+        let completion_marked = Arc::clone(&marked);
+        let completion_session = Arc::clone(&session);
+        let result = self.enqueue_stdin(
+            id,
+            data,
+            Box::new(move |result| {
+                if completion_marked.load(Ordering::Acquire)
+                    && result.as_ref().is_err_and(StdinWriteError::nothing_written)
+                {
+                    completion_session
+                        .input_intervention
+                        .store(false, Ordering::Release);
+                    completion_session
+                        .input_intervention_id
+                        .lock()
+                        .expect("intervention input lock")
+                        .take();
+                }
+                completion(result);
+            }),
+            prepare,
+        );
+        if result.is_err() && marked.load(Ordering::Acquire) {
+            session.input_intervention.store(false, Ordering::Release);
+            session
+                .input_intervention_id
                 .lock()
-                .expect("session lifecycle lock");
-            self.ensure_not_sleeping(id)
-                .map_err(StdinWriteError::nothing)?;
-            if self.dead.lock().expect("dead lock").contains_key(&id) {
-                return Err(StdinWriteError::nothing(anyhow!(
-                    "session {id} is not running (restored after a daemon restart) — respawn it"
-                )));
-            }
-            let session = self.get(id).map_err(StdinWriteError::nothing)?;
-            let state = *session.state.lock().expect("state lock");
-            if !state.is_live() {
-                return Err(StdinWriteError::nothing(anyhow!(
-                    "session {id} is {state:?}; stdin requires a live session"
-                )));
-            }
-            session
-                .stdin_writes_in_flight
-                .fetch_add(1, Ordering::AcqRel);
-            session
-        };
-        let _admission = StdinWriteAdmission(Arc::clone(&session));
-        if let Some(cap) = self
-            .stdin_partial_after
-            .lock()
-            .expect("stdin partial lock")
-            .remove(&id)
-        {
-            let head = cap.min(data.len());
-            let _ = session.backend.write_stdin(id, &data[..head]);
-            return Err(StdinWriteError {
-                written: Some(head),
-                error: anyhow!("injected partial write for session {id}"),
-            });
+                .expect("intervention input lock")
+                .take();
         }
-        session.backend.write_stdin_counting(id, data)
+        result.map_err(|error| anyhow!("{error}"))
+    }
+
+    pub fn enqueue_stdin_from_renderer(
+        self: &Arc<Self>,
+        id: u32,
+        data: &[u8],
+        conn: u64,
+    ) -> Result<()> {
+        let daemon = Arc::clone(self);
+        self.enqueue_renderer_stdin(
+            id,
+            data,
+            Box::new(move |result| {
+                if let Err(error) = result {
+                    tracing::warn!(session_id = id, %error, "stdin delivery failed");
+                    daemon.send_control_to(
+                        conn,
+                        &proto::ServerMsg::Error {
+                            message: format!("session {id} stdin delivery failed: {error}"),
+                            context: Some("stdin".into()),
+                        },
+                    );
+                }
+            }),
+        )
     }
 
     pub fn write_stdin_from_renderer(&self, id: u32, data: &[u8]) -> Result<()> {
         let Ok(session) = self.get(id) else {
-            // Bytes the renderer had in flight when the operator closed the pane.
             if self.db.session_is_closed(id)? {
                 return Ok(());
             }
@@ -11480,20 +12466,19 @@ impl Daemon {
         if !session.state.lock().expect("state lock").is_live() {
             return Ok(());
         }
-        let operator_input = !data.is_empty() && !is_terminal_report_only(data);
-        let _native_input = operator_input
-            .then(|| self.native_input_mutation_guard())
-            .transpose()?;
-        let marked = operator_input && self.note_input_intervention(id);
-        let result = self.write_stdin_counting(id, data);
-        if marked && result.as_ref().is_err_and(StdinWriteError::nothing_written) {
-            session.input_intervention.store(false, Ordering::Release);
-            session
-                .input_intervention_id
-                .lock()
-                .expect("intervention input lock")
-                .take();
-        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.self_arc()
+            .expect("daemon owns itself weakly")
+            .enqueue_renderer_stdin(
+                id,
+                data,
+                Box::new(move |result| {
+                    let _ = tx.send(result);
+                }),
+            )?;
+        let result = rx
+            .recv()
+            .map_err(|error| anyhow!("session {id} stdin completion unavailable: {error}"))?;
         if !session.state.lock().expect("state lock").is_live() {
             return Ok(());
         }
@@ -11514,6 +12499,26 @@ impl Daemon {
             Ok(session) => session.stdin_writes_in_flight.load(Ordering::Acquire) != 0,
             Err(_) => false,
         }
+    }
+
+    #[doc(hidden)]
+    #[cfg(unix)]
+    pub fn stdin_writer_receipt_for_test(
+        &self,
+        id: u32,
+    ) -> Result<Box<dyn Fn() -> bool + Send + Sync>> {
+        let session = self.get(id)?;
+        Ok(Box::new(move || match &session.backend {
+            Backend::Pty { interrupt, .. } => interrupt.active_for_test(),
+            Backend::AdoptedPty(raw) => raw.writer_active_for_test(),
+            Backend::Ssh(_) => false,
+        }))
+    }
+
+    #[doc(hidden)]
+    pub fn stdin_cleanup_for_test(&self, id: u32) -> Result<Box<dyn FnOnce() + Send>> {
+        let session = self.get(id)?;
+        Ok(Box::new(move || session.backend.release_pty()))
     }
 
     pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(u16, u16)> {
@@ -11541,19 +12546,28 @@ impl Daemon {
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
+        let cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.ensure_not_closing(id, "kill")?;
         self.ensure_not_sleeping(id)?;
         self.ensure_not_shell_restoring(id)?;
         let session = self.get(id)?;
+        self.cancel_delegation(id)?;
+        drop(cleanup);
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("kill-admitted", id);
         session
             .backend
             .kill(id, session.pid, self.channel.as_deref())?;
+        session.cancel_pty_reader();
         session.remove_shell_token_file();
         self.operator_ended
             .lock()
             .expect("operator_ended lock")
             .insert(id);
         self.forget_resume_handle(id);
-        self.cancel_delegation(id);
         *session.state.lock().expect("state lock") = proto::SessionState::Killed;
         *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
         self.db
@@ -11929,57 +12943,211 @@ impl Daemon {
     }
 
     pub fn close(&self, id: u32) -> Result<()> {
-        let _lifecycle = self
-            .session_lifecycle_lock
-            .lock()
-            .expect("session lifecycle lock");
-        self.ensure_not_sleeping(id)?;
-        self.ensure_not_shell_restoring(id)?;
-        self.close_unlocked(id)
+        let reservation = {
+            let _lifecycle = self
+                .session_lifecycle_lock
+                .lock()
+                .expect("session lifecycle lock");
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            self.reserve_deliberate_close_locked(id)?
+        };
+        self.close_reserved(&reservation)
     }
 
-    fn close_unlocked(&self, id: u32) -> Result<()> {
-        self.ensure_not_sleeping(id)?;
-        self.ensure_not_shell_restoring(id)?;
-        self.escalate_child_inputs_locked(id, proto::ChildInputEscalationReason::ParentUnavailable);
-        for row in self.db.delegations_for_parent(id)? {
-            if row.child_session != id
-                && (self.get(row.child_session).is_ok()
-                    || self
-                        .dead
-                        .lock()
-                        .expect("dead lock")
-                        .contains_key(&row.child_session))
-            {
-                self.close_unlocked(row.child_session)?;
+    fn ensure_not_closing(&self, id: u32, operation: &str) -> Result<()> {
+        if self
+            .closing_sessions
+            .lock()
+            .expect("closing sessions lock")
+            .contains(&id)
+        {
+            bail!("{operation} refused: session {id} is closing");
+        }
+        Ok(())
+    }
+
+    // Callers take lifecycle before cleanup. Only admission uses these locks: reader
+    // callbacks and early exit publication must run while physical cleanup waits.
+    fn reserve_close_locked(&self, id: u32) -> Result<CloseReservation<'_>> {
+        let root = id;
+        let mut pending = vec![(id, false)];
+        let mut seen = HashSet::new();
+        let mut ids = Vec::new();
+        while let Some((id, visited)) = pending.pop() {
+            if visited {
+                ids.push(id);
+                continue;
+            }
+            if !seen.insert(id) {
+                continue;
+            }
+            self.ensure_not_closing(id, "close")?;
+            self.ensure_not_sleeping(id)?;
+            self.ensure_not_shell_restoring(id)?;
+            let known = self
+                .sessions
+                .lock()
+                .expect("sessions lock")
+                .contains_key(&id)
+                || self.dead.lock().expect("dead lock").contains_key(&id);
+            if !known {
+                if id == root {
+                    bail!("unknown session id {id} (expected an active or restored session)");
+                }
+                continue;
+            }
+            pending.push((id, true));
+            for row in self.db.delegations_for_parent(id)? {
+                if row.child_session != id {
+                    pending.push((row.child_session, false));
+                }
             }
         }
+        self.closing_sessions
+            .lock()
+            .expect("closing sessions lock")
+            .extend(ids.iter().copied());
+        Ok(CloseReservation { daemon: self, ids })
+    }
+
+    fn reserve_deliberate_close_locked(&self, id: u32) -> Result<CloseReservation<'_>> {
+        let reservation = self.reserve_close_locked(id)?;
+        // Project pending asks before cancellation expires descendant dialogue.
+        for &parent in reservation.ids.iter().rev() {
+            self.escalate_child_inputs_locked(
+                parent,
+                proto::ChildInputEscalationReason::ParentUnavailable,
+            );
+        }
+        // Persist deliberate cancellation before the waiter can publish natural exit.
+        // Cleanup failures retain the pane for retry, with its request already cancelled.
+        for &child in &reservation.ids {
+            self.cancel_delegation(child)?;
+        }
+        Ok(reservation)
+    }
+
+    fn close_reserved(&self, reservation: &CloseReservation<'_>) -> Result<()> {
+        #[cfg(feature = "test-barriers")]
+        if let Some(id) = reservation.ids.last() {
+            crate::test_barriers::pause("close-admitted", *id);
+        }
+        for &id in &reservation.ids {
+            self.close_one_reserved(id)?;
+        }
+        Ok(())
+    }
+
+    fn reserve_ownership_replacement(&self, id: u32) -> Result<CloseReservation<'_>> {
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.reserve_close_locked(id)
+    }
+
+    fn drain_session_reader(&self, id: u32, session: &Session) -> Result<()> {
+        if session
+            .reader_worker
+            .lock()
+            .expect("reader worker lock")
+            .as_ref()
+            .is_some_and(|worker| worker.thread().id() == std::thread::current().id())
+        {
+            bail!("session {id}: PTY cleanup refused from its own reader; ownership remains registered");
+        }
+        let live = session.state.lock().expect("state lock").is_live();
+        #[cfg(not(target_os = "linux"))]
+        if !live && session.has_retained_reader() {
+            bail!("cleanup refused for exited session {id}: descendant PTY cleanup after root reap is unsupported on this platform; wait for PTY EOF");
+        }
+        #[cfg(target_os = "linux")]
+        let retained = matches!(&session.backend, Backend::Pty { master, .. } if master.lock().expect("master lock").is_some());
+        #[cfg(not(target_os = "linux"))]
+        let retained = false;
+        if live || retained {
+            session
+                .backend
+                .kill(id, session.pid, self.channel.as_deref())?;
+        }
+        session.cancel_pty_reader();
+        #[cfg(windows)]
+        session.backend.release_pty();
+        if matches!(&session.backend, Backend::Pty { .. }) {
+            let (done, changed) = &*session.reader_done;
+            let done = done.lock().expect("reader done lock");
+            let (done, _) = changed
+                .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
+                .expect("reader cleanup wait");
+            if !*done {
+                bail!("session {id}: PTY reader exceeded cleanup drain limit 1000 ms; ownership remains registered");
+            }
+            drop(done);
+            if let Some(worker) = session
+                .reader_worker
+                .lock()
+                .expect("reader worker lock")
+                .take()
+            {
+                worker
+                    .join()
+                    .map_err(|_| anyhow!("session {id}: PTY reader panicked during cleanup"))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn cleanup_session_ownership(&self, id: u32, session: &Session) -> Result<()> {
+        self.drain_session_reader(id, session)?;
+        if matches!(&session.backend, Backend::Pty { .. }) {
+            let (done, changed) = &*session.pty_reaped;
+            let done = done.lock().expect("PTY reap lock");
+            let (done, _) = changed
+                .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
+                .expect("PTY reap wait");
+            if !*done {
+                bail!("session {id}: PTY root exceeded cleanup reap limit 1000 ms; ownership remains registered");
+            }
+        }
+        Ok(())
+    }
+
+    fn close_one_reserved(&self, id: u32) -> Result<()> {
         let session = self
             .sessions
             .lock()
             .expect("sessions lock")
             .get(&id)
             .cloned();
-        if let Some(session) = session {
-            let live = session.state.lock().expect("state lock").is_live();
-            if live {
-                session
-                    .backend
-                    .kill(id, session.pid, self.channel.as_deref())?;
-            }
+        if let Some(session) = session.as_ref() {
+            self.cleanup_session_ownership(id, session)?;
         }
+        if session.is_none() && !self.dead.lock().expect("dead lock").contains_key(&id) {
+            bail!("unknown session id {id} (expected an active or restored session)");
+        }
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        // Keep the pane available for a retry if storage refuses the close.
+        // A late waiter cannot overwrite this durable state (update_session_state guards it).
+        self.db.mark_closed(id)?;
+        self.escalate_child_inputs_locked(id, proto::ChildInputEscalationReason::ParentUnavailable);
         self.operator_ended
             .lock()
             .expect("operator_ended lock")
             .insert(id);
         self.forget_resume_handle(id);
-        self.cancel_delegation(id);
+        self.cancel_delegation(id)?;
         self.db.delegation_forget_retention(id)?;
         let removed = self.sessions.lock().expect("sessions lock").remove(&id);
+        self.remote_forget_session(id);
         if let Some(session) = removed {
             session.remove_shell_token_file();
             session.removed.store(true, Ordering::Release);
-            self.db.mark_closed(id)?;
             worktree_pass::queue_closed_session(self, id);
             self.write_run_state();
             self.mcp_creds.revoke_session(id);
@@ -11987,6 +13155,7 @@ impl Daemon {
             self.remove_persisted_scrollback(id);
             self.frame_taps.forget_session(id);
             self.voice.forget_session(id);
+            self.forget_session_visibility(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             if let Some(parent) = session.info.spawned_by {
                 self.broadcast_live_children(parent);
@@ -11999,10 +13168,10 @@ impl Daemon {
                 .lock()
                 .expect("dead geometry lock")
                 .remove(&id);
-            self.db.mark_closed(id)?;
             worktree_pass::queue_closed_session(self, id);
             self.remove_persisted_scrollback(id);
             self.voice.forget_session(id);
+            self.forget_session_visibility(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             return Ok(());
         }
@@ -12249,6 +13418,26 @@ impl Daemon {
         bail!("unknown session id {id} (expected an active or restored session)")
     }
 
+    fn handoff_started(&self, hidden: u32) {
+        let started = self
+            .handoff_jobs
+            .lock()
+            .expect("handoff lock")
+            .iter()
+            .find(|(_, job)| job.hidden == hidden)
+            .map(|(&request, job)| (request, job.source, job.provider));
+        if let Some((request, session, provider)) = started {
+            // Output and exit workers remain gated until the start is published.
+            #[cfg(feature = "test-barriers")]
+            crate::test_barriers::pause("handoff-before-started", hidden);
+            self.broadcast_control(&proto::ServerMsg::HandoffStarted {
+                request,
+                session,
+                provider,
+            });
+        }
+    }
+
     pub fn handoff_generate(
         self: &Arc<Self>,
         source: u32,
@@ -12466,6 +13655,8 @@ impl Daemon {
             request,
             HandoffJob {
                 hidden: hidden_id,
+                source,
+                provider,
                 provider_name: provider_name.clone(),
                 buffer: Vec::new(),
                 last_activity: Instant::now(),
@@ -12514,12 +13705,6 @@ impl Daemon {
             let _ = std::fs::remove_file(&prompt_path);
             return Err(e.context(format!("spawning the {provider_name} generator")));
         }
-
-        self.broadcast_control(&proto::ServerMsg::HandoffStarted {
-            request,
-            session: source,
-            provider,
-        });
 
         let weak = Arc::downgrade(self);
         let timeout = handoff_timeout();
@@ -12599,6 +13784,7 @@ impl Daemon {
             .lock()
             .expect("sessions lock")
             .remove(&job.hidden);
+        self.remote_forget_session(job.hidden);
         let _ = std::fs::remove_file(&job.prompt_path);
 
         let exit = job.exit.flatten();
@@ -12708,6 +13894,15 @@ impl Daemon {
         self.db.command_history_count(None).map(|n| n as u32)
     }
 
+    pub(crate) fn has_session(&self, id: u32) -> bool {
+        let live = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .contains_key(&id);
+        live || self.dead.lock().expect("dead lock").contains_key(&id)
+    }
+
     fn get(&self, id: u32) -> Result<Arc<Session>> {
         self.sessions
             .lock()
@@ -12762,6 +13957,11 @@ impl Daemon {
             .session_lifecycle_lock
             .lock()
             .expect("session lifecycle lock");
+        let _cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.ensure_not_closing(id, "Sleep")?;
         let session = self.get(id)?;
         self.ensure_not_shell_restoring(id)?;
         if session.stdin_writes_in_flight.load(Ordering::Acquire) != 0 {
@@ -12922,6 +14122,7 @@ impl Daemon {
     fn apply_hook_drop(
         self: &Arc<Self>,
         d: &crate::hook_drop::HookDrop,
+        receipt: Option<(&str, u64)>,
     ) -> crate::hook_drop::DropVerdict {
         if self.ensure_not_sleeping(d.session).is_err() {
             return crate::hook_drop::DropVerdict::Retry;
@@ -12940,6 +14141,9 @@ impl Daemon {
             return crate::hook_drop::DropVerdict::Retry;
         }
         if self.ensure_not_shell_restoring(d.session).is_err() {
+            return crate::hook_drop::DropVerdict::Retry;
+        }
+        if self.ensure_not_closing(d.session, "hook").is_err() {
             return crate::hook_drop::DropVerdict::Retry;
         }
         let provider = match d.agent.as_deref() {
@@ -13089,6 +14293,9 @@ impl Daemon {
                     }
                     Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
                 });
+                if self.ensure_not_closing(d.session, "hook").is_err() {
+                    return crate::hook_drop::DropVerdict::Retry;
+                }
                 if self.ensure_not_sleeping(d.session).is_err() {
                     return crate::hook_drop::DropVerdict::Retry;
                 }
@@ -13096,8 +14303,9 @@ impl Daemon {
             if crate::agent_events::compaction_event(provider) == Some(d.event.as_str())
                 && d.subagent_type.is_none()
                 && d.agent_id.is_none()
+                && !self.note_compaction(d.session, receipt)
             {
-                self.note_compaction(d.session);
+                return crate::hook_drop::DropVerdict::Retry;
             }
         }
         if !d.internal_prompt
@@ -13141,9 +14349,8 @@ impl Daemon {
                 }
             }
         }
-        // Native correlation and status effects acquire the cleanup guard. Release
-        // lifecycle admission first, matching send_keys' cleanup -> stdin lock order.
-        drop(lifecycle.take());
+        // Keep hook correlation inside lifecycle admission. Cleanup-held input uses
+        // admitted helpers, so no callback acquires lifecycle in reverse order.
         if let Some(verdict) = self.correlate_hook_drop(d, provider) {
             return verdict;
         }
@@ -14332,13 +15539,28 @@ impl Daemon {
         let (mut applied, mut all_listed) = (0usize, true);
         for dir in &dirs {
             let state = states.entry(dir.clone()).or_default();
-            let out = crate::hook_drop::run_pass(dir, state, now, pass, |d| {
-                let verdict = self.apply_hook_drop(d);
-                if verdict == crate::hook_drop::DropVerdict::Applied {
-                    self.remote_feed_hook(d);
-                }
-                verdict
-            });
+            let out = crate::hook_drop::run_pass_with_io(
+                dir,
+                state,
+                now,
+                pass,
+                |d, identity, event_ms| {
+                    match self.db.hook_compaction_seen(identity) {
+                        Ok(true) => return crate::hook_drop::DropVerdict::Applied,
+                        Ok(false) => {}
+                        Err(error) => {
+                            tracing::warn!("checking hook compaction receipt: {error:#}");
+                            return crate::hook_drop::DropVerdict::Retry;
+                        }
+                    }
+                    let verdict = self.apply_hook_drop(d, Some((identity, event_ms)));
+                    if verdict == crate::hook_drop::DropVerdict::Applied {
+                        self.remote_feed_hook(d);
+                    }
+                    verdict
+                },
+                |path| std::fs::remove_file(path),
+            );
             applied += out.applied;
             all_listed &= out.listed_ok;
             if out.collected > 0 {
@@ -14941,6 +16163,17 @@ impl Daemon {
         self.reap_reevaluate();
     }
 
+    fn forget_session_visibility(&self, session: u32) {
+        for hidden in self
+            .visibility
+            .lock()
+            .expect("visibility lock")
+            .values_mut()
+        {
+            hidden.remove(&session);
+        }
+    }
+
     pub fn conn_set_visibility(&self, conn: u64, session: u32, visible: bool) {
         let mut map = self.visibility.lock().expect("visibility lock");
         let Some(set) = map.get_mut(&conn) else {
@@ -15450,15 +16683,17 @@ impl Daemon {
             });
             return;
         }
-        if self.voice.download_in_flight(&model_id) {
-            self.broadcast_control(&proto::ServerMsg::VoiceModelState {
-                model: self.voice_model_state(&model_id),
-            });
-            return;
-        }
+        let lease = match self.voice.claim_download(&model_id) {
+            Ok(lease) => lease,
+            Err(_) => {
+                self.broadcast_control(&proto::ServerMsg::VoiceModelState {
+                    model: self.voice_model_state(&model_id),
+                });
+                return;
+            }
+        };
         let me = self.clone();
         tokio::spawn(async move {
-            me.voice.download_begin(&model_id);
             me.broadcast_control(&proto::ServerMsg::VoiceModelState {
                 model: me.voice_model_state(&model_id),
             });
@@ -15468,8 +16703,7 @@ impl Daemon {
             {
                 Ok(c) => c,
                 Err(e) => {
-                    me.voice
-                        .download_end(&model_id, Some(format!("building the HTTP client: {e}")));
+                    lease.finish(Some(format!("building the HTTP client: {e}")));
                     me.broadcast_control(&proto::ServerMsg::VoiceModelState {
                         model: me.voice_model_state(&model_id),
                     });
@@ -15487,7 +16721,7 @@ impl Daemon {
                     } else {
                         done as f32 / total as f32
                     };
-                    me.voice.download_progress(&model_id, progress);
+                    lease.progress(progress);
                     if last_broadcast.elapsed() >= VOICE_DOWNLOAD_PROGRESS_INTERVAL {
                         last_broadcast = std::time::Instant::now();
                         me.broadcast_control(&proto::ServerMsg::VoiceModelState {
@@ -15499,11 +16733,11 @@ impl Daemon {
             match result {
                 Ok(path) => {
                     tracing::info!(model = %model_id, path = %path.display(), "voice: model downloaded and verified");
-                    me.voice.download_end(&model_id, None);
+                    lease.finish(None);
                 }
                 Err(e) => {
                     tracing::warn!(model = %model_id, "voice: model download failed: {e}");
-                    me.voice.download_end(&model_id, Some(e.to_string()));
+                    lease.finish(Some(e.to_string()));
                 }
             }
             me.broadcast_control(&proto::ServerMsg::VoiceModelState {
@@ -15513,21 +16747,18 @@ impl Daemon {
         });
     }
 
-    pub fn voice_model_delete(&self, model_id: &str) -> proto::ServerMsg {
-        match crate::voice::models::delete(&self.voice_models_dir(), model_id) {
-            Ok(freed) => {
-                tracing::info!(model = %model_id, freed_bytes = freed, "voice: model deleted");
-                self.voice.download_forget(model_id);
-                self.voice.forget_engine();
-            }
+    pub fn voice_model_delete(&self, model_id: &str) -> Result<proto::ServerMsg> {
+        let freed = match self.voice.delete_model(&self.voice_models_dir(), model_id) {
+            Ok(freed) => freed,
             Err(e) => {
                 tracing::warn!(model = %model_id, "voice: model delete failed: {e}");
-                self.voice.download_end(model_id, Some(e.to_string()));
+                return Err(e.into());
             }
-        }
-        proto::ServerMsg::VoiceModelState {
+        };
+        tracing::info!(model = %model_id, freed_bytes = freed, "voice: model deleted");
+        Ok(proto::ServerMsg::VoiceModelState {
             model: self.voice_model_state(model_id),
-        }
+        })
     }
 
     pub fn voice_key_set(&self, provider: proto::CloudStt, key: String) -> Result<()> {
@@ -15624,6 +16855,13 @@ impl Daemon {
                 crate::acp::AcpDecodeOutcome::Message(msg) => {
                     if let Some(event) = crate::acp::event_for_message(&msg) {
                         if event == crate::agent_events::AgentEvent::NeedsInput {
+                            let _cleanup = self
+                                .temporary_cleanup_lock
+                                .lock()
+                                .expect("temporary cleanup lock");
+                            if self.ensure_not_closing(id, "ACP permission").is_err() {
+                                continue;
+                            }
                             let request_id = msg
                                 .get("id")
                                 .and_then(|id| serde_json::to_string(id).ok())
@@ -17341,13 +18579,13 @@ impl Daemon {
                 );
             }
         }
-        // Cleanup and registration share the parent/child live roster. Keep the parent alive
-        // through the whole spawn so a completed temporary parent cannot disappear between the
-        // cap check and its durable delegation row.
+        // Cleanup and registration share admission. Reserve the pending child before
+        // worktree preparation, then recheck its parent before publishing a delegation.
         let _cleanup_guard = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        self.ensure_spawn_parent_locked(caller)?;
         if kind == proto::AgentKind::Custom {
             bail!(
                 "spawn refused: kind `custom` cannot be spawned as a child — a custom command \
@@ -17567,6 +18805,15 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        if let Err(error) = self.ensure_spawn_parent_locked(caller) {
+            drop(_cleanup_guard);
+            if created_here {
+                if let Some(created) = &created {
+                    self.discard_spawn_worktree(created);
+                }
+            }
+            return Err(error);
+        }
         let cwd = created.as_ref().map(|c| c.path.clone()).unwrap_or(cwd);
         if let Some(created) = &created {
             match crate::launch::prepare_worktree_trust(kind, &cwd)
@@ -17659,9 +18906,11 @@ impl Daemon {
         let info = match spawned {
             Ok(info) => info,
             Err(e) => {
+                drop(_cleanup_guard);
                 if self.get(sid).is_ok() {
                     if let Err(rollback) = self.rollback_spawned_child(sid) {
-                        tracing::warn!("rolling back failed spawn {sid}: {rollback}");
+                        return Err(e).context(format!("rollback of session {sid} failed; ownership and worktree retained for Close retry: {rollback}"))
+                            .context(orchestrate::MutationMayHaveActed);
                     }
                 }
                 if !handoff {
@@ -17692,8 +18941,9 @@ impl Daemon {
             return Ok(info);
         }
         if let Err(parent_error) = self.get(caller) {
+            drop(_cleanup_guard);
             let rollback = self.rollback_spawned_child(sid);
-            if created_here {
+            if created_here && rollback.is_ok() {
                 if let Some(c) = &created {
                     self.discard_spawn_worktree(c);
                 }
@@ -17875,25 +19125,23 @@ impl Daemon {
         }
     }
 
-    fn rollback_spawned_child(&self, child: u32) -> Result<()> {
-        let first_close = self.db.mark_closed(child);
-        let close_result = self.close(child);
-        let final_close = self.db.mark_closed(child);
-        if let Err(e) = close_result {
-            return Err(e).context(format!("closing rolled-back child {child}"));
-        }
-        if let Err(e) = final_close {
-            return Err(e).context(format!(
-                "persisting the closed state for rolled-back child {child}"
-            ));
-        }
-        if let Err(e) = first_close {
-            tracing::warn!(
-                "the first durable close for rolled-back child {child} failed, but the retry \
-                 succeeded: {e}"
-            );
-        }
+    fn ensure_spawn_parent_locked(&self, caller: u32) -> Result<()> {
+        self.ensure_not_closing(caller, "spawn")?;
+        self.ensure_not_sleeping(caller)?;
+        self.ensure_not_shell_restoring(caller)?;
+        let parent = self
+            .get(caller)
+            .context(format!("spawn refused for parent session {caller}"))?;
+        anyhow::ensure!(
+            parent.state.lock().expect("state lock").is_live(),
+            "spawn refused: parent session {caller} is no longer live"
+        );
         Ok(())
+    }
+
+    fn rollback_spawned_child(&self, child: u32) -> Result<()> {
+        self.close(child)
+            .with_context(|| format!("closing rolled-back child {child}"))
     }
 
     pub fn orchestrate_list(&self, caller: u32) -> Result<Vec<serde_json::Value>> {
@@ -18406,10 +19654,15 @@ impl Daemon {
 
     pub fn orchestrate_send_keys(&self, caller: u32, target: u32, keys: &[String]) -> Result<()> {
         let _native_input = self.native_input_mutation_guard()?;
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
         let _cleanup_guard = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        self.ensure_not_closing(target, "send_keys")?;
         self.assert_orchestration_target(caller, target)?;
         if let Some(episode) = self.pending_permission_episode(target)? {
             bail!("send_keys refused for child {target}, permission episode {episode}: use pane_deny or pane_escalate; only the operator may approve");
@@ -18421,7 +19674,17 @@ impl Daemon {
         self.assert_no_operator_input_intervention(target, None)?;
         self.cancel_temporary_cleanup_locked(target);
         let bytes = orchestrate::keys_to_bytes(keys).map_err(|e| anyhow!("{e}"))?;
-        self.write_stdin(target, &bytes)?;
+        let receipt = self.admit_stdin_counting(target, &bytes);
+        drop(_cleanup_guard);
+        drop(_lifecycle);
+        drop(_native_input);
+        Self::wait_stdin_receipt(target, receipt).map_err(|error| anyhow!("{error}"))?;
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.ensure_not_closing(target, "send_keys completion")?;
+        self.get(target)?;
         if let Err(e) = self
             .db
             .delegation_set_no_handback(target, false, 0, now_ms())
@@ -18491,39 +19754,42 @@ impl Daemon {
         target: u32,
         confirm_children: bool,
     ) -> Result<()> {
-        let _cleanup_guard = self
-            .temporary_cleanup_lock
-            .lock()
-            .expect("temporary cleanup lock");
-        self.assert_orchestration_target(caller, target)?;
-        self.child_guard(target, confirm_children)?;
-        self.close(target)
+        let reservation = {
+            let _lifecycle = self
+                .session_lifecycle_lock
+                .lock()
+                .expect("session lifecycle lock");
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            self.ensure_not_closing(target, "orchestrate_kill")?;
+            self.assert_orchestration_target(caller, target)?;
+            self.child_guard(target, confirm_children)?;
+            self.reserve_deliberate_close_locked(target)?
+        };
+        self.close_reserved(&reservation)
     }
 
-    fn cancel_delegation(&self, child: u32) {
-        match self.db.delegation_for_child(child) {
-            Ok(Some(row))
-                if !orchestrate::DelegationState::parse(&row.state)
-                    .is_some_and(|s| s.is_closed()) =>
-            {
-                if let Err(e) = self.db.delegation_finish(
-                    child,
-                    orchestrate::DelegationState::Cancelled.as_str(),
-                    Some("ended on purpose while its current request was still open"),
-                    now_ms(),
-                ) {
-                    tracing::warn!("cancelling the delegation for child {child}: {e}");
-                }
-                self.broadcast_delegation(child);
-                if let Some(daemon) = self.self_arc() {
-                    daemon.inbox_notify(row.parent_session, false);
-                } else {
-                    self.notify_inbox_wake(row.parent_session);
-                }
+    fn cancel_delegation(&self, child: u32) -> Result<()> {
+        if let Some(row) = self.db.delegation_for_child(child)? {
+            if orchestrate::DelegationState::parse(&row.state).is_some_and(|s| s.is_closed()) {
+                return Ok(());
             }
-            Ok(_) => {}
-            Err(e) => tracing::warn!("reading the delegation record for child {child}: {e}"),
+            self.db.delegation_finish(
+                child,
+                orchestrate::DelegationState::Cancelled.as_str(),
+                Some("ended on purpose while its current request was still open"),
+                now_ms(),
+            )?;
+            self.broadcast_delegation(child);
+            if let Some(daemon) = self.self_arc() {
+                daemon.inbox_notify(row.parent_session, false);
+            } else {
+                self.notify_inbox_wake(row.parent_session);
+            }
         }
+        Ok(())
     }
 
     fn child_guard(&self, id: u32, confirmed: bool) -> Result<()> {
@@ -18586,14 +19852,21 @@ impl Daemon {
     }
 
     pub fn session_close_checked(self: &Arc<Self>, id: u32, confirm_children: bool) -> Result<()> {
-        let _lifecycle = self
-            .session_lifecycle_lock
-            .lock()
-            .expect("session lifecycle lock");
-        self.ensure_not_sleeping(id)?;
-        self.child_guard(id, confirm_children)?;
-        let notice = self.operator_ended_notice_facts(id);
-        self.close_unlocked(id)?;
+        let (reservation, notice) = {
+            let _lifecycle = self
+                .session_lifecycle_lock
+                .lock()
+                .expect("session lifecycle lock");
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            self.ensure_not_closing(id, "close")?;
+            self.child_guard(id, confirm_children)?;
+            let notice = self.operator_ended_notice_facts(id);
+            (self.reserve_deliberate_close_locked(id)?, notice)
+        };
+        self.close_reserved(&reservation)?;
         if let Some((parent, label)) = notice {
             self.write_operator_ended_notice(id, parent, label);
         }
@@ -19311,6 +20584,10 @@ impl Daemon {
     }
 
     fn delegation_child_exited(self: &Arc<Self>, child: u32) {
+        let cleanup = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         let row = match self.db.delegation_for_child(child) {
             Ok(Some(row)) => row,
             Ok(None) => return,
@@ -19355,6 +20632,7 @@ impl Daemon {
         ) {
             tracing::warn!("closing the delegation for child {child}: {e}");
         }
+        drop(cleanup);
         if let Some(id) = pending {
             self.broadcast_inbox_row(id);
         }
@@ -19391,6 +20669,12 @@ impl Daemon {
                 .temporary_cleanup_lock
                 .lock()
                 .expect("temporary cleanup lock");
+            if self
+                .ensure_not_closing(child, "arm temporary cleanup")
+                .is_err()
+            {
+                return;
+            }
             let Ok(Some(row)) = self.db.delegation_for_child(child) else {
                 return;
             };
@@ -19448,6 +20732,12 @@ impl Daemon {
         now: u64,
     ) -> Option<u32> {
         if self
+            .ensure_not_closing(row.child_session, "temporary cleanup")
+            .is_err()
+        {
+            return None;
+        }
+        if self
             .pending_cleanup_cancellations
             .lock()
             .expect("pending cleanup lock")
@@ -19491,12 +20781,10 @@ impl Daemon {
                     return None;
                 }
             }
-            session.removed.store(true, Ordering::Release);
             if let Err(e) = self
                 .db
                 .update_session_state(child, proto::SessionState::Exited, None)
             {
-                session.removed.store(false, Ordering::Release);
                 tracing::warn!("ending settled child {child}: {e}");
                 return None;
             }
@@ -19607,6 +20895,9 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        if self.ensure_not_closing(child, "delegation event").is_err() {
+            return;
+        }
         // Exit can win after apply_agent_event checks liveness. This lock also
         // protects finish_session, so a delayed hook cannot reopen an ended pane.
         if self
@@ -20547,6 +21838,16 @@ impl Daemon {
             if since.is_some_and(|since| {
                 now.saturating_sub(since) >= orchestrate::NO_HANDBACK_SETTLE_MS
             }) {
+                let _cleanup = self
+                    .temporary_cleanup_lock
+                    .lock()
+                    .expect("temporary cleanup lock");
+                if self
+                    .ensure_not_closing(child, "retain no-handback child")
+                    .is_err()
+                {
+                    continue;
+                }
                 let timestamp = now_ms();
                 if let Err(e) = self.db.delegation_finish(
                     child,
@@ -20628,22 +21929,51 @@ impl Daemon {
             self.delegation_settle_pass(row, &s, busy, now);
         }
         for row in self.db.delegations_retained().unwrap_or_default() {
-            let _guard = self
-                .temporary_cleanup_lock
-                .lock()
-                .expect("temporary cleanup lock");
-            let Some(row) = self.delegation_of(row.child_session) else {
-                continue;
+            let reservation = {
+                let _lifecycle = self
+                    .session_lifecycle_lock
+                    .lock()
+                    .expect("session lifecycle lock");
+                let _cleanup = self
+                    .temporary_cleanup_lock
+                    .lock()
+                    .expect("temporary cleanup lock");
+                let Some(row) = self.delegation_of(row.child_session) else {
+                    continue;
+                };
+                if row.retained_until.is_none_or(|at| at > cleanup_now)
+                    || !self.temporary_cleanup_safe(row.child_session, cleanup_now)
+                    || self
+                        .pending_cleanup_cancellations
+                        .lock()
+                        .expect("pending cleanup lock")
+                        .contains(&row.child_session)
+                {
+                    continue;
+                }
+                self.reserve_close_locked(row.child_session)
             };
-            if row.retained_until.is_some_and(|at| at <= cleanup_now)
-                && self.temporary_cleanup_safe(row.child_session, cleanup_now)
-            {
-                if let Err(e) = self.close(row.child_session) {
-                    tracing::warn!("closing expired settled child {}: {e}", row.child_session);
+            match reservation.and_then(|reservation| self.close_reserved(&reservation)) {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::warn!("closing expired settled child {}: {e}", row.child_session)
                 }
             }
         }
         for row in self.db.delegations_done().unwrap_or_default() {
+            let _cleanup = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            if self
+                .ensure_not_closing(row.child_session, "retain delegation")
+                .is_err()
+            {
+                continue;
+            }
+            let Some(row) = self.delegation_of(row.child_session) else {
+                continue;
+            };
             if row.reusable
                 && row.state == "done"
                 && self.session_status(row.child_session).ok().flatten()
@@ -21022,6 +22352,9 @@ impl Daemon {
         if is_terminal_report_only(payload) {
             return;
         }
+        if self.ensure_not_closing(session, "operator input").is_err() {
+            return;
+        }
         self.remote_note_keystroke(session);
         self.composer_occupied
             .lock()
@@ -21282,12 +22615,22 @@ impl Daemon {
         }
     }
 
-    fn note_compaction(self: &Arc<Self>, session: u32) {
-        let compactions = match self.db.session_note_compaction(session) {
-            Ok(n) => n,
+    fn note_compaction(self: &Arc<Self>, session: u32, receipt: Option<(&str, u64)>) -> bool {
+        let result = match receipt {
+            Some((identity, event_ms)) => self.db.session_note_compaction_once(
+                session,
+                identity,
+                event_ms,
+                crate::hook_drop::now_ms(),
+            ),
+            None => self.db.session_note_compaction(session).map(Some),
+        };
+        let compactions = match result {
+            Ok(Some(n)) => n,
+            Ok(None) => return true,
             Err(e) => {
                 tracing::warn!("counting a compaction for session {session}: {e:#}");
-                return;
+                return false;
             }
         };
         self.broadcast_control(&proto::ServerMsg::CompactionsChanged {
@@ -21302,7 +22645,7 @@ impl Daemon {
                 .delegations_for_parent(session)
                 .map_or(true, |children| children.is_empty())
         {
-            return;
+            return true;
         }
         let workspace = self.current_workspace(session).unwrap_or_default();
         if let Err(e) = self.inbox_write(
@@ -21321,6 +22664,7 @@ impl Daemon {
         ) {
             tracing::warn!("offering a handoff to pane {session}: {e:#}");
         }
+        true
     }
 
     fn compactions_of(&self, info: &proto::SessionInfo) -> Option<u32> {
@@ -23474,6 +24818,66 @@ mod idle_profile_tests {
 
     #[cfg(unix)]
     #[test]
+    fn queued_renderer_input_does_not_reacquire_a_waiting_callers_native_fence() {
+        let (daemon, state) = test_daemon();
+        let id = daemon
+            .create_session(CreateParams {
+                agent: proto::AgentKind::Custom,
+                project_dir: state.path().to_path_buf(),
+                cmd: Some(vec!["cat".into()]),
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+                model: None,
+                effort: None,
+            })
+            .unwrap()
+            .id;
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        daemon
+            .enqueue_stdin(
+                id,
+                b"first\n",
+                Box::new(move |result| {
+                    result.unwrap();
+                    ready_tx.send(()).unwrap();
+                    resume_rx.recv().unwrap();
+                }),
+                None,
+            )
+            .unwrap();
+        ready_rx.recv_timeout(Duration::from_secs(15)).unwrap();
+        daemon
+            .enqueue_renderer_stdin(id, b"renderer\n", Box::new(|result| result.unwrap()))
+            .unwrap();
+        let native_input = daemon.native_input_mutation_guard().unwrap();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let writer = daemon.clone();
+        let writing = std::thread::spawn(move || {
+            done_tx
+                .send(writer.write_stdin_counting(id, b"caller\n"))
+                .unwrap();
+        });
+        resume_tx.send(()).unwrap();
+        let result = done_rx.recv_timeout(Duration::from_secs(3));
+        drop(native_input);
+        writing.join().unwrap();
+        daemon.close(id).unwrap();
+        assert!(
+            result.is_ok(),
+            "a synchronous caller's native-input fence must not block earlier FIFO jobs"
+        );
+        result.unwrap().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn r1_blocked_stdin_does_not_hold_session_state_or_prevent_kill() {
         let (daemon, state) = test_daemon();
         let child = daemon
@@ -24082,5 +25486,42 @@ mod transcript_link_tests {
             Some((Some("/t/b.jsonl".into()), Some("abc".into())))
         );
         assert_eq!(transcript_link_update(None, None, None), None);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod reader_wake_tests {
+    use super::*;
+    use std::os::fd::AsRawFd;
+
+    #[test]
+    fn wake_queued_before_poll_stays_readable_and_coalesces_when_full() {
+        let wake = ReaderWake::new().unwrap();
+        wake.notify();
+        let mut poll = libc::pollfd {
+            fd: wake.read.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: the single entry and its owned descriptor are valid.
+        assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 1);
+        wake.consume();
+        wake.consume(); // Coalesced or already-consumed wakes may return WouldBlock.
+                        // SAFETY: the single entry and its owned descriptor are valid.
+        assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 0);
+        let mut writer = &wake.write;
+        let bytes = [1; 4096];
+        loop {
+            match writer.write(&bytes) {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("filling reader wake: {error}"),
+            }
+        }
+        wake.notify();
+        // SAFETY: the single entry and its owned descriptor are valid.
+        assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 1);
+        wake.consume();
     }
 }
