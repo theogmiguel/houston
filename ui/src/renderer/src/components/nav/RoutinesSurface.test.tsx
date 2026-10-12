@@ -23,7 +23,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 function routine(id: number, name = `Routine ${id}`, next = NOW + 60_000): Routine {
   return {
-    id, name, prompt: 'Check the project.', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: null },
+    kind: 'user', id, name, prompt: 'Check the project.', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: null },
     enabled: true, engine: 'claude', next_run_at_ms: next, last_run_at_ms: null, permission_mode: 'accept_edits',
     isolate: false, revision: `rev-${id}`
   }

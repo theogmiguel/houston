@@ -12,6 +12,7 @@ const NOW = 1_700_000_000_000
 function routine(overrides: Partial<Routine> = {}): Routine {
   return {
     id: 1,
+    kind: 'user',
     engine: 'claude',
     name: 'Leak watch',
     prompt: 'p',

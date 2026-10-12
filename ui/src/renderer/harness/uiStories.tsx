@@ -1150,7 +1150,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <ConnectionCell status="Off" server="linear" agent="Cursor" onClick={noop} />
           </SpecimenRow>
           <RoutineDetail
-            routine={{ id: 1, name: 'Nightly dependency check', prompt: 'Check packages', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), last_run_at_ms: null, permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}
+            routine={{ kind: 'user', id: 1, name: 'Nightly dependency check', prompt: 'Check packages', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), last_run_at_ms: null, permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}
             runs={[]}
             runsLoading={false}
             now={Date.now()}

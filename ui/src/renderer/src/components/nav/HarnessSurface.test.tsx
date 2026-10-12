@@ -15,6 +15,7 @@ const WS = '/home/dev/proj'
 function routine(overrides: Partial<Routine> = {}): Routine {
   return {
     id: 7,
+    kind: 'harness_review',
     engine: 'claude',
     name: 'Harness review · proj',
     prompt: '[houston harness review]',

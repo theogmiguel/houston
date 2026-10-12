@@ -19,7 +19,7 @@ describe('shared table, list-detail, drawer and notice primitives', () => {
   it('renders a routine detail panel with schedule, enabled state and working run action', () => {
     const onRunNow = vi.fn()
     const routine = {
-      id: 7, name: 'Nightly dependency check', prompt: 'Update packages', cadence: { type: 'clock' as const, hour: 2, minute: 0, weekdays: null }, enabled: true,
+      kind: 'user' as const, id: 7, name: 'Nightly dependency check', prompt: 'Update packages', cadence: { type: 'clock' as const, hour: 2, minute: 0, weekdays: null }, enabled: true,
       engine: 'claude' as const, next_run_at_ms: 10_000, last_run_at_ms: null, permission_mode: 'accept_edits' as const,
       isolate: false, revision: 'r1'
     }

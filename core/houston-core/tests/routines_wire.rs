@@ -713,3 +713,77 @@ async fn next_routine_reply(ws: &mut common::WsStream) -> proto::ServerMsg {
         }
     }
 }
+
+#[tokio::test]
+async fn migrated_harness_routine_reads_back_as_harness_review() {
+    let state = tempfile::tempdir().unwrap();
+    let db_path = state.path().join("legacy.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE routines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL, name_folded TEXT NOT NULL, prompt TEXT NOT NULL,
+                cadence TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+                workspace_id TEXT, engine TEXT NOT NULL DEFAULT 'claude',
+                model TEXT, effort TEXT, next_run_at_ms INTEGER NOT NULL,
+                last_run_at_ms INTEGER, last_run_session_id INTEGER, last_error TEXT,
+                revision TEXT NOT NULL, permission_mode TEXT NOT NULL DEFAULT 'accept_edits',
+                isolate INTEGER NOT NULL DEFAULT 0, last_outcome TEXT,
+                created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE harness_routines (
+                workspace TEXT PRIMARY KEY, routine_id INTEGER NOT NULL UNIQUE
+            );
+            INSERT INTO routines
+                (id, name, name_folded, prompt, cadence, next_run_at_ms, revision, created_at, updated_at)
+            VALUES
+                (1, 'Weekly review', 'weekly review', 'review', '{\"type\":\"interval\",\"seconds\":900}', 0, 'a', 0, 0),
+                (2, 'Yours', 'yours', '[houston harness review] ordinary user prompt', '{\"type\":\"interval\",\"seconds\":900}', 0, 'b', 0, 0);
+            INSERT INTO harness_routines (workspace, routine_id) VALUES ('/project', 1);",
+        ).unwrap();
+    }
+    let cfg = || DaemonConfig {
+        token: TOKEN.to_string(),
+        db_path: db_path.clone(),
+    };
+    for _ in 0..2 {
+        let daemon = Daemon::new(cfg()).unwrap();
+        let routines = routines_of(daemon.routine_list());
+        assert_eq!(
+            routines.iter().find(|r| r.id == 1).unwrap().kind,
+            proto::RoutineKind::HarnessReview
+        );
+        assert_eq!(
+            routines.iter().find(|r| r.id == 2).unwrap().kind,
+            proto::RoutineKind::User
+        );
+    }
+}
+
+#[tokio::test]
+async fn new_harness_routine_reports_its_kind_immediately() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let workspace = state.path().join("project");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let list = routines_of(
+        daemon
+            .harness_routine_create(
+                &workspace.display().to_string(),
+                proto::AgentKind::Claude,
+                None,
+                None,
+                interval(900),
+                false,
+            )
+            .unwrap(),
+    );
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].kind, proto::RoutineKind::HarnessReview);
+    let user = created(&daemon, "Yours");
+    assert_eq!(user.kind, proto::RoutineKind::User);
+    let mut legacy = serde_json::to_value(&user).unwrap();
+    legacy.as_object_mut().unwrap().remove("kind");
+    let decoded: proto::Routine = serde_json::from_value(legacy).unwrap();
+    assert_eq!(decoded.kind, proto::RoutineKind::User);
+}

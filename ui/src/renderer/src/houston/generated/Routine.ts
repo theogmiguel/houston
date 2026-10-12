@@ -3,9 +3,10 @@ import type { AgentKind } from "./AgentKind";
 import type { Cadence } from "./Cadence";
 import type { ChatEffort } from "./ChatEffort";
 import type { ChatPermissionMode } from "./ChatPermissionMode";
+import type { RoutineKind } from "./RoutineKind";
 import type { RoutineOutcome } from "./RoutineOutcome";
 
-export type Routine = { id: number, name: string, prompt: string, cadence: Cadence, enabled: boolean,
+export type Routine = { kind: RoutineKind, id: number, name: string, prompt: string, cadence: Cadence, enabled: boolean,
 /**
  * The working directory a run starts in, and the base an isolated run
  * branches from.

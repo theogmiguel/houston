@@ -892,6 +892,7 @@ pub struct AgentProfileRow {
 }
 
 pub struct RoutineRow {
+    pub kind: proto::RoutineKind,
     pub id: u32,
     pub name: String,
     pub name_folded: String,
@@ -1121,7 +1122,7 @@ fn map_inbox_row(r: &rusqlite::Row) -> rusqlite::Result<InboxRow> {
 
 const ROUTINE_SELECT: &str = "SELECT id, name, name_folded, prompt, cadence, enabled, \
     workspace_id, engine, model, effort, next_run_at_ms, last_run_at_ms, \
-    last_run_session_id, last_error, revision, permission_mode, isolate, last_outcome \
+    last_run_session_id, last_error, revision, permission_mode, isolate, last_outcome, kind \
     FROM routines";
 
 fn map_routine_row(r: &rusqlite::Row) -> rusqlite::Result<RoutineRow> {
@@ -1150,7 +1151,17 @@ fn map_routine_row(r: &rusqlite::Row) -> rusqlite::Result<RoutineRow> {
         .get::<_, Option<String>>(9)?
         .as_deref()
         .and_then(from_wire);
+    let kind_raw: String = r.get(18)?;
+    let kind = from_wire::<proto::RoutineKind>(&kind_raw).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            18,
+            rusqlite::types::Type::Text,
+            format!("routines {id} has unknown kind {kind_raw:?}: expected user or harness_review")
+                .into(),
+        )
+    })?;
     Ok(RoutineRow {
+        kind,
         id,
         name: r.get(1)?,
         name_folded: r.get(2)?,
@@ -1731,6 +1742,17 @@ impl Db {
         add_column_if_missing(&conn, "routines", "thread_id", "thread_id INTEGER")?;
         migrate_routines_to_first_class(&conn)?;
         migrate_routines_to_standalone(&conn)?;
+        add_column_if_missing(
+            &conn,
+            "routines",
+            "kind",
+            "kind TEXT NOT NULL DEFAULT 'user'",
+        )?;
+        conn.execute(
+            "UPDATE routines SET kind = 'harness_review' \
+             WHERE id IN (SELECT routine_id FROM harness_routines) AND kind = 'user'",
+            [],
+        )?;
         close_stale_routine_runs(&conn)?;
         harness::close_stale_reviews(&conn)?;
         conn.execute_batch(

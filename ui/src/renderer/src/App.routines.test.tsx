@@ -15,6 +15,7 @@ const q = (c: Element, sel: string): Element | null => c.querySelector(sel)
 function routine(over: Partial<Routine> = {}): Routine {
   return {
     id: 1,
+    kind: 'user',
     engine: 'claude',
     name: 'Inbox triage',
     prompt: 'Read the inbox.',

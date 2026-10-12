@@ -5507,6 +5507,7 @@ impl Daemon {
 
     fn routine_row_to_wire(row: crate::db::RoutineRow) -> proto::Routine {
         proto::Routine {
+            kind: row.kind,
             id: row.id,
             name: row.name,
             prompt: row.prompt,

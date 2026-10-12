@@ -52,6 +52,7 @@ function Frame({ children, active = 'Routines' }: { children: React.ReactNode; a
 function routine(o: Partial<Routine> = {}): Routine {
   return {
     id: 1,
+    kind: 'user',
     engine: 'claude',
     name: 'Leak watch',
     prompt: 'Check for leaked file descriptors and report.',
@@ -490,6 +491,7 @@ export function HarnessPageStory({ firstRun = false, noReviews = false }: { firs
     workspace: HARNESS_WS,
     routine: {
       id: 3,
+      kind: 'harness_review',
       name: 'Harness review · auth-refactor',
       prompt: '[houston harness review]',
       cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] },

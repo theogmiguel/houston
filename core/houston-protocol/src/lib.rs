@@ -185,9 +185,20 @@ pub enum ProfileChoice {
     },
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum RoutineKind {
+    #[default]
+    User,
+    HarnessReview,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct Routine {
+    #[serde(default)]
+    pub kind: RoutineKind,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u32,
     pub name: String,
