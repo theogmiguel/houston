@@ -1,4 +1,4 @@
-import { SettingsScreen } from './settingsStories'
+import { SettingsScreen, settingsAgentAttentionFixture } from './settingsStories'
 import React from 'react'
 import { HooksSurface } from '../src/components/nav/HooksSurface'
 import { McpSurface } from '../src/components/nav/McpSurface'
@@ -544,7 +544,7 @@ export function HarnessPageStory({ firstRun = false, noReviews = false, inSettin
   }
   const shown: HarnessState = firstRun || noReviews ? { ...state, routine: firstRun ? null : state.routine, reviews: [], findings: [], providerCoverage: [] } : state
 
-  if (inSettings) return <SettingsScreen section="agents-review" props={{ agentPages: { 'agents-review': (<HarnessSurface embedded onOpenRoutines={noop}
+  if (inSettings) return <SettingsScreen section="agents-review" props={{ agentAttention: firstRun || noReviews ? undefined : settingsAgentAttentionFixture, agentPages: { 'agents-review': (<HarnessSurface embedded onOpenRoutines={noop}
         workspaces={[{ id: HARNESS_WS, name: 'auth-refactor' }]}
         workspace={HARNESS_WS}
         onWorkspace={noop}
