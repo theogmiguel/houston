@@ -109,7 +109,10 @@ a delete, since git has no copy to fall back to.
 
 ## Branches, worktrees and checkpoints
 
-Open the current branch name to search or switch branches. For a new name, **Enter**
+Open the current branch name to search or switch branches. The current branch stays
+first; other branches are ordered by their most recent commit, with upstream ahead/behind
+counts and commit age when available. Use arrow keys to choose, **Enter** to switch,
+and **Esc** to close. For a new name, **Enter**
 creates and switches to a branch from the repository's default branch, falling back to
 HEAD when no base is known. **Ctrl+Enter** creates a worktree and opens a Shell pane
 there. Worktree branches use `houston/<slug>`; names are normalized to lowercase ASCII

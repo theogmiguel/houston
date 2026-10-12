@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, click, file, mount, q, qa, teardown } from './ChangesPane.harness'
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => { localStorage.clear(); vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000) })
+afterEach(() => vi.restoreAllMocks())
 afterEach(teardown)
 
 function branch(name: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -14,10 +15,10 @@ function open(): ReturnType<typeof mount> {
   h.status([file()], { branch: 'topic', ahead: 2 })
   click(q('[data-testid="changes-branch-chip"]'))
   act(() => h.client.emit({ type: 'git_branches', dir: '/repo', branches: [
-    branch('topic', { current: true, committed_at: 1 }),
-    branch('old', { committed_at: 10, behind: 2 }),
-    branch('main', { is_default: true, committed_at: 2 }),
-    branch('recent', { committed_at: 30, ahead: 3 })
+    branch('topic', { current: true, committed_at: 1_800_000_000 - 3600 }),
+    branch('old', { committed_at: 1_800_000_000 - 10800, behind: 2 }),
+    branch('main', { is_default: true, committed_at: 1_800_000_000 - 14400 }),
+    branch('recent', { committed_at: 1_800_000_000 - 7200, ahead: 3 })
   ], remotes: [], default_branch: 'main', truncated: false }))
   return h
 }
@@ -36,12 +37,53 @@ function key(input: Element, key: string, ctrlKey = false): void {
 }
 
 describe('Changes branch switcher', () => {
-  it('orders current/default first, then recent commits, and names sync counts', () => {
+  it('keeps a compact Esc HintKey inside one field with one focus halo', () => {
+    open()
+    const input = q<HTMLInputElement>('[aria-label="Find or create a branch"]')!
+    const field = input.parentElement!
+    const hint = field.querySelector('kbd')!
+    expect(hint?.textContent).toBe('Esc')
+    expect(hint?.className).toContain('flex-none')
+    expect(hint?.className.split(' ')).not.toContain('border')
+    expect(field.className).toContain('focus-within:shadow-')
+    expect(field.className).not.toContain('focus-within:ring-')
+    expect(input.className).not.toContain('focus-visible:ring-')
+    expect(input.className).toContain('focus-visible:outline-0')
+  })
+
+  it('marks worktrees with a glyph while preserving sync metadata', () => {
+    const h = open()
+    act(() => h.client.emit({ type: 'git_branches', dir: '/repo', branches: [
+      branch('topic', { current: true }),
+      branch('tree', { worktree_path: '/other/tree', ahead: 1, behind: 2, committed_at: 1_800_000_000 - 10800 })
+    ], remotes: [], default_branch: 'main', truncated: false }))
+    const row = qa('[role="dialog"] [role="option"]')[1]
+    expect(row.textContent).toBe('tree1 ahead · 2 behind · 3h')
+    expect(row.querySelector('[data-tooltip="Open worktree /other/tree"] svg')).not.toBeNull()
+    expect(row.textContent).not.toContain('worktree')
+    click(row)
+    expect(h.client.createSessionCalls).toEqual([{ agent: 'shell', project_dir: '/other/tree' }])
+  })
+
+  it('pins current then orders recent commits with sync and age metadata', () => {
     open()
     const options = qa('[role="dialog"] [role="option"]')
-    expect(options.map((item) => item.textContent)).toEqual(['topic', 'maindefault', 'recent3 ahead', 'old2 behind'])
-    expect(options.filter((item) => item.getAttribute('aria-selected') === 'true')).toHaveLength(0)
+    expect(options.map((item) => item.textContent)).toEqual(['topic1h', 'recent3 ahead · 2h', 'old2 behind · 3h', 'maindefault · 4h'])
+    expect(options.filter((item) => item.getAttribute('aria-selected') === 'true')).toHaveLength(1)
     expect(q('[data-testid="changes-push"]')?.textContent).toBe('Push 2 commits')
+  })
+
+  it('arrow keys move one active row and Enter switches it', () => {
+    const h = open()
+    const input = q<HTMLInputElement>('[aria-label="Find or create a branch"]')!
+    key(input, 'ArrowDown')
+    key(input, 'ArrowDown')
+    key(input, 'ArrowUp')
+    const active = qa('[role="dialog"] [aria-selected="true"]')
+    expect(active).toHaveLength(1)
+    expect(active[0].textContent).toBe('recent3 ahead · 2h')
+    key(input, 'Enter')
+    expect(h.client.gitBranchSwitchCalls).toEqual([{ dir: '/repo', name: 'recent' }])
   })
 
   it('searches, keeps one active row, and switches with Enter', () => {
@@ -60,6 +102,7 @@ describe('Changes branch switcher', () => {
     const h = open()
     const input = typeName('feat/new')
     expect(qa('[role="dialog"] [aria-selected="true"]')).toHaveLength(1)
+    expect(q('[role="dialog"] [role="option"]')?.textContent).toBe('Branch feat/new from mainEnter')
     key(input, 'Enter')
     expect(h.client.gitBranchCreateCalls).toEqual([{ dir: '/repo', name: 'feat/new', base: 'main', switchTo: true }])
   })

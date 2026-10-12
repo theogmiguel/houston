@@ -52,10 +52,10 @@ export class InspectorClient {
 
   gitBranches(dir: string): void {
     queueMicrotask(() => this.emit({ type: 'git_branches', dir, default_branch: 'main', truncated: false, remotes: [], branches: [
-      { name: 'inspector-polish', current: true, is_default: false, is_remote: false, committed_at: 40 },
-      { name: 'main', current: false, is_default: true, is_remote: false, committed_at: 30 },
-      { name: 'feature/source-control', current: false, is_default: false, is_remote: false, committed_at: 20, ahead: 0, behind: 2 },
-      { name: 'houston/pr-list', current: false, is_default: false, is_remote: false, committed_at: 10, worktree_path: '/repo/.houston/worktrees/pr-list' }
+      { name: 'inspector-polish', current: true, is_default: false, is_remote: false, committed_at: Math.floor(Date.now() / 1000) - 3600 },
+      { name: 'main', current: false, is_default: true, is_remote: false, committed_at: Math.floor(Date.now() / 1000) - 7200 },
+      { name: 'feature/source-control', current: false, is_default: false, is_remote: false, committed_at: Math.floor(Date.now() / 1000) - 10800, ahead: 0, behind: 2 },
+      { name: 'houston/pr-list', current: false, is_default: false, is_remote: false, committed_at: Math.floor(Date.now() / 1000) - 14400, worktree_path: '/repo/.houston/worktrees/pr-list' }
     ] }))
   }
 

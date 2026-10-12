@@ -4,15 +4,15 @@ import type { HoustonClient } from '../../houston/client'
 import type { GitBranchInfo } from '../../houston/generated/GitBranchInfo'
 import type { GitTools } from './useGitToolsSubscription'
 import { nameShapeLooksValid } from './branches'
-import { branchSyncLabel, recentBranches, worktreeSlug } from './branchSwitcherModel'
+import { branchMetaLabel, recentBranches, worktreeSlug } from './branchSwitcherModel'
 import { BranchSwitcherList, BranchSwitcherFooter, BranchSwitcherGroup, BranchSwitcherRow, BranchSwitcherSearch, BranchSwitcherSurface, ChangesBranchChip } from '../ui/BranchSwitcher'
 import { Button } from '../ui/Button'
 import { Text } from '../ui/Text'
 
 export interface CheckoutPane { id: number; path: string }
 
-function BranchSwitcherOptions({ create, id, selected, busy, name, defaultBase, worktreeBranch, worktreeTaken, shown, truncated, setActive, createBranch, chooseBranch, branchNote }: {
-  create: boolean; id: string; selected: number | null; busy: boolean; name: string; defaultBase: string | null; worktreeBranch: string; worktreeTaken: boolean; shown: GitBranchInfo[]; truncated: boolean; setActive: (index: number) => void; createBranch: (worktree: boolean) => void; chooseBranch: (branch: GitBranchInfo) => void; branchNote: (branch: GitBranchInfo) => string | null
+function BranchSwitcherOptions({ create, id, selected, busy, name, defaultBase, worktreeBranch, worktreeTaken, shown, truncated, setActive, createBranch, chooseBranch, worktreeLabel }: {
+  create: boolean; id: string; selected: number | null; busy: boolean; name: string; defaultBase: string | null; worktreeBranch: string; worktreeTaken: boolean; shown: GitBranchInfo[]; truncated: boolean; setActive: (index: number) => void; createBranch: (worktree: boolean) => void; chooseBranch: (branch: GitBranchInfo) => void; worktreeLabel: (branch: GitBranchInfo) => string | null
 }): React.JSX.Element {
   return <BranchSwitcherList role="listbox" id={`${id}-options`} aria-label="Branches">
         {create && <>
@@ -23,7 +23,7 @@ function BranchSwitcherOptions({ create, id, selected, busy, name, defaultBase, 
         <BranchSwitcherGroup>Branches</BranchSwitcherGroup>
         {shown.map((item, index) => {
           const position = index + (create ? 2 : 0)
-          return <BranchSwitcherRow key={item.name} id={`${id}-${position}`} role="option" aria-selected={selected === position} active={selected === position} current={item.current} note={branchNote(item)} disabled={busy || item.current} onMouseMove={() => setActive(position)} onClick={() => chooseBranch(item)}>{item.name}</BranchSwitcherRow>
+          return <BranchSwitcherRow key={item.name} id={`${id}-${position}`} role="option" aria-selected={selected === position} active={selected === position} current={item.current} note={branchMetaLabel(item)} worktreeLabel={worktreeLabel(item)} disabled={busy} onMouseMove={() => setActive(position)} onClick={() => chooseBranch(item)}>{item.name}</BranchSwitcherRow>
         })}
         {shown.length === 0 && <Text size="small" tone="muted">No branches found.</Text>}
         {name && !nameShapeLooksValid(name) && <Text size="small" tone="muted">Cannot create “{name}”: use a Git branch name without whitespace or a leading hyphen.</Text>}
@@ -53,7 +53,7 @@ export function BranchSwitcher({ client, dir, branch, base, tools, busy, error, 
   const worktreeBranch = `houston/${slug}`
   const worktreeTaken = tools.branches.some((item) => item.name === worktreeBranch)
   const count = shown.length + (create ? 2 : 0)
-  const selected = active !== null && active < count ? active : create ? 0 : null
+  const selected = active !== null && active < count ? active : count > 0 ? 0 : null
   const defaultBase = tools.defaultBranch ?? base
   const currentWorktree = tools.worktrees.some((item) => item.path === dir && !item.is_main)
 
@@ -115,13 +115,11 @@ export function BranchSwitcher({ client, dir, branch, base, tools, busy, error, 
       if (item) chooseBranch(item)
     }
   }
-  const branchNote = (item: GitBranchInfo): string | null => {
-    if (item.current && currentWorktree) return 'worktree · this pane'
-    if (item.worktree_path) {
-      const pane = panes.find((pane) => pane.path === item.worktree_path)
-      return pane ? `worktree · open in pane ${pane.id}` : 'worktree'
-    }
-    return branchSyncLabel(item) ?? (item.is_default ? 'default' : null)
+  const worktreeLabel = (item: GitBranchInfo): string | null => {
+    if (item.current && currentWorktree) return 'Worktree in this pane'
+    if (!item.worktree_path) return null
+    const pane = panes.find((pane) => pane.path === item.worktree_path)
+    return pane ? `Open worktree in pane ${pane.id}` : `Open worktree ${item.worktree_path}`
   }
   return <>
     <ChangesBranchChip ref={trigger} data-testid="changes-branch-chip" aria-label={`Branch: ${branch ?? 'Detached HEAD'}`} aria-haspopup="dialog" aria-expanded={open} disabled={!client} branch={branch ?? 'Detached HEAD'} worktree={currentWorktree} onClick={() => {
@@ -147,7 +145,7 @@ export function BranchSwitcher({ client, dir, branch, base, tools, busy, error, 
       }
     }}>
       <BranchSwitcherSearch inputRef={input} value={query} onChange={(event) => { setQuery(event.target.value); setActive(null) }} role="combobox" aria-label="Find or create a branch" placeholder="Find or create a branch" aria-expanded aria-controls={`${id}-options`} aria-activedescendant={selected === null ? undefined : `${id}-${selected}`} />
-      <BranchSwitcherOptions create={create} id={id} selected={selected} busy={busy} name={name} defaultBase={defaultBase} worktreeBranch={worktreeBranch} worktreeTaken={worktreeTaken} shown={shown} truncated={tools.branchesTruncated} setActive={setActive} createBranch={createBranch} chooseBranch={chooseBranch} branchNote={branchNote} />
+      <BranchSwitcherOptions create={create} id={id} selected={selected} busy={busy} name={name} defaultBase={defaultBase} worktreeBranch={worktreeBranch} worktreeTaken={worktreeTaken} shown={shown} truncated={tools.branchesTruncated} setActive={setActive} createBranch={createBranch} chooseBranch={chooseBranch} worktreeLabel={worktreeLabel} />
       <BranchSwitcherFooter>
         <span>Switching keeps uncommitted changes or refuses with the files that block it.</span>
         <Button variant="link" size="sm" onClick={() => { setOpen(false); onManage() }}>Manage…</Button>

@@ -1,4 +1,5 @@
 export const FOCUS_HALO_CLS = 'focus-visible:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]'
+export const FOCUS_WITHIN_HALO_CLS = 'focus-within:shadow-[0_0_0_2px_var(--background),0_0_0_3px_var(--focus-ring)]'
 
 export const RING_ACCENT_ICON = '0_0_0_1px_color-mix(in_srgb,var(--accent)_50%,transparent)'
 

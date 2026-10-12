@@ -1,4 +1,4 @@
-import { ROW_STATE } from './rowState'
+import { ROW_HIGHLIGHT, ROW_STATE } from './rowState'
 import { FOCUS_HALO_CLS } from './shadowChrome'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode, Ref } from 'react'
 import './floatingSurface.css'
@@ -23,7 +23,8 @@ export function ContextMenuItems({ children }: { children: ReactNode }): React.J
   return <div className="flex flex-col gap-[var(--space-context-menu-gap)] p-[var(--space-context-menu-pad)]">{children}</div>
 }
 
-export function ContextMenuItem({ danger = false, variant = 'default', shortcut, children, ref, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean; variant?: 'default' | 'editor'; shortcut?: string; ref?: Ref<HTMLButtonElement> }): React.JSX.Element {
+export function ContextMenuItem({ danger = false, active = false, variant = 'default', shortcut, children, ref, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean; active?: boolean; variant?: 'default' | 'editor' | 'picker'; shortcut?: string; ref?: Ref<HTMLButtonElement> }): React.JSX.Element {
+  if (variant === 'picker') return <button {...props} ref={ref} type="button" className={`btn flex h-[var(--h-row)] w-full items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 px-[var(--space-2)] text-left text-[length:var(--tr-text-small-size)] ${active ? ROW_HIGHLIGHT.selected : ROW_HIGHLIGHT.rest} disabled:hover:bg-transparent focus-visible:outline-none ${FOCUS_HALO_CLS} ${props.className ?? ''}`}>{children}</button>
   if (variant === 'editor') return <button {...props} ref={ref} type={props.type} className={`${EDITOR_ITEM_CLASS} ${ROW_STATE.rest} ${FOCUS_HALO_CLS} ${props.className ?? ''}`}>{shortcut ? <><Text as="span" size="small" weight="small">{children}</Text><Text as="span" size="small" weight="small" tone="faint">{shortcut}</Text></> : children}</button>
   return <button {...props} ref={ref} type="button" className={`btn ctx-item ${ROW_STATE.rest} disabled:hover:bg-transparent ${FOCUS_HALO_CLS} ${danger ? 'danger' : ''} ${props.className ?? ''}`}>{children}</button>
 }
