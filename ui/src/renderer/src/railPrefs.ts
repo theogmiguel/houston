@@ -76,7 +76,12 @@ export function normalizeRailPrefs(value: unknown): RailPrefs {
   if (!object(value))
     return { ...DEFAULT_RAIL_PREFS, filters: { ...DEFAULT_RAIL_PREFS.filters }, properties: [...DETAILED_DEFAULT] }
   const source = value.v === 1 ? value : {}
-  const list = Array.isArray(source.properties)
+  const customised = source.customisedProperties === true
+  const modeDefault = source.cardMode === 'compact' ? COMPACT_DEFAULT : DETAILED_DEFAULT
+  // Uncustomised properties are a snapshot of an older default; follow the current one.
+  const list = !customised
+    ? [...modeDefault]
+    : Array.isArray(source.properties)
     ? source.properties.filter(
         (entry): entry is RailCardProperty => typeof entry === 'string' && properties.has(entry as RailCardProperty),
       )
@@ -107,7 +112,7 @@ export function normalizeRailPrefs(value: unknown): RailPrefs {
       ? source.collapsedGroups.filter((entry): entry is string => typeof entry === 'string')
       : [],
     tags: Array.isArray(source.tags) ? source.tags.filter((entry): entry is number => Number.isSafeInteger(entry)) : [],
-    customisedProperties: source.customisedProperties === true,
+    customisedProperties: customised,
     gridOrder: Array.isArray(source.gridOrder)
       ? [...new Set(source.gridOrder.filter((entry): entry is string => typeof entry === 'string'))]
       : [],

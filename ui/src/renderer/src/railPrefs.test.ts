@@ -50,8 +50,14 @@ describe('rail preferences', () => {
   })
 
   it('drops dead card properties from saved preferences', () => {
-    const prefs = normalizeRailPrefs({ v: 1, properties: ['ci', 'task', 'context', 'tags'] })
+    const prefs = normalizeRailPrefs({ v: 1, properties: ['ci', 'task', 'context', 'tags'], customisedProperties: true })
     expect(prefs.properties).toEqual(['status', 'unread', 'tags'])
+  })
+
+  it('gives uncustomised saved preferences the current defaults for their card mode', () => {
+    const savedDefault = { v: 1, cardMode: 'detailed', properties: ['status', 'unread', 'checkout', 'pr', 'diff', 'task', 'inline-agents'], customisedProperties: false }
+    expect(normalizeRailPrefs(savedDefault).properties).toEqual(DETAILED_DEFAULT)
+    expect(normalizeRailPrefs({ ...savedDefault, cardMode: 'compact', properties: ['status', 'unread'] }).properties).toEqual(COMPACT_DEFAULT)
   })
 
   it('migrates tag filters once and leaves workspace collapse under its own key', () => {
