@@ -14,7 +14,7 @@ grids for different arrangements of the same project.
 Add a project directory as a workspace, then open a pane and pick which CLI runs in it.
 Your home directory can also be a workspace. The disk root (`/`), credential directories
 such as `.ssh`, `.gnupg` and `.aws`, and paths containing secrets cannot be workspaces.
-A grid can also hold Files or editor panes. Browser, Diff, Pull request and Linked pull
+A grid can also hold Files or editor panes. Browser, Changes, Pull request and Linked pull
 requests are side-panel surfaces; see [Files, editor and browser](files-editor-browser.md)
 and [Changes](changes.md).
 
