@@ -19,6 +19,7 @@ export class InspectorClient {
     private readonly failingChecks = false,
     private readonly diffFixture = false,
     private readonly prFixture?: { number: number; state: 'open' | 'merged' | 'closed'; isDraft?: boolean },
+    private readonly unstagedFixture = false,
   ) {}
 
   subscribe(kind: string, handler: (message: never) => void): () => void {
@@ -35,19 +36,37 @@ export class InspectorClient {
   gitStatus(dir: string, base: string | null = null): void {
     setTimeout(() => this.emit({
       type: 'git_status', dir, base, branch: this.diffFixture ? 'inspector-polish' : 'feat/tasks-backlog', upstream: 'origin/main',
-      ahead: this.diffFixture ? 0 : 4, behind: 0, default_base: 'main', not_a_repo: false,
+      ahead: this.diffFixture ? 2 : 4, behind: 0, default_base: 'main', not_a_repo: false,
       files: this.diffFixture ? [
         ...(base ? ['src/branch-a.ts', 'src/branch-b.ts', 'src/branch-c.ts'].map((path) => ({ path, status: 'modified', staged: false, added: 1, deleted: 0, is_sensitive: false })) : []),
-        { path: 'ui/src/renderer/src/ghostty/surface.ts', status: 'modified', staged: true, added: 12, deleted: 3, is_sensitive: false },
-        { path: 'ui/src/renderer/src/components/ui/AnimOut.tsx', status: 'modified', staged: true, added: 9, deleted: 2, is_sensitive: false },
-        { path: 'ui/src/renderer/src/components/ui/inspector.css', status: 'modified', staged: true, added: 6, deleted: 1, is_sensitive: false },
-        { path: 'ui/src/renderer/src/ghostty/surface.fitPaint.test.ts', status: 'added', staged: true, added: 64, deleted: 0, is_sensitive: false }
+        { path: 'ui/src/renderer/src/ghostty/surface.ts', status: 'modified', staged: !this.unstagedFixture, added: 12, deleted: 3, is_sensitive: false },
+        { path: 'ui/src/renderer/src/components/ui/AnimOut.tsx', status: 'modified', staged: !this.unstagedFixture, added: 9, deleted: 2, is_sensitive: false },
+        { path: 'ui/src/renderer/src/components/ui/inspector.css', status: 'modified', staged: !this.unstagedFixture, added: 6, deleted: 1, is_sensitive: false },
+        { path: 'ui/src/renderer/src/ghostty/surface.fitPaint.test.ts', status: 'added', staged: !this.unstagedFixture, added: 64, deleted: 0, is_sensitive: false }
       ] : [
-        { path: 'core/houston-core/src/orchestrate.rs', status: 'modified', staged: true, added: 52, deleted: 12, is_sensitive: false },
-        { path: 'core/houston-core/tests/batch_wake_wire.rs', status: 'added', staged: true, added: 12, deleted: 0, is_sensitive: false }
+        { path: 'core/houston-core/src/orchestrate.rs', status: 'modified', staged: !this.unstagedFixture, added: 52, deleted: 12, is_sensitive: false },
+        { path: 'core/houston-core/tests/batch_wake_wire.rs', status: 'added', staged: !this.unstagedFixture, added: 12, deleted: 0, is_sensitive: false }
       ]
     }), 10)
   }
+
+  gitBranches(dir: string): void {
+    queueMicrotask(() => this.emit({ type: 'git_branches', dir, default_branch: 'main', truncated: false, remotes: [], branches: [
+      { name: 'inspector-polish', current: true, is_default: false, is_remote: false, committed_at: 40 },
+      { name: 'main', current: false, is_default: true, is_remote: false, committed_at: 30 },
+      { name: 'feature/source-control', current: false, is_default: false, is_remote: false, committed_at: 20, ahead: 0, behind: 2 },
+      { name: 'houston/pr-list', current: false, is_default: false, is_remote: false, committed_at: 10, worktree_path: '/repo/.houston/worktrees/pr-list' }
+    ] }))
+  }
+
+  gitWorktrees(dir: string): void {
+    queueMicrotask(() => this.emit({ type: 'git_worktrees', dir, worktrees: [
+      { path: '/repo', branch: 'inspector-polish', is_main: false, is_detached: false, is_bare: false, dirty: true },
+      { path: '/repo/.houston/worktrees/pr-list', branch: 'houston/pr-list', is_main: false, is_detached: false, is_bare: false, dirty: false }
+    ] }))
+  }
+
+  worktreeCleanupStatus(): void {}
 
   gitBranchCommits(dir: string): void {
     queueMicrotask(() => this.emit({

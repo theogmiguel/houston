@@ -1,6 +1,7 @@
 import { VerbGlyphSpecimen } from '../src/components/ui/VerbGlyphSpecimen'
 import { ChipShapeSpecimen } from '../src/components/ui/ChipShapeSpecimen'
 import { ComposerPillMenuSpecimen } from '../src/components/ui/ComposerPill'
+import { BranchSwitcherSpecimen } from '../src/components/ui/BranchSwitcher'
 import { ChangesReviewSpecimen } from '../src/components/ui/ChangesReview'
 import { DiffBody } from '../src/components/git/DiffBody'
 import { RowStateSpecimen } from '../src/components/ui/RowStateSpecimen'
@@ -555,6 +556,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <MotionThemeSpecimens theme="paper" reducedMotion />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Branch switcher"><BranchSwitcherSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Changes review workspace"><ChangesReviewSpecimen /></SpecimenGroup>
         <SpecimenGroup heading="Diff line">
           <ReviewDiffLineSpecimen />

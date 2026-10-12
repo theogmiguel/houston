@@ -116,7 +116,7 @@ function titleForSurface(surface: SurfaceKind, browserTitle: string, faviconUrl:
   if (isBrowserSurface(surface) || surface === 'browser') return { title: browserTitle || 'New tab', icon: faviconUrl ? <img src={faviconUrl} alt="" className="h-3.5 w-3.5" /> : browserTitle && browserTitle !== 'New tab' ? <ShellElement as="span" shellRole="browser-tab-favicon">{browserTitle.slice(0, 1).toUpperCase()}</ShellElement> : SURFACE_META.browser.icon }
   if (surface === 'diff') return { title: `Changes ${changed}`, icon: SURFACE_META.diff.icon }
   if (surface === 'files') return { title: fileTitle || SURFACE_META.files.label, icon: <PanelFilesIcon /> }
-  if (surface === 'pull-request') return { title: prNumber === null ? SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label : `#${prNumber}`, badge: <GitPresenceDot data-tone={prTone ?? 'ok'} tone={prTone === 'stop' || prTone === 'warn' ? prTone : 'ok'} />, icon: <ShellElement as="span" shellRole="panel-pr-icon" state={prTone === 'stop' || prTone === 'warn' || prTone === 'ok' ? prTone : undefined}><Icon glyph={IconGitPullRequest} role="label" /></ShellElement> }
+  if (surface === 'pull-request') return { title: prNumber === null ? SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label : `#${prNumber}`, badge: <Tooltip label={prTone === 'stop' ? 'Checks failing' : prTone === 'warn' ? 'Checks running' : 'Checks passing'}><GitPresenceDot data-tone={prTone ?? 'ok'} tone={prTone === 'stop' || prTone === 'warn' ? prTone : 'ok'} /></Tooltip>, icon: <ShellElement as="span" shellRole="panel-pr-icon" state={prTone === 'stop' || prTone === 'warn' || prTone === 'ok' ? prTone : undefined}><Icon glyph={IconGitPullRequest} role="label" /></ShellElement> }
   return { title: SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].label, icon: SURFACE_META[isBrowserSurface(surface) ? 'browser' : surface].icon }
 }
 
@@ -402,6 +402,7 @@ function PanelContent({
           onSendToTerminal={props.onSendToTerminal}
           checkAgentTargets={checkAgentTargets}
           onOpenPane={props.onFocusPane}
+          checkoutPanes={[...props.sessions.values()].map((session) => ({ id: session.id, path: session.worktree?.path ?? session.project_dir }))}
         />
       </ShellElement>
     )
