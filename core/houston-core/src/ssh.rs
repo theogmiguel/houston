@@ -56,6 +56,8 @@ pub struct SshHandle {
     uploads: Arc<Semaphore>,
     cancel: watch::Sender<bool>,
     resize: watch::Sender<(u16, u16)>,
+    #[cfg(feature = "test-barriers")]
+    received_output: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl SshHandle {
@@ -71,6 +73,8 @@ impl SshHandle {
                 uploads: Arc::new(Semaphore::new(SSH_UPLOADS)),
                 cancel,
                 resize,
+                #[cfg(feature = "test-barriers")]
+                received_output: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             },
             rx,
             cancelled,
@@ -118,6 +122,13 @@ impl SshHandle {
     #[doc(hidden)]
     pub fn transfer_active_for_test(&self) -> bool {
         self.transferring.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    #[cfg(feature = "test-barriers")]
+    #[doc(hidden)]
+    pub fn received_output_bytes_for_test(&self) -> usize {
+        self.received_output
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     pub fn write_stdin(&self, data: &[u8]) -> std::result::Result<(), StdinWriteError> {
@@ -414,10 +425,27 @@ struct Client {
     host: String,
     port: u16,
     prompt_tx: mpsc::UnboundedSender<HostKeyPrompt>,
+    #[cfg(feature = "test-barriers")]
+    received_output: Option<Arc<std::sync::atomic::AtomicUsize>>,
 }
 
 impl client::Handler for Client {
     type Error = russh::Error;
+
+    #[cfg(feature = "test-barriers")]
+    async fn data(
+        &mut self,
+        _: russh::ChannelId,
+        data: &[u8],
+        _: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        // russh invokes this after placing Data in the channel receiver, so the
+        // receipt proves a fixture backlog is ready before the driver starts.
+        if let Some(received) = &self.received_output {
+            received.fetch_add(data.len(), std::sync::atomic::Ordering::Release);
+        }
+        Ok(())
+    }
 
     async fn check_server_key(&mut self, key: &PublicKey) -> Result<bool, Self::Error> {
         let fingerprint = key.fingerprint(HashAlg::Sha256).to_string();
@@ -601,6 +629,8 @@ pub async fn connect(
         host: params.host.clone(),
         port: params.port,
         prompt_tx,
+        #[cfg(feature = "test-barriers")]
+        received_output: None,
     };
     let mut session = client::connect(config, (params.host.as_str(), params.port), handler)
         .await
@@ -756,6 +786,72 @@ pub struct SshOutcome {
     pub exit_code: Option<i32>,
 }
 
+mod scheduling {
+    use std::future::{poll_fn, Future};
+    use std::task::Poll;
+
+    pub enum IoEvent<O, R, I> {
+        Cancelled,
+        Output(O),
+        Resize(R),
+        Input(I),
+    }
+
+    #[derive(Default)]
+    pub struct IoScheduler {
+        next: usize,
+    }
+
+    impl IoScheduler {
+        pub async fn next<C, O, R, I>(
+            &mut self,
+            cancel: C,
+            output: O,
+            resize: R,
+            input: I,
+        ) -> IoEvent<O::Output, R::Output, I::Output>
+        where
+            C: Future,
+            O: Future,
+            R: Future,
+            I: Future,
+        {
+            tokio::pin!(cancel, output, resize, input);
+            poll_fn(|cx| {
+                if cancel.as_mut().poll(cx).is_ready() {
+                    return Poll::Ready(IoEvent::Cancelled);
+                }
+                // Rotate ready I/O, retaining cancellation priority without letting
+                // an inbound flood starve stdin or resize (or the reverse).
+                for step in 0..3 {
+                    let branch = (self.next + step) % 3;
+                    let event = match branch {
+                        0 => output.as_mut().poll(cx).map(IoEvent::Output),
+                        1 => resize.as_mut().poll(cx).map(IoEvent::Resize),
+                        _ => input.as_mut().poll(cx).map(IoEvent::Input),
+                    };
+                    if event.is_ready() {
+                        self.next = (branch + 1) % 3;
+                        return event;
+                    }
+                }
+                Poll::Pending
+            })
+            .await
+        }
+    }
+}
+
+use scheduling::{IoEvent, IoScheduler};
+#[cfg(feature = "test-barriers")]
+#[doc(hidden)]
+pub use scheduling::{IoEvent as SshIoEvent, IoScheduler as SshIoScheduler};
+
+enum DriverWork {
+    Command(Option<SshCmd>),
+    UploadCompleted,
+}
+
 pub async fn run(connected: Connected, mut on_output: impl FnMut(&[u8])) -> SshOutcome {
     let Connected {
         session,
@@ -769,42 +865,83 @@ pub async fn run(connected: Connected, mut on_output: impl FnMut(&[u8])) -> SshO
     let mut exit_code = None;
     let mut uploads = tokio::task::JoinSet::new();
     let (upload_stop, upload_cancel) = watch::channel(false);
+    let mut io = IoScheduler::default();
     'driver: loop {
         if *cancel.borrow() {
             break;
         }
-        tokio::select! {
-            biased;
-            _ = cancel.changed() => break,
-            Some(_) = uploads.join_next(), if !uploads.is_empty() => {},
-            msg = reader.wait() => {
-                if !ssh_output(msg, &mut on_output, &mut exit_code) { break; }
-            },
-            changed = resize.changed() => {
-                if changed.is_err() { break; }
+        let event = io.next(cancel.changed(), reader.wait(), resize.changed(), async {
+            tokio::select! {
+                biased;
+                Some(_) = uploads.join_next(), if !uploads.is_empty() => DriverWork::UploadCompleted,
+                cmd = cmds.recv() => DriverWork::Command(cmd),
+            }
+        }).await;
+        match event {
+            IoEvent::Cancelled => break,
+            IoEvent::Output(msg) => {
+                if !ssh_output(msg, &mut on_output, &mut exit_code) {
+                    break;
+                }
+            }
+            IoEvent::Resize(changed) => {
+                if changed.is_err() {
+                    break;
+                }
                 let (cols, rows) = *resize.borrow_and_update();
                 tokio::select! {
                     _ = cancel.changed() => break,
                     _ = writer.window_change(cols as u32, rows as u32, 0, 0) => {},
                 }
-            },
-            cmd = cmds.recv() => match cmd {
-                Some(SshCmd::Data { bytes, reply, _budget }) => {
+            }
+            IoEvent::Input(DriverWork::UploadCompleted) => {}
+            IoEvent::Input(DriverWork::Command(cmd)) => match cmd {
+                Some(SshCmd::Data {
+                    bytes,
+                    reply,
+                    _budget,
+                }) => {
                     transferring.store(true, std::sync::atomic::Ordering::Release);
                     let delivery = writer.data(&bytes[..]);
                     tokio::pin!(delivery);
                     let result = loop {
-                        tokio::select! {
-                            biased;
-                            _ = cancel.changed() => break Err(StdinWriteError { written: None, error: anyhow!("SSH transfer cancelled; partial delivery is unknown") }),
-                            result = &mut delivery => break result.map_err(|error| StdinWriteError { written: None, error: anyhow!(error).context("SSH transfer failed; partial delivery is unknown") }),
-                            msg = reader.wait() => {
+                        match io
+                            .next(
+                                cancel.changed(),
+                                reader.wait(),
+                                resize.changed(),
+                                &mut delivery,
+                            )
+                            .await
+                        {
+                            IoEvent::Cancelled => {
+                                break Err(StdinWriteError {
+                                    written: None,
+                                    error: anyhow!(
+                                        "SSH transfer cancelled; partial delivery is unknown"
+                                    ),
+                                })
+                            }
+                            IoEvent::Input(result) => {
+                                break result.map_err(|error| StdinWriteError {
+                                    written: None,
+                                    error: anyhow!(error).context(
+                                        "SSH transfer failed; partial delivery is unknown",
+                                    ),
+                                })
+                            }
+                            IoEvent::Output(msg) => {
                                 if !ssh_output(msg, &mut on_output, &mut exit_code) {
                                     break Err(StdinWriteError { written: None, error: anyhow!("SSH channel closed during delivery; partial delivery is unknown") });
                                 }
-                            },
-                            changed = resize.changed() => {
-                                if changed.is_err() { break Err(StdinWriteError { written: None, error: anyhow!("SSH handle dropped during delivery") }); }
+                            }
+                            IoEvent::Resize(changed) => {
+                                if changed.is_err() {
+                                    break Err(StdinWriteError {
+                                        written: None,
+                                        error: anyhow!("SSH handle dropped during delivery"),
+                                    });
+                                }
                                 let (cols, rows) = *resize.borrow_and_update();
                                 tokio::select! {
                                     _ = cancel.changed() => break Err(StdinWriteError { written: None, error: anyhow!("SSH transfer cancelled; partial delivery is unknown") }),
@@ -817,9 +954,16 @@ pub async fn run(connected: Connected, mut on_output: impl FnMut(&[u8])) -> SshO
                     let stopped = result.is_err();
                     let _ = reply.send(result);
                     drop(_budget);
-                    if stopped { break 'driver; }
-                },
-                Some(SshCmd::Upload { local_path, remote_name, reply, _slot }) => {
+                    if stopped {
+                        break 'driver;
+                    }
+                }
+                Some(SshCmd::Upload {
+                    local_path,
+                    remote_name,
+                    reply,
+                    _slot,
+                }) => {
                     let session = Arc::clone(&session);
                     let mut cancel = upload_cancel.clone();
                     uploads.spawn(async move {
@@ -831,9 +975,9 @@ pub async fn run(connected: Connected, mut on_output: impl FnMut(&[u8])) -> SshO
                         };
                         let _ = reply.send(out);
                     });
-                },
+                }
                 None => break,
-            }
+            },
         }
     }
     cmds.close();
@@ -884,6 +1028,7 @@ pub async fn connect_stream_for_test(
     known_hosts: PathBuf,
 ) -> Result<(SshHandle, Connected)> {
     let (prompt_tx, _prompts) = mpsc::unbounded_channel();
+    let (handle, cmds, cancel, resize) = SshHandle::queue(80, 24);
     let mut session = client::connect_stream(
         Arc::new(client::Config::default()),
         stream,
@@ -892,6 +1037,7 @@ pub async fn connect_stream_for_test(
             host: "fixture".into(),
             port: 22,
             prompt_tx,
+            received_output: Some(Arc::clone(&handle.received_output)),
         },
     )
     .await?;
@@ -908,7 +1054,6 @@ pub async fn connect_stream_for_test(
         channel.writable_packet_size().await == 0,
         "fixture requires an initial zero receive window"
     );
-    let (handle, cmds, cancel, resize) = SshHandle::queue(80, 24);
     let transferring = Arc::clone(&handle.transferring);
     Ok((
         handle,
