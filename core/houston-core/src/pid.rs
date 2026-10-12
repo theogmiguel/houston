@@ -877,12 +877,10 @@ pub(crate) fn resume_owned_child(
         if start.elapsed() >= timeout {
             return Err(std::io::Error::from(std::io::ErrorKind::TimedOut));
         }
-        if entry.th32OwnerProcessID == child.id() {
-            if primary.replace(entry.th32ThreadID).is_some() {
-                return Err(std::io::Error::other(
-                    "suspended child has multiple threads; expected one primary thread",
-                ));
-            }
+        if entry.th32OwnerProcessID == child.id() && primary.replace(entry.th32ThreadID).is_some() {
+            return Err(std::io::Error::other(
+                "suspended child has multiple threads; expected one primary thread",
+            ));
         }
         entry.dwSize = std::mem::size_of_val(&entry) as u32;
         // SAFETY: same live snapshot and entry used by Thread32First.

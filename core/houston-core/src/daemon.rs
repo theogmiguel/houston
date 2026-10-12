@@ -4079,6 +4079,7 @@ impl Daemon {
         }
     }
 
+    #[cfg(unix)]
     fn retained_exited_readers(&self) -> Vec<u32> {
         self.sessions
             .lock()
