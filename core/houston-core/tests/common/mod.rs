@@ -273,6 +273,23 @@ pub async fn collect_broadcast_until(
     session: u32,
     needle: &str,
 ) -> String {
+    collect_broadcast_matching(rx, session, needle, false).await
+}
+
+pub async fn collect_broadcast_envelope(
+    rx: &mut houston_core::frame_queue::Observer,
+    session: u32,
+    needle: &str,
+) -> String {
+    collect_broadcast_matching(rx, session, needle, true).await
+}
+
+async fn collect_broadcast_matching(
+    rx: &mut houston_core::frame_queue::Observer,
+    session: u32,
+    needle: &str,
+    complete_envelope: bool,
+) -> String {
     let mut acc = String::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     loop {
@@ -295,7 +312,9 @@ pub async fn collect_broadcast_until(
             if let Some((id, _offset, payload)) = proto::decode_output_frame(&buf) {
                 if id == session {
                     acc.push_str(&String::from_utf8_lossy(payload));
-                    if acc.contains(needle) {
+                    if acc.find(needle).is_some_and(|at| {
+                        !complete_envelope || acc[at..].contains("--- End Inbox ---")
+                    }) {
                         return acc;
                     }
                 }

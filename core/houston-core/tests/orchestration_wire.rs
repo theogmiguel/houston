@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{collect_broadcast_until, start_daemon_with_handle, TOKEN};
+use common::{
+    collect_broadcast_envelope, collect_broadcast_until, start_daemon_with_handle, TOKEN,
+};
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::mcp_creds::McpScope;
 use houston_protocol as proto;
@@ -7708,7 +7710,7 @@ async fn a_delivered_provisional_result_gets_a_correction_row_naming_it() {
     let mut rx = r.daemon.observe();
     let kid =
         child_with_a_provisional_result(&r, &token, &state, "GUESSED-RESULT the answer").await;
-    let acc = collect_broadcast_until(&mut rx, pane.id, "a correction may follow").await;
+    let acc = collect_broadcast_envelope(&mut rx, pane.id, "GUESSED-RESULT").await;
     assert!(acc.contains("GUESSED-RESULT"), "{acc:?}");
     wait_row_delivered(&r.daemon, pane.id).await;
 
@@ -7720,6 +7722,7 @@ async fn a_delivered_provisional_result_gets_a_correction_row_naming_it() {
     assert!(guessed.provisional, "it went out marked: {delivered:?}");
     let guessed_id = guessed.id;
 
+    let mut correction_rx = r.daemon.observe();
     apply_drop(
         &state,
         HookDrop {
@@ -7762,8 +7765,8 @@ async fn a_delivered_provisional_result_gets_a_correction_row_naming_it() {
         "the row it corrects survives"
     );
 
-    let mut rx = r.daemon.observe();
-    let acc = collect_broadcast_until(&mut rx, pane.id, "as stale").await;
+    wait_row_delivered(&r.daemon, pane.id).await;
+    let acc = collect_broadcast_until(&mut correction_rx, pane.id, "as stale").await;
     assert!(
         acc.contains(&format!("corrects #{guessed_id}")),
         "the delivery names the row it revises: {acc:?}"
