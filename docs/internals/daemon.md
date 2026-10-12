@@ -301,12 +301,15 @@ queued input is not part of the adoption manifest.
 
 Off-connection control handlers use immediate admission: at most 16 per connection and
 64 per process, with no semaphore waiters. A process-owned task set retains admitted
-handlers through completion, including after disconnect; this preserves partially applied
+mutations through completion, including after disconnect; this preserves partially applied
 mutations and subprocess cleanup. Completed handles are collected at the next admission.
 Replies use a fixed 256-item queue and an 8 MiB byte budget, including the reply being sent.
 Cloning senders adds no capacity. Admission refusal names the limits and current counts.
 Reply overflow closes the connection for a full state resync; mutations already admitted
 still finish. These limits apply to off-connection handlers, not the attach-family path.
+Idle waits retain their handler permits for the entire quiet-window or timeout check.
+Disconnect cancels these read-only waits and releases their session ownership; admitted
+mutations continue to completion.
 
 ## The emulator
 
@@ -455,9 +458,10 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns seven tasks:
+`boot::spawn_background_loops` is called only by the daemon host and spawns eleven tasks:
 `swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
-`worktree_cleanup_loop`, `task_pr_watch_loop` and `checkout_watch_loop`. The checkout
+`worktree_cleanup_loop`, `task_pr_watch_loop`, `remote_loops`, `pr_watch_loop`,
+`checkout_watch_loop`, `slack_loops` and `task_tracker_loop`. The checkout
 watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
 debounces changes and broadcasts updated checkout identity. It reacts only to content
 changes that name the HEAD file and coalesces them into one pending flag per HEAD: its
@@ -507,6 +511,13 @@ on whether a client is attached — and 2 s or 5 s with a dead one.
 A filesystem-watcher event fires `swarm_mail_wake` (a `tokio::sync::Notify`) which cuts a
 sleep short — never lengthens one. Mailbox GC retention is 24 h, wire-settable.
 
+The delegation watcher sleeps until notified when no work or retention deadline remains.
+While watching active children it polls every five seconds. Its pending-recipient query
+uses a partial inbox index that includes delivered unresolved questions and blocks;
+delivered result history does not expand the scan.
+The task tracker outbox scans only rows without a receipt, so sent revisions retained
+for idempotency do not expand its retry poll. Future retries retain their scheduled time.
+
 `boot::spawn_startup_refresh` is the sibling for one-shot work that must not block the
 window appearing: a legacy-hook sweep, then workspace and consented-agent hook installs, all
 on `spawn_blocking`, plus Claude MCP entry maintenance and registration with Codex, Grok,
@@ -526,8 +537,9 @@ pane is observed through its `RoutineRun` row and can be opened from the routine
   arms), the pane's `session_id`, its error and timestamps. `Routine.last_*` is a
   denormalised summary of the newest run. A row still `Running` at boot was cut off by the
   daemon stopping, and is closed `Failed` there.
-- Cadence is the only trigger. One catch-up loop drives every routine (`routines.rs`'s
-  `ROUTINE_TICK_MS`, 15 s), bounded by `ROUTINE_RUNS_CONCURRENT` (3 at once) and
+- Cadence is the only trigger. One catch-up loop drives every routine, sleeping until the
+  next enabled run or a schedule change, and polling settling panes every
+  `ROUTINE_TICK_MS` (15 s). It is bounded by `ROUTINE_RUNS_CONCURRENT` (3 at once) and
   `ROUTINE_RUN_MAX_MS` (30 min per run); a week of downtime fires each routine once on the
   next tick rather than replaying every missed firing, and every run ends in a typed
   `RoutineOutcome` (`Ok` · `Denied` · `KilledAtCap` · `EngineRefused` · `Failed`).

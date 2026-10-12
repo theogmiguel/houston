@@ -692,6 +692,58 @@ CPU and input latency under steady output in a 12-pane grid:
   again) each sample `/proc` CPU of the app, WebKit and daemon processes. A
   phase with fewer than 500 frames is VOID.
 
+### Terminal surface diagnostics
+
+Run the bounded standalone fixture after installing renderer dependencies and the
+Playwright WebKit browser used by the story harness. On Linux:
+
+```sh
+flock /tmp/houston-perf-round.lock node ui/harness/terminal-profile.mjs \
+  --out /tmp/houston-terminal-profile.json --phase-ms 5000 --cycles 3
+```
+
+On Windows, run one fixture at a time from PowerShell:
+
+```powershell
+node ui/harness/terminal-profile.mjs --out "$env:TEMP\houston-terminal-profile.json" --phase-ms 5000 --cycles 3
+```
+
+The fixture loads production terminal surfaces and vendored WASM through Vite development
+modules. It creates 1, 6 and 12 surfaces in one browser, samples idle and 20 Hz streaming
+output, then pauses and hides background surfaces while continuing output and verifies
+their repaint and latest content on reveal. With one surface, input and streaming share
+the terminal and there is no hidden-background phase.
+Three colour and create/dispose cycles exercise 8192 distinct truecolours per surface per
+cycle, using fresh colours across surfaces and rounds. Writes use UTF-8 byte arrays.
+`--phase-ms` accepts 1000..20000 and `--cycles` accepts 1..5; each round has a deadline
+and failures preserve partial JSON. Output and caches must stay outside the checkout.
+
+JSON records parse and paint counters, synthetic rAF cadence, synthetic textarea input
+through a timer loopback to a submitted canvas paint, WASM capacity and competing machine
+load. Cadence samples cover streaming only; the separately reported input-drain interval
+cannot satisfy the streaming sample threshold. Linux additionally records the launched
+browser process tree's CPU, RSS and PSS at
+phase boundaries; other platforms omit these process metrics. CPU is percent of one core
+and excludes Vite and the driver. Changing process sets invalidate CPU comparisons; summed
+RSS double-counts shared pages, so prefer PSS. Idle has no continuous rAF or input probe,
+but the focused cursor still blinks. Disposal does not force garbage collection, and WASM
+capacity can stay at its allocator high-water mark. A page hidden or unfocused at any point
+in a phase, missing or changing Linux process samples and streaming phases with fewer than 25 rAF samples per second mark diagnostic
+timings invalid; they do not discard the structural observations.
+Missing or timed-out synthetic input echoes fail the run and preserve the measured counts
+in the JSON instead of reporting a valid latency distribution from only successful echoes.
+
+Run at normal priority with no concurrent build or benchmark, and repeat on an idle machine
+before interpreting timing differences. These are development diagnostics, with no release
+baseline or regression floor. Playwright WebKit does not establish the installed
+WebKitGTK/Tauri runtime's behaviour; native memory-corruption investigations remain
+separate. The fixture omits PTYs, transport, React layout and snapshot hibernation.
+Native M12 covers the component's hidden policy and daemon reattachment; M13 covers
+actual PTY echo and app/daemon CPU. Worktrees can inspect those native scenarios using a
+debug binary built with `--features bench` and `TR_BENCH_ALLOW_DEBUG=1` on an unused named
+channel, but must not run the release-baseline scripts or compare debug numbers to their
+release floors.
+
 ## Maintaining model data
 
 Houston reads LiteLLM's

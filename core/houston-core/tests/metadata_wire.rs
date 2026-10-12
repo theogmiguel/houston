@@ -213,6 +213,7 @@ async fn wait_for_idle_answers_quiet_busy_dead_and_unknown() {
     let quiet_session = create_custom_session(&daemon, tmp.path(), vec!["sleep", "30"]);
     daemon
         .wait_for_idle(1, quiet_session.id, Some(5_000), Some(100))
+        .await
         .unwrap();
     assert!(
         expect_broadcast_idle(&mut rx, 1).await,
@@ -233,6 +234,7 @@ async fn wait_for_idle_answers_quiet_busy_dead_and_unknown() {
     collect_broadcast_until(&mut rx, busy_session.id, "BUSY").await;
     daemon
         .wait_for_idle(2, busy_session.id, Some(400), Some(5_000))
+        .await
         .unwrap();
     assert!(
         !expect_broadcast_idle(&mut rx, 2).await,
@@ -248,13 +250,14 @@ async fn wait_for_idle_answers_quiet_busy_dead_and_unknown() {
     let mut rx = daemon.observe();
     daemon
         .wait_for_idle(3, dead_session.id, Some(5_000), Some(60_000))
+        .await
         .unwrap();
     assert!(
         expect_broadcast_idle(&mut rx, 3).await,
         "a dead session is idle"
     );
 
-    let err = daemon.wait_for_idle(4, 9999, None, None).unwrap_err();
+    let err = daemon.wait_for_idle(4, 9999, None, None).await.unwrap_err();
     assert!(
         err.to_string().contains("9999"),
         "error must name the id: {err}"

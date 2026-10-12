@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SessionInfo } from './houston/client'
 import { createSessionsStore, SessionsStoreContext, useSession, useSessionIds, useLayoutSessions } from './sessionsStore'
 
@@ -10,6 +10,97 @@ function session(id: number): SessionInfo {
 }
 
 describe('sessions selectors', () => {
+  it.each([1, 6, 12])('does not re-read %i mounted panes for background session events', (panes) => {
+    const store = createSessionsStore(new Map(Array.from({ length: panes + 1 }, (_, index) => {
+      const info = session(index + 1)
+      return [info.id, { ...info, project_dir: index === panes ? '/background' : '/visible' }]
+    })))
+    const getSnapshot = vi.spyOn(store, 'getSnapshot')
+    let renders = 0
+    function Pane({ id }: { id: number }) { useSession(id); renders++; return null }
+    const root = createRoot(document.createElement('div'))
+    act(() => root.render(<SessionsStoreContext.Provider value={store}>
+      {Array.from({ length: panes }, (_, index) => <Pane key={index} id={index + 1} />)}
+    </SessionsStoreContext.Provider>))
+    getSnapshot.mockClear()
+    renders = 0
+    for (let event = 0; event < 100; event++) {
+      act(() => store.set((previous) => new Map(previous).set(panes + 1, { ...previous.get(panes + 1)!, title: `Background ${event}` })))
+    }
+    expect(getSnapshot.mock.calls.length).toBe(0)
+    expect(renders).toBe(0)
+    act(() => store.set((previous) => new Map(previous).set(1, { ...previous.get(1)!, status: 'idle' })))
+    expect(renders).toBe(1)
+    act(() => root.unmount())
+  })
+
+  it('switches session ids and stores, observes removal, and releases unmounted ids', () => {
+    const first = createSessionsStore(new Map([[1, session(1)], [2, session(2)]]))
+    const second = createSessionsStore(new Map([[2, { ...session(2), title: 'Second store' }]]))
+    const firstReads = vi.spyOn(first, 'getSnapshot')
+    let selected: SessionInfo | undefined
+    function Pane({ id }: { id: number }) { selected = useSession(id); return null }
+    const root = createRoot(document.createElement('div'))
+    const render = (store: typeof first, id: number) => act(() => root.render(
+      <SessionsStoreContext.Provider value={store}><Pane id={id} /></SessionsStoreContext.Provider>
+    ))
+    render(first, 1)
+    render(first, 2)
+    firstReads.mockClear()
+    act(() => first.set((previous) => new Map(previous).set(1, { ...session(1), title: 'Old id' })))
+    expect(firstReads.mock.calls.length).toBe(0)
+    expect(selected?.id).toBe(2)
+    render(second, 2)
+    firstReads.mockClear()
+    act(() => first.set((previous) => new Map(previous).set(2, { ...session(2), title: 'Old store' })))
+    expect(firstReads.mock.calls.length).toBe(0)
+    expect(selected?.title).toBe('Second store')
+    act(() => second.set(new Map()))
+    expect(selected).toBeUndefined()
+    act(() => second.set(new Map([[2, session(2)]])))
+    expect(selected?.id).toBe(2)
+    act(() => root.unmount())
+    const next = new Map([[2, { ...session(2), title: 'Unmounted' }]])
+    const get = vi.spyOn(next, 'get')
+    second.set(next)
+    expect(get.mock.calls.length).toBe(0)
+    const oldNext = new Map([[1, session(1)], [2, session(2)]])
+    const oldGet = vi.spyOn(oldNext, 'get')
+    first.set(oldNext)
+    expect(oldGet.mock.calls.length).toBe(0)
+  })
+
+  it('notifies multiple consumers of an id and preserves whole-roster subscriptions', () => {
+    const store = createSessionsStore(new Map([[1, session(1)], [2, session(2)]]))
+    const a = vi.fn()
+    const b = vi.fn()
+    const roster = vi.fn()
+    const offA = store.subscribeSession(1, a)
+    const offB = store.subscribeSession(1, b)
+    const offRoster = store.subscribe(roster)
+    store.set((previous) => new Map(previous))
+    expect(a).not.toHaveBeenCalled()
+    expect(b).not.toHaveBeenCalled()
+    expect(roster).toHaveBeenCalledTimes(1)
+    store.set((previous) => new Map(previous).set(1, { ...session(1), status: 'idle' }))
+    expect(a).toHaveBeenCalledTimes(1)
+    expect(b).toHaveBeenCalledTimes(1)
+    offA()
+    store.set(new Map([[2, session(2)]]))
+    expect(a).toHaveBeenCalledTimes(1)
+    expect(b).toHaveBeenCalledTimes(2)
+    offB()
+    // Reusing an id after cleanup must survive a repeated old unsubscribe.
+    const offNew = store.subscribeSession(1, a)
+    offB()
+    store.set((previous) => new Map(previous).set(1, session(1)))
+    expect(a).toHaveBeenCalledTimes(2)
+    offNew()
+    offRoster()
+    store.set(new Map())
+    expect(roster).toHaveBeenCalledTimes(4)
+  })
+
   it('keeps unrelated session and membership references stable without rendering', () => {
     const a = session(1)
     const b = session(2)
