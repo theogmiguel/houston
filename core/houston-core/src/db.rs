@@ -2516,17 +2516,28 @@ impl Db {
         let tx = conn.transaction()?;
         Self::insert_session_on(&tx, info, Some(title_source))?;
         tx.execute(
-            "UPDATE sessions SET profile_config_dir = ?2, launch_selections = ?3,
-                approval_mode = ?4 WHERE id = ?1",
+            "UPDATE sessions SET profile_config_dir = ?2 WHERE id = ?1",
+            rusqlite::params![info.id, profile],
+        )?;
+        Self::set_session_launch_selections_on(&tx, info.id, launch)?;
+        prepare()?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn set_session_launch_selections_on(
+        conn: &Connection,
+        id: u32,
+        launch: Option<&crate::launch::SessionLaunchSelections>,
+    ) -> Result<()> {
+        conn.execute(
+            "UPDATE sessions SET launch_selections = ?2, approval_mode = ?3 WHERE id = ?1",
             rusqlite::params![
-                info.id,
-                profile,
+                id,
                 launch.map(serde_json::to_string).transpose()?,
                 launch.map_or("default", |selections| selections.approval.as_str()),
             ],
         )?;
-        prepare()?;
-        tx.commit()?;
         Ok(())
     }
 
