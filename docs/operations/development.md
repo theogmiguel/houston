@@ -427,8 +427,8 @@ present the proc macro panics.
 ### The safety scripts
 
 Hermetic, sub-second, text-search invariants. Twenty-six of these run on every
-push and every PR, in `ci.yml`'s `safety-checks` job — one of four CI now
-runs; see "What CI runs" below for the other three, and the Cadence section
+push and every PR, in `ci.yml`'s `safety-checks` job;
+see "What CI runs" below for the other jobs, and the Cadence section
 above for what still runs only locally. The last row,
 `check-third-party-licenses.sh`, is not a text search: it regenerates the
 committed inventory and runs in its own `licence-inventory` job.
@@ -469,14 +469,15 @@ committed inventory and runs in its own `licence-inventory` job.
 |---|---|---|
 | `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | The twenty-six hermetic, sub-second text-search scripts above |
 | `renderer-checks` | every PR, and every push to `main` except a docs-only change | `ui`'s `bun run typecheck` and `bun run test` |
-| `core-checks` | every PR, and every push to `main` except a docs-only change | `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --lib`, all against `core/Cargo.toml` |
+| `core-checks` | every PR, and every push to `main` except a docs-only change | core formatting, Clippy, unit tests, protocol compatibility and correlated session creation regressions |
+| `linux-native-checks` | every PR, and every push to `main` except a docs-only change | fresh renderer assets and debug sidecars, native formatting, Clippy and tests with default and `bench` features; tests use an isolated keyring |
 | `windows-renderer-checks` | every PR, and every push to `main` except a docs-only change | renderer tests, typecheck, complexity, CSS and bundle gates on Windows 2022 |
-| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus Git, management, shutdown, environment, Tasks wire, non-ASCII/long-path ConPTY and orchestration worktree regressions on Windows 2022 |
+| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus protocol compatibility, subprocess deadlines, stalled SSH, Git, management, shutdown, environment, Tasks wire, non-ASCII/long-path ConPTY and orchestration worktree regressions on Windows 2022 |
 | `licence-inventory` | every PR, and every push to `main` except a docs-only change | regenerates `src-tauri/resources/third-party-licenses.json` and diffs it against the committed copy (`scripts/check-third-party-licenses.sh`) |
 
-The remaining integration suites (`core/houston-core/tests/`, which need a real
-PTY, a keyring or an unlocked session), Linux `src-tauri` gates and load-sensitive
-gates stay local. Windows renderer and Rust checks run in parallel; the native
+The remaining integration suites in `core/houston-core/tests/`, graphical tests
+requiring a desktop session, and load-sensitive gates stay local.
+Windows renderer and Rust checks run in parallel; the native
 job builds its own fresh frontend assets and covers portable ConPTY regressions,
 including Tasks start/stop/resume for all six providers and queue execution with
 structured results and independent review. Provider CLIs are simulated; PTYs and
