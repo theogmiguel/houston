@@ -27,8 +27,10 @@ requests, Routines and Usage remain work destinations in the rail.
 
 Search your skills and filter by Yours or This workspace. Copy counts show how many
 reported agents can use each skill. Select a skill or its copy count to expand the
-per-agent status and instructions inline. The expanded detail also provides editing,
-deleting, comparing copies and undoing a previous copy operation.
+per-agent status inline: synced, missing, different from Claude Code, or reading
+Claude Code’s folder directly. Add a missing copy or compare differing instructions
+before copying Claude Code’s version to an agent. The expanded detail also provides
+editing, deleting, an instructions disclosure and undoing a previous copy operation.
 
 **Sync all** fills missing copies using the Claude Code source for every eligible
 skill in the library, including skills hidden by search or the scope filter. Skills

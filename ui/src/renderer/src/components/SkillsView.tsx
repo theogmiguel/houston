@@ -1,3 +1,6 @@
+import { copyAgentLabel } from './settings/skillLibraryCopies'
+import { SettingsToolbar } from './ui/SettingsToolbar'
+import { DetailsDisclosure } from './ui/DetailsDisclosure'
 import { SkillsSettingsLibrary } from './settings/SkillsSettingsLibrary'
 import { MascotSurfaceMount } from '../mascot/MascotMount'
 import { useEffect, useMemo, useState } from 'react'
@@ -529,15 +532,8 @@ function SkillEditForm({
   )
 }
 
-const SKILL_TOOL_LABEL: Partial<Record<AgentKind, string>> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  opencode: 'OpenCode',
-  cursor: 'Cursor'
-}
-
 function skillToolLabel(tool: AgentKind): string {
-  return SKILL_TOOL_LABEL[tool] ?? tool
+  return copyAgentLabel(tool)
 }
 
 function formatPushAge(pushedAtSec: number, nowMs: number): string {
@@ -653,6 +649,21 @@ function SkillInstructionsBox({ path }: { path: string }): React.JSX.Element {
       {error ? `Couldn't read ${path}: ${error}` : (content ?? 'Reading…')}
     </CodePane>
   )
+}
+
+function SkillSettingsDetail({ skill, scopeLabel, onEdit, onDelete }: {
+  skill: Skill; scopeLabel?: string; onEdit: (skill: Skill) => void; onDelete: (skill: Skill) => void
+}): React.JSX.Element {
+  return <div className="grid gap-[var(--space-2)]">
+    <SettingsToolbar>
+      <Caption tone="faint">{scopeLabel ?? (skill.source === 'project' ? 'This workspace' : 'User')}</Caption>
+      <SettingsToolbar>
+        <Button variant="ghost" size="sm" icon={IconPencil} aria-label={`Edit ${skill.name}`} onClick={() => onEdit(skill)}>Edit</Button>
+        <Button variant="danger" size="sm" icon={IconTrash} aria-label={`Delete ${skill.name}`} onClick={() => onDelete(skill)}>Delete</Button>
+      </SettingsToolbar>
+    </SettingsToolbar>
+    <DetailsDisclosure summary="Instructions"><SkillInstructionsBox path={skill.path} /></DetailsDisclosure>
+  </div>
 }
 
 function SkillEmbeddedDetail({
@@ -1130,6 +1141,7 @@ export function SkillsView({
               if (form && form.path === skill.path) {
                 return <SkillEmbeddedEditor form={form} setForm={setForm} submitForm={submitForm} />
               }
+              if (settingsPage) return <SkillSettingsDetail skill={skill} scopeLabel={scopeLabel} onEdit={startEdit} onDelete={startDelete} />
               return (
                 <SkillEmbeddedDetail
                   skill={skill}

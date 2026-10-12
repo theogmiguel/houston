@@ -9,7 +9,7 @@ import { Notice } from '../ui/Notice'
 import { Tooltip } from '../ui/Tooltip'
 import { Drawer } from '../ui/Drawer'
 import { SettingsToolbar } from '../ui/SettingsToolbar'
-import { SkillItemDistribution } from '../SkillDistribution'
+import { SkillCopyTable } from '../SkillDistribution'
 import { copyAgentLabel, libraryCopies, librarySkillId, syncLibrarySkill, uniqueLibrarySkills } from './skillLibraryCopies'
 
 type Push = (tool: AgentKind, skill: string) => void
@@ -54,18 +54,14 @@ function MissingCopiesNotice({ skills, tools, onPush }: Pick<LibraryProps, 'skil
   const syncable = missing.some(skill => { const state = libraryCopies(skill, tools); return skill.agent === 'claude' && state.source && !state.conflict })
   return <Notice tone="warn" action={onPush && syncable ? { label: 'Sync all', onClick: () => missing.forEach(skill => syncLibrarySkill(skill, tools, onPush)) } : undefined}>
     <Text weight="semibold">{missing.length ? `${missing.length} ${missing.length === 1 ? 'skill is' : 'skills are'} missing copies` : 'Skill copies need review'}</Text><br />
-    <Text size="small">{agents.length > 0 && `In ${agents.join(' or ')}. `}{conflicts.length > 0 && `${conflicts.length} ${conflicts.length === 1 ? 'skill has' : 'skills have'} differing copies; ${conflicts.length === 1 ? 'it is excluded from Sync all and needs review' : 'they are excluded from Sync all and need review'}.`}</Text>
+    <Text size="small">{agents.length > 0 && `In ${new Intl.ListFormat('en-GB', { style: 'long', type: 'disjunction' }).format(agents)}. `}{conflicts.length > 0 && `${conflicts.length} ${conflicts.length === 1 ? 'skill has' : 'skills have'} differing copies; ${conflicts.length === 1 ? 'it is excluded from Sync all and needs review' : 'they are excluded from Sync all and need review'}.`}</Text>
   </Notice>
 }
 function SkillCopyDetail({ skill, tools, onPush, onPushUndo, pushes }: Pick<LibraryProps, 'tools' | 'onPush' | 'onPushUndo' | 'pushes'> & { skill: Skill }): React.JSX.Element {
   const state = libraryCopies(skill, tools)
   return <div className="grid gap-[var(--space-2)]">
-    <DataTable aria-label={`Agent copies of ${skill.name}`} rows={state.copies} getRowId={copy => copy.tool.tool} columns={[
-      { key: 'agent', header: 'Agent', render: copy => <Text size="small">{copyAgentLabel(copy.tool.tool)}</Text> },
-      { key: 'status', header: 'Copy', render: copy => <Text size="small" tone={copy.status === 'Differs' ? 'warn' : copy.status === 'Missing' ? 'muted' : 'secondary'}>{copy.status}{copy.inherited && ' (reads Claude Code’s copy)'}</Text> }
-    ]} />
+    <SkillCopyTable skillName={skill.name} row={state.row} tools={state.copies.map(copy => copy.tool)} onPush={skill.agent === 'claude' ? onPush : undefined} onPushUndo={onPushUndo} pushes={pushes} />
     <Text size="small" tone="secondary">{state.conflict ? 'Copies differ. Compare instructions before choosing which copy to keep.' : state.source ? 'Sync uses Claude Code’s copy. Agents that read it directly do not need another copy.' : 'A Claude Code source copy is required to sync this skill.'}</Text>
     {skill.agent === 'claude' && onPush && state.source && !state.conflict && state.missing.length > 0 && <Button variant="secondary" size="sm" onClick={() => syncLibrarySkill(skill, tools, onPush)}>Sync this skill</Button>}
-    {skill.agent === 'claude' && onPush && onPushUndo && tools && <SkillItemDistribution skillName={skill.name} tools={tools} pushes={pushes ?? []} onPush={onPush} onPushUndo={onPushUndo} />}
   </div>
 }

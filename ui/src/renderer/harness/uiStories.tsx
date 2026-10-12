@@ -706,6 +706,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="surface-large">Large surface</Button>
             <Button variant="action-primary" size="lg">Large primary</Button>
             <BrowserButton variant="outline">Outline</BrowserButton>
+            <div className="max-w-[180px]"><Button variant="ghost-wrap" size="sm">Copy Claude’s version to Antigravity</Button></div>
             <Button variant="ghost">Ghost</Button>
             <BrowserButton variant="label">Label action</BrowserButton>
             <Button variant="link">Link</Button>

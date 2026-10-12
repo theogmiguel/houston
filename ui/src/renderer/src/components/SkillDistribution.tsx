@@ -1,134 +1,69 @@
 import { useState } from 'react'
-import { StatusIcon, type StatusIconState } from './ui/StatusIcon'
-import { Tooltip } from './ui/Tooltip'
-import { IconRespawn } from './icons'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { SkillToolState } from '../houston/generated/SkillToolState'
 import type { SkillPushRecord } from '../houston/generated/SkillPushRecord'
-import { buildSkillRows, needsPush, skillCellFor, skillCellTitle } from '../houston/skillRows'
+import { buildSkillRows, needsPush, skillCellFor, type SkillRow } from '../houston/skillRows'
 import { readFile } from '../houston/bridge'
-import { BlockBar, BlockBarList, BlockLabelCell, CodePane } from './ui/Block'
-import { Card } from './ui/Card'
-import { Icon } from './ui/Icon'
-import { PanelButton, PanelColumns, PanelIconButton } from './ui/PanelControls'
+import { CodePane } from './ui/Block'
+import { Button } from './ui/Button'
+import { DataTable } from './ui/DataTable'
+import { PanelColumns } from './ui/PanelControls'
 import { Text } from './ui/Text'
+import { SettingsToolbar } from './ui/SettingsToolbar'
+import { copyAgentLabel } from './settings/skillLibraryCopies'
 
-const TOOL_LABEL: Partial<Record<AgentKind, string>> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  opencode: 'OpenCode',
-  cursor: 'Cursor'
-}
-
-function label(tool: AgentKind): string {
-  return TOOL_LABEL[tool] ?? tool
-}
-
-const SKILL_STATE: Record<ReturnType<typeof skillCellFor>['kind'], StatusIconState> = {
-  same: 'ok',
-  differs: 'differs',
-  inherited: 'off',
-  missing: 'absent'
-}
-
-const CELL_STATUS: Record<ReturnType<typeof skillCellFor>['kind'], string> = {
-  same: 'Its own copy',
-  differs: "Its own copy, differs from Claude Code's",
-  inherited: "No copy of its own — sees Claude Code's",
-  missing: 'Not visible here'
-}
-
-export function SkillItemDistribution({
-  skillName,
-  tools,
-  pushes,
-  onPush,
-  onPushUndo
-}: {
+type Push = (tool: AgentKind, skill: string) => void
+interface CopyTableProps {
   skillName: string
+  row?: SkillRow
   tools: SkillToolState[]
-  pushes: SkillPushRecord[]
-  onPush: (tool: AgentKind, skill: string) => void
-  onPushUndo: (tool: AgentKind, skill: string) => void
-}): React.JSX.Element | null {
-  const [diffTool, setDiffTool] = useState<AgentKind | null>(null)
-  const [diffContent, setDiffContent] = useState<{ claude: string; other: string } | null>(null)
-  const [diffError, setDiffError] = useState<string | null>(null)
+  pushes?: SkillPushRecord[]
+  onPush?: Push
+  onPushUndo?: Push
+}
+const CELL_STATUS = { same: 'Synced', differs: 'Differs', inherited: "Reads Claude's folder", missing: 'Missing' }
 
-  const row = buildSkillRows(tools).find((r) => r.name === skillName)
-  if (!row || !row.claude) return null
-  const others = tools.filter((t) => t.tool !== 'claude')
-  if (others.length === 0) return null
-
+export function SkillCopyTable({ skillName, row, tools, pushes = [], onPush, onPushUndo }: CopyTableProps): React.JSX.Element {
+  const [diff, setDiff] = useState<{ tool: AgentKind; content?: { claude: string; other: string }; error?: string } | null>(null)
   const openDiff = (tool: SkillToolState): void => {
-    const entry = row.byTool[tool.tool]
-    if (!entry || !row.claude) return
-    setDiffTool(tool.tool)
-    setDiffContent(null)
-    setDiffError(null)
+    const entry = row?.byTool[tool.tool]
+    if (!entry || !row?.claude) return
+    setDiff({ tool: tool.tool })
     Promise.all([readFile(row.claude.path), readFile(entry.path)])
-      .then(([claude, other]) => setDiffContent({ claude, other }))
-      .catch((e: Error) => setDiffError(e.message))
+      .then(([claude, other]) => setDiff(current => current?.tool === tool.tool ? { tool: tool.tool, content: { claude, other } } : current))
+      .catch((error: Error) => setDiff(current => current?.tool === tool.tool ? { tool: tool.tool, error: error.message } : current))
   }
-
-  return (
-    <Card tone="block" shape="md" data-testid="skill-item-distribution">
-      <BlockBar edge="bottom" text="faint">
-        Distribution — Claude Code&apos;s copy is the source; the table shows what each other tool
-        sees.
-      </BlockBar>
-      <BlockBarList>
-        {others.map((tool) => {
-          const cell = skillCellFor(row, tool)
-          const pushable = needsPush(row, tool)
-          const push = pushes.find((p) => p.tool === tool.tool && p.skill === skillName)
-          return (
-            <BlockBar as="li" edge="rows" text="small" key={tool.tool} className="flex items-center gap-[var(--space-2)]">
-              <span className="flex-none">
-                <StatusIcon state={SKILL_STATE[cell.kind]} />
-              </span>
-              <BlockLabelCell>{label(tool.tool)}</BlockLabelCell>
-              <Text tone="secondary" className="flex-1 min-w-0 truncate">
-                <Tooltip label={skillCellTitle(cell, label(tool.tool))}>
-                  <span>{CELL_STATUS[cell.kind]}</span>
-                </Tooltip>
-              </Text>
-              {cell.kind === 'differs' && <PanelIconButton onClick={() => openDiff(tool)}>View difference</PanelIconButton>}
-              {pushable && (
-                <PanelButton onClick={() => onPush(tool.tool, skillName)}>
-                  Copy Claude&apos;s version to {label(tool.tool)}
-                </PanelButton>
-              )}
-              {push && (
-                <Tooltip label="Undo this push">
-                  <PanelIconButton
-                    aria-label={`Undo pushing ${skillName} into ${label(tool.tool)}`}
-                    onClick={() => onPushUndo(tool.tool, skillName)}
-                  >
-                    <Icon glyph={IconRespawn} role="small" />
-                  </PanelIconButton>
-                </Tooltip>
-              )}
-            </BlockBar>
-          )
-        })}
-      </BlockBarList>
-      {diffTool && (
-        <BlockBar edge="top" pad="lg" className="grid gap-[var(--space-2)]">
-          <Text as="div" size="small" weight="semibold" tone="secondary" className="flex items-center justify-between">
-            Claude Code vs {label(diffTool)}
-            <PanelIconButton onClick={() => setDiffTool(null)}>Close</PanelIconButton>
-          </Text>
-          {diffError && <Text as="div" tone="danger">{diffError}</Text>}
-          {!diffError && !diffContent && <Text as="div" tone="faint">Reading both copies…</Text>}
-          {diffContent && (
-            <PanelColumns>
-              <CodePane size="diff">{diffContent.claude}</CodePane>
-              <CodePane size="diff">{diffContent.other}</CodePane>
-            </PanelColumns>
-          )}
-        </BlockBar>
-      )}
-    </Card>
-  )
+  return <div data-testid="skill-item-distribution" className="min-w-0 grid gap-[var(--space-2)]">
+    <DataTable variant="dense" maxBodyHeight={900} aria-label={`Agent copies of ${skillName}`} rows={tools} getRowId={tool => tool.tool} columns={[
+      { key: 'agent', header: 'Agent', width: '18%', render: tool => <Text size="small">{copyAgentLabel(tool.tool)}</Text> },
+      { key: 'status', header: 'Status', width: '25%', render: tool => <CopyStatus row={row} tool={tool} /> },
+      { key: 'actions', header: 'Actions', render: tool => <CopyActions skillName={skillName} row={row} tool={tool} pushed={pushes.some(push => push.tool === tool.tool && push.skill === skillName)} onPush={onPush} onPushUndo={onPushUndo} onDiff={openDiff} /> }
+    ]} />
+    {diff && <CopyDifference diff={diff} onClose={() => setDiff(null)} />}
+  </div>
+}
+function CopyStatus({ row, tool }: { row?: SkillRow; tool: SkillToolState }): React.JSX.Element {
+  const cell = row ? skillCellFor(row, tool) : { kind: 'missing' as const }
+  return <Text size="small" tone={cell.kind === 'differs' ? 'warn' : 'secondary'}>{CELL_STATUS[cell.kind]}</Text>
+}
+function CopyActions({ skillName, row, tool, pushed, onPush, onPushUndo, onDiff }: Omit<CopyTableProps, 'tools' | 'pushes'> & { tool: SkillToolState; pushed: boolean; onDiff: (tool: SkillToolState) => void }): React.JSX.Element {
+  const cell = row ? skillCellFor(row, tool) : { kind: 'missing' as const }
+  const pushable = row && !tool.error && needsPush(row, tool) && cell.kind !== 'inherited'
+  return <SettingsToolbar>
+    {cell.kind === 'differs' && <Button variant="ghost-wrap" size="sm" onClick={() => onDiff(tool)}>View difference</Button>}
+    {pushable && onPush && <Button variant="ghost-wrap" size="sm" aria-label={cell.kind === 'missing' ? `Add copy to ${copyAgentLabel(tool.tool)}` : undefined} onClick={() => onPush(tool.tool, skillName)}>{cell.kind === 'missing' ? 'Add copy' : `Copy Claude's version to ${copyAgentLabel(tool.tool)}`}</Button>}
+    {pushed && onPushUndo && <Button variant="ghost-wrap" size="sm" aria-label={`Undo pushing ${skillName} into ${copyAgentLabel(tool.tool)}`} onClick={() => onPushUndo(tool.tool, skillName)}>Undo copy</Button>}
+  </SettingsToolbar>
+}
+function CopyDifference({ diff, onClose }: { diff: { tool: AgentKind; content?: { claude: string; other: string }; error?: string }; onClose: () => void }): React.JSX.Element {
+  return <div className="grid gap-[var(--space-2)]">
+    <div className="flex items-center justify-between"><Text size="small" weight="semibold">Claude Code vs {copyAgentLabel(diff.tool)}</Text><Button variant="ghost-wrap" size="sm" onClick={onClose}>Close</Button></div>
+    {diff.error ? <Text tone="danger">{diff.error}</Text> : diff.content ? <PanelColumns><CodePane size="diff">{diff.content.claude}</CodePane><CodePane size="diff">{diff.content.other}</CodePane></PanelColumns> : <Text tone="faint">Reading both copies…</Text>}
+  </div>
+}
+export function SkillItemDistribution({ skillName, tools, pushes, onPush, onPushUndo }: Omit<CopyTableProps, 'row'>): React.JSX.Element | null {
+  const row = buildSkillRows(tools).find(item => item.name === skillName)
+  const others = tools.filter(tool => tool.detected && tool.tool !== 'claude')
+  if (!row?.claude || !others.length) return null
+  return <SkillCopyTable skillName={skillName} row={row} tools={others} pushes={pushes} onPush={onPush} onPushUndo={onPushUndo} />
 }
