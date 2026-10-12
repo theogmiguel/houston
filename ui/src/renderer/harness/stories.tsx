@@ -544,6 +544,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'notices/pane-corner': () => <NoticesPaneCorner />,
   'notices/orchestration': () => <NoticesOrchestration />,
   'nav/routines': () => <NavRoutines />,
+  'nav/routines-many-workspaces': () => <NavRoutines many />,
   'nav/routines-user': () => <NavRoutines selectedRoutineId={2} />,
   'nav/routines-review-setup': () => <NavRoutines setup />,
   'nav/routines-review-report': () => <NavRoutines report />,

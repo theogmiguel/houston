@@ -5,6 +5,7 @@ import type { HoustonClient, ServerMsg } from '../../houston/client'
 import type { Routine } from '../../houston/routineTypes'
 import { WeeklyReviewDetail } from './WeeklyReviewDetail'
 import { RoutinesSurface } from './RoutinesSurface'
+import { pickOption } from '../../test/selectHarness'
 
 afterEach(cleanup)
 const ROUTINE: Routine = { kind: 'harness_review', id: 1, name: 'Harness review', prompt: 'Review sessions', workspace_id: '/a', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, enabled: true, engine: 'claude', next_run_at_ms: 1, permission_mode: 'accept_edits', isolate: false, revision: 'r1' }
@@ -55,7 +56,8 @@ it('creates a missing per-workspace review with shared setup fields without star
   const onRunNow = vi.fn()
   render(<RoutinesSurface client={client} routines={[]} running={[]} runs={{}} runsLoading={null} workspaces={[{ id: '/a', name: 'A' }]} error={null}
     onDismissError={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} onDelete={vi.fn()} onRunNow={onRunNow} onLoadRuns={vi.fn()} onOpenSession={vi.fn()} onRequest={vi.fn()} now={1} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Set up Weekly review' }))
+  fireEvent.click(screen.getAllByTestId('list-detail-item')[0])
+  pickOption(document.body, 'review-setup-workspace', '/a')
   emit(state('/a', null))
   expect(screen.getByText('What a review sends to its provider')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Create routine' }))

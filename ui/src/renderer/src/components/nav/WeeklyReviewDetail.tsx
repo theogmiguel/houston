@@ -11,6 +11,7 @@ import type { Routine } from '../../houston/routineTypes'
 import { TaskAgentIcon } from '../ui/TaskSurface'
 import { engineLabel } from '../engineLabel'
 import { formatAgo } from '../tasks/format'
+import { formatRunTime, nextUpTimeLabel } from './routineFormat'
 import { Toggle } from '../ui/settingsPrimitives'
 import { RoutineDetail } from '../ui/RoutineDetail'
 import { HarnessReviewConsent, HarnessSetupFields, type HarnessSetupValue } from './HarnessSurface'
@@ -30,7 +31,8 @@ export function WeeklyReviewSetup({ client, workspace, onCancel, onCreate }: {
   </div>
 }
 
-export function WeeklyReviewDetail({ client = null, workspaceName, onUpdateReviewSchedule, ...props }: ComponentProps<typeof RoutineDetail> & {
+export function WeeklyReviewDetail({ client = null, workspaceName, onUpdateReviewSchedule, grouped = false, ...props }: ComponentProps<typeof RoutineDetail> & {
+  grouped?: boolean
   client?: HoustonClient | null
   workspaceName?: string | null
   onUpdateReviewSchedule?: (fields: ReturnType<typeof scheduleFields>) => void
@@ -42,8 +44,11 @@ export function WeeklyReviewDetail({ client = null, workspaceName, onUpdateRevie
   const workspaceLabel = workspaceName ?? workspace ?? 'an unavailable workspace'
   const currentReview = state?.reviews.find((review) => review.status === 'running')
   return <>
-    <RoutineDetail {...props} heading="Weekly review"
-      description={<ReviewDescription />}
+    <RoutineDetail {...props} heading={grouped ? workspaceLabel : 'Weekly review'}
+      description={grouped ? <div className="grid gap-[var(--space-1)]">
+        <Text size="small" tone="muted">Next run: {routine.enabled ? nextUpTimeLabel(routine.next_run_at_ms, now) : 'Paused'}</Text>
+        <Text size="small" tone="muted">Last run: {routine.last_run_at_ms == null ? 'Never' : formatRunTime(routine.last_run_at_ms, now)}</Text>
+      </div> : <ReviewDescription />}
       activity={currentReview && <ReviewRunningBanner review={currentReview} workspaceName={workspaceLabel} now={now} onOpenSession={onOpenSession} />}
       settings={<ReviewSettings routine={routine} workspaceName={workspaceLabel} onEdit={props.onEdit} onToggleEnabled={props.onToggleEnabled} onUpdateSchedule={onUpdateReviewSchedule} />}
       history={<WeeklyReviewRuns workspace={workspace} connected={!!client} state={state}
@@ -87,7 +92,7 @@ function WeeklyReviewReport({ reportId, report, error, onClose, onRetry }: {
   )
 }
 
-function ReviewDescription(): React.JSX.Element {
+export function ReviewDescription(): React.JSX.Element {
   return <Text as="p" size="small" tone="secondary" flush>Reads recent session summaries and looks for mistakes your agents repeat. Findings arrive in <Button variant="muted-link" size="sm" onClick={() => setRailView('tasks')}>Tasks › Suggested</Button>; the report and trend live in <Button variant="muted-link" size="sm" onClick={() => { setSettingsSection('agents-review'); setSettingsOpen(true) }}>Settings › Agents › Review</Button>.</Text>
 }
 

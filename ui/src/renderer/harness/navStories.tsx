@@ -72,7 +72,7 @@ function routine(o: Partial<Routine> = {}): Routine {
   }
 }
 
-export function NavRoutines({ selectedRoutineId = 1, setup = false, report = false }: { selectedRoutineId?: number; setup?: boolean; report?: boolean }): React.JSX.Element {
+export function NavRoutines({ selectedRoutineId = 1, setup = false, report = false, many = false }: { selectedRoutineId?: number; setup?: boolean; report?: boolean; many?: boolean }): React.JSX.Element {
   const run = (id: number, status: RoutineRun['status'], started: number, sessionId: number | null, error?: string): RoutineRun => ({
     id, routine_id: 2, trigger: 'schedule', status, started_at_ms: started, ended_at_ms: status === 'running' ? null : started + 4 * 60_000,
     session_id: sessionId, error
@@ -108,11 +108,17 @@ export function NavRoutines({ selectedRoutineId = 1, setup = false, report = fal
     } as unknown as HoustonClient
   }, [])
   React.useEffect(() => {
-    const testId = setup ? 'review-setup-/home/dev/code/finex' : report ? 'review-open-report-7' : null
+    const testId = setup ? 'review-setup-workspace' : report ? 'review-open-report-7' : null
     if (!testId) return
     const timer = window.setInterval(() => {
       const target = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
-      if (target) { target.click(); window.clearInterval(timer) }
+      if (target) {
+        if (setup) {
+          target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+          window.setTimeout(() => document.querySelector<HTMLElement>('[role="option"][data-value="/home/dev/code/finex"]')?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 })), 0)
+        } else target.click()
+        window.clearInterval(timer)
+      }
     }, 100)
     const stop = window.setTimeout(() => window.clearInterval(timer), 2000)
     return () => { window.clearInterval(timer); window.clearTimeout(stop) }
@@ -126,7 +132,7 @@ export function NavRoutines({ selectedRoutineId = 1, setup = false, report = fal
         engineRefusals={ENGINE_REFUSALS}
         runs={{ 2: runHistory }}
         runsLoading={null}
-        workspaces={[{ id: '/home/dev/code/houston', name: 'Houston' }, { id: '/home/dev/code/finex', name: 'finex' }]}
+        workspaces={[{ id: '/home/dev/code/houston', name: 'Houston' }, { id: '/home/dev/code/finex', name: 'finex' }, ...(many ? ['ProjetosPessoais', 'live-ws', '.houston', 'a-long-workspace-name-for-review', 'sandbox'].map((name) => ({ id: `/home/dev/code/${name}`, name })) : [])]}
         error={null}
         onDismissError={noop}
         onCreate={noop}

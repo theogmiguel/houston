@@ -4,10 +4,9 @@ A routine runs the same instructions on a schedule or whenever you choose **Run 
 run opens a fresh agent pane in the selected working directory, so its terminal and result
 remain visible like any other session.
 
-Open **Routines** from the rail. **Built in** contains Houston's Weekly review for each
-workspace; **Yours** contains routines you create. Choose **New routine** for your own
-instructions. Give it a name and
-instructions, then choose:
+Open **Routines** from the rail. **Built in** contains one Weekly review entry showing how
+many workspaces have it enabled; **Yours** contains routines you create. Choose **New
+routine** for your own instructions. Give it a name and instructions, then choose:
 
 - when it runs;
 - the working directory;
@@ -52,10 +51,13 @@ it does not replay every missed interval.
 
 Houston offers one built-in [Weekly review](harness-review.md) per workspace. It reviews
 recent agent sessions and recommends improvements to the workspace's agent configuration.
-**Set up Weekly review** chooses its provider, optional model and schedule without starting
-a run immediately. Settings ▸ Agents ▸ Review also supports setup and an explicit first run.
+Select **Weekly review** to see the workspaces where it is set up, including paused reviews,
+with their schedules and next and last runs. Choose **Set up for a workspace** and select a
+workspace that has no review yet. Setup chooses its provider, optional model and schedule
+without starting a run immediately. Settings ▸ Agents ▸ Review also supports setup and an
+explicit first run.
 
-Select the workspace's Weekly review and choose **Daily**, **Weekly** or **Only when I
+In the selected workspace's review, choose **Daily**, **Weekly** or **Only when I
 run it**. Daily runs at 09:00; Weekly runs on Mondays at 09:00. Only when I run it turns
 scheduled runs off while retaining the saved cadence. **Run now** starts an explicit run.
 **Enabled** pauses or resumes scheduling without deleting the routine; provider and model
