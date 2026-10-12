@@ -74,7 +74,7 @@ export function UsageCalendar({
     <div className="flex flex-wrap items-baseline gap-[var(--space-2)]">
       <UsageSectionHeading>Last 12 months</UsageSectionHeading>
       <Text size="small" tone="muted" data-testid="usage-calendar-meaning">{totalLabel} · colour shows {metric === 'cost' ? 'cost' : 'tokens'} per day</Text>
-      <Text size="small" tone="secondary" className="ml-auto flex items-center gap-[var(--space-3)]"><span className="inline-flex items-center gap-[var(--space-1-5)]"><span aria-hidden="true" data-level={0} className={`inline-block size-[var(--space-2)] rounded-[var(--tr-radius-input)] ${LEVELS[0]}`} />Less</span><span className="inline-flex items-center gap-[var(--space-1-5)]"><span aria-hidden="true" data-level={4} className={`inline-block size-[var(--space-2)] rounded-[var(--tr-radius-input)] ${LEVELS[4]}`} />More</span></Text>
+      <Text size="small" tone="secondary" className="ml-auto flex items-center gap-[var(--space-3)]"><span className="inline-flex items-center gap-[var(--space-1-5)]"><span aria-hidden="true" data-level={0} className={`inline-block size-[var(--space-2)] rounded-[var(--tr-radius-legend-mark)] ${LEVELS[0]}`} />Less</span><span className="inline-flex items-center gap-[var(--space-1-5)]"><span aria-hidden="true" data-level={4} className={`inline-block size-[var(--space-2)] rounded-[var(--tr-radius-legend-mark)] ${LEVELS[4]}`} />More</span></Text>
     </div>
     <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-[var(--space-2)]">
       <div aria-hidden="true" className="grid grid-rows-7 gap-[var(--space-0-75)] text-[length:var(--tr-text-xs)] text-[var(--text-muted)]" style={{ height: CALENDAR_HEIGHT }}><span /><span>Mon</span><span /><span>Wed</span><span /><span>Fri</span><span /></div>

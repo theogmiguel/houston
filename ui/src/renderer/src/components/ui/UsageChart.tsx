@@ -69,7 +69,7 @@ export function niceScale(max: number): { top: number; ticks: number[] } {
 
 export function UsageLegend({ series }: { series: UsageSeries[] }): React.JSX.Element {
   return <Text size="small" tone="secondary" className="flex flex-wrap items-center gap-x-[var(--space-3)] gap-y-[var(--space-1)]">
-    {series.map((item) => <span key={item.provider} className="inline-flex items-center gap-[var(--space-1-5)]"><span aria-hidden="true" className="inline-block size-[var(--space-2)] rounded-[var(--tr-radius-input)]" style={{ background: item.color }} />{item.label}</span>)}
+    {series.map((item) => <span key={item.provider} className="inline-flex items-center gap-[var(--space-1-5)]"><span aria-hidden="true" className="inline-block size-[var(--space-2)] rounded-[var(--tr-radius-legend-mark)]" style={{ background: item.color }} />{item.label}</span>)}
   </Text>
 }
 
@@ -129,7 +129,7 @@ export function UsageChart({ points, series, metric, labelFor }: {
           {series.map((item) => <span key={item.provider} aria-hidden="true" data-testid="usage-chart-hover-dot" className="absolute size-[var(--space-2)] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--card-bg)]" style={{ left: `${hx}%`, top: `${yAt(valueOf(point, item.provider)) / VIEW_H * 100}%`, background: item.color }} />)}
           <div {...OVERLAY_RAISED_ATTRS} id={tooltipId} role="tooltip" data-testid="usage-chart-tooltip" className={`${OVERLAY_RAISED_CLS} pointer-events-none absolute top-[var(--space-1)] grid gap-[var(--space-1)] whitespace-nowrap px-[var(--space-2-5)] py-[var(--space-2)]`} style={{ left: `${hx}%`, transform: hx < 50 ? 'translateX(var(--space-3))' : 'translateX(calc(-100% - var(--space-3)))' }}>
             <Text size="small" weight="medium" tone="primary">{hoverLabel}</Text>
-            {series.map((item) => <Text key={item.provider} size="small" tone="secondary" className="flex items-center gap-[var(--space-2)]"><span aria-hidden="true" className="inline-block size-[var(--space-1-5)] rounded-full" style={{ background: item.color }} />{item.label}<Text tabular tone="primary" className="ml-auto pl-[var(--space-4)]">{valueFormat(valueOf(point, item.provider))}</Text></Text>)}
+            {series.map((item) => <Text key={item.provider} size="small" tone="secondary" className="flex items-center gap-[var(--space-2)]"><span aria-hidden="true" className="inline-block size-[var(--space-1-5)] rounded-[var(--tr-radius-legend-mark)]" style={{ background: item.color }} />{item.label}<Text tabular tone="primary" className="ml-auto pl-[var(--space-4)]">{valueFormat(valueOf(point, item.provider))}</Text></Text>)}
           </div>
         </>}
       </div>

@@ -325,7 +325,11 @@ export function UsageSection({
       ? { timeZone, hour: 'numeric' }
       : { timeZone, weekday: 'short', day: 'numeric' }
     try {
-      return new Intl.DateTimeFormat('en-US', opts).format(new Date(windowDef.hourly ? point.startMs : `${point.key}T12:00:00`))
+      const formatter = new Intl.DateTimeFormat('en-US', opts)
+      const date = new Date(windowDef.hourly ? point.startMs : `${point.key}T12:00:00`)
+      if (windowDef.hourly) return formatter.format(date)
+      const parts = formatter.formatToParts(date)
+      return `${parts.find((part) => part.type === 'weekday')?.value ?? ''} ${parts.find((part) => part.type === 'day')?.value ?? ''}`
     } catch {
       return ''
     }

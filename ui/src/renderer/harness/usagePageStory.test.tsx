@@ -64,3 +64,18 @@ it.each(STATES)('renders the %s capture state without external requests', (state
   if (state === 'retained-day') expect(host.textContent).toContain('Model details no longer available for this day')
   if (state === 'retained-day-total') expect(host.querySelector('[data-testid="usage-breakdown"] tbody tr')?.children[1].textContent).toBe('—')
 })
+
+it('uses weekday-first axis labels', () => {
+  act(() => root.render(<UsagePageStory state="hover" />))
+  const chart = host.querySelector('[data-testid="usage-chart"]')
+  expect(chart?.textContent).toContain('Mon 5')
+  expect(chart?.textContent).toContain('Sun 11')
+})
+
+it('uses square series keys in chart, hover, category and calendar legends', () => {
+  act(() => root.render(<UsagePageStory />))
+  act(() => host.querySelector<HTMLElement>('[aria-label="Explore daily usage"]')?.focus())
+  const marks = [...host.querySelectorAll<HTMLSpanElement>('span[aria-hidden="true"]')].filter((mark) => mark.className.includes('inline-block') && mark.className.includes('size-'))
+  expect(marks).toHaveLength(10)
+  expect(marks.every((mark) => mark.className.includes('rounded-[var(--tr-radius-legend-mark)]'))).toBe(true)
+})

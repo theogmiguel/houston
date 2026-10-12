@@ -26,7 +26,7 @@ export function UsageShareBar({ heading, segments, aside, note }: { heading: str
     </span>
     <div className="grid gap-[var(--space-1-5)]">
       {segments.map((segment) => <Text key={segment.id} size="small" className="flex items-center gap-[var(--space-2)]">
-        <span aria-hidden="true" className="inline-block size-[var(--space-2)] rounded-[var(--tr-radius-input)]" style={{ background: colorFor(segment.id) }} />
+        <span aria-hidden="true" className="inline-block size-[var(--space-2)] rounded-[var(--tr-radius-legend-mark)]" style={{ background: colorFor(segment.id) }} />
         <Text tone="secondary" className="flex-1">{segment.label}</Text>
         <Text tone="muted" tabular className="w-[48px] text-right">{(total > 0 ? segment.value / total * 100 : 0).toFixed(0)}%</Text>
         <Text tone="primary" tabular className="w-[80px] text-right">{formatUsd(segment.value)}</Text>
