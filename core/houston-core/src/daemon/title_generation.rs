@@ -17,7 +17,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn note_title_excerpt(
+    pub(super) fn note_title_excerpt(
         &self,
         id: u32,
         provider: proto::AgentKind,
@@ -52,7 +52,7 @@ impl Daemon {
         }
     }
 
-    fn maybe_generate_title(self: &Arc<Self>, id: u32) {
+    pub(super) fn maybe_generate_title(self: &Arc<Self>, id: u32) {
         if !self.db.claim_title_first_turn(id).unwrap_or(false) || !self.generated_titles_enabled()
         {
             return;
@@ -118,7 +118,7 @@ impl Daemon {
         result
     }
 
-    fn finish_generated_title(&self, job: HandoffJob) {
+    pub(super) fn finish_generated_title(&self, job: HandoffJob) {
         self.sessions
             .lock()
             .expect("sessions lock")
