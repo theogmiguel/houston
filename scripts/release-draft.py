@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 import subprocess
 import sys
-from urllib.parse import quote
 
 
 class Refused(RuntimeError):
@@ -21,15 +20,16 @@ def run(args):
 
 
 def release(repository, tag):
+    # The releases/tags endpoint answers 404 for drafts, so search the full list.
     result = subprocess.run(
-        ["gh", "api", f"repos/{repository}/releases/tags/{quote(tag, safe='')}"],
+        ["gh", "api", "--paginate", f"repos/{repository}/releases",
+         "--jq", f".[] | select(.tag_name == {json.dumps(tag)})"],
         text=True, capture_output=True, check=False,
     )
     if result.returncode:
-        if "HTTP 404" in result.stderr:
-            return None
         raise Refused(f"Cannot inspect release {tag}: {result.stderr.strip()}")
-    return json.loads(result.stdout)
+    matches = result.stdout.splitlines()
+    return json.loads(matches[0]) if matches else None
 
 
 def require_draft(value, tag):
