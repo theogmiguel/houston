@@ -23603,6 +23603,8 @@ fn init_orchestration_scope(project_dir: &Path) -> Result<(PathBuf, PathBuf)> {
 }
 
 fn path_with(bin_dir: &Path, base: Option<&str>) -> String {
+    #[cfg(windows)]
+    let bin_dir = crate::paths::windows_command_path(bin_dir);
     let sep = if cfg!(windows) { ';' } else { ':' };
     match base {
         Some(p) if !p.is_empty() => format!("{}{sep}{p}", bin_dir.display()),
@@ -23706,6 +23708,22 @@ fn write_windows_cmd_wrapper(bin_dir: &Path, name: &str, exe: &Path, subcmd: &st
 #[cfg(test)]
 mod windows_cmd_wrapper_script_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn orchestration_path_uses_dos_syntax_for_cmd_wrappers() {
+        assert_eq!(
+            path_with(
+                Path::new(r"\\?\C:\project with spaces\.houston\orchestration\bin"),
+                Some(r"C:\Windows\System32")
+            ),
+            r"C:\project with spaces\.houston\orchestration\bin;C:\Windows\System32"
+        );
+        assert_eq!(
+            path_with(Path::new(r"\\?\UNC\server\share\bin"), None),
+            r"\\server\share\bin"
+        );
+    }
 
     /// The `hs-task` twin's text is exercised on every platform, not only where
     /// the writer compiles, so the quoting is verified on the Linux gate too.
