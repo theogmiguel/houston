@@ -8,6 +8,8 @@ pub fn hook_events() -> Vec<&'static str> {
     crate::agent_events::events_for(houston_protocol::AgentKind::Claude)
         .iter()
         .map(|(name, _)| *name)
+        // Mods report this through the helper; it is not a settings hook event.
+        .filter(|name| *name != crate::claude_turns::INTERRUPTED)
         .chain(crate::agent_events::CLAUDE_CORRELATION_EVENTS)
         .chain(crate::agent_events::compaction_event(
             houston_protocol::AgentKind::Claude,

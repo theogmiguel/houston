@@ -114,6 +114,11 @@ it off removes exactly what Houston added:
   reported in Settings ▸ Agents ▸ CLIs. Use an absolute profile path for status reporting.
   Claude started from any directory inside a Houston pane reports status. The commands
   exit silently when `TR_SESSION` is empty, so they do nothing outside Houston.
+  With Claude Code 2.1.290 or later, Claude panes opened or resumed by Houston also report
+  Esc interruptions and return to idle. Older or unknown versions, and Claude commands
+  typed manually into a shell pane, keep reporting ordinary turns through hooks but
+  cannot report an Esc interruption; status remains working until another prompt or
+  reported turn end. Mods disabled by CLI or organization policy have the same limitation.
   Your other settings and hooks are preserved. Houston removes its old workspace entries
   from `.claude/settings.local.json` during migration to avoid duplicate events.
   Turn Claude off in Settings ▸ Agents ▸ CLIs ▸ Claude to remove its global entries;

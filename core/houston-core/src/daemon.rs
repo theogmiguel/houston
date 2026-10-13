@@ -1693,6 +1693,7 @@ pub struct Daemon {
     first_prompt_confirm_ms: AtomicU64,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
+    claude_mod_turns: Mutex<HashMap<u32, (String, String)>>,
     prompt_awaiting_hook: Mutex<HashSet<u32>>,
     stdin_partial_after: Mutex<HashMap<u32, usize>>,
     inbox_pending_max: AtomicU32,
@@ -3405,6 +3406,7 @@ impl Daemon {
             first_prompts: Mutex::new(HashMap::new()),
             first_prompt_confirm_ms: AtomicU64::new(FIRST_PROMPT_CONFIRM.as_millis() as u64),
             turn_start_round: Mutex::new(HashMap::new()),
+            claude_mod_turns: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new({
                 #[cfg(unix)]
                 let recovered = adopted
@@ -9803,7 +9805,7 @@ impl Daemon {
         } else {
             None
         };
-        let shell_startup = if agent == proto::AgentKind::Shell && !extra_args.is_empty() {
+        let mut shell_startup = if agent == proto::AgentKind::Shell && !extra_args.is_empty() {
             let provider = resume_agent.ok_or_else(|| {
                 anyhow!(
                     "shell session {old_id} has resume arguments without a validated Claude, Codex or ZCode provider"
@@ -11187,11 +11189,39 @@ impl Daemon {
             if !hidden && self.session_policy().claude_fullscreen {
                 cmd.env(CLAUDE_FULLSCREEN_ENV, "1");
             }
+            let version = self.cli_presence(proto::AgentKind::Claude).version;
+            let launcher = crate::claude_hooks::executable_launcher(
+                &crate::claude_hooks::launcher_path(&self.state_dir),
+            );
+            let turn_mod = if self.hook_consent(proto::AgentKind::Claude)
+                && crate::claude_turns::supported(version.as_deref())
+                && launcher.is_file()
+            {
+                Some(crate::claude_turns::prepare(
+                    &self.state_dir,
+                    &launcher,
+                    self.channel.as_deref(),
+                )?)
+            } else {
+                tracing::debug!(
+                    session = id,
+                    ?version,
+                    "Claude native interrupt reports unavailable"
+                );
+                None
+            };
             if !shell_claude_resume {
+                if let Some(root) = &turn_mod {
+                    cmd.args(["--plugin-dir", &root.display().to_string()]);
+                }
                 cmd.args(crate::launch::claude_pane_env_args(
                     &cmd,
                     &self.claude_settings_path(id),
                 )?);
+            } else if let Some(root) = turn_mod {
+                if let Some(argv) = shell_startup.as_mut() {
+                    argv.extend(["--plugin-dir".into(), root.display().to_string()]);
+                }
             }
         }
         if let Some(argv) = &shell_startup {
@@ -14769,6 +14799,51 @@ impl Daemon {
                 }
             }
         }
+        if provider == proto::AgentKind::Claude
+            && matches!(
+                d.event.as_str(),
+                crate::claude_turns::START | crate::claude_turns::INTERRUPTED
+            )
+        {
+            let Ok(session) = self.get(d.session) else {
+                return crate::hook_drop::DropVerdict::NoSession;
+            };
+            if !session.state.lock().expect("state lock").is_live() {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            if d.agent_id.is_some() || d.subagent_type.is_some() {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            let (Some(conversation), Some(turn)) =
+                (d.session_id.as_deref(), d.prompt_id.as_deref())
+            else {
+                return crate::hook_drop::DropVerdict::Applied;
+            };
+            if conversation.is_empty()
+                || turn.is_empty()
+                || conversation.len() > crate::claude_turns::ID_MAX_BYTES
+                || turn.len() > crate::claude_turns::ID_MAX_BYTES
+            {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            let mut turns = self.claude_mod_turns.lock().expect("Claude mod turns lock");
+            if d.event == crate::claude_turns::INTERRUPTED
+                && !turns
+                    .get(&d.session)
+                    .is_some_and(|current| current.0 == conversation && current.1 == turn)
+            {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
+                return crate::hook_drop::DropVerdict::NoSession;
+            }
+            if d.event == crate::claude_turns::START {
+                turns.insert(d.session, (conversation.to_string(), turn.to_string()));
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            turns.remove(&d.session);
+        }
+
         if provider == proto::AgentKind::Grok
             && d.event == "SessionEnd"
             && d.subagent_type.is_some()
@@ -15376,6 +15451,12 @@ impl Daemon {
         }
 
         if correlates && ev == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
+            if provider == proto::AgentKind::Claude && !d.internal_prompt {
+                self.claude_mod_turns
+                    .lock()
+                    .expect("Claude mod turns lock")
+                    .remove(&d.session);
+            }
             let mut reopened = false;
             let mut rounds = self.subagent_rounds.lock().expect("subagent rounds lock");
             let round = rounds.entry(d.session).or_default();
@@ -16119,6 +16200,10 @@ impl Daemon {
         self.last_prompt_id
             .lock()
             .expect("last prompt id lock")
+            .retain(|id, _| live.contains(id));
+        self.claude_mod_turns
+            .lock()
+            .expect("Claude mod turns lock")
             .retain(|id, _| live.contains(id));
         self.prompt_awaiting_hook
             .lock()
@@ -21614,11 +21699,12 @@ impl Daemon {
             AgentEvent::PromptSubmitted | AgentEvent::InputResolved => {
                 orchestrate::DelegationEvent::TurnStarted
             }
-            AgentEvent::TurnEnded => orchestrate::DelegationEvent::TurnEnded,
+            AgentEvent::TurnEnded | AgentEvent::TurnInterrupted => {
+                orchestrate::DelegationEvent::TurnEnded
+            }
             AgentEvent::NeedsInput => orchestrate::DelegationEvent::Blocked,
             AgentEvent::SessionStarted
             | AgentEvent::Activity
-            | AgentEvent::TurnInterrupted
             | AgentEvent::TurnFailed
             | AgentEvent::SessionEnded => return,
         };
