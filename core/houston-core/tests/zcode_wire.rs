@@ -820,6 +820,11 @@ async fn a_restored_zcode_pane_resumes_its_session_by_id() {
     .await;
 
     daemon.manage_shutdown().unwrap();
+    // Fixture daemons launch without a session scope; acknowledge the stopped workload.
+    houston_core::db::Db::open(&env.state.path().join("test.db"))
+        .unwrap()
+        .acknowledge_uncontained_recovery(info.id)
+        .unwrap();
     let after = boot(&env);
     let restored = after
         .list()

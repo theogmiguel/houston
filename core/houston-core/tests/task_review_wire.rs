@@ -493,6 +493,9 @@ fn a_restored_task_child_flips_its_interrupted_run_back_to_running() {
         let db = Db::open(&db_path).unwrap();
         seed_session(&db, 1, project.path(), proto::AgentKind::Claude, None);
         seed_session(&db, 2, project.path(), proto::AgentKind::Codex, Some(1));
+        // Seeded legacy rows carry no receipt; acknowledge their stopped workload.
+        db.acknowledge_uncontained_recovery(1).unwrap();
+        db.acknowledge_uncontained_recovery(2).unwrap();
         let parent_transcript = project.path().join("parent-conversation.jsonl");
         std::fs::write(
             &parent_transcript,
