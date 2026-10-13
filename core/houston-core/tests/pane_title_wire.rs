@@ -230,6 +230,7 @@ async fn a_restored_prompt_named_pane_accepts_its_clis_title() {
         Some("prompt"),
     )
     .unwrap();
+    db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
 
     let daemon = Daemon::new(DaemonConfig {
@@ -542,9 +543,15 @@ async fn hidden_handoff_pane_can_reset_its_manual_title() {
     let detail = daemon.orchestrate_get(hidden, hidden).unwrap();
     assert_eq!(detail.info.title, "First hidden prompt");
     assert_eq!(detail.info.title_source, proto::TitleSource::Prompt);
+    // The hidden generator persists its row for ownership receipts, never title candidates.
     let db = Db::open(&state.path().join("test.db")).unwrap();
-    assert_eq!(db.session_final(hidden).unwrap(), None);
-    assert!(db.session_title_candidates(hidden).unwrap().is_empty());
+    assert_eq!(
+        db.session_final(hidden).unwrap(),
+        Some((proto::SessionState::Running, None))
+    );
+    assert!(!db.session_is_closed(hidden).unwrap());
+    let candidates = db.session_title_candidates(hidden).unwrap();
+    assert!(candidates.is_empty(), "{candidates:?}");
     let mut observer = daemon.observe();
     daemon.write_stdin(hidden, b"done\n").unwrap();
     loop {
@@ -560,7 +567,10 @@ async fn hidden_handoff_pane_can_reset_its_manual_title() {
         }
     }
     assert!(daemon.orchestrate_get(hidden, hidden).is_err());
-    assert_eq!(db.session_final(hidden).unwrap(), None);
+    wait_until("the finished hidden generator row to close", || {
+        db.session_is_closed(hidden).unwrap()
+    })
+    .await;
     assert!(db.session_title_candidates(hidden).unwrap().is_empty());
     daemon.close(source.id).unwrap();
 }
@@ -573,6 +583,7 @@ async fn legacy_manual_title_without_provenance_stays_locked_until_reset() {
     let mut stored = stored_session(1, state.path(), "Manual project overview");
     stored.codename = "Max".into();
     db.insert_session(&stored).unwrap();
+    db.acknowledge_uncontained_recovery(1).unwrap();
     assert_eq!(db.session_title_source(1).unwrap(), None);
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
         DaemonConfig {
@@ -610,6 +621,7 @@ async fn refused_restored_title_reset_keeps_the_manual_name_locked() {
         .unwrap();
     db.save_title_candidate(1, proto::TitleSource::Prompt, "Original task")
         .unwrap();
+    db.acknowledge_uncontained_recovery(1).unwrap();
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
         DaemonConfig {
             token: "refused-title-reset".into(),
@@ -656,6 +668,7 @@ async fn user_title_and_candidates_survive_boot_restore() {
         .unwrap();
     db.save_title_candidate(1, proto::TitleSource::Prompt, "Original task")
         .unwrap();
+    db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
     let daemon = Daemon::new(DaemonConfig {
         token: "restore-title".into(),

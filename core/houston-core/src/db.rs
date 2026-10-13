@@ -1724,13 +1724,20 @@ impl Db {
             "title_first_turn_ended",
             "title_first_turn_ended INTEGER NOT NULL DEFAULT 0",
         )?;
+        // The candidate backfill below excludes hidden rows.
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "hidden",
+            "hidden INTEGER NOT NULL DEFAULT 0",
+        )?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS session_title_candidates (
             session_id INTEGER NOT NULL, source TEXT NOT NULL, title TEXT NOT NULL,
             PRIMARY KEY(session_id, source));
             INSERT OR IGNORE INTO session_title_candidates (session_id, source, title)
                 SELECT id, title_source, title FROM sessions
-                WHERE title_source IS NOT NULL AND title_source != 'user' AND title IS NOT NULL AND title != '' AND state != 'closed';
+                WHERE title_source IS NOT NULL AND title_source != 'user' AND title IS NOT NULL AND title != '' AND state != 'closed' AND hidden = 0;
             DELETE FROM session_title_candidates WHERE session_id NOT IN (SELECT id FROM sessions WHERE state != 'closed');
             CREATE TRIGGER IF NOT EXISTS title_candidates_closed AFTER UPDATE OF state ON sessions
                 WHEN NEW.state = 'closed' BEGIN DELETE FROM session_title_candidates WHERE session_id = NEW.id; END;
@@ -1778,12 +1785,6 @@ impl Db {
             "sessions",
             "recovery_acknowledged",
             "recovery_acknowledged INTEGER NOT NULL DEFAULT 0",
-        )?;
-        add_column_if_missing(
-            &conn,
-            "sessions",
-            "hidden",
-            "hidden INTEGER NOT NULL DEFAULT 0",
         )?;
         add_column_if_missing(&conn, "sessions", "transcript_path", "transcript_path TEXT")?;
         add_column_if_missing(
@@ -2609,7 +2610,8 @@ impl Db {
                 info.hidden,
             ],
         )?;
-        if let Some(source) = title_source.filter(|source| *source != "user") {
+        // Hidden rows exist only for ownership receipts; their title candidates stay in memory.
+        if let Some(source) = title_source.filter(|source| *source != "user" && !info.hidden) {
             conn.execute("INSERT OR IGNORE INTO session_title_candidates (session_id, source, title) VALUES (?1, ?2, ?3)", rusqlite::params![info.id, source, info.title])?;
         }
         Ok(())

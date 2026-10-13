@@ -13934,7 +13934,7 @@ impl Daemon {
         let candidate;
         let title = if source != TitleSource::User {
             candidate = if let Some(session) = live.as_ref().filter(|s| s.info.hidden) {
-                // Hidden generators have no durable row; retain at most one bounded title per source.
+                // Hidden generators keep title candidates in memory: at most one bounded title per source.
                 let mut candidates = session
                     .transient_title_candidates
                     .lock()
