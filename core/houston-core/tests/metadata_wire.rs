@@ -200,6 +200,76 @@ async fn visibility_filters_frames_per_connection() {
 }
 
 #[tokio::test]
+async fn hiding_a_removed_session_is_idempotent() {
+    let (addr, _state, daemon) = start_daemon_with_handle().await;
+    let project = tempfile::tempdir().unwrap();
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    #[cfg(unix)]
+    let argv = vec!["sleep", "30"];
+    #[cfg(windows)]
+    let argv = vec!["ping", "-n", "31", "127.0.0.1"];
+    send(
+        &mut ws,
+        &serde_json::from_str(&create_custom_msg(argv, project.path())).unwrap(),
+    )
+    .await;
+    let session = expect_created(&mut ws).await.id;
+    send(
+        &mut ws,
+        &proto::ClientMsg::SessionClose {
+            session,
+            confirm_children: None,
+        },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::SessionRemoved { session: removed } if removed == session => break,
+            proto::ServerMsg::Error { message, .. } => panic!("close failed: {message}"),
+            _ => {}
+        }
+    }
+    for _ in 0..2 {
+        send(
+            &mut ws,
+            &proto::ClientMsg::SessionVisibility {
+                session,
+                visible: false,
+            },
+        )
+        .await;
+    }
+    send(&mut ws, &proto::ClientMsg::SessionList).await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::Error { message, .. } => panic!("late hide failed: {message}"),
+            proto::ServerMsg::SessionList { sessions } => {
+                assert!(!sessions.iter().any(|info| info.id == session));
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        !daemon.session_hidden_everywhere(session),
+        "late hide recreated a visibility vote"
+    );
+    send(
+        &mut ws,
+        &proto::ClientMsg::SessionVisibility {
+            session,
+            visible: true,
+        },
+    )
+    .await;
+    match next_control(&mut ws).await {
+        proto::ServerMsg::Error { message, .. } => assert!(message.contains("unknown session id")),
+        msg => panic!("showing an unknown session must be refused: {msg:?}"),
+    }
+}
+
+#[tokio::test]
 async fn wait_for_idle_answers_quiet_busy_dead_and_unknown() {
     let state_dir = tempfile::tempdir().unwrap();
     let daemon = Daemon::new(DaemonConfig {
