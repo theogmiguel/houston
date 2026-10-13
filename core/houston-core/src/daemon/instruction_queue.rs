@@ -729,7 +729,7 @@ impl Daemon {
         drop(admission.take());
         #[cfg(feature = "test-barriers")]
         crate::test_barriers::pause("instruction-before-enter", target);
-        std::thread::sleep(SWARM_WAKE_SETTLE);
+        std::thread::sleep(self.paste_submit_settle(target));
         admission = Some(self.instruction_admission());
         if self
             .db

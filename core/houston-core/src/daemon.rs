@@ -18532,7 +18532,7 @@ impl Daemon {
                 return Ok(true);
             }
         }
-        std::thread::sleep(SWARM_WAKE_SETTLE);
+        std::thread::sleep(self.paste_submit_settle(session_id));
         let partial = if let Some(reason) = hold() {
             Some(format!("prompt was pasted but not submitted: {reason}"))
         } else {
@@ -18708,7 +18708,7 @@ impl Daemon {
                 "prefilled; the operator submits it".into(),
             ));
         }
-        std::thread::sleep(SWARM_WAKE_SETTLE);
+        std::thread::sleep(self.paste_submit_settle(session));
         self.write_stdin_counting(session, b"\r")
             .map_err(|e| anyhow!("submitting Enter: {e}; the text remains in its composer"))?;
         if !confirmable {
@@ -20394,6 +20394,16 @@ impl Daemon {
     pub fn agent_kind_of(&self, id: u32) -> Option<proto::AgentKind> {
         let sessions = self.sessions.lock().expect("sessions lock");
         sessions.get(&id).map(|s| s.status_kind())
+    }
+
+    fn paste_submit_settle(&self, _session: u32) -> Duration {
+        #[cfg(windows)]
+        if self.agent_kind_of(_session) == Some(proto::AgentKind::Codex) {
+            // The console paste guard suppresses Enter for 120 ms, with a 60 ms
+            // idle flush. Leave 20 ms margin before the separate submission key.
+            return Duration::from_millis(200);
+        }
+        SWARM_WAKE_SETTLE
     }
 
     #[doc(hidden)]
@@ -23579,7 +23589,7 @@ impl Daemon {
                 return;
             }
         }
-        std::thread::sleep(SWARM_WAKE_SETTLE);
+        std::thread::sleep(self.paste_submit_settle(parent));
         if let Some(why) = self.paste_hold_reason(parent) {
             self.paste_went_partial(
                 &delivery_id,

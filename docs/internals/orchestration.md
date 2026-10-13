@@ -594,14 +594,18 @@ instructions do not emit queue updates for ordinary lifecycle events.
 Untouched instructions become held after recovery. Explicit resume validates the
 target origin, provider, directory, profile and conversation. A write-ahead marker
 precedes PTY input; partial writes, withheld Enter and ambiguous crash recovery become
-uncertain and block replay. Delivery proves the complete prompt and Enter, not task
-completion. Full instruction bodies are read only on explicit inspection; snapshots
+uncertain and block replay. Delivery records the complete prompt and Enter writes;
+provider start or named request adoption confirms processing. Full instruction bodies
+are read only on explicit inspection; snapshots
 carry bounded previews. `steer` permits a paste while the provider is working;
 `restart` sends the provider's interrupt key while working and queues delivery
 until authoritative idle. Both immediate modes refuse an operator draft,
 needs-input, or an occupied wake lane before writing. The composer and
 needs-input guards are rechecked before paste and before Enter. A partial or
 unsubmitted paste creates a note for the sender and is never retried automatically.
+Windows Codex submission waits for its paste-buffering window before writing Enter.
+The same delay applies to first prompts, instructions, inbox wakeups and phone input;
+the delay never establishes status or authorizes input at a permission prompt.
 Restart or a superseding request releases an old staged handback as partial with its
 body retained. A pending replacement prevents temporary child cleanup.
 Queued prompts retain their sender; a dead sender's nearest live ancestor inherits
