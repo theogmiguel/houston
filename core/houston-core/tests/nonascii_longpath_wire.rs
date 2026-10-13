@@ -159,6 +159,14 @@ async fn drive_spawn_persist_reopen(
         "husk must replay the persisted scrollback"
     );
 
+    #[cfg(windows)]
+    {
+        let refusal = daemon.close(info.id).unwrap_err().to_string();
+        assert!(refusal.contains("Job ownership proof"), "{refusal}");
+        assert!(daemon.recheck_recovery(info.id, false).is_err());
+        assert!(daemon.list().iter().any(|session| session.id == info.id));
+        daemon.recheck_recovery(info.id, true).unwrap();
+    }
     daemon.close(info.id).unwrap();
     Ok(())
 }
