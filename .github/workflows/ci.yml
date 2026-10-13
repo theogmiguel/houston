@@ -229,7 +229,7 @@ jobs:
             eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)"
             cargo test --lib --manifest-path core/Cargo.toml'
       - name: Test protocol, pane lifecycle, titles, model reuse and recovery ownership
-        run: bash scripts/with-test-keyring.sh cargo test --locked --manifest-path core/Cargo.toml -p houston-core --test protocol_version_wire --test session_create_result_wire --test claude_turns_wire --test session_activity --test generated_titles --test recovery_ownership --test voice_model_reuse --test launch_prompt_isolation
+        run: bash scripts/with-test-keyring.sh cargo test --locked --manifest-path core/Cargo.toml -p houston-core --test protocol_version_wire --test session_create_result_wire --test claude_turns_wire --test session_activity --test generated_titles --test recovery_ownership --test voice_model_reuse --test launch_prompt_isolation --test codex_shell_mcp
       # The restored-CLI regressions run real bash and zsh integration rc files.
       - name: cargo test restored shell-hosted CLI
         run: >
