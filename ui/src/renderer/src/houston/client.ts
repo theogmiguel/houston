@@ -1161,6 +1161,7 @@ export class HoustonClient {
   }
 
   sessionVisibility(session: number, visible: boolean): void {
+    if (this.deadSessions.has(session)) return
     this.terminals.setVisible(session, visible)
   }
 
