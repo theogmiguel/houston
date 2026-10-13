@@ -1332,8 +1332,10 @@ What changes per provider, beyond the shared inbox:
   launches use a pane-owned app-server and the native TUI's `--remote` transport.
   A startup-only observer confirms the loaded root's Idle status with documented
   read-only requests and writes one guarded SessionStart drop. It never takes over
-  the conversation or bypasses hook review. A shell pane's managed PATH wrapper
-  gives interactive Codex the same ownership; CLI management subcommands pass through.
+  the conversation or bypasses hook review. A contained shell pane's managed PATH wrapper keeps interactive Codex on lifecycle
+  hooks with `--no-daemon`, preserving the shell's recorded scope instead of creating
+  an unrecorded sibling scope. Native startup readiness is unavailable on this path;
+  CLI management subcommands pass through.
   The server receives the pane's MCP environment and applicable CLI configuration
   overrides, preventing a shared backend from retaining another pane's credentials.
   Unsupported native options and hosts without user systemd retain hooks and, when available, `--no-daemon`.

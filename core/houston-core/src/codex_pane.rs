@@ -670,6 +670,22 @@ mod linux {
             .and_then(|executable| crate::cli_probe::probe(executable).version);
         if version.as_deref().is_some_and(supports_native) && LaunchPlan::from_args(cli).is_ok() {
             let (channel, session) = ownership()?;
+            if let Some(scope) = crate::session_isolation::current_owned_scope(&channel, session)
+                .map_err(anyhow::Error::msg)?
+            {
+                // Moving this child into a sibling scope would escape the shell's committed receipt.
+                let committed = std::env::var("HOUSTON_COMMITTED_SCOPE").ok();
+                eprintln!("houston-core: Codex shell launch uses lifecycle hooks only: inherited Houston scope {scope} (committed receipt matches: {}) cannot create an unrecorded sibling lifetime scope", committed.as_deref() == Some(scope.as_str()));
+                let mut command = crate::spawn::command(&args[2]);
+                if !cli
+                    .iter()
+                    .take_while(|argument| *argument != "--")
+                    .any(|argument| argument == "--no-daemon")
+                {
+                    command.arg("--no-daemon");
+                }
+                return Err(command.args(cli).exec().into());
+            }
             match crate::session_isolation::enter_owned_scope(&channel, session) {
                 Ok(()) => {}
                 Err(crate::session_isolation::ScopeError::Unavailable(reason)) => {

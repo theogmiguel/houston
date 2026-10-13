@@ -1,4 +1,4 @@
-# Wire protocol v140
+# Wire protocol v141
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -96,6 +96,7 @@ failure not given a typed refusal comes back as `error`.
 | `session_kill` | `session`, `confirm_children?` | `session_state` (bcast); refused `live_children_confirmation_required:` when the pane has live children and `confirm_children` is not set |
 | `session_close` | `session`, `confirm_children?` | `session_removed` (bcast); same children refusal |
 | `session_respawn` | `session`, `shell_integration?`, `cwd?` (must exist), `shell?` (absolute shell binary, shell panes only), `force?` (restart a still-live session: kill, reap, respawn — without it a live session is refused by name), `fresh?` (v119: start a fresh CLI and forget the conversation; absent, a Claude session with a valid resume handle is relaunched with `--resume <id>`, and one whose handle fails validation starts fresh with `resume_notice` set) | broadcasts; a failed spawn leaves the husk intact |
+| `session_recovery_check` | `session`, `acknowledge_uncontained?` (default false; true explicitly asserts all previous uncontained workload processes have stopped) | `session_updated` with current recovery notice (bcast), plus `error` while ownership remains unsafe or unknown. Read-only recheck launches and signals nothing. Acknowledgement refuses for recorded live roots, contained scopes or unreadable receipts; it retains conversations and held instructions without resuming them |
 | `session_sleep` | `session` | `session_state` and `session_updated` (bcast); Linux only, idle top-level Claude/Codex with a validated conversation and no external work or live children. Persists before graceful termination; a timeout leaves the live PTY usable |
 | `session_wake` | `session` | `session_created` for the exact resumed conversation and `session_removed` for its old placeholder; a validation failure keeps it sleeping with a visible notice. Focus never wakes it |
 | `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
@@ -1328,6 +1329,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 141 | `session_recovery_check` refreshes retained process-ownership refusals and supports explicit acknowledgement of stopped legacy or uncontained workloads without resuming held instructions. |
 | 140 | `pr_list` replies include the cached viewer login. `Routine.kind` identifies user and harness review routines, backfilled from existing harness mappings. `GitBranchInfo` gains upstream ahead/behind counts and committer time. `usage_summary` gains optional `session_counts` (`UsageSessionCounts`): exact distinct sessions by model and by day; older replies omit it. **Amend.** `git_commit` gains `amend` (default false): rewrites HEAD instead of adding a commit, and refuses with an error naming the branch and HEAD SHA when HEAD is already contained in its upstream. |
 | 139 | Pane names expose `title_source` (`codename < prompt < role < cli < task < user`) in `SessionInfo` and `session_renamed`. `session_title_reset` restores the strongest stored automatic candidate without a user override. |
 | 138 | Session creation accepts a connection-local request ID and replies with `session_create_result`, correlating success or refusal without relying on broadcast order. |

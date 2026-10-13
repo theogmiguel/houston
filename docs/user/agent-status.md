@@ -60,8 +60,8 @@ server; their tools and hooks cannot be guaranteed to identify the invoking pane
 Sessions started with `--no-daemon` are absent from the shared agent overview.
 Older CLIs without this flag retain their original launch behavior.
 
-Older Codex versions, hosts without user systemd, other platforms and custom launches
-use lifecycle hooks only.
+Interactive Codex typed into a contained Linux shell, older Codex versions, hosts
+without user systemd, other platforms and custom launches use lifecycle hooks only.
 On Linux, native Codex profiles (`--profile`), explicit remote endpoints and unsupported CLI
 flags also keep the hook path, with a notice in the terminal. Houston account profiles
 remain supported. Codex delays its startup hook until the first turn; on these fallback

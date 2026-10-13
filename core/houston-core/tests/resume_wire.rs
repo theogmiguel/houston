@@ -136,9 +136,14 @@ async fn serve(daemon: &Arc<Daemon>) -> std::net::SocketAddr {
     addr
 }
 
-/// The orderly-shutdown half of SIGTERM, then a new daemon on the same state dir.
+/// Orderly shutdown and explicit acknowledgement of these isolated hook-only workloads.
 fn reboot(env: &Env, before: &Arc<Daemon>) -> Arc<Daemon> {
+    let retained = before.list();
     before.manage_shutdown().unwrap();
+    let db = Db::open(&env.db_path()).unwrap();
+    for pane in retained {
+        db.acknowledge_uncontained_recovery(pane.id).unwrap();
+    }
     boot(env)
 }
 
@@ -1382,6 +1387,7 @@ fn seed_claude(env: &Env, id: u32, dir: &Path, cwd: &Path, handle: Option<(&str,
     })
     .unwrap();
     db.set_session_resume_handle(id, handle).unwrap();
+    db.acknowledge_uncontained_recovery(id).unwrap();
 }
 
 fn clean_shutdown(env: &Env) {

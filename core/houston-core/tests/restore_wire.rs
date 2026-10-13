@@ -15,6 +15,7 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+// These restoration fixtures explicitly acknowledge stopped legacy workloads.
 fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
     let db = Db::open(&state_dir.join("test.db")).unwrap();
     for (i, dir) in dirs.iter().enumerate() {
@@ -59,6 +60,7 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             slept_at_ms: None,
         })
         .unwrap();
+        db.acknowledge_uncontained_recovery((i + 1) as u32).unwrap();
     }
     if clean {
         std::fs::write(state_dir.join("clean-shutdown"), b"").unwrap();
@@ -115,6 +117,7 @@ fn seed_one(
         slept_at_ms: None,
     })
     .unwrap();
+    db.acknowledge_uncontained_recovery(id).unwrap();
 }
 
 fn boot_and_list(
@@ -370,6 +373,7 @@ fn invalid_cwd_is_deferred_not_respawned() {
         slept_at_ms: None,
     })
     .unwrap();
+    db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
@@ -553,6 +557,7 @@ fn no_flags_set_runs_normal_restore_policy() {
         slept_at_ms: None,
     })
     .unwrap();
+    db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 

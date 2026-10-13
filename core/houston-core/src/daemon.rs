@@ -618,6 +618,7 @@ pub struct Session {
     hook_latest_prompt: Mutex<Option<String>>,
     hook_latest_agent_message: Mutex<Option<String>>,
     sleep_notice: Mutex<Option<String>>,
+    recovery_notice: Mutex<Option<String>>,
     slept_at_ms: Mutex<Option<u64>>,
     geometry: AtomicU32,
     backend: Backend,
@@ -1345,6 +1346,14 @@ impl Session {
             .expect("latest agent message lock")
             .clone();
         info.sleep_notice = self.sleep_notice.lock().expect("sleep notice lock").clone();
+        if let Some(notice) = self
+            .recovery_notice
+            .lock()
+            .expect("recovery notice lock")
+            .clone()
+        {
+            info.resume_notice = Some(notice);
+        }
         info.slept_at_ms = *self.slept_at_ms.lock().expect("slept-at lock");
         info
     }
@@ -3243,6 +3252,16 @@ impl Daemon {
                 .filter(|t| !t.is_empty())
                 .collect();
             for info in dead.values_mut() {
+                match db.uncontained_recovery_notice(info.id) {
+                    Ok(Some(notice)) => info.resume_notice = Some(notice),
+                    Err(error) => {
+                        info.resume_notice = Some(format!(
+                            "Session {} ownership receipt is unreadable: {error:#}",
+                            info.id
+                        ))
+                    }
+                    Ok(None) => {}
+                }
                 if info.title.is_empty() {
                     let name = crate::pane_name::pick_codename(&used);
                     used.insert(name.clone());
@@ -3642,7 +3661,10 @@ impl Daemon {
             anyhow::ensure!(!out.metadata_failed, "hook metadata recovery could not read or validate all candidate drops in {}; resume is deferred until every relevant drop is readable and valid", dir.display());
         }
         let mut dead = self.dead.lock().expect("dead lock");
-        for info in self.db.list_interrupted()? {
+        for mut info in self.db.list_interrupted()? {
+            if let Some(notice) = self.db.uncontained_recovery_notice(info.id)? {
+                info.resume_notice = Some(notice);
+            }
             if dead.contains_key(&info.id) {
                 dead.insert(info.id, info);
             }
@@ -5292,6 +5314,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(m.cols) << 16) | u32::from(m.rows)),
             backend,
@@ -9568,6 +9591,15 @@ impl Daemon {
             }
             ownership = Some(self.reserve_ownership_replacement(old_id)?);
             self.cleanup_session_ownership(old_id, old)?;
+            #[cfg(target_os = "linux")]
+            if let Err(error) = self.db.check_contained_workload_stopped(old_id) {
+                *old.recovery_notice.lock().expect("recovery notice lock") =
+                    Some(format!("Session {old_id} replacement deferred: {error:#}"));
+                self.broadcast_control(&proto::ServerMsg::SessionUpdated {
+                    info: old.snapshot_info(),
+                });
+                return Err(error);
+            }
             // The drained reader may have supplied a final shell cwd. Commit its
             // watermark before validating a handle or attempting replacement.
             self.flush_shell_cwd_metadata()?;
@@ -11300,21 +11332,23 @@ impl Daemon {
             }
         }
         #[cfg(target_os = "linux")]
-        if let Some(launcher) = self
-            .session_launcher
-            .lock()
-            .expect("session launcher lock")
-            .as_ref()
-        {
+        let mut exec_gate = if let Some(launcher) = self.cli_launcher() {
             crate::session_isolation::resolve_program(&mut cmd)
                 .with_context(|| format!("resolving command for session {id}"))?;
             crate::session_isolation::wrap(
                 &mut cmd,
-                launcher,
+                &launcher,
                 self.channel.as_deref().unwrap_or("release"),
                 id,
             );
-        }
+            Some(crate::session_isolation::ExecGate::new(
+                &mut cmd,
+                self.channel.as_deref().unwrap_or("release"),
+                id,
+            )?)
+        } else {
+            None
+        };
         #[cfg(feature = "test-barriers")]
         self.startup_fault("reader-handle")?;
         let reader = pair
@@ -11368,6 +11402,14 @@ impl Daemon {
         let pid = child.process_id();
         let killer = child.clone_killer();
         *startup.child.lock().expect("startup child lock") = Some(child);
+        #[cfg(target_os = "linux")]
+        let ownership_receipt = exec_gate
+            .as_mut()
+            .map(|gate| {
+                gate.receipt(pid.ok_or_else(|| anyhow!("session {id}: gated PTY has no PID"))?)
+            })
+            .transpose()
+            .context(orchestrate::MutationMayHaveActed)?;
         #[cfg(feature = "test-barriers")]
         {
             if let (Some(pid), Some(spawned)) = (
@@ -11533,6 +11575,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(info.latest_prompt.clone()),
             hook_latest_agent_message: Mutex::new(info.last_agent_message.clone()),
             sleep_notice: Mutex::new(None),
+            recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(info.slept_at_ms),
             geometry: AtomicU32::new((u32::from(cols) << 16) | u32::from(rows)),
             backend: Backend::Pty {
@@ -11703,9 +11746,14 @@ impl Daemon {
         } else {
             preassigned.map(|conversation| (None, Some(conversation)))
         };
-        if hidden {
-            prepare().context(orchestrate::MutationMayHaveActed)?;
-        } else {
+        {
+            #[cfg(target_os = "linux")]
+            let process_identity = match ownership_receipt {
+                Some(receipt) => Some(receipt),
+                None => crate::recovery_process::ProcessIdentity::capture(pid)
+                    .context(orchestrate::MutationMayHaveActed)?,
+            };
+            #[cfg(not(target_os = "linux"))]
             let process_identity = crate::recovery_process::ProcessIdentity::capture(pid)
                 .context(orchestrate::MutationMayHaveActed)?;
             self.db
@@ -11753,6 +11801,12 @@ impl Daemon {
         startup.committed = true;
         if hidden {
             self.handoff_started(id);
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(gate) = &mut exec_gate {
+            if let Err(error) = gate.release() {
+                tracing::warn!("session {id}: committed pre-exec release failed: {error:#}; retaining ownership receipt and recovery metadata");
+            }
         }
         startup.gate.finish(true);
         #[cfg(target_os = "linux")]
@@ -12137,6 +12191,7 @@ impl Daemon {
                 hook_latest_prompt: Mutex::new(None),
                 hook_latest_agent_message: Mutex::new(None),
                 sleep_notice: Mutex::new(None),
+                recovery_notice: Mutex::new(None),
                 slept_at_ms: Mutex::new(None),
                 geometry: AtomicU32::new((u32::from(params.cols) << 16) | u32::from(params.rows)),
                 backend: Backend::Ssh(handle),
@@ -13514,6 +13569,51 @@ impl Daemon {
         self.close_reserved(&reservation)
     }
 
+    pub fn recheck_recovery(&self, id: u32, acknowledge_uncontained: bool) -> Result<()> {
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
+        self.ensure_not_closing(id, "recovery check")?;
+        let registered = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .get(&id)
+            .cloned();
+        anyhow::ensure!(
+            self.dead.lock().expect("dead lock").contains_key(&id)
+                || registered
+                    .as_ref()
+                    .is_some_and(|session| !session.snapshot_info().state.is_live()),
+            "recovery check refused for session {id}: expected a retained ended session"
+        );
+        if acknowledge_uncontained {
+            self.db.acknowledge_uncontained_recovery(id)?;
+        }
+        let result = self.db.check_previous_process_stopped(id);
+        let notice = match &result {
+            Ok(()) => "Process recovery recheck passed. Restart is available; retained missions still require explicit resume.".into(),
+            Err(error) => format!("Session {id} recovery deferred: {error:#}"),
+        };
+        let info = if let Some(session) = registered {
+            *session
+                .recovery_notice
+                .lock()
+                .expect("recovery notice lock") = Some(notice);
+            session.snapshot_info()
+        } else {
+            let mut dead = self.dead.lock().expect("dead lock");
+            let info = dead
+                .get_mut(&id)
+                .ok_or_else(|| anyhow!("unknown retained session {id}"))?;
+            info.resume_notice = Some(notice);
+            info.clone()
+        };
+        self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+        result
+    }
+
     fn ensure_not_closing(&self, id: u32, operation: &str) -> Result<()> {
         if self
             .closing_sessions
@@ -14507,6 +14607,9 @@ impl Daemon {
     }
 
     fn handoff_finish(&self, request: u32, job: HandoffJob) {
+        if let Err(error) = self.db.mark_closed(job.hidden) {
+            tracing::warn!("retiring hidden generator {}: {error:#}", job.hidden);
+        }
         if job.title_job.is_some() {
             self.finish_generated_title(job);
             return;

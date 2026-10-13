@@ -2160,6 +2160,17 @@ async fn dispatch(
             }
             Err(e) => Err(e),
         },
+        proto::ClientMsg::SessionRecoveryCheck {
+            session,
+            acknowledge_uncontained,
+        } => {
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || {
+                daemon.recheck_recovery(session, acknowledge_uncontained.unwrap_or(false))
+            })
+            .await
+            .unwrap_or_else(|error| Err(anyhow::anyhow!("recovery check task panicked: {error}")))
+        }
         proto::ClientMsg::SessionClose {
             session,
             confirm_children,

@@ -75,7 +75,8 @@ On Linux, the app asks the systemd user manager through D-Bus `StartTransientUni
 start the supervisor in a unique `houston-daemon-<channel>-<id>.service`. The supervisor
 and daemon share that service, independently of the app's desktop scope. Each new PTY
 enters a separate `houston-session-<channel>-<session>-<id>.scope` before executing the
-CLI, so descendants inherit its scope without a migration race. The daemon remains
+CLI, then waits for its ownership receipt and startup transaction to commit.
+Descendants inherit its scope without a migration race. The daemon remains
 the PTY owner; PID, session leadership and terminal input are preserved. Killing one
 session scope leaves the daemon and sibling scopes running. A failed scope stop falls
 back to signalling the PTY's process groups and is logged, because some user managers
@@ -87,7 +88,8 @@ authenticated endpoints.
 Without a systemd user manager, launch falls back to `setsid` and prints the reason.
 That separates the Unix session but preserves the caller's cgroup, so group termination
 can still end the daemon and its panes. Session scope creation also reports an explicit
-fallback when isolation is unavailable. An ambiguous scope request timeout refuses the
+fallback when isolation is unavailable, retaining a named cold-recovery refusal
+until explicit acknowledgement. An ambiguous scope request timeout refuses the
 CLI launch, preventing delayed migration from missing descendants. On Windows, detached creation separates the console but does
 not escape a containing job object. An externally imposed job with kill-on-close can
 still terminate the daemon; Houston does not require permission to break away from it.

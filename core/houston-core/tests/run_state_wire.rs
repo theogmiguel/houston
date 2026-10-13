@@ -80,6 +80,7 @@ fn seed_husk(state_dir: &std::path::Path, dir: &std::path::Path) {
         slept_at_ms: None,
     })
     .unwrap();
+    db.acknowledge_uncontained_recovery(1).unwrap();
 }
 
 #[test]

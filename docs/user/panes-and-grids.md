@@ -329,10 +329,17 @@ retry, or explicitly choose Start fresh or Close. A provider launched with a cus
 also waits after a daemon restart: Houston does not save arbitrary command arguments.
 Start fresh launches that provider's standard command.
 
-If a recorded process from the previous daemon is still alive, Houston keeps its pane
-and refuses replacement, including Start fresh and Close. Stop that process or reboot,
-then retry. This check identifies the recorded PTY process; it cannot establish that
-all detached subprocesses have stopped, and older saved sessions may lack that identity.
+Houston refuses replacement while a recorded process or its Linux workload scope is
+still alive. A missing root process does not prove that detached tools stopped. A verified
+Linux reboot can clear that refusal without signals.
+
+Use Recheck recovery after stopping the previous workload or fixing an unavailable Linux
+user manager. Legacy sessions and launches without complete process ownership, including
+Windows ConPTY, retain their pane, conversation and pending missions with a named refusal.
+After stopping all their previous workload processes, explicitly acknowledge that they
+have stopped, then retry Restart. Acknowledgement cannot override a live recorded root,
+a contained scope or unreadable ownership evidence. It does not start a conversation or
+resume pending instructions; held instructions still require explicit resume.
 
 Saved terminal output follows an automatically restored pane. Output since the last
 checkpoint can be lost after an abrupt daemon exit, and provider conversation history

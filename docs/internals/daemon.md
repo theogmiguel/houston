@@ -153,14 +153,28 @@ Naturally exited root panes retain their identity and saved output without autom
 Only the newest row of a session origin is eligible, so legacy replacement predecessors
 cannot reappear alongside their successors.
 
-Startup commits the PTY root's PID and creation identity with the session row. Linux
-records the kernel boot UUID because process start ticks can repeat after reboot;
-Windows uses the absolute process creation FILETIME. Cold replacement and Close refuse
-while the recorded root is still present, without signalling a process from a previous
-daemon. Missing creation evidence for a live recorded PID remains a refusal. A changed
-boot or recycled PID does not block recovery. This is a root liveness check, not proof
-that an escaped descendant has stopped. Legacy rows without identity retain the previous
-recovery policy. Full containment and migration of those rows remain separate work.
+Linux startup holds the executable behind a private socket gate until its versioned
+ownership receipt, continuation metadata and session replacement transaction commit.
+The helper enters a nonce-bearing user systemd scope and verifies its kernel membership
+against the manager before reporting ownership. Socket EOF or a failed scope request
+aborts execution before the CLI can fork. Hidden generators also commit receipts, but
+remain excluded from cold restoration. The gate proves process-crash ordering, not
+power-loss durability.
+
+Cold recovery checks the boot UUID, root creation identity and exact recorded scope's
+recursive cgroup population. A recycled or absent root cannot certify a stopped workload.
+A reachable manager must confirm collection when the kernel cgroup is absent; manager
+errors, permission failures and timeouts remain unknown. A verified different Linux boot
+permits recovery without signalling old processes. Live handoff preserves the stored
+receipt on both commit and rollback; adoption does not establish workload quiescence.
+
+Windows ConPTY currently has no committed pre-exec Job receipt. Windows, Linux launches
+without verified scopes and historical rows therefore retain a named recovery refusal,
+the pane, conversation and pending instructions. Read-only recheck refreshes the reason.
+An explicit user acknowledgement that all previous workload processes have stopped can
+clear an uncontained or legacy refusal after any recorded root passes its liveness check.
+It cannot bypass a contained scope or an unreadable receipt. Acknowledgement does not
+resume held instructions or change continuation metadata.
 
 Shell panes can retain a root Claude, Codex or ZCode conversation reported by lifecycle
 hooks. Restart validates that provider's exact handle and launches the CLI from the restored

@@ -1608,7 +1608,7 @@ fn is_busy(err: &anyhow::Error) -> bool {
     )
 }
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
@@ -1772,6 +1772,18 @@ impl Db {
             "sessions",
             "process_identity",
             "process_identity TEXT",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "recovery_acknowledged",
+            "recovery_acknowledged INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "hidden",
+            "hidden INTEGER NOT NULL DEFAULT 0",
         )?;
         add_column_if_missing(&conn, "sessions", "transcript_path", "transcript_path TEXT")?;
         add_column_if_missing(
@@ -2362,7 +2374,7 @@ impl Db {
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id),
                     latest_prompt, last_agent_message, slept_at_ms, state, context_json
              FROM sessions
-             WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom'
+             WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom' AND hidden = 0
                    AND (state != 'exited' OR spawned_by IS NOT NULL OR id IN (
                        SELECT MAX(id) FROM sessions GROUP BY COALESCE(session_origin, id)
                    ))
@@ -2573,8 +2585,8 @@ impl Db {
         conn.execute(
             "INSERT INTO sessions (id, agent, project_dir, cwd, state, title, codename, title_source,
                                    ssh_host, spawned_by, acp, profile_label, tags, session_origin,
-                                   latest_prompt, last_agent_message, slept_at_ms, context_json, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, unixepoch())",
+                                   latest_prompt, last_agent_message, slept_at_ms, context_json, hidden, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, unixepoch())",
             rusqlite::params![
                 info.id,
                 serde_json::to_string(&info.agent)?.trim_matches('"'),
@@ -2594,6 +2606,7 @@ impl Db {
                 info.last_agent_message,
                 info.slept_at_ms,
                 info.context.map(|context| serde_json::to_string(&context)).transpose()?,
+                info.hidden,
             ],
         )?;
         if let Some(source) = title_source.filter(|source| *source != "user") {
@@ -2722,17 +2735,83 @@ impl Db {
     }
 
     pub fn check_previous_process_stopped(&self, id: u32) -> Result<()> {
+        let (encoded, acknowledged): (Option<String>, bool) =
+            self.conn.lock().expect("db lock").query_row(
+                "SELECT process_identity, recovery_acknowledged FROM sessions WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+        if let Some(encoded) = encoded {
+            let identity: crate::recovery_process::ProcessIdentity = serde_json::from_str(&encoded)
+                .with_context(|| format!("invalid previous process identity for session {id}"))?;
+            if acknowledged {
+                identity.check_acknowledgeable()?;
+            } else {
+                identity.check_stopped()?;
+            }
+        } else if !acknowledged {
+            anyhow::bail!("Process ownership unknown: legacy session {id} has no ownership receipt. Stop all previous workload processes, then explicitly acknowledge uncontained recovery; session, conversation and pending missions are retained.");
+        }
+        Ok(())
+    }
+
+    pub fn acknowledge_uncontained_recovery(&self, id: u32) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let encoded: Option<String> = tx.query_row(
+            "SELECT process_identity FROM sessions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if let Some(encoded) = encoded {
+            let identity: crate::recovery_process::ProcessIdentity =
+                serde_json::from_str(&encoded)?;
+            identity.check_acknowledgeable()?;
+        }
+        tx.execute(
+            "UPDATE sessions SET recovery_acknowledged = 1 WHERE id = ?1",
+            [id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn check_contained_workload_stopped(&self, id: u32) -> Result<()> {
         let encoded: Option<String> = self.conn.lock().expect("db lock").query_row(
             "SELECT process_identity FROM sessions WHERE id = ?1",
             [id],
             |row| row.get(0),
         )?;
         if let Some(encoded) = encoded {
-            let identity: crate::recovery_process::ProcessIdentity = serde_json::from_str(&encoded)
-                .with_context(|| format!("invalid previous process identity for session {id}"))?;
-            identity.check_stopped()?;
+            let identity: crate::recovery_process::ProcessIdentity =
+                serde_json::from_str(&encoded)?;
+            if identity.is_contained() {
+                identity.check_stopped()?;
+            }
         }
         Ok(())
+    }
+
+    pub fn uncontained_recovery_notice(&self, id: u32) -> Result<Option<String>> {
+        let (encoded, acknowledged): (Option<String>, bool) =
+            self.conn.lock().expect("db lock").query_row(
+                "SELECT process_identity, recovery_acknowledged FROM sessions WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+        if acknowledged {
+            return Ok(None);
+        }
+        let identity = encoded
+            .map(|body| serde_json::from_str::<crate::recovery_process::ProcessIdentity>(&body))
+            .transpose()?;
+        let reason = identity
+            .as_ref()
+            .map_or(Some("legacy session has no ownership receipt"), |receipt| {
+                receipt.uncontained_reason()
+            });
+        Ok(reason.map(|reason| format!("Process ownership unknown: {reason}. Recheck, or stop all previous workload processes and explicitly acknowledge uncontained recovery; session, conversation and pending missions are retained.")))
     }
 
     pub(crate) fn session_has_command_override(&self, id: u32) -> Result<bool> {

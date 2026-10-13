@@ -11,9 +11,34 @@ fn connection() -> Result<zbus::blocking::Connection, String> {
     if !Path::new("/run/systemd/system").is_dir() {
         return Err("the host is not running systemd".into());
     }
-    zbus::blocking::connection::Builder::session()
-        .and_then(|builder| builder.method_timeout(MANAGER_TIMEOUT).build())
-        .map_err(|error| format!("user session bus unavailable: {error}"))
+    // Method timeouts do not bound bus authentication. Cancel the asynchronous
+    // connection build as well, on a private runtime outside any caller's runtime.
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|error| format!("creating ownership connection runtime: {error}"))?;
+                runtime.block_on(async {
+                    let builder = zbus::connection::Builder::session()
+                        .map_err(|error| format!("user session bus unavailable: {error}"))?;
+                    let connection = tokio::time::timeout(
+                        MANAGER_TIMEOUT,
+                        builder.method_timeout(MANAGER_TIMEOUT).build(),
+                    )
+                    .await
+                    .map_err(|_| {
+                        "user session bus authentication timed out after 5s; ownership unknown"
+                            .to_string()
+                    })?
+                    .map_err(|error| format!("user session bus unavailable: {error}"))?;
+                    Ok(zbus::blocking::Connection::from(connection))
+                })
+            })
+            .join()
+            .map_err(|_| "ownership connection worker panicked".to_string())?
+    })
 }
 
 fn manager(connection: &zbus::blocking::Connection) -> Result<zbus::blocking::Proxy<'_>, String> {
@@ -27,13 +52,8 @@ fn manager(connection: &zbus::blocking::Connection) -> Result<zbus::blocking::Pr
 }
 
 pub fn launcher() -> Option<PathBuf> {
-    let result = (|| {
-        let connection = connection()?;
-        manager(&connection)?
-            .get_property::<String>("Version")
-            .map_err(|error| format!("user systemd manager unavailable: {error}"))?;
-        std::env::current_exe().map_err(|error| format!("resolving session launcher: {error}"))
-    })();
+    let result =
+        std::env::current_exe().map_err(|error| format!("resolving session launcher: {error}"));
     match result {
         Ok(path) => Some(path),
         Err(reason) => {
@@ -41,6 +61,16 @@ pub fn launcher() -> Option<PathBuf> {
             None
         }
     }
+}
+
+pub fn manager_available() -> bool {
+    connection()
+        .and_then(|connection| {
+            manager(&connection)?
+                .get_property::<String>("Version")
+                .map_err(|error| error.to_string())
+        })
+        .is_ok()
 }
 
 pub fn resolve_program(command: &mut portable_pty::CommandBuilder) -> anyhow::Result<()> {
@@ -133,12 +163,17 @@ fn definite_rejection(name: &str) -> bool {
 }
 
 fn enter_scope(channel: &str, id: u32) -> Result<(), ScopeError> {
+    enter_scope_with_nonce(channel, id, &uuid::Uuid::new_v4().simple().to_string()).map(|_| ())
+}
+
+fn enter_scope_with_nonce(
+    channel: &str,
+    id: u32,
+    nonce: &str,
+) -> Result<crate::recovery_process::Ownership, ScopeError> {
     let connection = connection().map_err(ScopeError::Unavailable)?;
     let manager = manager(&connection).map_err(ScopeError::Unavailable)?;
-    let unit = format!(
-        "houston-session-{channel}-{id}-{}.scope",
-        uuid::Uuid::new_v4().simple()
-    );
+    let unit = format!("houston-session-{channel}-{id}-{nonce}.scope");
     let properties = (|| -> zbus::zvariant::Result<Vec<(&str, OwnedValue)>> {
         Ok(vec![
             (
@@ -192,7 +227,16 @@ fn enter_scope(channel: &str, id: u32) -> Result<(), ScopeError> {
                 .map_err(|error| format!("reading session scope {unit}: {error}"))?
                 == "active"
             {
-                return Ok(());
+                let cgroup = scope_cgroup(&connection, &unit)?;
+                if !contents
+                    .lines()
+                    .any(|line| line.strip_prefix("0::") == Some(cgroup.as_str()))
+                {
+                    return Err(ScopeError::Pending(format!(
+                        "session {id} membership does not match manager cgroup {cgroup}"
+                    )));
+                }
+                return Ok(crate::recovery_process::Ownership::LinuxScope { unit, cgroup });
             }
         }
         if Instant::now() >= deadline {
@@ -278,20 +322,216 @@ pub fn run(args: Vec<OsString>) -> anyhow::Result<()> {
     }
     // A helper cannot fork the CLI until its own scope is active. If a queued request
     // times out, refusing the launch prevents later PID migration from missing descendants.
-    match enter_scope(channel, id) {
-        Ok(()) => {}
-        Err(ScopeError::Unavailable(reason)) => eprintln!(
-            "houston-core: session {id} cgroup isolation unavailable: {reason}; using the existing PTY launch"
-        ),
+    let gate = std::env::var_os("HOUSTON_EXEC_GATE");
+    let nonce = std::env::var("HOUSTON_EXEC_NONCE")
+        .unwrap_or_else(|_| uuid::Uuid::new_v4().simple().to_string());
+    anyhow::ensure!(
+        nonce.len() == 32 && nonce.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "invalid pre-exec scope nonce {nonce:?}; expected 32 hexadecimal characters"
+    );
+    let mut stream = gate
+        .map(std::os::unix::net::UnixStream::connect)
+        .transpose()?;
+    let ownership = match enter_scope_with_nonce(channel, id, &nonce) {
+        Ok(ownership) => ownership,
+        Err(ScopeError::Unavailable(reason)) => {
+            eprintln!("houston-core: session {id} cgroup isolation unavailable: {reason}; recovery requires explicit acknowledgement");
+            crate::recovery_process::Ownership::Uncontained { reason }
+        }
         Err(ScopeError::Pending(reason)) => return Err(anyhow::Error::msg(reason)),
+    };
+    if let Some(stream) = &mut stream {
+        use std::io::{Read, Write};
+        let receipt = crate::recovery_process::ProcessIdentity::capture(Some(std::process::id()))?
+            .ok_or_else(|| anyhow::anyhow!("pre-exec process identity unavailable"))?
+            .with_ownership(ownership.clone());
+        stream.set_read_timeout(Some(Duration::from_secs(60)))?;
+        stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+        let mut bytes = serde_json::to_vec(&receipt)?;
+        bytes.push(b'\n');
+        stream.write_all(&bytes)?;
+        let mut release = [0u8; 1];
+        // EOF on parent death or rollback aborts execution; output-worker gates cannot provide this guarantee.
+        stream.read_exact(&mut release)?;
+        anyhow::ensure!(release == [1], "pre-exec gate aborted session {id}");
     }
     let mut command = crate::spawn::command(&args[3]);
     command.args(&args[4..]);
+    command.env_remove("HOUSTON_EXEC_GATE");
+    command.env_remove("HOUSTON_EXEC_NONCE");
+    command.env_remove("HOUSTON_COMMITTED_SCOPE");
+    if stream.is_some() {
+        if let crate::recovery_process::Ownership::LinuxScope { unit, .. } = ownership {
+            command.env("HOUSTON_COMMITTED_SCOPE", unit);
+        }
+    }
     let error = command.exec();
     Err(anyhow::anyhow!(
         "session-exec: executing {:?}: {error}",
         args[3]
     ))
+}
+
+fn scope_cgroup(connection: &zbus::blocking::Connection, unit: &str) -> Result<String, String> {
+    let path: OwnedObjectPath = manager(connection)?
+        .call("GetUnit", &(unit,))
+        .map_err(|error| format!("looking up ownership scope {unit}: {error}"))?;
+    let scope = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.systemd1",
+        path,
+        "org.freedesktop.systemd1.Scope",
+    )
+    .map_err(|error| error.to_string())?;
+    scope
+        .get_property::<String>("ControlGroup")
+        .map_err(|error| format!("reading scope {unit} membership: {error}"))
+}
+
+pub(crate) fn validate_scope_receipt(unit: &str, cgroup: &str) -> Result<(), String> {
+    let path = Path::new(cgroup);
+    let valid_name = (|| {
+        let (prefix, nonce) = unit.strip_suffix(".scope")?.rsplit_once('-')?;
+        let (channel, id) = prefix.strip_prefix("houston-session-")?.rsplit_once('-')?;
+        crate::paths::validate_channel(channel).ok()?;
+        let id = id.parse::<u32>().ok()?;
+        (id > 0 && nonce.len() == 32 && nonce.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .then_some(())
+    })()
+    .is_some();
+    if !valid_name
+        || !path.is_absolute()
+        || path.file_name().is_none_or(|name| name != unit)
+        || path
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err(format!(
+            "invalid ownership scope {unit:?} / cgroup {cgroup:?}"
+        ));
+    }
+    Ok(())
+}
+
+pub fn check_scope_stopped(unit: &str, cgroup: &str) -> Result<(), String> {
+    validate_scope_receipt(unit, cgroup)?;
+    // Even a missing cgroup is unknown until the user manager is reachable.
+    let connection = connection()?;
+    manager(&connection)?
+        .get_property::<String>("Version")
+        .map_err(|error| format!("ownership manager unavailable: {error}"))?;
+    let group = Path::new("/sys/fs/cgroup").join(cgroup.trim_start_matches('/'));
+    match std::fs::read_to_string(group.join("cgroup.events")) {
+        Ok(events) => {
+            let actual = scope_cgroup(&connection, unit)?;
+            if actual != cgroup {
+                return Err(format!(
+                    "scope {unit} membership changed: recorded {cgroup}, actual {actual}"
+                ));
+            }
+            match events.lines().find_map(|line| line.strip_prefix("populated ")) {
+                Some("0") => Ok(()),
+                Some("1") => Err(format!("Previous workload scope {unit} remains populated; replacement refused. Houston has not signalled it.")),
+                _ => Err(format!("scope {unit} population unavailable; expected populated 0 or 1")),
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // GetUnit's explicit NoSuchUnit plus absent kernel cgroup establishes collection.
+            match manager(&connection)?.call::<_, _, OwnedObjectPath>("GetUnit", &(unit,)) {
+                Err(zbus::Error::MethodError(name, ..))
+                    if name.as_str() == "org.freedesktop.systemd1.NoSuchUnit" =>
+                {
+                    Ok(())
+                }
+                Ok(_) => Err(format!(
+                    "scope {unit} still registered but its population is unavailable"
+                )),
+                Err(error) => Err(format!("scope {unit} ownership unknown: {error}")),
+            }
+        }
+        Err(error) => Err(format!("reading scope {unit} population: {error}")),
+    }
+}
+
+pub struct ExecGate {
+    _directory: tempfile::TempDir,
+    listener: std::os::unix::net::UnixListener,
+    stream: Option<std::os::unix::net::UnixStream>,
+    expected_unit: String,
+}
+
+impl ExecGate {
+    pub fn new(
+        command: &mut portable_pty::CommandBuilder,
+        channel: &str,
+        id: u32,
+    ) -> anyhow::Result<Self> {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::Builder::new().prefix("houston-exec-").tempdir()?;
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700))?;
+        let socket = directory.path().join("gate");
+        let listener = std::os::unix::net::UnixListener::bind(&socket)?;
+        listener.set_nonblocking(true)?;
+        command.env("HOUSTON_EXEC_GATE", socket);
+        let nonce = uuid::Uuid::new_v4().simple().to_string();
+        command.env("HOUSTON_EXEC_NONCE", &nonce);
+        let expected_unit = format!("houston-session-{channel}-{id}-{nonce}.scope");
+        Ok(Self {
+            _directory: directory,
+            listener,
+            stream: None,
+            expected_unit,
+        })
+    }
+
+    pub fn receipt(
+        &mut self,
+        pid: u32,
+    ) -> anyhow::Result<crate::recovery_process::ProcessIdentity> {
+        use std::io::{BufRead, Read};
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let stream = loop {
+            match self.listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
+        let peer =
+            nix::sys::socket::getsockopt(&stream, nix::sys::socket::sockopt::PeerCredentials)?;
+        anyhow::ensure!(
+            u32::try_from(peer.pid()).ok() == Some(pid),
+            "pre-exec socket peer {} differs from spawned process {pid}",
+            peer.pid()
+        );
+        stream.set_read_timeout(Some(Duration::from_secs(30)))?;
+        stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+        let mut body = String::new();
+        std::io::BufReader::new((&stream).take(16 * 1024)).read_line(&mut body)?;
+        anyhow::ensure!(
+            body.ends_with('\n'),
+            "ownership receipt missing or exceeds 16384 bytes"
+        );
+        let receipt: crate::recovery_process::ProcessIdentity = serde_json::from_str(&body)?;
+        receipt.verify_root(pid)?;
+        receipt.verify_scope_receipt(&self.expected_unit, pid)?;
+        self.stream = Some(stream);
+        Ok(receipt)
+    }
+
+    pub fn release(&mut self) -> anyhow::Result<()> {
+        use std::io::Write;
+        self.stream
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("pre-exec receipt missing"))?
+            .write_all(&[1])?;
+        Ok(())
+    }
 }
 
 static FAIL_SCOPE_TERMINATION: std::sync::atomic::AtomicBool =
