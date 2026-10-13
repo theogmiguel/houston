@@ -27,83 +27,6 @@ import {
   BrowserPickerHint,
   BrowserPickerSelected
 } from './browserStories'
-import { NewSessionComposer } from '../src/components/NewSessionComposer'
-import { LaunchGridPreview } from '../src/components/ui/LaunchGridPreview'
-import type { SessionSlot } from '../src/components/sessionPresets'
-import { leaf, type LayoutNode } from '../src/layout/tree'
-
-function NewSession(): React.JSX.Element {
-  return (
-    <NewSessionComposer
-      workspaceName="acme"
-      workspacePath="~/Desktop/acme"
-      gridName="Improve Orchestration"
-      onLaunch={() => {}}
-      onCancel={() => {}}
-    />
-  )
-}
-
-function NewSessionClicked({ selector, focusSelector }: { selector: string; focusSelector?: string }): React.JSX.Element {
-  const ref = React.useRef<HTMLDivElement>(null)
-  React.useEffect(() => {
-    ref.current?.querySelector<HTMLButtonElement>(selector)?.click()
-    if (focusSelector) ref.current?.querySelector<HTMLButtonElement>(focusSelector)?.focus()
-  }, [selector])
-  return (
-    <div ref={ref} style={{ display: 'flex', height: '100%' }}>
-      <NewSession />
-    </div>
-  )
-}
-
-function DockedLaunchHoverStory(): React.JSX.Element {
-  const ref = React.useRef<HTMLDivElement>(null)
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      ref.current?.querySelector<HTMLButtonElement>('[data-preset="swarm"]')?.dispatchEvent(
-        new MouseEvent('mouseover', { bubbles: true })
-      )
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [])
-  return <DockedLaunchStory ref={ref} />
-}
-
-const launchStoryTree: LayoutNode = {
-  kind: 'split', dir: 'row', children: [leaf(1), leaf(2)], weights: [1, 1]
-}
-const launchStorySessions = new Map<number, SessionInfo>([
-  [1, { id: 1, agent: 'claude' } as SessionInfo],
-  [2, { id: 2, agent: 'codex' } as SessionInfo]
-])
-
-const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunchStory(_, ref): React.JSX.Element {
-  const [preview, setPreview] = React.useState<{ slots: SessionSlot[]; target: 'this-grid' | 'new-grid' } | null>(null)
-  const updatePreview = React.useCallback((slots: SessionSlot[], target: 'this-grid' | 'new-grid'): void => {
-    setPreview({ slots, target })
-  }, [])
-  return (
-    <div ref={ref} className="flex h-full min-w-0 bg-[var(--content-bg)]">
-      <div className="relative min-w-0 flex-1" aria-label="Current grid">
-        <div className="absolute inset-0 grid grid-cols-2 gap-[var(--pane-gutter)] p-[var(--pane-gutter)]">
-        {['Session · Claude Code', 'Session · Codex'].map((name) => (
-            <div key={name} className="flex items-center justify-center rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-muted)]">{name}</div>
-        ))}
-        </div>
-        {preview && <LaunchGridPreview tree={launchStoryTree} slots={preview.slots} target={preview.target} sessions={launchStorySessions} />}
-      </div>
-      <NewSessionComposer
-        workspaceName="acme"
-        workspacePath="~/Desktop/acme"
-        gridName="Improve Orchestration"
-        onPreviewChange={updatePreview}
-        onLaunch={() => {}}
-        onCancel={() => {}}
-      />
-    </div>
-  )
-})
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
 import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsMascot, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsRemote, SettingsRemoteOff, SettingsRemoteUnconfigured, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
@@ -151,7 +74,7 @@ import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
 
 const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }, { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }]
 import { PhonePairingSpecimen, StaleWorktreesStory, UiPrimitivesStory } from './uiStories'
-import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
+import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
 import { FilesSurfaceDelete470, FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceImage470, FilesSurfaceImage732, FilesSurfaceMarkdown470, FilesSurfaceMarkdown732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceQuickOpenHighlighted, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
 import { EditorSurfaceMenuStory, LayoutDropSlotsStory, MarkdownPreviewStory, OpenInSubmenuStory, EditorPreviewStatesStory, DictationListeningStory, DictationTranscribingStory, WindowControlsStory } from './workbenchStories'
@@ -295,13 +218,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'browser/fullscreen': () => <BrowserFullscreenStory />,
   'browser/act-overlay': () => <BrowserActOverlayStory />,
   'browser/act-modal': () => <BrowserActModalStory />,
-  'new-session/default': () => <NewSession />,
   'shell/add-pane-menu': () => <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={() => {}} onNewTerminal={() => {}} onSpawnAgent={() => {}} onSplitDown={() => {}} onNewGrid={() => {}} agentProfiles={null} workspaceActions={STORY_ACTIONS} />,
-  'shell/workspace-empty': () => <WorkspaceEmpty onNewSession={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,
-  'launch/docked': () => <DockedLaunchStory />,
-  'launch/docked-preset-hover': () => <DockedLaunchHoverStory />,
-  'new-session/swarm': () => <NewSessionClicked selector='[data-preset="swarm"]' focusSelector='[data-preset="pair"]' />,
-  'new-session/terminal': () => <NewSessionClicked selector='[data-agent="shell"]' />,
+  'shell/workspace-empty': () => <WorkspaceEmpty installedAgents={['claude', 'codex', 'opencode']} onSpawnAgent={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,
   'harness/smoke': () => (
     <div
       style={{
@@ -525,9 +443,6 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'ui-primitives/attachment-chips': () => <AttachmentChips />,
   'composer/attachment-chips': () => <AttachmentChips />,
   'composer/attachment-previews': () => <AttachmentPreviews />,
-  'new-session/routes': () => <NewSessionWithRoutes />,
-  'new-session/task-focus': () => <NewSessionTask text="Fix the flaky reconnect test" focus />,
-  'new-session/task-over-limit': () => <NewSessionTask text={'x'.repeat(9000)} focus={false} />,
   'shell/add-pane-profiles': () => <AddPaneProfiles />,
   'shell/add-pane-disabled': () => <AddPaneDisabled />,
   'banner/reconnect': () => <ReconnectBannerStory error={null} />,

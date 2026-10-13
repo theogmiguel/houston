@@ -26,15 +26,10 @@ and [Changes](changes.md).
 
 ## Launching sessions
 
-Open the launch composer from a grid action. It docks beside the current grid so you can
-preview the resulting panes before starting them. Choose **This grid** to add sessions to
-the current layout or **New grid** to start a separate layout. Hover a preset to preview
-its slots, choose an agent for each slot, and optionally enter one task shared by every
-agent. Press Ctrl+Enter in the task field or choose **Launch** to start the sessions.
-
-Each slot shows its model, effort and checkout, with the source of each value. Workspace
-routing applies to matching roles; a route that a selected provider cannot use is shown
-as skipped with its reason. A launch with an invalid slot is blocked until you correct it.
+Choose **New session** beside a workspace to create a new empty grid. Choose **Terminal**
+or an installed agent in the empty grid to open its first pane directly. The pane **+**
+menu adds more terminals or agents to the current grid. Choose model and effort inside
+an agent CLI. For coordinated multi-agent work, use [orchestration](orchestration.md).
 
 New terminal sessions support 256-colour and true-colour output even when the
 launcher disables its own colours. Existing sessions retain their original

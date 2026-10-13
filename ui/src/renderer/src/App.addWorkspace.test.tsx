@@ -32,9 +32,9 @@ async function flush(): Promise<void> {
   })
 }
 
-async function waitForComposer(container: Element): Promise<void> {
+async function waitForLauncher(container: Element): Promise<void> {
   await waitFor(
-    () => expect(container.querySelector('[data-testid="new-session-composer"]')).not.toBeNull(),
+    () => expect(container.querySelector('[data-testid="workspace-empty"]')).not.toBeNull(),
     { timeout: 5_000 }
   )
 }
@@ -100,7 +100,7 @@ describe('Add workspace — Local folder opens the folder picker', () => {
     ])
   })
 
-  it('Success — the picked folder opens straight onto step 3’s composer', async () => {
+  it('Success — the picked folder opens straight onto an empty grid launcher', async () => {
     harness = await renderReadyApp()
     picked.value = ['/home/test/beta']
 
@@ -112,36 +112,12 @@ describe('Add workspace — Local folder opens the folder picker', () => {
       })
     })
     await flush()
-    await waitForComposer(harness.container)
+    await waitForLauncher(harness.container)
 
-    const composer = harness.container.querySelector('[data-testid="new-session-composer"]')
-    expect(composer, 'the folder picker’s success opens the composer').not.toBeNull()
-    expect(composer?.textContent).toContain('beta')
-  })
-
-  it('Success — closing the composer leaves the ZERO-pane workspace behind it', async () => {
-    harness = await renderReadyApp()
-    picked.value = ['/home/test/beta']
-
-    await clickAdd(harness)
-    act(() => {
-      deliverControl({
-        type: 'workspace_list',
-        workspaces: [makeWorkspace({ path: '/home/test/beta', name: 'beta' })]
-      })
-    })
-    await flush()
-    await waitForComposer(harness.container)
-    act(() => {
-      harness!.container
-        .querySelector<HTMLButtonElement>('[data-testid="new-session-close"]')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
-
+    expect(harness.container.querySelector('[data-testid="new-session-composer"]')).toBeNull()
     const empty = harness.container.querySelector('[data-testid="workspace-empty"]')
-    expect(empty, 'a freshly added workspace shows step 2 behind the composer').not.toBeNull()
     expect(empty?.textContent).toContain('Nothing running here yet')
+    expect(currentClient().createSession).not.toHaveBeenCalled()
   })
 
   it('Refused — root and a secret dir are turned away while home and a good pick land', async () => {

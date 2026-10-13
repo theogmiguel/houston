@@ -17,7 +17,8 @@ describe('WorkspaceEmpty — state matrix', () => {
     act(() =>
       root.render(
         <WorkspaceEmpty
-          onNewSession={() => clicks.push('session')}
+          installedAgents={['claude', 'codex']}
+          onSpawnAgent={(agent) => clicks.push(agent)}
           onTerminal={() => clicks.push('terminal')}
           onBrowser={() => clicks.push('browser')}
         />
@@ -46,14 +47,14 @@ describe('WorkspaceEmpty — state matrix', () => {
       'Nothing running here yet'
     )
     expect(container.textContent).toContain(
-      'Open a real terminal or an isolated browser inside this workspace.'
+      'Open a terminal or an installed agent inside this workspace.'
     )
     expect(container.textContent).not.toContain('thread')
   })
 
   it('the action row is the three doors that work', () => {
     const labels = Array.from(container.querySelectorAll('[data-testid="workspace-empty-new-session"], [data-testid="workspace-empty-terminal"], [data-testid="workspace-empty-browser"]')).map((b) => b.textContent?.trim())
-    expect(labels).toEqual(['New session', 'Terminal', 'Browser'])
+    expect(labels).toEqual(['Terminal', 'Browser'])
     expect(container.textContent).toContain('＋ Add action')
   })
 
@@ -63,9 +64,12 @@ describe('WorkspaceEmpty — state matrix', () => {
     expect(clicks).toEqual(['terminal', 'browser'])
   })
 
-  it('New session opens the composer', () => {
-    click('workspace-empty-new-session')
-    expect(clicks).toEqual(['session'])
+  it('installed agents launch directly and unavailable providers are absent', () => {
+    const button = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'codex')!
+    act(() => button.click())
+    expect(clicks).toEqual(['codex'])
+    expect(container.textContent).not.toContain('antigravity')
+    expect(container.querySelector('[data-testid="workspace-empty-new-session"]')).toBeNull()
   })
 
   it('Thread is gone, not merely disabled', () => {
