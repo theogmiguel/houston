@@ -142,10 +142,25 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
     render(makeSession({ title_source: 'prompt', state: 'running' }))
     openPaneMenu()
     click(row('Generate title'))
-    expect(send).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalledWith({ type: 'session_title_generate', session: 1 })
     expect(dialog()?.textContent).toContain('redacted first-prompt and first-reply hook text')
     click(confirmButton('Generate title'))
     expect(send).toHaveBeenCalledWith({ type: 'session_title_generate', session: 1 })
+  })
+
+  it('routes recovery recheck and confirmed acknowledgement separately', () => {
+    render(makeSession({ state: 'interrupted', restore_deferred: 'spawn-failed', resume_notice: 'Previous uncontained process scope' }))
+    const button = (label: string): HTMLButtonElement => {
+      const found = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((item) => item.textContent?.trim() === label)
+      if (!found) throw new Error(`missing button ${label}`)
+      return found
+    }
+    click(button('Recheck recovery'))
+    expect(send).toHaveBeenCalledWith({ type: 'session_recovery_check', session: 1 })
+    click(button('Acknowledge prior processes stopped'))
+    expect(send).not.toHaveBeenCalledWith({ type: 'session_recovery_check', session: 1, acknowledge_uncontained: true })
+    click(confirmButton('I verified they stopped'))
+    expect(send).toHaveBeenCalledWith({ type: 'session_recovery_check', session: 1, acknowledge_uncontained: true })
   })
 
   it('a resumable husk offers Resume conversation first and Start fresh second', () => {

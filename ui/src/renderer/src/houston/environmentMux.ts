@@ -105,6 +105,7 @@ export const CLIENT_ROUTES: Record<ClientMsg['type'], ClientRoute> = {
   session_rename: SESSION,
   session_title_reset: SESSION,
   session_title_generate: SESSION,
+  session_recovery_check: SESSION,
   generated_titles_get: 'local',
   generated_titles_set: 'all',
   session_set_tags: 'tags',
