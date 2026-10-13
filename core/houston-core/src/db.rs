@@ -2735,21 +2735,24 @@ impl Db {
     }
 
     pub fn check_previous_process_stopped(&self, id: u32) -> Result<()> {
-        let (encoded, acknowledged): (Option<String>, bool) =
+        let (encoded, acknowledged, state): (Option<String>, bool, String) =
             self.conn.lock().expect("db lock").query_row(
-                "SELECT process_identity, recovery_acknowledged FROM sessions WHERE id = ?1",
+                "SELECT process_identity, recovery_acknowledged, state FROM sessions WHERE id = ?1",
                 [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )?;
+        // Sleep refuses while external descendants run and waits for the CLI to exit,
+        // so an uncontained sleeping session only needs its recorded root to be gone.
+        let slept = state == "sleeping";
         if let Some(encoded) = encoded {
             let identity: crate::recovery_process::ProcessIdentity = serde_json::from_str(&encoded)
                 .with_context(|| format!("invalid previous process identity for session {id}"))?;
-            if acknowledged {
+            if acknowledged || (slept && !identity.is_contained()) {
                 identity.check_acknowledgeable()?;
             } else {
                 identity.check_stopped()?;
             }
-        } else if !acknowledged {
+        } else if !acknowledged && !slept {
             anyhow::bail!("Process ownership unknown: legacy session {id} has no ownership receipt. Stop all previous workload processes, then explicitly acknowledge uncontained recovery; session, conversation and pending missions are retained.");
         }
         Ok(())
