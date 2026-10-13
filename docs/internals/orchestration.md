@@ -1490,6 +1490,9 @@ self-refusal exists for the verbs that act on a pane, and this one only reads.
 
 ## The brief
 
+File-backed launch briefs have unique paths for each launch. A sibling launch cannot
+overwrite instructions that an existing agent may reread after compaction or resume.
+
 `prompt` is unchanged and is still a complete request on its own;
 `output_format` and `boundaries` are optional and are composed WITH it, by
 `orchestrate::Brief::compose`, into one instruction string before anything is launched.

@@ -310,7 +310,8 @@ pub fn prompt_text(
                 }
             })
             .collect();
-        let path = dir.join(format!("prompt-{sanitized}.md"));
+        // A running agent may reread its brief after compaction or resume.
+        let path = dir.join(format!("prompt-{sanitized}-{}.md", uuid::Uuid::new_v4()));
         let stub = format!(
             "Read the file {} and follow every instruction in it exactly. \
              It is your full mission brief for this job; start working immediately.",
@@ -937,7 +938,12 @@ mod tests {
         let long = "x".repeat(PROMPT_FILE_THRESHOLD + 1);
         let (text, file) = prompt_text(&long, Some(dir.path()), "a b").unwrap();
         let (path, contents) = file.expect("a file for a long prompt");
-        assert_eq!(path, dir.path().join("prompt-a-b.md"));
+        assert_eq!(path.parent(), Some(dir.path()));
+        assert!(path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("prompt-a-b-"));
         assert_eq!(contents, long);
         assert!(text.contains(&path.display().to_string()), "{text}");
     }
@@ -1410,9 +1416,14 @@ mod tests {
         .unwrap();
         let (path, contents) = file.expect("prompt file");
         assert_eq!(contents, long);
-        assert_eq!(path, dir.join("prompt-builder-1.md"));
+        assert_eq!(path.parent(), Some(dir.as_path()));
+        assert!(path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("prompt-builder-1-"));
         assert!(args[0].contains("Read the file"));
-        assert!(args[0].contains("prompt-builder-1.md"));
+        assert!(args[0].contains(&path.display().to_string()));
     }
 
     #[test]
@@ -1439,10 +1450,10 @@ mod tests {
             "x",
         )
         .unwrap();
-        let (_path, contents) = file.expect("multiline prompt must go to a file");
+        let (path, contents) = file.expect("multiline prompt must go to a file");
         assert_eq!(contents, "line one\r\nline two");
         assert!(args[0].contains("Read the file"));
-        assert!(args[0].contains("prompt-x.md"));
+        assert!(args[0].contains(&path.display().to_string()));
         assert_eq!(args[1], "-m");
         assert_eq!(args[2], "gpt-5-codex");
     }
