@@ -30,6 +30,7 @@ const openPath = vi.fn().mockResolvedValue({ ok: true })
 
 const ROWS = [
   'Measure process memory',
+  'Generate title',
   'Split right',
   'Split down',
   'Swap with previous pane',
@@ -156,7 +157,7 @@ describe('pane ··· menu', () => {
     container.remove()
   })
 
-  it('renders exactly the fourteen rows, in order', () => {
+  it('renders exactly the fifteen rows, in order', () => {
     render()
     openPaneMenu()
     expect(rows().map((b) => b.textContent ?? '')).toEqual(
