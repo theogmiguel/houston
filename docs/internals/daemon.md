@@ -88,8 +88,10 @@ child as an identity anchor until output-reader completion; an Exited state ther
 not imply that descendants or the reader have finished. Close still terminates that owned
 terminal session. Reaping and master release share the same lock as termination, so a
 recycled root PID cannot be signalled through an old backend. On other platforms, cleanup
-of an Exited pane whose reader remains open is explicitly refused until PTY EOF, including
-replacement and failed-Wake rollback. Windows
+of an Exited pane waits up to one second for the retained reader to record PTY EOF,
+without signalling the exited workload. Cleanup is refused if that receipt does not arrive,
+including replacement and failed-Wake rollback. This also covers an owned stop publishing
+its ended state before reader completion. Windows
 close releases the master because conhost exit alone need not close the reader pipe.
 `Backend::resize` returns the dimensions actually applied.
 

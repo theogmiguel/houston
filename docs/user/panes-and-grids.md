@@ -57,8 +57,9 @@ delivery is unknown; queued writes report that nothing was transferred. Cancelli
 upload may leave a partial file on the remote host; at most four uploads can be pending.
 
 On Linux, closing an Exited pane also stops descendants still holding its terminal open
-and completes the output reader. On other platforms, that close is refused until the
-terminal reaches EOF. A daemon handoff asks you to close Exited panes that still retain
+and completes the output reader. On Windows, closing an Exited pane whose terminal is still
+open waits up to one second for EOF and refuses if it stays open. Restart follows the same
+rule. A daemon handoff asks you to close Exited panes that still retain
 output readers.
 
 ## Splitting and stacking

@@ -10917,6 +10917,8 @@ impl Daemon {
                 drop(reader);
                 #[cfg(unix)]
                 drop(poll_fd);
+                #[cfg(all(windows, feature = "test-barriers"))]
+                crate::test_barriers::pause("pty-reader-eof", id);
                 let (done, changed) = &*reader_session.reader_done;
                 *done.lock().expect("reader done lock") = true;
                 changed.notify_all();
@@ -13722,7 +13724,16 @@ impl Daemon {
         let live = session.state.lock().expect("state lock").is_live();
         #[cfg(not(target_os = "linux"))]
         if !live && session.has_retained_reader() {
-            bail!("cleanup refused for exited session {id}: descendant PTY cleanup after root reap is unsupported on this platform; wait for PTY EOF");
+            // An owned stop can publish its ended state before the reader records EOF.
+            // Wait only for that receipt; never signal an unproven exited workload.
+            let (done, changed) = &*session.reader_done;
+            let done = done.lock().expect("reader done lock");
+            let (done, _) = changed
+                .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
+                .expect("reader EOF wait");
+            if !*done {
+                bail!("cleanup refused for exited session {id}: descendant PTY cleanup after root reap is unsupported on this platform; PTY EOF was not observed within 1000 ms");
+            }
         }
         #[cfg(target_os = "linux")]
         let retained = matches!(&session.backend, Backend::Pty { master, .. } if master.lock().expect("master lock").is_some());
