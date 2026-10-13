@@ -9860,7 +9860,7 @@ impl Daemon {
         } else {
             None
         };
-        let mut shell_startup = if agent == proto::AgentKind::Shell && !extra_args.is_empty() {
+        let shell_startup = if agent == proto::AgentKind::Shell && !extra_args.is_empty() {
             let provider = resume_agent.ok_or_else(|| {
                 anyhow!(
                     "shell session {old_id} has resume arguments without a validated Claude, Codex or ZCode provider"
@@ -10974,7 +10974,7 @@ impl Daemon {
             spawned_by,
             extra_args,
             launch_selections,
-            shell_startup,
+            mut shell_startup,
             extra_env,
             wrap,
             acp,
