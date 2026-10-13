@@ -29,7 +29,11 @@ export function register(on) {
     if (e.agentId === undefined && e.isAborted === true
         && e.turnId === activeTurn) {
       try {
-        await started;
+        try { await started; } catch {
+          // An immediate interrupt can cancel the start helper after it writes.
+          if (e.turnId !== activeTurn) return next(e);
+          await report($, 'ModTurnStart', e.turnId);
+        }
         if (e.turnId === activeTurn) {
           await report($, 'ModTurnInterrupted', e.turnId);
           if (e.turnId === activeTurn) activeTurn = undefined;

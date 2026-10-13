@@ -8,7 +8,9 @@ function world(on, failHelper = false) {
   on('turn.start', (_, e) => ({ turnId: e.turnId }));
   on('turn.complete', () => ({ text: 'unchanged' }));
   on('process.run', (_, e) => {
-    if (failHelper) return { deny: 'fixture failure' };
+    if (typeof failHelper === 'function' ? failHelper() : failHelper) {
+      return { deny: 'fixture failure' };
+    }
     reports.push({ event: e.argv[2], payload: JSON.parse(e.init.stdin), env: e.init.env });
     return { value: { exitCode: 0, stdout: '', stderr: '' } };
   });
@@ -49,4 +51,16 @@ test('a failed helper cannot stop the native lifecycle chain', async ($, on) => 
   await $.turn.start({ turnId: 'one', text: '' });
   const result = await $.turn.complete({ turnId: 'one', answer: '', durationMs: 1, isAborted: true, reason: 'aborted' });
   expect(result.text).toBe('unchanged');
+});
+
+test('an immediate interruption retries a cancelled start before reporting its end', async ($, on) => {
+  let attempts = 0;
+  const reports = world(on, () => attempts++ === 0);
+  on('ui.log', () => ({ value: undefined }));
+  await $.turn.start({ turnId: 'one', text: '' });
+  const result = await $.turn.complete({ turnId: 'one', answer: '', durationMs: 1, isAborted: true, reason: 'aborted' });
+  expect(result.text).toBe('unchanged');
+  expect(reports.map(report => report.event)).toEqual(['ModTurnStart', 'ModTurnInterrupted']);
+  expect(reports[0].payload.turn_id).toBe('one');
+  expect(reports[1].payload.turn_id).toBe('one');
 });
