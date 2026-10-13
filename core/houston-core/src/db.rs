@@ -1712,6 +1712,18 @@ impl Db {
         add_column_if_missing(&conn, "sessions", "title", "title TEXT")?;
         add_column_if_missing(&conn, "sessions", "codename", "codename TEXT")?;
         add_column_if_missing(&conn, "sessions", "title_source", "title_source TEXT")?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "title_generation_attempted",
+            "title_generation_attempted INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "title_first_turn_ended",
+            "title_first_turn_ended INTEGER NOT NULL DEFAULT 0",
+        )?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS session_title_candidates (
             session_id INTEGER NOT NULL, source TEXT NOT NULL, title TEXT NOT NULL,
@@ -2931,6 +2943,16 @@ impl Db {
             }
         }
         Ok(candidates)
+    }
+
+    pub fn claim_title_first_turn(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.execute("UPDATE sessions SET title_first_turn_ended = 1 WHERE id = ?1 AND state != 'closed' AND title_first_turn_ended = 0", [id])? == 1)
+    }
+
+    pub fn claim_title_generation(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.execute("UPDATE sessions SET title_generation_attempted = 1 WHERE id = ?1 AND state != 'closed' AND title_generation_attempted = 0", [id])? == 1)
     }
 
     pub fn session_title_source(&self, id: u32) -> Result<Option<String>> {
@@ -6877,6 +6899,22 @@ mod tests {
             db.session_title_source(1).unwrap().as_deref(),
             Some("prompt")
         );
+    }
+
+    #[test]
+    fn title_generation_claims_survive_reopening_and_are_independent_of_first_turn() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("titles.db");
+        let db = Db::open(&path).unwrap();
+        db.insert_session(&info(1, proto::SessionState::Running))
+            .unwrap();
+        assert!(db.claim_title_first_turn(1).unwrap());
+        assert!(!db.claim_title_first_turn(1).unwrap());
+        assert!(db.claim_title_generation(1).unwrap());
+        drop(db);
+        let db = Db::open(&path).unwrap();
+        assert!(!db.claim_title_first_turn(1).unwrap());
+        assert!(!db.claim_title_generation(1).unwrap());
     }
 
     #[test]

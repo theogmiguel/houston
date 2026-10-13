@@ -2171,6 +2171,17 @@ async fn dispatch(
             .await
             .unwrap_or_else(|e| Err(anyhow::anyhow!("close task panicked: {e}")))
         }
+        proto::ClientMsg::SessionTitleGenerate { session } => daemon.generate_title(session),
+        proto::ClientMsg::GeneratedTitlesGet {} => {
+            send_msg(
+                sink,
+                &proto::ServerMsg::GeneratedTitles {
+                    enabled: daemon.generated_titles_enabled(),
+                },
+            )
+            .await
+        }
+        proto::ClientMsg::GeneratedTitlesSet { enabled } => daemon.set_generated_titles(enabled),
         proto::ClientMsg::SessionTitleReset { session } => {
             let daemon = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || daemon.reset_title(session))

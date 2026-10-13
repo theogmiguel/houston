@@ -298,6 +298,12 @@ Providers without hook mappings (Droid, Copilot, Aider) get identity only, from
 banner sniffing that `agents.rs` explicitly documents as not the status machine. They can
 be delegated to, via #3 — identity is still not status.
 
+### Generated titles never supply status or identity
+
+Generated pane titles consume only redacted first-prompt and first-reply hook text after
+explicit opt-in or a manual request. Generated display text never drives agent status or
+serves as an orchestration address. Native CLI titles and user overrides retain precedence.
+
 ### The remote feed comes from hook payloads and lives in memory
 
 The conversation a paired remote-access device reads (`remote/feed.rs`) is built only from

@@ -42,6 +42,7 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
   let container: HTMLDivElement
   let root: Root
   let respawn: ReturnType<typeof vi.fn>
+  let send: ReturnType<typeof vi.fn>
 
   function render(info: SessionInfo): void {
     const client = {
@@ -51,6 +52,7 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
       sessionVisibility: vi.fn(),
       sendStdin: vi.fn().mockReturnValue(true),
       respawnSession: respawn,
+      send,
       closeSession: vi.fn(),
       sessionCwd: vi.fn().mockResolvedValue('/home/tester/project')
     } as unknown as HoustonClient
@@ -125,6 +127,7 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
 
   beforeEach(() => {
     respawn = vi.fn()
+    send = vi.fn()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -133,6 +136,16 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+  })
+
+  it('a generated title sends hook text only after its disclosure is confirmed', () => {
+    render(makeSession({ title_source: 'prompt', state: 'running' }))
+    openPaneMenu()
+    click(row('Generate title'))
+    expect(send).not.toHaveBeenCalled()
+    expect(dialog()?.textContent).toContain('redacted first-prompt and first-reply hook text')
+    click(confirmButton('Generate title'))
+    expect(send).toHaveBeenCalledWith({ type: 'session_title_generate', session: 1 })
   })
 
   it('a resumable husk offers Resume conversation first and Start fresh second', () => {

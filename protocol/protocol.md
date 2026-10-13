@@ -103,6 +103,9 @@ failure not given a typed refusal comes back as `error`.
 | `session_list` | — | `session_list` (direct) |
 | `session_attach` | `session`, `replay_bytes?` (cap the tail; omitted = whole ring), `snapshot?` (v94: ask for emulator state instead of a byte replay), `from_offset?` + `generation?` (v129: the offset the client already holds and the run it came from; with both matching the ring, `scrollback` carries only the bytes after it and `replayed_bytes = bytes_seen - from_offset`, otherwise the reply is the `replay_bytes` replay) | `scrollback` **or** `attach_snapshot` (direct), numbered by `attempt`; this socket starts receiving that session's frames, and nothing below the reply's cutoff follows it. `snapshot: true` is answered with `attach_snapshot` when the daemon has an emulator and could encode one, and with `scrollback` otherwise — a client must handle either reply |
 | `session_title_reset` | `session` | `session_renamed` (bcast); recomputes the strongest available automatic candidate |
+| `session_title_generate` | `session` | A one-shot generated `auto` title or a named refusal; stronger sources and changed revisions discard the result |
+| `generated_titles_get` | — | `generated_titles` with the current off-default setting |
+| `generated_titles_set` | `enabled` | `generated_titles` (bcast) |
 | `session_rename` | `session`, `title` (trimmed, non-empty, ≤ 40 chars) | `session_renamed` (bcast) |
 | `session_set_tags` | `session`, `tags: u32[]` (registry ids, ≤ `MAX_TAGS_PER_SESSION` (5), whole-set replacement) | `session_tags_set` (bcast); unknown session or tag id, or over the cap, is an `error` naming the limit and the value |
 | `tag_create` | `name` (trimmed, non-empty, ≤ `MAX_TAG_NAME_LEN` (32) chars, unique case-insensitively), `color` (any six-digit `#rrggbb`; `TAG_PALETTE` supplies presets) | `tag_list` (bcast); collisions and invalid colors are `error`s naming the offending value |
@@ -445,6 +448,7 @@ every refusal names the setting.
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Driven by hooks or ACP; process liveness only starts the bounded `spawning` grace and never guesses activity |
 | `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude or Codex transcript the hook names; unsupported providers stay absent and render no indicator |
 | `session_checkout` | `id`, `checkout?: SessionCheckout` | bcast when a session's checkout identity changes; primary, managed worktree and folder checkouts are explicit, with nullable branch/head for detached HEAD |
+| `generated_titles` | `enabled: bool` | current daemon setting for first-turn generated titles |
 | `session_activity` | `id`, `activity?: SessionActivity` | bcast when hook-reported prompt, last message, tool or model activity changes; unsupported values remain null |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
@@ -660,7 +664,7 @@ SessionInfo           id, agent, project_dir, cwd, checkout_root?, worktree?, ch
                       activity?, state, title, title_source, codename, status?, status_since_ms?, ...
 SessionCheckout       root, kind: CheckoutKind, branch?, head?
 CheckoutKind          primary | worktree{slug} | folder
-SessionActivity       prompt?, last_message?, tool?, model?
+SessionActivity       prompt?, last_message?, question?, tool?, model?
 
 GitFileState       modified | added | deleted | renamed | untracked | conflicted
 GitFileStatus      path, status: GitFileState, staged, added?, deleted?, is_sensitive
@@ -1391,3 +1395,8 @@ Only the current window; older bumps live in git history.
 saved per workspace in the daemon database. A workspace can store up to 24 actions, and each
 command is limited to 4096 UTF-8 bytes. Refusals report the limit, actual value, requested value
 and reason.
+
+Generated titles use `session_title_generate {session}`, `generated_titles_get {}` and
+`generated_titles_set {enabled}`. `generated_titles {enabled}` reports the daemon setting,
+which defaults to false. `auto` ranks between `prompt` and `role`. Session activity carries
+an optional `question` with hook-delivered pending input text; it is display-only.

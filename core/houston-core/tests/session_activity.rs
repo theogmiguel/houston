@@ -151,5 +151,55 @@ async fn hook_activity_is_snapshotted_and_tool_bursts_are_coalesced() {
         "the burst emits at most one activity update during its first 500 ms window; the second arrived after {elapsed:?}"
     );
     assert_eq!(coalesced.tool.as_deref(), Some("Write"));
+    let stable_title = daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == session.id)
+        .unwrap()
+        .title;
+    apply_drop(
+        &daemon,
+        state.path(),
+        HookDrop {
+            agent: Some("claude".into()),
+            event: "Notification".into(),
+            session: session.id,
+            reason: Some("May I continue?".into()),
+            notification_type: Some("permission_prompt".into()),
+            ..HookDrop::default()
+        },
+    )
+    .await;
+    let pending = tokio::time::timeout(Duration::from_secs(2), next_activity(&mut rx, session.id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(pending.question.as_deref(), Some("May I continue?"));
+    assert_eq!(
+        daemon
+            .list()
+            .into_iter()
+            .find(|info| info.id == session.id)
+            .unwrap()
+            .title,
+        stable_title
+    );
+    apply_drop(
+        &daemon,
+        state.path(),
+        HookDrop {
+            agent: Some("claude".into()),
+            event: "UserPromptSubmit".into(),
+            session: session.id,
+            prompt: Some("Continue".into()),
+            ..HookDrop::default()
+        },
+    )
+    .await;
+    let resumed = tokio::time::timeout(Duration::from_secs(2), next_activity(&mut rx, session.id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(resumed.question.is_none());
     daemon.close(session.id).ok();
 }

@@ -399,7 +399,7 @@ before any user startup code runs, which leaves the initial environment block in
 a path that no longer resolves. `TokenRedactor` strips the capability from the stream before
 scrollback and both fanouts, so it never reaches a client, the DB or a log.
 
-Pane names carry a persisted source with the precedence codename < first prompt < spawned role
+Pane names carry a persisted source with the precedence codename < first prompt < generated title < spawned role
 < CLI title < task < user rename. CLI titles continue to outrank a parent-assigned role;
 orchestration addresses use the stable codename and role, never the display title. Respawn,
 boot restore and daemon handoff preserve provenance. Automatic candidates retain the first

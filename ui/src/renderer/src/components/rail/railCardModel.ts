@@ -1,3 +1,4 @@
+import { doingNow } from './doingNow'
 import type { PrInfo, SessionInfo } from '../../houston/client'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionActivity } from '../../houston/generated/SessionActivity'
@@ -100,14 +101,14 @@ export function buildRailCard(source: RailCardSource): RailCard {
       checkouts.push(checkout)
     }
     const activity = activityOf(session)
-    const leading = activity?.prompt?.trim() || session.title || session.agent
+    const leading = session.title || session.agent
     return {
       session,
       agent: session.agent === 'shell' ? (session.running_agent ?? 'shell') : session.agent,
       depth,
       checkout,
       leading,
-      trailing: activity?.last_message?.trim() || null,
+      trailing: doingNow(session),
       model: activity?.model ?? null,
       unread: session.inbox_unread > 0 || session.children_waiting > 0,
     }

@@ -2152,6 +2152,7 @@ pub enum TitleSource {
     #[default]
     Codename,
     Prompt,
+    Auto,
     Role,
     Cli,
     Task,
@@ -2163,6 +2164,7 @@ impl TitleSource {
         match self {
             Self::Codename => "codename",
             Self::Prompt => "prompt",
+            Self::Auto => "auto",
             Self::Role => "role",
             Self::Cli => "cli",
             Self::Task => "task",
@@ -2174,6 +2176,7 @@ impl TitleSource {
         match value {
             "codename" => Some(Self::Codename),
             "prompt" => Some(Self::Prompt),
+            "auto" => Some(Self::Auto),
             "role" => Some(Self::Role),
             "cli" => Some(Self::Cli),
             "task" => Some(Self::Task),
@@ -2322,6 +2325,9 @@ pub struct SessionActivity {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub last_message: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub question: Option<String>,
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub tool: Option<String>,
@@ -3537,6 +3543,13 @@ pub enum ClientMsg {
         session: u32,
         title: String,
     },
+    SessionTitleGenerate {
+        session: u32,
+    },
+    GeneratedTitlesGet {},
+    GeneratedTitlesSet {
+        enabled: bool,
+    },
     SessionTitleReset {
         session: u32,
     },
@@ -4608,6 +4621,10 @@ pub enum ClientMsg {
 // once on its way out, so the largest payload's bytes never sit on a hot path.
 #[allow(clippy::large_enum_variant)]
 pub enum ServerMsg {
+    GeneratedTitles {
+        enabled: bool,
+    },
+
     HelloOk {
         protocol: u32,
         sessions: Vec<SessionInfo>,

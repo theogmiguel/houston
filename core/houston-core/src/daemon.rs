@@ -583,6 +583,10 @@ pub struct Session {
     composer_watch: AtomicBool,
     cli_title: Mutex<CliTitleState>,
     title_source: Mutex<TitleSource>,
+    title_revision: AtomicU64,
+    title_excerpt: Mutex<(Option<String>, Option<String>)>,
+    title_excerpt_closed: AtomicBool,
+    title_profile_env: Option<(String, String)>,
     transient_title_candidates: Mutex<Vec<(TitleSource, String)>>,
     tags: Mutex<Vec<u32>>,
     acp: Option<Mutex<crate::acp::AcpDecoder>>,
@@ -1478,6 +1482,7 @@ mod remote;
 mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
+mod title_generation;
 mod worktree_pass;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 
@@ -1645,6 +1650,7 @@ pub struct Daemon {
     ledger_tx: mpsc::Sender<LedgerEntry>,
     recovery: Mutex<Option<proto::RecoverySummary>>,
     handoff_jobs: Mutex<HashMap<u32, HandoffJob>>,
+    title_generation_busy: AtomicBool,
     next_handoff: AtomicU32,
     ssh_prompts: Mutex<HashMap<u32, oneshot::Sender<crate::ssh::HostKeyVerdict>>>,
     known_hosts: PathBuf,
@@ -1850,7 +1856,14 @@ fn voice_capture_failure(e: &crate::voice::capture::CaptureError) -> proto::Voic
 const KEYMAP_OVERRIDES_MAX_BINDINGS: usize = 64;
 const KEYMAP_OVERRIDES_MAX_CODE_LEN: usize = 64;
 
+struct TitleJob {
+    revision: u64,
+    prompt: String,
+    directory: tempfile::TempDir,
+}
+
 struct HandoffJob {
+    title_job: Option<TitleJob>,
     hidden: u32,
     source: u32,
     provider: proto::AgentKind,
@@ -1868,6 +1881,10 @@ struct HandoffJob {
 // can't grow it unbounded; output past the cap is dropped from the buffer, not
 // from the live chunks already broadcast.
 const HANDOFF_BUFFER_CAP: usize = 2 * 1024 * 1024;
+// Allow bounded CLI startup diagnostics while a generated title itself fits in forty characters.
+const TITLE_OUTPUT_CAP: usize = 4096;
+// A fixed deadline bounds provider stalls even if they keep emitting output.
+const TITLE_GENERATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn handoff_timeout() -> Duration {
     std::env::var("HOUSTON_HANDOFF_TIMEOUT_MS")
@@ -3340,6 +3357,7 @@ impl Daemon {
             ledger_tx,
             recovery: Mutex::new(None),
             handoff_jobs: Mutex::new(HashMap::new()),
+            title_generation_busy: AtomicBool::new(false),
             next_handoff: AtomicU32::new(1),
             ssh_prompts: Mutex::new(HashMap::new()),
             known_hosts: state_dir.join("known_hosts"),
@@ -5227,6 +5245,10 @@ impl Daemon {
             composer_watch: AtomicBool::new(false),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(title_source),
+            title_revision: AtomicU64::new(0),
+            title_excerpt: Mutex::new((None, None)),
+            title_excerpt_closed: AtomicBool::new(true),
+            title_profile_env: None,
             transient_title_candidates: Mutex::new(Vec::new()),
             tags: Mutex::new(m.tags.clone()),
             acp: None,
@@ -8488,12 +8510,13 @@ impl Daemon {
         let now = std::time::Instant::now();
         let (dispatch, activity) = {
             let mut tracker = session.activity.lock().expect("activity lock");
-            let dispatch = tracker.update(
+            let dispatch = tracker.update_with_question(
                 provider,
                 &drop.event,
                 drop.prompt.as_deref(),
                 drop.last_message.as_deref(),
                 drop.tool_name.as_deref(),
+                drop.reason.as_deref(),
                 now,
             );
             (dispatch, tracker.activity())
@@ -11472,6 +11495,11 @@ impl Daemon {
             composer_watch: AtomicBool::new(pastes_first_prompt),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(title_source),
+            title_revision: AtomicU64::new(0),
+            title_excerpt: Mutex::new((None, None)),
+            title_excerpt_closed: AtomicBool::new(carries_scrollback),
+            title_profile_env: Self::agent_profile_config_dir(agent, &extra_env)
+                .map(|directory| (Self::agent_profile_env_var(agent), directory.to_string())),
             transient_title_candidates: Mutex::new(Vec::new()),
             tags: Mutex::new(p_tags),
             acp: acp
@@ -12073,6 +12101,10 @@ impl Daemon {
                 composer_watch: AtomicBool::new(false),
                 cli_title: Mutex::new(CliTitleState::default()),
                 title_source: Mutex::new(TitleSource::Codename),
+                title_revision: AtomicU64::new(0),
+                title_excerpt: Mutex::new((None, None)),
+                title_excerpt_closed: AtomicBool::new(true),
+                title_profile_env: None,
                 transient_title_candidates: Mutex::new(Vec::new()),
                 tags: Mutex::new(Vec::new()),
                 osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
@@ -13824,6 +13856,7 @@ impl Daemon {
                 self.db
                     .update_session_title_with_source(id, title, Some(source.as_str()))?;
             }
+            s.title_revision.fetch_add(1, Ordering::Relaxed);
             *current = source;
             *s.title.lock().expect("title lock") = title.to_string();
         } else if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&id) {
@@ -14047,7 +14080,7 @@ impl Daemon {
             .lock()
             .expect("handoff lock")
             .iter()
-            .find(|(_, job)| job.hidden == hidden)
+            .find(|(_, job)| job.hidden == hidden && job.title_job.is_none())
             .map(|(&request, job)| (request, job.source, job.provider));
         if let Some((request, session, provider)) = started {
             // Output and exit workers remain gated until the start is published.
@@ -14067,17 +14100,34 @@ impl Daemon {
         provider: proto::AgentKind,
         cmd_override: Option<Vec<String>>,
     ) -> Result<u32> {
-        let (info, ring, blocks) = self.handoff_source(source)?;
+        self.handoff_generate_impl(source, provider, cmd_override, None)
+    }
 
-        let cwd = self
-            .live_cwd(source)
-            .filter(|d| d.is_dir())
+    fn handoff_generate_impl(
+        self: &Arc<Self>,
+        source: u32,
+        provider: proto::AgentKind,
+        cmd_override: Option<Vec<String>>,
+        title_job: Option<TitleJob>,
+    ) -> Result<u32> {
+        let (info, ring, blocks) = if title_job.is_some() {
+            (self.get(source)?.snapshot_info(), None, Vec::new())
+        } else {
+            self.handoff_source(source)?
+        };
+
+        let cwd = title_job
+            .as_ref()
+            .map(|job| job.directory.path().to_path_buf())
+            .or_else(|| self.live_cwd(source).filter(|d| d.is_dir()))
             .unwrap_or_else(|| PathBuf::from(&info.project_dir));
         let tr_dir = cwd.join(crate::paths::PROJECT_DIR);
         std::fs::create_dir_all(&tr_dir)
             .with_context(|| format!("creating {}", tr_dir.display()))?;
 
-        let activity = if !blocks.is_empty() {
+        let activity = if title_job.is_some() {
+            String::new()
+        } else if !blocks.is_empty() {
             match &ring {
                 Some(r) => crate::handoff::curate_blocks(&blocks, |a, b| r.slice(a, b)),
                 None => crate::handoff::curate_blocks(&blocks, |_, _| (Vec::new(), true)),
@@ -14110,7 +14160,10 @@ impl Daemon {
                     .unwrap_or(0)
             }),
         };
-        let prompt = crate::handoff::build_prompt(&facts, &activity);
+        let prompt = title_job
+            .as_ref()
+            .map(|job| job.prompt.clone())
+            .unwrap_or_else(|| crate::handoff::build_prompt(&facts, &activity));
 
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -14122,7 +14175,13 @@ impl Daemon {
 
         let path_arg = prompt_path.display().to_string();
         #[cfg(unix)]
-        let (argv, provider_name): (Vec<String>, String) = match (provider, cmd_override) {
+        let (argv, provider_name): (Vec<String>, String) = if title_job.is_some() {
+            (
+                crate::generated_title::argv(provider, prompt.clone())?,
+                format!("{provider:?}"),
+            )
+        } else {
+            match (provider, cmd_override) {
             (proto::AgentKind::Custom, Some(mut cmd)) if !cmd.is_empty() => {
                 cmd.push(path_arg);
                 (cmd, "custom".into())
@@ -14211,72 +14270,90 @@ impl Daemon {
                      cursor, grok or zcode"
                 )
             }
+        }
         };
         #[cfg(windows)]
         let (argv, provider_name): (Vec<String>, String) = {
             let read_the_file = |path: &str| {
                 format!("Read the file at {path} and follow the instructions in it exactly.")
             };
-            match (provider, cmd_override) {
-                (proto::AgentKind::Custom, Some(mut cmd)) if !cmd.is_empty() => {
-                    cmd.push(path_arg);
-                    (cmd, "custom".into())
-                }
-                (proto::AgentKind::Custom, _) => {
-                    let _ = std::fs::remove_file(&prompt_path);
-                    bail!(
+            if title_job.is_some() {
+                (
+                    crate::generated_title::argv(provider, prompt.clone())?,
+                    format!("{provider:?}"),
+                )
+            } else {
+                match (provider, cmd_override) {
+                    (proto::AgentKind::Custom, Some(mut cmd)) if !cmd.is_empty() => {
+                        cmd.push(path_arg);
+                        (cmd, "custom".into())
+                    }
+                    (proto::AgentKind::Custom, _) => {
+                        let _ = std::fs::remove_file(&prompt_path);
+                        bail!(
                         "handoff provider \"custom\" requires a non-empty cmd argv (test fixtures)"
                     )
-                }
-                (proto::AgentKind::Claude, _) => (
-                    vec!["claude".into(), "--print".into(), read_the_file(&path_arg)],
-                    "claude".into(),
-                ),
-                (proto::AgentKind::Codex, _) => (
-                    vec!["codex".into(), "exec".into(), read_the_file(&path_arg)],
-                    "codex".into(),
-                ),
-                (proto::AgentKind::Antigravity, _) => (
-                    vec!["agy".into(), "-p".into(), read_the_file(&path_arg)],
-                    "antigravity".into(),
-                ),
-                (proto::AgentKind::Opencode, _) => (
-                    vec!["opencode".into(), "run".into(), read_the_file(&path_arg)],
-                    "opencode".into(),
-                ),
-                (proto::AgentKind::Cursor, _) => (
-                    vec!["cursor-agent".into(), "-p".into(), read_the_file(&path_arg)],
-                    "cursor".into(),
-                ),
-                (proto::AgentKind::Grok, _) => (
-                    vec!["grok".into(), "-p".into(), read_the_file(&path_arg)],
-                    "grok".into(),
-                ),
-                (proto::AgentKind::Zcode, _) => (
-                    vec![
+                    }
+                    (proto::AgentKind::Claude, _) => (
+                        vec!["claude".into(), "--print".into(), read_the_file(&path_arg)],
+                        "claude".into(),
+                    ),
+                    (proto::AgentKind::Codex, _) => (
+                        vec!["codex".into(), "exec".into(), read_the_file(&path_arg)],
+                        "codex".into(),
+                    ),
+                    (proto::AgentKind::Antigravity, _) => (
+                        vec!["agy".into(), "-p".into(), read_the_file(&path_arg)],
+                        "antigravity".into(),
+                    ),
+                    (proto::AgentKind::Opencode, _) => (
+                        vec!["opencode".into(), "run".into(), read_the_file(&path_arg)],
+                        "opencode".into(),
+                    ),
+                    (proto::AgentKind::Cursor, _) => (
+                        vec!["cursor-agent".into(), "-p".into(), read_the_file(&path_arg)],
+                        "cursor".into(),
+                    ),
+                    (proto::AgentKind::Grok, _) => (
+                        vec!["grok".into(), "-p".into(), read_the_file(&path_arg)],
+                        "grok".into(),
+                    ),
+                    (proto::AgentKind::Zcode, _) => (
+                        vec![
+                            "zcode".into(),
+                            "--mode".into(),
+                            "build".into(),
+                            "-p".into(),
+                            read_the_file(&path_arg),
+                        ],
                         "zcode".into(),
-                        "--mode".into(),
-                        "build".into(),
-                        "-p".into(),
-                        read_the_file(&path_arg),
-                    ],
-                    "zcode".into(),
-                ),
-                (other, _) => {
-                    let _ = std::fs::remove_file(&prompt_path);
-                    bail!(
+                    ),
+                    (other, _) => {
+                        let _ = std::fs::remove_file(&prompt_path);
+                        bail!(
                         "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode, \
                          cursor, grok or zcode"
                     )
+                    }
                 }
             }
         };
 
+        let generation_profile_env = title_job
+            .as_ref()
+            .and_then(|_| {
+                self.get(source)
+                    .ok()
+                    .and_then(|session| session.title_profile_env.clone())
+            })
+            .into_iter()
+            .collect();
         let hidden_id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let request = self.next_handoff.fetch_add(1, Ordering::Relaxed);
         self.handoff_jobs.lock().expect("handoff lock").insert(
             request,
             HandoffJob {
+                title_job,
                 hidden: hidden_id,
                 source,
                 provider,
@@ -14310,7 +14387,7 @@ impl Daemon {
             extra_args: Vec::new(),
             launch_selections: None,
             shell_startup: None,
-            extra_env: Vec::new(),
+            extra_env: generation_profile_env,
             wrap: None,
             acp: None,
             profile_label: None,
@@ -14332,7 +14409,18 @@ impl Daemon {
         }
 
         let weak = Arc::downgrade(self);
-        let timeout = handoff_timeout();
+        let is_title = self
+            .handoff_jobs
+            .lock()
+            .expect("handoff lock")
+            .get(&request)
+            .is_some_and(|job| job.title_job.is_some());
+        let started = Instant::now();
+        let timeout = if is_title {
+            TITLE_GENERATION_TIMEOUT
+        } else {
+            handoff_timeout()
+        };
         std::thread::Builder::new()
             .name(format!("handoff-watch-{request}"))
             .spawn(move || loop {
@@ -14343,12 +14431,17 @@ impl Daemon {
                     let Some(job) = jobs.get_mut(&request) else {
                         return;
                     };
-                    if job.last_activity.elapsed() < timeout {
+                    if (if is_title {
+                        started.elapsed()
+                    } else {
+                        job.last_activity.elapsed()
+                    }) < timeout
+                    {
                         continue;
                     }
                     if job.fail_reason.is_none() {
                         job.fail_reason = Some(format!(
-                            "no output from {} for {}s — is it installed and authenticated?",
+                            "{} exceeded its {}s generator deadline — is it installed and authenticated?",
                             job.provider_name,
                             timeout.as_secs()
                         ));
@@ -14369,6 +14462,15 @@ impl Daemon {
             return;
         };
         let request = *request;
+        if job.title_job.is_some() {
+            let actual = job.buffer.len() + chunk.len();
+            if actual <= TITLE_OUTPUT_CAP {
+                job.buffer.extend_from_slice(chunk);
+            } else {
+                job.fail_reason = Some(format!("title output limit {TITLE_OUTPUT_CAP} bytes exceeded (actual {actual}); cannot capture generated title"));
+            }
+            return;
+        }
         job.last_activity = Instant::now();
         if job.buffer.len() + chunk.len() <= HANDOFF_BUFFER_CAP {
             job.buffer.extend_from_slice(chunk);
@@ -14405,6 +14507,10 @@ impl Daemon {
     }
 
     fn handoff_finish(&self, request: u32, job: HandoffJob) {
+        if job.title_job.is_some() {
+            self.finish_generated_title(job);
+            return;
+        }
         self.sessions
             .lock()
             .expect("sessions lock")
@@ -15092,6 +15198,7 @@ impl Daemon {
                 .then_some(d.prompt.as_deref())
                 .flatten(),
         );
+        self.note_title_excerpt(d.session, provider, d);
         self.note_session_activity(d.session, provider, d);
         if d.event == "Stop" && provider == proto::AgentKind::Claude {
             if let Some(count) = d.background_tasks {
@@ -15497,6 +15604,10 @@ impl Daemon {
             return None;
         }
 
+        if correlates && ev == Some(crate::agent_events::AgentEvent::TurnEnded) && !d.stop_continued
+        {
+            self.maybe_generate_title(d.session);
+        }
         if correlates && ev == Some(crate::agent_events::AgentEvent::TurnEnded) {
             if d.stop_hook_active {
                 tracing::debug!(

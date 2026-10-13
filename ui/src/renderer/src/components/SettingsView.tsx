@@ -1,3 +1,4 @@
+import { GeneratedTitlesSetting } from './settings/GeneratedTitlesSetting'
 import { agentAttentionFor, type AgentAttention, type AgentSetupSection } from '../useAgentAttention'
 import { AgentsOverview } from './settings/AgentsOverview'
 import { SETTINGS_SECTIONS } from '../settingsSections'
@@ -401,6 +402,8 @@ function SectionDispatch({
         )}
 
         {section === 'workspaces' && (
+          <>
+          <GeneratedTitlesSetting client={daemonClient ?? null} />
           <WorkspaceDefaultsSection
             onRestoreBudgetSet={onRestoreBudgetSet}
             onRestoreResumeSet={onRestoreResumeSet}
@@ -412,6 +415,7 @@ function SectionDispatch({
             sessionPolicy={sessionPolicy}
             onSessionPolicy={onSessionPolicy}
           />
+          </>
         )}
 
         {section === 'daemon' && (

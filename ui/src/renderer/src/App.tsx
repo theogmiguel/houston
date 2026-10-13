@@ -445,6 +445,7 @@ type RosterPatchMsg = Extract<
   ServerMsg,
   {
     type:
+      | "session_activity"
       | "session_checkout"
       | "session_renamed"
       | "session_reparented"
@@ -458,6 +459,7 @@ type RosterPatchMsg = Extract<
 >;
 
 const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
+  "session_activity",
   "session_checkout",
   "session_renamed",
   "session_reparented",
@@ -478,11 +480,11 @@ function patchRosterFields(
   msg: RosterPatchMsg,
 ): Map<number, SessionInfo> {
   const isCheckout = msg.type === "session_checkout";
-  const id = isCheckout ? msg.id : msg.session;
+  const id = isCheckout || msg.type === "session_activity" ? msg.id : msg.session;
   const cur = prev.get(id);
   if (!cur) return prev;
   const patch: Partial<SessionInfo> =
-    isCheckout
+    msg.type === "session_activity" ? { activity: msg.activity ?? null } : isCheckout
       ? { checkout: msg.checkout ?? null }
       : msg.type === "session_renamed"
         ? { title: msg.title, title_source: msg.title_source }

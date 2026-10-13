@@ -98,6 +98,28 @@ When an inbox row offers a jump to a pane, Houston opens the workspace that cont
 that target pane. This also works when the message was recorded in a different
 workspace from the pane it names.
 
+### Doing now and generated titles
+
+The rail and pane header show the latest hook-delivered prompt or reply. While an agent
+needs input, its pending question takes precedence. This text does not rename the pane
+or change its reported status.
+
+Settings ▸ Workspaces ▸ Automatic titles is off by default. Enabling it requests one title
+at the first turn end while the name is still a codename or first prompt. **Generate title**
+in a pane's Terminal actions requests it manually. Generated titles rank above a prompt
+and below a delegated role; native titles, task names and manual names still win. A rename,
+reset, close or replacement while generation runs discards its result. Each session admits
+one generation attempt, with one active generation across the daemon and a 30-second deadline.
+
+**What leaves your machine:** up to 1 KB of redacted first-prompt and first-reply hook text
+is sent through the pane's own CLI and provider account. Houston reads no transcript or
+scrollback for this feature. Claude uses Haiku with tools, MCP, slash commands and session
+persistence disabled, in a temporary directory. Codex, OpenCode, Cursor, Grok, Antigravity
+and ZCode are refused by name until equivalent controls are verified. Authentication and
+billing use the CLI's existing account. A pane without both hook excerpts cannot generate
+a title; excerpt availability is lost after a daemon restart. A restored account profile
+whose original configuration cannot be recovered is also refused.
+
 ## Tags
 
 A tag is a named colour you attach to mark work, such as `code review`. Choose a preset or
@@ -129,7 +151,8 @@ Agent rows show **Waiting** when input is needed and context use as a percentage
 reaches 80% or higher. Selecting an agent row selects its grid and focuses its pane.
 With collapsed agent activity, a grid with more than three agents shows its first two
 and an **N more agents** action; expand it to see the rest. Expanded activity shows the
-full list. Optional prompt and latest-message previews stay local to Houston.
+full list. Prompt and latest-message previews stay local unless you enable generated titles or choose
+**Generate title** for a pane.
 The unread marker reflects inbox messages and waiting child panes; use it to mark a grid
 read or unread. **Agent activity** sort places unread cards after cards that need input
 or are working.
