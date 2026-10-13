@@ -278,6 +278,19 @@ fn managed_marker_lines(
                 .to_string(),
         ),
         (Some(open), Some(close)) => {
+            // Removing a timeout setting can leave its surrounding comments.
+            // A complete empty block is ours and safe to replace.
+            if timeout.is_none()
+                && close > open
+                && contents[marker_line_end(contents, open)..marker_line_start(contents, close)]
+                    .trim()
+                    .is_empty()
+            {
+                return Ok(Some(vec![
+                    marker_line_start(contents, open)..marker_line_end(contents, open),
+                    marker_line_start(contents, close)..marker_line_end(contents, close),
+                ]));
+            }
             let timeout_span = timeout
                 .and_then(toml_edit::Item::span)
                 .ok_or_else(|| {
@@ -334,6 +347,9 @@ fn ensure_timeout_text(contents: &str) -> Result<(String, TimeoutAction), String
         == Some(expected);
 
     if let Some(ranges) = markers {
+        if timeout.is_none() {
+            return ensure_timeout_text(&remove_marker_lines(contents, &ranges));
+        }
         if managed_value {
             return Ok((contents.to_string(), TimeoutAction::AlreadyManaged));
         }
@@ -1067,5 +1083,22 @@ args = ["--stdio"]
             std::fs::read_to_string(home.join("config.toml")).unwrap(),
             original
         );
+    }
+
+    #[tokio::test]
+    async fn an_empty_managed_timeout_block_is_repaired_without_changing_policy() {
+        let root = tempfile::tempdir().unwrap();
+        let original = format!("approval_policy = 'on-request'\nsandbox_mode = 'read-only'\n[mcp_servers.houston]\nurl = 'http://127.0.0.1:1111/mcp'\nbearer_token_env_var = 'HOUSTON_MCP_TOKEN'\n{CODEX_TIMEOUT_OPEN}\n{CODEX_TIMEOUT_CLOSE}\n");
+        std::fs::write(root.path().join("config.toml"), &original).unwrap();
+        run(root.path(), Path::new("missing-codex"), 4242)
+            .await
+            .unwrap();
+        let after = std::fs::read_to_string(root.path().join("config.toml")).unwrap();
+        validate_transform(&original, &after, Some("http://127.0.0.1:4242/mcp")).unwrap();
+        assert_eq!(after.matches(CODEX_TIMEOUT_OPEN).count(), 1, "{after}");
+        assert_eq!(after.matches(CODEX_TIMEOUT_CLOSE).count(), 1, "{after}");
+        assert!(after.contains("tool_timeout_sec = 630"), "{after}");
+        assert!(after.contains("approval_policy = 'on-request'"), "{after}");
+        assert!(after.contains("sandbox_mode = 'read-only'"), "{after}");
     }
 }
