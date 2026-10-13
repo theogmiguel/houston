@@ -665,57 +665,6 @@ mod linux {
             .and_then(|(index, _)| cli.get(index + 1))
             .and_then(|argument| argument.to_str())
             .filter(|id| uuid::Uuid::parse_str(id).is_ok());
-        let version = args[2]
-            .to_str()
-            .and_then(|executable| crate::cli_probe::probe(executable).version);
-        if version.as_deref().is_some_and(supports_native) && LaunchPlan::from_args(cli).is_ok() {
-            let (channel, session) = ownership()?;
-            if let Some(scope) = crate::session_isolation::current_owned_scope(&channel, session)
-                .map_err(anyhow::Error::msg)?
-            {
-                // Moving this child into a sibling scope would escape the shell's committed receipt.
-                let committed = std::env::var("HOUSTON_COMMITTED_SCOPE").ok();
-                eprintln!("houston-core: Codex shell launch uses lifecycle hooks only: inherited Houston scope {scope} (committed receipt matches: {}) cannot create an unrecorded sibling lifetime scope", committed.as_deref() == Some(scope.as_str()));
-                let mut command = crate::spawn::command(&args[2]);
-                if !cli
-                    .iter()
-                    .take_while(|argument| *argument != "--")
-                    .any(|argument| argument == "--no-daemon")
-                {
-                    command.arg("--no-daemon");
-                }
-                return Err(command.args(cli).exec().into());
-            }
-            match crate::session_isolation::enter_owned_scope(&channel, session) {
-                Ok(()) => {}
-                Err(crate::session_isolation::ScopeError::Unavailable(reason)) => {
-                    eprintln!(
-                        "houston-core: Codex shell launch uses lifecycle hooks only: {reason}"
-                    );
-                    let mut command = crate::spawn::command(&args[2]);
-                    if !cli
-                        .iter()
-                        .take_while(|argument| *argument != "--")
-                        .any(|argument| argument == "--no-daemon")
-                    {
-                        command.arg("--no-daemon");
-                    }
-                    return Err(command.args(cli).exec().into());
-                }
-                Err(crate::session_isolation::ScopeError::Pending(reason)) => {
-                    bail!("Codex shell scope ownership is unresolved: {reason}")
-                }
-            }
-        }
-        let directory = private_socket_dir()?;
-        let socket = directory.path().join("app.sock");
-        let mut forwarded = vec![
-            socket.into_os_string(),
-            args[0].clone(),
-            resume.unwrap_or("-").into(),
-            "--".into(),
-        ];
-        forwarded.push(args[2].clone());
         let mut launch_args = cli.to_vec();
         if let (Ok(endpoint), Ok(token)) = (
             std::env::var(crate::mcp_launch::URL_ENV),
@@ -737,6 +686,57 @@ mod linux {
                 );
             }
         }
+        let version = args[2]
+            .to_str()
+            .and_then(|executable| crate::cli_probe::probe(executable).version);
+        if version.as_deref().is_some_and(supports_native) && LaunchPlan::from_args(cli).is_ok() {
+            let (channel, session) = ownership()?;
+            if let Some(scope) = crate::session_isolation::current_owned_scope(&channel, session)
+                .map_err(anyhow::Error::msg)?
+            {
+                // Moving this child into a sibling scope would escape the shell's committed receipt.
+                let committed = std::env::var("HOUSTON_COMMITTED_SCOPE").ok();
+                eprintln!("houston-core: Codex shell launch uses lifecycle hooks only: inherited Houston scope {scope} (committed receipt matches: {}) cannot create an unrecorded sibling lifetime scope", committed.as_deref() == Some(scope.as_str()));
+                let mut command = crate::spawn::command(&args[2]);
+                if !cli
+                    .iter()
+                    .take_while(|argument| *argument != "--")
+                    .any(|argument| argument == "--no-daemon")
+                {
+                    command.arg("--no-daemon");
+                }
+                return Err(command.args(&launch_args).exec().into());
+            }
+            match crate::session_isolation::enter_owned_scope(&channel, session) {
+                Ok(()) => {}
+                Err(crate::session_isolation::ScopeError::Unavailable(reason)) => {
+                    eprintln!(
+                        "houston-core: Codex shell launch uses lifecycle hooks only: {reason}"
+                    );
+                    let mut command = crate::spawn::command(&args[2]);
+                    if !cli
+                        .iter()
+                        .take_while(|argument| *argument != "--")
+                        .any(|argument| argument == "--no-daemon")
+                    {
+                        command.arg("--no-daemon");
+                    }
+                    return Err(command.args(&launch_args).exec().into());
+                }
+                Err(crate::session_isolation::ScopeError::Pending(reason)) => {
+                    bail!("Codex shell scope ownership is unresolved: {reason}")
+                }
+            }
+        }
+        let directory = private_socket_dir()?;
+        let socket = directory.path().join("app.sock");
+        let mut forwarded = vec![
+            socket.into_os_string(),
+            args[0].clone(),
+            resume.unwrap_or("-").into(),
+            "--".into(),
+        ];
+        forwarded.push(args[2].clone());
         forwarded.extend(launch_args);
         run(forwarded)
     }
