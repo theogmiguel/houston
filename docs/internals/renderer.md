@@ -188,9 +188,13 @@ draws its first frame at 80 columns and reprints it at the pane's width. With no
 screen to measure, the daemon's default applies and the pane's first fit corrects it.
 
 Terminal palettes are applied **to the engine, not to CSS**: `theme.ts` holds
-`TERMINAL_PALETTES`, and `ghosttyThemeFromCss` converts a palette's hex values to the
-engine's RGB theme. `[data-theme]` scopes app chrome only; it never reaches the terminal
-canvas. An unparseable colour degrades to white rather than throwing.
+`TERMINAL_PALETTES`, and `ghosttyThemeFromCss` converts the foreground, background,
+cursor and sixteen ANSI colors to the engine's RGB theme. The engine replaces only
+the default ANSI entries, preserving the extended palette and explicit OSC 4
+overrides. A daemon snapshot carries only explicit color overrides, so the renderer's
+theme remains local across attach. `[data-theme]` scopes app chrome only; it never
+reaches the terminal canvas. An unparseable colour degrades to white rather than
+throwing.
 
 ## Layout
 
