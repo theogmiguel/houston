@@ -2,7 +2,7 @@ import { MascotSurfaceMount } from '../mascot/MascotMount'
 import { IconGlobe, IconSquareTerminal } from './icons'
 import { Icon } from './ui/Icon'
 import { WorkspaceActions } from './ui/WorkspaceActions'
-import { Button, Card, EmptyStateFrame, EmptyStateActions, EmptyStateHeading, EmptyStateDescription } from './ui'
+import { Button, Card, Inline, EmptyStateFrame, EmptyStateActions, EmptyStateHeading, EmptyStateDescription } from './ui'
 import type { WorkspaceAction } from '../houston/client'
 import { PaneMenuAgentRow } from './ui/PaneMenu'
 import type { AgentKind } from '../houston/client'
@@ -75,11 +75,11 @@ export function WorkspaceEmpty({
           Browser
         </Button>
       </EmptyStateActions>
-      <div className="flex flex-wrap justify-center gap-[var(--space-2)]">
+      <Inline gap="small" wrap className="justify-center">
         {installedAgents.filter((agent) => ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode'].includes(agent)).map((agent) => (
           <div key={agent}><PaneMenuAgentRow agent={agent} onClick={() => onSpawnAgent(agent)} /></div>
         ))}
-      </div>
+      </Inline>
       <WorkspaceActions actions={actions} keymapOverrides={keymapOverrides} onRun={onRunAction} onSave={onSaveAction} onDelete={onDeleteAction} />
       </Card>
     </EmptyStateFrame>
