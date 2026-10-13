@@ -15,14 +15,38 @@ let host: HTMLDivElement
 let sessions: Map<number, SessionInfo>
 let gridIds: Set<number>
 const onOpenFile = vi.fn(), onOpenDir = vi.fn(), onFocusPane = vi.fn(), onMoveChildToGrid = vi.fn()
-function render(): void {
-  act(() => root.render(<SessionPane client={client} info={sessions.get(1)!} roster={{ sessions, maxLiveChildren: 8 }} gridSessionIds={gridIds} theme="black" active connected fontSize={14} copyOnSelect={false} stripBoxGlyphs={false} showProject={false} shellIntegration={false} registerOutput={() => noop} onReconnectSsh={noop} onActivate={noop} onExpand={noop} onZoom={noop} onShellZoom={noop} onSplit={noop} onHeaderPointerDown={noop} onHandoff={noop} onOpenFile={onOpenFile} onOpenDir={onOpenDir} onFocusPane={onFocusPane} onMoveChildToGrid={onMoveChildToGrid} />))
+function render(parent = 1, paneId = "parent-pane"): void {
+  act(() => root.render(<SessionPane client={client} info={sessions.get(parent)!} paneId={paneId} roster={{ sessions, maxLiveChildren: 8 }} gridSessionIds={gridIds} theme="black" active connected fontSize={14} copyOnSelect={false} stripBoxGlyphs={false} showProject={false} shellIntegration={false} registerOutput={() => noop} onReconnectSsh={noop} onActivate={noop} onExpand={noop} onZoom={noop} onShellZoom={noop} onSplit={noop} onHeaderPointerDown={noop} onHandoff={noop} onOpenFile={onOpenFile} onOpenDir={onOpenDir} onFocusPane={onFocusPane} onMoveChildToGrid={onMoveChildToGrid} />))
 }
 function select(id: number): void { act(() => host.querySelector<HTMLButtonElement>(`button[aria-label="Open ${id}"]`)!.click()) }
-beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); sessions = new Map([info(1), ...[2, 3, 4, 5].map(id => info(id, 1))].map(s => [s.id, s])); gridIds = new Set([1]); vi.clearAllMocks() })
+beforeEach(() => { localStorage.clear(); host = document.createElement('div'); document.body.append(host); root = createRoot(host); sessions = new Map([info(1), ...[2, 3, 4, 5].map(id => info(id, 1))].map(s => [s.id, s])); gridIds = new Set([1]); vi.clearAllMocks() })
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks() })
 
 describe('private child terminal stack', () => {
+  for (const mode of ['collapsed', 'expanded'] as const) {
+    it(`restores an explicitly ${mode} roster after the pane remounts`, () => {
+      render()
+      act(() => host.querySelector<HTMLButtonElement>('button[aria-label="Collapse children"]')!.click())
+      if (mode === 'expanded') act(() => host.querySelector<HTMLButtonElement>('button[aria-label="Show children"]')!.click())
+      expect(host.querySelector('.children-split')?.classList.contains(mode)).toBe(true)
+      act(() => root.unmount())
+      root = createRoot(host)
+      render()
+      expect(host.querySelector('.children-split')?.classList.contains(mode)).toBe(true)
+    })
+  }
+  it('keeps the choice with the pane across continuation and separate from other panes', () => {
+    sessions.set(10, info(10)); sessions.set(11, info(11, 10))
+    render()
+    act(() => host.querySelector<HTMLButtonElement>('button[aria-label="Collapse children"]')!.click())
+    render(10, 'other-pane')
+    expect(host.querySelector('.children-split')?.classList.contains('auto')).toBe(true)
+    render(10, 'parent-pane')
+    expect(host.querySelector('.children-split')?.classList.contains('collapsed')).toBe(true)
+    render(1, 'parent-pane')
+    expect(host.querySelector('.children-split')?.classList.contains('collapsed')).toBe(true)
+  })
+
   it('shows settlement timestamps and continues the existing conversation', () => {
     const ended = new Date('2026-10-01T13:38:00').getTime()
     vi.spyOn(Date, 'now').mockReturnValue(ended + 180000)

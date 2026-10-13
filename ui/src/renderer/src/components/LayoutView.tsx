@@ -309,6 +309,7 @@ function renderPaneBody(node: PaneNode, opts: PaneBodyOpts): React.JSX.Element |
       <SessionPane
         client={props.client}
         info={info}
+        paneId={node.id}
         theme={props.theme}
         active={props.activeId === node.session}
         connected={props.connected}

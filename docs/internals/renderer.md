@@ -206,7 +206,9 @@ Node union: `LeafNode { kind:'leaf', session, id }`, `BrowserNode`, `EditorNode`
 
 `LeafNode.id` is a **durable pane identity**, minted once and persisted with the layout,
 distinct from the session occupying it. Respawn mints a fresh session id, so a pane
-identified by its session would lose identity every time it came back.
+identified by its session would lose identity every time it came back. The roster's explicit
+collapsed or expanded choice uses this same pane identity, so remounting or
+continuing a session does not reset it to the responsive default.
 
 Grid metadata is `GridMeta { id, name, named? }`; the tree is stored separately. `named`
 records that a grid was auto-named from its first session or renamed by the user;

@@ -20,6 +20,7 @@ import { showItemInFolder } from '../houston/bridge'
 import type { ThemeName } from '../theme'
 import type { SplitSide } from '../layout/tree'
 import { TerminalPane, type RegisterOutput, type TermActions } from '../pane/TerminalPane'
+import { useRosterMode } from '../pane/rosterMode'
 import { DictationIndicator } from '../voice/DictationIndicator'
 import { AnimOut, MenuLayer } from './ui/AnimOut'
 import {
@@ -371,6 +372,7 @@ interface Props {
   onSwapAdjacent?: (id: number, offset: 1 | -1) => void
   onOpenFile: (id: number, path: string, line?: number, col?: number) => void
   onOpenDir: (path: string, session?: number) => void
+  paneId?: string
   gridSessionIds?: ReadonlySet<number>
   onMoveChildToGrid?: (parent: number, child: number) => void
   onReturnChildToRoster?: (child: number) => void
@@ -501,6 +503,7 @@ function SessionPaneImpl({
   onOpenDir,
   roster: rosterProp,
   gridSessionIds,
+  paneId,
   onMoveChildToGrid,
   onReturnChildToRoster,
   onFocusPane
@@ -512,7 +515,7 @@ function SessionPaneImpl({
   const roster = withSessionFamily(rosterProp, family)
   const [peekId, setPeekId] = useState<number | null>(null)
   const [recent, setRecent] = useState<number[]>([])
-  const [rosterMode, setRosterMode] = useState<RosterMode>('auto')
+  const [rosterMode, setRosterMode] = useRosterMode(paneId, info)
   const children = rosterChildren(roster?.sessions, info.id)
   const peek = visiblePeek(children, peekId, gridSessionIds)
   const selectChild = (id: number | null): void => {
