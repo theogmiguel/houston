@@ -2,6 +2,7 @@ pub mod capture;
 pub mod cloud;
 pub mod dictation;
 pub mod models;
+pub mod reuse;
 pub mod runtime;
 #[cfg(unix)]
 pub mod whisper;

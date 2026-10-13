@@ -1,3 +1,4 @@
+import { useVoiceSettings } from "./voice/useVoiceSettings";
 import { useAgentSettingsReads } from './useAgentSettingsReads'
 import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
@@ -42,16 +43,12 @@ import type {
 } from "./houston/client";
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
-import type { VoiceDevice } from "./houston/generated/VoiceDevice";
 import { useRemoteGridPublish } from "./houston/useRemoteGridPublish";
-import type { VoiceModelState } from "./houston/generated/VoiceModelState";
-import type { VoiceSettings } from "./houston/generated/VoiceSettings";
 import {
   clearVoiceIndicators,
   insertVoiceText,
   isPersistentVoiceFailure,
   setVoiceIndicator,
-  setVoiceLevel,
   setVoicePageError,
   voiceFailureMessage,
   showVoiceNotice,
@@ -805,15 +802,9 @@ export function App(): React.JSX.Element {
   const [historyIgnoreGlobs, setHistoryIgnoreGlobs] = useState<string[] | null>(
     null,
   );
-  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings | null>(
-    null,
-  );
-  const [voiceCloudKeyPresent, setVoiceCloudKeyPresent] = useState(false);
-  const [voiceKeyringError, setVoiceKeyringError] = useState<string | null>(
-    null,
-  );
-  const [voiceModels, setVoiceModels] = useState<VoiceModelState[]>([]);
-  const [voiceDevices, setVoiceDevices] = useState<VoiceDevice[]>([]);
+  const voice = useVoiceSettings(readyClient(conn));
+  const { voiceSettings, voiceCloudKeyPresent, voiceKeyringError, voiceModels,
+    voiceDevices, voiceExternalModels, voiceScanLimited } = voice;
   const [mcp, setMcp] = useState<McpStateView | null>(null);
   const [skills, setSkills] = useState<SkillToolState[] | null>(null);
   const agentAttention = useAgentAttention({ agentHooks, skills, checks: mcp?.checks ?? null, serverCount: mcp?.source.length, reviews: harnessOverview });
@@ -1338,6 +1329,7 @@ export function App(): React.JSX.Element {
         checkout.handleMessage(msg);
         if (handlePullRequestWireMessage(msg, prScreen.handleMessage)) return;
         if (handleWorkspaceWireMessage(msg, setWorkspaces, setSelectedWs, setShowLauncher)) return;
+        if (voice.handleMessage(msg)) return;
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1545,29 +1537,6 @@ export function App(): React.JSX.Element {
             break;
           case "command_history_ignore_globs":
             setHistoryIgnoreGlobs(msg.globs);
-            break;
-          case "voice_settings":
-            setVoiceSettings(msg.settings);
-            setVoiceCloudKeyPresent(msg.cloud_key_present);
-            setVoiceKeyringError(msg.keyring_error ?? null);
-            setVoiceModels(msg.models);
-            if (!msg.settings.enabled) clearVoiceIndicators();
-            break;
-          case "voice_devices":
-            setVoiceDevices(msg.devices);
-            break;
-          case "voice_level":
-            setVoiceLevel(msg.rms);
-            break;
-          case "voice_model_state":
-            setVoiceModels((prev) => {
-              const next = prev.map((m) =>
-                m.id === msg.model.id ? msg.model : m,
-              );
-              return next.some((m) => m.id === msg.model.id)
-                ? next
-                : [...next, msg.model];
-            });
             break;
           case "voice_state": {
             const st = msg.state;
@@ -4171,27 +4140,7 @@ export function App(): React.JSX.Element {
                       voiceKeyringError={voiceKeyringError}
                       voiceModels={voiceModels}
                       voiceDevices={voiceDevices}
-                      onVoiceSettingsSet={(next) => {
-                        if (conn.kind !== "ready") return;
-                        conn.client.voiceSettingsSet(next);
-                      }}
-                      onVoiceKeySet={(provider, key) => {
-                        if (conn.kind !== "ready") return;
-                        conn.client.voiceKeySet(provider, key);
-                      }}
-                      onVoiceKeyClear={(provider) => {
-                        if (conn.kind !== "ready") return;
-                        conn.client.voiceKeyClear(provider);
-                      }}
-                      onVoiceDevicesRefresh={() => {
-                        if (conn.kind === "ready")
-                          conn.client.voiceDevicesGet();
-                      }}
-                      onVoiceLevelMonitor={(enabled) => {
-                        if (conn.kind !== "ready") return;
-                        conn.client.voiceLevelMonitor(enabled);
-                        if (!enabled) setVoiceLevel(null);
-                      }}
+                      {...voice.actions}
                       historyWorkspace={
                         selectedWs === "all" ? null : selectedWs
                       }
@@ -4282,14 +4231,8 @@ export function App(): React.JSX.Element {
                         if (conn.kind === "ready")
                           conn.client.commandHistoryIgnoreGlobsSet(globs);
                       }}
-                      onVoiceModelDownload={(modelId) => {
-                        if (conn.kind === "ready")
-                          conn.client.voiceModelDownload(modelId);
-                      }}
-                      onVoiceModelDelete={(modelId) => {
-                        if (conn.kind === "ready")
-                          conn.client.voiceModelDelete(modelId);
-                      }}
+                      voiceExternalModels={voiceExternalModels}
+                      voiceScanLimited={voiceScanLimited}
                       onRevealSessionDb={() => {
                         if (hostInfo)
                           void openExternal(`file://${hostInfo.state_dir}`);

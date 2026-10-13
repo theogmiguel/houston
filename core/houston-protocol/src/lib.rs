@@ -1762,6 +1762,23 @@ pub struct VoiceModelState {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub cooldown_remaining_ms: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub unavailable_reason: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub guidance: Option<String>,
+    #[serde(default)]
+    pub linked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct VoiceExternalModel {
+    pub path: String,
+    pub source: String,
+    pub model_id: Option<String>,
+    pub unsupported_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4504,6 +4521,12 @@ pub enum ClientMsg {
     VoiceModelDelete {
         model_id: String,
     },
+    VoiceModelsScan,
+    VoiceModelReuse {
+        model_id: String,
+        path: String,
+        copy: bool,
+    },
     VoiceLevelMonitor {
         enabled: bool,
     },
@@ -5410,6 +5433,10 @@ pub enum ServerMsg {
     },
     VoiceModelState {
         model: VoiceModelState,
+    },
+    VoiceModelsFound {
+        files: Vec<VoiceExternalModel>,
+        limited: bool,
     },
     VoiceLevel {
         rms: f32,

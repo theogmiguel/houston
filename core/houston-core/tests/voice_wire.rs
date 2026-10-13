@@ -68,6 +68,99 @@ fn voice_model_msg(msg: proto::ServerMsg) -> Option<proto::VoiceModelState> {
     }
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn selecting_an_installed_catalogue_model_round_trips_and_active_delete_clears_selection() {
+    let (addr, _dir, daemon) = start_daemon_with_handle().await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let external = tempfile::tempdir().unwrap();
+    let source = external.path().join("fixture.bin");
+    let payload = b"whisper fixture weights";
+    std::fs::write(&source, payload).unwrap();
+    let fixture = houston_core::voice::models::ModelSpec {
+        id: "ggml-tiny",
+        display_name: "Tiny fixture",
+        url: "http://127.0.0.1/fixture",
+        sha256: "ada54ec2596d3737fcd230da1197417cd9f9d4db419d66e19e7cf104f73ed329",
+        size_bytes: payload.len() as u64,
+        memory_gib: 1,
+    };
+    houston_core::voice::reuse::reuse_file(&daemon.voice_models_dir(), &source, &fixture, false)
+        .unwrap();
+    let mut settings = daemon.voice_settings();
+    settings.engine = proto::VoiceEngine::Local {
+        model_id: "ggml-tiny".into(),
+    };
+    send(
+        &mut ws,
+        proto::ClientMsg::VoiceSettingsSet {
+            settings: settings.clone(),
+        },
+    )
+    .await;
+    let (selected, _, models) = next_matching(&mut ws, voice_settings_msg).await;
+    assert_eq!(selected, settings);
+    assert!(models.iter().find(|m| m.id == "ggml-tiny").unwrap().linked);
+    send(
+        &mut ws,
+        proto::ClientMsg::VoiceModelDelete {
+            model_id: "ggml-tiny".into(),
+        },
+    )
+    .await;
+    let (cleared, _, models) = next_matching(&mut ws, voice_settings_msg).await;
+    assert_eq!(
+        cleared.engine,
+        proto::VoiceEngine::Local {
+            model_id: String::new()
+        }
+    );
+    assert_eq!(
+        models.iter().find(|m| m.id == "ggml-tiny").unwrap().status,
+        proto::VoiceModelStatus::NotDownloaded
+    );
+    assert_eq!(std::fs::read(&source).unwrap(), payload);
+    assert!(!daemon.voice.download_in_flight("ggml-tiny"));
+    settings.engine = proto::VoiceEngine::Local {
+        model_id: "ggml-base".into(),
+    };
+    assert!(daemon
+        .voice_settings_set(&settings)
+        .unwrap_err()
+        .to_string()
+        .contains("not installed"));
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_refuses_local_download_and_reuse_without_touching_model_storage() {
+    let (addr, _dir, daemon) = start_daemon_with_handle().await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        proto::ClientMsg::VoiceModelDownload {
+            model_id: "ggml-tiny".into(),
+        },
+    )
+    .await;
+    let error = next_matching(&mut ws, |msg| match msg {
+        proto::ServerMsg::Error { message, .. } => Some(message),
+        _ => None,
+    })
+    .await;
+    assert!(error.contains("local whisper engine"), "{error}");
+    assert!(!daemon.voice.download_in_flight("ggml-tiny"));
+    assert!(!daemon.voice_models_dir().exists());
+    assert!(daemon
+        .voice_model_reuse("ggml-tiny".into(), "C:\\missing-model.bin".into(), false)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("local whisper engine"));
+}
+
 #[tokio::test]
 async fn voice_settings_get_replies_with_the_defaults_and_the_whole_catalog() {
     let (addr, _dir, _daemon) = start_daemon_with_handle().await;
@@ -90,8 +183,8 @@ async fn voice_settings_get_replies_with_the_defaults_and_the_whole_catalog() {
         }
     );
 
-    assert_eq!(models.len(), 1, "{models:?}");
-    assert_eq!(models[0].id, "ggml-small");
+    assert_eq!(models.len(), 5, "{models:?}");
+    assert_eq!(models[0].id, "ggml-tiny");
     assert!(
         models[0].size_bytes > 0,
         "the page must be able to show what a download costs"
@@ -254,7 +347,7 @@ async fn an_installed_model_reports_its_size_and_delete_frees_it() {
     send(&mut ws, proto::ClientMsg::VoiceSettingsGet).await;
     let (_, _, models) = next_matching(&mut ws, voice_settings_msg).await;
     assert_eq!(
-        models[0].status,
+        models.iter().find(|m| m.id == "ggml-small").unwrap().status,
         proto::VoiceModelStatus::Downloaded { size_bytes: 4096 }
     );
 
@@ -308,6 +401,7 @@ async fn deleting_traversal_and_absolute_model_ids_preserves_external_synthetic_
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn duplicate_download_and_delete_requests_preserve_the_active_download() {
     let (addr, _dir, daemon) = start_daemon_with_handle().await;
@@ -380,6 +474,7 @@ async fn duplicate_download_and_delete_requests_preserve_the_active_download() {
     assert!(!installed.exists());
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn daemon_download_admission_precedes_the_spawned_workers_first_poll() {
     let (_addr, _dir, daemon) = start_daemon_with_handle().await;
@@ -412,7 +507,17 @@ async fn a_local_engine_with_no_model_refuses_by_name() {
     use futures_util::SinkExt;
     ws.send(tokio_tungstenite::tungstenite::Message::text(
         common::create_custom_msg(
-            vec!["sh", "-c", "sleep 30"],
+            if cfg!(windows) {
+                vec![
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "Start-Sleep -Seconds 30",
+                ]
+            } else {
+                vec!["sh", "-c", "sleep 30"]
+            },
             std::path::Path::new(if cfg!(windows) { "C:\\" } else { "/tmp" }),
         ),
     ))

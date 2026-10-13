@@ -17333,6 +17333,12 @@ impl Daemon {
                 .unwrap_or_else(|| model_id.to_string()),
             size_bytes: spec.map(|s| s.size_bytes).unwrap_or(0),
             status,
+            unavailable_reason: (!cfg!(unix))
+                .then(|| crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE.to_string()),
+            guidance: spec.map(crate::voice::reuse::guidance),
+            linked: !crate::voice::models::final_model_path(&self.voice_models_dir(), model_id)
+                .is_file()
+                && crate::voice::reuse::linked_path(&self.voice_models_dir(), model_id).is_some(),
             cooldown_remaining_ms: self
                 .voice
                 .models
@@ -17358,6 +17364,22 @@ impl Daemon {
     }
 
     pub fn voice_settings_set(&self, settings: &proto::VoiceSettings) -> Result<()> {
+        let previous = self.voice_settings();
+        if previous.engine != settings.engine {
+            if let proto::VoiceEngine::Local { model_id } = &settings.engine {
+                if !model_id.is_empty() {
+                    if !cfg!(unix) {
+                        anyhow::bail!("{}", crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE);
+                    }
+                    anyhow::ensure!(
+                        crate::voice::models::find(model_id).is_some(),
+                        "unknown local model {model_id:?}"
+                    );
+                    anyhow::ensure!(matches!(crate::voice::models::status(&self.voice_models_dir(), model_id), crate::voice::models::ModelStatus::Downloaded { .. }), "local model {model_id:?} is not installed; download or reuse it before selecting");
+                }
+            }
+            self.voice.forget_engine();
+        }
         self.db
             .set_setting(VOICE_SETTINGS_KEY, &serde_json::to_string(settings)?)?;
         self.voice_apply_mic_policy(settings);
@@ -17482,6 +17504,11 @@ impl Daemon {
                         model_id: model_id.clone(),
                     });
                 }
+                if !cfg!(unix) {
+                    return Some(proto::VoiceFailure::Engine {
+                        message: crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE.into(),
+                    });
+                }
             }
             proto::VoiceEngine::Cloud { provider } => {
                 match crate::voice::cloud::key_availability() {
@@ -17546,11 +17573,19 @@ impl Daemon {
         };
         match &settings.engine {
             proto::VoiceEngine::Local { model_id } => {
-                let path = self.voice_models_dir().join(format!("{model_id}.bin"));
+                let spec = crate::voice::models::find(model_id)
+                    .ok_or_else(|| engine_failure("No local model selected".into()))?;
+                let path = crate::voice::reuse::resolve_path(&self.voice_models_dir(), model_id)
+                    .ok_or_else(|| {
+                        engine_failure(format!("local model {model_id:?} is not installed"))
+                    })?;
+                let external = crate::voice::reuse::linked_path(&self.voice_models_dir(), model_id)
+                    .is_some()
+                    .then_some(spec);
                 let transcriber = self
                     .voice
-                    .local_engine(&path)
-                    .map_err(|e| engine_failure(e.to_string()))?;
+                    .local_engine(&path, external)
+                    .map_err(|e| engine_failure(format!("loading {} failed: {e}; allow about {} GiB working headroom; available memory {}", spec.display_name, spec.memory_gib, crate::voice::reuse::memory_available_bytes().map(|m| format!("{:.1} GiB", m as f64 / 1073741824.0)).unwrap_or_else(|| "unknown".into()))))?;
                 let t = crate::voice::Transcriber::transcribe(&*transcriber, audio, &request)
                     .map_err(|e| engine_failure(e.to_string()))?;
                 Ok(crate::voice::Transcribed {
@@ -17704,6 +17739,13 @@ impl Daemon {
             });
             return;
         }
+        if !cfg!(unix) {
+            self.broadcast_control(&proto::ServerMsg::Error {
+                message: crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE.into(),
+                context: Some("voice_model_download".into()),
+            });
+            return;
+        }
         let lease = match self.voice.claim_download(&model_id) {
             Ok(lease) => lease,
             Err(_) => {
@@ -17776,10 +17818,57 @@ impl Daemon {
                 return Err(e.into());
             }
         };
+        let mut settings = self.voice_settings();
+        if matches!(&settings.engine, proto::VoiceEngine::Local { model_id: active } if active == model_id)
+        {
+            settings.engine = proto::VoiceEngine::Local {
+                model_id: String::new(),
+            };
+            self.voice_settings_set(&settings)?;
+        }
         tracing::info!(model = %model_id, freed_bytes = freed, "voice: model deleted");
         Ok(proto::ServerMsg::VoiceModelState {
             model: self.voice_model_state(model_id),
         })
+    }
+
+    pub async fn voice_models_scan(self: &Arc<Self>) -> Result<proto::ServerMsg> {
+        let lease = self.voice.claim_scan().ok_or_else(|| anyhow::anyhow!("local model scan limit is 1; 1 scan is active; wait before requesting another scan"))?;
+        let home = crate::home_dir::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("home directory unavailable for local model scan"))?;
+        let current = self.voice_models_dir();
+        let (files, limited) = tokio::task::spawn_blocking(move || {
+            let _lease = lease;
+            crate::voice::reuse::scan_home(&home, &current, crate::voice::models::CATALOG)
+        })
+        .await?;
+        Ok(proto::ServerMsg::VoiceModelsFound { files, limited })
+    }
+
+    pub async fn voice_model_reuse(
+        self: &Arc<Self>,
+        model_id: String,
+        path: PathBuf,
+        copy: bool,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            cfg!(unix),
+            "{}",
+            crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE
+        );
+        let spec = crate::voice::models::find(&model_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown local model {model_id:?}"))?;
+        let lease = self.voice.claim_download(&model_id)?;
+        let dir = self.voice_models_dir();
+        tokio::task::spawn_blocking(move || {
+            let result = crate::voice::reuse::reuse_file(&dir, &path, spec, copy);
+            lease.finish(result.as_ref().err().map(ToString::to_string));
+            result
+        })
+        .await??;
+        self.voice.forget_engine();
+        self.broadcast_control(&self.voice_settings_reply());
+        Ok(())
     }
 
     pub fn voice_key_set(&self, provider: proto::CloudStt, key: String) -> Result<()> {

@@ -14,6 +14,7 @@ function model(overrides: Partial<VoiceModelState> = {}): VoiceModelState {
     size_bytes: 487_601_967,
     status: { kind: 'not_downloaded' },
     cooldown_remaining_ms: null,
+    linked: false,
     ...overrides
   }
 }
@@ -143,7 +144,7 @@ describe('VoiceModelRoster — the model roster', () => {
         />
       )
     )
-    expect(container.textContent).toContain('sha-256 mismatch for ggml-small')
+    expect(container.textContent).toContain('sha-256 mismatch for ggml-small Repeated failures')
     expect(container.textContent).toContain('the next attempt is allowed in 120s')
     const retry = container.querySelector<HTMLButtonElement>(
       '[data-testid="settings-voice-model-download"]'
@@ -162,6 +163,55 @@ describe('VoiceModelRoster — the model roster', () => {
       )
     )
     expect(container.textContent).toContain('This is the model dictation uses.')
+  })
+
+  it('selects an installed model separately from downloading it and exposes no selection', () => {
+    const selected: string[] = []
+    const downloaded: string[] = []
+    act(() => root.render(<VoiceModelRoster {...baseProps()}
+      voiceModels={[model({ status: { kind: 'downloaded', size_bytes: 487_601_967 } })]}
+      onVoiceModelSelect={(id) => selected.push(id)}
+      onVoiceModelDownload={(id) => downloaded.push(id)} />))
+    expect(container.textContent).toContain('No local model selected')
+    const use = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Use model')!
+    act(() => use.click())
+    expect(selected).toEqual(['ggml-small'])
+    expect(downloaded).toEqual([])
+  })
+
+  it('offers explicit link and copy, names unsupported Parakeet and reports partial results', () => {
+    const reused: unknown[] = []
+    act(() => root.render(<VoiceModelRoster {...baseProps()} voiceModels={[model()]}
+      voiceScanLimited
+      voiceExternalModels={[
+        { path: '/handy/model.bin', source: 'Handy', model_id: 'ggml-small', unsupported_reason: null },
+        { path: '/handy/parakeet.onnx', source: 'Handy', model_id: null, unsupported_reason: 'Parakeet is not supported by the local Whisper engine' }
+      ]}
+      onVoiceModelReuse={(...args) => reused.push(args)} />))
+    expect(container.textContent).toContain('Scan limit reached')
+    expect(container.textContent).toContain('Parakeet · Unsupported')
+    expect(container.textContent).toContain('SHA-256 matched')
+    for (const label of ['Link', 'Copy']) {
+      act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === label)!.click())
+    }
+    expect(reused).toEqual([['ggml-small', '/handy/model.bin', false], ['ggml-small', '/handy/model.bin', true]])
+  })
+
+  it('removing a linked model advertises no external disk deletion', () => {
+    act(() => root.render(<VoiceModelRoster {...baseProps()}
+      voiceModels={[model({ linked: true, status: { kind: 'downloaded', size_bytes: 487_601_967 } })]} />))
+    expect(container.textContent).toContain('Houston disk usage: 0 B')
+    expect(container.textContent).toContain('Remove link')
+    expect(container.textContent).not.toContain('frees 465.0 MB')
+  })
+
+  it('the Windows refusal exposes sizes without offering unusable downloads or selection', () => {
+    act(() => root.render(<VoiceModelRoster {...baseProps()}
+      voiceModels={[model({ unavailable_reason: 'Local Whisper is unavailable on Windows' })]} />))
+    expect(container.textContent).toContain('465.0 MB')
+    expect(container.textContent).toContain('Windows')
+    expect(container.querySelector('[data-testid="settings-voice-model-download"]')).toBeNull()
+    expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent === 'Use model')).toBe(false)
   })
 })
 

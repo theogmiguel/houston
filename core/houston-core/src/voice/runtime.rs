@@ -11,6 +11,7 @@ use super::whisper::{WhisperEngineError, WhisperTranscriber};
 #[cfg(unix)]
 struct CachedEngine {
     path: PathBuf,
+    verified_sha256: Option<&'static str>,
     transcriber: Arc<WhisperTranscriber>,
 }
 
@@ -69,9 +70,17 @@ pub enum MonitorTransition {
 pub struct Runtime {
     inner: Arc<Mutex<Inner>>,
     pub models: models::Manager,
+    scan_active: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Runtime {
+    pub fn claim_scan(&self) -> Option<ScanLease> {
+        use std::sync::atomic::Ordering;
+        self.scan_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()?;
+        Some(ScanLease(self.scan_active.clone()))
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -204,19 +213,30 @@ impl Runtime {
     }
 
     #[cfg(unix)]
-    pub fn local_engine(&self, path: &Path) -> Result<Arc<WhisperTranscriber>, WhisperEngineError> {
+    pub fn local_engine(
+        &self,
+        path: &Path,
+        external: Option<&models::ModelSpec>,
+    ) -> Result<Arc<WhisperTranscriber>, WhisperEngineError> {
         {
             let inner = self.lock();
             if let Some(cached) = inner.engine.as_ref() {
-                if cached.path == path {
+                if cached.path == path && cached.verified_sha256 == external.map(|s| s.sha256) {
                     return Ok(cached.transcriber.clone());
                 }
             }
+        }
+        // Cached engines own their loaded weights. Verify external bytes only when
+        // loading, so a short dictation never hashes hundreds of MiB again.
+        if let Some(spec) = external {
+            super::reuse::verify_file(path, spec)
+                .map_err(|e| WhisperEngineError::Verification(e.to_string()))?;
         }
         let loaded = Arc::new(WhisperTranscriber::load(path)?);
         let mut inner = self.lock();
         inner.engine = Some(CachedEngine {
             path: path.to_path_buf(),
+            verified_sha256: external.map(|s| s.sha256),
             transcriber: loaded.clone(),
         });
         Ok(loaded)
@@ -226,6 +246,7 @@ impl Runtime {
     pub fn local_engine(
         &self,
         _path: &Path,
+        _external: Option<&models::ModelSpec>,
     ) -> Result<Arc<LocalEngineUnavailable>, LocalEngineUnavailableError> {
         Err(LocalEngineUnavailableError)
     }
@@ -289,6 +310,14 @@ impl Runtime {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().expect("voice runtime lock")
+    }
+}
+
+pub struct ScanLease(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for ScanLease {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -526,7 +555,7 @@ mod tests {
         let rt = Runtime::new();
         let missing = Path::new("/nonexistent/ggml-not-here.bin");
         let err = rt
-            .local_engine(missing)
+            .local_engine(missing, None)
             .expect_err("a missing model must not load");
         assert!(
             err.to_string().contains("ggml-not-here.bin"),
@@ -543,7 +572,7 @@ mod tests {
     fn local_engine_is_a_named_refusal_on_this_platform() {
         let rt = Runtime::new();
         let err = rt
-            .local_engine(Path::new("C:/ggml-small.bin"))
+            .local_engine(Path::new("C:/ggml-small.bin"), None)
             .expect_err("a gated-out engine must refuse");
         assert!(
             err.to_string().contains("not built on this platform"),

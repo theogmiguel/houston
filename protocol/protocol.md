@@ -368,6 +368,8 @@ every refusal names the setting.
 | `voice_start` | `session` (the delivery target, fixed here) | `voice_state` (bcast) |
 | `voice_stop` | `session` | `voice_transcript`, or `voice_state` carrying a `VoiceFailure` |
 | `voice_model_download` | `model_id` | repeated `voice_model_state` (bcast); SHA-256 verified |
+| `voice_models_scan` | — | `voice_models_found` (direct), bounded on-demand local scan |
+| `voice_model_reuse` | `model_id`, `path`, `copy` | `voice_settings` (bcast); verified external link or copy, refused on Windows |
 | `voice_model_delete` | `model_id` | `voice_model_state` + `voice_settings` (bcast) |
 | `voice_level_monitor` | `enabled` | `voice_level` every `VOICE_LEVEL_INTERVAL_MS` while anyone is monitoring. Opens the microphone; refcounted per connection as a set, and released on disconnect |
 
@@ -526,6 +528,7 @@ every refusal names the setting.
 | `voice_devices` | `devices: VoiceDevice[]` | direct reply to `voice_devices_get` |
 | `voice_state` | `state: VoiceState` | bcast on every capture transition, including failures |
 | `voice_transcript` | `session`, `text` (the engine's transcript), `insert` (what to put in the prompt: the trimmed text plus one space, led by the agent preamble on the pane's first dictation when `output_mode` is `english` and `agent_preamble` is on; empty when there is nothing to insert), `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start`. The daemon tracks which panes already received the preamble, for the desktop and paired devices together, and forgets a pane when it is removed |
+| `voice_models_found` | `files: VoiceExternalModel[]`, `limited` | direct scan results; unsupported Parakeet files have no model ID |
 | `voice_model_state` | `model: VoiceModelState` | bcast — download progress, completion, failure or deletion |
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
 | `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
@@ -836,14 +839,15 @@ Every refusal names the operation, the limit and the actual value; a stale
 the actual one.
 
 CloudStt           groq
-VoiceEngine        tag "kind": local{model_id} | cloud{provider: CloudStt}
+VoiceEngine        tag "kind": local{model_id} | cloud{provider: CloudStt}; empty local model_id means no selected model
 VoiceSettings      enabled (default false — this is what opens the microphone), engine,
                    output_mode (original | english), input_language?, capture_mode (hold | toggle),
                    input_device?, insert_mode (direct | confirm_first), vocabulary, agent_preamble,
                    mic_policy (persistent | on_keypress), rms_floor
 VoiceDevice        id (what input_device stores), label, is_default
 VoiceModelStatus   tag "kind": not_downloaded | downloading{progress} | downloaded{size_bytes} | failed{reason}
-VoiceModelState    id, display_name, size_bytes, status, cooldown_remaining_ms?
+VoiceModelState    id, display_name, size_bytes, status, cooldown_remaining_ms?, unavailable_reason?, guidance?, linked?
+VoiceExternalModel path, source, model_id (nullable), unsupported_reason (nullable)
 VoiceFailure       tag "kind": no_model{model_id} | missing_key{provider} | device_unavailable{device}
                    | too_quiet{rms, floor} | too_short{seconds, minimum} | ring_buffer_overrun{dropped}
                    | no_speech | target_gone{session} | engine{message} — every variant carries its numbers

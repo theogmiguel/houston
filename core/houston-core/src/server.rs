@@ -2007,6 +2007,20 @@ async fn dispatch(
             daemon.broadcast_control(&daemon.voice_settings_reply());
             Ok(())
         }
+        proto::ClientMsg::VoiceModelsScan => {
+            let reply = daemon.voice_models_scan().await?;
+            let _ = send_msg(sink, &reply).await;
+            Ok(())
+        }
+        proto::ClientMsg::VoiceModelReuse {
+            model_id,
+            path,
+            copy,
+        } => {
+            daemon
+                .voice_model_reuse(model_id, std::path::PathBuf::from(path), copy)
+                .await
+        }
         proto::ClientMsg::VoiceLevelMonitor { enabled } => {
             daemon.voice_level_monitor(conn_id, enabled);
             Ok(())

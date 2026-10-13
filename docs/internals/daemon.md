@@ -58,7 +58,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | | `ssh.rs` | SSH panes: a remote shell as a normal grid pane |
 | | `ssh_config.rs`, `ssh_credentials.rs` | Four config directives; credentials in the keychain |
 | | `usage/` | Token-usage reporting for the agent CLIs Houston hosts (7 files) |
-| | `voice/` | Capture, local and cloud transcription, model catalog (6 files) |
+| | `voice/` | Capture, local and cloud transcription, model catalogue and external reuse |
 | safety | `pid.rs` | The only module allowed to call raw `kill` or the Win32 twin |
 | | `sanitize.rs` | Secret-pattern redaction, shared by everything that persists text |
 
@@ -693,6 +693,16 @@ without limit.
 never blocks. `voice/whisper.rs` is the local engine via `whisper-rs`, CPU-only — `load`
 calls `use_gpu(false)` explicitly so the build choice and the runtime choice cannot drift;
 the crate is `cfg(unix)`-gated and the Windows local engine is a named refusal.
+`voice/reuse.rs` scans only on request and identifies external files by SHA-256.
+Linked files are reverified before engine loading; cached engines own the loaded weights,
+so short dictations do not repeat whole-file hashing. Deletion removes only this channel's
+reference. Copy publication verifies the bytes actually copied. Scan and reuse work runs
+off the async control loop, with one scan admitted at a time and visible partial results
+when a work limit is reached. Download, reuse and deletion share per-model admission.
+Deleting the active model persists an empty local model ID, meaning no local model selected,
+and never triggers a download. Windows retains the named local engine refusal and refuses
+downloads and reuse.
+
 `voice/cloud.rs` is a Groq OpenAI-compatible Whisper client whose key lives in the keychain
 under `groq-api-key`; `voice/models.rs` carries the catalog, verified download, delete and
 disk usage. The runtime is constructed at boot but **opens no device** —

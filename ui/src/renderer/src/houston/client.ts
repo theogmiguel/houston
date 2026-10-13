@@ -1435,6 +1435,14 @@ export class HoustonClient {
     this.send({ type: 'voice_model_download', model_id: modelId })
   }
 
+  voiceModelsScan(): void {
+    this.send({ type: 'voice_models_scan' })
+  }
+
+  voiceModelReuse(modelId: string, path: string, copy: boolean): void {
+    this.send({ type: 'voice_model_reuse', model_id: modelId, path, copy })
+  }
+
   voiceModelDelete(modelId: string): void {
     this.send({ type: 'voice_model_delete', model_id: modelId })
   }
