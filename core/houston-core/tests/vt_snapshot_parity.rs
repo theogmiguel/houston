@@ -34,6 +34,11 @@ fn scenarios() -> Vec<Scenario> {
             b"after\r\n",
         ),
         (
+            "explicit palette and dynamic colors",
+            b"\x1b]4;1;#cc6666;114;#654321\x07\x1b]10;#112233\x07\x1b]11;#445566\x07\x1b]12;#778899\x07\x1b[31mred\x1b[0m",
+            b"\x1b]104;114\x07\x1b]110\x07\x1b]111\x07\x1b]112\x07\r\nafter",
+        ),
+        (
             "alternate screen active",
             b"primary content\r\n\x1b[?1049h\x1b[2J\x1b[Halt screen here",
             b"\r\nmore alt",
@@ -119,6 +124,59 @@ fn scenarios() -> Vec<Scenario> {
         b: b" continues\r\n".to_vec(),
     });
     out
+}
+
+fn term_section(snapshot: &[u8]) -> &[u8] {
+    let mut offset = 8;
+    while offset + 8 <= snapshot.len() {
+        let tag = &snapshot[offset..offset + 4];
+        let len = u32::from_le_bytes(snapshot[offset + 4..offset + 8].try_into().unwrap()) as usize;
+        offset += 8;
+        if tag == b"TERM" {
+            return &snapshot[offset..offset + len];
+        }
+        offset += len;
+    }
+    panic!("snapshot has no TERM section");
+}
+
+#[test]
+fn native_snapshots_carry_explicit_colors_but_not_daemon_defaults() {
+    let mut vt = Emulator::new(COLS, ROWS, VT_HISTORY_BYTES).expect("emulator");
+    let clean = vt.snapshot(VT_HISTORY_ROWS).expect("snapshot");
+    let clean_term = String::from_utf8_lossy(term_section(&clean));
+    assert!(
+        !clean_term.contains("\x1b]4;"),
+        "clean TERM serialized palette defaults"
+    );
+    assert!(!clean_term.contains("\x1b]10;"));
+
+    vt.feed(b"\x1b]4;1;#cc6666;114;#654321\x07\x1b]10;#112233\x07\x1b]11;#445566\x07\x1b]12;#778899\x07");
+    let state = vt.snapshot(VT_HISTORY_ROWS).expect("snapshot");
+    let term = String::from_utf8_lossy(term_section(&state));
+    assert!(term.contains("\x1b]4;1;rgb:cc/66/66\x1b\\"));
+    assert!(term.contains("\x1b]4;114;rgb:65/43/21\x1b\\"));
+    assert!(!term.contains("\x1b]4;0;"));
+    for osc in ["10;rgb:11/22/33", "11;rgb:44/55/66", "12;rgb:77/88/99"] {
+        assert!(term.contains(osc), "missing {osc}");
+    }
+
+    vt.feed(b"\x1b]104;114\x07\x1b]110\x07\x1b]111\x07\x1b]112\x07");
+    let reset = vt.snapshot(VT_HISTORY_ROWS).expect("snapshot");
+    let reset_term = String::from_utf8_lossy(term_section(&reset));
+    assert!(reset_term.contains("\x1b]4;1;"));
+    assert!(!reset_term.contains("\x1b]4;114;"));
+    for osc in ["10;", "11;", "12;"] {
+        assert!(!reset_term.contains(&format!("\x1b]{osc}")));
+    }
+
+    let mut restored = Emulator::new(COLS, ROWS, VT_HISTORY_BYTES).expect("emulator");
+    restored.import(&state).expect("import");
+    restored.feed(b"\x1b]4;3;#abcdef\x07");
+    let continued = restored.snapshot(VT_HISTORY_ROWS).expect("snapshot");
+    let continued_term = String::from_utf8_lossy(term_section(&continued));
+    assert!(continued_term.contains("\x1b]4;1;"));
+    assert!(continued_term.contains("\x1b]4;3;rgb:ab/cd/ef\x1b\\"));
 }
 
 fn fixture_path() -> std::path::PathBuf {

@@ -67,7 +67,9 @@ setting back off.
 follow the chrome theme. The command palette’s **Change terminal palette…** picker
 previews the palette highlighted by Up/Down or the pointer. The check marks the saved
 palette; Enter saves the preview and Escape restores the saved palette. Focus stays
-in the search field while browsing.
+in the search field while browsing. A palette change recolors existing ANSI text and
+backgrounds in open panes. Applications can override palette colors until reset;
+fixed 256-color and RGB output keeps its original colors.
 
 New panes support full colour even when Houston is launched from a command runner with
 `NO_COLOR` set. To disable CLI colours intentionally, set `NO_COLOR` inside the pane or

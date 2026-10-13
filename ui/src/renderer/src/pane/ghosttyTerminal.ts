@@ -1,4 +1,6 @@
 import type { GhosttySnapshot, GhosttyTheme } from '../ghostty/core'
+import { GHOSTTY_ANSI_COLOR_NAMES } from '../ansiColors'
+import type { TerminalPalette } from '../theme'
 import type { GhosttyTerminalSurface, TerminalLinkWithRange } from '../ghostty/surface'
 import { logTerminalTransport } from '../houston/latency'
 import { findResyncStart } from './writeQueue'
@@ -18,7 +20,7 @@ export interface PaneBuffer {
 export interface PaneTerminalOptions {
   readOnly?: boolean
   disableStdin?: boolean
-  theme?: { background?: string; foreground?: string; cursor?: string }
+  theme?: TerminalPalette
   fontSize?: number
   fontFamily?: string
   lineHeight?: number
@@ -75,7 +77,7 @@ export interface PaneLinkProvider {
 
 export interface GhosttyTerminalInit {
   readonly host: HTMLElement
-  readonly theme: { background?: string; foreground?: string; cursor?: string }
+  readonly theme: TerminalPalette
   readonly fontFamily: string
   readonly fontSize: number
   readonly lineHeight?: number
@@ -91,11 +93,7 @@ export interface GhosttyTerminalInit {
     host: HTMLElement,
     options: GhosttySurfaceCreateOptions
   ) => Promise<GhosttyTerminalSurface>
-  readonly toGhosttyTheme: (theme: {
-    background?: string
-    foreground?: string
-    cursor?: string
-  }) => GhosttyTheme
+  readonly toGhosttyTheme: (theme: TerminalPalette) => GhosttyTheme
   // Buffered output during attach hit the cap and the oldest was dropped.
   // Narrated out of band (a toast), never written into the stream -- inside
   // a full-screen TUI an inline marker would land mid-frame.
@@ -709,16 +707,17 @@ function hexToRgb(hex: string | undefined): { r: number; g: number; b: number } 
   }
 }
 
-export function ghosttyThemeFromCss(theme: {
-  background?: string
-  foreground?: string
-  cursor?: string
-  selectionBackground?: string
-}): GhosttyTheme {
+export function ghosttyThemeFromCss(theme: TerminalPalette): GhosttyTheme {
+  const ansi: NonNullable<GhosttyTheme['ansi']> = Object.fromEntries(
+    GHOSTTY_ANSI_COLOR_NAMES
+      .filter(name => theme[name] !== undefined)
+      .map(name => [name, hexToRgb(theme[name])])
+  )
   return {
     background: hexToRgb(theme.background),
     foreground: hexToRgb(theme.foreground),
     cursor: hexToRgb(theme.cursor),
+    ...(Object.keys(ansi).length > 0 ? { ansi } : {}),
     ...(theme.selectionBackground !== undefined
       ? { selectionBackground: theme.selectionBackground }
       : {})

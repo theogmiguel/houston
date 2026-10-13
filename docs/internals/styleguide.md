@@ -934,7 +934,8 @@ Any palette pairs with any chrome theme, so never assume the terminal background
 matches a chrome token — that is why the active-pane ring is achromatic.
 The shipped foreground and twelve chromatic ANSI colours in every palette keep at
 least 3:1 contrast against that palette's own background. This is a property of the
-definitions; terminal output is never repainted at runtime.
+definitions. Runtime palette changes update indexed colors without applying a
+per-cell contrast adjustment.
 
 ## Guards
 

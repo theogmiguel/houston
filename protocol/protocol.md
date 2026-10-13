@@ -991,7 +991,7 @@ sections until end of buffer:
 | tag | body |
 |---|---|
 | `HEAD` | cols u16, rows u16, active screen u8 (0 primary / 1 alternate), alternate present u8, pending truncated u8, reserved u8, mode bit count u16 |
-| `TERM` | VT: palette (OSC 4), tabstops, pwd (OSC 7), keyboard modes |
+| `TERM` | VT: explicit palette overrides (OSC 4), dynamic foreground/background/cursor overrides (OSC 10/11/12), tabstops, pwd (OSC 7), keyboard modes. Format v2 leaves defaults local to the importer; v1 snapshots are refused because they encoded all 256 daemon defaults as overrides |
 | `SCRG` | VT: scrolling region (DECSTBM/DECSLRM) |
 | `MODE` | mode values / saved / defaults, each a 128-bit image of the mode bitfield |
 | `TFLG` | mouse event u8, mouse format u8, modify-other-keys u8, shift capture u8, status display u8, previous char present u8 + u32 |

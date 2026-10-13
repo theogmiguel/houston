@@ -360,7 +360,8 @@ Stalled, Idle, Status unavailable and Settled. Select a
 child to inspect its terminal inside the orchestrator pane; return to Orchestrator to
 see the parent. New children stay in this roster by default. Move to grid gives a child
 its own cell beside its parent, selecting the parent's grid even when another grid was
-active. Return to roster reverses that placement. A headless child stays in the roster
+active. The roster remembers whether you explicitly collapsed or expanded it, including
+when you return to the pane or reopen Houston. Return to roster reverses that placement. A headless child stays in the roster
 without consuming a grid cell.
 Needs you includes requests explicitly assigned to you and children whose descendants
 are waiting on you; Answer focuses their terminal prompt. Questions awaiting a parent

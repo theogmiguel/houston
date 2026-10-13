@@ -40,7 +40,7 @@ const Result = @import("result.zig").Result;
 /// Bumped whenever an encoder change would make an older importer read a
 /// snapshot wrongly rather than merely miss something. The importer refuses
 /// any value it does not equal: a wrong screen is worse than a byte replay.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 const MAGIC = "HVTS";
 
@@ -149,20 +149,43 @@ fn encode(
         try writeSection(w, Tag.head, body.writer.buffered());
     }
 
-    // Terminal-level state that is cheapest to say in VT: the palette,
-    // tabstops, the pwd and the keyboard-protocol modes. Deliberately NOT
+    // Only explicit OSC colors travel with the snapshot. The daemon's
+    // defaults belong to the renderer's theme, including after an attach.
+    // Deliberately NOT
     // `modes` -- the mode extra emits the alternate-screen DEC modes too,
     // and replaying those would switch screens underneath an importer that
     // is placing both screens itself.
-    try writeTerminalVt(alloc, w, t, Tag.term, .{
-        .palette = true,
-        .modes = false,
-        .scrolling_region = false,
-        .tabstops = true,
-        .pwd = true,
-        .keyboard = true,
-        .screen = .none,
-    });
+    {
+        var body: std.Io.Writer.Allocating = .init(alloc);
+        defer body.deinit();
+        for (t.colors.palette.current, 0..) |rgb, idx| {
+            if (t.colors.palette.mask.isSet(idx)) {
+                try body.writer.print("\x1b]4;{d};rgb:{x:0>2}/{x:0>2}/{x:0>2}\x1b\\", .{
+                    idx, rgb.r, rgb.g, rgb.b,
+                });
+            }
+        }
+        inline for (.{ .{ 10, t.colors.foreground.override }, .{ 11, t.colors.background.override }, .{ 12, t.colors.cursor.override } }) |entry| {
+            if (entry[1]) |rgb| {
+                try body.writer.print("\x1b]{d};rgb:{x:0>2}/{x:0>2}/{x:0>2}\x1b\\", .{
+                    entry[0], rgb.r, rgb.g, rgb.b,
+                });
+            }
+        }
+        var f: formatterpkg.TerminalFormatter = .init(t, .{ .emit = .vt, .trim = false });
+        f.content = .none;
+        f.extra = .{
+            .palette = false,
+            .modes = false,
+            .scrolling_region = false,
+            .tabstops = true,
+            .pwd = true,
+            .keyboard = true,
+            .screen = .none,
+        };
+        try f.format(&body.writer);
+        try writeSection(w, Tag.term, body.writer.buffered());
+    }
 
     // The scrolling region rides in its own section because the importer
     // has to apply it AFTER painting the screens: a region in force changes
@@ -359,9 +382,20 @@ fn importBytes(wrapper: anytype, buf: []const u8) !Result {
 
     const t: *ZigTerminal = wrapper.terminal;
     t.fullReset();
-    // A reset leaves the parser mid-nothing, but the caller may have been
-    // writing into this terminal before deciding to import.
+    // fullReset retains dynamic RGB overrides, which must not leak from a
+    // previous import into a snapshot that carries no such override.
+    t.colors.foreground.override = null;
+    t.colors.background.override = null;
+    t.colors.cursor.override = null;
+    // The caller may have been writing before import. Preserve the OSC
+    // allocator and limit: a bare parser init drops them, disabling color
+    // operations and other allocated OSC actions after attach.
+    const osc_alloc = wrapper.stream.parser.osc_parser.alloc;
+    const osc_unknown_max_bytes = wrapper.stream.parser.osc_parser.unknown_max_bytes;
+    wrapper.stream.parser.deinit();
     wrapper.stream.parser = .init();
+    wrapper.stream.parser.osc_parser.alloc = osc_alloc;
+    wrapper.stream.parser.osc_parser.unknown_max_bytes = osc_unknown_max_bytes;
     wrapper.stream.utf8decoder = .{};
 
     var sections: Sections = .{};
@@ -395,7 +429,7 @@ fn importBytes(wrapper: anytype, buf: []const u8) !Result {
     if (cols == 0 or rows == 0) return .invalid_value;
     try t.resize(t.gpa(), .{ .cols = cols, .rows = rows });
 
-    // Tabstops, the palette and the pwd first: emitting a tabstop is HTS at
+    // Tabstops, explicit colors and the pwd first: emitting a tabstop is HTS at
     // a cursor position, so this walks the cursor across the row and must
     // not do that over painted content.
     if (sections.term) |body| wrapper.stream.nextSlice(body);
