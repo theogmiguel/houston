@@ -853,6 +853,35 @@ describe('HoustonClient dead-session suppression set (item 14, r11)', () => {
     await expect(client.sessionCwd(6)).rejects.toThrow(/suppressed for session 6/)
   })
 
+  it('suppresses visibility reports from pane cleanup after session_removed', async () => {
+    const { client, ws } = await connectFakeClient()
+    client.subscribe('session_removed', (msg) => client.sessionVisibility(msg.session, false))
+
+    client.sessionVisibility(6, true)
+    sessionRemoved(ws, 6)
+    client.sessionVisibility(6, true)
+    client.sessionVisibility(7, false)
+
+    const reports = ws.sent
+      .filter((msg): msg is string => typeof msg === 'string')
+      .map((msg) => JSON.parse(msg))
+      .filter((msg) => msg.type === 'session_visibility')
+    expect(reports).toEqual([
+      { type: 'session_visibility', session: 6, visible: true },
+      { type: 'session_visibility', session: 7, visible: false }
+    ])
+  })
+
+  it('keeps visibility reports for an exited session that still has a pane', async () => {
+    const { client, ws } = await connectFakeClient()
+    getTransport(client).onExit(6, 0)
+    client.sessionVisibility(6, false)
+
+    expect(JSON.parse(ws.sent.at(-1) as string)).toEqual({
+      type: 'session_visibility', session: 6, visible: false
+    })
+  })
+
   it('sessionCwds and sessionRunningProcs filter dead ids out of the batch, and send nothing when the whole batch is dead', async () => {
     const { client, ws } = await connectFakeClient()
 

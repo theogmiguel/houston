@@ -308,8 +308,10 @@ per-connection tap (`FrameRegistry::offer`, `frame_queue.rs`). A hidden session
 short-circuits into `handoff_output` before any of that. Backpressure is per-connection, not a
 shared broadcast. Hiding a session unregisters its tap and clears queued output; showing it
 creates a fresh tap while preserving the live session's attach attempt count. Session
-removal reclaims connection-owned taps, attempt counters and visibility votes. Invalid
-session IDs do not allocate attachment state. Each tap queues up to `FRAME_QUEUE_DEPTH` (4096) items or `FRAME_QUEUE_BYTES`
+removal reclaims connection-owned taps, attempt counters and visibility votes. Late hide
+reports after removal clear connection state without error or new visibility votes; the
+renderer suppresses reports once it receives removal. Invalid session IDs do not allocate
+attachment state. Each tap queues up to `FRAME_QUEUE_DEPTH` (4096) items or `FRAME_QUEUE_BYTES`
 (4 MiB) before it drops, and the drop becomes a `Queued::Gap` the connection loop turns into a
 gap frame — the renderer answers a gap with one fresh attach instead of the client being
 disconnected; it never stalls the PTY. `OUTBOUND_CAPACITY`'s 4096-slot `tokio::broadcast` is a

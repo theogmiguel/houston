@@ -114,7 +114,7 @@ failure not given a typed refusal comes back as `error`.
 | `pr_watch_list` | — | `pr_watch_list` (direct), grouped by session |
 | `pr_watch_unwatch` | `session`, `number` | removes that pane's watch and broadcasts `pr_watch_changed` |
 | `session_running_procs` | `sessions: u32[]` | `session_running_procs` (direct) |
-| `session_visibility` | `session`, `visible` | none; changes this socket's frame filter |
+| `session_visibility` | `session`, `visible` | none; changes this socket's frame filter. Hiding an unknown or removed session clears connection state without error; showing an unknown session is refused |
 | `wait_for_idle` | `request`, `session`, `timeout_ms?` (default 10000, cap 120000), `idle_quiet_ms?` (default 500, cap 30000) | `idle` (bcast), keyed by `request` |
 | `session_policy_get` | — | `session_policy` (direct) |
 | `session_policy_set` | `policy: SessionPolicy` | `session_policy` (bcast) |

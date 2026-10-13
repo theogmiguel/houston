@@ -3548,12 +3548,19 @@ async fn dispatch(
             Ok(())
         }
         proto::ClientMsg::SessionVisibility { session, visible } => {
-            anyhow::ensure!(
-                daemon.has_session(session),
-                "unknown session id {session} (expected an active or restored session)"
-            );
             let frames_wanted =
                 frames_wanted.expect("an attach-family message runs on the connection task");
+            if !daemon.has_session(session) {
+                anyhow::ensure!(
+                    !visible,
+                    "unknown session id {session} (expected an active or restored session)"
+                );
+                // Pane cleanup can arrive after removal; discard connection state without
+                // recreating a visibility vote for a session that no longer exists.
+                frames_wanted.forget(session);
+                daemon.conn_set_visibility(conn_id, session, true);
+                return Ok(());
+            }
             if visible {
                 frames_wanted.insert(session);
             } else {
