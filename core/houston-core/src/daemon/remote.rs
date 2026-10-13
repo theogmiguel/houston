@@ -651,7 +651,7 @@ impl Daemon {
                 write(text.as_bytes())?;
             }
             if !key_bytes.is_empty() {
-                std::thread::sleep(super::SWARM_WAKE_SETTLE);
+                std::thread::sleep(self.paste_submit_settle(id));
             }
         }
         if !key_bytes.is_empty() {

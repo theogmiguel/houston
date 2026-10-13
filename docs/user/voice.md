@@ -24,21 +24,58 @@ Desktop dictation records nothing and never opens this computer's microphone whi
 is off. Once enabled, it follows the activation and microphone settings below. The
 paired-device setting controls uploaded recordings independently of desktop dictation.
 
-## Local model downloads
+## Choose a local model
 
-In **Settings → Dictation**, download the local model before selecting the local
-engine. Downloads contact Hugging Face and its download hosts to retrieve the model;
-they do not send microphone audio. Houston checks the catalog's exact byte count and
-SHA-256 digest before installing a model.
+In **Settings → Dictation**, choose Local, download or reuse a model, then select it.
+Download, selection and deletion are separate actions. The active model and Houston's
+model disk usage remain visible. Deleting the active model leaves **No local model
+selected**; select another installed model to resume. Houston never downloads a replacement
+automatically. Windows lists the catalogue but refuses local selection, downloads and
+reuse because the local engine is unavailable.
 
-Each model has one active download. Repeated requests use the existing download;
-deletion is refused until it finishes. A failed or interrupted transfer removes its
-partial file and can be retried. Downloads stop after 30 seconds without response
-headers or new body bytes, or after 30 minutes overall. After three consecutive
-failures, retries pause for five minutes, including across daemon restarts.
+All models are multilingual. Tiny and Base suit constrained machines; Small is a middle
+option. Medium Q5_0 and Large v3 Turbo Q5_0 use quantized weights. Guidance uses physical
+cores and total RAM when available and never blocks selection. Memory figures are approximate
+working headroom, not measured load requirements. Builds and Auto-detect can increase latency.
+Load failures name the model, suggested headroom and available memory when known.
 
-Deleting a downloaded model frees its disk space. Download it again before using the
-local engine.
+| Model | Download bytes | Approximate disk size |
+|---|---:|---:|
+| Tiny | 77,691,713 | 74 MiB |
+| Base | 147,951,465 | 141 MiB |
+| Small | 487,601,967 | 465 MiB |
+| Medium Q5_0 | 539,212,467 | 514 MiB |
+| Large v3 Turbo Q5_0 | 574,041,195 | 547 MiB |
+
+Explicit downloads contact Hugging Face and its download hosts. They transmit HTTP
+connection/request metadata, including the requested model, but no microphone audio.
+Houston fetches the corresponding `ggml-*.bin` from the
+[upstream model repository](https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1),
+pinned to that revision, and checks the exact byte count and SHA-256 before installation.
+
+Each model has one active download or reuse operation. Deletion is refused until it
+finishes. Failed or interrupted downloads remove partial files and can be retried.
+Downloads stop after 30 seconds without response headers or new body bytes, or after
+30 minutes overall. After three consecutive download failures, retries pause for five
+minutes, including across daemon restarts.
+
+## Reuse installed models
+
+Request a local scan in **Settings → Dictation** for Handy's models directory,
+`~/.cache/huggingface/hub`, and other Houston channels' `models/` directories. On Linux,
+Handy's directory is `~/.local/share/com.pais.handy/models`; Windows also checks
+`com.pais.handy/models` under roaming and local AppData. Scans run only on request,
+make no network requests, and stop after 4096 entries, 64 results, depth six, 4 GiB of candidate
+bytes hashed, or 30 seconds. A limit produces a visible partial-results notice.
+
+SHA-256 identifies a reusable model, regardless of filename. Choose a link, a copy
+into this channel, or a fresh download. Houston verifies reuse again before saving it.
+Links depend on the external file remaining present and unchanged; linked bytes are
+verified before loading the engine. Removing a linked model removes only Houston's reference
+and frees no external disk space. Copies occupy Houston disk space and can be deleted
+independently. Houston never writes to, moves or deletes another application's or
+channel's model files. Parakeet files are listed as unsupported by the local Whisper
+engine and cannot be selected or loaded.
 
 ## The API key, and where it is stored
 

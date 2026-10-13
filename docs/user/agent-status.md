@@ -49,9 +49,20 @@ pane while keeping the normal Codex terminal. Houston confirms startup readiness
 thread status, so a restored pane can become Idle before its first turn. Houston trusts
 its own installed status hooks; other hooks still use Codex's review process.
 
-Older Codex versions, hosts without user systemd, other platforms and custom launches
-use lifecycle hooks only.
-Native Codex profiles (`--profile`), explicit remote endpoints and unsupported CLI
+On Windows, Houston launches Codex with `--no-daemon` when the installed CLI
+advertises support. This keeps status hooks and tools associated with their own pane.
+The same applies to ordinary `codex` commands in PowerShell, cmd and Git Bash
+shell panes through a workspace wrapper. Custom launch commands, aliases and
+absolute CLI paths retain their own launch policy. User sandbox and approval
+settings remain unchanged.
+`agents`, `queue`, `remote-control` and `--remote` launches retain the shared
+server; their tools and hooks cannot be guaranteed to identify the invoking pane.
+Sessions started with `--no-daemon` are absent from the shared agent overview.
+Older CLIs without this flag retain their original launch behavior.
+
+Interactive Codex typed into a contained Linux shell, older Codex versions, hosts
+without user systemd, other platforms and custom launches use lifecycle hooks only.
+On Linux, native Codex profiles (`--profile`), explicit remote endpoints and unsupported CLI
 flags also keep the hook path, with a notice in the terminal. Houston account profiles
 remain supported. Codex delays its startup hook until the first turn; on these fallback
 paths, inspect the pane and send the first prompt directly. Queued delivery waits for
@@ -103,6 +114,11 @@ it off removes exactly what Houston added:
   reported in Settings ▸ Agents ▸ CLIs. Use an absolute profile path for status reporting.
   Claude started from any directory inside a Houston pane reports status. The commands
   exit silently when `TR_SESSION` is empty, so they do nothing outside Houston.
+  With Claude Code 2.1.290 or later, Claude panes opened or resumed by Houston also report
+  Esc interruptions and return to idle. Older or unknown versions, and Claude commands
+  typed manually into a shell pane, keep reporting ordinary turns through hooks but
+  cannot report an Esc interruption; status remains working until another prompt or
+  reported turn end. Mods disabled by CLI or organization policy have the same limitation.
   Your other settings and hooks are preserved. Houston removes its old workspace entries
   from `.claude/settings.local.json` during migration to avoid duplicate events.
   Turn Claude off in Settings ▸ Agents ▸ CLIs ▸ Claude to remove its global entries;
@@ -118,6 +134,8 @@ it off removes exactly what Houston added:
   installed commands so Codex runs them without a `/hooks` review prompt. Other hooks
   and trust entries stay unchanged. Houston checks the saved trust against its installed
   definitions and removes its hooks if trust setup fails.
+  On Windows, Codex hooks explicitly launch the Windows command interpreter, including
+  when Codex uses PowerShell for its session. Git Bash is not required.
   Launches using another Codex config directory check that directory's hooks and trust.
   A new pane with hooks off, missing hooks or unconfirmed trust immediately shows
   **Unavailable**, with an operator note naming the cause. Repair the setup in

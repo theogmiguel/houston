@@ -9,6 +9,9 @@ const SESSION_MARKERS: &[&str] = &[
     "CLAUDE_PID",
     "CLAUDE_CODE_ENTRYPOINT",
     "CLAUDE_CODE_EXECPATH",
+    "HOUSTON_EXEC_GATE",
+    "HOUSTON_EXEC_NONCE",
+    "HOUSTON_COMMITTED_SCOPE",
     crate::supervisor::SUPERVISOR_FD_ENV,
 ];
 

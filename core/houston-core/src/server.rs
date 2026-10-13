@@ -2007,6 +2007,20 @@ async fn dispatch(
             daemon.broadcast_control(&daemon.voice_settings_reply());
             Ok(())
         }
+        proto::ClientMsg::VoiceModelsScan => {
+            let reply = daemon.voice_models_scan().await?;
+            let _ = send_msg(sink, &reply).await;
+            Ok(())
+        }
+        proto::ClientMsg::VoiceModelReuse {
+            model_id,
+            path,
+            copy,
+        } => {
+            daemon
+                .voice_model_reuse(model_id, std::path::PathBuf::from(path), copy)
+                .await
+        }
         proto::ClientMsg::VoiceLevelMonitor { enabled } => {
             daemon.voice_level_monitor(conn_id, enabled);
             Ok(())
@@ -2160,6 +2174,17 @@ async fn dispatch(
             }
             Err(e) => Err(e),
         },
+        proto::ClientMsg::SessionRecoveryCheck {
+            session,
+            acknowledge_uncontained,
+        } => {
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || {
+                daemon.recheck_recovery(session, acknowledge_uncontained.unwrap_or(false))
+            })
+            .await
+            .unwrap_or_else(|error| Err(anyhow::anyhow!("recovery check task panicked: {error}")))
+        }
         proto::ClientMsg::SessionClose {
             session,
             confirm_children,
@@ -2171,6 +2196,16 @@ async fn dispatch(
             .await
             .unwrap_or_else(|e| Err(anyhow::anyhow!("close task panicked: {e}")))
         }
+        proto::ClientMsg::SessionTitleGenerate { session } => daemon.generate_title(session),
+        proto::ClientMsg::GeneratedTitlesGet {} => send_msg(
+            sink,
+            &proto::ServerMsg::GeneratedTitles {
+                enabled: daemon.generated_titles_enabled(),
+            },
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("sending generated-title setting failed")),
+        proto::ClientMsg::GeneratedTitlesSet { enabled } => daemon.set_generated_titles(enabled),
         proto::ClientMsg::SessionTitleReset { session } => {
             let daemon = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || daemon.reset_title(session))

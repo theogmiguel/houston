@@ -1,13 +1,16 @@
 import { MascotSurfaceMount } from '../mascot/MascotMount'
-import { IconGlobe, IconSparkles, IconSquareTerminal } from './icons'
+import { IconGlobe, IconSquareTerminal } from './icons'
 import { Icon } from './ui/Icon'
 import { WorkspaceActions } from './ui/WorkspaceActions'
-import { Button, Card, EmptyStateFrame, EmptyStateActions, EmptyStateHeading, EmptyStateDescription } from './ui'
+import { Button, Card, Inline, EmptyStateFrame, EmptyStateActions, EmptyStateHeading, EmptyStateDescription } from './ui'
 import type { WorkspaceAction } from '../houston/client'
+import { PaneMenuAgentRow } from './ui/PaneMenu'
+import type { AgentKind } from '../houston/client'
 import type { KeymapOverrides } from '../houston/client'
 
 export interface WorkspaceEmptyProps {
-  onNewSession: () => void
+  installedAgents: AgentKind[]
+  onSpawnAgent: (agent: AgentKind) => void
   onTerminal: () => void
   onBrowser: () => void
   actions?: WorkspaceAction[]
@@ -18,7 +21,8 @@ export interface WorkspaceEmptyProps {
 }
 
 export function WorkspaceEmpty({
-  onNewSession,
+  installedAgents,
+  onSpawnAgent,
   onTerminal,
   onBrowser,
   actions = [],
@@ -49,19 +53,9 @@ export function WorkspaceEmpty({
         Nothing running here yet
       </EmptyStateHeading>
       <EmptyStateDescription>
-        Open a real terminal or an isolated browser inside this workspace.
+        Open a terminal or an installed agent inside this workspace.
       </EmptyStateDescription>
       <EmptyStateActions>
-        <Button
-          variant="action-primary"
-          size="lg"
-          data-testid="workspace-empty-new-session"
-          onClick={onNewSession}
-          className=""
-        >
-          <Icon glyph={IconSparkles} role="ui" />
-          New session
-        </Button>
         <Button
           variant="surface-large"
           data-testid="workspace-empty-terminal"
@@ -81,6 +75,11 @@ export function WorkspaceEmpty({
           Browser
         </Button>
       </EmptyStateActions>
+      <Inline gap="small" wrap className="justify-center">
+        {installedAgents.filter((agent) => ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode'].includes(agent)).map((agent) => (
+          <div key={agent}><PaneMenuAgentRow agent={agent} onClick={() => onSpawnAgent(agent)} /></div>
+        ))}
+      </Inline>
       <WorkspaceActions actions={actions} keymapOverrides={keymapOverrides} onRun={onRunAction} onSave={onSaveAction} onDelete={onDeleteAction} />
       </Card>
     </EmptyStateFrame>

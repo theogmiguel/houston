@@ -1821,12 +1821,25 @@ async fn stall_guard_disarms_after_startup_progress() {
         3,
         "the concurrent heartbeat/result producer must make progress through the wait"
     );
+    // The interrupted turn hands back nothing; the stall guard must not preempt it.
     match result {
+        houston_core::orchestrate::InboxWaitOutcome::Delivered { rows, .. } => {
+            assert_eq!(rows.len(), 1, "{rows:?}");
+            assert_eq!(rows[0].kind, "no_handback", "{rows:?}");
+        }
+        other => panic!("startup progress must disarm the stall guard: {other:?}"),
+    }
+    match r
+        .daemon
+        .orchestrate_wait(pane.id, Some(child), None, 2_000, true)
+        .await
+        .expect("the follow-up wait must succeed")
+    {
         houston_core::orchestrate::InboxWaitOutcome::Delivered { rows, .. } => {
             assert_eq!(rows.len(), 1, "{rows:?}");
             assert!(rows[0].body.contains("PROGRESS-RESULT"), "{rows:?}");
         }
-        other => panic!("startup progress must disarm the stall guard: {other:?}"),
+        other => panic!("the later result must still reach the parent: {other:?}"),
     }
 }
 
@@ -9835,6 +9848,11 @@ async fn settled_exited_children_without_retention_are_backfilled_before_restore
     apply_hook_event(r._state.path(), closed_child, "Stop").await;
     r.daemon.manage_shutdown().unwrap();
     let db_path = r._state.path().join("test.db");
+    let db = houston_core::db::Db::open(&db_path).unwrap();
+    for id in [parent.id, child, closed_parent.id, closed_child] {
+        db.acknowledge_uncontained_recovery(id).unwrap();
+    }
+    drop(db);
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     conn.execute(
         "UPDATE delegations SET retained_until = NULL WHERE child_session = ?1",
@@ -10227,6 +10245,11 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
         )),
     )
     .unwrap();
+    // Fixture daemons launch without a session scope; acknowledge their stopped
+    // workload so restoration exercises the retention paths rather than the hold.
+    for id in [parent.id, child, unsupported, nested, missing, invalid] {
+        db.acknowledge_uncontained_recovery(id).unwrap();
+    }
     if manual {
         db.set_setting("restore_budget", "0").unwrap();
     }

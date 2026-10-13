@@ -157,7 +157,9 @@ export function resetVoiceStoreForTests(): void {
 export function voiceFailureMessage(failure: VoiceFailure): string {
   switch (failure.kind) {
     case 'no_model':
-      return `No speech model installed (${failure.model_id}) — download it in Settings → Dictation.`
+      return failure.model_id
+        ? `No speech model installed (${failure.model_id}) — download or reuse it in Settings → Dictation, then select it.`
+        : 'No local model selected — download or reuse a model in Settings → Dictation, then select it.'
     case 'missing_key':
       return `No ${failure.provider} API key stored — add one in Settings → Dictation, or switch back to the local engine.`
     case 'device_unavailable':

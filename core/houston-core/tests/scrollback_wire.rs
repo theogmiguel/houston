@@ -272,6 +272,10 @@ async fn closing_a_husk_removes_its_persisted_scrollback() {
         .join("scrollback")
         .join(format!("{id}.bin"));
     assert!(ring.exists(), "persisted ring survives the restart GC");
+    // An unacknowledged uncontained husk refuses close and keeps its ring.
+    assert!(daemon.close(id).is_err());
+    assert!(ring.exists(), "a refused close keeps the persisted ring");
+    daemon.recheck_recovery(id, true).unwrap();
     daemon.close(id).unwrap();
     assert!(!ring.exists(), "close deletes the persisted ring");
 }

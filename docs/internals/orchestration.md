@@ -100,7 +100,7 @@ all supported events. Every PTY additionally reports process exit independently.
 
 | Provider | Turn start | Tool use | Turn end | Needs-input | Session end | Parent wait cap | API failure | Restart |
 |---|---|---|---|---|---|---|---|---|
-| Claude | UserPromptSubmit | Interactive PreToolUse; PostToolUse/Failure | Stop; StopFailure is failure | PermissionRequest, interactive tools, blocking notifications, elicitation | PTY exit | 90 s | StopFailure; error and details | Unsupported: no idle hook after user interrupt |
+| Claude | UserPromptSubmit | Interactive PreToolUse; PostToolUse/Failure | Stop; native mod interruption on supported launches; StopFailure is failure | PermissionRequest, interactive tools, blocking notifications, elicitation | PTY exit | 90 s | StopFailure; error and details | Unsupported: live restart contract unverified |
 | Codex | UserPromptSubmit | request_user_input; PostToolUse | Stop; Interrupt is interruption | Ask approvals, request_user_input; Auto approvals are activity | SessionEnd correlation; PTY exit | 600 s | Unsupported in hooks | Escape |
 | Antigravity | PreInvocation (each invocation) | PreToolUse/PostToolUse | Stop | Supported ask tools only | PTY exit | 30 s, provisional | Unsupported in hooks | Refused: no verified key |
 | OpenCode | User messages; busy status is activity | Permission/question events | session.idle; session.error is failure | Permission/question requests | PTY exit | 600 s with managed launch timeout | session.error | Unsupported: interrupt-to-idle contract unverified |
@@ -594,14 +594,18 @@ instructions do not emit queue updates for ordinary lifecycle events.
 Untouched instructions become held after recovery. Explicit resume validates the
 target origin, provider, directory, profile and conversation. A write-ahead marker
 precedes PTY input; partial writes, withheld Enter and ambiguous crash recovery become
-uncertain and block replay. Delivery proves the complete prompt and Enter, not task
-completion. Full instruction bodies are read only on explicit inspection; snapshots
+uncertain and block replay. Delivery records the complete prompt and Enter writes;
+provider start or named request adoption confirms processing. Full instruction bodies
+are read only on explicit inspection; snapshots
 carry bounded previews. `steer` permits a paste while the provider is working;
 `restart` sends the provider's interrupt key while working and queues delivery
 until authoritative idle. Both immediate modes refuse an operator draft,
 needs-input, or an occupied wake lane before writing. The composer and
 needs-input guards are rechecked before paste and before Enter. A partial or
 unsubmitted paste creates a note for the sender and is never retried automatically.
+Windows Codex submission waits for its paste-buffering window before writing Enter.
+The same delay applies to first prompts, instructions, inbox wakeups and phone input;
+the delay never establishes status or authorizes input at a permission prompt.
 Restart or a superseding request releases an old staged handback as partial with its
 body retained. A pending replacement prevents temporary child cleanup.
 Queued prompts retain their sender; a dead sender's nearest live ancestor inherits
@@ -611,8 +615,10 @@ Restart supports Codex's default Escape binding and its documented
 [Interrupt hook](https://learn.chatgpt.com/docs/hooks#interrupt), mapped to idle.
 Grok 1.0.13's bundled hook documentation specifies `StopCancelled` for user
 interrupts, including Ctrl+C with an empty composer; that event maps to idle.
-Claude is refused: its [Stop hook](https://code.claude.com/docs/en/hooks#stop)
-explicitly excludes user interrupts. OpenCode is refused: the root `session.idle`
+Claude is refused: its native mod can report interruptions on supported launches,
+but a live key-to-interrupt restart contract has not been verified. Its
+[Stop hook](https://code.claude.com/docs/en/hooks#stop) excludes user interrupts.
+OpenCode is refused: the root `session.idle`
 fixture proves normal idle, not interruption; its installed TUI uses an Escape
 counter before abort, without a captured or documented interrupt-to-idle contract.
 Cursor and Antigravity have no verified interrupt/idle pair and are also refused.
@@ -1273,7 +1279,7 @@ name.
 
 | | Claude | Codex | Grok | OpenCode | Cursor | Antigravity (`agy`) |
 |---|---|---|---|---|---|---|
-| **Turn end** | `Stop` | `Stop` (hooks.json; `notify` retired) | `Stop` | `session.idle` for the root session only | `stop` (`status`, `loop_count`) | `Stop` (`fullyIdle`, `terminationReason`) |
+| **Turn end** | `Stop`; main-loop mod `turn.complete.isAborted` for interruptions | `Stop` (hooks.json; `notify` retired) | `Stop` | `session.idle` for the root session only | `stop` (`status`, `loop_count`) | `Stop` (`fullyIdle`, `terminationReason`) |
 | **Last message** | `Stop.last_assistant_message` | `Stop.last_assistant_message` | not in payload: capped tail | plugin reads `client.session.messages` at idle | `afterAgentResponse.text` | not in payload; every payload carries `transcriptPath` (the CLI's own JSONL), read the last assistant entry there, never the screen |
 | **Needs input, with reason** | `PermissionRequest.tool_name` + typed `Notification` | `PermissionRequest.tool_name`; `PostToolUse` resolves the matching permission episode | `Notification` (`permission_prompt`, `elicitation_dialog`) | `permission.asked` (`permission`, `patterns`); also subscribed `permission.updated` for older builds | **none exists**: stall row, named in `pane_list` | `PreToolUse` (matcher dialect) for `ask_question` / `ask_permission` / `ask_custom_permission` with no `PostToolUse` yet; `toolCall.args.questions[].question` is the reason |
 | **Sub-agent vs child** | the round rule above | `SubagentStop` is separate; main `Stop` fires once, parent stays busy | `SubagentStart`/`Stop` separate; `spawn_subagent` blocks the parent by default | child is a session with `parentID`; plugin maps ids from `session.created`, parent stays busy | `subagentStart`/`Stop` carry `subagent_id`, `parent_conversation_id` | sub-agent is a second `conversationId` firing the same hooks; the parent's own `Stop` while it waits has `fullyIdle=false`. Pin the root id at the first `SessionStart`, drop the rest |
@@ -1290,6 +1296,19 @@ whose hook surface actually delivers the field this crate lifts, however it gets
 
 What changes per provider, beyond the shared inbox:
 
+- **Claude.** Houston launches a local lifecycle mod with `--plugin-dir` on verified
+  versions at least 2.1.290 when status hooks are enabled. The documented
+  [turn events](https://code.claude.com/docs/en/plugins/mods/events) identify user
+  interruption through `turn.complete.isAborted`. The mod ignores
+  subagent completions, forwards the middleware unchanged, and sends only conversation,
+  turn and working-directory identifiers to the existing hook helper. One bounded helper
+  call at turn start establishes correlation; an interrupted completion uses a second.
+  The daemon rejects missing, replayed or superseded turn identities. No transcript or
+  terminal content drives this signal. `next.signal` alone is insufficient because hook
+  budget expiry and middleware abandonment also abort it. Unknown or older CLI versions,
+  policy-disabled mods and manually typed shell commands retain classic hooks without
+  interrupt reporting. The installed 2.1.296 mod validator and isolated event harness
+  cover the API contract; a synthetic event test does not verify a live Esc dispatch.
 - **Codex.** `agent_hooks.rs` installs `~/.codex/hooks.json` in the Claude schema for
   `SessionStart`, `UserPromptSubmit`, `Stop`, `PermissionRequest`, plus
   `SubagentStart`/`SubagentStop`/`SessionEnd`/`PreToolUse`/`PostToolUse` correlation-only, with the
@@ -1317,8 +1336,10 @@ What changes per provider, beyond the shared inbox:
   launches use a pane-owned app-server and the native TUI's `--remote` transport.
   A startup-only observer confirms the loaded root's Idle status with documented
   read-only requests and writes one guarded SessionStart drop. It never takes over
-  the conversation or bypasses hook review. A shell pane's managed PATH wrapper
-  gives interactive Codex the same ownership; CLI management subcommands pass through.
+  the conversation or bypasses hook review. A contained shell pane's managed PATH wrapper keeps interactive Codex on lifecycle
+  hooks with `--no-daemon`, preserving the shell's recorded scope instead of creating
+  an unrecorded sibling scope. Native startup readiness is unavailable on this path;
+  CLI management subcommands pass through.
   The server receives the pane's MCP environment and applicable CLI configuration
   overrides, preventing a shared backend from retaining another pane's credentials.
   Unsupported native options and hosts without user systemd retain hooks and, when available, `--no-daemon`.
@@ -1472,6 +1493,9 @@ is the parent's next wake and not a field a caller can drain early. This is the 
 self-refusal exists for the verbs that act on a pane, and this one only reads.
 
 ## The brief
+
+File-backed launch briefs have unique paths for each launch. A sibling launch cannot
+overwrite instructions that an existing agent may reread after compaction or resume.
 
 `prompt` is unchanged and is still a complete request on its own;
 `output_format` and `boundaries` are optional and are composed WITH it, by

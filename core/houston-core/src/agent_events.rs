@@ -60,11 +60,15 @@ impl AgentEvent {
 // SubagentStart/SubagentStop are deliberately absent: a sub-agent runs
 // INSIDE its parent's turn, so reading either as a status would move a
 // pane on something that is not its own lifecycle (see the correlation list).
-const CLAUDE_EVENTS: [(&str, AgentEvent); 9] = [
+const CLAUDE_EVENTS: [(&str, AgentEvent); 10] = [
     ("SessionStart", AgentEvent::SessionStarted),
     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
     ("Stop", AgentEvent::TurnEnded),
     ("StopFailure", AgentEvent::TurnFailed),
+    (
+        crate::claude_turns::INTERRUPTED,
+        AgentEvent::TurnInterrupted,
+    ),
     ("Notification", AgentEvent::NeedsInput),
     ("PermissionRequest", AgentEvent::NeedsInput),
     ("PermissionDenied", AgentEvent::InputResolved),
@@ -282,6 +286,10 @@ mod tests {
                     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
                     ("Stop", AgentEvent::TurnEnded),
                     ("StopFailure", AgentEvent::TurnFailed),
+                    (
+                        crate::claude_turns::INTERRUPTED,
+                        AgentEvent::TurnInterrupted,
+                    ),
                     ("Notification", AgentEvent::NeedsInput),
                     ("PermissionRequest", AgentEvent::NeedsInput),
                     ("PermissionDenied", AgentEvent::InputResolved),

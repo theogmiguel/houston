@@ -213,6 +213,7 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
     assert_eq!(replacement.title_source, proto::TitleSource::User);
     assert_eq!(replacement.session_origin, Some(origin));
     let session_id = replacement.id;
+    let ownership_before = ownership_receipt(&channel_dir, session_id);
 
     ws.send(Message::Binary(
         proto::encode_stdin_frame(session_id, b"before-handoff\n").into(),
@@ -237,6 +238,11 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
         let f = read_daemon_json(&cfg_path)?;
         (f.pid != before.pid && f.generation == Some(expected_generation)).then_some(f)
     });
+    assert_eq!(
+        ownership_receipt(&channel_dir, session_id),
+        ownership_before,
+        "successful adoption must preserve the committed ownership receipt exactly"
+    );
     assert_eq!(after.port, before.port, "handoff must preserve the port");
     assert_ne!(
         after.pid, before.pid,
@@ -509,6 +515,20 @@ async fn a_lost_commit_ack_still_leaves_the_commit_record_on_disk() {
     poll_until(POLL_TIMEOUT, || child.try_wait().expect("poll daemon exit"));
 }
 
+fn ownership_receipt(channel: &std::path::Path, session: u32) -> String {
+    rusqlite::Connection::open_with_flags(
+        channel.join("houston.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row(
+        "SELECT process_identity FROM sessions WHERE id=?1",
+        [session],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
 async fn manage_shutdown(port: u16, token: &str) {
     let response: serde_json::Value = reqwest::Client::new()
         .post(format!("http://127.0.0.1:{port}/manage"))
@@ -565,6 +585,7 @@ async fn a_candidate_dying_before_prepare_leaves_the_old_daemon_serving() {
         vec!["sh", "-c", "cat"],
     )
     .await;
+    let ownership_before = ownership_receipt(&channel_dir, session_id);
 
     ws.send(Message::Binary(
         proto::encode_stdin_frame(session_id, b"before-fault\n").into(),
@@ -581,6 +602,11 @@ async fn a_candidate_dying_before_prepare_leaves_the_old_daemon_serving() {
 
     let result = daemon_handoff(before.port, &before.token).await;
     std::fs::set_permissions(&db, restore).unwrap();
+    assert_eq!(
+        ownership_receipt(&channel_dir, session_id),
+        ownership_before,
+        "failed adoption must preserve the old ownership receipt exactly"
+    );
     assert!(
         !result.accepted,
         "a candidate that cannot prepare must not be committed to: {result:?}"

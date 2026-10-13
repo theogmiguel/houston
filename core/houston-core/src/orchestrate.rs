@@ -393,7 +393,7 @@ pub fn prompt_interrupt_key(provider: proto::AgentKind) -> anyhow::Result<&'stat
     match provider {
         Codex => Ok(b"\x1b"),
         Grok => Ok(b"\x03"),
-        Claude => anyhow::bail!("mode restart refused for provider Claude: Stop does not run after user interrupts; no verified post-interrupt idle signal; accepted modes: queue, steer"),
+        Claude => anyhow::bail!("mode restart refused for provider Claude: native interrupt reporting requires a supported launch-scoped mod and no live restart contract is verified; accepted modes: queue, steer"),
         Opencode => anyhow::bail!("mode restart refused for provider OpenCode: no captured or documented post-interrupt idle contract for its interrupt sequence; accepted modes: queue, steer"),
         Zcode => anyhow::bail!("mode restart refused for provider ZCode: Stop does not run after an interrupt and the interrupt cancels ZCode's own hooks, so no idle is reported; accepted modes: queue, steer"),
         other => anyhow::bail!("mode restart refused for provider {other:?}: no verified interrupt key; accepted modes: queue, steer"),

@@ -438,9 +438,9 @@ export function SettingsDictation(): React.JSX.Element {
   const voiceModels: VoiceModelState[] = [{
     id: 'ggml-small',
     display_name: 'Small (multilingual)',
-    size_bytes: 465_000_000,
-    status: { kind: 'downloaded', size_bytes: 465_000_000 },
-    cooldown_remaining_ms: null
+    size_bytes: 487_601_967,
+    status: { kind: 'downloaded', size_bytes: 487_601_967 },
+    linked: false, cooldown_remaining_ms: null
   }]
   return <SettingsScreen section="dictation" props={{ voiceSettings, voiceModels }} />
 }
@@ -460,10 +460,11 @@ export function SettingsDictationModelStates(): React.JSX.Element {
     rms_floor: 0.01
   }
   const voiceModels: VoiceModelState[] = [
-    { id: 'ggml-small', display_name: 'Small (multilingual)', size_bytes: 465_000_000, status: { kind: 'downloaded', size_bytes: 465_000_000 }, cooldown_remaining_ms: null },
-    { id: 'ggml-medium', display_name: 'Medium (multilingual)', size_bytes: 1_500_000_000, status: { kind: 'downloading', progress: 0.42 }, cooldown_remaining_ms: null },
-    { id: 'ggml-large', display_name: 'Large (multilingual)', size_bytes: 2_900_000_000, status: { kind: 'not_downloaded' }, cooldown_remaining_ms: null },
-    { id: 'ggml-failed', display_name: 'Failed download', size_bytes: 900_000_000, status: { kind: 'failed', reason: 'Checksum verification failed' }, cooldown_remaining_ms: 15_000 }
+    { id: 'ggml-tiny', display_name: 'Tiny (multilingual)', size_bytes: 77_691_713, status: { kind: 'downloaded', size_bytes: 77_691_713 }, linked: true, cooldown_remaining_ms: null },
+    { id: 'ggml-base', display_name: 'Base (multilingual)', size_bytes: 147_951_465, status: { kind: 'failed', reason: 'Model download timed out; retry the download' }, linked: false, cooldown_remaining_ms: 15_000 },
+    { id: 'ggml-small', display_name: 'Small (multilingual)', size_bytes: 487_601_967, status: { kind: 'downloaded', size_bytes: 487_601_967 }, linked: false, cooldown_remaining_ms: null },
+    { id: 'ggml-medium-q5_0', display_name: 'Medium Q5_0 (multilingual)', size_bytes: 539_212_467, status: { kind: 'downloading', progress: 0.42 }, linked: false, cooldown_remaining_ms: null },
+    { id: 'ggml-large-v3-turbo-q5_0', display_name: 'Large v3 Turbo Q5_0 (multilingual)', size_bytes: 574_041_195, status: { kind: 'not_downloaded' }, linked: false, cooldown_remaining_ms: null, guidance: '4 physical cores, 8 GiB RAM. This model may be slow on this machine. Guidance only.' }
   ]
   return <SettingsScreen section="dictation" props={{ voiceSettings, voiceModels }} />
 }
@@ -490,8 +491,25 @@ export function SettingsDictationCloud(): React.JSX.Element {
 }
 
 export function SettingsWorkspaces(): React.JSX.Element {
+  const client = React.useMemo(() => {
+    let enabled = false
+    const listeners = new Set<(message: ServerMsg) => void>()
+    return new Proxy({
+      subscribeAll(handler: (message: ServerMsg) => void) {
+        listeners.add(handler)
+        return () => { listeners.delete(handler) }
+      },
+      send(message: { type: string; enabled?: boolean }) {
+        if (message.type === 'generated_titles_set') enabled = message.enabled === true
+        if (message.type === 'generated_titles_get' || message.type === 'generated_titles_set') {
+          queueMicrotask(() => { for (const listener of listeners) listener({ type: 'generated_titles', enabled }) })
+        }
+      }
+    }, { get: (target, key) => Reflect.get(target, key) ?? noop }) as unknown as HoustonClient
+  }, [])
   const sessionPolicy: SessionPolicy = { idle_reap_enabled: false, idle_reap_minutes: 15, claude_fullscreen: true }
   return <SettingsScreen section="workspaces" props={{
+    daemonClient: client,
     hostInfo: hostInfoFixture(),
     sessionPolicy,
     historyWorkspace: '/home/dev/code/houston',

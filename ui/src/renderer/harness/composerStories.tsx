@@ -2,9 +2,7 @@ import React from 'react'
 import { AddPanePopover } from '../src/components/AddPanePopover'
 import { AttachmentChip } from '../src/components/AttachmentChip'
 import { ComposerControls, type ComposerChip } from '../src/components/ComposerControls'
-import { NewSessionComposer } from '../src/components/NewSessionComposer'
 import { ReconnectBanner } from '../src/components/ReconnectBanner'
-import type { HoustonClient } from '../src/houston/client'
 import type { AgentProfileState } from '../src/components/SettingsView'
 
 const noop = (): void => {}
@@ -127,52 +125,6 @@ export function ReconnectBannerStory({ error }: { error: string | null }): React
     <div className="reconnect-banner-story" style={{ height: '100%', background: 'var(--content-bg)' }}>
       <style>{'.reconnect-banner-story [role="status"] > span:first-child { animation: none !important; opacity: 0.25; }'}</style>
       <ReconnectBanner since={FROZEN_NOW - 12_000} error={error} onRetry={noop} />
-    </div>
-  )
-}
-
-const ROUTES_CLIENT = {
-  subscribe: (_kind: string, cb: (message: { workspace: string; routes: unknown[] }) => void) => {
-    cb({
-      workspace: '~/Desktop/acme',
-      routes: [
-        { pattern: 'src/**/*.rs', model: 'opus', effort: 'high' },
-        { pattern: 'docs/**', model: 'haiku', effort: null }
-      ]
-    })
-    return noop
-  },
-  workspaceRoutingGet: noop
-} as unknown as HoustonClient
-
-export function NewSessionWithRoutes(): React.JSX.Element {
-  return (
-    <NewSessionComposer
-      workspaceName="acme"
-      workspacePath="~/Desktop/acme"
-      gridName="Improve Orchestration"
-      client={ROUTES_CLIENT}
-      onLaunch={noop}
-      onCancel={noop}
-    />
-  )
-}
-
-export function NewSessionTask({ text, focus }: { text: string; focus: boolean }): React.JSX.Element {
-  const ref = React.useRef<HTMLDivElement>(null)
-  React.useEffect(() => {
-    const area = ref.current?.querySelector<HTMLTextAreaElement>('textarea')
-    if (!area) return
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-    setter?.call(area, text)
-    area.dispatchEvent(new Event('input', { bubbles: true }))
-    if (focus) area.focus()
-    // Step the counter up once so the disabled-at-minimum state also renders.
-    ref.current?.querySelector<HTMLElement>('[aria-label="Fewer"]')?.click()
-  }, [text, focus])
-  return (
-    <div ref={ref} style={{ display: 'flex', height: '100%' }}>
-      <NewSessionComposer workspaceName="acme" workspacePath="~/Desktop/acme" gridName="Improve Orchestration" onLaunch={noop} onCancel={noop} />
     </div>
   )
 }

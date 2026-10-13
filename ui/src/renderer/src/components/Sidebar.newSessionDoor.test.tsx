@@ -53,7 +53,7 @@ describe('Sidebar — the workspace row’s doors match the reference', () => {
     container.remove()
   })
 
-  it('the row’s "+" is "New session in {name}" and opens the composer for that workspace', () => {
+  it('the row’s "+" is "New session in {name}" and requests a new empty grid for that workspace', () => {
     const onNewWorkspaceSession = vi.fn()
     const onAddGrid = vi.fn()
     act(() => {

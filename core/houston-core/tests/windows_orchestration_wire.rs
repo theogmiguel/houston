@@ -59,7 +59,6 @@ impl Drop for Rig {
     fn drop(&mut self) {
         self.server.abort();
         for session in self.daemon.list() {
-            let _ = self.daemon.kill(session.id);
             let _ = self.daemon.close(session.id);
         }
     }
@@ -442,7 +441,8 @@ async fn auto_claude_can_spawn_explicit_codex_bypass_over_http_and_mcp() {
                 db.session_approval_mode(child).unwrap().as_deref(),
                 Some(expected)
             );
-            rig.daemon.kill(child).unwrap();
+            // Close owns termination and the reader drain; publishing Killed first
+            // can correctly refuse cleanup until ConPTY reaches EOF.
             rig.daemon.close(child).unwrap();
         }
     }

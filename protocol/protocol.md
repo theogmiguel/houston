@@ -1,4 +1,4 @@
-# Wire protocol v140
+# Wire protocol v141
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -96,6 +96,7 @@ failure not given a typed refusal comes back as `error`.
 | `session_kill` | `session`, `confirm_children?` | `session_state` (bcast); refused `live_children_confirmation_required:` when the pane has live children and `confirm_children` is not set |
 | `session_close` | `session`, `confirm_children?` | `session_removed` (bcast); same children refusal |
 | `session_respawn` | `session`, `shell_integration?`, `cwd?` (must exist), `shell?` (absolute shell binary, shell panes only), `force?` (restart a still-live session: kill, reap, respawn — without it a live session is refused by name), `fresh?` (v119: start a fresh CLI and forget the conversation; absent, a Claude session with a valid resume handle is relaunched with `--resume <id>`, and one whose handle fails validation starts fresh with `resume_notice` set) | broadcasts; a failed spawn leaves the husk intact |
+| `session_recovery_check` | `session`, `acknowledge_uncontained?` (default false; true explicitly asserts all previous uncontained workload processes have stopped) | `session_updated` with current recovery notice (bcast), plus `error` while ownership remains unsafe or unknown. Read-only recheck launches and signals nothing. Acknowledgement refuses for recorded live roots, contained scopes or unreadable receipts; it retains conversations and held instructions without resuming them |
 | `session_sleep` | `session` | `session_state` and `session_updated` (bcast); Linux only, idle top-level Claude/Codex with a validated conversation and no external work or live children. Persists before graceful termination; a timeout leaves the live PTY usable |
 | `session_wake` | `session` | `session_created` for the exact resumed conversation and `session_removed` for its old placeholder; a validation failure keeps it sleeping with a visible notice. Focus never wakes it |
 | `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
@@ -103,6 +104,9 @@ failure not given a typed refusal comes back as `error`.
 | `session_list` | — | `session_list` (direct) |
 | `session_attach` | `session`, `replay_bytes?` (cap the tail; omitted = whole ring), `snapshot?` (v94: ask for emulator state instead of a byte replay), `from_offset?` + `generation?` (v129: the offset the client already holds and the run it came from; with both matching the ring, `scrollback` carries only the bytes after it and `replayed_bytes = bytes_seen - from_offset`, otherwise the reply is the `replay_bytes` replay) | `scrollback` **or** `attach_snapshot` (direct), numbered by `attempt`; this socket starts receiving that session's frames, and nothing below the reply's cutoff follows it. `snapshot: true` is answered with `attach_snapshot` when the daemon has an emulator and could encode one, and with `scrollback` otherwise — a client must handle either reply |
 | `session_title_reset` | `session` | `session_renamed` (bcast); recomputes the strongest available automatic candidate |
+| `session_title_generate` | `session` | A one-shot generated `auto` title or a named refusal; stronger sources and changed revisions discard the result |
+| `generated_titles_get` | — | `generated_titles` with the current off-default setting |
+| `generated_titles_set` | `enabled` | `generated_titles` (bcast) |
 | `session_rename` | `session`, `title` (trimmed, non-empty, ≤ 40 chars) | `session_renamed` (bcast) |
 | `session_set_tags` | `session`, `tags: u32[]` (registry ids, ≤ `MAX_TAGS_PER_SESSION` (5), whole-set replacement) | `session_tags_set` (bcast); unknown session or tag id, or over the cap, is an `error` naming the limit and the value |
 | `tag_create` | `name` (trimmed, non-empty, ≤ `MAX_TAG_NAME_LEN` (32) chars, unique case-insensitively), `color` (any six-digit `#rrggbb`; `TAG_PALETTE` supplies presets) | `tag_list` (bcast); collisions and invalid colors are `error`s naming the offending value |
@@ -364,6 +368,8 @@ every refusal names the setting.
 | `voice_start` | `session` (the delivery target, fixed here) | `voice_state` (bcast) |
 | `voice_stop` | `session` | `voice_transcript`, or `voice_state` carrying a `VoiceFailure` |
 | `voice_model_download` | `model_id` | repeated `voice_model_state` (bcast); SHA-256 verified |
+| `voice_models_scan` | — | `voice_models_found` (direct), bounded on-demand local scan |
+| `voice_model_reuse` | `model_id`, `path`, `copy` | `voice_settings` (bcast); verified external link or copy, refused on Windows |
 | `voice_model_delete` | `model_id` | `voice_model_state` + `voice_settings` (bcast) |
 | `voice_level_monitor` | `enabled` | `voice_level` every `VOICE_LEVEL_INTERVAL_MS` while anyone is monitoring. Opens the microphone; refcounted per connection as a set, and released on disconnect |
 
@@ -445,6 +451,7 @@ every refusal names the setting.
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Driven by hooks or ACP; process liveness only starts the bounded `spawning` grace and never guesses activity |
 | `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude or Codex transcript the hook names; unsupported providers stay absent and render no indicator |
 | `session_checkout` | `id`, `checkout?: SessionCheckout` | bcast when a session's checkout identity changes; primary, managed worktree and folder checkouts are explicit, with nullable branch/head for detached HEAD |
+| `generated_titles` | `enabled: bool` | current daemon setting for first-turn generated titles |
 | `session_activity` | `id`, `activity?: SessionActivity` | bcast when hook-reported prompt, last message, tool or model activity changes; unsupported values remain null |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
@@ -521,6 +528,7 @@ every refusal names the setting.
 | `voice_devices` | `devices: VoiceDevice[]` | direct reply to `voice_devices_get` |
 | `voice_state` | `state: VoiceState` | bcast on every capture transition, including failures |
 | `voice_transcript` | `session`, `text` (the engine's transcript), `insert` (what to put in the prompt: the trimmed text plus one space, led by the agent preamble on the pane's first dictation when `output_mode` is `english` and `agent_preamble` is on; empty when there is nothing to insert), `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start`. The daemon tracks which panes already received the preamble, for the desktop and paired devices together, and forgets a pane when it is removed |
+| `voice_models_found` | `files: VoiceExternalModel[]`, `limited` | direct scan results; unsupported Parakeet files have no model ID |
 | `voice_model_state` | `model: VoiceModelState` | bcast — download progress, completion, failure or deletion |
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
 | `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
@@ -660,7 +668,7 @@ SessionInfo           id, agent, project_dir, cwd, checkout_root?, worktree?, ch
                       activity?, state, title, title_source, codename, status?, status_since_ms?, ...
 SessionCheckout       root, kind: CheckoutKind, branch?, head?
 CheckoutKind          primary | worktree{slug} | folder
-SessionActivity       prompt?, last_message?, tool?, model?
+SessionActivity       prompt?, last_message?, question?, tool?, model?
 
 GitFileState       modified | added | deleted | renamed | untracked | conflicted
 GitFileStatus      path, status: GitFileState, staged, added?, deleted?, is_sensitive
@@ -831,14 +839,15 @@ Every refusal names the operation, the limit and the actual value; a stale
 the actual one.
 
 CloudStt           groq
-VoiceEngine        tag "kind": local{model_id} | cloud{provider: CloudStt}
+VoiceEngine        tag "kind": local{model_id} | cloud{provider: CloudStt}; empty local model_id means no selected model
 VoiceSettings      enabled (default false — this is what opens the microphone), engine,
                    output_mode (original | english), input_language?, capture_mode (hold | toggle),
                    input_device?, insert_mode (direct | confirm_first), vocabulary, agent_preamble,
                    mic_policy (persistent | on_keypress), rms_floor
 VoiceDevice        id (what input_device stores), label, is_default
 VoiceModelStatus   tag "kind": not_downloaded | downloading{progress} | downloaded{size_bytes} | failed{reason}
-VoiceModelState    id, display_name, size_bytes, status, cooldown_remaining_ms?
+VoiceModelState    id, display_name, size_bytes, status, cooldown_remaining_ms?, unavailable_reason?, guidance?, linked?
+VoiceExternalModel path, source, model_id (nullable), unsupported_reason (nullable)
 VoiceFailure       tag "kind": no_model{model_id} | missing_key{provider} | device_unavailable{device}
                    | too_quiet{rms, floor} | too_short{seconds, minimum} | ring_buffer_overrun{dropped}
                    | no_speech | target_gone{session} | engine{message} — every variant carries its numbers
@@ -1324,6 +1333,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 141 | `session_recovery_check` refreshes retained process-ownership refusals and supports explicit acknowledgement of stopped legacy or uncontained workloads without resuming held instructions. |
 | 140 | `pr_list` replies include the cached viewer login. `Routine.kind` identifies user and harness review routines, backfilled from existing harness mappings. `GitBranchInfo` gains upstream ahead/behind counts and committer time. `usage_summary` gains optional `session_counts` (`UsageSessionCounts`): exact distinct sessions by model and by day; older replies omit it. **Amend.** `git_commit` gains `amend` (default false): rewrites HEAD instead of adding a commit, and refuses with an error naming the branch and HEAD SHA when HEAD is already contained in its upstream. |
 | 139 | Pane names expose `title_source` (`codename < prompt < role < cli < task < user`) in `SessionInfo` and `session_renamed`. `session_title_reset` restores the strongest stored automatic candidate without a user override. |
 | 138 | Session creation accepts a connection-local request ID and replies with `session_create_result`, correlating success or refusal without relying on broadcast order. |
@@ -1391,3 +1401,8 @@ Only the current window; older bumps live in git history.
 saved per workspace in the daemon database. A workspace can store up to 24 actions, and each
 command is limited to 4096 UTF-8 bytes. Refusals report the limit, actual value, requested value
 and reason.
+
+Generated titles use `session_title_generate {session}`, `generated_titles_get {}` and
+`generated_titles_set {enabled}`. `generated_titles {enabled}` reports the daemon setting,
+which defaults to false. `auto` ranks between `prompt` and `role`. Session activity carries
+an optional `question` with hook-delivered pending input text; it is display-only.

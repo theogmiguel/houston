@@ -151,3 +151,15 @@ the base seed and failure output names the provider, scenario and seed.
 `HOUSTON_CHAOS_SCENARIO` and `HOUSTON_CHAOS_PROVIDER` narrow the fast matrix for diagnosis
 only. Run Cargo under
 the memory guard described in the development runbook, with three build jobs.
+
+## Local speech model latency
+
+The ignored `voice_model_latency` integration test uses the actual local transcriber
+on Linux. Set `HOUSTON_VOICE_BENCH_MODELS` to a directory containing all catalogue model
+files and `HOUSTON_VOICE_BENCH_CLIP` to one fixed English WAV (16 kHz, mono, PCM16).
+It verifies catalogue hashes and makes no downloads. Build the test under the development
+runbook's memory guard, then run its emitted test executable with `--ignored --nocapture`
+on an idle machine at normal priority. Report the clip hash, duration, CPU and memory,
+and each model's load, fixed-English and auto-language timings. Transcription timings
+exclude model loading and hash verification; one pass per language is a latency sample,
+not a statistical performance comparison.

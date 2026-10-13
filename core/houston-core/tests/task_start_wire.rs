@@ -477,7 +477,26 @@ async fn a_long_brief_gets_a_unique_prompt_file_per_attempt() {
     // The session belongs to the workspace, so its prompt files live there like
     // any other session's, not inside the task worktree.
     let prompts = r.ws_dir.join(".houston").join("prompts");
-    let attempt_one = prompts.join("prompt-task-hou-1-attempt-1.md");
+    // Each launch suffixes its label with a unique id.
+    let prompt_file = |label: &str| {
+        let prefix = format!("prompt-{label}-");
+        let matches: Vec<PathBuf> = std::fs::read_dir(&prompts)
+            .map(|entries| {
+                entries
+                    .map(|entry| entry.unwrap().path())
+                    .filter(|path| {
+                        path.file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .starts_with(&prefix)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(matches.len(), 1, "expected one {prefix}*.md: {matches:?}");
+        matches.into_iter().next().unwrap()
+    };
+    let attempt_one = prompt_file("task-hou-1-attempt-1");
     let first_contents = std::fs::read_to_string(&attempt_one)
         .unwrap_or_else(|e| panic!("reading {}: {e}", attempt_one.display()));
     assert!(
@@ -502,9 +521,9 @@ async fn a_long_brief_gets_a_unique_prompt_file_per_attempt() {
     assert_eq!(second.attempt, 2);
     r.await_output(second.session_id.unwrap(), "FIXTURE-READY")
         .await;
-    let attempt_two = prompts.join("prompt-task-hou-1-attempt-2.md");
-    assert!(
-        attempt_two.is_file(),
+    let attempt_two = prompt_file("task-hou-1-attempt-2");
+    assert_ne!(
+        attempt_two, attempt_one,
         "attempt 2 writes its own prompt file, not the fixed session label"
     );
     assert_eq!(

@@ -150,6 +150,7 @@ impl Transcriber for WhisperTranscriber {
 
 #[derive(Debug)]
 pub enum WhisperEngineError {
+    Verification(String),
     LoadModel {
         path: PathBuf,
         source: whisper_rs::WhisperError,
@@ -162,6 +163,7 @@ pub enum WhisperEngineError {
 impl fmt::Display for WhisperEngineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            WhisperEngineError::Verification(message) => f.write_str(message),
             WhisperEngineError::LoadModel { path, source } => {
                 write!(f, "loading whisper model {}: {source}", path.display())
             }

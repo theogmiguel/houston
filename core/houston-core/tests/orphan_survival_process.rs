@@ -73,7 +73,7 @@ fn atomic(path: &Path, bytes: &[u8]) {
     std::fs::rename(temporary, path).unwrap();
 }
 
-// Executed only through the private provider shim; it creates no descendants.
+// Executed only through the private provider shim and its isolated detached fixture.
 #[test]
 fn orphan_fixture_agent() {
     if std::env::var("ORPHAN_PROBE_CHILD").as_deref() != Ok("1") {
@@ -82,6 +82,40 @@ fn orphan_fixture_agent() {
     let records = PathBuf::from(std::env::var_os("ORPHAN_PROBE_RECORDS").unwrap());
     let fixture = std::env::var("ORPHAN_PROBE_NONCE").unwrap();
     let session: u32 = std::env::var("HOUSTON_SESSION").unwrap().parse().unwrap();
+    if std::env::var_os("ORPHAN_PROBE_DETACH").is_some()
+        && std::env::var_os("ORPHAN_PROBE_DESCENDANT").is_none()
+    {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "orphan_fixture_agent",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("ORPHAN_PROBE_DESCENDANT", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        // SAFETY: the private child only starts a new terminal session before exec.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        // This actor must outlive its parent; the outer fixture owns its identity cleanup.
+        #[expect(clippy::zombie_processes)]
+        let _child = command.spawn().unwrap();
+        let deadline = Instant::now() + DEADLINE;
+        while !records.join(format!("{session}.owned.json")).exists() {
+            assert!(Instant::now() < deadline, "detached actor never registered");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        return;
+    }
     let identity = Identity::capture(std::process::id(), &fixture);
     // Register before ignoring signals, so panic cleanup never misses an immortal actor.
     atomic(
@@ -156,6 +190,8 @@ struct Fixture {
     nonce: String,
     children: Vec<(Child, Identity, bool)>,
     daemons: Vec<Identity>,
+    detached: bool,
+    user_bus: bool,
 }
 
 impl Fixture {
@@ -183,6 +219,8 @@ impl Fixture {
             nonce: uuid::Uuid::new_v4().to_string(),
             children: vec![],
             daemons: vec![],
+            detached: false,
+            user_bus: false,
         }
     }
 
@@ -204,6 +242,9 @@ impl Fixture {
             env!("CARGO_BIN_EXE_houston-core")
         };
         let mut command = common::hermetic_command(executable, self.home.path());
+        if self.detached {
+            command.env("ORPHAN_PROBE_DETACH", "1");
+        }
         if supervised {
             // SAFETY: setsid is async-signal-safe and runs only in the private child.
             unsafe {
@@ -224,7 +265,14 @@ impl Fixture {
             // Refuse host user-bus/cgroup access; exercise the supported PTY fallback.
             .env(
                 "DBUS_SESSION_BUS_ADDRESS",
-                format!("unix:path={}/absent-bus", self.home.path().display()),
+                if self.user_bus {
+                    std::env::var("DBUS_SESSION_BUS_ADDRESS").unwrap_or_else(|_| {
+                        // SAFETY: geteuid only reads the current fixture user's identity.
+                        format!("unix:path=/run/user/{}/bus", unsafe { libc::geteuid() })
+                    })
+                } else {
+                    format!("unix:path={}/absent-bus", self.home.path().display())
+                },
             )
             .env("ORPHAN_PROBE_NONCE", &self.nonce)
             .env("ORPHAN_PROBE_RECORDS", &self.records)
@@ -514,4 +562,143 @@ async fn supervised_sigkill_never_overlaps_exact_conversation_owners() {
 #[tokio::test]
 async fn direct_sigkill_never_overlaps_exact_conversation_owners() {
     probe(false).await;
+}
+
+async fn detached_probe(user_bus: bool) {
+    let mut fixture = Fixture::new();
+    fixture.detached = true;
+    fixture.user_bus = user_bus;
+    let (daemon, mut ws) = fixture.start(false).await;
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionCreate {
+            request: None,
+            agent: proto::AgentKind::Claude,
+            project_dir: fixture.project.display().to_string(),
+            cmd: None,
+            cols: Some(80),
+            rows: Some(24),
+            cwd_from: None,
+            shell_integration: Some(false),
+            auto_approve: Some(false),
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    let pane = common::expect_created(&mut ws).await;
+    let actor = poll("detached actor", || fixture.actor(pane.id)).await;
+    let receipt: serde_json::Value =
+        rusqlite::Connection::open(fixture.channel().join("houston.db"))
+            .unwrap()
+            .query_row(
+                "SELECT process_identity FROM sessions WHERE id=?1",
+                [pane.id],
+                |row| row.get::<_, String>(0),
+            )
+            .map(|body| serde_json::from_str(&body).unwrap())
+            .unwrap();
+    if user_bus {
+        assert_eq!(
+            receipt["ownership"]["kind"], "linux_scope",
+            "manager fixture must actually contain the workload"
+        );
+    }
+    let root = receipt["pid"].as_u64().unwrap() as u32;
+    assert_ne!(
+        root, actor.pid,
+        "descendant must escape the root PID and PTY session"
+    );
+    poll("PTY root exited and reaped", || {
+        (!Path::new(&format!("/proc/{root}")).exists()).then_some(())
+    })
+    .await;
+    let progress = poll("detached work", || {
+        std::fs::read(fixture.records.join(format!("{}.progress", pane.id))).ok()
+    })
+    .await;
+    poll("surviving detached child progresses", || {
+        (std::fs::read(fixture.records.join(format!("{}.progress", pane.id))).ok()? != progress)
+            .then_some(())
+    })
+    .await;
+    pid::signal_process_checked_identity(daemon.pid, pid::Signal::Kill, daemon.pid_creation)
+        .unwrap();
+    poll("daemon died", || {
+        (!fixture.daemons[0].running(&fixture.nonce)).then_some(())
+    })
+    .await;
+    let daemon_child = &mut fixture.children.last_mut().unwrap().0;
+    assert_eq!(daemon_child.id(), daemon.pid);
+    // The leader can be a zombie before its last thread releases the channel lock.
+    poll("daemon process fully reaped", || {
+        daemon_child.try_wait().unwrap()
+    })
+    .await;
+    drop(ws);
+    let (_, mut ws) = fixture.start(false).await;
+    let restored = sessions(&mut ws)
+        .await
+        .into_iter()
+        .find(|session| session.id == pane.id)
+        .unwrap();
+    assert!(actor.running(&fixture.nonce));
+    assert_eq!(restored.state, proto::SessionState::Exited);
+    for fresh in [false, true] {
+        ws.send(Message::text(
+            serde_json::to_string(&proto::ClientMsg::SessionRespawn {
+                session: pane.id,
+                shell_integration: Some(false),
+                cwd: None,
+                shell: None,
+                force: Some(true),
+                fresh: Some(fresh),
+            })
+            .unwrap(),
+        ))
+        .await
+        .unwrap();
+        loop {
+            match common::next_control(&mut ws).await {
+                proto::ServerMsg::Error { message, .. } => {
+                    assert!(
+                        message.contains(if user_bus {
+                            "remains populated"
+                        } else {
+                            "Process ownership unknown"
+                        }),
+                        "{message}"
+                    );
+                    break;
+                }
+                proto::ServerMsg::SessionCreated { .. } => {
+                    panic!("dead PTY root falsely certified surviving descendant stopped")
+                }
+                _ => {}
+            }
+        }
+    }
+    fixture.cleanup();
+    assert!(!actor.running(&fixture.nonce));
+}
+
+#[tokio::test]
+async fn exited_root_with_detached_work_refuses_uncontained_recovery() {
+    detached_probe(false).await;
+}
+
+#[tokio::test]
+async fn scope_population_blocks_recovery_after_root_exit() {
+    if !houston_core::session_isolation::manager_available()
+        || !Path::new("/run/systemd/system").is_dir()
+    {
+        eprintln!("SKIPPED: Linux user systemd required for scope population regression");
+        return;
+    }
+    // Unlike the unavailable-manager fixture, this requires a real running user manager.
+    detached_probe(true).await;
 }

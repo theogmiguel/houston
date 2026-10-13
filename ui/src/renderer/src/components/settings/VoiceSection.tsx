@@ -1,3 +1,4 @@
+import type { VoiceExternalModel } from '../../houston/generated/VoiceExternalModel'
 import { useEffect, useRef, useState } from 'react'
 import { dictationShortcut, effectiveLabel } from '../../keymap'
 import type { KeymapOverrides } from '../../houston/client'
@@ -13,7 +14,6 @@ import type { VoiceModelState } from '../../houston/generated/VoiceModelState'
 import type { VoiceSettings } from '../../houston/generated/VoiceSettings'
 import { Row, SubHead } from './shared'
 
-const DEFAULT_VOICE_MODEL_ID = 'ggml-small'
 
 // Mirrors voice/capture.rs's MAX_UTTERANCE_SECS (300s) — keep the two in sync.
 const VOICE_MAX_UTTERANCE_MINUTES = 5
@@ -46,11 +46,11 @@ function voiceEngineState(
   const voiceEngine = voiceSettings?.engine
   const voiceLocalModel =
     voiceEngine?.kind === 'local' ? voiceModels.find((m) => m.id === voiceEngine.model_id) : undefined
-  const voiceModelLabel = voiceLocalModel?.display_name ?? 'selected'
+  const voiceModelLabel = voiceLocalModel?.display_name ?? 'No local model selected'
   const voiceEngineReady =
     voiceSettings?.engine.kind === 'cloud'
       ? voiceCloudKeyPresent
-      : voiceLocalModel?.status.kind === 'downloaded'
+      : voiceLocalModel?.status.kind === 'downloaded' && !voiceLocalModel.unavailable_reason
   return { voiceEngine, voiceModelLabel, voiceEngineReady }
 }
 
@@ -65,7 +65,7 @@ function dictationEnabledDesc(
     return 'On. Turning this off closes the microphone stream immediately — nothing is held open while dictation is off.'
   }
   if (voiceEngine?.kind === 'local') {
-    return `On, but nothing can be transcribed yet — the ${voiceModelLabel} model is not downloaded, so holding the key will be refused. Download it below.`
+    return `On, but nothing can be transcribed yet — ${voiceModelLabel} is unavailable, so holding the key will be refused. Download or reuse a model below, then select it.`
   }
   return 'On, but nothing can be transcribed yet — the cloud engine has no API key, so holding the key will be refused. Add one below.'
 }
@@ -99,7 +99,7 @@ function VoiceNotReadyBanner({
     >
       Dictation is on but cannot run yet:{' '}
       {voiceEngine?.kind === 'local'
-        ? `the ${voiceModelLabel} model is not downloaded.`
+        ? `${voiceModelLabel} is unavailable.`
         : 'the cloud engine has no API key.'}{' '}
       Holding the dictation key will be refused until that is fixed.
     </InlineNotice>
@@ -183,6 +183,10 @@ function VoiceEngineGroup({
   onVoiceSettingsSet,
   onVoiceModelDownload,
   onVoiceModelDelete,
+  voiceExternalModels,
+  voiceScanLimited,
+  onVoiceModelsScan,
+  onVoiceModelReuse,
   onVoiceKeySet,
   onVoiceKeyClear
 }: {
@@ -196,6 +200,10 @@ function VoiceEngineGroup({
   onVoiceSettingsSet: (settings: VoiceSettings) => void
   onVoiceModelDownload: (modelId: string) => void
   onVoiceModelDelete: (modelId: string) => void
+  voiceExternalModels?: VoiceExternalModel[]
+  voiceScanLimited?: boolean
+  onVoiceModelsScan?: () => void
+  onVoiceModelReuse?: (modelId: string, path: string, copy: boolean) => void
   onVoiceKeySet: (provider: CloudStt, key: string) => void
   onVoiceKeyClear: (provider: CloudStt) => void
 }): React.JSX.Element {
@@ -212,7 +220,7 @@ function VoiceEngineGroup({
       </Row>
       <Row
         title="Engine"
-        desc="Local runs offline. Cloud is better at Brazilian Portuguese, but sends your audio to Groq."
+        desc="Local transcribes on this computer using the selected model. Cloud sends your audio to Groq."
       >
         <Select
           width="medium"
@@ -228,7 +236,7 @@ function VoiceEngineGroup({
               engine:
                 v === 'cloud'
                   ? { kind: 'cloud', provider: 'groq' }
-                  : { kind: 'local', model_id: DEFAULT_VOICE_MODEL_ID }
+                  : { kind: 'local', model_id: '' }
             })
           }
         />
@@ -237,8 +245,13 @@ function VoiceEngineGroup({
         <VoiceModelRoster
           voiceModels={voiceModels}
           selectedModelId={voiceSettings.engine.kind === 'local' ? voiceSettings.engine.model_id : null}
+          onVoiceModelSelect={(modelId) => onVoiceSettingsSet({ ...voiceSettings, engine: { kind: 'local', model_id: modelId } })}
           onVoiceModelDownload={onVoiceModelDownload}
           onVoiceModelDelete={onVoiceModelDelete}
+          voiceExternalModels={voiceExternalModels}
+          voiceScanLimited={voiceScanLimited}
+          onVoiceModelsScan={onVoiceModelsScan}
+          onVoiceModelReuse={onVoiceModelReuse}
         />
       )}
       {voiceSettings.engine.kind === 'cloud' && (
@@ -440,6 +453,10 @@ export interface VoiceSectionProps {
   onVoiceDevicesRefresh: () => void
   onVoiceModelDownload: (modelId: string) => void
   onVoiceModelDelete: (modelId: string) => void
+  voiceExternalModels?: VoiceExternalModel[]
+  voiceScanLimited?: boolean
+  onVoiceModelsScan?: () => void
+  onVoiceModelReuse?: (modelId: string, path: string, copy: boolean) => void
   keymapOverrides: KeymapOverrides
 }
 
@@ -456,6 +473,10 @@ export function VoiceSection({
   onVoiceDevicesRefresh,
   onVoiceModelDownload,
   onVoiceModelDelete,
+  voiceExternalModels,
+  voiceScanLimited,
+  onVoiceModelsScan,
+  onVoiceModelReuse,
   keymapOverrides
 }: VoiceSectionProps): React.JSX.Element {
   const voicePageError = useVoicePageError()
@@ -498,6 +519,10 @@ export function VoiceSection({
               onVoiceSettingsSet={onVoiceSettingsSet}
               onVoiceModelDownload={onVoiceModelDownload}
               onVoiceModelDelete={onVoiceModelDelete}
+          voiceExternalModels={voiceExternalModels}
+          voiceScanLimited={voiceScanLimited}
+          onVoiceModelsScan={onVoiceModelsScan}
+          onVoiceModelReuse={onVoiceModelReuse}
               onVoiceKeySet={onVoiceKeySet}
               onVoiceKeyClear={onVoiceKeyClear}
             />

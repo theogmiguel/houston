@@ -192,7 +192,6 @@ describe('every chrome theme cuts its own custom ground', () => {
   // material rung and the corner cut against the rail.
   const SCREEN_ROOTS: Array<[screen: string, role: string, roleFile: string]> = [
     ['SettingsView.tsx', 'SettingsPageSurface', 'ui/SettingsPageSurface.tsx'],
-    ['NewSessionComposer.tsx', 'DockedFormPanel', 'ui/LaunchComposerParts.tsx'],
     ['FirstRun.tsx', 'OnboardingStage', 'ui/OnboardingStage.tsx'],
     ['WorkspacesEmpty.tsx', 'ScreenRegion', 'ui/ScreenRegion.tsx'],
     ['nav/SkillsSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],

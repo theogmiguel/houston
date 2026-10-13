@@ -58,7 +58,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | | `ssh.rs` | SSH panes: a remote shell as a normal grid pane |
 | | `ssh_config.rs`, `ssh_credentials.rs` | Four config directives; credentials in the keychain |
 | | `usage/` | Token-usage reporting for the agent CLIs Houston hosts (7 files) |
-| | `voice/` | Capture, local and cloud transcription, model catalog (6 files) |
+| | `voice/` | Capture, local and cloud transcription, model catalogue and external reuse |
 | safety | `pid.rs` | The only module allowed to call raw `kill` or the Win32 twin |
 | | `sanitize.rs` | Secret-pattern redaction, shared by everything that persists text |
 
@@ -88,8 +88,10 @@ child as an identity anchor until output-reader completion; an Exited state ther
 not imply that descendants or the reader have finished. Close still terminates that owned
 terminal session. Reaping and master release share the same lock as termination, so a
 recycled root PID cannot be signalled through an old backend. On other platforms, cleanup
-of an Exited pane whose reader remains open is explicitly refused until PTY EOF, including
-replacement and failed-Wake rollback. Windows
+of an Exited pane waits up to one second for the retained reader to record PTY EOF,
+without signalling the exited workload. Cleanup is refused if that receipt does not arrive,
+including replacement and failed-Wake rollback. This also covers an owned stop publishing
+its ended state before reader completion. Windows
 close releases the master because conhost exit alone need not close the reader pipe.
 `Backend::resize` returns the dimensions actually applied.
 
@@ -153,14 +155,28 @@ Naturally exited root panes retain their identity and saved output without autom
 Only the newest row of a session origin is eligible, so legacy replacement predecessors
 cannot reappear alongside their successors.
 
-Startup commits the PTY root's PID and creation identity with the session row. Linux
-records the kernel boot UUID because process start ticks can repeat after reboot;
-Windows uses the absolute process creation FILETIME. Cold replacement and Close refuse
-while the recorded root is still present, without signalling a process from a previous
-daemon. Missing creation evidence for a live recorded PID remains a refusal. A changed
-boot or recycled PID does not block recovery. This is a root liveness check, not proof
-that an escaped descendant has stopped. Legacy rows without identity retain the previous
-recovery policy. Full containment and migration of those rows remain separate work.
+Linux startup holds the executable behind a private socket gate until its versioned
+ownership receipt, continuation metadata and session replacement transaction commit.
+The helper enters a nonce-bearing user systemd scope and verifies its kernel membership
+against the manager before reporting ownership. Socket EOF or a failed scope request
+aborts execution before the CLI can fork. Hidden generators also commit receipts, but
+remain excluded from cold restoration. The gate proves process-crash ordering, not
+power-loss durability.
+
+Cold recovery checks the boot UUID, root creation identity and exact recorded scope's
+recursive cgroup population. A recycled or absent root cannot certify a stopped workload.
+A reachable manager must confirm collection when the kernel cgroup is absent; manager
+errors, permission failures and timeouts remain unknown. A verified different Linux boot
+permits recovery without signalling old processes. Live handoff preserves the stored
+receipt on both commit and rollback; adoption does not establish workload quiescence.
+
+Windows ConPTY currently has no committed pre-exec Job receipt. Windows, Linux launches
+without verified scopes and historical rows therefore retain a named recovery refusal,
+the pane, conversation and pending instructions. Read-only recheck refreshes the reason.
+An explicit user acknowledgement that all previous workload processes have stopped can
+clear an uncontained or legacy refusal after any recorded root passes its liveness check.
+It cannot bypass a contained scope or an unreadable receipt. Acknowledgement does not
+resume held instructions or change continuation metadata.
 
 Shell panes can retain a root Claude, Codex or ZCode conversation reported by lifecycle
 hooks. Restart validates that provider's exact handle and launches the CLI from the restored
@@ -399,7 +415,7 @@ before any user startup code runs, which leaves the initial environment block in
 a path that no longer resolves. `TokenRedactor` strips the capability from the stream before
 scrollback and both fanouts, so it never reaches a client, the DB or a log.
 
-Pane names carry a persisted source with the precedence codename < first prompt < spawned role
+Pane names carry a persisted source with the precedence codename < first prompt < generated title < spawned role
 < CLI title < task < user rename. CLI titles continue to outrank a parent-assigned role;
 orchestration addresses use the stable codename and role, never the display title. Respawn,
 boot restore and daemon handoff preserve provenance. Automatic candidates retain the first
@@ -679,6 +695,16 @@ without limit.
 never blocks. `voice/whisper.rs` is the local engine via `whisper-rs`, CPU-only — `load`
 calls `use_gpu(false)` explicitly so the build choice and the runtime choice cannot drift;
 the crate is `cfg(unix)`-gated and the Windows local engine is a named refusal.
+`voice/reuse.rs` scans only on request and identifies external files by SHA-256.
+Linked files are reverified before engine loading; cached engines own the loaded weights,
+so short dictations do not repeat whole-file hashing. Deletion removes only this channel's
+reference. Copy publication verifies the bytes actually copied. Scan and reuse work runs
+off the async control loop, with one scan admitted at a time and visible partial results
+when a work limit is reached. Download, reuse and deletion share per-model admission.
+Deleting the active model persists an empty local model ID, meaning no local model selected,
+and never triggers a download. Windows retains the named local engine refusal and refuses
+downloads and reuse.
+
 `voice/cloud.rs` is a Groq OpenAI-compatible Whisper client whose key lives in the keychain
 under `groq-api-key`; `voice/models.rs` carries the catalog, verified download, delete and
 disk usage. The runtime is constructed at boot but **opens no device** —

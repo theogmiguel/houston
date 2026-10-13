@@ -7,6 +7,7 @@ interface Props {
   message: string
   confirmLabel?: string
   title?: string
+  destructive?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -15,6 +16,7 @@ export function ConfirmModal({
   message,
   confirmLabel = 'Confirm',
   title = 'CONFIRM',
+  destructive = true,
   onConfirm,
   onCancel
 }: Props): React.JSX.Element {
@@ -65,7 +67,7 @@ export function ConfirmModal({
         </DialogBody>
         <DialogActions>
           <Button ref={cancelRef} variant="legacy-ghost" onClick={onCancel}>Cancel</Button>
-          <Button ref={confirmRef} variant="legacy-danger-solid" onClick={onConfirm}><Icon glyph={IconAlertTriangle} role="ui" />{confirmLabel}</Button>
+          <Button ref={confirmRef} variant={destructive ? "legacy-danger-solid" : "legacy-primary"} onClick={onConfirm}>{destructive && <Icon glyph={IconAlertTriangle} role="ui" />}{confirmLabel}</Button>
         </DialogActions>
       </DialogPanel>
     </DialogBackdrop>

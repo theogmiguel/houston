@@ -119,6 +119,7 @@ function model(overrides: Partial<VoiceModelState> = {}): VoiceModelState {
     size_bytes: 487_601_967,
     status: { kind: 'not_downloaded' },
     cooldown_remaining_ms: null,
+    linked: false,
     ...overrides
   }
 }

@@ -1,3 +1,5 @@
+import { GeneratedTitlesSetting } from './settings/GeneratedTitlesSetting'
+import type { VoiceExternalModel } from '../houston/generated/VoiceExternalModel'
 import { agentAttentionFor, type AgentAttention, type AgentSetupSection } from '../useAgentAttention'
 import { AgentsOverview } from './settings/AgentsOverview'
 import { SETTINGS_SECTIONS } from '../settingsSections'
@@ -123,6 +125,10 @@ export interface Props {
   onVoiceDevicesRefresh: () => void
   onVoiceModelDownload: (modelId: string) => void
   onVoiceModelDelete: (modelId: string) => void
+  voiceExternalModels?: VoiceExternalModel[]
+  voiceScanLimited?: boolean
+  onVoiceModelsScan?: () => void
+  onVoiceModelReuse?: (modelId: string, path: string, copy: boolean) => void
   agentProfiles: AgentProfileState | null
   onAgentProfileUpsert: (id: number | null, agent: AgentKind, name: string, configDir: string) => void
   onAgentProfileDelete: (id: number) => void
@@ -217,6 +223,10 @@ function SectionDispatch({
   onVoiceDevicesRefresh,
   onVoiceModelDownload,
   onVoiceModelDelete,
+  voiceExternalModels,
+  voiceScanLimited,
+  onVoiceModelsScan,
+  onVoiceModelReuse,
   agentProfiles,
   onAgentProfileUpsert,
   onAgentProfileDelete,
@@ -326,6 +336,10 @@ function SectionDispatch({
             onVoiceDevicesRefresh={onVoiceDevicesRefresh}
             onVoiceModelDownload={onVoiceModelDownload}
             onVoiceModelDelete={onVoiceModelDelete}
+          voiceExternalModels={voiceExternalModels}
+          voiceScanLimited={voiceScanLimited}
+          onVoiceModelsScan={onVoiceModelsScan}
+          onVoiceModelReuse={onVoiceModelReuse}
             keymapOverrides={keymapOverrides}
           />
         )}
@@ -401,6 +415,8 @@ function SectionDispatch({
         )}
 
         {section === 'workspaces' && (
+          <>
+          <GeneratedTitlesSetting client={daemonClient ?? null} />
           <WorkspaceDefaultsSection
             onRestoreBudgetSet={onRestoreBudgetSet}
             onRestoreResumeSet={onRestoreResumeSet}
@@ -412,6 +428,7 @@ function SectionDispatch({
             sessionPolicy={sessionPolicy}
             onSessionPolicy={onSessionPolicy}
           />
+          </>
         )}
 
         {section === 'daemon' && (

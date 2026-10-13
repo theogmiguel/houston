@@ -269,19 +269,20 @@ pub fn is_installed(provider: proto::AgentKind, home: &ConfigHome, sentinel: &st
     }
 }
 
-// Guarded like claude_hooks::hook_command, since Codex/OpenCode/Cursor/Grok
-// all run this through a shell. Codex's Windows arm builds its own argv
-// directly and never reaches here — unguarded by necessity, not oversight.
+// Codex can use the session's PowerShell or cmd.exe to execute Windows hooks.
 fn hook_command(
     launcher: &Path,
     provider: proto::AgentKind,
     event: &str,
     sentinel: &str,
 ) -> String {
-    crate::claude_hooks::guard_launcher_exec(
-        launcher,
-        &hook_argv(provider, event, sentinel).join(" "),
-    )
+    let arguments = hook_argv(provider, event, sentinel).join(" ");
+    if cfg!(windows) && provider == proto::AgentKind::Codex {
+        let exe =
+            crate::exe_path::command_spelling(&crate::claude_hooks::executable_launcher(launcher));
+        return format!("cmd.exe /D /C if exist \"{exe}\" \"{exe}\" {arguments}");
+    }
+    crate::claude_hooks::guard_launcher_exec(launcher, &arguments)
 }
 
 /// The helper's arguments for one event, for a CLI that starts it without a shell.

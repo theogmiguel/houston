@@ -1,3 +1,4 @@
+import { useVoiceSettings } from "./voice/useVoiceSettings";
 import { useAgentSettingsReads } from './useAgentSettingsReads'
 import { useAgentAttention } from './useAgentAttention'
 import { useLayoutDocumentOwners } from "./editor/useLayoutDocumentOwners";
@@ -42,16 +43,12 @@ import type {
 } from "./houston/client";
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
-import type { VoiceDevice } from "./houston/generated/VoiceDevice";
 import { useRemoteGridPublish } from "./houston/useRemoteGridPublish";
-import type { VoiceModelState } from "./houston/generated/VoiceModelState";
-import type { VoiceSettings } from "./houston/generated/VoiceSettings";
 import {
   clearVoiceIndicators,
   insertVoiceText,
   isPersistentVoiceFailure,
   setVoiceIndicator,
-  setVoiceLevel,
   setVoicePageError,
   voiceFailureMessage,
   showVoiceNotice,
@@ -105,7 +102,7 @@ import { useShellFocus } from "./Shell/useShellFocus";
 import { BrowserActConfirmModal } from "./components/BrowserActConfirm";
 import { useBrowserConfirm } from "./houston/browserConfirm";
 import { TERMINAL_SYNC_FIT_EVENT, TerminalTuningContext, type OutputSink } from "./pane/TerminalPane";
-import { newPaneSize, newPaneSizes } from "./pane/newPaneSize";
+import { newPaneSize } from "./pane/newPaneSize";
 import { CHROME_THEME_LABELS, THEME_LABELS } from "./theme";
 import { revealThemeFromClick } from "./themeReveal";
 import {
@@ -143,8 +140,6 @@ import { Shell } from "./components/Shell/Shell";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { ConfirmModal } from "./components/ConfirmModal";
 import type { HandoffSource } from "./components/PaneHandoff";
-import type { SessionSlot } from "./components/sessionPresets";
-import { LaunchComposerDock, visibleLaunchPreview, type LaunchPreview } from "./components/LaunchComposerDock";
 import { WorkspaceEmpty } from "./components/WorkspaceEmpty";
 import { useWorkspaceActions } from "./houston/useWorkspaceActions";
 import { WorkspacesEmpty } from "./components/WorkspacesEmpty";
@@ -388,9 +383,7 @@ const SshConnectModal = lazy(() =>
 const PaneHandoff = lazy(() =>
   import("./components/PaneHandoff").then((m) => ({ default: m.PaneHandoff })),
 );
-const LaunchGridPreview = lazy(() =>
-  import("./components/ui/LaunchGridPreview").then((m) => ({ default: m.LaunchGridPreview })),
-);
+
 export { isTitlebarDragEligible, isBareTitlebarTarget };
 
 const SELECTED_WS_KEY = "tr-selected-workspace";
@@ -449,6 +442,7 @@ type RosterPatchMsg = Extract<
   ServerMsg,
   {
     type:
+      | "session_activity"
       | "session_checkout"
       | "session_renamed"
       | "session_reparented"
@@ -462,6 +456,7 @@ type RosterPatchMsg = Extract<
 >;
 
 const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
+  "session_activity",
   "session_checkout",
   "session_renamed",
   "session_reparented",
@@ -482,11 +477,11 @@ function patchRosterFields(
   msg: RosterPatchMsg,
 ): Map<number, SessionInfo> {
   const isCheckout = msg.type === "session_checkout";
-  const id = isCheckout ? msg.id : msg.session;
+  const id = isCheckout || msg.type === "session_activity" ? msg.id : msg.session;
   const cur = prev.get(id);
   if (!cur) return prev;
   const patch: Partial<SessionInfo> =
-    isCheckout
+    msg.type === "session_activity" ? { activity: msg.activity ?? null } : isCheckout
       ? { checkout: msg.checkout ?? null }
       : msg.type === "session_renamed"
         ? { title: msg.title, title_source: msg.title_source }
@@ -807,15 +802,9 @@ export function App(): React.JSX.Element {
   const [historyIgnoreGlobs, setHistoryIgnoreGlobs] = useState<string[] | null>(
     null,
   );
-  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings | null>(
-    null,
-  );
-  const [voiceCloudKeyPresent, setVoiceCloudKeyPresent] = useState(false);
-  const [voiceKeyringError, setVoiceKeyringError] = useState<string | null>(
-    null,
-  );
-  const [voiceModels, setVoiceModels] = useState<VoiceModelState[]>([]);
-  const [voiceDevices, setVoiceDevices] = useState<VoiceDevice[]>([]);
+  const voice = useVoiceSettings(readyClient(conn));
+  const { voiceSettings, voiceCloudKeyPresent, voiceKeyringError, voiceModels,
+    voiceDevices, voiceExternalModels, voiceScanLimited } = voice;
   const [mcp, setMcp] = useState<McpStateView | null>(null);
   const [skills, setSkills] = useState<SkillToolState[] | null>(null);
   const agentAttention = useAgentAttention({ agentHooks, skills, checks: mcp?.checks ?? null, serverCount: mcp?.source.length, reviews: harnessOverview });
@@ -900,10 +889,6 @@ export function App(): React.JSX.Element {
   }, [settings]);
 
   useAgentSettingsReads(readyClient(conn), settings, settingsSection);
-  const [composer, setComposer] = useState<"current-grid" | "new-grid" | null>(
-    null,
-  );
-  const [launchPreview, setLaunchPreview] = useState<LaunchPreview | null>(null);
   const [showLauncher, setShowLauncher] = useState(false);
   const [pickingWorkspace, setPickingWorkspace] = useState(false);
   const [workspaceRefusals, setWorkspaceRefusals] = useState<string[]>([]);
@@ -930,7 +915,6 @@ export function App(): React.JSX.Element {
   const openOverlays = [
     settings,
     railView !== null,
-    composer,
     firstRunOpen || workspacesEmptyOpen,
   ].filter(Boolean).length;
   useNativeSuppressionCount("grid-hidden", openOverlays);
@@ -1345,6 +1329,7 @@ export function App(): React.JSX.Element {
         checkout.handleMessage(msg);
         if (handlePullRequestWireMessage(msg, prScreen.handleMessage)) return;
         if (handleWorkspaceWireMessage(msg, setWorkspaces, setSelectedWs, setShowLauncher)) return;
+        if (voice.handleMessage(msg)) return;
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1552,29 +1537,6 @@ export function App(): React.JSX.Element {
             break;
           case "command_history_ignore_globs":
             setHistoryIgnoreGlobs(msg.globs);
-            break;
-          case "voice_settings":
-            setVoiceSettings(msg.settings);
-            setVoiceCloudKeyPresent(msg.cloud_key_present);
-            setVoiceKeyringError(msg.keyring_error ?? null);
-            setVoiceModels(msg.models);
-            if (!msg.settings.enabled) clearVoiceIndicators();
-            break;
-          case "voice_devices":
-            setVoiceDevices(msg.devices);
-            break;
-          case "voice_level":
-            setVoiceLevel(msg.rms);
-            break;
-          case "voice_model_state":
-            setVoiceModels((prev) => {
-              const next = prev.map((m) =>
-                m.id === msg.model.id ? msg.model : m,
-              );
-              return next.some((m) => m.id === msg.model.id)
-                ? next
-                : [...next, msg.model];
-            });
             break;
           case "voice_state": {
             const st = msg.state;
@@ -1793,7 +1755,6 @@ export function App(): React.JSX.Element {
       if (accepted.length > 0) {
         setSelectedWs(accepted[accepted.length - 1]);
         setShowLauncher(false);
-        setComposer("current-grid");
       }
     } catch (err: unknown) {
       setAddWorkspaceError(
@@ -2206,40 +2167,6 @@ export function App(): React.JSX.Element {
       new Map(prev).set(path, next[next.length - 1].id),
     );
   }, []);
-  const launchSessions = useCallback(
-    (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
-      if (conn.kind !== "ready" || selectedWs === "all") return;
-      setExpandedId(null);
-      const sizes = newPaneSizes({
-        current: currentTreeRef.current,
-        target: target === "new-grid" ? null : currentTreeRef.current,
-        count: slots.length,
-      });
-      if (target === "new-grid") handleAddGrid(selectedWs);
-      for (const [index, slot] of slots.entries()) {
-        conn.client.createSession({
-          ...sizes[index],
-          agent: slot.agent,
-          project_dir: selectedWs,
-          shell_integration: shellIntegration,
-          model: slot.model,
-          effort: slot.effort,
-          prompt:
-            slot.agent === "shell" || slot.prompt === "" ? null : slot.prompt,
-        });
-      }
-      setComposer(null);
-      setLaunchPreview(null);
-    },
-    [conn, selectedWs, shellIntegration, handleAddGrid],
-  );
-  const handleLaunchPreview = useCallback(
-    (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
-      setLaunchPreview({ slots, target });
-    },
-    [],
-  );
-
   const handleRenameGrid = useCallback(
     (path: string, gridId: string, name: string): void => {
       setGridsByWs((prev) =>
@@ -3169,7 +3096,6 @@ export function App(): React.JSX.Element {
         if (shortcutSheet) setShortcutSheet(false);
         else if (settings) setSettings(false);
         else if (railView !== null) setRailView(null);
-        else if (composer) setComposer(null);
         else if (showLauncher) {
           if (workspaces.length > 0) setShowLauncher(false);
         } else setExpandedId(null);
@@ -3190,7 +3116,6 @@ export function App(): React.JSX.Element {
         paneHandoff ||
         settings ||
         railView !== null ||
-        composer ||
         shortcutSheet ||
         confirmRemoveWs ||
         sshModal ||
@@ -3309,7 +3234,6 @@ export function App(): React.JSX.Element {
     currentTree,
     mutateTree,
     settings,
-    composer,
     showLauncher,
     workspacesEmptyOpen,
     workspaces,
@@ -3419,7 +3343,6 @@ export function App(): React.JSX.Element {
     );
   const client = conn.client;
   const connected = conn.kind === "ready";
-  const activeLaunchPreview = visibleLaunchPreview(composer, launchPreview);
 
   const renameWorkspaceSubmit = (path: string, name: string): void => {
     setWsRenaming(null);
@@ -3448,7 +3371,6 @@ export function App(): React.JSX.Element {
   const selectNavRow = (row: RailView): void => {
     setSettings(false);
     setRailView(row);
-    setComposer(null);
     setShowLauncher(false);
   };
 
@@ -3643,7 +3565,9 @@ export function App(): React.JSX.Element {
               onNewWorkspaceSession={(path) => {
                 setSelectedWs(path);
                 setShowLauncher(false);
-                setComposer("new-grid");
+                setRailView(null);
+                setSettings(false);
+                handleAddGrid(path);
               }}
               onRenameGrid={handleRenameGrid}
               onRemoveGrid={handleRemoveGrid}
@@ -3943,12 +3867,12 @@ export function App(): React.JSX.Element {
                               focusUrlRequest={
                                 gridSelected ? focusBrowserUrl : undefined
                               }
-                              launchPreview={gridSelected ? activeLaunchPreview : undefined}
                             />
                           ) : gridSelected ? (
                             <div className="relative flex-1 min-w-0 min-h-0">
                               <WorkspaceEmpty
-                                onNewSession={() => setComposer("current-grid")}
+                                installedAgents={(agentHooks ?? []).filter((provider) => provider.present).map((provider) => provider.provider)}
+                                onSpawnAgent={spawnAgentPane}
                                 onTerminal={newTerminal}
                                 onBrowser={() => openBrowserPane(w.path, null)}
                                 actions={workspaceActionsFor(w.path)}
@@ -3957,11 +3881,7 @@ export function App(): React.JSX.Element {
                                 onSaveAction={workspaceActionState.save}
                                 onDeleteAction={workspaceActionState.remove}
                               />
-                              {activeLaunchPreview && (
-                                <Suspense fallback={null}>
-                                  <LaunchGridPreview tree={null} slots={activeLaunchPreview.slots} target={activeLaunchPreview.target} sessions={sessions} />
-                                </Suspense>
-                              )}
+
                             </div>
                           ) : null}
                         </ContentsSwitch>
@@ -3971,19 +3891,6 @@ export function App(): React.JSX.Element {
                 </>
               )}
               </GridSlot>
-              <LaunchComposerDock
-                composer={composer}
-                workspace={selectedWs}
-                settingsOpen={Boolean(settings)}
-                railOpen={railView !== null}
-                workspaceName={basename(selectedWs)}
-                gridName={() => gridsFor(selectedWs).find((grid) => grid.id === activeGridId(selectedWs))?.name}
-                client={client}
-                connected={connected}
-                onPreviewChange={handleLaunchPreview}
-                onLaunch={launchSessions}
-                onClose={() => { setComposer(null); setLaunchPreview(null) }}
-              />
                 <SidePanelIntegration
                   proactiveDiffEnabled={openDiffOnAgentStop}
                   proactiveDiffRequest={proactiveDiff.request}
@@ -4233,27 +4140,7 @@ export function App(): React.JSX.Element {
                       voiceKeyringError={voiceKeyringError}
                       voiceModels={voiceModels}
                       voiceDevices={voiceDevices}
-                      onVoiceSettingsSet={(next) => {
-                        if (conn.kind !== "ready") return;
-                        conn.client.voiceSettingsSet(next);
-                      }}
-                      onVoiceKeySet={(provider, key) => {
-                        if (conn.kind !== "ready") return;
-                        conn.client.voiceKeySet(provider, key);
-                      }}
-                      onVoiceKeyClear={(provider) => {
-                        if (conn.kind !== "ready") return;
-                        conn.client.voiceKeyClear(provider);
-                      }}
-                      onVoiceDevicesRefresh={() => {
-                        if (conn.kind === "ready")
-                          conn.client.voiceDevicesGet();
-                      }}
-                      onVoiceLevelMonitor={(enabled) => {
-                        if (conn.kind !== "ready") return;
-                        conn.client.voiceLevelMonitor(enabled);
-                        if (!enabled) setVoiceLevel(null);
-                      }}
+                      {...voice.actions}
                       historyWorkspace={
                         selectedWs === "all" ? null : selectedWs
                       }
@@ -4344,14 +4231,8 @@ export function App(): React.JSX.Element {
                         if (conn.kind === "ready")
                           conn.client.commandHistoryIgnoreGlobsSet(globs);
                       }}
-                      onVoiceModelDownload={(modelId) => {
-                        if (conn.kind === "ready")
-                          conn.client.voiceModelDownload(modelId);
-                      }}
-                      onVoiceModelDelete={(modelId) => {
-                        if (conn.kind === "ready")
-                          conn.client.voiceModelDelete(modelId);
-                      }}
+                      voiceExternalModels={voiceExternalModels}
+                      voiceScanLimited={voiceScanLimited}
                       onRevealSessionDb={() => {
                         if (hostInfo)
                           void openExternal(`file://${hostInfo.state_dir}`);

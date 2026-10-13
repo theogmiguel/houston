@@ -1,3 +1,5 @@
+import { ConfirmModal } from './ConfirmModal'
+import { IconPencil } from './icons'
 import { GLYPH_FOR_VERB } from './verbGlyphs'
 import { ChildInputBanner } from './ChildInputDetails'
 import { askedOrchestrator, attentionStatus, needsUserInput } from '../sessionAttention'
@@ -32,6 +34,8 @@ import {
 } from './PaneRestart'
 import type { HandoffSource } from './PaneHandoff'
 import { clampConversation } from './handoffPacket'
+import { doingNow } from './rail/doingNow'
+import { RecoveryCheckControls } from './RecoveryCheckControls'
 import { RenameTitle } from './RenameTitle'
 import { Tooltip } from './ui/Tooltip'
 import {
@@ -472,6 +476,22 @@ function SessionLifecycleMenuItems({
   </>
 }
 
+function PaneActivityNotice({ info }: { info: SessionInfo }): React.JSX.Element | null {
+  const activity = doingNow(info)
+  return activity ? <PaneNotice data-testid="pane-doing-now">{activity}</PaneNotice> : null
+}
+
+function GenerateTitleConfirm({ open, info, onCancel, onConfirm }: {
+  open: boolean
+  info: SessionInfo
+  onCancel: () => void
+  onConfirm: () => void
+}): React.JSX.Element {
+  return <AnimOut open={open} suppress="modal">
+    {open && <ConfirmModal destructive={false} title="Generate title" confirmLabel="Generate title" message={`Send up to 1 KB of redacted first-prompt and first-reply hook text through this pane’s ${info.detected_agent ?? info.agent} account to generate a title? This may use provider quota. Houston reads no transcript or scrollback. Providers without verified tools-off controls are refused.`} onCancel={onCancel} onConfirm={onConfirm} />}
+  </AnimOut>
+}
+
 function SessionPaneImpl({
   client,
   info: infoProp,
@@ -542,6 +562,7 @@ function SessionPaneImpl({
   const focusTier = usePaneFocusTier(active)
 
   const keymapOverrides = useContext(KeymapOverridesContext)
+  const [confirmGenerateTitle, setConfirmGenerateTitle] = useState(false)
   const [confirmRestart, setConfirmRestart] = useState<RestartMode | null>(null)
   const termActions = useRef<TermActions | null>(null)
   const [menuCwd, setMenuCwd] = useState<string | null>(null)
@@ -626,10 +647,13 @@ function SessionPaneImpl({
         <SessionInboxButton info={info} />
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </PaneHeader>
+      <PaneActivityNotice info={info} />
       <ResumeNotice notice={info.resume_notice} />
       <ChildInputBanner info={info} />
       <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} memoryResult={memoryResult} />
+      <RecoveryCheckControls info={lifecycleInfo} connected={connected} onRecheck={() => client.send({ type: 'session_recovery_check', session: info.id })} onAcknowledge={() => client.send({ type: 'session_recovery_check', session: info.id, acknowledge_uncontained: true })} />
       {sleeping ? <SleepingSessionPlaceholder info={lifecycleInfo} onWake={() => client.send({ type: 'session_wake', session: info.id })} onFresh={() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)} /> : <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />}
+      <GenerateTitleConfirm open={confirmGenerateTitle} info={info} onCancel={() => setConfirmGenerateTitle(false)} onConfirm={() => { setConfirmGenerateTitle(false); client.send({ type: 'session_title_generate', session: info.id }) }} />
       <AnimOut open={confirmRestart !== null} suppress="modal">
         {confirmRestart && (
           <RestartConfirm
@@ -656,6 +680,7 @@ function SessionPaneImpl({
           <PaneContextMenuSeparator />
           {children.length > 0 && <CtxRow glyph={GLYPH_FOR_VERB['overview']} label="Overview" onClick={menuItem(() => openSideOverview(info.id))} />}
           {info.spawned_by != null && onReturnChildToRoster && <CtxRow glyph={IconArrowUpRight} label="Return to roster" onClick={menuItem(() => onReturnChildToRoster(info.id))} />}
+          <CtxRow glyph={IconPencil} label="Generate title" disabled={!['codename', 'prompt'].includes(info.title_source)} disabledReason="A generated title requires a codename or first-prompt name" onClick={menuItem(() => setConfirmGenerateTitle(true))} />
           <CtxRow
             glyph={IconSplitRight}
             label="Split right"

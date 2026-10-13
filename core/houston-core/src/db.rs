@@ -1608,7 +1608,7 @@ fn is_busy(err: &anyhow::Error) -> bool {
     )
 }
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
@@ -1712,13 +1712,32 @@ impl Db {
         add_column_if_missing(&conn, "sessions", "title", "title TEXT")?;
         add_column_if_missing(&conn, "sessions", "codename", "codename TEXT")?;
         add_column_if_missing(&conn, "sessions", "title_source", "title_source TEXT")?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "title_generation_attempted",
+            "title_generation_attempted INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "title_first_turn_ended",
+            "title_first_turn_ended INTEGER NOT NULL DEFAULT 0",
+        )?;
+        // The candidate backfill below excludes hidden rows.
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "hidden",
+            "hidden INTEGER NOT NULL DEFAULT 0",
+        )?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS session_title_candidates (
             session_id INTEGER NOT NULL, source TEXT NOT NULL, title TEXT NOT NULL,
             PRIMARY KEY(session_id, source));
             INSERT OR IGNORE INTO session_title_candidates (session_id, source, title)
                 SELECT id, title_source, title FROM sessions
-                WHERE title_source IS NOT NULL AND title_source != 'user' AND title IS NOT NULL AND title != '' AND state != 'closed';
+                WHERE title_source IS NOT NULL AND title_source != 'user' AND title IS NOT NULL AND title != '' AND state != 'closed' AND hidden = 0;
             DELETE FROM session_title_candidates WHERE session_id NOT IN (SELECT id FROM sessions WHERE state != 'closed');
             CREATE TRIGGER IF NOT EXISTS title_candidates_closed AFTER UPDATE OF state ON sessions
                 WHEN NEW.state = 'closed' BEGIN DELETE FROM session_title_candidates WHERE session_id = NEW.id; END;
@@ -1760,6 +1779,12 @@ impl Db {
             "sessions",
             "process_identity",
             "process_identity TEXT",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "recovery_acknowledged",
+            "recovery_acknowledged INTEGER NOT NULL DEFAULT 0",
         )?;
         add_column_if_missing(&conn, "sessions", "transcript_path", "transcript_path TEXT")?;
         add_column_if_missing(
@@ -2350,7 +2375,7 @@ impl Db {
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id),
                     latest_prompt, last_agent_message, slept_at_ms, state, context_json
              FROM sessions
-             WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom'
+             WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom' AND hidden = 0
                    AND (state != 'exited' OR spawned_by IS NOT NULL OR id IN (
                        SELECT MAX(id) FROM sessions GROUP BY COALESCE(session_origin, id)
                    ))
@@ -2561,8 +2586,8 @@ impl Db {
         conn.execute(
             "INSERT INTO sessions (id, agent, project_dir, cwd, state, title, codename, title_source,
                                    ssh_host, spawned_by, acp, profile_label, tags, session_origin,
-                                   latest_prompt, last_agent_message, slept_at_ms, context_json, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, unixepoch())",
+                                   latest_prompt, last_agent_message, slept_at_ms, context_json, hidden, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, unixepoch())",
             rusqlite::params![
                 info.id,
                 serde_json::to_string(&info.agent)?.trim_matches('"'),
@@ -2582,9 +2607,11 @@ impl Db {
                 info.last_agent_message,
                 info.slept_at_ms,
                 info.context.map(|context| serde_json::to_string(&context)).transpose()?,
+                info.hidden,
             ],
         )?;
-        if let Some(source) = title_source.filter(|source| *source != "user") {
+        // Hidden rows exist only for ownership receipts; their title candidates stay in memory.
+        if let Some(source) = title_source.filter(|source| *source != "user" && !info.hidden) {
             conn.execute("INSERT OR IGNORE INTO session_title_candidates (session_id, source, title) VALUES (?1, ?2, ?3)", rusqlite::params![info.id, source, info.title])?;
         }
         Ok(())
@@ -2710,17 +2737,86 @@ impl Db {
     }
 
     pub fn check_previous_process_stopped(&self, id: u32) -> Result<()> {
+        let (encoded, acknowledged, state): (Option<String>, bool, String) =
+            self.conn.lock().expect("db lock").query_row(
+                "SELECT process_identity, recovery_acknowledged, state FROM sessions WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )?;
+        // Sleep refuses while external descendants run and waits for the CLI to exit,
+        // so an uncontained sleeping session only needs its recorded root to be gone.
+        let slept = state == "sleeping";
+        if let Some(encoded) = encoded {
+            let identity: crate::recovery_process::ProcessIdentity = serde_json::from_str(&encoded)
+                .with_context(|| format!("invalid previous process identity for session {id}"))?;
+            if acknowledged || (slept && !identity.is_contained()) {
+                identity.check_acknowledgeable()?;
+            } else {
+                identity.check_stopped()?;
+            }
+        } else if !acknowledged && !slept {
+            anyhow::bail!("Process ownership unknown: legacy session {id} has no ownership receipt. Stop all previous workload processes, then explicitly acknowledge uncontained recovery; session, conversation and pending missions are retained.");
+        }
+        Ok(())
+    }
+
+    pub fn acknowledge_uncontained_recovery(&self, id: u32) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let encoded: Option<String> = tx.query_row(
+            "SELECT process_identity FROM sessions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if let Some(encoded) = encoded {
+            let identity: crate::recovery_process::ProcessIdentity =
+                serde_json::from_str(&encoded)?;
+            identity.check_acknowledgeable()?;
+        }
+        tx.execute(
+            "UPDATE sessions SET recovery_acknowledged = 1 WHERE id = ?1",
+            [id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn check_contained_workload_stopped(&self, id: u32) -> Result<()> {
         let encoded: Option<String> = self.conn.lock().expect("db lock").query_row(
             "SELECT process_identity FROM sessions WHERE id = ?1",
             [id],
             |row| row.get(0),
         )?;
         if let Some(encoded) = encoded {
-            let identity: crate::recovery_process::ProcessIdentity = serde_json::from_str(&encoded)
-                .with_context(|| format!("invalid previous process identity for session {id}"))?;
-            identity.check_stopped()?;
+            let identity: crate::recovery_process::ProcessIdentity =
+                serde_json::from_str(&encoded)?;
+            if identity.is_contained() {
+                identity.check_stopped()?;
+            }
         }
         Ok(())
+    }
+
+    pub fn uncontained_recovery_notice(&self, id: u32) -> Result<Option<String>> {
+        let (encoded, acknowledged): (Option<String>, bool) =
+            self.conn.lock().expect("db lock").query_row(
+                "SELECT process_identity, recovery_acknowledged FROM sessions WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+        if acknowledged {
+            return Ok(None);
+        }
+        let identity = encoded
+            .map(|body| serde_json::from_str::<crate::recovery_process::ProcessIdentity>(&body))
+            .transpose()?;
+        let reason = identity
+            .as_ref()
+            .map_or(Some("legacy session has no ownership receipt"), |receipt| {
+                receipt.uncontained_reason()
+            });
+        Ok(reason.map(|reason| format!("Process ownership unknown: {reason}. Recheck, or stop all previous workload processes and explicitly acknowledge uncontained recovery; session, conversation and pending missions are retained.")))
     }
 
     pub(crate) fn session_has_command_override(&self, id: u32) -> Result<bool> {
@@ -2931,6 +3027,16 @@ impl Db {
             }
         }
         Ok(candidates)
+    }
+
+    pub fn claim_title_first_turn(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.execute("UPDATE sessions SET title_first_turn_ended = 1 WHERE id = ?1 AND state != 'closed' AND title_first_turn_ended = 0", [id])? == 1)
+    }
+
+    pub fn claim_title_generation(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.execute("UPDATE sessions SET title_generation_attempted = 1 WHERE id = ?1 AND state != 'closed' AND title_generation_attempted = 0", [id])? == 1)
     }
 
     pub fn session_title_source(&self, id: u32) -> Result<Option<String>> {
@@ -6877,6 +6983,22 @@ mod tests {
             db.session_title_source(1).unwrap().as_deref(),
             Some("prompt")
         );
+    }
+
+    #[test]
+    fn title_generation_claims_survive_reopening_and_are_independent_of_first_turn() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("titles.db");
+        let db = Db::open(&path).unwrap();
+        db.insert_session(&info(1, proto::SessionState::Running))
+            .unwrap();
+        assert!(db.claim_title_first_turn(1).unwrap());
+        assert!(!db.claim_title_first_turn(1).unwrap());
+        assert!(db.claim_title_generation(1).unwrap());
+        drop(db);
+        let db = Db::open(&path).unwrap();
+        assert!(!db.claim_title_first_turn(1).unwrap());
+        assert!(!db.claim_title_generation(1).unwrap());
     }
 
     #[test]

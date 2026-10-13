@@ -32,15 +32,47 @@ impl Tracker {
         tool: Option<&str>,
         now: Instant,
     ) -> Dispatch {
+        self.update_with_question(provider, event, prompt, last_message, tool, None, now)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_with_question(
+        &mut self,
+        provider: proto::AgentKind,
+        event: &str,
+        prompt: Option<&str>,
+        last_message: Option<&str>,
+        tool: Option<&str>,
+        question: Option<&str>,
+        now: Instant,
+    ) -> Dispatch {
         let mut activity = self.activity.clone().unwrap_or(proto::SessionActivity {
             prompt: None,
             last_message: None,
+            question: None,
             tool: None,
             model: None,
         });
         let before = activity.clone();
         let event_kind = crate::agent_events::AgentEvent::from_provider(provider, event);
 
+        if matches!(
+            event_kind,
+            Some(crate::agent_events::AgentEvent::NeedsInput)
+        ) {
+            activity.question = question.and_then(first_line);
+        } else if matches!(
+            event_kind,
+            Some(
+                crate::agent_events::AgentEvent::PromptSubmitted
+                    | crate::agent_events::AgentEvent::InputResolved
+                    | crate::agent_events::AgentEvent::TurnEnded
+                    | crate::agent_events::AgentEvent::TurnInterrupted
+                    | crate::agent_events::AgentEvent::TurnFailed
+            )
+        ) {
+            activity.question = None;
+        }
         if event_kind == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
             activity.prompt = prompt.and_then(first_line);
             activity.last_message = None;
@@ -71,6 +103,7 @@ impl Tracker {
             return Dispatch::Unchanged;
         }
         if activity.prompt.is_none()
+            && activity.question.is_none()
             && activity.last_message.is_none()
             && activity.tool.is_none()
             && activity.model.is_none()
@@ -108,7 +141,8 @@ impl Tracker {
 }
 
 fn first_line(value: &str) -> Option<String> {
-    let line = value.lines().next()?.trim();
+    let redacted = crate::sanitize::redact_secrets(value).0;
+    let line = redacted.lines().next()?.trim();
     if line.is_empty() {
         return None;
     }

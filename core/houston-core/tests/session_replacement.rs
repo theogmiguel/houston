@@ -116,6 +116,10 @@ fn seed(database: &Path, project: &Path, sleeping: bool) -> Db {
         .unwrap();
     // A session's parent identity also survives if its delegation record is absent.
     db.insert_session(&info(3, project, Some(1))).unwrap();
+    // Replacement tests begin after an operator acknowledged the legacy workloads.
+    for id in 1..=3 {
+        db.acknowledge_uncontained_recovery(id).unwrap();
+    }
     db
 }
 

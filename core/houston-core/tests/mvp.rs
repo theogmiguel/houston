@@ -373,7 +373,7 @@ async fn workspace_remove_kills_sessions_and_deletes_workspace() {
 }
 
 #[tokio::test]
-async fn interrupted_sessions_are_automatically_restored_and_restartable() {
+async fn legacy_interrupted_sessions_require_acknowledgement_before_restart() {
     use houston_core::db::Db;
 
     let state_dir = tempfile::tempdir().unwrap();
@@ -431,12 +431,17 @@ async fn interrupted_sessions_are_automatically_restored_and_restartable() {
     })
     .unwrap();
 
-    let restored = daemon
+    let retained = daemon
         .list()
         .into_iter()
-        .filter(|s| s.session_origin == Some(1))
-        .max_by_key(|s| s.id)
-        .expect("the interrupted pane restores automatically");
+        .find(|session| session.id == 1)
+        .expect("the legacy interrupted pane is retained");
+    assert_eq!(retained.state, proto::SessionState::Interrupted);
+    let refusal = daemon.respawn(1, true, None, None, false).unwrap_err();
+    assert!(refusal.to_string().to_lowercase().contains("legacy"));
+    assert!(daemon.recheck_recovery(1, false).is_err());
+    daemon.recheck_recovery(1, true).unwrap();
+    let restored = daemon.respawn(1, true, None, None, false).unwrap();
     assert_ne!(restored.id, 1);
     assert_eq!(restored.state, proto::SessionState::Running);
     assert_eq!(restored.restore_deferred, None);

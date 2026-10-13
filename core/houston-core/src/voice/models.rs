@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use super::reuse::{reference_path, resolve_path};
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 
@@ -13,15 +14,53 @@ pub struct ModelSpec {
     pub url: &'static str,
     pub sha256: &'static str,
     pub size_bytes: u64,
+    pub memory_gib: u64,
 }
 
-pub const CATALOG: &[ModelSpec] = &[ModelSpec {
-    id: "ggml-small",
-    display_name: "Small (multilingual)",
-    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
-    sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
-    size_bytes: 487_601_967,
-}];
+// SHA-256 and sizes are the upstream Hugging Face LFS metadata at the pinned revision.
+// Memory figures are conservative working headroom guidance, not measured load requirements.
+pub const CATALOG: &[ModelSpec] = &[
+    ModelSpec {
+        id: "ggml-tiny",
+        display_name: "Tiny (multilingual)",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.bin",
+        sha256: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+        size_bytes: 77_691_713,
+        memory_gib: 1,
+    },
+    ModelSpec {
+        id: "ggml-base",
+        display_name: "Base (multilingual)",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.bin",
+        sha256: "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+        size_bytes: 147_951_465,
+        memory_gib: 1,
+    },
+    ModelSpec {
+        id: "ggml-small",
+        display_name: "Small (multilingual)",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small.bin",
+        sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+        size_bytes: 487_601_967,
+        memory_gib: 2,
+    },
+    ModelSpec {
+        id: "ggml-medium-q5_0",
+        display_name: "Medium Q5_0 (multilingual)",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-medium-q5_0.bin",
+        sha256: "19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f",
+        size_bytes: 539_212_467,
+        memory_gib: 3,
+    },
+    ModelSpec {
+        id: "ggml-large-v3-turbo-q5_0",
+        display_name: "Large v3 Turbo Q5_0 (multilingual)",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin",
+        sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+        size_bytes: 574_041_195,
+        memory_gib: 3,
+    },
+];
 
 pub fn find(id: &str) -> Option<&'static ModelSpec> {
     CATALOG.iter().find(|m| m.id == id)
@@ -161,7 +200,7 @@ impl Manager {
     }
 }
 
-fn final_model_path(models_dir: &Path, id: &str) -> PathBuf {
+pub fn final_model_path(models_dir: &Path, id: &str) -> PathBuf {
     models_dir.join(format!("{id}.bin"))
 }
 
@@ -324,18 +363,29 @@ pub fn status(models_dir: &Path, id: &str) -> ModelStatus {
     if find(id).is_none() {
         return ModelStatus::NotDownloaded;
     }
-    match std::fs::metadata(final_model_path(models_dir, id)) {
-        Ok(meta) => ModelStatus::Downloaded {
+    match resolve_path(models_dir, id).and_then(|p| std::fs::metadata(p).ok()) {
+        Some(meta) if meta.is_file() => ModelStatus::Downloaded {
             size_bytes: meta.len(),
         },
-        Err(_) => ModelStatus::NotDownloaded,
+        _ => ModelStatus::NotDownloaded,
     }
 }
 
 pub fn delete(models_dir: &Path, id: &str) -> Result<u64, ModelError> {
     find(id).ok_or_else(|| ModelError::UnknownModel { id: id.to_string() })?;
+    let reference = reference_path(models_dir, id);
+    match std::fs::remove_file(&reference) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(ModelError::Io {
+                path: reference,
+                source,
+            })
+        }
+    }
     let path = final_model_path(models_dir, id);
-    match std::fs::metadata(&path) {
+    match std::fs::symlink_metadata(&path) {
         Ok(meta) => {
             let freed = meta.len();
             std::fs::remove_file(&path).map_err(|source| ModelError::Io {
@@ -352,10 +402,12 @@ pub fn delete(models_dir: &Path, id: &str) -> Result<u64, ModelError> {
 pub fn disk_usage(models_dir: &Path) -> u64 {
     CATALOG
         .iter()
-        .filter_map(|spec| match status(models_dir, spec.id) {
-            ModelStatus::Downloaded { size_bytes } => Some(size_bytes),
-            ModelStatus::NotDownloaded => None,
-        })
+        .filter_map(
+            |spec| match std::fs::metadata(final_model_path(models_dir, spec.id)) {
+                Ok(meta) if meta.is_file() => Some(meta.len()),
+                _ => None,
+            },
+        )
         .sum()
 }
 

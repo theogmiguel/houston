@@ -131,7 +131,7 @@ struct Rig {
 impl Rig {
     fn start(mode: &str) -> Option<Self> {
         use std::os::unix::fs::PermissionsExt;
-        if houston_core::session_isolation::launcher().is_none() {
+        if !houston_core::session_isolation::manager_available() {
             eprintln!("SKIPPED: user systemd unavailable for a native Codex scope and guardian");
             return None;
         }

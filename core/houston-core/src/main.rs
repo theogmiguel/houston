@@ -390,6 +390,12 @@ fn main() -> Result<()> {
             || command == houston_core::codex_pane::OBSERVER_SUBCOMMAND
             || command == houston_core::codex_pane::SHELL_SUBCOMMAND
     }) {
+        #[cfg(windows)]
+        if command == houston_core::codex_pane::SHELL_SUBCOMMAND {
+            std::process::exit(houston_core::codex_pane::run_shell(
+                std::env::args_os().skip(2).collect(),
+            )?);
+        }
         #[cfg(target_os = "linux")]
         {
             let args = std::env::args_os().skip(2).collect();

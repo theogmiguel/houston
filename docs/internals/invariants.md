@@ -36,6 +36,8 @@ both `clippy.toml` files banning `std::process::Command::new` and
 **Why.** On Windows a console-subsystem child flashes a window unless spawned with
 `CREATE_NO_WINDOW`. The flag must *not* reach `portable_pty::CommandBuilder` — the PTY path
 needs its console — and the script asserts that too.
+The foreground Windows `codex-shell` helper resets this flag for its Codex child
+to inherit the existing ConPTY console; its bounded capability probe stays hidden.
 
 ### Opening a file or URL never goes through a shell string
 
@@ -151,7 +153,7 @@ Seven recorded carve-outs stand. Further exceptions need the same recorded treat
 
 ### App-initiated config writes use reversible managed markers
 
-Hook entries in `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.cursor/hooks.json`,
+Hook entries in `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.cursor/hooks.json`,
 `~/.grok/hooks/…`, ZCode's settings file and the OpenCode plugin carry
 `--houston-managed[=<channel>]` matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
 matching would let one channel evict the other. Claude preserves unrelated settings and hook
@@ -295,6 +297,12 @@ the parent's turn. `every_provider_ends_a_turn_at_most_once` holds it.
 Providers without hook mappings (Droid, Copilot, Aider) get identity only, from
 banner sniffing that `agents.rs` explicitly documents as not the status machine. They can
 be delegated to, via #3 — identity is still not status.
+
+### Generated titles never supply status or identity
+
+Generated pane titles consume only redacted first-prompt and first-reply hook text after
+explicit opt-in or a manual request. Generated display text never drives agent status or
+serves as an orchestration address. Native CLI titles and user overrides retain precedence.
 
 ### The remote feed comes from hook payloads and lives in memory
 

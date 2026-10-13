@@ -583,6 +583,10 @@ pub struct Session {
     composer_watch: AtomicBool,
     cli_title: Mutex<CliTitleState>,
     title_source: Mutex<TitleSource>,
+    title_revision: AtomicU64,
+    title_excerpt: Mutex<(Option<String>, Option<String>)>,
+    title_excerpt_closed: AtomicBool,
+    title_profile_env: Option<(String, String)>,
     transient_title_candidates: Mutex<Vec<(TitleSource, String)>>,
     tags: Mutex<Vec<u32>>,
     acp: Option<Mutex<crate::acp::AcpDecoder>>,
@@ -614,6 +618,7 @@ pub struct Session {
     hook_latest_prompt: Mutex<Option<String>>,
     hook_latest_agent_message: Mutex<Option<String>>,
     sleep_notice: Mutex<Option<String>>,
+    recovery_notice: Mutex<Option<String>>,
     slept_at_ms: Mutex<Option<u64>>,
     geometry: AtomicU32,
     backend: Backend,
@@ -1341,6 +1346,14 @@ impl Session {
             .expect("latest agent message lock")
             .clone();
         info.sleep_notice = self.sleep_notice.lock().expect("sleep notice lock").clone();
+        if let Some(notice) = self
+            .recovery_notice
+            .lock()
+            .expect("recovery notice lock")
+            .clone()
+        {
+            info.resume_notice = Some(notice);
+        }
         info.slept_at_ms = *self.slept_at_ms.lock().expect("slept-at lock");
         info
     }
@@ -1478,6 +1491,7 @@ mod remote;
 mod slack;
 mod task_trackers;
 pub(crate) mod tasks;
+mod title_generation;
 mod worktree_pass;
 pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 
@@ -1640,11 +1654,12 @@ pub struct Daemon {
     db_path: PathBuf,
     scrollback_dir: PathBuf,
     shellint_dir: Option<PathBuf>,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     session_launcher: Mutex<Option<PathBuf>>,
     ledger_tx: mpsc::Sender<LedgerEntry>,
     recovery: Mutex<Option<proto::RecoverySummary>>,
     handoff_jobs: Mutex<HashMap<u32, HandoffJob>>,
+    title_generation_busy: AtomicBool,
     next_handoff: AtomicU32,
     ssh_prompts: Mutex<HashMap<u32, oneshot::Sender<crate::ssh::HostKeyVerdict>>>,
     known_hosts: PathBuf,
@@ -1693,6 +1708,7 @@ pub struct Daemon {
     first_prompt_confirm_ms: AtomicU64,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
+    claude_mod_turns: Mutex<HashMap<u32, (String, String)>>,
     prompt_awaiting_hook: Mutex<HashSet<u32>>,
     stdin_partial_after: Mutex<HashMap<u32, usize>>,
     inbox_pending_max: AtomicU32,
@@ -1849,7 +1865,14 @@ fn voice_capture_failure(e: &crate::voice::capture::CaptureError) -> proto::Voic
 const KEYMAP_OVERRIDES_MAX_BINDINGS: usize = 64;
 const KEYMAP_OVERRIDES_MAX_CODE_LEN: usize = 64;
 
+struct TitleJob {
+    revision: u64,
+    prompt: String,
+    directory: tempfile::TempDir,
+}
+
 struct HandoffJob {
+    title_job: Option<TitleJob>,
     hidden: u32,
     source: u32,
     provider: proto::AgentKind,
@@ -1867,6 +1890,10 @@ struct HandoffJob {
 // can't grow it unbounded; output past the cap is dropped from the buffer, not
 // from the live chunks already broadcast.
 const HANDOFF_BUFFER_CAP: usize = 2 * 1024 * 1024;
+// Allow bounded CLI startup diagnostics while a generated title itself fits in forty characters.
+const TITLE_OUTPUT_CAP: usize = 4096;
+// A fixed deadline bounds provider stalls even if they keep emitting output.
+const TITLE_GENERATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn handoff_timeout() -> Duration {
     std::env::var("HOUSTON_HANDOFF_TIMEOUT_MS")
@@ -3074,12 +3101,12 @@ impl Daemon {
         Self::new_inner_ex(cfg, None, Some(port), None, launcher)
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub fn set_session_launcher(&self, launcher: Option<PathBuf>) {
         *self.session_launcher.lock().expect("session launcher lock") = launcher;
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn cli_launcher(&self) -> Option<PathBuf> {
         self.session_launcher
             .lock()
@@ -3089,7 +3116,11 @@ impl Daemon {
                 std::env::current_exe()
                     .ok()
                     .map(|path| crate::exe_path::strip_deleted_exe_suffix(&path))
-                    .filter(|path| path.file_name().is_some_and(|name| name == "houston-core"))
+                    .filter(|path| {
+                        path.file_name().is_some_and(|name| {
+                            name == "houston-core" || name == "houston-core.exe"
+                        })
+                    })
             })
     }
 
@@ -3150,7 +3181,7 @@ impl Daemon {
         adopted: Option<AdoptedSessions>,
         session_launcher: Option<PathBuf>,
     ) -> Result<Arc<Self>> {
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", windows)))]
         let _ = session_launcher;
         let db = Db::open(&cfg.db_path)?;
         db.instruction_recover(now_ms())?;
@@ -3221,6 +3252,16 @@ impl Daemon {
                 .filter(|t| !t.is_empty())
                 .collect();
             for info in dead.values_mut() {
+                match db.uncontained_recovery_notice(info.id) {
+                    Ok(Some(notice)) => info.resume_notice = Some(notice),
+                    Err(error) => {
+                        info.resume_notice = Some(format!(
+                            "Session {} ownership receipt is unreadable: {error:#}",
+                            info.id
+                        ))
+                    }
+                    Ok(None) => {}
+                }
                 if info.title.is_empty() {
                     let name = crate::pane_name::pick_codename(&used);
                     used.insert(name.clone());
@@ -3330,11 +3371,12 @@ impl Daemon {
             db_path: cfg.db_path.clone(),
             scrollback_dir,
             shellint_dir,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             session_launcher: Mutex::new(session_launcher),
             ledger_tx,
             recovery: Mutex::new(None),
             handoff_jobs: Mutex::new(HashMap::new()),
+            title_generation_busy: AtomicBool::new(false),
             next_handoff: AtomicU32::new(1),
             ssh_prompts: Mutex::new(HashMap::new()),
             known_hosts: state_dir.join("known_hosts"),
@@ -3401,6 +3443,7 @@ impl Daemon {
             first_prompts: Mutex::new(HashMap::new()),
             first_prompt_confirm_ms: AtomicU64::new(FIRST_PROMPT_CONFIRM.as_millis() as u64),
             turn_start_round: Mutex::new(HashMap::new()),
+            claude_mod_turns: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new({
                 #[cfg(unix)]
                 let recovered = adopted
@@ -3618,7 +3661,10 @@ impl Daemon {
             anyhow::ensure!(!out.metadata_failed, "hook metadata recovery could not read or validate all candidate drops in {}; resume is deferred until every relevant drop is readable and valid", dir.display());
         }
         let mut dead = self.dead.lock().expect("dead lock");
-        for info in self.db.list_interrupted()? {
+        for mut info in self.db.list_interrupted()? {
+            if let Some(notice) = self.db.uncontained_recovery_notice(info.id)? {
+                info.resume_notice = Some(notice);
+            }
             if dead.contains_key(&info.id) {
                 dead.insert(info.id, info);
             }
@@ -5221,6 +5267,10 @@ impl Daemon {
             composer_watch: AtomicBool::new(false),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(title_source),
+            title_revision: AtomicU64::new(0),
+            title_excerpt: Mutex::new((None, None)),
+            title_excerpt_closed: AtomicBool::new(true),
+            title_profile_env: None,
             transient_title_candidates: Mutex::new(Vec::new()),
             tags: Mutex::new(m.tags.clone()),
             acp: None,
@@ -5264,6 +5314,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(None),
             hook_latest_agent_message: Mutex::new(None),
             sleep_notice: Mutex::new(None),
+            recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(m.cols) << 16) | u32::from(m.rows)),
             backend,
@@ -7794,21 +7845,26 @@ impl Daemon {
     ) -> Result<PathBuf> {
         if provider == proto::AgentKind::Zcode {
             self.prepare_zcode_hooks()?;
+        } else if provider == proto::AgentKind::Codex {
+            self.prepare_windows_hook_launcher(provider)?;
         }
         crate::agent_hooks::install(provider, home, launcher, sentinel)
     }
 
-    /// On Windows ZCode starts the launcher itself, with no guard for a missing file, so
-    /// the launcher is pointed here rather than only alongside Claude's hooks.
     fn prepare_zcode_hooks(&self) -> Result<()> {
         crate::zcode_config::write_plugin(&self.state_dir, self.channel.as_deref())?;
+        self.prepare_windows_hook_launcher(proto::AgentKind::Zcode)
+    }
+
+    /// Native Windows commands need the `.exe` launcher even with Claude hooks disabled.
+    fn prepare_windows_hook_launcher(&self, provider: proto::AgentKind) -> Result<()> {
         if cfg!(windows) && self.hook_launcher().is_none() {
             let program = crate::claude_hooks::executable_launcher(
                 &crate::claude_hooks::launcher_path(&self.state_dir),
             );
             if !program.is_file() {
                 bail!(
-                    "ZCode's hooks start {}, which Houston could not create (the daemon log \
+                    "{provider:?}'s hooks start {}, which Houston could not create (the daemon log \
                      names the cause)",
                     program.display()
                 );
@@ -8477,12 +8533,13 @@ impl Daemon {
         let now = std::time::Instant::now();
         let (dispatch, activity) = {
             let mut tracker = session.activity.lock().expect("activity lock");
-            let dispatch = tracker.update(
+            let dispatch = tracker.update_with_question(
                 provider,
                 &drop.event,
                 drop.prompt.as_deref(),
                 drop.last_message.as_deref(),
                 drop.tool_name.as_deref(),
+                drop.reason.as_deref(),
                 now,
             );
             (dispatch, tracker.activity())
@@ -9534,6 +9591,15 @@ impl Daemon {
             }
             ownership = Some(self.reserve_ownership_replacement(old_id)?);
             self.cleanup_session_ownership(old_id, old)?;
+            #[cfg(target_os = "linux")]
+            if let Err(error) = self.db.check_contained_workload_stopped(old_id) {
+                *old.recovery_notice.lock().expect("recovery notice lock") =
+                    Some(format!("Session {old_id} replacement deferred: {error:#}"));
+                self.broadcast_control(&proto::ServerMsg::SessionUpdated {
+                    info: old.snapshot_info(),
+                });
+                return Err(error);
+            }
             // The drained reader may have supplied a final shell cwd. Commit its
             // watermark before validating a handle or attempting replacement.
             self.flush_shell_cwd_metadata()?;
@@ -10851,6 +10917,8 @@ impl Daemon {
                 drop(reader);
                 #[cfg(unix)]
                 drop(poll_fd);
+                #[cfg(all(windows, feature = "test-barriers"))]
+                crate::test_barriers::pause("pty-reader-eof", id);
                 let (done, changed) = &*reader_session.reader_done;
                 *done.lock().expect("reader done lock") = true;
                 changed.notify_all();
@@ -10908,7 +10976,7 @@ impl Daemon {
             spawned_by,
             extra_args,
             launch_selections,
-            shell_startup,
+            mut shell_startup,
             extra_env,
             wrap,
             acp,
@@ -11029,13 +11097,13 @@ impl Daemon {
                     )
                 }
             };
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             let resolved = if agent == proto::AgentKind::Codex && custom_cmd.is_none() {
                 std::env::var_os("PATH").and_then(|path| resolve_codex_cli(&path))
             } else {
                 crate::exe_path::resolve(&program)
             };
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(any(target_os = "linux", windows)))]
             let resolved = crate::exe_path::resolve(&program);
             let program: std::path::PathBuf =
                 resolved.unwrap_or_else(|| std::path::PathBuf::from(&program));
@@ -11121,13 +11189,20 @@ impl Daemon {
         if !hidden && agent != proto::AgentKind::Ssh {
             match init_orchestration_scope(&project_dir) {
                 Ok((_, bin_dir)) => {
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", windows))]
                     if agent == proto::AgentKind::Shell {
                         if let (Some(launcher), Some(codex)) = (
                             self.cli_launcher(),
                             std::env::var_os("PATH").and_then(|path| resolve_codex_cli(&path)),
                         ) {
                             write_codex_wrapper(&bin_dir)?;
+                            #[cfg(windows)]
+                            let (launcher, codex) = (
+                                crate::exe_path::command_spelling(
+                                    &crate::paths::windows_command_path(&launcher),
+                                ),
+                                crate::exe_path::command_spelling(&codex),
+                            );
                             cmd.env("HOUSTON_CODEX_LAUNCHER", &launcher);
                             cmd.env("HOUSTON_CODEX_CLI", &codex);
                             cmd.env(
@@ -11171,11 +11246,39 @@ impl Daemon {
             if !hidden && self.session_policy().claude_fullscreen {
                 cmd.env(CLAUDE_FULLSCREEN_ENV, "1");
             }
+            let version = self.cli_presence(proto::AgentKind::Claude).version;
+            let launcher = crate::claude_hooks::executable_launcher(
+                &crate::claude_hooks::launcher_path(&self.state_dir),
+            );
+            let turn_mod = if self.hook_consent(proto::AgentKind::Claude)
+                && crate::claude_turns::supported(version.as_deref())
+                && launcher.is_file()
+            {
+                Some(crate::claude_turns::prepare(
+                    &self.state_dir,
+                    &launcher,
+                    self.channel.as_deref(),
+                )?)
+            } else {
+                tracing::debug!(
+                    session = id,
+                    ?version,
+                    "Claude native interrupt reports unavailable"
+                );
+                None
+            };
             if !shell_claude_resume {
+                if let Some(root) = &turn_mod {
+                    cmd.args(["--plugin-dir", &root.display().to_string()]);
+                }
                 cmd.args(crate::launch::claude_pane_env_args(
                     &cmd,
                     &self.claude_settings_path(id),
                 )?);
+            } else if let Some(root) = turn_mod {
+                if let Some(argv) = shell_startup.as_mut() {
+                    argv.extend(["--plugin-dir".into(), root.display().to_string()]);
+                }
             }
         }
         if let Some(argv) = &shell_startup {
@@ -11219,22 +11322,35 @@ impl Daemon {
         } else {
             None
         };
-        #[cfg(target_os = "linux")]
-        if let Some(launcher) = self
-            .session_launcher
-            .lock()
-            .expect("session launcher lock")
-            .as_ref()
+        #[cfg(windows)]
+        if agent == proto::AgentKind::Codex
+            && acp.is_none()
+            && custom_cmd.is_none()
+            && wrap.is_none()
+            && !hidden
         {
+            if let Some(launcher) = self.cli_launcher() {
+                crate::codex_pane::wrap_direct(&mut cmd, &launcher);
+            }
+        }
+        #[cfg(target_os = "linux")]
+        let mut exec_gate = if let Some(launcher) = self.cli_launcher() {
             crate::session_isolation::resolve_program(&mut cmd)
                 .with_context(|| format!("resolving command for session {id}"))?;
             crate::session_isolation::wrap(
                 &mut cmd,
-                launcher,
+                &launcher,
                 self.channel.as_deref().unwrap_or("release"),
                 id,
             );
-        }
+            Some(crate::session_isolation::ExecGate::new(
+                &mut cmd,
+                self.channel.as_deref().unwrap_or("release"),
+                id,
+            )?)
+        } else {
+            None
+        };
         #[cfg(feature = "test-barriers")]
         self.startup_fault("reader-handle")?;
         let reader = pair
@@ -11288,6 +11404,14 @@ impl Daemon {
         let pid = child.process_id();
         let killer = child.clone_killer();
         *startup.child.lock().expect("startup child lock") = Some(child);
+        #[cfg(target_os = "linux")]
+        let ownership_receipt = exec_gate
+            .as_mut()
+            .map(|gate| {
+                gate.receipt(pid.ok_or_else(|| anyhow!("session {id}: gated PTY has no PID"))?)
+            })
+            .transpose()
+            .context(orchestrate::MutationMayHaveActed)?;
         #[cfg(feature = "test-barriers")]
         {
             if let (Some(pid), Some(spawned)) = (
@@ -11415,6 +11539,11 @@ impl Daemon {
             composer_watch: AtomicBool::new(pastes_first_prompt),
             cli_title: Mutex::new(CliTitleState::default()),
             title_source: Mutex::new(title_source),
+            title_revision: AtomicU64::new(0),
+            title_excerpt: Mutex::new((None, None)),
+            title_excerpt_closed: AtomicBool::new(carries_scrollback),
+            title_profile_env: Self::agent_profile_config_dir(agent, &extra_env)
+                .map(|directory| (Self::agent_profile_env_var(agent), directory.to_string())),
             transient_title_candidates: Mutex::new(Vec::new()),
             tags: Mutex::new(p_tags),
             acp: acp
@@ -11448,6 +11577,7 @@ impl Daemon {
             hook_latest_prompt: Mutex::new(info.latest_prompt.clone()),
             hook_latest_agent_message: Mutex::new(info.last_agent_message.clone()),
             sleep_notice: Mutex::new(None),
+            recovery_notice: Mutex::new(None),
             slept_at_ms: Mutex::new(info.slept_at_ms),
             geometry: AtomicU32::new((u32::from(cols) << 16) | u32::from(rows)),
             backend: Backend::Pty {
@@ -11618,9 +11748,14 @@ impl Daemon {
         } else {
             preassigned.map(|conversation| (None, Some(conversation)))
         };
-        if hidden {
-            prepare().context(orchestrate::MutationMayHaveActed)?;
-        } else {
+        {
+            #[cfg(target_os = "linux")]
+            let process_identity = match ownership_receipt {
+                Some(receipt) => Some(receipt),
+                None => crate::recovery_process::ProcessIdentity::capture(pid)
+                    .context(orchestrate::MutationMayHaveActed)?,
+            };
+            #[cfg(not(target_os = "linux"))]
             let process_identity = crate::recovery_process::ProcessIdentity::capture(pid)
                 .context(orchestrate::MutationMayHaveActed)?;
             self.db
@@ -11668,6 +11803,12 @@ impl Daemon {
         startup.committed = true;
         if hidden {
             self.handoff_started(id);
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(gate) = &mut exec_gate {
+            if let Err(error) = gate.release() {
+                tracing::warn!("session {id}: committed pre-exec release failed: {error:#}; retaining ownership receipt and recovery metadata");
+            }
         }
         startup.gate.finish(true);
         #[cfg(target_os = "linux")]
@@ -12016,6 +12157,10 @@ impl Daemon {
                 composer_watch: AtomicBool::new(false),
                 cli_title: Mutex::new(CliTitleState::default()),
                 title_source: Mutex::new(TitleSource::Codename),
+                title_revision: AtomicU64::new(0),
+                title_excerpt: Mutex::new((None, None)),
+                title_excerpt_closed: AtomicBool::new(true),
+                title_profile_env: None,
                 transient_title_candidates: Mutex::new(Vec::new()),
                 tags: Mutex::new(Vec::new()),
                 osc52: Mutex::new(crate::osc52::Osc52Scanner::new()),
@@ -12048,6 +12193,7 @@ impl Daemon {
                 hook_latest_prompt: Mutex::new(None),
                 hook_latest_agent_message: Mutex::new(None),
                 sleep_notice: Mutex::new(None),
+                recovery_notice: Mutex::new(None),
                 slept_at_ms: Mutex::new(None),
                 geometry: AtomicU32::new((u32::from(params.cols) << 16) | u32::from(params.rows)),
                 backend: Backend::Ssh(handle),
@@ -13425,6 +13571,51 @@ impl Daemon {
         self.close_reserved(&reservation)
     }
 
+    pub fn recheck_recovery(&self, id: u32, acknowledge_uncontained: bool) -> Result<()> {
+        let _lifecycle = self
+            .session_lifecycle_lock
+            .lock()
+            .expect("session lifecycle lock");
+        self.ensure_not_closing(id, "recovery check")?;
+        let registered = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .get(&id)
+            .cloned();
+        anyhow::ensure!(
+            self.dead.lock().expect("dead lock").contains_key(&id)
+                || registered
+                    .as_ref()
+                    .is_some_and(|session| !session.snapshot_info().state.is_live()),
+            "recovery check refused for session {id}: expected a retained ended session"
+        );
+        if acknowledge_uncontained {
+            self.db.acknowledge_uncontained_recovery(id)?;
+        }
+        let result = self.db.check_previous_process_stopped(id);
+        let notice = match &result {
+            Ok(()) => "Process recovery recheck passed. Restart is available; retained missions still require explicit resume.".into(),
+            Err(error) => format!("Session {id} recovery deferred: {error:#}"),
+        };
+        let info = if let Some(session) = registered {
+            *session
+                .recovery_notice
+                .lock()
+                .expect("recovery notice lock") = Some(notice);
+            session.snapshot_info()
+        } else {
+            let mut dead = self.dead.lock().expect("dead lock");
+            let info = dead
+                .get_mut(&id)
+                .ok_or_else(|| anyhow!("unknown retained session {id}"))?;
+            info.resume_notice = Some(notice);
+            info.clone()
+        };
+        self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
+        result
+    }
+
     fn ensure_not_closing(&self, id: u32, operation: &str) -> Result<()> {
         if self
             .closing_sessions
@@ -13533,7 +13724,16 @@ impl Daemon {
         let live = session.state.lock().expect("state lock").is_live();
         #[cfg(not(target_os = "linux"))]
         if !live && session.has_retained_reader() {
-            bail!("cleanup refused for exited session {id}: descendant PTY cleanup after root reap is unsupported on this platform; wait for PTY EOF");
+            // An owned stop can publish its ended state before the reader records EOF.
+            // Wait only for that receipt; never signal an unproven exited workload.
+            let (done, changed) = &*session.reader_done;
+            let done = done.lock().expect("reader done lock");
+            let (done, _) = changed
+                .wait_timeout_while(done, PTY_READER_CLOSE_WAIT, |done| !*done)
+                .expect("reader EOF wait");
+            if !*done {
+                bail!("cleanup refused for exited session {id}: descendant PTY cleanup after root reap is unsupported on this platform; PTY EOF was not observed within 1000 ms");
+            }
         }
         #[cfg(target_os = "linux")]
         let retained = matches!(&session.backend, Backend::Pty { master, .. } if master.lock().expect("master lock").is_some());
@@ -13734,7 +13934,7 @@ impl Daemon {
         let candidate;
         let title = if source != TitleSource::User {
             candidate = if let Some(session) = live.as_ref().filter(|s| s.info.hidden) {
-                // Hidden generators have no durable row; retain at most one bounded title per source.
+                // Hidden generators keep title candidates in memory: at most one bounded title per source.
                 let mut candidates = session
                     .transient_title_candidates
                     .lock()
@@ -13767,6 +13967,7 @@ impl Daemon {
                 self.db
                     .update_session_title_with_source(id, title, Some(source.as_str()))?;
             }
+            s.title_revision.fetch_add(1, Ordering::Relaxed);
             *current = source;
             *s.title.lock().expect("title lock") = title.to_string();
         } else if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&id) {
@@ -13990,7 +14191,7 @@ impl Daemon {
             .lock()
             .expect("handoff lock")
             .iter()
-            .find(|(_, job)| job.hidden == hidden)
+            .find(|(_, job)| job.hidden == hidden && job.title_job.is_none())
             .map(|(&request, job)| (request, job.source, job.provider));
         if let Some((request, session, provider)) = started {
             // Output and exit workers remain gated until the start is published.
@@ -14010,17 +14211,34 @@ impl Daemon {
         provider: proto::AgentKind,
         cmd_override: Option<Vec<String>>,
     ) -> Result<u32> {
-        let (info, ring, blocks) = self.handoff_source(source)?;
+        self.handoff_generate_impl(source, provider, cmd_override, None)
+    }
 
-        let cwd = self
-            .live_cwd(source)
-            .filter(|d| d.is_dir())
+    fn handoff_generate_impl(
+        self: &Arc<Self>,
+        source: u32,
+        provider: proto::AgentKind,
+        cmd_override: Option<Vec<String>>,
+        title_job: Option<TitleJob>,
+    ) -> Result<u32> {
+        let (info, ring, blocks) = if title_job.is_some() {
+            (self.get(source)?.snapshot_info(), None, Vec::new())
+        } else {
+            self.handoff_source(source)?
+        };
+
+        let cwd = title_job
+            .as_ref()
+            .map(|job| job.directory.path().to_path_buf())
+            .or_else(|| self.live_cwd(source).filter(|d| d.is_dir()))
             .unwrap_or_else(|| PathBuf::from(&info.project_dir));
         let tr_dir = cwd.join(crate::paths::PROJECT_DIR);
         std::fs::create_dir_all(&tr_dir)
             .with_context(|| format!("creating {}", tr_dir.display()))?;
 
-        let activity = if !blocks.is_empty() {
+        let activity = if title_job.is_some() {
+            String::new()
+        } else if !blocks.is_empty() {
             match &ring {
                 Some(r) => crate::handoff::curate_blocks(&blocks, |a, b| r.slice(a, b)),
                 None => crate::handoff::curate_blocks(&blocks, |_, _| (Vec::new(), true)),
@@ -14053,7 +14271,10 @@ impl Daemon {
                     .unwrap_or(0)
             }),
         };
-        let prompt = crate::handoff::build_prompt(&facts, &activity);
+        let prompt = title_job
+            .as_ref()
+            .map(|job| job.prompt.clone())
+            .unwrap_or_else(|| crate::handoff::build_prompt(&facts, &activity));
 
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -14065,7 +14286,13 @@ impl Daemon {
 
         let path_arg = prompt_path.display().to_string();
         #[cfg(unix)]
-        let (argv, provider_name): (Vec<String>, String) = match (provider, cmd_override) {
+        let (argv, provider_name): (Vec<String>, String) = if title_job.is_some() {
+            (
+                crate::generated_title::argv(provider, prompt.clone())?,
+                format!("{provider:?}"),
+            )
+        } else {
+            match (provider, cmd_override) {
             (proto::AgentKind::Custom, Some(mut cmd)) if !cmd.is_empty() => {
                 cmd.push(path_arg);
                 (cmd, "custom".into())
@@ -14154,72 +14381,90 @@ impl Daemon {
                      cursor, grok or zcode"
                 )
             }
+        }
         };
         #[cfg(windows)]
         let (argv, provider_name): (Vec<String>, String) = {
             let read_the_file = |path: &str| {
                 format!("Read the file at {path} and follow the instructions in it exactly.")
             };
-            match (provider, cmd_override) {
-                (proto::AgentKind::Custom, Some(mut cmd)) if !cmd.is_empty() => {
-                    cmd.push(path_arg);
-                    (cmd, "custom".into())
-                }
-                (proto::AgentKind::Custom, _) => {
-                    let _ = std::fs::remove_file(&prompt_path);
-                    bail!(
+            if title_job.is_some() {
+                (
+                    crate::generated_title::argv(provider, prompt.clone())?,
+                    format!("{provider:?}"),
+                )
+            } else {
+                match (provider, cmd_override) {
+                    (proto::AgentKind::Custom, Some(mut cmd)) if !cmd.is_empty() => {
+                        cmd.push(path_arg);
+                        (cmd, "custom".into())
+                    }
+                    (proto::AgentKind::Custom, _) => {
+                        let _ = std::fs::remove_file(&prompt_path);
+                        bail!(
                         "handoff provider \"custom\" requires a non-empty cmd argv (test fixtures)"
                     )
-                }
-                (proto::AgentKind::Claude, _) => (
-                    vec!["claude".into(), "--print".into(), read_the_file(&path_arg)],
-                    "claude".into(),
-                ),
-                (proto::AgentKind::Codex, _) => (
-                    vec!["codex".into(), "exec".into(), read_the_file(&path_arg)],
-                    "codex".into(),
-                ),
-                (proto::AgentKind::Antigravity, _) => (
-                    vec!["agy".into(), "-p".into(), read_the_file(&path_arg)],
-                    "antigravity".into(),
-                ),
-                (proto::AgentKind::Opencode, _) => (
-                    vec!["opencode".into(), "run".into(), read_the_file(&path_arg)],
-                    "opencode".into(),
-                ),
-                (proto::AgentKind::Cursor, _) => (
-                    vec!["cursor-agent".into(), "-p".into(), read_the_file(&path_arg)],
-                    "cursor".into(),
-                ),
-                (proto::AgentKind::Grok, _) => (
-                    vec!["grok".into(), "-p".into(), read_the_file(&path_arg)],
-                    "grok".into(),
-                ),
-                (proto::AgentKind::Zcode, _) => (
-                    vec![
+                    }
+                    (proto::AgentKind::Claude, _) => (
+                        vec!["claude".into(), "--print".into(), read_the_file(&path_arg)],
+                        "claude".into(),
+                    ),
+                    (proto::AgentKind::Codex, _) => (
+                        vec!["codex".into(), "exec".into(), read_the_file(&path_arg)],
+                        "codex".into(),
+                    ),
+                    (proto::AgentKind::Antigravity, _) => (
+                        vec!["agy".into(), "-p".into(), read_the_file(&path_arg)],
+                        "antigravity".into(),
+                    ),
+                    (proto::AgentKind::Opencode, _) => (
+                        vec!["opencode".into(), "run".into(), read_the_file(&path_arg)],
+                        "opencode".into(),
+                    ),
+                    (proto::AgentKind::Cursor, _) => (
+                        vec!["cursor-agent".into(), "-p".into(), read_the_file(&path_arg)],
+                        "cursor".into(),
+                    ),
+                    (proto::AgentKind::Grok, _) => (
+                        vec!["grok".into(), "-p".into(), read_the_file(&path_arg)],
+                        "grok".into(),
+                    ),
+                    (proto::AgentKind::Zcode, _) => (
+                        vec![
+                            "zcode".into(),
+                            "--mode".into(),
+                            "build".into(),
+                            "-p".into(),
+                            read_the_file(&path_arg),
+                        ],
                         "zcode".into(),
-                        "--mode".into(),
-                        "build".into(),
-                        "-p".into(),
-                        read_the_file(&path_arg),
-                    ],
-                    "zcode".into(),
-                ),
-                (other, _) => {
-                    let _ = std::fs::remove_file(&prompt_path);
-                    bail!(
+                    ),
+                    (other, _) => {
+                        let _ = std::fs::remove_file(&prompt_path);
+                        bail!(
                         "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode, \
                          cursor, grok or zcode"
                     )
+                    }
                 }
             }
         };
 
+        let generation_profile_env = title_job
+            .as_ref()
+            .and_then(|_| {
+                self.get(source)
+                    .ok()
+                    .and_then(|session| session.title_profile_env.clone())
+            })
+            .into_iter()
+            .collect();
         let hidden_id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let request = self.next_handoff.fetch_add(1, Ordering::Relaxed);
         self.handoff_jobs.lock().expect("handoff lock").insert(
             request,
             HandoffJob {
+                title_job,
                 hidden: hidden_id,
                 source,
                 provider,
@@ -14253,7 +14498,7 @@ impl Daemon {
             extra_args: Vec::new(),
             launch_selections: None,
             shell_startup: None,
-            extra_env: Vec::new(),
+            extra_env: generation_profile_env,
             wrap: None,
             acp: None,
             profile_label: None,
@@ -14275,7 +14520,18 @@ impl Daemon {
         }
 
         let weak = Arc::downgrade(self);
-        let timeout = handoff_timeout();
+        let is_title = self
+            .handoff_jobs
+            .lock()
+            .expect("handoff lock")
+            .get(&request)
+            .is_some_and(|job| job.title_job.is_some());
+        let started = Instant::now();
+        let timeout = if is_title {
+            TITLE_GENERATION_TIMEOUT
+        } else {
+            handoff_timeout()
+        };
         std::thread::Builder::new()
             .name(format!("handoff-watch-{request}"))
             .spawn(move || loop {
@@ -14286,12 +14542,17 @@ impl Daemon {
                     let Some(job) = jobs.get_mut(&request) else {
                         return;
                     };
-                    if job.last_activity.elapsed() < timeout {
+                    if (if is_title {
+                        started.elapsed()
+                    } else {
+                        job.last_activity.elapsed()
+                    }) < timeout
+                    {
                         continue;
                     }
                     if job.fail_reason.is_none() {
                         job.fail_reason = Some(format!(
-                            "no output from {} for {}s — is it installed and authenticated?",
+                            "{} exceeded its {}s generator deadline — is it installed and authenticated?",
                             job.provider_name,
                             timeout.as_secs()
                         ));
@@ -14312,6 +14573,15 @@ impl Daemon {
             return;
         };
         let request = *request;
+        if job.title_job.is_some() {
+            let actual = job.buffer.len() + chunk.len();
+            if actual <= TITLE_OUTPUT_CAP {
+                job.buffer.extend_from_slice(chunk);
+            } else {
+                job.fail_reason = Some(format!("title output limit {TITLE_OUTPUT_CAP} bytes exceeded (actual {actual}); cannot capture generated title"));
+            }
+            return;
+        }
         job.last_activity = Instant::now();
         if job.buffer.len() + chunk.len() <= HANDOFF_BUFFER_CAP {
             job.buffer.extend_from_slice(chunk);
@@ -14348,6 +14618,13 @@ impl Daemon {
     }
 
     fn handoff_finish(&self, request: u32, job: HandoffJob) {
+        if let Err(error) = self.db.mark_closed(job.hidden) {
+            tracing::warn!("retiring hidden generator {}: {error:#}", job.hidden);
+        }
+        if job.title_job.is_some() {
+            self.finish_generated_title(job);
+            return;
+        }
         self.sessions
             .lock()
             .expect("sessions lock")
@@ -14742,6 +15019,51 @@ impl Daemon {
                 }
             }
         }
+        if provider == proto::AgentKind::Claude
+            && matches!(
+                d.event.as_str(),
+                crate::claude_turns::START | crate::claude_turns::INTERRUPTED
+            )
+        {
+            let Ok(session) = self.get(d.session) else {
+                return crate::hook_drop::DropVerdict::NoSession;
+            };
+            if !session.state.lock().expect("state lock").is_live() {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            if d.agent_id.is_some() || d.subagent_type.is_some() {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            let (Some(conversation), Some(turn)) =
+                (d.session_id.as_deref(), d.prompt_id.as_deref())
+            else {
+                return crate::hook_drop::DropVerdict::Applied;
+            };
+            if conversation.is_empty()
+                || turn.is_empty()
+                || conversation.len() > crate::claude_turns::ID_MAX_BYTES
+                || turn.len() > crate::claude_turns::ID_MAX_BYTES
+            {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            let mut turns = self.claude_mod_turns.lock().expect("Claude mod turns lock");
+            if d.event == crate::claude_turns::INTERRUPTED
+                && !turns
+                    .get(&d.session)
+                    .is_some_and(|current| current.0 == conversation && current.1 == turn)
+            {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            if !self.note_hook_seen(d.session, provider, &d.event, d.root_cwd(provider)) {
+                return crate::hook_drop::DropVerdict::NoSession;
+            }
+            if d.event == crate::claude_turns::START {
+                turns.insert(d.session, (conversation.to_string(), turn.to_string()));
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            turns.remove(&d.session);
+        }
+
         if provider == proto::AgentKind::Grok
             && d.event == "SessionEnd"
             && d.subagent_type.is_some()
@@ -14990,6 +15312,7 @@ impl Daemon {
                 .then_some(d.prompt.as_deref())
                 .flatten(),
         );
+        self.note_title_excerpt(d.session, provider, d);
         self.note_session_activity(d.session, provider, d);
         if d.event == "Stop" && provider == proto::AgentKind::Claude {
             if let Some(count) = d.background_tasks {
@@ -15349,6 +15672,12 @@ impl Daemon {
         }
 
         if correlates && ev == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
+            if provider == proto::AgentKind::Claude && !d.internal_prompt {
+                self.claude_mod_turns
+                    .lock()
+                    .expect("Claude mod turns lock")
+                    .remove(&d.session);
+            }
             let mut reopened = false;
             let mut rounds = self.subagent_rounds.lock().expect("subagent rounds lock");
             let round = rounds.entry(d.session).or_default();
@@ -15389,6 +15718,10 @@ impl Daemon {
             return None;
         }
 
+        if correlates && ev == Some(crate::agent_events::AgentEvent::TurnEnded) && !d.stop_continued
+        {
+            self.maybe_generate_title(d.session);
+        }
         if correlates && ev == Some(crate::agent_events::AgentEvent::TurnEnded) {
             if d.stop_hook_active {
                 tracing::debug!(
@@ -16092,6 +16425,10 @@ impl Daemon {
         self.last_prompt_id
             .lock()
             .expect("last prompt id lock")
+            .retain(|id, _| live.contains(id));
+        self.claude_mod_turns
+            .lock()
+            .expect("Claude mod turns lock")
             .retain(|id, _| live.contains(id));
         self.prompt_awaiting_hook
             .lock()
@@ -17007,6 +17344,12 @@ impl Daemon {
                 .unwrap_or_else(|| model_id.to_string()),
             size_bytes: spec.map(|s| s.size_bytes).unwrap_or(0),
             status,
+            unavailable_reason: (!cfg!(unix))
+                .then(|| crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE.to_string()),
+            guidance: spec.map(crate::voice::reuse::guidance),
+            linked: !crate::voice::models::final_model_path(&self.voice_models_dir(), model_id)
+                .is_file()
+                && crate::voice::reuse::linked_path(&self.voice_models_dir(), model_id).is_some(),
             cooldown_remaining_ms: self
                 .voice
                 .models
@@ -17032,6 +17375,22 @@ impl Daemon {
     }
 
     pub fn voice_settings_set(&self, settings: &proto::VoiceSettings) -> Result<()> {
+        let previous = self.voice_settings();
+        if previous.engine != settings.engine {
+            if let proto::VoiceEngine::Local { model_id } = &settings.engine {
+                if !model_id.is_empty() {
+                    if !cfg!(unix) {
+                        anyhow::bail!("{}", crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE);
+                    }
+                    anyhow::ensure!(
+                        crate::voice::models::find(model_id).is_some(),
+                        "unknown local model {model_id:?}"
+                    );
+                    anyhow::ensure!(matches!(crate::voice::models::status(&self.voice_models_dir(), model_id), crate::voice::models::ModelStatus::Downloaded { .. }), "local model {model_id:?} is not installed; download or reuse it before selecting");
+                }
+            }
+            self.voice.forget_engine();
+        }
         self.db
             .set_setting(VOICE_SETTINGS_KEY, &serde_json::to_string(settings)?)?;
         self.voice_apply_mic_policy(settings);
@@ -17156,6 +17515,11 @@ impl Daemon {
                         model_id: model_id.clone(),
                     });
                 }
+                if !cfg!(unix) {
+                    return Some(proto::VoiceFailure::Engine {
+                        message: crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE.into(),
+                    });
+                }
             }
             proto::VoiceEngine::Cloud { provider } => {
                 match crate::voice::cloud::key_availability() {
@@ -17220,11 +17584,19 @@ impl Daemon {
         };
         match &settings.engine {
             proto::VoiceEngine::Local { model_id } => {
-                let path = self.voice_models_dir().join(format!("{model_id}.bin"));
+                let spec = crate::voice::models::find(model_id)
+                    .ok_or_else(|| engine_failure("No local model selected".into()))?;
+                let path = crate::voice::reuse::resolve_path(&self.voice_models_dir(), model_id)
+                    .ok_or_else(|| {
+                        engine_failure(format!("local model {model_id:?} is not installed"))
+                    })?;
+                let external = crate::voice::reuse::linked_path(&self.voice_models_dir(), model_id)
+                    .is_some()
+                    .then_some(spec);
                 let transcriber = self
                     .voice
-                    .local_engine(&path)
-                    .map_err(|e| engine_failure(e.to_string()))?;
+                    .local_engine(&path, external)
+                    .map_err(|e| engine_failure(format!("loading {} failed: {e}; allow about {} GiB working headroom; available memory {}", spec.display_name, spec.memory_gib, crate::voice::reuse::memory_available_bytes().map(|m| format!("{:.1} GiB", m as f64 / 1073741824.0)).unwrap_or_else(|| "unknown".into()))))?;
                 let t = crate::voice::Transcriber::transcribe(&*transcriber, audio, &request)
                     .map_err(|e| engine_failure(e.to_string()))?;
                 Ok(crate::voice::Transcribed {
@@ -17378,6 +17750,13 @@ impl Daemon {
             });
             return;
         }
+        if !cfg!(unix) {
+            self.broadcast_control(&proto::ServerMsg::Error {
+                message: crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE.into(),
+                context: Some("voice_model_download".into()),
+            });
+            return;
+        }
         let lease = match self.voice.claim_download(&model_id) {
             Ok(lease) => lease,
             Err(_) => {
@@ -17450,10 +17829,57 @@ impl Daemon {
                 return Err(e.into());
             }
         };
+        let mut settings = self.voice_settings();
+        if matches!(&settings.engine, proto::VoiceEngine::Local { model_id: active } if active == model_id)
+        {
+            settings.engine = proto::VoiceEngine::Local {
+                model_id: String::new(),
+            };
+            self.voice_settings_set(&settings)?;
+        }
         tracing::info!(model = %model_id, freed_bytes = freed, "voice: model deleted");
         Ok(proto::ServerMsg::VoiceModelState {
             model: self.voice_model_state(model_id),
         })
+    }
+
+    pub async fn voice_models_scan(self: &Arc<Self>) -> Result<proto::ServerMsg> {
+        let lease = self.voice.claim_scan().ok_or_else(|| anyhow::anyhow!("local model scan limit is 1; 1 scan is active; wait before requesting another scan"))?;
+        let home = crate::home_dir::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("home directory unavailable for local model scan"))?;
+        let current = self.voice_models_dir();
+        let (files, limited) = tokio::task::spawn_blocking(move || {
+            let _lease = lease;
+            crate::voice::reuse::scan_home(&home, &current, crate::voice::models::CATALOG)
+        })
+        .await?;
+        Ok(proto::ServerMsg::VoiceModelsFound { files, limited })
+    }
+
+    pub async fn voice_model_reuse(
+        self: &Arc<Self>,
+        model_id: String,
+        path: PathBuf,
+        copy: bool,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            cfg!(unix),
+            "{}",
+            crate::voice::runtime::LOCAL_ENGINE_UNAVAILABLE
+        );
+        let spec = crate::voice::models::find(&model_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown local model {model_id:?}"))?;
+        let lease = self.voice.claim_download(&model_id)?;
+        let dir = self.voice_models_dir();
+        tokio::task::spawn_blocking(move || {
+            let result = crate::voice::reuse::reuse_file(&dir, &path, spec, copy);
+            lease.finish(result.as_ref().err().map(ToString::to_string));
+            result
+        })
+        .await??;
+        self.voice.forget_engine();
+        self.broadcast_control(&self.voice_settings_reply());
+        Ok(())
     }
 
     pub fn voice_key_set(&self, provider: proto::CloudStt, key: String) -> Result<()> {
@@ -18117,7 +18543,7 @@ impl Daemon {
                 return Ok(true);
             }
         }
-        std::thread::sleep(SWARM_WAKE_SETTLE);
+        std::thread::sleep(self.paste_submit_settle(session_id));
         let partial = if let Some(reason) = hold() {
             Some(format!("prompt was pasted but not submitted: {reason}"))
         } else {
@@ -18293,7 +18719,7 @@ impl Daemon {
                 "prefilled; the operator submits it".into(),
             ));
         }
-        std::thread::sleep(SWARM_WAKE_SETTLE);
+        std::thread::sleep(self.paste_submit_settle(session));
         self.write_stdin_counting(session, b"\r")
             .map_err(|e| anyhow!("submitting Enter: {e}; the text remains in its composer"))?;
         if !confirmable {
@@ -19981,6 +20407,16 @@ impl Daemon {
         sessions.get(&id).map(|s| s.status_kind())
     }
 
+    fn paste_submit_settle(&self, _session: u32) -> Duration {
+        #[cfg(windows)]
+        if self.agent_kind_of(_session) == Some(proto::AgentKind::Codex) {
+            // The console paste guard suppresses Enter for 120 ms, with a 60 ms
+            // idle flush. Leave 20 ms margin before the separate submission key.
+            return Duration::from_millis(200);
+        }
+        SWARM_WAKE_SETTLE
+    }
+
     #[doc(hidden)]
     pub fn set_worktree_spawn_observer_for_test(&self, observer: Arc<dyn Fn(u32) + Send + Sync>) {
         *self
@@ -21587,11 +22023,12 @@ impl Daemon {
             AgentEvent::PromptSubmitted | AgentEvent::InputResolved => {
                 orchestrate::DelegationEvent::TurnStarted
             }
-            AgentEvent::TurnEnded => orchestrate::DelegationEvent::TurnEnded,
+            AgentEvent::TurnEnded | AgentEvent::TurnInterrupted => {
+                orchestrate::DelegationEvent::TurnEnded
+            }
             AgentEvent::NeedsInput => orchestrate::DelegationEvent::Blocked,
             AgentEvent::SessionStarted
             | AgentEvent::Activity
-            | AgentEvent::TurnInterrupted
             | AgentEvent::TurnFailed
             | AgentEvent::SessionEnded => return,
         };
@@ -23163,7 +23600,7 @@ impl Daemon {
                 return;
             }
         }
-        std::thread::sleep(SWARM_WAKE_SETTLE);
+        std::thread::sleep(self.paste_submit_settle(parent));
         if let Some(why) = self.paste_hold_reason(parent) {
             self.paste_went_partial(
                 &delivery_id,
@@ -23598,6 +24035,8 @@ fn init_orchestration_scope(project_dir: &Path) -> Result<(PathBuf, PathBuf)> {
 }
 
 fn path_with(bin_dir: &Path, base: Option<&str>) -> String {
+    #[cfg(windows)]
+    let bin_dir = crate::paths::windows_command_path(bin_dir);
     let sep = if cfg!(windows) { ';' } else { ':' };
     match base {
         Some(p) if !p.is_empty() => format!("{}{sep}{p}", bin_dir.display()),
@@ -23653,6 +24092,55 @@ fn resolve_codex_cli(search: &std::ffi::OsStr) -> Option<PathBuf> {
     })
 }
 
+#[cfg(windows)]
+fn resolve_codex_cli(search: &std::ffi::OsStr) -> Option<PathBuf> {
+    std::env::split_paths(search).find_map(|directory| {
+        ["codex.exe", "codex.cmd", "codex.bat", "codex.com"]
+            .into_iter()
+            .find_map(|name| {
+                let candidate = directory.join(name);
+                if !candidate.is_file() {
+                    return None;
+                }
+                let mut header = String::new();
+                let managed = std::fs::File::open(&candidate)
+                    .and_then(|file| file.take(256).read_to_string(&mut header))
+                    .is_ok()
+                    && header.contains(">>> houston managed codex >>>");
+                if managed {
+                    None
+                } else {
+                    candidate
+                        .canonicalize()
+                        .ok()
+                        .map(|path| crate::paths::windows_command_path(&path))
+                }
+            })
+    })
+}
+
+#[cfg(windows)]
+fn write_codex_wrapper(bin_dir: &Path) -> Result<()> {
+    let script = "@echo off\r\nrem >>> houston managed codex >>>\r\n\"%HOUSTON_CODEX_LAUNCHER%\" codex-shell -- \"%HOUSTON_CODEX_CLI%\" %*\r\nexit /b %ERRORLEVEL%\r\nrem <<< houston managed codex <<<\r\n";
+    let sh = "#!/bin/sh\n# >>> houston managed codex >>>\nexec \"${HOUSTON_CODEX_LAUNCHER:?}\" codex-shell -- \"${HOUSTON_CODEX_CLI:?}\" \"$@\"\n# <<< houston managed codex <<<\n";
+    for (name, contents) in [("codex.cmd", script), ("codex", sh)] {
+        let path = bin_dir.join(name);
+        if path.exists()
+            && !std::fs::read_to_string(&path)?.contains(">>> houston managed codex >>>")
+        {
+            bail!(
+                "Codex wrapper {} already exists without a Houston managed marker",
+                path.display()
+            );
+        }
+        if std::fs::read_to_string(&path).ok().as_deref() != Some(contents) {
+            std::fs::write(&path, contents)
+                .with_context(|| format!("writing {}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "linux")]
 fn write_codex_wrapper(bin_dir: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -23701,6 +24189,22 @@ fn write_windows_cmd_wrapper(bin_dir: &Path, name: &str, exe: &Path, subcmd: &st
 #[cfg(test)]
 mod windows_cmd_wrapper_script_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn orchestration_path_uses_dos_syntax_for_cmd_wrappers() {
+        assert_eq!(
+            path_with(
+                Path::new(r"\\?\C:\project with spaces\.houston\orchestration\bin"),
+                Some(r"C:\Windows\System32")
+            ),
+            r"C:\project with spaces\.houston\orchestration\bin;C:\Windows\System32"
+        );
+        assert_eq!(
+            path_with(Path::new(r"\\?\UNC\server\share\bin"), None),
+            r"\\server\share\bin"
+        );
+    }
 
     /// The `hs-task` twin's text is exercised on every platform, not only where
     /// the writer compiles, so the quoting is verified on the Linux gate too.

@@ -44,7 +44,7 @@ async fn create_pane(
 
 #[tokio::test]
 async fn killing_one_session_scope_preserves_the_daemon_and_other_real_pty() {
-    if houston_core::session_isolation::launcher().is_none() {
+    if !houston_core::session_isolation::manager_available() {
         eprintln!("SKIPPED: user systemd manager unavailable for session scope isolation");
         return;
     }
@@ -177,4 +177,101 @@ fn unavailable_user_bus_keeps_the_original_argv_cwd_and_real_pty() {
     assert!(status.success(), "fallback CLI failed: {output}");
     assert!(output.contains("cgroup isolation unavailable"));
     assert!(output.contains(&format!("{}|literal $HOME %h", project.path().display())));
+}
+
+#[tokio::test]
+async fn replacement_requires_empty_scope_after_root_exit_or_failed_scope_stop() {
+    use houston_core::{daemon::RespawnConversation, pid};
+    if !houston_core::session_isolation::manager_available() {
+        eprintln!("SKIPPED: user manager required for contained replacement regression");
+        return;
+    }
+    struct Descendant(u32, u64);
+    impl Drop for Descendant {
+        fn drop(&mut self) {
+            let _ = pid::signal_process_checked_identity(self.0, pid::Signal::Kill, Some(self.1));
+        }
+    }
+    struct ScopeReset;
+    impl Drop for ScopeReset {
+        fn drop(&mut self) {
+            houston_core::session_isolation::fail_scope_termination_for_test(false);
+        }
+    }
+    for root_exits in [false, true] {
+        let (_addr, state, daemon) = common::start_daemon_with_handle().await;
+        daemon.set_session_launcher(Some(env!("CARGO_BIN_EXE_houston-core").into()));
+        let project = tempfile::tempdir().unwrap();
+        let script = format!("setsid /bin/sh -c 'trap \"\" HUP TERM; echo $$ > child.pid; exec sleep 100' </dev/null >/dev/null 2>&1 & while [ ! -f child.pid ]; do sleep 0.01; done; echo $$ > root.pid; {}", if root_exits {"exit 0"} else {"read ignored"});
+        let pane = daemon
+            .create_session(houston_core::daemon::CreateParams {
+                agent: proto::AgentKind::Custom,
+                project_dir: project.path().into(),
+                cmd: Some(vec!["/bin/sh".into(), "-c".into(), script]),
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+                model: None,
+                effort: None,
+            })
+            .unwrap();
+        let mut guard = PaneGuard(daemon.clone(), vec![pane.id]);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+        while !project.path().join("root.pid").exists() {
+            assert!(tokio::time::Instant::now() < deadline);
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let child: u32 = std::fs::read_to_string(project.path().join("child.pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let child = Descendant(child, pid::process_creation_token(child).unwrap());
+        if root_exits {
+            let root: u32 = std::fs::read_to_string(project.path().join("root.pid"))
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            while Path::new(&format!("/proc/{root}")).exists() {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "root was not reaped after redirected child detached"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }
+        houston_core::session_isolation::fail_scope_termination_for_test(true);
+        let _reset = ScopeReset;
+        let error = daemon
+            .respawn_with(pane.id, false, None, None, true, RespawnConversation::Fresh)
+            .unwrap_err();
+        assert!(error.to_string().contains("remains populated"), "{error:#}");
+        assert!(
+            daemon.list().iter().any(|info| info.id == pane.id),
+            "original pane lost on failed proof"
+        );
+        assert_eq!(
+            pid::process_creation_token(child.0),
+            Some(child.1),
+            "escaped child should still anchor nonempty scope"
+        );
+        let conn = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM sessions", [], |row| row
+                .get::<_, u32>(0))
+                .unwrap(),
+            1,
+            "refusal committed a replacement row"
+        );
+        guard.1.clear();
+        houston_core::session_isolation::fail_scope_termination_for_test(false);
+        drop(child);
+        daemon.close(pane.id).unwrap();
+    }
 }

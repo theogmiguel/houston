@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 140;
+pub const PROTOCOL_VERSION: u32 = 141;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1762,6 +1762,23 @@ pub struct VoiceModelState {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub cooldown_remaining_ms: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub unavailable_reason: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub guidance: Option<String>,
+    #[serde(default)]
+    pub linked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct VoiceExternalModel {
+    pub path: String,
+    pub source: String,
+    pub model_id: Option<String>,
+    pub unsupported_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2152,6 +2169,7 @@ pub enum TitleSource {
     #[default]
     Codename,
     Prompt,
+    Auto,
     Role,
     Cli,
     Task,
@@ -2163,6 +2181,7 @@ impl TitleSource {
         match self {
             Self::Codename => "codename",
             Self::Prompt => "prompt",
+            Self::Auto => "auto",
             Self::Role => "role",
             Self::Cli => "cli",
             Self::Task => "task",
@@ -2174,6 +2193,7 @@ impl TitleSource {
         match value {
             "codename" => Some(Self::Codename),
             "prompt" => Some(Self::Prompt),
+            "auto" => Some(Self::Auto),
             "role" => Some(Self::Role),
             "cli" => Some(Self::Cli),
             "task" => Some(Self::Task),
@@ -2322,6 +2342,9 @@ pub struct SessionActivity {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub last_message: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub question: Option<String>,
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub tool: Option<String>,
@@ -3501,6 +3524,12 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         fresh: Option<bool>,
     },
+    SessionRecoveryCheck {
+        session: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        acknowledge_uncontained: Option<bool>,
+    },
     SessionSleep {
         session: u32,
     },
@@ -3536,6 +3565,13 @@ pub enum ClientMsg {
     SessionRename {
         session: u32,
         title: String,
+    },
+    SessionTitleGenerate {
+        session: u32,
+    },
+    GeneratedTitlesGet {},
+    GeneratedTitlesSet {
+        enabled: bool,
     },
     SessionTitleReset {
         session: u32,
@@ -4485,6 +4521,12 @@ pub enum ClientMsg {
     VoiceModelDelete {
         model_id: String,
     },
+    VoiceModelsScan,
+    VoiceModelReuse {
+        model_id: String,
+        path: String,
+        copy: bool,
+    },
     VoiceLevelMonitor {
         enabled: bool,
     },
@@ -4608,6 +4650,10 @@ pub enum ClientMsg {
 // once on its way out, so the largest payload's bytes never sit on a hot path.
 #[allow(clippy::large_enum_variant)]
 pub enum ServerMsg {
+    GeneratedTitles {
+        enabled: bool,
+    },
+
     HelloOk {
         protocol: u32,
         sessions: Vec<SessionInfo>,
@@ -5387,6 +5433,10 @@ pub enum ServerMsg {
     },
     VoiceModelState {
         model: VoiceModelState,
+    },
+    VoiceModelsFound {
+        files: Vec<VoiceExternalModel>,
+        limited: bool,
     },
     VoiceLevel {
         rms: f32,

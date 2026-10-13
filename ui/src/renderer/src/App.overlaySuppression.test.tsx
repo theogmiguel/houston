@@ -43,17 +43,6 @@ afterEach(() => {
 const hides = (): number => calls.filter(([r, v]) => r === 'grid-hidden' && !v).length
 const shows = (): number => calls.filter(([r, v]) => r === 'grid-hidden' && v).length
 
-function click(el: Element | null | undefined, what: string): void {
-  if (!el) throw new Error(`${what} not found`)
-  act(() => {
-    ;(el as HTMLElement).click()
-  })
-}
-
-function openComposer(container: Element): void {
-  click(container.querySelector('[aria-label^="New session in "]'), 'the workspace row’s "New session" button')
-}
-
 describe('B6b — full-surface overlays hide the grid, never destroy it', () => {
   let harness: AppHarness | null = null
 
@@ -63,7 +52,7 @@ describe('B6b — full-surface overlays hide the grid, never destroy it', () => 
   })
 
   const openers: Array<{ name: string; open: (container: Element) => void }> = [
-    { name: 'NewSessionComposer', open: openComposer }
+    { name: 'Settings', open: () => act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true, bubbles: true, cancelable: true })) }) }
   ]
 
   for (const { name, open } of openers) {

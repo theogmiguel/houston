@@ -26,15 +26,10 @@ and [Changes](changes.md).
 
 ## Launching sessions
 
-Open the launch composer from a grid action. It docks beside the current grid so you can
-preview the resulting panes before starting them. Choose **This grid** to add sessions to
-the current layout or **New grid** to start a separate layout. Hover a preset to preview
-its slots, choose an agent for each slot, and optionally enter one task shared by every
-agent. Press Ctrl+Enter in the task field or choose **Launch** to start the sessions.
-
-Each slot shows its model, effort and checkout, with the source of each value. Workspace
-routing applies to matching roles; a route that a selected provider cannot use is shown
-as skipped with its reason. A launch with an invalid slot is blocked until you correct it.
+Choose **New session** beside a workspace to create a new empty grid. Choose **Terminal**
+or an installed agent in the empty grid to open its first pane directly. The pane **+**
+menu adds more terminals or agents to the current grid. Choose model and effort inside
+an agent CLI. For coordinated multi-agent work, use [orchestration](orchestration.md).
 
 New terminal sessions support 256-colour and true-colour output even when the
 launcher disables its own colours. Existing sessions retain their original
@@ -62,8 +57,9 @@ delivery is unknown; queued writes report that nothing was transferred. Cancelli
 upload may leave a partial file on the remote host; at most four uploads can be pending.
 
 On Linux, closing an Exited pane also stops descendants still holding its terminal open
-and completes the output reader. On other platforms, that close is refused until the
-terminal reaches EOF. A daemon handoff asks you to close Exited panes that still retain
+and completes the output reader. On Windows, closing an Exited pane whose terminal is still
+open waits up to one second for EOF and refuses if it stays open. Restart follows the same
+rule. A daemon handoff asks you to close Exited panes that still retain
 output readers.
 
 ## Splitting and stacking
@@ -103,6 +99,30 @@ When an inbox row offers a jump to a pane, Houston opens the workspace that cont
 that target pane. This also works when the message was recorded in a different
 workspace from the pane it names.
 
+### Doing now and generated titles
+
+The rail and pane header show the latest hook-delivered prompt or reply. While an agent
+needs input, its pending question takes precedence. This text does not rename the pane
+or change its reported status.
+
+Settings ▸ Workspaces ▸ Automatic titles is off by default. Enabling it requests one title
+at the first turn end while the name is still a codename or first prompt. **Generate title**
+in a pane's Terminal actions requests it manually. Generated titles rank above a prompt
+and below a delegated role; native titles, task names and manual names still win. A rename,
+reset, close or replacement while generation runs discards its result. Each session admits
+one generation attempt, with one active generation across the daemon and a 30-second deadline.
+
+**What leaves your machine:** up to 1 KB of redacted first-prompt and first-reply hook text
+is sent through the pane's own CLI and provider account. Houston reads no transcript or
+scrollback for this feature. Claude uses Haiku with tools, MCP, slash commands and session
+persistence disabled, in a temporary directory. Its safe mode excludes customization files,
+including global CLAUDE.md instructions and automatic memory, while preserving account
+authentication. Codex, OpenCode, Cursor, Grok, Antigravity
+and ZCode are refused by name until equivalent controls are verified. Authentication and
+billing use the CLI's existing account. A pane without both hook excerpts cannot generate
+a title; excerpt availability is lost after a daemon restart. A restored account profile
+whose original configuration cannot be recovered is also refused.
+
 ## Tags
 
 A tag is a named colour you attach to mark work, such as `code review`. Choose a preset or
@@ -134,7 +154,8 @@ Agent rows show **Waiting** when input is needed and context use as a percentage
 reaches 80% or higher. Selecting an agent row selects its grid and focuses its pane.
 With collapsed agent activity, a grid with more than three agents shows its first two
 and an **N more agents** action; expand it to see the rest. Expanded activity shows the
-full list. Optional prompt and latest-message previews stay local to Houston.
+full list. Prompt and latest-message previews stay local unless you enable generated titles or choose
+**Generate title** for a pane.
 The unread marker reflects inbox messages and waiting child panes; use it to mark a grid
 read or unread. **Agent activity** sort places unread cards after cards that need input
 or are working.
@@ -311,10 +332,18 @@ retry, or explicitly choose Start fresh or Close. A provider launched with a cus
 also waits after a daemon restart: Houston does not save arbitrary command arguments.
 Start fresh launches that provider's standard command.
 
-If a recorded process from the previous daemon is still alive, Houston keeps its pane
-and refuses replacement, including Start fresh and Close. Stop that process or reboot,
-then retry. This check identifies the recorded PTY process; it cannot establish that
-all detached subprocesses have stopped, and older saved sessions may lack that identity.
+Houston refuses Restart, Start fresh and Close while a recorded process or its Linux workload scope is
+still alive. A missing root process does not prove that detached tools stopped. A verified
+Linux reboot can clear that refusal without signals.
+
+Use Recheck recovery after stopping the previous workload or fixing an unavailable Linux
+user manager. Legacy sessions and launches without complete process ownership, including
+Windows ConPTY, retain their pane, conversation and pending missions with a named refusal.
+After stopping all their previous workload processes, explicitly acknowledge that they
+have stopped, then retry Restart. Acknowledgement cannot override a live recorded root,
+a contained scope or unreadable ownership evidence. It does not start a conversation or
+resume pending instructions; held instructions still require explicit resume. Rechecking
+does not acknowledge that processes stopped.
 
 Saved terminal output follows an automatically restored pane. Output since the last
 checkpoint can be lost after an abrupt daemon exit, and provider conversation history

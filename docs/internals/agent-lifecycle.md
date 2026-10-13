@@ -307,9 +307,10 @@ server retains its launch environment, and its old Idle thread cannot prove that
 TUI passed hook review. The helper supervises the real TUI with inherited PTY descriptors
 and stops its server before exiting. The observer remains in the owned scope and
 watches the helper and PTY owner's process identities; their exit ends that exact scope,
-including tool processes that created another Unix session. An interactive Codex inside
-a shell uses its own scope, so closing Codex preserves the shell and closing the shell
-ends Codex. Startup observation lasts until the pane ends or reports Idle; individual
+including tool processes that created another Unix session. Interactive Codex inside a contained Houston shell uses lifecycle hooks and
+`--no-daemon` instead: creating a sibling scope would escape the shell's committed
+ownership receipt. Its descendants remain in the shell scope, and it has no native
+startup-readiness observer. Closing the shell ends its contained workload. Startup observation lasts until the pane ends or reports Idle; individual
 RPCs, frame sizes and polling rates are bounded. After Idle, only the lifetime watch remains.
 Normal turn hooks remain authoritative, and a late SessionStart cannot replace Working
 or NeedsInput. Unsupported CLI flags, missing user systemd and other platforms retain the hook-only path;
