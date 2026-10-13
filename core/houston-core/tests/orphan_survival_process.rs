@@ -632,6 +632,13 @@ async fn detached_probe(user_bus: bool) {
         (!fixture.daemons[0].running(&fixture.nonce)).then_some(())
     })
     .await;
+    let daemon_child = &mut fixture.children.last_mut().unwrap().0;
+    assert_eq!(daemon_child.id(), daemon.pid);
+    // The leader can be a zombie before its last thread releases the channel lock.
+    poll("daemon process fully reaped", || {
+        daemon_child.try_wait().unwrap()
+    })
+    .await;
     drop(ws);
     let (_, mut ws) = fixture.start(false).await;
     let restored = sessions(&mut ws)
