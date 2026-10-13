@@ -151,7 +151,7 @@ Seven recorded carve-outs stand. Further exceptions need the same recorded treat
 
 ### App-initiated config writes use reversible managed markers
 
-Hook entries in `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.cursor/hooks.json`,
+Hook entries in `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.cursor/hooks.json`,
 `~/.grok/hooks/…`, ZCode's settings file and the OpenCode plugin carry
 `--houston-managed[=<channel>]` matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
 matching would let one channel evict the other. Claude preserves unrelated settings and hook

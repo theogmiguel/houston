@@ -118,6 +118,8 @@ it off removes exactly what Houston added:
   installed commands so Codex runs them without a `/hooks` review prompt. Other hooks
   and trust entries stay unchanged. Houston checks the saved trust against its installed
   definitions and removes its hooks if trust setup fails.
+  On Windows, Codex hooks run through the native Windows command interpreter and do
+  not require Git Bash.
   Launches using another Codex config directory check that directory's hooks and trust.
   A new pane with hooks off, missing hooks or unconfirmed trust immediately shows
   **Unavailable**, with an operator note naming the cause. Repair the setup in
