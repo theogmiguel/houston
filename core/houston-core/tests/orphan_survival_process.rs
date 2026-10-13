@@ -106,6 +106,8 @@ fn orphan_fixture_agent() {
                 Ok(())
             });
         }
+        // This actor must outlive its parent; the outer fixture owns its identity cleanup.
+        #[expect(clippy::zombie_processes)]
         let _child = command.spawn().unwrap();
         let deadline = Instant::now() + DEADLINE;
         while !records.join(format!("{session}.owned.json")).exists() {

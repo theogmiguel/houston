@@ -66,7 +66,7 @@ fn shell_fallback(retain_scope: bool) {
         "http://127.0.0.1:41234/mcp",
         "fixture-mcp-token",
     );
-    for argument in managed.args.chunks_exact(2) {
+    for argument in managed.args.as_chunks::<2>().0 {
         assert!(
             args[..delimiter].windows(2).any(|pair| pair == argument),
             "missing pane MCP override: {}",
