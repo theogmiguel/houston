@@ -7794,21 +7794,26 @@ impl Daemon {
     ) -> Result<PathBuf> {
         if provider == proto::AgentKind::Zcode {
             self.prepare_zcode_hooks()?;
+        } else if provider == proto::AgentKind::Codex {
+            self.prepare_windows_hook_launcher(provider)?;
         }
         crate::agent_hooks::install(provider, home, launcher, sentinel)
     }
 
-    /// On Windows ZCode starts the launcher itself, with no guard for a missing file, so
-    /// the launcher is pointed here rather than only alongside Claude's hooks.
     fn prepare_zcode_hooks(&self) -> Result<()> {
         crate::zcode_config::write_plugin(&self.state_dir, self.channel.as_deref())?;
+        self.prepare_windows_hook_launcher(proto::AgentKind::Zcode)
+    }
+
+    /// Native Windows commands need the `.exe` launcher even with Claude hooks disabled.
+    fn prepare_windows_hook_launcher(&self, provider: proto::AgentKind) -> Result<()> {
         if cfg!(windows) && self.hook_launcher().is_none() {
             let program = crate::claude_hooks::executable_launcher(
                 &crate::claude_hooks::launcher_path(&self.state_dir),
             );
             if !program.is_file() {
                 bail!(
-                    "ZCode's hooks start {}, which Houston could not create (the daemon log \
+                    "{provider:?}'s hooks start {}, which Houston could not create (the daemon log \
                      names the cause)",
                     program.display()
                 );

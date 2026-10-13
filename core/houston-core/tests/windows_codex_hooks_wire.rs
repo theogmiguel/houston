@@ -2,6 +2,7 @@
 
 use houston_core::agent_hooks::{self, CodexHookTrust, ConfigHome};
 use houston_core::claude_hooks::{executable_launcher, point_launcher, sentinel_for};
+use houston_core::daemon::{Daemon, DaemonConfig};
 use houston_core::hook_drop::{drop_dir, parse_drop_name};
 use houston_protocol::AgentKind;
 use serde_json::{json, Value};
@@ -11,6 +12,75 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 
 const CHANNEL: &str = "wincodexhooks";
+
+struct ConfigEnvironment(Vec<(&'static str, Option<std::ffi::OsString>)>);
+
+impl ConfigEnvironment {
+    fn isolated(home: &Path) -> Self {
+        let names = [
+            "HOME",
+            "USERPROFILE",
+            "CODEX_HOME",
+            "CLAUDE_CONFIG_DIR",
+            "XDG_CONFIG_HOME",
+        ];
+        let saved = names
+            .iter()
+            .map(|name| (*name, std::env::var_os(name)))
+            .collect();
+        for name in names {
+            let value = match name {
+                "CODEX_HOME" => home.join(".codex"),
+                "CLAUDE_CONFIG_DIR" => home.join(".claude"),
+                "XDG_CONFIG_HOME" => home.join(".config"),
+                _ => home.to_path_buf(),
+            };
+            std::env::set_var(name, value);
+        }
+        Self(saved)
+    }
+}
+
+impl Drop for ConfigEnvironment {
+    fn drop(&mut self) {
+        for (name, value) in &self.0 {
+            if let Some(value) = value {
+                std::env::set_var(name, value);
+            } else {
+                std::env::remove_var(name);
+            }
+        }
+    }
+}
+
+#[test]
+fn codex_consent_and_startup_prepare_the_launcher_with_claude_hooks_disabled() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+    let state = home.join(format!(".houston-{CHANNEL}"));
+    std::fs::create_dir_all(&state).unwrap();
+    let _environment = ConfigEnvironment::isolated(&home);
+    let daemon = Daemon::new(DaemonConfig {
+        token: "windows-codex-launcher-test".into(),
+        db_path: state.join("test.db"),
+    })
+    .unwrap();
+    daemon.agent_hooks_set(AgentKind::Claude, false);
+    assert!(!daemon.hook_consent(AgentKind::Claude));
+    let launcher = executable_launcher(&houston_core::claude_hooks::launcher_path(&state));
+    daemon.agent_hooks_set(AgentKind::Codex, true);
+    assert!(
+        launcher.is_file(),
+        "Codex consent must prepare its own native launcher"
+    );
+    std::fs::remove_file(&launcher).unwrap();
+    daemon.install_consented_agent_hooks();
+    assert!(
+        launcher.is_file(),
+        "startup must restore the consented Codex launcher"
+    );
+    assert!(!daemon.hook_consent(AgentKind::Claude));
+}
 
 fn run_hook(command: &str, home: &Path, session: Option<u32>, input: &str) -> Output {
     let mut process = houston_core::spawn::command("cmd.exe");
