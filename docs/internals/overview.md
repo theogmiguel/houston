@@ -108,6 +108,10 @@ development. Everything hangs off the state dir: `houston.db`, `daemon.json`,
 `daemon.lock`, `logs/`, `scrollback/`, `hooks/drop/`, `bin/`, the webview's
 `data_directory`, the single-instance D-Bus id.
 
+The app and daemon share the home resolver: non-empty `HOME`, then `USERPROFILE`,
+then the operating system's home directory. Desktop home and log paths use this
+same resolver so an environment override cannot point them at another state universe.
+
 The app resolves its channel from `--channel`. The daemon accepts either `--channel` or
 `HOUSTON_CHANNEL`, refuses when both identify different channels, and refuses when neither
 is explicit. The resolved daemon channel is propagated to its children before startup,

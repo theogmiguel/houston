@@ -1,25 +1,18 @@
 use houston_core::paths;
 use tauri::Manager;
 
-fn log_path_for(home: &std::path::Path, channel: Option<&str>) -> String {
-    paths::log_dir_for(home, channel)
-        .to_string_lossy()
-        .into_owned()
-}
-
 #[tauri::command]
 pub fn system_get_log_path() -> Result<String, String> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| "system_get_log_path: cannot resolve home directory".to_string())?;
-    let channel = paths::channel().map_err(|e| {
-        format!("system_get_log_path: cannot resolve the channel's log directory: {e}")
-    })?;
-    Ok(log_path_for(&home, channel.as_deref()))
+    paths::log_dir()
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|e| {
+            format!("system_get_log_path: cannot resolve the channel's log directory: {e}")
+        })
 }
 
 #[tauri::command]
 pub fn system_get_home_dir() -> Result<String, String> {
-    dirs::home_dir()
+    houston_core::home_dir::home_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .ok_or_else(|| "system_get_home_dir: cannot resolve home directory".to_string())
 }
@@ -88,25 +81,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn log_path_for_tracks_a_non_default_channel_without_mutating_process_env() {
-        let home = dirs::home_dir().expect("test host must have a resolvable home dir");
-
-        let release = log_path_for(&home, None);
-        assert_eq!(release, paths::log_dir_for(&home, None).to_string_lossy());
-
-        let dev = log_path_for(&home, Some("dev"));
-        assert_eq!(
-            dev,
-            paths::log_dir_for(&home, Some("dev")).to_string_lossy()
-        );
-
-        assert_ne!(
-            release, dev,
-            "log_path_for must actually track the channel, not return a constant"
-        );
-    }
-
-    #[test]
     fn system_get_log_path_agrees_with_paths_log_dir_in_this_process_env() {
         let expected = paths::log_dir().expect("log_dir() must resolve in a normal test env");
         let got =
@@ -127,8 +101,9 @@ mod tests {
     }
 
     #[test]
-    fn system_get_home_dir_agrees_with_dirs_home_dir() {
-        let expected = dirs::home_dir().expect("test host must have a resolvable home dir");
+    fn system_get_home_dir_agrees_with_the_shared_home_resolver() {
+        let expected =
+            houston_core::home_dir::home_dir().expect("test host must have a resolvable home dir");
         let got =
             system_get_home_dir().expect("system_get_home_dir must succeed in a normal test env");
         assert_eq!(got, expected.to_string_lossy());
