@@ -1,5 +1,5 @@
 import type { GhosttySnapshot, GhosttyTheme } from '../ghostty/core'
-import { GHOSTTY_ANSI_COLOR_NAMES } from '../ghostty/ansiColors'
+import { GHOSTTY_ANSI_COLOR_NAMES } from '../ansiColors'
 import type { TerminalPalette } from '../theme'
 import type { GhosttyTerminalSurface, TerminalLinkWithRange } from '../ghostty/surface'
 import { logTerminalTransport } from '../houston/latency'

@@ -1,5 +1,5 @@
 import { assertPasteBudget } from "./inputBudget";
-import { GHOSTTY_ANSI_COLOR_NAMES, type GhosttyAnsiColorName } from "./ansiColors";
+import { GHOSTTY_ANSI_COLOR_NAMES, type GhosttyAnsiColorName } from "../ansiColors";
 import {
   type GhosttyKeyboardLayoutMap,
   ghosttyKeyForCode,
