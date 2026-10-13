@@ -49,9 +49,20 @@ pane while keeping the normal Codex terminal. Houston confirms startup readiness
 thread status, so a restored pane can become Idle before its first turn. Houston trusts
 its own installed status hooks; other hooks still use Codex's review process.
 
+On Windows, Houston launches Codex with `--no-daemon` when the installed CLI
+advertises support. This keeps status hooks and tools associated with their own pane.
+The same applies to ordinary `codex` commands in PowerShell, cmd and Git Bash
+shell panes through a workspace wrapper. Custom launch commands, aliases and
+absolute CLI paths retain their own launch policy. User sandbox and approval
+settings remain unchanged.
+`agents`, `queue`, `remote-control` and `--remote` launches retain the shared
+server; their tools and hooks cannot be guaranteed to identify the invoking pane.
+Sessions started with `--no-daemon` are absent from the shared agent overview.
+Older CLIs without this flag retain their original launch behavior.
+
 Older Codex versions, hosts without user systemd, other platforms and custom launches
 use lifecycle hooks only.
-Native Codex profiles (`--profile`), explicit remote endpoints and unsupported CLI
+On Linux, native Codex profiles (`--profile`), explicit remote endpoints and unsupported CLI
 flags also keep the hook path, with a notice in the terminal. Houston account profiles
 remain supported. Codex delays its startup hook until the first turn; on these fallback
 paths, inspect the pane and send the first prompt directly. Queued delivery waits for

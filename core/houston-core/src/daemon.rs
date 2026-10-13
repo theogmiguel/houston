@@ -1640,7 +1640,7 @@ pub struct Daemon {
     db_path: PathBuf,
     scrollback_dir: PathBuf,
     shellint_dir: Option<PathBuf>,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     session_launcher: Mutex<Option<PathBuf>>,
     ledger_tx: mpsc::Sender<LedgerEntry>,
     recovery: Mutex<Option<proto::RecoverySummary>>,
@@ -3074,12 +3074,12 @@ impl Daemon {
         Self::new_inner_ex(cfg, None, Some(port), None, launcher)
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub fn set_session_launcher(&self, launcher: Option<PathBuf>) {
         *self.session_launcher.lock().expect("session launcher lock") = launcher;
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn cli_launcher(&self) -> Option<PathBuf> {
         self.session_launcher
             .lock()
@@ -3089,7 +3089,11 @@ impl Daemon {
                 std::env::current_exe()
                     .ok()
                     .map(|path| crate::exe_path::strip_deleted_exe_suffix(&path))
-                    .filter(|path| path.file_name().is_some_and(|name| name == "houston-core"))
+                    .filter(|path| {
+                        path.file_name().is_some_and(|name| {
+                            name == "houston-core" || name == "houston-core.exe"
+                        })
+                    })
             })
     }
 
@@ -3150,7 +3154,7 @@ impl Daemon {
         adopted: Option<AdoptedSessions>,
         session_launcher: Option<PathBuf>,
     ) -> Result<Arc<Self>> {
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", windows)))]
         let _ = session_launcher;
         let db = Db::open(&cfg.db_path)?;
         db.instruction_recover(now_ms())?;
@@ -3330,7 +3334,7 @@ impl Daemon {
             db_path: cfg.db_path.clone(),
             scrollback_dir,
             shellint_dir,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             session_launcher: Mutex::new(session_launcher),
             ledger_tx,
             recovery: Mutex::new(None),
@@ -11034,13 +11038,13 @@ impl Daemon {
                     )
                 }
             };
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             let resolved = if agent == proto::AgentKind::Codex && custom_cmd.is_none() {
                 std::env::var_os("PATH").and_then(|path| resolve_codex_cli(&path))
             } else {
                 crate::exe_path::resolve(&program)
             };
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(any(target_os = "linux", windows)))]
             let resolved = crate::exe_path::resolve(&program);
             let program: std::path::PathBuf =
                 resolved.unwrap_or_else(|| std::path::PathBuf::from(&program));
@@ -11126,13 +11130,20 @@ impl Daemon {
         if !hidden && agent != proto::AgentKind::Ssh {
             match init_orchestration_scope(&project_dir) {
                 Ok((_, bin_dir)) => {
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", windows))]
                     if agent == proto::AgentKind::Shell {
                         if let (Some(launcher), Some(codex)) = (
                             self.cli_launcher(),
                             std::env::var_os("PATH").and_then(|path| resolve_codex_cli(&path)),
                         ) {
                             write_codex_wrapper(&bin_dir)?;
+                            #[cfg(windows)]
+                            let (launcher, codex) = (
+                                crate::exe_path::command_spelling(
+                                    &crate::paths::windows_command_path(&launcher),
+                                ),
+                                crate::exe_path::command_spelling(&codex),
+                            );
                             cmd.env("HOUSTON_CODEX_LAUNCHER", &launcher);
                             cmd.env("HOUSTON_CODEX_CLI", &codex);
                             cmd.env(
@@ -11224,6 +11235,17 @@ impl Daemon {
         } else {
             None
         };
+        #[cfg(windows)]
+        if agent == proto::AgentKind::Codex
+            && acp.is_none()
+            && custom_cmd.is_none()
+            && wrap.is_none()
+            && !hidden
+        {
+            if let Some(launcher) = self.cli_launcher() {
+                crate::codex_pane::wrap_direct(&mut cmd, &launcher);
+            }
+        }
         #[cfg(target_os = "linux")]
         if let Some(launcher) = self
             .session_launcher
@@ -23658,6 +23680,55 @@ fn resolve_codex_cli(search: &std::ffi::OsStr) -> Option<PathBuf> {
             candidate.canonicalize().ok()
         }
     })
+}
+
+#[cfg(windows)]
+fn resolve_codex_cli(search: &std::ffi::OsStr) -> Option<PathBuf> {
+    std::env::split_paths(search).find_map(|directory| {
+        ["codex.exe", "codex.cmd", "codex.bat", "codex.com"]
+            .into_iter()
+            .find_map(|name| {
+                let candidate = directory.join(name);
+                if !candidate.is_file() {
+                    return None;
+                }
+                let mut header = String::new();
+                let managed = std::fs::File::open(&candidate)
+                    .and_then(|file| file.take(256).read_to_string(&mut header))
+                    .is_ok()
+                    && header.contains(">>> houston managed codex >>>");
+                if managed {
+                    None
+                } else {
+                    candidate
+                        .canonicalize()
+                        .ok()
+                        .map(|path| crate::paths::windows_command_path(&path))
+                }
+            })
+    })
+}
+
+#[cfg(windows)]
+fn write_codex_wrapper(bin_dir: &Path) -> Result<()> {
+    let script = "@echo off\r\nrem >>> houston managed codex >>>\r\n\"%HOUSTON_CODEX_LAUNCHER%\" codex-shell -- \"%HOUSTON_CODEX_CLI%\" %*\r\nexit /b %ERRORLEVEL%\r\nrem <<< houston managed codex <<<\r\n";
+    let sh = "#!/bin/sh\n# >>> houston managed codex >>>\nexec \"${HOUSTON_CODEX_LAUNCHER:?}\" codex-shell -- \"${HOUSTON_CODEX_CLI:?}\" \"$@\"\n# <<< houston managed codex <<<\n";
+    for (name, contents) in [("codex.cmd", script), ("codex", sh)] {
+        let path = bin_dir.join(name);
+        if path.exists()
+            && !std::fs::read_to_string(&path)?.contains(">>> houston managed codex >>>")
+        {
+            bail!(
+                "Codex wrapper {} already exists without a Houston managed marker",
+                path.display()
+            );
+        }
+        if std::fs::read_to_string(&path).ok().as_deref() != Some(contents) {
+            std::fs::write(&path, contents)
+                .with_context(|| format!("writing {}", path.display()))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]

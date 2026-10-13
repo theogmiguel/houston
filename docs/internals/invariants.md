@@ -36,6 +36,8 @@ both `clippy.toml` files banning `std::process::Command::new` and
 **Why.** On Windows a console-subsystem child flashes a window unless spawned with
 `CREATE_NO_WINDOW`. The flag must *not* reach `portable_pty::CommandBuilder` — the PTY path
 needs its console — and the script asserts that too.
+The foreground Windows `codex-shell` helper resets this flag for its Codex child
+to inherit the existing ConPTY console; its bounded capability probe stays hidden.
 
 ### Opening a file or URL never goes through a shell string
 

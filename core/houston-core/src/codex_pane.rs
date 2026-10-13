@@ -6,6 +6,89 @@ pub const SUBCOMMAND: &str = "codex-exec";
 pub const OBSERVER_SUBCOMMAND: &str = "codex-observe";
 pub const SHELL_SUBCOMMAND: &str = "codex-shell";
 
+/// Whole-argument exclusions deliberately prefer a harmless skip over mirroring
+/// Codex's evolving option arities. These commands require the shared server.
+pub fn requires_shared_server(args: &[OsString]) -> bool {
+    args.iter().any(|arg| {
+        arg.to_str().is_some_and(|arg| {
+            matches!(arg, "agents" | "queue" | "--remote" | "remote-control")
+                || arg.starts_with("--remote=")
+        })
+    })
+}
+
+#[cfg(windows)]
+pub fn wrap_direct(command: &mut portable_pty::CommandBuilder, launcher: &Path) {
+    let original = command.get_argv().to_vec();
+    let arguments = command.get_argv_mut();
+    arguments.clear();
+    arguments.extend([
+        launcher.as_os_str().to_owned(),
+        SHELL_SUBCOMMAND.into(),
+        "--".into(),
+    ]);
+    arguments.extend(original);
+}
+
+#[cfg(windows)]
+pub fn run_shell(args: Vec<OsString>) -> Result<i32> {
+    use anyhow::Context;
+    use std::os::windows::process::CommandExt;
+    use std::time::Duration;
+
+    if args.first().is_none_or(|arg| arg != "--") || args.len() < 2 {
+        bail!("codex-shell requires -- followed by the Codex executable and arguments");
+    }
+    let mut cli = args[2..].to_vec();
+    let shared = requires_shared_server(&cli);
+    let informational = cli.iter().any(|arg| {
+        matches!(
+            arg.to_str(),
+            Some("--help" | "-h" | "--version" | "-V" | "help" | "completion")
+        )
+    });
+    if !shared && !informational {
+        if !cli.iter().any(|arg| arg == "--no-daemon") {
+            // Probe every launch so upgrades/downgrades cannot leave a stale
+            // decision. Closed stdin preserves piped prompts for the real CLI.
+            let mut probe = crate::spawn::command(&args[1]);
+            probe.arg("--help");
+            if crate::spawn::output_within(probe, Duration::from_secs(4))
+                .ok()
+                .flatten()
+                .is_some_and(|output| {
+                    output.status.success()
+                        && String::from_utf8_lossy(&output.stdout).contains("--no-daemon")
+                })
+            {
+                cli.insert(0, "--no-daemon".into());
+            }
+        }
+        if let (Ok(endpoint), Ok(token)) = (
+            std::env::var(crate::mcp_launch::URL_ENV),
+            std::env::var(crate::mcp_launch::CODEX_TOKEN_ENV),
+        ) {
+            if !endpoint.is_empty() && !token.is_empty() {
+                let managed = crate::mcp_launch::launch_for(
+                    houston_protocol::AgentKind::Codex,
+                    &endpoint,
+                    "unused",
+                );
+                // Global config precedes subcommands and prompt delimiters.
+                cli.splice(0..0, managed.args.into_iter().map(OsString::from));
+            }
+        }
+    }
+    let mut command = crate::spawn::command(&args[1]);
+    // This is the foreground CLI inside a real ConPTY, not a background helper.
+    // Inherit its console as well as stdio so native TUI console APIs work.
+    command.creation_flags(0).args(cli);
+    let status = command
+        .status()
+        .with_context(|| format!("launching Codex executable {:?}", args[1]))?;
+    Ok(status.code().unwrap_or(1))
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct LaunchPlan {
     pub server_args: Vec<OsString>,
