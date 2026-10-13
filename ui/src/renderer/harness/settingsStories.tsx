@@ -491,8 +491,25 @@ export function SettingsDictationCloud(): React.JSX.Element {
 }
 
 export function SettingsWorkspaces(): React.JSX.Element {
+  const client = React.useMemo(() => {
+    let enabled = false
+    const listeners = new Set<(message: ServerMsg) => void>()
+    return new Proxy({
+      subscribeAll(handler: (message: ServerMsg) => void) {
+        listeners.add(handler)
+        return () => { listeners.delete(handler) }
+      },
+      send(message: { type: string; enabled?: boolean }) {
+        if (message.type === 'generated_titles_set') enabled = message.enabled === true
+        if (message.type === 'generated_titles_get' || message.type === 'generated_titles_set') {
+          queueMicrotask(() => { for (const listener of listeners) listener({ type: 'generated_titles', enabled }) })
+        }
+      }
+    }, { get: (target, key) => Reflect.get(target, key) ?? noop }) as unknown as HoustonClient
+  }, [])
   const sessionPolicy: SessionPolicy = { idle_reap_enabled: false, idle_reap_minutes: 15, claude_fullscreen: true }
   return <SettingsScreen section="workspaces" props={{
+    daemonClient: client,
     hostInfo: hostInfoFixture(),
     sessionPolicy,
     historyWorkspace: '/home/dev/code/houston',
