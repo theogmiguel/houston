@@ -114,7 +114,9 @@ one generation attempt, with one active generation across the daemon and a 30-se
 **What leaves your machine:** up to 1 KB of redacted first-prompt and first-reply hook text
 is sent through the pane's own CLI and provider account. Houston reads no transcript or
 scrollback for this feature. Claude uses Haiku with tools, MCP, slash commands and session
-persistence disabled, in a temporary directory. Codex, OpenCode, Cursor, Grok, Antigravity
+persistence disabled, in a temporary directory. Its safe mode excludes customization files,
+including global CLAUDE.md instructions and automatic memory, while preserving account
+authentication. Codex, OpenCode, Cursor, Grok, Antigravity
 and ZCode are refused by name until equivalent controls are verified. Authentication and
 billing use the CLI's existing account. A pane without both hook excerpts cannot generate
 a title; excerpt availability is lost after a daemon restart. A restored account profile

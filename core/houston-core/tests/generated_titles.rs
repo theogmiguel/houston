@@ -50,6 +50,7 @@ fn generator_contract_is_bounded_redacted_and_refuses_unverified_providers() {
     let argv = generated_title::argv(AgentKind::Claude, prompt).unwrap();
     assert!(argv.windows(2).any(|pair| pair == ["--tools", ""]));
     for flag in [
+        "--safe-mode",
         "--strict-mcp-config",
         "--disable-slash-commands",
         "--no-session-persistence",

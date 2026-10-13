@@ -37,6 +37,7 @@ pub fn argv(provider: AgentKind, prompt: String) -> Result<Vec<String>> {
     Ok(vec![
         "claude".into(),
         "--print".into(),
+        "--safe-mode".into(),
         "--model".into(),
         "haiku".into(),
         "--tools".into(),
