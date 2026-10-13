@@ -236,20 +236,31 @@ async fn closing_a_husk_removes_its_persisted_scrollback() {
         })
         .unwrap();
         let mut rx = daemon.observe();
-        let id = create_custom_session(
-            &daemon,
-            tmp.path(),
-            vec!["sh", "-c", "echo gone-soon; sleep 600"],
-        );
-        collect_broadcast_until(&mut rx, id, "gone-soon").await;
-        daemon.persist_all();
+        let id = daemon
+            .create_session(CreateParams {
+                agent: proto::AgentKind::Shell,
+                project_dir: tmp.path().to_path_buf(),
+                cmd: None,
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+                model: None,
+                effort: None,
+            })
+            .unwrap()
+            .id;
+        daemon
+            .write_stdin(id, b"echo gone-$((1+1))-soon\r")
+            .unwrap();
+        collect_broadcast_until(&mut rx, id, "gone-2-soon").await;
+        daemon.manage_shutdown().unwrap();
         id
     };
-    {
-        let conn = rusqlite_open(&db_path);
-        conn.execute("UPDATE sessions SET agent = 'shell' WHERE id = ?1", [id])
-            .unwrap();
-    }
 
     let daemon = Daemon::new(DaemonConfig {
         token: TOKEN.to_string(),

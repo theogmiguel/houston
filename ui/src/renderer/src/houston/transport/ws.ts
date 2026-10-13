@@ -1,6 +1,7 @@
 import type { ClientMsg } from '../generated/ClientMsg'
 import type { AttachResult, ResizeResult, TerminalTransport } from './types'
 import { decodeGapFrame } from './types'
+import { inputSocketForSession } from './inputSocket'
 import {
   type CreateSessionParams,
   decodeBase64,
@@ -136,10 +137,11 @@ export class WsTerminalTransport implements TerminalTransport {
   }
 
   write(session: number, data: string, reply = false): boolean {
-    if (this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error(`Input refused for session ${session}: socket state ${this.ws.readyState}; expected OPEN (${WebSocket.OPEN})`)
+    const socket = inputSocketForSession(this.ws, session)
+    if (socket.readyState !== WebSocket.OPEN) {
+      throw new Error(`Input refused for session ${session}: socket state ${socket.readyState}; expected OPEN (${WebSocket.OPEN})`)
     }
-    const actual = this.ws.bufferedAmount ?? 0
+    const actual = socket.bufferedAmount ?? 0
     const limit = MAX_SOCKET_INPUT_BYTES + (reply ? REPLY_RESERVE_BYTES : 0)
     // Refuse before encoding or frame allocation when even the minimum cannot fit.
     if (data.length > MAX_INPUT_FRAME_BYTES || actual + data.length + 5 > limit) {

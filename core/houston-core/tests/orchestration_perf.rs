@@ -850,13 +850,25 @@ async fn restart_to_restored_notice_fixture(iterations: usize) {
             "restart-parent",
             json!([{"op":"hang"}]),
         );
-        let parent = rig.pane(
-            proto::AgentKind::Claude,
-            vec![
-                env!("CARGO_BIN_EXE_fake_agent").into(),
-                format!("@fake:{}", parent_script.display()),
-            ],
-        );
+        let parent = rig
+            .daemon
+            .create_session(CreateParams {
+                agent: proto::AgentKind::Claude,
+                project_dir: rig.workspace.clone(),
+                cmd: None,
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: Some(format!("@fake:{}", parent_script.display())),
+                model: None,
+                effort: None,
+            })
+            .unwrap()
+            .id;
         let script = rig.script(
             "claude",
             iteration as u64 + 1,
@@ -866,7 +878,7 @@ async fn restart_to_restored_notice_fixture(iterations: usize) {
         let child = rig.call(parent, "pane_spawn", json!({"kind":"claude","prompt":format!("@fake:{}",script.display()),"reusable":true})).await["session"].as_u64().unwrap() as u32;
         rig.receipt("restart-parent", "hook").await;
         rig.receipt("restart-child", "hook").await;
-        rig.daemon.checkpoint_scrollback().unwrap();
+        rig.daemon.manage_shutdown().unwrap();
         let path = rig.state.path().join("restart.db");
         let source = rusqlite::Connection::open(rig.state.path().join("test.db")).unwrap();
         source

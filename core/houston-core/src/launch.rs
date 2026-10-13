@@ -608,11 +608,13 @@ pub fn model_blocks_auto_mode(agent: proto::AgentKind, model: &str) -> bool {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ApprovalMode {
     Default,
     Auto,
     Bypass,
+    Plan,
 }
 
 impl ApprovalMode {
@@ -621,6 +623,7 @@ impl ApprovalMode {
             ApprovalMode::Default => Some(Vec::new()),
             ApprovalMode::Auto => auto_mode_args(agent),
             ApprovalMode::Bypass => auto_approve_args(agent),
+            ApprovalMode::Plan => flags_only(agent, false, true, None).ok(),
         }
     }
 
@@ -629,6 +632,7 @@ impl ApprovalMode {
             ApprovalMode::Default => "default",
             ApprovalMode::Auto => "auto",
             ApprovalMode::Bypass => "bypass",
+            ApprovalMode::Plan => "plan",
         }
     }
 
@@ -637,8 +641,48 @@ impl ApprovalMode {
             "default" => Some(ApprovalMode::Default),
             "auto" => Some(ApprovalMode::Auto),
             "bypass" => Some(ApprovalMode::Bypass),
+            "plan" => Some(ApprovalMode::Plan),
             _ => None,
         }
+    }
+}
+
+/// Reusable provider choices only: never an initial prompt, arbitrary argv or environment.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionLaunchSelections {
+    pub provider: proto::AgentKind,
+    pub model: Option<String>,
+    pub effort: Option<proto::ChatEffort>,
+    pub approval: ApprovalMode,
+    pub dialogue: bool,
+}
+
+impl SessionLaunchSelections {
+    pub fn supports(provider: proto::AgentKind) -> bool {
+        executable(provider).is_ok()
+    }
+
+    pub fn args(&self, provider: proto::AgentKind) -> Result<Vec<String>> {
+        anyhow::ensure!(
+            self.provider == provider,
+            "launch selections name {:?}, expected {provider:?}",
+            self.provider
+        );
+        let mut args = flags_only(provider, false, false, self.model.as_deref())?;
+        args.extend(self.approval.args(provider).ok_or_else(|| {
+            anyhow::anyhow!(
+                "provider {provider:?} does not support launch mode {:?}",
+                self.approval
+            )
+        })?);
+        if let Some(effort) = self.effort {
+            args.extend(effort_args(provider, effort)?);
+        }
+        if self.dialogue {
+            args.extend(dialogue_permission_args(provider));
+        }
+        Ok(args)
     }
 }
 
@@ -1067,6 +1111,7 @@ mod tests {
             ApprovalMode::Default,
             ApprovalMode::Auto,
             ApprovalMode::Bypass,
+            ApprovalMode::Plan,
         ] {
             assert_eq!(ApprovalMode::parse(mode.as_str()), Some(mode));
         }

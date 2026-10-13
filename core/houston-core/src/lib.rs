@@ -57,6 +57,7 @@ pub mod pane_name;
 pub mod paths;
 pub mod pid;
 pub mod pull_requests;
+pub mod recovery_process;
 pub mod remote;
 pub mod routines;
 pub mod sanitize;

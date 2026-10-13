@@ -24,6 +24,8 @@ pub use intake::{
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
 mod remote;
+mod resume_metadata;
+pub use resume_metadata::RootHookMetadata;
 mod task_trackers;
 pub use remote::RemoteDeviceRow;
 mod tasks;
@@ -48,6 +50,17 @@ pub struct MessageReceipt {
     pub key: Option<String>,
     pub operation: &'static str,
     pub digest: String,
+}
+
+#[derive(Default)]
+pub struct SessionStartupMetadata<'a> {
+    pub process_identity: Option<&'a crate::recovery_process::ProcessIdentity>,
+    pub launch_selections: Option<&'a crate::launch::SessionLaunchSelections>,
+    pub command_override: bool,
+    pub resume_handle: Option<(&'a str, Option<&'a str>)>,
+    pub transcript_path: Option<&'a str>,
+    pub native_session_id: Option<&'a str>,
+    pub replacement: Option<(u32, u64)>,
 }
 
 impl MessageReceipt {
@@ -1730,6 +1743,24 @@ impl Db {
             "session_origin INTEGER",
         )?;
         add_column_if_missing(&conn, "sessions", "approval_mode", "approval_mode TEXT")?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "launch_selections",
+            "launch_selections TEXT",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "command_override",
+            "command_override INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "process_identity",
+            "process_identity TEXT",
+        )?;
         add_column_if_missing(&conn, "sessions", "transcript_path", "transcript_path TEXT")?;
         add_column_if_missing(
             &conn,
@@ -1749,6 +1780,35 @@ impl Db {
             "resume_transcript_path",
             "resume_transcript_path TEXT",
         )?;
+        let binding_tx = conn.unchecked_transaction()?;
+        let has_resume_binding: bool = binding_tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('sessions') WHERE name = 'resume_agent')",
+            [], |row| row.get(0),
+        )?;
+        add_column_if_missing(&binding_tx, "sessions", "resume_agent", "resume_agent TEXT")?;
+        add_column_if_missing(&binding_tx, "sessions", "resume_cwd", "resume_cwd TEXT")?;
+        add_column_if_missing(
+            &binding_tx,
+            "sessions",
+            "root_hook_ms",
+            "root_hook_ms INTEGER",
+        )?;
+        add_column_if_missing(
+            &binding_tx,
+            "sessions",
+            "root_hook_seq",
+            "root_hook_seq INTEGER",
+        )?;
+        if !has_resume_binding {
+            // Fixed-provider rows retain their existing recorded namespace. A shell
+            // can host several providers, so its historical handle stays unbound.
+            binding_tx.execute(
+                "UPDATE sessions SET resume_agent = agent, resume_cwd = cwd
+                 WHERE resume_session_id IS NOT NULL AND agent IN ('claude', 'codex', 'zcode')",
+                [],
+            )?;
+        }
+        binding_tx.commit()?;
         add_column_if_missing(&conn, "sessions", "latest_prompt", "latest_prompt TEXT")?;
         add_column_if_missing(
             &conn,
@@ -2283,13 +2343,17 @@ impl Db {
 
     pub fn list_interrupted(&self) -> Result<Vec<proto::SessionInfo>> {
         let conn = self.conn.lock().expect("db lock");
+        // Legacy replacements left exited predecessors; retain only the current root slot.
         let mut stmt = conn.prepare(
             "SELECT id, agent, project_dir, cwd, title, codename, title_source, detected_agent, ssh_host,
                     (SELECT sa.id FROM swarm_agents sa WHERE sa.session_id = sessions.id),
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id),
                     latest_prompt, last_agent_message, slept_at_ms, state, context_json
              FROM sessions
-             WHERE (state IN ('interrupted', 'sleeping') OR (state = 'exited' AND spawned_by IS NOT NULL)) AND agent != 'custom'
+             WHERE state IN ('interrupted', 'sleeping', 'exited') AND agent != 'custom'
+                   AND (state != 'exited' OR spawned_by IS NOT NULL OR id IN (
+                       SELECT MAX(id) FROM sessions GROUP BY COALESCE(session_origin, id)
+                   ))
                    AND NOT EXISTS (SELECT 1 FROM swarm_agents sa WHERE sa.session_id = sessions.id)
              ORDER BY id",
         )?;
@@ -2534,16 +2598,138 @@ impl Db {
         profile: Option<&str>,
         prepare: impl FnOnce() -> Result<()>,
     ) -> Result<()> {
+        self.insert_session_with_startup_metadata(
+            info,
+            title_source,
+            profile,
+            SessionStartupMetadata::default(),
+            prepare,
+        )
+    }
+
+    pub fn insert_session_with_startup_metadata(
+        &self,
+        info: &proto::SessionInfo,
+        title_source: &str,
+        profile: Option<&str>,
+        metadata: SessionStartupMetadata<'_>,
+        prepare: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
         Self::insert_session_on(&tx, info, Some(title_source))?;
         tx.execute(
-            "UPDATE sessions SET profile_config_dir = ?2 WHERE id = ?1",
-            rusqlite::params![info.id, profile],
+            "UPDATE sessions SET profile_config_dir = ?2, command_override = ?3, process_identity = ?4 WHERE id = ?1",
+            rusqlite::params![info.id, profile, metadata.command_override, metadata.process_identity.map(serde_json::to_string).transpose()?],
         )?;
+        Self::set_session_launch_selections_on(&tx, info.id, metadata.launch_selections)?;
+        let resume_provider = metadata.resume_handle.and_then(|_| {
+            if info.agent == proto::AgentKind::Shell {
+                info.detected_agent
+            } else {
+                Some(info.agent)
+            }
+        });
+        tx.execute(
+            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3,
+                    transcript_path = ?4, native_session_id = ?5, detected_agent = ?6,
+                    resume_agent = ?7, resume_cwd = ?8
+             WHERE id = ?1",
+            rusqlite::params![
+                info.id,
+                metadata.resume_handle.map(|handle| handle.0),
+                metadata.resume_handle.and_then(|handle| handle.1),
+                metadata.transcript_path,
+                metadata.native_session_id,
+                info.detected_agent
+                    .map(|agent| serde_json::to_string(&agent))
+                    .transpose()?
+                    .map(|agent| agent.trim_matches('"').to_string()),
+                resume_provider.map(crate::agent_hooks::provider_slug),
+                metadata.resume_handle.map(|_| info.cwd.as_str()),
+            ],
+        )?;
+        if let Some((old, now)) = metadata.replacement {
+            tx.execute(
+                "INSERT OR IGNORE INTO session_title_candidates (session_id, source, title)
+                 SELECT ?2, source, title FROM session_title_candidates WHERE session_id = ?1",
+                [old, info.id],
+            )?;
+            Self::delegation_rebind_on(&tx, old, info.id, info.spawned_by, now)?;
+            let retired = tx.execute(
+                "UPDATE sessions SET state = 'closed', resume_session_id = NULL,
+                        resume_transcript_path = NULL, resume_agent = NULL, resume_cwd = NULL
+                 WHERE id = ?1 AND state != 'closed'",
+                [old],
+            )?;
+            anyhow::ensure!(
+                retired == 1,
+                "replacement of session {old} refused: expected an open original row"
+            );
+        }
         prepare()?;
         tx.commit()?;
         Ok(())
+    }
+
+    pub(crate) fn set_session_launch_selections_on(
+        conn: &Connection,
+        id: u32,
+        launch: Option<&crate::launch::SessionLaunchSelections>,
+    ) -> Result<()> {
+        conn.execute(
+            "UPDATE sessions SET launch_selections = ?2, approval_mode = ?3 WHERE id = ?1",
+            rusqlite::params![
+                id,
+                launch.map(serde_json::to_string).transpose()?,
+                launch.map_or("default", |selections| selections.approval.as_str()),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn session_launch_selections(
+        &self,
+        id: u32,
+    ) -> Result<Option<crate::launch::SessionLaunchSelections>> {
+        let conn = self.conn.lock().expect("db lock");
+        let json: Option<String> = conn
+            .query_row(
+                "SELECT launch_selections FROM sessions WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        json.map(|value| {
+            serde_json::from_str(&value).with_context(|| {
+                format!("session {id} launch selections must be typed provider choices")
+            })
+        })
+        .transpose()
+    }
+
+    pub fn check_previous_process_stopped(&self, id: u32) -> Result<()> {
+        let encoded: Option<String> = self.conn.lock().expect("db lock").query_row(
+            "SELECT process_identity FROM sessions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if let Some(encoded) = encoded {
+            let identity: crate::recovery_process::ProcessIdentity = serde_json::from_str(&encoded)
+                .with_context(|| format!("invalid previous process identity for session {id}"))?;
+            identity.check_stopped()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn session_has_command_override(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT command_override FROM sessions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?)
     }
     pub fn save_ssh_profile(&self, p: &proto::SshProfile) -> Result<()> {
         let (auth_kind, identity_file, passphrase_profile) = match &p.auth {
@@ -2676,7 +2862,12 @@ impl Db {
     pub fn update_session_detected(&self, id: u32, agent: proto::AgentKind) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         let n = conn.execute(
-            "UPDATE sessions SET detected_agent = ?2 WHERE id = ?1",
+            "UPDATE sessions SET detected_agent = ?2,
+                transcript_path = CASE WHEN agent = 'shell' AND detected_agent IS NOT ?2 THEN NULL ELSE transcript_path END,
+                native_session_id = CASE WHEN agent = 'shell' AND detected_agent IS NOT ?2 THEN NULL ELSE native_session_id END,
+                profile_config_dir = CASE WHEN agent = 'shell' AND detected_agent IS NOT ?2 THEN NULL ELSE profile_config_dir END,
+                profile_label = CASE WHEN agent = 'shell' AND detected_agent IS NOT ?2 THEN NULL ELSE profile_label END
+             WHERE id = ?1",
             rusqlite::params![id, serde_json::to_string(&agent)?.trim_matches('"')],
         )?;
         if n == 0 {
@@ -2740,16 +2931,6 @@ impl Db {
             }
         }
         Ok(candidates)
-    }
-
-    pub fn copy_title_candidates(&self, old: u32, new: u32) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
-        conn.execute(
-            "INSERT OR IGNORE INTO session_title_candidates (session_id, source, title)
-            SELECT ?2, source, title FROM session_title_candidates WHERE session_id = ?1",
-            [old, new],
-        )?;
-        Ok(())
     }
 
     pub fn session_title_source(&self, id: u32) -> Result<Option<String>> {
@@ -2846,7 +3027,9 @@ impl Db {
     ) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3 WHERE id = ?1",
+            "UPDATE sessions SET resume_session_id = ?2, resume_transcript_path = ?3,
+                resume_agent = CASE WHEN ?2 IS NULL THEN NULL WHEN agent = 'shell' THEN detected_agent ELSE agent END,
+                resume_cwd = CASE WHEN ?2 IS NULL THEN NULL ELSE cwd END WHERE id = ?1",
             rusqlite::params![id, handle.map(|h| h.0), handle.and_then(|h| h.1)],
         )?;
         Ok(())
@@ -4093,32 +4276,43 @@ impl Db {
     ) -> Result<()> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
-        tx.execute("UPDATE delegations SET child_session = ?2, parent_session = COALESCE(?3, parent_session), state = 'working', stop_reason = NULL, ended_at = NULL, settled_at = NULL, retained_until = NULL, cleanup_after = NULL, updated_at = ?4 WHERE child_session = ?1", rusqlite::params![old, new, parent, now as i64])?;
-        tx.execute(
+        Self::delegation_rebind_on(&tx, old, new, parent, now)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn delegation_rebind_on(
+        conn: &Connection,
+        old: u32,
+        new: u32,
+        parent: Option<u32>,
+        now: u64,
+    ) -> Result<()> {
+        conn.execute("UPDATE delegations SET child_session = ?2, parent_session = COALESCE(?3, parent_session), state = 'working', stop_reason = NULL, ended_at = NULL, settled_at = NULL, retained_until = NULL, cleanup_after = NULL, updated_at = ?4 WHERE child_session = ?1", rusqlite::params![old, new, parent, now as i64])?;
+        conn.execute(
             "UPDATE child_input_requests SET child_session = ?2 WHERE child_session = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE delegations SET parent_session = ?2 WHERE parent_session = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE sessions SET spawned_by = ?2 WHERE spawned_by = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE pane_inbox SET to_session = ?2 WHERE to_session = ?1 OR (to_session = 0 AND original_to = ?1)",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE pane_inbox SET from_session = ?2 WHERE from_session = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.execute(
+        conn.execute(
             "UPDATE pane_inbox SET original_to = ?2 WHERE original_to = ?1",
             rusqlite::params![old, new],
         )?;
-        tx.commit()?;
         Ok(())
     }
 

@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { SessionPane } from './SessionPane'
+import { restartTooltip } from './PaneRestart'
 import { ghosttySurfaceMockModule } from '../test/ghosttySurfaceMock'
 
 vi.mock('../ghostty/surface', () => ghosttySurfaceMockModule())
@@ -153,7 +154,7 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
     expect(respawn).toHaveBeenLastCalledWith(1, false)
   })
 
-  it('a pane without a handle offers a single Restart', () => {
+  it('an ordinary ended pane without a handle or recovery notice offers a single Restart', () => {
     render(makeSession({ state: 'interrupted', resumable: false }))
     openPaneMenu()
     const all = labels()
@@ -167,6 +168,77 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
     if (!header) throw new Error('no header Restart button on a husk')
     click(header)
     expect(respawn).toHaveBeenLastCalledWith(1, false)
+  })
+
+  it.each([
+    {
+      caseName: 'interrupted metadata recovery',
+      state: 'interrupted' as const,
+      restore_deferred: 'spawn-failed' as const,
+      resume_notice: 'Conversation metadata recovery is incomplete: too many hook entries. Resume is blocked; retry after fixing recovery, or choose Fresh or Close.'
+    },
+    {
+      caseName: 'naturally exited metadata recovery',
+      state: 'exited' as const,
+      restore_deferred: 'spawn-failed' as const,
+      resume_notice: 'Conversation metadata recovery is incomplete: an unreadable hook drop. Resume is blocked; retry after fixing recovery, or choose Fresh or Close.'
+    },
+    {
+      caseName: 'invalid saved binding',
+      state: 'interrupted' as const,
+      restore_deferred: 'spawn-failed' as const,
+      resume_notice: null
+    },
+    {
+      caseName: 'binding fallback notice',
+      state: 'exited' as const,
+      restore_deferred: null,
+      resume_notice: 'Started a fresh CLI: the saved conversation belongs to a different working directory.'
+    }
+  ])('a nonresumable recovery husk ($caseName) offers explicit Fresh while keeping retry and its refusal visible', (recovery) => {
+    const info = makeSession({ state: recovery.state, restore_deferred: recovery.restore_deferred, resume_notice: recovery.resume_notice, resumable: false })
+    render(info)
+    const notice = () => container.querySelector(recovery.resume_notice ? '[data-testid="resume-notice"]' : '[data-testid="session-recovery-notice"]')?.textContent
+    const reason = recovery.resume_notice ?? 'the agent could not be started'
+    expect(notice()).toContain(reason)
+    expect(restartTooltip(info)).toBe('Retry session recovery')
+    openPaneMenu()
+    const all = labels()
+    const retry = all.findIndex((label) => label.trim() === 'Restart')
+    expect(retry).toBeGreaterThanOrEqual(0)
+    expect(all.findIndex((label) => label.includes('Start fresh'))).toBe(retry + 1)
+    expect(all.some((label) => label.includes('Resume conversation'))).toBe(false)
+
+    click(row('Restart'))
+    expect(respawn).toHaveBeenLastCalledWith(1, false)
+    expect(notice()).toContain(reason)
+    openPaneMenu()
+    click(row('Start fresh'))
+    expect(dialog()).toBeNull()
+    expect(respawn).toHaveBeenLastCalledWith(1, false, undefined, undefined, undefined, true)
+
+    const header = container.querySelector('header button[aria-label="Restart"]')
+    if (!header) throw new Error('no header Restart button on a recovery husk')
+    click(header)
+    expect(respawn).toHaveBeenLastCalledWith(1, false)
+  })
+
+  it('a deferred husk with no recovered conversation notice still offers explicit Fresh', () => {
+    render(makeSession({ state: 'interrupted', resumable: false, restore_deferred: 'safe-mode' }))
+    openPaneMenu()
+    click(row('Start fresh'))
+    expect(respawn).toHaveBeenLastCalledWith(1, false, undefined, undefined, undefined, true)
+  })
+
+  it('a live nonresumable shell keeps its single confirmed Restart', () => {
+    render(makeSession({ agent: 'shell', state: 'running', resumable: false }))
+    openPaneMenu()
+    expect(labels().some((label) => label.includes('Start fresh'))).toBe(false)
+    expect(labels().some((label) => label.includes('Resume conversation'))).toBe(false)
+    click(row('Restart'))
+    expect(respawn).not.toHaveBeenCalled()
+    click(confirmButton('Restart'))
+    expect(respawn).toHaveBeenLastCalledWith(1, false, undefined, undefined, true)
   })
 
   it('a live pane confirms before either restart', () => {

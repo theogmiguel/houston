@@ -3,18 +3,20 @@ import type { ServerMsg } from './generated/ServerMsg'
 import { PROTOCOL_VERSION } from './generated/PROTOCOL_VERSION'
 import {
   listEnvironments,
+  claimEnvironmentRoster,
+  ENVIRONMENT_SESSION_BASE as TAG_BASE,
+  ENVIRONMENT_SESSION_SPAN as SLOT_SPAN,
   wslWorkspaceOf,
   wslWorkspaces,
   type EnvironmentEntry
 } from './environments'
 import { parseWslPath } from './wslPath'
+import { setInputSocketResolver } from './transport/inputSocket'
 
 // The mux installs itself on the local daemon's socket: it replaces that socket's
 // `send` and `onmessage`, so HoustonClient keeps one socket-shaped object. With no
 // WSL environment it is never installed, and installed it forwards local traffic as is.
 
-const TAG_BASE = 0x80000000
-const SLOT_SPAN = 0x1000000
 export const MAX_WSL_SESSION_ID = SLOT_SPAN - 1
 // AC 24: a closed WSL environment is retried every second; local traffic is untouched.
 const RECONNECT_MS = 1000
@@ -468,6 +470,8 @@ interface WslEnvironment {
   label: string
   socket: WebSocket | null
   helloed: boolean
+  sessionsDelivered: boolean
+  workspacesDelivered: boolean
   retry: ReturnType<typeof setTimeout> | null
   lists: Partial<Record<ListType, unknown[]>>
   reported: Set<string>
@@ -502,12 +506,35 @@ export class EnvironmentMux {
   private sendLocal: (data: string | ArrayBuffer) => void
   private deliverToClient: (ev: MessageEvent) => void
   private disposed = false
+  private publishRoster = claimEnvironmentRoster()
+
+  private publishRosterPending(discovering = false): void {
+    const sessionSlots = new Set<number>()
+    let workspaces = discovering
+    for (const env of this.envs.values()) {
+      const connected = !this.disposed && env.entry.state === 'ready' && env.socket?.readyState === OPEN && env.helloed
+      if (!connected || !env.sessionsDelivered) sessionSlots.add(env.entry.slot)
+      if (!connected || !env.workspacesDelivered) workspaces = true
+    }
+    this.publishRoster({ sessionSlots, workspaces, discovering })
+  }
+
+  private rosterDelivered(type: 'session_list' | 'workspace_list'): void {
+    if (this.disposed) return
+    for (const env of this.envs.values()) {
+      if (!env.helloed) continue
+      if (type === 'session_list') env.sessionsDelivered = true
+      else env.workspacesDelivered = true
+    }
+    this.publishRosterPending()
+  }
 
   constructor(
-    local: WebSocket,
+    private local: WebSocket,
     private open: (url: string) => WebSocket = (url) => new WebSocket(url)
   ) {
     this.sendLocal = local.send.bind(local)
+    setInputSocketResolver(local, (session) => this.inputSocket(session))
     const clientOnMessage = local.onmessage
     this.deliverToClient = (ev) => clientOnMessage?.call(local, ev)
     local.send = (data) => this.fromClient(data as string | ArrayBuffer)
@@ -527,6 +554,8 @@ export class EnvironmentMux {
           label: `WSL: ${entry.distro ?? entry.id}`,
           socket: null,
           helloed: false,
+          sessionsDelivered: false,
+          workspacesDelivered: false,
           retry: null,
           lists: {},
           reported: new Set(),
@@ -544,6 +573,7 @@ export class EnvironmentMux {
       this.forget(env)
       removed = true
     }
+    this.publishRosterPending()
     for (const env of this.envs.values()) {
       if (env.entry.state === 'ready' && env.socket === null && env.retry === null) this.connect(env)
     }
@@ -557,6 +587,7 @@ export class EnvironmentMux {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.publishRosterPending(true)
     for (const env of [...this.envs.values()]) this.forget(env)
     for (const round of this.rounds.values()) clearTimeout(round.timer)
     this.rounds.clear()
@@ -578,6 +609,9 @@ export class EnvironmentMux {
       if (env.socket !== socket) return
       env.socket = null
       env.helloed = false
+      env.sessionsDelivered = false
+      env.workspacesDelivered = false
+      this.publishRosterPending()
       this.leaveRounds(env.entry.id)
       if (this.disposed || this.envs.get(env.entry.id) !== env || env.entry.state !== 'ready') return
       env.retry = setTimeout(() => {
@@ -615,7 +649,7 @@ export class EnvironmentMux {
   }
 
   private fromClient(data: string | ArrayBuffer): void {
-    if (typeof data !== 'string') return this.envs.size === 0 ? this.sendLocal(data) : this.stdinFromClient(data)
+    if (typeof data !== 'string') return this.stdinFromClient(data)
     const msg = JSON.parse(data) as Json
     this.noteAttach(msg)
     if (this.envs.size === 0) return this.sendLocal(data)
@@ -641,11 +675,23 @@ export class EnvironmentMux {
   private stdinFromClient(buf: ArrayBuffer): void {
     const id = buf.byteLength >= 5 ? new DataView(buf).getUint32(1, false) : 0
     if (!isTagged(id)) return this.sendLocal(buf)
-    const env = this.envForSession(id)
-    if (env === null) return
+    const socket = this.inputSocket(id)
     const out = buf.slice(0)
     new DataView(out).setUint32(1, id % SLOT_SPAN, false)
-    this.sendTo(env, out, 'stdin')
+    socket.send(out)
+  }
+
+  private inputSocket(id: number): WebSocket {
+    if (!isTagged(id)) return this.local
+    const env = this.envForSession(id)
+    if (env === null) {
+      throw new Error(`Input refused for session ${id}: no enabled WSL environment owns slot ${slotOf(id)}`)
+    }
+    const socket = env.socket
+    if (env.entry.state !== 'ready' || socket?.readyState !== OPEN || !env.helloed) {
+      throw new Error(`Input refused for session ${id}: ${env.label} is not ready (environment ${env.entry.state}, socket state ${socket?.readyState ?? 'disconnected'}, hello_ok ${env.helloed}); expected ready, OPEN (${OPEN}) and hello_ok`)
+    }
+    return socket
   }
 
   private envForSession(id: number): WslEnvironment | null {
@@ -804,6 +850,8 @@ export class EnvironmentMux {
         workspaces: this.merged('workspace_list')
       })
     )
+    this.rosterDelivered('session_list')
+    this.rosterDelivered('workspace_list')
   }
 
   private fromEnvironment(env: WslEnvironment, ev: MessageEvent): void {
@@ -830,6 +878,9 @@ export class EnvironmentMux {
       throw err
     }
     if (msg.type === 'handoff_started') this.handoffs.set(msg.request as number, env)
+    if (msg.type === 'session_removed') {
+      env.lists.session_list = (env.lists.session_list ?? []).filter((item) => (item as { id: number }).id !== msg.session)
+    }
     if (msg.type === 'scrollback' || msg.type === 'attach_snapshot') this.renumberAttempt(env, msg)
     this.deliver(JSON.stringify(msg))
   }
@@ -957,6 +1008,7 @@ export class EnvironmentMux {
 
   private emitList(type: ListType): void {
     this.deliver(JSON.stringify({ type, [LIST_FIELD[type]]: this.merged(type) }))
+    if (type === 'session_list' || type === 'workspace_list') this.rosterDelivered(type)
     if (type !== 'workspace_list') return
     const focus = this.focusAfterList.splice(0)
     for (const data of focus) this.deliver(data)
@@ -966,6 +1018,7 @@ export class EnvironmentMux {
 /** Installs the mux on the local socket once `env_list` names a WSL environment, and
  *  keeps it in step with `wsl://environments` until that socket closes. */
 export async function watchEnvironments(local: WebSocket): Promise<void> {
+  const publishRoster = claimEnvironmentRoster()
   const { listen } = await import('@tauri-apps/api/event')
   let mux: EnvironmentMux | null = null
   let closed = false
@@ -974,6 +1027,7 @@ export async function watchEnvironments(local: WebSocket): Promise<void> {
     if (closed) return
     if (mux === null && entries.some((e) => e.kind === 'wsl')) mux = new EnvironmentMux(local)
     mux?.setEnvironments(entries)
+    if (mux === null) publishRoster({ sessionSlots: new Set(), workspaces: false, discovering: false })
   }
   const unlisten = await listen('wsl://environments', () => {
     void refresh().catch((err: unknown) => console.warn('houston: env_list failed', err))
@@ -981,6 +1035,7 @@ export async function watchEnvironments(local: WebSocket): Promise<void> {
   const stop = (): void => {
     closed = true
     unlisten()
+    if (mux === null) publishRoster({ sessionSlots: new Set(), workspaces: true, discovering: true })
   }
   if (local.readyState >= CLOSING) return stop()
   local.addEventListener('close', stop)

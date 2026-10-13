@@ -193,10 +193,13 @@ export function PaneSleepingStory(): React.JSX.Element {
 }
 
 export function PaneRecoveryDeferredStory(): React.JSX.Element {
-  const shell = mkInfo({ agent: 'shell', state: 'running', restore_deferred: 'spawn-failed' })
-  const sessions = new Map([[shell.id, shell]])
+  const deferred = mkInfo({
+    state: 'interrupted', status: null, resumable: false, restore_deferred: 'spawn-failed', tags: [],
+    resume_notice: 'Conversation metadata recovery is incomplete: an unreadable hook drop. Resume is blocked; retry after fixing recovery, or choose Fresh or Close.'
+  })
+  const sessions = new Map([[deferred.id, deferred]])
   const store = React.useMemo(() => createSessionsStore(sessions), [])
-  return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><div style={{ height: '100%', padding: 12, display: 'flex', background: 'var(--content-bg)' }}><PaneFor info={shell} branch="feature/session-recovery" /></div></SessionsStoreContext.Provider></TagsContext.Provider>
+  return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><div style={{ height: '100%', padding: 12, display: 'flex', background: 'var(--content-bg)' }}><PaneFor info={deferred} branch="feature/session-recovery" menu /></div></SessionsStoreContext.Provider></TagsContext.Provider>
 }
 
 export function PaneTerminalStatesStory(): React.JSX.Element {

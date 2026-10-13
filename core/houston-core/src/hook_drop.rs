@@ -115,6 +115,16 @@ pub struct HookDrop {
     pub interrupted: bool,
 }
 
+impl HookDrop {
+    pub fn root_cwd(&self, provider: houston_protocol::AgentKind) -> Option<&str> {
+        (crate::agent_events::names_root_conversation(provider, &self.event)
+            && self.agent_id.is_none()
+            && self.subagent_type.is_none())
+        .then_some(self.cwd.as_deref())
+        .flatten()
+    }
+}
+
 impl Default for HookDrop {
     fn default() -> Self {
         Self {
@@ -400,11 +410,19 @@ pub enum DropVerdict {
 pub struct DropDirState {
     warned: HashSet<OsString>,
     applied: HashSet<OsString>,
+    protected_sessions: HashSet<u32>,
+    recovery_candidates: Option<HashSet<u32>>,
 }
 
 impl DropDirState {
     pub fn new() -> Self {
         Self::default()
+    }
+    pub fn protect_sessions(&mut self, sessions: impl IntoIterator<Item = u32>) {
+        self.protected_sessions = sessions.into_iter().collect();
+    }
+    pub fn recover_sessions(&mut self, sessions: impl IntoIterator<Item = u32>) {
+        self.recovery_candidates = Some(sessions.into_iter().collect());
     }
     pub fn warned_len(&self) -> usize {
         self.warned.len()
@@ -417,17 +435,20 @@ pub struct PassOutcome {
     pub kept: usize,
     pub collected: usize,
     pub listed_ok: bool,
+    pub listing_limit_exceeded: Option<usize>,
+    pub metadata_failed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pass {
     Seed,
     Steady,
+    RecoveryMetadata,
 }
 
-// An unparseable name accumulates forever by design — the alternative is
-// deleting a file Houston does not own — and is warned once, not per pass.
-// A file older than MAX_AGE_MS is collected without applying; else applied.
+// Unparseable names are retained and warned once, since Houston cannot claim them.
+// Ordinary passes expire files after MAX_AGE_MS; recovery reads bounded metadata across downtime.
+// Recovery callbacks must not replay lifecycle effects.
 pub fn run_pass(
     dir: &Path,
     state: &mut DropDirState,
@@ -452,6 +473,25 @@ pub fn run_pass_with_io(
     now_ms: u64,
     pass: Pass,
     mut apply: impl FnMut(&HookDrop, &str, u64) -> DropVerdict,
+    remove: impl FnMut(&Path) -> std::io::Result<()>,
+) -> PassOutcome {
+    run_pass_with_name_io(
+        dir,
+        state,
+        now_ms,
+        pass,
+        |drop, identity, name| apply(drop, identity, name.ms),
+        remove,
+    )
+}
+
+/// Recovery retains event ordering without replaying the event's lifecycle effects.
+pub fn run_pass_with_name_io(
+    dir: &Path,
+    state: &mut DropDirState,
+    now_ms: u64,
+    pass: Pass,
+    mut apply: impl FnMut(&HookDrop, &str, DropName) -> DropVerdict,
     mut remove: impl FnMut(&Path) -> std::io::Result<()>,
 ) -> PassOutcome {
     let mut out = PassOutcome::default();
@@ -476,7 +516,26 @@ pub fn run_pass_with_io(
 
     let mut present: HashSet<OsString> = HashSet::new();
     let mut files: Vec<(DropName, PathBuf, OsString)> = Vec::new();
-    for entry in entries.flatten() {
+    for (index, entry) in entries.enumerate() {
+        // Refuse a partial recovery scan before any application: skipped newer
+        // drops could invalidate an older handle. Steady draining stays unchanged.
+        if pass == Pass::RecoveryMetadata && index >= 4096 {
+            tracing::warn!("hook metadata recovery directory limit 4096 exceeded (actual at least {} entries) in {}; restore refused", index + 1, dir.display());
+            out.listed_ok = false;
+            out.listing_limit_exceeded = Some(index + 1);
+            return out;
+        }
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                tracing::warn!("listing hook drop entry in {}: {error}", dir.display());
+                out.listed_ok = false;
+                if pass == Pass::RecoveryMetadata {
+                    return out;
+                }
+                continue;
+            }
+        };
         let name = entry.file_name();
         let Some(text) = name.to_str() else {
             warn_once(state, &mut present, &name, || {
@@ -510,7 +569,21 @@ pub fn run_pass_with_io(
     files.sort_by_key(|(n, _, _)| (n.ms, n.seq, n.session));
 
     for (parsed, path, name) in files {
-        if now_ms.saturating_sub(parsed.ms) > MAX_AGE_MS {
+        let recovering = pass == Pass::RecoveryMetadata;
+        if recovering
+            && state
+                .recovery_candidates
+                .as_ref()
+                .is_some_and(|sessions| !sessions.contains(&parsed.session))
+        {
+            out.kept += 1;
+            continue;
+        }
+        if pass != Pass::RecoveryMetadata && state.protected_sessions.contains(&parsed.session) {
+            out.kept += 1;
+            continue;
+        }
+        if pass != Pass::RecoveryMetadata && now_ms.saturating_sub(parsed.ms) > MAX_AGE_MS {
             state.applied.remove(&name);
             match remove(&path) {
                 Ok(()) => out.collected += 1,
@@ -540,22 +613,56 @@ pub fn run_pass_with_io(
                     path.display()
                 );
             });
+            out.metadata_failed |= recovering;
             out.kept += 1;
             continue;
         }
-        let bytes = match std::fs::read(&path) {
+        if pass == Pass::RecoveryMetadata {
+            // Metadata survives long downtime. Bound and validate the local drop
+            // before reading; stale lifecycle TTL still applies in the seed pass.
+            let metadata = match std::fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    tracing::warn!("reading recovery drop metadata {}: {error}", path.display());
+                    out.metadata_failed |= recovering;
+                    out.kept += 1;
+                    continue;
+                }
+            };
+            if !metadata.is_file() || metadata.len() > 1024 * 1024 || parsed.ms > now_ms {
+                tracing::warn!("hook metadata recovery refused {}: expected a regular file of at most 1048576 bytes (actual {}) sampled by {now_ms} (actual {})", path.display(), metadata.len(), parsed.ms);
+                out.metadata_failed |= recovering;
+                out.kept += 1;
+                continue;
+            }
+        }
+        let read = if pass == Pass::RecoveryMetadata {
+            use std::io::Read;
+            std::fs::File::open(&path).and_then(|file| {
+                let mut bytes = Vec::new();
+                file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
+                if bytes.len() > 1024 * 1024 {
+                    return Err(std::io::Error::other(format!("hook metadata recovery payload limit 1048576 exceeded (actual at least {} bytes)", bytes.len())));
+                }
+                Ok(bytes)
+            })
+        } else {
+            std::fs::read(&path)
+        };
+        let bytes = match read {
             Ok(b) => b,
             Err(e) => {
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!("hook drop pass: reading {}: {e}", path.display());
                 });
+                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
         };
         let drop = match serde_json::from_slice::<HookDrop>(&bytes) {
-            Ok(d) if d.v == DROP_V => d,
-            Ok(d) => {
+            Ok(d) if d.v == DROP_V && d.session == parsed.session => d,
+            Ok(d) if d.v != DROP_V => {
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!(
                         "hook drop pass: {} has version {} (expected {DROP_V}) — kept, \
@@ -564,6 +671,15 @@ pub fn run_pass_with_io(
                         d.v
                     );
                 });
+                out.metadata_failed |= recovering;
+                out.kept += 1;
+                continue;
+            }
+            Ok(d) => {
+                warn_once(state, &mut present, &name, || {
+                    tracing::warn!("hook drop pass: {} names session {} in its payload (expected {} from filename); kept, not applied", path.display(), d.session, parsed.session);
+                });
+                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -571,6 +687,7 @@ pub fn run_pass_with_io(
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!("hook drop pass: parsing {}: {e}", path.display());
                 });
+                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -582,7 +699,7 @@ pub fn run_pass_with_io(
         digest.update(path_bytes);
         digest.update(&bytes);
         let identity = format!("{:x}", digest.finalize());
-        match apply(&drop, &identity, parsed.ms) {
+        match apply(&drop, &identity, parsed) {
             DropVerdict::Applied => {
                 state.applied.insert(name.clone());
                 if let Err(e) = remove(&path) {
@@ -594,7 +711,11 @@ pub fn run_pass_with_io(
                 }
                 out.applied += 1;
             }
-            DropVerdict::NoSession | DropVerdict::Retry => out.kept += 1,
+            DropVerdict::NoSession => out.kept += 1,
+            DropVerdict::Retry => {
+                out.metadata_failed |= recovering;
+                out.kept += 1;
+            }
         }
     }
     out

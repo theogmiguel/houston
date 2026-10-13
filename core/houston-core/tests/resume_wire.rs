@@ -48,7 +48,15 @@ exec cat
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["claude", "codex", "zcode"] {
+        for name in [
+            "claude",
+            "codex",
+            "agy",
+            "opencode",
+            "cursor-agent",
+            "grok",
+            "zcode",
+        ] {
             let path = dir.join(name);
             std::fs::write(&path, FAKE_CLI).unwrap();
             use std::os::unix::fs::PermissionsExt;
@@ -129,9 +137,8 @@ async fn serve(daemon: &Arc<Daemon>) -> std::net::SocketAddr {
 }
 
 /// The orderly-shutdown half of SIGTERM, then a new daemon on the same state dir.
-fn reboot(env: &Env, before: &Daemon) -> Arc<Daemon> {
-    before.checkpoint_scrollback().unwrap();
-    before.mark_clean_shutdown().unwrap();
+fn reboot(env: &Env, before: &Arc<Daemon>) -> Arc<Daemon> {
+    before.manage_shutdown().unwrap();
     boot(env)
 }
 
@@ -501,6 +508,13 @@ async fn shell_hosted_claude_hook_is_recorded_and_restart_resumes_inside_shell()
         resume_of(&argv).as_deref(),
         Some(conversation),
         "the restored shell must relaunch the exact Claude conversation"
+    );
+    assert!(
+        !argv.iter().any(|arg| matches!(
+            arg.as_str(),
+            "--model" | "--effort" | "--permission-mode" | "--dangerously-skip-permissions"
+        )),
+        "a manually launched shell CLI has no explicit Houston selections: {argv:?}"
     );
     let settings_file = flag(&argv, "--settings").expect(
         "shell recovery must carry pane identity in Claude arguments, even if its daemon drops env",
@@ -1817,6 +1831,91 @@ async fn a_resumed_cli_that_exits_cleanly_is_not_relaunched() {
 }
 
 #[tokio::test]
+async fn a_failed_child_resume_never_starts_a_fresh_agent() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "failed-child-resume");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let parent = claude_pane(&daemon, &dir, None);
+    let child = daemon
+        .orchestrate_spawn_with_options(
+            parent.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            houston_core::orchestrate::Brief::from("finish the assigned change".to_string()),
+            Some(false),
+            None,
+            Some("failed-resume".into()),
+            None,
+            true,
+            None,
+            None,
+        )
+        .unwrap();
+    let conversation = flag(&argv_of(&env, child.id).await, "--session-id").unwrap();
+    let path = transcript(&env, &conversation, b"child turn\n");
+    hook(
+        &env,
+        &daemon,
+        child.id,
+        "UserPromptSubmit",
+        PROMPT,
+        &conversation,
+        &path,
+        &dir,
+    )
+    .await;
+    std::env::set_var("RESUME_FAKE_EXIT", "1");
+    let resumed = daemon.respawn(child.id, false, None, None, true).unwrap();
+    assert_eq!(
+        resume_of(&argv_of(&env, resumed.id).await),
+        Some(conversation.clone())
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let reported = daemon
+            .inbox_rows_for_test(parent.id)
+            .iter()
+            .any(|row| row.reason.as_deref() == Some("resume_failed"));
+        let replaced = daemon
+            .list()
+            .iter()
+            .any(|info| info.session_origin == Some(child.id) && info.id != resumed.id);
+        if reported || replaced {
+            assert!(
+                reported,
+                "a failed child resume must be reported without a fresh replacement"
+            );
+            assert!(
+                !replaced,
+                "a child's mission cannot be replaced by an empty fresh CLI"
+            );
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "failed resume never settled"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let ended = daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == resumed.id)
+        .unwrap();
+    assert_eq!(ended.state, proto::SessionState::Exited);
+    assert!(ended.resumable);
+    assert_eq!(
+        handle_in(&env, ended.id).map(|handle| handle.0),
+        Some(conversation)
+    );
+    daemon.close(ended.id).unwrap();
+    daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
 async fn a_codex_pane_restores_its_exact_thread_id() {
     let env = setup().await;
     let daemon = boot(&env);
@@ -1874,6 +1973,79 @@ async fn a_codex_pane_restores_its_exact_thread_id() {
     assert_eq!(restored.resume_notice, None);
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_fresh_codex_restore_does_not_pin_its_observer_to_the_retry_handle() {
+    for resume_enabled in [false, true] {
+        let env = setup().await;
+        let daemon = boot(&env);
+        let dir = project(&env, "fresh-codex-observer");
+        let pane = daemon
+            .create_session(CreateParams {
+                agent: proto::AgentKind::Codex,
+                project_dir: dir.clone(),
+                cmd: None,
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+                model: None,
+                effort: None,
+            })
+            .unwrap();
+        argv_of(&env, pane.id).await;
+        let path = transcript(&env, "observer-retry-thread", b"turn\n");
+        apply_drop(
+            &env,
+            &daemon,
+            HookDrop {
+                event: "UserPromptSubmit".into(),
+                session: pane.id,
+                agent: Some("codex".into()),
+                session_id: Some("observer-retry-thread".into()),
+                transcript_path: Some(path.clone()),
+                ..Default::default()
+            },
+        )
+        .await;
+        daemon.set_restore_resume(resume_enabled).unwrap();
+        if resume_enabled {
+            std::fs::remove_file(path).unwrap();
+        }
+        daemon.manage_shutdown().unwrap();
+        // The shim records the full native launch argv without running a CLI,
+        // observer, systemd scope or network service.
+        let restored_daemon = Daemon::new_bound_with_session_launcher(
+            DaemonConfig {
+                token: TOKEN.to_string(),
+                db_path: env.db_path(),
+            },
+            1,
+            Some(shim_dir().join("claude")),
+        )
+        .unwrap();
+        let restored = restored_from(&restored_daemon.list(), pane.id).clone();
+        let argv = argv_of(&env, restored.id).await;
+        let helper = argv.iter().position(|arg| arg == "codex-exec").unwrap();
+        assert_eq!(
+            argv[helper + 3],
+            "-",
+            "fresh launch must discover its own thread: {argv:?}"
+        );
+        assert_eq!(resume_of(&argv), None);
+        assert_eq!(
+            handle_in(&env, restored.id).unwrap().0,
+            "observer-retry-thread"
+        );
+        restored_daemon.close(restored.id).unwrap();
+        daemon.close(pane.id).unwrap();
+    }
+}
+
 async fn respawn_over_the_wire(
     addr: std::net::SocketAddr,
     session: u32,
@@ -1914,6 +2086,550 @@ async fn restart_over_the_wire_resumes_by_default() {
         Some(conversation),
         "the forced kill does not clear the handle it carries"
     );
+}
+
+#[tokio::test]
+async fn fresh_restore_preserves_typed_launch_choices_for_every_provider() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "typed-provider-launches");
+    daemon.set_restore_budget(16).unwrap();
+    let mut panes = Vec::new();
+    for agent in [
+        proto::AgentKind::Claude,
+        proto::AgentKind::Codex,
+        proto::AgentKind::Antigravity,
+        proto::AgentKind::Opencode,
+        proto::AgentKind::Cursor,
+        proto::AgentKind::Grok,
+        proto::AgentKind::Zcode,
+    ] {
+        let model = (agent != proto::AgentKind::Zcode).then(|| "fixture-model".to_string());
+        let effort = matches!(
+            agent,
+            proto::AgentKind::Claude
+                | proto::AgentKind::Codex
+                | proto::AgentKind::Antigravity
+                | proto::AgentKind::Grok
+        )
+        .then_some(proto::ChatEffort::High);
+        let pane = daemon
+            .create_session(CreateParams {
+                agent,
+                project_dir: dir.clone(),
+                cmd: None,
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: true,
+                acp: None,
+                profile: None,
+                prompt: Some("initial prompt must not be replayed".into()),
+                model: model.clone(),
+                effort,
+            })
+            .unwrap();
+        argv_of(&env, pane.id).await;
+        if matches!(
+            agent,
+            proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Zcode
+        ) {
+            let conversation = format!("typed-provider-{}", pane.id);
+            let path = transcript(&env, &conversation, b"completed turn\n");
+            let provider = match agent {
+                proto::AgentKind::Claude => "claude",
+                proto::AgentKind::Codex => "codex",
+                _ => "zcode",
+            };
+            apply_drop(
+                &env,
+                &daemon,
+                HookDrop {
+                    event: "UserPromptSubmit".into(),
+                    session: pane.id,
+                    agent: Some(provider.into()),
+                    session_id: Some(conversation),
+                    transcript_path: Some(path.clone()),
+                    ..Default::default()
+                },
+            )
+            .await;
+            if agent != proto::AgentKind::Zcode {
+                std::fs::remove_file(path).unwrap();
+            }
+        }
+        panes.push((pane, model, effort));
+    }
+    let restored_daemon = reboot(&env, &daemon);
+    for (pane, model, effort) in panes {
+        let restored = restored_from(&restored_daemon.list(), pane.id).clone();
+        let argv = argv_of(&env, restored.id).await;
+        for argument in houston_core::launch::auto_approve_args(pane.agent).unwrap() {
+            assert!(
+                argv.contains(&argument),
+                "{:?} lost bypass selection: {argv:?}",
+                pane.agent
+            );
+        }
+        if let Some(model) = model {
+            assert!(
+                argv.contains(&model),
+                "{:?} lost model: {argv:?}",
+                pane.agent
+            );
+        }
+        if effort.is_some() {
+            let expected = if pane.agent == proto::AgentKind::Codex {
+                "model_reasoning_effort=\"high\""
+            } else {
+                "high"
+            };
+            assert!(
+                argv.iter().any(|arg| arg == expected),
+                "lost effort: {argv:?}"
+            );
+        }
+        assert!(!argv
+            .iter()
+            .any(|arg| arg.contains("initial prompt must not be replayed")));
+        assert_eq!(
+            Db::open(&env.db_path())
+                .unwrap()
+                .session_approval_mode(restored.id)
+                .unwrap()
+                .as_deref(),
+            Some("bypass")
+        );
+        restored_daemon.close(restored.id).unwrap();
+        daemon.close(pane.id).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn restored_auto_children_keep_choices_dialogue_rules_and_codex_activity() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "typed-child-launches");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let (parent, _, _) = pane_with_a_turn(&env, &daemon, &dir, None).await;
+    let mut children = Vec::new();
+    for agent in [proto::AgentKind::Claude, proto::AgentKind::Codex] {
+        let child = daemon
+            .orchestrate_spawn_with_options(
+                parent.id,
+                agent,
+                Some("fixture-model".into()),
+                None,
+                houston_core::orchestrate::Brief::from("retain the assigned mission".to_string()),
+                None,
+                None,
+                None,
+                None,
+                true,
+                Some(proto::ChatEffort::High),
+                None,
+            )
+            .unwrap();
+        argv_of(&env, child.id).await;
+        let conversation = format!("typed-child-{}", child.id);
+        let path = transcript(&env, &conversation, b"child turn\n");
+        apply_drop(
+            &env,
+            &daemon,
+            HookDrop {
+                event: "UserPromptSubmit".into(),
+                session: child.id,
+                agent: Some(
+                    if agent == proto::AgentKind::Claude {
+                        "claude"
+                    } else {
+                        "codex"
+                    }
+                    .into(),
+                ),
+                session_id: Some(conversation),
+                transcript_path: Some(path),
+                ..Default::default()
+            },
+        )
+        .await;
+        children.push(child);
+    }
+    let restored_daemon = reboot(&env, &daemon);
+    let restored_parent = restored_from(&restored_daemon.list(), parent.id).clone();
+    for child in children {
+        let restored = restored_from(&restored_daemon.list(), child.id).clone();
+        let argv = argv_of(&env, restored.id).await;
+        assert!(resume_of(&argv).is_some());
+        assert!(argv.iter().any(|arg| arg == "fixture-model"), "{argv:?}");
+        for argument in houston_core::launch::auto_mode_args(child.agent).unwrap() {
+            assert!(argv.contains(&argument), "lost Auto mode: {argv:?}");
+        }
+        for argument in houston_core::launch::dialogue_permission_args(child.agent) {
+            assert!(argv.contains(&argument), "lost dialogue rule: {argv:?}");
+        }
+        assert_eq!(
+            Db::open(&env.db_path())
+                .unwrap()
+                .session_approval_mode(restored.id)
+                .unwrap()
+                .as_deref(),
+            Some("auto")
+        );
+        if child.agent == proto::AgentKind::Codex {
+            for event in ["UserPromptSubmit", "PermissionRequest"] {
+                apply_drop(
+                    &env,
+                    &restored_daemon,
+                    HookDrop {
+                        event: event.into(),
+                        session: restored.id,
+                        agent: Some("codex".into()),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            }
+            let status = restored_daemon
+                .list()
+                .into_iter()
+                .find(|info| info.id == restored.id)
+                .unwrap()
+                .status;
+            assert_eq!(
+                status,
+                Some(proto::AgentStatus::Working),
+                "bare Auto PermissionRequest is activity"
+            );
+        }
+        let again = restored_daemon
+            .respawn(restored.id, false, None, None, true)
+            .unwrap();
+        let again_argv = argv_of(&env, again.id).await;
+        assert_eq!(resume_of(&again_argv), resume_of(&argv));
+        for argument in houston_core::launch::auto_mode_args(child.agent)
+            .unwrap()
+            .into_iter()
+            .chain(houston_core::launch::dialogue_permission_args(child.agent))
+            .chain(["fixture-model".to_string()])
+        {
+            assert!(
+                again_argv.contains(&argument),
+                "manual Restart lost choices: {again_argv:?}"
+            );
+        }
+        assert_eq!(
+            Db::open(&env.db_path())
+                .unwrap()
+                .session_approval_mode(again.id)
+                .unwrap()
+                .as_deref(),
+            Some("auto")
+        );
+        restored_daemon.close(again.id).unwrap();
+        daemon.close(child.id).unwrap();
+    }
+    restored_daemon.close(restored_parent.id).unwrap();
+    daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn legacy_rows_retain_their_recorded_approval_mode() {
+    let env = setup().await;
+    let dir = project(&env, "legacy-launch-choices");
+    seed_claude(&env, 5, &dir, &dir, None);
+    Db::open(&env.db_path())
+        .unwrap()
+        .session_set_approval_mode(5, "bypass")
+        .unwrap();
+    let daemon = boot(&env);
+    let restored = restored_from(&daemon.list(), 5).clone();
+    let argv = argv_of(&env, restored.id).await;
+    assert!(
+        argv.iter()
+            .any(|arg| arg == "--dangerously-skip-permissions"),
+        "{argv:?}"
+    );
+    assert_eq!(
+        Db::open(&env.db_path())
+            .unwrap()
+            .session_approval_mode(restored.id)
+            .unwrap()
+            .as_deref(),
+        Some("bypass")
+    );
+    daemon.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn a_known_provider_command_override_is_deferred_until_explicit_fresh_start() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "command-override-refusal");
+    daemon.set_restore_budget(1).unwrap();
+    let ordinary = claude_pane(&daemon, &dir, None);
+    let overridden = daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Claude,
+            project_dir: dir.clone(),
+            cmd: Some(vec![
+                shim_dir().join("claude").display().to_string(),
+                "--custom-wrapper-option".into(),
+            ]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    assert!(argv_of(&env, overridden.id)
+        .await
+        .iter()
+        .any(|arg| arg == "--custom-wrapper-option"));
+    let live = daemon
+        .respawn(overridden.id, false, None, None, true)
+        .unwrap();
+    assert!(
+        argv_of(&env, live.id)
+            .await
+            .iter()
+            .any(|arg| arg == "--custom-wrapper-option"),
+        "live Restart can still use the in-memory command"
+    );
+    let path = transcript(&env, "custom-wrapper-conversation", b"wrapper turn\n");
+    apply_drop(
+        &env,
+        &daemon,
+        HookDrop {
+            event: "UserPromptSubmit".into(),
+            session: live.id,
+            agent: Some("claude".into()),
+            session_id: Some("custom-wrapper-conversation".into()),
+            transcript_path: Some(path),
+            ..Default::default()
+        },
+    )
+    .await;
+    let after = reboot(&env, &daemon);
+    let sessions = after.list();
+    let deferred = sessions
+        .iter()
+        .find(|info| info.id == live.id)
+        .expect("an override must keep its husk rather than silently launch the stock CLI");
+    assert_eq!(
+        deferred.restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed)
+    );
+    let notice = deferred.resume_notice.as_deref().unwrap();
+    assert!(
+        notice.contains("Claude") && notice.contains("command override"),
+        "{notice}"
+    );
+    assert!(deferred.resumable);
+    let restored_ordinary = restored_from(&sessions, ordinary.id).clone();
+    assert!(
+        restored_ordinary.state.is_live(),
+        "refusal must not consume restore budget or halt other panes"
+    );
+    let error = after
+        .respawn(live.id, false, None, None, false)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("Claude") && error.contains("Start fresh"),
+        "{error}"
+    );
+    assert_eq!(
+        handle_in(&env, live.id).unwrap().0,
+        "custom-wrapper-conversation"
+    );
+    let fresh = after
+        .respawn_with(
+            live.id,
+            false,
+            None,
+            None,
+            false,
+            houston_core::daemon::RespawnConversation::Fresh,
+        )
+        .unwrap();
+    assert!(!argv_of(&env, fresh.id)
+        .await
+        .iter()
+        .any(|arg| arg == "--custom-wrapper-option"));
+    assert!(!fresh.resumable);
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    assert!(!conn
+        .query_row(
+            "SELECT command_override FROM sessions WHERE id = ?1",
+            [fresh.id],
+            |row| row.get::<_, bool>(0)
+        )
+        .unwrap());
+    after.close(fresh.id).unwrap();
+    after.close(restored_ordinary.id).unwrap();
+    daemon.close(live.id).unwrap();
+    daemon.close(ordinary.id).unwrap();
+}
+
+#[tokio::test]
+async fn failed_forced_shell_restart_flushes_its_final_cwd_before_replacement() {
+    let env = setup().await;
+    std::env::set_var("SHELL", "/bin/bash");
+    let daemon = boot(&env);
+    let dir = project(&env, "forced-shell-cwd");
+    let changed = dir.join("changed");
+    std::fs::create_dir(&changed).unwrap();
+    let shell = daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Shell,
+            project_dir: dir.clone(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: true,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let path = transcript(&env, "shell-before-cd", b"shell root turn\n");
+    apply_drop(
+        &env,
+        &daemon,
+        HookDrop {
+            event: "UserPromptSubmit".into(),
+            session: shell.id,
+            agent: Some("claude".into()),
+            session_id: Some("shell-before-cd".into()),
+            cwd: Some(dir.display().to_string()),
+            transcript_path: Some(path),
+            ..Default::default()
+        },
+    )
+    .await;
+    daemon.write_stdin(shell.id, b"cd changed\n").unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while daemon.last_hook_cwd(shell.id).as_deref() != changed.to_str() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "shell did not report its new cwd"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    let stored_cwd = || {
+        conn.query_row(
+            "SELECT cwd FROM sessions WHERE id = ?1",
+            [shell.id],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        stored_cwd(),
+        dir.display().to_string(),
+        "PTY cwd writes stay coalesced until a control checkpoint"
+    );
+    conn.execute_batch(
+        "CREATE TRIGGER replacement_failure BEFORE INSERT ON sessions
+        BEGIN SELECT RAISE(ABORT, 'forced shell replacement failure'); END;",
+    )
+    .unwrap();
+    assert!(daemon.respawn(shell.id, true, None, None, true).is_err());
+    assert_eq!(
+        stored_cwd(),
+        changed.display().to_string(),
+        "failed replacement must leave the final drained cwd durable"
+    );
+    let db = Db::open(&env.db_path()).unwrap();
+    assert_eq!(
+        db.session_final(shell.id).unwrap().unwrap().0,
+        proto::SessionState::Interrupted
+    );
+    assert_eq!(
+        db.session_resume_handle(shell.id).unwrap().unwrap().0,
+        "shell-before-cd"
+    );
+    assert!(db
+        .list_interrupted()
+        .unwrap()
+        .iter()
+        .any(|info| info.id == shell.id && info.cwd == changed.display().to_string()));
+    conn.execute_batch("DROP TRIGGER replacement_failure")
+        .unwrap();
+    daemon.close(shell.id).unwrap();
+}
+
+#[tokio::test]
+async fn wake_preserves_the_explicit_model_effort_and_approval_choices() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "typed-wake-launch");
+    let pane = daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Claude,
+            project_dir: dir.clone(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: true,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: Some("fixture-model".into()),
+            effort: Some(proto::ChatEffort::High),
+        })
+        .unwrap();
+    let conversation = flag(&argv_of(&env, pane.id).await, "--session-id").unwrap();
+    let path = transcript(&env, &conversation, b"completed turn\n");
+    for event in ["UserPromptSubmit", "Stop"] {
+        hook(
+            &env,
+            &daemon,
+            pane.id,
+            event,
+            if event == "Stop" { STOP } else { PROMPT },
+            &conversation,
+            &path,
+            &dir,
+        )
+        .await;
+    }
+    daemon.sleep_session(pane.id).unwrap();
+    let woken = daemon.wake_session(pane.id).unwrap();
+    let argv = argv_of(&env, woken.id).await;
+    assert_eq!(resume_of(&argv), Some(conversation));
+    assert!(
+        argv.iter()
+            .any(|arg| arg == "--dangerously-skip-permissions"),
+        "{argv:?}"
+    );
+    assert_eq!(flag(&argv, "--model").as_deref(), Some("fixture-model"));
+    assert_eq!(flag(&argv, "--effort").as_deref(), Some("high"));
+    assert_eq!(
+        Db::open(&env.db_path())
+            .unwrap()
+            .session_approval_mode(woken.id)
+            .unwrap()
+            .as_deref(),
+        Some("bypass")
+    );
+    daemon.close(woken.id).unwrap();
 }
 
 #[tokio::test]
@@ -2581,10 +3297,8 @@ async fn routine_and_harness_panes_never_resume() {
         .find(|r| r.name.starts_with("Harness review"))
         .unwrap()
         .id;
-    let cli = shim_dir().join("claude").display().to_string();
     let mut panes = Vec::new();
     for (routine, conversation) in [(plain, "routine-conv"), (review, "review-conv")] {
-        daemon.set_routine_pane_cmd_for_test(vec![cli.clone()]);
         daemon.routine_run_now(routine).unwrap();
         let proto::ServerMsg::RoutineRuns { runs } = daemon.routine_runs_list(Some(routine)) else {
             panic!("routine_runs_list answers RoutineRuns");
@@ -2772,4 +3486,482 @@ async fn restarting_in_another_existing_folder_discards_the_previous_conversatio
     let next = daemon.respawn(moved.id, false, None, None, true).unwrap();
     assert_eq!(resume_of(&argv_of(&env, next.id).await), None);
     assert_eq!(handle_in(&env, next.id), None);
+}
+
+#[tokio::test]
+async fn undrained_root_metadata_is_recovered_before_restore_even_after_long_downtime() {
+    let env = setup().await;
+    let ws = project(&env, "backlog");
+    let conversation = uuid::Uuid::new_v4().to_string();
+    let path = transcript(&env, &conversation, b"{}\n");
+    seed_claude(&env, 41, &ws, &ws, None);
+    // This row and its drop predate the ordinary lifecycle TTL, as after a long reboot.
+    let sampled = houston_core::hook_drop::now_ms() - 2 * houston_core::hook_drop::MAX_AGE_MS;
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    conn.execute(
+        "UPDATE sessions SET created_at = ?1 WHERE id = 41",
+        [sampled / 1000 - 1],
+    )
+    .unwrap();
+    let drop = HookDrop {
+        session: 41,
+        event: "UserPromptSubmit".into(),
+        cwd: Some(ws.display().to_string()),
+        session_id: Some(conversation.clone()),
+        transcript_path: Some(path.clone()),
+        prompt: Some("old prompt must not become a new task".into()),
+        last_message: Some("old message must not be replayed".into()),
+        ..HookDrop::default()
+    };
+    let pending = houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()),
+        &drop,
+        sampled,
+    )
+    .unwrap();
+    let permission = HookDrop {
+        event: "PermissionRequest".into(),
+        tool_use_id: Some("tool-old".into()),
+        permission_command: Some("old command".into()),
+        ..drop.clone()
+    };
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()),
+        &permission,
+        sampled + 1,
+    )
+    .unwrap();
+    clean_shutdown(&env);
+    let daemon = boot(&env);
+    let restored = restored_from(&daemon.list(), 41).clone();
+    assert_eq!(
+        resume_of(&argv_of(&env, restored.id).await).as_deref(),
+        Some(conversation.as_str())
+    );
+    assert_eq!(
+        handle_in(&env, restored.id),
+        Some((conversation, Some(path)))
+    );
+    assert!(!pending.exists());
+    assert_ne!(restored.status, Some(proto::AgentStatus::NeedsInput));
+    assert_eq!(restored.latest_prompt, None);
+    assert_eq!(restored.last_agent_message, None);
+    assert_eq!(daemon.last_hook_message(restored.id), None);
+    daemon.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn an_unprompted_provider_switch_in_a_shell_cannot_reuse_the_previous_handle() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "switch");
+    let pane = shell_pane(&daemon, &ws);
+    let codex = uuid::Uuid::new_v4().to_string();
+    let claude = uuid::Uuid::new_v4().to_string();
+    let path = transcript(&env, &codex, b"{}\n");
+    let dir = houston_core::hook_drop::drop_dir(env.state.path());
+    let first = HookDrop {
+        session: pane.id,
+        agent: Some("codex".into()),
+        event: "UserPromptSubmit".into(),
+        cwd: Some(ws.display().to_string()),
+        session_id: Some(codex.clone()),
+        transcript_path: Some(path),
+        ..HookDrop::default()
+    };
+    houston_core::hook_drop::write_drop(&dir, &first, houston_core::hook_drop::now_ms()).unwrap();
+    assert_eq!(daemon.hook_drop_tick_for_test(), 1);
+    assert_eq!(handle_in(&env, pane.id).unwrap().0, codex);
+    let second = HookDrop {
+        agent: None,
+        event: "SessionStart".into(),
+        session_id: Some(claude),
+        transcript_path: None,
+        ..first
+    };
+    // The timestamp is sampled after the first hook is applied, like a new CLI start.
+    tokio::time::sleep(Duration::from_millis(2)).await;
+    houston_core::hook_drop::write_drop(&dir, &second, houston_core::hook_drop::now_ms()).unwrap();
+    assert_eq!(daemon.hook_drop_tick_for_test(), 1);
+    assert_eq!(
+        daemon
+            .list()
+            .into_iter()
+            .find(|info| info.id == pane.id)
+            .unwrap()
+            .detected_agent,
+        Some(proto::AgentKind::Claude)
+    );
+    assert_eq!(handle_in(&env, pane.id).unwrap().0, codex);
+    let db = Db::open(&env.db_path()).unwrap();
+    let refusal = db
+        .check_session_resume_binding(pane.id, proto::AgentKind::Claude, &ws)
+        .unwrap_err();
+    assert!(refusal.contains("belongs to codex"), "{refusal}");
+    assert!(!db.session_has_bound_resume_handle(pane.id).unwrap());
+    daemon.close(pane.id).unwrap();
+}
+
+#[tokio::test]
+async fn a_subagent_hook_cannot_move_the_root_cwd_or_resume_binding() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "root");
+    let other = project(&env, "subagent");
+    let (pane, conversation, path) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    let root_handle = handle_in(&env, pane.id);
+    let drop = HookDrop {
+        session: pane.id,
+        event: "SubagentStop".into(),
+        cwd: Some(other.display().to_string()),
+        session_id: Some(uuid::Uuid::new_v4().to_string()),
+        agent_id: Some("agent-child".into()),
+        transcript_path: Some(path),
+        ..HookDrop::default()
+    };
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()),
+        &drop,
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    assert_eq!(daemon.hook_drop_tick_for_test(), 1);
+    assert_eq!(daemon.last_hook_cwd(pane.id).as_deref(), ws.to_str());
+    assert_eq!(handle_in(&env, pane.id), root_handle);
+    assert_eq!(
+        native_in(&env, pane.id).as_deref(),
+        Some(conversation.as_str())
+    );
+    daemon.close(pane.id).unwrap();
+}
+
+fn overflow_recovery_fixture(env: &Env, id: u32, ws: &Path) -> (String, PathBuf, Vec<PathBuf>) {
+    let prior = uuid::Uuid::new_v4().to_string();
+    let prior_path = transcript(env, &prior, b"{}\n");
+    seed_claude(env, id, ws, ws, Some((&prior, Some(&prior_path))));
+    let final_root = uuid::Uuid::new_v4().to_string();
+    let path = transcript(env, &final_root, b"{}\n");
+    let sampled = houston_core::hook_drop::now_ms() - 2 * houston_core::hook_drop::MAX_AGE_MS;
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    conn.execute(
+        "UPDATE sessions SET created_at = ?1 WHERE id = ?2",
+        rusqlite::params![sampled / 1000 - 1, id],
+    )
+    .unwrap();
+    let dir = houston_core::hook_drop::drop_dir(env.state.path());
+    let drop = HookDrop {
+        session: id,
+        event: "Stop".into(),
+        cwd: Some(ws.display().to_string()),
+        session_id: Some(final_root.clone()),
+        transcript_path: Some(path),
+        ..HookDrop::default()
+    };
+    let pending = houston_core::hook_drop::write_drop(&dir, &drop, sampled).unwrap();
+    let mut noise = Vec::new();
+    for seq in 2..=4097 {
+        let path = dir.join(format!("{sampled:013}-{seq:06}-s{id}.json"));
+        std::fs::write(&path, b"{}").unwrap();
+        noise.push(path);
+    }
+    (final_root, pending, noise)
+}
+
+#[tokio::test]
+async fn over_limit_recovery_keeps_daemon_available_and_resume_blocked_until_retry_succeeds() {
+    let env = setup().await;
+    let ws = project(&env, "recovery-limit");
+    let (conversation, pending, noise) = overflow_recovery_fixture(&env, 41, &ws);
+    clean_shutdown(&env);
+    let daemon = boot(&env);
+    let husk = daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == 41)
+        .unwrap();
+    assert_eq!(husk.state, proto::SessionState::Interrupted);
+    assert_eq!(
+        husk.restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed)
+    );
+    assert!(!husk.resumable);
+    assert!(husk.resume_notice.as_deref().unwrap().contains("4096"));
+    assert_eq!(daemon.recovery_summary().unwrap().respawned, 0);
+    assert_eq!(
+        std::fs::read_dir(env.argv.path()).unwrap().count(),
+        0,
+        "no fake CLI was launched"
+    );
+    let error = daemon.respawn(41, false, None, None, false).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("metadata recovery remains incomplete"),
+        "{error:#}"
+    );
+    assert!(
+        pending.exists(),
+        "ordinary seed drain must retain old metadata for retry"
+    );
+    for path in noise {
+        std::fs::remove_file(path).unwrap();
+    }
+    let resumed = daemon.respawn(41, false, None, None, false).unwrap();
+    assert_eq!(
+        resume_of(&argv_of(&env, resumed.id).await).as_deref(),
+        Some(conversation.as_str())
+    );
+    assert!(!pending.exists());
+    daemon.close(resumed.id).unwrap();
+}
+
+#[tokio::test]
+async fn blocked_metadata_recovery_still_allows_explicit_fresh_and_close() {
+    let env = setup().await;
+    let ws = project(&env, "recovery-explicit");
+    overflow_recovery_fixture(&env, 41, &ws);
+    seed_claude(&env, 42, &ws, &ws, None);
+    clean_shutdown(&env);
+    let daemon = boot(&env);
+    daemon.close(42).unwrap();
+    let fresh = daemon
+        .respawn_with(
+            41,
+            false,
+            None,
+            None,
+            false,
+            houston_core::daemon::RespawnConversation::Fresh,
+        )
+        .unwrap();
+    assert_eq!(resume_of(&argv_of(&env, fresh.id).await), None);
+    assert_eq!(handle_in(&env, fresh.id), None);
+    daemon.close(fresh.id).unwrap();
+}
+
+#[tokio::test]
+async fn an_undrained_final_root_hook_is_recovered_after_natural_exit_without_auto_launch() {
+    let env = setup().await;
+    let ws = project(&env, "natural-exit");
+    seed_claude(&env, 41, &ws, &ws, None);
+    let db = Db::open(&env.db_path()).unwrap();
+    db.update_session_state(41, proto::SessionState::Exited, Some(0))
+        .unwrap();
+    let conversation = uuid::Uuid::new_v4().to_string();
+    let path = transcript(&env, &conversation, b"{}\n");
+    let drop = HookDrop {
+        session: 41,
+        event: "Stop".into(),
+        session_id: Some(conversation.clone()),
+        transcript_path: Some(path.clone()),
+        cwd: Some(ws.display().to_string()),
+        ..HookDrop::default()
+    };
+    let pending = houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()),
+        &drop,
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    clean_shutdown(&env);
+    let _daemon = boot(&env);
+    assert_eq!(handle_in(&env, 41), Some((conversation, Some(path))));
+    assert_eq!(
+        db.session_resume_binding(41).unwrap(),
+        Some(("claude".into(), ws.display().to_string()))
+    );
+    assert!(!pending.exists());
+    assert_eq!(std::fs::read_dir(env.argv.path()).unwrap().count(), 0);
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    let state: String = conn
+        .query_row("SELECT state FROM sessions WHERE id = 41", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        state, "exited",
+        "metadata recovery must not replay lifecycle"
+    );
+}
+
+#[tokio::test]
+async fn a_mismatched_provider_hook_cannot_change_the_validated_profile_namespace() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "profile-root");
+    let trusted = project(&env, "trusted-profile");
+    let other = project(&env, "other-provider-profile");
+    let proto::ServerMsg::AgentProfileState { profiles, .. } = daemon
+        .agent_profile_upsert(
+            None,
+            proto::AgentKind::Claude,
+            "trusted",
+            trusted.to_str().unwrap(),
+        )
+        .unwrap()
+    else {
+        panic!("profile upsert must return state");
+    };
+    let profile = profiles
+        .iter()
+        .find(|profile| profile.agent == proto::AgentKind::Claude && profile.name == "trusted")
+        .unwrap()
+        .id;
+    let pane = claude_pane(&daemon, &ws, Some(profile));
+    assert_eq!(
+        config_dir_of(&argv_of(&env, pane.id).await),
+        trusted.display().to_string()
+    );
+    let db = Db::open(&env.db_path()).unwrap();
+    let drop = HookDrop {
+        session: pane.id,
+        agent: Some("codex".into()),
+        event: "UserPromptSubmit".into(),
+        session_id: Some(uuid::Uuid::new_v4().to_string()),
+        cwd: Some(ws.display().to_string()),
+        resume_evidence: Some(houston_core::hook_drop::ResumeHookEvidence {
+            source: None,
+            profile_dir: Some(other.display().to_string()),
+        }),
+        ..HookDrop::default()
+    };
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()),
+        &drop,
+        houston_core::hook_drop::now_ms(),
+    )
+    .unwrap();
+    assert_eq!(daemon.hook_drop_tick_for_test(), 1);
+    assert_eq!(
+        db.session_profile_config_dir(pane.id).unwrap().as_deref(),
+        trusted.to_str()
+    );
+    daemon.close(pane.id).unwrap();
+}
+
+#[tokio::test]
+async fn an_incompatible_shell_handle_is_never_rebound_during_fresh_restore() {
+    for resume_enabled in [false, true] {
+        let env = setup().await;
+        let daemon = boot(&env);
+        let first_dir = project(&env, "bound-shell-first");
+        let next_dir = project(&env, "bound-shell-next");
+        let shell = shell_pane(&daemon, &first_dir);
+        let first = uuid::Uuid::new_v4().to_string();
+        let path = transcript(&env, &first, b"first conversation turn\n");
+        hook(
+            &env,
+            &daemon,
+            shell.id,
+            "UserPromptSubmit",
+            PROMPT,
+            &first,
+            &path,
+            &first_dir,
+        )
+        .await;
+        let next = uuid::Uuid::new_v4().to_string();
+        let next_path = transcript(&env, &next, b"unprompted startup\n");
+        hook(
+            &env,
+            &daemon,
+            shell.id,
+            "SessionStart",
+            START,
+            &next,
+            &next_path,
+            &next_dir,
+        )
+        .await;
+        assert_eq!(handle_in(&env, shell.id).unwrap().0, first);
+        daemon.set_restore_resume(resume_enabled).unwrap();
+        let after = reboot(&env, &daemon);
+        let restored = restored_from(&after.list(), shell.id).clone();
+        assert_eq!(restored.cwd, next_dir.display().to_string());
+        assert_eq!(
+            handle_in(&env, restored.id),
+            None,
+            "a fresh launch must not stamp the old folder's handle with the new folder binding"
+        );
+        assert!(!restored.resumable);
+        after.close(restored.id).unwrap();
+        daemon.close(shell.id).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_corrupt_newest_candidate_drop_blocks_stale_resume_across_two_boots() {
+    let env = setup().await;
+    let ws = project(&env, "corrupt-recovery");
+    let old_conversation = uuid::Uuid::new_v4().to_string();
+    let old_path = transcript(&env, &old_conversation, b"{}\n");
+    seed_claude(
+        &env,
+        41,
+        &ws,
+        &ws,
+        Some((&old_conversation, Some(&old_path))),
+    );
+    let sampled = houston_core::hook_drop::now_ms() - 2 * houston_core::hook_drop::MAX_AGE_MS;
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    conn.execute(
+        "UPDATE sessions SET created_at = ?1 WHERE id = 41",
+        [sampled / 1000 - 1],
+    )
+    .unwrap();
+    let newest = uuid::Uuid::new_v4().to_string();
+    let newest_path = transcript(&env, &newest, b"{}\n");
+    let drop = HookDrop {
+        session: 41,
+        event: "Stop".into(),
+        session_id: Some(newest),
+        transcript_path: Some(newest_path),
+        cwd: Some(ws.display().to_string()),
+        ..HookDrop::default()
+    };
+    let pending = houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()),
+        &drop,
+        sampled,
+    )
+    .unwrap();
+    // A valid managed name with a damaged payload models unreadable durable evidence.
+    std::fs::write(&pending, b"{ damaged newest root hook").unwrap();
+    for round in 1..=2 {
+        clean_shutdown(&env);
+        let daemon = boot(&env);
+        let husk = daemon
+            .list()
+            .into_iter()
+            .find(|info| info.id == 41)
+            .unwrap();
+        assert_eq!(husk.state, proto::SessionState::Interrupted, "boot {round}");
+        assert_eq!(
+            husk.restore_deferred,
+            Some(proto::RestoreReason::SpawnFailed)
+        );
+        assert!(!husk.resumable);
+        assert!(husk
+            .resume_notice
+            .as_deref()
+            .unwrap()
+            .contains("read or validate"));
+        assert_eq!(
+            std::fs::read_dir(env.argv.path()).unwrap().count(),
+            0,
+            "boot {round}: stale handle must not launch"
+        );
+        assert_eq!(
+            handle_in(&env, 41),
+            Some((old_conversation.clone(), Some(old_path.clone())))
+        );
+        assert!(
+            pending.exists(),
+            "boot {round}: seed TTL must not erase damaged evidence"
+        );
+        let refusal = daemon.respawn(41, false, None, None, false).unwrap_err();
+        assert!(refusal
+            .to_string()
+            .contains("metadata recovery remains incomplete"));
+    }
 }

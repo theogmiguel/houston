@@ -964,6 +964,109 @@ struct DaemonFileFields {
     token: String,
 }
 
+#[derive(Deserialize, PartialEq, Eq)]
+struct ReconnectDiscovery {
+    pid: u32,
+    port: u16,
+    token: String,
+}
+
+// Discovery is a small local record; status can include a full live-session roster.
+const RECONNECT_DISCOVERY_LIMIT: usize = 16 * 1024;
+const RECONNECT_STATUS_LIMIT: usize = 64 * 1024;
+const RECONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+
+async fn read_reconnect_discovery(state_dir: &Path) -> Result<ReconnectDiscovery, String> {
+    use tokio::io::AsyncReadExt;
+    let path = state_dir.join("daemon.json");
+    let metadata = tokio::fs::symlink_metadata(&path).await
+        .map_err(|_| "Daemon discovery is unavailable for this channel; start the daemon explicitly or reopen Houston.".to_string())?;
+    if !metadata.is_file() {
+        return Err("Daemon discovery is not a regular file; reconnect refused.".into());
+    }
+    if metadata.len() > RECONNECT_DISCOVERY_LIMIT as u64 {
+        return Err(format!("Daemon discovery exceeds the reconnect read limit {RECONNECT_DISCOVERY_LIMIT} bytes (actual {}).", metadata.len()));
+    }
+    let file = tokio::fs::File::open(path)
+        .await
+        .map_err(|_| "Daemon discovery could not be read; reconnect refused.".to_string())?;
+    let mut bytes = Vec::new();
+    file.take((RECONNECT_DISCOVERY_LIMIT + 1) as u64)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|_| "Daemon discovery could not be read; reconnect refused.".to_string())?;
+    if bytes.len() > RECONNECT_DISCOVERY_LIMIT {
+        return Err(format!("Daemon discovery exceeds the reconnect read limit {RECONNECT_DISCOVERY_LIMIT} bytes (actual at least {}).", bytes.len()));
+    }
+    let fields: ReconnectDiscovery = serde_json::from_slice(&bytes)
+        .map_err(|_| "Daemon discovery has an invalid shape; reconnect refused.".to_string())?;
+    if fields.pid == 0
+        || fields.pid > i32::MAX as u32
+        || fields.port == 0
+        || fields.token.is_empty()
+    {
+        return Err("Daemon discovery has an invalid identity; reconnect refused.".into());
+    }
+    Ok(fields)
+}
+
+/// Reconnect only discovers an existing daemon. Startup ownership decisions stay at boot.
+pub(crate) async fn discover_running_daemon(state_dir: &Path) -> Result<DaemonHandle, String> {
+    tokio::time::timeout(RECONNECT_TIMEOUT, async {
+        let fields = read_reconnect_discovery(state_dir).await?;
+        if !houston_core::pid::process_is_alive(fields.pid) {
+            return Err("Daemon discovery names a stopped process; reconnect refused.".into());
+        }
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(RECONNECT_TIMEOUT)
+            .connect_timeout(RECONNECT_TIMEOUT)
+            .build()
+            .map_err(|_| "Daemon reconnect client could not be initialized.".to_string())?;
+        let request = houston_protocol::ManageRequest {
+            manage_version: houston_protocol::MANAGE_VERSION,
+            verb: houston_protocol::ManageVerb::DaemonStatus,
+            candidate_bin: None,
+            expected_sessions: None,
+            path: None,
+        };
+        let mut response = client.post(format!("http://127.0.0.1:{}/manage", fields.port))
+            .bearer_auth(&fields.token).json(&request).send().await
+            .map_err(|_| "Daemon did not answer the authenticated reconnect probe.".to_string())?;
+        if !response.status().is_success() {
+            return Err("Daemon refused the authenticated reconnect probe.".into());
+        }
+        if let Some(length) = response.content_length().filter(|length| *length > RECONNECT_STATUS_LIMIT as u64) {
+            return Err(format!("Daemon status exceeds the reconnect read limit {RECONNECT_STATUS_LIMIT} bytes (actual {length})."));
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await
+            .map_err(|_| "Daemon reconnect status could not be read.".to_string())?
+        {
+            if chunk.len() > RECONNECT_STATUS_LIMIT.saturating_sub(bytes.len()) {
+                return Err(format!("Daemon status exceeds the reconnect read limit {RECONNECT_STATUS_LIMIT} bytes (actual at least {}).", bytes.len().saturating_add(chunk.len())));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let status: houston_protocol::ManageDaemonStatus = serde_json::from_slice(&bytes)
+            .map_err(|_| "Daemon reconnect status has an invalid shape.".to_string())?;
+        if status.pid != fields.pid || status.manage_version != houston_protocol::MANAGE_VERSION {
+            return Err("Daemon reconnect identity does not match discovery.".into());
+        }
+        let identity = DaemonIdentity::current();
+        if status.protocol_version != identity.protocol {
+            return Err(protocol_mismatch_message(status.protocol_version, Some(status.live_sessions.count)));
+        }
+        // Startup may accept another build after a same-wire handoff refusal.
+        // Reconnect preserves compatibility without attempting a handoff.
+        if read_reconnect_discovery(state_dir).await? != fields {
+            return Err("Daemon discovery changed during reconnect; retry the connection.".into());
+        }
+        Ok(DaemonHandle { port: fields.port, token: fields.token, spawned: false })
+    }).await.map_err(|_| "Daemon reconnect probe exceeded its 2-second limit.".to_string())?
+}
+
 pub enum BootPrecheck {
     Attached(DaemonHandle),
     NeedsSpawn(StaleReason),

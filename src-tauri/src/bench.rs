@@ -351,7 +351,7 @@ pub fn bench_m10_stamps(stamps: State<'_, Arc<BootStamps>>) -> Vec<(String, u64)
 
 #[tauri::command]
 pub async fn bench_session_count(connection: State<'_, host::ConnectionCell>) -> Result<usize, ()> {
-    let info = connection.get().await;
+    let info = connection.get().await.map_err(|_| ())?;
     Ok(probe_live_session_count(info.port, &info.token)
         .await
         .unwrap_or(0))
@@ -689,7 +689,7 @@ pub async fn bench_stdin(
     session: u32,
     text: String,
 ) -> Result<(), String> {
-    let info = connection.get().await;
+    let info = connection.get().await?;
     let mut ws = ws_connect_and_hello(info.port, &info.token).await?;
     let frame = houston_protocol::encode_stdin_frame(session, text.as_bytes());
     ws.send(TtMessage::Binary(frame.into()))
@@ -702,7 +702,7 @@ pub async fn bench_session_kill(
     connection: State<'_, host::ConnectionCell>,
     session: u32,
 ) -> Result<(), String> {
-    let info = connection.get().await;
+    let info = connection.get().await?;
     let mut ws = ws_connect_and_hello(info.port, &info.token).await?;
     let msg = houston_protocol::ClientMsg::SessionKill {
         session,
