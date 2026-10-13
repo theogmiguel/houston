@@ -12,6 +12,8 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 
 const CHANNEL: &str = "wincodexhooks";
+// The daemon installation fixture changes process-wide configuration directories.
+static CONFIG_ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 struct ConfigEnvironment(Vec<(&'static str, Option<std::ffi::OsString>)>);
 
@@ -55,6 +57,7 @@ impl Drop for ConfigEnvironment {
 
 #[test]
 fn codex_consent_and_startup_prepare_the_launcher_with_claude_hooks_disabled() {
+    let _serial = CONFIG_ENVIRONMENT.lock().unwrap();
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("home");
     let state = home.join(format!(".houston-{CHANNEL}"));
@@ -85,15 +88,60 @@ fn codex_consent_and_startup_prepare_the_launcher_with_claude_hooks_disabled() {
 fn run_hook(command: &str, home: &Path, session: Option<u32>, input: &str) -> Output {
     let mut process = houston_core::spawn::command("cmd.exe");
     process.env_clear();
-    for name in ["PATH", "SystemRoot", "SystemDrive", "windir", "TEMP", "TMP"] {
+    for name in [
+        "PATH",
+        "PATHEXT",
+        "SystemRoot",
+        "SystemDrive",
+        "windir",
+        "TEMP",
+        "TMP",
+    ] {
         if let Some(value) = std::env::var_os(name) {
             process.env(name, value);
         }
     }
     // Codex passes the whole hook command as one raw, quoted cmd.exe argument.
     process
-        .args(["/D", "/S", "/C"])
+        .args(["/C"])
         .raw_arg(format!("\"{command}\""))
+        .env("USERPROFILE", home)
+        .env("HOUSTON_CHANNEL", CHANNEL)
+        .current_dir(home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(session) = session {
+        process.env("TR_SESSION", session.to_string());
+    }
+    let mut child = process.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+fn run_powershell_hook(command: &str, home: &Path, session: Option<u32>, input: &str) -> Output {
+    let mut process = houston_core::spawn::command("powershell.exe");
+    process.env_clear();
+    for name in [
+        "PATH",
+        "PATHEXT",
+        "SystemRoot",
+        "SystemDrive",
+        "windir",
+        "TEMP",
+        "TMP",
+    ] {
+        if let Some(value) = std::env::var_os(name) {
+            process.env(name, value);
+        }
+    }
+    process
+        .args(["-NoProfile", "-NonInteractive", "-Command", command])
         .env("USERPROFILE", home)
         .env("HOUSTON_CHANNEL", CHANNEL)
         .current_dir(home)
@@ -131,6 +179,7 @@ fn drops(state: &Path) -> Vec<Value> {
 
 #[test]
 fn installed_codex_hooks_deliver_events_through_cmd_and_survive_refresh() {
+    let _serial = CONFIG_ENVIRONMENT.lock().unwrap();
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("Jo's Home (ação) & code");
     let state = home.join(format!(".houston-{CHANNEL}"));
@@ -172,6 +221,32 @@ fn installed_codex_hooks_deliver_events_through_cmd_and_survive_refresh() {
         String::from_utf8_lossy(&outside.stderr)
     );
     assert!(drops(&state).is_empty());
+
+    let powershell = run_powershell_hook(
+        command_of("SessionStart"),
+        &home,
+        Some(42),
+        &input("SessionStart"),
+    );
+    assert!(
+        powershell.status.success(),
+        "PowerShell: {}",
+        String::from_utf8_lossy(&powershell.stderr)
+    );
+    let powershell_drops = drops(&state);
+    assert_eq!(
+        powershell_drops.len(),
+        1,
+        "PowerShell command {}: stdout={} stderr={}",
+        command_of("SessionStart"),
+        String::from_utf8_lossy(&powershell.stdout),
+        String::from_utf8_lossy(&powershell.stderr)
+    );
+    assert_eq!(powershell_drops[0]["cwd"], home.to_string_lossy().as_ref());
+    assert_eq!(powershell_drops[0]["session"], 42);
+    for entry in std::fs::read_dir(drop_dir(&state)).unwrap().flatten() {
+        std::fs::remove_file(entry.path()).unwrap();
+    }
 
     for event in groups.keys() {
         let output = run_hook(command_of(event), &home, Some(42), &input(event));

@@ -269,7 +269,7 @@ pub fn is_installed(provider: proto::AgentKind, home: &ConfigHome, sentinel: &st
     }
 }
 
-// Codex uses cmd.exe on Windows; the other command-hook providers use a POSIX shell.
+// Codex can use the session's PowerShell or cmd.exe to execute Windows hooks.
 fn hook_command(
     launcher: &Path,
     provider: proto::AgentKind,
@@ -280,7 +280,7 @@ fn hook_command(
     if cfg!(windows) && provider == proto::AgentKind::Codex {
         let exe =
             crate::exe_path::command_spelling(&crate::claude_hooks::executable_launcher(launcher));
-        return format!("if exist \"{exe}\" \"{exe}\" {arguments}");
+        return format!("cmd.exe /D /C if exist \"{exe}\" \"{exe}\" {arguments}");
     }
     crate::claude_hooks::guard_launcher_exec(launcher, &arguments)
 }
