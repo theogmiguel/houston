@@ -158,18 +158,73 @@ async fn claude_native_interrupt_closes_only_the_current_main_turn() {
 
 #[tokio::test]
 async fn claude_native_interrupt_releases_a_staged_handback_to_its_parent() {
+    if std::env::var_os("CLAUDE_TURN_SPAWN_FIXTURE").is_none() {
+        let home = tempfile::tempdir().unwrap();
+        let bin = home.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        for provider in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let path = bin.join(provider);
+                let script = if provider == "claude" {
+                    "#!/bin/sh\nif [ \"$1\" = '--version' ]; then echo 2.1.296; exit 0; fi\nexec sleep 60\n"
+                } else {
+                    "#!/bin/sh\nexit 1\n"
+                };
+                std::fs::write(&path, script).unwrap();
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            #[cfg(windows)]
+            {
+                let script = if provider == "claude" {
+                    "@echo off\r\nif \"%~1\"==\"--version\" (echo 2.1.296& exit /b 0)\r\npowershell.exe -NoProfile -Command \"Start-Sleep -Seconds 60\"\r\n"
+                } else {
+                    "@exit /b 1\r\n"
+                };
+                std::fs::write(bin.join(format!("{provider}.cmd")), script).unwrap();
+            }
+        }
+        let mut command = common::hermetic_command(std::env::current_exe().unwrap(), home.path());
+        let inherited = command
+            .get_envs()
+            .find(|(key, _)| *key == "PATH")
+            .and_then(|(_, value)| value)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let separator = if cfg!(windows) { ';' } else { ':' };
+        let status = command
+            .args([
+                "--exact",
+                "claude_native_interrupt_releases_a_staged_handback_to_its_parent",
+                "--nocapture",
+            ])
+            .env("PATH", format!("{}{separator}{inherited}", bin.display()))
+            .env("CLAUDE_TURN_SPAWN_FIXTURE", "1")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
     let (_addr, state, daemon) = start_daemon_with_handle().await;
     let (parent, _parent_dir) = a_pane(&daemon);
-    let (child, _child_dir) = a_pane(&daemon);
+    daemon.workspace_add(&parent.project_dir).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let child = daemon
+        .orchestrate_spawn(
+            parent.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            "Fixture task".to_string().into(),
+            Some(false),
+            None,
+            Some("interrupt-fixture".into()),
+        )
+        .unwrap();
+    assert_eq!(child.spawned_by, Some(parent.id));
     let db = houston_core::db::Db::open(&state.path().join("test.db")).unwrap();
-    db.delegation_create(
-        parent.id,
-        child.id,
-        Some("interrupt-fixture"),
-        "task",
-        hook_drop::now_ms(),
-    )
-    .unwrap();
     drop_and_await_apply(state.path(), &drop_for("UserPromptSubmit", child.id)).await;
     let round = db.delegation_for_child(child.id).unwrap().unwrap().round;
     let native = |event: &str| HookDrop {
@@ -181,16 +236,21 @@ async fn claude_native_interrupt_releases_a_staged_handback_to_its_parent() {
     daemon
         .orchestrate_submit(child.id, "preserved partial result".to_string().into())
         .unwrap();
-    assert!(!db
-        .inbox_round_handed_back(parent.id, child.id, round)
-        .unwrap());
+    assert!(db
+        .inbox_pending_result(parent.id, child.id, round)
+        .unwrap()
+        .is_some());
     drop_and_await_apply(
         state.path(),
         &native(houston_core::claude_turns::INTERRUPTED),
     )
     .await;
     assert!(db
-        .inbox_round_handed_back(parent.id, child.id, round)
+        .inbox_pending_result(parent.id, child.id, round)
+        .unwrap()
+        .is_none());
+    assert!(db
+        .inbox_round_has_result(parent.id, child.id, round)
         .unwrap());
     assert_eq!(
         db.delegation_for_child(child.id).unwrap().unwrap().state,

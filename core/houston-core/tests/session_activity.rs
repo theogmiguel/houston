@@ -45,11 +45,20 @@ async fn hook_activity_is_snapshotted_and_tool_bursts_are_coalesced() {
     })
     .unwrap();
     let mut rx = daemon.subscribe();
+    #[cfg(unix)]
+    let cmd = vec!["sleep".into(), "30".into()];
+    #[cfg(windows)]
+    let cmd = vec![
+        "powershell.exe".into(),
+        "-NoProfile".into(),
+        "-Command".into(),
+        "Start-Sleep -Seconds 30".into(),
+    ];
     let session = daemon
         .create_session(CreateParams {
             agent: proto::AgentKind::Custom,
             project_dir: workspace.path().to_path_buf(),
-            cmd: Some(vec!["sleep".into(), "30".into()]),
+            cmd: Some(cmd),
             cols: 80,
             rows: 24,
             cwd_from: None,

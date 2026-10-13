@@ -228,8 +228,8 @@ jobs:
           dbus-run-session -- bash -c '
             eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)"
             cargo test --lib --manifest-path core/Cargo.toml'
-      - name: Test protocol compatibility and correlated creation
-        run: bash scripts/with-test-keyring.sh cargo test --locked --manifest-path core/Cargo.toml -p houston-core --test protocol_version_wire --test session_create_result_wire
+      - name: Test protocol, pane lifecycle, titles, model reuse and recovery ownership
+        run: bash scripts/with-test-keyring.sh cargo test --locked --manifest-path core/Cargo.toml -p houston-core --test protocol_version_wire --test session_create_result_wire --test claude_turns_wire --test session_activity --test generated_titles --test recovery_ownership --test voice_model_reuse --test launch_prompt_isolation
       # The restored-CLI regressions run real bash and zsh integration rc files.
       - name: cargo test restored shell-hosted CLI
         run: >
@@ -382,7 +382,7 @@ jobs:
         run: |
           cargo test --locked -p houston-core --lib -- --test-threads=3
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked --no-fail-fast -p houston-core --test protocol_version_wire --test env_hygiene_wire --test nonascii_longpath_wire --test checkpoints_wire --test git_discard_wire --test git_tools_wire --test git_wire --test manage_wire --test shutdown_drain_wire --test subprocess_deadlines_windows --test tasks_wire --test windows_claude_hooks_wire --test windows_codex_hooks_wire --test windows_orchestration_wire --test wsl_wire -- --test-threads=3
+          cargo test --locked --no-fail-fast -p houston-core --test protocol_version_wire --test env_hygiene_wire --test nonascii_longpath_wire --test checkpoints_wire --test git_discard_wire --test git_tools_wire --test git_wire --test manage_wire --test shutdown_drain_wire --test subprocess_deadlines_windows --test tasks_wire --test windows_claude_hooks_wire --test windows_codex_hooks_wire --test windows_codex_launch_wire --test windows_instruction_submit --test launch_prompt_isolation --test claude_turns_wire --test session_activity --test generated_titles --test recovery_ownership --test voice_model_reuse --test windows_orchestration_wire --test wsl_wire -- --test-threads=3
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --locked -p houston-core --features test-barriers --test ssh_stalled_window -- --test-threads=3
           exit $LASTEXITCODE
