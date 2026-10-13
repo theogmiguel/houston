@@ -34,4 +34,4 @@ zig_sha256_x86_64-windows = "68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf33
 
 # Bumped by houston_snapshot.zig, mirrored here so the check script can assert
 # the daemon and the vendored WASM agree without running either.
-snapshot_format_version = "1"
+snapshot_format_version = "2"

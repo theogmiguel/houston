@@ -24,6 +24,21 @@ function storedSessions(path: string): number[] {
 }
 
 describe('orchestrator children', () => {
+  it('restores the roster choice with the saved pane when a continued session gets a new id', async () => {
+    const initial = { sessions: [makeSession({ id: 1 }), makeSession({ id: 2, spawned_by: 1 })] }
+    harness = await renderReadyApp(initial)
+    click('Collapse children')
+    expect(harness.container.querySelector('.children-split')?.classList.contains('collapsed')).toBe(true)
+    harness.unmount()
+    const continued = { sessions: [makeSession({ id: 3, session_origin: 1 }), makeSession({ id: 4, spawned_by: 3 })] }
+    harness = await renderReadyApp(continued)
+    expect(harness.container.querySelector('.children-split')?.classList.contains('collapsed')).toBe(true)
+    click('Show children')
+    harness.unmount()
+    harness = await renderReadyApp(continued)
+    expect(harness.container.querySelector('.children-split')?.classList.contains('expanded')).toBe(true)
+  })
+
   it('keeps parent-owned input neutral, shows an escalated reason in the child, and clears it on resolution', async () => {
     const parent = makeSession({ id: 1, status: 'working', children_waiting: 0 })
     const child = makeSession({ id: 2, spawned_by: 1, status: 'needs-input', title: 'worker' })
