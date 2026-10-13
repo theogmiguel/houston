@@ -272,6 +272,11 @@ async fn closing_a_husk_removes_its_persisted_scrollback() {
         .join("scrollback")
         .join(format!("{id}.bin"));
     assert!(ring.exists(), "persisted ring survives the restart GC");
+    #[cfg(windows)]
+    {
+        assert!(daemon.close(id).is_err());
+        daemon.recheck_recovery(id, true).unwrap();
+    }
     daemon.close(id).unwrap();
     assert!(!ring.exists(), "close deletes the persisted ring");
 }
