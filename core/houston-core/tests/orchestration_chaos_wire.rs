@@ -2353,15 +2353,18 @@ async fn h4_codex_missing_call_identity_cannot_be_cleared_by_an_unrelated_tool()
     )
     .unwrap();
     rig.daemon.hook_drop_tick_for_test();
-    assert!(rig
-        .daemon
-        .list()
-        .iter()
-        .find(|pane| pane.id == child)
-        .unwrap()
-        .delegation
-        .as_ref()
-        .unwrap()
-        .hold_reason
-        .is_none());
+    // The pane list also folds in the parent's inbox delivery hold; the interrupted
+    // turn's no_handback can legitimately be waiting there. Read the child's own hold.
+    let detail = rig.daemon.orchestrate_get(parent, child).unwrap();
+    assert_eq!(
+        detail.delegation.unwrap().hold_reason,
+        None,
+        "list view: {:?}",
+        rig.daemon
+            .list()
+            .iter()
+            .find(|pane| pane.id == child)
+            .and_then(|pane| pane.delegation.as_ref())
+            .and_then(|delegation| delegation.hold_reason.clone())
+    );
 }

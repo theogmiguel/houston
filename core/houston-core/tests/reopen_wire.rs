@@ -401,14 +401,26 @@ async fn a_long_opening_prompt_is_written_to_a_prompt_file() {
         })
         .unwrap();
 
-    // The label is the session's own id, so two launches never share one file.
-    let written = tmp
-        .path()
-        .join(".houston")
-        .join("prompts")
-        .join(format!("prompt-session-{}.md", info.id));
-    assert!(written.is_file(), "no prompt file at {}", written.display());
-    assert_eq!(std::fs::read_to_string(&written).unwrap(), prompt);
+    // Each launch gets its own uniquely suffixed file labelled with the session id.
+    let prefix = format!("prompt-session-{}-", info.id);
+    let prompts = tmp.path().join(".houston").join("prompts");
+    let written: Vec<_> = std::fs::read_dir(&prompts)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(&prefix)
+        })
+        .collect();
+    assert_eq!(
+        written.len(),
+        1,
+        "expected one {prefix}*.md in {prompts:?}: {written:?}"
+    );
+    let written = &written[0];
+    assert_eq!(std::fs::read_to_string(written).unwrap(), prompt);
     assert_eq!(
         std::fs::read_to_string(
             tmp.path()

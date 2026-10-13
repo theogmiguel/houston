@@ -895,6 +895,9 @@ async fn restart_to_restored_notice_fixture(iterations: usize) {
                 Some((&conversation, Some(transcript.to_str().unwrap()))),
             )
             .unwrap();
+            // Fixture daemons launch without a session scope; their stopped workload
+            // must be acknowledged before restoration may start another owner.
+            db.acknowledge_uncontained_recovery(id).unwrap();
         }
         drop(db);
         let began = Instant::now();

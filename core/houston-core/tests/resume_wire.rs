@@ -25,6 +25,11 @@ static SHIM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 /// Records its argv (and the profile and renderer env and PTY size) per pane, then waits like a
 /// CLI; with `RESUME_FAKE_EXIT` set, a `--resume` launch exits with that code instead.
 const FAKE_CLI: &str = r#"#!/bin/sh
+# As a session launcher, the real pre-exec helper supplies the ownership receipt;
+# the missing bus keeps it out of any systemd scope.
+if [ "$1" = "session-exec" ]; then
+  DBUS_SESSION_BUS_ADDRESS="unix:path=$RESUME_ARGV_DIR/no-bus" exec "$RESUME_SESSION_EXEC" "$@"
+fi
 if [ "$RESUME_IGNORE_TERM" = "1" ]; then trap '' TERM; fi
 if [ "$RESUME_FAKE_DESCENDANT" = "1" ]; then sleep 60 & fi
 if [ "$RESUME_BLOCK_STDIN" = "1" ]; then stty raw -echo; fi
@@ -90,6 +95,7 @@ async fn setup() -> Env {
     std::env::set_var("HOME", home.path());
     let argv = tempfile::tempdir().unwrap();
     std::env::set_var("RESUME_ARGV_DIR", argv.path());
+    std::env::set_var("RESUME_SESSION_EXEC", env!("CARGO_BIN_EXE_houston-core"));
     std::env::set_var("SHELL", "/bin/sh");
     for var in [
         "RESUME_FAKE_EXIT",
@@ -2023,8 +2029,12 @@ async fn a_fresh_codex_restore_does_not_pin_its_observer_to_the_retry_handle() {
             std::fs::remove_file(path).unwrap();
         }
         daemon.manage_shutdown().unwrap();
+        Db::open(&env.db_path())
+            .unwrap()
+            .acknowledge_uncontained_recovery(pane.id)
+            .unwrap();
         // The shim records the full native launch argv without running a CLI,
-        // observer, systemd scope or network service.
+        // observer, systemd scope or network service; only the pre-exec gate is real.
         let restored_daemon = Daemon::new_bound_with_session_launcher(
             DaemonConfig {
                 token: TOKEN.to_string(),
@@ -2036,7 +2046,10 @@ async fn a_fresh_codex_restore_does_not_pin_its_observer_to_the_retry_handle() {
         .unwrap();
         let restored = restored_from(&restored_daemon.list(), pane.id).clone();
         let argv = argv_of(&env, restored.id).await;
-        let helper = argv.iter().position(|arg| arg == "codex-exec").unwrap();
+        let helper = argv
+            .iter()
+            .position(|arg| arg == "codex-exec")
+            .unwrap_or_else(|| panic!("restored Codex must launch through codex-exec: {argv:?}"));
         assert_eq!(
             argv[helper + 3],
             "-",
