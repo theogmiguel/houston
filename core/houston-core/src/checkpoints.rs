@@ -306,15 +306,41 @@ fn ensure_git_repo(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+// A checkpoint diff walks workspace content, so capture goes through the same
+// bounded subprocess capture as git.rs instead of allocating an unbounded diff.
+const GIT_CAPTURE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+fn bounded_git(
+    mut command: std::process::Command,
+    args: &[&str],
+    dir: &Path,
+) -> Result<std::process::Output> {
+    command.env("GIT_TERMINAL_PROMPT", "0");
+    let incomplete = || {
+        format!(
+            "git {args:?} in {}: command completion was not confirmed; a mutation may already \
+             have taken effect. Inspect repository state before retrying",
+            dir.display()
+        )
+    };
+    crate::spawn::output_within(command, GIT_CAPTURE_TIMEOUT)
+        .with_context(incomplete)?
+        .with_context(|| {
+            format!(
+                "{} (deadline {} ms)",
+                incomplete(),
+                GIT_CAPTURE_TIMEOUT.as_millis()
+            )
+        })
+}
+
 fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &OsStr)]) -> Result<String> {
     let mut cmd = crate::spawn::command("git");
     cmd.arg("-C").arg(dir).args(args);
     for &(key, value) in envs {
         cmd.env(key, value);
     }
-    let out = cmd
-        .output()
-        .with_context(|| format!("spawning git {args:?} in {}", dir.display()))?;
+    let out = bounded_git(cmd, args, dir)?;
     if !out.status.success() {
         bail!(
             "git {:?} in {} failed (exit {:?}): {}",
@@ -328,12 +354,9 @@ fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &OsStr)]) -> Result<String>
 }
 
 fn run_git(dir: &Path, args: &[&str]) -> Result<String> {
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .with_context(|| format!("spawning git {args:?} in {}", dir.display()))?;
+    let mut command = crate::spawn::command("git");
+    command.arg("-C").arg(dir).args(args);
+    let out = bounded_git(command, args, dir)?;
     if !out.status.success() {
         bail!(
             "git {:?} in {} failed (exit {:?}): {}",
@@ -470,6 +493,30 @@ mod tests {
         );
         assert!(!patch.contains("hunter2"), "{patch}");
         assert!(!patch.contains("TOKEN=abcdef"), "{patch}");
+    }
+
+    #[test]
+    fn an_oversized_workspace_diff_is_refused_not_collected() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        let shot = capture(tmp.path(), "manual", "shot").unwrap();
+        std::fs::write(
+            tmp.path().join("huge.txt"),
+            "content line\n".repeat(800_000),
+        )
+        .unwrap();
+        git(tmp.path(), &["add", "-A"]);
+
+        let error =
+            diff(tmp.path(), &shot.r#ref, CheckpointAgainst::Working).expect_err("capture limit");
+        assert!(
+            format!("{error:#}").contains("combined output limit"),
+            "{error:#}"
+        );
+        assert!(
+            exists(tmp.path(), &shot.r#ref),
+            "a refused diff must leave the checkpoint intact"
+        );
     }
 
     #[test]
