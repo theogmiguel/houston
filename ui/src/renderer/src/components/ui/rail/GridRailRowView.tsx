@@ -3,8 +3,8 @@ import type { RailAgentRow } from '../../rail/railCardModel'
 import type { TagInfo } from '../../../houston/generated/TagInfo'
 import type { PrInfo } from '../../../houston/client'
 import type { AgentActivityMode, RailCardMode, RailCardProperty, RailTagDisplay } from '../../../railPrefs'
-import { isRailCardQuiet } from '../../rail/railCardModel'
 import { Tooltip } from '../Tooltip'
+import { WorkingSpinner } from '../Spinner'
 import { GridRailTitleRow } from './GridRailTitleRow'
 import { GridRailCheckoutLine } from './GridRailCheckoutLine'
 import { GridRailAgentRows } from './GridRailAgentRows'
@@ -13,23 +13,16 @@ import { TagCardAffordance } from '../../tags/TagCardAffordance'
 
 function statusDotClass(kind: RailCard['status']['kind']): string {
   if (kind === 'needs-input') return 'bg-[var(--warn)]'
-  if (kind === 'working') return 'animate-[spin_1s_linear_infinite] motion-reduce:animate-none border-[1.5px] border-[var(--accent)] border-r-transparent bg-transparent'
   if (kind === 'starting') return 'bg-[var(--accent)]'
   if (kind === 'exited') return 'bg-[var(--stop)]'
   if (kind === 'done') return 'bg-[var(--ok)]'
   return 'bg-[var(--text-faint)]'
 }
 
-function StatusDot({ card, now }: { card: RailCard; now: number }): React.JSX.Element {
-  const quiet = isRailCardQuiet(card.status, now)
+function StatusDot({ card }: { card: RailCard }): React.JSX.Element {
   const state = card.status.kind === 'exited' ? 'stopped' : card.status.kind
-  return quiet ? (
-    <Tooltip label="No recent update from agent">
-    <span data-testid="grid-state-dot" data-state={state} role="img" aria-label="No recent update from agent" className="inline-block size-1.5 flex-none rounded-full border border-[var(--info)] bg-transparent" />
-    </Tooltip>
-  ) : (
-    <span data-testid="grid-state-dot" data-state={state} role="img" className={`inline-block ${card.status.kind === 'working' ? 'size-[9px]' : 'size-2'} flex-none rounded-full ${statusDotClass(card.status.kind)}`} aria-label={state === 'unavailable' ? 'Grid status unavailable' : card.status.label} />
-  )
+  if (card.status.kind === 'working') return <WorkingSpinner testId="grid-state-dot" state={state} label={card.status.label} />
+  return <span data-testid="grid-state-dot" data-state={state} role="img" className={`inline-block size-2 flex-none rounded-full ${statusDotClass(card.status.kind)}`} aria-label={state === 'unavailable' ? 'Grid status unavailable' : card.status.label} />
 }
 
 function gridRowClassName({ cardMode, hasChipRow, dragging, dragPosition, selected }: {
@@ -120,7 +113,7 @@ export function GridRailRowView({
         onMouseEnter={startHover}
         onMouseLeave={closeHover}
       >
-        <GridRailUnreadToggle card={card} now={now} cardMode={cardMode} hasUnread={hasUnread} onToggleUnread={onToggleUnread} />
+        <GridRailUnreadToggle card={card} cardMode={cardMode} hasUnread={hasUnread} onToggleUnread={onToggleUnread} />
         <div className={`flex min-w-0 flex-1 flex-col ${cardMode === 'compact' && !hasChipRow ? 'justify-center' : 'gap-[5px]'}`}>
           <GridRailTitleRow name={name} unread={properties.includes('unread') && hasUnread} pinned={pinned} tags={tags} hasTags={properties.includes('tags')} tagDisplay={tagDisplay} pr={pr} hasPr={properties.includes('pr')} hasCheckout={properties.includes('checkout')} cardMode={cardMode} checkoutLabel={checkoutLabel} many={many} agentCount={card.agents.length} primary={primary} hasRemove={Boolean(onRemove)} gridId={gridId} onRemove={onRemove} onOpenInspector={onOpenInspector} openTagPopover={openTagPopover} />
           <GridRailCheckout cardMode={cardMode} hasCheckout={properties.includes('checkout')} label={checkoutLabel} pr={pr} hasPr={properties.includes('pr')} hasDiff={properties.includes('diff')} diff={card.diff} primary={primary} onOpenInspector={onOpenInspector} />
@@ -134,9 +127,8 @@ export function GridRailRowView({
   )
 }
 
-function GridRailUnreadToggle({ card, now, cardMode, hasUnread, onToggleUnread }: {
+function GridRailUnreadToggle({ card, cardMode, hasUnread, onToggleUnread }: {
   card: RailCard
-  now: number
   cardMode: RailCardMode
   hasUnread: boolean
   onToggleUnread?: () => void
@@ -144,7 +136,7 @@ function GridRailUnreadToggle({ card, now, cardMode, hasUnread, onToggleUnread }
   const label = hasUnread ? 'Mark as read' : 'Mark as unread'
   return <Tooltip label={label}>
     <button type="button" aria-label={label} data-testid="grid-unread-toggle" className={`relative flex w-4 flex-none justify-center ${cardMode === 'compact' ? 'items-start pt-1' : 'h-5 items-start pt-[5px]'}`} onClick={(event) => { event.stopPropagation(); onToggleUnread?.() }}>
-      <StatusDot card={card} now={now} />
+      <StatusDot card={card} />
     </button>
   </Tooltip>
 }

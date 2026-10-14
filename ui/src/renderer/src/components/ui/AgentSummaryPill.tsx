@@ -1,6 +1,7 @@
 import { attentionStatus } from '../../sessionAttention'
 import { Icon } from './Icon'
 import { IconChevronRight } from '../icons'
+import { WorkingSpinner } from './Spinner'
 import type { RailAgentRow } from '../rail/railCardModel'
 import { IconAgent } from '../icons'
 
@@ -45,15 +46,7 @@ export function AgentSummaryPill({
               aria-label={`${rows.length} ${status} agents`}
               className="inline-flex items-center gap-[3px] rounded bg-[var(--rail-bg)] px-1 text-[var(--text-secondary)]"
             >
-              <i
-                className={`size-[9px] rounded-full ${status === 'working' ? 'animate-[spin_1s_linear_infinite] motion-reduce:animate-none border-[1.5px] border-[var(--accent)] border-r-transparent bg-transparent' : ''} ${
-                  status === 'working'
-                    ? ''
-                    : status === 'needs-input'
-                      ? 'bg-[var(--warn)]'
-                      : 'bg-[var(--text-faint)]'
-                }`}
-              />
+              {status === 'working' ? <WorkingSpinner /> : <i className={`size-[9px] rounded-full ${status === 'needs-input' ? 'bg-[var(--warn)]' : 'bg-[var(--text-faint)]'}`} />}
               <span className="inline-flex items-center pl-0.5">
                 {rows.slice(0, 2).map(({ session, agent }, index) => <span key={session.id} className={`-ml-0.5 inline-flex size-3.5 items-center justify-center rounded-full border border-[var(--rail-bg)] bg-[var(--card-hover)] ${index === 0 ? 'ml-0' : ''}`}><IconAgent agent={agent} role="small" brand /></span>)}
               </span>
