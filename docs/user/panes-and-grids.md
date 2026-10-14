@@ -69,8 +69,8 @@ tab strip, one visible at a time. A stack has a capacity: reaching it blocks add
 another pane to that stack until you raise the limit in Settings ▸ Terminal ▸ Panes per
 stack, or open a new cell instead.
 
-The command palette also offers **Set grid layout: 1×** through **4×**, which resets the
-current grid's splits into that many balanced columns.
+The command palette also offers **Set grid layout: 1×** through **4×**, which rearranges the
+current grid's panes into an even grid with that many columns.
 
 ## Renaming a pane
 
