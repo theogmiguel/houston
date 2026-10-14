@@ -65,8 +65,10 @@ impl Daemon {
     pub fn generate_title(self: &Arc<Self>, id: u32) -> Result<()> {
         let session = self.get(id)?;
         let info = session.snapshot_info();
+        // A shell pane qualifies once hooks have detected the agent running inside it.
+        let provider = info.detected_agent.unwrap_or(info.agent);
         if info.hidden
-            || info.agent == proto::AgentKind::Shell
+            || provider == proto::AgentKind::Shell
             || info.state != proto::SessionState::Running
         {
             bail!("session {id} title generation requires a live agent pane");
@@ -74,7 +76,6 @@ impl Daemon {
         if info.title_source > TitleSource::Prompt {
             bail!("session {id} title source {:?} outranks generated titles; expected prompt or codename", info.title_source);
         }
-        let provider = info.detected_agent.unwrap_or(info.agent);
         crate::generated_title::argv(provider, String::new())?;
         if info.profile_label.is_some() && session.title_profile_env.is_none() {
             bail!("{provider:?} title generation refused for session {id}: the original account profile cannot be recovered");

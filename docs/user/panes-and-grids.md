@@ -106,7 +106,8 @@ needs input, its pending question takes precedence. This text does not rename th
 or change its reported status.
 
 Settings ▸ Workspaces ▸ Automatic titles is off by default. Enabling it requests one title
-at the first turn end while the name is still a codename or first prompt. **Generate title**
+at the first turn end while the name is still a codename or first prompt, including for an
+agent started inside a shell pane once its hooks report it. **Generate title**
 in a pane's Terminal actions requests it manually. Generated titles rank above a prompt
 and below a delegated role; native titles, task names and manual names still win. A rename,
 reset, close or replacement while generation runs discards its result. Each session admits
