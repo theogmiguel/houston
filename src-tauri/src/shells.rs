@@ -64,13 +64,52 @@ pub async fn detect_available_shells(cache: &ShellsCache) -> Vec<ShellEntry> {
     #[cfg(windows)]
     {
         let _ = cache;
-        Vec::new()
+        windows_shell_candidates()
     }
     #[cfg(not(windows))]
     cached_or(cache, || {
         read_and_filter_shells_at(Path::new("/etc/shells"))
     })
     .await
+}
+
+/// Windows ships no `/etc/shells`; enumerate the shells the session shell ladder
+/// itself can run — Windows PowerShell, pwsh from PATH, and ComSpec — keeping only
+/// paths that exist, as the Unix reader does.
+#[cfg(windows)]
+fn windows_shell_candidates() -> Vec<ShellEntry> {
+    let mut candidates = Vec::new();
+    let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+    candidates.push(ShellEntry {
+        name: "powershell.exe".into(),
+        path: format!(r"{system_root}\System32\WindowsPowerShell\v1.0\powershell.exe"),
+    });
+    if let Some(pwsh) = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join("pwsh.exe"))
+            .find(|candidate| candidate.is_file())
+    }) {
+        candidates.push(ShellEntry {
+            name: "pwsh.exe".into(),
+            path: pwsh.display().to_string(),
+        });
+    }
+    if let Ok(comspec) = std::env::var("ComSpec") {
+        let name = Path::new(&comspec)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("cmd.exe")
+            .to_string();
+        candidates.push(ShellEntry {
+            name,
+            path: comspec,
+        });
+    }
+    let mut seen = HashSet::new();
+    candidates
+        .into_iter()
+        .filter(|entry| std::fs::metadata(&entry.path).is_ok() && seen.insert(entry.name.clone()))
+        .collect()
 }
 
 pub fn parse_shells(text: &str) -> Vec<ShellEntry> {
@@ -308,6 +347,31 @@ mod tests {
             calls.load(std::sync::atomic::Ordering::SeqCst),
             2,
             "a failed compute() must not be cached -- the retry must actually run compute() again"
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn windows_detects_installed_shells_and_every_entry_exists() {
+        let got = detect_available_shells(&ShellsCache::new()).await;
+        assert!(
+            !got.is_empty(),
+            "Windows must enumerate its installed shells; got an empty list"
+        );
+        for entry in &got {
+            assert!(
+                tokio::fs::metadata(&entry.path).await.is_ok(),
+                "{} is listed but does not exist",
+                entry.path
+            );
+            assert!(!entry.name.is_empty(), "every entry needs a name");
+        }
+        let names: Vec<String> = got.iter().map(|e| e.name.clone()).collect();
+        assert!(
+            names
+                .iter()
+                .any(|n| n.eq_ignore_ascii_case("powershell.exe")),
+            "Windows PowerShell is a system component; got {names:?}"
         );
     }
 
