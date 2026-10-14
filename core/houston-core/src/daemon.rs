@@ -2781,7 +2781,15 @@ fn shell_hosted_resume_command(shell: &str, argv: &[String], report_exit: bool) 
         .and_then(|name| name.to_str())
         .unwrap_or_default();
     if !matches!(name, "sh" | "bash" | "zsh" | "dash" | "ksh") {
-        bail!("shell-hosted conversation resume supports POSIX shells; detected shell {shell:?}");
+        bail!(
+            "shell-hosted conversation resume supports POSIX shells only (expected one of sh, \
+             bash, zsh, dash, ksh); detected shell {shell:?}{}",
+            if cfg!(windows) {
+                " — not supported on Windows: respawn the provider pane directly instead"
+            } else {
+                ""
+            }
+        );
     }
     let quote = |arg: &str| format!("'{}'", arg.replace('\'', "'\\''"));
     let command = argv
@@ -2831,6 +2839,30 @@ mod shell_hosted_resume_tests {
                 .unwrap_err()
                 .to_string()
                 .contains("detected shell \"/bin/fish\"")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_session_shell_is_refused_by_platform_name() {
+        let err = shell_hosted_resume_command(
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            &["claude".into()],
+            false,
+        )
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("not supported on Windows"),
+            "the refusal must name the platform, got: {text}"
+        );
+        assert!(
+            text.contains("powershell.exe"),
+            "the refusal must name the detected shell, got: {text}"
+        );
+        assert!(
+            text.contains("sh, bash, zsh, dash, ksh"),
+            "the refusal must name the expected shells, got: {text}"
         );
     }
 
