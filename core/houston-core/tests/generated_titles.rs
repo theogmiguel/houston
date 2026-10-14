@@ -228,3 +228,101 @@ async fn hook_only_generation_preserves_source_priority_and_freezes_the_generate
         .contains("outranks"));
     daemon.close(session.id).unwrap();
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_claude_started_inside_a_shell_pane_gets_a_generated_title_after_its_first_turn() {
+    use houston_core::daemon::{CreateParams, Daemon, DaemonConfig, Outbound};
+    use houston_core::hook_drop::{self, HookDrop};
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::Duration;
+    let state = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let shim = state.path().join("claude");
+    std::fs::write(&shim, "#!/bin/sh\nprintf 'Repair parser\\n'\n").unwrap();
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = std::env::var("PATH").unwrap_or_default();
+    std::env::set_var("PATH", format!("{}:{path}", state.path().display()));
+    let daemon = Daemon::new(DaemonConfig {
+        token: "generated-title-shell-test".into(),
+        db_path: state.path().join("test.db"),
+    })
+    .unwrap();
+    daemon.set_generated_titles(true).unwrap();
+    let mut rx = daemon.subscribe();
+    let session = daemon
+        .create_session(CreateParams {
+            agent: AgentKind::Shell,
+            project_dir: workspace.path().into(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    for (event, prompt, last_message) in [
+        ("SessionStart", None, None),
+        ("UserPromptSubmit", Some("Fix parser"), None),
+        ("Stop", None, Some("Parser fixed")),
+    ] {
+        let drop = HookDrop {
+            agent: Some("claude".into()),
+            event: event.into(),
+            session: session.id,
+            prompt: prompt.map(str::to_string),
+            last_message: last_message.map(str::to_string),
+            ..HookDrop::default()
+        };
+        let file = hook_drop::write_drop(
+            &hook_drop::drop_dir(state.path()),
+            &drop,
+            hook_drop::now_ms(),
+        )
+        .unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while file.exists() {
+            assert!(tokio::time::Instant::now() < deadline);
+            daemon.hook_drop_tick_for_test();
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+    let renamed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let Outbound::Control(json) = rx.recv().await.unwrap() else {
+                continue;
+            };
+            if let Ok(houston_protocol::ServerMsg::SessionRenamed {
+                session: changed,
+                title,
+                title_source: TitleSource::Auto,
+            }) = serde_json::from_str(&json)
+            {
+                if changed == session.id {
+                    break title;
+                }
+            }
+        }
+    })
+    .await;
+    let current = daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == session.id)
+        .unwrap();
+    assert_eq!(current.detected_agent, Some(AgentKind::Claude));
+    assert_eq!(
+        renamed.ok().as_deref(),
+        Some("Repair parser"),
+        "shell-hosted Claude kept title {:?} from source {:?}; expected a generated title",
+        current.title,
+        current.title_source
+    );
+    daemon.close(session.id).unwrap();
+}
