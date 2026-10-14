@@ -13,7 +13,8 @@ import {
   setPaneCapsForTests,
   setPassKeysToTerminal,
   setStackCapacity,
-  stackCapacity
+  stackCapacity,
+  stackFullMessage
 } from './paneCaps'
 import { MAX_STACK_TABS, isLayoutNode, leaf, stackPane, stackWith } from './layout/tree'
 import type { SplitNode, StackNode } from './layout/tree'
@@ -103,6 +104,15 @@ describe('settings-40 — the stack cap is the preference, not a constant', () =
   it('the validator accepts a stack built at the highest cap the app allows', () => {
     expect(isLayoutNode(stackOf(STACK_CAP_MAX))).toBe(true)
     expect(isLayoutNode(stackOf(STACK_CAP_MAX + 1))).toBe(false)
+  })
+})
+
+describe('the stack-full refusal points at Settings ▸ Terminal', () => {
+  it('names the Terminal section, not Orchestration', () => {
+    const msg = stackFullMessage(STACK_CAP_DEFAULT, STACK_CAP_DEFAULT)
+    expect(msg).toContain('Stack is full (4/4)')
+    expect(msg).toContain('Raise "Panes per stack" in Settings → Terminal')
+    expect(msg).not.toContain('Orchestration')
   })
 })
 
