@@ -411,6 +411,10 @@ the reported reason. Send a follow-up when the provider allows another turn;
 Houston cannot infer a limit reset time from these hooks. A provider may also
 continue on its own.
 
+When a child's process ends before it hands anything back, for example a CLI that
+fails at launch, its parent receives the exit status and the last lines the pane
+printed; `pane_get` shows the same text as the stop reason.
+
 Use `workspace_info.providers` before choosing a provider or model. It reports
 installed CLIs, locally known versions and model identifiers, per-run effort
 support, and orchestration capabilities. `workspace_info.routing` contains the

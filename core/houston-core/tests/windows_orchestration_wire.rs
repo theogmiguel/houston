@@ -16,7 +16,7 @@ fn fixture() -> &'static Path {
         let root = tempfile::tempdir().unwrap();
         let home = root.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
-        let script = "$ErrorActionPreference='Stop'\nif(-not $env:HOUSTON_SESSION){exit 0}\n@{cwd=(Get-Location).Path;session=[int]$env:HOUSTON_SESSION;task=$env:HOUSTON_TASK;argv=@($args)} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:HOUSTON_WINDOWS_FIXTURE ('pane-'+$env:HOUSTON_SESSION+'.json'))\nWrite-Output 'FIXTURE-READY'\nwhile($true){$line=[Console]::In.ReadLine();if($null -eq $line){Start-Sleep -Milliseconds 50}else{Write-Output $line}}\n";
+        let script = "$ErrorActionPreference='Stop'\nif(-not $env:HOUSTON_SESSION){exit 0}\nif($env:HOUSTON_WINDOWS_EXIT_NOW){ Write-Output $env:HOUSTON_WINDOWS_EXIT_NOW; exit 3 }\n@{cwd=(Get-Location).Path;session=[int]$env:HOUSTON_SESSION;task=$env:HOUSTON_TASK;argv=@($args)} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:HOUSTON_WINDOWS_FIXTURE ('pane-'+$env:HOUSTON_SESSION+'.json'))\nWrite-Output 'FIXTURE-READY'\nwhile($true){$line=[Console]::In.ReadLine();if($null -eq $line){Start-Sleep -Milliseconds 50}else{Write-Output $line}}\n";
         std::fs::write(root.path().join("fixture.ps1"), script).unwrap();
         for provider in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
             std::fs::write(root.path().join(format!("{provider}.cmd")), "@powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fixture.ps1\" %*\r\n").unwrap();
@@ -446,6 +446,62 @@ async fn auto_claude_can_spawn_explicit_codex_bypass_over_http_and_mcp() {
             rig.daemon.close(child).unwrap();
         }
     }
+}
+
+#[tokio::test]
+async fn a_child_that_dies_at_launch_tells_its_parent_why() {
+    let _guard = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let parent = rig.parent();
+    let token = rig.token(parent.id);
+    std::env::set_var("HOUSTON_WINDOWS_EXIT_NOW", "setting.json corrupt: exiting");
+    let (status, body) = rig
+        .post(
+            &token,
+            "/orchestrate/spawn",
+            json!({"kind":"codex", "prompt":"h0"}),
+        )
+        .await;
+    std::env::remove_var("HOUSTON_WINDOWS_EXIT_NOW");
+    assert_eq!(status, 200, "spawn body: {body}");
+    let child = body["session_id"].as_u64().unwrap() as u32;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    let row = loop {
+        let exited = rig
+            .daemon
+            .inbox_rows_for_test(parent.id)
+            .into_iter()
+            .find(|row| row.kind == "exited");
+        if let Some(row) = exited {
+            break row;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "parent never heard the exit; rows: {:?}, scrollback: {:?}",
+            rig.daemon.inbox_rows_for_test(parent.id),
+            rig.daemon
+                .scrollback(child, None)
+                .map(|replay| String::from_utf8_lossy(&replay.data).into_owned())
+        );
+        tokio::time::sleep(Duration::from_millis(30)).await;
+    };
+    assert!(row.summary.contains("pane ended"), "{row:?}");
+    assert!(
+        row.body.contains("exit status 3"),
+        "the exit status reaches the parent: {row:?}"
+    );
+    assert!(
+        row.body.contains("setting.json corrupt: exiting"),
+        "the CLI's own error text reaches the parent: {row:?}"
+    );
+    let record = rig.daemon.delegation_of(child).unwrap();
+    assert_eq!(record.state, "failed");
+    let reason = record.stop_reason.expect("the stop reason names the exit");
+    assert!(
+        reason.contains("exit status 3") && reason.contains("setting.json corrupt"),
+        "pane_get's stop reason carries the same diagnosis: {reason}"
+    );
 }
 
 #[tokio::test]

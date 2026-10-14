@@ -848,6 +848,11 @@ const PTY_READER_FINAL_DRAIN: Duration = Duration::from_millis(100);
 // Includes scrollback persistence and a cold reader scheduling turn.
 const PTY_READER_CLOSE_WAIT: Duration = Duration::from_secs(1);
 
+// A bounded join on an ended pane's output reader before its exit tail is cut, so
+// the CLI's final lines reach the scrollback ring. A retained reader (the Windows
+// exit path keeps one) can outlive this, so the wait is bounded rather than joined.
+const EXIT_TAIL_READER_WAIT: Duration = Duration::from_millis(750);
+
 #[derive(Default)]
 struct SupervisorWaitState {
     eof: bool,
@@ -11679,7 +11684,7 @@ impl Daemon {
                         if let Some(parent) = parent {
                             daemon.broadcast_live_children(parent);
                         }
-                        daemon.delegation_child_exited(id);
+                        daemon.delegation_child_exited(id, exit_code);
                         daemon.routine_pane_exited(id);
                     }
                     #[cfg(target_os = "linux")]
@@ -12008,7 +12013,7 @@ impl Daemon {
         if let Some(parent) = parent {
             self.broadcast_live_children(parent);
         }
-        self.delegation_child_exited(id);
+        self.delegation_child_exited(id, exit_code);
         self.routine_pane_exited(id);
     }
 
@@ -12264,7 +12269,7 @@ impl Daemon {
         self.persist_scrollback(id);
         self.finish_session(id, outcome.exit_code);
         self.publish_session_exit(id, &session, outcome.exit_code);
-        self.delegation_child_exited(id);
+        self.delegation_child_exited(id, outcome.exit_code);
         self.routine_pane_exited(id);
     }
 
@@ -21724,7 +21729,49 @@ impl Daemon {
             .into())
     }
 
-    fn delegation_child_exited(self: &Arc<Self>, child: u32) {
+    /// The ended pane's output tail for its exit row and stop reason: text for a reader,
+    /// never a status input. The bounded reader join lets the CLI's final lines land
+    /// first; whatever arrived by the deadline is what the parent sees.
+    fn exit_output_tail(&self, child: u32) -> String {
+        let Ok(session) = self.get(child) else {
+            return String::new();
+        };
+        {
+            let (done, changed) = &*session.reader_done;
+            let done = done.lock().expect("reader done lock");
+            let _ = changed.wait_timeout_while(done, EXIT_TAIL_READER_WAIT, |done| !*done);
+        }
+        // More raw lines than the bound, because a repainting CLI can leave several
+        // blank or drawn lines after the words that explain the exit.
+        let ring = session.scrollback.lock().expect("scrollback lock");
+        orchestrate::exit_tail_text(&ring.tail_lines(orchestrate::EXIT_TAIL_LINES * 4))
+    }
+
+    fn delegation_child_exited(self: &Arc<Self>, child: u32, exit_code: Option<i32>) {
+        // The tail's bounded reader join runs before the cleanup lock so a slow drain
+        // cannot hold up unrelated cleanups; everything decided here is re-checked
+        // under the lock below.
+        let needs_tail = !self.preserving_session(child)
+            && match self.db.delegation_for_child(child) {
+                Ok(Some(row)) => {
+                    !orchestrate::DelegationState::parse(&row.state).is_some_and(|s| s.is_closed())
+                        && self
+                            .db
+                            .inbox_pending_result(row.parent_session, child, row.round)
+                            .unwrap_or(None)
+                            .is_none()
+                }
+                _ => false,
+            };
+        // Diagnostic context for an exit that already happened — quoted verbatim for
+        // the parent, never a status input. Only a child that handed nothing back
+        // needs it: with a stored result, that result is the explanation.
+        let tail = if needs_tail {
+            let (text, _) = crate::sanitize::redact_secrets(&self.exit_output_tail(child));
+            text
+        } else {
+            String::new()
+        };
         let cleanup = self
             .temporary_cleanup_lock
             .lock()
@@ -21756,13 +21803,13 @@ impl Daemon {
         } else {
             (
                 orchestrate::DelegationState::Failed,
-                Some("the pane's process ended before it handed anything back"),
+                Some(orchestrate::exit_stop_reason(exit_code, &tail)),
             )
         };
         if let Err(e) = self.db.delegation_close_round(
             child,
             state.as_str(),
-            reason,
+            reason.as_deref(),
             true,
             match pending {
                 Some(id) => crate::db::RoundHandback::Ready {
@@ -21782,7 +21829,7 @@ impl Daemon {
         }
         let workspace = self.current_workspace(child).unwrap_or_default();
         let label = self.child_label_of(child);
-        let body = orchestrate::exited_body(pending.is_some());
+        let body = orchestrate::exited_body(pending.is_some(), exit_code, &tail);
         if let Err(e) = self.inbox_write(
             parent,
             &workspace,
