@@ -101,9 +101,9 @@ workspace from the pane it names.
 
 ### Doing now and generated titles
 
-The rail and pane header show the latest hook-delivered prompt or reply. While an agent
-needs input, its pending question takes precedence. This text does not rename the pane
-or change its reported status.
+The rail shows the latest hook-delivered prompt or reply. While an agent needs input, its
+pending question takes precedence. This text does not rename the pane or change its
+reported status.
 
 Settings ▸ Workspaces ▸ Automatic titles is off by default. Enabling it requests one title
 at the first turn end while the name is still a codename or first prompt, including for an
