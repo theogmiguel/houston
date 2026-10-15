@@ -2268,6 +2268,111 @@ fn terminal_report_classification_keeps_real_keys_as_typing() {
     assert!(report(b"\x1bP>|ghostty 1.2\x1b\\"));
 }
 
+#[test]
+fn key_release_events_are_terminal_reports_not_typing() {
+    use houston_core::daemon::is_terminal_report_only_for_test as report;
+    // Kitty keyboard protocol event type 3: Enter, a letter, Escape.
+    for release in [
+        &b"\x1b[13;1:3u"[..],
+        b"\x1b[104;1:3u",
+        b"\x1b[27;1:3u",
+        b"\x1b[13;1:3u\x1b[104;1:3u",
+    ] {
+        assert!(report(release), "{release:?} is a key release");
+    }
+    // Press and repeat events, and a release that carries text, still count.
+    for input in [
+        &b"\x1b[13u"[..],
+        b"\x1b[104;1:1u",
+        b"\x1b[104;1:2u",
+        b"\x1b[104;1:3u\r",
+        b"\x1b[104;1:3ux",
+    ] {
+        assert!(!report(input), "{input:?} is operator input");
+    }
+}
+
+/// An operator submits a message in a pane whose CLI reports key releases (kitty keyboard
+/// protocol event types). The Enter release arrives after the prompt hook cleared the
+/// composer and must not mark it occupied again.
+#[tokio::test]
+async fn a_steer_is_accepted_after_the_operator_submitted_and_the_composer_is_empty() {
+    let _guard = serial().await;
+    let r = rig("steer-after-submit").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+
+    for frame in [&b"h"[..], b"i", b"\x1b[104;1:3u", b"\x1b[105;1:3u", b"\r"] {
+        r.daemon.note_operator_keystroke(child, frame);
+    }
+    // The CLI accepts the prompt: its hook is the submission boundary.
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+    r.daemon.note_operator_keystroke(child, b"\x1b[13;1:3u");
+    tokio::time::sleep(Duration::from_millis(
+        houston_core::orchestrate::OPERATOR_TYPING_GUARD_MS + 500,
+    ))
+    .await;
+
+    let steer = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session":child,"text":"STEER-AFTER-SUBMIT","mode":"steer"}),
+    )
+    .await;
+    assert_eq!(steer["isError"], false, "{steer}");
+    await_child_echo(&r.daemon, child, "STEER-AFTER-SUBMIT").await;
+}
+
+/// Releases carry no new text: they neither occupy an empty composer nor clear a draft.
+#[tokio::test]
+async fn a_key_release_does_not_release_an_operators_unsubmitted_draft() {
+    let _guard = serial().await;
+    let r = rig("steer-draft-release").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+    r.daemon.note_operator_keystroke(child, b"draft");
+    r.daemon.note_operator_keystroke(child, b"\x1b[116;1:3u");
+    tokio::time::sleep(Duration::from_millis(
+        houston_core::orchestrate::OPERATOR_TYPING_GUARD_MS + 500,
+    ))
+    .await;
+    let refusal = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session":child,"text":"MUST-NOT-PASTE","mode":"steer"}),
+    )
+    .await;
+    assert_eq!(refusal["isError"], true, "{refusal}");
+    assert!(
+        refusal
+            .to_string()
+            .contains("has text the operator has not submitted"),
+        "{refusal}"
+    );
+}
+
 #[tokio::test]
 async fn submit_while_parent_is_working_queues_until_turn_end() {
     let _guard = serial().await;
