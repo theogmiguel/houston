@@ -1,4 +1,5 @@
 #![cfg(windows)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 use houston_core::agent_hooks::{self, CodexHookTrust, ConfigHome};

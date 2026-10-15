@@ -1,4 +1,5 @@
 #![cfg(all(windows, feature = "test-barriers"))]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_protocol as proto;

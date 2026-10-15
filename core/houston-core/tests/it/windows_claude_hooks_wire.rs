@@ -1,4 +1,5 @@
 #![cfg(windows)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 //! The Claude hook entries Houston writes on Windows run through Git Bash, exec the
 //! `.exe` launcher copy of the hook helper, and deliver events as drop files.
