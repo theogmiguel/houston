@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use houston_core::daemon::{Daemon, DaemonConfig, SafeModeFlags};
 use houston_core::db::Db;
@@ -56,7 +56,10 @@ fn exited_roots_keep_passive_panes_and_output_until_explicit_close() {
         let status = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
             .args([
                 "--exact",
-                "exited_roots_keep_passive_panes_and_output_until_explicit_close",
+                &common::exact_path(
+                    module_path!(),
+                    "exited_roots_keep_passive_panes_and_output_until_explicit_close",
+                ),
                 "--nocapture",
             ])
             .env("HOUSTON_EXITED_ROOT_FIXTURE", "1")

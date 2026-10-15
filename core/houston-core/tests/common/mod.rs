@@ -14,6 +14,31 @@ pub type WsStream =
 
 pub const TOKEN: &str = "test-token-0000-0000-000000000000";
 
+/// libtest's name for test `name` of the module `module_path!()` names, for `--exact`. Checked
+/// against the binary's test list: an `--exact` name that matches nothing runs zero tests
+/// and exits 0, which would turn a re-executed fixture into a silent pass.
+pub fn exact_path(module: &str, name: &str) -> String {
+    let relative = module.split_once("::").map_or("", |(_, rest)| rest);
+    let path = if relative.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{relative}::{name}")
+    };
+    let listing = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--list", "--format", "terse"])
+        .output()
+        .expect("listing this binary's tests");
+    let listing = String::from_utf8_lossy(&listing.stdout);
+    assert!(
+        listing
+            .lines()
+            .any(|line| line.strip_suffix(": test") == Some(path.as_str())),
+        "re-executing {path:?} (module_path {module:?}, test {name:?}): no such test in this binary; \
+         the name must be the module path under tests/it/main.rs plus the function name"
+    );
+    path
+}
+
 pub fn hermetic_command(
     bin: impl AsRef<std::ffi::OsStr>,
     home: &std::path::Path,

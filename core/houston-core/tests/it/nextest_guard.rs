@@ -1,12 +1,8 @@
-//! Plain `cargo test` runs every module of this binary as threads of one process, while many
-//! modules still mutate the process environment under per-module locks. nextest runs each
-//! test in its own process and sets `NEXTEST`; a re-executed child sets `HOUSTON_TEST_REEXEC`.
+//! Plain `cargo test` runs the modules of this binary as threads of one process, but many
+//! still mutate the process environment under per-module locks. nextest runs each test in
+//! its own process and sets `NEXTEST`; a re-executed child runs only its own `--exact` test.
 
-const ACCEPTED: [&str; 3] = [
-    "NEXTEST",
-    "HOUSTON_TEST_REEXEC",
-    "HOUSTON_ALLOW_PLAIN_CARGO_TEST",
-];
+const ACCEPTED: [&str; 2] = ["NEXTEST", "HOUSTON_ALLOW_PLAIN_CARGO_TEST"];
 
 #[test]
 fn the_suite_runs_one_test_per_process() {

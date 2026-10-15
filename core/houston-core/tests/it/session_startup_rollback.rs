@@ -1,6 +1,6 @@
 #![cfg(all(target_os = "linux", feature = "test-barriers"))]
 
-mod common;
+use crate::common;
 
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig, RespawnConversation};
 use houston_protocol as proto;
@@ -97,7 +97,10 @@ fn startup_failures_are_owned_and_transactional() {
         let status = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
             .args([
                 "--exact",
-                "startup_failures_are_owned_and_transactional",
+                &common::exact_path(
+                    module_path!(),
+                    "startup_failures_are_owned_and_transactional",
+                ),
                 "--nocapture",
             ])
             .env("HOUSTON_STARTUP_FIXTURE", "1")

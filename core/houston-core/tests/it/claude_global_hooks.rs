@@ -1,7 +1,7 @@
 #![cfg(unix)]
 #![allow(clippy::disallowed_methods)]
 
-mod common;
+use crate::common;
 
 use houston_core::{
     claude_hooks,
@@ -20,7 +20,11 @@ fn isolated(name: &str) -> bool {
     let result = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
         .env("HOUSTON_CLAUDE_GLOBAL_FIXTURE", "1")
         .current_dir(home.path())
-        .args(["--exact", name, "--nocapture"])
+        .args([
+            "--exact",
+            &common::exact_path(module_path!(), name),
+            "--nocapture",
+        ])
         .status()
         .unwrap();
     assert!(result.success(), "isolated fixture {name} failed");

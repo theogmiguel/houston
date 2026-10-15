@@ -1,5 +1,5 @@
 #![cfg(all(unix, feature = "test-barriers"))]
-mod common;
+use crate::common;
 
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_protocol as proto;
@@ -13,7 +13,10 @@ fn shutdown_waits_for_admitted_launch_and_concurrent_refusal_keeps_the_gate() {
         let status = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
             .args([
                 "--exact",
-                "shutdown_waits_for_admitted_launch_and_concurrent_refusal_keeps_the_gate",
+                &common::exact_path(
+                    module_path!(),
+                    "shutdown_waits_for_admitted_launch_and_concurrent_refusal_keeps_the_gate",
+                ),
                 "--nocapture",
             ])
             .env("HOUSTON_SHUTDOWN_ADMISSION_FIXTURE", "1")

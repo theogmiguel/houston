@@ -21,7 +21,7 @@ junit = { path = "junit.xml" }
 pty-heavy = { max-threads = 2 }
 
 [[profile.default.overrides]]
-filter = 'binary(orphan_survival_process) | binary(windows_pty_lifecycle) | binary(ssh_stalled_window)'
+filter = 'test(/^orphan_survival_process::/) | binary(windows_pty_lifecycle) | binary(ssh_stalled_window)'
 test-group = 'pty-heavy'
 
 # Long by construction: seeded property loop in a debug build, a provider/seed matrix, and

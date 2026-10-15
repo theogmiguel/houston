@@ -1,6 +1,6 @@
 #![cfg(target_os = "linux")]
 
-mod common;
+use crate::common;
 
 use houston_core::{
     pid,
@@ -84,7 +84,11 @@ fn precommit_parent_sigkill_aborts_helper_before_any_cli_execution() {
     use std::process::Stdio;
     let directory = tempfile::tempdir().unwrap();
     let mut parent = houston_core::spawn::command(std::env::current_exe().unwrap())
-        .args(["--exact", "gate_parent_fixture", "--nocapture"])
+        .args([
+            "--exact",
+            &common::exact_path(module_path!(), "gate_parent_fixture"),
+            "--nocapture",
+        ])
         .env("EXEC_GATE_PARENT_FIXTURE", directory.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -140,7 +144,10 @@ fn failed_session_startup_transaction_cannot_release_executable() {
         let result = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
             .args([
                 "--exact",
-                "failed_session_startup_transaction_cannot_release_executable",
+                &common::exact_path(
+                    module_path!(),
+                    "failed_session_startup_transaction_cannot_release_executable",
+                ),
                 "--nocapture",
             ])
             .env("EXEC_GATE_DB_FIXTURE", "1")

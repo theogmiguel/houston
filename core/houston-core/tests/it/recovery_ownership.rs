@@ -161,7 +161,10 @@ fn unavailable_manager_and_wrong_scope_nonce_remain_unknown() {
         let result = houston_core::spawn::command(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "unavailable_manager_and_wrong_scope_nonce_remain_unknown",
+                &crate::common::exact_path(
+                    module_path!(),
+                    "unavailable_manager_and_wrong_scope_nonce_remain_unknown",
+                ),
                 "--nocapture",
             ])
             .env("OWNERSHIP_MANAGER_FIXTURE", "1")
@@ -273,7 +276,10 @@ fn manager_permission_errors_and_timeouts_do_not_certify_empty_scopes() {
         let result = houston_core::spawn::command(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "manager_permission_errors_and_timeouts_do_not_certify_empty_scopes",
+                &crate::common::exact_path(
+                    module_path!(),
+                    "manager_permission_errors_and_timeouts_do_not_certify_empty_scopes",
+                ),
                 "--nocapture",
             ])
             .env(
@@ -313,7 +319,10 @@ fn manager_permission_errors_and_timeouts_do_not_certify_empty_scopes() {
     let result = houston_core::spawn::command(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "manager_permission_errors_and_timeouts_do_not_certify_empty_scopes",
+            &crate::common::exact_path(
+                module_path!(),
+                "manager_permission_errors_and_timeouts_do_not_certify_empty_scopes",
+            ),
             "--nocapture",
         ])
         .env("OWNERSHIP_FAKE_MANAGER", "authentication")

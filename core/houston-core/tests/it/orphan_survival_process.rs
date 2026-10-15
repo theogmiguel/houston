@@ -1,7 +1,7 @@
 #![cfg(target_os = "linux")]
 #![allow(clippy::disallowed_methods)]
 
-mod common;
+use crate::common;
 
 use futures_util::SinkExt;
 use houston_core::{hook_drop, pid};
@@ -89,7 +89,7 @@ fn orphan_fixture_agent() {
         command
             .args([
                 "--exact",
-                "orphan_fixture_agent",
+                &common::exact_path(module_path!(), "orphan_fixture_agent"),
                 "--nocapture",
                 "--test-threads=1",
             ])
@@ -204,8 +204,8 @@ impl Fixture {
             std::fs::create_dir(path).unwrap();
         }
         for (name, script) in [
-            ("claude", "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ORPHAN_PROBE_RECORDS/$HOUSTON_SESSION.argv\"\nexport ORPHAN_PROBE_CHILD=1\nexec \"$ORPHAN_PROBE_BINARY\" --exact orphan_fixture_agent --nocapture --test-threads=1\n"),
-            ("shell", "#!/bin/sh\nif [ \"$1\" = -lic ]; then shift; exec /bin/sh -c \"$1\"; fi\nexec /bin/sh \"$@\"\n"),
+            ("claude", format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ORPHAN_PROBE_RECORDS/$HOUSTON_SESSION.argv\"\nexport ORPHAN_PROBE_CHILD=1\nexec \"$ORPHAN_PROBE_BINARY\" --exact {} --nocapture --test-threads=1\n", common::exact_path(module_path!(), "orphan_fixture_agent"))),
+            ("shell", "#!/bin/sh\nif [ \"$1\" = -lic ]; then shift; exec /bin/sh -c \"$1\"; fi\nexec /bin/sh \"$@\"\n".to_string()),
         ] {
             let path = bin.join(name);
             std::fs::write(&path, script).unwrap();

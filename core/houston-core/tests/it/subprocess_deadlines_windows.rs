@@ -7,8 +7,13 @@ use std::time::{Duration, Instant};
 
 fn fixture(mode: &str) -> Command {
     let mut cmd = command(std::env::current_exe().unwrap());
-    cmd.args(["--exact", "subprocess_fixture", "--nocapture", "--quiet"])
-        .env("HOUSTON_SUBPROCESS_FIXTURE", mode);
+    cmd.args([
+        "--exact",
+        &common::exact_path(module_path!(), "subprocess_fixture"),
+        "--nocapture",
+        "--quiet",
+    ])
+    .env("HOUSTON_SUBPROCESS_FIXTURE", mode);
     cmd
 }
 

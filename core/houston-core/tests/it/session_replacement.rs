@@ -1,6 +1,6 @@
 #![cfg(all(target_os = "linux", feature = "test-barriers"))]
 
-mod common;
+use crate::common;
 
 use houston_core::daemon::{Daemon, DaemonConfig, RespawnConversation, SafeModeFlags};
 use houston_core::db::{Db, MessageReceipt, NewInboxRow};
@@ -17,7 +17,11 @@ fn isolated(test: &str) -> bool {
     }
     let home = tempfile::tempdir().unwrap();
     let status = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
-        .args(["--exact", test, "--nocapture"])
+        .args([
+            "--exact",
+            &common::exact_path(module_path!(), test),
+            "--nocapture",
+        ])
         .env("HOUSTON_REPLACEMENT_FIXTURE", "1")
         .status()
         .unwrap();

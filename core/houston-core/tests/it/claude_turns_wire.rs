@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::start_daemon_with_handle;
 use houston_core::daemon::{CreateParams, Daemon};
@@ -197,7 +197,10 @@ async fn claude_native_interrupt_releases_a_staged_handback_to_its_parent() {
         let status = command
             .args([
                 "--exact",
-                "claude_native_interrupt_releases_a_staged_handback_to_its_parent",
+                &common::exact_path(
+                    module_path!(),
+                    "claude_native_interrupt_releases_a_staged_handback_to_its_parent",
+                ),
                 "--nocapture",
             ])
             .env("PATH", format!("{}{separator}{inherited}", bin.display()))

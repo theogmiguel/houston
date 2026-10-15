@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-mod common;
+use crate::common;
 
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::hook_drop::{self, HookDrop};
@@ -95,7 +95,11 @@ fn run_codex_status_test_in_isolated_home(name: &str) -> bool {
     let home = tempfile::tempdir().unwrap();
     let result = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
         .env("HOUSTON_CODEX_STATUS_FIXTURE", "1")
-        .args(["--exact", name, "--nocapture"])
+        .args([
+            "--exact",
+            &common::exact_path(module_path!(), name),
+            "--nocapture",
+        ])
         .status()
         .unwrap();
     assert!(

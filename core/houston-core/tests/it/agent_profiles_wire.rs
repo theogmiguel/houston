@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use houston_protocol as proto;
 
@@ -11,7 +11,11 @@ fn isolated(name: &str) -> bool {
     let home = tempfile::tempdir().unwrap();
     let result = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
         .env("HOUSTON_PROFILE_FIXTURE", "1")
-        .args(["--exact", name, "--nocapture"])
+        .args([
+            "--exact",
+            &common::exact_path(module_path!(), name),
+            "--nocapture",
+        ])
         .status()
         .unwrap();
     assert!(result.success(), "isolated profile fixture {name} failed");

@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::TOKEN;
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
@@ -278,7 +278,10 @@ async fn failed_idle_shutdown_capture_does_not_exit_and_retries() {
         let status = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
             .args([
                 "--exact",
-                "failed_idle_shutdown_capture_does_not_exit_and_retries",
+                &common::exact_path(
+                    module_path!(),
+                    "failed_idle_shutdown_capture_does_not_exit_and_retries",
+                ),
                 "--nocapture",
             ])
             .env("HOUSTON_REAP_RETRY_FIXTURE", "1")
