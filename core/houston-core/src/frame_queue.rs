@@ -75,6 +75,11 @@ impl FrameTap {
         self.session
     }
 
+    #[doc(hidden)]
+    pub fn queued_bytes_for_test(&self) -> usize {
+        self.state.lock().expect("frame tap lock").bytes
+    }
+
     pub fn offer(&self, offset: u64, payload_len: usize, frame: &Arc<Vec<u8>>) {
         let mut s = self.state.lock().expect("frame tap lock");
         if offset + payload_len as u64 <= s.cutoff {

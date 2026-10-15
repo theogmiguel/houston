@@ -6,7 +6,6 @@ mod common;
 use common::*;
 use futures_util::{SinkExt, StreamExt};
 use houston_core::daemon::{CreateParams, Daemon, Outbound};
-use houston_core::frame_queue::Observer;
 use houston_protocol as proto;
 use std::path::Path;
 use std::sync::Arc;
@@ -15,10 +14,13 @@ use tokio_tungstenite::tungstenite::Message;
 
 type RawWs = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
 
-// Far past a 4 KiB client window plus the daemon's socket and WebSocket write buffers, so
-// its send is blocked on backpressure by the time the keystroke goes out. ConPTY renders a
-// flood at tens of KiB/s on a loaded host, which rules out overflowing the 4 MiB tap.
-const BACKLOG_BYTES: u64 = 1024 * 1024;
+// A whole scrollback ring, replayed as one base64 message of about 5.3 MiB: far past a 4 KiB
+// client window plus the daemon's socket buffers, so the attach's own send blocks.
+const REPLAY_BYTES: u64 = 4 * 1024 * 1024;
+// Output then waiting on the connection's queue. A writer that kept up drains it on every
+// wake, so this much waiting means its send is blocked. It stays small because on Windows a
+// session watched by a client that does not read produces output at only KiB/s.
+const TAP_BACKLOG: usize = 32 * 1024;
 const INPUT_BOUND: Duration = Duration::from_secs(10);
 
 // Concurrent floods starve each other's PTYs and the other tests' daemons.
@@ -29,7 +31,9 @@ struct Sessions(Arc<Daemon>, Vec<u32>);
 impl Drop for Sessions {
     fn drop(&mut self) {
         for id in &self.1 {
-            self.0.kill(*id).ok();
+            if let Err(error) = self.0.kill(*id) {
+                eprintln!("cleanup: killing session {id} failed: {error:#}");
+            }
         }
     }
 }
@@ -75,17 +79,20 @@ fn shell(script: &str) -> Vec<String> {
     ])
 }
 
+// Floods stop on their own after about 32 MiB, so one that outlives its test cannot starve
+// the next.
 #[cfg(unix)]
 fn flood() -> Vec<String> {
-    shell("yes \"$(printf '%0190d' 0)\"")
+    shell("yes \"$(printf '%0190d' 0)\" | head -c 33554432; sleep 60")
 }
 
+// One console write per 64 KiB: a write per line is what limits a flood on Windows.
 #[cfg(windows)]
 fn flood() -> Vec<String> {
-    // One console write per 64 KiB: a write per line is what limits a flood on Windows.
-    shell(
-        "$b = ((1..320) | ForEach-Object { \"$_ \" + ('0' * 190) }) -join \"`r`n\";          while ($true) { [Console]::Out.Write($b) }",
-    )
+    shell(concat!(
+        "$b = ((1..320) | ForEach-Object { \"$_ \" + ('0' * 190) }) -join \"`r`n\"; ",
+        "for ($n = 0; $n -lt 512; $n++) { [Console]::Out.Write($b) }; Start-Sleep 60",
+    ))
 }
 
 #[cfg(unix)]
@@ -159,11 +166,11 @@ async fn connect_unread(addr: std::net::SocketAddr) -> RawWs {
     ws
 }
 
-fn attach_msg(session: u32) -> Message {
+fn attach_msg(session: u32, replay_bytes: Option<u64>) -> Message {
     Message::text(
         serde_json::to_string(&proto::ClientMsg::SessionAttach {
             session,
-            replay_bytes: None,
+            replay_bytes,
             snapshot: Some(false),
             from_offset: None,
             generation: None,
@@ -172,14 +179,16 @@ fn attach_msg(session: u32) -> Message {
     )
 }
 
-/// Counts `session`'s output until `bytes` more have been produced.
-async fn await_output(observer: &mut Observer, session: u32, bytes: u64) -> Duration {
+/// Lets a flood fill its scrollback while unwatched, attaches it on an unread socket with a
+/// whole-ring replay, and waits until that connection's queue for it holds `TAP_BACKLOG`.
+async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
+    let mut observer = daemon.observe();
     let started = Instant::now();
     let mut produced = 0u64;
-    while produced < bytes {
+    while produced < REPLAY_BYTES {
         assert!(
             started.elapsed() < Duration::from_secs(120),
-            "flood session {session} produced {produced} of {bytes} bytes in 120 s"
+            "flood session {session} produced {produced} of {REPLAY_BYTES} bytes in 120 s"
         );
         match tokio::time::timeout(Duration::from_secs(5), observer.recv()).await {
             Ok(Ok(Outbound::Frame(buf))) => {
@@ -192,27 +201,36 @@ async fn await_output(observer: &mut Observer, session: u32, bytes: u64) -> Dura
             Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(dropped))) => {
                 produced += dropped
             }
-            Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => {
-                panic!("daemon broadcast closed while session {session} flooded")
-            }
-            Ok(Ok(_)) | Err(_) => {}
+            _ => {}
         }
     }
-    started.elapsed()
-}
-
-/// Attaches a running flood on an unread socket and waits until it has produced
-/// `BACKLOG_BYTES` since, so the daemon's writes to that socket are blocked.
-async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
-    let mut observer = daemon.observe();
-    // An unwatched session has the daemon answer its terminal's startup queries; once
-    // this client (which never answers) watches it, an unanswered query stalls ConPTY.
-    await_output(&mut observer, session, 64 * 1024).await;
-    ws.send(attach_msg(session)).await.unwrap();
-    let elapsed = await_output(&mut observer, session, BACKLOG_BYTES).await;
+    drop(observer);
+    ws.send(attach_msg(session, Some(REPLAY_BYTES)))
+        .await
+        .unwrap();
+    let attached = Instant::now();
+    loop {
+        let queued = daemon
+            .frame_taps()
+            .taps_for_test(session)
+            .iter()
+            .filter_map(std::sync::Weak::upgrade)
+            .map(|tap| tap.queued_bytes_for_test())
+            .max();
+        if queued.is_some_and(|bytes| bytes >= TAP_BACKLOG) {
+            break;
+        }
+        assert!(
+            attached.elapsed() < Duration::from_secs(120),
+            "session {session}: connection queue holds {queued:?} bytes 120 s after attach; \
+             expected {TAP_BACKLOG} once its writer blocks"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     eprintln!(
-        "backlog: session {session} produced {BACKLOG_BYTES} bytes in {} ms while the client          read nothing",
-        elapsed.as_millis()
+        "backlog: {TAP_BACKLOG} bytes queued for session {session} {} ms after attach; client \
+         read nothing",
+        attached.elapsed().as_millis()
     );
 }
 
@@ -264,7 +282,18 @@ async fn stdin_reaches_the_pty_while_output_backpressures_the_socket() {
         latency.as_millis(),
         INPUT_BOUND.as_millis()
     );
-    let got = std::fs::read_to_string(project.path().join("got")).unwrap();
+    // The child may still hold the file open for writing.
+    let read_started = Instant::now();
+    let got = loop {
+        match std::fs::read_to_string(project.path().join("got")) {
+            Ok(got) if !got.trim().is_empty() => break got,
+            result => assert!(
+                read_started.elapsed() < Duration::from_secs(10),
+                "reading the line reader's output: {result:?}"
+            ),
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
     assert_eq!(got.trim(), "through-backpressure");
 }
 
@@ -295,15 +324,15 @@ async fn attach_and_create_replies_keep_request_order_around_stdin() {
     for (round, order) in [[c, a, b], [b, c, a]].into_iter().enumerate() {
         let base = round as u32 * 10;
         let burst = vec![
-            attach_msg(order[0]),
+            attach_msg(order[0], None),
             stdin(a),
             create(base + 1),
             Message::text(r#"{"type":"session_list"}"#),
-            attach_msg(order[1]),
+            attach_msg(order[1], None),
             stdin(b),
             create(base + 2),
             stdin(c),
-            attach_msg(order[2]),
+            attach_msg(order[2], None),
         ];
         for msg in burst {
             ws.feed(msg).await.unwrap();
