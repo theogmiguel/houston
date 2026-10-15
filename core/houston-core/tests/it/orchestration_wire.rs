@@ -7064,7 +7064,10 @@ async fn a_child_that_dies_at_launch_tells_its_parent_why() {
     let pane = r.pane();
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
-    std::env::set_var("HOUSTON_TEST_EXIT_NOW", "setting.json corrupt: exiting");
+    r.daemon.set_env_var_for_test(
+        "HOUSTON_TEST_EXIT_NOW",
+        Some("setting.json corrupt: exiting"),
+    );
     let (status, body) = http_json(
         r.addr,
         "POST",
@@ -7073,7 +7076,7 @@ async fn a_child_that_dies_at_launch_tells_its_parent_why() {
         Some(serde_json::json!({"kind": "codex", "prompt": "h0"})),
     )
     .await;
-    std::env::remove_var("HOUSTON_TEST_EXIT_NOW");
+    r.daemon.set_env_var_for_test("HOUSTON_TEST_EXIT_NOW", None);
     assert_eq!(status, 200, "spawn body: {body}");
     let kid = body["session_id"].as_u64().unwrap() as u32;
 

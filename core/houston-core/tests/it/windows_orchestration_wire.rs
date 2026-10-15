@@ -457,7 +457,10 @@ async fn a_child_that_dies_at_launch_tells_its_parent_why() {
     let rig = Rig::new().await;
     let parent = rig.parent();
     let token = rig.token(parent.id);
-    std::env::set_var("HOUSTON_WINDOWS_EXIT_NOW", "setting.json corrupt: exiting");
+    rig.daemon.set_env_var_for_test(
+        "HOUSTON_WINDOWS_EXIT_NOW",
+        Some("setting.json corrupt: exiting"),
+    );
     let (status, body) = rig
         .post(
             &token,
@@ -465,7 +468,8 @@ async fn a_child_that_dies_at_launch_tells_its_parent_why() {
             json!({"kind":"codex", "prompt":"h0"}),
         )
         .await;
-    std::env::remove_var("HOUSTON_WINDOWS_EXIT_NOW");
+    rig.daemon
+        .set_env_var_for_test("HOUSTON_WINDOWS_EXIT_NOW", None);
     assert_eq!(status, 200, "spawn body: {body}");
     let child = body["session_id"].as_u64().unwrap() as u32;
 
