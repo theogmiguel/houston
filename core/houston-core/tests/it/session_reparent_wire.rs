@@ -120,7 +120,7 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
 
@@ -137,7 +137,7 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
     let reopened = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let restored = reopened
@@ -219,7 +219,7 @@ fn reparent_refuses_a_swarm_tied_session() {
     let daemon = Daemon::new(DaemonConfig::new(
         "test-token".into(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
 

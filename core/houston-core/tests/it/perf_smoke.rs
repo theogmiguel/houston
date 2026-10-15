@@ -34,7 +34,7 @@ async fn flood_throughput_floor() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("perf.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr, _handle) = server::start(daemon, "127.0.0.1:0".parse().unwrap())
@@ -131,7 +131,7 @@ async fn daemon_rss_at_ten_sessions() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("perf.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr, _handle) = server::start(daemon, "127.0.0.1:0".parse().unwrap())

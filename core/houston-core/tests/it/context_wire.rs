@@ -173,7 +173,7 @@ mod context_indicator {
         let daemon = Daemon::new(houston_core::daemon::DaemonConfig::new(
             "test-token".into(),
             state.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         ))
         .unwrap();
         daemon
@@ -449,7 +449,7 @@ mod context_indicator {
         let daemon = Daemon::new(houston_core::daemon::DaemonConfig::new(
             "test-token".to_string(),
             channel_dir.join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         ))
         .unwrap();
         let dir = tempfile::tempdir().unwrap();
