@@ -1,8 +1,15 @@
 //! Antigravity publishes no last-assistant-message field in its hook payloads;
 //! its own `transcriptPath` JSONL — never a path Houston builds — is the only
-//! place that text lives. Reads the last assistant entry only; any error is `None`.
+//! place that text lives. Reads the last assistant entry only, from a bounded
+//! tail of the file; any error is `None`, and an entry wholly before the tail
+//! window is not guessed at.
+
+/// A few MiB of tail: the turn-end hook fires right after the assistant entry
+/// is appended, so the newest one is always near the end of the file.
+const TAIL_BYTES: u64 = 8 * 1024 * 1024;
+
 pub fn antigravity_last_message_from_transcript(path: &str) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = crate::context_window::read_tail(std::path::Path::new(path), TAIL_BYTES)?;
     let mut last = None;
     for line in text.lines() {
         let line = line.trim();
@@ -71,6 +78,50 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("transcript.jsonl");
         std::fs::write(&path, "{\"role\":\"user\",\"content\":\"hi\"}\n").unwrap();
+        assert_eq!(
+            antigravity_last_message_from_transcript(path.to_str().unwrap()),
+            None
+        );
+    }
+
+    fn padding_beyond_the_tail() -> String {
+        let filler = format!(
+            "{{\"role\":\"user\",\"content\":\"{}\"}}\n",
+            "x".repeat(1024)
+        );
+        filler.repeat((TAIL_BYTES as usize / filler.len()) + 1)
+    }
+
+    #[test]
+    fn a_transcript_past_the_tail_keeps_the_last_entry_not_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+        std::fs::write(
+            &path,
+            format!(
+                "{{\"role\":\"assistant\",\"content\":\"oldest\"}}\n{}{{\"role\":\"assistant\",\"content\":\"newest\"}}\n",
+                padding_beyond_the_tail()
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            antigravity_last_message_from_transcript(path.to_str().unwrap()),
+            Some("newest".to_string())
+        );
+    }
+
+    #[test]
+    fn an_assistant_entry_before_the_tail_window_is_none_not_a_guess() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+        std::fs::write(
+            &path,
+            format!(
+                "{{\"role\":\"assistant\",\"content\":\"only\"}}\n{}",
+                padding_beyond_the_tail()
+            ),
+        )
+        .unwrap();
         assert_eq!(
             antigravity_last_message_from_transcript(path.to_str().unwrap()),
             None
