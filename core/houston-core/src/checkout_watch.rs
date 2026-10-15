@@ -211,6 +211,8 @@ fn refresh_head(
             daemon.broadcast_control(&proto::ServerMsg::SessionCheckout {
                 id: snapshot.id,
                 checkout,
+                checkout_root: current.checkout_root,
+                worktree: current.worktree,
             });
         }
     }

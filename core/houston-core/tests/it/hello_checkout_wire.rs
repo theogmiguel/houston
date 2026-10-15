@@ -66,6 +66,7 @@ async fn wait_for_branch(ws: &mut WsStream, id: u32, expected: &str) {
             if let proto::ServerMsg::SessionCheckout {
                 id: event_id,
                 checkout,
+                ..
             } = next_control(ws).await
             {
                 if event_id == id
@@ -280,7 +281,7 @@ async fn restored_sessions_get_their_checkout_from_the_watcher_not_the_listing()
             else {
                 continue;
             };
-            if let Ok(proto::ServerMsg::SessionCheckout { id, checkout }) =
+            if let Ok(proto::ServerMsg::SessionCheckout { id, checkout, .. }) =
                 serde_json::from_str(&json)
             {
                 if pending.remove(&id) {

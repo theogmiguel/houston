@@ -62,6 +62,7 @@ async fn wait_for_branch(ws: &mut WsStream, id: u32, expected: &str) {
                 proto::ServerMsg::SessionCheckout {
                     id: event_id,
                     checkout,
+                    ..
                 } if event_id == id
                     && checkout.as_ref().and_then(|value| value.branch.as_deref())
                         == Some(expected) =>

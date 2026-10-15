@@ -8838,6 +8838,8 @@ impl Daemon {
                         self.broadcast_control(&proto::ServerMsg::SessionCheckout {
                             id: info.id,
                             checkout: info.checkout.clone(),
+                            checkout_root: info.checkout_root.clone(),
+                            worktree: info.worktree.clone(),
                         });
                     }
                 }
