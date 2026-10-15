@@ -33,10 +33,12 @@ impl HostEnv {
     #[must_use]
     pub fn with(&self, name: &str, value: Option<impl Into<OsString>>) -> Self {
         let mut map = (*self.0).clone();
-        match value {
-            Some(v) => map.insert(name.into(), v.into()),
-            None => map.remove(OsStr::new(name)),
-        };
+        if let Some(existing) = self.key_of(name) {
+            map.remove(existing);
+        }
+        if let Some(v) = value {
+            map.insert(name.into(), v.into());
+        }
         Self(Arc::new(map))
     }
 
@@ -46,7 +48,20 @@ impl HostEnv {
     }
 
     pub fn var_os(&self, name: &str) -> Option<&OsStr> {
-        self.0.get(OsStr::new(name)).map(OsString::as_os_str)
+        self.key_of(name)
+            .and_then(|key| self.0.get(key))
+            .map(OsString::as_os_str)
+    }
+
+    /// The stored spelling of `name`. Windows variable names are case-insensitive
+    /// (the process environment holds `Path`, callers ask for `PATH`), so the
+    /// lookup there ignores ASCII case, as `std::env::var` does.
+    fn key_of(&self, name: &str) -> Option<&OsString> {
+        if cfg!(windows) {
+            self.0.keys().find(|key| key.eq_ignore_ascii_case(name))
+        } else {
+            self.0.get_key_value(OsStr::new(name)).map(|(key, _)| key)
+        }
     }
 
     /// Like `std::env::var(..).ok()`: `None` when unset or not valid Unicode.
@@ -142,6 +157,21 @@ impl HostEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_lookups_ignore_the_case_of_variable_names() {
+        let env = HostEnv::from_pairs([("Path", r"C:\Windows\System32")]);
+        assert_eq!(env.var("PATH").as_deref(), Some(r"C:\Windows\System32"));
+        let env = env.with("PATH", Some(r"C:\tools"));
+        assert_eq!(
+            env.names().count(),
+            1,
+            "PATH replaces Path instead of adding a second entry"
+        );
+        assert_eq!(env.var("Path").as_deref(), Some(r"C:\tools"));
+        assert_eq!(env.without("path").names().count(), 0);
+    }
 
     #[test]
     fn lookups_read_the_snapshot_not_the_process() {
