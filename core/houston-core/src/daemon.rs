@@ -21789,7 +21789,15 @@ impl Daemon {
         let Ok(session) = self.get(child) else {
             return String::new();
         };
-        {
+        // A reader that recorded EOF has already put every chunk in the ring. The
+        // supervisor path can run this on that reader itself, before it marks
+        // `reader_done`, so waiting there would only burn the whole bound.
+        let eof_seen = session
+            .supervisor_wait
+            .lock()
+            .expect("supervisor wait lock")
+            .eof;
+        if !eof_seen {
             let (done, changed) = &*session.reader_done;
             let done = done.lock().expect("reader done lock");
             let _ = changed.wait_timeout_while(done, EXIT_TAIL_READER_WAIT, |done| !*done);
@@ -26904,5 +26912,72 @@ mod reader_wake_tests {
         // SAFETY: the single entry and its owned descriptor are valid.
         assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 1);
         wake.consume();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod exit_tail_tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn the_exit_tail_does_not_wait_on_a_reader_that_recorded_eof() {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
+        .unwrap();
+        let manifest = crate::adoption::SessionManifest {
+            title_source: Default::default(),
+            session_id: 41,
+            pid: None,
+            cols: 80,
+            rows: 24,
+            output_offset: 0,
+            state: proto::SessionState::Running,
+            status: None,
+            hidden: false,
+            project_dir: state.path().display().to_string(),
+            cwd: state.path().display().to_string(),
+            title: "ssh".into(),
+            codename: "ssh".into(),
+            tags: vec![],
+            agent: proto::AgentKind::Ssh,
+            swarm_agent: None,
+            hook_cwd: None,
+            mcp_cred: None,
+            native_input: None,
+            vt_snapshot: Vec::new(),
+            vt_format_version: 0,
+        };
+        let session =
+            Daemon::adopted_session(&manifest, Backend::Ssh(crate::ssh::SshHandle::stub()));
+        daemon
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .insert(41, session.clone());
+        session
+            .scrollback
+            .lock()
+            .expect("scrollback lock")
+            .push(b"Unable to read setting.json\r\n");
+        // The supervisor path's order: the reader recorded EOF and is the thread asking,
+        // so it has not set `reader_done` yet.
+        session
+            .supervisor_wait
+            .lock()
+            .expect("supervisor wait lock")
+            .eof = true;
+        let started = Instant::now();
+        let tail = daemon.exit_output_tail(41);
+        assert!(
+            started.elapsed() < EXIT_TAIL_READER_WAIT,
+            "the tail waited {:?} on a reader that had already drained",
+            started.elapsed()
+        );
+        assert!(tail.contains("Unable to read setting.json"), "{tail}");
     }
 }
