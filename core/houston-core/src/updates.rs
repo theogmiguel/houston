@@ -663,10 +663,11 @@ mod tests {
         let response = format!("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{payload}");
         let (url, _requests) = scripted_release_server(vec![response]).await;
         let dir = tempfile::tempdir().unwrap();
-        let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig {
-            token: "test-token-0000-0000-000000000000".to_string(),
-            db_path: dir.path().join("test.db"),
-        })
+        let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig::new(
+            "test-token-0000-0000-000000000000".to_string(),
+            dir.path().join("test.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
 
         let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
@@ -686,10 +687,11 @@ mod tests {
         );
         let (url, _requests) = scripted_release_server(vec![response]).await;
         let dir = tempfile::tempdir().unwrap();
-        let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig {
-            token: "test-token-0000-0000-000000000000".to_string(),
-            db_path: dir.path().join("test.db"),
-        })
+        let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig::new(
+            "test-token-0000-0000-000000000000".to_string(),
+            dir.path().join("test.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
 
         let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
