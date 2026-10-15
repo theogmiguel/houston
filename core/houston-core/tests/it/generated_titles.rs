@@ -244,12 +244,13 @@ async fn a_claude_started_inside_a_shell_pane_gets_a_generated_title_after_its_f
     let shim = state.path().join("claude");
     std::fs::write(&shim, "#!/bin/sh\nprintf 'Repair parser\\n'\n").unwrap();
     std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let path = std::env::var("PATH").unwrap_or_default();
-    std::env::set_var("PATH", format!("{}:{path}", state.path().display()));
-    let daemon = Daemon::new(DaemonConfig {
-        token: "generated-title-shell-test".into(),
-        db_path: state.path().join("test.db"),
-    })
+    let env = common::base_env();
+    let path = env.var("PATH").unwrap_or_default();
+    let daemon = Daemon::new(DaemonConfig::new(
+        "generated-title-shell-test".into(),
+        state.path().join("test.db"),
+        env.with("PATH", Some(format!("{}:{path}", state.path().display()))),
+    ))
     .unwrap();
     daemon.set_generated_titles(true).unwrap();
     let mut rx = daemon.subscribe();
