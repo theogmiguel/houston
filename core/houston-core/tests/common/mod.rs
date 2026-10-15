@@ -430,6 +430,27 @@ pub async fn collect_broadcast_until(
     collect_broadcast_matching(rx, session, needle, false).await
 }
 
+/// The last 512 characters of a pane's output with control bytes escaped, so a timeout
+/// shows whether the program wrote anything past the terminal's own startup sequences.
+pub fn escaped_tail(output: &[u8]) -> String {
+    let text = String::from_utf8_lossy(output);
+    let skip = text.chars().count().saturating_sub(512);
+    text.chars()
+        .skip(skip)
+        .collect::<String>()
+        .escape_debug()
+        .to_string()
+}
+
+fn broadcast_timeout(needle: &str, session: u32, acc: &str) -> ! {
+    panic!(
+        "timed out waiting for {needle:?} on session {session} in broadcast output \
+         (accumulated {} bytes, ending: \"{}\")",
+        acc.len(),
+        escaped_tail(acc.as_bytes())
+    )
+}
+
 pub async fn collect_broadcast_envelope(
     rx: &mut houston_core::frame_queue::Observer,
     session: u32,
@@ -447,12 +468,13 @@ async fn collect_broadcast_matching(
     let mut acc = String::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     loop {
-        let remaining = deadline.checked_duration_since(tokio::time::Instant::now()).unwrap_or_else(|| {
-            panic!("timed out waiting for {needle:?} on session {session} in broadcast output (accumulated {} bytes)", acc.len())
-        });
-        let out = match tokio::time::timeout(remaining, rx.recv()).await.unwrap_or_else(|_| {
-            panic!("timed out waiting for {needle:?} on session {session} in broadcast output (accumulated {} bytes)", acc.len())
-        }) {
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .unwrap_or_else(|| broadcast_timeout(needle, session, &acc));
+        let out = match tokio::time::timeout(remaining, rx.recv())
+            .await
+            .unwrap_or_else(|_| broadcast_timeout(needle, session, &acc))
+        {
             Ok(o) => o,
             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => panic!(
                 "broadcast receiver lagged by {n} messages while waiting for {needle:?} on \
