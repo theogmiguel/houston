@@ -128,7 +128,7 @@ async fn either_half_ending_releases_a_backpressured_connection() {
     attach_and_backlog(&daemon, &mut ws, flood_id).await;
     assert_eq!(daemon.manage_status().clients_connected, 1);
     drop(ws);
-    wait_for_clients(&daemon, 0, Duration::from_secs(15)).await;
+    wait_for_release(&daemon, flood_id, Duration::from_secs(15)).await;
 
     // The writer half ends.
     let mut ws = connect_unread(addr).await;
@@ -170,5 +170,5 @@ async fn either_half_ending_releases_a_backpressured_connection() {
     // Windows resets a socket closed with output still queued, which discards the
     // `control_lag` error the client had not read yet, so seeing it is not required.
     eprintln!("writer-side close: {end}; control_lag error seen: {lagged}");
-    wait_for_clients(&daemon, 0, Duration::from_secs(15)).await;
+    wait_for_release(&daemon, flood_id, Duration::from_secs(15)).await;
 }

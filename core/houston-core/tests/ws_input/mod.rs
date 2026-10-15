@@ -230,13 +230,24 @@ pub async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
     );
 }
 
-pub async fn wait_for_clients(daemon: &Daemon, expected: u32, within: Duration) {
+/// Waits until no client is connected and no connection still queues `session`'s output.
+pub async fn wait_for_release(daemon: &Daemon, session: u32, within: Duration) {
     let started = Instant::now();
-    while daemon.manage_status().clients_connected != expected {
+    loop {
+        let clients = daemon.manage_status().clients_connected;
+        let taps = daemon
+            .frame_taps()
+            .taps_for_test(session)
+            .iter()
+            .filter(|tap| tap.strong_count() > 0)
+            .count();
+        if clients == 0 && taps == 0 {
+            return;
+        }
         assert!(
             started.elapsed() < within,
-            "{} clients still connected after {within:?}; expected {expected}",
-            daemon.manage_status().clients_connected
+            "{clients} clients connected and {taps} frame queues for session {session} after \
+             {within:?}; expected both 0 once the connection ends"
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }

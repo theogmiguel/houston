@@ -172,8 +172,11 @@ task that writes stdin frames to their PTYs as they arrive. That task hands cont
 the loop in socket order through a queue bounded at 256 messages and 1 MiB; past either
 bound it stops reading until the loop catches up, so keystrokes wait only behind that many
 unprocessed control messages. A stdin refusal that finds the queue full is logged rather
-than reported, because waiting for room would stall input to every pane. Either half ending ends the connection: the loop ending aborts
-and joins the reader before the connection is forgotten. A control request runs on its own
+than reported, because waiting for room would stall input to every pane. Either half ending
+ends the connection. When the reader ends, the loop drains the messages already queued and
+stops after any send in flight completes or fails. When the loop ends, it aborts and joins
+the reader before the connection is forgotten, so no keystroke arrives for a forgotten
+connection and the socket closes. A control request runs on its own
 task, not on the connection's loop: that loop flushes the connection's PTY frames and acks
 resizes, and a handler awaited there — a `git` shell-out, a CLI probe, a directory scan —
 held both for its whole duration, which is how a resize ack missed the renderer's deadline
