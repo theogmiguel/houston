@@ -1,8 +1,6 @@
-//! Antigravity publishes no last-assistant-message field in its hook payloads;
-//! its own `transcriptPath` JSONL — never a path Houston builds — is the only
-//! place that text lives. Reads the last assistant entry only, from a bounded
-//! tail of the file; any error is `None`, and an entry wholly before the tail
-//! window is not guessed at.
+//! Antigravity's hook payloads carry no last assistant message; its own `transcriptPath`
+//! JSONL (never a path Houston builds) is the only source. Reads the last assistant entry
+//! from a bounded tail; an error, or an entry before the tail window, is `None`.
 
 /// A few MiB of tail: the turn-end hook fires right after the assistant entry
 /// is appended, so the newest one is always near the end of the file.
