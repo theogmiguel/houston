@@ -33,6 +33,23 @@ fn read_to_string(path: &std::path::Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
+/// The stand-in daemon writes its pidfile with a truncate-then-write, so a reader can
+/// observe an empty file; only a parsed pid counts as the file being ready.
+fn read_pid(path: &std::path::Path) -> Option<u32> {
+    read_to_string(path)?.trim().parse().ok()
+}
+
+#[test]
+fn a_pidfile_still_being_written_is_not_ready() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let pidfile = dir.path().join("p.pid");
+    assert_eq!(read_pid(&pidfile), None, "missing file");
+    std::fs::write(&pidfile, "").unwrap();
+    assert_eq!(read_pid(&pidfile), None, "empty file, mid-write");
+    std::fs::write(&pidfile, "4242").unwrap();
+    assert_eq!(read_pid(&pidfile), Some(4242));
+}
+
 struct SupervisorGuard(Child);
 impl Drop for SupervisorGuard {
     fn drop(&mut self) {
@@ -81,10 +98,7 @@ fn supervisor_json_shape_and_permissions() {
         .permissions();
     assert_eq!(perms.mode() & 0o777, 0o600, "supervisor.json must be 0600");
 
-    let orphan_pid: u32 = poll_until(POLL_TIMEOUT, || read_to_string(&pidfile))
-        .trim()
-        .parse()
-        .expect("pidfile holds a pid");
+    let orphan_pid = poll_until(POLL_TIMEOUT, || read_pid(&pidfile));
     signal_process(orphan_pid, Signal::Kill).expect("SIGKILL the orphan");
     poll_until(POLL_TIMEOUT, || guard.0.try_wait().ok().flatten());
 }
@@ -138,8 +152,7 @@ fn orphan_signal_kill_is_relayed_with_real_signal() {
         ],
     );
 
-    let pid_str = poll_until(POLL_TIMEOUT, || read_to_string(&pidfile));
-    let orphan_pid: u32 = pid_str.trim().parse().expect("pidfile holds a pid");
+    let orphan_pid = poll_until(POLL_TIMEOUT, || read_pid(&pidfile));
 
     let ready_marker = dir.path().join("result.txt.ready");
     poll_until(POLL_TIMEOUT, || read_to_string(&ready_marker));
