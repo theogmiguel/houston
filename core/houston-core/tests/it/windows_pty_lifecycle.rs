@@ -26,7 +26,7 @@ impl Fixture {
         let daemon = Daemon::new(DaemonConfig::new(
             "windows-lifecycle-fixture".into(),
             state.path().join("fixture.db"),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         ))
         .unwrap();
         Self {

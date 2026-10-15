@@ -30,7 +30,7 @@ fn shutdown_waits_for_admitted_launch_and_concurrent_refusal_keeps_the_gate() {
     let daemon = Daemon::new(DaemonConfig::new(
         "fixture".into(),
         state.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let spawned = Arc::new(Barrier::new(2));

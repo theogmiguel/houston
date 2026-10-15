@@ -118,7 +118,7 @@ fn exited_roots_keep_passive_panes_and_output_until_explicit_close() {
                 DaemonConfig::new(
                     common::TOKEN.into(),
                     database.clone(),
-                    houston_core::host_env::HostEnv::capture(),
+                    crate::common::capture_env(),
                 ),
                 SafeModeFlags {
                     disable_auto_restore,

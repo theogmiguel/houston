@@ -394,7 +394,7 @@ async fn a_run_left_in_flight_by_a_dead_daemon_reads_failed_on_boot() {
         houston_core::daemon::DaemonConfig::new(
             "t".into(),
             db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         )
     };
     let routine_id = {

@@ -880,7 +880,7 @@ fn boot_collects_a_stale_drop_file_and_keeps_a_fresh_one() {
     let _daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
 

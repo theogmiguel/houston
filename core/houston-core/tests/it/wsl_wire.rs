@@ -445,7 +445,7 @@ async fn wsl_proxy_completes_a_slow_request_after_stdin_eof() {
     let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr, _handle) =
