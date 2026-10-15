@@ -167,8 +167,11 @@ whole terminal scope.
 
 - **Caps**: `MemoryHigh=16G`, `MemoryMax=18G` (override via
   `OOM_SHIELD_MEMORY_HIGH`/`OOM_SHIELD_MEMORY_MAX`). Receipted against the
-  measured 10.2 GiB peak of the core `cargo test -j 3` run on a 31 GiB/12-core
-  machine, which a 12G cap OOM-killed; a cold build peaks near 4.1 GiB. Swap is
+  measured peak of a clean core `cargo test -j 3` build on a 31 GiB/12-core machine:
+  9.1 GiB including page cache, 4.5 GiB anonymous (the largest process is the
+  `houston-core` lib's rustc at 3.1 GiB; the single `it` test binary peaks at 2.4 GiB).
+  The former 158-binary link fan-out reached 10.2 GiB, which a 12G cap OOM-killed. The
+  test run itself stays under 0.4 GiB anonymous. Swap is
   uncapped by default (`OOM_SHIELD_MEMORY_SWAP_MAX` opts in).
 - Applies `nice -n 19` to the wrapped command unconditionally.
 - A second invocation *waits* on a global per-user `flock`, announcing
@@ -205,15 +208,18 @@ removed. Agent worktrees under `.houston/worktrees/` multiply this.
 - `scripts/sweep-targets.sh` deletes artifacts untouched for
   `HOUSTON_SWEEP_DAYS` (default 3) and artifacts built by toolchains rustup no
   longer has, in the main checkout and every worktree below it. It also trims
-  each target directory to `HOUSTON_SWEEP_MAXSIZE` (default 30 GB; a full core
-  test build needs about 25 GB). `--dry-run` lists what it would delete. It
-  needs `cargo install cargo-sweep`.
+  each target directory to `HOUSTON_SWEEP_MAXSIZE` (default 15 GB; a full core
+  test build with incremental caches measured 8.6 GB). `--dry-run` lists what
+  it would delete. It needs `cargo install cargo-sweep`.
 - Each sweep waits for the `oom-shield` lock, so it cannot overlap a shielded
   build.
 - `scripts/sweep-targets.sh --install` runs that sweep hourly through a
-  systemd user timer (`houston-sweep-targets.timer`) and writes
-  `.houston/worktrees/.cargo/config.toml` with `incremental = false`, which
-  Cargo applies to builds inside the agent worktrees only.
+  systemd user timer (`houston-sweep-targets.timer`).
+- Keep incremental compilation on in agent worktrees. It costs about 3.5 GB of
+  `target/` per worktree and about 0.2–0.7 GB more written per build, and it
+  makes the edit-and-rebuild loop two to three times faster (measured 13 s
+  instead of 45 s after touching one test file, 55 s instead of 121 s after
+  touching `src/`).
 - Agent worktrees build and test the dev profile only; `--release` belongs to
   the main checkout when packaging.
 - Remove an agent worktree with `git worktree remove` once its branch is
@@ -241,6 +247,10 @@ build-dir = "{cargo-cache-home}/build-dir/{workspace-path-hash}"
   workspace directories that have gone idle, which costs only a rebuild. Cargo
   treats the layout inside them as internal and changes it between releases.
 - Removing a worktree leaves its intermediates behind until that cleanup runs.
+- Keep the build-dir on the same filesystem as the checkouts. Cargo hard-links
+  final binaries from the build-dir into `target/`; across filesystems it
+  copies them on every invocation, including a no-op build (measured 0.57 GB
+  written per `cargo test --no-run` with nothing to rebuild).
 - For a hard ceiling, mount a fixed-size filesystem (for example a sparse,
   loop-mounted ext4 image with `discard`) at the build-dir root; a full volume
   fails the build instead of filling the disk.
@@ -337,7 +347,8 @@ verifies daemon, UI, and `protocol/protocol.md` all agree on
 **Before every push and delivery** — the full suite, always
 inside `scripts/oom-shield.sh`:
 
-- `core`: full `cargo test`.
+- `core`: full `cargo nextest run`, then `cargo test --doc` (nextest does not run
+  documentation tests).
 - `ui`: full `bun run typecheck` + `bun run test` + `bun run check:complexity` +
   `bun run build` + `bun run check:css` + `bun run check:bundle`, in that order
   (the last two read what `build` emitted).
@@ -353,8 +364,24 @@ before the fix.
 ```
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
-cargo test
+cargo nextest run
+cargo test --doc
 ```
+
+`cargo-nextest` runs every test in its own process and is the primary runner for `core/`;
+`core/.config/nextest.toml` holds the thread budget (`test-threads = 3`, matching the
+`-j 3` that `oom-shield.sh` was measured against), timeouts and the `ci` profile. Install the
+pinned version once (CI installs the same one):
+
+```
+scripts/oom-shield.sh cargo install cargo-nextest --version 0.9.148 --locked -j 3
+```
+
+The core integration tests are the modules of one binary, `core/houston-core/tests/it/main.rs`
+(`it`); a new test file is a new `mod` line there. Select a file's tests with a filterset,
+for example `cargo nextest run -E 'test(/^git_wire::/)'`. Plain `cargo test` would run
+those modules as threads of one process, so `nextest_guard` fails it and names the command
+to use; `HOUSTON_ALLOW_PLAIN_CARGO_TEST=1` overrides that for a single module.
 
 Run hook-installation tests and full core gates with a throwaway `HOME`, and unset
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Workspace creation can refresh user-scope Claude
@@ -364,7 +391,7 @@ configuration in subprocesses.
 
 Locally, run `cargo test` through `scripts/with-test-keyring.sh` when
 `voice::cloud`'s Secret Service tests need a keyring:
-`scripts/oom-shield.sh scripts/with-test-keyring.sh cargo test`. Never run
+`scripts/oom-shield.sh scripts/with-test-keyring.sh cargo nextest run`. Never run
 `gnome-keyring-daemon --unlock` directly on a desktop host, even inside
 `dbus-run-session`: the daemon opens the host's real
 `~/.local/share/keyrings/login.keyring`, and once anything prompts it
@@ -442,6 +469,7 @@ committed inventory and runs in its own `licence-inventory` job.
 | `check-loop-spawn-sync.sh` | both daemon hosts (`houston-core/src/main.rs`, `src-tauri/src/daemon_host.rs`) call the single `spawn_background_loops` helper | Text search for the helper's definition and each call site — deliberately not a real parser |
 | `check-title-tooltip-guard.sh` | native `title=` DOM tooltips vs. component `title` props (visible headings) are not confused, and the remaining native `title=` only ever shrink toward `Tooltip` | Scan over `.tsx` for capitalised JSX tags carrying `title=`, checked against an explicit component-props allowlist; a third check counts native lowercase-element `title=` per file against a ratchet |
 | `check-spawn-window.sh` | every production spawn goes through `houston_core::spawn` (`CREATE_NO_WINDOW` on Windows) | Checks `clippy.toml` disallows raw `Command::new`; checks `spawn.rs` sets the flag; asserts it's **not** applied to the PTY's `portable_pty::CommandBuilder` |
+| `check-env-ratchet.sh` | daemon code reads the environment through `HostEnv`, never `std::env`; direct accesses per file only go down | `grep -c` of `std::env::{var,var_os,vars,vars_os,set_var,remove_var}`, `dirs::home_dir` and `home_dir::home_dir` in `core/houston-core/{src,tests}` against `scripts/env-ratchet.baseline` (`--update` after a migration); clippy `disallowed-methods` covers new code in modules without a blanket allow |
 | `check-wsl-bundle.sh` | the Windows installer bundles the Linux daemon for WSL distros | Checks `tauri.windows.conf.json`'s `bundle.resources`, then that `src-tauri/wsl/` holds only `houston-core`, `tr-helper` and `houston-supervisor`, each an x86-64 ELF; with nothing staged it passes unless `HOUSTON_WSL_BUNDLE_REQUIRED=1` |
 | `check-icon-imports.sh` | raw `lucide-react` imports live only in `components/icons.tsx` | `grep` over `ui/src` excluding tests and `icons.tsx`, checked against an allowlist |
 | `check-native-select.sh` | no native `<select>` in the renderer (its popup is an unstyled GTK window on Linux/WebKitGTK) | `grep` over `ui/src` excluding tests and `Select.tsx`, comments stripped first |
@@ -507,10 +535,10 @@ These need a release build and an idle machine; they are not part of
 
 ### `perf_smoke`
 
-`core/houston-core/tests/perf_smoke.rs`, `#[ignore]` by default:
+`core/houston-core/tests/it/perf_smoke.rs`, `#[ignore]` by default:
 
 ```
-cargo test --release --test perf_smoke -- --ignored --nocapture
+cargo nextest run --release -j 1 --run-ignored only --no-capture -E 'test(/^perf_smoke::/)'
 ```
 
 - **Throughput floor**: `MIN_MIB_PER_SEC = 5.0` — an ANSI-flood test spraying
@@ -554,15 +582,13 @@ through the relay; like `perf_smoke`, read it only from an idle machine.
 
 ### `idle_loops_wire`
 
-`core/houston-core/tests/idle_loops_wire.rs`, the detached daemon's idle
+`core/houston-core/tests/it/idle_loops_wire.rs`, the detached daemon's idle
 budget, `#[ignore]` by default. Each test reads a whole-process figure, and a
-daemon booted by an earlier test stays resident, so run each in its own process:
+daemon booted by an earlier test stays resident, so each must run in its own process,
+one at a time, which nextest with a single job does:
 
 ```
-for t in p3_idle_context_switches_per_minute p4_idle_rss_at_zero_sessions \
-         p4_idle_rss_with_twelve_saturated_emulators; do
-  cargo test --release --test idle_loops_wire -- --ignored --nocapture --exact "$t"
-done
+cargo nextest run --release -j 1 --run-ignored only --no-capture -E 'test(/^idle_loops_wire::/)'
 ```
 
 - **P3, idle scheduling**: ≤ 15 thread-summed context switches per minute with no

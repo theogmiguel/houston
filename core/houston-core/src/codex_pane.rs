@@ -36,6 +36,7 @@ pub fn run_shell(args: Vec<OsString>) -> Result<i32> {
     use std::os::windows::process::CommandExt;
     use std::time::Duration;
 
+    let env = crate::host_env::HostEnv::capture();
     if args.first().is_none_or(|arg| arg != "--") || args.len() < 2 {
         bail!("codex-shell requires -- followed by the Codex executable and arguments");
     }
@@ -64,9 +65,9 @@ pub fn run_shell(args: Vec<OsString>) -> Result<i32> {
                 cli.insert(0, "--no-daemon".into());
             }
         }
-        if let (Ok(endpoint), Ok(token)) = (
-            std::env::var(crate::mcp_launch::URL_ENV),
-            std::env::var(crate::mcp_launch::CODEX_TOKEN_ENV),
+        if let (Some(endpoint), Some(token)) = (
+            env.var(crate::mcp_launch::URL_ENV),
+            env.var(crate::mcp_launch::CODEX_TOKEN_ENV),
         ) {
             if !endpoint.is_empty() && !token.is_empty() {
                 let managed = crate::mcp_launch::launch_for(
@@ -380,9 +381,12 @@ mod linux {
         Ok((socket, drop_dir, resume))
     }
 
-    fn ownership() -> Result<(String, u32)> {
+    fn ownership(env: &crate::host_env::HostEnv) -> Result<(String, u32)> {
         let channel = crate::paths::channel()?.unwrap_or_else(|| "release".into());
-        let session = std::env::var("HOUSTON_SESSION")?.parse::<u32>()?;
+        let session = env
+            .var("HOUSTON_SESSION")
+            .context("HOUSTON_SESSION is not set (expected the pane's session id)")?
+            .parse::<u32>()?;
         if session == 0 {
             bail!("Codex helper requires a positive HOUSTON_SESSION");
         }
@@ -408,6 +412,7 @@ mod linux {
     }
 
     pub fn run(args: Vec<OsString>) -> Result<i32> {
+        let env = crate::host_env::HostEnv::capture();
         let (socket, drop_dir, resume) = helper_arguments(&args)?;
         if args.get(3).is_none_or(|arg| arg != "--") || args.len() < 5 {
             bail!("codex-exec requires -- followed by the original Codex executable and arguments");
@@ -416,7 +421,7 @@ mod linux {
             .to_str()
             .and_then(|executable| crate::cli_probe::probe(executable).version);
         let native = version.as_deref().is_some_and(supports_native);
-        let (channel, session) = ownership()?;
+        let (channel, session) = ownership(&env)?;
         let planned = if native {
             LaunchPlan::from_args(&args[5..]).and_then(|plan| {
                 if crate::session_isolation::current_owned_scope(&channel, session)
@@ -574,6 +579,7 @@ mod linux {
     }
 
     pub fn run_shell(args: Vec<OsString>) -> Result<i32> {
+        let env = crate::host_env::HostEnv::capture();
         if args.len() < 3 || args[1] != "--" {
             bail!("codex-shell requires a drop directory and -- followed by the real Codex executable");
         }
@@ -666,9 +672,9 @@ mod linux {
             .and_then(|argument| argument.to_str())
             .filter(|id| uuid::Uuid::parse_str(id).is_ok());
         let mut launch_args = cli.to_vec();
-        if let (Ok(endpoint), Ok(token)) = (
-            std::env::var(crate::mcp_launch::URL_ENV),
-            std::env::var(crate::mcp_launch::CODEX_TOKEN_ENV),
+        if let (Some(endpoint), Some(token)) = (
+            env.var(crate::mcp_launch::URL_ENV),
+            env.var(crate::mcp_launch::CODEX_TOKEN_ENV),
         ) {
             if !endpoint.is_empty() && !token.is_empty() {
                 let managed = crate::mcp_launch::launch_for(
@@ -690,12 +696,12 @@ mod linux {
             .to_str()
             .and_then(|executable| crate::cli_probe::probe(executable).version);
         if version.as_deref().is_some_and(supports_native) && LaunchPlan::from_args(cli).is_ok() {
-            let (channel, session) = ownership()?;
+            let (channel, session) = ownership(&env)?;
             if let Some(scope) = crate::session_isolation::current_owned_scope(&channel, session)
                 .map_err(anyhow::Error::msg)?
             {
                 // Moving this child into a sibling scope would escape the shell's committed receipt.
-                let committed = std::env::var("HOUSTON_COMMITTED_SCOPE").ok();
+                let committed = env.var("HOUSTON_COMMITTED_SCOPE");
                 eprintln!("houston-core: Codex shell launch uses lifecycle hooks only: inherited Houston scope {scope} (committed receipt matches: {}) cannot create an unrecorded sibling lifetime scope", committed.as_deref() == Some(scope.as_str()));
                 let mut command = crate::spawn::command(&args[2]);
                 if !cli
@@ -945,6 +951,7 @@ mod linux {
     }
 
     pub fn observe(args: Vec<OsString>) -> Result<i32> {
+        let env = crate::host_env::HostEnv::capture();
         let (socket, drop_dir, resume) = helper_arguments(&args)?;
         let owner = args
             .get(3)
@@ -957,7 +964,7 @@ mod linux {
             .and_then(|value| value.to_str())
             .and_then(|value| value.parse::<u64>().ok())
             .ok_or_else(|| anyhow!("Codex guardian requires its owning helper process identity"))?;
-        let (channel, session) = ownership()?;
+        let (channel, session) = ownership(&env)?;
         let unit = crate::session_isolation::current_owned_scope(&channel, session)
             .map_err(anyhow::Error::msg)?
             .ok_or_else(|| anyhow!("Codex guardian requires its inherited owned scope"))?;
