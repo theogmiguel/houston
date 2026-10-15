@@ -485,10 +485,9 @@ pub fn run_pass_with_io(
     )
 }
 
-// Recovery validates drops against this bound before reading them, and every
-// pass reads through the same bound: recovery must be able to replay any drop
-// the steady pass applies, so a larger file is not a payload the hook client
-// can have produced and must never be allocated whole.
+// Recovery and every steady pass read through this one bound, so recovery can
+// replay any drop the steady pass applies. No hook client produces a larger
+// file, so it is refused rather than allocated whole.
 const MAX_DROP_BYTES: u64 = 1024 * 1024;
 
 /// Stops at `MAX_DROP_BYTES + 1` so an oversized file is refused without ever
