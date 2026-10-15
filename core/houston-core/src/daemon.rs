@@ -1897,6 +1897,8 @@ const KEYMAP_OVERRIDES_MAX_BINDINGS: usize = 64;
 const KEYMAP_OVERRIDES_MAX_CODE_LEN: usize = 64;
 
 struct TitleJob {
+    /// Started by the first-turn trigger rather than by the user.
+    automatic: bool,
     revision: u64,
     prompt: String,
     directory: tempfile::TempDir,
