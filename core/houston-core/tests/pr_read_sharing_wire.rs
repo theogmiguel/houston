@@ -78,7 +78,7 @@ fn take_calls(bin: &Path, prefix: &str) -> usize {
     calls.lines().filter(|l| l.starts_with(prefix)).count()
 }
 
-fn pane(daemon: &houston_core::daemon::Daemon, workspace: &Path) -> u32 {
+fn pane(daemon: &std::sync::Arc<houston_core::daemon::Daemon>, workspace: &Path) -> u32 {
     daemon
         .create_session(CreateParams {
             agent: proto::AgentKind::Claude,
@@ -241,10 +241,20 @@ async fn watches_of_one_pr_share_a_read_and_a_rate_limit_pauses_them_until_the_r
     daemon.pr_watch_tick();
     daemon.task_pr_watch_tick();
     assert_eq!(take_calls(&bin, ""), 0, "no gh call while paused");
-    let reopened = houston_core::db::Db::open(&db_path).unwrap();
-    let watches = reopened.pr_watch_list(None).unwrap();
-    assert_eq!(watches.len(), 2, "a rate limit ends no watch");
-    assert!(watches.iter().all(|w| w.state.read_failures == 0));
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let mut stmt = conn.prepare("SELECT state_json FROM pr_watches").unwrap();
+    let states: Vec<serde_json::Value> = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(|json| serde_json::from_str(&json.unwrap()).unwrap())
+        .collect();
+    drop(stmt);
+    drop(conn);
+    assert_eq!(states.len(), 2, "a rate limit ends no watch");
+    assert!(
+        states.iter().all(|s| s["read_failures"] == 0),
+        "a pause is not a failed read: {states:?}"
+    );
     for pane in [first, second] {
         assert_eq!(
             daemon.inbox_rows_for_test(pane).len(),
