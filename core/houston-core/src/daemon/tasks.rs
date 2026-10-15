@@ -5543,7 +5543,7 @@ impl Daemon {
             now_unix_ms(),
         ) {
             crate::pull_requests::shared::Read::Done(result) => {
-                result.map_err(anyhow::Error::msg)?
+                (*result).map_err(anyhow::Error::msg)?
             }
             crate::pull_requests::shared::Read::Paused { until_ms } => anyhow::bail!(
                 "{}; watch PR #{number} after then",
@@ -5682,7 +5682,7 @@ impl Daemon {
                 Some(&row.link),
                 now_unix_ms(),
             ) {
-                crate::pull_requests::shared::Read::Done(result) => result,
+                crate::pull_requests::shared::Read::Done(result) => *result,
                 // A rate limit is not the PR's failure: the watch keeps its
                 // state, failure count included, until the reset.
                 crate::pull_requests::shared::Read::Paused { .. } => continue,

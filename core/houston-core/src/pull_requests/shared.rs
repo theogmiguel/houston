@@ -47,7 +47,7 @@ pub struct Tick {
 }
 
 pub enum Read {
-    Done(Outcome),
+    Done(Box<Outcome>),
     Paused { until_ms: i64 },
 }
 
@@ -160,7 +160,7 @@ impl SharedReads {
         reset: impl FnOnce() -> anyhow::Result<Option<i64>>,
     ) -> Read {
         if let Some(outcome) = tick.memo.get(&key) {
-            return Read::Done(outcome.clone());
+            return Read::Done(Box::new(outcome.clone()));
         }
         if let Some(until_ms) = self.paused_until(now_ms) {
             return Read::Paused { until_ms };
@@ -187,7 +187,7 @@ impl SharedReads {
             Err(_) => {}
         }
         tick.memo.insert(key, outcome.clone());
-        Read::Done(outcome)
+        Read::Done(Box::new(outcome))
     }
 
     fn record(&self, link: &PullRequestLink, detail: &PrDetail, dir: &Path, now_ms: i64) {
@@ -271,7 +271,7 @@ mod tests {
             let k = key("Owner/Repo", dir, 12);
             assert!(matches!(
                 shared.tick_read_with(&mut tick, k, dir, NOW, read, no_reset),
-                Read::Done(Ok(_))
+                Read::Done(o) if o.is_ok()
             ));
         }
         assert_eq!(reads.get(), 1, "three watches of one PR share one read");
@@ -309,7 +309,7 @@ mod tests {
             let k = key("owner/repo", dir, 12);
             assert!(matches!(
                 shared.tick_read_with(&mut tick, k, dir, NOW, read, no_reset),
-                Read::Done(Err(e)) if e.contains("404")
+                Read::Done(o) if o.as_ref().as_ref().is_err_and(|e| e.contains("404"))
             ));
         }
         assert_eq!(reads.get(), 1);
@@ -349,7 +349,7 @@ mod tests {
         let k = key("owner/repo", dir, 12);
         assert!(matches!(
             shared.tick_read_with(&mut resumed, k, dir, reset_at, read, no_reset),
-            Read::Done(Ok(_))
+            Read::Done(o) if o.is_ok()
         ));
         assert_eq!(reads.get(), 1);
         assert_eq!(shared.paused_until(reset_at), None);
@@ -395,7 +395,7 @@ mod tests {
             || Ok((link(PullRequestState::Open), read)),
             || Ok(Some(NOW + 60_000)),
         );
-        assert!(matches!(outcome, Read::Done(Ok(_))));
+        assert!(matches!(outcome, Read::Done(o) if o.is_ok()));
         assert_eq!(shared.paused_until(NOW), Some(NOW + 60_000));
     }
 
