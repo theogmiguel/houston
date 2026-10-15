@@ -402,6 +402,7 @@ function useSessionLifecycle(client: HoustonClient, sessionId: number): {
   memoryResult: SessionMemoryResult | null
   setMemoryResult: React.Dispatch<React.SetStateAction<SessionMemoryResult | null>>
   lifecycleError: string | null
+  dismissLifecycleError: () => void
 } {
   const [memoryResult, setMemoryResult] = useState<SessionMemoryResult | null>(null)
   const [lifecycleError, setLifecycleError] = useState<string | null>(null)
@@ -423,19 +424,21 @@ function useSessionLifecycle(client: HoustonClient, sessionId: number): {
     return () => { offMemory(); offError() }
   }, [client, sessionId])
 
-  return { memoryResult, setMemoryResult, lifecycleError }
+  const dismissLifecycleError = useCallback(() => setLifecycleError(null), [])
+  return { memoryResult, setMemoryResult, lifecycleError, dismissLifecycleError }
 }
 
-function SessionLifecycleNotices({ info, lifecycleError, memoryResult }: {
+function SessionLifecycleNotices({ info, lifecycleError, dismissLifecycleError, memoryResult }: {
   info: SessionInfo
   lifecycleError: string | null
+  dismissLifecycleError: () => void
   memoryResult: SessionMemoryResult | null
 }): React.JSX.Element {
   return <>
     {(info.sleep_notice || info.restore_deferred) && <PaneNotice data-testid="session-recovery-notice">
       {info.sleep_notice ?? `Session restore deferred: ${restoreReasonLabel(info.restore_deferred)}`}
     </PaneNotice>}
-    {lifecycleError && <Notice tone="danger" inset="compact-inline" className="flex-none">{lifecycleError}</Notice>}
+    {lifecycleError && <Notice tone="danger" inset="compact-inline" className="flex-none" action={{ label: 'Dismiss', onClick: dismissLifecycleError }}>{lifecycleError}</Notice>}
     {memoryResult && <div role="status"><Notice tone="info" inset="compact-inline" className="flex-none">
       {memoryResult.bytes == null ? memoryResult.reason ?? 'Memory measurement is unavailable.' : `Process memory (PSS): ${formatMemory(memoryResult.bytes)}`}
       {memoryResult.measuredAt != null && <span> · measured {new Date(memoryResult.measuredAt).toLocaleTimeString()}</span>}
@@ -560,7 +563,7 @@ function SessionPaneImpl({
   const [confirmRestart, setConfirmRestart] = useState<RestartMode | null>(null)
   const termActions = useRef<TermActions | null>(null)
   const [menuCwd, setMenuCwd] = useState<string | null>(null)
-  const { memoryResult, setMemoryResult, lifecycleError } = useSessionLifecycle(client, infoProp.id)
+  const { memoryResult, setMemoryResult, lifecycleError, dismissLifecycleError } = useSessionLifecycle(client, infoProp.id)
 
   const lifecycleInfo = info
   const sleeping = info.state === 'sleeping'
@@ -643,7 +646,7 @@ function SessionPaneImpl({
       </PaneHeader>
       <ResumeNotice notice={info.resume_notice} />
       <ChildInputBanner info={info} />
-      <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} memoryResult={memoryResult} />
+      <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} dismissLifecycleError={dismissLifecycleError} memoryResult={memoryResult} />
       <RecoveryCheckControls info={lifecycleInfo} connected={connected} onRecheck={() => client.send({ type: 'session_recovery_check', session: info.id })} onAcknowledge={() => client.send({ type: 'session_recovery_check', session: info.id, acknowledge_uncontained: true })} />
       {sleeping ? <SleepingSessionPlaceholder info={lifecycleInfo} onWake={() => client.send({ type: 'session_wake', session: info.id })} onFresh={() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)} /> : <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />}
       <GenerateTitleConfirm open={confirmGenerateTitle} info={info} onCancel={() => setConfirmGenerateTitle(false)} onConfirm={() => { setConfirmGenerateTitle(false); client.send({ type: 'session_title_generate', session: info.id }) }} />
@@ -668,7 +671,7 @@ function SessionPaneImpl({
           onMouseDown={(e) => e.stopPropagation()}
         >
           <PaneContextMenuHead heading={info.title} detail={collapseHome(cwd)} />
-          {lifecycleError && <Notice tone="danger">{lifecycleError}</Notice>}
+          {lifecycleError && <Notice tone="danger" action={{ label: 'Dismiss', onClick: dismissLifecycleError }}>{lifecycleError}</Notice>}
           <SessionLifecycleMenuItems info={info} live={live} sleeping={sleeping} shellIntegration={shellIntegration} client={client} menuItem={menuItem} setMemoryResult={setMemoryResult} />
           <PaneContextMenuSeparator />
           {children.length > 0 && <CtxRow glyph={GLYPH_FOR_VERB['overview']} label="Overview" onClick={menuItem(() => openSideOverview(info.id))} />}

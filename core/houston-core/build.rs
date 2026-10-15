@@ -1,5 +1,8 @@
 #![allow(clippy::disallowed_methods)]
 
+#[path = "build_git.rs"]
+mod build_git;
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,8 +10,9 @@ use std::process::Command;
 
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(houston_vt)");
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
-    println!("cargo:rerun-if-changed=../../.git/refs");
+    for path in build_git::rerun_paths(Path::new(".")) {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
 
     if let Ok(output) = Command::new("git")
         .args(["rev-parse", "--short=7", "HEAD"])

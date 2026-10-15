@@ -1,9 +1,14 @@
+/// Resolves against the process environment: for entry points that own it.
 pub fn resolve(command: &str) -> Option<std::path::PathBuf> {
+    resolve_in(&crate::host_env::HostEnv::capture(), command)
+}
+
+pub fn resolve_in(env: &crate::host_env::HostEnv, command: &str) -> Option<std::path::PathBuf> {
     if command.contains('/') || command.contains('\\') {
         return Some(std::path::PathBuf::from(command));
     }
-    let path = std::env::var_os("PATH")?;
-    let mut candidates: Vec<String> = candidate_extensions()
+    let path = env.var_os("PATH")?;
+    let mut candidates: Vec<String> = candidate_extensions(env)
         .into_iter()
         .map(|ext| format!("{command}{ext}"))
         .collect();
@@ -14,7 +19,7 @@ pub fn resolve(command: &str) -> Option<std::path::PathBuf> {
         let _ = &candidates;
         candidates.push(command.to_string());
     }
-    for dir in std::env::split_paths(&path) {
+    for dir in std::env::split_paths(path) {
         if dir.as_os_str().is_empty() {
             continue;
         }
@@ -28,11 +33,13 @@ pub fn resolve(command: &str) -> Option<std::path::PathBuf> {
     None
 }
 
-fn candidate_extensions() -> Vec<String> {
+fn candidate_extensions(env: &crate::host_env::HostEnv) -> Vec<String> {
+    #[cfg(not(windows))]
+    let _ = env;
     #[cfg(windows)]
     {
         const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
-        let raw = std::env::var("PATHEXT").unwrap_or_default();
+        let raw = env.var("PATHEXT").unwrap_or_default();
         let trimmed = raw.trim();
         let source = if trimmed.is_empty() {
             DEFAULT_PATHEXT
@@ -149,49 +156,16 @@ pub fn agent_helper_exe(exe: &std::path::Path) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsString;
-    use std::sync::Mutex;
 
-    static SERIAL: Mutex<()> = Mutex::new(());
-
-    struct EnvGuard {
-        path: Option<OsString>,
-        pathext: Option<OsString>,
-    }
-
-    impl EnvGuard {
-        fn take() -> EnvGuard {
-            EnvGuard {
-                path: std::env::var_os("PATH"),
-                pathext: std::env::var_os("PATHEXT"),
-            }
+    /// PATH is `dir` followed by the process's own entries.
+    #[allow(dead_code)]
+    fn env_with_path(dir: &std::path::Path, pathext: Option<&str>) -> crate::host_env::HostEnv {
+        let mut parts = vec![dir.to_path_buf()];
+        if let Some(old) = crate::host_env::HostEnv::capture().var_os("PATH") {
+            parts.extend(std::env::split_paths(old));
         }
-
-        fn prepend_path(dir: &std::path::Path) -> EnvGuard {
-            let guard = EnvGuard::take();
-            let mut parts = vec![dir.to_path_buf()];
-            if let Some(old) = std::env::var_os("PATH") {
-                parts.extend(std::env::split_paths(&old));
-            }
-            std::env::set_var(
-                "PATH",
-                std::env::join_paths(parts).expect("tempdir paths never contain separators"),
-            );
-            guard
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            match self.path.take() {
-                Some(p) => std::env::set_var("PATH", p),
-                None => std::env::remove_var("PATH"),
-            }
-            match self.pathext.take() {
-                Some(v) => std::env::set_var("PATHEXT", v),
-                None => std::env::remove_var("PATHEXT"),
-            }
-        }
+        let path = std::env::join_paths(parts).expect("tempdir paths never contain separators");
+        crate::host_env::HostEnv::from_pairs([("PATH", path)]).with("PATHEXT", pathext)
     }
 
     #[cfg_attr(not(windows), allow(dead_code))]
@@ -228,74 +202,63 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn pathext_order_decides_between_cmd_and_exe() {
-        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("claude.cmd"), b"").unwrap();
         std::fs::write(dir.path().join("claude.exe"), b"").unwrap();
-        let _env = EnvGuard::prepend_path(dir.path());
+        let env = env_with_path(dir.path(), Some(".COM;.EXE;.BAT;.CMD"));
+        assert_hit(dir.path(), "claude.exe", resolve_in(&env, "claude"));
 
-        std::env::set_var("PATHEXT", ".COM;.EXE;.BAT;.CMD");
-        assert_hit(dir.path(), "claude.exe", resolve("claude"));
-
-        std::env::set_var("PATHEXT", ".CMD;.EXE");
-        assert_hit(dir.path(), "claude.cmd", resolve("claude"));
+        let env = env_with_path(dir.path(), Some(".CMD;.EXE"));
+        assert_hit(dir.path(), "claude.cmd", resolve_in(&env, "claude"));
     }
 
     #[test]
     #[cfg(windows)]
     fn unset_pathext_falls_back_to_default_and_extensions_beat_bare_name() {
-        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("claude.cmd"), b"").unwrap();
         std::fs::write(dir.path().join("claude.exe"), b"").unwrap();
         std::fs::write(dir.path().join("tool"), b"").unwrap();
         std::fs::write(dir.path().join("tool.EXE"), b"").unwrap();
-        let _env = EnvGuard::prepend_path(dir.path());
-        std::env::remove_var("PATHEXT");
+        let env = env_with_path(dir.path(), None);
 
-        assert_hit(dir.path(), "claude.exe", resolve("claude"));
-        assert_hit(dir.path(), "tool.EXE", resolve("tool"));
+        assert_hit(dir.path(), "claude.exe", resolve_in(&env, "claude"));
+        assert_hit(dir.path(), "tool.EXE", resolve_in(&env, "tool"));
     }
 
     #[test]
     #[cfg(windows)]
     fn bare_name_still_wins_when_no_extension_sibling_exists() {
-        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("only"), b"").unwrap();
-        let _env = EnvGuard::prepend_path(dir.path());
-        std::env::remove_var("PATHEXT");
+        let env = env_with_path(dir.path(), None);
 
-        assert_hit(dir.path(), "only", resolve("only"));
+        assert_hit(dir.path(), "only", resolve_in(&env, "only"));
     }
 
     #[test]
     #[cfg(unix)]
     fn bare_tool_resolves_on_unix_without_any_extension_logic() {
-        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("tool"), b"").unwrap();
         std::fs::create_dir(dir.path().join("dirmatch")).unwrap();
-        let _env = EnvGuard::prepend_path(dir.path());
+        let env = env_with_path(dir.path(), None);
 
-        assert_eq!(resolve("tool"), Some(dir.path().join("tool")));
-        assert_eq!(resolve("dirmatch"), None);
+        assert_eq!(resolve_in(&env, "tool"), Some(dir.path().join("tool")));
+        assert_eq!(resolve_in(&env, "dirmatch"), None);
     }
 
     #[test]
     fn a_name_found_nowhere_returns_none() {
-        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::prepend_path(dir.path());
-        assert_eq!(resolve("tr-exe-resolve-missing-probe"), None);
+        let env = env_with_path(dir.path(), None);
+        assert_eq!(resolve_in(&env, "tr-exe-resolve-missing-probe"), None);
     }
 
     #[test]
     fn no_path_means_none() {
-        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        let _env = EnvGuard::take();
-        std::env::remove_var("PATH");
-        assert_eq!(resolve("anything-at-all"), None);
+        let env = crate::host_env::HostEnv::from_pairs::<&str, &str>([]);
+        assert_eq!(resolve_in(&env, "anything-at-all"), None);
     }
 
     #[test]
