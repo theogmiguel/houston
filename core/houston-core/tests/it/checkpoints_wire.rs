@@ -215,7 +215,7 @@ fn a_diff_reports_the_change_between_two_checkpoints() {
 
 #[test]
 fn a_non_git_directory_is_refused_by_name() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = houston_core::fixture_dirs::tempdir_outside_git();
     let err = checkpoints::capture(tmp.path(), "owner_1", "before")
         .unwrap_err()
         .to_string();

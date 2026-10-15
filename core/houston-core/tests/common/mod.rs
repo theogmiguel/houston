@@ -160,7 +160,7 @@ pub async fn start_daemon_with_handle_in(
     tempfile::TempDir,
     std::sync::Arc<Daemon>,
 ) {
-    let state_dir = tempfile::tempdir().unwrap();
+    let state_dir = houston_core::fixture_dirs::tempdir_outside_git();
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
@@ -193,7 +193,7 @@ pub async fn start_daemon_without_mail_loop_in(
     tempfile::TempDir,
     std::sync::Arc<Daemon>,
 ) {
-    let state_dir = tempfile::tempdir().unwrap();
+    let state_dir = houston_core::fixture_dirs::tempdir_outside_git();
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
