@@ -200,6 +200,17 @@ supplied. Existing branches and occupied paths are refused. If creation or provi
 preparation fails, Houston rolls back the fresh checkout and branch. If Git checkout fails
 after a hook has added commits, Houston preserves them and reports that rollback needs attention.
 
+A new worktree is a fresh checkout, so files Git ignores, such as `.env` or local settings,
+are missing from it. To carry them over, list them in a `.worktreeinclude` file at the
+repository root, using `.gitignore` syntax. When Houston creates a worktree (for
+`pane_spawn`, a task, or the Changes pane), it copies each file that matches the list and
+is ignored by Git in your checkout. Tracked files are never copied, and a file that already
+exists in the new worktree is kept. Symlinks and paths that resolve outside the checkout are
+refused. A copy stops at 256 files or 32 MiB. Anything not copied is named in a
+`worktree_include` warning in the `pane_spawn` result, in the task brief, or in the Changes
+pane's message; the worktree is created either way. Houston runs no command from the
+repository while doing this.
+
 Children are temporary by default. After a durable completed result, Houston ends the
 process, but keeps the session and transcript under Settled until the parent closes the
 pane or retention expires. After receiving a completed result, preserve any needed output

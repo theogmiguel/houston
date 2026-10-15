@@ -24,6 +24,19 @@ pane drops its record, and a new worktree at a recorded path replaces the stale 
 a slug is reusable once its worktree and branch are gone. Houston does not commit changes
 on an agent's behalf.
 
+Every path that records a `managed_worktrees` row calls `worktree_include::carry_over` once
+the tree exists. Git decides what is copied: `ls-files --others --ignored` with
+`.worktreeinclude` as the exclude file, narrowed by `check-ignore`, so only untracked files
+the checkout ignores qualify and the patterns mean what they mean in `.gitignore`. No
+repository-defined command runs and no matcher is reimplemented. Copies never overwrite,
+never follow a symlink in either tree, and are bounded by `MAX_FILES` and `MAX_BYTES`;
+logs name counts and relative paths, never contents. A copy failure is a warning, never a
+failed creation. `pane_spawn` returns it as `worktree_include`; a task appends it to the
+brief when the brief stays within its limit; the Changes pane appends it to its reply
+message. Cleanup does not count an ignored file that is byte-identical to the same path in
+the workspace checkout, so unchanged copies do not keep a worktree; the comparison shares
+the same file and byte bounds, and a file past them counts as local work.
+
 Creating a worktree does not request a handoff. Normal delegation uses child panes
 with `worktree`; independent handoff is reserved for an explicit operator request to
 continue in a new pane, passing context via `state_doc`. A contributor must not edit

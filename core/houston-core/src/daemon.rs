@@ -1721,6 +1721,8 @@ pub struct Daemon {
     closing_sessions: Mutex<HashSet<u32>>,
     spawn_reservations: Mutex<HashMap<u32, (u32, Option<String>)>>,
     worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
+    /// `.worktreeinclude` warnings of a spawn's new worktree, until its result takes them.
+    spawn_include_warnings: Mutex<HashMap<u32, Vec<String>>>,
     pending_cleanup_cancellations: Mutex<HashSet<u32>>,
     spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     shell_child_restore_observer_for_test: Mutex<Option<SpawnObserver>>,
@@ -3427,6 +3429,7 @@ impl Daemon {
             closing_sessions: Mutex::new(HashSet::new()),
             spawn_reservations: Mutex::new(HashMap::new()),
             worktree_branch_reservations: Mutex::new(HashMap::new()),
+            spawn_include_warnings: Mutex::new(HashMap::new()),
             pending_cleanup_cancellations: Mutex::new(HashSet::new()),
             spawn_observer_for_test: Mutex::new(None),
             shell_child_restore_observer_for_test: Mutex::new(None),
@@ -5634,13 +5637,13 @@ impl Daemon {
 
     /// A panel-created worktree under the daemon's own state dir, beside task
     /// worktrees: branch `houston/<slug>` off `base`, so it cannot collide with
-    /// a task's directory.
+    /// a task's directory. Also returns what `.worktreeinclude` could not copy.
     pub fn git_worktree_create(
         &self,
         repo: &std::path::Path,
         name: &str,
         base: Option<&str>,
-    ) -> anyhow::Result<crate::worktrees::Worktree> {
+    ) -> anyhow::Result<(crate::worktrees::Worktree, Vec<String>)> {
         let project = repo
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
@@ -5667,7 +5670,8 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording worktree {}: {e:#}", path.display());
         }
-        Ok(wt)
+        let include = crate::worktree_include::carry_over(repo, &path);
+        Ok((wt, include.warnings))
     }
 
     /// Drops the row with the tree, so the path and its slug are free again.
@@ -19498,7 +19502,17 @@ impl Daemon {
             } else {
                 self.spawn_checkout_warning(session.id)
             };
-            let warnings = self.spawn_warnings(&session, isolated);
+            let mut warnings = self.spawn_warnings(&session, isolated);
+            let include = self
+                .spawn_include_warnings
+                .lock()
+                .expect("spawn include warnings lock")
+                .remove(&session.id)
+                .unwrap_or_default();
+            warnings.extend(include.into_iter().map(|message| proto::PaneSpawnWarning {
+                code: "worktree_include".into(),
+                message,
+            }));
             Ok(orchestrate::SpawnOutcome {
                 session,
                 warning,
@@ -20065,6 +20079,15 @@ impl Daemon {
         if let Some(text) = first_prompt {
             self.deliver_first_prompt(sid, text, Some(caller), true);
         }
+        if let Some(created) = created
+            .as_ref()
+            .filter(|c| created_here && !c.include_warnings.is_empty())
+        {
+            self.spawn_include_warnings
+                .lock()
+                .expect("spawn include warnings lock")
+                .insert(sid, created.include_warnings.clone());
+        }
         if handoff {
             if let Err(e) = self.db.session_mark_handed_off(caller, now_ms()) {
                 tracing::warn!("recording that pane {caller} handed off to {sid}: {e:#}");
@@ -20073,6 +20096,10 @@ impl Daemon {
         }
         if let Err(parent_error) = self.get(caller) {
             drop(_cleanup_guard);
+            self.spawn_include_warnings
+                .lock()
+                .expect("spawn include warnings lock")
+                .remove(&sid);
             let rollback = self.rollback_spawned_child(sid);
             if created_here && rollback.is_ok() {
                 if let Some(c) = &created {
@@ -20203,10 +20230,11 @@ impl Daemon {
         crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
             .context("spawn refused")?;
         let path = dest.canonicalize().unwrap_or(dest);
-        let created = CreatedWorktree {
+        let mut created = CreatedWorktree {
             repo: project_dir.to_path_buf(),
             path,
             branch,
+            include_warnings: Vec::new(),
         };
         let row = crate::db::ManagedWorktreeRow {
             path: created.path.display().to_string(),
@@ -20225,6 +20253,8 @@ impl Daemon {
                 .context("spawn refused")
                 .context(orchestrate::MutationMayHaveActed);
         }
+        created.include_warnings =
+            crate::worktree_include::carry_over(project_dir, &created.path).warnings;
         Ok(created)
     }
 
@@ -24004,6 +24034,8 @@ pub(crate) struct CreatedWorktree {
     pub(crate) repo: PathBuf,
     pub(crate) path: PathBuf,
     pub(crate) branch: String,
+    /// What `.worktreeinclude` could not carry over when this call created the tree.
+    pub(crate) include_warnings: Vec<String>,
 }
 
 /// Where a spawn's worktree comes from: `Create` asks git for the slug/branch

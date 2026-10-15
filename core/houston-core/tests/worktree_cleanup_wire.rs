@@ -433,6 +433,34 @@ async fn clean_now_removes_a_merged_clean_tree_with_its_branch() {
 }
 
 #[tokio::test]
+async fn an_unchanged_worktreeinclude_copy_does_not_keep_a_merged_tree() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    r.set_cleanup(false, 1);
+    let copied = r.tree(&ws, "copied", true);
+    let edited = r.tree(&ws, "edited", true);
+    merged("copied", &copied, 2);
+    merged("edited", &edited, 2);
+    // `info/exclude` is shared by every worktree of the repository.
+    let exclude = git(&ws.dir, &["rev-parse", "--git-path", "info/exclude"]);
+    std::fs::write(ws.dir.join(exclude), ".env\n").unwrap();
+    std::fs::write(ws.dir.join(".env"), "TOKEN=1\n").unwrap();
+    std::fs::write(copied.join(".env"), "TOKEN=1\n").unwrap();
+    std::fs::write(edited.join(".env"), "TOKEN=2\n").unwrap();
+
+    let (entries, removed) = run(&r, &ws.dir).await;
+    assert_eq!(removed.len(), 1, "{removed:?}; {entries:?}");
+    assert_eq!(removed[0].path, copied.display().to_string());
+    assert!(!copied.exists());
+    assert_eq!(
+        keep_of(&entries, &edited),
+        Some(proto::WorktreeKeep::IgnoredFiles { files: 1 })
+    );
+    assert!(edited.exists());
+}
+
+#[tokio::test]
 async fn a_tree_behind_its_pr_head_is_removed() {
     let _guard = SERIAL.lock().await;
     let r = rig().await;

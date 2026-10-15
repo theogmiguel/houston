@@ -38,6 +38,8 @@ struct CleanupWorkspace {
     key: String,
     dir: PathBuf,
     common_dir: Option<String>,
+    /// The checkout `.worktreeinclude` copies come from, for the unchanged-copy rule.
+    toplevel: Option<PathBuf>,
 }
 
 /// Which of the trees nothing keeps a pass removes.
@@ -159,7 +161,7 @@ impl Daemon {
             .ok_or_else(|| anyhow!("{path} is not a managed worktree in {dir}"))?;
         let tree = PathBuf::from(&row.path);
         if !tree.exists()
-            || wc::idle_days(&tree, now_ms() as i64)
+            || wc::idle_days(&tree, ws.toplevel.as_deref(), now_ms() as i64)
                 .is_none_or(|idle| idle < self.worktree_idle_removal_days().div_ceil(2))
         {
             bail!("{path} is not stale (expected a clean worktree with all commits on a remote and no live session, idle for at least {} days)", self.worktree_idle_removal_days().div_ceil(2));
@@ -230,8 +232,10 @@ impl Daemon {
             .into_iter()
             .map(|w| {
                 let dir = PathBuf::from(&w.path);
+                let facts = crate::git::checkout_facts(&dir);
                 CleanupWorkspace {
-                    common_dir: crate::git::checkout_facts(&dir).common_dir,
+                    common_dir: facts.common_dir,
+                    toplevel: facts.toplevel.filter(|t| !t.is_empty()).map(PathBuf::from),
                     key: w.path,
                     dir,
                 }
@@ -345,7 +349,7 @@ impl Daemon {
             let idle_days = keep
                 .as_ref()
                 .is_some_and(idle_may_apply)
-                .then(|| wc::idle_days(&path, now))
+                .then(|| wc::idle_days(&path, ws.toplevel.as_deref(), now))
                 .flatten()
                 .filter(|_| !live.iter().any(|(_, cwd)| cwd.starts_with(&path)));
             if let Some(idle_days) = idle_days {
@@ -579,7 +583,7 @@ fn keep_reason(
     if facts.state != "MERGED" {
         return (pr, Some(WorktreeKeep::NotMerged { state: facts.state }));
     }
-    if let Some(keep) = local_work_keep(row, path) {
+    if let Some(keep) = local_work_keep(ws, row, path) {
         return (pr, Some(keep));
     }
     let head_here = wc::has_object(path, &facts.head_oid)
@@ -642,7 +646,7 @@ fn integrated_keep(
     if base == row.branch || default.as_deref() == Some(row.branch.as_str()) {
         return Some(WorktreeKeep::NoPr);
     }
-    if let Some(keep) = local_work_keep(row, path) {
+    if let Some(keep) = local_work_keep(ws, row, path) {
         return Some(keep);
     }
     let Some(mut pending) = wc::cherry_unintegrated(&ws.dir, &base, &row.branch) else {
@@ -671,7 +675,11 @@ fn integrated_keep(
 }
 
 /// Removing the tree must not lose anything git does not already hold elsewhere.
-fn local_work_keep(row: &ManagedWorktreeRow, path: &Path) -> Option<WorktreeKeep> {
+fn local_work_keep(
+    ws: &CleanupWorkspace,
+    row: &ManagedWorktreeRow,
+    path: &Path,
+) -> Option<WorktreeKeep> {
     match wc::dirty_files(path) {
         Some(0) => {}
         Some(files) => return Some(WorktreeKeep::Dirty { files }),
@@ -681,7 +689,7 @@ fn local_work_keep(row: &ManagedWorktreeRow, path: &Path) -> Option<WorktreeKeep
             })
         }
     }
-    match wc::ignored_files(path) {
+    match wc::ignored_files(path, ws.toplevel.as_deref()) {
         Some(0) => None,
         Some(files) => Some(WorktreeKeep::IgnoredFiles { files }),
         None => Some(WorktreeKeep::RemoveFailed {

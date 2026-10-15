@@ -85,6 +85,7 @@ pub mod usage;
 pub mod voice;
 pub mod vt;
 pub mod worktree_cleanup;
+pub mod worktree_include;
 pub mod worktrees;
 pub mod wsl_ensure;
 pub mod wsl_proxy;

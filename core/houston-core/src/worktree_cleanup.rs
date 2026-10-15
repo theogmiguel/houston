@@ -60,27 +60,36 @@ pub fn dirty_files(tree: &Path) -> Option<u32> {
 
 /// Loose ignored files (`.env`, local settings) that `git worktree remove` would delete.
 /// A wholly ignored directory is listed once with a trailing `/` and is taken as build
-/// output (`target/`, `node_modules/`), so it is not counted.
-pub fn ignored_files(tree: &Path) -> Option<u32> {
+/// output (`target/`, `node_modules/`), so it is not counted. Nor is a file byte for byte
+/// the one at the same path in the checkout `source`, such as an unchanged
+/// `.worktreeinclude` copy: removing it loses nothing.
+pub fn ignored_files(tree: &Path, source: Option<&Path>) -> Option<u32> {
     let out = git(
         tree,
         &[
             "status",
             "--porcelain",
+            "-z",
             "--ignored=traditional",
             "--untracked-files=normal",
         ],
     )?;
+    let mut budget = crate::worktree_include::CompareBudget::default();
     Some(
-        out.lines()
+        out.split('\0')
             .filter_map(|l| l.strip_prefix("!! "))
-            .filter(|p| !p.trim_end_matches('"').ends_with('/'))
+            .filter(|p| !p.ends_with('/'))
+            .filter(|p| {
+                !source.is_some_and(|source| {
+                    crate::worktree_include::unchanged_copy(source, tree, p, &mut budget)
+                })
+            })
             .count() as u32,
     )
 }
 
-pub fn idle_days(tree: &Path, now_ms: i64) -> Option<u32> {
-    if dirty_files(tree)? != 0 || ignored_files(tree)? != 0 {
+pub fn idle_days(tree: &Path, source: Option<&Path>, now_ms: i64) -> Option<u32> {
+    if dirty_files(tree)? != 0 || ignored_files(tree, source)? != 0 {
         return None;
     }
     let unpushed = git(tree, &["rev-list", "--count", "HEAD", "--not", "--remotes"])?;
