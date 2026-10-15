@@ -339,6 +339,65 @@ pub fn pr_detail_read(dir: &Path, number: Option<u32>) -> PrRead {
     }
 }
 
+/// Whether gh's error text reports a GitHub rate limit: the primary hourly
+/// budget ("API rate limit exceeded", "already exceeded"), a secondary limit, or
+/// an HTTP 429. gh prints none of the response headers, so the reset is not here.
+pub fn is_rate_limited(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("rate limit") || lower.contains("http 429")
+}
+
+/// The budgets a pull request read spends: `gh pr view` and the enrichment use
+/// GraphQL, `gh api repos/...` uses the REST core budget.
+const RATE_LIMIT_RESOURCES: [&str; 2] = ["graphql", "core"];
+
+/// The latest future reset, in Unix ms, among the exhausted read budgets of a
+/// `gh api rate_limit` payload. `Ok(None)` means no read budget is exhausted,
+/// which is what a secondary limit looks like.
+pub fn rate_limit_reset_ms(json: &str, now_ms: i64) -> Result<Option<i64>> {
+    let value: serde_json::Value = serde_json::from_str(json).with_context(|| {
+        let head: String = json.chars().take(200).collect();
+        format!("gh api rate_limit printed no JSON; first 200 chars: {head:?}")
+    })?;
+    let Some(resources) = value.get("resources").and_then(|r| r.as_object()) else {
+        let head: String = json.chars().take(200).collect();
+        bail!(
+            "gh api rate_limit printed {head:?}; expected {{\"resources\": {{\"graphql\": {{\"remaining\": N, \"reset\": EPOCH}}, ...}}}}"
+        );
+    };
+    let mut latest = None;
+    for name in RATE_LIMIT_RESOURCES {
+        let Some(budget) = resources.get(name) else {
+            continue;
+        };
+        let (Some(remaining), Some(reset)) = (
+            budget.get("remaining").and_then(|v| v.as_i64()),
+            budget.get("reset").and_then(|v| v.as_i64()),
+        ) else {
+            bail!(
+                "gh api rate_limit reported {name} as {budget}; expected integer `remaining` and `reset` (Unix seconds)"
+            );
+        };
+        let reset_ms = reset.saturating_mul(1_000);
+        if remaining <= 0 && reset_ms > now_ms {
+            latest = latest.max(Some(reset_ms));
+        }
+    }
+    Ok(latest)
+}
+
+/// One `gh api rate_limit`, which GitHub does not count against any budget.
+pub fn rate_limit_reset(dir: &Path, now_ms: i64) -> Result<Option<i64>> {
+    let out = run(dir, &["api", "rate_limit"])?;
+    if !out.ok {
+        bail!(
+            "gh api rate_limit failed: {}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| format!("exit {:?}", out.code))
+        );
+    }
+    rate_limit_reset_ms(&out.stdout, now_ms)
+}
+
 pub struct PrMergeOutcome {
     pub ok: bool,
     pub message: Option<String>,
@@ -1743,6 +1802,52 @@ mod tests {
         assert!(parse_pr("").is_none());
         assert!(parse_pr("not json").is_none());
         assert!(parse_pr(r#"{"url":"u"}"#).is_none(), "a PR needs a number");
+    }
+
+    #[test]
+    fn rate_limit_texts_from_gh_are_recognised_and_other_failures_are_not() {
+        for text in [
+            "GraphQL: API rate limit exceeded for user ID 1234.",
+            "GraphQL: API rate limit already exceeded for user ID 1234.",
+            "HTTP 403: API rate limit exceeded for user ID 1234. (https://api.github.com/graphql)",
+            "HTTP 403: You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+            "HTTP 429: Too Many Requests (https://api.github.com/repos/o/r/pulls/7)",
+        ] {
+            assert!(is_rate_limited(text), "{text}");
+        }
+        for text in [
+            "HTTP 403: Resource not accessible by integration",
+            "GraphQL: Could not resolve to a PullRequest with the number of 7.",
+            "no pull requests found for branch \"feature\"",
+        ] {
+            assert!(!is_rate_limited(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_rate_limit_reset_is_the_latest_exhausted_read_budget() {
+        let now_ms = 1_000_000;
+        let json = r#"{"resources":{
+          "core":{"limit":5000,"remaining":0,"reset":1300},
+          "graphql":{"limit":5000,"remaining":0,"reset":1600},
+          "search":{"limit":30,"remaining":0,"reset":9999}
+        }}"#;
+        assert_eq!(rate_limit_reset_ms(json, now_ms).unwrap(), Some(1_600_000));
+        let spare = r#"{"resources":{"core":{"remaining":10,"reset":1300},"graphql":{"remaining":0,"reset":900}}}"#;
+        assert_eq!(
+            rate_limit_reset_ms(spare, now_ms).unwrap(),
+            None,
+            "a budget with quota left or a reset already past pauses nothing"
+        );
+        let error = rate_limit_reset_ms(r#"{"rate":{}}"#, now_ms).unwrap_err();
+        assert!(
+            error.to_string().contains("expected {\"resources\""),
+            "{error}"
+        );
+        let error = rate_limit_reset_ms(r#"{"resources":{"graphql":{"remaining":"0"}}}"#, now_ms)
+            .unwrap_err();
+        assert!(error.to_string().contains("integer `remaining`"), "{error}");
+        assert!(rate_limit_reset_ms("<html>", now_ms).is_err());
     }
 
     #[test]

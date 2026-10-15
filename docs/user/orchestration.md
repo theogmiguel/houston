@@ -181,6 +181,10 @@ From an agent pane, ask the agent to watch an open GitHub pull request. The agen
 request once a minute and wakes that pane when a check fails, all reported checks pass, a new
 review or comment arrives, or the branch becomes conflicted with its base. A watch stops when the
 pull request is merged or closed, after repeated read failures, or after ten comment-only wakes.
+Panes watching the same pull request share one read per check. When GitHub reports a rate
+limit, Houston pauses every pull request watch until GitHub's reset time instead of counting a
+failed read; starting a watch during the pause is refused with "paused until HH:MM", and an
+in-review task's run shows the same reason.
 Use `pane_pr_unwatch` when updates are no longer needed.
 
 ## Workspaces and child lifetime
