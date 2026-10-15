@@ -337,7 +337,8 @@ verifies daemon, UI, and `protocol/protocol.md` all agree on
 **Before every push and delivery** — the full suite, always
 inside `scripts/oom-shield.sh`:
 
-- `core`: full `cargo test`.
+- `core`: full `cargo nextest run`, then `cargo test --doc` (nextest does not run
+  documentation tests).
 - `ui`: full `bun run typecheck` + `bun run test` + `bun run check:complexity` +
   `bun run build` + `bun run check:css` + `bun run check:bundle`, in that order
   (the last two read what `build` emitted).
@@ -353,8 +354,22 @@ before the fix.
 ```
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
-cargo test
+cargo nextest run
+cargo test --doc
 ```
+
+`cargo-nextest` runs every test in its own process and is the primary runner for `core/`;
+`core/.config/nextest.toml` holds the thread budget (`test-threads = 3`, matching the
+`-j 3` that `oom-shield.sh` was measured against), timeouts and the `ci` profile. Install the
+pinned version once (CI installs the same one):
+
+```
+scripts/oom-shield.sh cargo install cargo-nextest --version 0.9.148 --locked -j 3
+```
+
+Plain `cargo test` still runs the same tests in one process per test binary. Select tests
+with filtersets, for example `cargo nextest run -E 'binary(git_wire)'` in place of
+`cargo test --test git_wire`.
 
 Run hook-installation tests and full core gates with a throwaway `HOME`, and unset
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Workspace creation can refresh user-scope Claude
@@ -364,7 +379,7 @@ configuration in subprocesses.
 
 Locally, run `cargo test` through `scripts/with-test-keyring.sh` when
 `voice::cloud`'s Secret Service tests need a keyring:
-`scripts/oom-shield.sh scripts/with-test-keyring.sh cargo test`. Never run
+`scripts/oom-shield.sh scripts/with-test-keyring.sh cargo nextest run`. Never run
 `gnome-keyring-daemon --unlock` directly on a desktop host, even inside
 `dbus-run-session`: the daemon opens the host's real
 `~/.local/share/keyrings/login.keyring`, and once anything prompts it

@@ -72,8 +72,12 @@ in PowerShell. Never run concurrent Cargo workloads.
 ```
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
-cargo test
+cargo nextest run
+cargo test --doc
 ```
+
+The core suite runs under [cargo-nextest](https://nexte.st/); the pinned install command is in the
+[development runbook](docs/operations/development.md).
 
 **`ui/`** (order matters — the last two read what `build` emitted):
 

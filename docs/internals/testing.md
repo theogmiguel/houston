@@ -7,8 +7,8 @@ What the suites are, where new tests go, and how to read a failure. Commands and
 
 | Layer | Location | Runner |
 |---|---|---|
-| Daemon unit tests | `#[cfg(test)]` in `core/houston-core/src/*.rs` | `cargo test --lib <module>` |
-| Daemon integration | `core/houston-core/tests/*.rs`, harness `tests/common/mod.rs` — boots a real daemon on a throwaway state dir and speaks `/ws` | `cargo test --test <name>` |
+| Daemon unit tests | `#[cfg(test)]` in `core/houston-core/src/*.rs` | `cargo nextest run --lib <module>` |
+| Daemon integration | `core/houston-core/tests/*.rs`, harness `tests/common/mod.rs` — boots a real daemon on a throwaway state dir and speaks `/ws` | `cargo nextest run -E 'binary(<name>)'` |
 | Perf floors | `tests/perf_smoke.rs` (throughput and RSS floors, both `#[ignore]`) | `cargo test --release --test perf_smoke -- --ignored` |
 | App | `src-tauri/tests/*.rs` (daemon ownership, channel flags), unit tests in `src/` | `cargo test`, and again with `--features bench` |
 | Renderer | `*.test.ts(x)` beside the code, jsdom + Testing Library | `bun run test` (vitest) |

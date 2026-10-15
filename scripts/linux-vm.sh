@@ -70,7 +70,7 @@ case "${1:-}" in
         echo '--- systemd (oom-shield needs it) ---'; systemctl is-system-running || true
         echo '--- wslg sockets (empty => wsl --shutdown and relaunch) ---'
         ls /mnt/wslg/.X11-unix/ 2>&1; ls /mnt/wslg/runtime-dir/ 2>&1 | head -4
-        echo '--- toolchain ---'; echo \"cargo=\$(command -v cargo || echo MISSING)  bun=\$(command -v bun || echo MISSING)  node=\$(command -v node || echo MISSING)\"
+        echo '--- toolchain ---'; echo \"cargo=\$(command -v cargo || echo MISSING)  nextest=\$(command -v cargo-nextest || echo MISSING)  bun=\$(command -v bun || echo MISSING)  node=\$(command -v node || echo MISSING)\"
         echo '--- clone ---'; vmcd $VM_REPO && git log --oneline -1 && git status --short | head"
     ;;
 
@@ -121,11 +121,11 @@ case "${1:-}" in
           cargo fmt --manifest-path core/Cargo.toml --all -- --check
         step 'core: clippy -D warnings' \
           cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
-        step 'core: cargo test (shielded, with Secret Service)' \
+        step 'core: cargo nextest run + doctests (shielded, with Secret Service)' \
           env HOUSTON_CHANNEL=dev ./scripts/oom-shield.sh \
               dbus-run-session -- bash -c \
                 'eval \"\$(echo -n \"\" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)\"
-                 cargo test --manifest-path core/Cargo.toml'
+                 cargo nextest run --manifest-path core/Cargo.toml && cargo test --doc --manifest-path core/Cargo.toml'
 
         step 'src-tauri: fmt --check' \
           cargo fmt --manifest-path src-tauri/Cargo.toml --check

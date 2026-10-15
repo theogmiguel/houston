@@ -366,7 +366,7 @@ not replace the complete local gate in
 [`docs/operations/development.md`](development.md); a release must run the
 remaining checks as well.
 
-Windows: natively, the same `cargo test && cargo clippy --all-targets -- -D
+Windows: natively, the same `cargo nextest run && cargo test --doc && cargo clippy --all-targets -- -D
 warnings && cargo fmt` / `bun run typecheck && bun run test && bun run build
 && bun run check:css` commands — typed by hand, not wrapped in a script.
 
