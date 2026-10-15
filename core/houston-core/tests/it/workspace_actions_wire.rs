@@ -10,7 +10,7 @@ fn workspace_actions_persist_and_limits_are_reported() {
         DaemonConfig::new(
             "test-token-0000-0000-000000000000".into(),
             state.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         )
     };
 

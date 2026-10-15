@@ -192,7 +192,7 @@ async fn session_reparent_over_the_wire_refuses_a_swarm_tied_session() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr, _handle) =

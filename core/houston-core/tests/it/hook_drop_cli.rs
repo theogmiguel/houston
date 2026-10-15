@@ -515,7 +515,7 @@ while True:
     let daemon = Daemon::new(DaemonConfig::new(
         "test".into(),
         f.state_dir().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let info = daemon

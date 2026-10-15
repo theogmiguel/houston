@@ -32,7 +32,7 @@ fn spawn_test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     (daemon, state_dir)

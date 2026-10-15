@@ -102,7 +102,7 @@ async fn pty_exports_houston_session_marker() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -123,7 +123,7 @@ async fn agent_banner_sets_detected_identity() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -171,7 +171,7 @@ async fn create_with_cwd_from_inherits_live_directory() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -431,7 +431,7 @@ async fn legacy_interrupted_sessions_require_acknowledgement_before_restart() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
 
@@ -468,7 +468,7 @@ async fn codenames_are_assigned_renamed_and_persisted() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
 
@@ -539,7 +539,7 @@ async fn close_kills_a_live_session_and_removes_it() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -564,7 +564,7 @@ async fn renderer_input_racing_a_close_is_dropped_but_an_unknown_id_is_refused()
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -591,7 +591,7 @@ async fn respawn_reuses_the_directory() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();

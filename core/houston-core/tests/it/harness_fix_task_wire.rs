@@ -41,7 +41,7 @@ fn fixture(keys: &[&str]) -> Fixture {
     let daemon = Daemon::new(DaemonConfig::new(
         "test-token".into(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     daemon
@@ -450,7 +450,7 @@ fn links_and_verdicts_survive_reopening_the_daemon() {
     let reopened = Daemon::new(DaemonConfig::new(
         "test-token".into(),
         f.db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let finding = finding_from_state(&reopened, &f.workspace, "denied-push");
