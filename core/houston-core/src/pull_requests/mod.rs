@@ -1,4 +1,5 @@
 pub(crate) mod github;
+pub(crate) mod shared;
 pub(crate) mod watch;
 
 use anyhow::{bail, Result};

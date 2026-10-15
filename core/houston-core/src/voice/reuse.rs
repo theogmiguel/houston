@@ -176,6 +176,7 @@ fn discover_roots(
         ),
     ];
     #[cfg(windows)]
+    #[allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
     for key in ["APPDATA", "LOCALAPPDATA"] {
         if let Some(base) = std::env::var_os(key) {
             roots.push((

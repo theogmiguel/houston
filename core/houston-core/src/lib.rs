@@ -17,11 +17,14 @@ pub mod claude_turns;
 pub mod cli_probe;
 pub mod codex_pane;
 pub mod composer_ready;
+pub mod conflict_prediction;
 pub mod context_window;
 pub mod daemon;
 pub mod db;
 pub mod env_hygiene;
 pub mod exe_path;
+#[doc(hidden)]
+pub mod fixture_dirs;
 pub mod frame_queue;
 pub mod fs_watch;
 pub mod generated_title;
@@ -32,6 +35,7 @@ pub mod harness;
 pub mod home_dir;
 pub mod hook_drop;
 pub mod hook_state;
+pub mod host_env;
 pub mod launch;
 pub mod legacy_hook_sweep;
 pub mod lock;
@@ -86,6 +90,7 @@ pub mod usage;
 pub mod voice;
 pub mod vt;
 pub mod worktree_cleanup;
+pub mod worktree_include;
 pub mod worktrees;
 pub mod wsl_ensure;
 pub mod wsl_proxy;
@@ -97,6 +102,7 @@ pub mod test_tracing_capture;
 #[cfg(feature = "test-barriers")]
 #[doc(hidden)]
 pub mod test_barriers {
+    #[allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
     pub fn pause(point: &str, subject: u32) {
         let Some(directory) = std::env::var_os("HOUSTON_TEST_BARRIER_DIR") else {
             return;
