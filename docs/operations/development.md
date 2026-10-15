@@ -167,8 +167,11 @@ whole terminal scope.
 
 - **Caps**: `MemoryHigh=16G`, `MemoryMax=18G` (override via
   `OOM_SHIELD_MEMORY_HIGH`/`OOM_SHIELD_MEMORY_MAX`). Receipted against the
-  measured 10.2 GiB peak of the core `cargo test -j 3` run on a 31 GiB/12-core
-  machine, which a 12G cap OOM-killed; a cold build peaks near 4.1 GiB. Swap is
+  measured peak of a clean core `cargo test -j 3` build on a 31 GiB/12-core machine:
+  9.1 GiB including page cache, 4.5 GiB anonymous (the largest process is the
+  `houston-core` lib's rustc at 3.1 GiB; the single `it` test binary peaks at 2.4 GiB).
+  The former 158-binary link fan-out reached 10.2 GiB, which a 12G cap OOM-killed. The
+  test run itself stays under 0.4 GiB anonymous. Swap is
   uncapped by default (`OOM_SHIELD_MEMORY_SWAP_MAX` opts in).
 - Applies `nice -n 19` to the wrapped command unconditionally.
 - A second invocation *waits* on a global per-user `flock`, announcing

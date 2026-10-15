@@ -12,9 +12,9 @@ if ! command -v systemd-run >/dev/null 2>&1; then
   exit 1
 fi
 
-# MemoryMax=18G / MemoryHigh=16G sit above the measured 10.2 GiB peak of the
-# core `cargo test -j 3` link fan-out (a 12G cap OOM-killed it): high enough not
-# to trip a real build, low enough to be a tripwire a runaway can actually hit.
+# MemoryMax=18G / MemoryHigh=16G sit above the measured 9.1 GiB peak (4.5 GiB anonymous) of a
+# clean core `cargo test -j 3` build and the 10.2 GiB of the old 158-binary link fan-out (a
+# 12G cap OOM-killed it): high enough not to trip a real build, low enough to catch a runaway.
 MEMORY_HIGH="${OOM_SHIELD_MEMORY_HIGH:-16G}"
 MEMORY_MAX="${OOM_SHIELD_MEMORY_MAX:-18G}"
 MEMORY_SWAP_MAX="${OOM_SHIELD_MEMORY_SWAP_MAX:-}"
