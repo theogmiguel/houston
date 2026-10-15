@@ -108,6 +108,7 @@ named.
 
 | Term | Meaning | Code |
 |---|---|---|
+| **EcoQoS** | Windows execution-speed throttling ("efficiency mode"): the OS may park a process it classifies as background on a fraction of a core. The daemon opts itself out at start; Linux has no equivalent. | `power_throttling.rs` |
 | **daemon** | `houston-core`, run detached — spawned by `houston-supervisor` on Linux or directly on Windows — and outliving the app, which connects to it as a `/ws` client rather than linking it in. Owns PTYs, DB, hooks, MCP for one channel in one environment. | `core/houston-core` |
 | **supervisor** | `houston-supervisor`, Linux-only: forks `houston-core` as its child, writes `supervisor.json` beside `daemon.json`, and is what makes the daemon survive an app crash or a `kill` of the app itself. Not present on Windows, where the app spawns `houston-core.exe` directly. | `core/houston-core/src/bin/houston-supervisor.rs` |
 | **handoff** | A live transfer of a running daemon's sessions to a new generation on the same channel (Linux only), over `/manage`'s `daemon_handoff` — refused by name, preserving the old daemon, for a live SSH session, a schema-changing candidate, an exceeded cap, or any unsupported platform. What `dev.sh --fresh` and a supported upgrade use before falling back to the orderly stop. | `daemon.rs::begin_handoff`, `adoption.rs` |
