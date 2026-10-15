@@ -34,7 +34,6 @@ import {
 } from './PaneRestart'
 import type { HandoffSource } from './PaneHandoff'
 import { clampConversation } from './handoffPacket'
-import { doingNow } from './rail/doingNow'
 import { RecoveryCheckControls } from './RecoveryCheckControls'
 import { RenameTitle } from './RenameTitle'
 import { Tooltip } from './ui/Tooltip'
@@ -476,11 +475,6 @@ function SessionLifecycleMenuItems({
   </>
 }
 
-function PaneActivityNotice({ info }: { info: SessionInfo }): React.JSX.Element | null {
-  const activity = doingNow(info)
-  return activity ? <PaneNotice data-testid="pane-doing-now">{activity}</PaneNotice> : null
-}
-
 function GenerateTitleConfirm({ open, info, onCancel, onConfirm }: {
   open: boolean
   info: SessionInfo
@@ -647,7 +641,6 @@ function SessionPaneImpl({
         <SessionInboxButton info={info} />
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </PaneHeader>
-      <PaneActivityNotice info={info} />
       <ResumeNotice notice={info.resume_notice} />
       <ChildInputBanner info={info} />
       <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} memoryResult={memoryResult} />

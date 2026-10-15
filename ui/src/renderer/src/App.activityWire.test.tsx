@@ -8,13 +8,12 @@ beforeEach(() => { resetHarness(); localStorage.clear() })
 afterEach(() => { harness?.unmount(); harness = null })
 
 describe('hook activity on the wire', () => {
-  it('updates the doing-now line immediately and clears it without renaming the pane', async () => {
+  it('applies activity without renaming the pane or repeating it under the header', async () => {
     harness = await renderReadyApp()
     const title = harness.container.querySelector('.pane-head')?.textContent
-    act(() => deliverControl({ type: 'session_activity', id: 1, activity: { prompt: 'Fix parser' } }))
-    expect(harness.container.querySelector('[data-testid="pane-doing-now"]')?.textContent).toBe('Fix parser')
+    act(() => deliverControl({ type: 'session_activity', id: 1, activity: { prompt: 'Fix parser', last_message: 'Parser fixed' } }))
     expect(harness.container.querySelector('.pane-head')?.textContent).toBe(title)
-    act(() => deliverControl({ type: 'session_activity', id: 1, activity: null }))
     expect(harness.container.querySelector('[data-testid="pane-doing-now"]')).toBeNull()
+    expect(harness.container.querySelector('section.pane')?.textContent).not.toContain('Parser fixed')
   })
 })

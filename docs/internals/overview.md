@@ -507,8 +507,8 @@ Acceptance criteria on Linux, mid-range hardware. Enforcement is what actually c
 | Keystroke → echo, focused pane, loaded system | p95 < 25 ms | `--features bench`, `scripts/m9-baseline.sh` |
 | PTY write → paint | p95 < 50 ms | bench harness |
 | Rendering regression floor (M9) | p95 ≤ 450 ms, 5-run median | `scripts/m9-baseline.sh` |
-| PTY throughput under ANSI flood | ≥ 5 MiB/s | `tests/perf_smoke.rs` (release, `--ignored`, idle machine) |
-| Daemon RSS @ 10 flooding sessions | target 50 MiB; gated at 150 MiB regression ceiling | `tests/perf_smoke.rs` |
+| PTY throughput under ANSI flood | ≥ 5 MiB/s | `tests/it/perf_smoke.rs` (release, `--ignored`, idle machine) |
+| Daemon RSS @ 10 flooding sessions | target 50 MiB; gated at 150 MiB regression ceiling | `tests/it/perf_smoke.rs` |
 | Scrollback resident per session | ~8 MiB stable | `scrollback.rs` capacity ceiling |
 | Cold start to `<App/>` mounted, 0 sessions | < 3 s (measured 2.14 s) | `scripts/boot-baseline.sh` |
 | Warm restore to focused pane typeable, 12 panes | < 3.5 s (measured 2.30 s) | `scripts/boot-baseline.sh` |

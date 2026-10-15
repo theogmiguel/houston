@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol as proto;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
@@ -1386,6 +1387,18 @@ impl Session {
 pub struct DaemonConfig {
     pub token: String,
     pub db_path: PathBuf,
+    /// The environment the daemon and its children see.
+    pub env: crate::host_env::HostEnv,
+}
+
+impl DaemonConfig {
+    pub fn new(token: String, db_path: PathBuf, env: crate::host_env::HostEnv) -> Self {
+        Self {
+            token,
+            db_path,
+            env,
+        }
+    }
 }
 
 struct SwarmMailScope {
@@ -1628,6 +1641,7 @@ pub struct Daemon {
     #[cfg(feature = "test-barriers")]
     startup_test: Mutex<StartupTest>,
     pub token: String,
+    env: std::sync::RwLock<crate::host_env::HostEnv>,
     pub mcp_creds: crate::mcp_creds::Registry,
     pub mcp_notify: crate::mcp_server::NotifierRegistry,
     pub mcp_tools: crate::mcp_server::ToolRegistry,
@@ -1900,9 +1914,8 @@ const TITLE_OUTPUT_CAP: usize = 4096;
 // A fixed deadline bounds provider stalls even if they keep emitting output.
 const TITLE_GENERATION_TIMEOUT: Duration = Duration::from_secs(30);
 
-fn handoff_timeout() -> Duration {
-    std::env::var("HOUSTON_HANDOFF_TIMEOUT_MS")
-        .ok()
+fn handoff_timeout(env: &crate::host_env::HostEnv) -> Duration {
+    env.var("HOUSTON_HANDOFF_TIMEOUT_MS")
         .and_then(|v| v.parse::<u64>().ok())
         .map(Duration::from_millis)
         .unwrap_or(Duration::from_secs(60))
@@ -1924,9 +1937,8 @@ const REAP_GRACE_MS: u64 = 5 * 60 * 1000;
 
 const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
-fn shutdown_drain_timeout() -> Duration {
-    std::env::var("HOUSTON_SHUTDOWN_DRAIN_MS")
-        .ok()
+fn shutdown_drain_timeout(env: &crate::host_env::HostEnv) -> Duration {
+    env.var("HOUSTON_SHUTDOWN_DRAIN_MS")
         .and_then(|v| v.parse::<u64>().ok())
         .map(Duration::from_millis)
         .unwrap_or(SHUTDOWN_DRAIN_TIMEOUT)
@@ -2127,10 +2139,6 @@ impl SafeModeFlags {
         }
     }
 
-    fn from_env() -> Self {
-        Self::from_lookup(|name| std::env::var(name).ok())
-    }
-
     fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Self {
         Self::resolve(
             lookup("HOUSTON_SAFE_MODE").as_deref(),
@@ -2179,9 +2187,12 @@ fn claude_mcp_add_args(server: &proto::McpServer) -> Option<Vec<String>> {
     Some(args)
 }
 
-fn run_claude_mcp(args: &[String]) -> Result<()> {
-    let claude = crate::exe_path::resolve("claude").unwrap_or_else(|| PathBuf::from("claude"));
-    let out = crate::spawn::command(claude).arg("mcp").args(args).output();
+fn run_claude_mcp(env: &crate::host_env::HostEnv, args: &[String]) -> Result<()> {
+    let claude =
+        crate::exe_path::resolve_in(env, "claude").unwrap_or_else(|| PathBuf::from("claude"));
+    let mut command = crate::spawn::command(claude);
+    env.apply_to(&mut command);
+    let out = command.arg("mcp").args(args).output();
     match out {
         Ok(out) if out.status.success() => Ok(()),
         Ok(out) => {
@@ -2727,7 +2738,10 @@ fn default_shell_ladder(
 }
 
 #[cfg(windows)]
-fn windows_default_shell_candidates(shell_override: Option<&str>) -> Vec<String> {
+fn windows_default_shell_candidates(
+    env: &crate::host_env::HostEnv,
+    shell_override: Option<&str>,
+) -> Vec<String> {
     use std::sync::OnceLock;
     static OPENSSH_DEFAULT_SHELL: OnceLock<Option<String>> = OnceLock::new();
     let openssh = OPENSSH_DEFAULT_SHELL
@@ -2742,10 +2756,11 @@ fn windows_default_shell_candidates(shell_override: Option<&str>) -> Vec<String>
             found
         })
         .clone();
-    let shell_env = std::env::var("SHELL").ok();
-    let comspec = std::env::var("ComSpec").ok();
-    let system_root = std::env::var("SystemRoot")
-        .unwrap_or_else(|_| r"C:\Windows".to_string())
+    let shell_env = env.var("SHELL");
+    let comspec = env.var("ComSpec");
+    let system_root = env
+        .var("SystemRoot")
+        .unwrap_or_else(|| r"C:\Windows".to_string())
         .trim_end_matches('\\')
         .to_string();
     let powershell = format!("{system_root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
@@ -2760,19 +2775,25 @@ fn windows_default_shell_candidates(shell_override: Option<&str>) -> Vec<String>
 }
 
 #[cfg(windows)]
-fn resolve_session_shell(shell_override: Option<&str>) -> (String, Vec<String>) {
-    let mut ladder = windows_default_shell_candidates(shell_override);
+fn resolve_session_shell(
+    env: &crate::host_env::HostEnv,
+    shell_override: Option<&str>,
+) -> (String, Vec<String>) {
+    let mut ladder = windows_default_shell_candidates(env, shell_override);
     debug_assert!(!ladder.is_empty(), "the terminal rung guarantees non-empty");
     let first = ladder.remove(0);
     (first, ladder)
 }
 
 #[cfg(not(windows))]
-fn resolve_session_shell(shell_override: Option<&str>) -> (String, Vec<String>) {
+fn resolve_session_shell(
+    env: &crate::host_env::HostEnv,
+    shell_override: Option<&str>,
+) -> (String, Vec<String>) {
     (
         shell_override
             .map(str::to_string)
-            .unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "bash".into())),
+            .unwrap_or_else(|| env.var("SHELL").unwrap_or_else(|| "bash".into())),
         Vec::new(),
     )
 }
@@ -3089,6 +3110,19 @@ impl Drop for HandoffClaim<'_> {
 }
 
 impl Daemon {
+    /// The environment this daemon and its children run under.
+    pub fn env(&self) -> crate::host_env::HostEnv {
+        self.env.read().expect("daemon environment lock").clone()
+    }
+
+    /// Replaces one variable the daemon and its later children see; for tests that
+    /// change the environment between spawns.
+    #[doc(hidden)]
+    pub fn set_env_var_for_test(&self, name: &str, value: Option<&str>) {
+        let mut env = self.env.write().expect("daemon environment lock");
+        *env = env.with(name, value);
+    }
+
     pub fn new(cfg: DaemonConfig) -> Result<Arc<Self>> {
         Self::new_inner(cfg, None, None)
     }
@@ -3332,7 +3366,8 @@ impl Daemon {
         let startup_cause = read_and_derive_startup_cause(&marker_path, &run_state_path);
         remove_file_logged(&marker_path, "clean-shutdown marker");
 
-        let safe_mode_flags = safe_mode_flags_override.unwrap_or_else(SafeModeFlags::from_env);
+        let safe_mode_flags = safe_mode_flags_override
+            .unwrap_or_else(|| SafeModeFlags::from_lookup(|name| cfg.env.var(name)));
         tracing::info!(
             "safe-mode flags resolved: disable_auto_restore={} disable_swarm_autolaunch={}",
             safe_mode_flags.disable_auto_restore,
@@ -3344,6 +3379,7 @@ impl Daemon {
         let swarm_mail_wake = Arc::new(tokio::sync::Notify::new());
         let daemon = Arc::new(Self {
             token: cfg.token,
+            env: std::sync::RwLock::new(cfg.env),
             mcp_creds: crate::mcp_creds::Registry::new(),
             mcp_notify: crate::mcp_server::NotifierRegistry::new(),
             mcp_tools: crate::mcp_server::ToolRegistry::with_builtins(),
@@ -3576,7 +3612,7 @@ impl Daemon {
         if adopted.is_none() {
             daemon.hook_drop_boot();
         }
-        crate::statusline_sweep::sweep(&daemon.db);
+        crate::statusline_sweep::sweep(&daemon.db, &daemon.env());
         *daemon.self_weak.lock().expect("self_weak lock") = Arc::downgrade(&daemon);
         daemon.mcp_tools.bind_daemon(&daemon);
         daemon
@@ -4233,8 +4269,8 @@ impl Daemon {
     }
 
     fn reap_grace_ms(&self) -> u64 {
-        std::env::var("HOUSTON_REAP_GRACE_MS")
-            .ok()
+        self.env()
+            .var("HOUSTON_REAP_GRACE_MS")
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(REAP_GRACE_MS)
     }
@@ -4623,7 +4659,7 @@ impl Daemon {
                 unterminated: kill_failures.iter().map(|(id, _)| *id).collect(),
             });
         }
-        let drain_timeout = shutdown_drain_timeout();
+        let drain_timeout = shutdown_drain_timeout(&self.env());
         let unterminated = self.wait_for_sessions_to_end(&live_ids, drain_timeout);
         if !unterminated.is_empty() {
             self.shutting_down.store(false, Ordering::Release);
@@ -5824,7 +5860,7 @@ impl Daemon {
 
     pub fn mcp_state(&self) -> proto::ServerMsg {
         let source = self.mcp_source();
-        let tools = match crate::agent_hooks::ConfigHome::from_env() {
+        let tools = match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(home) => crate::mcp::read_tools(&home),
             Err(e) => crate::mcp::MCP_TOOLS
                 .iter()
@@ -5879,7 +5915,7 @@ impl Daemon {
     pub fn mcp_sync(&self, only: Option<proto::AgentKind>) -> proto::ServerMsg {
         let source = self.mcp_source();
         let mut results = Vec::new();
-        let home = crate::agent_hooks::ConfigHome::from_env();
+        let home = crate::agent_hooks::ConfigHome::from_env(&self.env());
         for tool in crate::mcp::MCP_TOOLS {
             if only.is_some_and(|t| t != tool) {
                 continue;
@@ -5964,14 +6000,17 @@ impl Daemon {
             if wanted.contains(&name.as_str()) {
                 continue;
             }
-            match run_claude_mcp(&["remove".into(), name.clone(), "-s".into(), "user".into()]) {
+            match run_claude_mcp(
+                &self.env(),
+                &["remove".into(), name.clone(), "-s".into(), "user".into()],
+            ) {
                 Ok(()) => out.removed += 1,
                 Err(e) => out.skipped.push(format!("{name}: {e}")),
             }
         }
         for server in source {
             match claude_mcp_add_args(server) {
-                Some(args) => match run_claude_mcp(&args) {
+                Some(args) => match run_claude_mcp(&self.env(), &args) {
                     Ok(()) => out.written += 1,
                     Err(e) => out.skipped.push(format!("{}: {e}", server.name)),
                 },
@@ -5985,7 +6024,7 @@ impl Daemon {
     }
 
     pub fn mcp_import(&self, tool: proto::AgentKind) -> proto::ServerMsg {
-        let home = match crate::agent_hooks::ConfigHome::from_env() {
+        let home = match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(h) => h,
             Err(e) => return self.mcp_error_state(tool, format!("{e:#}")),
         };
@@ -7419,7 +7458,7 @@ impl Daemon {
     }
 
     pub fn skill_sync_state(&self) -> proto::ServerMsg {
-        let home = crate::agent_hooks::ConfigHome::from_env();
+        let home = crate::agent_hooks::ConfigHome::from_env(&self.env());
         if let Ok(home) = &home {
             if self.skill_auto_push_enabled() {
                 self.do_skill_push(home, None, None);
@@ -7541,7 +7580,7 @@ impl Daemon {
         tool: Option<proto::AgentKind>,
         skill: Option<String>,
     ) -> proto::ServerMsg {
-        match crate::agent_hooks::ConfigHome::from_env() {
+        match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(home) => self.do_skill_push(&home, tool, skill.as_deref()),
             Err(e) => tracing::warn!("skill push: resolving config home: {e:#}"),
         }
@@ -7551,7 +7590,7 @@ impl Daemon {
     pub fn skill_push_undo(&self, tool: proto::AgentKind, skill: String) -> proto::ServerMsg {
         let slug = crate::agent_hooks::provider_slug(tool);
         match (
-            crate::agent_hooks::ConfigHome::from_env(),
+            crate::agent_hooks::ConfigHome::from_env(&self.env()),
             self.db.skill_push(slug, &skill),
         ) {
             (Ok(home), Ok(Some(row))) => {
@@ -7605,7 +7644,7 @@ impl Daemon {
     }
 
     fn hook_config_home(&self) -> Result<crate::agent_hooks::ConfigHome> {
-        crate::agent_hooks::ConfigHome::from_env()
+        crate::agent_hooks::ConfigHome::from_env(&self.env())
     }
 
     fn hook_sentinel(&self) -> String {
@@ -7614,7 +7653,10 @@ impl Daemon {
 
     fn claude_hook_paths(&self) -> Result<(Vec<std::path::PathBuf>, Option<String>)> {
         let home = self.hook_config_home()?;
-        let mut paths = vec![crate::claude_hooks::global_settings_path(&home)];
+        let mut paths = vec![crate::claude_hooks::global_settings_path(
+            &self.env(),
+            &home,
+        )];
         for profile in self.db.list_agent_profiles("claude")? {
             let dir = crate::agent_accounts::expand_tilde(&profile.config_dir, &home.home);
             paths.push(dir.join("settings.json"));
@@ -7714,7 +7756,11 @@ impl Daemon {
 
     fn cli_presence(&self, provider: proto::AgentKind) -> crate::cli_probe::CliPresence {
         match crate::cli_probe::binary_name(provider) {
-            Some(binary) => self.cli_probes.lock().expect("cli probe cache").get(binary),
+            Some(binary) => self
+                .cli_probes
+                .lock()
+                .expect("cli probe cache")
+                .get(&self.env(), binary),
             None => crate::cli_probe::CliPresence::default(),
         }
     }
@@ -7729,7 +7775,7 @@ impl Daemon {
         let claude_cli = self.cli_presence(proto::AgentKind::Claude);
         let (claude_path, installed, mut error) = match &home {
             Ok(home) => {
-                let path = crate::claude_hooks::global_settings_path(home);
+                let path = crate::claude_hooks::global_settings_path(&self.env(), home);
                 let installed = crate::claude_hooks::is_installed(&path, &sentinel);
                 (path.display().to_string(), installed, None)
             }
@@ -7903,7 +7949,7 @@ impl Daemon {
     }
 
     pub fn sweep_legacy_hooks(&self) {
-        crate::legacy_hook_sweep::sweep(&self.db);
+        crate::legacy_hook_sweep::sweep(&self.db, &self.env());
     }
 
     pub fn install_all_workspace_hooks(&self) {
@@ -7975,8 +8021,9 @@ impl Daemon {
         if !self.hook_consent(proto::AgentKind::Codex) {
             return Some(("hooks_off", "Codex status hooks are off"));
         }
-        let inherited = std::env::var("CODEX_HOME")
-            .ok()
+        let inherited = self
+            .env()
+            .var("CODEX_HOME")
             .filter(|value| !value.trim().is_empty());
         let config_dir = match profile_dir.or(inherited.as_deref()) {
             Some(directory) => {
@@ -11012,7 +11059,8 @@ impl Daemon {
         let mut shellint_token: Option<String> = None;
         let mut shellint_token_file: Option<shellint::TokenFileGuard> = None;
         let mut cmd = if agent == proto::AgentKind::Shell {
-            let (shell, _ladder_rest) = resolve_session_shell(shell_override.as_deref());
+            let (shell, _ladder_rest) =
+                resolve_session_shell(&self.env(), shell_override.as_deref());
             let mut c = CommandBuilder::new(&shell);
             if let Some(real) = &relocate_to {
                 let exe = Path::new(&shell)
@@ -11104,12 +11152,12 @@ impl Daemon {
             };
             #[cfg(any(target_os = "linux", windows))]
             let resolved = if agent == proto::AgentKind::Codex && custom_cmd.is_none() {
-                std::env::var_os("PATH").and_then(|path| resolve_codex_cli(&path))
+                self.env().var_os("PATH").and_then(resolve_codex_cli)
             } else {
-                crate::exe_path::resolve(&program)
+                crate::exe_path::resolve_in(&self.env(), &program)
             };
             #[cfg(not(any(target_os = "linux", windows)))]
-            let resolved = crate::exe_path::resolve(&program);
+            let resolved = crate::exe_path::resolve_in(&self.env(), &program);
             let program: std::path::PathBuf =
                 resolved.unwrap_or_else(|| std::path::PathBuf::from(&program));
             let mut c = match &wrap {
@@ -11166,6 +11214,7 @@ impl Daemon {
         for (k, v) in &mcp.env {
             cmd.env(k, v);
         }
+        self.env().apply_to_pty(&mut cmd);
         #[cfg(windows)]
         cmd.cwd(&spawn_dir);
         #[cfg(unix)]
@@ -11180,7 +11229,8 @@ impl Daemon {
             cmd.env("ZCODE_DISABLE_UPDATE_CHECK", "1");
             // An inherited URL of another channel would resolve that channel's plugin here.
             let own = crate::zcode_config::url_env(self.channel.as_deref());
-            for (name, _) in std::env::vars_os() {
+            let launcher_env = self.env();
+            for name in launcher_env.names() {
                 let name = name.to_string_lossy();
                 if name.starts_with(crate::zcode_config::URL_ENV_PREFIX) && name != own {
                     cmd.env_remove(name.as_ref());
@@ -11198,7 +11248,7 @@ impl Daemon {
                     if agent == proto::AgentKind::Shell {
                         if let (Some(launcher), Some(codex)) = (
                             self.cli_launcher(),
-                            std::env::var_os("PATH").and_then(|path| resolve_codex_cli(&path)),
+                            self.env().var_os("PATH").and_then(resolve_codex_cli),
                         ) {
                             write_codex_wrapper(&bin_dir)?;
                             #[cfg(windows)]
@@ -11220,7 +11270,7 @@ impl Daemon {
                         .iter()
                         .find(|(k, _)| k == "PATH")
                         .map(|(_, v)| v.clone())
-                        .or_else(|| std::env::var("PATH").ok())
+                        .or_else(|| self.env().var("PATH"))
                         .filter(|p| !p.is_empty());
                     cmd.env("PATH", path_with(&bin_dir, base.as_deref()));
                 }
@@ -11392,7 +11442,8 @@ impl Daemon {
         #[cfg(windows)]
         let shell_spawn_fallbacks = if agent == proto::AgentKind::Shell && injected_shell.is_none()
         {
-            let mut ladder = windows_default_shell_candidates(shell_override.as_deref());
+            let mut ladder =
+                windows_default_shell_candidates(&self.env(), shell_override.as_deref());
             ladder.remove(0);
             ladder
         } else {
@@ -14535,7 +14586,7 @@ impl Daemon {
         let timeout = if is_title {
             TITLE_GENERATION_TIMEOUT
         } else {
-            handoff_timeout()
+            handoff_timeout(&self.env())
         };
         std::thread::Builder::new()
             .name(format!("handoff-watch-{request}"))
@@ -16706,7 +16757,7 @@ impl Daemon {
     }
 
     pub fn restore_budget(&self) -> u32 {
-        if let Ok(v) = std::env::var("HOUSTON_RESTORE_BUDGET") {
+        if let Some(v) = self.env().var("HOUSTON_RESTORE_BUDGET") {
             if let Ok(n) = v.parse() {
                 return n;
             }
@@ -17112,7 +17163,7 @@ impl Daemon {
     }
 
     fn usage_sources(&self) -> Vec<crate::usage::SourceSpec> {
-        let home = crate::home_dir::home_dir();
+        let home = self.env().home_dir();
         let mut sources = Vec::new();
 
         for provider in proto::UsageProvider::ALL {
@@ -17850,7 +17901,9 @@ impl Daemon {
 
     pub async fn voice_models_scan(self: &Arc<Self>) -> Result<proto::ServerMsg> {
         let lease = self.voice.claim_scan().ok_or_else(|| anyhow::anyhow!("local model scan limit is 1; 1 scan is active; wait before requesting another scan"))?;
-        let home = crate::home_dir::home_dir()
+        let home = self
+            .env()
+            .home_dir()
             .ok_or_else(|| anyhow::anyhow!("home directory unavailable for local model scan"))?;
         let current = self.voice_models_dir();
         let (files, limited) = tokio::task::spawn_blocking(move || {
@@ -18953,7 +19006,7 @@ impl Daemon {
             if enabled { "ENABLED" } else { "disabled" }
         );
         if enabled {
-            match crate::agent_hooks::ConfigHome::from_env() {
+            match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
                 Ok(home) => orchestrate::seed_skill_everywhere(&home),
                 Err(e) => tracing::warn!("seeding the hs-pane skill stub: {e:#}"),
             }
@@ -19215,9 +19268,9 @@ impl Daemon {
         use proto::AgentKind::*;
         [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode].into_iter().map(|provider| {
             let binary = crate::cli_probe::binary_name(provider).expect("spawnable provider binary");
-            let cli = self.cli_probes.lock().expect("cli probe cache").cached_presence(binary);
+            let cli = self.cli_probes.lock().expect("cli probe cache").cached_presence(&self.env(), binary);
             let caps = orchestrate::provider_capabilities(provider);
-            let (models, model_note) = crate::cli_probe::local_models(provider);
+            let (models, model_note) = crate::cli_probe::local_models(&self.env(), provider);
             serde_json::json!({
                 "provider": provider, "installed": cli.present, "version": cli.version,
                 "models": models, "model_note": model_note,
@@ -19742,7 +19795,7 @@ impl Daemon {
                  mode, so it does not stop for routine approvals"
             );
         }
-        match crate::agent_hooks::ConfigHome::from_env() {
+        match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(home) => orchestrate::seed_skill_everywhere(&home),
             Err(e) => tracing::warn!("seeding the hs-pane skill stub: {e:#}"),
         }
@@ -19945,7 +19998,7 @@ impl Daemon {
         }
         let cwd = created.as_ref().map(|c| c.path.clone()).unwrap_or(cwd);
         if let Some(created) = &created {
-            match crate::launch::prepare_worktree_trust(kind, &cwd)
+            match crate::launch::prepare_worktree_trust(&self.env(), kind, &cwd)
                 .and_then(|()| crate::launch::worktree_trust_args(kind, &cwd))
             {
                 Ok(args) => extra_args.extend(args),
@@ -20578,7 +20631,7 @@ impl Daemon {
             .agent_kind_of(caller)
             .unwrap_or(proto::AgentKind::Custom);
         let grok_timeout = if provider == proto::AgentKind::Grok {
-            crate::home_dir::home_dir().and_then(|home| {
+            self.env().home_dir().and_then(|home| {
                 match std::fs::read_to_string(home.join(".grok/config.toml")) {
                     Ok(text) => crate::mcp_register_grok::effective_wait_timeout_ms(Some(&text)),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -22684,7 +22737,7 @@ impl Daemon {
     }
 
     fn codex_trust_pending_note(&self) -> Option<String> {
-        let home = crate::agent_hooks::ConfigHome::from_env().ok()?;
+        let home = crate::agent_hooks::ConfigHome::from_env(&self.env()).ok()?;
         let sentinel = self.hook_sentinel();
         crate::agent_hooks::is_installed(proto::AgentKind::Codex, &home, &sentinel)
             .then(|| "Codex hooks installed, not confirmed for this pane".to_string())
@@ -23468,7 +23521,7 @@ impl Daemon {
 
     pub fn paste_hold_reason(&self, parent: u32) -> Option<String> {
         #[cfg(feature = "test-barriers")]
-        if std::env::var_os("HOUSTON_TEST_INBOX_WAIT_ONLY").is_some() {
+        if self.env().var_os("HOUSTON_TEST_INBOX_WAIT_ONLY").is_some() {
             return Some("the crash harness consumes inbox rows through pane_wait".into());
         }
         if let Some(reason) = self.child_input_paste_hold_reason(parent) {
@@ -24505,10 +24558,11 @@ mod hook_state_registry_tests {
         let root = tempfile::tempdir().unwrap();
         let root_s = root.path().display().to_string();
         let id = {
-            let daemon = Daemon::new(DaemonConfig {
-                token: "t".into(),
-                db_path: db_path.clone(),
-            })
+            let daemon = Daemon::new(DaemonConfig::new(
+                "t".into(),
+                db_path.clone(),
+                crate::host_env::HostEnv::capture(),
+            ))
             .unwrap();
             daemon
                 .db
@@ -24525,10 +24579,11 @@ mod hook_state_registry_tests {
         .unwrap();
         assert!(crate::hook_state::read_scopes(state.path()).is_empty());
 
-        let _daemon2 = Daemon::new(DaemonConfig {
-            token: "t".into(),
+        let _daemon2 = Daemon::new(DaemonConfig::new(
+            "t".into(),
             db_path,
-        })
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let healed = crate::hook_state::read_scopes(state.path());
         assert_eq!(healed.len(), 1, "boot must rebuild wholesale: {healed:?}");
@@ -24543,10 +24598,11 @@ mod pr_watch_stall_tests {
     #[test]
     fn an_idle_watched_child_is_not_marked_stalled() {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "pr-watch-test".into(),
-            db_path: state.path().join("test.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "pr-watch-test".into(),
+            state.path().join("test.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let workspace = state.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
@@ -24644,10 +24700,11 @@ mod swarm_send_inbox_tests {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("h.db");
         (
-            Daemon::new(DaemonConfig {
-                token: "t".into(),
+            Daemon::new(DaemonConfig::new(
+                "t".into(),
                 db_path,
-            })
+                crate::host_env::HostEnv::capture(),
+            ))
             .unwrap(),
             dir,
         )
@@ -25126,10 +25183,11 @@ mod agent_profile_env_tests {
 
     fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         daemon
             .set_hook_consent(proto::AgentKind::Claude, false)
@@ -25423,6 +25481,7 @@ mod agent_profile_env_tests {
             .arg("sleep 5; :")
             .env("CLAUDE_CONFIG_DIR", "/tmp/tr-test-profile")
             .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
             .expect("spawn sh");
         let mut found = None;
@@ -25697,10 +25756,11 @@ mod idle_profile_tests {
 
     fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         (daemon, state)
     }
@@ -26338,10 +26398,11 @@ mod handoff_refusal_tests {
 
     fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         (daemon, state)
     }
@@ -26704,10 +26765,11 @@ mod handoff_platform_refusal_tests {
     #[test]
     fn handoff_refuses_by_platform_off_linux() {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let result = daemon.begin_handoff(None);
         assert!(!result.accepted);
@@ -26758,10 +26820,11 @@ mod codex_trust_row_tests {
 
         let _guard = home_guard(home.path());
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
 
         let rows = daemon.agent_hooks_state();

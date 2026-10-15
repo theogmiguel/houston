@@ -50,13 +50,6 @@ export type RailCardSource = {
   prByDir?: ReadonlyMap<string, { gh: string; pr: PrInfo | null }>
 }
 
-// Distinguishes a working agent with no recent hook update from active work.
-export const RAIL_QUIET_MS = 10 * 60_000
-
-export function isRailCardQuiet(status: GridStatusModel, now: number): boolean {
-  return status.kind === 'working' && status.since != null && now - status.since >= RAIL_QUIET_MS
-}
-
 function checkoutIdentity(session: SessionInfo, branches: ReadonlyMap<number, string>): CheckoutIdentity {
   const checkout = (session as SessionInfo & { checkout?: SessionCheckout | null }).checkout
   const checkoutKind = checkout?.kind

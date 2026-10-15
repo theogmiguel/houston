@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { IconPencil, IconUndo } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { Icon } from './ui/Icon'
-import { Text } from './ui/Text'
 import type { TitleSource } from '../houston/generated/TitleSource'
 import { PaneTitle } from './ui'
 import { RenameActionButton, RenameTitleInput } from './ui/TitleEditControls'
@@ -32,7 +31,6 @@ export function RenameTitle({ title, onRename, titleSource, onReset }: Props): R
             {title}
           </PaneTitle>
         </Tooltip>
-        {titleSource && <Text size="xs" tone="faint">{titleSource === 'user' ? 'Manual' : 'Auto'}</Text>}
         {onReset && titleSource === 'user' && <Tooltip label="Reset to automatic"><RenameActionButton aria-label="Reset to automatic" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onReset() }}><Icon glyph={IconUndo} role="label" /></RenameActionButton></Tooltip>}
         <Tooltip label="Rename">
           <RenameActionButton
