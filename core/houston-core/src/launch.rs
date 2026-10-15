@@ -115,11 +115,12 @@ fn write_owner_only(path: &Path, contents: &[u8]) -> Result<()> {
 pub fn dialogue_permission_args(agent: proto::AgentKind) -> Vec<String> {
     match agent {
         // One token: the flag is variadic, so a separate value could swallow a later positional.
-        proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate".into()],
+        proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate".into()],
         proto::AgentKind::Grok => [
             "pane_submit",
             "pane_report",
             "pane_reply",
+            "pane_message",
             "pane_wait",
             "pane_deny",
             "pane_escalate",
@@ -771,7 +772,7 @@ mod tests {
         use houston_protocol::AgentKind::*;
         assert_eq!(
             super::dialogue_permission_args(Claude),
-            ["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate"]
+            ["--allowedTools=mcp__houston__pane_submit,mcp__houston__pane_report,mcp__houston__pane_reply,mcp__houston__pane_message,mcp__houston__pane_wait,mcp__houston__pane_deny,mcp__houston__pane_escalate"]
         );
         assert_eq!(
             super::dialogue_permission_args(Grok),
@@ -782,6 +783,8 @@ mod tests {
                 "mcp__houston__pane_report",
                 "--allow",
                 "mcp__houston__pane_reply",
+                "--allow",
+                "mcp__houston__pane_message",
                 "--allow",
                 "mcp__houston__pane_wait",
                 "--allow",

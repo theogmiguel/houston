@@ -265,6 +265,7 @@ impl Agent {
                         "pane_submit",
                         "pane_report",
                         "pane_reply",
+                        "pane_message",
                         "pane_wait",
                         "pane_deny",
                         "pane_escalate",
@@ -273,7 +274,7 @@ impl Agent {
                     if required.iter().any(|name| !allowed.contains(name))
                         || allowed.len() != required.len()
                     {
-                        bail!("expected only the six local dialogue and input tools in {expected}; got {allowed:?}");
+                        bail!("expected only the seven local dialogue and input tools in {expected}; got {allowed:?}");
                     }
                     self.log("handback_allowed", Value::Null)?;
                 }

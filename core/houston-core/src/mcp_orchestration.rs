@@ -112,8 +112,8 @@ const PANE_ROUTING: &str = concat!(
     "`workspace_info` lists registered target workspaces; `target_workspace` accepts only one \
      of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
-    "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_deny`, `pane_escalate`, `pane_instruction_list/get/cancel/resume`, `pane_pr_watch`, `pane_pr_unwatch`. ",
-    "A worker sends `pane_report{kind: progress|question|blocked, body, request_id}` during work; question/blocked stays open until its recipient calls `pane_reply{message_id,text}`. The worker then uses `pane_wait` without a session, including without children or spawn authority. These messages do not finish a request; only `pane_submit` does. Parents resolve routine questions within existing authority first. When a child input episode needs a user decision, call `pane_escalate{child,reason}`; prose alone does not escalate. A reply does not grant extra permissions or automatically approve a CLI prompt. Reports/replies allow 8000 characters and 64 outstanding messages per worker; use a stable `client_request_id` for retry. ",
+    "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_deny`, `pane_escalate`, `pane_instruction_list/get/cancel/resume`, `pane_pr_watch`, `pane_pr_unwatch`. ",
+    "A worker sends `pane_report{kind: progress|question|blocked, body, request_id}` during work; question/blocked stays open until its recipient calls `pane_reply{message_id,text}`. The worker then uses `pane_wait` without a session, including without children or spawn authority. These messages do not finish a request; only `pane_submit` does. Parents resolve routine questions within existing authority first. When a child input episode needs a user decision, call `pane_escalate{child,reason}`; prose alone does not escalate. A reply does not grant extra permissions or automatically approve a CLI prompt. Reports/replies allow 8000 characters and 64 outstanding messages per worker; use a stable `client_request_id` for retry. Siblings — live children of the same parent — talk directly with `pane_message{to: role, body}` while both have an open request; `workspace_info.siblings` lists them, the message arrives in the recipient's `pane_wait`, and the parent receives no copy. ",
     "For reusable workers `pane_prompt{mode: queue|steer|restart}` defaults to queue and returns an accepted instruction id and current state, not proof of completion or delivery. Use `pane_instruction_list/get/cancel/resume` for current durable control state: queued, held_after_recovery, delivered, cancelled or uncertain. After restart recovery, held work requires explicit resume; never resume uncertain work. Cancel/resume retries report current truth. Steer delivery and adoption are distinct: adoption starts a separate request round. Restart requires verified interrupt-to-idle (Codex Escape, Grok Ctrl+C); Claude, Antigravity, OpenCode and Cursor restart is refused. Preserve partial results. Needs-input requires an explicit decision, not paste. ",
     "After receiving a completed child's result, preserve its needed output and artifacts, then close it with `pane_kill` (or `hs-pane kill`) as soon as no further task is planned. Before your final response or handback, close every completed child you no longer need. A reusable flag is not a reason to leave a completed pane open; keep one only for intentional assigned follow-up work. Never close a child that is still working; inspect live descendants and do not confirm ending them unless their work is also complete and preserved. The worker must not kill itself before delivering its result. ",
     "Call `pane_pr_watch` with a PR URL or number and end your turn; do not poll. Use `pane_pr_unwatch` when updates are no longer needed. ",
@@ -140,7 +140,7 @@ const PANE_ROUTING: &str = concat!(
 /// forgets otherwise waits on a promise this very block made.
 fn worker_duty(parent: u32) -> String {
     format!(
-        "You were spawned by pane {parent}. When your task is done, hand the result back with          `pane_submit` (or `hs-pane submit`) — that is your end-of-turn, and it is what wakes          the pane waiting on you. Say what you did, what you did not, and anything it must          decide. The parent closes the completed pane after receiving your result; do not try          to close your own pane. During work, use pane_report with the current request_id for progress, questions or blockers, then pane_wait without a session for the correlated reply; only pane_submit completes the request. Delegate coding-agent work through Houston panes, never internal sub-agents. "
+        "You were spawned by pane {parent}. When your task is done, hand the result back with          `pane_submit` (or `hs-pane submit`) — that is your end-of-turn, and it is what wakes          the pane waiting on you. Say what you did, what you did not, and anything it must          decide. The parent closes the completed pane after receiving your result; do not try          to close your own pane. During work, use pane_report with the current request_id for progress, questions or blockers, then pane_wait without a session for the correlated reply; only pane_submit completes the request. To coordinate with a sibling named in your brief, use pane_message with its role and receive its answers through pane_wait. Delegate coding-agent work through Houston panes, never internal sub-agents. "
     )
 }
 
@@ -366,6 +366,17 @@ impl ToolProvider for OrchestrationTools {
                     })
                     .await
                     .map_err(|e| ToolError(format!("report task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(outcome))
+                }
+                "pane_message" => {
+                    let message = serde_json::from_value(args.clone())
+                        .map_err(|e| ToolError(format!("pane_message: {e}")))?;
+                    let outcome = tokio::task::spawn_blocking(move || {
+                        daemon.orchestrate_message(caller, message)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("message task panicked: {e}")))?
                     .map_err(refused)?;
                     Ok(ToolOutput::structured(outcome))
                 }
@@ -829,6 +840,17 @@ impl OrchestrationTools {
                 annotations: Annotations::local_write(),
             },
             ToolSpec {
+                name: "pane_message".into(),
+                title: "Message a sibling".into(),
+                description: "Send text to a live sibling (same parent) by role or session id, while both of you have an open request. It arrives in the sibling's pane_wait; your parent gets no copy. Not completion or CLI approval; client_request_id deduplicates.".into(),
+                input_schema: json!({"type":"object","properties":{
+                    "to":{"type":"string","minLength":1,"maxLength":64,"description":"Sibling role or session id, from workspace_info.siblings."},
+                    "body":{"type":"string","minLength":1,"maxLength":orchestrate::SUBMIT_BODY_MAX_CHARS},
+                    "client_request_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_.-]+$"}
+                },"required":["to","body"],"additionalProperties":false}),
+                annotations: Annotations::local_write(),
+            },
+            ToolSpec {
                 name: "pane_pr_watch".into(),
                 title: "Watch a PR".into(),
                 description: "Watch PR checks/reviews/comments/conflicts. Call last; end your turn, do not poll.".into(),
@@ -1161,6 +1183,7 @@ mod tests {
                 "pane_instruction_resume",
                 "pane_report",
                 "pane_reply",
+                "pane_message",
                 "pane_pr_watch",
                 "pane_pr_unwatch",
                 "pane_spawn",
@@ -1294,6 +1317,7 @@ mod tests {
                 "pane_submit"
                     | "pane_report"
                     | "pane_reply"
+                    | "pane_message"
                     | "pane_pr_watch"
                     | "pane_pr_unwatch"
                     | "pane_deny"

@@ -174,6 +174,7 @@ named.
 | **`DelegationInfo`** | The delegation record as the RENDERER reads it: `DelegationView` minus `brief`, with typed `state`/`turn_end_source`. Pushed by `DelegationChanged`. | `houston-protocol` |
 | **orchestration card** | The RAISED-tier panel behind a pane header's `⑂`/`↳` badge: a parent's is a roster of its children, a child's is its own record. It exposes inspection, focus and explicit delivery actions. | `DelegationCard.tsx` |
 | **role** | A parent's own short name for one child (`reviewer`), unique among ITS live children and freed when that pane dies. | `orchestrate.rs::validate_role` |
+| **sibling message** | A `pane_message` row from one child to another child of the same parent, addressed by role or session id. Both requests must be open; the parent receives no copy, and the row closes with the recipient's request. | `daemon.rs::orchestrate_message` |
 | **child slot** | One of `MAX_LIVE_CHILDREN = 4` per parent; **depth** is capped at `MAX_SPAWN_DEPTH = 1`. Both settable up to a wire cap. | `orchestrate.rs` |
 | **auto mode** | The default launch mode for a spawned pane, using its provider's automatic approval flags. Sandbox boundaries depend on the provider; a model that cannot run this mode is refused by name. Explicit Ask or Bypass overrides it. | `launch.rs`, `orchestrate.rs` |
 | **MCP credential** | A per-pane bearer token bound to `{ workspace, session }`; only its SHA-256 is stored. | `mcp_creds.rs` |
