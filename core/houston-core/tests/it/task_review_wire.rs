@@ -559,7 +559,7 @@ fn a_restored_task_child_flips_its_interrupted_run_back_to_running() {
     let _daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
 

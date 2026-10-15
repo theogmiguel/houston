@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Direct process-environment access may only go down: daemon code reads it through
-# HostEnv (core/houston-core/src/host_env.rs). Counts live in scripts/env-ratchet.baseline.
+# Direct process-environment access only goes down; daemon code reads it through HostEnv.
+# Counts: scripts/env-ratchet.baseline. Sanctioned readers: host_env.rs, tests/common/mod.rs.
 # Grep, not only clippy: a blanket `allow(clippy::disallowed_methods)` hides new calls.
 
 set -euo pipefail
@@ -15,7 +15,7 @@ pattern='std::env::(var|var_os|vars|vars_os|set_var|remove_var)\b|dirs::home_dir
 counts() {
   grep -rEc "$pattern" --include='*.rs' core/houston-core/src core/houston-core/tests \
     | grep -v ':0$' \
-    | grep -v '^core/houston-core/src/host_env.rs:' \
+    | grep -v -e '^core/houston-core/src/host_env.rs:' -e '^core/houston-core/tests/common/mod.rs:' \
     | sed -E 's/^(.*):([0-9]+)$/\2 \1/' \
     | LC_ALL=C sort -k2
 }

@@ -13,7 +13,7 @@ fn daemon(state_dir: &std::path::Path) -> Arc<Daemon> {
     Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap()
 }

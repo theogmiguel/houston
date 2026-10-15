@@ -1,4 +1,5 @@
 #![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
+use crate::common;
 use houston_core::{db::Db, generated_title};
 use houston_protocol::{AgentKind, TitleSource};
 
@@ -138,7 +139,7 @@ async fn hook_only_generation_preserves_source_priority_and_freezes_the_generate
     let daemon = Daemon::new(DaemonConfig::new(
         "generated-title-test".into(),
         state.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     assert!(!daemon.generated_titles_enabled());

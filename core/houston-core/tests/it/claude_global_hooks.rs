@@ -35,7 +35,7 @@ fn daemon(state: &Path) -> Arc<Daemon> {
     Daemon::new(DaemonConfig::new(
         "fixture".into(),
         state.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap()
 }

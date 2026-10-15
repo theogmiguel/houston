@@ -40,6 +40,11 @@ impl HostEnv {
         Self(Arc::new(map))
     }
 
+    #[must_use]
+    pub fn without(&self, name: &str) -> Self {
+        self.with(name, None::<&str>)
+    }
+
     pub fn var_os(&self, name: &str) -> Option<&OsStr> {
         self.0.get(OsStr::new(name)).map(OsString::as_os_str)
     }

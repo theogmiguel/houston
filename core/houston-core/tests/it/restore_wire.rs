@@ -1,20 +1,12 @@
 #![cfg(unix)]
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
 use common::*;
 use houston_core::daemon::{Daemon, DaemonConfig, SafeModeFlags};
 use houston_core::db::Db;
+use houston_core::host_env::HostEnv;
 use houston_protocol as proto;
-
-static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-    ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
 
 // These restoration fixtures explicitly acknowledge stopped legacy workloads.
 fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
@@ -123,11 +115,12 @@ fn seed_one(
 
 fn boot_and_list(
     state_dir: &std::path::Path,
+    env: &HostEnv,
 ) -> (Vec<proto::SessionInfo>, Option<proto::RecoverySummary>) {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
     (daemon.list(), daemon.recovery_summary())
@@ -148,10 +141,10 @@ impl Drop for OwnedRestoreDaemon {
 
 struct LiveClaude {
     _dir: tempfile::TempDir,
-    previous_path: Option<std::ffi::OsString>,
+    path: std::ffi::OsString,
 }
 impl LiveClaude {
-    fn new() -> Self {
+    fn new(env: &HostEnv) -> Self {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let executable = dir.path().join("claude");
@@ -161,33 +154,26 @@ impl LiveClaude {
         )
         .unwrap();
         std::fs::set_permissions(executable, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let previous_path = std::env::var_os("PATH");
         let mut paths = vec![dir.path().to_path_buf()];
-        if let Some(previous) = &previous_path {
+        if let Some(previous) = env.var_os("PATH") {
             paths.extend(std::env::split_paths(previous));
         }
-        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
         Self {
             _dir: dir,
-            previous_path,
+            path: std::env::join_paths(paths).unwrap(),
         }
     }
-}
-impl Drop for LiveClaude {
-    fn drop(&mut self) {
-        if let Some(previous) = &self.previous_path {
-            std::env::set_var("PATH", previous);
-        } else {
-            std::env::remove_var("PATH");
-        }
+
+    fn env(&self, env: &HostEnv) -> HostEnv {
+        env.with("PATH", Some(&self.path))
     }
 }
 
-fn boot_owned_restore(state: &std::path::Path) -> OwnedRestoreDaemon {
+fn boot_owned_restore(state: &std::path::Path, env: &HostEnv) -> OwnedRestoreDaemon {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
     let owned = OwnedRestoreDaemon(daemon);
@@ -213,17 +199,12 @@ fn boot_owned_restore(state: &std::path::Path) -> OwnedRestoreDaemon {
 
 #[test]
 fn a_refused_durable_close_keeps_the_restored_pane_retryable() {
-    let _env = env_lock();
     let state = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     seed(state.path(), &[project.path()], true);
     let path = state.path().join("test.db");
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig::new(
-            TOKEN.to_string(),
-            path.clone(),
-            houston_core::host_env::HostEnv::capture(),
-        ),
+        DaemonConfig::new(TOKEN.to_string(), path.clone(), common::base_env()),
         SafeModeFlags {
             disable_auto_restore: true,
             ..Default::default()
@@ -251,11 +232,7 @@ fn a_refused_durable_close_keeps_the_restored_pane_retryable() {
     assert!(!daemon.list().iter().any(|s| s.id == 1));
     drop(daemon);
     let reopened = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig::new(
-            TOKEN.to_string(),
-            path,
-            houston_core::host_env::HostEnv::capture(),
-        ),
+        DaemonConfig::new(TOKEN.to_string(), path, common::base_env()),
         SafeModeFlags {
             disable_auto_restore: true,
             ..Default::default()
@@ -270,10 +247,10 @@ fn a_refused_durable_close_keeps_the_restored_pane_retryable() {
 
 #[test]
 fn clean_shutdown_respawns_within_budget_and_defers_the_rest() {
-    let _env = env_lock();
-    std::env::set_var("SHELL", "/bin/sh");
-    std::env::set_var("HOUSTON_RESTORE_BUDGET", "2");
-    std::env::remove_var("HOUSTON_SAFE_MODE");
+    let env = common::base_env()
+        .with("SHELL", Some("/bin/sh"))
+        .with("HOUSTON_RESTORE_BUDGET", Some("2"))
+        .without("HOUSTON_SAFE_MODE");
 
     let state = tempfile::tempdir().unwrap();
     let p1 = tempfile::tempdir().unwrap();
@@ -281,7 +258,7 @@ fn clean_shutdown_respawns_within_budget_and_defers_the_rest() {
     let p3 = tempfile::tempdir().unwrap();
     seed(state.path(), &[p1.path(), p2.path(), p3.path()], true);
 
-    let (sessions, recovery) = boot_and_list(state.path());
+    let (sessions, recovery) = boot_and_list(state.path(), &env);
     let running: Vec<_> = sessions
         .iter()
         .filter(|s| s.state == proto::SessionState::Running)
@@ -306,16 +283,16 @@ fn clean_shutdown_respawns_within_budget_and_defers_the_rest() {
 
 #[test]
 fn crash_restores_with_the_same_budget_as_clean_shutdown() {
-    let _env = env_lock();
-    std::env::set_var("SHELL", "/bin/sh");
-    std::env::remove_var("HOUSTON_SAFE_MODE");
-    std::env::set_var("HOUSTON_RESTORE_BUDGET", "6");
+    let env = common::base_env()
+        .with("SHELL", Some("/bin/sh"))
+        .without("HOUSTON_SAFE_MODE")
+        .with("HOUSTON_RESTORE_BUDGET", Some("6"));
 
     let state = tempfile::tempdir().unwrap();
     let p1 = tempfile::tempdir().unwrap();
     seed(state.path(), &[p1.path()], false);
 
-    let (sessions, recovery) = boot_and_list(state.path());
+    let (sessions, recovery) = boot_and_list(state.path(), &env);
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].restore_deferred, None);
     assert_eq!(sessions[0].state, proto::SessionState::Running);
@@ -327,10 +304,10 @@ fn crash_restores_with_the_same_budget_as_clean_shutdown() {
 
 #[test]
 fn invalid_cwd_is_deferred_not_respawned() {
-    let _env = env_lock();
-    std::env::set_var("SHELL", "/bin/sh");
-    std::env::remove_var("HOUSTON_SAFE_MODE");
-    std::env::set_var("HOUSTON_RESTORE_BUDGET", "6");
+    let env = common::base_env()
+        .with("SHELL", Some("/bin/sh"))
+        .without("HOUSTON_SAFE_MODE")
+        .with("HOUSTON_RESTORE_BUDGET", Some("6"));
 
     let state = tempfile::tempdir().unwrap();
     let gone = tempfile::tempdir().unwrap();
@@ -382,7 +359,7 @@ fn invalid_cwd_is_deferred_not_respawned() {
     drop(db);
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
-    let (sessions, _) = boot_and_list(state.path());
+    let (sessions, _) = boot_and_list(state.path(), &env);
     assert_eq!(
         sessions[0].restore_deferred,
         Some(proto::RestoreReason::InvalidCwd)
@@ -392,17 +369,17 @@ fn invalid_cwd_is_deferred_not_respawned() {
 #[cfg(unix)]
 #[test]
 fn spawn_failure_trips_the_circuit_breaker() {
-    let _env = env_lock();
-    std::env::set_var("SHELL", "/nonexistent/houston-test-shell");
-    std::env::remove_var("HOUSTON_SAFE_MODE");
-    std::env::set_var("HOUSTON_RESTORE_BUDGET", "6");
+    let env = common::base_env()
+        .with("SHELL", Some("/nonexistent/houston-test-shell"))
+        .without("HOUSTON_SAFE_MODE")
+        .with("HOUSTON_RESTORE_BUDGET", Some("6"));
 
     let state = tempfile::tempdir().unwrap();
     let p1 = tempfile::tempdir().unwrap();
     let p2 = tempfile::tempdir().unwrap();
     seed(state.path(), &[p1.path(), p2.path()], true);
 
-    let (sessions, recovery) = boot_and_list(state.path());
+    let (sessions, recovery) = boot_and_list(state.path(), &env);
     assert_eq!(sessions.len(), 2, "both husks kept: {sessions:?}");
     let reasons: Vec<_> = sessions.iter().map(|s| s.restore_deferred).collect();
     assert_eq!(
@@ -427,28 +404,27 @@ fn spawn_failure_trips_the_circuit_breaker() {
 
 #[test]
 fn safe_mode_defers_everything() {
-    let _env = env_lock();
-    std::env::set_var("SHELL", "/bin/sh");
-    std::env::set_var("HOUSTON_SAFE_MODE", "1");
+    let env = common::base_env()
+        .with("SHELL", Some("/bin/sh"))
+        .with("HOUSTON_SAFE_MODE", Some("1"));
 
     let state = tempfile::tempdir().unwrap();
     let p1 = tempfile::tempdir().unwrap();
     seed(state.path(), &[p1.path()], true);
 
-    let (sessions, _) = boot_and_list(state.path());
+    let (sessions, _) = boot_and_list(state.path(), &env);
     assert_eq!(
         sessions[0].restore_deferred,
         Some(proto::RestoreReason::SafeMode)
     );
-    std::env::remove_var("HOUSTON_SAFE_MODE");
 }
 
 #[test]
 fn choose_folder_respawn_overrides_the_cwd() {
-    let _env = env_lock();
-    std::env::set_var("SHELL", "/bin/sh");
-    std::env::remove_var("HOUSTON_SAFE_MODE");
-    std::env::set_var("HOUSTON_RESTORE_BUDGET", "0");
+    let env = common::base_env()
+        .with("SHELL", Some("/bin/sh"))
+        .without("HOUSTON_SAFE_MODE")
+        .with("HOUSTON_RESTORE_BUDGET", Some("0"));
 
     let state = tempfile::tempdir().unwrap();
     let old_dir = tempfile::tempdir().unwrap();
@@ -457,7 +433,7 @@ fn choose_folder_respawn_overrides_the_cwd() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
 
@@ -488,7 +464,7 @@ fn boot_and_list_with_flags(
         DaemonConfig::new(
             TOKEN.to_string(),
             state_dir.join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            common::base_env(),
         ),
         flags,
     )
@@ -582,7 +558,6 @@ fn no_flags_set_runs_normal_restore_policy() {
 #[test]
 fn restored_shell_pane_gets_the_mcp_credential() {
     use std::os::unix::fs::PermissionsExt;
-    let _env = env_lock();
     let state_dir = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     let dump = state_dir.path().join("env.txt");
@@ -593,9 +568,7 @@ fn restored_shell_pane_gets_the_mcp_credential() {
     )
     .unwrap();
     std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
-    std::env::set_var("SHELL", &shell);
-    std::env::remove_var("HOUSTON_RESTORE_BUDGET");
-    std::env::remove_var("HOUSTON_SAFE_MODE");
+    let shell_env = common::base_env().with("SHELL", Some(&shell));
     seed(state_dir.path(), &[project.path()], true);
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -604,7 +577,7 @@ fn restored_shell_pane_gets_the_mcp_credential() {
         DaemonConfig::new(
             TOKEN.to_string(),
             state_dir.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            shell_env,
         ),
         port,
     )
@@ -652,12 +625,13 @@ fn restored_shell_pane_gets_the_mcp_credential() {
 
 #[test]
 fn an_agent_husk_comes_back_live_and_never_as_a_corpse() {
-    let _env = env_lock();
-    std::env::set_var("SHELL", "/bin/sh");
-    std::env::remove_var("HOUSTON_RESTORE_BUDGET");
-    std::env::remove_var("HOUSTON_SAFE_MODE");
+    let env = common::base_env()
+        .with("SHELL", Some("/bin/sh"))
+        .without("HOUSTON_RESTORE_BUDGET")
+        .without("HOUSTON_SAFE_MODE");
 
-    let _provider = LiveClaude::new();
+    let provider = LiveClaude::new(&env);
+    let env = provider.env(&env);
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
     seed_one(
@@ -670,7 +644,7 @@ fn an_agent_husk_comes_back_live_and_never_as_a_corpse() {
     );
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
-    let owned = boot_owned_restore(state.path());
+    let owned = boot_owned_restore(state.path(), &env);
     let sessions = owned.0.list();
     let recovery = owned.0.recovery_summary();
     let husk = sessions
@@ -692,10 +666,10 @@ fn an_agent_husk_comes_back_live_and_never_as_a_corpse() {
 
 #[test]
 fn a_restored_session_keeps_its_original_identity() {
-    let _env = env_lock();
-    std::env::set_var("SHELL", "/bin/sh");
-    std::env::remove_var("HOUSTON_RESTORE_BUDGET");
-    std::env::remove_var("HOUSTON_SAFE_MODE");
+    let env = common::base_env()
+        .with("SHELL", Some("/bin/sh"))
+        .without("HOUSTON_RESTORE_BUDGET")
+        .without("HOUSTON_SAFE_MODE");
 
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
@@ -709,7 +683,7 @@ fn a_restored_session_keeps_its_original_identity() {
     );
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
-    let (sessions, _) = boot_and_list(state.path());
+    let (sessions, _) = boot_and_list(state.path(), &env);
     let restored = sessions
         .iter()
         .find(|s| s.title == "Husk-7")
@@ -724,12 +698,13 @@ fn a_restored_session_keeps_its_original_identity() {
 
 #[test]
 fn boot_defers_an_unresumable_child_when_its_parent_starts_fresh() {
-    let _env = env_lock();
-    std::env::set_var("SHELL", "/bin/sh");
-    std::env::remove_var("HOUSTON_RESTORE_BUDGET");
-    std::env::remove_var("HOUSTON_SAFE_MODE");
+    let env = common::base_env()
+        .with("SHELL", Some("/bin/sh"))
+        .without("HOUSTON_RESTORE_BUDGET")
+        .without("HOUSTON_SAFE_MODE");
 
-    let _provider = LiveClaude::new();
+    let provider = LiveClaude::new(&env);
+    let env = provider.env(&env);
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
     seed_one(
@@ -750,7 +725,7 @@ fn boot_defers_an_unresumable_child_when_its_parent_starts_fresh() {
     );
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
-    let owned = boot_owned_restore(state.path());
+    let owned = boot_owned_restore(state.path(), &env);
     let sessions = owned.0.list();
     let summary = owned.0.recovery_summary();
     let child = sessions

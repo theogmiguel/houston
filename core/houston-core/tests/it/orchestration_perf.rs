@@ -140,7 +140,7 @@ impl Rig {
         let daemon = Daemon::new(DaemonConfig::new(
             common::TOKEN.into(),
             state.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            common::base_env(),
         ))
         .unwrap();
         let (addr, server) =
@@ -904,11 +904,7 @@ async fn restart_to_restored_notice_fixture(iterations: usize) {
         drop(db);
         let began = Instant::now();
         let restarted = Daemon::new_with_safe_mode_flags_for_test(
-            DaemonConfig::new(
-                common::TOKEN.into(),
-                path,
-                houston_core::host_env::HostEnv::capture(),
-            ),
+            DaemonConfig::new(common::TOKEN.into(), path, common::base_env()),
             houston_core::daemon::SafeModeFlags::default(),
         )
         .unwrap();

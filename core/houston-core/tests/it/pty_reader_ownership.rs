@@ -219,7 +219,7 @@ fn startup_rollback_terminates_descendant_before_reaping_owned_root() {
     let daemon = Daemon::new(DaemonConfig::new(
         common::TOKEN.into(),
         dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     let identities = Arc::new(std::sync::Mutex::new(None));

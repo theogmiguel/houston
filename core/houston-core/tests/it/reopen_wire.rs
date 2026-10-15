@@ -92,7 +92,7 @@ fn boot_daemon(db_path: std::path::PathBuf) -> Arc<Daemon> {
     Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap()
 }
@@ -312,7 +312,7 @@ async fn respawn_refuses_a_swarm_tied_session() {
     let daemon = Daemon::new(DaemonConfig::new(
         "test-token".into(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
 

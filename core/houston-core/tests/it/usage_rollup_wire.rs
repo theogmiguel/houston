@@ -53,7 +53,7 @@ async fn start(
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.into(),
         state_dir.join("houston.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     let (addr, server_task) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())

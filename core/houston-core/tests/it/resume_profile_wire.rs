@@ -1,6 +1,7 @@
 #![cfg(unix)]
 #![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
+use crate::common;
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::db::Db;
 use houston_core::hook_drop::{self, HookDrop};
@@ -73,7 +74,7 @@ impl Fixture {
         let daemon = Daemon::new(DaemonConfig::new(
             "profile-resume-test-token".into(),
             state.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            common::base_env(),
         ))
         .unwrap();
         Self {

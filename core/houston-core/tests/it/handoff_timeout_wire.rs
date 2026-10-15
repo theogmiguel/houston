@@ -1,4 +1,3 @@
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use common::*;
@@ -29,8 +28,8 @@ async fn expect_started(ws: &mut WsStream) -> u32 {
 
 #[tokio::test]
 async fn silent_generator_times_out() {
-    std::env::set_var("HOUSTON_HANDOFF_TIMEOUT_MS", "1500");
-    let (addr, _state, daemon) = start_daemon_with_handle().await;
+    let env = common::base_env().with("HOUSTON_HANDOFF_TIMEOUT_MS", Some("1500"));
+    let (addr, _state, daemon) = start_daemon_with_handle_in(env.clone()).await;
     let project = tempfile::tempdir().unwrap();
     let mut ws = connect_and_hello(addr, TOKEN).await;
     let _ = next_control(&mut ws).await;

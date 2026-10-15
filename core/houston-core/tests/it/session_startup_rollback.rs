@@ -125,7 +125,7 @@ fn startup_failures_are_owned_and_transactional() {
     let daemon = Daemon::new(DaemonConfig::new(
         "test-token".into(),
         database.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     daemon.set_port(1); // Mint local credentials without running an MCP server.

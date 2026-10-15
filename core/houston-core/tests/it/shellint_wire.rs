@@ -1,5 +1,4 @@
 #![cfg(unix)]
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -29,8 +28,6 @@ fn create_shell_session(daemon: &Arc<Daemon>, dir: &std::path::Path, integration
         .unwrap()
         .id
 }
-
-static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[test]
 fn managed_codex_launcher_survives_user_rc_path_and_alias_overrides() {
@@ -115,11 +112,10 @@ fn managed_codex_launcher_survives_user_rc_path_and_alias_overrides() {
     }
 }
 
-async fn pin_env(home: &std::path::Path) -> tokio::sync::MutexGuard<'static, ()> {
-    let guard = ENV_LOCK.lock().await;
-    std::env::set_var("HOME", home);
-    std::env::set_var("SHELL", "/bin/bash");
-    guard
+fn pinned_env(home: &std::path::Path) -> houston_core::host_env::HostEnv {
+    common::base_env()
+        .with("HOME", Some(home))
+        .with("SHELL", Some("/bin/bash"))
 }
 
 async fn poll<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
@@ -136,7 +132,7 @@ async fn poll<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
 #[tokio::test]
 async fn bash_markers_become_blocks_and_ledger_rows() {
     let fake_home = tempfile::tempdir().unwrap();
-    let _env = pin_env(fake_home.path()).await;
+    let env = pinned_env(fake_home.path());
 
     let state_dir = tempfile::tempdir().unwrap();
     let db_path = state_dir.path().join("test.db");
@@ -146,7 +142,7 @@ async fn bash_markers_become_blocks_and_ledger_rows() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
 
@@ -231,14 +227,14 @@ async fn bash_markers_become_blocks_and_ledger_rows() {
 #[tokio::test]
 async fn program_output_cannot_forge_markers_and_child_environment_is_clean() {
     let fake_home = tempfile::tempdir().unwrap();
-    let _env = pin_env(fake_home.path()).await;
+    let env = pinned_env(fake_home.path());
 
     let state_dir = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
 
@@ -315,13 +311,13 @@ async fn program_output_cannot_forge_markers_and_child_environment_is_clean() {
 #[tokio::test]
 async fn integration_can_be_disabled_per_spawn() {
     let fake_home = tempfile::tempdir().unwrap();
-    let _env = pin_env(fake_home.path()).await;
+    let env = pinned_env(fake_home.path());
 
     let state_dir = tempfile::tempdir().unwrap();
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
     let project = tempfile::tempdir().unwrap();
@@ -348,14 +344,14 @@ async fn user_prompt_command_never_fabricates_blocks_or_exit_codes() {
         "__user_pc() { :; }\nPROMPT_COMMAND='history -a; __user_pc'\n",
     )
     .unwrap();
-    let _env = pin_env(fake_home.path()).await;
+    let env = pinned_env(fake_home.path());
 
     let state_dir = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
 

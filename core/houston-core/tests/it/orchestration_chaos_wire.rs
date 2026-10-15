@@ -1,6 +1,7 @@
 #![cfg(unix)]
 #![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
+use crate::common;
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::mcp_creds::McpScope;
 use houston_protocol as proto;
@@ -77,7 +78,7 @@ impl Rig {
         let daemon = Daemon::new(DaemonConfig::new(
             "chaos-test-token".into(),
             state.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            common::base_env(),
         ))
         .unwrap();
         daemon.reap_set_exit_hook_for_test(Box::new(|| {}));
@@ -1670,9 +1671,6 @@ async fn h4_auto_review_with_its_command_running_is_not_stalled() {
     );
     assert!(!rig.daemon.delegation_of(child).unwrap().stalled);
 }
-
-#[cfg(feature = "test-barriers")]
-use crate::common;
 
 #[cfg(feature = "test-barriers")]
 mod daemon_crash {

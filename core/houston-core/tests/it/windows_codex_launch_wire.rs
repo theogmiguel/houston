@@ -1,5 +1,6 @@
 #![cfg(windows)]
 
+use crate::common;
 use houston_core::{codex_pane, spawn};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
@@ -91,7 +92,7 @@ fn daemon_direct_custom_and_typed_shell_launches_keep_distinct_credentials() {
     let daemon = Daemon::new(DaemonConfig::new(
         "fixture".into(),
         root.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     struct Sessions(std::sync::Arc<Daemon>);

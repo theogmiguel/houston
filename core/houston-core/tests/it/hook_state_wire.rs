@@ -1,6 +1,7 @@
 #![cfg(unix)]
 #![allow(clippy::disallowed_methods)]
 
+use crate::common;
 use houston_core::daemon::{Daemon, DaemonConfig};
 use houston_core::hook_state;
 use houston_protocol as proto;
@@ -44,7 +45,7 @@ fn daemon(state_dir: &Path) -> std::sync::Arc<Daemon> {
     Daemon::new(DaemonConfig::new(
         "test-token".to_string(),
         state_dir.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap()
 }

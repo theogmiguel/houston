@@ -366,7 +366,7 @@ async fn start_daemon_on(db_path: PathBuf) -> (std::net::SocketAddr, Arc<Daemon>
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     let (addr, _handle) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())

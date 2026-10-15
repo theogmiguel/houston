@@ -1,5 +1,6 @@
 #![cfg(windows)]
 
+use crate::common;
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::mcp_creds::McpScope;
 use houston_protocol as proto;
@@ -82,7 +83,7 @@ impl Rig {
         let daemon = Daemon::new(DaemonConfig::new(
             "windows-wire-fixture".into(),
             state.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            common::base_env(),
         ))
         .unwrap();
         daemon.workspace_add(repo.to_str().unwrap()).unwrap();

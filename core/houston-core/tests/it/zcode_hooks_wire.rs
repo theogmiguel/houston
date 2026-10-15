@@ -173,7 +173,7 @@ async fn the_installed_zcode_stop_entry_reaches_the_channels_drop_dir() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
 

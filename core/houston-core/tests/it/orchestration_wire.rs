@@ -4,7 +4,7 @@
 use crate::common;
 
 use common::{
-    collect_broadcast_envelope, collect_broadcast_until, start_daemon_with_handle, TOKEN,
+    collect_broadcast_envelope, collect_broadcast_until, start_daemon_with_handle_in, TOKEN,
 };
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::mcp_creds::McpScope;
@@ -287,14 +287,24 @@ fn shim_dir() -> PathBuf {
                 std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
             }
         }
+        dir
+    })
+    .clone()
+}
+
+/// The fixture CLIs first on PATH, a throwaway HOME, and no inherited CODEX_HOME.
+fn shim_env() -> houston_core::host_env::HostEnv {
+    static ENV: OnceLock<houston_core::host_env::HostEnv> = OnceLock::new();
+    ENV.get_or_init(|| {
+        let dir = shim_dir();
         let sep = if cfg!(windows) { ";" } else { ":" };
-        let path_env = std::env::var("PATH").unwrap_or_default();
-        std::env::set_var("PATH", format!("{}{sep}{path_env}", dir.display()));
+        let base = common::base_env();
+        let path_env = base.var("PATH").unwrap_or_default();
         let home = dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
-        std::env::set_var("HOME", &home);
-        std::env::remove_var("CODEX_HOME");
-        dir
+        base.with("PATH", Some(format!("{}{sep}{path_env}", dir.display())))
+            .with("HOME", Some(&home))
+            .without("CODEX_HOME")
     })
     .clone()
 }
@@ -353,7 +363,7 @@ struct Rig {
 
 async fn rig(name: &str) -> Rig {
     shim_dir();
-    let (addr, state, daemon) = start_daemon_with_handle().await;
+    let (addr, state, daemon) = start_daemon_with_handle_in(shim_env()).await;
     daemon.install_consented_agent_hooks();
     let ws_dir = state.path().join(name);
     std::fs::create_dir_all(&ws_dir).unwrap();
@@ -436,7 +446,7 @@ impl Rig {
     async fn post_spawn(&self, token: &str, body: serde_json::Value) -> (u16, serde_json::Value) {
         let (status, response) =
             http_json(self.addr, "POST", "/orchestrate/spawn", token, Some(body)).await;
-        if status == 200 && std::env::var_os("FIXTURE_SILENT").is_none() {
+        if status == 200 && self.daemon.env().var_os("FIXTURE_SILENT").is_none() {
             let child = response["session_id"].as_u64().unwrap() as u32;
             await_child_echo(&self.daemon, child, "FIXTURE-READY").await;
         }
@@ -570,12 +580,7 @@ async fn spawn_rolls_back_when_delegation_persistence_fails() {
         "delegation persistence fails before any child starts"
     );
     drop(conn);
-    let reopened = Daemon::new(DaemonConfig::new(
-        TOKEN.to_string(),
-        db_path,
-        houston_core::host_env::HostEnv::capture(),
-    ))
-    .unwrap();
+    let reopened = Daemon::new(DaemonConfig::new(TOKEN.to_string(), db_path, shim_env())).unwrap();
     assert!(!reopened
         .list()
         .iter()
@@ -3805,12 +3810,7 @@ async fn k2_temporary_child_is_ended_and_kept_with_durable_result_after_restart(
     );
     drop(conn);
 
-    let reopened = Daemon::new(DaemonConfig::new(
-        TOKEN.to_string(),
-        db_path,
-        houston_core::host_env::HostEnv::capture(),
-    ))
-    .unwrap();
+    let reopened = Daemon::new(DaemonConfig::new(TOKEN.to_string(), db_path, shim_env())).unwrap();
     assert!(
         reopened
             .list()
@@ -4216,7 +4216,7 @@ async fn a_turn_end_during_a_childs_startup_wakes_nobody() {
     let pane = r.pane();
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
-    std::env::set_var("FIXTURE_SILENT", "1");
+    r.daemon.set_env_var_for_test("FIXTURE_SILENT", Some("1"));
     let (_, body) = r
         .post_spawn(
             &token,
@@ -4227,7 +4227,7 @@ async fn a_turn_end_during_a_childs_startup_wakes_nobody() {
             }),
         )
         .await;
-    std::env::remove_var("FIXTURE_SILENT");
+    r.daemon.set_env_var_for_test("FIXTURE_SILENT", None);
     let kid = body["session_id"].as_u64().unwrap() as u32;
     apply_hook_event(r._state.path(), pane.id, "Stop").await;
     assert_eq!(
@@ -9884,12 +9884,7 @@ async fn settled_exited_children_without_retention_are_backfilled_before_restore
     .unwrap();
     drop(conn);
 
-    let reopened = Daemon::new(DaemonConfig::new(
-        TOKEN.into(),
-        db_path,
-        houston_core::host_env::HostEnv::capture(),
-    ))
-    .unwrap();
+    let reopened = Daemon::new(DaemonConfig::new(TOKEN.into(), db_path, shim_env())).unwrap();
     assert!(reopened.list().iter().any(|session| session.id == child));
     assert!(reopened
         .delegation_of(child)
@@ -10265,11 +10260,7 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
     }
     drop(db);
     let restarted = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig::new(
-            TOKEN.into(),
-            path.clone(),
-            houston_core::host_env::HostEnv::capture(),
-        ),
+        DaemonConfig::new(TOKEN.into(), path.clone(), shim_env()),
         houston_core::daemon::SafeModeFlags::default(),
     )
     .unwrap();
@@ -10794,7 +10785,7 @@ async fn result_archive_retains_full_body_artifacts_and_scope_after_child_close(
     let reopened = Daemon::new(DaemonConfig::new(
         TOKEN.into(),
         r._state.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        shim_env(),
     ))
     .unwrap();
     let proto::ServerMsg::DelegationResultDetail { row: restored, .. } = reopened
@@ -10885,7 +10876,7 @@ async fn k4_latest_results_are_parent_scoped_bounded_read_only_and_durable() {
         Daemon::new(DaemonConfig::new(
             TOKEN.into(),
             r._state.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            shim_env(),
         ))
         .unwrap(),
     );
@@ -11485,8 +11476,8 @@ async fn workspace_info_reports_bounded_local_provider_catalog() {
         br#"{"models":[{"slug":"fixture-codex-model"}]}"#,
     )
     .unwrap();
-    let previous_home = std::env::var_os("CODEX_HOME");
-    std::env::set_var("CODEX_HOME", &codex_home);
+    r.daemon
+        .set_env_var_for_test("CODEX_HOME", Some(codex_home.to_str().unwrap()));
     let info = mcp_call(
         r.addr,
         &r.token_for(parent.id),
@@ -11494,11 +11485,6 @@ async fn workspace_info_reports_bounded_local_provider_catalog() {
         serde_json::json!({}),
     )
     .await;
-    if let Some(home) = previous_home {
-        std::env::set_var("CODEX_HOME", home);
-    } else {
-        std::env::remove_var("CODEX_HOME");
-    }
     assert_eq!(info["isError"], false, "{info}");
     let info = &info["structuredContent"];
     let providers = info["providers"].as_array().unwrap();
@@ -11866,14 +11852,15 @@ async fn restart_interrupts_before_delivery_and_waits_for_authoritative_idle() {
         ("codex", proto::AgentKind::Codex, "Interrupt", 0x1b),
         ("grok", proto::AgentKind::Grok, "StopCancelled", 0x03),
     ] {
-        std::env::set_var("HOUSTON_TEST_RAW_PTY", "1");
+        r.daemon
+            .set_env_var_for_test("HOUSTON_TEST_RAW_PTY", Some("1"));
         let (status, spawned) = r
             .post_spawn(
                 &token,
                 serde_json::json!({"kind":provider,"prompt":"work","reusable":true}),
             )
             .await;
-        std::env::remove_var("HOUSTON_TEST_RAW_PTY");
+        r.daemon.set_env_var_for_test("HOUSTON_TEST_RAW_PTY", None);
         assert_eq!(status, 200, "{spawned}");
         let child = spawned["session_id"].as_u64().unwrap() as u32;
         let start = if provider == "opencode" {
@@ -14079,10 +14066,11 @@ async fn input_policy_verified_denials_send_exact_bytes_once_and_wait_for_provid
         let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
         let parent = r.pane();
         r.daemon.orchestration_set(true).unwrap();
-        std::env::set_var("HOUSTON_TEST_RAW_PTY", "1");
+        r.daemon
+            .set_env_var_for_test("HOUSTON_TEST_RAW_PTY", Some("1"));
         // Codex Ask produces an actual modal; Auto PermissionRequest alone is review activity.
         let child = input_policy_child(&r, parent.id, provider, Some(false)).await;
-        std::env::remove_var("HOUSTON_TEST_RAW_PTY");
+        r.daemon.set_env_var_for_test("HOUSTON_TEST_RAW_PTY", None);
         await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
         let native_id = if provider == "antigravity" {
             "3"
@@ -14537,19 +14525,14 @@ async fn input_policy_effective_profile_custom_bindings_refuse_without_claiming_
     let parent = r.pane();
     r.daemon.orchestration_set(true).unwrap();
     let profile = tempfile::tempdir().unwrap();
-    let saved = std::env::var_os("CLAUDE_CONFIG_DIR");
     std::fs::write(
         profile.path().join("keybindings.json"),
         r#"{"bindings":[{"context":"Confirmation","bindings":{"escape":"confirm:yes"}}]}"#,
     )
     .unwrap();
-    std::env::set_var("CLAUDE_CONFIG_DIR", profile.path());
+    r.daemon
+        .set_env_var_for_test("CLAUDE_CONFIG_DIR", Some(profile.path().to_str().unwrap()));
     let child = input_policy_child(&r, parent.id, "claude", Some(false)).await;
-    if let Some(saved) = saved {
-        std::env::set_var("CLAUDE_CONFIG_DIR", saved);
-    } else {
-        std::env::remove_var("CLAUDE_CONFIG_DIR");
-    }
     input_policy_permission(&r, child, "claude", "custom-binding").await;
     let deny = proto::PaneDenyRequest {
         child,
@@ -14628,9 +14611,10 @@ async fn input_policy_real_provider_episode_denial_crosses_mcp_http_and_cli_door
         let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
         let parent = r.pane();
         r.daemon.orchestration_set(true).unwrap();
-        std::env::set_var("HOUSTON_TEST_RAW_PTY", "1");
+        r.daemon
+            .set_env_var_for_test("HOUSTON_TEST_RAW_PTY", Some("1"));
         let child = input_policy_child(&r, parent.id, "codex", Some(false)).await;
-        std::env::remove_var("HOUSTON_TEST_RAW_PTY");
+        r.daemon.set_env_var_for_test("HOUSTON_TEST_RAW_PTY", None);
         await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
         input_policy_permission(&r, child, "codex", "deny-door").await;
         let input = input_policy_request(&r, child);

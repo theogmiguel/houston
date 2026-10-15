@@ -1,19 +1,24 @@
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use common::TOKEN;
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
+use houston_core::host_env::HostEnv;
 use houston_protocol as proto;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-static GRACE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 fn daemon(state_dir: &std::path::Path) -> Arc<Daemon> {
+    daemon_with(state_dir, &[])
+}
+
+fn daemon_with(state_dir: &std::path::Path, vars: &[(&str, &str)]) -> Arc<Daemon> {
+    let env = vars
+        .iter()
+        .fold(HostEnv::capture(), |env, (k, v)| env.with(k, Some(*v)));
     Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        env,
     ))
     .unwrap()
 }
@@ -41,8 +46,7 @@ fn create_session(d: &Arc<Daemon>, dir: &std::path::Path) -> u32 {
 #[tokio::test]
 async fn a_daemon_that_never_receives_a_client_arms_on_boot() {
     let state = tempfile::tempdir().unwrap();
-    std::env::set_var("SHELL", "/bin/sh");
-    let d = daemon(state.path());
+    let d = daemon_with(state.path(), &[("SHELL", "/bin/sh")]);
     let (armed, deadline) = d.reap_status();
     assert!(armed, "a never-connected boot must arm the reap task");
     assert!(deadline.is_some());
@@ -80,8 +84,7 @@ async fn reconnecting_cancels_an_armed_reap() {
 async fn a_live_session_holds_off_the_arm_and_its_exit_arms_it() {
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
-    std::env::set_var("SHELL", "/bin/sh");
-    let d = daemon(state.path());
+    let d = daemon_with(state.path(), &[("SHELL", "/bin/sh")]);
     let id = create_session(&d, proj.path());
     assert!(
         !d.reap_status().0,
@@ -142,12 +145,9 @@ async fn an_enabled_routine_holds_off_the_arm_disabling_it_arms_the_reap() {
 
 #[tokio::test]
 async fn the_reap_grace_override_changes_the_reported_deadline() {
-    let _env = GRACE_ENV_LOCK.lock().unwrap();
-    std::env::set_var("HOUSTON_REAP_GRACE_MS", "999999");
     let state = tempfile::tempdir().unwrap();
-    let d = daemon(state.path());
+    let d = daemon_with(state.path(), &[("HOUSTON_REAP_GRACE_MS", "999999")]);
     let (armed, deadline_ms) = d.reap_status();
-    std::env::remove_var("HOUSTON_REAP_GRACE_MS");
     assert!(armed);
     let now = houston_core::daemon::now_unix_ms();
     let remaining = deadline_ms.unwrap() - now;
@@ -160,13 +160,7 @@ async fn the_reap_grace_override_changes_the_reported_deadline() {
 #[tokio::test]
 async fn an_uncancelled_reap_actually_fires_after_its_grace() {
     let state = tempfile::tempdir().unwrap();
-    let d = {
-        let _env = GRACE_ENV_LOCK.lock().unwrap();
-        std::env::set_var("HOUSTON_REAP_GRACE_MS", "30");
-        let d = daemon(state.path());
-        std::env::remove_var("HOUSTON_REAP_GRACE_MS");
-        d
-    };
+    let d = daemon_with(state.path(), &[("HOUSTON_REAP_GRACE_MS", "30")]);
 
     let fired = Arc::new(AtomicBool::new(false));
     {
@@ -194,13 +188,7 @@ async fn a_fired_reap_removes_the_discovery_files() {
     std::fs::write(&daemon_json, b"{}").unwrap();
     std::fs::write(&supervisor_json, b"{}").unwrap();
 
-    let d = {
-        let _env = GRACE_ENV_LOCK.lock().unwrap();
-        std::env::set_var("HOUSTON_REAP_GRACE_MS", "30");
-        let d = daemon(state.path());
-        std::env::remove_var("HOUSTON_REAP_GRACE_MS");
-        d
-    };
+    let d = daemon_with(state.path(), &[("HOUSTON_REAP_GRACE_MS", "30")]);
 
     let fired = Arc::new(AtomicBool::new(false));
     {
@@ -235,16 +223,9 @@ async fn a_fired_reap_removes_the_discovery_files() {
 
 #[tokio::test]
 async fn a_spawn_racing_the_deadline_wins_and_the_reap_does_not_fire() {
-    std::env::set_var("SHELL", "/bin/sh");
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
-    let d = {
-        let _env = GRACE_ENV_LOCK.lock().unwrap();
-        std::env::set_var("HOUSTON_REAP_GRACE_MS", "60");
-        let d = daemon(state.path());
-        std::env::remove_var("HOUSTON_REAP_GRACE_MS");
-        d
-    };
+    let d = daemon_with(state.path(), &[("HOUSTON_REAP_GRACE_MS", "60")]);
     assert!(
         d.reap_status().0,
         "never-connected boot arms with a 60ms deadline"
@@ -275,7 +256,7 @@ async fn a_spawn_racing_the_deadline_wins_and_the_reap_does_not_fire() {
 
 #[tokio::test]
 async fn failed_idle_shutdown_capture_does_not_exit_and_retries() {
-    if std::env::var_os("HOUSTON_REAP_RETRY_FIXTURE").is_none() {
+    if common::process_var_os("HOUSTON_REAP_RETRY_FIXTURE").is_none() {
         let home = tempfile::tempdir().unwrap();
         let status = common::hermetic_command(std::env::current_exe().unwrap(), home.path())
             .args([

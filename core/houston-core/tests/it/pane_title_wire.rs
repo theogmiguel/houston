@@ -237,7 +237,7 @@ async fn a_restored_prompt_named_pane_accepts_its_clis_title() {
     let daemon = Daemon::new(DaemonConfig::new(
         "title-test".into(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     let replacement = daemon
@@ -588,11 +588,7 @@ async fn legacy_manual_title_without_provenance_stays_locked_until_reset() {
     db.acknowledge_uncontained_recovery(1).unwrap();
     assert_eq!(db.session_title_source(1).unwrap(), None);
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig::new(
-            "legacy-title".into(),
-            db_path,
-            houston_core::host_env::HostEnv::capture(),
-        ),
+        DaemonConfig::new("legacy-title".into(), db_path, common::base_env()),
         houston_core::daemon::SafeModeFlags {
             disable_auto_restore: true,
             ..Default::default()
@@ -629,7 +625,7 @@ async fn refused_restored_title_reset_keeps_the_manual_name_locked() {
         DaemonConfig::new(
             "refused-title-reset".into(),
             db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            common::base_env(),
         ),
         houston_core::daemon::SafeModeFlags {
             disable_auto_restore: true,
@@ -677,7 +673,7 @@ async fn user_title_and_candidates_survive_boot_restore() {
     let daemon = Daemon::new(DaemonConfig::new(
         "restore-title".into(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     let replacement = daemon

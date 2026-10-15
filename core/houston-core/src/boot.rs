@@ -30,7 +30,7 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
 /// before the agent hook configs are refreshed.
 pub fn spawn_startup_refresh(daemon: &Arc<Daemon>) {
     let bound_port = daemon.bound_port();
-    let env = daemon.env().clone();
+    let env = daemon.env();
     let daemon = daemon.clone();
     tokio::task::spawn_blocking(move || {
         daemon.sweep_legacy_hooks();

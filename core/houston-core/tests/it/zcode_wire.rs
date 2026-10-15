@@ -97,7 +97,7 @@ fn boot(env: &Env) -> Arc<Daemon> {
     Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         env.state.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap()
 }
@@ -969,7 +969,7 @@ async fn the_zcode_toggle_writes_and_removes_the_channels_plugin() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     let _addr = serve(&daemon).await;

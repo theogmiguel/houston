@@ -3,7 +3,7 @@
 
 use crate::common;
 
-use common::{connect_and_hello, start_daemon_with_handle, WsStream, TOKEN};
+use common::{connect_and_hello, start_daemon_with_handle_in, WsStream, TOKEN};
 use futures_util::SinkExt;
 use houston_core::daemon::{Daemon, DaemonConfig};
 use houston_core::mcp_creds::McpScope;
@@ -13,8 +13,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
-
-static PROCESS_ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn send(ws: &mut WsStream, message: &proto::ClientMsg) {
     ws.send(Message::text(serde_json::to_string(message).unwrap()))
@@ -184,7 +182,12 @@ async fn call_tool(addr: std::net::SocketAddr, token: &str, name: &str, argument
         .clone()
 }
 
-fn provider_shim(home: &Path, provider: &str, argv_path: &Path) {
+fn provider_shim(
+    env: &houston_core::host_env::HostEnv,
+    home: &Path,
+    provider: &str,
+    argv_path: &Path,
+) -> houston_core::host_env::HostEnv {
     let shims = home.join("provider-shims");
     std::fs::create_dir_all(&shims).unwrap();
     let cli = shims.join(provider);
@@ -198,9 +201,9 @@ fn provider_shim(home: &Path, provider: &str, argv_path: &Path) {
     .unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let path = std::env::var("PATH").unwrap_or_default();
-    std::env::set_var("PATH", format!("{}:{path}", shims.display()));
-    std::env::set_var("HOME", home);
+    let path = env.var("PATH").unwrap_or_default();
+    env.with("PATH", Some(format!("{}:{path}", shims.display())))
+        .with("HOME", Some(home))
 }
 
 async fn wait_for_file(path: &Path) -> String {
@@ -284,16 +287,15 @@ fn proposal(question: &str) -> proto::TaskPlanProposal {
 
 #[tokio::test]
 async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_enforced() {
-    let _env_guard = PROCESS_ENV.lock().await;
-    let (addr, state, daemon) = start_daemon_with_handle().await;
+    let shim_root = tempfile::tempdir().unwrap();
+    let home = shim_root.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let argv_path = shim_root.path().join("claude-argv.txt");
+    let env = provider_shim(&common::base_env(), &home, "claude", &argv_path);
+    let (addr, state, daemon) = start_daemon_with_handle_in(env).await;
     let workspace_path = workspace(state.path());
     let workspace = workspace_path.display().to_string();
     daemon.workspace_add(&workspace).unwrap();
-
-    let home = state.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let argv_path = state.path().join("claude-argv.txt");
-    provider_shim(&home, "claude", &argv_path);
 
     let mut ws = connect_and_hello(addr, TOKEN).await;
     let target = create_task(
@@ -1018,16 +1020,15 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
 
 #[tokio::test]
 async fn next_and_queue_skip_higher_priority_unready_task_for_ready_work() {
-    let _env_guard = PROCESS_ENV.lock().await;
-    let (addr, state, daemon) = start_daemon_with_handle().await;
+    let shim_root = tempfile::tempdir().unwrap();
+    let home = shim_root.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let argv_path = shim_root.path().join("grok-argv.txt");
+    let env = provider_shim(&common::base_env(), &home, "grok", &argv_path);
+    let (addr, state, daemon) = start_daemon_with_handle_in(env).await;
     let workspace_path = workspace(state.path());
     let workspace = workspace_path.display().to_string();
     daemon.workspace_add(&workspace).unwrap();
-
-    let home = state.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let argv_path = state.path().join("grok-argv.txt");
-    provider_shim(&home, "grok", &argv_path);
     daemon.orchestration_set(true).unwrap();
     daemon.set_orchestration_caps(2, 2).unwrap();
 
@@ -1164,7 +1165,6 @@ async fn next_and_queue_skip_higher_priority_unready_task_for_ready_work() {
 
 #[tokio::test]
 async fn reopening_daemon_settles_active_planning_state_and_preserves_retry() {
-    let _env_guard = PROCESS_ENV.lock().await;
     let state = tempfile::tempdir().unwrap();
     let db_path = state.path().join("test.db");
     let workspace_path = workspace(state.path());
@@ -1172,14 +1172,8 @@ async fn reopening_daemon_settles_active_planning_state_and_preserves_retry() {
     let home = state.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
     let argv_path = state.path().join("claude-argv.txt");
-    provider_shim(&home, "claude", &argv_path);
-    let config = || {
-        DaemonConfig::new(
-            TOKEN.into(),
-            db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
-        )
-    };
+    let env = provider_shim(&common::base_env(), &home, "claude", &argv_path);
+    let config = || DaemonConfig::new(TOKEN.into(), db_path.clone(), env.clone());
     let daemon = Daemon::new(config()).unwrap();
     daemon.workspace_add(&workspace).unwrap();
     let task_id = match daemon

@@ -1636,7 +1636,7 @@ pub struct Daemon {
     #[cfg(feature = "test-barriers")]
     startup_test: Mutex<StartupTest>,
     pub token: String,
-    env: crate::host_env::HostEnv,
+    env: std::sync::RwLock<crate::host_env::HostEnv>,
     pub mcp_creds: crate::mcp_creds::Registry,
     pub mcp_notify: crate::mcp_server::NotifierRegistry,
     pub mcp_tools: crate::mcp_server::ToolRegistry,
@@ -3106,8 +3106,16 @@ impl Drop for HandoffClaim<'_> {
 
 impl Daemon {
     /// The environment this daemon and its children run under.
-    pub fn env(&self) -> &crate::host_env::HostEnv {
-        &self.env
+    pub fn env(&self) -> crate::host_env::HostEnv {
+        self.env.read().expect("daemon environment lock").clone()
+    }
+
+    /// Replaces one variable the daemon and its later children see; for tests that
+    /// change the environment between spawns.
+    #[doc(hidden)]
+    pub fn set_env_var_for_test(&self, name: &str, value: Option<&str>) {
+        let mut env = self.env.write().expect("daemon environment lock");
+        *env = env.with(name, value);
     }
 
     pub fn new(cfg: DaemonConfig) -> Result<Arc<Self>> {
@@ -3366,7 +3374,7 @@ impl Daemon {
         let swarm_mail_wake = Arc::new(tokio::sync::Notify::new());
         let daemon = Arc::new(Self {
             token: cfg.token,
-            env: cfg.env,
+            env: std::sync::RwLock::new(cfg.env),
             mcp_creds: crate::mcp_creds::Registry::new(),
             mcp_notify: crate::mcp_server::NotifierRegistry::new(),
             mcp_tools: crate::mcp_server::ToolRegistry::with_builtins(),
@@ -3599,7 +3607,7 @@ impl Daemon {
         if adopted.is_none() {
             daemon.hook_drop_boot();
         }
-        crate::statusline_sweep::sweep(&daemon.db, &daemon.env);
+        crate::statusline_sweep::sweep(&daemon.db, &daemon.env());
         *daemon.self_weak.lock().expect("self_weak lock") = Arc::downgrade(&daemon);
         daemon.mcp_tools.bind_daemon(&daemon);
         daemon
@@ -4256,7 +4264,7 @@ impl Daemon {
     }
 
     fn reap_grace_ms(&self) -> u64 {
-        self.env
+        self.env()
             .var("HOUSTON_REAP_GRACE_MS")
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(REAP_GRACE_MS)
@@ -4646,7 +4654,7 @@ impl Daemon {
                 unterminated: kill_failures.iter().map(|(id, _)| *id).collect(),
             });
         }
-        let drain_timeout = shutdown_drain_timeout(&self.env);
+        let drain_timeout = shutdown_drain_timeout(&self.env());
         let unterminated = self.wait_for_sessions_to_end(&live_ids, drain_timeout);
         if !unterminated.is_empty() {
             self.shutting_down.store(false, Ordering::Release);
@@ -5847,7 +5855,7 @@ impl Daemon {
 
     pub fn mcp_state(&self) -> proto::ServerMsg {
         let source = self.mcp_source();
-        let tools = match crate::agent_hooks::ConfigHome::from_env(&self.env) {
+        let tools = match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(home) => crate::mcp::read_tools(&home),
             Err(e) => crate::mcp::MCP_TOOLS
                 .iter()
@@ -5902,7 +5910,7 @@ impl Daemon {
     pub fn mcp_sync(&self, only: Option<proto::AgentKind>) -> proto::ServerMsg {
         let source = self.mcp_source();
         let mut results = Vec::new();
-        let home = crate::agent_hooks::ConfigHome::from_env(&self.env);
+        let home = crate::agent_hooks::ConfigHome::from_env(&self.env());
         for tool in crate::mcp::MCP_TOOLS {
             if only.is_some_and(|t| t != tool) {
                 continue;
@@ -5988,7 +5996,7 @@ impl Daemon {
                 continue;
             }
             match run_claude_mcp(
-                &self.env,
+                &self.env(),
                 &["remove".into(), name.clone(), "-s".into(), "user".into()],
             ) {
                 Ok(()) => out.removed += 1,
@@ -5997,7 +6005,7 @@ impl Daemon {
         }
         for server in source {
             match claude_mcp_add_args(server) {
-                Some(args) => match run_claude_mcp(&self.env, &args) {
+                Some(args) => match run_claude_mcp(&self.env(), &args) {
                     Ok(()) => out.written += 1,
                     Err(e) => out.skipped.push(format!("{}: {e}", server.name)),
                 },
@@ -6011,7 +6019,7 @@ impl Daemon {
     }
 
     pub fn mcp_import(&self, tool: proto::AgentKind) -> proto::ServerMsg {
-        let home = match crate::agent_hooks::ConfigHome::from_env(&self.env) {
+        let home = match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(h) => h,
             Err(e) => return self.mcp_error_state(tool, format!("{e:#}")),
         };
@@ -7445,7 +7453,7 @@ impl Daemon {
     }
 
     pub fn skill_sync_state(&self) -> proto::ServerMsg {
-        let home = crate::agent_hooks::ConfigHome::from_env(&self.env);
+        let home = crate::agent_hooks::ConfigHome::from_env(&self.env());
         if let Ok(home) = &home {
             if self.skill_auto_push_enabled() {
                 self.do_skill_push(home, None, None);
@@ -7567,7 +7575,7 @@ impl Daemon {
         tool: Option<proto::AgentKind>,
         skill: Option<String>,
     ) -> proto::ServerMsg {
-        match crate::agent_hooks::ConfigHome::from_env(&self.env) {
+        match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(home) => self.do_skill_push(&home, tool, skill.as_deref()),
             Err(e) => tracing::warn!("skill push: resolving config home: {e:#}"),
         }
@@ -7577,7 +7585,7 @@ impl Daemon {
     pub fn skill_push_undo(&self, tool: proto::AgentKind, skill: String) -> proto::ServerMsg {
         let slug = crate::agent_hooks::provider_slug(tool);
         match (
-            crate::agent_hooks::ConfigHome::from_env(&self.env),
+            crate::agent_hooks::ConfigHome::from_env(&self.env()),
             self.db.skill_push(slug, &skill),
         ) {
             (Ok(home), Ok(Some(row))) => {
@@ -7631,7 +7639,7 @@ impl Daemon {
     }
 
     fn hook_config_home(&self) -> Result<crate::agent_hooks::ConfigHome> {
-        crate::agent_hooks::ConfigHome::from_env(&self.env)
+        crate::agent_hooks::ConfigHome::from_env(&self.env())
     }
 
     fn hook_sentinel(&self) -> String {
@@ -7740,7 +7748,11 @@ impl Daemon {
 
     fn cli_presence(&self, provider: proto::AgentKind) -> crate::cli_probe::CliPresence {
         match crate::cli_probe::binary_name(provider) {
-            Some(binary) => self.cli_probes.lock().expect("cli probe cache").get(binary),
+            Some(binary) => self
+                .cli_probes
+                .lock()
+                .expect("cli probe cache")
+                .get(&self.env(), binary),
             None => crate::cli_probe::CliPresence::default(),
         }
     }
@@ -7929,7 +7941,7 @@ impl Daemon {
     }
 
     pub fn sweep_legacy_hooks(&self) {
-        crate::legacy_hook_sweep::sweep(&self.db, &self.env);
+        crate::legacy_hook_sweep::sweep(&self.db, &self.env());
     }
 
     pub fn install_all_workspace_hooks(&self) {
@@ -8002,7 +8014,7 @@ impl Daemon {
             return Some(("hooks_off", "Codex status hooks are off"));
         }
         let inherited = self
-            .env
+            .env()
             .var("CODEX_HOME")
             .filter(|value| !value.trim().is_empty());
         let config_dir = match profile_dir.or(inherited.as_deref()) {
@@ -11039,7 +11051,8 @@ impl Daemon {
         let mut shellint_token: Option<String> = None;
         let mut shellint_token_file: Option<shellint::TokenFileGuard> = None;
         let mut cmd = if agent == proto::AgentKind::Shell {
-            let (shell, _ladder_rest) = resolve_session_shell(&self.env, shell_override.as_deref());
+            let (shell, _ladder_rest) =
+                resolve_session_shell(&self.env(), shell_override.as_deref());
             let mut c = CommandBuilder::new(&shell);
             if let Some(real) = &relocate_to {
                 let exe = Path::new(&shell)
@@ -11131,12 +11144,12 @@ impl Daemon {
             };
             #[cfg(any(target_os = "linux", windows))]
             let resolved = if agent == proto::AgentKind::Codex && custom_cmd.is_none() {
-                self.env.var_os("PATH").and_then(resolve_codex_cli)
+                self.env().var_os("PATH").and_then(resolve_codex_cli)
             } else {
-                crate::exe_path::resolve_in(&self.env, &program)
+                crate::exe_path::resolve_in(&self.env(), &program)
             };
             #[cfg(not(any(target_os = "linux", windows)))]
-            let resolved = crate::exe_path::resolve_in(&self.env, &program);
+            let resolved = crate::exe_path::resolve_in(&self.env(), &program);
             let program: std::path::PathBuf =
                 resolved.unwrap_or_else(|| std::path::PathBuf::from(&program));
             let mut c = match &wrap {
@@ -11193,7 +11206,7 @@ impl Daemon {
         for (k, v) in &mcp.env {
             cmd.env(k, v);
         }
-        self.env.apply_to_pty(&mut cmd);
+        self.env().apply_to_pty(&mut cmd);
         #[cfg(windows)]
         cmd.cwd(&spawn_dir);
         #[cfg(unix)]
@@ -11208,7 +11221,8 @@ impl Daemon {
             cmd.env("ZCODE_DISABLE_UPDATE_CHECK", "1");
             // An inherited URL of another channel would resolve that channel's plugin here.
             let own = crate::zcode_config::url_env(self.channel.as_deref());
-            for name in self.env.names() {
+            let launcher_env = self.env();
+            for name in launcher_env.names() {
                 let name = name.to_string_lossy();
                 if name.starts_with(crate::zcode_config::URL_ENV_PREFIX) && name != own {
                     cmd.env_remove(name.as_ref());
@@ -11226,7 +11240,7 @@ impl Daemon {
                     if agent == proto::AgentKind::Shell {
                         if let (Some(launcher), Some(codex)) = (
                             self.cli_launcher(),
-                            self.env.var_os("PATH").and_then(resolve_codex_cli),
+                            self.env().var_os("PATH").and_then(resolve_codex_cli),
                         ) {
                             write_codex_wrapper(&bin_dir)?;
                             #[cfg(windows)]
@@ -11248,7 +11262,7 @@ impl Daemon {
                         .iter()
                         .find(|(k, _)| k == "PATH")
                         .map(|(_, v)| v.clone())
-                        .or_else(|| self.env.var("PATH"))
+                        .or_else(|| self.env().var("PATH"))
                         .filter(|p| !p.is_empty());
                     cmd.env("PATH", path_with(&bin_dir, base.as_deref()));
                 }
@@ -11420,7 +11434,8 @@ impl Daemon {
         #[cfg(windows)]
         let shell_spawn_fallbacks = if agent == proto::AgentKind::Shell && injected_shell.is_none()
         {
-            let mut ladder = windows_default_shell_candidates(&self.env, shell_override.as_deref());
+            let mut ladder =
+                windows_default_shell_candidates(&self.env(), shell_override.as_deref());
             ladder.remove(0);
             ladder
         } else {
@@ -14563,7 +14578,7 @@ impl Daemon {
         let timeout = if is_title {
             TITLE_GENERATION_TIMEOUT
         } else {
-            handoff_timeout(&self.env)
+            handoff_timeout(&self.env())
         };
         std::thread::Builder::new()
             .name(format!("handoff-watch-{request}"))
@@ -16734,7 +16749,7 @@ impl Daemon {
     }
 
     pub fn restore_budget(&self) -> u32 {
-        if let Some(v) = self.env.var("HOUSTON_RESTORE_BUDGET") {
+        if let Some(v) = self.env().var("HOUSTON_RESTORE_BUDGET") {
             if let Ok(n) = v.parse() {
                 return n;
             }
@@ -17140,7 +17155,7 @@ impl Daemon {
     }
 
     fn usage_sources(&self) -> Vec<crate::usage::SourceSpec> {
-        let home = self.env.home_dir();
+        let home = self.env().home_dir();
         let mut sources = Vec::new();
 
         for provider in proto::UsageProvider::ALL {
@@ -17879,7 +17894,7 @@ impl Daemon {
     pub async fn voice_models_scan(self: &Arc<Self>) -> Result<proto::ServerMsg> {
         let lease = self.voice.claim_scan().ok_or_else(|| anyhow::anyhow!("local model scan limit is 1; 1 scan is active; wait before requesting another scan"))?;
         let home = self
-            .env
+            .env()
             .home_dir()
             .ok_or_else(|| anyhow::anyhow!("home directory unavailable for local model scan"))?;
         let current = self.voice_models_dir();
@@ -18983,7 +18998,7 @@ impl Daemon {
             if enabled { "ENABLED" } else { "disabled" }
         );
         if enabled {
-            match crate::agent_hooks::ConfigHome::from_env(&self.env) {
+            match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
                 Ok(home) => orchestrate::seed_skill_everywhere(&home),
                 Err(e) => tracing::warn!("seeding the hs-pane skill stub: {e:#}"),
             }
@@ -19245,9 +19260,9 @@ impl Daemon {
         use proto::AgentKind::*;
         [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode].into_iter().map(|provider| {
             let binary = crate::cli_probe::binary_name(provider).expect("spawnable provider binary");
-            let cli = self.cli_probes.lock().expect("cli probe cache").cached_presence(binary);
+            let cli = self.cli_probes.lock().expect("cli probe cache").cached_presence(&self.env(), binary);
             let caps = orchestrate::provider_capabilities(provider);
-            let (models, model_note) = crate::cli_probe::local_models(provider);
+            let (models, model_note) = crate::cli_probe::local_models(&self.env(), provider);
             serde_json::json!({
                 "provider": provider, "installed": cli.present, "version": cli.version,
                 "models": models, "model_note": model_note,
@@ -19772,7 +19787,7 @@ impl Daemon {
                  mode, so it does not stop for routine approvals"
             );
         }
-        match crate::agent_hooks::ConfigHome::from_env(&self.env) {
+        match crate::agent_hooks::ConfigHome::from_env(&self.env()) {
             Ok(home) => orchestrate::seed_skill_everywhere(&home),
             Err(e) => tracing::warn!("seeding the hs-pane skill stub: {e:#}"),
         }
@@ -19975,7 +19990,7 @@ impl Daemon {
         }
         let cwd = created.as_ref().map(|c| c.path.clone()).unwrap_or(cwd);
         if let Some(created) = &created {
-            match crate::launch::prepare_worktree_trust(&self.env, kind, &cwd)
+            match crate::launch::prepare_worktree_trust(&self.env(), kind, &cwd)
                 .and_then(|()| crate::launch::worktree_trust_args(kind, &cwd))
             {
                 Ok(args) => extra_args.extend(args),
@@ -20608,7 +20623,7 @@ impl Daemon {
             .agent_kind_of(caller)
             .unwrap_or(proto::AgentKind::Custom);
         let grok_timeout = if provider == proto::AgentKind::Grok {
-            self.env.home_dir().and_then(|home| {
+            self.env().home_dir().and_then(|home| {
                 match std::fs::read_to_string(home.join(".grok/config.toml")) {
                     Ok(text) => crate::mcp_register_grok::effective_wait_timeout_ms(Some(&text)),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -22672,7 +22687,7 @@ impl Daemon {
     }
 
     fn codex_trust_pending_note(&self) -> Option<String> {
-        let home = crate::agent_hooks::ConfigHome::from_env(&self.env).ok()?;
+        let home = crate::agent_hooks::ConfigHome::from_env(&self.env()).ok()?;
         let sentinel = self.hook_sentinel();
         crate::agent_hooks::is_installed(proto::AgentKind::Codex, &home, &sentinel)
             .then(|| "Codex hooks installed, not confirmed for this pane".to_string())
@@ -23456,7 +23471,7 @@ impl Daemon {
 
     pub fn paste_hold_reason(&self, parent: u32) -> Option<String> {
         #[cfg(feature = "test-barriers")]
-        if self.env.var_os("HOUSTON_TEST_INBOX_WAIT_ONLY").is_some() {
+        if self.env().var_os("HOUSTON_TEST_INBOX_WAIT_ONLY").is_some() {
             return Some("the crash harness consumes inbox rows through pane_wait".into());
         }
         if let Some(reason) = self.child_input_paste_hold_reason(parent) {

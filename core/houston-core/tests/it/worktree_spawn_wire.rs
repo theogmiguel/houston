@@ -962,11 +962,7 @@ async fn k4_session_worktree_metadata_groups_nested_shared_checkouts_and_survive
     r.daemon.kill(sibling).unwrap();
     r.daemon.kill(parent.id).unwrap();
     let reopened = Daemon::new_with_safe_mode_flags_for_test(
-        houston_core::daemon::DaemonConfig::new(
-            TOKEN.into(),
-            snapshot,
-            houston_core::host_env::HostEnv::capture(),
-        ),
+        houston_core::daemon::DaemonConfig::new(TOKEN.into(), snapshot, common::base_env()),
         houston_core::daemon::SafeModeFlags {
             disable_auto_restore: true,
             ..Default::default()

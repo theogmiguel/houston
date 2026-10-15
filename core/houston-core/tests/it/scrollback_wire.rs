@@ -1,4 +1,3 @@
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use common::*;
@@ -35,7 +34,7 @@ async fn output_frames_carry_contiguous_stream_offsets() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -129,7 +128,7 @@ async fn capped_scrollback_replays_a_tail() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -171,7 +170,7 @@ async fn capped_scrollback_replays_a_tail() {
 
 #[tokio::test]
 async fn scrollback_survives_a_daemon_restart_for_live_sessions() {
-    std::env::set_var("HOUSTON_SAFE_MODE", "1");
+    let env = common::base_env().with("HOUSTON_SAFE_MODE", Some("1"));
     let state_dir = tempfile::tempdir().unwrap();
     let db_path = state_dir.path().join("test.db");
     let tmp = tempfile::tempdir().unwrap();
@@ -180,7 +179,7 @@ async fn scrollback_survives_a_daemon_restart_for_live_sessions() {
         let daemon = Daemon::new(DaemonConfig::new(
             TOKEN.to_string(),
             db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            env.clone(),
         ))
         .unwrap();
         let mut rx = daemon.observe();
@@ -204,7 +203,7 @@ async fn scrollback_survives_a_daemon_restart_for_live_sessions() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
     let s = daemon
@@ -229,7 +228,7 @@ async fn scrollback_survives_a_daemon_restart_for_live_sessions() {
 
 #[tokio::test]
 async fn closing_a_husk_removes_its_persisted_scrollback() {
-    std::env::set_var("HOUSTON_SAFE_MODE", "1");
+    let env = common::base_env().with("HOUSTON_SAFE_MODE", Some("1"));
     let state_dir = tempfile::tempdir().unwrap();
     let db_path = state_dir.path().join("test.db");
     let tmp = tempfile::tempdir().unwrap();
@@ -238,7 +237,7 @@ async fn closing_a_husk_removes_its_persisted_scrollback() {
         let daemon = Daemon::new(DaemonConfig::new(
             TOKEN.to_string(),
             db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            env.clone(),
         ))
         .unwrap();
         let mut rx = daemon.observe();
@@ -271,7 +270,7 @@ async fn closing_a_husk_removes_its_persisted_scrollback() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
     let ring = state_dir
@@ -289,7 +288,7 @@ async fn closing_a_husk_removes_its_persisted_scrollback() {
 
 #[tokio::test]
 async fn corrupt_persisted_ring_degrades_to_empty_replay() {
-    std::env::set_var("HOUSTON_SAFE_MODE", "1");
+    let env = common::base_env().with("HOUSTON_SAFE_MODE", Some("1"));
     let state_dir = tempfile::tempdir().unwrap();
     let db_path = state_dir.path().join("test.db");
     let tmp = tempfile::tempdir().unwrap();
@@ -298,7 +297,7 @@ async fn corrupt_persisted_ring_degrades_to_empty_replay() {
         let daemon = Daemon::new(DaemonConfig::new(
             TOKEN.to_string(),
             db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            env.clone(),
         ))
         .unwrap();
         let mut rx = daemon.observe();
@@ -325,7 +324,7 @@ async fn corrupt_persisted_ring_degrades_to_empty_replay() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        env.clone(),
     ))
     .unwrap();
     let replay = daemon.scrollback(id, None).unwrap();

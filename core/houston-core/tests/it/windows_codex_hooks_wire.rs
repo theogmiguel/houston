@@ -1,5 +1,6 @@
 #![cfg(windows)]
 
+use crate::common;
 use houston_core::agent_hooks::{self, CodexHookTrust, ConfigHome};
 use houston_core::claude_hooks::{executable_launcher, point_launcher, sentinel_for};
 use houston_core::daemon::{Daemon, DaemonConfig};
@@ -66,7 +67,7 @@ fn codex_consent_and_startup_prepare_the_launcher_with_claude_hooks_disabled() {
     let daemon = Daemon::new(DaemonConfig::new(
         "windows-codex-launcher-test".into(),
         state.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     daemon.agent_hooks_set(AgentKind::Claude, false);

@@ -27,7 +27,7 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
 

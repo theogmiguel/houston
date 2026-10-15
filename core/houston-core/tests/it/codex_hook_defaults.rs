@@ -1,6 +1,7 @@
 #![cfg(unix)]
 #![allow(clippy::disallowed_methods)]
 
+use crate::common;
 use houston_core::agent_hooks::{self, CodexHookTrust, ConfigHome};
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_protocol as proto;
@@ -149,7 +150,7 @@ fn explicit_off_stays_off_and_uninstalls_hooks_and_trust() {
     let restarted = Daemon::new(DaemonConfig::new(
         "restarted".into(),
         r.state.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        common::base_env(),
     ))
     .unwrap();
     assert!(!restarted.hook_consent(proto::AgentKind::Codex));

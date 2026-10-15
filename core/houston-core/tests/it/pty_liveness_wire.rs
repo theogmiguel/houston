@@ -179,7 +179,7 @@ async fn adopted_blocked_writer(fail_scope: bool) {
         DaemonConfig::new(
             common::TOKEN.into(),
             dir.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            common::base_env(),
         ),
         0,
         vec![adopted],
