@@ -1,6 +1,6 @@
 //! Keystrokes on `/ws` reach the PTY while the daemon is blocked sending output to a client
-//! that is not reading. Its own binary: on Windows, PTY floods from earlier tests in the same
-//! process have slowed later floods enough to time out building the backlog.
+//! that is not reading. One flood per test binary: on Windows, a flood from an earlier test in
+//! the same process has slowed later floods enough to time out filling the scrollback.
 #![allow(clippy::disallowed_methods)]
 mod common;
 mod ws_input;
@@ -27,6 +27,7 @@ async fn stdin_reaches_the_pty_while_output_backpressures_the_socket() {
     );
 
     let mut ws = connect_unread(addr).await;
+    fill_scrollback(&daemon, flood_id).await;
     attach_and_backlog(&daemon, &mut ws, flood_id).await;
 
     ws.send(Message::Binary(

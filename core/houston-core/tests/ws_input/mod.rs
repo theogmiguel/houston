@@ -21,9 +21,6 @@ pub const REPLAY_BYTES: u64 = 4 * 1024 * 1024;
 pub const TAP_BACKLOG: usize = 32 * 1024;
 pub const INPUT_BOUND: Duration = Duration::from_secs(10);
 
-// Concurrent floods starve each other's PTYs and the other tests' daemons.
-pub static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
 pub struct Sessions(pub Arc<Daemon>, pub Vec<u32>);
 
 impl Drop for Sessions {
@@ -77,11 +74,9 @@ pub fn shell(script: &str) -> Vec<String> {
     ])
 }
 
-// Floods stop on their own after about 32 MiB, so one that outlives its test cannot starve
-// the next.
 #[cfg(unix)]
 pub fn flood() -> Vec<String> {
-    shell("yes \"$(printf '%0190d' 0)\" | head -c 33554432; sleep 60")
+    shell("yes \"$(printf '%0190d' 0)\"")
 }
 
 // One console write per 64 KiB: a write per line is what limits a flood on Windows.
@@ -89,7 +84,7 @@ pub fn flood() -> Vec<String> {
 pub fn flood() -> Vec<String> {
     shell(concat!(
         "$b = ((1..320) | ForEach-Object { \"$_ \" + ('0' * 190) }) -join \"`r`n\"; ",
-        "for ($n = 0; $n -lt 512; $n++) { [Console]::Out.Write($b) }; Start-Sleep 60",
+        "while ($true) { [Console]::Out.Write($b) }",
     ))
 }
 
@@ -177,9 +172,8 @@ pub fn attach_msg(session: u32, replay_bytes: Option<u64>) -> Message {
     )
 }
 
-/// Lets a flood fill its scrollback while unwatched, attaches it on an unread socket with a
-/// whole-ring replay, and waits until that connection's queue for it holds `TAP_BACKLOG`.
-pub async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
+/// Waits until an unwatched flood has produced a whole scrollback ring.
+pub async fn fill_scrollback(daemon: &Daemon, session: u32) {
     let mut observer = daemon.observe();
     let started = Instant::now();
     let mut produced = 0u64;
@@ -202,7 +196,11 @@ pub async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
             _ => {}
         }
     }
-    drop(observer);
+}
+
+/// Attaches a session with a full scrollback on an unread socket with a whole-ring replay,
+/// and waits until that connection's queue for it holds `TAP_BACKLOG`.
+pub async fn attach_and_backlog(daemon: &Daemon, ws: &mut RawWs, session: u32) {
     ws.send(attach_msg(session, Some(REPLAY_BYTES)))
         .await
         .unwrap();

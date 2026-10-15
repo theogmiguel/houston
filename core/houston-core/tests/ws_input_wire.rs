@@ -13,7 +13,6 @@ use ws_input::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn attach_and_create_replies_keep_request_order_around_stdin() {
-    let _serial = SERIAL.lock().await;
     let (addr, _state, daemon) = start_daemon_with_handle().await;
     let project = tempfile::tempdir().unwrap();
     // `hello_ok` lists sessions with a `git` probe each; connect first so a loaded host
@@ -115,29 +114,23 @@ async fn attach_and_create_replies_keep_request_order_around_stdin() {
     }
 }
 
+// One flood per test binary; see `ws_input_backpressure_wire.rs`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_client_dropping_a_backpressured_socket_releases_the_connection() {
-    let _serial = SERIAL.lock().await;
+async fn either_half_ending_releases_a_backpressured_connection() {
     let (addr, _state, daemon) = start_daemon_with_handle().await;
     let project = tempfile::tempdir().unwrap();
     let flood_id = spawn(&daemon, project.path(), flood());
     let _sessions = Sessions(daemon.clone(), vec![flood_id]);
+    fill_scrollback(&daemon, flood_id).await;
 
+    // The reader half ends: the client goes away while the daemon is blocked writing to it.
     let mut ws = connect_unread(addr).await;
     attach_and_backlog(&daemon, &mut ws, flood_id).await;
     assert_eq!(daemon.manage_status().clients_connected, 1);
     drop(ws);
     wait_for_clients(&daemon, 0, Duration::from_secs(15)).await;
-}
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_connection_closed_by_its_writer_also_stops_reading() {
-    let _serial = SERIAL.lock().await;
-    let (addr, _state, daemon) = start_daemon_with_handle().await;
-    let project = tempfile::tempdir().unwrap();
-    let flood_id = spawn(&daemon, project.path(), flood());
-    let _sessions = Sessions(daemon.clone(), vec![flood_id]);
-
+    // The writer half ends.
     let mut ws = connect_unread(addr).await;
     attach_and_backlog(&daemon, &mut ws, flood_id).await;
     // Overrun the control broadcast while the writer is blocked, so it ends the connection
