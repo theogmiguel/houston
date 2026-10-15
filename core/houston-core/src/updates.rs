@@ -195,10 +195,8 @@ fn status_error(url: &str, response: &reqwest::Response) -> anyhow::Error {
     anyhow!("update check rate limited (HTTP {status}) by {url}: {details}")
 }
 
-/// Buffers the manifest body under [`MANIFEST_MAX_BYTES`] so a hostile or
-/// misbehaving endpoint cannot size the daemon's allocation: the declared
-/// length is refused before reading, and streaming stops once the received
-/// bytes pass the limit.
+/// Buffers the manifest under [`MANIFEST_MAX_BYTES`]: a declared length past it is
+/// refused before reading, and streaming stops once received bytes pass it.
 async fn read_bounded(mut response: reqwest::Response, url: &str) -> anyhow::Result<String> {
     if let Some(declared) = response.content_length() {
         ensure!(
