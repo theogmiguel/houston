@@ -642,7 +642,7 @@ fn timeout_action_message(action: TimeoutAction) -> &'static str {
 // The entry holds a literal port, so it must be refreshed every boot — but only
 // on the release channel: a dev daemon writing the same file would fight the
 // installed app over one `[mcp_servers.houston]`.
-pub fn spawn_at_boot(port: Option<u16>) {
+pub fn spawn_at_boot(env: crate::host_env::HostEnv, port: Option<u16>) {
     match crate::paths::channel() {
         Ok(Some(name)) => {
             tracing::info!(
@@ -664,9 +664,9 @@ pub fn spawn_at_boot(port: Option<u16>) {
     };
 
     tokio::spawn(async move {
-        let codex_home = match std::env::var_os("CODEX_HOME") {
+        let codex_home = match env.var_os("CODEX_HOME") {
             Some(dir) if !dir.is_empty() => PathBuf::from(dir),
-            _ => match crate::agent_hooks::ConfigHome::from_env() {
+            _ => match crate::agent_hooks::ConfigHome::from_env(&env) {
                 Ok(h) => h.home.join(".codex"),
                 Err(e) => {
                     tracing::warn!("codex mcp self-registration: no home dir ({e}); skipped");
@@ -675,7 +675,7 @@ pub fn spawn_at_boot(port: Option<u16>) {
             },
         };
 
-        let Some(codex_bin) = crate::exe_path::resolve("codex") else {
+        let Some(codex_bin) = crate::exe_path::resolve_in(&env, "codex") else {
             tracing::info!("codex mcp self-registration: `codex` not found on PATH; skipped");
             return;
         };

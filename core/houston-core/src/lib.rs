@@ -32,6 +32,7 @@ pub mod harness;
 pub mod home_dir;
 pub mod hook_drop;
 pub mod hook_state;
+pub mod host_env;
 pub mod launch;
 pub mod legacy_hook_sweep;
 pub mod lock;
@@ -97,6 +98,7 @@ pub mod test_tracing_capture;
 #[cfg(feature = "test-barriers")]
 #[doc(hidden)]
 pub mod test_barriers {
+    #[allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
     pub fn pause(point: &str, subject: u32) {
         let Some(directory) = std::env::var_os("HOUSTON_TEST_BARRIER_DIR") else {
             return;

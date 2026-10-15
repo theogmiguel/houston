@@ -1,6 +1,7 @@
 //! The handful of Slack Web API methods the intake connector calls. Every call
 //! carries a token, so a URL that did not come from configuration (a file
 //! download link inside an event) is checked against Slack's own hosts first.
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use anyhow::{anyhow, bail, Context, Result};
 use futures_util::StreamExt;

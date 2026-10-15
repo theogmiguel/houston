@@ -5984,10 +5984,11 @@ mod frame_flush_tests {
     impl LiveSession {
         fn new() -> Self {
             let state = tempfile::tempdir().unwrap();
-            let daemon = Daemon::new(crate::daemon::DaemonConfig {
-                token: "token".into(),
-                db_path: state.path().join("test.db"),
-            })
+            let daemon = Daemon::new(crate::daemon::DaemonConfig::new(
+                "token".into(),
+                state.path().join("test.db"),
+                crate::host_env::HostEnv::capture(),
+            ))
             .unwrap();
             let id = daemon
                 .create_session(crate::daemon::CreateParams {
