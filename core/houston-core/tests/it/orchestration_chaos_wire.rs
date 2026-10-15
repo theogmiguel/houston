@@ -1670,8 +1670,7 @@ async fn h4_auto_review_with_its_command_running_is_not_stalled() {
 }
 
 #[cfg(feature = "test-barriers")]
-#[path = "common/mod.rs"]
-mod common;
+use crate::common;
 
 #[cfg(feature = "test-barriers")]
 mod daemon_crash {

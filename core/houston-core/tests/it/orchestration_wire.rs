@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-mod common;
+use crate::common;
 
 use common::{
     collect_broadcast_envelope, collect_broadcast_until, start_daemon_with_handle, TOKEN,

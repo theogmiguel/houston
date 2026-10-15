@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use houston_core::daemon::{Daemon, DaemonConfig};
 use houston_protocol as proto;

@@ -36,7 +36,7 @@ fn vmrss_kib(pid: u32) -> Option<u64> {
 const RSS_CEILING_MIB: f64 = 8.0;
 
 #[test]
-#[ignore = "perf smoke — run explicitly, release only (cargo test --release --test supervisor_perf_smoke -- --ignored --nocapture)"]
+#[ignore = "perf smoke — run explicitly, release only (cargo nextest run --release -j 1 --run-ignored only --no-capture -E 'test(/^supervisor_perf_smoke::/)')"]
 fn supervisor_rss_stays_near_the_floor_while_idle() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut child = Command::new(supervisor_bin())

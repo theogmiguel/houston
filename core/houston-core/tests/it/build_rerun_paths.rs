@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_methods)]
 
-#[path = "../build_git.rs"]
+#[path = "../../build_git.rs"]
 mod build_git;
 
 use std::path::Path;

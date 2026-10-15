@@ -1,6 +1,6 @@
 #![cfg(all(unix, feature = "test-barriers"))]
 
-mod common;
+use crate::common;
 use common::*;
 use futures_util::SinkExt;
 use houston_protocol as proto;

@@ -225,8 +225,8 @@ fn the_committed_snapshot_fixture_matches_what_this_build_emits() {
     }
     let committed = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "{} is missing ({e}); regenerate it with HOUSTON_REGEN_VT_FIXTURE=1 cargo test \
-             --test vt_snapshot_parity",
+            "{} is missing ({e}); regenerate it with HOUSTON_REGEN_VT_FIXTURE=1 cargo nextest run \
+             -E 'test(/^vt_snapshot_parity::/)'",
             path.display()
         )
     });
@@ -235,7 +235,7 @@ fn the_committed_snapshot_fixture_matches_what_this_build_emits() {
         built,
         "the committed snapshot fixture ({} bytes) is not what this build emits ({} bytes). \
          The renderer's import test reads it, so a stale fixture would prove nothing. \
-         Regenerate: HOUSTON_REGEN_VT_FIXTURE=1 cargo test --test vt_snapshot_parity",
+         Regenerate: HOUSTON_REGEN_VT_FIXTURE=1 cargo nextest run -E 'test(/^vt_snapshot_parity::/)'",
         committed.len(),
         built.len()
     );

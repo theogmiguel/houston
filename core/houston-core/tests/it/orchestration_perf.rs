@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-mod common;
+use crate::common;
 
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::mcp_creds::McpScope;

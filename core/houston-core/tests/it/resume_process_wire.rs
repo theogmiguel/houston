@@ -1,7 +1,7 @@
 #![cfg(unix)]
 #![allow(clippy::disallowed_methods)]
 
-mod common;
+use crate::common;
 
 use futures_util::SinkExt;
 use houston_core::pid::{self, Signal};

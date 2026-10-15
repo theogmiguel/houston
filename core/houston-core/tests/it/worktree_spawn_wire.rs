@@ -1,7 +1,7 @@
 #![cfg(unix)]
 #![allow(clippy::disallowed_methods)]
 
-mod common;
+use crate::common;
 
 use common::*;
 use futures_util::SinkExt;

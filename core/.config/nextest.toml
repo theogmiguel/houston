@@ -21,7 +21,7 @@ junit = { path = "junit.xml" }
 pty-heavy = { max-threads = 2 }
 
 [[profile.default.overrides]]
-filter = 'test(/^orphan_survival_process::/) | binary(windows_pty_lifecycle) | binary(ssh_stalled_window)'
+filter = 'test(/^orphan_survival_process::/) | test(/^windows_pty_lifecycle::/) | test(/^ssh_stalled_window::/)'
 test-group = 'pty-heavy'
 
 # Long by construction: seeded property loop in a debug build, a provider/seed matrix, and
@@ -29,3 +29,9 @@ test-group = 'pty-heavy'
 [[profile.default.overrides]]
 filter = 'test(scrollback::tests::random_pushes_match_the_contiguous_reference) | test(fast_provider_seed_matrix) | test(/^slack_intake_wire::/) | test(/^resume_wire::/)'
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+# Ignored perf and latency tests run alone (`-j 1`, release) and sample for minutes. The bound
+# only catches a hang (20 minutes); it is not a performance threshold and was not measured.
+[[profile.default.overrides]]
+filter = 'test(/^(perf_smoke|idle_loops_wire|supervisor_perf_smoke|voice_model_latency)::/)'
+slow-timeout = { period = "60s", terminate-after = 20 }

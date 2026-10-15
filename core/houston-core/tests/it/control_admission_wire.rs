@@ -1,6 +1,6 @@
 #![cfg(all(target_os = "linux", feature = "test-barriers"))]
 #![allow(clippy::disallowed_methods)]
-mod common;
+use crate::common;
 use futures_util::{SinkExt, StreamExt};
 use houston_core::server;
 use houston_protocol as proto;
