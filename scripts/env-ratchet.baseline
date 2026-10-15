@@ -35,7 +35,6 @@
 1 core/houston-core/tests/it/harness_cli.rs
 1 core/houston-core/tests/it/hook_state_wire.rs
 3 core/houston-core/tests/it/hooks_wire.rs
-7 core/houston-core/tests/it/instruction_queue_wire.rs
 1 core/houston-core/tests/it/mcp_server_wire.rs
 1 core/houston-core/tests/it/mcp_sync_wire.rs
 1 core/houston-core/tests/it/nextest_guard.rs
@@ -56,7 +55,7 @@
 2 core/houston-core/tests/it/recovery_ownership.rs
 4 core/houston-core/tests/it/reopen_wire.rs
 5 core/houston-core/tests/it/resume_profile_wire.rs
-28 core/houston-core/tests/it/resume_wire.rs
+25 core/houston-core/tests/it/resume_wire.rs
 2 core/houston-core/tests/it/session_exec_gate.rs
 2 core/houston-core/tests/it/session_prompt_wire.rs
 2 core/houston-core/tests/it/session_replacement.rs

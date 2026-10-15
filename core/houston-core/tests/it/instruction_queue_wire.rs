@@ -1,5 +1,4 @@
 #![cfg(unix)]
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -11,7 +10,6 @@ use houston_core::mcp_creds::McpScope;
 use houston_core::orchestrate::request_header;
 use houston_protocol as proto;
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -29,7 +27,6 @@ struct ProviderFixture {
     state: tempfile::TempDir,
     home: PathBuf,
     workspace: PathBuf,
-    previous_env: Vec<(&'static str, Option<OsString>)>,
     _serial: tokio::sync::MutexGuard<'static, ()>,
 }
 
@@ -52,15 +49,15 @@ impl ProviderFixture {
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(codex, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let previous_env = ["HOME", "PATH", "SHELL", "CODEX_HOME"]
-            .into_iter()
-            .map(|key| (key, std::env::var_os(key)))
-            .collect();
-        std::env::set_var("HOME", &home);
-        std::env::set_var("PATH", format!("{}:/usr/bin:/bin", shims.display()));
-        std::env::set_var("SHELL", shims.join("login-shell"));
         std::fs::create_dir_all(home.join(".codex")).unwrap();
-        std::env::set_var("CODEX_HOME", home.join(".codex"));
+        for (key, value) in [
+            ("HOME", home.display().to_string()),
+            ("PATH", format!("{}:/usr/bin:/bin", shims.display())),
+            ("SHELL", shims.join("login-shell").display().to_string()),
+            ("CODEX_HOME", home.join(".codex").display().to_string()),
+        ] {
+            daemon.set_env_var_for_test(key, Some(&value));
+        }
         // Register directly so this fixture does not install provider configuration.
         Db::open(&state.path().join("test.db"))
             .unwrap()
@@ -74,7 +71,6 @@ impl ProviderFixture {
             state,
             home,
             workspace,
-            previous_env,
             _serial: serial,
         }
     }
@@ -214,12 +210,6 @@ impl Drop for ProviderFixture {
     fn drop(&mut self) {
         for session in self.daemon.list() {
             let _ = self.daemon.close(session.id);
-        }
-        for (key, value) in &self.previous_env {
-            match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
-            }
         }
     }
 }

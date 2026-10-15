@@ -899,7 +899,7 @@ async fn shell_children_stay_deferred_when_the_resumed_cli_exits_before_root_hoo
     )
     .await;
 
-    std::env::set_var("RESUME_FAKE_EXIT", "1");
+    daemon.set_env_var_for_test("RESUME_FAKE_EXIT", Some("1"));
     let restarted = reboot(&env, &daemon);
     let sessions = restarted.list();
     let restored_parent = restored_from(&sessions, shell.id);
@@ -1880,7 +1880,7 @@ async fn a_failed_child_resume_never_starts_a_fresh_agent() {
         &dir,
     )
     .await;
-    std::env::set_var("RESUME_FAKE_EXIT", "1");
+    daemon.set_env_var_for_test("RESUME_FAKE_EXIT", Some("1"));
     let resumed = daemon.respawn(child.id, false, None, None, true).unwrap();
     assert_eq!(
         resume_of(&argv_of(&env, resumed.id).await),
@@ -3148,7 +3148,7 @@ async fn an_early_wake_exit_returns_to_sleep_without_a_fresh_fallback() {
     let ws = project(&env, "wake-early-exit");
     let (pane, conversation, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
     daemon.sleep_session(pane.id).unwrap();
-    std::env::set_var("RESUME_FAKE_EXIT", "1");
+    daemon.set_env_var_for_test("RESUME_FAKE_EXIT", Some("1"));
 
     let waking = daemon.wake_session(pane.id).unwrap();
     assert_eq!(
