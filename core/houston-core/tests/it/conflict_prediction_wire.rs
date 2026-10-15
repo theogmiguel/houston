@@ -126,6 +126,41 @@ fn notes(db: &rusqlite::Connection) -> Vec<(u32, String, String)> {
         .unwrap()
 }
 
+/// Git before 2.38 has no `merge-tree --write-tree` (Ubuntu 22.04 ships 2.34); there the
+/// daemon refuses by name, so each test checks that refusal instead of the predictions.
+fn merge_tree_supported() -> bool {
+    use houston_core::conflict_prediction as cp;
+    cp::require_merge_tree(cp::git_version()).is_ok()
+}
+
+/// The old-Git refusal reaches the live orchestrator once, naming both versions.
+async fn assert_refused_once(daemon: &Arc<Daemon>, db: &rusqlite::Connection, parent: u32) {
+    let refusals = || -> Vec<(u32, String)> {
+        let mut stmt = db
+            .prepare(
+                "SELECT to_session, body FROM pane_inbox
+                 WHERE kind = 'operator_note' AND summary = 'Conflict prediction is unavailable'",
+            )
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    tick(daemon).await;
+    tick(daemon).await;
+    let found = refusals();
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert_eq!(found[0].0, parent);
+    assert!(found[0].1.contains("is installed"), "{}", found[0].1);
+    assert!(
+        found[0].1.contains("needs Git 2.38 or newer"),
+        "{}",
+        found[0].1
+    );
+    assert!(notes(db).is_empty(), "an old Git predicts nothing");
+}
+
 async fn tick(daemon: &Arc<Daemon>) {
     let daemon = daemon.clone();
     tokio::task::spawn_blocking(move || daemon.conflict_prediction_tick())
@@ -145,6 +180,12 @@ async fn a_new_conflict_between_worktrees_notes_its_orchestrator_once() {
     commit_file(&a, "shared.txt", &shared(&[(1, "A")]), "a");
     commit_file(&b, "shared.txt", &shared(&[(1, "B")]), "b");
     commit_file(&c, "c.txt", "c\n", "c");
+    if !merge_tree_supported() {
+        assert_refused_once(&daemon, &db, parent).await;
+        let _ = daemon.kill(parent);
+        let _ = daemon.close(parent);
+        return;
+    }
 
     tick(&daemon).await;
     let first = notes(&db);
@@ -217,6 +258,12 @@ async fn worktrees_without_a_live_orchestrator_or_a_conflict_note_nothing() {
     commit_file(&y, "shared.txt", &shared(&[(1, "Y")]), "y");
     commit_file(&p, "shared.txt", &shared(&[(5, "P")]), "p");
     commit_file(&q, "shared.txt", &shared(&[(5, "Q")]), "q");
+    if !merge_tree_supported() {
+        assert_refused_once(&daemon, &db, parent).await;
+        let _ = daemon.kill(parent);
+        let _ = daemon.close(parent);
+        return;
+    }
 
     // Two ticks: the first is capped below the pair count.
     tick(&daemon).await;
