@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, ensure};
 use houston_protocol as proto;
 use std::cmp::Ordering;
 use std::time::Duration;
@@ -28,6 +28,9 @@ pub const UPDATE_MANIFEST_URL_ENV: &str = "HOUSTON_UPDATE_MANIFEST_URL";
 const USER_AGENT: &str = "houston";
 // A check that outlives this is a hung request, not a slow release.
 const REQUEST_TIMEOUT_SECS: u64 = 10;
+// The manifest is a few KB of JSON; anything past 1 MiB is a hostile or
+// misbehaving endpoint and must not size the daemon's allocation.
+const MANIFEST_MAX_BYTES: u64 = 1024 * 1024;
 
 #[derive(Default)]
 pub(crate) struct ReleaseCache {
@@ -192,6 +195,29 @@ fn status_error(url: &str, response: &reqwest::Response) -> anyhow::Error {
     anyhow!("update check rate limited (HTTP {status}) by {url}: {details}")
 }
 
+/// Buffers the manifest body under [`MANIFEST_MAX_BYTES`] so a hostile or
+/// misbehaving endpoint cannot size the daemon's allocation: the declared
+/// length is refused before reading, and streaming stops once the received
+/// bytes pass the limit.
+async fn read_bounded(mut response: reqwest::Response, url: &str) -> anyhow::Result<String> {
+    if let Some(declared) = response.content_length() {
+        ensure!(
+            declared <= MANIFEST_MAX_BYTES,
+            "latest.json at {url} declares {declared} bytes; the limit is {MANIFEST_MAX_BYTES} bytes"
+        );
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        let received = body.len() as u64 + chunk.len() as u64;
+        ensure!(
+            received <= MANIFEST_MAX_BYTES,
+            "latest.json at {url} exceeds the {MANIFEST_MAX_BYTES}-byte limit (received {received} bytes)"
+        );
+        body.extend_from_slice(&chunk);
+    }
+    String::from_utf8(body).map_err(|e| anyhow!("latest.json at {url} is not UTF-8 ({e})"))
+}
+
 impl Daemon {
     pub fn update_policy(&self) -> proto::UpdatePolicy {
         let check = match self.db().get_setting(UPDATES_CHECK_KEY) {
@@ -317,7 +343,7 @@ impl Daemon {
             .get(reqwest::header::ETAG)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
-        let body = response.text().await?;
+        let body = read_bounded(response, url).await?;
         let release = parse_latest_release(&body)?;
         cache.etag = etag;
         cache.release = Some(release.clone());
@@ -620,5 +646,58 @@ mod tests {
             .unwrap();
 
         assert_eq!(daemon.update_state(), proto::UpdateState::Disabled);
+    }
+
+    #[tokio::test]
+    async fn an_oversized_streamed_manifest_is_refused_with_the_named_limit() {
+        // Valid JSON past the limit: the refusal must be about size, so a client
+        // that buffered first would parse this and offer the release instead.
+        let payload = format!(
+            r#"{{"version":"99.0.0","notes":"{}"}}"#,
+            "n".repeat(MANIFEST_MAX_BYTES as usize)
+        );
+        // No Content-Length: the body runs until close, exercising the streamed
+        // check rather than a declared one.
+        let response = format!("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{payload}");
+        let (url, _requests) = scripted_release_server(vec![response]).await;
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig {
+            token: "test-token-0000-0000-000000000000".to_string(),
+            db_path: dir.path().join("test.db"),
+        })
+        .unwrap();
+
+        let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+        for want in ["limit", &MANIFEST_MAX_BYTES.to_string(), &url] {
+            assert!(text.contains(want), "{want:?} missing from: {text}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_manifest_declaring_oversize_is_refused_before_its_body_is_read() {
+        // The declared length is past the limit but the body is short and the
+        // connection closes: buffering first would end in a truncated-body error
+        // that names no limit.
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\nx",
+            MANIFEST_MAX_BYTES + 1
+        );
+        let (url, _requests) = scripted_release_server(vec![response]).await;
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig {
+            token: "test-token-0000-0000-000000000000".to_string(),
+            db_path: dir.path().join("test.db"),
+        })
+        .unwrap();
+
+        let text = daemon.fetch_latest(&url).await.unwrap_err().to_string();
+        for want in [
+            "limit",
+            &(MANIFEST_MAX_BYTES + 1).to_string(),
+            &MANIFEST_MAX_BYTES.to_string(),
+            &url,
+        ] {
+            assert!(text.contains(want), "{want:?} missing from: {text}");
+        }
     }
 }
