@@ -477,8 +477,10 @@ other table already keys on; `request_id` is the `delegations.round` the row ans
 can keep naming a result after temporary settlement ends the process.
 `kind` is one of `InboxKind`: `result` (a `pane_submit` body), `no_handback` (a turn ended
 with nothing submitted), `needs_input` (urgent), `exited` (urgent, the child's process is
-gone), `stalled`, `operator_note` (the operator ended or interrupted the child), `mail`
-(a swarm-scope message addressed to a pane's label), and worker `progress`, `question`,
+gone; the row body and the round's stop reason name the exit status, and quote the pane's
+final output lines when nothing was handed back), `stalled`, `operator_note` (the operator
+ended or interrupted the child), `mail` (a swarm-scope message addressed to a pane's
+label), and worker `progress`, `question`,
 `blocked` and `reply`. `needs_input`, `exited`, `question`, `blocked` and `reply` are urgent,
 and they bypass every batch window. Swarm mail between siblings remains agent-to-agent
 traffic. A top-level pane may address the operator; delegated children hand results to their

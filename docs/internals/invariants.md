@@ -220,7 +220,7 @@ they are never inferred from terminal text.
    It gates the idle reaper and the pane-close confirmation. It does not set `AgentStatus`.
    Codex's lifetime guardian separately polls its helper and PTY owner's process
    identities for scope cleanup only; their disappearance is never evidence of Idle.
-2. **Content→text somebody reads.** Two paths under one rule: what they produce is text for
+2. **Content→text somebody reads.** Three paths under one rule: what they produce is text for
    a reader, never an `AgentStatus`.
    - **The activity mirror.** `Daemon::extract_activity` runs per chunk (throttled
      1/s) to produce display text. Its single status effect is roster-level
@@ -250,6 +250,14 @@ they are never inferred from terminal text.
      `orchestrate::unsubmitted_turn_end_reaches_parent` needs before it suppresses a
      delivery. Read at the same moment as the tail, never sampled, and what it produces is
      whether one wake is sent, never an `AgentStatus`.
+   - **The exit tail.** When a delegated pane's process ends without a stored result,
+     `Daemon::exit_output_tail` reads the ended pane's scrollback ring once — a bounded
+     join on the output reader (`EXIT_TAIL_READER_WAIT`) so the CLI's final lines are in —
+     and `orchestrate::exit_tail_text` quotes the newest non-empty lines in the `exited`
+     inbox row and the round's stop reason beside the exit status, for the parent to read
+     (`EXIT_TAIL_LINES`/`EXIT_TAIL_MAX_CHARS`, ANSI-stripped, redacted, framing-indented).
+     Read once per exit, on a process exit that already happened; it explains an exit, it
+     is never an `AgentStatus`, and no code branches on its content.
 3. **The delegation quiet-settle detector.** What stands in for a turn end on a CLI that
    reports none at all: `Daemon::delegation_watch_tick` samples the rendered screen and,
    when it has not changed for `DELEGATION_SETTLE_QUIET_MS`, makes the child's stored
