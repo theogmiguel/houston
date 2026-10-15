@@ -267,13 +267,37 @@ fn resolve_ref(dir: &Path, refname: &str) -> Result<String> {
     Ok(sha)
 }
 
+// git clean walks every untracked path; a stuck filesystem must fail the revert, not
+// hold its worker. Capture also enforces the collector's 8 MiB output limit.
+const CLEAN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 fn clean_workspace(dir: &Path) -> Result<()> {
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["clean", "-fd", "--", "."])
-        .output()
-        .with_context(|| format!("spawning git clean -fd in {}", dir.display()))?;
+    let mut command = crate::spawn::command("git");
+    command.arg("-C").arg(dir).args(["clean", "-fd", "--", "."]);
+    clean_with(dir, command, CLEAN_TIMEOUT)
+}
+
+fn clean_with(
+    dir: &Path,
+    command: std::process::Command,
+    deadline: std::time::Duration,
+) -> Result<()> {
+    let out = crate::spawn::output_within(command, deadline)
+        .with_context(|| {
+            format!(
+                "capturing git clean -fd in {} (deadline {} ms)",
+                dir.display(),
+                deadline.as_millis()
+            )
+        })?
+        .with_context(|| {
+            format!(
+                "git clean -fd in {} did not finish within the {} ms deadline; some untracked \
+                 files may already be removed. Inspect the workspace before retrying",
+                dir.display(),
+                deadline.as_millis()
+            )
+        })?;
     if out.status.success() {
         return Ok(());
     }
@@ -484,5 +508,37 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(err.contains("no checkpoint at ref"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn a_clean_past_its_deadline_fails_naming_the_directory_and_deadline() {
+        let tmp = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let stuck = {
+            let mut cmd = crate::spawn::command("ping");
+            cmd.args(["-n", "30", "127.0.0.1"]);
+            cmd
+        };
+        #[cfg(not(windows))]
+        let stuck = {
+            let mut cmd = crate::spawn::command("sleep");
+            cmd.arg("30");
+            cmd
+        };
+        let start = std::time::Instant::now();
+        let error = clean_with(tmp.path(), stuck, std::time::Duration::from_millis(200))
+            .expect_err("a clean past its deadline must fail");
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "the capture outlived its deadline: {:?}",
+            start.elapsed()
+        );
+        let message = format!("{error:#}");
+        assert!(message.contains("git clean -fd"), "{message}");
+        assert!(
+            message.contains(&tmp.path().display().to_string()),
+            "{message}"
+        );
+        assert!(message.contains("200 ms deadline"), "{message}");
     }
 }
