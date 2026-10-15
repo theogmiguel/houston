@@ -1659,7 +1659,7 @@ fn capture(
         .map_err(|e| anyhow!("running {}: {e}", what()))?
         .ok_or_else(|| {
             anyhow!(
-                "{} gave no answer within its {} ms deadline",
+                "{} gave no answer within its {} ms deadline; a change it requested may already have taken effect on GitHub",
                 what(),
                 timeout.as_millis()
             )
@@ -1928,9 +1928,7 @@ mod tests {
     #[test]
     fn capture_feeds_stdin_past_a_pipe_buffer() {
         let dir = tempfile::tempdir().unwrap();
-        let input = "houston
-"
-        .repeat(40_000);
+        let input = "houston\n".repeat(40_000);
         let mut cmd = crate::spawn::command("sort");
         cmd.current_dir(dir.path());
         let out = capture(
