@@ -294,7 +294,7 @@ pub fn message(number: u32, changes: &[Change]) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn state() -> State {
@@ -321,7 +321,7 @@ mod tests {
         assert_eq!(restored.last_checked_at_ms, None);
     }
 
-    fn link(state: proto::PullRequestState) -> proto::PullRequestLink {
+    pub(crate) fn link(state: proto::PullRequestState) -> proto::PullRequestLink {
         proto::PullRequestLink {
             host: "GitHub".into(),
             repository: "owner/repo".into(),
@@ -343,7 +343,7 @@ mod tests {
         }
     }
 
-    fn detail(sha: &str) -> proto::PrDetail {
+    pub(crate) fn detail(sha: &str) -> proto::PrDetail {
         proto::PrDetail {
             body: None,
             author: Some("author".into()),

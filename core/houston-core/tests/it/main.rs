@@ -21,6 +21,7 @@ mod codex_shell_mcp;
 mod command_history_ignore;
 #[path = "../common/mod.rs"]
 mod common;
+mod conflict_prediction_wire;
 mod context_wire;
 mod control_admission_wire;
 mod daemon_adoption_wire;
@@ -71,6 +72,7 @@ mod pane_read_source_wire;
 mod pane_title_wire;
 mod perf_smoke;
 mod pr_detail_wire;
+mod pr_read_sharing_wire;
 mod pr_surfaces_wire;
 mod pr_watch_wire;
 mod program_status_wire;

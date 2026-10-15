@@ -849,6 +849,11 @@ const PTY_READER_FINAL_DRAIN: Duration = Duration::from_millis(100);
 // Includes scrollback persistence and a cold reader scheduling turn.
 const PTY_READER_CLOSE_WAIT: Duration = Duration::from_secs(1);
 
+// A bounded join on an ended pane's output reader before its exit tail is cut, so
+// the CLI's final lines reach the scrollback ring. A retained reader (the Windows
+// exit path keeps one) can outlive this, so the wait is bounded rather than joined.
+const EXIT_TAIL_READER_WAIT: Duration = Duration::from_millis(750);
+
 #[derive(Default)]
 struct SupervisorWaitState {
     eof: bool,
@@ -1515,6 +1520,7 @@ impl DelegationSettleSample {
 }
 
 mod child_inputs;
+mod conflict_pass;
 mod harness_review;
 mod provider_deny;
 mod remote;
@@ -1749,6 +1755,7 @@ pub struct Daemon {
     inbox_waiting: Mutex<HashMap<u32, Arc<InboxWaitState>>>,
     inbox_delivering: Mutex<HashMap<String, u32>>,
     temporary_cleanup_lock: Mutex<()>,
+    pr_reads: crate::pull_requests::shared::SharedReads,
     closing_sessions: Mutex<HashSet<u32>>,
     spawn_reservations: Mutex<HashMap<u32, (u32, Option<String>)>>,
     worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
@@ -1758,6 +1765,7 @@ pub struct Daemon {
     worktree_spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
     worktree_cleanup_notify: tokio::sync::Notify,
+    conflict_prediction: Mutex<conflict_pass::ConflictState>,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
     swarm_wake_generation: AtomicU64,
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
@@ -3482,6 +3490,7 @@ impl Daemon {
             inbox_waiting: Mutex::new(HashMap::new()),
             inbox_delivering: Mutex::new(HashMap::new()),
             temporary_cleanup_lock: Mutex::new(()),
+            pr_reads: Default::default(),
             closing_sessions: Mutex::new(HashSet::new()),
             spawn_reservations: Mutex::new(HashMap::new()),
             worktree_branch_reservations: Mutex::new(HashMap::new()),
@@ -3491,6 +3500,7 @@ impl Daemon {
             worktree_spawn_observer_for_test: Mutex::new(None),
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             worktree_cleanup_notify: tokio::sync::Notify::new(),
+            conflict_prediction: Mutex::new(conflict_pass::ConflictState::default()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),
@@ -11753,7 +11763,7 @@ impl Daemon {
                         if let Some(parent) = parent {
                             daemon.broadcast_live_children(parent);
                         }
-                        daemon.delegation_child_exited(id);
+                        daemon.delegation_child_exited(id, exit_code);
                         daemon.routine_pane_exited(id);
                     }
                     #[cfg(target_os = "linux")]
@@ -12082,7 +12092,7 @@ impl Daemon {
         if let Some(parent) = parent {
             self.broadcast_live_children(parent);
         }
-        self.delegation_child_exited(id);
+        self.delegation_child_exited(id, exit_code);
         self.routine_pane_exited(id);
     }
 
@@ -12338,7 +12348,7 @@ impl Daemon {
         self.persist_scrollback(id);
         self.finish_session(id, outcome.exit_code);
         self.publish_session_exit(id, &session, outcome.exit_code);
-        self.delegation_child_exited(id);
+        self.delegation_child_exited(id, outcome.exit_code);
         self.routine_pane_exited(id);
     }
 
@@ -21800,7 +21810,57 @@ impl Daemon {
             .into())
     }
 
-    fn delegation_child_exited(self: &Arc<Self>, child: u32) {
+    /// The ended pane's output tail for its exit row and stop reason: text for a reader,
+    /// never a status input. The bounded reader join lets the CLI's final lines land
+    /// first; whatever arrived by the deadline is what the parent sees.
+    fn exit_output_tail(&self, child: u32) -> String {
+        let Ok(session) = self.get(child) else {
+            return String::new();
+        };
+        // A reader that recorded EOF has already put every chunk in the ring. The
+        // supervisor path can run this on that reader itself, before it marks
+        // `reader_done`, so waiting there would only burn the whole bound.
+        let eof_seen = session
+            .supervisor_wait
+            .lock()
+            .expect("supervisor wait lock")
+            .eof;
+        if !eof_seen {
+            let (done, changed) = &*session.reader_done;
+            let done = done.lock().expect("reader done lock");
+            let _ = changed.wait_timeout_while(done, EXIT_TAIL_READER_WAIT, |done| !*done);
+        }
+        // More raw lines than the bound, because a repainting CLI can leave several
+        // blank or drawn lines after the words that explain the exit.
+        let ring = session.scrollback.lock().expect("scrollback lock");
+        orchestrate::exit_tail_text(&ring.tail_lines(orchestrate::EXIT_TAIL_LINES * 4))
+    }
+
+    fn delegation_child_exited(self: &Arc<Self>, child: u32, exit_code: Option<i32>) {
+        // The tail's bounded reader join runs before the cleanup lock so a slow drain
+        // cannot hold up unrelated cleanups; everything decided here is re-checked
+        // under the lock below.
+        let needs_tail = !self.preserving_session(child)
+            && match self.db.delegation_for_child(child) {
+                Ok(Some(row)) => {
+                    !orchestrate::DelegationState::parse(&row.state).is_some_and(|s| s.is_closed())
+                        && self
+                            .db
+                            .inbox_pending_result(row.parent_session, child, row.round)
+                            .unwrap_or(None)
+                            .is_none()
+                }
+                _ => false,
+            };
+        // Diagnostic context for an exit that already happened — quoted verbatim for
+        // the parent, never a status input. Only a child that handed nothing back
+        // needs it: with a stored result, that result is the explanation.
+        let tail = if needs_tail {
+            let (text, _) = crate::sanitize::redact_secrets(&self.exit_output_tail(child));
+            text
+        } else {
+            String::new()
+        };
         let cleanup = self
             .temporary_cleanup_lock
             .lock()
@@ -21832,13 +21892,13 @@ impl Daemon {
         } else {
             (
                 orchestrate::DelegationState::Failed,
-                Some("the pane's process ended before it handed anything back"),
+                Some(orchestrate::exit_stop_reason(exit_code, &tail)),
             )
         };
         if let Err(e) = self.db.delegation_close_round(
             child,
             state.as_str(),
-            reason,
+            reason.as_deref(),
             true,
             match pending {
                 Some(id) => crate::db::RoundHandback::Ready {
@@ -21858,7 +21918,7 @@ impl Daemon {
         }
         let workspace = self.current_workspace(child).unwrap_or_default();
         let label = self.child_label_of(child);
-        let body = orchestrate::exited_body(pending.is_some());
+        let body = orchestrate::exited_body(pending.is_some(), exit_code, &tail);
         if let Err(e) = self.inbox_write(
             parent,
             &workspace,
@@ -26880,5 +26940,72 @@ mod reader_wake_tests {
         // SAFETY: the single entry and its owned descriptor are valid.
         assert_eq!(unsafe { libc::poll(&mut poll, 1, 0) }, 1);
         wake.consume();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod exit_tail_tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn the_exit_tail_does_not_wait_on_a_reader_that_recorded_eof() {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
+        .unwrap();
+        let manifest = crate::adoption::SessionManifest {
+            title_source: Default::default(),
+            session_id: 41,
+            pid: None,
+            cols: 80,
+            rows: 24,
+            output_offset: 0,
+            state: proto::SessionState::Running,
+            status: None,
+            hidden: false,
+            project_dir: state.path().display().to_string(),
+            cwd: state.path().display().to_string(),
+            title: "ssh".into(),
+            codename: "ssh".into(),
+            tags: vec![],
+            agent: proto::AgentKind::Ssh,
+            swarm_agent: None,
+            hook_cwd: None,
+            mcp_cred: None,
+            native_input: None,
+            vt_snapshot: Vec::new(),
+            vt_format_version: 0,
+        };
+        let session =
+            Daemon::adopted_session(&manifest, Backend::Ssh(crate::ssh::SshHandle::stub()));
+        daemon
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .insert(41, session.clone());
+        session
+            .scrollback
+            .lock()
+            .expect("scrollback lock")
+            .push(b"Unable to read setting.json\r\n");
+        // The supervisor path's order: the reader recorded EOF and is the thread asking,
+        // so it has not set `reader_done` yet.
+        session
+            .supervisor_wait
+            .lock()
+            .expect("supervisor wait lock")
+            .eof = true;
+        let started = Instant::now();
+        let tail = daemon.exit_output_tail(41);
+        assert!(
+            started.elapsed() < EXIT_TAIL_READER_WAIT,
+            "the tail waited {:?} on a reader that had already drained",
+            started.elapsed()
+        );
+        assert!(tail.contains("Unable to read setting.json"), "{tail}");
     }
 }

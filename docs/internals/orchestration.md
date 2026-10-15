@@ -24,6 +24,14 @@ pane drops its record, and a new worktree at a recorded path replaces the stale 
 a slug is reusable once its worktree and branch are gone. Houston does not commit changes
 on an agent's behalf.
 
+Recorded worktrees are compared before any PR exists: each branch against its recorded
+base and against the other recorded branches of its repository, with `git merge-tree`
+on committed heads. A newly predicted conflict is one `operator_note` inbox row to the
+session that created the worktree, naming both branches and up to 20 files; it is not
+repeated while the conflict persists. Uncommitted changes are invisible to it. A
+worktree no orchestrator created is compared only for the orchestrators of its siblings,
+and a closed orchestrator's pairs are not compared until it is live again.
+
 Creating a worktree does not request a handoff. Normal delegation uses child panes
 with `worktree`; independent handoff is reserved for an explicit operator request to
 continue in a new pane, passing context via `state_doc`. A contributor must not edit
@@ -469,8 +477,10 @@ other table already keys on; `request_id` is the `delegations.round` the row ans
 can keep naming a result after temporary settlement ends the process.
 `kind` is one of `InboxKind`: `result` (a `pane_submit` body), `no_handback` (a turn ended
 with nothing submitted), `needs_input` (urgent), `exited` (urgent, the child's process is
-gone), `stalled`, `operator_note` (the operator ended or interrupted the child), `mail`
-(a swarm-scope message addressed to a pane's label), and worker `progress`, `question`,
+gone; the row body and the round's stop reason name the exit status, and quote the pane's
+final output lines when nothing was handed back), `stalled`, `operator_note` (the operator
+ended or interrupted the child), `mail` (a swarm-scope message addressed to a pane's
+label), and worker `progress`, `question`,
 `blocked` and `reply`. `needs_input`, `exited`, `question`, `blocked` and `reply` are urgent,
 and they bypass every batch window. Swarm mail between siblings remains agent-to-agent
 traffic. A top-level pane may address the operator; delegated children hand results to their
