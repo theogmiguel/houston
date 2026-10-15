@@ -1,4 +1,5 @@
 #![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
+#[cfg(unix)]
 use crate::common;
 use houston_core::{db::Db, generated_title};
 use houston_protocol::{AgentKind, TitleSource};

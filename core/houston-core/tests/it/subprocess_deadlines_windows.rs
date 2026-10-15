@@ -1,6 +1,7 @@
 #![cfg(windows)]
 #![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
+use crate::common;
 use houston_core::spawn::{command, output_within, output_within_with_stdin};
 use std::io::{Read, Seek, Write};
 use std::process::{Command, Stdio};
