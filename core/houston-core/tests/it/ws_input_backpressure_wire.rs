@@ -1,16 +1,14 @@
 //! Keystrokes on `/ws` reach the PTY while the daemon is blocked sending output to a client
-//! that is not reading. One flood per test binary: on Windows, a flood from an earlier test in
+//! that is not reading. One flood per test process: on Windows, a flood from an earlier test in
 //! the same process has slowed later floods enough to time out filling the scrollback.
 #![allow(clippy::disallowed_methods)]
-mod common;
-mod ws_input;
 
-use common::*;
+use crate::common::*;
+use crate::ws_input::*;
 use futures_util::SinkExt;
 use houston_protocol as proto;
 use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
-use ws_input::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn stdin_reaches_the_pty_while_output_backpressures_the_socket() {

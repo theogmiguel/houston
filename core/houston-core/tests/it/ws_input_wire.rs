@@ -1,15 +1,13 @@
 //! Splitting the `/ws` socket into a reader and a writer keeps attach-family reply order and
 //! ends the connection when either half ends.
 #![allow(clippy::disallowed_methods)]
-mod common;
-mod ws_input;
 
-use common::*;
+use crate::common::*;
+use crate::ws_input::*;
 use futures_util::{SinkExt, StreamExt};
 use houston_protocol as proto;
 use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
-use ws_input::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn attach_and_create_replies_keep_request_order_around_stdin() {
