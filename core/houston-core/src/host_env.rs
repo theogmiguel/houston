@@ -68,14 +68,69 @@ impl HostEnv {
             .or_else(dirs::home_dir)
     }
 
-    /// Children see this environment instead of the process's own. Call before
-    /// any per-command `env`/`env_remove`, which then layer on top.
+    /// Children see this environment instead of the process's own. Only the
+    /// differences from the process environment are applied, so a snapshot equal
+    /// to it spawns as before. Call before per-command `env`/`env_remove`.
     pub fn apply_to(&self, cmd: &mut std::process::Command) {
-        cmd.env_clear().envs(self.0.iter());
+        let (set, remove) = self.diff_from_process();
+        for (k, v) in set {
+            cmd.env(k, v);
+        }
+        for k in remove {
+            cmd.env_remove(k);
+        }
     }
 
     pub fn apply_to_tokio(&self, cmd: &mut tokio::process::Command) {
-        cmd.env_clear().envs(self.0.iter());
+        let (set, remove) = self.diff_from_process();
+        for (k, v) in set {
+            cmd.env(k, v);
+        }
+        for k in remove {
+            cmd.env_remove(k);
+        }
+    }
+
+    /// The same overlay for a PTY child. `portable_pty` seeds its own base
+    /// environment, and on Unix replaces `SHELL` with the passwd shell, so
+    /// `SHELL` is left to it.
+    pub fn apply_to_pty(&self, cmd: &mut portable_pty::CommandBuilder) {
+        let (set, remove) = self.diff_from_process();
+        for (k, v) in set {
+            if !cfg!(unix) || k != "SHELL" {
+                cmd.env(k, v);
+            }
+        }
+        for k in remove {
+            if !cfg!(unix) || k != "SHELL" {
+                cmd.env_remove(k);
+            }
+        }
+    }
+
+    #[allow(clippy::disallowed_methods)]
+    fn diff_from_process(&self) -> (Vec<(&OsString, &OsString)>, Vec<OsString>) {
+        let key = |k: &OsStr| -> OsString {
+            if cfg!(windows) {
+                k.to_ascii_uppercase()
+            } else {
+                k.to_os_string()
+            }
+        };
+        let process: HashMap<OsString, OsString> =
+            std::env::vars_os().map(|(k, v)| (key(&k), v)).collect();
+        let ours: std::collections::HashSet<OsString> = self.0.keys().map(|k| key(k)).collect();
+        let set = self
+            .0
+            .iter()
+            .filter(|(k, v)| process.get(&key(k)) != Some(*v))
+            .collect();
+        let mut remove: Vec<OsString> = std::env::vars_os()
+            .map(|(k, _)| k)
+            .filter(|k| !ours.contains(&key(k)))
+            .collect();
+        remove.sort();
+        (set, remove)
     }
 }
 
@@ -106,6 +161,13 @@ mod tests {
         assert_eq!(env.with("B", Some("2")).var("B").as_deref(), Some("2"));
         assert_eq!(env.var("A").as_deref(), Some("1"));
         assert_eq!(env.var("B"), None);
+    }
+
+    #[test]
+    fn a_snapshot_of_the_process_changes_nothing_for_children() {
+        let mut cmd = crate::spawn::command("true");
+        HostEnv::capture().apply_to(&mut cmd);
+        assert_eq!(cmd.get_envs().count(), 0);
     }
 
     #[cfg(unix)]

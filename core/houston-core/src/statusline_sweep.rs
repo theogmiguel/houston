@@ -1,8 +1,7 @@
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use std::path::Path;
 
-pub fn sweep(db: &crate::db::Db) {
-    let Ok(cfg) = crate::agent_hooks::ConfigHome::from_env() else {
+pub fn sweep(db: &crate::db::Db, env: &crate::host_env::HostEnv) {
+    let Ok(cfg) = crate::agent_hooks::ConfigHome::from_env(env) else {
         return;
     };
     let stem = crate::claude_hooks::sentinel_for(None);
@@ -165,9 +164,10 @@ mod tests {
         db.upsert_agent_profile(None, "claude", "personal", "~/.claude-personal")
             .unwrap();
 
-        let guard = test_home_guard(&home);
-        sweep(&db);
-        drop(guard);
+        sweep(
+            &db,
+            &crate::host_env::HostEnv::from_pairs([("HOME", &home)]),
+        );
 
         assert!(
             !default_dir.join("settings.json").exists()
@@ -185,29 +185,5 @@ mod tests {
             untouched.contains("quota-statusline"),
             "an undeclared directory is nobody Houston knows about — never swept: {untouched}"
         );
-    }
-
-    struct Guard(Option<std::ffi::OsString>);
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            if let Some(v) = self.0.take() {
-                // SAFETY: test-only restore of the value this guard saved; the
-                // crate's env-var tests run sequentially, so no other thread is
-                // reading `HOME` concurrently.
-                unsafe {
-                    std::env::set_var("HOME", v);
-                }
-            }
-        }
-    }
-
-    fn test_home_guard(home: &Path) -> Guard {
-        let prev = std::env::var_os("HOME");
-        // SAFETY: test-only; the caller holds the guard for the whole test, and
-        // the crate's env-var tests run sequentially by contract.
-        unsafe {
-            std::env::set_var("HOME", home);
-        }
-        Guard(prev)
     }
 }
