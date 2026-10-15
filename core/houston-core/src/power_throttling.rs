@@ -30,7 +30,8 @@ pub fn opt_out_execution_speed_throttling() {
         let current = unsafe { windows_sys::Win32::System::Threading::GetCurrentProcess() };
         if let Err(error) = win::opt_out(current) {
             tracing::warn!(
-                "SetProcessInformation(ProcessPowerThrottling) failed ({error}); Windows may                  throttle this process"
+                "SetProcessInformation(ProcessPowerThrottling) failed ({error}); Windows may \
+                 throttle this process"
             );
         }
     }
