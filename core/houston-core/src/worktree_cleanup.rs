@@ -59,10 +59,8 @@ pub fn dirty_files(tree: &Path) -> Option<u32> {
 }
 
 /// Loose ignored files (`.env`, local settings) that `git worktree remove` would delete.
-/// A wholly ignored directory is listed once with a trailing `/` and is taken as build
-/// output (`target/`, `node_modules/`), so it is not counted. Nor is a file byte for byte
-/// the one at the same path in the checkout `source`, such as an unchanged
-/// `.worktreeinclude` copy: removing it loses nothing.
+/// Not counted: wholly ignored directories (build output such as `target/`), and files
+/// byte-identical to the same path in `source`, such as unchanged `.worktreeinclude` copies.
 pub fn ignored_files(tree: &Path, source: Option<&Path>) -> Option<u32> {
     let out = git(
         tree,
