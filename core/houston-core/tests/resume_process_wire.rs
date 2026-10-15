@@ -18,6 +18,10 @@ const DEADLINE: Duration = Duration::from_secs(40);
 
 const FAKE_CLI: &str = r#"#!/bin/sh
 set -eu
+# The hook helper probes `<cli> --version` from inside the session; that probe must not
+# rewrite the launch records the test is reading; it prints nothing, as the probe
+# did before.
+case "${1:-}" in --version) exit 0 ;; esac
 [ -n "${HOUSTON_SESSION:-}" ] || exit 0
 umask 077
 out="$RESUME_RECORDS/$HOUSTON_SESSION"
