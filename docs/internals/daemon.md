@@ -535,10 +535,9 @@ milliseconds on a busy machine, so passes run right after a spawn, three more at
 intervals, and then at most once a second while some session produces output; otherwise
 the loop parks. A process that cannot be opened or set has usually exited and is logged at
 debug level. The cost is battery life: Windows applies EcoQoS to save power, and agent
-trees now run at full speed on battery too. On Linux the loop returns at once.
+trees run at full speed on battery too. On Linux the loop returns at once.
 
-The checkout
-watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
+The checkout watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
 debounces changes and broadcasts updated checkout identity. It reacts only to content
 changes that name the HEAD file and coalesces them into one pending flag per HEAD: its
 own refresh reads HEAD, so waking on reads would feed back into itself. Adopted sessions
