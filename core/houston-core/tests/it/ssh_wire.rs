@@ -145,7 +145,7 @@ async fn daemon_ws(state: &std::path::Path) -> WsStream {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state.join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr, _handle) = server::start(daemon, "127.0.0.1:0".parse().unwrap())

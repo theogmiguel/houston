@@ -297,7 +297,7 @@ async fn git_branch_commits_report_when_the_cap_trims_the_reply() {
 #[tokio::test]
 async fn git_branch_commits_refuse_a_non_git_directory_by_name() {
     let (addr, _state) = start_daemon().await;
-    let plain = tempfile::tempdir().unwrap();
+    let plain = houston_core::fixture_dirs::tempdir_outside_git();
     let dir = plain.path().display().to_string();
 
     let mut ws = connect_and_hello(addr, TOKEN).await;
@@ -313,7 +313,7 @@ async fn git_branch_commits_refuse_a_non_git_directory_by_name() {
 #[tokio::test]
 async fn git_branch_is_none_for_non_repo_and_does_not_error() {
     let (addr, _state) = start_daemon().await;
-    let plain = tempfile::tempdir().unwrap();
+    let plain = houston_core::fixture_dirs::tempdir_outside_git();
 
     let mut ws = connect_and_hello(addr, TOKEN).await;
     let _ = next_control(&mut ws).await;
@@ -717,7 +717,7 @@ async fn excessive_git_output_reports_its_limit_and_the_socket_remains_usable() 
 #[tokio::test]
 async fn non_git_dir_replies_not_a_repo_status() {
     let (addr, _state) = start_daemon().await;
-    let plain = tempfile::tempdir().unwrap();
+    let plain = houston_core::fixture_dirs::tempdir_outside_git();
 
     let mut ws = connect_and_hello(addr, TOKEN).await;
     let _ = next_control(&mut ws).await;
@@ -786,7 +786,7 @@ async fn git_status_preserves_failure_for_a_broken_gitfile() {
 #[tokio::test]
 async fn git_status_preserves_failure_for_an_empty_git_marker() {
     let (addr, _state) = start_daemon().await;
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = houston_core::fixture_dirs::tempdir_outside_git();
     std::fs::create_dir(workspace.path().join(".git")).unwrap();
 
     let mut ws = connect_and_hello(addr, TOKEN).await;

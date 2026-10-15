@@ -46,7 +46,7 @@ async fn drive_spawn_persist_reopen(
         DaemonConfig::new(
             TOKEN.to_string(),
             db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         ),
         no_auto_restore(),
     )
@@ -119,11 +119,7 @@ async fn drive_spawn_persist_reopen(
     drop(daemon);
 
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig::new(
-            TOKEN.to_string(),
-            db_path,
-            houston_core::host_env::HostEnv::capture(),
-        ),
+        DaemonConfig::new(TOKEN.to_string(), db_path, crate::common::capture_env()),
         no_auto_restore(),
     )
     .unwrap();
