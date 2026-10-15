@@ -1520,6 +1520,7 @@ impl DelegationSettleSample {
 }
 
 mod child_inputs;
+mod conflict_pass;
 mod harness_review;
 mod provider_deny;
 mod remote;
@@ -1754,6 +1755,7 @@ pub struct Daemon {
     inbox_waiting: Mutex<HashMap<u32, Arc<InboxWaitState>>>,
     inbox_delivering: Mutex<HashMap<String, u32>>,
     temporary_cleanup_lock: Mutex<()>,
+    pr_reads: crate::pull_requests::shared::SharedReads,
     closing_sessions: Mutex<HashSet<u32>>,
     spawn_reservations: Mutex<HashMap<u32, (u32, Option<String>)>>,
     worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
@@ -1763,6 +1765,7 @@ pub struct Daemon {
     worktree_spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
     worktree_cleanup_notify: tokio::sync::Notify,
+    conflict_prediction: Mutex<conflict_pass::ConflictState>,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
     swarm_wake_generation: AtomicU64,
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
@@ -3484,6 +3487,7 @@ impl Daemon {
             inbox_waiting: Mutex::new(HashMap::new()),
             inbox_delivering: Mutex::new(HashMap::new()),
             temporary_cleanup_lock: Mutex::new(()),
+            pr_reads: Default::default(),
             closing_sessions: Mutex::new(HashSet::new()),
             spawn_reservations: Mutex::new(HashMap::new()),
             worktree_branch_reservations: Mutex::new(HashMap::new()),
@@ -3493,6 +3497,7 @@ impl Daemon {
             worktree_spawn_observer_for_test: Mutex::new(None),
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             worktree_cleanup_notify: tokio::sync::Notify::new(),
+            conflict_prediction: Mutex::new(conflict_pass::ConflictState::default()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),

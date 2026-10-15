@@ -17,6 +17,7 @@ pub mod claude_turns;
 pub mod cli_probe;
 pub mod codex_pane;
 pub mod composer_ready;
+pub mod conflict_prediction;
 pub mod context_window;
 pub mod daemon;
 pub mod db;
