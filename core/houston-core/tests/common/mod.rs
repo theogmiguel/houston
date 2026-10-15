@@ -25,9 +25,10 @@ pub fn process_var(name: &str) -> Option<String> {
 }
 
 /// The environment an in-process daemon starts from: the test process's, minus the
-/// variables that change daemon behaviour, so a runner that exports one cannot leak in.
+/// variables that change daemon behaviour, so a runner that exports one cannot leak in,
+/// and with the user's real config homes swapped for a throwaway one (see `isolate_config`).
 pub fn base_env() -> houston_core::host_env::HostEnv {
-    [
+    let env = [
         "HOUSTON_SAFE_MODE",
         "HOUSTON_DISABLE_AUTO_RESTORE",
         "HOUSTON_DISABLE_SWARM_AUTOLAUNCH",
@@ -39,7 +40,79 @@ pub fn base_env() -> houston_core::host_env::HostEnv {
     .into_iter()
     .fold(houston_core::host_env::HostEnv::capture(), |env, name| {
         env.without(name)
+    });
+    isolate_config(env)
+}
+
+/// The test process's environment as it is, for fixtures that pass daemon-behaviour
+/// variables to a re-executed child, with the same config-home isolation as `base_env`.
+pub fn capture_env() -> houston_core::host_env::HostEnv {
+    isolate_config(houston_core::host_env::HostEnv::capture())
+}
+
+fn under_temp_dir(path: &std::ffi::OsStr) -> bool {
+    std::path::Path::new(path).starts_with(std::env::temp_dir())
+}
+
+/// One per test process, under cargo's per-target scratch dir so `cargo clean` and the target
+/// sweep reclaim it. Homes untouched for a day are removed when a new one is made.
+fn throwaway_home() -> &'static std::path::Path {
+    static HOME: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    HOME.get_or_init(|| {
+        let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("test-homes");
+        std::fs::create_dir_all(&root)
+            .unwrap_or_else(|e| panic!("creating {}: {e}", root.display()));
+        let stale = std::time::Duration::from_secs(24 * 60 * 60);
+        for entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+            let old = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|t| t.elapsed().is_ok_and(|age| age > stale));
+            if old {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+        tempfile::Builder::new()
+            .prefix("home-")
+            .tempdir_in(&root)
+            .unwrap_or_else(|e| panic!("creating a throwaway home in {}: {e}", root.display()))
+            .keep()
     })
+}
+
+/// Daemons install Claude and Codex hooks under `HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`
+/// and `XDG_CONFIG_HOME`. Values under the temp dir are a test's own and are kept; any other
+/// (including an unset `HOME`, which falls back to the account's) becomes a throwaway.
+fn isolate_config(env: houston_core::host_env::HostEnv) -> houston_core::host_env::HostEnv {
+    let home_var = if env.var_os("HOME").is_some() {
+        "HOME"
+    } else {
+        "USERPROFILE"
+    };
+    let test_home = env
+        .var_os(home_var)
+        .filter(|value| under_temp_dir(value))
+        .map(std::path::PathBuf::from);
+    let mut env = env;
+    let home = match test_home {
+        Some(home) => home,
+        None => {
+            let home = throwaway_home().to_path_buf();
+            env = env.with("HOME", Some(home.clone()));
+            env = env.with("USERPROFILE", Some(home.clone()));
+            home
+        }
+    };
+    for (name, relative) in [
+        ("CLAUDE_CONFIG_DIR", ".claude"),
+        ("CODEX_HOME", ".codex"),
+        ("XDG_CONFIG_HOME", ".config"),
+    ] {
+        if env.var_os(name).is_some_and(|value| !under_temp_dir(value)) {
+            env = env.with(name, Some(home.join(relative)));
+        }
+    }
+    env
 }
 
 /// libtest's name for test `name` of the module `module_path!()` names, for `--exact`. Checked

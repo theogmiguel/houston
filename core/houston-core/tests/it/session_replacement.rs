@@ -90,7 +90,7 @@ fn boot(database: &Path) -> Arc<Daemon> {
         DaemonConfig::new(
             common::TOKEN.into(),
             database.to_path_buf(),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         ),
         SafeModeFlags {
             disable_auto_restore: true,
@@ -553,7 +553,7 @@ fn root_restore_carries_saved_scrollback_before_retiring_the_old_row() {
         let daemon = Daemon::new(DaemonConfig::new(
             common::TOKEN.into(),
             database.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         ))
         .unwrap();
         let replacement = daemon

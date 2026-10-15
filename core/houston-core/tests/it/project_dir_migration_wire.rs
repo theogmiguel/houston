@@ -6,7 +6,7 @@ fn boot(db_path: &std::path::Path) -> std::sync::Arc<Daemon> {
     Daemon::new(DaemonConfig::new(
         "test-token".to_string(),
         db_path.to_path_buf(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap()
 }

@@ -11,7 +11,7 @@ fn test_daemon() -> (std::sync::Arc<Daemon>, tempfile::TempDir) {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state.path().join("t.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     (daemon, state)

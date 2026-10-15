@@ -166,7 +166,7 @@ fn failed_session_startup_transaction_cannot_release_executable() {
     let daemon = Daemon::new(DaemonConfig::new(
         "fixture-token".into(),
         database.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     daemon.set_session_launcher(Some(env!("CARGO_BIN_EXE_houston-core").into()));
