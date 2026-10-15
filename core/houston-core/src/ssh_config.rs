@@ -1,6 +1,7 @@
 //! `~/.ssh/config` reading, deliberately narrow: only `HostName`, `User`, `Port`
 //! and `IdentityFile` under `Host` patterns. First obtained value wins — the
 //! opposite of the usual last-wins intuition, and easy to get backwards.
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

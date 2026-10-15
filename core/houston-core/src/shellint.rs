@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{Context, Result};
 use base64::Engine as _;
 use std::io::Write as _;

@@ -84,6 +84,8 @@ jobs:
         run: bash scripts/check-title-tooltip-guard.sh
       - name: check-spawn-window.sh (CREATE_NO_WINDOW lint config still armed)
         run: bash scripts/check-spawn-window.sh
+      - name: check-env-ratchet.sh (direct process-environment access only goes down)
+        run: bash scripts/check-env-ratchet.sh
       - name: check-wsl-bundle.sh (the Windows installer bundles the Linux daemon for WSL)
         run: bash scripts/check-wsl-bundle.sh
       - name: check-icon-imports.sh (raw lucide-react imports outside components/icons.tsx)
@@ -219,23 +221,33 @@ jobs:
         run: cargo fmt --all --check --manifest-path core/Cargo.toml
       - name: cargo clippy
         run: cargo clippy --all-targets --manifest-path core/Cargo.toml -- -D warnings
+      # Pinned to the version core/.config/nextest.toml requires.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.148
       # voice::cloud's tests talk to a Secret Service the runner has none of; a
       # private session bus with gnome-keyring unlocked is the same fix the local
       # Linux gate uses. No oom-shield here — that's a local-machine concern.
-      - name: cargo test --lib
+      - name: cargo nextest --lib
         run: |
           # shellcheck disable=SC2016
           dbus-run-session -- bash -c '
             eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)"
-            cargo test --lib --manifest-path core/Cargo.toml'
+            cargo nextest run --profile ci --lib --manifest-path core/Cargo.toml'
       - name: Test protocol, pane lifecycle, titles, model reuse and recovery ownership
-        run: bash scripts/with-test-keyring.sh cargo test --locked --manifest-path core/Cargo.toml -p houston-core --test protocol_version_wire --test session_create_result_wire --test claude_turns_wire --test session_activity --test generated_titles --test recovery_ownership --test voice_model_reuse --test launch_prompt_isolation --test codex_shell_mcp
-      # The restored-CLI regressions run real bash and zsh integration rc files.
-      - name: cargo test restored shell-hosted CLI
         run: >
-          bash scripts/with-test-keyring.sh cargo test --locked
-          --manifest-path core/Cargo.toml -p houston-core --test resume_wire
-          -- --test-threads=1 a_restored_bash_hosted_claude a_restored_zsh_hosted_claude
+          bash scripts/with-test-keyring.sh cargo nextest run --profile ci --locked
+          --manifest-path core/Cargo.toml -p houston-core
+          -E 'test(/^protocol_version_wire::/) | test(/^session_create_result_wire::/) | test(/^claude_turns_wire::/) | test(/^session_activity::/) | test(/^generated_titles::/) | test(/^recovery_ownership::/) | test(/^voice_model_reuse::/) | test(/^launch_prompt_isolation::/) | test(/^codex_shell_mcp::/)'
+      # The restored-CLI regressions run real bash and zsh integration rc files.
+      - name: cargo nextest restored shell-hosted CLI
+        run: >
+          bash scripts/with-test-keyring.sh cargo nextest run --profile ci --locked
+          --manifest-path core/Cargo.toml -p houston-core
+          -E 'test(/^resume_wire::/) & (test(a_restored_bash_hosted_claude) | test(a_restored_zsh_hosted_claude))'
+      # nextest does not run documentation tests.
+      - name: cargo test --doc
+        run: cargo test --doc --locked --manifest-path core/Cargo.toml
       - name: Report job timing
         if: always()
         continue-on-error: true
@@ -377,14 +389,19 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo clippy --locked --all-targets -- -D warnings
           exit $LASTEXITCODE
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.148
       - name: Test core
         working-directory: core
         run: |
-          cargo test --locked -p houston-core --lib -- --test-threads=3
+          cargo nextest run --profile ci --locked -p houston-core --lib
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked --no-fail-fast -p houston-core --test protocol_version_wire --test env_hygiene_wire --test nonascii_longpath_wire --test checkpoints_wire --test git_discard_wire --test git_tools_wire --test git_wire --test manage_wire --test shutdown_drain_wire --test subprocess_deadlines_windows --test tasks_wire --test windows_claude_hooks_wire --test windows_codex_hooks_wire --test windows_codex_launch_wire --test windows_instruction_submit --test launch_prompt_isolation --test claude_turns_wire --test session_activity --test generated_titles --test recovery_ownership --test voice_model_reuse --test windows_orchestration_wire --test wsl_wire -- --test-threads=3
+          cargo nextest run --profile ci --locked --no-fail-fast -p houston-core -E 'test(/^protocol_version_wire::/) | test(/^env_hygiene_wire::/) | test(/^nonascii_longpath_wire::/) | test(/^checkpoints_wire::/) | test(/^git_discard_wire::/) | test(/^git_tools_wire::/) | test(/^git_wire::/) | test(/^manage_wire::/) | test(/^shutdown_drain_wire::/) | test(/^subprocess_deadlines_windows::/) | test(/^tasks_wire::/) | test(/^windows_claude_hooks_wire::/) | test(/^windows_codex_hooks_wire::/) | test(/^windows_codex_launch_wire::/) | test(/^windows_instruction_submit::/) | test(/^launch_prompt_isolation::/) | test(/^claude_turns_wire::/) | test(/^session_activity::/) | test(/^generated_titles::/) | test(/^recovery_ownership::/) | test(/^voice_model_reuse::/) | test(/^windows_orchestration_wire::/) | test(/^wsl_wire::/)'
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked -p houston-core --features test-barriers --test ssh_stalled_window --test windows_pty_lifecycle -- --test-threads=3
+          cargo nextest run --profile ci --locked -p houston-core --features test-barriers -E 'test(/^ssh_stalled_window::/) | test(/^windows_pty_lifecycle::/)'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -p houston-core --doc
           exit $LASTEXITCODE
       - name: Stage debug sidecars
         run: |

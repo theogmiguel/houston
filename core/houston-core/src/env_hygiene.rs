@@ -1,6 +1,7 @@
 //! Drop inherited session identities and private supervisor startup state before
 //! the daemon spawns children. Agent settings such as `CLAUDE_CONFIG_DIR` and
 //! `ANTHROPIC_*` remain available.
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 const SESSION_MARKERS: &[&str] = &[
     "CLAUDE_CODE_CHILD_SESSION",
     "CLAUDECODE",

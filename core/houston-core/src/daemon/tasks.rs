@@ -3252,7 +3252,7 @@ impl Daemon {
             started_at_ms: now,
         })?;
         let mut spawn_args = Vec::new();
-        match crate::launch::prepare_worktree_trust(agent, &created.path)
+        match crate::launch::prepare_worktree_trust(&self.env(), agent, &created.path)
             .and_then(|()| crate::launch::worktree_trust_args(agent, &created.path))
         {
             Ok(args) => spawn_args.extend(args),
