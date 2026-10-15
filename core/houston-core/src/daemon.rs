@@ -1485,6 +1485,7 @@ impl DelegationSettleSample {
 }
 
 mod child_inputs;
+mod conflict_pass;
 mod harness_review;
 mod provider_deny;
 mod remote;
@@ -1727,6 +1728,7 @@ pub struct Daemon {
     worktree_spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
     worktree_cleanup_notify: tokio::sync::Notify,
+    conflict_prediction: Mutex<conflict_pass::ConflictState>,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
     swarm_wake_generation: AtomicU64,
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
@@ -3433,6 +3435,7 @@ impl Daemon {
             worktree_spawn_observer_for_test: Mutex::new(None),
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             worktree_cleanup_notify: tokio::sync::Notify::new(),
+            conflict_prediction: Mutex::new(conflict_pass::ConflictState::default()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),

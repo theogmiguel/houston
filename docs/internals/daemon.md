@@ -495,7 +495,7 @@ only on rare control-plane events — the PTY path never touches SQLite.
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
-| bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove) |
+| bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove), `predicted_conflicts` (worktree pairs whose predicted conflict was already noted) |
 | legacy tasks | `tasks`, `task_events` — an orphan from before the `backlog_` tables, retained for database compatibility and never read or written by Tasks |
 | legacy substrate | `swarms`, `swarm_agents`, `swarm_messages`, `swarm_deliveries`, `swarm_plan_events_applied` |
 
@@ -514,9 +514,9 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns eleven tasks:
+`boot::spawn_background_loops` is called only by the daemon host and spawns twelve tasks:
 `swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
-`worktree_cleanup_loop`, `task_pr_watch_loop`, `remote_loops`, `pr_watch_loop`,
+`worktree_cleanup_loop`, `conflict_prediction_loop`, `task_pr_watch_loop`, `remote_loops`, `pr_watch_loop`,
 `checkout_watch_loop`, `slack_loops` and `task_tracker_loop`. The checkout
 watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
 debounces changes and broadcasts updated checkout identity. It reacts only to content
@@ -555,6 +555,22 @@ File stdin is passed directly to the child, with no copier thread. OS spawn and
 termination scheduling are outside the wall-clock guarantee. Other platforms,
 including macOS, explicitly refuse bounded capture before spawning until equivalent
 process ownership is available.
+The conflict prediction loop has no setting: it is local and read-only apart from
+unreferenced merge objects, and it does nothing until a managed worktree has a creating
+session. Every `CONFLICT_CHECK_INTERVAL_MS` it reads each repository's branch heads with
+one `for-each-ref` and pairs every managed branch with its recorded base and with each
+other managed branch of the same common directory. A pair runs only while one of its
+creating sessions has a live inbox recipient: a closed orchestrator's notes would
+otherwise reach the workspace operator queue each time its abandoned branches fall
+behind, so its pairs wait unchecked until it is live again. A pair runs `git merge-tree --write-tree` on its two heads only when
+either head differs from its last run, at most `MAX_RUNS_PER_TICK` runs per tick,
+least recently checked first, each bounded by `spawn::output_within`. A run that fails
+keeps the pair's previous verdict until a head moves. The first conflicting verdict
+inserts a `predicted_conflicts` row and writes one `operator_note` to each creating
+session; a clean verdict deletes the row, so only a recurrence notifies again. Merge-tree
+needs Git 2.38: the version is read once per daemon, and an older or missing Git writes
+one note per creating session naming the found and required versions instead of
+predicting.
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then
 a `plan/events/` GC sweep gated to `SWARM_MAIL_GC_SWEEP_INTERVAL_MS`. Mail delivery uses
 `pane_inbox` `Mail` rows and the shared inbox delivery paths. The loop lists the legacy
