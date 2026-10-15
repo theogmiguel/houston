@@ -529,7 +529,16 @@ The task PR watch is not gated by
 `worktree_cleanup_enabled`: every `TASK_PR_WATCH_INTERVAL_MS` it runs one `gh pr view` in
 the worktree of each in-review task that has a run branch. A merged PR records `done` with
 `houston:pr-merged` in history; a missing or unauthenticated `gh`, or a branch with no PR,
-leaves the task in review and writes the reason on its run. While `worktree_cleanup_enabled` is on, the worktree cleanup
+leaves the task in review and writes the reason on its run. Both PR watches read through
+`pull_requests::shared`: a pane watch tick reads each (repository, number) once and hands the
+outcome to every watch of it, and the task watch reuses a same-repository read of its branch
+from the last `SHARED_READ_TTL_MS`, which stays just under the pane watch interval. A
+rate-limit answer from `gh` pauses both watches daemon-wide until the latest reset of an
+exhausted GraphQL or core budget from one `gh api rate_limit` (gh prints no response
+headers), or for a bounded fallback when none is exhausted, as after a secondary limit. A pause
+counts no read failure. Pane watches have no state text on the wire, so their pause shows only
+in the `pane_pr_watch` refusal and the daemon log; the task run reason carries it to the
+renderer. While `worktree_cleanup_enabled` is on, the worktree cleanup
 loop runs one pass at
 boot and every 6 h over each workspace with rows in `managed_worktrees`: it works out why
 each recorded worktree stays (`WorktreeKeep`), measures it, removes the ones nothing keeps
