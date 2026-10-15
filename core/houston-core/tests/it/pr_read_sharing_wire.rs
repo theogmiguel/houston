@@ -1,7 +1,7 @@
 #![cfg(unix)]
 #![allow(clippy::disallowed_methods)]
 
-mod common;
+use crate::common;
 
 use common::start_daemon_with_handle;
 use houston_core::daemon::CreateParams;

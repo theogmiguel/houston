@@ -69,6 +69,7 @@ mod pane_read_source_wire;
 mod pane_title_wire;
 mod perf_smoke;
 mod pr_detail_wire;
+mod pr_read_sharing_wire;
 mod pr_surfaces_wire;
 mod pr_watch_wire;
 mod program_status_wire;
