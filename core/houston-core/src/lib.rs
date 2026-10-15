@@ -17,11 +17,14 @@ pub mod claude_turns;
 pub mod cli_probe;
 pub mod codex_pane;
 pub mod composer_ready;
+pub mod conflict_prediction;
 pub mod context_window;
 pub mod daemon;
 pub mod db;
 pub mod env_hygiene;
 pub mod exe_path;
+#[doc(hidden)]
+pub mod fixture_dirs;
 pub mod frame_queue;
 pub mod fs_watch;
 pub mod generated_title;

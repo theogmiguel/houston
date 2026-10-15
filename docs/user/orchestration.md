@@ -181,6 +181,10 @@ From an agent pane, ask the agent to watch an open GitHub pull request. The agen
 request once a minute and wakes that pane when a check fails, all reported checks pass, a new
 review or comment arrives, or the branch becomes conflicted with its base. A watch stops when the
 pull request is merged or closed, after repeated read failures, or after ten comment-only wakes.
+Panes watching the same pull request share one read per check. When GitHub reports a rate
+limit, Houston pauses every pull request watch until GitHub's reset time instead of counting a
+failed read; starting a watch during the pause is refused with "paused until HH:MM", and an
+in-review task's run shows the same reason.
 Use `pane_pr_unwatch` when updates are no longer needed.
 
 ## Workspaces and child lifetime
@@ -199,6 +203,13 @@ in `pane_spawn` (`hs-pane spawn --worktree SLUG`). Houston creates and records i
 supplied. Existing branches and occupied paths are refused. If creation or provider
 preparation fails, Houston rolls back the fresh checkout and branch. If Git checkout fails
 after a hook has added commits, Houston preserves them and reports that rollback needs attention.
+
+While an orchestrator has worktrees from `pane_spawn`, Houston checks about once a minute
+whether their committed branches would conflict with their base or with each other. A
+new predicted conflict arrives once in the orchestrator's inbox, naming both branches and
+the files, so it can reassign or sequence the work before either branch becomes a pull
+request. It reads only the local repository and requires Git 2.38 or newer; with an older
+Git, the orchestrator receives one note naming the installed and required versions.
 
 Children are temporary by default. After a durable completed result, Houston ends the
 process, but keeps the session and transcript under Settled until the parent closes the
@@ -410,6 +421,10 @@ the child available for inspection with a failed delegation and send its parent
 the reported reason. Send a follow-up when the provider allows another turn;
 Houston cannot infer a limit reset time from these hooks. A provider may also
 continue on its own.
+
+When a child's process ends before it hands anything back, for example a CLI that
+fails at launch, its parent receives the exit status and the last lines the pane
+printed; `pane_get` shows the same text as the stop reason.
 
 Use `workspace_info.providers` before choosing a provider or model. It reports
 installed CLIs, locally known versions and model identifiers, per-run effort

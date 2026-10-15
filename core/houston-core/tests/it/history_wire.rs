@@ -33,7 +33,7 @@ async fn start_daemon_with_db_path() -> (std::net::SocketAddr, tempfile::TempDir
     let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr, _handle) =

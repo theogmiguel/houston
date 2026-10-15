@@ -280,7 +280,7 @@ fn shim_dir() -> PathBuf {
                 let path = dir.join(name);
                 std::fs::write(
                     &path,
-                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_BLOCK_STDIN\" ]; then stty raw -echo; echo FIXTURE-READY; exec sleep 60; fi\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
+                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_BLOCK_STDIN\" ]; then stty raw -echo; echo FIXTURE-READY; exec sleep 60; fi\nif [ -n \"$HOUSTON_TEST_EXIT_NOW\" ]; then printf '%s\\n' \"$HOUSTON_TEST_EXIT_NOW\"; exit 7; fi\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
                 )
                 .unwrap();
                 use std::os::unix::fs::PermissionsExt;
@@ -2266,6 +2266,111 @@ fn terminal_report_classification_keeps_real_keys_as_typing() {
     }
     assert!(report(b"\x1b[O"));
     assert!(report(b"\x1bP>|ghostty 1.2\x1b\\"));
+}
+
+#[test]
+fn key_release_events_are_terminal_reports_not_typing() {
+    use houston_core::daemon::is_terminal_report_only_for_test as report;
+    // Kitty keyboard protocol event type 3: Enter, a letter, Escape.
+    for release in [
+        &b"\x1b[13;1:3u"[..],
+        b"\x1b[104;1:3u",
+        b"\x1b[27;1:3u",
+        b"\x1b[13;1:3u\x1b[104;1:3u",
+    ] {
+        assert!(report(release), "{release:?} is a key release");
+    }
+    // Press and repeat events, and a release that carries text, still count.
+    for input in [
+        &b"\x1b[13u"[..],
+        b"\x1b[104;1:1u",
+        b"\x1b[104;1:2u",
+        b"\x1b[104;1:3u\r",
+        b"\x1b[104;1:3ux",
+    ] {
+        assert!(!report(input), "{input:?} is operator input");
+    }
+}
+
+/// An operator submits a message in a pane whose CLI reports key releases (kitty keyboard
+/// protocol event types). The Enter release arrives after the prompt hook cleared the
+/// composer and must not mark it occupied again.
+#[tokio::test]
+async fn a_steer_is_accepted_after_the_operator_submitted_and_the_composer_is_empty() {
+    let _guard = serial().await;
+    let r = rig("steer-after-submit").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+
+    for frame in [&b"h"[..], b"i", b"\x1b[104;1:3u", b"\x1b[105;1:3u", b"\r"] {
+        r.daemon.note_operator_keystroke(child, frame);
+    }
+    // The CLI accepts the prompt: its hook is the submission boundary.
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+    r.daemon.note_operator_keystroke(child, b"\x1b[13;1:3u");
+    tokio::time::sleep(Duration::from_millis(
+        houston_core::orchestrate::OPERATOR_TYPING_GUARD_MS + 500,
+    ))
+    .await;
+
+    let steer = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session":child,"text":"STEER-AFTER-SUBMIT","mode":"steer"}),
+    )
+    .await;
+    assert_eq!(steer["isError"], false, "{steer}");
+    await_child_echo(&r.daemon, child, "STEER-AFTER-SUBMIT").await;
+}
+
+/// Releases carry no new text: they neither occupy an empty composer nor clear a draft.
+#[tokio::test]
+async fn a_key_release_does_not_release_an_operators_unsubmitted_draft() {
+    let _guard = serial().await;
+    let r = rig("steer-draft-release").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+    r.daemon.note_operator_keystroke(child, b"draft");
+    r.daemon.note_operator_keystroke(child, b"\x1b[116;1:3u");
+    tokio::time::sleep(Duration::from_millis(
+        houston_core::orchestrate::OPERATOR_TYPING_GUARD_MS + 500,
+    ))
+    .await;
+    let refusal = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session":child,"text":"MUST-NOT-PASTE","mode":"steer"}),
+    )
+    .await;
+    assert_eq!(refusal["isError"], true, "{refusal}");
+    assert!(
+        refusal
+            .to_string()
+            .contains("has text the operator has not submitted"),
+        "{refusal}"
+    );
 }
 
 #[tokio::test]
@@ -7054,6 +7159,67 @@ async fn a_child_that_crashes_empty_handed_still_reaches_its_parent() {
         r.daemon.delegation_of(kid).unwrap().state,
         "failed",
         "nothing came back, so the record is failed rather than done"
+    );
+}
+
+#[tokio::test]
+async fn a_child_that_dies_at_launch_tells_its_parent_why() {
+    let _guard = serial().await;
+    let r = rig("launch-exit-reason").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_env_var_for_test(
+        "HOUSTON_TEST_EXIT_NOW",
+        Some("setting.json corrupt: exiting"),
+    );
+    let (status, body) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/spawn",
+        &token,
+        Some(serde_json::json!({"kind": "codex", "prompt": "h0"})),
+    )
+    .await;
+    r.daemon.set_env_var_for_test("HOUSTON_TEST_EXIT_NOW", None);
+    assert_eq!(status, 200, "spawn body: {body}");
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let row = loop {
+        let exited = r
+            .daemon
+            .inbox_rows_for_test(pane.id)
+            .into_iter()
+            .find(|row| row.kind == "exited");
+        if let Some(row) = exited {
+            break row;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "parent never heard the exit; rows: {:?}, scrollback: {:?}",
+            r.daemon.inbox_rows_for_test(pane.id),
+            r.daemon
+                .scrollback(kid, None)
+                .map(|replay| String::from_utf8_lossy(&replay.data).into_owned())
+        );
+        std::thread::sleep(Duration::from_millis(30));
+    };
+    assert!(row.summary.contains("pane ended"), "{row:?}");
+    assert!(
+        row.body.contains("exit status 7"),
+        "the exit status reaches the parent: {row:?}"
+    );
+    assert!(
+        row.body.contains("setting.json corrupt: exiting"),
+        "the CLI's own error text reaches the parent: {row:?}"
+    );
+    let record = r.daemon.delegation_of(kid).unwrap();
+    assert_eq!(record.state, "failed");
+    let reason = record.stop_reason.expect("the stop reason names the exit");
+    assert!(
+        reason.contains("exit status 7") && reason.contains("setting.json corrupt"),
+        "pane_get's stop reason carries the same diagnosis: {reason}"
     );
 }
 
@@ -12748,6 +12914,103 @@ async fn worker_dialogue_reports_and_replies_cross_cli_mcp_without_completing_th
                 .count(),
             1
         );
+    }
+}
+
+/// A reply is ~600 characters; the worker must read all of it through every door that
+/// delivers an inbox row, not just the "Reply to message #N" title.
+#[tokio::test]
+async fn a_worker_receives_the_full_reply_text_through_every_delivery_route() {
+    let _guard = serial().await;
+    let r = rig("reply-full-text").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let text = format!(
+        "REPLY-HEAD {} REPLY-TAIL-{}",
+        "Use the existing fixture and keep the migration reversible. ".repeat(10),
+        "x".repeat(8)
+    );
+    assert!(
+        text.chars().count() > 600,
+        "the fixture models a long reply"
+    );
+
+    for route in ["mcp_wait", "http_wait", "stop_hook", "paste"] {
+        let (status, spawned) = r
+            .post_spawn(
+                &r.token_for(parent.id),
+                serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+            )
+            .await;
+        assert_eq!(status, 200, "{spawned}");
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        let child_token = r.token_for(child);
+        apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+        let question = mcp_call(
+            r.addr,
+            &child_token,
+            "pane_report",
+            serde_json::json!({"kind":"question","body":"Which fixture?","request_id":1}),
+        )
+        .await;
+        let question_id = question["structuredContent"]["message_id"]
+            .as_i64()
+            .unwrap();
+        if route == "paste" {
+            // An idle worker gets the reply pasted into its prompt.
+            apply_codex_hook_event(r._state.path(), child, "Stop").await;
+        }
+        let answer = mcp_call(
+            r.addr,
+            &r.token_for(parent.id),
+            "pane_reply",
+            serde_json::json!({"message_id":question_id,"text":text}),
+        )
+        .await;
+        assert_eq!(answer["isError"], false, "{route}: {answer}");
+
+        match route {
+            "mcp_wait" => {
+                let got = mcp_call(
+                    r.addr,
+                    &child_token,
+                    "pane_wait",
+                    serde_json::json!({"timeout_ms":1000}),
+                )
+                .await;
+                let shown = got["content"][0]["text"].as_str().unwrap();
+                assert!(shown.contains(&text), "{route}: {got}");
+            }
+            "http_wait" => {
+                let (status, got) = http_json(
+                    r.addr,
+                    "POST",
+                    "/orchestrate/wait",
+                    &child_token,
+                    Some(serde_json::json!({"timeout_ms":1000})),
+                )
+                .await;
+                assert_eq!(status, 200, "{got}");
+                assert_eq!(got["rows"][0]["body"], text, "{route}: {got}");
+            }
+            "stop_hook" => {
+                let (status, got) = http_json(
+                    r.addr,
+                    "POST",
+                    "/inbox/reserve",
+                    &child_token,
+                    Some(serde_json::json!({})),
+                )
+                .await;
+                assert_eq!(status, 200, "{got}");
+                assert!(
+                    got["text"].as_str().unwrap().contains(&text),
+                    "{route}: {got}"
+                );
+            }
+            _ => await_child_echo(&r.daemon, child, "REPLY-TAIL-xxxxxxxx").await,
+        }
     }
 }
 

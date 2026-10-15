@@ -115,7 +115,7 @@ fn harness_state_returns_native_models_from_the_cached_catalog() {
     let daemon = Daemon::new(houston_core::daemon::DaemonConfig::new(
         "test-token".into(),
         state.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
 
@@ -222,7 +222,7 @@ fn reopening_the_daemon_fails_interrupted_harness_reviews_and_keeps_published_on
     let daemon = Daemon::new(houston_core::daemon::DaemonConfig::new(
         "test-token".into(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (_, reviews, _) = state(&daemon, &workspace);

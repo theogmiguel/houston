@@ -134,7 +134,7 @@ fn a_missing_base_ref_is_refused_by_name() {
 
 #[test]
 fn a_non_git_directory_is_refused_by_name() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = houston_core::fixture_dirs::tempdir_outside_git();
     let dest = tmp.path().join("wt");
     let err = worktrees::create(tmp.path(), "task_1", None, &dest)
         .unwrap_err()
