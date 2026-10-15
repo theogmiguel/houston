@@ -5212,6 +5212,56 @@ impl Db {
         Ok(result)
     }
 
+    /// A sibling message: both panes must still be inside an open request, checked in the
+    /// same transaction as the insert so a round closing concurrently cannot be written to.
+    pub fn inbox_insert_sibling_message(
+        &self,
+        row: &NewInboxRow,
+        sender_round: u32,
+        receipt: &MessageReceipt,
+        now: u64,
+    ) -> Result<serde_json::Value> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        if let Some(result) = receipt.begin(&tx, now)? {
+            return Ok(result);
+        }
+        let sender = row.from_session.unwrap_or_default();
+        let recipient_round = row.request_id.unwrap_or_default();
+        for (pane, round, who) in [
+            (sender, sender_round, "sender"),
+            (row.to_session, recipient_round, "recipient"),
+        ] {
+            let (current, state): (u32, String) = tx.query_row(
+                "SELECT round, state FROM delegations WHERE child_session = ?1",
+                [pane],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            anyhow::ensure!(
+                round > 0
+                    && round == current
+                    && crate::orchestrate::DelegationState::parse(&state)
+                        .is_some_and(|state| !state.is_closed()),
+                "message refused: {who} pane {pane} has no open request (expected request {round}; current request is {current} with state {state}); only its orchestrator starts new work"
+            );
+        }
+        let sent: u32 = tx.query_row(
+            "SELECT COUNT(*) FROM pane_inbox WHERE from_session = ?1 AND to_session = ?2
+             AND kind = 'mail' AND request_id = ?3",
+            rusqlite::params![sender, row.to_session, recipient_round],
+            |r| r.get(0),
+        )?;
+        let cap = crate::orchestrate::SIBLING_MESSAGE_ROUND_MAX;
+        anyhow::ensure!(sent < cap,
+            "message refused: SIBLING_MESSAGE_ROUND_MAX is {cap}; pane {sender} already sent {sent} messages to pane {} during its request {recipient_round}; requested one more", row.to_session);
+        let id = insert_inbox_row(&tx, row, now)?;
+        let result = serde_json::json!({"sent":true,"message_id":id,"to_session":row.to_session,"request_id":recipient_round,
+            "note":"Stored in the sibling's inbox; it receives it from pane_wait or when its turn ends. Wait with pane_wait (omit session) for an answer; your parent is not sent a copy."});
+        receipt.finish(&tx, &result)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
     pub fn inbox_insert_reply(
         &self,
         row: &NewInboxRow,
@@ -5759,7 +5809,7 @@ fn expire_worker_dialogue(conn: &Connection, child: u32, now: u64) -> Result<()>
         "UPDATE pane_inbox SET resolved_at = ?2, reason = 'request_closed'
          WHERE resolved_at IS NULL
          AND ((from_session = ?1 AND kind IN ('progress', 'question', 'blocked'))
-              OR (to_session = ?1 AND kind = 'reply'))
+              OR (to_session = ?1 AND kind IN ('reply', 'mail')))
          AND EXISTS (SELECT 1 FROM delegations WHERE child_session = ?1
                      AND (round != pane_inbox.request_id OR state IN ('done', 'failed', 'cancelled', 'unknown')))",
         rusqlite::params![child, now as i64])?;

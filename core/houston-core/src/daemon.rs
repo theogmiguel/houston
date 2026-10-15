@@ -19324,6 +19324,18 @@ impl Daemon {
             "registered_workspaces": registered_workspaces,
             "routing": self.workspace_routing(&info.project_dir)?,
             "providers": self.orchestration_provider_catalog(),
+            "siblings": self
+                .siblings_of(caller)
+                .into_iter()
+                .map(|(id, role, open)| {
+                    serde_json::json!({
+                        "session_id": id,
+                        "role": role,
+                        "codename": self.codename_of(id),
+                        "open_request": open,
+                    })
+                })
+                .collect::<Vec<_>>(),
         }))
     }
 
@@ -21272,6 +21284,106 @@ impl Daemon {
         drop(guard);
         self.mcp_notify.tools_changed_for_session(caller);
         self.inbox_notify(child, true);
+        Ok(result)
+    }
+
+    /// Live siblings of `caller` with a delegation record: `(session, role, open request)`.
+    /// Spawn reservations are excluded because they have no request to receive into yet.
+    fn siblings_of(&self, caller: u32) -> Vec<(u32, Option<String>, bool)> {
+        let Some(parent) = self.parent_of(caller) else {
+            return Vec::new();
+        };
+        self.live_children_of(parent)
+            .into_iter()
+            .filter(|&id| id != caller)
+            .filter_map(|id| {
+                let row = self.delegation_of(id)?;
+                let open = orchestrate::DelegationState::parse(&row.state)
+                    .is_some_and(|state| !state.is_closed());
+                Some((id, row.role, open))
+            })
+            .collect()
+    }
+
+    pub fn orchestrate_message(
+        self: &Arc<Self>,
+        caller: u32,
+        mut message: orchestrate::SiblingMessage,
+    ) -> Result<serde_json::Value> {
+        message.body = orchestrate::report_text(&message.body)?;
+        let key = message.client_request_id.take();
+        let receipt = crate::db::MessageReceipt::new(
+            caller,
+            key,
+            "pane_message",
+            &serde_json::to_value(&message)?,
+        )?;
+        self.orchestrate_whoami(caller)?;
+        let guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        if let Some(result) = self.db.message_receipt_lookup(&receipt, now_ms())? {
+            return Ok(result);
+        }
+        anyhow::ensure!(
+            self.parent_of(caller).is_some(),
+            "message refused: pane {caller} has no parent; pane_message reaches siblings, the live children of the same parent"
+        );
+        let target = message.to.trim();
+        let siblings = self.siblings_of(caller);
+        let recipient = siblings
+            .iter()
+            .find(|(id, role, _)| {
+                target.parse::<u32>().ok() == Some(*id)
+                    || role
+                        .as_deref()
+                        .is_some_and(|role| role.eq_ignore_ascii_case(target))
+            })
+            .map(|(id, _, _)| *id)
+            .ok_or_else(|| {
+                let known: Vec<String> = siblings
+                    .iter()
+                    .map(|(id, role, _)| match role {
+                        Some(role) => format!("{role} (pane {id})"),
+                        None => format!("pane {id}"),
+                    })
+                    .collect();
+                anyhow!(
+                    "message refused: {target:?} is not a live sibling of pane {caller}; expected a sibling role or session id from [{}]",
+                    known.join(", ")
+                )
+            })?;
+        let sender_round = self
+            .delegation_of(caller)
+            .map(|row| row.round)
+            .unwrap_or_default();
+        let recipient_round = self
+            .delegation_of(recipient)
+            .map(|row| row.round)
+            .unwrap_or_default();
+        let workspace = self.current_workspace(caller)?;
+        let row = orchestrate::inbox_row_new(
+            recipient,
+            &workspace,
+            Some(caller),
+            Some(recipient_round),
+            orchestrate::InboxKind::Mail,
+            &orchestrate::submit_summary_fallback(&message.body),
+            &message.body,
+            Vec::new(),
+            false,
+            None,
+            None,
+            true,
+        )?;
+        let result =
+            self.db
+                .inbox_insert_sibling_message(&row, sender_round, &receipt, now_ms())?;
+        let id = result["message_id"].as_i64().expect("stored message id");
+        self.broadcast_inbox_row(id);
+        drop(guard);
+        self.inbox_notify(recipient, false);
         Ok(result)
     }
 

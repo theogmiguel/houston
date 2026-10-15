@@ -2638,6 +2638,7 @@ async fn a_child_pane_keeps_its_reporting_tools_consent_or_not() {
     assert_eq!(
         names,
         vec![
+            "pane_message",
             "pane_reply",
             "pane_report",
             "pane_submit",
@@ -5978,6 +5979,7 @@ async fn pane_spawn_is_advertised_only_while_it_could_be_used() {
     assert_eq!(
         kid_names,
         vec![
+            "pane_message",
             "pane_reply",
             "pane_report",
             "pane_submit",
@@ -12951,6 +12953,207 @@ async fn a_worker_receives_the_full_reply_text_through_every_delivery_route() {
             _ => await_child_echo(&r.daemon, child, "REPLY-TAIL-xxxxxxxx").await,
         }
     }
+}
+
+#[tokio::test]
+async fn siblings_message_each_other_directly_without_passing_through_the_parent() {
+    let _guard = serial().await;
+    let r = rig("sibling-message").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let spawn = |role: &'static str| {
+        let r = &r;
+        async move {
+            let (_, spawned) = r
+                .post_spawn(
+                    &r.token_for(parent.id),
+                    serde_json::json!({"kind":"codex","prompt":"work","reusable":true,"role":role}),
+                )
+                .await;
+            let child = spawned["session_id"].as_u64().unwrap() as u32;
+            apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+            child
+        }
+    };
+    let implementer = spawn("implementer").await;
+    let reviewer = spawn("reviewer").await;
+    let implementer_token = r.token_for(implementer);
+    let reviewer_token = r.token_for(reviewer);
+
+    let info = mcp_call(
+        r.addr,
+        &implementer_token,
+        "workspace_info",
+        serde_json::json!({}),
+    )
+    .await;
+    let siblings = info["structuredContent"]["siblings"].as_array().unwrap();
+    assert_eq!(siblings.len(), 1, "{info}");
+    assert_eq!(siblings[0]["role"], "reviewer");
+    assert_eq!(siblings[0]["session_id"], reviewer);
+    assert_eq!(siblings[0]["open_request"], true);
+
+    let addr = r.addr;
+    let wait_token = reviewer_token.clone();
+    let waiter = tokio::spawn(async move {
+        mcp_call(
+            addr,
+            &wait_token,
+            "pane_wait",
+            serde_json::json!({"timeout_ms":2000}),
+        )
+        .await
+    });
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while !r.daemon.inbox_wait_active_for_test(reviewer) {
+        assert!(tokio::time::Instant::now() < deadline);
+        tokio::task::yield_now().await;
+    }
+    let sent = dialogue_cli(
+        &r,
+        implementer,
+        &implementer_token,
+        &[
+            "message",
+            "reviewer",
+            "Draft builds; please review",
+            "--client-request-id",
+            "msg-1",
+        ],
+    )
+    .await;
+    assert_eq!(sent["sent"], true, "{sent}");
+    assert_eq!(sent["to_session"], reviewer);
+    let replay = mcp_call(
+        r.addr,
+        &implementer_token,
+        "pane_message",
+        serde_json::json!({"to":"reviewer","body":"Draft builds; please review","client_request_id":"msg-1"}),
+    )
+    .await;
+    assert_eq!(
+        replay["structuredContent"], sent,
+        "a retried key returns its receipt"
+    );
+    let got = waiter.await.unwrap();
+    assert_eq!(got["isError"], false, "{got}");
+    assert_eq!(got["structuredContent"]["rows"][0]["kind"], "mail");
+    assert_eq!(
+        got["structuredContent"]["rows"][0]["from_session"],
+        implementer
+    );
+    let text = got["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("Draft builds; please review") && text.contains("from a sibling"),
+        "{text}"
+    );
+    assert!(
+        !r.daemon
+            .inbox_rows_for_test(parent.id)
+            .iter()
+            .any(|row| row.kind == "mail"),
+        "the parent receives no copy of sibling traffic"
+    );
+
+    let answer = mcp_call(
+        r.addr,
+        &reviewer_token,
+        "pane_message",
+        serde_json::json!({"to": implementer.to_string(), "body":"One finding: rename the helper"}),
+    )
+    .await;
+    assert_eq!(
+        answer["isError"], false,
+        "a session id addresses a sibling too: {answer}"
+    );
+
+    let unknown = mcp_call(
+        r.addr,
+        &implementer_token,
+        "pane_message",
+        serde_json::json!({"to":"tester","body":"hello"}),
+    )
+    .await;
+    assert_eq!(unknown["isError"], true);
+    assert!(
+        unknown
+            .to_string()
+            .contains(&format!("reviewer (pane {reviewer})")),
+        "a refusal lists the siblings that exist: {unknown}"
+    );
+    let orphan = mcp_call(
+        r.addr,
+        &r.token_for(parent.id),
+        "pane_message",
+        serde_json::json!({"to":"reviewer","body":"hello"}),
+    )
+    .await;
+    assert_eq!(
+        orphan["isError"], true,
+        "a top-level pane has no siblings: {orphan}"
+    );
+
+    let cap = 32;
+    for n in 2..=cap {
+        let ok = mcp_call(
+            r.addr,
+            &implementer_token,
+            "pane_message",
+            serde_json::json!({"to":"reviewer","body":format!("note {n}")}),
+        )
+        .await;
+        assert_eq!(ok["isError"], false, "message {n}: {ok}");
+    }
+    let over = mcp_call(
+        r.addr,
+        &implementer_token,
+        "pane_message",
+        serde_json::json!({"to":"reviewer","body":"one more"}),
+    )
+    .await;
+    assert_eq!(over["isError"], true);
+    assert!(
+        over.to_string().contains("SIBLING_MESSAGE_ROUND_MAX is 32")
+            && over
+                .to_string()
+                .contains(&format!("already sent {cap} messages")),
+        "the cap names its limit, the count and the request: {over}"
+    );
+
+    let submitted = mcp_call(
+        r.addr,
+        &reviewer_token,
+        "pane_submit",
+        serde_json::json!({"body":"Approved","request_id":1}),
+    )
+    .await;
+    assert_eq!(submitted["isError"], false, "{submitted}");
+    apply_codex_hook_event(r._state.path(), reviewer, "Stop").await;
+    assert_eq!(r.daemon.delegation_of(reviewer).unwrap().state, "done");
+    let closed = mcp_call(
+        r.addr,
+        &implementer_token,
+        "pane_message",
+        serde_json::json!({"to":"reviewer","body":"Start another review"}),
+    )
+    .await;
+    assert_eq!(closed["isError"], true);
+    assert!(
+        closed.to_string().contains("no open request")
+            && closed
+                .to_string()
+                .contains("only its orchestrator starts new work"),
+        "a sibling that handed back cannot be restarted by a peer: {closed}"
+    );
+    assert!(
+        r.daemon
+            .inbox_rows_for_test(reviewer)
+            .iter()
+            .filter(|row| row.kind == "mail")
+            .all(|row| row.resolved_at.is_some()),
+        "undelivered sibling mail closes with the recipient's request"
+    );
 }
 
 #[tokio::test]
