@@ -90,7 +90,7 @@ fn boot(database: &Path) -> Arc<Daemon> {
         DaemonConfig::new(
             common::TOKEN.into(),
             database.to_path_buf(),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         ),
         SafeModeFlags {
             disable_auto_restore: true,
@@ -545,7 +545,7 @@ fn root_restore_carries_saved_scrollback_before_retiring_the_old_row() {
         let state = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
         let database = state.path().join("test.db");
-        seed(&database, project.path(), false);
+        let db = seed(&database, project.path(), false);
         seed_scrollback(state.path());
         if clean {
             std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
@@ -553,7 +553,7 @@ fn root_restore_carries_saved_scrollback_before_retiring_the_old_row() {
         let daemon = Daemon::new(DaemonConfig::new(
             common::TOKEN.into(),
             database.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         ))
         .unwrap();
         let replacement = daemon
@@ -573,6 +573,10 @@ fn root_restore_carries_saved_scrollback_before_retiring_the_old_row() {
         assert!(!state.path().join("scrollback/1.bin").exists());
         // The staged ring was checked above, before this orderly checkpoint.
         daemon.manage_shutdown().unwrap();
+        // Outside a systemd session scope the replacement's launch is uncontained, and closing
+        // it after a restart needs the same operator acknowledgement `seed` gives its rows.
+        // A contained launch refuses acknowledgement and is verified through its scope instead.
+        let _ = db.acknowledge_uncontained_recovery(replacement.id);
         let reopened = boot(&database);
         assert_saved_scrollback(&reopened, replacement.id);
         reopened.close(replacement.id).unwrap();

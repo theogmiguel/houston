@@ -371,7 +371,7 @@ async fn tasks_survive_a_daemon_restart() {
         DaemonConfig::new(
             TOKEN.to_string(),
             db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         )
     };
 

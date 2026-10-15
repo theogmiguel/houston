@@ -28,7 +28,7 @@ impl Rig {
         let daemon = Daemon::new(DaemonConfig::new(
             "codex-hooks-test".into(),
             state.path().join("test.db"),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         ))
         .unwrap();
         Self {
