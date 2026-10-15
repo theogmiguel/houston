@@ -25376,6 +25376,7 @@ mod agent_profile_env_tests {
             .arg("sleep 5; :")
             .env("CLAUDE_CONFIG_DIR", "/tmp/tr-test-profile")
             .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
             .expect("spawn sh");
         let mut found = None;
