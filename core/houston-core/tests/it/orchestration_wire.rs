@@ -280,7 +280,7 @@ fn shim_dir() -> PathBuf {
                 let path = dir.join(name);
                 std::fs::write(
                     &path,
-                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_BLOCK_STDIN\" ]; then stty raw -echo; echo FIXTURE-READY; exec sleep 60; fi\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
+                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_BLOCK_STDIN\" ]; then stty raw -echo; echo FIXTURE-READY; exec sleep 60; fi\nif [ -n \"$HOUSTON_TEST_EXIT_NOW\" ]; then printf '%s\\n' \"$HOUSTON_TEST_EXIT_NOW\"; exit 7; fi\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
                 )
                 .unwrap();
                 use std::os::unix::fs::PermissionsExt;
@@ -7161,6 +7161,67 @@ async fn a_child_that_crashes_empty_handed_still_reaches_its_parent() {
         r.daemon.delegation_of(kid).unwrap().state,
         "failed",
         "nothing came back, so the record is failed rather than done"
+    );
+}
+
+#[tokio::test]
+async fn a_child_that_dies_at_launch_tells_its_parent_why() {
+    let _guard = serial().await;
+    let r = rig("launch-exit-reason").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_env_var_for_test(
+        "HOUSTON_TEST_EXIT_NOW",
+        Some("setting.json corrupt: exiting"),
+    );
+    let (status, body) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/spawn",
+        &token,
+        Some(serde_json::json!({"kind": "codex", "prompt": "h0"})),
+    )
+    .await;
+    r.daemon.set_env_var_for_test("HOUSTON_TEST_EXIT_NOW", None);
+    assert_eq!(status, 200, "spawn body: {body}");
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let row = loop {
+        let exited = r
+            .daemon
+            .inbox_rows_for_test(pane.id)
+            .into_iter()
+            .find(|row| row.kind == "exited");
+        if let Some(row) = exited {
+            break row;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "parent never heard the exit; rows: {:?}, scrollback: {:?}",
+            r.daemon.inbox_rows_for_test(pane.id),
+            r.daemon
+                .scrollback(kid, None)
+                .map(|replay| String::from_utf8_lossy(&replay.data).into_owned())
+        );
+        std::thread::sleep(Duration::from_millis(30));
+    };
+    assert!(row.summary.contains("pane ended"), "{row:?}");
+    assert!(
+        row.body.contains("exit status 7"),
+        "the exit status reaches the parent: {row:?}"
+    );
+    assert!(
+        row.body.contains("setting.json corrupt: exiting"),
+        "the CLI's own error text reaches the parent: {row:?}"
+    );
+    let record = r.daemon.delegation_of(kid).unwrap();
+    assert_eq!(record.state, "failed");
+    let reason = record.stop_reason.expect("the stop reason names the exit");
+    assert!(
+        reason.contains("exit status 7") && reason.contains("setting.json corrupt"),
+        "pane_get's stop reason carries the same diagnosis: {reason}"
     );
 }
 

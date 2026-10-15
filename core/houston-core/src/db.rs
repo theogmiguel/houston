@@ -1953,6 +1953,14 @@ impl Db {
             "base_branch",
             "base_branch TEXT",
         )?;
+        // A row is a predicted conflict its orchestrator has been told about. It goes once
+        // the pair merges clean or leaves the managed set, so a recurrence is told again.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS predicted_conflicts (
+                pair TEXT PRIMARY KEY,
+                noted_at_ms INTEGER NOT NULL
+            );",
+        )?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS skill_pushes (
                 tool TEXT NOT NULL,
@@ -3505,6 +3513,28 @@ impl Db {
                 measured_at_ms: r.get(8)?,
             })
         })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// True only for the call that first records `pair`, which is the one that notifies.
+    pub fn predicted_conflict_note(&self, pair: &str, at_ms: i64) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.execute(
+            "INSERT OR IGNORE INTO predicted_conflicts (pair, noted_at_ms) VALUES (?1, ?2)",
+            rusqlite::params![pair, at_ms],
+        )? == 1)
+    }
+
+    pub fn predicted_conflict_clear(&self, pair: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute("DELETE FROM predicted_conflicts WHERE pair = ?1", [pair])?;
+        Ok(())
+    }
+
+    pub fn predicted_conflicts(&self) -> Result<Vec<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare("SELECT pair FROM predicted_conflicts ORDER BY pair")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
@@ -9619,5 +9649,17 @@ mod tests {
         };
         db.managed_worktree_record(&again).unwrap();
         assert_eq!(db.managed_worktrees().unwrap(), vec![again]);
+    }
+
+    #[test]
+    fn a_predicted_conflict_notes_once_until_cleared() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        assert!(db.predicted_conflict_note("pair", 1).unwrap());
+        assert!(!db.predicted_conflict_note("pair", 2).unwrap());
+        assert_eq!(db.predicted_conflicts().unwrap(), vec!["pair".to_string()]);
+        db.predicted_conflict_clear("pair").unwrap();
+        assert!(db.predicted_conflicts().unwrap().is_empty());
+        assert!(db.predicted_conflict_note("pair", 3).unwrap());
     }
 }

@@ -47,6 +47,7 @@
 3 core/houston-core/tests/it/pane_read_source_wire.rs
 3 core/houston-core/tests/it/pane_title_wire.rs
 2 core/houston-core/tests/it/pr_detail_wire.rs
+3 core/houston-core/tests/it/pr_read_sharing_wire.rs
 4 core/houston-core/tests/it/pr_surfaces_wire.rs
 3 core/houston-core/tests/it/pr_watch_wire.rs
 7 core/houston-core/tests/it/provider_parity_wire.rs

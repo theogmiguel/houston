@@ -495,7 +495,7 @@ only on rare control-plane events — the PTY path never touches SQLite.
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
-| bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove) |
+| bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove), `predicted_conflicts` (worktree pairs whose predicted conflict was already noted) |
 | legacy tasks | `tasks`, `task_events` — an orphan from before the `backlog_` tables, retained for database compatibility and never read or written by Tasks |
 | legacy substrate | `swarms`, `swarm_agents`, `swarm_messages`, `swarm_deliveries`, `swarm_plan_events_applied` |
 
@@ -514,9 +514,9 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns eleven tasks:
+`boot::spawn_background_loops` is called only by the daemon host and spawns twelve tasks:
 `swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
-`worktree_cleanup_loop`, `task_pr_watch_loop`, `remote_loops`, `pr_watch_loop`,
+`worktree_cleanup_loop`, `conflict_prediction_loop`, `task_pr_watch_loop`, `remote_loops`, `pr_watch_loop`,
 `checkout_watch_loop`, `slack_loops` and `task_tracker_loop`. The checkout
 watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
 debounces changes and broadcasts updated checkout identity. It reacts only to content
@@ -529,7 +529,16 @@ The task PR watch is not gated by
 `worktree_cleanup_enabled`: every `TASK_PR_WATCH_INTERVAL_MS` it runs one `gh pr view` in
 the worktree of each in-review task that has a run branch. A merged PR records `done` with
 `houston:pr-merged` in history; a missing or unauthenticated `gh`, or a branch with no PR,
-leaves the task in review and writes the reason on its run. While `worktree_cleanup_enabled` is on, the worktree cleanup
+leaves the task in review and writes the reason on its run. Both PR watches read through
+`pull_requests::shared`: a pane watch tick reads each (repository, number) once and hands the
+outcome to every watch of it, and the task watch reuses a same-repository read of its branch
+from the last `SHARED_READ_TTL_MS`, which stays just under the pane watch interval. A
+rate-limit answer from `gh` pauses both watches daemon-wide until the latest reset of an
+exhausted GraphQL or core budget from one `gh api rate_limit` (gh prints no response
+headers), or for a bounded fallback when none is exhausted, as after a secondary limit. A pause
+counts no read failure. Pane watches have no state text on the wire, so their pause shows only
+in the `pane_pr_watch` refusal and the daemon log; the task run reason carries it to the
+renderer. While `worktree_cleanup_enabled` is on, the worktree cleanup
 loop runs one pass at
 boot and every 6 h over each workspace with rows in `managed_worktrees`: it works out why
 each recorded worktree stays (`WorktreeKeep`), measures it, removes the ones nothing keeps
@@ -555,6 +564,15 @@ File stdin is passed directly to the child, with no copier thread. OS spawn and
 termination scheduling are outside the wall-clock guarantee. Other platforms,
 including macOS, explicitly refuse bounded capture before spawning until equivalent
 process ownership is available.
+The conflict prediction loop has no setting because it is local, bounded and read-only
+apart from unreferenced merge objects, and it is idle until a managed worktree has a
+creating session. Only sessions with a live inbox recipient are compared or notified;
+otherwise a closed orchestrator's notes would reach the workspace operator queue each time
+its abandoned branches fall behind. `MAX_RUNS_PER_TICK` caps `git merge-tree` runs, and
+an unchanged pair of heads is never re-run. `predicted_conflicts` keeps a conflict to one
+note until the pair merges clean. Merge-tree needs Git 2.38: an older or missing Git is
+refused by name, once per creating session. Only committed heads are compared, so
+uncommitted work is invisible to it.
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then
 a `plan/events/` GC sweep gated to `SWARM_MAIL_GC_SWEEP_INTERVAL_MS`. Mail delivery uses
 `pane_inbox` `Mail` rows and the shared inbox delivery paths. The loop lists the legacy
