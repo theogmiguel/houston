@@ -27,5 +27,5 @@ test-group = 'pty-heavy'
 # Long by construction: seeded property loop in a debug build, a provider/seed matrix, and
 # Slack socket-silence timers. The longest of them passed in 96 s of a 120 s default window.
 [[profile.default.overrides]]
-filter = 'test(scrollback::tests::random_pushes_match_the_contiguous_reference) | test(fast_provider_seed_matrix) | binary(slack_intake_wire) | binary(resume_wire)'
+filter = 'test(scrollback::tests::random_pushes_match_the_contiguous_reference) | test(fast_provider_seed_matrix) | test(/^slack_intake_wire::/) | test(/^resume_wire::/)'
 slow-timeout = { period = "60s", terminate-after = 5 }
