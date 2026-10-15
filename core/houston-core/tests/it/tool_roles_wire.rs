@@ -194,6 +194,7 @@ async fn a_leaf_child_sees_only_dialogue_and_identity_tools_with_every_provider_
     assert_eq!(
         names,
         vec![
+            "pane_message".to_string(),
             "pane_reply".to_string(),
             "pane_report".to_string(),
             "pane_submit".to_string(),
@@ -364,6 +365,7 @@ async fn a_role_change_pushes_tools_list_changed() {
     assert_eq!(
         names,
         vec![
+            "pane_message".to_string(),
             "pane_reply".to_string(),
             "pane_report".to_string(),
             "pane_submit".to_string(),

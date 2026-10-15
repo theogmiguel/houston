@@ -1790,6 +1790,8 @@ pub struct Daemon {
     closing_sessions: Mutex<HashSet<u32>>,
     spawn_reservations: Mutex<HashMap<u32, (u32, Option<String>)>>,
     worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
+    /// `.worktreeinclude` warnings of a spawn's new worktree, until its result takes them.
+    spawn_include_warnings: Mutex<HashMap<u32, Vec<String>>>,
     pending_cleanup_cancellations: Mutex<HashSet<u32>>,
     spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     shell_child_restore_observer_for_test: Mutex<Option<SpawnObserver>>,
@@ -3523,6 +3525,7 @@ impl Daemon {
             closing_sessions: Mutex::new(HashSet::new()),
             spawn_reservations: Mutex::new(HashMap::new()),
             worktree_branch_reservations: Mutex::new(HashMap::new()),
+            spawn_include_warnings: Mutex::new(HashMap::new()),
             pending_cleanup_cancellations: Mutex::new(HashSet::new()),
             spawn_observer_for_test: Mutex::new(None),
             shell_child_restore_observer_for_test: Mutex::new(None),
@@ -5731,13 +5734,13 @@ impl Daemon {
 
     /// A panel-created worktree under the daemon's own state dir, beside task
     /// worktrees: branch `houston/<slug>` off `base`, so it cannot collide with
-    /// a task's directory.
+    /// a task's directory. Also returns what `.worktreeinclude` could not copy.
     pub fn git_worktree_create(
         &self,
         repo: &std::path::Path,
         name: &str,
         base: Option<&str>,
-    ) -> anyhow::Result<crate::worktrees::Worktree> {
+    ) -> anyhow::Result<(crate::worktrees::Worktree, Vec<String>)> {
         let project = repo
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
@@ -5764,7 +5767,8 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording worktree {}: {e:#}", path.display());
         }
-        Ok(wt)
+        let include = crate::worktree_include::carry_over(repo, &path);
+        Ok((wt, include.warnings))
     }
 
     /// Drops the row with the tree, so the path and its slug are free again.
@@ -18291,117 +18295,6 @@ impl Daemon {
         Ok(info.id)
     }
 
-    pub fn swarm_send(
-        self: &Arc<Self>,
-        id: u64,
-        from: &str,
-        to: &str,
-        body: &str,
-        kind: proto::SwarmMsgKind,
-    ) -> Result<proto::SwarmMessage> {
-        self.swarm_send_with_wire_id(id, from, to, body, kind, crate::scope::gen_mailbox_id())
-    }
-
-    fn swarm_send_with_wire_id(
-        self: &Arc<Self>,
-        id: u64,
-        from: &str,
-        to: &str,
-        body: &str,
-        kind: proto::SwarmMsgKind,
-        wire_id: String,
-    ) -> Result<proto::SwarmMessage> {
-        let body = body.trim();
-        anyhow::ensure!(!body.is_empty(), "swarm message body must not be empty");
-        let agents = self.db.list_swarm_agents(id)?;
-        let labels: Vec<String> = agents.iter().map(|a| a.label.clone()).collect();
-        let recipients = crate::scope::resolve_recipients(to, from, &labels)?;
-
-        let info = self.db.get_swarm(id)?;
-        let mail = crate::scope::MailMessage {
-            id: wire_id,
-            from: from.to_string(),
-            to: to.to_string(),
-            body: body.to_string(),
-            kind,
-            timestamp_ms: now_ms(),
-        };
-
-        let ingest = self.db.swarm_mail_ingest(id, &mail, &recipients)?;
-        let msg = ingest.message().clone();
-        if let crate::db::SwarmMailIngest::New(m) = &ingest {
-            self.broadcast_control(&proto::ServerMsg::SwarmMessage { message: m.clone() });
-        }
-
-        let from_session = agents
-            .iter()
-            .find(|a| a.label == from)
-            .and_then(|a| a.session);
-        for recipient in &recipients {
-            self.mail_deliver_one(id, &info.root_dir, from_session, recipient, &agents, &mail);
-        }
-
-        Ok(msg)
-    }
-
-    fn mail_deliver_one(
-        self: &Arc<Self>,
-        swarm: u64,
-        workspace: &str,
-        from_session: Option<u32>,
-        recipient: &str,
-        agents: &[proto::SwarmAgentInfo],
-        mail: &crate::scope::MailMessage,
-    ) {
-        let live_session = agents
-            .iter()
-            .find(|a| a.label == recipient)
-            .and_then(|a| a.session);
-        let summary = format!("Mail from {}", mail.from);
-        let recipient = live_session
-            .or_else(|| {
-                from_session.and_then(|sender| {
-                    self.get(sender)
-                        .ok()
-                        .and_then(|session| session.info.spawned_by)
-                })
-            })
-            .unwrap_or(0);
-        let to_session = self.live_inbox_recipient(recipient);
-        let reason = (live_session.is_none() || to_session != recipient).then_some("parent_dead");
-        let row = match orchestrate::inbox_row_new(
-            recipient,
-            workspace,
-            from_session,
-            None,
-            orchestrate::InboxKind::Mail,
-            &summary,
-            &mail.body,
-            Vec::new(),
-            false,
-            None,
-            reason,
-            true,
-        ) {
-            Ok(row) => row,
-            Err(e) => {
-                tracing::warn!("swarm {swarm}: composing the mail row for {recipient:?}: {e}");
-                return;
-            }
-        };
-        match self.db.inbox_insert(&row, now_ms()) {
-            Ok(id) => {
-                if to_session != recipient {
-                    self.retain_or_readdress_row(id, "parent_dead");
-                } else {
-                    self.broadcast_inbox_row(id);
-                    self.inbox_notify(to_session, false);
-                }
-            }
-            Err(e) => tracing::warn!("swarm {swarm}: writing the mail row for {recipient:?}: {e}"),
-        }
-    }
-
     pub fn swarm_remove(&self, id: u64) -> Result<()> {
         self.db.swarm_remove(id)?;
         if let Err(e) = self.list_swarms_publishing_registry() {
@@ -19439,6 +19332,18 @@ impl Daemon {
             "registered_workspaces": registered_workspaces,
             "routing": self.workspace_routing(&info.project_dir)?,
             "providers": self.orchestration_provider_catalog(),
+            "siblings": self
+                .siblings_of(caller)
+                .into_iter()
+                .map(|(id, role, open)| {
+                    serde_json::json!({
+                        "session_id": id,
+                        "role": role,
+                        "codename": self.codename_of(id),
+                        "open_request": open,
+                    })
+                })
+                .collect::<Vec<_>>(),
         }))
     }
 
@@ -19685,7 +19590,17 @@ impl Daemon {
             } else {
                 self.spawn_checkout_warning(session.id)
             };
-            let warnings = self.spawn_warnings(&session, isolated);
+            let mut warnings = self.spawn_warnings(&session, isolated);
+            let include = self
+                .spawn_include_warnings
+                .lock()
+                .expect("spawn include warnings lock")
+                .remove(&session.id)
+                .unwrap_or_default();
+            warnings.extend(include.into_iter().map(|message| proto::PaneSpawnWarning {
+                code: "worktree_include".into(),
+                message,
+            }));
             Ok(orchestrate::SpawnOutcome {
                 session,
                 warning,
@@ -20252,6 +20167,15 @@ impl Daemon {
         if let Some(text) = first_prompt {
             self.deliver_first_prompt(sid, text, Some(caller), true);
         }
+        if let Some(created) = created
+            .as_ref()
+            .filter(|c| created_here && !c.include_warnings.is_empty())
+        {
+            self.spawn_include_warnings
+                .lock()
+                .expect("spawn include warnings lock")
+                .insert(sid, created.include_warnings.clone());
+        }
         if handoff {
             if let Err(e) = self.db.session_mark_handed_off(caller, now_ms()) {
                 tracing::warn!("recording that pane {caller} handed off to {sid}: {e:#}");
@@ -20260,6 +20184,10 @@ impl Daemon {
         }
         if let Err(parent_error) = self.get(caller) {
             drop(_cleanup_guard);
+            self.spawn_include_warnings
+                .lock()
+                .expect("spawn include warnings lock")
+                .remove(&sid);
             let rollback = self.rollback_spawned_child(sid);
             if created_here && rollback.is_ok() {
                 if let Some(c) = &created {
@@ -20390,10 +20318,11 @@ impl Daemon {
         crate::worktrees::create_on_branch(project_dir, &branch, None, &dest)
             .context("spawn refused")?;
         let path = dest.canonicalize().unwrap_or(dest);
-        let created = CreatedWorktree {
+        let mut created = CreatedWorktree {
             repo: project_dir.to_path_buf(),
             path,
             branch,
+            include_warnings: Vec::new(),
         };
         let row = crate::db::ManagedWorktreeRow {
             path: created.path.display().to_string(),
@@ -20412,6 +20341,8 @@ impl Daemon {
                 .context("spawn refused")
                 .context(orchestrate::MutationMayHaveActed);
         }
+        created.include_warnings =
+            crate::worktree_include::carry_over(project_dir, &created.path).warnings;
         Ok(created)
     }
 
@@ -21387,6 +21318,106 @@ impl Daemon {
         drop(guard);
         self.mcp_notify.tools_changed_for_session(caller);
         self.inbox_notify(child, true);
+        Ok(result)
+    }
+
+    /// Live siblings of `caller` with a delegation record: `(session, role, open request)`.
+    /// Spawn reservations are excluded because they have no request to receive into yet.
+    fn siblings_of(&self, caller: u32) -> Vec<(u32, Option<String>, bool)> {
+        let Some(parent) = self.parent_of(caller) else {
+            return Vec::new();
+        };
+        self.live_children_of(parent)
+            .into_iter()
+            .filter(|&id| id != caller)
+            .filter_map(|id| {
+                let row = self.delegation_of(id)?;
+                let open = orchestrate::DelegationState::parse(&row.state)
+                    .is_some_and(|state| !state.is_closed());
+                Some((id, row.role, open))
+            })
+            .collect()
+    }
+
+    pub fn orchestrate_message(
+        self: &Arc<Self>,
+        caller: u32,
+        mut message: orchestrate::SiblingMessage,
+    ) -> Result<serde_json::Value> {
+        message.body = orchestrate::report_text(&message.body)?;
+        let key = message.client_request_id.take();
+        let receipt = crate::db::MessageReceipt::new(
+            caller,
+            key,
+            "pane_message",
+            &serde_json::to_value(&message)?,
+        )?;
+        self.orchestrate_whoami(caller)?;
+        let guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        if let Some(result) = self.db.message_receipt_lookup(&receipt, now_ms())? {
+            return Ok(result);
+        }
+        anyhow::ensure!(
+            self.parent_of(caller).is_some(),
+            "message refused: pane {caller} has no parent; pane_message reaches siblings, the live children of the same parent"
+        );
+        let target = message.to.trim();
+        let siblings = self.siblings_of(caller);
+        let recipient = siblings
+            .iter()
+            .find(|(id, role, _)| {
+                target.parse::<u32>().ok() == Some(*id)
+                    || role
+                        .as_deref()
+                        .is_some_and(|role| role.eq_ignore_ascii_case(target))
+            })
+            .map(|(id, _, _)| *id)
+            .ok_or_else(|| {
+                let known: Vec<String> = siblings
+                    .iter()
+                    .map(|(id, role, _)| match role {
+                        Some(role) => format!("{role} (pane {id})"),
+                        None => format!("pane {id}"),
+                    })
+                    .collect();
+                anyhow!(
+                    "message refused: {target:?} is not a live sibling of pane {caller}; expected a sibling role or session id from [{}]",
+                    known.join(", ")
+                )
+            })?;
+        let sender_round = self
+            .delegation_of(caller)
+            .map(|row| row.round)
+            .unwrap_or_default();
+        let recipient_round = self
+            .delegation_of(recipient)
+            .map(|row| row.round)
+            .unwrap_or_default();
+        let workspace = self.current_workspace(caller)?;
+        let row = orchestrate::inbox_row_new(
+            recipient,
+            &workspace,
+            Some(caller),
+            Some(recipient_round),
+            orchestrate::InboxKind::Mail,
+            &orchestrate::submit_summary_fallback(&message.body),
+            &message.body,
+            Vec::new(),
+            false,
+            None,
+            None,
+            true,
+        )?;
+        let result =
+            self.db
+                .inbox_insert_sibling_message(&row, sender_round, &receipt, now_ms())?;
+        let id = result["message_id"].as_i64().expect("stored message id");
+        self.broadcast_inbox_row(id);
+        drop(guard);
+        self.inbox_notify(recipient, false);
         Ok(result)
     }
 
@@ -24241,6 +24272,8 @@ pub(crate) struct CreatedWorktree {
     pub(crate) repo: PathBuf,
     pub(crate) path: PathBuf,
     pub(crate) branch: String,
+    /// What `.worktreeinclude` could not carry over when this call created the tree.
+    pub(crate) include_warnings: Vec<String>,
 }
 
 /// Where a spawn's worktree comes from: `Create` asks git for the slug/branch
@@ -24826,134 +24859,6 @@ mod pr_watch_stall_tests {
             let _ = daemon.kill(id);
             let _ = daemon.close(id);
         }
-    }
-}
-
-#[cfg(test)]
-mod swarm_send_inbox_tests {
-    use super::*;
-
-    fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
-        let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("h.db");
-        (
-            Daemon::new(DaemonConfig::new(
-                "t".into(),
-                db_path,
-                crate::host_env::HostEnv::capture(),
-            ))
-            .unwrap(),
-            dir,
-        )
-    }
-
-    fn roster_two() -> Vec<proto::SwarmRosterEntry> {
-        vec![
-            proto::SwarmRosterEntry {
-                label: "Alice".into(),
-                role: proto::SwarmRole::Builder,
-                agent: proto::AgentKind::Custom,
-                auto_approve: false,
-                model: None,
-                plan_mode: false,
-                custom_prompt: None,
-                cmd: None,
-            },
-            proto::SwarmRosterEntry {
-                label: "Bob".into(),
-                role: proto::SwarmRole::Builder,
-                agent: proto::AgentKind::Custom,
-                auto_approve: false,
-                model: None,
-                plan_mode: false,
-                custom_prompt: None,
-                cmd: None,
-            },
-        ]
-    }
-
-    #[test]
-    fn agent_send_is_an_inbox_row() {
-        let (daemon, _state) = test_daemon();
-        let root = tempfile::tempdir().unwrap();
-        let (info, agents) = daemon
-            .db
-            .swarm_create(
-                "S",
-                &root.path().display().to_string(),
-                "goal",
-                &roster_two(),
-                60,
-            )
-            .unwrap();
-        let bob = agents.iter().find(|a| a.label == "Bob").unwrap();
-        daemon
-            .db
-            .swarm_agent_bind_session(bob.id, None, Some(4242))
-            .unwrap();
-
-        daemon
-            .swarm_send(
-                info.id,
-                "Alice",
-                "Bob",
-                "ship the thing",
-                proto::SwarmMsgKind::Message,
-            )
-            .unwrap();
-
-        assert_eq!(
-            daemon.db.swarm_messages(info.id, 500).unwrap().len(),
-            1,
-            "the swarm history table still gets its row"
-        );
-
-        let rows = daemon.db.inbox_list_operator(&info.root_dir).unwrap();
-        assert_eq!(
-            rows.len(),
-            1,
-            "a dead recipient without ancestors reaches the operator"
-        );
-        assert_eq!(rows[0].kind, "mail");
-        assert!(rows[0].body.contains("ship the thing"));
-    }
-
-    #[test]
-    fn mail_to_a_recipient_with_no_live_session_reaches_the_operator() {
-        let (daemon, _state) = test_daemon();
-        let root = tempfile::tempdir().unwrap();
-        let (info, _agents) = daemon
-            .db
-            .swarm_create(
-                "S",
-                &root.path().display().to_string(),
-                "goal",
-                &roster_two(),
-                60,
-            )
-            .unwrap();
-
-        daemon
-            .swarm_send(
-                info.id,
-                "Alice",
-                "Bob",
-                "ship the thing",
-                proto::SwarmMsgKind::Message,
-            )
-            .unwrap();
-
-        let operator_rows = daemon.db.inbox_list_operator(&info.root_dir).unwrap();
-        assert_eq!(operator_rows.len(), 1);
-        assert_eq!(
-            operator_rows[0]
-                .reason
-                .as_deref()
-                .unwrap_or_default()
-                .split(':')
-                .next(),
-            Some("parent_dead")
-        );
     }
 }
 
