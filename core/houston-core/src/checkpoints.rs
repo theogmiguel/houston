@@ -268,12 +268,15 @@ fn resolve_ref(dir: &Path, refname: &str) -> Result<String> {
 }
 
 // git clean walks every untracked path; a stuck filesystem must fail the revert, not
-// hold its worker. Capture also enforces the collector's 8 MiB output limit.
+// hold its worker. -q keeps removed paths out of the collector's 8 MiB output limit.
 const CLEAN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 fn clean_workspace(dir: &Path) -> Result<()> {
     let mut command = crate::spawn::command("git");
-    command.arg("-C").arg(dir).args(["clean", "-fd", "--", "."]);
+    command
+        .arg("-C")
+        .arg(dir)
+        .args(["clean", "-fdq", "--", "."]);
     clean_with(dir, command, CLEAN_TIMEOUT)
 }
 
@@ -285,14 +288,14 @@ fn clean_with(
     let out = crate::spawn::output_within(command, deadline)
         .with_context(|| {
             format!(
-                "capturing git clean -fd in {} (deadline {} ms)",
+                "capturing git clean -fdq in {} (deadline {} ms)",
                 dir.display(),
                 deadline.as_millis()
             )
         })?
         .with_context(|| {
             format!(
-                "git clean -fd in {} did not finish within the {} ms deadline; some untracked \
+                "git clean -fdq in {} did not finish within the {} ms deadline; some untracked \
                  files may already be removed. Inspect the workspace before retrying",
                 dir.display(),
                 deadline.as_millis()
@@ -309,7 +312,7 @@ fn clean_with(
         return Ok(());
     }
     bail!(
-        "git clean -fd in {} failed (exit {:?}): {}",
+        "git clean -fdq in {} failed (exit {:?}): {}",
         dir.display(),
         out.status.code(),
         String::from_utf8_lossy(&out.stderr).trim()
@@ -534,7 +537,7 @@ mod tests {
             start.elapsed()
         );
         let message = format!("{error:#}");
-        assert!(message.contains("git clean -fd"), "{message}");
+        assert!(message.contains("git clean -fdq"), "{message}");
         assert!(
             message.contains(&tmp.path().display().to_string()),
             "{message}"
