@@ -83,6 +83,7 @@ pub(crate) fn host_name() -> String {
         }
     };
     #[cfg(not(unix))]
+    #[allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
     let raw = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "localhost".to_string());
     feed::mask(&raw)
         .chars()

@@ -171,11 +171,15 @@ pub fn worktree_trust_warning(agent: proto::AgentKind) -> Option<String> {
     Some(format!("{provider} may ask to trust this new worktree folder before it starts; answer it in the child's pane"))
 }
 
-pub fn prepare_worktree_trust(agent: proto::AgentKind, cwd: &Path) -> Result<()> {
+pub fn prepare_worktree_trust(
+    env: &crate::host_env::HostEnv,
+    agent: proto::AgentKind,
+    cwd: &Path,
+) -> Result<()> {
     if agent != proto::AgentKind::Grok {
         return Ok(());
     }
-    let home = crate::agent_hooks::ConfigHome::from_env()?;
+    let home = crate::agent_hooks::ConfigHome::from_env(env)?;
     let path = home.home.join(".grok/trusted_folders.toml");
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _guard = LOCK.lock().expect("worktree trust lock");

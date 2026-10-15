@@ -6,8 +6,8 @@ set -euo pipefail
 # Artifacts untouched for 3 days belong to a branch nobody is building; the next
 # build of that branch recompiles only what it needs.
 SWEEP_DAYS="${HOUSTON_SWEEP_DAYS:-3}"
-# 30 GB leaves room for a full core test build, which needs about 25 GB.
-SWEEP_MAXSIZE="${HOUSTON_SWEEP_MAXSIZE:-30GB}"
+# 15 GB leaves room for a full core test build with incremental caches (measured 8.6 GB).
+SWEEP_MAXSIZE="${HOUSTON_SWEEP_MAXSIZE:-15GB}"
 LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/oom-shield.lock"
 
 common_dir="$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)"
@@ -64,18 +64,6 @@ EOF
   systemctl --user daemon-reload
   systemctl --user enable --now houston-sweep-targets.timer
   echo "[sweep-targets] installed houston-sweep-targets.timer ($units)"
-
-  # Cargo reads config from every parent directory, so this reaches each agent
-  # worktree's build and not the main checkout's. Incremental caches are a large
-  # share of target/ and buy little for the few builds an agent worktree sees.
-  local worktree_config="$ROOT/.houston/worktrees/.cargo/config.toml"
-  mkdir -p "$(dirname "$worktree_config")"
-  if [ ! -f "$worktree_config" ]; then
-    printf '[build]\nincremental = false\n' >"$worktree_config"
-    echo "[sweep-targets] wrote $worktree_config"
-  else
-    echo "[sweep-targets] kept existing $worktree_config"
-  fi
 }
 
 case "${1:-}" in
