@@ -12856,6 +12856,103 @@ async fn worker_dialogue_reports_and_replies_cross_cli_mcp_without_completing_th
     }
 }
 
+/// A reply is ~600 characters; the worker must read all of it through every door that
+/// delivers an inbox row, not just the "Reply to message #N" title.
+#[tokio::test]
+async fn a_worker_receives_the_full_reply_text_through_every_delivery_route() {
+    let _guard = serial().await;
+    let r = rig("reply-full-text").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let text = format!(
+        "REPLY-HEAD {} REPLY-TAIL-{}",
+        "Use the existing fixture and keep the migration reversible. ".repeat(10),
+        "x".repeat(8)
+    );
+    assert!(
+        text.chars().count() > 600,
+        "the fixture models a long reply"
+    );
+
+    for route in ["mcp_wait", "http_wait", "stop_hook", "paste"] {
+        let (status, spawned) = r
+            .post_spawn(
+                &r.token_for(parent.id),
+                serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+            )
+            .await;
+        assert_eq!(status, 200, "{spawned}");
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        let child_token = r.token_for(child);
+        apply_codex_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+        let question = mcp_call(
+            r.addr,
+            &child_token,
+            "pane_report",
+            serde_json::json!({"kind":"question","body":"Which fixture?","request_id":1}),
+        )
+        .await;
+        let question_id = question["structuredContent"]["message_id"]
+            .as_i64()
+            .unwrap();
+        if route == "paste" {
+            // An idle worker gets the reply pasted into its prompt.
+            apply_codex_hook_event(r._state.path(), child, "Stop").await;
+        }
+        let answer = mcp_call(
+            r.addr,
+            &r.token_for(parent.id),
+            "pane_reply",
+            serde_json::json!({"message_id":question_id,"text":text}),
+        )
+        .await;
+        assert_eq!(answer["isError"], false, "{route}: {answer}");
+
+        match route {
+            "mcp_wait" => {
+                let got = mcp_call(
+                    r.addr,
+                    &child_token,
+                    "pane_wait",
+                    serde_json::json!({"timeout_ms":1000}),
+                )
+                .await;
+                let shown = got["content"][0]["text"].as_str().unwrap();
+                assert!(shown.contains(&text), "{route}: {got}");
+            }
+            "http_wait" => {
+                let (status, got) = http_json(
+                    r.addr,
+                    "POST",
+                    "/orchestrate/wait",
+                    &child_token,
+                    Some(serde_json::json!({"timeout_ms":1000})),
+                )
+                .await;
+                assert_eq!(status, 200, "{got}");
+                assert_eq!(got["rows"][0]["body"], text, "{route}: {got}");
+            }
+            "stop_hook" => {
+                let (status, got) = http_json(
+                    r.addr,
+                    "POST",
+                    "/inbox/reserve",
+                    &child_token,
+                    Some(serde_json::json!({})),
+                )
+                .await;
+                assert_eq!(status, 200, "{got}");
+                assert!(
+                    got["text"].as_str().unwrap().contains(&text),
+                    "{route}: {got}"
+                );
+            }
+            _ => await_child_echo(&r.daemon, child, "REPLY-TAIL-xxxxxxxx").await,
+        }
+    }
+}
+
 #[tokio::test]
 async fn worker_dialogue_steer_reconciles_a_new_request_without_a_prompt_hook() {
     let _guard = serial().await;
