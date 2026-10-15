@@ -6,9 +6,12 @@ fn workspace_actions_persist_and_limits_are_reported() {
     let state = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
     let workspace = workspace.path().display().to_string();
-    let config = || DaemonConfig {
-        token: "test-token-0000-0000-000000000000".into(),
-        db_path: state.path().join("test.db"),
+    let config = || {
+        DaemonConfig::new(
+            "test-token-0000-0000-000000000000".into(),
+            state.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        )
     };
 
     let daemon = Daemon::new(config()).unwrap();

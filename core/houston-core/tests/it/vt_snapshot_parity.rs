@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use houston_core::vt::{Emulator, VT_HISTORY_BYTES, VT_HISTORY_ROWS};
 

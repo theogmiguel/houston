@@ -170,10 +170,11 @@ mod context_indicator {
             cache.to_string(),
         )
         .unwrap();
-        let daemon = Daemon::new(houston_core::daemon::DaemonConfig {
-            token: "test-token".into(),
-            db_path: state.path().join("test.db"),
-        })
+        let daemon = Daemon::new(houston_core::daemon::DaemonConfig::new(
+            "test-token".into(),
+            state.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         daemon
             .update_policy_set(proto::UpdatePolicy { check: false })
@@ -445,10 +446,11 @@ mod context_indicator {
         let channel_dir = home.path().join(".houston-contexttest");
         std::fs::create_dir_all(&channel_dir).unwrap();
 
-        let daemon = Daemon::new(houston_core::daemon::DaemonConfig {
-            token: "test-token".to_string(),
-            db_path: channel_dir.join("test.db"),
-        })
+        let daemon = Daemon::new(houston_core::daemon::DaemonConfig::new(
+            "test-token".to_string(),
+            channel_dir.join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let dir = tempfile::tempdir().unwrap();
         let info = daemon

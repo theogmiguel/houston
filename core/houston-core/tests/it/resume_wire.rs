@@ -126,10 +126,11 @@ async fn setup() -> Env {
 }
 
 fn boot(env: &Env) -> Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: env.db_path(),
-    })
+    Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        env.db_path(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 
@@ -2036,10 +2037,11 @@ async fn a_fresh_codex_restore_does_not_pin_its_observer_to_the_retry_handle() {
         // The shim records the full native launch argv without running a CLI,
         // observer, systemd scope or network service; only the pre-exec gate is real.
         let restored_daemon = Daemon::new_bound_with_session_launcher(
-            DaemonConfig {
-                token: TOKEN.to_string(),
-                db_path: env.db_path(),
-            },
+            DaemonConfig::new(
+                TOKEN.to_string(),
+                env.db_path(),
+                houston_core::host_env::HostEnv::capture(),
+            ),
             1,
             Some(shim_dir().join("claude")),
         )

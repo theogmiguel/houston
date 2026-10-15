@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{anyhow, Context, Result};
 use houston_protocol as proto;
 use sha2::{Digest, Sha256};

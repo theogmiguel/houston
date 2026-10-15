@@ -176,10 +176,11 @@ async fn adopted_blocked_writer(fail_scope: bool) {
     drop(pair.master);
     drop(reader);
     let daemon = Daemon::new_adopting(
-        DaemonConfig {
-            token: common::TOKEN.into(),
-            db_path: dir.path().join("test.db"),
-        },
+        DaemonConfig::new(
+            common::TOKEN.into(),
+            dir.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ),
         0,
         vec![adopted],
     )

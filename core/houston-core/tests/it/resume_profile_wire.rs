@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::db::Db;
@@ -69,10 +70,11 @@ impl Fixture {
         for path in [&workspace, &original, &replacement] {
             std::fs::create_dir_all(path).unwrap();
         }
-        let daemon = Daemon::new(DaemonConfig {
-            token: "profile-resume-test-token".into(),
-            db_path: state.path().join("test.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "profile-resume-test-token".into(),
+            state.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         Self {
             state,

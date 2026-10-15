@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::daemon::StdinWriteError;
 use anyhow::{anyhow, bail, Context, Result};
 use russh::client::{self, Handle};

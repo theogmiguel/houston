@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol as proto;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
@@ -1381,6 +1382,18 @@ impl Session {
 pub struct DaemonConfig {
     pub token: String,
     pub db_path: PathBuf,
+    /// The environment the daemon and its children see.
+    pub env: crate::host_env::HostEnv,
+}
+
+impl DaemonConfig {
+    pub fn new(token: String, db_path: PathBuf, env: crate::host_env::HostEnv) -> Self {
+        Self {
+            token,
+            db_path,
+            env,
+        }
+    }
 }
 
 struct SwarmMailScope {
@@ -1623,6 +1636,7 @@ pub struct Daemon {
     #[cfg(feature = "test-barriers")]
     startup_test: Mutex<StartupTest>,
     pub token: String,
+    env: crate::host_env::HostEnv,
     pub mcp_creds: crate::mcp_creds::Registry,
     pub mcp_notify: crate::mcp_server::NotifierRegistry,
     pub mcp_tools: crate::mcp_server::ToolRegistry,
@@ -2120,10 +2134,6 @@ impl SafeModeFlags {
             disable_auto_restore: safe_mode || on(disable_auto_restore),
             disable_swarm_autolaunch: safe_mode || on(disable_swarm_autolaunch),
         }
-    }
-
-    fn from_env() -> Self {
-        Self::from_lookup(|name| std::env::var(name).ok())
     }
 
     fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Self {
@@ -3084,6 +3094,11 @@ impl Drop for HandoffClaim<'_> {
 }
 
 impl Daemon {
+    /// The environment this daemon and its children run under.
+    pub fn env(&self) -> &crate::host_env::HostEnv {
+        &self.env
+    }
+
     pub fn new(cfg: DaemonConfig) -> Result<Arc<Self>> {
         Self::new_inner(cfg, None, None)
     }
@@ -3327,7 +3342,8 @@ impl Daemon {
         let startup_cause = read_and_derive_startup_cause(&marker_path, &run_state_path);
         remove_file_logged(&marker_path, "clean-shutdown marker");
 
-        let safe_mode_flags = safe_mode_flags_override.unwrap_or_else(SafeModeFlags::from_env);
+        let safe_mode_flags = safe_mode_flags_override
+            .unwrap_or_else(|| SafeModeFlags::from_lookup(|name| cfg.env.var(name)));
         tracing::info!(
             "safe-mode flags resolved: disable_auto_restore={} disable_swarm_autolaunch={}",
             safe_mode_flags.disable_auto_restore,
@@ -3339,6 +3355,7 @@ impl Daemon {
         let swarm_mail_wake = Arc::new(tokio::sync::Notify::new());
         let daemon = Arc::new(Self {
             token: cfg.token,
+            env: cfg.env,
             mcp_creds: crate::mcp_creds::Registry::new(),
             mcp_notify: crate::mcp_server::NotifierRegistry::new(),
             mcp_tools: crate::mcp_server::ToolRegistry::with_builtins(),
@@ -24458,10 +24475,11 @@ mod hook_state_registry_tests {
         let root = tempfile::tempdir().unwrap();
         let root_s = root.path().display().to_string();
         let id = {
-            let daemon = Daemon::new(DaemonConfig {
-                token: "t".into(),
-                db_path: db_path.clone(),
-            })
+            let daemon = Daemon::new(DaemonConfig::new(
+                "t".into(),
+                db_path.clone(),
+                crate::host_env::HostEnv::capture(),
+            ))
             .unwrap();
             daemon
                 .db
@@ -24478,10 +24496,11 @@ mod hook_state_registry_tests {
         .unwrap();
         assert!(crate::hook_state::read_scopes(state.path()).is_empty());
 
-        let _daemon2 = Daemon::new(DaemonConfig {
-            token: "t".into(),
+        let _daemon2 = Daemon::new(DaemonConfig::new(
+            "t".into(),
             db_path,
-        })
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let healed = crate::hook_state::read_scopes(state.path());
         assert_eq!(healed.len(), 1, "boot must rebuild wholesale: {healed:?}");
@@ -24496,10 +24515,11 @@ mod pr_watch_stall_tests {
     #[test]
     fn an_idle_watched_child_is_not_marked_stalled() {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "pr-watch-test".into(),
-            db_path: state.path().join("test.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "pr-watch-test".into(),
+            state.path().join("test.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let workspace = state.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
@@ -24597,10 +24617,11 @@ mod swarm_send_inbox_tests {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("h.db");
         (
-            Daemon::new(DaemonConfig {
-                token: "t".into(),
+            Daemon::new(DaemonConfig::new(
+                "t".into(),
                 db_path,
-            })
+                crate::host_env::HostEnv::capture(),
+            ))
             .unwrap(),
             dir,
         )
@@ -25079,10 +25100,11 @@ mod agent_profile_env_tests {
 
     fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         daemon
             .set_hook_consent(proto::AgentKind::Claude, false)
@@ -25651,10 +25673,11 @@ mod idle_profile_tests {
 
     fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         (daemon, state)
     }
@@ -26292,10 +26315,11 @@ mod handoff_refusal_tests {
 
     fn test_daemon() -> (Arc<Daemon>, tempfile::TempDir) {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         (daemon, state)
     }
@@ -26658,10 +26682,11 @@ mod handoff_platform_refusal_tests {
     #[test]
     fn handoff_refuses_by_platform_off_linux() {
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let result = daemon.begin_handoff(None);
         assert!(!result.accepted);
@@ -26712,10 +26737,11 @@ mod codex_trust_row_tests {
 
         let _guard = home_guard(home.path());
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "t".into(),
-            db_path: state.path().join("t.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "t".into(),
+            state.path().join("t.db"),
+            crate::host_env::HostEnv::capture(),
+        ))
         .unwrap();
 
         let rows = daemon.agent_hooks_state();

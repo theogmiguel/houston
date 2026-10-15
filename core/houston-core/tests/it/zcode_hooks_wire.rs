@@ -170,10 +170,11 @@ async fn the_installed_zcode_stop_entry_reaches_the_channels_drop_dir() {
     std::fs::create_dir_all(&state_dir).unwrap();
     std::env::set_var("HOME", home.path());
     std::env::set_var("USERPROFILE", home.path());
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let rows = daemon.agent_hooks_set(proto::AgentKind::Zcode, true);

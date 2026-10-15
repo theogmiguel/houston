@@ -1,5 +1,6 @@
 //! `hs-harness`: the extractor a harness review run calls from inside its
 //! pane. The daemon never runs it; see carve-out #6 in `invariants.md`.
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 pub mod digest;
 pub mod findings;
 pub mod inventory;

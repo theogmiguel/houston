@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -136,10 +137,11 @@ impl Rig {
     async fn new() -> Self {
         shim_dir();
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: common::TOKEN.into(),
-            db_path: state.path().join("test.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            common::TOKEN.into(),
+            state.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let (addr, server) =
             houston_core::server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
@@ -902,10 +904,11 @@ async fn restart_to_restored_notice_fixture(iterations: usize) {
         drop(db);
         let began = Instant::now();
         let restarted = Daemon::new_with_safe_mode_flags_for_test(
-            DaemonConfig {
-                token: common::TOKEN.into(),
-                db_path: path,
-            },
+            DaemonConfig::new(
+                common::TOKEN.into(),
+                path,
+                houston_core::host_env::HostEnv::capture(),
+            ),
             houston_core::daemon::SafeModeFlags::default(),
         )
         .unwrap();

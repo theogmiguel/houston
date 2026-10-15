@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use common::{connect_and_hello, next_control};
@@ -49,10 +50,11 @@ async fn start(
     tokio::task::JoinHandle<()>,
     std::sync::Arc<Daemon>,
 ) {
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.into(),
-        db_path: state_dir.join("houston.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.into(),
+        state_dir.join("houston.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (addr, server_task) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
         .await

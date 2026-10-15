@@ -367,9 +367,12 @@ async fn tasks_survive_a_daemon_restart() {
     let dir = state_dir.path().join("project");
     std::fs::create_dir_all(&dir).unwrap();
     let workspace = dir.display().to_string();
-    let cfg = || DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
+    let cfg = || {
+        DaemonConfig::new(
+            TOKEN.to_string(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        )
     };
 
     let (id, revision) = {

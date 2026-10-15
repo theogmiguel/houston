@@ -1,4 +1,5 @@
 #![cfg(all(unix, feature = "test-barriers"))]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
@@ -26,10 +27,11 @@ fn shutdown_waits_for_admitted_launch_and_concurrent_refusal_keeps_the_gate() {
         return;
     }
     let state = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: "fixture".into(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "fixture".into(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let spawned = Arc::new(Barrier::new(2));
     let release = Arc::new(Barrier::new(2));

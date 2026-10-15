@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::mcp_creds::McpScope;
@@ -73,10 +74,11 @@ impl Rig {
         std::os::unix::fs::symlink(state.path(), home.join(".houston-chaos")).unwrap();
         let workspace = state.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "chaos-test-token".into(),
-            db_path: state.path().join("test.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "chaos-test-token".into(),
+            state.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         daemon.reap_set_exit_hook_for_test(Box::new(|| {}));
         daemon.install_consented_agent_hooks();

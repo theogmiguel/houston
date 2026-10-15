@@ -117,10 +117,11 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
         .unwrap();
     }
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     daemon.reparent_session(50, new_dir.path()).unwrap();
@@ -133,10 +134,11 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
     assert_eq!(listed.project_dir, new_dir.path().display().to_string());
 
     drop(daemon);
-    let reopened = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let reopened = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let restored = reopened
         .list()
@@ -214,10 +216,11 @@ fn reparent_refuses_a_swarm_tied_session() {
         agents[0].id
     };
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: "test-token".into(),
+    let daemon = Daemon::new(DaemonConfig::new(
+        "test-token".into(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let err = daemon

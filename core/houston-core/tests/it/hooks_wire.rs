@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -876,10 +877,11 @@ fn boot_collects_a_stale_drop_file_and_keeps_a_fresh_one() {
     .unwrap();
     let fresh = hook_drop::write_drop(&dir, &drop_for("UserPromptSubmit", 1), now).unwrap();
 
-    let _daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let _daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     assert!(

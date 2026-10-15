@@ -32,10 +32,11 @@ fn isolated(name: &str) -> bool {
 }
 
 fn daemon(state: &Path) -> Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: "fixture".into(),
-        db_path: state.join("test.db"),
-    })
+    Daemon::new(DaemonConfig::new(
+        "fixture".into(),
+        state.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 

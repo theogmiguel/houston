@@ -1,4 +1,5 @@
 #![cfg(all(unix, feature = "test-barriers"))]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 use common::*;

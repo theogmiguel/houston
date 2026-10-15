@@ -31,10 +31,11 @@ fn vmrss_kib() -> Option<u64> {
 #[ignore = "perf smoke — run explicitly (CI runs it in release)"]
 async fn flood_throughput_floor() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("perf.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("perf.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (addr, _handle) = server::start(daemon, "127.0.0.1:0".parse().unwrap())
         .await
@@ -127,10 +128,11 @@ async fn flood_throughput_floor() {
 #[ignore = "perf smoke — run explicitly (CI runs it in release)"]
 async fn daemon_rss_at_ten_sessions() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("perf.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("perf.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (addr, _handle) = server::start(daemon, "127.0.0.1:0".parse().unwrap())
         .await

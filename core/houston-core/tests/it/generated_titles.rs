@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use houston_core::{db::Db, generated_title};
 use houston_protocol::{AgentKind, TitleSource};
 
@@ -134,10 +135,11 @@ async fn hook_only_generation_preserves_source_priority_and_freezes_the_generate
     std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
     let path = std::env::var("PATH").unwrap_or_default();
     std::env::set_var("PATH", format!("{}:{path}", state.path().display()));
-    let daemon = Daemon::new(DaemonConfig {
-        token: "generated-title-test".into(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "generated-title-test".into(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     assert!(!daemon.generated_titles_enabled());
     let mut rx = daemon.subscribe();

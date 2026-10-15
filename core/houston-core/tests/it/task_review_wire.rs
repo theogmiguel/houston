@@ -556,10 +556,11 @@ fn a_restored_task_child_flips_its_interrupted_run_back_to_running() {
     }
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
-    let _daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let _daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let db = Db::open(&db_path).unwrap();

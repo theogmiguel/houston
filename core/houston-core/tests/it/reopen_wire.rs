@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -88,10 +89,11 @@ fn create_shell_session_no_integration(daemon: &Arc<Daemon>, dir: &std::path::Pa
 }
 
 fn boot_daemon(db_path: std::path::PathBuf) -> Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
+    Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 
@@ -307,10 +309,11 @@ async fn respawn_refuses_a_swarm_tied_session() {
         agents[0].id
     };
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: "test-token".into(),
+    let daemon = Daemon::new(DaemonConfig::new(
+        "test-token".into(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let err = daemon

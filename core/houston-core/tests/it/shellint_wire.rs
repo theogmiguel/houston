@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -142,10 +143,11 @@ async fn bash_markers_become_blocks_and_ledger_rows() {
     let project = tempfile::tempdir().unwrap();
     std::fs::create_dir(project.path().join("subdir")).unwrap();
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let mut rx = daemon.observe();
@@ -233,10 +235,11 @@ async fn program_output_cannot_forge_markers_and_child_environment_is_clean() {
 
     let state_dir = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let mut rx = daemon.observe();
@@ -315,10 +318,11 @@ async fn integration_can_be_disabled_per_spawn() {
     let _env = pin_env(fake_home.path()).await;
 
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let project = tempfile::tempdir().unwrap();
 
@@ -348,10 +352,11 @@ async fn user_prompt_command_never_fabricates_blocks_or_exit_codes() {
 
     let state_dir = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let mut rx = daemon.observe();

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use houston_core::{
     db::{Db, MessageReceipt},
     recovery_process::ProcessIdentity,

@@ -63,10 +63,11 @@ fn codex_consent_and_startup_prepare_the_launcher_with_claude_hooks_disabled() {
     let state = home.join(format!(".houston-{CHANNEL}"));
     std::fs::create_dir_all(&state).unwrap();
     let _environment = ConfigEnvironment::isolated(&home);
-    let daemon = Daemon::new(DaemonConfig {
-        token: "windows-codex-launcher-test".into(),
-        db_path: state.join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "windows-codex-launcher-test".into(),
+        state.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     daemon.agent_hooks_set(AgentKind::Claude, false);
     assert!(!daemon.hook_consent(AgentKind::Claude));

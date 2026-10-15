@@ -40,10 +40,11 @@ fn create_custom_session(
 #[tokio::test]
 async fn session_cwds_batches_and_never_fails_whole() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp_a = tempfile::tempdir().unwrap();
     let tmp_b = tempfile::tempdir().unwrap();
@@ -77,10 +78,11 @@ async fn session_cwds_batches_and_never_fails_whole() {
 #[tokio::test]
 async fn running_procs_is_a_process_tree_fact() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -272,10 +274,11 @@ async fn hiding_a_removed_session_is_idempotent() {
 #[tokio::test]
 async fn wait_for_idle_answers_quiet_busy_dead_and_unknown() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 

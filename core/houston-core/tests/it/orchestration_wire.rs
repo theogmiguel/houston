@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -569,10 +570,11 @@ async fn spawn_rolls_back_when_delegation_persistence_fails() {
         "delegation persistence fails before any child starts"
     );
     drop(conn);
-    let reopened = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
+    let reopened = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     assert!(!reopened
         .list()
@@ -3803,10 +3805,11 @@ async fn k2_temporary_child_is_ended_and_kept_with_durable_result_after_restart(
     );
     drop(conn);
 
-    let reopened = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
+    let reopened = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     assert!(
         reopened
@@ -9881,10 +9884,11 @@ async fn settled_exited_children_without_retention_are_backfilled_before_restore
     .unwrap();
     drop(conn);
 
-    let reopened = Daemon::new(DaemonConfig {
-        token: TOKEN.into(),
+    let reopened = Daemon::new(DaemonConfig::new(
+        TOKEN.into(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     assert!(reopened.list().iter().any(|session| session.id == child));
     assert!(reopened
@@ -10261,10 +10265,11 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
     }
     drop(db);
     let restarted = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig {
-            token: TOKEN.into(),
-            db_path: path.clone(),
-        },
+        DaemonConfig::new(
+            TOKEN.into(),
+            path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        ),
         houston_core::daemon::SafeModeFlags::default(),
     )
     .unwrap();
@@ -10786,10 +10791,11 @@ async fn result_archive_retains_full_body_artifacts_and_scope_after_child_close(
         .await
         .unwrap_err()
         .contains("positive"));
-    let reopened = Daemon::new(DaemonConfig {
-        token: TOKEN.into(),
-        db_path: r._state.path().join("test.db"),
-    })
+    let reopened = Daemon::new(DaemonConfig::new(
+        TOKEN.into(),
+        r._state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let proto::ServerMsg::DelegationResultDetail { row: restored, .. } = reopened
         .delegation_result_get(parent.id, message_id)
@@ -10876,10 +10882,11 @@ async fn k4_latest_results_are_parent_scoped_bounded_read_only_and_durable() {
         r.daemon.kill(info.id).unwrap();
     }
     let reopened = Arc::new(
-        Daemon::new(DaemonConfig {
-            token: TOKEN.into(),
-            db_path: r._state.path().join("test.db"),
-        })
+        Daemon::new(DaemonConfig::new(
+            TOKEN.into(),
+            r._state.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap(),
     );
     let (addr, _server) =

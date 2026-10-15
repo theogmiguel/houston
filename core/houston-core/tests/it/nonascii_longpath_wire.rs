@@ -43,10 +43,11 @@ async fn drive_spawn_persist_reopen(
     workspace: &std::path::Path,
 ) -> Result<(), String> {
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig {
-            token: TOKEN.to_string(),
-            db_path: db_path.clone(),
-        },
+        DaemonConfig::new(
+            TOKEN.to_string(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        ),
         no_auto_restore(),
     )
     .unwrap();
@@ -118,10 +119,11 @@ async fn drive_spawn_persist_reopen(
     drop(daemon);
 
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig {
-            token: TOKEN.to_string(),
+        DaemonConfig::new(
+            TOKEN.to_string(),
             db_path,
-        },
+            houston_core::host_env::HostEnv::capture(),
+        ),
         no_auto_restore(),
     )
     .unwrap();

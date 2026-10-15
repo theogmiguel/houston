@@ -79,10 +79,11 @@ impl Rig {
         git(&repo, &["add", "."]);
         git(&repo, &["commit", "-m", "fixture"]);
         let repo = repo.canonicalize().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "windows-wire-fixture".into(),
-            db_path: state.path().join("test.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "windows-wire-fixture".into(),
+            state.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         daemon.workspace_add(repo.to_str().unwrap()).unwrap();
         let (address, server) =

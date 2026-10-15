@@ -8,10 +8,11 @@ use tokio::sync::broadcast::error::RecvError;
 #[tokio::test]
 async fn no_port_broadcast_for_localhost_urls() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 

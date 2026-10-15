@@ -24,10 +24,11 @@ impl Rig {
         std::env::remove_var("CODEX_HOME");
         std::env::set_var("HOME", home.path());
         let state = tempfile::tempdir().unwrap();
-        let daemon = Daemon::new(DaemonConfig {
-            token: "codex-hooks-test".into(),
-            db_path: state.path().join("test.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "codex-hooks-test".into(),
+            state.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         Self {
             home,
@@ -145,10 +146,11 @@ fn explicit_off_stays_off_and_uninstalls_hooks_and_trust() {
         &houston_core::claude_hooks::sentinel_for(None)
     ));
     drop(r.daemon.take());
-    let restarted = Daemon::new(DaemonConfig {
-        token: "restarted".into(),
-        db_path: r.state.path().join("test.db"),
-    })
+    let restarted = Daemon::new(DaemonConfig::new(
+        "restarted".into(),
+        r.state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     assert!(!restarted.hook_consent(proto::AgentKind::Codex));
     r.daemon = Some(restarted);

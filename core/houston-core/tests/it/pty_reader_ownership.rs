@@ -216,10 +216,11 @@ async fn exited_root_cleanup(fail_scope: bool, respawn: bool) {
 fn startup_rollback_terminates_descendant_before_reaping_owned_root() {
     let _home = Home::new();
     let dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: common::TOKEN.into(),
-        db_path: dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        common::TOKEN.into(),
+        dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let identities = Arc::new(std::sync::Mutex::new(None));
     let observed = identities.clone();

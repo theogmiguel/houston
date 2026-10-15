@@ -88,10 +88,11 @@ fn daemon_direct_custom_and_typed_shell_launches_keep_distinct_credentials() {
     );
     let project = root.path().join("project with spaces");
     std::fs::create_dir(&project).unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: "fixture".into(),
-        db_path: root.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "fixture".into(),
+        root.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     struct Sessions(std::sync::Arc<Daemon>);
     impl Drop for Sessions {

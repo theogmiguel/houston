@@ -1,4 +1,5 @@
 #![cfg(all(target_os = "linux", feature = "test-barriers"))]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -121,10 +122,11 @@ fn startup_failures_are_owned_and_transactional() {
     std::env::set_var("SHELL", &shell);
     let state = tempfile::tempdir().unwrap();
     let database = state.path().join("test.db");
-    let daemon = Daemon::new(DaemonConfig {
-        token: "test-token".into(),
-        db_path: database.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "test-token".into(),
+        database.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     daemon.set_port(1); // Mint local credentials without running an MCP server.
     let conn = rusqlite::Connection::open(&database).unwrap();

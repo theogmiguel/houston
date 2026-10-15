@@ -1,4 +1,5 @@
 #![cfg(target_os = "linux")]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -162,10 +163,11 @@ fn failed_session_startup_transaction_cannot_release_executable() {
     }
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("test.db");
-    let daemon = Daemon::new(DaemonConfig {
-        token: "fixture-token".into(),
-        db_path: database.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "fixture-token".into(),
+        database.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     daemon.set_session_launcher(Some(env!("CARGO_BIN_EXE_houston-core").into()));
     let conn = rusqlite::Connection::open(&database).unwrap();

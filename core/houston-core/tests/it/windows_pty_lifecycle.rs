@@ -22,10 +22,11 @@ impl Fixture {
         let barrier = tempfile::tempdir().unwrap();
         let previous = std::env::var_os("HOUSTON_TEST_BARRIER_DIR");
         std::env::set_var("HOUSTON_TEST_BARRIER_DIR", barrier.path());
-        let daemon = Daemon::new(DaemonConfig {
-            token: "windows-lifecycle-fixture".into(),
-            db_path: state.path().join("fixture.db"),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            "windows-lifecycle-fixture".into(),
+            state.path().join("fixture.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         Self {
             _state: state,

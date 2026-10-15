@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 

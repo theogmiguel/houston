@@ -38,10 +38,11 @@ fn fixture(keys: &[&str]) -> Fixture {
     std::fs::create_dir_all(&workspace).unwrap();
     let workspace = std::fs::canonicalize(workspace).unwrap();
     let db_path = state.path().join("test.db");
-    let daemon = Daemon::new(DaemonConfig {
-        token: "test-token".into(),
-        db_path: db_path.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "test-token".into(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     daemon
         .workspace_add(&workspace.display().to_string())
@@ -446,10 +447,11 @@ fn links_and_verdicts_survive_reopening_the_daemon() {
         .unwrap();
     drop(database);
     drop(f.daemon);
-    let reopened = Daemon::new(DaemonConfig {
-        token: "test-token".into(),
-        db_path: f.db_path.clone(),
-    })
+    let reopened = Daemon::new(DaemonConfig::new(
+        "test-token".into(),
+        f.db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let finding = finding_from_state(&reopened, &f.workspace, "denied-push");
     assert_eq!(

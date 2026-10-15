@@ -442,10 +442,11 @@ async fn wsl_proxy_completes_a_slow_request_after_stdin_eof() {
     let home = tempfile::tempdir().unwrap();
     let state_dir = home.path().join(".houston-wslt-slow");
     std::fs::create_dir_all(&state_dir).unwrap();
-    let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.join("test.db"),
-    })
+    let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (addr, _handle) =
         houston_core::server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())

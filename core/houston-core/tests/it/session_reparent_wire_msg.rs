@@ -189,10 +189,11 @@ async fn session_reparent_over_the_wire_refuses_a_swarm_tied_session() {
         agents[0].id
     };
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (addr, _handle) =
         houston_core::server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())

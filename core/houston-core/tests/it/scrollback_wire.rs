@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use common::*;
@@ -31,10 +32,11 @@ fn create_custom_session(daemon: &Arc<Daemon>, dir: &std::path::Path, cmd: Vec<&
 #[tokio::test]
 async fn output_frames_carry_contiguous_stream_offsets() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -124,10 +126,11 @@ async fn output_frames_carry_contiguous_stream_offsets() {
 #[tokio::test]
 async fn capped_scrollback_replays_a_tail() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let mut rx = daemon.observe();
@@ -174,10 +177,11 @@ async fn scrollback_survives_a_daemon_restart_for_live_sessions() {
     let tmp = tempfile::tempdir().unwrap();
 
     let (id, seen_before) = {
-        let daemon = Daemon::new(DaemonConfig {
-            token: TOKEN.to_string(),
-            db_path: db_path.clone(),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            TOKEN.to_string(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let mut rx = daemon.observe();
         let id = create_custom_session(
@@ -197,10 +201,11 @@ async fn scrollback_survives_a_daemon_restart_for_live_sessions() {
         conn.execute("UPDATE sessions SET agent = 'shell' WHERE id = ?1", [id])
             .unwrap();
     }
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let s = daemon
         .list()
@@ -230,10 +235,11 @@ async fn closing_a_husk_removes_its_persisted_scrollback() {
     let tmp = tempfile::tempdir().unwrap();
 
     let id = {
-        let daemon = Daemon::new(DaemonConfig {
-            token: TOKEN.to_string(),
-            db_path: db_path.clone(),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            TOKEN.to_string(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let mut rx = daemon.observe();
         let id = daemon
@@ -262,10 +268,11 @@ async fn closing_a_husk_removes_its_persisted_scrollback() {
         id
     };
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let ring = state_dir
         .path()
@@ -288,10 +295,11 @@ async fn corrupt_persisted_ring_degrades_to_empty_replay() {
     let tmp = tempfile::tempdir().unwrap();
 
     let id = {
-        let daemon = Daemon::new(DaemonConfig {
-            token: TOKEN.to_string(),
-            db_path: db_path.clone(),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            TOKEN.to_string(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let mut rx = daemon.observe();
         let id = create_custom_session(
@@ -314,10 +322,11 @@ async fn corrupt_persisted_ring_degrades_to_empty_replay() {
         .join(format!("{id}.bin"));
     std::fs::write(&ring, b"Houston").unwrap();
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let replay = daemon.scrollback(id, None).unwrap();
     assert!(

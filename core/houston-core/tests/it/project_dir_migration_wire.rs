@@ -3,10 +3,11 @@ use houston_core::db::Db;
 use houston_core::paths::{LEGACY_PROJECT_DIR, PROJECT_DIR};
 
 fn boot(db_path: &std::path::Path) -> std::sync::Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: "test-token".to_string(),
-        db_path: db_path.to_path_buf(),
-    })
+    Daemon::new(DaemonConfig::new(
+        "test-token".to_string(),
+        db_path.to_path_buf(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 

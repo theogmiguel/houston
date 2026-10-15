@@ -1173,9 +1173,12 @@ async fn reopening_daemon_settles_active_planning_state_and_preserves_retry() {
     std::fs::create_dir_all(&home).unwrap();
     let argv_path = state.path().join("claude-argv.txt");
     provider_shim(&home, "claude", &argv_path);
-    let config = || DaemonConfig {
-        token: TOKEN.into(),
-        db_path: db_path.clone(),
+    let config = || {
+        DaemonConfig::new(
+            TOKEN.into(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        )
     };
     let daemon = Daemon::new(config()).unwrap();
     daemon.workspace_add(&workspace).unwrap();

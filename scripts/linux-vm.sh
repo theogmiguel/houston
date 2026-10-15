@@ -146,7 +146,7 @@ case "${1:-}" in
 
         for s in check-watchdog check-dev-channel check-kill-guard check-protocol-sync \
                  check-loop-spawn-sync check-title-tooltip-guard \
-                 check-spawn-window; do
+                 check-spawn-window check-env-ratchet; do
           step \"safety: \$s\" \"./scripts/\$s.sh\"
         done
 

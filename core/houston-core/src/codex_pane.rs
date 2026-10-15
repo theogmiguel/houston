@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{anyhow, bail, Result};
 use std::ffi::{OsStr, OsString};
 use std::path::Path;

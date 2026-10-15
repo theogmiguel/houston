@@ -112,10 +112,11 @@ fn harness_state_returns_native_models_from_the_cached_catalog() {
         cache.to_string(),
     )
     .unwrap();
-    let daemon = Daemon::new(houston_core::daemon::DaemonConfig {
-        token: "test-token".into(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(houston_core::daemon::DaemonConfig::new(
+        "test-token".into(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let proto::ServerMsg::HarnessState { models, .. } =
@@ -218,10 +219,11 @@ fn reopening_the_daemon_fails_interrupted_harness_reviews_and_keeps_published_on
     .unwrap();
     drop(db);
 
-    let daemon = Daemon::new(houston_core::daemon::DaemonConfig {
-        token: "test-token".into(),
+    let daemon = Daemon::new(houston_core::daemon::DaemonConfig::new(
+        "test-token".into(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (_, reviews, _) = state(&daemon, &workspace);
     let stale = reviews.iter().find(|review| review.id == stale_id).unwrap();

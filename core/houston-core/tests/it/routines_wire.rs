@@ -475,9 +475,12 @@ async fn out_of_range_values_are_errors_naming_the_bound() {
 async fn routines_survive_a_daemon_restart() {
     let state_dir = tempfile::tempdir().unwrap();
     let db_path = state_dir.path().join("test.db");
-    let cfg = || DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
+    let cfg = || {
+        DaemonConfig::new(
+            TOKEN.to_string(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        )
     };
     let (id, revision) = {
         let daemon = Daemon::new(cfg()).unwrap();
@@ -507,10 +510,11 @@ async fn a_bot_owned_routine_migrates_to_standalone_with_its_execution_fields() 
             .unwrap();
     }
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let list = routines_of(daemon.routine_list());
     assert_eq!(list.len(), 1, "the routine is preserved");
@@ -887,9 +891,12 @@ async fn migrated_harness_routine_reads_back_as_harness_review() {
             INSERT INTO harness_routines (workspace, routine_id) VALUES ('/project', 1);",
         ).unwrap();
     }
-    let cfg = || DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
+    let cfg = || {
+        DaemonConfig::new(
+            TOKEN.to_string(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        )
     };
     for _ in 0..2 {
         let daemon = Daemon::new(cfg()).unwrap();

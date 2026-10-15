@@ -17,10 +17,11 @@ async fn hello_with_wrong_token_is_rejected() {
 #[tokio::test]
 async fn session_runs_and_exits() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -57,10 +58,11 @@ async fn session_runs_and_exits() {
 #[tokio::test]
 async fn stdin_reaches_the_pty_and_kill_works() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 

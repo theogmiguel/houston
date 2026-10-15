@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol as proto;
 use std::path::{Path, PathBuf};

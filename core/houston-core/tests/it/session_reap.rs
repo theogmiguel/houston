@@ -4,10 +4,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 fn daemon(state_dir: &Path) -> Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: "test-token".to_string(),
-        db_path: state_dir.join("test.db"),
-    })
+    Daemon::new(DaemonConfig::new(
+        "test-token".to_string(),
+        state_dir.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 

@@ -8,10 +8,11 @@ use common::TOKEN;
 
 fn test_daemon() -> (std::sync::Arc<Daemon>, tempfile::TempDir) {
     let state = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("t.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("t.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     (daemon, state)
 }

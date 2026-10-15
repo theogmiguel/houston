@@ -94,10 +94,11 @@ async fn setup() -> Env {
 }
 
 fn boot(env: &Env) -> Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: env.state.path().join("test.db"),
-    })
+    Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        env.state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 
@@ -965,10 +966,11 @@ async fn the_zcode_toggle_writes_and_removes_the_channels_plugin() {
     let previous_home = std::env::var_os("HOME");
     std::env::set_var("HOME", home.path());
     std::env::set_var("ZCODE_HOUSTON_MCP_URL", "http://127.0.0.1:1/mcp");
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let _addr = serve(&daemon).await;
 

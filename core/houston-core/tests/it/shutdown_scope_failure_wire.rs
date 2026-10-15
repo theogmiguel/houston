@@ -14,10 +14,11 @@ use std::time::Duration;
 static SCOPE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn daemon(state_dir: &Path) -> Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.join("test.db"),
-    })
+    Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 

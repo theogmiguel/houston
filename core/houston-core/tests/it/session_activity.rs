@@ -39,10 +39,11 @@ async fn next_activity(
 async fn hook_activity_is_snapshotted_and_tool_bursts_are_coalesced() {
     let state = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: "session-activity-test-token".into(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "session-activity-test-token".into(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let mut rx = daemon.subscribe();
     #[cfg(unix)]

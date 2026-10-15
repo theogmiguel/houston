@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 #[path = "orchestrate_doors.rs"]
 pub(crate) mod doors;
 

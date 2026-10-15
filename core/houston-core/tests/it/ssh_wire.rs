@@ -142,10 +142,11 @@ fn write_client_key(dir: &std::path::Path) -> String {
 }
 
 async fn daemon_ws(state: &std::path::Path) -> WsStream {
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (addr, _handle) = server::start(daemon, "127.0.0.1:0".parse().unwrap())
         .await

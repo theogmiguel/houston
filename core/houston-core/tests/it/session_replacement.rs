@@ -1,4 +1,5 @@
 #![cfg(all(target_os = "linux", feature = "test-barriers"))]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -86,10 +87,11 @@ fn info(id: u32, project: &Path, parent: Option<u32>) -> proto::SessionInfo {
 
 fn boot(database: &Path) -> Arc<Daemon> {
     Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig {
-            token: common::TOKEN.into(),
-            db_path: database.to_path_buf(),
-        },
+        DaemonConfig::new(
+            common::TOKEN.into(),
+            database.to_path_buf(),
+            houston_core::host_env::HostEnv::capture(),
+        ),
         SafeModeFlags {
             disable_auto_restore: true,
             disable_swarm_autolaunch: true,
@@ -548,10 +550,11 @@ fn root_restore_carries_saved_scrollback_before_retiring_the_old_row() {
         if clean {
             std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
         }
-        let daemon = Daemon::new(DaemonConfig {
-            token: common::TOKEN.into(),
-            db_path: database.clone(),
-        })
+        let daemon = Daemon::new(DaemonConfig::new(
+            common::TOKEN.into(),
+            database.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        ))
         .unwrap();
         let replacement = daemon
             .list()

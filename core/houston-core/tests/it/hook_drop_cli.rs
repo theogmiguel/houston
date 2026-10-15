@@ -512,10 +512,11 @@ while True:
     .unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::os::unix::fs::symlink(bin(), f.project_dir.join("hook-bin")).unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: "test".into(),
-        db_path: f.state_dir().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "test".into(),
+        f.state_dir().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let info = daemon
         .create_session(CreateParams {

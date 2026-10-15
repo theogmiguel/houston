@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use common::TOKEN;
@@ -8,10 +9,11 @@ use std::sync::Arc;
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn boot_daemon(state_dir: &std::path::Path) -> Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.join("test.db"),
-    })
+    Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 
@@ -42,10 +44,11 @@ fn checkpoint_alone_does_not_mark_clean_so_a_later_crash_still_reads_abnormal() 
     std::env::set_var("SHELL", "/bin/sh");
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     create_session(&daemon, proj.path());
     daemon
@@ -64,10 +67,11 @@ fn checkpoint_alone_does_not_mark_clean_so_a_later_crash_still_reads_abnormal() 
 #[test]
 fn mark_clean_shutdown_alone_reads_clean_on_the_next_boot() {
     let state = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     daemon
         .mark_clean_shutdown()
@@ -88,10 +92,11 @@ fn checkpoint_then_mark_clean_reads_clean_on_the_next_boot() {
     std::env::set_var("SHELL", "/bin/sh");
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     create_session(&daemon, proj.path());
     daemon.checkpoint_scrollback().unwrap();
@@ -112,10 +117,11 @@ fn checkpoint_failure_surfaces_as_an_error() {
     std::env::set_var("SHELL", "/bin/sh");
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let _id = create_session(&daemon, proj.path());
     std::thread::sleep(std::time::Duration::from_millis(300));

@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -123,10 +124,11 @@ fn seed_one(
 fn boot_and_list(
     state_dir: &std::path::Path,
 ) -> (Vec<proto::SessionInfo>, Option<proto::RecoverySummary>) {
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     (daemon.list(), daemon.recovery_summary())
 }
@@ -182,10 +184,11 @@ impl Drop for LiveClaude {
 }
 
 fn boot_owned_restore(state: &std::path::Path) -> OwnedRestoreDaemon {
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let owned = OwnedRestoreDaemon(daemon);
     let daemon = &owned.0;
@@ -216,10 +219,11 @@ fn a_refused_durable_close_keeps_the_restored_pane_retryable() {
     seed(state.path(), &[project.path()], true);
     let path = state.path().join("test.db");
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig {
-            token: TOKEN.to_string(),
-            db_path: path.clone(),
-        },
+        DaemonConfig::new(
+            TOKEN.to_string(),
+            path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        ),
         SafeModeFlags {
             disable_auto_restore: true,
             ..Default::default()
@@ -247,10 +251,11 @@ fn a_refused_durable_close_keeps_the_restored_pane_retryable() {
     assert!(!daemon.list().iter().any(|s| s.id == 1));
     drop(daemon);
     let reopened = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig {
-            token: TOKEN.to_string(),
-            db_path: path,
-        },
+        DaemonConfig::new(
+            TOKEN.to_string(),
+            path,
+            houston_core::host_env::HostEnv::capture(),
+        ),
         SafeModeFlags {
             disable_auto_restore: true,
             ..Default::default()
@@ -449,10 +454,11 @@ fn choose_folder_respawn_overrides_the_cwd() {
     let old_dir = tempfile::tempdir().unwrap();
     seed(state.path(), &[old_dir.path()], true);
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let new_dir = tempfile::tempdir().unwrap();
@@ -479,10 +485,11 @@ fn boot_and_list_with_flags(
     flags: SafeModeFlags,
 ) -> (Vec<proto::SessionInfo>, Option<proto::RecoverySummary>) {
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig {
-            token: TOKEN.to_string(),
-            db_path: state_dir.join("test.db"),
-        },
+        DaemonConfig::new(
+            TOKEN.to_string(),
+            state_dir.join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ),
         flags,
     )
     .unwrap();
@@ -594,10 +601,11 @@ fn restored_shell_pane_gets_the_mcp_credential() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let daemon = Daemon::new_bound(
-        DaemonConfig {
-            token: TOKEN.to_string(),
-            db_path: state_dir.path().join("test.db"),
-        },
+        DaemonConfig::new(
+            TOKEN.to_string(),
+            state_dir.path().join("test.db"),
+            houston_core::host_env::HostEnv::capture(),
+        ),
         port,
     )
     .unwrap();

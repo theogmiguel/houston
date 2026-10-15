@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 pub fn resolve(command: &str) -> Option<std::path::PathBuf> {
     if command.contains('/') || command.contains('\\') {
         return Some(std::path::PathBuf::from(command));

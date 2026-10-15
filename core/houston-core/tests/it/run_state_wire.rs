@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use common::*;
@@ -9,10 +10,11 @@ use std::sync::Arc;
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn boot_daemon(state_dir: &std::path::Path) -> Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.join("test.db"),
-    })
+    Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 
@@ -89,10 +91,11 @@ fn graceful_shutdown_reports_no_abnormal_exit() {
     std::env::set_var("SHELL", "/bin/sh");
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     create_session(&daemon, proj.path());
     daemon.persist_all();
@@ -117,10 +120,11 @@ fn ungraceful_exit_reports_abnormal_exit_with_session_count_and_runtime() {
     std::env::set_var("SHELL", "/bin/sh");
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     create_session(&daemon, proj.path());
     create_session(&daemon, proj.path());
@@ -157,10 +161,11 @@ fn expected_restart_is_not_an_abnormal_exit() {
     std::env::set_var("SHELL", "/bin/sh");
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     create_session(&daemon, proj.path());
     daemon.expect_restart();
@@ -251,10 +256,11 @@ fn heartbeat_after_persist_all_does_not_turn_a_clean_shutdown_into_a_crash() {
     std::env::set_var("SHELL", "/bin/sh");
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     create_session(&daemon, proj.path());
     daemon.persist_all();

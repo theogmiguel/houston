@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use std::collections::HashMap;
 use std::io::Read;
 use std::process::Stdio;

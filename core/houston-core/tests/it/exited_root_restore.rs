@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use houston_core::daemon::{Daemon, DaemonConfig, SafeModeFlags};
@@ -114,10 +115,11 @@ fn exited_roots_keep_passive_panes_and_output_until_explicit_close() {
         }
         let boot = || {
             Daemon::new_with_safe_mode_flags_for_test(
-                DaemonConfig {
-                    token: common::TOKEN.into(),
-                    db_path: database.clone(),
-                },
+                DaemonConfig::new(
+                    common::TOKEN.into(),
+                    database.clone(),
+                    houston_core::host_env::HostEnv::capture(),
+                ),
                 SafeModeFlags {
                     disable_auto_restore,
                     disable_swarm_autolaunch: true,

@@ -390,9 +390,12 @@ async fn firing_advances_the_clock_before_the_run_finishes() {
 async fn a_run_left_in_flight_by_a_dead_daemon_reads_failed_on_boot() {
     let state_dir = tempfile::tempdir().unwrap();
     let db_path = state_dir.path().join("test.db");
-    let cfg = || houston_core::daemon::DaemonConfig {
-        token: "t".into(),
-        db_path: db_path.clone(),
+    let cfg = || {
+        houston_core::daemon::DaemonConfig::new(
+            "t".into(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        )
     };
     let routine_id = {
         let daemon = Daemon::new(cfg()).unwrap();

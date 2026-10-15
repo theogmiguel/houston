@@ -1,6 +1,7 @@
 //! `hs-task`: the CLI door to a workspace's Tasks backlog, for agents whose
 //! provider cannot use MCP. Every command is the same daemon call an MCP tool
 //! makes, through the `/task/*` routes and the pane's own bearer token.
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 

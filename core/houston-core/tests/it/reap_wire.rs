@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use crate::common;
 
 use common::TOKEN;
@@ -9,10 +10,11 @@ use std::sync::Arc;
 static GRACE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn daemon(state_dir: &std::path::Path) -> Arc<Daemon> {
-    Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.join("test.db"),
-    })
+    Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap()
 }
 

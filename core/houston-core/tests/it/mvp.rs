@@ -99,10 +99,11 @@ async fn scrollback_replays_to_a_second_client() {
 #[tokio::test]
 async fn pty_exports_houston_session_marker() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -119,10 +120,11 @@ async fn pty_exports_houston_session_marker() {
 #[tokio::test]
 async fn agent_banner_sets_detected_identity() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -166,10 +168,11 @@ async fn agent_banner_sets_detected_identity() {
 #[tokio::test]
 async fn create_with_cwd_from_inherits_live_directory() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
     std::fs::create_dir(tmp.path().join("subdir")).unwrap();
@@ -425,10 +428,11 @@ async fn legacy_interrupted_sessions_require_acknowledgement_before_restart() {
         .unwrap();
     }
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let retained = daemon
@@ -461,10 +465,11 @@ async fn codenames_are_assigned_renamed_and_persisted() {
     let db_path = state_dir.path().join("test.db");
     let tmp = tempfile::tempdir().unwrap();
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
 
     let created = daemon
@@ -531,10 +536,11 @@ async fn codenames_are_assigned_renamed_and_persisted() {
 #[tokio::test]
 async fn close_kills_a_live_session_and_removes_it() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -555,10 +561,11 @@ async fn close_kills_a_live_session_and_removes_it() {
 #[tokio::test]
 async fn renderer_input_racing_a_close_is_dropped_but_an_unknown_id_is_refused() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -581,10 +588,11 @@ async fn renderer_input_racing_a_close_is_dropped_but_an_unknown_id_is_refused()
 #[tokio::test]
 async fn respawn_reuses_the_directory() {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
 

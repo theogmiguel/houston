@@ -117,10 +117,11 @@ pub async fn start_daemon_with_handle() -> (
     std::sync::Arc<Daemon>,
 ) {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (addr, _handle) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
         .await
@@ -139,10 +140,11 @@ pub async fn start_daemon_without_mail_loop() -> (
     std::sync::Arc<Daemon>,
 ) {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (addr, _handle) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
         .await

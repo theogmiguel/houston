@@ -30,10 +30,11 @@ async fn start_daemon_with_db_path() -> (std::net::SocketAddr, tempfile::TempDir
 {
     let state_dir = tempfile::tempdir().unwrap();
     let db_path = state_dir.path().join("test.db");
-    let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: db_path.clone(),
-    })
+    let daemon = houston_core::daemon::Daemon::new(houston_core::daemon::DaemonConfig::new(
+        TOKEN.to_string(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let (addr, _handle) =
         houston_core::server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())

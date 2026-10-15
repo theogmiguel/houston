@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::common;
 
@@ -233,10 +234,11 @@ async fn a_restored_prompt_named_pane_accepts_its_clis_title() {
     db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
 
-    let daemon = Daemon::new(DaemonConfig {
-        token: "title-test".into(),
+    let daemon = Daemon::new(DaemonConfig::new(
+        "title-test".into(),
         db_path,
-    })
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let replacement = daemon
         .list()
@@ -586,10 +588,11 @@ async fn legacy_manual_title_without_provenance_stays_locked_until_reset() {
     db.acknowledge_uncontained_recovery(1).unwrap();
     assert_eq!(db.session_title_source(1).unwrap(), None);
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig {
-            token: "legacy-title".into(),
+        DaemonConfig::new(
+            "legacy-title".into(),
             db_path,
-        },
+            houston_core::host_env::HostEnv::capture(),
+        ),
         houston_core::daemon::SafeModeFlags {
             disable_auto_restore: true,
             ..Default::default()
@@ -623,10 +626,11 @@ async fn refused_restored_title_reset_keeps_the_manual_name_locked() {
         .unwrap();
     db.acknowledge_uncontained_recovery(1).unwrap();
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
-        DaemonConfig {
-            token: "refused-title-reset".into(),
-            db_path: db_path.clone(),
-        },
+        DaemonConfig::new(
+            "refused-title-reset".into(),
+            db_path.clone(),
+            houston_core::host_env::HostEnv::capture(),
+        ),
         houston_core::daemon::SafeModeFlags {
             disable_auto_restore: true,
             ..Default::default()
@@ -670,10 +674,11 @@ async fn user_title_and_candidates_survive_boot_restore() {
         .unwrap();
     db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
-    let daemon = Daemon::new(DaemonConfig {
-        token: "restore-title".into(),
-        db_path: db_path.clone(),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        "restore-title".into(),
+        db_path.clone(),
+        houston_core::host_env::HostEnv::capture(),
+    ))
     .unwrap();
     let replacement = daemon
         .list()
