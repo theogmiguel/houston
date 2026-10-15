@@ -1632,6 +1632,10 @@ impl Drop for CloseReservation<'_> {
     }
 }
 
+// Each resolve can run git (~300 ms on a loaded Windows host) on the watcher's runtime
+// worker; eight keeps one pass near two seconds, and the rest wait for the next tick.
+const MAX_CHECKOUT_RESOLVES_PER_PASS: usize = 8;
+
 /// Checkout identity resolved after spawn, by the HEAD watcher or after a reparent.
 #[derive(Clone)]
 struct CheckoutRecord {
@@ -8758,8 +8762,8 @@ impl Daemon {
     }
 
     /// Live sessions for the HEAD watcher, with recorded checkout identity. Sessions
-    /// without one (restored from storage, reparented) are resolved here, off every
-    /// client connection, and the change is broadcast.
+    /// without one (restored from storage, reparented) are resolved here, live first,
+    /// off every client connection, and the change is broadcast.
     pub(crate) fn checkout_watch_sessions(&self) -> Vec<proto::SessionInfo> {
         let mut live: Vec<_> = self
             .sessions
@@ -8780,6 +8784,7 @@ impl Daemon {
             .lock()
             .expect("checkouts lock")
             .retain(|id, _| live.iter().chain(&dead).any(|info| info.id == *id));
+        let mut resolves = 0;
         for info in live.iter_mut().chain(dead.iter_mut()) {
             let recorded = self
                 .checkouts
@@ -8790,7 +8795,9 @@ impl Daemon {
             match recorded {
                 Some(Some(record)) => record.apply(info),
                 None if info.checkout.is_some() => {}
+                Some(None) | None if resolves >= MAX_CHECKOUT_RESOLVES_PER_PASS => {}
                 Some(None) | None => {
+                    resolves += 1;
                     let before = info.checkout.clone();
                     self.session_checkout_metadata(info);
                     self.record_checkout(info);

@@ -219,22 +219,28 @@ fn stored_session(id: u32, dir: &Path) -> proto::SessionInfo {
     }
 }
 
+// More stored sessions than the watcher resolves per pass (eight), so some wait a tick.
+const STORED: std::ops::RangeInclusive<u32> = 7..=18;
+
 #[tokio::test]
-async fn a_restored_session_gets_its_checkout_from_the_watcher_not_the_listing() {
+async fn restored_sessions_get_their_checkout_from_the_watcher_not_the_listing() {
     use houston_core::daemon::{DaemonConfig, Outbound};
+    use std::collections::{HashMap, HashSet};
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
     let state = tempfile::tempdir().unwrap();
     let db_path = state.path().join("test.db");
     {
         let db = houston_core::db::Db::open(&db_path).unwrap();
-        db.insert_session(&stored_session(7, repo.path())).unwrap();
-        db.acknowledge_uncontained_recovery(7).unwrap();
+        for id in STORED {
+            db.insert_session(&stored_session(id, repo.path())).unwrap();
+            db.acknowledge_uncontained_recovery(id).unwrap();
+        }
     }
     let trace_dir = tempfile::tempdir().unwrap();
     let trace = trace_dir.path().join("git-trace2.json");
     common::trace_git_processes(&trace);
-    // Auto-restore would respawn the session under a new id before the listing.
+    // Auto-restore would respawn the sessions under new ids before the listing.
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path,
@@ -243,48 +249,59 @@ async fn a_restored_session_gets_its_checkout_from_the_watcher_not_the_listing()
     .unwrap();
 
     let before = common::git_processes_started(&trace);
-    let restored = daemon.list().into_iter().find(|info| info.id == 7).unwrap();
-    assert_eq!(
-        restored.state,
-        proto::SessionState::Interrupted,
+    let restored: Vec<_> = daemon
+        .list()
+        .into_iter()
+        .filter(|info| STORED.contains(&info.id))
+        .collect();
+    assert_eq!(restored.len(), STORED.count(), "{restored:?}");
+    assert!(
+        restored
+            .iter()
+            .all(|info| info.state == proto::SessionState::Interrupted),
         "{restored:?}"
     );
     let started = common::git_processes_started(&trace) - before;
     assert_eq!(
         started, 0,
-        "listing a restored session started {started} git processes"
+        "listing restored sessions started {started} git processes"
     );
 
     let mut rx = daemon.subscribe();
     tokio::spawn(houston_core::checkout_watch::checkout_watch_loop(
         daemon.clone(),
     ));
-    let checkout = tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
+    let mut pending: HashSet<u32> = STORED.collect();
+    let mut resolved = HashMap::new();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !pending.is_empty() {
             let (Outbound::Control(json) | Outbound::ControlFor(_, json)) =
                 rx.recv().await.unwrap()
             else {
                 continue;
             };
-            if let Ok(proto::ServerMsg::SessionCheckout { id: 7, checkout }) =
+            if let Ok(proto::ServerMsg::SessionCheckout { id, checkout }) =
                 serde_json::from_str(&json)
             {
-                return checkout;
+                if pending.remove(&id) {
+                    resolved.insert(id, checkout);
+                }
             }
         }
     })
     .await
-    .expect("the watcher should resolve a restored session's checkout within five seconds");
-    assert_eq!(
-        checkout.as_ref().and_then(|c| c.branch.as_deref()),
-        Some("main")
-    );
+    .unwrap_or_else(|_| panic!("the watcher left {pending:?} unresolved after ten seconds"));
 
-    let listed = daemon.list().into_iter().find(|info| info.id == 7).unwrap();
-    assert_eq!(listed.checkout, checkout);
-    assert!(listed.checkout_root.is_some(), "{listed:?}");
-    assert!(matches!(
-        listed.checkout.as_ref().map(|c| &c.kind),
-        Some(proto::CheckoutKind::Primary)
-    ));
+    let before = common::git_processes_started(&trace);
+    let listed = daemon.list();
+    let started = common::git_processes_started(&trace) - before;
+    assert_eq!(started, 0, "listing started {started} git processes");
+    for id in STORED {
+        let info = listed.iter().find(|info| info.id == id).unwrap();
+        assert_eq!(Some(&info.checkout), resolved.get(&id), "{info:?}");
+        let checkout = info.checkout.as_ref().expect("a resolved checkout");
+        assert_eq!(checkout.branch.as_deref(), Some("main"), "{info:?}");
+        assert_eq!(checkout.kind, proto::CheckoutKind::Primary, "{info:?}");
+        assert!(info.checkout_root.is_some(), "{info:?}");
+    }
 }
