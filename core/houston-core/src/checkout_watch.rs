@@ -182,6 +182,7 @@ pub async fn checkout_watch_loop(daemon: Arc<Daemon>) {
                     refresh_head(&daemon, &sessions, head, &mut previous);
                 }
             }
+            daemon.recheck_folder_checkouts(&sessions);
             next_fallback_poll = now + FALLBACK_POLL;
         }
     }
@@ -202,6 +203,7 @@ fn refresh_head(
         }
         let mut current = snapshot.clone();
         daemon.session_checkout_metadata(&mut current);
+        daemon.record_checkout(&current);
         let checkout = current.checkout;
         let changed = previous.get(&snapshot.id) != Some(&checkout);
         if changed {

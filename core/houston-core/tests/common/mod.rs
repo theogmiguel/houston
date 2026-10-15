@@ -24,6 +24,24 @@ pub fn process_var(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
+/// Every git the test process starts, an in-process daemon's included, appends trace2
+/// events to `path`. nextest's one process per test keeps the trace to one test.
+pub fn trace_git_processes(path: &std::path::Path) {
+    std::env::set_var("GIT_TRACE2_EVENT", path);
+}
+
+/// Git processes started since [`trace_git_processes`] named `path`.
+pub fn git_processes_started(path: &std::path::Path) -> usize {
+    std::fs::read_to_string(path)
+        .map(|trace| {
+            trace
+                .lines()
+                .filter(|line| line.contains("\"event\":\"start\""))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
 /// The environment an in-process daemon starts from: the test process's, minus the
 /// variables that change daemon behaviour, so a runner that exports one cannot leak in.
 pub fn base_env() -> houston_core::host_env::HostEnv {

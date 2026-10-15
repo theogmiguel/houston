@@ -38,6 +38,7 @@ mod handoff_wire;
 mod harness_cli;
 mod harness_fix_task_wire;
 mod harness_review_wire;
+mod hello_checkout_wire;
 mod history_wire;
 mod hook_drop_cli;
 mod hook_replay;

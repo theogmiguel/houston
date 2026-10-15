@@ -523,8 +523,12 @@ debounces changes and broadcasts updated checkout identity. It reacts only to co
 changes that name the HEAD file and coalesces them into one pending flag per HEAD: its
 own refresh reads HEAD, so waking on reads would feed back into itself. Adopted sessions
 carry checkout identity from adoption, as spawned ones do, so the watcher never
-recomputes it. It caps filesystem watches at 256; excess checkouts use a 30-second poll
-so a large workspace set cannot grow watcher use without bound.
+recomputes it. The watcher records each refresh, and listing sessions (`HelloOk`,
+`SessionList`) reads spawn-time or recorded identity without running git: resolving it
+costs git processes, and a hello must not wait on one per session. Sessions with no
+identity, restored from storage or reparented, are resolved by the watcher and broadcast.
+It caps filesystem watches at 256; excess checkouts use a 30-second poll, which also
+re-resolves a folder session whose root has gained a HEAD file.
 The task PR watch is not gated by
 `worktree_cleanup_enabled`: every `TASK_PR_WATCH_INTERVAL_MS` it runs one `gh pr view` in
 the worktree of each in-review task that has a run branch. A merged PR records `done` with

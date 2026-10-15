@@ -1632,6 +1632,30 @@ impl Drop for CloseReservation<'_> {
     }
 }
 
+/// Checkout identity resolved after spawn, by the HEAD watcher or after a reparent.
+#[derive(Clone)]
+struct CheckoutRecord {
+    root: Option<String>,
+    worktree: Option<proto::SessionWorktree>,
+    checkout: Option<proto::SessionCheckout>,
+}
+
+impl CheckoutRecord {
+    fn of(info: &proto::SessionInfo) -> Self {
+        Self {
+            root: info.checkout_root.clone(),
+            worktree: info.worktree.clone(),
+            checkout: info.checkout.clone(),
+        }
+    }
+
+    fn apply(&self, info: &mut proto::SessionInfo) {
+        info.checkout_root = self.root.clone();
+        info.worktree = self.worktree.clone();
+        info.checkout = self.checkout.clone();
+    }
+}
+
 pub struct Daemon {
     #[cfg(feature = "test-barriers")]
     startup_test: Mutex<StartupTest>,
@@ -1654,6 +1678,9 @@ pub struct Daemon {
     sessions: Mutex<HashMap<u32, Arc<Session>>>,
     tags: Mutex<BTreeMap<u32, proto::TagInfo>>,
     dead: Mutex<HashMap<u32, proto::SessionInfo>>,
+    // Listing reads checkout identity from spawn or from here and never runs git: a hello
+    // waited on two git processes per session. `None` asks the HEAD watcher to resolve it.
+    checkouts: Mutex<HashMap<u32, Option<CheckoutRecord>>>,
     // The PTY size a session had when it went to sleep, so its wake starts at that
     // size; a program that draws its first frame at the wrong width reprints it.
     dead_geometry: Mutex<HashMap<u32, (u16, u16)>>,
@@ -3393,6 +3420,7 @@ impl Daemon {
             sessions: Mutex::new(HashMap::new()),
             tags: Mutex::new(tag_registry),
             dead: Mutex::new(dead),
+            checkouts: Mutex::new(HashMap::new()),
             dead_geometry: Mutex::new(HashMap::new()),
             #[cfg(feature = "test-barriers")]
             startup_test: Mutex::new(StartupTest::default()),
@@ -8699,21 +8727,84 @@ impl Daemon {
         });
     }
 
+    pub(crate) fn record_checkout(&self, info: &proto::SessionInfo) {
+        self.checkouts
+            .lock()
+            .expect("checkouts lock")
+            .insert(info.id, Some(CheckoutRecord::of(info)));
+    }
+
+    fn apply_recorded_checkout(&self, info: &mut proto::SessionInfo) {
+        if let Some(Some(record)) = self.checkouts.lock().expect("checkouts lock").get(&info.id) {
+            record.apply(info);
+        }
+    }
+
+    /// Drops a folder session's record once its root gains a HEAD file, so the
+    /// next watcher pass resolves the new repository.
+    pub(crate) fn recheck_folder_checkouts(&self, sessions: &[proto::SessionInfo]) {
+        let mut records = self.checkouts.lock().expect("checkouts lock");
+        for info in sessions {
+            let Some(checkout) = info.checkout.as_ref() else {
+                continue;
+            };
+            if checkout.kind == proto::CheckoutKind::Folder
+                && crate::checkout_watch::head_path(Path::new(&checkout.root))
+                    .is_some_and(|head| head.is_file())
+            {
+                records.insert(info.id, None);
+            }
+        }
+    }
+
+    /// Live sessions for the HEAD watcher, with recorded checkout identity. Sessions
+    /// without one (restored from storage, reparented) are resolved here, off every
+    /// client connection, and the change is broadcast.
     pub(crate) fn checkout_watch_sessions(&self) -> Vec<proto::SessionInfo> {
-        let mut snapshots: Vec<_> = self
+        let mut live: Vec<_> = self
             .sessions
             .lock()
             .expect("sessions lock")
             .values()
-            .filter(|session| !session.info.hidden && session.info.ssh_host.is_none())
+            .filter(|session| !session.info.hidden)
             .map(|session| session.snapshot_info())
             .collect();
-        for info in &mut snapshots {
-            if info.checkout.is_none() {
-                self.session_checkout_metadata(info);
+        let mut dead: Vec<_> = self
+            .dead
+            .lock()
+            .expect("dead lock")
+            .values()
+            .cloned()
+            .collect();
+        self.checkouts
+            .lock()
+            .expect("checkouts lock")
+            .retain(|id, _| live.iter().chain(&dead).any(|info| info.id == *id));
+        for info in live.iter_mut().chain(dead.iter_mut()) {
+            let recorded = self
+                .checkouts
+                .lock()
+                .expect("checkouts lock")
+                .get(&info.id)
+                .cloned();
+            match recorded {
+                Some(Some(record)) => record.apply(info),
+                None if info.checkout.is_some() => {}
+                Some(None) | None => {
+                    let before = info.checkout.clone();
+                    self.session_checkout_metadata(info);
+                    self.record_checkout(info);
+                    if info.checkout != before {
+                        self.broadcast_control(&proto::ServerMsg::SessionCheckout {
+                            id: info.id,
+                            checkout: info.checkout.clone(),
+                        });
+                    }
+                }
             }
         }
-        snapshots
+        live.retain(|info| info.ssh_host.is_none());
+        live
     }
 
     pub fn list(&self) -> Vec<proto::SessionInfo> {
@@ -8735,7 +8826,7 @@ impl Daemon {
                 .iter()
                 .find(|binding| binding.run.session_id == Some(info.id))
                 .map(tasks::binding_to_session_task);
-            self.session_checkout_metadata(info);
+            self.apply_recorded_checkout(info);
             if info.session_origin.is_none() {
                 info.session_origin = Some(self.db.session_origin(info.id).unwrap_or_else(|e| {
                     tracing::warn!("reading session origin for {}: {e}", info.id);
@@ -12148,7 +12239,7 @@ impl Daemon {
             }
             let id = self.next_id.fetch_add(1, Ordering::Relaxed);
             let title = self.next_codename();
-            let info = proto::SessionInfo {
+            let mut info = proto::SessionInfo {
                 title_source: Default::default(),
                 checkout: None,
                 activity: None,
@@ -12188,6 +12279,8 @@ impl Daemon {
                 last_agent_message: None,
                 slept_at_ms: None,
             };
+            // Remote checkouts are folders; resolving one runs no git.
+            self.session_checkout_metadata(&mut info);
             let session = Arc::new(Session {
                 info: info.clone(),
                 pid: None,
@@ -14205,6 +14298,11 @@ impl Daemon {
         } else if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&id) {
             info.project_dir = new_dir_str.clone();
         }
+        // A folder checkout's root is its project directory.
+        self.checkouts
+            .lock()
+            .expect("checkouts lock")
+            .insert(id, None);
         self.broadcast_control(&proto::ServerMsg::SessionReparented {
             session: id,
             project_dir: new_dir_str,
