@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol as proto;
 use std::path::Path;
 
@@ -526,9 +526,8 @@ fn first_meaningful_line(s: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// The most body bytes one write accepts. The cap is the pipe's own: the body is
-/// written to the child's stdin before its output is read, and a body larger
-/// than the 64 KiB pipe could block a child that answers before reading it all.
+/// The most body bytes one write accepts; GitHub refuses bodies past 65,536
+/// characters, so a longer one is refused here, naming the cap, before gh runs.
 pub const PR_BODY_MAX: usize = 60_000;
 
 /// The most a `pr_list` may ask for. gh itself would answer more, but a listing
@@ -587,30 +586,9 @@ pub fn body_refusal(body: &str) -> Option<String> {
 }
 
 fn run_stdin(dir: &Path, args: &[&str], stdin: &str) -> Result<Output> {
-    use std::io::Write as _;
-    use std::process::Stdio;
-    let mut child = crate::spawn::command("gh")
-        .current_dir(dir)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .with_context(|| format!("spawning gh {args:?} in {}", dir.display()))?;
-    if let Some(mut pipe) = child.stdin.take() {
-        pipe.write_all(stdin.as_bytes())
-            .with_context(|| format!("writing gh {args:?} stdin"))?;
-        drop(pipe);
-    }
-    let out = child
-        .wait_with_output()
-        .with_context(|| format!("waiting on gh {args:?}"))?;
-    Ok(Output {
-        ok: out.status.success(),
-        code: out.status.code(),
-        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-    })
+    let mut cmd = crate::spawn::command("gh");
+    cmd.current_dir(dir).args(args);
+    capture(cmd, dir, args, Some(stdin.as_bytes()), GH_CAPTURE_TIMEOUT)
 }
 
 fn ready(dir: &Path, what: &str) -> Result<()> {
@@ -1640,11 +1618,59 @@ struct Output {
 }
 
 fn run(dir: &Path, args: &[&str]) -> Result<Output> {
-    let out = crate::spawn::command("gh")
-        .current_dir(dir)
-        .args(args)
-        .output()
-        .with_context(|| format!("spawning gh {args:?} in {}", dir.display()))?;
+    let mut cmd = crate::spawn::command("gh");
+    cmd.current_dir(dir).args(args);
+    capture(cmd, dir, args, None, GH_CAPTURE_TIMEOUT)
+}
+
+/// gh crosses the network: two minutes fits a slow `pr create` or `pr merge`, while
+/// a stalled call still frees its daemon thread.
+const GH_CAPTURE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Captures `cmd` within `timeout` and the combined output limit of
+/// [`crate::spawn::output_within_with_stdin`]; `args` and `dir` only name the call.
+fn capture(
+    cmd: std::process::Command,
+    dir: &Path,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+    timeout: std::time::Duration,
+) -> Result<Output> {
+    use std::io::Write as _;
+    let what = || format!("gh {args:?} in {}", dir.display());
+    let (out, written) = match stdin {
+        None => (crate::spawn::output_within(cmd, timeout), Ok(())),
+        Some(bytes) => {
+            let (reader, mut writer) =
+                std::io::pipe().with_context(|| format!("opening stdin for {}", what()))?;
+            std::thread::scope(|scope| {
+                // The capture drops the read end when it returns, so a child that
+                // never reads stdin fails this write instead of blocking the join.
+                let writing = scope.spawn(move || writer.write_all(bytes));
+                let out = crate::spawn::output_within_with_stdin(cmd, timeout, reader.into());
+                let written = writing
+                    .join()
+                    .unwrap_or_else(|_| Err(std::io::Error::other("stdin writer panicked")));
+                (out, written)
+            })
+        }
+    };
+    let out = out
+        .map_err(|e| anyhow!("running {}: {e}", what()))?
+        .ok_or_else(|| {
+            anyhow!(
+                "{} gave no answer within its {} ms deadline; a change it requested may already have taken effect on GitHub",
+                what(),
+                timeout.as_millis()
+            )
+        })?;
+    // A child that exits before reading all of stdin has answered; its exit status
+    // and stderr say why, so a broken pipe must not hide them.
+    if let Err(e) = written {
+        if e.kind() != std::io::ErrorKind::BrokenPipe {
+            return Err(e).with_context(|| format!("writing {} stdin", what()));
+        }
+    }
     Ok(Output {
         ok: out.status.success(),
         code: out.status.code(),
@@ -1815,5 +1841,108 @@ mod tests {
         assert_eq!(PR_DIFF_MAX_BYTES, 512 * 1024);
         assert_eq!(PR_REVIEW_DRAFT_MAX, 50);
         assert_eq!(WORKFLOW_RUN_MAX, 100);
+    }
+
+    #[cfg(any(target_os = "linux", windows))]
+    fn capture_error(
+        cmd: std::process::Command,
+        dir: &Path,
+        args: &[&str],
+        stdin: Option<&[u8]>,
+        timeout: std::time::Duration,
+    ) -> String {
+        match capture(cmd, dir, args, stdin, timeout) {
+            Ok(out) => panic!(
+                "capture succeeded (exit {:?}, {} stdout bytes)",
+                out.code,
+                out.stdout.len()
+            ),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    #[cfg(any(target_os = "linux", windows))]
+    #[test]
+    fn capture_refuses_output_past_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("flood"), vec![b'x'; 9 * 1024 * 1024]).unwrap();
+        #[cfg(windows)]
+        let mut cmd = crate::spawn::command("cmd");
+        #[cfg(windows)]
+        cmd.args(["/d", "/c", "type flood"]);
+        #[cfg(target_os = "linux")]
+        let mut cmd = crate::spawn::command("cat");
+        #[cfg(target_os = "linux")]
+        cmd.arg("flood");
+        cmd.current_dir(dir.path());
+        let args = ["run", "view", "--log-failed"];
+        let err = capture_error(
+            cmd,
+            dir.path(),
+            &args,
+            None,
+            std::time::Duration::from_secs(60),
+        );
+        assert!(
+            err.contains("combined output limit is 8388608 bytes"),
+            "{err}"
+        );
+        assert!(err.contains(&format!("{args:?}")), "{err}");
+        assert!(err.contains(&dir.path().display().to_string()), "{err}");
+    }
+
+    #[cfg(any(target_os = "linux", windows))]
+    #[test]
+    fn capture_ends_a_child_past_its_deadline_without_waiting_on_stdin() {
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let mut cmd = crate::spawn::command("ping");
+        #[cfg(windows)]
+        cmd.args(["-n", "30", "127.0.0.1"]);
+        #[cfg(target_os = "linux")]
+        let mut cmd = crate::spawn::command("sleep");
+        #[cfg(target_os = "linux")]
+        cmd.arg("30");
+        let args = ["pr", "merge", "7"];
+        // The child never reads stdin, and 1 MiB outgrows any pipe buffer.
+        let stdin = vec![b'x'; 1024 * 1024];
+        let start = std::time::Instant::now();
+        let err = capture_error(
+            cmd,
+            dir.path(),
+            &args,
+            Some(&stdin),
+            std::time::Duration::from_millis(500),
+        );
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(20),
+            "took {:?}",
+            start.elapsed()
+        );
+        assert!(err.contains("within its 500 ms deadline"), "{err}");
+        assert!(err.contains(&format!("{args:?}")), "{err}");
+        assert!(err.contains(&dir.path().display().to_string()), "{err}");
+    }
+
+    #[cfg(any(target_os = "linux", windows))]
+    #[test]
+    fn capture_feeds_stdin_past_a_pipe_buffer() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = "houston\n".repeat(40_000);
+        let mut cmd = crate::spawn::command("sort");
+        cmd.current_dir(dir.path());
+        let out = capture(
+            cmd,
+            dir.path(),
+            &["api", "graphql", "--input", "-"],
+            Some(input.as_bytes()),
+            std::time::Duration::from_secs(60),
+        )
+        .expect("sort reads all of stdin and answers");
+        assert!(out.ok, "{}", out.stderr);
+        assert_eq!(
+            out.stdout.lines().filter(|l| l.trim() == "houston").count(),
+            40_000
+        );
     }
 }
