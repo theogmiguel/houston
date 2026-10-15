@@ -208,15 +208,18 @@ removed. Agent worktrees under `.houston/worktrees/` multiply this.
 - `scripts/sweep-targets.sh` deletes artifacts untouched for
   `HOUSTON_SWEEP_DAYS` (default 3) and artifacts built by toolchains rustup no
   longer has, in the main checkout and every worktree below it. It also trims
-  each target directory to `HOUSTON_SWEEP_MAXSIZE` (default 30 GB; a full core
-  test build needs about 25 GB). `--dry-run` lists what it would delete. It
-  needs `cargo install cargo-sweep`.
+  each target directory to `HOUSTON_SWEEP_MAXSIZE` (default 15 GB; a full core
+  test build with incremental caches measured 8.6 GB). `--dry-run` lists what
+  it would delete. It needs `cargo install cargo-sweep`.
 - Each sweep waits for the `oom-shield` lock, so it cannot overlap a shielded
   build.
 - `scripts/sweep-targets.sh --install` runs that sweep hourly through a
-  systemd user timer (`houston-sweep-targets.timer`) and writes
-  `.houston/worktrees/.cargo/config.toml` with `incremental = false`, which
-  Cargo applies to builds inside the agent worktrees only.
+  systemd user timer (`houston-sweep-targets.timer`).
+- Keep incremental compilation on in agent worktrees. It costs about 3.5 GB of
+  `target/` per worktree and about 0.2–0.7 GB more written per build, and it
+  makes the edit-and-rebuild loop two to three times faster (measured 13 s
+  instead of 45 s after touching one test file, 55 s instead of 121 s after
+  touching `src/`).
 - Agent worktrees build and test the dev profile only; `--release` belongs to
   the main checkout when packaging.
 - Remove an agent worktree with `git worktree remove` once its branch is
@@ -244,6 +247,10 @@ build-dir = "{cargo-cache-home}/build-dir/{workspace-path-hash}"
   workspace directories that have gone idle, which costs only a rebuild. Cargo
   treats the layout inside them as internal and changes it between releases.
 - Removing a worktree leaves its intermediates behind until that cleanup runs.
+- Keep the build-dir on the same filesystem as the checkouts. Cargo hard-links
+  final binaries from the build-dir into `target/`; across filesystems it
+  copies them on every invocation, including a no-op build (measured 0.57 GB
+  written per `cargo test --no-run` with nothing to rebuild).
 - For a hard ceiling, mount a fixed-size filesystem (for example a sparse,
   loop-mounted ext4 image with `discard`) at the build-dir root; a full volume
   fails the build instead of filling the disk.
