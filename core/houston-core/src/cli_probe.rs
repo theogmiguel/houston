@@ -44,10 +44,14 @@ pub fn parse_version(output: &str) -> Option<String> {
 }
 
 pub fn probe(binary: &str) -> CliPresence {
+    probe_in(&crate::host_env::HostEnv::capture(), binary)
+}
+
+pub fn probe_in(env: &crate::host_env::HostEnv, binary: &str) -> CliPresence {
     // exe_path::resolve passes a path containing a separator straight back
     // without touching disk (the caller owns existence there), so a resolved
     // path is not yet a path that exists.
-    let resolved = crate::exe_path::resolve(binary).filter(|p| p.is_file());
+    let resolved = crate::exe_path::resolve_in(env, binary).filter(|p| p.is_file());
     let Some(path) = resolved else {
         return CliPresence {
             present: false,
@@ -56,12 +60,14 @@ pub fn probe(binary: &str) -> CliPresence {
     };
     CliPresence {
         present: true,
-        version: read_version(&path),
+        version: read_version(env, &path),
     }
 }
 
-fn read_version(path: &std::path::Path) -> Option<String> {
-    let mut child = crate::spawn::command(path)
+fn read_version(env: &crate::host_env::HostEnv, path: &std::path::Path) -> Option<String> {
+    let mut command = crate::spawn::command(path);
+    env.apply_to(&mut command);
+    let mut child = command
         .arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -123,19 +129,23 @@ pub struct ProbeCache {
 }
 
 impl ProbeCache {
-    pub fn get(&mut self, binary: &'static str) -> CliPresence {
-        self.discard_if_path_changed();
+    pub fn get(&mut self, env: &crate::host_env::HostEnv, binary: &'static str) -> CliPresence {
+        self.discard_if_path_changed(env);
         if let Some(hit) = self.entries.get(binary) {
             return hit.clone();
         }
-        let fresh = probe(binary);
+        let fresh = probe_in(env, binary);
         self.entries.insert(binary, fresh.clone());
         fresh
     }
 
-    pub fn cached_presence(&mut self, binary: &'static str) -> CliPresence {
-        self.discard_if_path_changed();
-        let present = crate::exe_path::resolve(binary).is_some_and(|path| path.is_file());
+    pub fn cached_presence(
+        &mut self,
+        env: &crate::host_env::HostEnv,
+        binary: &'static str,
+    ) -> CliPresence {
+        self.discard_if_path_changed(env);
+        let present = crate::exe_path::resolve_in(env, binary).is_some_and(|path| path.is_file());
         CliPresence {
             present,
             version: self
@@ -152,8 +162,8 @@ impl ProbeCache {
         self.entries.clear();
     }
 
-    fn discard_if_path_changed(&mut self) {
-        let now = std::env::var_os("PATH").unwrap_or_default();
+    fn discard_if_path_changed(&mut self, env: &crate::host_env::HostEnv) {
+        let now = env.var_os("PATH").unwrap_or_default().to_os_string();
         if now != self.path {
             self.path = now;
             self.entries.clear();
@@ -169,7 +179,10 @@ const LOCAL_MODEL_CACHE_MAX_BYTES: u64 = 2 * 1024 * 1024;
 const LOCAL_MODEL_MAX: usize = 64;
 const LOCAL_MODEL_ID_MAX_BYTES: usize = 128;
 
-pub fn local_models(provider: proto::AgentKind) -> (Option<Vec<String>>, &'static str) {
+pub fn local_models(
+    env: &crate::host_env::HostEnv,
+    provider: proto::AgentKind,
+) -> (Option<Vec<String>>, &'static str) {
     if provider == proto::AgentKind::Zcode {
         return (
             None,
@@ -179,10 +192,12 @@ pub fn local_models(provider: proto::AgentKind) -> (Option<Vec<String>>, &'stati
     if provider != proto::AgentKind::Codex {
         return (None, "unknown: no verified local model list");
     }
-    let Some(home) = std::env::var_os("CODEX_HOME")
+    let Some(home) = env
+        .var_os("CODEX_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| {
-            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex"))
+            env.var_os("HOME")
+                .map(|home| std::path::PathBuf::from(home).join(".codex"))
         })
     else {
         return (None, "unknown: Codex home unavailable");
@@ -415,16 +430,17 @@ mod tests {
                 .into_boxed_str(),
         );
         let mut cache = ProbeCache::default();
+        let env = crate::host_env::HostEnv::capture();
 
-        assert!(!cache.get(name).present, "nothing written yet");
+        assert!(!cache.get(&env, name).present, "nothing written yet");
         fake_cli(dir.path(), "houston-cached-cli", "1.2.3");
         assert!(
-            !cache.get(name).present,
+            !cache.get(&env, name).present,
             "the cached answer stands until something asks for a rescan"
         );
 
         cache.clear();
-        let fresh = cache.get(name);
+        let fresh = cache.get(&env, name);
         assert!(fresh.present);
         assert_eq!(fresh.version.as_deref(), Some("1.2.3"));
     }
