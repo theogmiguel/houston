@@ -367,9 +367,11 @@ pinned version once (CI installs the same one):
 scripts/oom-shield.sh cargo install cargo-nextest --version 0.9.148 --locked -j 3
 ```
 
-Plain `cargo test` still runs the same tests in one process per test binary. Select tests
-with filtersets, for example `cargo nextest run -E 'binary(git_wire)'` in place of
-`cargo test --test git_wire`.
+The core integration tests are the modules of one binary, `core/houston-core/tests/it/main.rs`
+(`it`); a new test file is a new `mod` line there. Select a file's tests with a filterset,
+for example `cargo nextest run -E 'test(/^git_wire::/)'`. Plain `cargo test` would run
+those modules as threads of one process, so `nextest_guard` fails it and names the command
+to use; `HOUSTON_ALLOW_PLAIN_CARGO_TEST=1` overrides that for a single module.
 
 Run hook-installation tests and full core gates with a throwaway `HOME`, and unset
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Workspace creation can refresh user-scope Claude
@@ -522,10 +524,10 @@ These need a release build and an idle machine; they are not part of
 
 ### `perf_smoke`
 
-`core/houston-core/tests/perf_smoke.rs`, `#[ignore]` by default:
+`core/houston-core/tests/it/perf_smoke.rs`, `#[ignore]` by default:
 
 ```
-cargo test --release --test perf_smoke -- --ignored --nocapture
+cargo nextest run --release -j 1 --run-ignored only --no-capture -E 'test(/^perf_smoke::/)'
 ```
 
 - **Throughput floor**: `MIN_MIB_PER_SEC = 5.0` — an ANSI-flood test spraying
@@ -569,15 +571,13 @@ through the relay; like `perf_smoke`, read it only from an idle machine.
 
 ### `idle_loops_wire`
 
-`core/houston-core/tests/idle_loops_wire.rs`, the detached daemon's idle
+`core/houston-core/tests/it/idle_loops_wire.rs`, the detached daemon's idle
 budget, `#[ignore]` by default. Each test reads a whole-process figure, and a
-daemon booted by an earlier test stays resident, so run each in its own process:
+daemon booted by an earlier test stays resident, so each must run in its own process,
+one at a time, which nextest with a single job does:
 
 ```
-for t in p3_idle_context_switches_per_minute p4_idle_rss_at_zero_sessions \
-         p4_idle_rss_with_twelve_saturated_emulators; do
-  cargo test --release --test idle_loops_wire -- --ignored --nocapture --exact "$t"
-done
+cargo nextest run --release -j 1 --run-ignored only --no-capture -E 'test(/^idle_loops_wire::/)'
 ```
 
 - **P3, idle scheduling**: ≤ 15 thread-summed context switches per minute with no

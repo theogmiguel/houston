@@ -8,8 +8,8 @@ What the suites are, where new tests go, and how to read a failure. Commands and
 | Layer | Location | Runner |
 |---|---|---|
 | Daemon unit tests | `#[cfg(test)]` in `core/houston-core/src/*.rs` | `cargo nextest run --lib <module>` |
-| Daemon integration | `core/houston-core/tests/*.rs`, harness `tests/common/mod.rs` — boots a real daemon on a throwaway state dir and speaks `/ws` | `cargo nextest run -E 'binary(<name>)'` |
-| Perf floors | `tests/perf_smoke.rs` (throughput and RSS floors, both `#[ignore]`) | `cargo test --release --test perf_smoke -- --ignored` |
+| Daemon integration | modules of one binary, `core/houston-core/tests/it/*.rs` (listed in `tests/it/main.rs`), harness `tests/common/mod.rs` — boots a real daemon on a throwaway state dir and speaks `/ws` | `cargo nextest run -E 'binary(<name>)'` |
+| Perf floors | `tests/it/perf_smoke.rs` (throughput and RSS floors, both `#[ignore]`) | `cargo nextest run --release -j 1 --run-ignored only -E 'test(/^perf_smoke::/)'` |
 | App | `src-tauri/tests/*.rs` (daemon ownership, channel flags), unit tests in `src/` | `cargo test`, and again with `--features bench` |
 | Renderer | `*.test.ts(x)` beside the code, jsdom + Testing Library | `bun run test` (vitest) |
 | Renderer CSS | `ui/scripts/check-css-scoping.mjs` runs headless Chromium against the *built* stylesheet | `bun run check:css` after `bun run build` |
@@ -21,6 +21,10 @@ Rules:
   before the fix.
 - Tests redirect the state dir through `HOME` (`home_dir.rs` is environment-first for this
   reason) and never touch a real channel.
+- The integration files are modules of one binary and a test runs in its own process under
+  nextest. A test that re-executes its binary with `--exact` builds the name with
+  `common::exact_path(module_path!(), name)`, which refuses a name that matches no test:
+  `--exact` with an unknown name runs zero tests and exits 0, a silent pass.
 - Wait on events and receipts, not sleeps. A wall-clock deadline is acceptable only for a
   liveness property, and it must be generous enough to survive a cold page cache.
 - The shared renderer harness loads application modules during test collection. Keep this
@@ -33,7 +37,7 @@ Rules:
   and 16/60 failure rates before the fix, 0/100 after).
 - A test that reads a whole-process figure (VmRSS, thread count, context switches) is only
   meaningful if it is the only test touching that figure while it samples. `cargo test` runs
-  a binary's tests concurrently by default, so `tests/idle_loops_wire.rs`'s perf tests
+  a binary's tests concurrently by default, so `tests/it/idle_loops_wire.rs`'s perf tests
   serialize on a shared mutex and tear their own sessions down, waiting for threads to
   settle, before returning. A reading taken any other way is contaminated by its neighbours.
 - A test that spawns a daemon binary owns a guard that stops whatever generation its channel
@@ -158,8 +162,8 @@ The ignored `voice_model_latency` integration test uses the actual local transcr
 on Linux. Set `HOUSTON_VOICE_BENCH_MODELS` to a directory containing all catalogue model
 files and `HOUSTON_VOICE_BENCH_CLIP` to one fixed English WAV (16 kHz, mono, PCM16).
 It verifies catalogue hashes and makes no downloads. Build the test under the development
-runbook's memory guard, then run its emitted test executable with `--ignored --nocapture`
-on an idle machine at normal priority. Report the clip hash, duration, CPU and memory,
+runbook's memory guard, then run it with `cargo nextest run --release -j 1 --run-ignored only
+--no-capture -E 'test(/^voice_model_latency::/)'` on an idle machine at normal priority. Report the clip hash, duration, CPU and memory,
 and each model's load, fixed-English and auto-language timings. Transcription timings
 exclude model loading and hash verification; one pass per language is a latency sample,
 not a statistical performance comparison.
