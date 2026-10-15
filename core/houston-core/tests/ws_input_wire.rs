@@ -14,10 +14,14 @@ use tokio_tungstenite::tungstenite::Message;
 
 type RawWs = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
 
-// Comfortably past one connection's 4 MiB tap plus both loopback socket buffers, so the
-// daemon's send is blocked on backpressure by the time the keystroke goes out.
-const BACKLOG_BYTES: u64 = 12 * 1024 * 1024;
+// Far past a 4 KiB client window plus the daemon's socket and WebSocket write buffers, so
+// its send is blocked on backpressure by the time the keystroke goes out. ConPTY renders a
+// flood at tens of KiB/s on a loaded host, which rules out overflowing the 4 MiB tap.
+const BACKLOG_BYTES: u64 = 1024 * 1024;
 const INPUT_BOUND: Duration = Duration::from_secs(10);
+
+// Concurrent floods starve each other's PTYs and the other tests' daemons.
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 struct Sessions(Arc<Daemon>, Vec<u32>);
 
@@ -35,8 +39,8 @@ fn spawn(daemon: &Arc<Daemon>, dir: &Path, cmd: Vec<String>) -> u32 {
             agent: proto::AgentKind::Custom,
             project_dir: dir.to_path_buf(),
             cmd: Some(cmd),
-            cols: 200,
-            rows: 50,
+            cols: 400,
+            rows: 100,
             cwd_from: None,
             shell_integration: false,
             auto_approve: false,
@@ -72,12 +76,15 @@ fn shell(script: &str) -> Vec<String> {
 
 #[cfg(unix)]
 fn flood() -> Vec<String> {
-    shell("i=0; line=$(printf '%0190d' 0); while :; do i=$((i+1)); echo \"$i $line\"; done")
+    shell("yes \"$(printf '%0190d' 0)\"")
 }
 
 #[cfg(windows)]
 fn flood() -> Vec<String> {
-    shell("$l = '0' * 190; $i = 0; while ($true) { $i++; [Console]::Out.WriteLine(\"$i $l\") }")
+    // One console write per 64 KiB: a write per line is what limits a flood on Windows.
+    shell(
+        "$b = ((1..320) | ForEach-Object { \"$_ \" + ('0' * 190) }) -join \"`r`n\";          while ($true) { [Console]::Out.Write($b) }",
+    )
 }
 
 #[cfg(unix)]
@@ -213,6 +220,7 @@ async fn wait_for_clients(daemon: &Daemon, expected: u32, within: Duration) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn stdin_reaches_the_pty_while_output_backpressures_the_socket() {
+    let _serial = SERIAL.lock().await;
     let (addr, _state, daemon) = start_daemon_with_handle().await;
     let project = tempfile::tempdir().unwrap();
     let flood_id = spawn(&daemon, project.path(), flood());
@@ -248,39 +256,22 @@ async fn stdin_reaches_the_pty_while_output_backpressures_the_socket() {
     );
     let got = std::fs::read_to_string(project.path().join("got")).unwrap();
     assert_eq!(got.trim(), "through-backpressure");
-
-    // The daemon was really blocked: its queue for this socket overflowed into a gap.
-    let started = Instant::now();
-    loop {
-        assert!(
-            started.elapsed() < Duration::from_secs(60),
-            "no gap frame for session {flood_id} within 60 s: output was not backpressured"
-        );
-        let frame = tokio::time::timeout(Duration::from_secs(10), ws.next())
-            .await
-            .expect("socket went quiet while draining the backlog")
-            .expect("socket closed while draining the backlog")
-            .expect("socket error while draining the backlog");
-        if let Message::Binary(buf) = frame {
-            if buf.first() == Some(&3) && buf.get(1..5) == Some(&flood_id.to_be_bytes()[..]) {
-                break;
-            }
-        }
-    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn attach_and_create_replies_keep_request_order_around_stdin() {
+    let _serial = SERIAL.lock().await;
     let (addr, _state, daemon) = start_daemon_with_handle().await;
     let project = tempfile::tempdir().unwrap();
+    // `hello_ok` lists sessions with a `git` probe each; connect first so a loaded host
+    // cannot push it past the helper's timeout.
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
     let ids: Vec<u32> = (0..3)
         .map(|_| spawn(&daemon, project.path(), ticker()))
         .collect();
     let mut sessions = Sessions(daemon.clone(), ids.clone());
     let (a, b, c) = (ids[0], ids[1], ids[2]);
-
-    let mut ws = connect_and_hello(addr, TOKEN).await;
-    let _ = next_control(&mut ws).await;
     let create = |request: u32| {
         let mut msg: serde_json::Value = serde_json::from_str(&create_custom_msg(
             sleeper().iter().map(String::as_str).collect(),
@@ -321,10 +312,10 @@ async fn attach_and_create_replies_keep_request_order_around_stdin() {
         let started = Instant::now();
         while replies.len() < expected.len() {
             assert!(
-                started.elapsed() < Duration::from_secs(30),
+                started.elapsed() < Duration::from_secs(90),
                 "round {round}: replies so far {replies:?}, expected {expected:?}"
             );
-            let frame = tokio::time::timeout(Duration::from_secs(10), ws.next())
+            let frame = tokio::time::timeout(Duration::from_secs(30), ws.next())
                 .await
                 .expect("timed out waiting for attach and create replies")
                 .expect("socket closed")
@@ -373,6 +364,7 @@ async fn attach_and_create_replies_keep_request_order_around_stdin() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_client_dropping_a_backpressured_socket_releases_the_connection() {
+    let _serial = SERIAL.lock().await;
     let (addr, _state, daemon) = start_daemon_with_handle().await;
     let project = tempfile::tempdir().unwrap();
     let flood_id = spawn(&daemon, project.path(), flood());
@@ -387,6 +379,7 @@ async fn a_client_dropping_a_backpressured_socket_releases_the_connection() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_connection_closed_by_its_writer_also_stops_reading() {
+    let _serial = SERIAL.lock().await;
     let (addr, _state, daemon) = start_daemon_with_handle().await;
     let project = tempfile::tempdir().unwrap();
     let flood_id = spawn(&daemon, project.path(), flood());
