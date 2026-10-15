@@ -129,7 +129,7 @@ fn boot(env: &Env) -> Arc<Daemon> {
     Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         env.db_path(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap()
 }
@@ -2040,7 +2040,7 @@ async fn a_fresh_codex_restore_does_not_pin_its_observer_to_the_retry_handle() {
             DaemonConfig::new(
                 TOKEN.to_string(),
                 env.db_path(),
-                houston_core::host_env::HostEnv::capture(),
+                crate::common::capture_env(),
             ),
             1,
             Some(shim_dir().join("claude")),

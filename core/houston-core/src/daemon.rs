@@ -1418,7 +1418,20 @@ fn is_submitting_enter(payload: &[u8]) -> bool {
     payload.ends_with(b"\r") && !payload.ends_with(b"\x1b\r")
 }
 
-/// True when every byte is a terminal-generated report (focus, SGR mouse, and
+/// A kitty-keyboard `CSI code ; modifiers:3 u` key release. It adds no text, and after a
+/// submitting Enter it would re-mark the composer occupied.
+fn is_key_release_params(params: &[u8]) -> bool {
+    let mut fields = params.split(|b| *b == b';');
+    let code = fields.next().unwrap_or_default();
+    let modifiers = fields.next().unwrap_or_default();
+    !code.is_empty()
+        && code.iter().all(u8::is_ascii_digit)
+        && fields.next().is_none()
+        && modifiers.rsplit(|b| *b == b':').next() == Some(b"3")
+        && modifiers.contains(&b':')
+}
+
+/// True when every byte is a terminal-generated report (focus, SGR mouse, key releases, and
 /// CPR/DA/DECRPM/window/keyboard-mode or OSC/DCS/APC query replies): the
 /// renderer writes these to the PTY, but they are not operator input.
 fn is_terminal_report_only(payload: &[u8]) -> bool {
@@ -1443,7 +1456,11 @@ fn is_terminal_report_only(payload: &[u8]) -> bool {
                 let reported = match payload[start + len] {
                     b'I' | b'O' => params.is_empty(),
                     b'R' | b't' => params.iter().all(|b| b.is_ascii_digit() || *b == b';'),
-                    b'c' | b'u' | b'y' => matches!(params.first(), Some(b'?' | b'>' | b'=')),
+                    b'c' | b'y' => matches!(params.first(), Some(b'?' | b'>' | b'=')),
+                    b'u' => {
+                        matches!(params.first(), Some(b'?' | b'>' | b'='))
+                            || is_key_release_params(params)
+                    }
                     b'M' | b'm' => params.first() == Some(&b'<'),
                     _ => false,
                 };
@@ -1881,6 +1898,8 @@ const KEYMAP_OVERRIDES_MAX_BINDINGS: usize = 64;
 const KEYMAP_OVERRIDES_MAX_CODE_LEN: usize = 64;
 
 struct TitleJob {
+    /// Started by the first-turn trigger rather than by the user.
+    automatic: bool,
     revision: u64,
     prompt: String,
     directory: tempfile::TempDir,

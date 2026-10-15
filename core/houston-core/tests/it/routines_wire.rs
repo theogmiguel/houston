@@ -479,7 +479,7 @@ async fn routines_survive_a_daemon_restart() {
         DaemonConfig::new(
             TOKEN.to_string(),
             db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         )
     };
     let (id, revision) = {
@@ -513,7 +513,7 @@ async fn a_bot_owned_routine_migrates_to_standalone_with_its_execution_fields() 
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let list = routines_of(daemon.routine_list());
@@ -895,7 +895,7 @@ async fn migrated_harness_routine_reads_back_as_harness_review() {
         DaemonConfig::new(
             TOKEN.to_string(),
             db_path.clone(),
-            houston_core::host_env::HostEnv::capture(),
+            crate::common::capture_env(),
         )
     };
     for _ in 0..2 {

@@ -11,7 +11,7 @@ async fn no_port_broadcast_for_localhost_urls() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
