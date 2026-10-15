@@ -3356,17 +3356,22 @@ async fn dispatch(
             .await
             .unwrap_or_else(|e| Err(anyhow::anyhow!("git worktree create task panicked: {e}")));
             match result {
-                Ok(wt) => {
+                Ok((wt, include_warnings)) => {
+                    let mut message = format!(
+                        "Created worktree at {} (branch {}).",
+                        wt.path.display(),
+                        wt.branch.as_deref().unwrap_or("detached")
+                    );
+                    for warning in include_warnings {
+                        message.push(' ');
+                        message.push_str(&warning);
+                    }
                     let _ = send_msg(
                         sink,
                         &proto::ServerMsg::GitWorktrees {
                             dir,
                             worktrees: Vec::new(),
-                            message: Some(format!(
-                                "Created worktree at {} (branch {}).",
-                                wt.path.display(),
-                                wt.branch.as_deref().unwrap_or("detached")
-                            )),
+                            message: Some(message),
                         },
                     )
                     .await;
