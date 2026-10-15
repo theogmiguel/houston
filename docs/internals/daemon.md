@@ -555,22 +555,15 @@ File stdin is passed directly to the child, with no copier thread. OS spawn and
 termination scheduling are outside the wall-clock guarantee. Other platforms,
 including macOS, explicitly refuse bounded capture before spawning until equivalent
 process ownership is available.
-The conflict prediction loop has no setting: it is local and read-only apart from
-unreferenced merge objects, and it does nothing until a managed worktree has a creating
-session. Every `CONFLICT_CHECK_INTERVAL_MS` it reads each repository's branch heads with
-one `for-each-ref` and pairs every managed branch with its recorded base and with each
-other managed branch of the same common directory. A pair runs only while one of its
-creating sessions has a live inbox recipient: a closed orchestrator's notes would
-otherwise reach the workspace operator queue each time its abandoned branches fall
-behind, so its pairs wait unchecked until it is live again. A pair runs `git merge-tree --write-tree` on its two heads only when
-either head differs from its last run, at most `MAX_RUNS_PER_TICK` runs per tick,
-least recently checked first, each bounded by `spawn::output_within`. A run that fails
-keeps the pair's previous verdict until a head moves. The first conflicting verdict
-inserts a `predicted_conflicts` row and writes one `operator_note` to each creating
-session; a clean verdict deletes the row, so only a recurrence notifies again. Merge-tree
-needs Git 2.38: the version is read once per daemon, and an older or missing Git writes
-one note per creating session naming the found and required versions instead of
-predicting.
+The conflict prediction loop has no setting because it is local, bounded and read-only
+apart from unreferenced merge objects, and it is idle until a managed worktree has a
+creating session. Only sessions with a live inbox recipient are compared or notified;
+otherwise a closed orchestrator's notes would reach the workspace operator queue each time
+its abandoned branches fall behind. `MAX_RUNS_PER_TICK` caps `git merge-tree` runs, and
+an unchanged pair of heads is never re-run. `predicted_conflicts` keeps a conflict to one
+note until the pair merges clean. Merge-tree needs Git 2.38: an older or missing Git is
+refused by name, once per creating session. Only committed heads are compared, so
+uncommitted work is invisible to it.
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then
 a `plan/events/` GC sweep gated to `SWARM_MAIL_GC_SWEEP_INTERVAL_MS`. Mail delivery uses
 `pane_inbox` `Mail` rows and the shared inbox delivery paths. The loop lists the legacy

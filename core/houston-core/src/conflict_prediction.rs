@@ -80,10 +80,12 @@ pub fn require_merge_tree(version: Result<String, String>) -> Result<(), String>
     match version {
         Ok(v) if parse_version(&v).is_some_and(|found| found >= MIN_GIT) => Ok(()),
         Ok(v) => Err(format!(
-            "Git {v} is installed; conflict prediction needs Git {major}.{minor} or newer              for `git merge-tree --write-tree`"
+            "Git {v} is installed; conflict prediction needs Git {major}.{minor} or newer \
+             for `git merge-tree --write-tree`"
         )),
         Err(e) => Err(format!(
-            "no usable Git found ({e}); conflict prediction needs Git {major}.{minor} or newer              for `git merge-tree --write-tree`"
+            "no usable Git found ({e}); conflict prediction needs Git {major}.{minor} or newer \
+             for `git merge-tree --write-tree`"
         )),
     }
 }
@@ -252,6 +254,7 @@ mod tests {
         let err = require_merge_tree(Ok("2.37.1.windows.1".into())).unwrap_err();
         assert!(err.contains("Git 2.37.1.windows.1 is installed"), "{err}");
         assert!(err.contains("needs Git 2.38 or newer"), "{err}");
+        assert!(err.contains("or newer for `git merge-tree"), "{err}");
         let err = require_merge_tree(Err("spawning git: not found".into())).unwrap_err();
         assert!(err.contains("not found") && err.contains("2.38"), "{err}");
     }
