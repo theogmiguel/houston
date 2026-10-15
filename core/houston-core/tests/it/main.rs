@@ -155,6 +155,7 @@ mod windows_orchestration_wire;
 mod windows_pty_lifecycle;
 mod workspace_actions_wire;
 mod worktree_cleanup_wire;
+mod worktree_include_wire;
 mod worktree_spawn_wire;
 mod worktrees_wire;
 mod ws_control_wire;
