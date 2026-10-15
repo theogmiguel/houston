@@ -1,15 +1,12 @@
 5 core/houston-core/src/bin/fake_agent.rs
 1 core/houston-core/src/bin/supervisor-test-daemon.rs
-10 core/houston-core/src/claude_hooks.rs
-6 core/houston-core/src/codex_pane.rs
+1 core/houston-core/src/claude_hooks.rs
 8 core/houston-core/src/daemon.rs
 2 core/houston-core/src/env_hygiene.rs
-8 core/houston-core/src/harness/mod.rs
 4 core/houston-core/src/home_dir.rs
 1 core/houston-core/src/lib.rs
 3 core/houston-core/src/login_path.rs
 8 core/houston-core/src/main.rs
-25 core/houston-core/src/orchestrate.rs
 3 core/houston-core/src/paths.rs
 1 core/houston-core/src/pid.rs
 1 core/houston-core/src/remote/mod.rs
@@ -19,7 +16,6 @@
 1 core/houston-core/src/slack/credentials.rs
 2 core/houston-core/src/ssh.rs
 3 core/houston-core/src/ssh_config.rs
-3 core/houston-core/src/tasks_cli.rs
 1 core/houston-core/src/updates.rs
 1 core/houston-core/src/voice/reuse.rs
 1 core/houston-core/src/worktrees.rs

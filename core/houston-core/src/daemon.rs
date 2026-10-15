@@ -7648,7 +7648,10 @@ impl Daemon {
 
     fn claude_hook_paths(&self) -> Result<(Vec<std::path::PathBuf>, Option<String>)> {
         let home = self.hook_config_home()?;
-        let mut paths = vec![crate::claude_hooks::global_settings_path(&home)];
+        let mut paths = vec![crate::claude_hooks::global_settings_path(
+            &self.env(),
+            &home,
+        )];
         for profile in self.db.list_agent_profiles("claude")? {
             let dir = crate::agent_accounts::expand_tilde(&profile.config_dir, &home.home);
             paths.push(dir.join("settings.json"));
@@ -7767,7 +7770,7 @@ impl Daemon {
         let claude_cli = self.cli_presence(proto::AgentKind::Claude);
         let (claude_path, installed, mut error) = match &home {
             Ok(home) => {
-                let path = crate::claude_hooks::global_settings_path(home);
+                let path = crate::claude_hooks::global_settings_path(&self.env(), home);
                 let installed = crate::claude_hooks::is_installed(&path, &sentinel);
                 (path.display().to_string(), installed, None)
             }

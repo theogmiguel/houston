@@ -1,11 +1,11 @@
 //! `hs-harness`: the extractor a harness review run calls from inside its
 //! pane. The daemon never runs it; see carve-out #6 in `invariants.md`.
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 pub mod digest;
 pub mod findings;
 pub mod inventory;
 pub mod window;
 
+use crate::host_env::HostEnv;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -33,7 +33,7 @@ commands:
 Output goes to <workspace>/.houston/harness/<run>/.";
 
 pub fn run_cli(args: &[String]) -> i32 {
-    match cli(args) {
+    match cli(&HostEnv::capture(), args) {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("hs-harness: {e:#}");
@@ -42,15 +42,15 @@ pub fn run_cli(args: &[String]) -> i32 {
     }
 }
 
-fn cli(args: &[String]) -> Result<()> {
+fn cli(env: &HostEnv, args: &[String]) -> Result<()> {
     let (positional, flags) = crate::orchestrate::parse_flags(args);
     let flag = |k: &str| flags.get(k).map(String::as_str);
     let workspace = || workspace_dir(flag("workspace"));
     match positional.first().map(String::as_str) {
         Some("inventory") => {
             let ws = workspace()?;
-            let dir = run_dir(&ws, flag("run"))?;
-            let home = crate::home_dir::home_dir();
+            let dir = run_dir(env, &ws, flag("run"))?;
+            let home = env.home_dir();
             let now = window::format_ms(crate::usage::time::now_ms());
             let inv = inventory::build(&ws, home.as_deref(), &now);
             let path = dir.join("inventory.json");
@@ -58,8 +58,8 @@ fn cli(args: &[String]) -> Result<()> {
             println!("{}", path.display());
             Ok(())
         }
-        Some("digest") => digest_cmd(flag("workspace"), &flags),
-        Some("publish") => publish_cmd(flag("summary")),
+        Some("digest") => digest_cmd(env, flag("workspace"), &flags),
+        Some("publish") => publish_cmd(env, flag("summary")),
         _ => bail!("{USAGE}"),
     }
 }
@@ -77,8 +77,8 @@ fn workspace_dir(flag: Option<&str>) -> Result<PathBuf> {
     Ok(ws)
 }
 
-fn run_id(flag: Option<&str>) -> Result<String> {
-    let id = match (flag, std::env::var(RUN_ENV).ok().filter(|v| !v.is_empty())) {
+fn run_id(env: &HostEnv, flag: Option<&str>) -> Result<String> {
+    let id = match (flag, env.var(RUN_ENV).filter(|v| !v.is_empty())) {
         (Some(id), _) => id.to_string(),
         (None, Some(run)) => format!("r{run}"),
         (None, None) => {
@@ -100,8 +100,8 @@ fn harness_root(ws: &Path) -> PathBuf {
     ws.join(crate::paths::PROJECT_DIR).join("harness")
 }
 
-fn run_dir(ws: &Path, flag: Option<&str>) -> Result<PathBuf> {
-    prepare_run_dir(ws, &run_id(flag)?)
+fn run_dir(env: &HostEnv, ws: &Path, flag: Option<&str>) -> Result<PathBuf> {
+    prepare_run_dir(ws, &run_id(env, flag)?)
 }
 
 /// `<ws>/.houston/harness/<run>`, created with the ignore file beside it.
@@ -159,9 +159,9 @@ fn previous_until(ws: &Path, this_run: &Path) -> Option<i64> {
         .max()
 }
 
-fn claude_roots(home: Option<&Path>) -> Vec<PathBuf> {
+fn claude_roots(env: &HostEnv, home: Option<&Path>) -> Vec<PathBuf> {
     let mut roots = Vec::new();
-    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|v| !v.is_empty()) {
+    if let Some(dir) = env.var_os("CLAUDE_CONFIG_DIR").filter(|v| !v.is_empty()) {
         roots.push(crate::usage::root_under_config_dir(
             houston_protocol::UsageProvider::Claude,
             Path::new(&dir),
@@ -176,8 +176,8 @@ fn claude_roots(home: Option<&Path>) -> Vec<PathBuf> {
     roots
 }
 
-fn codex_roots(home: Option<&Path>) -> Vec<PathBuf> {
-    if let Some(dir) = std::env::var_os("CODEX_HOME").filter(|v| !v.is_empty()) {
+fn codex_roots(env: &HostEnv, home: Option<&Path>) -> Vec<PathBuf> {
+    if let Some(dir) = env.var_os("CODEX_HOME").filter(|v| !v.is_empty()) {
         return vec![crate::usage::root_under_config_dir(
             houston_protocol::UsageProvider::Codex,
             Path::new(&dir),
@@ -197,10 +197,11 @@ fn cleanup_period_days(home: Option<&Path>) -> Option<i64> {
 }
 
 fn digest_cmd(
+    env: &HostEnv,
     workspace_flag: Option<&str>,
     flags: &std::collections::HashMap<String, String>,
 ) -> Result<()> {
-    if std::env::var(RUN_ENV).map_or(true, |v| v.is_empty()) {
+    if env.var(RUN_ENV).is_none_or(|v| v.is_empty()) {
         bail!(
             "digest reads session transcripts, so it runs only inside a Harness review routine \
              run (carve-out #6 in docs/internals/invariants.md); {RUN_ENV} is not set in this \
@@ -224,23 +225,23 @@ fn digest_cmd(
             bail!("--since and --until go together; pass both, or neither for the automatic window")
         }
     };
-    let dir = run_dir(&ws, flag("run"))?;
+    let dir = run_dir(env, &ws, flag("run"))?;
     let previous = previous_until(&ws, &dir);
     let window = if mode == "automatic" {
         window::automatic(now, previous)
     } else {
         window
     };
-    let home = crate::home_dir::home_dir();
+    let home = env.home_dir();
     let req = digest::Request {
         workspace: &ws,
         claude_roots: if providers.contains(&"claude") {
-            claude_roots(home.as_deref())
+            claude_roots(env, home.as_deref())
         } else {
             Vec::new()
         },
         codex_roots: if providers.contains(&"codex") {
-            codex_roots(home.as_deref())
+            codex_roots(env, home.as_deref())
         } else {
             Vec::new()
         },
@@ -292,12 +293,16 @@ fn digest_cmd(
 }
 
 /// The CLI door to the daemon's `harness_publish`, for a CLI without MCP.
-fn publish_cmd(summary: Option<&str>) -> Result<()> {
+fn publish_cmd(env: &HostEnv, summary: Option<&str>) -> Result<()> {
     let outside = |var: &str| {
         anyhow!("{var} is not set; hs-harness publish runs only inside a Harness review run's pane")
     };
-    let url = std::env::var("HOUSTON_MCP_URL").map_err(|_| outside("HOUSTON_MCP_URL"))?;
-    let token = std::env::var("HOUSTON_MCP_TOKEN").map_err(|_| outside("HOUSTON_MCP_TOKEN"))?;
+    let url = env
+        .var("HOUSTON_MCP_URL")
+        .ok_or_else(|| outside("HOUSTON_MCP_URL"))?;
+    let token = env
+        .var("HOUSTON_MCP_TOKEN")
+        .ok_or_else(|| outside("HOUSTON_MCP_TOKEN"))?;
     let base = crate::orchestrate::cli_base_url(Some(&url))?;
     let v = crate::orchestrate::cli_call(
         &base,

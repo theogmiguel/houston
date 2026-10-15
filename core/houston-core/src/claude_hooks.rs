@@ -1,4 +1,3 @@
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{anyhow, Context, Result};
 use houston_protocol as proto;
 use sha2::{Digest, Sha256};
@@ -289,8 +288,11 @@ fn strip_managed_hooks(groups: &mut Vec<serde_json::Value>, sentinel: &str) {
     });
 }
 
-pub fn global_settings_path(home: &crate::agent_hooks::ConfigHome) -> PathBuf {
-    std::env::var_os("CLAUDE_CONFIG_DIR")
+pub fn global_settings_path(
+    env: &crate::host_env::HostEnv,
+    home: &crate::agent_hooks::ConfigHome,
+) -> PathBuf {
+    env.var_os("CLAUDE_CONFIG_DIR")
         .filter(|value| !value.to_string_lossy().trim().is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.home.join(".claude"))
@@ -418,6 +420,7 @@ fn another_channels_launcher(argv0: Option<&Path>, config_dir: Option<&Path>) ->
 }
 
 pub fn run_hook_client(args: &[String]) {
+    let env = &crate::host_env::HostEnv::capture();
     let Some(event) = args.get(2) else {
         return;
     };
@@ -426,7 +429,7 @@ pub fn run_hook_client(args: &[String]) {
         .position(|a| a == "--agent")
         .and_then(|i| args.get(i + 1))
         .cloned();
-    if agent.is_none() && std::env::var("GROK_SESSION_ID").is_ok() {
+    if agent.is_none() && env.var("GROK_SESSION_ID").is_some() {
         eprintln!(
             "hook {event}: GROK_SESSION_ID is set on the Claude path — Grok fired this \
              global Claude hooks too; the Grok-side drop already covers it"
@@ -440,10 +443,7 @@ pub fn run_hook_client(args: &[String]) {
         eprintln!("hook {event}: {reason}");
         return;
     }
-    let Some(session) = std::env::var("TR_SESSION")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-    else {
+    let Some(session) = env.var("TR_SESSION").and_then(|s| s.parse::<u32>().ok()) else {
         return;
     };
     let ms = crate::hook_drop::now_ms();
@@ -486,7 +486,7 @@ pub fn run_hook_client(args: &[String]) {
                     "hook {event}: stop_hook_active for session {session} — logged, not relied on"
                 );
             }
-            stop_continued = stop_hook_try_continue(session, provider);
+            stop_continued = stop_hook_try_continue(env, session, provider);
         } else {
             eprintln!(
                 "hook {event}: provider {provider:?} has no verified stop-hook continue shape — \
@@ -539,21 +539,25 @@ pub fn run_hook_client(args: &[String]) {
             };
             Some(crate::hook_drop::ResumeHookEvidence {
                 source: payload.source.clone(),
-                profile_dir: profile_dir.and_then(std::env::var_os).and_then(|value| {
-                    let value = match value.into_string() {
-                        Ok(value) => value,
-                        Err(_) => {
-                            return Some("<Houston omitted an unrepresentable profile path>".into())
+                profile_dir: profile_dir
+                    .and_then(|name| env.var_os(name))
+                    .and_then(|value| {
+                        let value = match value.to_os_string().into_string() {
+                            Ok(value) => value,
+                            Err(_) => {
+                                return Some(
+                                    "<Houston omitted an unrepresentable profile path>".into(),
+                                )
+                            }
+                        };
+                        if value.is_empty() {
+                            None
+                        } else if value.len() <= 4096 {
+                            Some(value)
+                        } else {
+                            Some("<Houston omitted an oversized profile path>".into())
                         }
-                    };
-                    if value.is_empty() {
-                        None
-                    } else if value.len() <= 4096 {
-                        Some(value)
-                    } else {
-                        Some("<Houston omitted an oversized profile path>".into())
-                    }
-                }),
+                    }),
             })
         } else {
             None
@@ -587,23 +591,24 @@ pub fn run_hook_client(args: &[String]) {
     }
     if event == "PostToolUse"
         && matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
-        && std::env::var_os(TOOL_BOUNDARY_CONTEXT_ENV)
+        && env
+            .var_os(TOOL_BOUNDARY_CONTEXT_ENV)
             .is_some_and(|path| Path::new(&path).is_file())
     {
-        tool_boundary_context();
+        tool_boundary_context(env);
     }
 }
 
 pub(crate) const TOOL_BOUNDARY_CONTEXT_ENV: &str = "HOUSTON_TOOL_BOUNDARY_CONTEXT";
 
-fn tool_boundary_context() {
-    let Some(base) = std::env::var(crate::mcp_launch::URL_ENV)
-        .ok()
+fn tool_boundary_context(env: &crate::host_env::HostEnv) {
+    let Some(base) = env
+        .var(crate::mcp_launch::URL_ENV)
         .and_then(|url| crate::orchestrate::cli_base_url(Some(&url)).ok())
     else {
         return;
     };
-    let Ok(token) = std::env::var(crate::mcp_launch::CODEX_TOKEN_ENV) else {
+    let Some(token) = env.var(crate::mcp_launch::CODEX_TOKEN_ENV) else {
         return;
     };
     let deadline = std::time::Instant::now()
@@ -630,22 +635,25 @@ fn tool_boundary_context() {
     );
 }
 
-fn stop_hook_try_continue(session: u32, provider: proto::AgentKind) -> bool {
+fn stop_hook_try_continue(
+    env: &crate::host_env::HostEnv,
+    session: u32,
+    provider: proto::AgentKind,
+) -> bool {
     let deadline = std::time::Instant::now()
         + std::time::Duration::from_millis(crate::orchestrate::STOP_INBOX_QUERY_MS);
-    let base = match crate::orchestrate::cli_base_url(
-        std::env::var(crate::mcp_launch::URL_ENV).ok().as_deref(),
-    ) {
-        Ok(base) => base,
-        Err(e) => {
-            eprintln!(
-                "hook Stop: no daemon endpoint for session {session}: {e:#} — ending the turn"
-            );
-            return false;
-        }
-    };
-    let token = match std::env::var(crate::mcp_launch::CODEX_TOKEN_ENV) {
-        Ok(token) if !token.trim().is_empty() => token,
+    let base =
+        match crate::orchestrate::cli_base_url(env.var(crate::mcp_launch::URL_ENV).as_deref()) {
+            Ok(base) => base,
+            Err(e) => {
+                eprintln!(
+                    "hook Stop: no daemon endpoint for session {session}: {e:#} — ending the turn"
+                );
+                return false;
+            }
+        };
+    let token = match env.var(crate::mcp_launch::CODEX_TOKEN_ENV) {
+        Some(token) if !token.trim().is_empty() => token,
         _ => {
             eprintln!("hook Stop: no pane credential for session {session} — ending the turn");
             return false;

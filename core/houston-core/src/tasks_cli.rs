@@ -1,7 +1,6 @@
 //! `hs-task`: the CLI door to a workspace's Tasks backlog, for agents whose
 //! provider cannot use MCP. Every command is the same daemon call an MCP tool
 //! makes, through the `/task/*` routes and the pane's own bearer token.
-#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
@@ -31,7 +30,7 @@ Priorities: 1 urgent, 2 high, 3 medium, 4 low (absent is none).
 Done is never set from here: the user closes a task.";
 
 pub fn run_cli(args: &[String]) -> i32 {
-    match cli(args) {
+    match cli(&crate::host_env::HostEnv::capture(), args) {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("hs-task: {e:#}");
@@ -40,7 +39,7 @@ pub fn run_cli(args: &[String]) -> i32 {
     }
 }
 
-fn cli(args: &[String]) -> Result<()> {
+fn cli(env: &crate::host_env::HostEnv, args: &[String]) -> Result<()> {
     if args.is_empty() {
         println!("{USAGE}");
         return Ok(());
@@ -54,9 +53,9 @@ fn cli(args: &[String]) -> Result<()> {
     let rest = &positional[1..];
     let flag = |k: &str| flags.get(k).map(String::as_str);
 
-    let base = crate::orchestrate::cli_base_url(std::env::var("HOUSTON_MCP_URL").ok().as_deref())
+    let base = crate::orchestrate::cli_base_url(env.var("HOUSTON_MCP_URL").as_deref())
         .map_err(|e| anyhow::anyhow!("{e:#}"))?;
-    let token = std::env::var("HOUSTON_MCP_TOKEN").map_err(|_| {
+    let token = env.var("HOUSTON_MCP_TOKEN").ok_or_else(|| {
         anyhow::anyhow!("HOUSTON_MCP_TOKEN is not set — hs-task only works inside a Houston pane")
     })?;
     let call = |method: &str, path: &str, body: Option<Value>| {
@@ -95,7 +94,7 @@ fn cli(args: &[String]) -> Result<()> {
             print(call("GET", path.trim_end_matches(['?', '&']), None)?)
         }
         "show" => {
-            let key = key_arg(rest.first())?;
+            let key = key_arg(env, rest.first())?;
             print(call(
                 "GET",
                 &format!("/task/get?key={}", query_escape(&key)),
@@ -134,11 +133,11 @@ fn cli(args: &[String]) -> Result<()> {
             print(call("POST", "/task/create", Some(body))?)
         }
         "claim" => {
-            let key = key_arg(rest.first())?;
+            let key = key_arg(env, rest.first())?;
             print(call("POST", "/task/claim", Some(json!({ "key": key })))?)
         }
         "comment" => {
-            let (key, text) = split_key_and_text(rest)?;
+            let (key, text) = split_key_and_text(env, rest)?;
             print(call(
                 "POST",
                 "/task/comment",
@@ -146,7 +145,7 @@ fn cli(args: &[String]) -> Result<()> {
             )?)
         }
         "check" => {
-            let (key, item) = split_key_and_item(rest)?;
+            let (key, item) = split_key_and_item(env, rest)?;
             print(call(
                 "POST",
                 "/task/check",
@@ -154,7 +153,7 @@ fn cli(args: &[String]) -> Result<()> {
             )?)
         }
         "handback" => {
-            let key = key_arg(rest.first())?;
+            let key = key_arg(env, rest.first())?;
             let structured = ["subject", "changes", "refused"]
                 .iter()
                 .any(|k| flags.contains_key(*k));
@@ -253,12 +252,12 @@ fn validate_key(key: &str) -> Result<String> {
 
 /// The explicit positional, else `$HOUSTON_TASK`; absent either way is an
 /// error naming both ways to supply one.
-fn key_arg(explicit: Option<&String>) -> Result<String> {
+fn key_arg(env: &crate::host_env::HostEnv, explicit: Option<&String>) -> Result<String> {
     if let Some(key) = explicit {
         return validate_key(key);
     }
-    match std::env::var("HOUSTON_TASK") {
-        Ok(key) if !key.trim().is_empty() => validate_key(&key),
+    match env.var("HOUSTON_TASK") {
+        Some(key) if !key.trim().is_empty() => validate_key(&key),
         _ => bail!(
             "no task key: pass HOU-n or set HOUSTON_TASK (expected HOU-<number>, for example \
              HOU-1)"
@@ -266,7 +265,7 @@ fn key_arg(explicit: Option<&String>) -> Result<String> {
     }
 }
 
-fn split_key_and_text(rest: &[String]) -> Result<(String, String)> {
+fn split_key_and_text(env: &crate::host_env::HostEnv, rest: &[String]) -> Result<(String, String)> {
     if rest.len() >= 2 && is_key_like(&rest[0]) {
         let key = validate_key(&rest[0])?;
         let text = rest[1..].join(" ");
@@ -275,7 +274,7 @@ fn split_key_and_text(rest: &[String]) -> Result<(String, String)> {
         }
         return Ok((key, text));
     }
-    let key = key_arg(None)?;
+    let key = key_arg(env, None)?;
     let text = rest.join(" ");
     if text.trim().is_empty() {
         bail!("comment needs text; expected `hs-task comment [HOU-n] TEXT`");
@@ -283,7 +282,7 @@ fn split_key_and_text(rest: &[String]) -> Result<(String, String)> {
     Ok((key, text))
 }
 
-fn split_key_and_item(rest: &[String]) -> Result<(String, u32)> {
+fn split_key_and_item(env: &crate::host_env::HostEnv, rest: &[String]) -> Result<(String, u32)> {
     let item = |raw: Option<&String>| -> Result<u32> {
         let raw = raw.ok_or_else(|| {
             anyhow::anyhow!(
@@ -297,7 +296,7 @@ fn split_key_and_item(rest: &[String]) -> Result<(String, u32)> {
     if rest.len() >= 2 && is_key_like(&rest[0]) {
         return Ok((validate_key(&rest[0])?, item(rest.get(1))?));
     }
-    Ok((key_arg(None)?, item(rest.first())?))
+    Ok((key_arg(env, None)?, item(rest.first())?))
 }
 
 fn print(value: Value) -> Result<()> {
