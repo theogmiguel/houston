@@ -41,7 +41,7 @@ its process works.
 ## Guarantees
 
 These are the properties orchestration promises, and the only ones. Each is enforced by the
-invariant checker in `tests/orchestration_chaos_wire.rs`, which drives every spawnable
+invariant checker in `tests/it/orchestration_chaos_wire.rs`, which drives every spawnable
 provider through `fake_agent` with randomized seeds, daemon kills and slow writers. A change
 that weakens one of them changes this list in the same PR.
 

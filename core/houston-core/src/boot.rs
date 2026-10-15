@@ -32,14 +32,15 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
 /// before the agent hook configs are refreshed.
 pub fn spawn_startup_refresh(daemon: &Arc<Daemon>) {
     let bound_port = daemon.bound_port();
+    let env = daemon.env();
     let daemon = daemon.clone();
     tokio::task::spawn_blocking(move || {
         daemon.sweep_legacy_hooks();
         daemon.install_consented_agent_hooks();
     });
-    crate::mcp_register::spawn_at_boot();
-    crate::mcp_register_codex::spawn_at_boot(bound_port);
-    crate::mcp_register_grok::spawn_at_boot();
-    crate::mcp_register_cursor::spawn_at_boot();
-    crate::mcp_register_antigravity::spawn_at_boot();
+    crate::mcp_register::spawn_at_boot(env.clone());
+    crate::mcp_register_codex::spawn_at_boot(env.clone(), bound_port);
+    crate::mcp_register_grok::spawn_at_boot(env.clone());
+    crate::mcp_register_cursor::spawn_at_boot(env.clone());
+    crate::mcp_register_antigravity::spawn_at_boot(env.clone());
 }
