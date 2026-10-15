@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 

@@ -14,6 +14,59 @@ pub type WsStream =
 
 pub const TOKEN: &str = "test-token-0000-0000-000000000000";
 
+/// The test process's own environment: re-exec markers and what a fixture must forward.
+/// Anything the daemon should see goes through `HostEnv` instead.
+pub fn process_var_os(name: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(name)
+}
+
+pub fn process_var(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+/// The environment an in-process daemon starts from: the test process's, minus the
+/// variables that change daemon behaviour, so a runner that exports one cannot leak in.
+pub fn base_env() -> houston_core::host_env::HostEnv {
+    [
+        "HOUSTON_SAFE_MODE",
+        "HOUSTON_DISABLE_AUTO_RESTORE",
+        "HOUSTON_DISABLE_SWARM_AUTOLAUNCH",
+        "HOUSTON_RESTORE_BUDGET",
+        "HOUSTON_REAP_GRACE_MS",
+        "HOUSTON_HANDOFF_TIMEOUT_MS",
+        "HOUSTON_SHUTDOWN_DRAIN_MS",
+    ]
+    .into_iter()
+    .fold(houston_core::host_env::HostEnv::capture(), |env, name| {
+        env.without(name)
+    })
+}
+
+/// libtest's name for test `name` of the module `module_path!()` names, for `--exact`. Checked
+/// against the binary's test list: an `--exact` name that matches nothing runs zero tests
+/// and exits 0, which would turn a re-executed fixture into a silent pass.
+pub fn exact_path(module: &str, name: &str) -> String {
+    let relative = module.split_once("::").map_or("", |(_, rest)| rest);
+    let path = if relative.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{relative}::{name}")
+    };
+    let listing = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--list", "--format", "terse"])
+        .output()
+        .expect("listing this binary's tests");
+    let listing = String::from_utf8_lossy(&listing.stdout);
+    assert!(
+        listing
+            .lines()
+            .any(|line| line.strip_suffix(": test") == Some(path.as_str())),
+        "re-executing {path:?} (module_path {module:?}, test {name:?}): no such test in this binary; \
+         the name must be the module path under tests/it/main.rs plus the function name"
+    );
+    path
+}
+
 pub fn hermetic_command(
     bin: impl AsRef<std::ffi::OsStr>,
     home: &std::path::Path,
@@ -82,7 +135,13 @@ pub fn hermetic_command(
 }
 
 pub async fn start_daemon() -> (std::net::SocketAddr, tempfile::TempDir) {
-    let (addr, dir, _daemon) = start_daemon_with_handle().await;
+    start_daemon_in(base_env()).await
+}
+
+pub async fn start_daemon_in(
+    env: houston_core::host_env::HostEnv,
+) -> (std::net::SocketAddr, tempfile::TempDir) {
+    let (addr, dir, _daemon) = start_daemon_with_handle_in(env).await;
     (addr, dir)
 }
 
@@ -91,11 +150,22 @@ pub async fn start_daemon_with_handle() -> (
     tempfile::TempDir,
     std::sync::Arc<Daemon>,
 ) {
+    start_daemon_with_handle_in(base_env()).await
+}
+
+pub async fn start_daemon_with_handle_in(
+    env: houston_core::host_env::HostEnv,
+) -> (
+    std::net::SocketAddr,
+    tempfile::TempDir,
+    std::sync::Arc<Daemon>,
+) {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        env,
+    ))
     .unwrap();
     let (addr, _handle) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
         .await
@@ -113,11 +183,22 @@ pub async fn start_daemon_without_mail_loop() -> (
     tempfile::TempDir,
     std::sync::Arc<Daemon>,
 ) {
+    start_daemon_without_mail_loop_in(base_env()).await
+}
+
+pub async fn start_daemon_without_mail_loop_in(
+    env: houston_core::host_env::HostEnv,
+) -> (
+    std::net::SocketAddr,
+    tempfile::TempDir,
+    std::sync::Arc<Daemon>,
+) {
     let state_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon::new(DaemonConfig {
-        token: TOKEN.to_string(),
-        db_path: state_dir.path().join("test.db"),
-    })
+    let daemon = Daemon::new(DaemonConfig::new(
+        TOKEN.to_string(),
+        state_dir.path().join("test.db"),
+        env,
+    ))
     .unwrap();
     let (addr, _handle) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
         .await
