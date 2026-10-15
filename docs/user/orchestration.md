@@ -204,6 +204,13 @@ supplied. Existing branches and occupied paths are refused. If creation or provi
 preparation fails, Houston rolls back the fresh checkout and branch. If Git checkout fails
 after a hook has added commits, Houston preserves them and reports that rollback needs attention.
 
+While an orchestrator has worktrees from `pane_spawn`, Houston checks about once a minute
+whether their committed branches would conflict with their base or with each other. A
+new predicted conflict arrives once in the orchestrator's inbox, naming both branches and
+the files, so it can reassign or sequence the work before either branch becomes a pull
+request. It reads only the local repository and requires Git 2.38 or newer; with an older
+Git, the orchestrator receives one note naming the installed and required versions.
+
 Children are temporary by default. After a durable completed result, Houston ends the
 process, but keeps the session and transcript under Settled until the parent closes the
 pane or retention expires. After receiving a completed result, preserve any needed output

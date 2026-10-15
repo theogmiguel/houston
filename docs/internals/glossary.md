@@ -177,6 +177,7 @@ named.
 | **auto mode** | The default launch mode for a spawned pane, using its provider's automatic approval flags. Sandbox boundaries depend on the provider; a model that cannot run this mode is refused by name. Explicit Ask or Bypass overrides it. | `launch.rs`, `orchestrate.rs` |
 | **MCP credential** | A per-pane bearer token bound to `{ workspace, session }`; only its SHA-256 is stored. | `mcp_creds.rs` |
 | **mailboxes** | Legacy file-based storage. Current pane-to-pane mail uses `pane_inbox`; the scope directory at `<root>/.houston/swarm/<id>/` remains for compatibility and `plan/events/` garbage collection. | `scope.rs` |
+| **conflict prediction** | The daemon's `git merge-tree` check of each managed worktree branch against its base and its sibling branches; a newly conflicting pair is one inbox note to the creating session. | `daemon/conflict_pass.rs`, `conflict_prediction.rs` |
 | **swarm** | Legacy prefix for orchestration scope infrastructure, tables and events. | `swarm_*` |
 | **`hs-mail`** | Unsupported compatibility alias. Returns a refusal naming its replacement and exits non-zero. | `main.rs`, `bin/tr-helper.rs` |
 

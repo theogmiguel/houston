@@ -21,6 +21,7 @@ mod codex_shell_mcp;
 mod command_history_ignore;
 #[path = "../common/mod.rs"]
 mod common;
+mod conflict_prediction_wire;
 mod context_wire;
 mod control_admission_wire;
 mod daemon_adoption_wire;
