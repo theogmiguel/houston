@@ -28,6 +28,7 @@ import { inputTraceEnabled, traceInputEvent } from './inputTrace'
 import { TERMINAL_FONT_DEFAULT } from './terminalFonts'
 import { shiftEnterSequence } from './shiftEnter'
 import { logTerminalTransport } from '../houston/latency'
+import { MAX_PASTE_CODE_UNITS } from '../ghostty/inputBudget'
 import { TERMINAL_PALETTES, type ThemeName } from '../theme'
 import { ExpandedContext } from '../layout/expandedContext'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
@@ -144,6 +145,17 @@ export type RegisterOutput = (id: number, sink: OutputSink) => () => void
 // Buffered pre-replay frames beyond this flip the pane to raw streaming — an
 // attach reply that never arrives must not buffer forever.
 const PENDING_CAP_BYTES = 4 * 1024 * 1024
+
+// Input typed while a snapshot attach is in flight waits for one attach round trip,
+// which a loaded socket can stretch to seconds. 1024 entries is about 30 s of key
+// repeat; two maximum pastes stay far below the socket's input admission limit when
+// the hold releases them in one burst.
+const HELD_INPUT_MAX_ENTRIES = 1024
+const HELD_INPUT_MAX_CODE_UNITS = 2 * MAX_PASTE_CODE_UNITS
+
+// A paste is held as text: its encoding depends on bracketed-paste mode, which the
+// pane learns only from the snapshot.
+type HeldInput = { data: string } | { paste: string }
 
 // Commit copy-on-select once the selection has settled, since onSelectionChange
 // fires continuously while a drag is in progress.
@@ -308,6 +320,63 @@ export function TerminalPane({
     catchup: false,
     awaitingSnapshot: false
   })
+  const heldInputRef = useRef({ entries: [] as HeldInput[], codeUnits: 0, overflowLogged: false })
+
+  // A paste waits for the snapshot's terminal modes and keys wait behind it to keep
+  // their order. Overflow recovery keeps input live: holding it would swallow Ctrl-C.
+  const inputHeld = (): boolean => seqRef.current.awaitingSnapshot && !overflowResyncRef.current
+
+  const holdInput = (entry: HeldInput): void => {
+    const held = heldInputRef.current
+    const size = 'data' in entry ? entry.data.length : entry.paste.length
+    if (held.entries.length >= HELD_INPUT_MAX_ENTRIES || held.codeUnits + size > HELD_INPUT_MAX_CODE_UNITS) {
+      if (!held.overflowLogged) {
+        held.overflowLogged = true
+        console.warn(
+          `houston: session ${info.id} dropped ${size} code units of input typed while its attach snapshot was pending: ${held.entries.length} entries and ${held.codeUnits} code units already held; limit ${HELD_INPUT_MAX_ENTRIES} entries and ${HELD_INPUT_MAX_CODE_UNITS} code units`
+        )
+      }
+      return
+    }
+    held.entries.push(entry)
+    held.codeUnits += size
+  }
+
+  /** Sends held input in order once no snapshot is pending. Every path that
+   * ends a hold calls this; it does nothing while the hold lasts. */
+  const releaseHeldInput = (): void => {
+    const { entries, overflowLogged } = heldInputRef.current
+    if (inputHeld() || (entries.length === 0 && !overflowLogged)) return
+    heldInputRef.current = { entries: [], codeUnits: 0, overflowLogged: false }
+    if (entries.length === 0) return
+    const term = termRef.current
+    if (!liveRef.current || !term) {
+      console.warn(`houston: session ${info.id} dropped ${entries.length} held input entries: the pane is no longer live`)
+      return
+    }
+    for (const [i, entry] of entries.entries()) {
+      if ('paste' in entry) {
+        const blocked = term.options.disableStdin
+        term.options.disableStdin = false
+        term.paste(entry.paste)
+        term.options.disableStdin = blocked
+      } else if (!clientRef.current.sendStdin(info.id, entry.data)) {
+        console.warn(
+          `houston: session ${info.id} refused held input; dropped the remaining ${entries.length - i} of ${entries.length} entries`
+        )
+        return
+      }
+    }
+  }
+
+  const deliverInput = (data: string): void => {
+    if (inputHeld()) {
+      holdInput({ data })
+      return
+    }
+    releaseHeldInput()
+    clientRef.current.sendStdin(info.id, data)
+  }
 
   useEffect(() => {
     if (!synced) {
@@ -600,6 +669,14 @@ export function TerminalPane({
       }, SELECTION_COPY_DEBOUNCE_MS)
     }
     const selectionChangeDisposable = term.onSelectionChange(onTermSelectionChange)
+    const pasteText = (text: string): void => {
+      if (inputHeld()) {
+        holdInput({ paste: text })
+        return
+      }
+      releaseHeldInput()
+      term.paste(text)
+    }
     const pastePath = (path: string): boolean => {
       if (!liveRef.current) return false
       onActivateRef.current()
@@ -608,7 +685,7 @@ export function TerminalPane({
         return false
       }
       term.options.disableStdin = false
-      term.paste(shellQuote(path) + ' ')
+      pasteText(shellQuote(path) + ' ')
       return true
     }
     const saveAndPasteImage = async (blob: Blob, mime: string): Promise<void> => {
@@ -640,7 +717,7 @@ export function TerminalPane({
         pushToast('Paste failed', 'daemon connection lost', 'danger')
         return
       }
-      term.paste(text)
+      pasteText(text)
     }
 
     const handleKey = (e: KeyboardEvent): boolean => {
@@ -668,7 +745,7 @@ export function TerminalPane({
       const shiftEnter = shiftEnterSequence(e, shiftEnterRef.current)
       if (shiftEnter !== null) {
         e.preventDefault()
-        clientRef.current.sendStdin(info.id, shiftEnter)
+        deliverInput(shiftEnter)
         return false
       }
       if (isPasteChord(e)) {
@@ -694,9 +771,7 @@ export function TerminalPane({
 
     const onPaste = (e: ClipboardEvent): void => {
       if (!liveRef.current) return
-      const items = e.clipboardData?.items
-      if (!items) return
-      for (const it of items) {
+      for (const it of e.clipboardData?.items ?? []) {
         if (it.kind === 'file' && it.type.startsWith('image/')) {
           e.preventDefault()
           e.stopPropagation()
@@ -713,6 +788,12 @@ export function TerminalPane({
           return
         }
       }
+      if (!inputHeld()) return
+      // The surface would encode this paste before the snapshot restores its modes.
+      e.preventDefault()
+      e.stopPropagation()
+      const text = e.clipboardData?.getData('text/plain') ?? ''
+      if (text.length > 0) holdInput({ paste: text })
     }
     const readDragItems = (dt: DataTransfer | null): { count: number; hasImages: boolean } => {
       if (!dt) return { count: 0, hasImages: false }
@@ -834,7 +915,7 @@ export function TerminalPane({
         try {
           const entry = JSON.parse(reference) as { path: string; directory: boolean }
           if (typeof entry.path !== 'string' || typeof entry.directory !== 'boolean') throw new Error(`Cannot insert ${reference}: expected a file path and directory flag`)
-          term.paste(fileReference(entry.path, entry.directory))
+          pasteText(fileReference(entry.path, entry.directory))
         } catch (error) { pushToast('Cannot insert file reference', String(error), 'danger') }
         return
       }
@@ -940,7 +1021,7 @@ export function TerminalPane({
       onActivateRef.current()
       if (!connectedRef.current) return false
       term.options.disableStdin = false
-      term.paste(text)
+      pasteText(text)
       return true
     })
 
@@ -1034,11 +1115,14 @@ export function TerminalPane({
           taLen: textareaLen()
         })
       }
-      const inputHeld = seqRef.current.awaitingSnapshot && !overflowResyncRef.current
-      if (liveRef.current && deliver && !inputHeld) {
-        if (reply) clientRef.current.sendStdin(info.id, d, true)
-        else clientRef.current.sendStdin(info.id, d)
+      if (!liveRef.current || !deliver) return
+      if (!reply) {
+        deliverInput(d)
+        return
       }
+      // A reply during a hold answers output below the snapshot's cutoff, computed
+      // against the screen the import replaces; output above it raises its own queries.
+      if (!inputHeld()) clientRef.current.sendStdin(info.id, d, true)
     })
 
     seqRef.current = {
@@ -1103,6 +1187,7 @@ export function TerminalPane({
           )
         }
         overflowResyncRef.current = false
+        releaseHeldInput()
         if (s.synced) {
           s.catchup = false
           const flushCatchup = (): void => {
@@ -1154,6 +1239,7 @@ export function TerminalPane({
         s.catchup = false
         s.synced = true
         setSynced(true)
+        releaseHeldInput()
         const pending = s.pending
         s.pending = []
         s.pendingBytes = 0
@@ -1239,6 +1325,9 @@ export function TerminalPane({
         term.textarea?.removeEventListener('keydown', onKeyDownTrace)
       }
       disposeData.dispose()
+      const dropped = heldInputRef.current.entries.length
+      if (dropped > 0) console.warn(`houston: session ${info.id} dropped ${dropped} held input entries: the pane closed before its attach snapshot landed`)
+      heldInputRef.current = { entries: [], codeUnits: 0, overflowLogged: false }
       linkProviderDisposable.dispose()
       webLinkProviderDisposable.dispose()
       taskLinkProviderDisposable.dispose()
@@ -1452,6 +1541,7 @@ export function TerminalPane({
     skipSnapshotOnceRef.current = false
     seqRef.current.awaitingSnapshot = snapshot
     clientRef.current.attachSession(info.id, replayBytes, snapshot || undefined, snapshot ? undefined : fromOffset)
+    releaseHeldInput()
   }
 
   /** A pane that fell too far behind takes the daemon's screen instead of dropping
