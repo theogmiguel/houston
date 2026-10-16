@@ -112,6 +112,7 @@ export interface GhosttySurfaceCreateOptions {
   readonly onInputRefused?: (message: string) => void
   readonly onResize: (cols: number, rows: number) => void
   readonly onSelectionChange: () => void
+  readonly onPaint: () => void
   readonly beforeKey: (event: KeyboardEvent) => boolean
   readonly onLinkActivate: (text: string, event: MouseEvent) => void
   readonly resolveLink: (
@@ -337,6 +338,9 @@ export class GhosttyPaneTerminal implements PaneTerminal {
         },
         onSelectionChange: () => {
           for (const listener of this.selectionListeners) listener()
+        },
+        onPaint: () => {
+          for (const listener of this.renderListeners) listener()
         },
         beforeKey: (event) => this.keyHandler?.(event) ?? true,
         onLinkActivate: (text, event) => this.activateLink(text, event),

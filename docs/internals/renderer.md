@@ -86,6 +86,15 @@ an unreported reply loss. These are bounded admission policies, not delivery rec
 WebSocket acceptance does not establish PTY consumption. Large content should use
 files; renderer input does not add a second unbounded queue.
 
+`WriteLatencyTracker` (`houston/latency.ts`) writes keystroke latency to the app's debug
+log. `slow round trip` times a keystroke to the next output frame of its session reaching
+the socket handler; `slow echo paint` times it to the pane's first paint after that frame
+has been parsed, with nothing left in the pane's write queue. The daemon merges a session's
+queued output into one frame, so one frame closes every keystroke sent before it; each
+record names the oldest, how many keystrokes it closed and how many records the
+per-session five-second throttle suppressed. Both are logged only above 250 ms. A
+session keeps at most eight open marks; further keystrokes are counted, not timed.
+
 `PaneWriteQueue` (`pane/writeQueue.ts`) is the **inbound** pipeline, between arriving frames
 and the engine's synchronous `term.write`. It owns a hard byte chunk ceiling,
 a single-write-in-flight gate, a stalled-write watchdog, and

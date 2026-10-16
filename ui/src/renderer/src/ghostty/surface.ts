@@ -524,6 +524,7 @@ export interface GhosttyTerminalSurfaceOptions {
   readonly onInputRefused?: (message: string) => void
   readonly onResize: (cols: number, rows: number) => void
   readonly onSelectionChange: () => void
+  readonly onPaint?: () => void
   readonly beforeKey: (event: KeyboardEvent) => boolean
   readonly onLinkActivate: (text: string, event: MouseEvent) => void
   readonly onContextMenu?: (event: MouseEvent) => void
@@ -1993,6 +1994,7 @@ export class GhosttyTerminalSurface {
     paintStats.paintMs += performance.now() - paintStartedAt
     paintStats.paintFrames += 1
     this.paintedFrames += 1
+    this.options.onPaint?.()
   }
 
   private scheduleCursorBlink(): void {

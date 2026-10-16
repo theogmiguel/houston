@@ -81,12 +81,12 @@ async function connectFakeClient(): Promise<{ client: HoustonClient; ws: MockWeb
 }
 
 function trackerState(client: HoustonClient): {
-  pending: Map<number, unknown[]>
+  pending: Map<number, { marks: unknown[] }>
   lastEmittedMs: Map<string, number>
 } {
   return (
     client as unknown as {
-      latency: { pending: Map<number, unknown[]>; lastEmittedMs: Map<string, number> }
+      latency: { pending: Map<number, { marks: unknown[] }>; lastEmittedMs: Map<string, number> }
     }
   ).latency
 }
@@ -100,7 +100,7 @@ describe('HoustonClient frame dispatch (Finding 2)', () => {
     const { client, ws } = await connectFakeClient()
 
     client.sendStdin(7, 'a')
-    expect(trackerState(client).pending.get(7)?.length).toBe(1)
+    expect(trackerState(client).pending.get(7)?.marks.length).toBe(1)
 
     let received: [number, number, Uint8Array] | null = null
     client.onFrame = (session, offset, payload) => {
@@ -110,7 +110,7 @@ describe('HoustonClient frame dispatch (Finding 2)', () => {
     const payload = new Uint8Array([1, 2, 3])
     ws.onmessage?.({ data: encodeOutputFrame(7, 42, payload) })
 
-    expect(trackerState(client).pending.get(7)?.length ?? 0).toBe(0)
+    expect(trackerState(client).pending.get(7)?.marks.length ?? 0).toBe(0)
     expect(received).toEqual([7, 42, payload])
   })
 
@@ -172,7 +172,7 @@ describe('HoustonClient session teardown (Finding 3)', () => {
     ).toBe(true)
 
     client.sendStdin(3, 'b')
-    expect(trackerState(client).pending.get(3)?.length).toBe(1)
+    expect(trackerState(client).pending.get(3)?.marks.length).toBe(1)
 
     let subscriberCalled: unknown = null
     client.subscribeAll((msg) => {
