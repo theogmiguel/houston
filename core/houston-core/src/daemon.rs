@@ -2997,7 +2997,10 @@ fn spawn_with_shell_fallback(
     let mut cmd = first_cmd;
     loop {
         match slave.spawn_command(cmd) {
-            Ok(child) => return Ok(child),
+            Ok(child) => {
+                crate::power_throttling::note_spawn();
+                return Ok(child);
+            }
             Err(err) => {
                 let next = if shell_spawn_error_is_retryable(&err) {
                     candidates.next()
@@ -10584,6 +10587,7 @@ impl Daemon {
         if session.removed.load(Ordering::Acquire) {
             return false;
         }
+        crate::power_throttling::note_output();
         let raw_chunk = chunk;
         let raw_offset = session
             .raw_output_bytes

@@ -8,7 +8,9 @@ pipeline and the MCP endpoint. One binary hosts it: `core/houston-core/src/main.
 detached — spawned by `houston-supervisor` on Linux or directly on Windows — and outliving
 the Tauri app, which connects to it as a `/ws` client (`src-tauri/src/daemon_host.rs`) rather
 than linking it in. See [overview.md](overview.md#one-daemon-one-host--and-an-app-that-is-a-client)
-for the reversal.
+for the reversal. On Windows the daemon opts itself and every process it starts out of
+EcoQoS execution-speed throttling (`power_throttling.rs`; see
+[Background loops](#background-loops)); Linux has no EcoQoS, so there both are no-ops.
 
 ## Module map
 
@@ -33,6 +35,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | persistence | `db.rs` | SQLite persistence (WAL); writes only on rare control-plane events |
 | | `paths.rs`, `home_dir.rs` | Channel-scoped state paths; the home dir, resolved per platform |
 | | `lock.rs` | The daemon-ownership advisory `flock` |
+| | `power_throttling.rs` | Windows EcoQoS opt-out for the daemon and every process it starts |
 | | `server.rs` | WebSocket endpoint: handshake, control dispatch, binary PTY path |
 | | `boot.rs` | The background-loop set: one spawn list, called only by the daemon's own `main` |
 | | `logging.rs` | The `tracing` subscriber — stdout plus a rotating file sink |
@@ -514,11 +517,27 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns twelve tasks:
+`boot::spawn_background_loops` is called only by the daemon host and spawns thirteen tasks:
 `swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
-`worktree_cleanup_loop`, `conflict_prediction_loop`, `task_pr_watch_loop`, `remote_loops`, `pr_watch_loop`,
-`checkout_watch_loop`, `slack_loops` and `task_tracker_loop`. The checkout
-watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
+`worktree_cleanup_loop`, `conflict_prediction_loop`, `task_pr_watch_loop`, `remote_loops`,
+`pr_watch_loop`, `checkout_watch_loop`, `slack_loops`, `task_tracker_loop` and
+`power_throttling::sweep_loop`.
+
+Windows throttles a windowless process 1–3 s after it starts working. A session is three
+such processes: its ConPTY console host (`conhost.exe`), its child and that child's
+children. Throttled, a flooding pane fell from about 12 MB/s to 20–60 KB/s, attached or
+not; each process limits it on its own. An opt-out is per process and is not inherited, so
+the daemon opts itself out at start and the sweep opts out every descendant of the daemon
+process, once per process. It walks parent links from the daemon's pid in one ToolHelp
+snapshot, bounded at 4096 descendants. It remembers each handled pid with its creation time
+so a reused pid is handled again, and it drops exited ones on every pass. A snapshot costs
+milliseconds on a busy machine, so passes run right after a spawn, three more at one-second
+intervals, and then at most once a second while some session produces output; otherwise
+the loop parks. A process that cannot be opened or set has usually exited and is logged at
+debug level. The cost is battery life: Windows applies EcoQoS to save power, and agent
+trees run at full speed on battery too. On Linux the loop returns at once.
+
+The checkout watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
 debounces changes and broadcasts updated checkout identity. It reacts only to content
 changes that name the HEAD file and coalesces them into one pending flag per HEAD: its
 own refresh reads HEAD, so waking on reads would feed back into itself. Adopted sessions
