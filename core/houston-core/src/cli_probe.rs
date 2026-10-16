@@ -237,6 +237,7 @@ fn codex_local_models(path: &std::path::Path) -> (Option<Vec<String>>, &'static 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::time::Instant;
 
     #[cfg(unix)]
