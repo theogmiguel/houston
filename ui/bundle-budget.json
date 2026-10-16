@@ -128,9 +128,14 @@
     "",
     "The update install modal joined them behind one `lazy()` in UpdateInstallHost:",
     "it renders only while an update installs, and the headroom it gave back pays",
-    "for the WSL environment wiring that must sit on the boot path."
+    "for the WSL environment wiring that must sit on the boot path.",
+    "",
+    "Re-cut against 946,074 bytes (one boot chunk) with the 126 bytes of headroom",
+    "the previous cut left: input typed while a pane's attach snapshot is pending",
+    "is held and released in order inside every mounted pane, so it is boot-path",
+    "code like the write-queue overflow resync."
   ],
-  "maxBootBytes": 944582,
+  "maxBootBytes": 946200,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",
