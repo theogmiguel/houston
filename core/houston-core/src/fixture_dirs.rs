@@ -48,6 +48,11 @@ fn repository_free_fallback(temp: &Path) -> PathBuf {
     )
 }
 
+/// The directory every [`tempdir_outside_git`] is created in.
+pub fn root() -> &'static Path {
+    base()
+}
+
 /// A fresh temporary directory outside every git repository.
 pub fn tempdir_outside_git() -> tempfile::TempDir {
     tempfile::Builder::new()

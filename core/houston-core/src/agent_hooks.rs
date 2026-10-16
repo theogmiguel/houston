@@ -73,6 +73,26 @@ pub struct ConfigHome {
     pub xdg_config: Option<PathBuf>,
 }
 
+static CONFINED_TO: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
+
+/// Test harnesses call this before building daemons. From then on a config home outside
+/// `roots` is refused, so a daemon handed the account's home cannot rewrite its CLI config.
+#[doc(hidden)]
+pub fn confine_config_homes_for_tests(roots: Vec<PathBuf>) {
+    let _ = CONFINED_TO.set(roots);
+}
+
+pub(crate) fn ensure_confined(path: &Path) -> Result<()> {
+    match CONFINED_TO.get() {
+        Some(roots) if !roots.iter().any(|root| path.starts_with(root)) => bail!(
+            "refusing agent CLI config under {}: this test process confines config homes to \
+             {roots:?}; give the daemon a temporary HOME through its HostEnv",
+            path.display()
+        ),
+        _ => Ok(()),
+    }
+}
+
 impl ConfigHome {
     pub fn from_env(env: &crate::host_env::HostEnv) -> Result<Self> {
         #[cfg(unix)]
@@ -89,8 +109,18 @@ impl ConfigHome {
             .var("XDG_CONFIG_HOME")
             .filter(|d| !d.trim().is_empty())
             .map(PathBuf::from);
+        let home = PathBuf::from(home);
+        ensure_confined(&home)?;
+        let overrides = ["CLAUDE_CONFIG_DIR", "CODEX_HOME"]
+            .into_iter()
+            .filter_map(|name| env.var(name))
+            .filter(|dir| !dir.trim().is_empty())
+            .map(PathBuf::from);
+        for dir in xdg.iter().cloned().chain(overrides) {
+            ensure_confined(&dir)?;
+        }
         Ok(Self {
-            home: PathBuf::from(home),
+            home,
             xdg_config: xdg,
         })
     }

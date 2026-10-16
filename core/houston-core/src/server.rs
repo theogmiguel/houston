@@ -6085,7 +6085,7 @@ mod frame_flush_tests {
             let daemon = Daemon::new(crate::daemon::DaemonConfig::new(
                 "token".into(),
                 state.path().join("test.db"),
-                crate::host_env::HostEnv::capture(),
+                crate::host_env::HostEnv::capture_with_home(state.path()),
             ))
             .unwrap();
             let id = daemon

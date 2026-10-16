@@ -7735,6 +7735,9 @@ impl Daemon {
                 false
             }
         });
+        for path in &paths {
+            crate::agent_hooks::ensure_confined(path)?;
+        }
         paths.sort();
         paths.dedup();
         Ok((paths, (!errors.is_empty()).then(|| errors.join("; "))))
@@ -24737,7 +24740,7 @@ mod hook_state_registry_tests {
             let daemon = Daemon::new(DaemonConfig::new(
                 "t".into(),
                 db_path.clone(),
-                crate::host_env::HostEnv::capture(),
+                crate::host_env::HostEnv::capture_with_home(state.path()),
             ))
             .unwrap();
             daemon
@@ -24758,7 +24761,7 @@ mod hook_state_registry_tests {
         let _daemon2 = Daemon::new(DaemonConfig::new(
             "t".into(),
             db_path,
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
         ))
         .unwrap();
         let healed = crate::hook_state::read_scopes(state.path());
@@ -24777,7 +24780,7 @@ mod pr_watch_stall_tests {
         let daemon = Daemon::new(DaemonConfig::new(
             "pr-watch-test".into(),
             state.path().join("test.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
         ))
         .unwrap();
         let workspace = state.path().join("workspace");
@@ -25234,7 +25237,7 @@ mod agent_profile_env_tests {
         let daemon = Daemon::new(DaemonConfig::new(
             "t".into(),
             state.path().join("t.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
         ))
         .unwrap();
         daemon
@@ -25311,14 +25314,7 @@ mod agent_profile_env_tests {
 
     #[test]
     fn a_tilde_in_a_profile_is_expanded_before_it_reaches_the_agent() {
-        let (daemon, _state) = test_daemon();
-        let home = std::env::var_os("HOME")
-            .filter(|h| !h.is_empty())
-            .or_else(|| std::env::var_os("USERPROFILE"))
-            .filter(|h| !h.is_empty())
-            .map(std::path::PathBuf::from)
-            .expect("HOME or USERPROFILE must be set to run this test");
-        let home = home.display().to_string();
+        let (daemon, state) = test_daemon();
         daemon
             .agent_profile_upsert(
                 None,
@@ -25335,10 +25331,7 @@ mod agent_profile_env_tests {
             .agent_profile_set_active(proto::AgentKind::Claude, Some(profiles[0].id))
             .unwrap();
 
-        let expected = std::path::Path::new(&home)
-            .join(".claude-personal")
-            .display()
-            .to_string();
+        let expected = state.path().join(".claude-personal").display().to_string();
         assert_eq!(
             daemon.active_agent_profile_env(proto::AgentKind::Claude),
             Some(("CLAUDE_CONFIG_DIR".to_string(), expected)),
@@ -25807,7 +25800,7 @@ mod idle_profile_tests {
         let daemon = Daemon::new(DaemonConfig::new(
             "t".into(),
             state.path().join("t.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
         ))
         .unwrap();
         (daemon, state)
@@ -26449,7 +26442,7 @@ mod handoff_refusal_tests {
         let daemon = Daemon::new(DaemonConfig::new(
             "t".into(),
             state.path().join("t.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
         ))
         .unwrap();
         (daemon, state)
@@ -26816,7 +26809,7 @@ mod handoff_platform_refusal_tests {
         let daemon = Daemon::new(DaemonConfig::new(
             "t".into(),
             state.path().join("t.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
         ))
         .unwrap();
         let result = daemon.begin_handoff(None);
@@ -26833,31 +26826,6 @@ mod handoff_platform_refusal_tests {
 mod codex_trust_row_tests {
     use super::*;
 
-    struct HomeGuard(Option<std::ffi::OsString>);
-    impl Drop for HomeGuard {
-        fn drop(&mut self) {
-            if let Some(v) = self.0.take() {
-                // SAFETY: single-threaded test process; no other thread reads env
-                // concurrently with this restore.
-                unsafe {
-                    std::env::set_var("HOME", v);
-                }
-            } else {
-                std::env::remove_var("HOME");
-            }
-        }
-    }
-
-    fn home_guard(home: &std::path::Path) -> HomeGuard {
-        let prev = std::env::var_os("HOME");
-        // SAFETY: single-threaded test process; no other thread reads env
-        // concurrently with this mutation.
-        unsafe {
-            std::env::set_var("HOME", home);
-        }
-        HomeGuard(prev)
-    }
-
     #[test]
     fn codex_trust_is_reported_on_the_setup_row() {
         let home = tempfile::tempdir().unwrap();
@@ -26866,12 +26834,11 @@ mod codex_trust_row_tests {
         std::fs::write(codex.join("hooks.json"), "{}").unwrap();
         std::fs::write(codex.join("config.toml"), "[model]\nname = \"gpt-5\"\n").unwrap();
 
-        let _guard = home_guard(home.path());
         let state = tempfile::tempdir().unwrap();
         let daemon = Daemon::new(DaemonConfig::new(
             "t".into(),
             state.path().join("t.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(home.path()),
         ))
         .unwrap();
 
@@ -26966,7 +26933,7 @@ mod exit_tail_tests {
         let daemon = Daemon::new(DaemonConfig::new(
             "t".into(),
             state.path().join("t.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(state.path()),
         ))
         .unwrap();
         let manifest = crate::adoption::SessionManifest {

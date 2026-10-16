@@ -411,7 +411,7 @@ mod tests {
         let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig::new(
             "test-token-0000-0000-000000000000".to_string(),
             dir.path().join("test.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(dir.path()),
         ))
         .unwrap();
 
@@ -582,7 +582,7 @@ mod tests {
         let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig::new(
             "test-token-0000-0000-000000000000".to_string(),
             dir.path().join("test.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(dir.path()),
         ))
         .unwrap();
 
@@ -630,7 +630,7 @@ mod tests {
         let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig::new(
             "test-token-0000-0000-000000000000".to_string(),
             dir.path().join("test.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(dir.path()),
         ))
         .unwrap();
 
@@ -666,7 +666,7 @@ mod tests {
         let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig::new(
             "test-token-0000-0000-000000000000".to_string(),
             dir.path().join("test.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(dir.path()),
         ))
         .unwrap();
 
@@ -690,7 +690,7 @@ mod tests {
         let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig::new(
             "test-token-0000-0000-000000000000".to_string(),
             dir.path().join("test.db"),
-            crate::host_env::HostEnv::capture(),
+            crate::host_env::HostEnv::capture_with_home(dir.path()),
         ))
         .unwrap();
 

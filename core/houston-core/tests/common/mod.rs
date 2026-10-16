@@ -102,6 +102,12 @@ fn throwaway_home() -> &'static std::path::Path {
 /// and `XDG_CONFIG_HOME`. Values under the temp dir are a test's own and are kept; any other
 /// (including an unset `HOME`, which falls back to the account's) becomes a throwaway.
 fn isolate_config(env: houston_core::host_env::HostEnv) -> houston_core::host_env::HostEnv {
+    // Any other config home is refused daemon-side, whatever environment a test builds.
+    houston_core::agent_hooks::confine_config_homes_for_tests(vec![
+        std::env::temp_dir(),
+        houston_core::fixture_dirs::root().to_path_buf(),
+        std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")),
+    ]);
     let home_var = if env.var_os("HOME").is_some() {
         "HOME"
     } else {
