@@ -235,7 +235,6 @@ async fn restored_sessions_get_their_checkout_from_the_watcher_not_the_listing()
         let db = houston_core::db::Db::open(&db_path).unwrap();
         for id in STORED {
             db.insert_session(&stored_session(id, repo.path())).unwrap();
-            db.acknowledge_uncontained_recovery(id).unwrap();
         }
     }
     let trace_dir = tempfile::tempdir().unwrap();

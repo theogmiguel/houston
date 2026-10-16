@@ -1,4 +1,4 @@
-# Wire protocol v142
+# Wire protocol v143
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -53,7 +53,8 @@ with `visible: true`, or having created the session on this socket
 withdraws one. The PTY is always drained daemon-side, so an agent never blocks
 on a pane nobody is watching, and scrollback keeps recording either way. Stdin
 frames are accepted for any live session; a write failure comes back as an
-`error` with `context: "stdin"`.
+`error` with `context: "stdin"`, except for a session that is neither live nor retained,
+whose frames are dropped without one.
 
 **Frames are bounded per connection and per session, by payload bytes.** Each
 socket owns one queue per session it takes frames for, capped at 4 MiB of
@@ -94,15 +95,14 @@ failure not given a typed refusal comes back as `error`.
 | `hello` | `token`, `protocol` | `hello_ok` (direct), or `error` + close |
 | `session_create` | `request?: u32` (connection-local correlation), `agent: AgentKind`, `project_dir`, `cmd?: string[]` (required for `custom`), `cols?`/`rows?` (default 80×24), `cwd_from?: u32` (start in that session's live cwd), `shell_integration?` (default true), `auto_approve?` (default false; refused for a kind with no bypass flag), `acp?` (slug from the ACP roster; refused with `cmd`), `profile?: ProfileChoice`, `prompt?` (initial task, delivered as argv, or as a `.houston/prompts/` file the child is told to read once it is over the argv-safe threshold), `model?` (provider model id), `effort?` (provider reasoning effort; refused when unsupported) | `session_created` (bcast); direct `session_create_result` when `request` is supplied, including refusal; this socket starts receiving that session's frames |
 | `session_kill` | `session`, `confirm_children?` | `session_state` (bcast); refused `live_children_confirmation_required:` when the pane has live children and `confirm_children` is not set |
-| `session_close` | `session`, `confirm_children?` | `session_removed` (bcast); same children refusal |
-| `session_respawn` | `session`, `shell_integration?`, `cwd?` (must exist), `shell?` (absolute shell binary, shell panes only), `force?` (restart a still-live session: kill, reap, respawn — without it a live session is refused by name), `fresh?` (v119: start a fresh CLI and forget the conversation; absent, a Claude session with a valid resume handle is relaunched with `--resume <id>`, and one whose handle fails validation starts fresh with `resume_notice` set) | broadcasts; a failed spawn leaves the husk intact |
-| `session_recovery_check` | `session`, `acknowledge_uncontained?` (default false; true explicitly asserts all previous uncontained workload processes have stopped) | `session_updated` with current recovery notice (bcast), plus `error` while ownership remains unsafe or unknown. Read-only recheck launches and signals nothing. Acknowledgement refuses for recorded live roots, contained scopes or unreadable receipts; it retains conversations and held instructions without resuming them |
+| `session_close` | `session`, `confirm_children?` | `session_removed` (bcast); same children refusal. An unknown or already removed session succeeds with no reply, and so does a session already closing; a parent's close leaves a child that is already closing to that close. Closing a retained pane first stops processes its previous workload left |
+| `session_respawn` | `session`, `shell_integration?`, `cwd?` (must exist), `shell?` (absolute shell binary, shell panes only), `force?` (restart a still-live session: kill, reap, respawn — without it a live session is refused by name), `fresh?` (v119: start a fresh CLI and forget the conversation; absent, a Claude session with a valid resume handle is relaunched with `--resume <id>`, and one whose handle fails validation starts fresh with `resume_notice` set) | broadcasts; a failed spawn leaves the husk intact. Before replacing a retained or ended pane the daemon stops processes its previous workload left (its scope on Linux, else its verified PTY root) |
 | `session_sleep` | `session` | `session_state` and `session_updated` (bcast); Linux only, idle top-level Claude/Codex with a validated conversation and no external work or live children. Persists before graceful termination; a timeout leaves the live PTY usable |
 | `session_wake` | `session` | `session_created` for the exact resumed conversation and `session_removed` for its old placeholder; a validation failure keeps it sleeping with a visible notice. Focus never wakes it |
 | `session_memory_get` | `session` | `session_memory` (direct); one process-tree PSS measurement off the terminal path, or an explicit unavailable reason |
-| `session_resize` | `session`, `cols`, `rows` | `session_resized` (direct) |
+| `session_resize` | `session`, `cols`, `rows` | `session_resized` (direct); an unknown or removed session gets no reply and no `error` |
 | `session_list` | — | `session_list` (direct) |
-| `session_attach` | `session`, `replay_bytes?` (cap the tail; omitted = whole ring), `snapshot?` (v94: ask for emulator state instead of a byte replay), `from_offset?` + `generation?` (v129: the offset the client already holds and the run it came from; with both matching the ring, `scrollback` carries only the bytes after it and `replayed_bytes = bytes_seen - from_offset`, otherwise the reply is the `replay_bytes` replay) | `scrollback` **or** `attach_snapshot` (direct), numbered by `attempt`; this socket starts receiving that session's frames, and nothing below the reply's cutoff follows it. `snapshot: true` is answered with `attach_snapshot` when the daemon has an emulator and could encode one, and with `scrollback` otherwise — a client must handle either reply |
+| `session_attach` | `session`, `replay_bytes?` (cap the tail; omitted = whole ring), `snapshot?` (v94: ask for emulator state instead of a byte replay), `from_offset?` + `generation?` (v129: the offset the client already holds and the run it came from; with both matching the ring, `scrollback` carries only the bytes after it and `replayed_bytes = bytes_seen - from_offset`, otherwise the reply is the `replay_bytes` replay) | `scrollback` **or** `attach_snapshot` (direct), numbered by `attempt`; this socket starts receiving that session's frames, and nothing below the reply's cutoff follows it. An unknown or removed session gets no reply and no `error`, and clears this socket's state for it. `snapshot: true` is answered with `attach_snapshot` when the daemon has an emulator and could encode one, and with `scrollback` otherwise — a client must handle either reply |
 | `session_title_reset` | `session` | `session_renamed` (bcast); recomputes the strongest available automatic candidate |
 | `session_title_generate` | `session` | A one-shot generated `auto` title or a named refusal; stronger sources and changed revisions discard the result |
 | `generated_titles_get` | — | `generated_titles` with the current off-default setting |
@@ -113,12 +113,12 @@ failure not given a typed refusal comes back as `error`.
 | `tag_update` | `tag`, `name`, `color` (same rules as `tag_create`) | `tag_list` (bcast); sessions follow — they carry the id |
 | `tag_delete` | `tag` | `tag_list` + `tag_deleted` (bcast); detaches from every session carrying it (the caller owns the confirm) |
 | `session_reparent` | `session`, `project_dir` | `session_reparented` (bcast) |
-| `session_cwd` | `session` | `session_cwd` (direct) — live cwd, resolved |
+| `session_cwd` | `session` | `session_cwd` (direct) — live cwd, resolved; an unknown or removed session gets no reply and no `error` |
 | `session_cwds` | `sessions: u32[]` | `session_cwds` (direct); unknown ids degrade to `cwd: null` |
 | `pr_watch_list` | — | `pr_watch_list` (direct), grouped by session |
 | `pr_watch_unwatch` | `session`, `number` | removes that pane's watch and broadcasts `pr_watch_changed` |
 | `session_running_procs` | `sessions: u32[]` | `session_running_procs` (direct) |
-| `session_visibility` | `session`, `visible` | none; changes this socket's frame filter. Hiding an unknown or removed session clears connection state without error; showing an unknown session is refused |
+| `session_visibility` | `session`, `visible` | none; changes this socket's frame filter. An unknown or removed session clears connection state without error |
 | `wait_for_idle` | `request`, `session`, `timeout_ms?` (default 10000, cap 120000), `idle_quiet_ms?` (default 500, cap 30000) | `idle` (bcast), keyed by `request` |
 | `session_policy_get` | — | `session_policy` (direct) |
 | `session_policy_set` | `policy: SessionPolicy` | `session_policy` (bcast) |
@@ -536,7 +536,7 @@ every refusal names the setting.
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `session_counts?: UsageSessionCounts`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
-| `error` | `message`, `context?` | direct, to the offending connection only |
+| `error` | `message`, `context?` | direct, to the offending connection only. A failed `session_close`, `session_respawn`, `session_wake`, `session_attach`, `session_resize` or `session_visibility` carries `context: "session:<id>"` naming the session it asked about |
 | `browser_tool_call` | `request_id`, `tool`, `args: JSON`, `session_id`, `workspace_id` | daemon-initiated, to the explicitly registered browser relay connection — the browser-tool relay (v93, Detach) |
 
 ## Shared shapes
@@ -552,7 +552,7 @@ ContextState       snake: unknown | idle | working | near_limit | reset
 ContextSource      snake: reported | derived
 SessionContext     used_tokens, window_tokens?, used_percent? (0-100, floored),
                    state: ContextState, source: ContextSource, as_of_ms
-RestoreReason      kebab: circuit-breaker | invalid-cwd | ssh | budget | previous-crash | safe-mode | spawn-failed
+RestoreReason      kebab: invalid-cwd | ssh | budget | previous-crash | safe-mode | spawn-failed
 
 SessionWorktree    path (checkout root), branch (Houston-recorded branch), repo_common_dir.
                    Only Houston-recorded worktrees are exposed; base_branch is not recorded.
@@ -1334,6 +1334,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 143 | **Panes resume after a crash without acknowledgement.** `session_recovery_check` and `RestoreReason` `circuit-breaker` are removed: before replacing or closing a retained pane the daemon stops the processes its previous workload left, so recovery needs no recheck, and one pane's failed respawn no longer defers the others. `session_close`, `session_visibility`, `session_attach`, `session_resize`, `session_cwd` and stdin frames for a session that is neither live nor retained succeed without an `error`, so a pane unmounting while its session is removed raises no error. Those requests' remaining failures carry `error.context` `session:<id>`. A `session_close` for a session already closing (a duplicate, or one its parent's close cascades to) succeeds without an `error`, and a parent's close leaves such a child to the close already removing it, so concurrent closes of one family converge. |
 | 142 | `session_checkout` gains `checkout_root?` and `worktree?`, so a session whose checkout the daemon resolves after a client attached (a restored session, a reparent) reaches the client complete. `hello_ok` and `session_list` read recorded checkout identity and run no git. |
 | 141 | `session_recovery_check` refreshes retained process-ownership refusals and supports explicit acknowledgement of stopped legacy or uncontained workloads without resuming held instructions. |
 | 140 | `pr_list` replies include the cached viewer login. `Routine.kind` identifies user and harness review routines, backfilled from existing harness mappings. `GitBranchInfo` gains upstream ahead/behind counts and committer time. `usage_summary` gains optional `session_counts` (`UsageSessionCounts`): exact distinct sessions by model and by day; older replies omit it. **Amend.** `git_commit` gains `amend` (default false): rewrites HEAD instead of adding a commit, and refuses with an error naming the branch and HEAD SHA when HEAD is already contained in its upstream. |

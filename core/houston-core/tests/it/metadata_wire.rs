@@ -265,9 +265,126 @@ async fn hiding_a_removed_session_is_idempotent() {
         },
     )
     .await;
-    match next_control(&mut ws).await {
-        proto::ServerMsg::Error { message, .. } => assert!(message.contains("unknown session id")),
-        msg => panic!("showing an unknown session must be refused: {msg:?}"),
+    send(&mut ws, &proto::ClientMsg::SessionList).await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::Error { message, .. } => {
+                panic!("showing a removed session must be ignored: {message}")
+            }
+            proto::ServerMsg::SessionList { .. } => break,
+            _ => {}
+        }
+    }
+    assert!(!daemon.session_hidden_everywhere(session));
+}
+
+#[tokio::test]
+async fn pane_teardown_requests_for_a_closed_session_send_no_error() {
+    let (addr, _state, _daemon) = start_daemon_with_handle().await;
+    let project = tempfile::tempdir().unwrap();
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    #[cfg(unix)]
+    let argv = vec!["sleep", "30"];
+    #[cfg(windows)]
+    let argv = vec!["ping", "-n", "31", "127.0.0.1"];
+    send(
+        &mut ws,
+        &serde_json::from_str(&create_custom_msg(argv, project.path())).unwrap(),
+    )
+    .await;
+    let session = expect_created(&mut ws).await.id;
+    send(
+        &mut ws,
+        &proto::ClientMsg::SessionClose {
+            session,
+            confirm_children: None,
+        },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::SessionRemoved { session: removed } if removed == session => break,
+            proto::ServerMsg::Error { message, .. } => panic!("close failed: {message}"),
+            _ => {}
+        }
+    }
+    for snapshot in [None, Some(true)] {
+        send(
+            &mut ws,
+            &proto::ClientMsg::SessionAttach {
+                session,
+                replay_bytes: None,
+                snapshot,
+                from_offset: None,
+                generation: None,
+            },
+        )
+        .await;
+    }
+    send(
+        &mut ws,
+        &proto::ClientMsg::SessionAttach {
+            session,
+            replay_bytes: None,
+            snapshot: None,
+            from_offset: Some(0),
+            generation: Some(1),
+        },
+    )
+    .await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::SessionResize {
+            session,
+            cols: 100,
+            rows: 30,
+        },
+    )
+    .await;
+    for visible in [true, false] {
+        send(
+            &mut ws,
+            &proto::ClientMsg::SessionVisibility { session, visible },
+        )
+        .await;
+    }
+    send(&mut ws, &proto::ClientMsg::SessionCwd { session }).await;
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(session, b"late keystroke").into(),
+    ))
+    .await
+    .unwrap();
+    send(&mut ws, &proto::ClientMsg::SessionList).await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::Error { message, context } => {
+                panic!("teardown request for a closed pane raised {context:?}: {message}")
+            }
+            proto::ServerMsg::Scrollback { .. } | proto::ServerMsg::AttachSnapshot { .. } => {
+                panic!("a closed pane must not replay")
+            }
+            proto::ServerMsg::SessionList { .. } => break,
+            _ => {}
+        }
+    }
+    send(
+        &mut ws,
+        &proto::ClientMsg::SessionRename {
+            session,
+            title: "renamed".into(),
+        },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::Error { message, .. } => {
+                assert!(message.contains("unknown session id"), "{message}");
+                break;
+            }
+            proto::ServerMsg::SessionList { .. } => panic!("renaming a closed pane must fail"),
+            _ => {}
+        }
     }
 }
 

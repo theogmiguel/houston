@@ -274,18 +274,6 @@ describe('environmentMux', () => {
     expect(debian.sent).toEqual([])
   })
 
-  it('routes recovery checks and explicit acknowledgements to the owning environment', () => {
-    const r = rig()
-    const sockets = connect(r, [{ entry: wslEntry('Ubuntu', 1) }])
-    r.clientSend({ type: 'session_recovery_check', session: tagSession(1, 6) })
-    r.clientSend({ type: 'session_recovery_check', session: tagSession(1, 6), acknowledge_uncontained: true })
-    expect(sockets.get('Ubuntu')!.json()).toEqual([
-      { type: 'session_recovery_check', session: 6 },
-      { type: 'session_recovery_check', session: 6, acknowledge_uncontained: true }
-    ])
-    expect(r.local.sent).toEqual([])
-  })
-
   it('routes archived results and instruction controls to their owning daemon', () => {
     const r = rig()
     const sockets = connect(r, [{ entry: wslEntry('Ubuntu', 1) }, { entry: wslEntry('Debian', 2) }])

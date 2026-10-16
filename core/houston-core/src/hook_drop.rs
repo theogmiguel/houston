@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -237,10 +237,31 @@ pub fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> Result<()> {
         .with_context(|| format!("writing temp file in {}", dir.display()))?;
     tmp.flush()
         .with_context(|| format!("flushing temp file in {}", dir.display()))?;
+    tmp.as_file()
+        .sync_all()
+        .with_context(|| format!("syncing temp file in {}", dir.display()))?;
     let dest = dir.join(name);
     tmp.persist(&dest)
         .map_err(|e| anyhow!("persisting {}: {}", dest.display(), e.error))?;
+    sync_dir(dir).with_context(|| format!("syncing directory {}", dir.display()))?;
     Ok(())
+}
+
+// Without both syncs, ext4 delayed allocation can leave a renamed or linked name pointing at
+// an empty file after power loss. Cost per write on ext4/NVMe: 8.6 ms synced vs 0.08 ms
+// unsynced (300 writes; 17-42 ms synced at load average 20).
+fn sync_dir(dir: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::fs::File::open(dir)?.sync_all()
+    }
+    // std cannot open a directory handle on Windows; NTFS journals the rename itself, so
+    // the file's own flush is the durable part there.
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        Ok(())
+    }
 }
 
 fn ensure_dir(dir: &Path) -> Result<()> {
@@ -328,7 +349,15 @@ pub(crate) fn write_drop_with(
         std::process::id(),
         N.fetch_add(1, Ordering::Relaxed)
     ));
-    std::fs::write(&tmp, &bytes).with_context(|| format!("writing {}", tmp.display()))?;
+    let durable = needs_sync(drop);
+    {
+        use std::io::Write as _;
+        let mut file =
+            std::fs::File::create(&tmp).with_context(|| format!("writing {}", tmp.display()))?;
+        file.write_all(&bytes)
+            .and_then(|()| if durable { sync_file(&file) } else { Ok(()) })
+            .with_context(|| format!("writing {}", tmp.display()))?;
+    }
     let mut seq = sweep_and_next_seq(dir, drop.session);
     loop {
         if seq > MAX_SEQ {
@@ -345,6 +374,9 @@ pub(crate) fn write_drop_with(
         match claim(&tmp, &dest) {
             Ok(()) => {
                 let _ = std::fs::remove_file(&tmp);
+                if durable {
+                    sync_claimed(dir, &dest);
+                }
                 return Ok(dest);
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => seq += 1,
@@ -356,6 +388,12 @@ pub(crate) fn write_drop_with(
                         dest.display()
                     );
                     let _ = std::fs::remove_file(&tmp);
+                    if durable {
+                        if let Err(error) = std::fs::File::open(&dest).and_then(|f| sync_file(&f)) {
+                            tracing::warn!("syncing copied hook drop {}: {error}", dest.display());
+                        }
+                        sync_claimed(dir, &dest);
+                    }
                     return Ok(dest);
                 }
                 Err(copy_err) => {
@@ -371,6 +409,38 @@ pub(crate) fn write_drop_with(
                 }
             },
         }
+    }
+}
+
+// Only drops recovery records as the root conversation are synced; losing another one to power
+// loss loses a status cue. Per drop on ext4/NVMe (300 into one dir, load 2-6): SessionStart,
+// prompt submit and turn end 2.1-16 ms synced; tool and other lifecycle events 0.45-0.8 ms.
+fn needs_sync(drop: &HookDrop) -> bool {
+    let provider = drop
+        .agent
+        .as_deref()
+        .map(crate::agent_hooks::provider_from_slug)
+        .unwrap_or(Ok(houston_protocol::AgentKind::Claude));
+    provider.is_ok_and(|provider| {
+        drop.session_id.as_deref().is_some_and(|id| !id.is_empty())
+            && crate::db::resume_metadata::names_root_conversation_event(provider, drop)
+    })
+}
+
+fn sync_file(file: &std::fs::File) -> std::io::Result<()> {
+    #[cfg(test)]
+    tests::SYNCED_FILES.with(|count| count.set(count.get() + 1));
+    file.sync_all()
+}
+
+// The drop is already delivered; a failed directory sync only weakens power-loss durability,
+// and failing the hook here would make its caller deliver the event twice.
+fn sync_claimed(dir: &Path, dest: &Path) {
+    if let Err(error) = sync_dir(dir) {
+        tracing::warn!(
+            "syncing hook drop directory for {}: {error}",
+            dest.display()
+        );
     }
 }
 
@@ -429,14 +499,50 @@ impl DropDirState {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PassOutcome {
     pub applied: usize,
     pub kept: usize,
     pub collected: usize,
     pub listed_ok: bool,
     pub listing_limit_exceeded: Option<usize>,
-    pub metadata_failed: bool,
+    /// Recovery sessions whose drop the callback could not store (`DropVerdict::Retry`).
+    pub failed_sessions: BTreeSet<u32>,
+    /// Recovery drops set aside as unreadable or invalid evidence.
+    pub quarantined: usize,
+}
+
+/// Suffix of a recovery drop set aside as invalid; it no longer ends in `.json`, so no pass
+/// reads it again.
+pub const QUARANTINE_SUFFIX: &str = ".quarantined";
+// Enough evidence to diagnose a damaged directory; beyond it bad drops are deleted, so
+// repeated power loss cannot fill the directory.
+pub const QUARANTINE_MAX: usize = 64;
+
+fn quarantine(path: &Path, held: &mut usize, reason: &str, out: &mut PassOutcome) {
+    let target = PathBuf::from(format!("{}{QUARANTINE_SUFFIX}", path.display()));
+    let result = if *held >= QUARANTINE_MAX {
+        std::fs::remove_file(path)
+            .or_else(|_| std::fs::remove_dir(path))
+            .map(|()| {
+                format!("deleted it (quarantine limit {QUARANTINE_MAX} reached, actual {held})")
+            })
+    } else {
+        std::fs::rename(path, &target).map(|()| {
+            *held += 1;
+            format!("moved it to {}", target.display())
+        })
+    };
+    match result {
+        Ok(action) => {
+            tracing::warn!("hook metadata recovery: {} {reason}; expected a regular file of at most 1048576 bytes holding a version {DROP_V} drop for the session named in its filename, sampled no later than now; {action}; the pane resumes from its stored handle", path.display());
+            out.quarantined += 1;
+        }
+        Err(error) => {
+            tracing::warn!("hook metadata recovery: {} {reason}; setting it aside failed ({error}); skipped, the pane resumes from its stored handle", path.display());
+            out.kept += 1;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -538,11 +644,11 @@ pub fn run_pass_with_name_io(
 
     let mut present: HashSet<OsString> = HashSet::new();
     let mut files: Vec<(DropName, PathBuf, OsString)> = Vec::new();
+    let mut held = 0usize;
     for (index, entry) in entries.enumerate() {
         // Refuse a partial recovery scan before any application: skipped newer
         // drops could invalidate an older handle. Steady draining stays unchanged.
         if pass == Pass::RecoveryMetadata && index >= 4096 {
-            tracing::warn!("hook metadata recovery directory limit 4096 exceeded (actual at least {} entries) in {}; restore refused", index + 1, dir.display());
             out.listed_ok = false;
             out.listing_limit_exceeded = Some(index + 1);
             return out;
@@ -570,6 +676,7 @@ pub fn run_pass_with_name_io(
             continue;
         };
         if !text.ends_with(".json") {
+            held += usize::from(text.ends_with(QUARANTINE_SUFFIX));
             continue;
         }
         let Some(parsed) = parse_drop_name(text) else {
@@ -635,7 +742,6 @@ pub fn run_pass_with_name_io(
                     path.display()
                 );
             });
-            out.metadata_failed |= recovering;
             out.kept += 1;
             continue;
         }
@@ -644,33 +750,58 @@ pub fn run_pass_with_name_io(
             // before reading; stale lifecycle TTL still applies in the seed pass.
             let metadata = match std::fs::symlink_metadata(&path) {
                 Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(error) => {
-                    tracing::warn!("reading recovery drop metadata {}: {error}", path.display());
-                    out.metadata_failed |= recovering;
-                    out.kept += 1;
+                    quarantine(
+                        &path,
+                        &mut held,
+                        &format!("has unreadable metadata ({error})"),
+                        &mut out,
+                    );
                     continue;
                 }
             };
-            if !metadata.is_file() || metadata.len() > 1024 * 1024 || parsed.ms > now_ms {
-                tracing::warn!("hook metadata recovery refused {}: expected a regular file of at most 1048576 bytes (actual {}) sampled by {now_ms} (actual {})", path.display(), metadata.len(), parsed.ms);
-                out.metadata_failed |= recovering;
-                out.kept += 1;
+            if !metadata.is_file() || metadata.len() > MAX_DROP_BYTES || parsed.ms > now_ms {
+                let reason = format!(
+                    "is {} of {} bytes sampled at {} (now {now_ms})",
+                    if metadata.is_file() {
+                        "a file"
+                    } else {
+                        "not a regular file"
+                    },
+                    metadata.len(),
+                    parsed.ms
+                );
+                quarantine(&path, &mut held, &reason, &mut out);
                 continue;
             }
         }
         let bytes = match read_bounded(&path) {
             Ok(b) => b,
+            Err(e) if recovering => {
+                quarantine(&path, &mut held, &format!("cannot be read ({e})"), &mut out);
+                continue;
+            }
             Err(e) => {
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!("hook drop pass: reading {}: {e}", path.display());
                 });
-                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
         };
         let drop = match serde_json::from_slice::<HookDrop>(&bytes) {
             Ok(d) if d.v == DROP_V && d.session == parsed.session => d,
+            Ok(d) if recovering => {
+                let reason = format!("holds version {} for session {}", d.v, d.session);
+                quarantine(&path, &mut held, &reason, &mut out);
+                continue;
+            }
+            Err(e) if recovering => {
+                let reason = format!("does not parse ({} bytes: {e})", bytes.len());
+                quarantine(&path, &mut held, &reason, &mut out);
+                continue;
+            }
             Ok(d) if d.v != DROP_V => {
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!(
@@ -680,7 +811,6 @@ pub fn run_pass_with_name_io(
                         d.v
                     );
                 });
-                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -688,7 +818,6 @@ pub fn run_pass_with_name_io(
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!("hook drop pass: {} names session {} in its payload (expected {} from filename); kept, not applied", path.display(), d.session, parsed.session);
                 });
-                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -696,7 +825,6 @@ pub fn run_pass_with_name_io(
                 warn_once(state, &mut present, &name, || {
                     tracing::warn!("hook drop pass: parsing {}: {e}", path.display());
                 });
-                out.metadata_failed |= recovering;
                 out.kept += 1;
                 continue;
             }
@@ -722,7 +850,9 @@ pub fn run_pass_with_name_io(
             }
             DropVerdict::NoSession => out.kept += 1,
             DropVerdict::Retry => {
-                out.metadata_failed |= recovering;
+                if recovering {
+                    out.failed_sessions.insert(parsed.session);
+                }
                 out.kept += 1;
             }
         }
@@ -746,6 +876,56 @@ fn warn_once(
 mod tests {
     #![allow(clippy::disallowed_methods)]
     use super::*;
+
+    thread_local! {
+        pub(super) static SYNCED_FILES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    }
+
+    fn synced_by_write(drop: &HookDrop) -> bool {
+        let dir = tempfile::tempdir().unwrap();
+        let before = SYNCED_FILES.with(std::cell::Cell::get);
+        write_drop(&dir.path().join("drop"), drop, now_ms()).unwrap();
+        SYNCED_FILES.with(std::cell::Cell::get) > before
+    }
+
+    #[test]
+    fn only_root_conversation_drops_take_the_synced_path() {
+        let event = |agent: Option<&str>, event: &str| HookDrop {
+            session: 7,
+            event: event.into(),
+            agent: agent.map(Into::into),
+            session_id: Some("conv-7".into()),
+            transcript_path: Some("/tmp/conv-7.jsonl".into()),
+            ..HookDrop::default()
+        };
+        for tool in [
+            "PreToolUse",
+            "PostToolUse",
+            "Notification",
+            "PermissionRequest",
+        ] {
+            assert!(!synced_by_write(&event(None, tool)), "{tool} was synced");
+        }
+        assert!(!synced_by_write(&HookDrop {
+            agent_id: Some("sub".into()),
+            ..event(None, "Stop")
+        }));
+        assert!(!synced_by_write(&HookDrop {
+            session_id: None,
+            ..event(None, "SessionStart")
+        }));
+        for (agent, name) in [
+            (None, "SessionStart"),
+            (None, "UserPromptSubmit"),
+            (None, "Stop"),
+            (Some("codex"), "SessionStart"),
+        ] {
+            assert!(
+                synced_by_write(&event(agent, name)),
+                "{agent:?} {name} was not synced"
+            );
+        }
+    }
 
     #[derive(Clone, Default)]
     struct LogBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
@@ -885,7 +1065,11 @@ mod tests {
             recorder(&mut log),
         );
         assert_eq!(out.applied, 0);
-        assert!(out.metadata_failed, "recovery refuses it the same way");
+        assert_eq!(out.quarantined, 1, "recovery sets it aside");
+        assert!(
+            out.failed_sessions.is_empty(),
+            "an unreadable drop defers no session"
+        );
         assert_eq!(log.len(), 0, "no pass applied the oversized payload");
     }
 

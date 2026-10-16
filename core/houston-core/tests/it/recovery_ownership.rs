@@ -22,19 +22,31 @@ impl Fixture {
             .unwrap();
         Self { state, db }
     }
+
+    fn reclaim(&self) -> anyhow::Result<()> {
+        match self.db.previous_process_identity(7)? {
+            Some(identity) => identity.reclaim("fixture", 7),
+            None => Ok(()),
+        }
+    }
+}
+
+fn receipt_of(pid: u32) -> serde_json::Value {
+    serde_json::to_value(ProcessIdentity::capture(Some(pid)).unwrap().unwrap()).unwrap()
 }
 
 fn current_receipt() -> serde_json::Value {
-    serde_json::to_value(
-        ProcessIdentity::capture(Some(std::process::id()))
-            .unwrap()
-            .unwrap(),
-    )
-    .unwrap()
+    receipt_of(std::process::id())
+}
+
+fn recycled_receipt() -> serde_json::Value {
+    let mut receipt = current_receipt();
+    receipt["creation"] = serde_json::json!(receipt["creation"].as_u64().unwrap() + 1);
+    receipt
 }
 
 #[test]
-fn legacy_acknowledgement_preserves_conversation_and_held_mission() {
+fn legacy_reclaim_needs_no_acknowledgement_and_keeps_conversation_and_held_mission() {
     let fixture = Fixture::new(None);
     let receipt = MessageReceipt::new(1, None, "pane_prompt", &serde_json::json!({})).unwrap();
     let context = serde_json::json!({
@@ -56,14 +68,7 @@ fn legacy_acknowledgement_preserves_conversation_and_held_mission() {
         )
         .unwrap();
     fixture.db.instruction_recover(2).unwrap();
-    assert!(fixture
-        .db
-        .check_previous_process_stopped(7)
-        .unwrap_err()
-        .to_string()
-        .contains("legacy"));
-    fixture.db.acknowledge_uncontained_recovery(7).unwrap();
-    fixture.db.check_previous_process_stopped(7).unwrap();
+    fixture.reclaim().unwrap();
     let instruction = fixture
         .db
         .instruction_row(&instruction.info.id)
@@ -82,66 +87,73 @@ fn legacy_acknowledgement_preserves_conversation_and_held_mission() {
         fixture.db.list_interrupted().unwrap()[0].title,
         "Retained pane"
     );
-    drop(fixture.db);
-    let reopened = Db::open(&fixture.state.path().join("fixture.db")).unwrap();
-    reopened.check_previous_process_stopped(7).unwrap();
-    assert_eq!(
-        reopened
-            .instruction_row(&instruction.info.id)
-            .unwrap()
-            .unwrap()
-            .info
-            .state,
-        proto::InstructionState::HeldAfterRecovery
-    );
 }
 
 #[test]
-fn live_root_cannot_be_acknowledged_and_recycled_root_is_not_tree_proof() {
-    let fixture = Fixture::new(Some(current_receipt()));
-    assert!(fixture.db.acknowledge_uncontained_recovery(7).is_err());
-    let mut recycled = current_receipt();
-    recycled["creation"] = serde_json::json!(recycled["creation"].as_u64().unwrap() + 1);
-    let fixture = Fixture::new(Some(recycled));
+fn dead_or_recycled_roots_are_reclaimed_without_signals() {
+    Fixture::new(Some(recycled_receipt())).reclaim().unwrap();
+    let mut legacy = recycled_receipt();
+    legacy.as_object_mut().unwrap().remove("ownership");
+    legacy["version"] = serde_json::json!(1);
+    Fixture::new(Some(legacy.clone())).reclaim().unwrap();
+    legacy["version"] = serde_json::json!(2);
     assert!(
-        fixture.db.check_previous_process_stopped(7).is_err(),
-        "a recycled root must not certify detached descendants stopped"
+        Fixture::new(Some(legacy)).reclaim().is_err(),
+        "a version 2 receipt without an ownership boundary is corrupt"
     );
-    fixture.db.acknowledge_uncontained_recovery(7).unwrap();
-    fixture.db.check_previous_process_stopped(7).unwrap();
 }
 
+#[cfg(unix)]
+fn spawn_root(script: &str) -> std::process::Child {
+    use std::os::unix::process::CommandExt;
+    let mut command = houston_core::spawn::command("/bin/sh");
+    command.args(["-c", script]);
+    // SAFETY: setsid is async-signal-safe; a PTY root also leads its own session.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    command.spawn().unwrap()
+}
+
+#[cfg(unix)]
 #[test]
-fn legacy_root_receipt_requires_ack_and_corrupt_new_receipt_cannot_be_acknowledged() {
-    let mut receipt = current_receipt();
-    receipt["creation"] = serde_json::json!(receipt["creation"].as_u64().unwrap() + 1);
-    receipt.as_object_mut().unwrap().remove("ownership");
-    let corrupt = Fixture::new(Some(receipt.clone()));
-    assert!(corrupt.db.check_previous_process_stopped(7).is_err());
-    assert!(corrupt.db.acknowledge_uncontained_recovery(7).is_err());
-    receipt["version"] = serde_json::json!(1);
-    let legacy = Fixture::new(Some(receipt));
-    assert!(legacy.db.check_previous_process_stopped(7).is_err());
-    legacy.db.acknowledge_uncontained_recovery(7).unwrap();
-    legacy.db.check_previous_process_stopped(7).unwrap();
+fn a_live_uncontained_root_is_stopped_by_its_verified_identity() {
+    use std::os::unix::process::ExitStatusExt;
+    for (script, signal) in [
+        ("exec sleep 600", libc::SIGTERM),
+        ("trap '' TERM; exec sleep 600", libc::SIGKILL),
+    ] {
+        let mut root = spawn_root(script);
+        // Wait for exec so a TERM-ignoring root has installed its disposition.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while houston_core::pid::process_comm(root.id()).as_deref() != Some("sleep") {
+            assert!(std::time::Instant::now() < deadline, "root never exec'd");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let fixture = Fixture::new(Some(receipt_of(root.id())));
+        let started = std::time::Instant::now();
+        fixture.reclaim().unwrap();
+        let status = root.wait().unwrap();
+        assert_eq!(status.signal(), Some(signal), "{script}: {status:?}");
+        if signal == libc::SIGKILL {
+            assert!(
+                started.elapsed() >= std::time::Duration::from_secs(2),
+                "SIGKILL must follow the SIGTERM grace"
+            );
+        }
+        assert!(fixture.db.session_resume_handle(7).unwrap().is_some());
+    }
 }
 
 #[cfg(windows)]
 #[test]
-fn windows_refusal_names_missing_job_ownership_and_retains_data() {
-    let mut receipt = current_receipt();
-    receipt["creation"] = serde_json::json!(receipt["creation"].as_u64().unwrap() + 1);
-    let fixture = Fixture::new(Some(receipt));
-    let error = fixture
-        .db
-        .check_previous_process_stopped(7)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains("Windows ConPTY") && error.contains("Job ownership"),
-        "{error}"
-    );
-    assert!(fixture.db.session_resume_handle(7).unwrap().is_some());
+fn windows_uncontained_receipts_need_no_acknowledgement() {
+    Fixture::new(Some(recycled_receipt())).reclaim().unwrap();
 }
 
 #[cfg(target_os = "linux")]
@@ -150,13 +162,39 @@ fn verified_different_boot_permits_recovery_without_signals() {
     let mut receipt = current_receipt();
     receipt["system"] = serde_json::json!(format!("linux:{}", uuid::Uuid::new_v4()));
     let fixture = Fixture::new(Some(receipt));
-    fixture.db.check_previous_process_stopped(7).unwrap();
+    fixture.reclaim().unwrap();
     assert!(fixture.db.session_resume_handle(7).unwrap().is_some());
 }
 
 #[cfg(target_os = "linux")]
+fn scope_receipt(channel: &str, id: u32) -> serde_json::Value {
+    let mut receipt = recycled_receipt();
+    let unit = format!(
+        "houston-session-{channel}-{id}-{}.scope",
+        uuid::Uuid::new_v4().simple()
+    );
+    receipt["ownership"] = serde_json::json!({"kind":"linux_scope","unit":unit,"cgroup":format!("/user.slice/{unit}")});
+    receipt
+}
+
+#[cfg(target_os = "linux")]
 #[test]
-fn unavailable_manager_and_wrong_scope_nonce_remain_unknown() {
+fn foreign_or_malformed_scope_receipts_are_never_signalled() {
+    for receipt in [scope_receipt("other", 7), scope_receipt("fixture", 8)] {
+        let error = Fixture::new(Some(receipt))
+            .reclaim()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("refusing to stop it"), "{error}");
+    }
+    let mut receipt = scope_receipt("fixture", 7);
+    receipt["ownership"]["unit"] = serde_json::json!("houston-session-fixture-7-wrong.scope");
+    assert!(Fixture::new(Some(receipt)).reclaim().is_err());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn unavailable_manager_falls_back_to_the_recorded_root() {
     if std::env::var_os("OWNERSHIP_MANAGER_FIXTURE").is_none() {
         let state = tempfile::tempdir().unwrap();
         let result = houston_core::spawn::command(std::env::current_exe().unwrap())
@@ -164,7 +202,7 @@ fn unavailable_manager_and_wrong_scope_nonce_remain_unknown() {
                 "--exact",
                 &crate::common::exact_path(
                     module_path!(),
-                    "unavailable_manager_and_wrong_scope_nonce_remain_unknown",
+                    "unavailable_manager_falls_back_to_the_recorded_root",
                 ),
                 "--nocapture",
             ])
@@ -178,67 +216,73 @@ fn unavailable_manager_and_wrong_scope_nonce_remain_unknown() {
         assert!(result.success());
         return;
     }
-    let mut receipt = current_receipt();
-    receipt["creation"] = serde_json::json!(receipt["creation"].as_u64().unwrap() + 1);
-    let unit = "houston-session-fixture-7-0123456789abcdef0123456789abcdef.scope";
-    receipt["ownership"] = serde_json::json!({"kind":"linux_scope","unit":unit,"cgroup":format!("/user.slice/{unit}")});
-    let fixture = Fixture::new(Some(receipt.clone()));
-    assert!(fixture.db.check_previous_process_stopped(7).is_err());
-    assert!(fixture.db.acknowledge_uncontained_recovery(7).is_err());
-    receipt["ownership"]["unit"] = serde_json::json!("houston-session-fixture-7-wrong.scope");
-    receipt["system"] = serde_json::json!(format!("linux:{}", uuid::Uuid::new_v4()));
-    assert!(
-        Fixture::new(Some(receipt))
-            .db
-            .check_previous_process_stopped(7)
-            .is_err(),
-        "invalid nonce is corrupt evidence even after reboot"
-    );
+    let fixture = Fixture::new(Some(scope_receipt("fixture", 7)));
+    fixture.reclaim().unwrap();
+    assert!(fixture.db.session_resume_handle(7).unwrap().is_some());
 }
 
 #[cfg(target_os = "linux")]
-struct RefusingManager {
-    timeout: bool,
+struct FixtureManager {
+    mode: &'static str,
 }
 
 #[cfg(target_os = "linux")]
 #[zbus::interface(name = "org.freedesktop.systemd1.Manager")]
-impl RefusingManager {
+impl FixtureManager {
     #[zbus(property)]
     fn version(&self) -> String {
         "fixture".into()
     }
 
     fn get_unit(&self, _unit: &str) -> zbus::fdo::Result<zbus::zvariant::OwnedObjectPath> {
-        if self.timeout {
-            std::thread::sleep(std::time::Duration::from_secs(7));
+        match self.mode {
+            "timeout" => std::thread::sleep(std::time::Duration::from_secs(7)),
+            "mismatch" => {
+                return Ok(zbus::zvariant::ObjectPath::try_from(
+                    "/org/freedesktop/systemd1/unit/fixture",
+                )
+                .unwrap()
+                .into())
+            }
+            _ => {}
         }
         Err(zbus::fdo::Error::AccessDenied(
             "fixture denies population lookup".into(),
         ))
     }
+
+    fn kill_unit(&self, unit: &str, _whom: &str, _signal: i32) -> zbus::fdo::Result<()> {
+        Err(zbus::fdo::Error::Failed(format!(
+            "fixture never kills {unit}"
+        )))
+    }
+}
+
+#[cfg(target_os = "linux")]
+struct ForeignScope;
+
+#[cfg(target_os = "linux")]
+#[zbus::interface(name = "org.freedesktop.systemd1.Scope")]
+impl ForeignScope {
+    #[zbus(property)]
+    fn control_group(&self) -> String {
+        "/user.slice/app.slice/foreign.scope".into()
+    }
 }
 
 #[cfg(target_os = "linux")]
 #[test]
-fn manager_permission_errors_and_timeouts_do_not_certify_empty_scopes() {
+fn manager_failures_fall_back_and_a_moved_cgroup_is_refused() {
     use std::io::BufRead;
     if let Some(mode) = std::env::var_os("OWNERSHIP_FAKE_MANAGER") {
-        let mut receipt = current_receipt();
-        receipt["creation"] = serde_json::json!(receipt["creation"].as_u64().unwrap() + 1);
-        let unit = format!(
-            "houston-session-fixture-7-{}.scope",
-            uuid::Uuid::new_v4().simple()
-        );
-        receipt["ownership"] = serde_json::json!({"kind":"linux_scope","unit":unit,"cgroup":format!("/user.slice/{unit}")});
-        let fixture = Fixture::new(Some(receipt));
-        let error = fixture
-            .db
-            .check_previous_process_stopped(7)
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("ownership unknown"), "{mode:?}: {error}");
-        assert!(fixture.db.acknowledge_uncontained_recovery(7).is_err());
+        let fixture = Fixture::new(Some(scope_receipt("fixture", 7)));
+        let result = fixture.reclaim();
+        if mode == "mismatch" {
+            let error = result.unwrap_err().to_string();
+            assert!(error.contains("membership changed"), "{error}");
+        } else {
+            result.unwrap_or_else(|error| panic!("{mode:?}: {error:#}"));
+        }
         assert!(fixture.db.session_resume_handle(7).unwrap().is_some());
         return;
     }
@@ -253,7 +297,7 @@ fn manager_permission_errors_and_timeouts_do_not_certify_empty_scopes() {
             let _ = self.0.wait();
         }
     }
-    for timeout in [false, true] {
+    for mode in ["denied", "timeout", "mismatch"] {
         let directory = tempfile::tempdir().unwrap();
         let address = format!("unix:path={}/bus", directory.path().display());
         let mut bus = Bus(houston_core::spawn::command("dbus-daemon")
@@ -270,7 +314,9 @@ fn manager_permission_errors_and_timeouts_do_not_certify_empty_scopes() {
             .unwrap()
             .name("org.freedesktop.systemd1")
             .unwrap()
-            .serve_at("/org/freedesktop/systemd1", RefusingManager { timeout })
+            .serve_at("/org/freedesktop/systemd1", FixtureManager { mode })
+            .unwrap()
+            .serve_at("/org/freedesktop/systemd1/unit/fixture", ForeignScope)
             .unwrap()
             .build()
             .unwrap();
@@ -279,18 +325,15 @@ fn manager_permission_errors_and_timeouts_do_not_certify_empty_scopes() {
                 "--exact",
                 &crate::common::exact_path(
                     module_path!(),
-                    "manager_permission_errors_and_timeouts_do_not_certify_empty_scopes",
+                    "manager_failures_fall_back_and_a_moved_cgroup_is_refused",
                 ),
                 "--nocapture",
             ])
-            .env(
-                "OWNERSHIP_FAKE_MANAGER",
-                if timeout { "timeout" } else { "denied" },
-            )
+            .env("OWNERSHIP_FAKE_MANAGER", mode)
             .env("DBUS_SESSION_BUS_ADDRESS", announced.trim())
             .status()
             .unwrap();
-        assert!(result.success());
+        assert!(result.success(), "{mode}");
         drop(service);
     }
     let directory = tempfile::tempdir().unwrap();
@@ -322,7 +365,7 @@ fn manager_permission_errors_and_timeouts_do_not_certify_empty_scopes() {
             "--exact",
             &crate::common::exact_path(
                 module_path!(),
-                "manager_permission_errors_and_timeouts_do_not_certify_empty_scopes",
+                "manager_failures_fall_back_and_a_moved_cgroup_is_refused",
             ),
             "--nocapture",
         ])

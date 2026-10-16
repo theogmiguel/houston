@@ -376,7 +376,7 @@ async fn workspace_remove_kills_sessions_and_deletes_workspace() {
 }
 
 #[tokio::test]
-async fn legacy_interrupted_sessions_require_acknowledgement_before_restart() {
+async fn legacy_interrupted_sessions_restore_without_acknowledgement() {
     use houston_core::db::Db;
 
     let state_dir = tempfile::tempdir().unwrap();
@@ -435,20 +435,22 @@ async fn legacy_interrupted_sessions_require_acknowledgement_before_restart() {
     ))
     .unwrap();
 
-    let retained = daemon
+    let restored = daemon
         .list()
         .into_iter()
-        .find(|session| session.id == 1)
-        .expect("the legacy interrupted pane is retained");
-    assert_eq!(retained.state, proto::SessionState::Interrupted);
-    let refusal = daemon.respawn(1, true, None, None, false).unwrap_err();
-    assert!(refusal.to_string().to_lowercase().contains("legacy"));
-    assert!(daemon.recheck_recovery(1, false).is_err());
-    daemon.recheck_recovery(1, true).unwrap();
-    let restored = daemon.respawn(1, true, None, None, false).unwrap();
+        .find(|session| session.session_origin == Some(1))
+        .expect("the legacy interrupted pane is restored");
     assert_ne!(restored.id, 1);
     assert_eq!(restored.state, proto::SessionState::Running);
     assert_eq!(restored.restore_deferred, None);
+    assert!(
+        !restored
+            .resume_notice
+            .as_deref()
+            .is_some_and(|notice| notice.contains("ownership")),
+        "{:?}",
+        restored.resume_notice
+    );
 
     let fresh = daemon.respawn(restored.id, true, None, None, true).unwrap();
     assert_ne!(fresh.id, restored.id);
@@ -603,4 +605,93 @@ async fn respawn_reuses_the_directory() {
     assert_ne!(fresh.id, old.id);
     assert_eq!(fresh.cwd, old.cwd);
     wait_for_state(&daemon, fresh.id, proto::SessionState::Exited).await;
+}
+
+#[tokio::test]
+async fn pane_teardown_for_a_removed_session_sends_no_error() {
+    let (addr, _state) = start_daemon().await;
+    let project = tempfile::tempdir().unwrap();
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    ws.send(Message::text(create_custom_msg(
+        vec!["/bin/sh", "-c", "read ignored"],
+        project.path(),
+    )))
+    .await
+    .unwrap();
+    let pane = expect_created(&mut ws).await;
+    let close = serde_json::to_string(&proto::ClientMsg::SessionClose {
+        session: pane.id,
+        confirm_children: None,
+    })
+    .unwrap();
+    ws.send(Message::text(close.clone())).await.unwrap();
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::SessionRemoved { session } if session == pane.id => break,
+            proto::ServerMsg::Error { message, .. } => panic!("first close failed: {message}"),
+            _ => {}
+        }
+    }
+    for message in [
+        close,
+        serde_json::to_string(&proto::ClientMsg::SessionClose {
+            session: 9_999,
+            confirm_children: Some(true),
+        })
+        .unwrap(),
+        serde_json::to_string(&proto::ClientMsg::SessionVisibility {
+            session: pane.id,
+            visible: true,
+        })
+        .unwrap(),
+        serde_json::to_string(&proto::ClientMsg::SessionVisibility {
+            session: 9_999,
+            visible: false,
+        })
+        .unwrap(),
+        serde_json::to_string(&proto::ClientMsg::SessionList).unwrap(),
+    ] {
+        ws.send(Message::text(message)).await.unwrap();
+    }
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::SessionList { .. } => break,
+            proto::ServerMsg::Error { message, .. } => {
+                panic!("teardown of a removed pane raised an error: {message}")
+            }
+            _ => {}
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_refused_respawn_names_its_session_in_the_error_context() {
+    let (addr, _state) = start_daemon().await;
+    let project = tempfile::tempdir().unwrap();
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    ws.send(Message::text(create_custom_msg(
+        vec!["/bin/sh", "-c", "read ignored"],
+        project.path(),
+    )))
+    .await
+    .unwrap();
+    let pane = expect_created(&mut ws).await;
+    let respawn = proto::ClientMsg::SessionRespawn {
+        session: pane.id,
+        shell_integration: None,
+        cwd: None,
+        shell: None,
+        force: None,
+        fresh: None,
+    };
+    ws.send(Message::text(serde_json::to_string(&respawn).unwrap()))
+        .await
+        .unwrap();
+    loop {
+        if let proto::ServerMsg::Error { message, context } = next_control(&mut ws).await {
+            assert!(message.contains("still running"), "{message}");
+            assert_eq!(context, Some(format!("session:{}", pane.id)), "{message}");
+            break;
+        }
+    }
 }

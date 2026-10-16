@@ -336,7 +336,7 @@ pub fn run(args: Vec<OsString>) -> anyhow::Result<()> {
     let ownership = match enter_scope_with_nonce(channel, id, &nonce) {
         Ok(ownership) => ownership,
         Err(ScopeError::Unavailable(reason)) => {
-            eprintln!("houston-core: session {id} cgroup isolation unavailable: {reason}; recovery requires explicit acknowledgement");
+            eprintln!("houston-core: session {id} cgroup isolation unavailable: {reason}; recovery stops only the recorded PTY root");
             crate::recovery_process::Ownership::Uncontained { reason }
         }
         Err(ScopeError::Pending(reason)) => return Err(anyhow::Error::msg(reason)),
@@ -414,44 +414,105 @@ pub(crate) fn validate_scope_receipt(unit: &str, cgroup: &str) -> Result<(), Str
     Ok(())
 }
 
-pub fn check_scope_stopped(unit: &str, cgroup: &str) -> Result<(), String> {
-    validate_scope_receipt(unit, cgroup)?;
-    // Even a missing cgroup is unknown until the user manager is reachable.
-    let connection = connection()?;
-    manager(&connection)?
-        .get_property::<String>("Version")
-        .map_err(|error| format!("ownership manager unavailable: {error}"))?;
-    let group = Path::new("/sys/fs/cgroup").join(cgroup.trim_start_matches('/'));
-    match std::fs::read_to_string(group.join("cgroup.events")) {
-        Ok(events) => {
-            let actual = scope_cgroup(&connection, unit)?;
-            if actual != cgroup {
-                return Err(format!(
-                    "scope {unit} membership changed: recorded {cgroup}, actual {actual}"
-                ));
-            }
-            match events.lines().find_map(|line| line.strip_prefix("populated ")) {
-                Some("0") => Ok(()),
-                Some("1") => Err(format!("Previous workload scope {unit} remains populated; replacement refused. Houston has not signalled it.")),
-                _ => Err(format!("scope {unit} population unavailable; expected populated 0 or 1")),
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            // GetUnit's explicit NoSuchUnit plus absent kernel cgroup establishes collection.
-            match manager(&connection)?.call::<_, _, OwnedObjectPath>("GetUnit", &(unit,)) {
-                Err(zbus::Error::MethodError(name, ..))
-                    if name.as_str() == "org.freedesktop.systemd1.NoSuchUnit" =>
-                {
-                    Ok(())
-                }
-                Ok(_) => Err(format!(
-                    "scope {unit} still registered but its population is unavailable"
-                )),
-                Err(error) => Err(format!("scope {unit} ownership unknown: {error}")),
-            }
-        }
-        Err(error) => Err(format!("reading scope {unit} population: {error}")),
+pub(crate) enum ReclaimError {
+    /// The manager cannot be used; the caller falls back to the recorded PTY root.
+    Unavailable(String),
+    /// The receipt does not identify a stoppable scope of this pane.
+    Refused(String),
+}
+
+// KillUnit empties a small pane scope in 15-28 ms (measured: shell plus five setsid
+// children); the bound defers only that pane when a process cannot die.
+const RECLAIM_DEADLINE: Duration = Duration::from_secs(2);
+
+fn scope_owner_matches(unit: &str, channel: &str, id: u32) -> bool {
+    unit.strip_prefix(&format!("houston-session-{channel}-{id}-"))
+        .and_then(|rest| rest.strip_suffix(".scope"))
+        .is_some_and(|nonce| {
+            nonce.len() == 32 && nonce.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+}
+
+fn scope_populated(cgroup: &str) -> Result<bool, String> {
+    let events = Path::new("/sys/fs/cgroup")
+        .join(cgroup.trim_start_matches('/'))
+        .join("cgroup.events");
+    match std::fs::read_to_string(&events) {
+        Ok(events) => match events
+            .lines()
+            .find_map(|line| line.strip_prefix("populated "))
+        {
+            Some("0") => Ok(false),
+            Some("1") => Ok(true),
+            other => Err(format!(
+                "scope {cgroup} reports populated {other:?}; expected 0 or 1"
+            )),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("reading {}: {error}", events.display())),
     }
+}
+
+/// Stops every process left in a pane's recorded scope. Only a unit named for this
+/// channel and session, whose manager cgroup still equals the receipt, is signalled.
+pub(crate) fn reclaim_scope(
+    unit: &str,
+    cgroup: &str,
+    channel: &str,
+    id: u32,
+) -> Result<(), ReclaimError> {
+    validate_scope_receipt(unit, cgroup).map_err(ReclaimError::Refused)?;
+    if !scope_owner_matches(unit, channel, id) {
+        return Err(ReclaimError::Refused(format!(
+            "session {id} ownership scope {unit:?} is not houston-session-{channel}-{id}-<32 hex>.scope; refusing to stop it"
+        )));
+    }
+    if FAIL_SCOPE_TERMINATION.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(ReclaimError::Unavailable(
+            "injected InvalidArgs failure".into(),
+        ));
+    }
+    let connection = connection().map_err(ReclaimError::Unavailable)?;
+    let manager = manager(&connection).map_err(ReclaimError::Unavailable)?;
+    match manager.call::<_, _, OwnedObjectPath>("GetUnit", &(unit,)) {
+        Ok(_) => {}
+        // CollectMode=inactive-or-failed unloads a scope once its last process exits.
+        Err(zbus::Error::MethodError(name, ..))
+            if name.as_str() == "org.freedesktop.systemd1.NoSuchUnit" =>
+        {
+            return Ok(())
+        }
+        Err(error) => {
+            return Err(ReclaimError::Unavailable(format!(
+                "looking up scope {unit}: {error}"
+            )))
+        }
+    }
+    let actual = scope_cgroup(&connection, unit).map_err(ReclaimError::Unavailable)?;
+    if actual != cgroup {
+        return Err(ReclaimError::Refused(format!(
+            "scope {unit} membership changed: recorded {cgroup}, actual {actual}; refusing to stop it"
+        )));
+    }
+    if !scope_populated(cgroup).map_err(ReclaimError::Unavailable)? {
+        return Ok(());
+    }
+    tracing::info!("session {id}: stopping processes left in previous workload scope {unit}");
+    manager
+        .call::<_, _, ()>("KillUnit", &(unit, "all", libc::SIGKILL))
+        .map_err(|error| ReclaimError::Unavailable(format!("terminating scope {unit}: {error}")))?;
+    let started = Instant::now();
+    while scope_populated(cgroup).map_err(ReclaimError::Unavailable)? {
+        if started.elapsed() >= RECLAIM_DEADLINE {
+            return Err(ReclaimError::Refused(format!(
+                "previous workload scope {unit} is still populated {} ms after SIGKILL (limit {} ms); replacement deferred",
+                started.elapsed().as_millis(),
+                RECLAIM_DEADLINE.as_millis()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
 }
 
 pub struct ExecGate {
@@ -676,6 +737,47 @@ mod tests {
         assert!(stop_recorded_scope(&unit, "dev", 42).is_err());
         assert!(current_owned_scope("dev", 0).is_err());
         assert!(current_owned_scope("invalid/channel", 42).is_err());
+    }
+
+    #[test]
+    fn reclaim_refuses_units_of_another_channel_session_or_cgroup() {
+        let nonce = "0123456789abcdef0123456789abcdef";
+        let unit = format!("houston-session-dev-42-{nonce}.scope");
+        assert!(scope_owner_matches(&unit, "dev", 42));
+        assert!(!scope_owner_matches(&unit, "release", 42));
+        assert!(!scope_owner_matches(&unit, "dev", 4));
+        assert!(!scope_owner_matches(
+            &format!("houston-session-dev-42-{nonce}0.scope"),
+            "dev",
+            42
+        ));
+        assert!(!scope_owner_matches(
+            &format!("houston-session-my-dev-42-{nonce}.scope"),
+            "dev",
+            42
+        ));
+        let refused = |unit: &str, cgroup: &str, channel: &str, id: u32| {
+            matches!(
+                reclaim_scope(unit, cgroup, channel, id),
+                Err(ReclaimError::Refused(_))
+            )
+        };
+        let cgroup = format!("/user.slice/app.slice/{unit}");
+        assert!(refused(&unit, &cgroup, "release", 42));
+        assert!(refused(&unit, &cgroup, "dev", 41));
+        assert!(refused(
+            &unit,
+            "/user.slice/app.slice/other.scope",
+            "dev",
+            42
+        ));
+        assert!(refused(&unit, &format!("/user.slice/../{unit}"), "dev", 42));
+        assert!(refused(
+            "sshd.service",
+            "/system.slice/sshd.service",
+            "dev",
+            42
+        ));
     }
 
     #[test]

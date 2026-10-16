@@ -88,8 +88,8 @@ authenticated endpoints.
 Without a systemd user manager, launch falls back to `setsid` and prints the reason.
 That separates the Unix session but preserves the caller's cgroup, so group termination
 can still end the daemon and its panes. Session scope creation also reports an explicit
-fallback when isolation is unavailable, retaining a named cold-recovery refusal
-until explicit acknowledgement. An ambiguous scope request timeout refuses the
+fallback when isolation is unavailable; cold recovery of such a pane can then stop only
+its recorded PTY root and that root's process group. An ambiguous scope request timeout refuses the
 CLI launch, preventing delayed migration from missing descendants. On Windows, detached creation separates the console but does
 not escape a containing job object. An externally imposed job with kill-on-close can
 still terminate the daemon; Houston does not require permission to break away from it.

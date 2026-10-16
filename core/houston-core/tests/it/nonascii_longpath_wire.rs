@@ -157,18 +157,6 @@ async fn drive_spawn_persist_reopen(
         "husk must replay the persisted scrollback"
     );
 
-    // Without a committed launch scope, closing the husk refuses until the stopped
-    // workload is explicitly acknowledged.
-    let expected = if cfg!(windows) {
-        "Job ownership proof"
-    } else {
-        "no verified session scope"
-    };
-    let refusal = daemon.close(info.id).unwrap_err().to_string();
-    assert!(refusal.contains(expected), "{refusal}");
-    assert!(daemon.recheck_recovery(info.id, false).is_err());
-    assert!(daemon.list().iter().any(|session| session.id == info.id));
-    daemon.recheck_recovery(info.id, true).unwrap();
     daemon.close(info.id).unwrap();
     Ok(())
 }

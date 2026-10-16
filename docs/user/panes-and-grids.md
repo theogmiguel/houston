@@ -263,6 +263,9 @@ launch. Use Kill or Close on an individual pane to discard its continuation.
 
 Closing a pane ends its session — the underlying PTY is torn down, not just hidden.
 There is no undo for a killed session; the pane is gone from the grid along with it.
+The pane leaves the grid as soon as you close it. If the daemon refuses the close, the
+pane returns with the refusal shown inside it; a close the daemon does not confirm within
+15 seconds is handed back the same way.
 
 ## Sleeping a pane
 
@@ -325,29 +328,34 @@ conversation, and at startup the pane waits for a manual restart. Other agents, 
 without a validated conversation and routine runs start fresh. Sessions beyond the restore
 budget remain available for manual restart.
 
+A pane that was not restored shows its saved output dimmed with one line at the bottom:
+**This conversation could not be resumed.**, with **Try again** (resume) and **New
+conversation** (start fresh). Hover or focus the sentence for the reason. Both buttons
+are disabled while Try again is running, and a refusal replaces the sentence in place. An
+SSH pane offers **Reconnect** instead. A pane that fell back to a fresh conversation shows
+**Started a new conversation; the previous one could not be resumed.** once, until
+dismissed.
+
 Panes that had already exited remain ended after reopening Houston, with their saved
 output available. They do not launch an agent automatically. Killed and closed panes do
 not return through recovery.
 
 A conversation belongs to its recorded provider and folder. Switching agents inside a
-shell cannot reuse the previous agent's conversation. If pending conversation metadata
-cannot be recovered, the pane stays visible with a reason; fix the reported problem and
-retry, or explicitly choose Start fresh or Close. A provider launched with a custom command
+shell cannot reuse the previous agent's conversation. If a pending conversation update was
+damaged when Houston stopped, the pane resumes the last conversation Houston had stored. If
+an update cannot be saved to Houston's database, only that pane stays visible with a reason;
+fix the reported problem and retry, or explicitly choose Start fresh or Close. A provider launched with a custom command
 also waits after a daemon restart: Houston does not save arbitrary command arguments.
 Start fresh launches that provider's standard command.
 
-Houston refuses Restart, Start fresh and Close while a recorded process or its Linux workload scope is
-still alive. A missing root process does not prove that detached tools stopped. A verified
-Linux reboot can clear that refusal without signals.
-
-Use Recheck recovery after stopping the previous workload or fixing an unavailable Linux
-user manager. Legacy sessions and launches without complete process ownership, including
-Windows ConPTY, retain their pane, conversation and pending missions with a named refusal.
-After stopping all their previous workload processes, explicitly acknowledge that they
-have stopped, then retry Restart. Acknowledgement cannot override a live recorded root,
-a contained scope or unreadable ownership evidence. It does not start a conversation or
-resume pending instructions; held instructions still require explicit resume. Rechecking
-does not acknowledge that processes stopped.
+After a crash, an update or an unexpected close, panes resume automatically. Processes
+that a previous Houston daemon left running in a pane can no longer receive input, so
+Houston stops them before it restores, restarts or closes that pane. On Linux with a
+systemd user session this covers every process the pane started, including background
+servers and detached jobs; elsewhere, including Windows, Houston stops the pane's own
+process and its foreground jobs, and detached background processes may keep running. A
+pane that cannot be restored shows its reason without holding back the other panes.
+Pending missions still require explicit resume.
 
 Saved terminal output follows an automatically restored pane. Output since the last
 checkpoint can be lost after an abrupt daemon exit, and provider conversation history

@@ -641,6 +641,9 @@ async fn read_client(
                 };
                 daemon.note_operator_keystroke(id, payload);
                 if let Err(e) = daemon.enqueue_stdin_from_renderer(id, payload, conn_id) {
+                    if vanished(&daemon, id, "stdin") {
+                        continue;
+                    }
                     let message = e.to_string();
                     // Refusals are advisory and the loop may be blocked on a slow client;
                     // waiting here would stall input for every other pane on the socket.
@@ -1059,9 +1062,10 @@ async fn handle_control(
         return;
     }
 
+    let context = session_error_context(&msg);
     if runs_on_connection_task(&msg) {
         let result = dispatch(daemon, sink, msg, Some(frames_wanted), conn_id).await;
-        report(sink, result).await;
+        report(sink, result, context).await;
         return;
     }
     let local = Arc::clone(handlers).try_acquire_owned();
@@ -1113,15 +1117,33 @@ async fn handle_control(
         } else {
             dispatch(&daemon, &mut tx, msg, None, conn_id).await
         };
-        report(&mut tx, result).await;
+        report(&mut tx, result, context).await;
     });
 }
 
-async fn report(sink: &mut (impl SinkExt<Message> + Unpin), result: anyhow::Result<()>) {
+/// Pane lifecycle requests name their session in an error's `context` (`session:<id>`), so a
+/// client can attribute the failure to its pane.
+fn session_error_context(msg: &proto::ClientMsg) -> Option<String> {
+    match msg {
+        proto::ClientMsg::SessionClose { session, .. }
+        | proto::ClientMsg::SessionRespawn { session, .. }
+        | proto::ClientMsg::SessionWake { session }
+        | proto::ClientMsg::SessionAttach { session, .. }
+        | proto::ClientMsg::SessionResize { session, .. }
+        | proto::ClientMsg::SessionVisibility { session, .. } => Some(format!("session:{session}")),
+        _ => None,
+    }
+}
+
+async fn report(
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    result: anyhow::Result<()>,
+    context: Option<String>,
+) {
     if let Err(e) = result {
         let msg = format!("{e:#}");
         tracing::warn!("control request failed: {msg}");
-        send_error(sink, msg, None).await;
+        send_error(sink, msg, context).await;
     }
 }
 
@@ -1218,8 +1240,8 @@ async fn dispatch(
             cols,
             rows,
         } => {
-            let daemon = Arc::clone(daemon);
-            let result = tokio::task::spawn_blocking(move || daemon.resize(session, cols, rows))
+            let resizer = Arc::clone(daemon);
+            let result = tokio::task::spawn_blocking(move || resizer.resize(session, cols, rows))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("resize task panicked: {e}")));
             match result {
@@ -1235,6 +1257,7 @@ async fn dispatch(
                     .await;
                     Ok(())
                 }
+                Err(_) if vanished(daemon, session, "resize") => Ok(()),
                 Err(e) => Err(e),
             }
         }
@@ -2170,6 +2193,10 @@ async fn dispatch(
                         .await;
                         Ok(())
                     }
+                    Err(_) if vanished(daemon, session, "attach") => {
+                        frames_wanted.forget(session);
+                        Ok(())
+                    }
                     Err(e) => {
                         frames_wanted.attach(session, None);
                         Err(e)
@@ -2252,19 +2279,9 @@ async fn dispatch(
                 let _ = send_msg(sink, &proto::ServerMsg::SessionCwd { session, cwd }).await;
                 Ok(())
             }
+            Err(_) if vanished(daemon, session, "cwd") => Ok(()),
             Err(e) => Err(e),
         },
-        proto::ClientMsg::SessionRecoveryCheck {
-            session,
-            acknowledge_uncontained,
-        } => {
-            let daemon = Arc::clone(daemon);
-            tokio::task::spawn_blocking(move || {
-                daemon.recheck_recovery(session, acknowledge_uncontained.unwrap_or(false))
-            })
-            .await
-            .unwrap_or_else(|error| Err(anyhow::anyhow!("recovery check task panicked: {error}")))
-        }
         proto::ClientMsg::SessionClose {
             session,
             confirm_children,
@@ -3671,12 +3688,9 @@ async fn dispatch(
             let frames_wanted =
                 frames_wanted.expect("an attach-family message runs on the connection task");
             if !daemon.has_session(session) {
-                anyhow::ensure!(
-                    !visible,
-                    "unknown session id {session} (expected an active or restored session)"
-                );
-                // Pane cleanup can arrive after removal; discard connection state without
+                // Pane mount and cleanup can race removal; discard connection state without
                 // recreating a visibility vote for a session that no longer exists.
+                tracing::debug!("visibility {visible} for unknown session {session} ignored");
                 frames_wanted.forget(session);
                 daemon.conn_set_visibility(conn_id, session, true);
                 return Ok(());
@@ -4897,6 +4911,16 @@ async fn slack_reply(
         }
         _ => daemon.broadcast_control(&msg),
     }
+}
+
+/// Pane mount, focus and teardown race session removal: a request for an id that is neither
+/// live nor retained is dropped with a debug log instead of an error frame.
+fn vanished(daemon: &Daemon, session: u32, request: &str) -> bool {
+    let gone = !daemon.has_session(session);
+    if gone {
+        tracing::debug!("{request} for unknown session {session} ignored");
+    }
+    gone
 }
 
 async fn send_error(

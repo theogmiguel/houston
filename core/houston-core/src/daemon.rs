@@ -3381,16 +3381,6 @@ impl Daemon {
                 .filter(|t| !t.is_empty())
                 .collect();
             for info in dead.values_mut() {
-                match db.uncontained_recovery_notice(info.id) {
-                    Ok(Some(notice)) => info.resume_notice = Some(notice),
-                    Err(error) => {
-                        info.resume_notice = Some(format!(
-                            "Session {} ownership receipt is unreadable: {error:#}",
-                            info.id
-                        ))
-                    }
-                    Ok(None) => {}
-                }
                 if info.title.is_empty() {
                     let name = crate::pane_name::pick_codename(&used);
                     used.insert(name.clone());
@@ -3682,9 +3672,10 @@ impl Daemon {
         if adopted.is_none() {
             daemon.close_delegations_lost_to_the_restart();
             daemon.reconcile_task_runs();
-            if let Err(error) = daemon.recover_root_hook_metadata() {
-                daemon.defer_metadata_recovery(&error);
-            }
+            let failed = daemon
+                .recover_root_hook_metadata()
+                .unwrap_or_else(|error| daemon.metadata_recovery_failed_for_all(&error));
+            daemon.defer_metadata_recovery(&failed);
             daemon.run_restore_policy(startup_cause);
             let live_sessions: Vec<u32> = daemon
                 .sessions
@@ -3741,17 +3732,19 @@ impl Daemon {
         Ok(daemon)
     }
 
-    fn recover_root_hook_metadata(&self) -> Result<()> {
+    /// Applies pending hook drops of the panes about to restore. Invalid drops are quarantined
+    /// by the pass; returns the sessions whose drop could not be stored, each with its reason.
+    fn recover_root_hook_metadata(&self) -> Result<HashMap<u32, String>> {
         let candidates: HashSet<u32> = self
             .db
             .root_hook_recovery_session_ids()?
             .into_iter()
             .collect();
+        let mut failed: HashMap<u32, String> = HashMap::new();
         if candidates.is_empty() {
-            return Ok(());
+            return Ok(failed);
         }
         for dir in self.hook_drop_dirs() {
-            let mut failure = None;
             let mut state = crate::hook_drop::DropDirState::new();
             state.recover_sessions(candidates.iter().copied());
             let out = crate::hook_drop::run_pass_with_name_io(
@@ -3763,6 +3756,10 @@ impl Daemon {
                     if !candidates.contains(&drop.session) {
                         return crate::hook_drop::DropVerdict::NoSession;
                     }
+                    // A later drop must not overtake one that failed to store.
+                    if failed.contains_key(&drop.session) {
+                        return crate::hook_drop::DropVerdict::Retry;
+                    }
                     let provider = drop
                         .agent
                         .as_deref()
@@ -3773,7 +3770,7 @@ impl Daemon {
                             .db
                             .record_root_hook_metadata(drop, provider, order, true)
                         {
-                            failure = Some(error);
+                            failed.insert(drop.session, format!("{error:#}"));
                             return crate::hook_drop::DropVerdict::Retry;
                         }
                     }
@@ -3782,34 +3779,25 @@ impl Daemon {
                 },
                 |path| std::fs::remove_file(path),
             );
-            if let Some(error) = failure {
-                return Err(error.context("recovering root hook metadata before restore"));
-            }
             if let Some(actual) = out.listing_limit_exceeded {
-                bail!("hook metadata recovery directory limit 4096 exceeded (actual at least {actual} entries) in {}; recovery is deferred", dir.display());
+                tracing::warn!("hook metadata recovery directory limit 4096 exceeded (actual at least {actual} entries) in {}; no drop applied, panes resume from their stored handles", dir.display());
+            } else if !out.listed_ok {
+                tracing::warn!(
+                    "hook metadata recovery could not fully list {}; panes without an applied drop resume from their stored handles",
+                    dir.display()
+                );
             }
-            anyhow::ensure!(
-                out.listed_ok,
-                "hook metadata recovery could not fully list {}; restore refused",
-                dir.display()
-            );
-            anyhow::ensure!(!out.metadata_failed, "hook metadata recovery could not read or validate all candidate drops in {}; resume is deferred until every relevant drop is readable and valid", dir.display());
         }
         let mut dead = self.dead.lock().expect("dead lock");
-        for mut info in self.db.list_interrupted()? {
-            if let Some(notice) = self.db.uncontained_recovery_notice(info.id)? {
-                info.resume_notice = Some(notice);
-            }
+        for info in self.db.list_interrupted()? {
             if dead.contains_key(&info.id) {
                 dead.insert(info.id, info);
             }
         }
-        Ok(())
+        Ok(failed)
     }
 
-    fn defer_metadata_recovery(&self, error: &anyhow::Error) {
-        let reason = format!("Conversation metadata recovery is incomplete: {error:#}. Resume is blocked; retry after fixing recovery, or choose Fresh or Close.");
-        tracing::warn!("{reason}");
+    fn metadata_recovery_failed_for_all(&self, error: &anyhow::Error) -> HashMap<u32, String> {
         let ids = self
             .db
             .root_hook_recovery_session_ids()
@@ -3827,21 +3815,31 @@ impl Daemon {
                     .map(|info| info.id)
                     .collect()
             });
-        let ids: HashSet<u32> = ids.into_iter().collect();
-        {
-            let mut blocked = self
-                .recovery_metadata_blocked
-                .lock()
-                .expect("recovery metadata lock");
-            for id in &ids {
-                blocked.insert(*id, reason.clone());
-            }
-        }
+        ids.into_iter()
+            .map(|id| (id, format!("{error:#}")))
+            .collect()
+    }
+
+    fn defer_metadata_recovery(&self, failed: &HashMap<u32, String>) {
+        let reasons: HashMap<u32, String> = failed
+            .iter()
+            .map(|(id, error)| {
+                let reason = format!("Conversation metadata recovery is incomplete: {error}. Resume is blocked; retry after fixing recovery, or choose Fresh or Close.");
+                tracing::warn!("session {id}: {reason}");
+                (*id, reason)
+            })
+            .collect();
+        self.recovery_metadata_blocked
+            .lock()
+            .expect("recovery metadata lock")
+            .extend(reasons.clone());
         let mut dead = self.dead.lock().expect("dead lock");
-        for info in dead.values_mut().filter(|info| ids.contains(&info.id)) {
-            info.restore_deferred = Some(proto::RestoreReason::SpawnFailed);
-            info.resume_notice = Some(reason.clone());
-            info.resumable = false;
+        for (id, reason) in reasons {
+            if let Some(info) = dead.get_mut(&id) {
+                info.restore_deferred = Some(proto::RestoreReason::SpawnFailed);
+                info.resume_notice = Some(reason);
+                info.resumable = false;
+            }
         }
     }
 
@@ -3859,14 +3857,21 @@ impl Daemon {
         {
             return Ok(());
         }
-        if let Err(error) = self.recover_root_hook_metadata() {
-            self.defer_metadata_recovery(&error);
-            bail!("Resume refused for session {id}: conversation metadata recovery remains incomplete: {error:#}. Choose Fresh or Close explicitly.");
-        }
+        let failed = match self.recover_root_hook_metadata() {
+            Ok(failed) => failed,
+            Err(error) => {
+                self.defer_metadata_recovery(&self.metadata_recovery_failed_for_all(&error));
+                bail!("Resume refused for session {id}: conversation metadata recovery remains incomplete: {error:#}. Choose Fresh or Close explicitly.");
+            }
+        };
         self.recovery_metadata_blocked
             .lock()
             .expect("recovery metadata lock")
             .clear();
+        self.defer_metadata_recovery(&failed);
+        if let Some(error) = failed.get(&id) {
+            bail!("Resume refused for session {id}: storing its conversation metadata failed: {error}. Choose Fresh or Close explicitly.");
+        }
         Ok(())
     }
 
@@ -3945,7 +3950,7 @@ impl Daemon {
         });
 
         candidates.retain(|candidate| {
-            if let Err(error) = self.db.check_previous_process_stopped(candidate.id) {
+            if let Err(error) = self.reclaim_previous_workload(candidate.id) {
                 if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&candidate.id) {
                     info.restore_deferred = Some(R::SpawnFailed);
                     info.resume_notice = Some(format!(
@@ -4001,13 +4006,8 @@ impl Daemon {
 
         let budget = self.restore_budget() as usize;
         let mut respawned: u32 = 0;
-        let mut broke = false;
+        // Each pane fails alone: one unlaunchable CLI must not keep the others down.
         for (i, c) in candidates.iter().enumerate() {
-            if broke {
-                defer(c.id, R::CircuitBreaker);
-                self.defer_children(c.id, &children, R::CircuitBreaker);
-                continue;
-            }
             if i >= budget {
                 defer(c.id, R::Budget);
                 self.defer_children(c.id, &children, R::Budget);
@@ -4018,13 +4018,9 @@ impl Daemon {
                     respawned = self.sessions.lock().expect("sessions lock").len() as u32;
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "boot restore: respawning session {} failed, halting auto-restore: {e}",
-                        c.id
-                    );
+                    tracing::warn!("boot restore: respawning session {} failed: {e:#}", c.id);
                     defer(c.id, R::SpawnFailed);
                     self.defer_children(c.id, &children, R::SpawnFailed);
-                    broke = true;
                 }
             }
         }
@@ -9686,7 +9682,7 @@ impl Daemon {
         self.recover_metadata_for_resume(old_id, &conversation)?;
         self.ensure_not_closing(old_id, "respawn")?;
         if self.dead.lock().expect("dead lock").contains_key(&old_id) {
-            self.db.check_previous_process_stopped(old_id)?;
+            self.reclaim_previous_workload(old_id)?;
         }
         if conversation != RespawnConversation::Fresh {
             let dead_provider = self
@@ -9809,8 +9805,7 @@ impl Daemon {
             }
             ownership = Some(self.reserve_ownership_replacement(old_id)?);
             self.cleanup_session_ownership(old_id, old)?;
-            #[cfg(target_os = "linux")]
-            if let Err(error) = self.db.check_contained_workload_stopped(old_id) {
+            if let Err(error) = self.reclaim_previous_workload(old_id) {
                 *old.recovery_notice.lock().expect("recovery notice lock") =
                     Some(format!("Session {old_id} replacement deferred: {error:#}"));
                 self.broadcast_control(&proto::ServerMsg::SessionUpdated {
@@ -13385,9 +13380,13 @@ impl Daemon {
         drop(cleanup);
         #[cfg(feature = "test-barriers")]
         crate::test_barriers::pause("kill-admitted", id);
+        let live = session.state.lock().expect("state lock").is_live();
         session
             .backend
             .kill(id, session.pid, self.channel.as_deref())?;
+        if !live {
+            self.reclaim_after_teardown(id);
+        }
         session.cancel_pty_reader();
         let cleanup = self
             .temporary_cleanup_lock
@@ -13791,63 +13790,38 @@ impl Daemon {
                 .temporary_cleanup_lock
                 .lock()
                 .expect("temporary cleanup lock");
-            self.reserve_deliberate_close_locked(id)?
+            self.reserve_deliberate_close_locked(id, true)?
         };
         self.close_reserved(&reservation)
     }
 
-    pub fn recheck_recovery(&self, id: u32, acknowledge_uncontained: bool) -> Result<()> {
-        let _lifecycle = self
-            .session_lifecycle_lock
-            .lock()
-            .expect("session lifecycle lock");
-        self.ensure_not_closing(id, "recovery check")?;
-        let registered = self
-            .sessions
-            .lock()
-            .expect("sessions lock")
-            .get(&id)
-            .cloned();
-        anyhow::ensure!(
-            self.dead.lock().expect("dead lock").contains_key(&id)
-                || registered
-                    .as_ref()
-                    .is_some_and(|session| !session.snapshot_info().state.is_live()),
-            "recovery check refused for session {id}: expected a retained ended session"
-        );
-        if acknowledge_uncontained {
-            self.db.acknowledge_uncontained_recovery(id)?;
-        }
-        let result = self.db.check_previous_process_stopped(id);
-        let notice = match &result {
-            Ok(()) => "Process recovery recheck passed. Restart is available; retained missions still require explicit resume.".into(),
-            Err(error) => format!("Session {id} recovery deferred: {error:#}"),
+    /// Stops what a pane's recorded workload left running before the pane is replaced
+    /// or closed: escaped descendants of an exited root, or a previous daemon's orphans.
+    /// Only the daemon holding the channel lock reaches this; adoption never calls it.
+    fn reclaim_previous_workload(&self, id: u32) -> Result<()> {
+        let Some(identity) = self.db.previous_process_identity(id)? else {
+            return Ok(());
         };
-        let info = if let Some(session) = registered {
-            *session
-                .recovery_notice
-                .lock()
-                .expect("recovery notice lock") = Some(notice);
-            session.snapshot_info()
-        } else {
-            let mut dead = self.dead.lock().expect("dead lock");
-            let info = dead
-                .get_mut(&id)
-                .ok_or_else(|| anyhow!("unknown retained session {id}"))?;
-            info.resume_notice = Some(notice);
-            info.clone()
-        };
-        self.broadcast_control(&proto::ServerMsg::SessionUpdated { info });
-        result
+        identity.reclaim(self.channel.as_deref().unwrap_or("release"), id)
     }
 
-    fn ensure_not_closing(&self, id: u32, operation: &str) -> Result<()> {
-        if self
-            .closing_sessions
+    /// Teardown of a pane this daemon owned: its root may have exited and left descendants
+    /// in the scope, which the process-group fallback cannot reach.
+    fn reclaim_after_teardown(&self, id: u32) {
+        if let Err(error) = self.reclaim_previous_workload(id) {
+            tracing::warn!("session {id}: stopping processes left after teardown: {error:#}");
+        }
+    }
+
+    fn is_closing(&self, id: u32) -> bool {
+        self.closing_sessions
             .lock()
             .expect("closing sessions lock")
             .contains(&id)
-        {
+    }
+
+    fn ensure_not_closing(&self, id: u32, operation: &str) -> Result<()> {
+        if self.is_closing(id) {
             bail!("{operation} refused: session {id} is closing");
         }
         Ok(())
@@ -13855,7 +13829,8 @@ impl Daemon {
 
     // Callers take lifecycle before cleanup. Only admission uses these locks: reader
     // callbacks and early exit publication must run while physical cleanup waits.
-    fn reserve_close_locked(&self, id: u32) -> Result<CloseReservation<'_>> {
+    // `join_closing` leaves an already-closing descendant to its close, so family closes converge.
+    fn reserve_close_locked(&self, id: u32, join_closing: bool) -> Result<CloseReservation<'_>> {
         let root = id;
         let mut pending = vec![(id, false)];
         let mut seen = HashSet::new();
@@ -13868,9 +13843,12 @@ impl Daemon {
             if !seen.insert(id) {
                 continue;
             }
+            if join_closing && id != root && self.is_closing(id) {
+                continue;
+            }
             self.ensure_not_closing(id, "close")?;
             if self.dead.lock().expect("dead lock").contains_key(&id) {
-                self.db.check_previous_process_stopped(id)?;
+                self.reclaim_previous_workload(id)?;
             }
             self.ensure_not_sleeping(id)?;
             self.ensure_not_shell_restoring(id)?;
@@ -13900,8 +13878,12 @@ impl Daemon {
         Ok(CloseReservation { daemon: self, ids })
     }
 
-    fn reserve_deliberate_close_locked(&self, id: u32) -> Result<CloseReservation<'_>> {
-        let reservation = self.reserve_close_locked(id)?;
+    fn reserve_deliberate_close_locked(
+        &self,
+        id: u32,
+        join_closing: bool,
+    ) -> Result<CloseReservation<'_>> {
+        let reservation = self.reserve_close_locked(id, join_closing)?;
         // Project pending asks before cancellation expires descendant dialogue.
         for &parent in reservation.ids.iter().rev() {
             self.escalate_child_inputs_locked(
@@ -13933,7 +13915,7 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
-        self.reserve_close_locked(id)
+        self.reserve_close_locked(id, false)
     }
 
     fn drain_session_reader(&self, id: u32, session: &Session) -> Result<()> {
@@ -14020,9 +14002,11 @@ impl Daemon {
             .cloned();
         if let Some(session) = session.as_ref() {
             self.cleanup_session_ownership(id, session)?;
+            self.reclaim_after_teardown(id);
         }
         if session.is_none() && !self.dead.lock().expect("dead lock").contains_key(&id) {
-            bail!("unknown session id {id} (expected an active or restored session)");
+            tracing::debug!("close of session {id} found it already removed");
+            return Ok(());
         }
         let _cleanup = self
             .temporary_cleanup_lock
@@ -14075,7 +14059,8 @@ impl Daemon {
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             return Ok(());
         }
-        bail!("unknown session id {id} (expected an active or restored session)")
+        tracing::debug!("close of session {id} found it already removed");
+        Ok(())
     }
 
     pub fn reset_title(&self, id: u32) -> Result<()> {
@@ -21066,7 +21051,7 @@ impl Daemon {
             self.ensure_not_closing(target, "orchestrate_kill")?;
             self.assert_orchestration_target(caller, target)?;
             self.child_guard(target, confirm_children)?;
-            self.reserve_deliberate_close_locked(target)?
+            self.reserve_deliberate_close_locked(target, false)?
         };
         self.close_reserved(&reservation)
     }
@@ -21161,10 +21146,19 @@ impl Daemon {
                 .temporary_cleanup_lock
                 .lock()
                 .expect("temporary cleanup lock");
-            self.ensure_not_closing(id, "close")?;
+            if !self.has_session(id) {
+                // Pane teardown can repeat a close after removal; the pane is already gone.
+                tracing::debug!("close of unknown session {id} ignored");
+                return Ok(());
+            }
+            if self.is_closing(id) {
+                // A duplicate close or the parent's cascade already owns this teardown.
+                tracing::debug!("close of session {id} joined the close in progress");
+                return Ok(());
+            }
             self.child_guard(id, confirm_children)?;
             let notice = self.operator_ended_notice_facts(id);
-            (self.reserve_deliberate_close_locked(id)?, notice)
+            (self.reserve_deliberate_close_locked(id, true)?, notice)
         };
         self.close_reserved(&reservation)?;
         if let Some((parent, label)) = notice {
@@ -23405,7 +23399,7 @@ impl Daemon {
                 {
                     continue;
                 }
-                self.reserve_close_locked(row.child_session)
+                self.reserve_close_locked(row.child_session, false)
             };
             match reservation.and_then(|reservation| self.close_reserved(&reservation)) {
                 Ok(()) => {}

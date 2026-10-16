@@ -74,6 +74,8 @@ import {
   LIVE_CHILDREN_MARKER,
   HoustonClient as Client,
 } from "./houston/client";
+import type { PaneOps } from "./houston/paneOps";
+import { IDLE_PANE_OPS, PaneOpsContext, useLayoutPlacement } from "./houston/paneOpsContext";
 import { USAGE_WINDOW_REFUSED } from "./houston/generated/DEFAULTS";
 import type { UsageSummaryMsg } from "./components/UsageSection";
 import type { UsageActivityDay } from "./houston/generated/UsageActivityDay";
@@ -325,6 +327,18 @@ function closeGridSessions(client: HoustonClient | null, sessions: number[]): vo
   for (const id of sessions) client?.closeSession(id);
 }
 
+// The daemon closes every session of a removed workspace; until it says so none may be placed again.
+function markWorkspaceSessionsClosing(client: HoustonClient, sessions: Iterable<SessionInfo>, path: string): void {
+  const all = [...sessions];
+  const closing = new Set(all.filter((s) => s.project_dir === path).map((s) => s.id));
+  for (const s of all) if (s.spawned_by != null && closing.has(s.spawned_by)) closing.add(s.id);
+  for (const id of closing) client.paneOps.beginClose(id);
+}
+
+function paneOpsOf(conn: Conn): PaneOps {
+  return "client" in conn ? conn.client.paneOps : IDLE_PANE_OPS;
+}
+
 function readyClient(conn: Conn): HoustonClient | null {
   return conn.kind === "ready" ? conn.client : null;
 }
@@ -430,8 +444,8 @@ const GIT_STATUS_ERROR_CONTEXT = "git_status";
 const USAGE_SUMMARY_ERROR_CONTEXT = "usage_summary";
 const USAGE_ACTIVITY_ERROR_CONTEXT = "usage_activity";
 
-function pushGlobalError(msg: { message: string; context?: string | null }, push: (message: string) => void): void {
-  if (msg.context !== GIT_STATUS_ERROR_CONTEXT) push(msg.message);
+function pushGlobalError(msg: { message: string; context?: string | null }, push: (message: string) => void, ops: PaneOps): void {
+  if (msg.context !== GIT_STATUS_ERROR_CONTEXT && ops.attribute(msg) === null) push(msg.message);
 }
 
 const REVIEW_INTENT_TTL_MS = 10_000;
@@ -1294,7 +1308,8 @@ export function App(): React.JSX.Element {
     let activeClient: HoustonClient | null = null;
     let bootTimer: ReturnType<typeof setTimeout> | undefined;
 
-    function handleSessionState(msg: SessionStateMessage): void {
+    function handleSessionState(client: HoustonClient, msg: SessionStateMessage): void {
+      client.paneOps.respawnSettled(msg.session);
       setSessions((prev) => {
         const next = new Map(prev);
         const s = next.get(msg.session);
@@ -1411,9 +1426,10 @@ export function App(): React.JSX.Element {
             break;
           }
           case "session_state":
-            handleSessionState(msg);
+            handleSessionState(client, msg);
             break;
           case "session_removed":
+            client.paneOps.sessionRemoved(msg.session);
             setRemovedSessions((prev) => new Set(prev).add(msg.session));
             setLayouts((prev) => removeSessionFromLayouts(prev, msg.session));
             setSessions((prev) => {
@@ -1613,6 +1629,7 @@ export function App(): React.JSX.Element {
               break;
             }
             if (msg.message.startsWith(LIVE_CHILDREN_MARKER)) {
+              client.paneOps.attribute(msg);
               const intent = client.takeRecentDestroyIntent();
               if (intent) {
                 setLiveChildrenConfirm({
@@ -1623,7 +1640,7 @@ export function App(): React.JSX.Element {
                 break;
               }
             }
-            pushGlobalError(msg, pushError);
+            pushGlobalError(msg, pushError, client.paneOps);
             break;
           }
         }
@@ -1770,6 +1787,9 @@ export function App(): React.JSX.Element {
     [sessions],
   );
 
+  const paneOps = paneOpsOf(conn);
+  const { closingIds, placeable, layoutSessions } = useLayoutPlacement(paneOps, sessions);
+
   const warmLayouts = useMemo(() => {
     const map = new Map<string, LayoutState>();
     for (const w of orderedWorkspaces) {
@@ -1784,7 +1804,7 @@ export function App(): React.JSX.Element {
         wsSessionIds,
         current,
         replacedSessions,
-        wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
+        wsSessionIds.filter(placeable),
         retainMissingSession,
       );
       for (const [key, st] of synced) map.set(key, st);
@@ -1798,6 +1818,7 @@ export function App(): React.JSX.Element {
     gridsFor,
     activeGridId,
     retainMissingSession,
+    placeable,
   ]);
   useBrowserLayoutMigration(orderedWorkspaces, warmLayouts);
   const documentLayouts = useMemo(() => new Map([...warmLayouts, ...layouts]), [warmLayouts, layouts]);
@@ -1871,10 +1892,10 @@ export function App(): React.JSX.Element {
     const ids = idsKey ? idsKey.split(",").map(Number) : [];
     setLayouts((prev) => {
       const cur = prev.get("all") ?? loadLayout("all");
-      const tree = syncSessionLayout(cur.tree, ids, cur.cols, replacedSessions, ids.filter((id) => sessions.get(id)?.spawned_by == null), retainMissingSession);
+      const tree = syncSessionLayout(cur.tree, ids, cur.cols, replacedSessions, ids.filter(placeable), retainMissingSession);
       return new Map(prev).set("all", { ...cur, tree });
     });
-  }, [selectedWs, idsKey, replacedSessions, conn.kind, retainMissingSession]);
+  }, [selectedWs, idsKey, replacedSessions, conn.kind, retainMissingSession, placeable]);
 
   const gridSyncKey = useMemo(() => {
     const perWs = workspaces
@@ -1891,8 +1912,8 @@ export function App(): React.JSX.Element {
       })
       .sort()
       .join("|");
-    return `${perWs}~sel:${selectedWs}`;
-  }, [workspaces, sessions, gridsFor, activeGridId, selectedWs]);
+    return `${perWs}~sel:${selectedWs}~closing:${[...closingIds].sort((a, b) => a - b).join(",")}`;
+  }, [workspaces, sessions, gridsFor, activeGridId, selectedWs, closingIds]);
   const lastGridSync = useRef<{ key: string; retainMissing: typeof retainMissingSession } | null>(null);
 
   useEffect(() => {
@@ -1913,7 +1934,7 @@ export function App(): React.JSX.Element {
           wsSessionIds,
           current,
           replacedSessions,
-          wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
+          wsSessionIds.filter(placeable),
           retainMissingSession,
         );
         for (const [key, st] of synced) {
@@ -1931,6 +1952,7 @@ export function App(): React.JSX.Element {
     gridsFor,
     activeGridId,
     retainMissingSession,
+    placeable,
   ]);
 
   useEffect(() => {
@@ -2058,13 +2080,13 @@ export function App(): React.JSX.Element {
       const persisted = loadLayout("all");
       return {
         ...persisted,
-        tree: syncSessionLayout(persisted.tree, wsIds, persisted.cols, replacedSessions, wsIds.filter((id) => sessions.get(id)?.spawned_by == null), retainMissingSession),
+        tree: syncSessionLayout(persisted.tree, wsIds, persisted.cols, replacedSessions, wsIds.filter(placeable), retainMissingSession),
       };
     }
     const key = gridStorageKey(selectedWs, activeGridId(selectedWs));
     return warmLayouts.get(key) ?? loadLayout(key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layouts, warmLayouts, selectedWs, idsKey, activeGridId, replacedSessions, retainMissingSession]);
+  }, [layouts, warmLayouts, selectedWs, idsKey, activeGridId, replacedSessions, retainMissingSession, placeable]);
   const currentTree = wsState.tree;
   currentTreeRef.current = currentTree;
   const { checkAgentTargets, linkedPullRequests } = usePullRequestRailData(
@@ -2749,6 +2771,7 @@ export function App(): React.JSX.Element {
       return;
     }
     const { path } = confirmRemoveWs;
+    markWorkspaceSessionsClosing(conn.client, sessionsRef.current.values(), path);
     conn.client.removeWorkspace(path);
     dropWorkspaceLocalState(path);
     setConfirmRemoveWs(null);
@@ -2789,6 +2812,7 @@ export function App(): React.JSX.Element {
           );
         },
         removeSourceWorkspace: () => {
+          markWorkspaceSessionsClosing(client, sessionsRef.current.values(), payload.sourceWorkspaceId);
           client.removeWorkspace(payload.sourceWorkspaceId);
           dropWorkspaceLocalState(payload.sourceWorkspaceId);
         },
@@ -3449,6 +3473,7 @@ export function App(): React.JSX.Element {
 
   return (
     <SessionsStoreContext.Provider value={sessionsStore}>
+    <PaneOpsContext.Provider value={paneOps}>
       <SessionEffects
         connection={conn.kind}
         workspaces={workspaces}
@@ -3704,7 +3729,7 @@ export function App(): React.JSX.Element {
                 currentTree ? (
                   <LayoutView
                     tree={currentTree}
-                    sessions={sessions}
+                    sessions={layoutSessions}
                     roster={paneRoster}
                     gridSessionIds={mountedGridSessionIds}
                     onMoveChildToGrid={moveChildToGrid}
@@ -3795,7 +3820,7 @@ export function App(): React.JSX.Element {
                             <LayoutView
                               tree={tree}
                               warm={!gridSelected}
-                              sessions={sessions}
+                              sessions={layoutSessions}
                               roster={paneRoster}
                               gridSessionIds={mountedGridSessionIds}
                               onMoveChildToGrid={moveChildToGrid}
@@ -4464,6 +4489,7 @@ export function App(): React.JSX.Element {
       </TagsContext.Provider>
       </KeymapOverridesContext.Provider>
     </TerminalTuningContext.Provider>
+    </PaneOpsContext.Provider>
     </SessionsStoreContext.Provider>
   );
 }

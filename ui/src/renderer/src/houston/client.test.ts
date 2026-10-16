@@ -1303,6 +1303,19 @@ describe('HoustonClient destroy intents + confirmed re-sends (v62 D3)', () => {
     expect(sent).toContainEqual({ type: 'session_kill', session: 6, confirm_children: true })
   })
 
+  it('marks a session closing from the close request on, kill leaves it in place, and respawn is marked in flight', async () => {
+    const { client } = await connectFakeClient()
+
+    client.killSession(1)
+    client.closeSession(2)
+    client.confirmCloseSession(3)
+    client.respawnSession(4)
+
+    expect(client.paneOps.closingIds()).toEqual(new Set([2, 3]))
+    expect(client.paneOps.isRespawning(4)).toBe(true)
+    expect(client.paneOps.isRespawning(1)).toBe(false)
+  })
+
   it('orchestration settings get/set go out on the control link', async () => {
     const { client, ws } = await connectFakeClient()
 

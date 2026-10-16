@@ -19,8 +19,8 @@ export type PaneFrameProps = Omit<HTMLAttributes<HTMLElement>, 'className'> & {
   kind: PaneFrameKind
   focusTier: PaneFocusTier
   active: boolean
-  /** An ended session steps back to 80% opacity. */
-  dimmed?: boolean
+  /** An ended session steps back to 80% opacity; `body` dims only what sits between the header and a footer notice. */
+  dimmed?: boolean | 'body'
   ref?: Ref<HTMLElement>
   children: ReactNode
 }
@@ -31,7 +31,7 @@ export function PaneFrame({ kind, focusTier, active, dimmed = false, children, .
     <section
       {...rest}
       data-pane-focus-border={focusTier}
-      className={`pane ${KIND[kind]} flex-1 min-w-0 min-h-0 relative flex flex-col overflow-hidden [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${dimmed ? 'opacity-80' : ''} ${active ? 'focus' : ''}`}
+      className={`pane ${KIND[kind]} flex-1 min-w-0 min-h-0 relative flex flex-col overflow-hidden [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${dimmed === 'body' ? '[&>:not(header,[data-pane-footer])]:opacity-60' : dimmed ? 'opacity-80' : ''} ${active ? 'focus' : ''}`}
     >
       {children}
     </section>

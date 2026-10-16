@@ -9,7 +9,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 142;
+pub const PROTOCOL_VERSION: u32 = 143;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1183,9 +1183,6 @@ pub enum HookTrust {
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "kebab-case")]
 pub enum RestoreReason {
-    /// A sibling's respawn already failed this boot; this husk was never
-    /// attempted. Distinct from `SpawnFailed`, which names the failing husk.
-    CircuitBreaker,
     InvalidCwd,
     Ssh,
     Budget,
@@ -3523,12 +3520,6 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         fresh: Option<bool>,
-    },
-    SessionRecoveryCheck {
-        session: u32,
-        #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
-        acknowledge_uncontained: Option<bool>,
     },
     SessionSleep {
         session: u32,

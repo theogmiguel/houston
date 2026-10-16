@@ -122,10 +122,6 @@ fn seed(database: &Path, project: &Path, sleeping: bool) -> Db {
         .unwrap();
     // A session's parent identity also survives if its delegation record is absent.
     db.insert_session(&info(3, project, Some(1))).unwrap();
-    // Replacement tests begin after an operator acknowledged the legacy workloads.
-    for id in 1..=3 {
-        db.acknowledge_uncontained_recovery(id).unwrap();
-    }
     db
 }
 
@@ -573,10 +569,6 @@ fn root_restore_carries_saved_scrollback_before_retiring_the_old_row() {
         assert!(!state.path().join("scrollback/1.bin").exists());
         // The staged ring was checked above, before this orderly checkpoint.
         daemon.manage_shutdown().unwrap();
-        // Outside a systemd session scope the replacement's launch is uncontained, and closing
-        // it after a restart needs the same operator acknowledgement `seed` gives its rows.
-        // A contained launch refuses acknowledgement and is verified through its scope instead.
-        let _ = db.acknowledge_uncontained_recovery(replacement.id);
         let reopened = boot(&database);
         assert_saved_scrollback(&reopened, replacement.id);
         reopened.close(replacement.id).unwrap();

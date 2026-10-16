@@ -8,7 +8,6 @@ use houston_core::db::Db;
 use houston_core::host_env::HostEnv;
 use houston_protocol as proto;
 
-// These restoration fixtures explicitly acknowledge stopped legacy workloads.
 fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
     let db = Db::open(&state_dir.join("test.db")).unwrap();
     for (i, dir) in dirs.iter().enumerate() {
@@ -53,7 +52,6 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             slept_at_ms: None,
         })
         .unwrap();
-        db.acknowledge_uncontained_recovery((i + 1) as u32).unwrap();
     }
     if clean {
         std::fs::write(state_dir.join("clean-shutdown"), b"").unwrap();
@@ -110,7 +108,6 @@ fn seed_one(
         slept_at_ms: None,
     })
     .unwrap();
-    db.acknowledge_uncontained_recovery(id).unwrap();
 }
 
 fn boot_and_list(
@@ -355,7 +352,6 @@ fn invalid_cwd_is_deferred_not_respawned() {
         slept_at_ms: None,
     })
     .unwrap();
-    db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
@@ -368,38 +364,144 @@ fn invalid_cwd_is_deferred_not_respawned() {
 
 #[cfg(unix)]
 #[test]
-fn spawn_failure_trips_the_circuit_breaker() {
+fn one_failed_respawn_defers_only_that_husk() {
+    // No `claude` on this PATH: the Claude husk restores first and fails to launch.
     let env = common::base_env()
-        .with("SHELL", Some("/nonexistent/houston-test-shell"))
+        .with("SHELL", Some("/bin/sh"))
+        .with("PATH", Some("/usr/bin:/bin"))
         .without("HOUSTON_SAFE_MODE")
         .with("HOUSTON_RESTORE_BUDGET", Some("6"));
 
     let state = tempfile::tempdir().unwrap();
     let p1 = tempfile::tempdir().unwrap();
     let p2 = tempfile::tempdir().unwrap();
-    seed(state.path(), &[p1.path(), p2.path()], true);
+    let p3 = tempfile::tempdir().unwrap();
+    seed_one(
+        state.path(),
+        1,
+        p1.path(),
+        proto::AgentKind::Shell,
+        None,
+        None,
+    );
+    seed_one(
+        state.path(),
+        2,
+        p2.path(),
+        proto::AgentKind::Claude,
+        None,
+        None,
+    );
+    seed_one(
+        state.path(),
+        3,
+        p3.path(),
+        proto::AgentKind::Shell,
+        None,
+        None,
+    );
+    std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
-    let (sessions, recovery) = boot_and_list(state.path(), &env);
-    assert_eq!(sessions.len(), 2, "both husks kept: {sessions:?}");
-    let reasons: Vec<_> = sessions.iter().map(|s| s.restore_deferred).collect();
-    assert_eq!(
-        reasons
-            .iter()
-            .filter(|r| **r == Some(proto::RestoreReason::SpawnFailed))
-            .count(),
-        1,
-        "exactly the attempted husk carries spawn-failed: {sessions:?}"
+    let daemon = OwnedRestoreDaemon(
+        Daemon::new(DaemonConfig::new(
+            TOKEN.to_string(),
+            state.path().join("test.db"),
+            env,
+        ))
+        .unwrap(),
     );
+    let sessions = daemon.0.list();
+    let failed = sessions
+        .iter()
+        .find(|s| s.id == 2)
+        .expect("the failed husk is kept");
     assert_eq!(
-        reasons
-            .iter()
-            .filter(|r| **r == Some(proto::RestoreReason::CircuitBreaker))
-            .count(),
-        1,
-        "the husk behind it was never attempted: {sessions:?}"
+        failed.restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed)
     );
-    let r = recovery.expect("summary");
-    assert_eq!((r.respawned, r.deferred), (0, 2));
+    for origin in [1, 3] {
+        let restored = sessions
+            .iter()
+            .find(|s| s.session_origin == Some(origin) && s.id != origin)
+            .unwrap_or_else(|| {
+                panic!("husk {origin} must restore after a sibling failed: {sessions:?}")
+            });
+        assert_eq!(restored.state, proto::SessionState::Running);
+    }
+    let r = daemon.0.recovery_summary().expect("summary");
+    assert_eq!((r.respawned, r.deferred), (2, 1));
+}
+
+#[test]
+fn legacy_and_dead_uncontained_roots_restore_without_acknowledgement() {
+    let env = common::base_env()
+        .with("SHELL", Some("/bin/sh"))
+        .without("HOUSTON_SAFE_MODE");
+    let state = tempfile::tempdir().unwrap();
+    let p1 = tempfile::tempdir().unwrap();
+    let p2 = tempfile::tempdir().unwrap();
+    seed_one(
+        state.path(),
+        1,
+        p1.path(),
+        proto::AgentKind::Shell,
+        None,
+        None,
+    );
+    seed_one(
+        state.path(),
+        2,
+        p2.path(),
+        proto::AgentKind::Shell,
+        None,
+        None,
+    );
+    let mut root = houston_core::spawn::command("sleep")
+        .arg("600")
+        .spawn()
+        .unwrap();
+    let receipt = houston_core::recovery_process::ProcessIdentity::capture(Some(root.id()))
+        .unwrap()
+        .unwrap();
+    assert!(receipt.uncontained_reason().is_some());
+    root.kill().unwrap();
+    root.wait().unwrap();
+    rusqlite::Connection::open(state.path().join("test.db"))
+        .unwrap()
+        .execute(
+            "UPDATE sessions SET process_identity = ?1 WHERE id = 2",
+            [serde_json::to_string(&receipt).unwrap()],
+        )
+        .unwrap();
+
+    let daemon = OwnedRestoreDaemon(
+        Daemon::new(DaemonConfig::new(
+            TOKEN.to_string(),
+            state.path().join("test.db"),
+            env,
+        ))
+        .unwrap(),
+    );
+    let sessions = daemon.0.list();
+    for origin in [1, 2] {
+        let restored = sessions
+            .iter()
+            .find(|s| s.session_origin == Some(origin))
+            .unwrap_or_else(|| panic!("husk {origin} missing: {sessions:?}"));
+        assert_ne!(restored.id, origin, "husk {origin} was not restored");
+        assert_eq!(restored.state, proto::SessionState::Running);
+        assert_eq!(restored.restore_deferred, None);
+        assert!(
+            !restored
+                .resume_notice
+                .as_deref()
+                .is_some_and(|notice| notice.contains("ownership")),
+            "{:?}",
+            restored.resume_notice
+        );
+    }
+    let r = daemon.0.recovery_summary().expect("summary");
+    assert_eq!((r.respawned, r.deferred), (2, 0));
 }
 
 #[test]
@@ -540,7 +642,6 @@ fn no_flags_set_runs_normal_restore_policy() {
         slept_at_ms: None,
     })
     .unwrap();
-    db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
