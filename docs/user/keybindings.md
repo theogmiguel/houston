@@ -96,6 +96,8 @@ All of the following are rebindable from Settings ▸ Shortcuts unless noted.
 | Split left | a |
 | Split down | s |
 | Tidy panes into a balanced grid | y |
+| Tidy panes into one row | h |
+| Tidy panes into one column | v |
 | Reset every split to an even share | = |
 | Focus previous pane | [ |
 | Focus next pane | ] |

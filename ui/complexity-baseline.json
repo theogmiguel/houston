@@ -26,7 +26,7 @@
   "files": {
     "src/renderer/src/App.tsx": {
       "total": 1015,
-      "worst": 82,
+      "worst": 81,
       "over": 3
     },
     "src/renderer/src/components/EditorSurface.tsx": {

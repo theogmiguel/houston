@@ -336,12 +336,14 @@ export function tidyColumns(n: number): number {
   return Math.min(4, Math.max(2, Math.ceil(Math.sqrt((n * 16) / 9))))
 }
 
-export function tidy(tree: LayoutNode | null): LayoutNode | null {
+export type TidyShape = 'grid' | 'row' | 'column'
+
+export function tidy(tree: LayoutNode | null, shape: TidyShape = 'grid'): LayoutNode | null {
   if (!tree) return null
   const slots = preorderSlots(tree)
   if (slots.length === 0) return null
   if (slots.length === 1) return slots[0]
-  const cols = tidyColumns(slots.length)
+  const cols = shape === 'row' ? slots.length : shape === 'column' ? 1 : tidyColumns(slots.length)
   const rows: GridSlot[][] = []
   for (let i = 0; i < slots.length; i += cols) rows.push(slots.slice(i, i + cols))
   const rowNode = (row: GridSlot[]): LayoutNode =>
