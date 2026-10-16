@@ -66,19 +66,27 @@ interface PendingMarks {
   notRecorded: number
 }
 
+interface AwaitingPaint {
+  cls: WriteClass
+  startedAtMs: number
+  arrivedAtMs: number
+  keystrokes: number
+}
+
 export interface WriteLatencyTrackerOptions {
   now?: () => number
   sink?: (entry: LogPayload) => void
 }
 
 /** Times each keystroke until the next output frame of its session reaches the socket
- * handler. The daemon merges a session's queued output into one frame, so a frame closes
- * every keystroke sent before it; the record names the oldest. Parse and paint come later
- * and are not included. */
+ * handler, and again until the pane's first paint after that frame was parsed. The daemon
+ * merges a session's queued output into one frame, so a frame closes every keystroke sent
+ * before it; the record names the oldest. */
 export class WriteLatencyTracker {
   private readonly now: () => number
   private readonly sink: (entry: LogPayload) => void
   private readonly pending = new Map<number, PendingMarks>()
+  private readonly awaitingPaint = new Map<number, AwaitingPaint>()
   private readonly lastEmittedMs = new Map<string, number>()
   private readonly suppressed = new Map<string, number>()
   private notRecordedAtCap = 0
@@ -116,11 +124,41 @@ export class WriteLatencyTracker {
     if (!queue) return
     this.pending.delete(session)
     const oldest = queue.marks[0]
-    const roundTripMs = this.now() - oldest.startedAtMs
+    const nowMs = this.now()
+    const roundTripMs = nowMs - oldest.startedAtMs
+    const keystrokes = queue.marks.length + queue.notRecorded
     if (roundTripMs > ROUND_TRIP_THRESHOLD_MS) {
-      this.emit(session, oldest.cls, 'slow round trip', {
-        roundTripMs,
-        keystrokes: queue.marks.length + queue.notRecorded
+      this.emit(session, oldest.cls, 'slow round trip', { roundTripMs, keystrokes })
+    }
+    const earlier = this.awaitingPaint.get(session)
+    if (earlier === undefined || nowMs - earlier.arrivedAtMs > STALE_MARK_MS) {
+      this.awaitingPaint.set(session, {
+        cls: oldest.cls,
+        startedAtMs: oldest.startedAtMs,
+        arrivedAtMs: nowMs,
+        keystrokes
+      })
+    } else {
+      earlier.keystrokes += keystrokes
+    }
+  }
+
+  /** The pane painted with no output left in its write queue, so every frame that reached
+   * it has been parsed into this paint. A hidden or paused pane that paints only after the
+   * staleness window is not timed. */
+  notePainted(session: number): void {
+    const awaiting = this.awaitingPaint.get(session)
+    if (awaiting === undefined) return
+    this.awaitingPaint.delete(session)
+    const nowMs = this.now()
+    const afterArrivalMs = nowMs - awaiting.arrivedAtMs
+    if (afterArrivalMs > STALE_MARK_MS) return
+    const paintMs = nowMs - awaiting.startedAtMs
+    if (paintMs > ROUND_TRIP_THRESHOLD_MS) {
+      this.emit(session, awaiting.cls, 'slow echo paint', {
+        paintMs,
+        afterArrivalMs,
+        keystrokes: awaiting.keystrokes
       })
     }
   }
@@ -131,6 +169,7 @@ export class WriteLatencyTracker {
 
   dropSession(session: number): void {
     this.pending.delete(session)
+    this.awaitingPaint.delete(session)
     const prefix = `${session}:`
     for (const key of this.lastEmittedMs.keys()) {
       if (key.startsWith(prefix)) this.lastEmittedMs.delete(key)

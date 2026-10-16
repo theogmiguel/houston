@@ -230,6 +230,71 @@ describe('WriteLatencyTracker', () => {
     expect(entries.map((e) => e.payload.suppressedSinceLast)).toEqual([0, 2])
   })
 
+  it('times a keystroke to the first paint after its frame, separately from arrival', () => {
+    let t = 0
+    const now = (): number => t
+    const { entries, sink } = collectingSink()
+    const tracker = new WriteLatencyTracker({ now, sink })
+
+    tracker.recordWrite(1, 'a', 1)
+    t = 100
+    tracker.closeOnFrame(1)
+    t = 400
+    tracker.notePainted(1)
+    t = 900
+    tracker.notePainted(1)
+
+    expect(entries.map((e) => e.message)).toEqual(['slow echo paint'])
+    expect(entries[0].payload).toMatchObject({ paintMs: 400, afterArrivalMs: 300, keystrokes: 1 })
+  })
+
+  it('does not time a paint that follows no echo frame', () => {
+    let t = 0
+    const now = (): number => t
+    const { entries, sink } = collectingSink()
+    const tracker = new WriteLatencyTracker({ now, sink })
+
+    tracker.closeOnFrame(1)
+    tracker.recordWrite(1, 'a', 1)
+    t = 1000
+    tracker.notePainted(1)
+
+    expect(entries).toEqual([])
+  })
+
+  it('times from the oldest keystroke when several frames arrive before one paint', () => {
+    let t = 0
+    const now = (): number => t
+    const { entries, sink } = collectingSink()
+    const tracker = new WriteLatencyTracker({ now, sink })
+
+    tracker.recordWrite(1, 'a', 1)
+    t = 50
+    tracker.closeOnFrame(1)
+    tracker.recordWrite(1, 'b', 1)
+    t = 100
+    tracker.closeOnFrame(1)
+    t = 600
+    tracker.notePainted(1)
+
+    expect(entries[0].payload).toMatchObject({ paintMs: 600, afterArrivalMs: 550, keystrokes: 2 })
+  })
+
+  it('does not attribute a paint that comes after the staleness window, as a hidden pane\'s does', () => {
+    let t = 0
+    const now = (): number => t
+    const { entries, sink } = collectingSink()
+    const tracker = new WriteLatencyTracker({ now, sink })
+
+    tracker.recordWrite(1, 'a', 1)
+    t = 10
+    tracker.closeOnFrame(1)
+    t = 10 + STALE_MARK_MS + 1
+    tracker.notePainted(1)
+
+    expect(entries).toEqual([])
+  })
+
   it('throttles per (session, message) pair, not globally: a different session is unaffected', () => {
     let t = 0
     const now = (): number => t

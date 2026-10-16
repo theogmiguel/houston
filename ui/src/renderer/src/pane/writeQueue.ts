@@ -143,6 +143,11 @@ export class PaneWriteQueue {
     return this.droppedBytes
   }
 
+  /** Bytes not yet handed to the engine; zero means everything enqueued has been parsed. */
+  get backlogBytes(): number {
+    return this.queuedBytes
+  }
+
   enqueue(data: Uint8Array, exempt = false): void {
     if (this.disposed || data.length === 0) return
     if (data.length <= this.smallWriteBytes && data.length <= this.chunkBytes && this.queue.length === 0 && !this.inFlight) {

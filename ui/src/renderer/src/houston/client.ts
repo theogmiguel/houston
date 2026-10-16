@@ -304,6 +304,10 @@ export class HoustonClient {
     this.onFrame(session, offset, payload)
   }
 
+  notePainted(session: number): void {
+    this.latency.notePainted(session)
+  }
+
   private markReady(session: number): void {
     if (this.exitedSessions.has(session) || this.deadSessions.has(session)) return
     if (this.readySessions.has(session)) return
