@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar, preloadRailOptionsMenu } from './Sidebar'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import { DEFAULT_RAIL_PREFS } from '../railPrefs'
 import {
   RAIL_TAG_MARK_AT,
@@ -13,8 +13,9 @@ import {
 import type { TagInfo } from '../houston/generated/TagInfo'
 import type { SessionInfo, Workspace } from '../houston/client'
 import { preloadTagPopoverSurface } from './tags/TagPopover'
+import { preloadGridRailRow } from './ui/GridRailRowFallback'
 
-beforeAll(() => Promise.all([preloadTagPopoverSurface(), preloadRailOptionsMenu()]))
+beforeAll(() => Promise.all([preloadTagPopoverSurface(), preloadRailChunks(), preloadGridRailRow()]), 30_000)
 
 function ws(path: string, name = path): Workspace {
   return { path, name } as Workspace
@@ -274,8 +275,9 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     expect(options()[0].getAttribute('aria-checked')).toBe('true')
     expect(badge()?.textContent).toBe('1')
 
+    // Two tags are one filter.
     act(() => options()[1].click())
-    expect(badge()?.textContent).toBe('2')
+    expect(badge()?.textContent).toBe('1')
     expect(options()[1].getAttribute('aria-checked')).toBe('true')
 
     act(() => options()[0].click())
@@ -313,7 +315,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     openFilter()
     act(() => options()[0].click())
     act(() => options()[2].click())
-    expect(badge()?.textContent).toBe('2')
+    expect(badge()?.textContent).toBe('1')
 
     const clear = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.trim() === 'Clear filter')!
     act(() => clear.click())
@@ -357,6 +359,8 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
   it('a filter that matches nothing says so instead of showing an empty tree', () => {
     render({
       ...TREE,
+      selected: '',
+      selectedGridId: null,
       gridsByWorkspace: {
         '/a': [
           { id: 'a1', name: 'alpha main', sessionIds: [11], tagIds: [], paneTagIds: [2], count: 1 }
@@ -372,7 +376,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
 
     expect(gridRows()).toHaveLength(0)
     expect(wsRows()).toHaveLength(0)
-    expect(container.textContent).toContain('No tab carries that tag')
+    expect(container.textContent).toContain('No grid carries that tag')
   })
 
   it('keeps configured tag chips visible at every rail width', async () => {

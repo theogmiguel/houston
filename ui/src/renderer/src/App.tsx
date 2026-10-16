@@ -74,7 +74,7 @@ import {
   LIVE_CHILDREN_MARKER,
   HoustonClient as Client,
 } from "./houston/client";
-import type { PaneOps } from "./houston/paneOps";
+import { errorSessionIds, type PaneOps } from "./houston/paneOps";
 import { IDLE_PANE_OPS, PaneOpsContext, useLayoutPlacement } from "./houston/paneOpsContext";
 import { USAGE_WINDOW_REFUSED } from "./houston/generated/DEFAULTS";
 import type { UsageSummaryMsg } from "./components/UsageSection";
@@ -118,7 +118,7 @@ import {
   useModifierHeld,
   type DesktopNotificationMode,
 } from "./usePreferences";
-import { MANAGE_TAGS_EVENT, Sidebar } from "./components/Sidebar";
+import { MANAGE_TAGS_EVENT, Sidebar, loadCollapsedWorkspaces } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
 import { focusedSkillAgent, paneSkillAgent, skillInvocationFor, skillRunBlocker } from "./houston/skillSurface";
 import { setSettingsSection, settingsSectionLabel, shouldIgnoreInputKey, useSettingsSection } from "./settingsNav";
@@ -218,7 +218,7 @@ import { usePullRequestsScreen } from "./usePullRequestsScreen";
 import { useProactiveDiff } from "./useProactiveDiff";
 import { useCheckAgentCreation, type CheckAgentSplitIntent } from "./useCheckAgentCreation";
 import { usePanelSurfaceNavigation } from "./usePanelSurfaceNavigation";
-import { touchGrid } from "./gridRecency";
+import { forgetGrid, touchGrid } from "./gridRecency";
 import { useNativeSuppressionCount } from "./layout/nativeSuppression";
 import type { ReviewDiffsData } from "./git/review";
 import { useNotices } from "./notices";
@@ -278,6 +278,7 @@ import {
   regrid,
   removeGrid,
   renameGrid,
+  resetGridName,
   setGridTags,
   dropTagFromGrids,
   gridTagIds,
@@ -328,9 +329,40 @@ export type Conn =
     }
   | { kind: "failed"; error: string };
 
-// Closing a workspace's last grid ends its panes rather than leaving them running unseen.
-function closeGridSessions(client: HoustonClient | null, sessions: number[]): void {
-  for (const id of sessions) client?.closeSession(id);
+// The user confirmed the grid close, which covers any agents those panes spawned,
+// so the daemon is asked to end each pane together with its children.
+function closeGridSessions(client: HoustonClient, sessions: readonly number[]): void {
+  for (const id of sessions) client.confirmCloseSession(id);
+}
+
+// Sidebar owns the collapsed-workspace set; a removed workspace's entry must not linger in storage.
+function pruneCollapsedWorkspace(path: string): void {
+  const collapsed = loadCollapsedWorkspaces();
+  if (!collapsed.delete(path)) return;
+  try {
+    localStorage.setItem("tr-ws-collapsed", JSON.stringify([...collapsed]));
+  } catch {
+    // Storage full or blocked: a stale collapsed entry is harmless.
+  }
+}
+
+// Sessions spawned, directly or not, by any of `roots`.
+function descendantSessions(all: Iterable<SessionInfo>, roots: Iterable<number>): Set<number> {
+  const sessions = [...all];
+  const found = new Set<number>();
+  const frontier = new Set(roots);
+  while (frontier.size > 0) {
+    const next = new Set<number>();
+    for (const s of sessions) {
+      if (s.spawned_by != null && frontier.has(s.spawned_by) && !found.has(s.id)) {
+        found.add(s.id);
+        next.add(s.id);
+      }
+    }
+    frontier.clear();
+    for (const id of next) frontier.add(id);
+  }
+  return found;
 }
 
 // The daemon closes every session of a removed workspace; until it says so none may be placed again.
@@ -452,7 +484,8 @@ const USAGE_SUMMARY_ERROR_CONTEXT = "usage_summary";
 const USAGE_ACTIVITY_ERROR_CONTEXT = "usage_activity";
 
 function pushGlobalError(msg: { message: string; context?: string | null }, push: (message: string) => void, ops: PaneOps): void {
-  if (msg.context !== GIT_STATUS_ERROR_CONTEXT && ops.attribute(msg) === null) push(msg.message);
+  if (msg.context === GIT_STATUS_ERROR_CONTEXT || ops.isStaleInput(msg)) return;
+  if (ops.attribute(msg) === null) push(msg.message);
 }
 
 const REVIEW_INTENT_TTL_MS = 10_000;
@@ -1637,7 +1670,8 @@ export function App(): React.JSX.Element {
             }
             if (msg.message.startsWith(LIVE_CHILDREN_MARKER)) {
               client.paneOps.attribute(msg);
-              const intent = client.takeRecentDestroyIntent();
+              const refused = errorSessionIds(msg)[0];
+              const intent = refused === undefined ? null : client.takeDestroyIntent(refused);
               if (intent) {
                 setLiveChildrenConfirm({
                   session: intent.session,
@@ -1841,13 +1875,15 @@ export function App(): React.JSX.Element {
         sessionIds?: number[];
         tagIds?: number[];
         paneTagIds?: number[];
+        userNamed?: boolean;
       }[]
     > = {};
     for (const w of orderedWorkspaces) {
       out[w.path] = gridsFor(w.path).map((g) => {
         const st = warmLayouts.get(gridStorageKey(w.path, g.id));
         const tagIds = gridTagIds(g);
-        if (!st) return { id: g.id, name: g.name, tagIds };
+        const userNamed = !isAutoNameable(g);
+        if (!st) return { id: g.id, name: g.name, tagIds, userNamed };
         const ids = preorderSessions(st.tree);
         const paneTagIds = [
           ...new Set(
@@ -1861,6 +1897,7 @@ export function App(): React.JSX.Element {
           sessionIds: ids,
           tagIds,
           paneTagIds,
+          userNamed,
         };
       });
     }
@@ -2190,12 +2227,11 @@ export function App(): React.JSX.Element {
     [selectedWs, gridsFor, activeGridId, handleSelectGrid],
   );
   const handleAddGrid = useCallback((path: string): void => {
+    if (!workspacesRef.current.some((w) => w.path === path)) return;
     const next = addGrid(path, "Untitled");
     setGridsByWs((prev) => new Map(prev).set(path, next));
-    setSelectedGridByWs((prev) =>
-      new Map(prev).set(path, next[next.length - 1].id),
-    );
-  }, []);
+    handleSelectGrid(path, next[next.length - 1].id);
+  }, [handleSelectGrid]);
   const handleRenameGrid = useCallback(
     (path: string, gridId: string, name: string): void => {
       setGridsByWs((prev) =>
@@ -2204,6 +2240,9 @@ export function App(): React.JSX.Element {
     },
     [],
   );
+  const handleResetGridName = useCallback((path: string, gridId: string): void => {
+    setGridsByWs((prev) => new Map(prev).set(path, resetGridName(path, gridId)));
+  }, []);
   useEffect(() => {
     for (const [path, grids] of gridsByWs) {
       for (const g of grids) {
@@ -2242,26 +2281,48 @@ export function App(): React.JSX.Element {
       }
     }
   }, [conn, gridsByWs, layouts, sessions]);
-  const handleRemoveGrid = useCallback((path: string, gridId: string): void => {
+  // Closes a grid and ends its panes with their child agents. A selected grid hands over to `nextGridId`,
+  // else to the grid after it in storage order, or the one before when it was last.
+  const handleRemoveGrid = useCallback((path: string, gridId: string, nextGridId?: string): void => {
     const before = gridsByWsRef.current.get(path) ?? loadGrids(path);
+    const index = before.findIndex((g) => g.id === gridId);
+    if (index < 0) return;
+    const client = readyClient(conn);
+    if (!client) {
+      pushError(`Cannot close grid "${before[index].name}": the daemon connection is ${conn.kind}, expected ready; its agents would keep running.`);
+      return;
+    }
     const key = gridStorageKey(path, gridId);
-    const closing = preorderSessions((layoutsRef.current.get(key) ?? loadLayout(key)).tree);
-    if (!before.some((g) => g.id === gridId)) return;
+    const layout = layoutsRef.current.get(key) ?? loadLayout(key);
+    const closing = preorderSessions(layout.tree);
+    const roster = [...sessionsRef.current.values()];
+    const gone = new Set([...closing, ...descendantSessions(roster, closing)]);
+    for (const pane of preorderNonSessionPanes(layout.tree)) {
+      if (pane.kind === "browser") localStorage.removeItem(tabsStorageKey(pane.id));
+    }
+    const wasSelected = (selectedGridByWsRef.current.get(path) ?? before[0].id) === gridId;
     const next = removeGrid(path, gridId);
-    closeGridSessions(readyClient(conn), closing);
+    for (const id of gone) client.paneOps.beginClose(id);
+    closeGridSessions(client, closing);
+    forgetGrid(path, gridId);
+    const neighbour = before[index + 1] ?? before[index - 1];
+    const fallback =
+      nextGridId !== undefined && next.some((g) => g.id === nextGridId)
+        ? nextGridId
+        : (next.find((g) => g.id === neighbour?.id) ?? next[0]).id;
     setGridsByWs((prev) => new Map(prev).set(path, next));
     setLayouts((prev) => {
-      const key = gridStorageKey(path, gridId);
       if (!prev.has(key)) return prev;
       const nm = new Map(prev);
       nm.delete(key);
       return nm;
     });
-    setSelectedGridByWs((prev) => {
-      if (prev.get(path) !== gridId) return prev;
-      return new Map(prev).set(path, next[0].id);
-    });
-  }, [conn]);
+    if (wasSelected) {
+      setSelectedGridByWs((prev) => new Map(prev).set(path, fallback));
+      touchGrid(path, fallback);
+    }
+    setActiveId((cur) => (cur !== null && gone.has(cur) ? null : cur));
+  }, [conn, pushError, setActiveId]);
 
   const handleStackWith = useCallback(
     (dragged: PaneKey, target: PaneKey): void => {
@@ -2779,6 +2840,10 @@ export function App(): React.JSX.Element {
       next.delete(path);
       return next;
     });
+    for (const g of grids) forgetGrid(path, g.id);
+    setWsPinned((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : prev));
+    setWsOrder((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : prev));
+    pruneCollapsedWorkspace(path);
     localStorage.removeItem(`tr-grids:${path}`);
     localStorage.removeItem(`tr-layout:${path}`);
     dropWorkspaceBuffers(path);
@@ -3610,6 +3675,7 @@ export function App(): React.JSX.Element {
                 handleAddGrid(path);
               }}
               onRenameGrid={handleRenameGrid}
+              onResetGridName={handleResetGridName}
               onRemoveGrid={handleRemoveGrid}
               onHideRail={() => setSidebarRail(true)}
               onOpenSettings={() => {

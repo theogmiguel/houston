@@ -126,3 +126,10 @@ export function buildRailCard(source: RailCardSource): RailCard {
     lastActivityMs: statusSince,
   }
 }
+
+/** Tooltip texts for the reasons a grid card refuses to start a reorder drag. */
+export const RAIL_DRAG_REFUSAL = {
+  crossWorkspace: 'Grids can only be reordered within the same workspace',
+  notManual: 'Switch to Manual sort to reorder',
+  pinState: 'Pinned and unpinned grids reorder separately',
+} as const

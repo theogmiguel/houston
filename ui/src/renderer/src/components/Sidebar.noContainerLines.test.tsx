@@ -3,8 +3,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import { setSettingsNavForTests } from '../settingsNav'
 import { setBackgroundStateForTests } from '../backgroundMode'
 
@@ -25,6 +25,8 @@ function buttonRules(): { selector: string; body: string }[] {
   }
   return out
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('the rail draws no container lines on its controls', () => {
   let container: HTMLDivElement

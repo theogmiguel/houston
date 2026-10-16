@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import type { SessionInfo, Workspace } from '../houston/client'
 import { wslWorkspaces } from '../houston/environments'
 
@@ -35,6 +35,8 @@ function props(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}): R
     ...overrides
   }
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('Sidebar environment badge', () => {
   let container: HTMLDivElement

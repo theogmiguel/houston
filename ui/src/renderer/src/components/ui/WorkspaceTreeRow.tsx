@@ -40,7 +40,7 @@ export function WorkspaceTreeAuxButton({ children, selected = false, onClick, ..
 }
 
 export function WorkspaceDropIndicator(): React.JSX.Element {
-  return <div className="h-0 mx-[var(--space-2)] relative pointer-events-none before:content-[''] before:absolute before:left-0 before:right-0 before:top-[var(--offset-workspace-drop-indicator)] before:h-[var(--h-workspace-drop-indicator)] before:rounded-[var(--tr-radius-workspace-drop-indicator)] before:bg-[var(--accent)]" />
+  return <div data-testid="ws-drop-indicator" className="h-0 mx-[var(--space-2)] relative pointer-events-none before:content-[''] before:absolute before:left-0 before:right-0 before:top-[var(--offset-workspace-drop-indicator)] before:h-[var(--h-workspace-drop-indicator)] before:rounded-[var(--tr-radius-workspace-drop-indicator)] before:bg-[var(--accent)]" />
 }
 
 export function EmptyListMessage({ children, kind = 'workspace' }: { children: ReactNode; kind?: 'workspace' | 'settings' }): React.JSX.Element {

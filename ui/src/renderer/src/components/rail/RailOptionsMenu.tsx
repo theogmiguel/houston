@@ -25,7 +25,6 @@ function changeCardProperties(prefs: RailPrefs, keys: RailCardProperty[], checke
     ...prefs,
     properties: checked ? [...new Set([...prefs.properties, ...keys])] : prefs.properties.filter((key) => !keys.includes(key)),
     customisedProperties: true,
-    tags: keys.includes('tags') && !checked ? [] : prefs.tags,
   }
 }
 

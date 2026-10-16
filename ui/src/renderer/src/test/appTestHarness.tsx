@@ -85,7 +85,7 @@ export function makeFakeClient(): HoustonClientType {
     agentSessionsResumable: vi.fn(),
     sessionRunningProcs: vi.fn(),
     sendStdin: vi.fn(() => true),
-    takeRecentDestroyIntent: vi.fn(() => null),
+    takeDestroyIntent: vi.fn(() => null),
     closeSession: vi.fn((session: number) => paneOps.beginClose(session)),
     confirmCloseSession: vi.fn((session: number) => paneOps.beginClose(session)),
     confirmKillSession: vi.fn(),
@@ -140,7 +140,7 @@ await import('../components/files/QuickOpen')
 await import('../components/prs/PullRequestsScreen')
 await import('../components/files/FilesSurface')
 await (await import('../components/tags/TagPopover')).preloadTagPopoverSurface()
-await (await import('../components/Sidebar')).preloadRailOptionsMenu()
+await (await import('../components/Sidebar')).preloadRailChunks()
 await (await import('../App')).preloadSidePanel()
 await import('../components/ui/GridRailRow')
 await import('../components/rail/RailOptionsMenu')

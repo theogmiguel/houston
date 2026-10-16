@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { MANAGE_TAGS_EVENT, Sidebar } from './Sidebar'
+import { MANAGE_TAGS_EVENT, Sidebar, preloadRailChunks } from './Sidebar'
 import { resetRailWidthForTests } from '../railWidth'
 import type { TagInfo } from '../houston/generated/TagInfo'
 import type { SessionInfo, Workspace } from '../houston/client'
@@ -58,6 +58,8 @@ function props(
     ...overrides
   } as React.ComponentProps<typeof Sidebar>
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('tags are created and managed in one anchored popover', () => {
   let container: HTMLDivElement

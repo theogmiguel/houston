@@ -81,12 +81,13 @@ export function GridRailAgentRows({
 }): React.JSX.Element | null {
   if (cardMode !== 'detailed' || !properties.includes('inline-agents')) return null
   const many = agents.length > 2
+  // `full` always lists every agent, so there is nothing for a summary pill to toggle.
   const showFullList = agentActivity === 'full' || expanded
   // A collapsed pill still lists the agents that need the user, so a waiting one is never hidden.
   const visible = many && !showFullList ? agents.filter(({ session }) => needsUser(session)) : agents
   return (
     <>
-      {many && <div onClick={(event) => event.stopPropagation()}><AgentSummaryPill agents={agents} expanded={showFullList} onToggle={onToggleExpanded} /></div>}
+      {many && agentActivity !== 'full' && <div onClick={(event) => event.stopPropagation()}><AgentSummaryPill agents={agents} expanded={expanded} onToggle={onToggleExpanded} /></div>}
       {visible.map((agent) => <AgentRow key={agent.session.id} agent={agent} now={now} onFocusPane={onFocusPane} lastMessage={properties.includes('last-message')} />)}
     </>
   )

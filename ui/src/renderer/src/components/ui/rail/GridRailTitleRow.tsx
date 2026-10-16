@@ -50,7 +50,7 @@ export function GridRailTitleRow({
 }): React.JSX.Element {
   const tagNames = tags.map((tag) => tag.name)
   return (
-    <div className="flex h-5 min-w-0 items-center gap-1.5 text-[length:var(--tr-text-base)] leading-5">
+    <div className={`flex h-5 min-w-0 items-center gap-1.5 text-[length:var(--tr-text-base)] leading-5 ${hasRemove ? 'group-hover:pr-5 group-focus-within:pr-5' : ''}`}>
       <span data-testid="grid-name" className={`min-w-0 truncate ${unread ? 'font-semibold text-[var(--text-primary)]' : ''}`}>{name}</span>
       {unread && <span role="img" aria-label="Unread" data-testid="grid-unread-pip" className="size-1.5 flex-none rounded-full bg-[var(--accent)]" />}
       <span aria-hidden className="min-w-0 flex-1" />
@@ -79,12 +79,12 @@ export function GridRailTitleRow({
         </Tooltip>
       )}
       {hasRemove && (
-        <Tooltip label={`Remove ${name}`}>
+        <Tooltip label="Close grid">
         <button
           type="button"
           data-testid="grid-close"
-          aria-label={`Remove ${name}`}
-          className="absolute right-1 top-1 hidden size-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] group-hover:flex"
+          aria-label={`Close grid ${name}`}
+          className="absolute right-1 top-1 hidden size-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] group-hover:flex group-focus-within:flex"
           onClick={(event) => {
             event.stopPropagation()
             onRemove?.()

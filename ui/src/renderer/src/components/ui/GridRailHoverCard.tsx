@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { formatCheckout } from '../checkout/formatCheckout'
 import type { SessionCheckout } from '../../houston/generated/SessionCheckout'
@@ -6,12 +6,13 @@ import type { RailCard, CheckoutIdentity } from '../rail/railCardModel'
 import type { TagInfo } from '../../houston/generated/TagInfo'
 import { Icon } from './Icon'
 import { IconAgent, IconFolder, IconGitBranch, IconGitPullRequest, IconTag, IconTerminal, IconAlertTriangle } from '../icons'
-import { PrLink } from './PrLink'
 import './floatingSurface.css'
 
 export const RAIL_HOVER_OPEN_DELAY_MS = 150
 export const RAIL_HOVER_CLOSE_DELAY_MS = 0
 export const RAIL_HOVER_WARM_WINDOW_MS = 400
+
+const VIEWPORT_MARGIN_PX = 8
 
 export function useGridRailHoverWarmWindow(): { isWarm: () => boolean; markWarm: () => void } {
   const warmUntil = useRef(0)
@@ -36,24 +37,29 @@ export function GridRailHoverCard({
   tags = [],
   position,
   visible = true,
-  onOpenInspector
 }: {
   card: RailCard
   tags?: readonly TagInfo[]
+  /** Anchor corner; the card shifts up as needed to stay inside the viewport. */
   position: { left: number; top: number }
   visible?: boolean
-  closeTimer: React.MutableRefObject<ReturnType<typeof window.setTimeout> | null>
-  scheduleClose: () => void
-  onOpenInspector?: (paneId: number, tab: 'changes' | 'pull-request') => void
 }): React.JSX.Element {
   const pr = card.pr?.pr
-  const firstPane = card.agents[0]?.session.id
+  const ref = useRef<HTMLDivElement>(null)
+  const [top, setTop] = useState(position.top)
+  // The card's height varies with PR, tags and agent rows, so clamp against the measured box.
+  useLayoutEffect(() => {
+    const height = ref.current?.getBoundingClientRect().height ?? 0
+    const limit = window.innerHeight - height - VIEWPORT_MARGIN_PX
+    setTop(Math.max(VIEWPORT_MARGIN_PX, Math.min(position.top, limit)))
+  }, [position.top, card, tags])
   return createPortal(
     <div
-      className={`grid-hover-card floating-glass shadow-[var(--shadow-1)] fixed z-[var(--z-tooltip)] grid w-[300px] gap-[var(--space-2)]
+      ref={ref}
+      className={`grid-hover-card floating-glass shadow-[var(--shadow-1)] pointer-events-none fixed z-[var(--z-tooltip)] grid w-[300px] gap-[var(--space-2)]
         p-[var(--space-3)] text-[length:var(--tr-text-small-size)]
         transition-[opacity,transform,top] duration-150 ease-out`}
-      style={{ ...position, transformOrigin: 'left top' }}
+      style={{ left: position.left, top, transformOrigin: 'left top' }}
       role="tooltip"
       data-testid="grid-hover-card"
       data-visible={visible}
@@ -84,21 +90,16 @@ export function GridRailHoverCard({
         {card.status.kind === 'needs-input' && <div className="flex items-center gap-2 text-[var(--warn)]"><Icon glyph={IconAlertTriangle} role="small" />Waiting for your answer</div>}
       </div>
       {pr && (
-        <PrLink
-          href={pr.url}
-          onClick={() => {
-            if (firstPane != null) onOpenInspector?.(firstPane, 'pull-request')
-          }}
-          className="w-full min-w-0 justify-start gap-[var(--space-1-5)] border-t border-[var(--divider)]
-            pt-[var(--space-2)] text-left text-[length:var(--tr-text-label-size)]"
-          aria-label={`Open pull request ${pr.number}`}
+        <div
+          className="flex w-full min-w-0 items-center gap-[var(--space-1-5)] border-t border-[var(--divider)]
+            pt-[var(--space-2)] text-[length:var(--tr-text-label-size)]"
         >
         <span className="inline-flex items-center gap-[var(--space-1)] font-mono text-[var(--text-muted)]">
           <Icon glyph={IconGitPullRequest} role="small" />#{pr.number}
         </span>
         <span className="min-w-0 truncate text-[var(--text-primary)]">{pr.title}</span>
         {card.agents.length === 0 && <><span className="flex-none text-[var(--text-muted)]">{pr.checks}</span><span className="flex-none font-mono text-[var(--ok)]">+{pr.additions}</span><span className="flex-none font-mono text-[var(--stop)]">−{pr.deletions}</span></>}
-        </PrLink>
+        </div>
       )}
       {card.agents.length === 0 && <div className="text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
         0 panes
@@ -109,7 +110,6 @@ export function GridRailHoverCard({
 }
 
 export function GridRailHoverCardSpecimen(): React.JSX.Element {
-  const closeTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const card: RailCard = {
     gridId: 'specimen',
     workspace: '/workspace',
@@ -142,5 +142,5 @@ export function GridRailHoverCardSpecimen(): React.JSX.Element {
     agents: [],
     lastActivityMs: 0
   }
-  return <GridRailHoverCard card={card} position={{ left: 12, top: 12 }} closeTimer={closeTimer} scheduleClose={() => {}} />
+  return <GridRailHoverCard card={card} position={{ left: 12, top: 12 }} />
 }

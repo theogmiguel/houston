@@ -38,7 +38,7 @@ describe('child-guard confirm flow on kill/close (v62 D3)', () => {
     harness = await renderReadyApp()
     const h = harness
     const client = currentClient()
-    ;(client.takeRecentDestroyIntent as unknown as { mockReturnValueOnce: (v: unknown) => void })
+    ;(client.takeDestroyIntent as unknown as { mockReturnValueOnce: (v: unknown) => void })
       .mockReturnValueOnce({ session: 1, kind: 'close' })
 
     deliverControl({ type: 'error', message: REFUSAL, context: null })
@@ -57,6 +57,25 @@ describe('child-guard confirm flow on kill/close (v62 D3)', () => {
     expect(client.confirmKillSession).not.toHaveBeenCalled()
   })
 
+  it('binds the confirm dialog to the session the refusal names, not to the newest intent', async () => {
+    harness = await renderReadyApp()
+    const client = currentClient()
+    const claimed: number[] = []
+    ;(client.takeDestroyIntent as unknown as { mockImplementation: (f: (session: number) => unknown) => void })
+      .mockImplementation((session) => {
+        claimed.push(session)
+        return { session, kind: 'close' }
+      })
+
+    deliverControl({ type: 'error', message: REFUSAL, context: 'session:1' })
+    act(() => {
+      findButton(harness!, 'Kill anyway').click()
+    })
+
+    expect(claimed).toEqual([1])
+    expect(client.confirmCloseSession).toHaveBeenCalledExactlyOnceWith(1)
+  })
+
   it('keeps the daemon child guard after a pure live_children update', async () => {
     harness = await renderReadyApp({ sessions: [makeSession({ id: 1, live_children: 0, children_waiting: 0 })] })
     const client = currentClient()
@@ -65,7 +84,7 @@ describe('child-guard confirm flow on kill/close (v62 D3)', () => {
     deliverControl({ type: 'live_children_changed', session: 1, live_children: 2, children_waiting: 1 })
     act(() => harness!.container.querySelector<HTMLButtonElement>('[data-panekey="1"] button[aria-label="Close"]')!.click())
     expect(closeSession).toHaveBeenCalledWith(1)
-    ;(client.takeRecentDestroyIntent as unknown as { mockReturnValueOnce: (v: unknown) => void }).mockReturnValueOnce({ session: 1, kind: 'close' })
+    ;(client.takeDestroyIntent as unknown as { mockReturnValueOnce: (v: unknown) => void }).mockReturnValueOnce({ session: 1, kind: 'close' })
     deliverControl({ type: 'error', message: REFUSAL, context: null })
     expect(harness.container.querySelector('#confirm-modal-msg')?.textContent).toContain('2 live children')
     expect(client.confirmCloseSession).not.toHaveBeenCalled()
@@ -77,7 +96,7 @@ describe('child-guard confirm flow on kill/close (v62 D3)', () => {
     harness = await renderReadyApp()
     const h = harness
     const client = currentClient()
-    ;(client.takeRecentDestroyIntent as unknown as { mockReturnValueOnce: (v: unknown) => void })
+    ;(client.takeDestroyIntent as unknown as { mockReturnValueOnce: (v: unknown) => void })
       .mockReturnValueOnce({ session: 2, kind: 'kill' })
 
     deliverControl({
@@ -99,7 +118,7 @@ describe('child-guard confirm flow on kill/close (v62 D3)', () => {
     harness = await renderReadyApp()
     const h = harness
     const client = currentClient()
-    ;(client.takeRecentDestroyIntent as unknown as { mockReturnValueOnce: (v: unknown) => void })
+    ;(client.takeDestroyIntent as unknown as { mockReturnValueOnce: (v: unknown) => void })
       .mockReturnValueOnce({ session: 1, kind: 'close' })
 
     deliverControl({ type: 'error', message: REFUSAL, context: null })

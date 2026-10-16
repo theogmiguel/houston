@@ -3,12 +3,12 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar, preloadRailOptionsMenu } from './Sidebar'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import type { SessionInfo, Workspace } from '../houston/client'
 import { GRID_PINNED_MIGRATION_KEY } from '../railPrefs'
 import { preloadTagPopoverSurface } from './tags/TagPopover'
 
-beforeAll(() => Promise.all([preloadTagPopoverSurface(), preloadRailOptionsMenu()]))
+beforeAll(() => Promise.all([preloadTagPopoverSurface(), preloadRailChunks()]))
 
 function ws(path: string, name = path): Workspace {
   return { path, name } as Workspace
@@ -220,17 +220,24 @@ describe('Sidebar — workspace pinning', () => {
       const over = [...container.querySelectorAll<HTMLElement>('[data-ws-idx]')].find(
         (r) => r.getAttribute('aria-label') === overPath
       )!
-      vi.spyOn(document, 'elementFromPoint').mockReturnValue(over)
+      // Rows are 32 px tall on a 40 px pitch; the pointer ends on the lower half of the row it is over.
+      const rows = [...container.querySelectorAll<HTMLElement>('[data-ws-idx]')]
+      rows.forEach((row, index) => {
+        row.getBoundingClientRect = () => ({ top: index * 40, height: 32, bottom: index * 40 + 32, left: 0, right: 300, width: 300, x: 0, y: index * 40, toJSON: () => ({}) })
+      })
+      container.querySelector<HTMLElement>('[data-rail-grid-list]')!.getBoundingClientRect = () =>
+        ({ top: 0, bottom: 400, left: 0, right: 300, height: 400, width: 300, x: 0, y: 0, toJSON: () => ({}) })
+      const y = rows.indexOf(over) * 40 + 28
       act(() => {
         from.dispatchEvent(
           new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 10, clientY: 10 })
         )
       })
       act(() => {
-        window.dispatchEvent(new PointerEvent('pointermove', { clientX: 10, clientY: 40 }))
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: 10, clientY: y }))
       })
       act(() => {
-        window.dispatchEvent(new PointerEvent('pointerup', { clientX: 10, clientY: 40 }))
+        window.dispatchEvent(new PointerEvent('pointerup', { clientX: 10, clientY: y }))
       })
     }
 

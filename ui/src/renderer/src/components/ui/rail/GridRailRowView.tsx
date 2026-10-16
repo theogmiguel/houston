@@ -44,7 +44,7 @@ export function GridRailRowView({
   name, workspace, gridId, selected, pinned, tags,
   cardMode, tagDisplay, agentActivity, properties, dragPosition, dragging, dragRefusal, onGridPointerDown,
   onToggleUnread, onFilterTag, jumpNumber, onRemove, onSelect, onFocusPane, onContextMenu, onOpenInspector, card, primary,
-  checkoutLabel, many, hasUnread, altHeld, hoverPosition, hoverVisible, expanded, now, rowRef, closeTimer,
+  checkoutLabel, many, hasUnread, altHeld, hoverPosition, hoverVisible, expanded, now, rowRef,
   openTagPopover, startHover, closeHover, onToggleExpanded, onKeyDown,
 }: {
   name: string
@@ -59,7 +59,7 @@ export function GridRailRowView({
   properties: readonly RailCardProperty[]
   dragPosition: 'before' | 'after' | null
   dragging: boolean
-  dragRefusal: boolean
+  dragRefusal: string | null
   onGridPointerDown?: (event: React.PointerEvent, workspace: string, gridId: string) => void
   onToggleUnread?: () => void
   onFilterTag?: (tag: TagInfo) => void
@@ -80,7 +80,6 @@ export function GridRailRowView({
   expanded: boolean
   now: number
   rowRef: React.RefObject<HTMLDivElement | null>
-  closeTimer: React.RefObject<ReturnType<typeof setTimeout> | null>
   openTagPopover: (options: import('../../tags/TagPopover').OpenTagPopoverOptions) => void
   startHover: () => void
   closeHover: () => void
@@ -91,7 +90,7 @@ export function GridRailRowView({
   const hasChipRow = properties.includes('tags') && tagDisplay === 'chips' && tags.length > 0
   const openTags = (anchor: HTMLElement): void => openTagPopover({ anchor, gridId, view: 'pick' })
   return (
-    <Tooltip label={dragRefusal ? 'Grids can only be reordered within the same workspace' : null} className="block">
+    <Tooltip label={dragRefusal} className="block">
       <div
         ref={rowRef}
         role="button"
@@ -113,26 +112,34 @@ export function GridRailRowView({
         onMouseEnter={startHover}
         onMouseLeave={closeHover}
       >
-        <GridRailUnreadToggle card={card} cardMode={cardMode} hasUnread={hasUnread} onToggleUnread={onToggleUnread} />
+        <GridRailUnreadToggle card={card} cardMode={cardMode} hasUnread={hasUnread} enabled={properties.includes('unread')} onToggleUnread={onToggleUnread} />
         <div className={`flex min-w-0 flex-1 flex-col ${cardMode === 'compact' && !hasChipRow ? 'justify-center' : 'gap-[5px]'}`}>
           <GridRailTitleRow name={name} unread={properties.includes('unread') && hasUnread} pinned={pinned} tags={tags} hasTags={properties.includes('tags')} tagDisplay={tagDisplay} pr={pr} hasPr={properties.includes('pr')} hasCheckout={properties.includes('checkout')} cardMode={cardMode} checkoutLabel={checkoutLabel} many={many} agentCount={card.agents.length} primary={primary} hasRemove={Boolean(onRemove)} gridId={gridId} onRemove={onRemove} onOpenInspector={onOpenInspector} openTagPopover={openTagPopover} />
           <GridRailCheckout cardMode={cardMode} hasCheckout={properties.includes('checkout')} label={checkoutLabel} pr={pr} hasPr={properties.includes('pr')} hasDiff={properties.includes('diff')} diff={card.diff} primary={primary} onOpenInspector={onOpenInspector} />
           {hasChipRow && <div className="flex min-h-4 items-center text-[length:var(--tr-text-xs)]"><TagCardAffordance tags={tags} mode="chips" onClick={openTags} onFilter={onFilterTag} /></div>}
+          {cardMode === 'detailed' && card.agents.length === 0 && <div data-testid="grid-no-agents" className="text-[length:var(--tr-text-xs)] leading-4 text-[var(--text-muted)]">No agents</div>}
           <GridRailAgentRows agents={card.agents} cardMode={cardMode} agentActivity={agentActivity} properties={properties} expanded={expanded} onToggleExpanded={onToggleExpanded} now={now} onFocusPane={(paneId) => { onSelect(); onFocusPane?.(paneId) }} />
         </div>
         <GridRailJumpNumber number={jumpNumber} altHeld={altHeld} />
       </div>
-      {hoverPosition && <GridRailHoverCardHost card={card} tags={tags} position={hoverPosition} visible={hoverVisible} closeTimer={closeTimer} scheduleClose={closeHover} onOpenInspector={onOpenInspector} />}
+      {hoverPosition && <GridRailHoverCardHost card={card} tags={tags} position={hoverPosition} visible={hoverVisible} />}
     </Tooltip>
   )
 }
 
-function GridRailUnreadToggle({ card, cardMode, hasUnread, onToggleUnread }: {
+function GridRailUnreadToggle({ card, cardMode, hasUnread, enabled, onToggleUnread }: {
   card: RailCard
   cardMode: RailCardMode
   hasUnread: boolean
+  // Without the `unread` property nothing on the card shows read state, so the dot offers no toggle.
+  enabled: boolean
   onToggleUnread?: () => void
 }): React.JSX.Element {
+  if (!enabled) {
+    return <span data-testid="grid-status-dot-static" className={`relative flex w-4 flex-none justify-center ${cardMode === 'compact' ? 'items-start pt-1' : 'h-5 items-start pt-[5px]'}`}>
+      <StatusDot card={card} />
+    </span>
+  }
   const label = hasUnread ? 'Mark as read' : 'Mark as unread'
   return <Tooltip label={label}>
     <button type="button" aria-label={label} data-testid="grid-unread-toggle" className={`relative flex w-4 flex-none justify-center ${cardMode === 'compact' ? 'items-start pt-1' : 'h-5 items-start pt-[5px]'}`} onClick={(event) => { event.stopPropagation(); onToggleUnread?.() }}>

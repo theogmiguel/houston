@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 import { IconCopy, IconExternal } from '../icons'
@@ -22,6 +22,26 @@ export function PrLinkSpecimen(): React.JSX.Element {
 export function PrLink({ href, onClick, children, className = '', ...buttonProps }: PrLinkProps): React.JSX.Element {
   const [controlHeld, setControlHeld] = useState(false)
   const [menu, setMenu] = useState(false)
+  const wrapRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    if (!menu) return
+    const closeOutside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && wrapRef.current?.contains(event.target)) return
+      setMenu(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setMenu(false)
+    }
+    document.addEventListener('pointerdown', closeOutside, true)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside, true)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [menu])
 
   useEffect(() => {
     const update = (event: KeyboardEvent): void => setControlHeld(event.ctrlKey)
@@ -37,7 +57,7 @@ export function PrLink({ href, onClick, children, className = '', ...buttonProps
   }, [])
 
   return (
-    <span className="relative inline-flex">
+    <span ref={wrapRef} className="relative inline-flex">
       <Tooltip label="Click: open in panel · Ctrl+click: open on GitHub">
         <button
           {...buttonProps}

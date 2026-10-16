@@ -28,6 +28,8 @@ export interface TagPopoverActions {
 }
 interface HostValue {
   open: (options: OpenTagPopoverOptions) => void
+  /** Closes the popover with its exit animation; a no-op when none is open. */
+  close: () => void
 }
 const TagPopoverContext = createContext<HostValue | null>(null)
 const tagPopoverSurface = preloadable(() => import('./TagPopoverSurface').then((module) => module.TagPopoverSurface))
@@ -77,7 +79,7 @@ export function TagPopoverHost({
     }, window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 100)
     return () => window.clearTimeout(timer)
   }, [closing, request])
-  const value = useMemo(() => ({ open }), [open])
+  const value = useMemo(() => ({ open, close }), [open, close])
   useEffect(() => {
     const timer = window.setTimeout(() => void preloadTagPopoverSurface(), 0)
     return () => window.clearTimeout(timer)
