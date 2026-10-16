@@ -4,15 +4,15 @@
 #![allow(clippy::disallowed_methods)]
 
 use crate::common;
+use houston_core::daemon::{Daemon, DaemonConfig};
+use houston_protocol::AgentKind;
 use std::path::Path;
 
 const CHILD: &str = "HOUSTON_HERMETIC_ENV_CHILD";
 
-#[tokio::test]
-async fn workspace_hooks_land_in_the_hermetic_home_not_the_inherited_one() {
-    if common::process_var_os(CHILD).is_some() {
-        return child().await;
-    }
+/// Runs test `name` in a child whose inherited `HOME` stands in for the account's, then
+/// checks that none of the `untouched` config directories appeared there.
+fn run_with_a_stand_in_account_home(name: &str, untouched: &[&str]) {
     let account_home = tempfile::tempdir().unwrap();
     // A temp dir distinct from the one holding `account_home`, so the child treats its
     // inherited home as the account's rather than as a test-owned one.
@@ -20,10 +20,7 @@ async fn workspace_hooks_land_in_the_hermetic_home_not_the_inherited_one() {
     let out = common::hermetic_command(std::env::current_exe().unwrap(), account_home.path())
         .args([
             "--exact",
-            &common::exact_path(
-                module_path!(),
-                "workspace_hooks_land_in_the_hermetic_home_not_the_inherited_one",
-            ),
+            &common::exact_path(module_path!(), name),
             "--nocapture",
         ])
         .env(CHILD, "1")
@@ -38,13 +35,33 @@ async fn workspace_hooks_land_in_the_hermetic_home_not_the_inherited_one() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
-    for untouched in [".claude", ".codex", ".config"] {
+    for untouched in untouched {
+        let path = account_home.path().join(untouched);
+        let mut listing = Vec::new();
+        let mut stack = vec![path.clone()];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                listing.push(entry.path());
+                stack.push(entry.path());
+            }
+        }
         assert!(
-            !account_home.path().join(untouched).exists(),
-            "{untouched} appeared under the inherited home {}",
+            !path.exists(),
+            "{untouched} appeared under the inherited home {}: {listing:?}",
             account_home.path().display()
         );
     }
+}
+
+#[tokio::test]
+async fn workspace_hooks_land_in_the_hermetic_home_not_the_inherited_one() {
+    if common::process_var_os(CHILD).is_some() {
+        return child().await;
+    }
+    run_with_a_stand_in_account_home(
+        "workspace_hooks_land_in_the_hermetic_home_not_the_inherited_one",
+        &[".claude", ".codex", ".config"],
+    );
 }
 
 async fn child() {
@@ -71,4 +88,46 @@ async fn child() {
     let written = std::fs::read_to_string(hermetic.join(".claude/settings.json"))
         .expect("workspace_add installs Claude hooks under the hermetic home");
     assert!(written.contains("houston-managed"), "{written}");
+}
+
+#[tokio::test]
+async fn a_daemon_handed_the_inherited_home_refuses_to_write_it() {
+    if common::process_var_os(CHILD).is_some() {
+        return refusing_child().await;
+    }
+    // Only Houston's own writes are confined: a real CLI the daemon probes for its version
+    // still sees the inherited HOME and may create its own directory there.
+    run_with_a_stand_in_account_home(
+        "a_daemon_handed_the_inherited_home_refuses_to_write_it",
+        &[".claude", ".codex"],
+    );
+}
+
+/// The daemon gets the raw process environment, the shape that leaked before `base_env`
+/// isolated it; only the confinement the harness installs keeps it out of `HOME`.
+async fn refusing_child() {
+    let _ = common::base_env();
+    let state = houston_core::fixture_dirs::tempdir_outside_git();
+    let daemon = Daemon::new(DaemonConfig::new(
+        common::TOKEN.into(),
+        state.path().join("test.db"),
+        houston_core::host_env::HostEnv::capture(),
+    ))
+    .unwrap();
+    let workspace = houston_core::fixture_dirs::tempdir_outside_git();
+    daemon
+        .workspace_add(&workspace.path().display().to_string())
+        .unwrap();
+    let rows = daemon.agent_hooks_set(AgentKind::Codex, true);
+    let codex = rows
+        .iter()
+        .find(|row| row.provider == AgentKind::Codex)
+        .expect("a Codex row");
+    assert!(
+        codex
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("refusing agent CLI config")),
+        "enabling Codex hooks must name the refused home: {codex:?}"
+    );
 }

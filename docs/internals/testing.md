@@ -21,6 +21,12 @@ Rules:
   before the fix.
 - Tests redirect the state dir through `HOME` (`home_dir.rs` is environment-first for this
   reason) and never touch a real channel.
+- An in-process daemon takes its environment from `tests/common`'s `base_env()` or
+  `capture_env()`, never from the raw process environment: they swap the account's config
+  homes for a throwaway and confine the test process, after which `ConfigHome` refuses any
+  config home outside the temp, fixture and target scratch roots, whatever the runner.
+  Unit tests build daemons from `HostEnv::capture_with_home`. The confinement covers
+  Houston's own config writes; a real CLI the daemon runs still sees the daemon's `HOME`.
 - The integration files are modules of one binary and a test runs in its own process under
   nextest. A test that re-executes its binary with `--exact` builds the name with
   `common::exact_path(module_path!(), name)`, which refuses a name that matches no test:

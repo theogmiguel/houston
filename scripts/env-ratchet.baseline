@@ -1,7 +1,7 @@
 5 core/houston-core/src/bin/fake_agent.rs
 1 core/houston-core/src/bin/supervisor-test-daemon.rs
 1 core/houston-core/src/claude_hooks.rs
-8 core/houston-core/src/daemon.rs
+2 core/houston-core/src/daemon.rs
 2 core/houston-core/src/env_hygiene.rs
 4 core/houston-core/src/home_dir.rs
 1 core/houston-core/src/lib.rs

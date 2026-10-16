@@ -18,6 +18,18 @@ impl HostEnv {
         Self(Arc::new(std::env::vars_os().collect()))
     }
 
+    /// The process environment with every agent CLI config home under `home`, for unit tests
+    /// that build a daemon: the account's own configuration stays out of reach.
+    #[cfg(test)]
+    pub fn capture_with_home(home: &std::path::Path) -> Self {
+        Self::capture()
+            .with("HOME", Some(home))
+            .with("USERPROFILE", Some(home))
+            .with("XDG_CONFIG_HOME", Some(home.join(".config")))
+            .without("CLAUDE_CONFIG_DIR")
+            .without("CODEX_HOME")
+    }
+
     pub fn from_pairs<K: Into<OsString>, V: Into<OsString>>(
         pairs: impl IntoIterator<Item = (K, V)>,
     ) -> Self {
