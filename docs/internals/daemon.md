@@ -8,7 +8,10 @@ pipeline and the MCP endpoint. One binary hosts it: `core/houston-core/src/main.
 detached — spawned by `houston-supervisor` on Linux or directly on Windows — and outliving
 the Tauri app, which connects to it as a `/ws` client (`src-tauri/src/daemon_host.rs`) rather
 than linking it in. See [overview.md](overview.md#one-daemon-one-host--and-an-app-that-is-a-client)
-for the reversal.
+for the reversal. On Windows the daemon opts itself out of EcoQoS execution-speed
+throttling at start (`power_throttling.rs`), because a detached, windowless process is
+otherwise throttled at Windows' discretion; Linux has no EcoQoS, so there the call is a
+no-op.
 
 ## Module map
 
@@ -33,6 +36,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | persistence | `db.rs` | SQLite persistence (WAL); writes only on rare control-plane events |
 | | `paths.rs`, `home_dir.rs` | Channel-scoped state paths; the home dir, resolved per platform |
 | | `lock.rs` | The daemon-ownership advisory `flock` |
+| | `power_throttling.rs` | Windows EcoQoS opt-out for the daemon process |
 | | `server.rs` | WebSocket endpoint: handshake, control dispatch, binary PTY path |
 | | `boot.rs` | The background-loop set: one spawn list, called only by the daemon's own `main` |
 | | `logging.rs` | The `tracing` subscriber — stdout plus a rotating file sink |
