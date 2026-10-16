@@ -485,6 +485,28 @@ pub fn run_pass_with_io(
     )
 }
 
+// Recovery and every steady pass read through this one bound, so recovery can
+// replay any drop the steady pass applies. No hook client produces a larger
+// file, so it is refused rather than allocated whole.
+const MAX_DROP_BYTES: u64 = 1024 * 1024;
+
+/// Stops at `MAX_DROP_BYTES + 1` so an oversized file is refused without ever
+/// being read into memory in full.
+fn read_bounded(path: &Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    std::fs::File::open(path).and_then(|file| {
+        let mut bytes = Vec::new();
+        file.take(MAX_DROP_BYTES + 1).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_DROP_BYTES {
+            return Err(std::io::Error::other(format!(
+                "hook drop payload limit {MAX_DROP_BYTES} exceeded (actual at least {} bytes)",
+                bytes.len()
+            )));
+        }
+        Ok(bytes)
+    })
+}
+
 /// Recovery retains event ordering without replaying the event's lifecycle effects.
 pub fn run_pass_with_name_io(
     dir: &Path,
@@ -636,20 +658,7 @@ pub fn run_pass_with_name_io(
                 continue;
             }
         }
-        let read = if pass == Pass::RecoveryMetadata {
-            use std::io::Read;
-            std::fs::File::open(&path).and_then(|file| {
-                let mut bytes = Vec::new();
-                file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
-                if bytes.len() > 1024 * 1024 {
-                    return Err(std::io::Error::other(format!("hook metadata recovery payload limit 1048576 exceeded (actual at least {} bytes)", bytes.len())));
-                }
-                Ok(bytes)
-            })
-        } else {
-            std::fs::read(&path)
-        };
-        let bytes = match read {
+        let bytes = match read_bounded(&path) {
             Ok(b) => b,
             Err(e) => {
                 warn_once(state, &mut present, &name, || {
@@ -844,6 +853,40 @@ mod tests {
         assert!(a < b, "{a} must sort before {b}");
         assert_eq!(parse_drop_name(&a).unwrap().seq, 1);
         assert_eq!(parse_drop_name(&b).unwrap().seq, 2);
+    }
+
+    #[test]
+    fn an_ordinary_pass_refuses_an_oversized_drop_payload() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = drop_dir(tmp.path());
+        let ms = 1_754_600_000_000;
+        let mut drop = drop_for(9, "Stop");
+        drop.cwd = Some("x".repeat(1024 * 1024 + 16));
+        let path = write_drop(&dir, &drop, ms).unwrap();
+        assert!(path.metadata().unwrap().len() > 1_048_576);
+
+        let mut log = Vec::new();
+        let mut state = DropDirState::new();
+        let out = run_pass(&dir, &mut state, ms + 1, Pass::Steady, recorder(&mut log));
+        assert_eq!(out.applied, 0, "an oversized payload must not be applied");
+        assert_eq!(out.kept, 1);
+        assert!(
+            path.exists(),
+            "the oversized file stays until MAX_AGE_MS collection, it is not deleted"
+        );
+
+        let mut recovery_state = DropDirState::new();
+        recovery_state.recover_sessions([9]);
+        let out = run_pass(
+            &dir,
+            &mut recovery_state,
+            ms + 1,
+            Pass::RecoveryMetadata,
+            recorder(&mut log),
+        );
+        assert_eq!(out.applied, 0);
+        assert!(out.metadata_failed, "recovery refuses it the same way");
+        assert_eq!(log.len(), 0, "no pass applied the oversized payload");
     }
 
     #[test]
