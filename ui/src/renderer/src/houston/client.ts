@@ -28,6 +28,7 @@ import type { PrCommentKind } from './generated/PrCommentKind'
 import type { PrReviewVerdict } from './generated/PrReviewVerdict'
 import type { PrReaction } from './generated/PrReaction'
 import type { PrReviewDraft } from './generated/PrReviewDraft'
+import { PaneOps } from './paneOps'
 import type { PrReviewer } from './generated/PrReviewer'
 import type { PrListState } from './generated/PrListState'
 import type { PrListInvolvement } from './generated/PrListInvolvement'
@@ -184,7 +185,7 @@ const REPARENT_CONFIRM_TIMEOUT_MS = 2000
 
 export const CWD_CACHE_TTL_MS = 5000
 
-export const LIVE_CHILDREN_MARKER = 'live_children_confirmation_required:'
+export { LIVE_CHILDREN_MARKER } from './paneOps'
 
 const DESTROY_INTENT_TTL_MS = 10_000
 
@@ -231,6 +232,8 @@ export class HoustonClient {
   private deadSessions = new Set<number>()
 
   private destroyIntents = new Map<number, { kind: 'kill' | 'close'; ts: number }>()
+
+  readonly paneOps = new PaneOps()
 
   private terminals: TerminalTransport
 
@@ -555,6 +558,7 @@ export class HoustonClient {
     if (shell !== undefined) msg.shell = shell
     if (force !== undefined) msg.force = force
     if (fresh !== undefined) msg.fresh = fresh
+    this.paneOps.beginRespawn(session)
     this.send(msg)
   }
 
@@ -600,6 +604,7 @@ export class HoustonClient {
 
   closeSession(session: number): void {
     this.destroyIntents.set(session, { kind: 'close', ts: Date.now() })
+    this.paneOps.beginClose(session)
     this.terminals.destroy(session)
   }
 
@@ -618,6 +623,7 @@ export class HoustonClient {
   }
 
   confirmCloseSession(session: number): void {
+    this.paneOps.beginClose(session)
     this.send({ type: 'session_close', session, confirm_children: true })
   }
 

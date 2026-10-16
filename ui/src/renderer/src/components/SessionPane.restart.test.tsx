@@ -208,11 +208,11 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
       restore_deferred: null,
       resume_notice: 'Started a fresh CLI: the saved conversation belongs to a different working directory.'
     }
-  ])('a nonresumable recovery husk ($caseName) offers explicit Fresh while keeping retry and its refusal visible', (recovery) => {
+  ])('a nonresumable recovery husk ($caseName) offers explicit Fresh while keeping retry and its footer visible', (recovery) => {
     const info = makeSession({ state: recovery.state, restore_deferred: recovery.restore_deferred, resume_notice: recovery.resume_notice, resumable: false })
     render(info)
-    const notice = () => container.querySelector(recovery.resume_notice ? '[data-testid="resume-notice"]' : '[data-testid="session-recovery-notice"]')?.textContent
-    const reason = recovery.resume_notice ?? 'the agent could not be started'
+    const notice = () => container.querySelector(recovery.restore_deferred ? '[data-testid="recovery-footer"]' : '[data-testid="resume-notice"]')?.textContent
+    const reason = recovery.restore_deferred ? 'This conversation could not be resumed.' : 'Started a new conversation'
     expect(notice()).toContain(reason)
     expect(restartTooltip(info)).toBe('Retry session recovery')
     openPaneMenu()
@@ -276,7 +276,7 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
     render(makeSession({ resume_notice: 'x' }))
     const notices = container.querySelectorAll('[data-testid="resume-notice"]')
     expect(notices).toHaveLength(1)
-    expect(notices[0].textContent).toContain('x')
+    expect(notices[0].textContent).toContain('Started a new conversation; the previous one could not be resumed.')
     const dismiss = notices[0].querySelector('button[aria-label="Dismiss notice"]')
     if (!dismiss) throw new Error('no dismiss control')
     click(dismiss)

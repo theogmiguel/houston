@@ -2,10 +2,10 @@ import { useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import { ConfirmModal } from './ConfirmModal'
-import { Icon } from './ui/Icon'
-import { IconClose, IconHistory, IconRespawn, type IconComponent } from './icons'
-import { Tooltip } from './ui/Tooltip'
-import { PaneHeadButton, PaneNotice } from './ui/PaneControls'
+import { IconHistory, IconRespawn, type IconComponent } from './icons'
+import { PaneFooterNotice } from './ui/PaneFooterNotice'
+import { usePaneOpState } from '../houston/paneOpsContext'
+import { recoveryReason } from './recoveryReason'
 
 export type RestartMode = 'restart' | 'resume' | 'fresh'
 
@@ -110,24 +110,66 @@ export function RestartConfirm({
   )
 }
 
-/** Why the pane started fresh instead of resuming, until the user dismisses it. */
-export function ResumeNotice({ notice }: { notice: string | null | undefined }): React.JSX.Element | null {
+/** A pane the daemon left as a husk: not running, with a recorded reason it was not restored. */
+export function isRestoreHusk(info: SessionInfo, live: boolean): boolean {
+  return !live && info.restore_deferred != null
+}
+
+export function paneDimming(info: SessionInfo, live: boolean, ended: string | null): boolean | 'body' {
+  return isRestoreHusk(info, live) ? 'body' : Boolean(ended)
+}
+
+/** The footer a pane shows when its conversation was not resumed; the reason is in a tooltip, never a title. */
+export function RecoveryFooter({
+  info,
+  live,
+  client,
+  shellIntegration,
+  onReconnectSsh
+}: {
+  info: SessionInfo
+  live: boolean
+  client: HoustonClient
+  shellIntegration: boolean
+  onReconnectSsh: (id: number) => void
+}): React.JSX.Element | null {
+  const { error, respawning } = usePaneOpState(info.id)
   const [dismissed, setDismissed] = useState(false)
-  if (!notice || dismissed) return null
+  if (isRestoreHusk(info, live)) {
+    const tone = error ? 'danger' : 'default'
+    if (info.agent === 'ssh') {
+      return (
+        <PaneFooterNotice
+          data-testid="recovery-footer"
+          tone={tone}
+          sentence={error ?? 'SSH sessions reconnect manually.'}
+          reason={info.resume_notice}
+          primary={{ label: 'Reconnect', onClick: () => onReconnectSsh(info.id) }}
+        />
+      )
+    }
+    return (
+      <PaneFooterNotice
+        data-testid="recovery-footer"
+        tone={tone}
+        sentence={error ?? 'This conversation could not be resumed.'}
+        reason={recoveryReason(info)}
+        primary={{ label: 'Try again', disabled: respawning, onClick: () => client.respawnSession(info.id, shellIntegration) }}
+        secondary={{
+          label: 'New conversation',
+          disabled: respawning,
+          onClick: () => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)
+        }}
+      />
+    )
+  }
+  if (!info.resume_notice || dismissed) return null
   return (
-    <PaneNotice data-testid="resume-notice">
-      <span className="min-w-0 flex-1 truncate">{notice}</span>
-      <Tooltip label="Dismiss">
-        <PaneHeadButton
-          aria-label="Dismiss notice"
-          onClick={(e) => {
-            e.stopPropagation()
-            setDismissed(true)
-          }}
-        >
-          <Icon glyph={IconClose} role="ui" />
-        </PaneHeadButton>
-      </Tooltip>
-    </PaneNotice>
+    <PaneFooterNotice
+      data-testid="resume-notice"
+      sentence="Started a new conversation; the previous one could not be resumed."
+      reason={recoveryReason(info)}
+      onDismiss={() => setDismissed(true)}
+    />
   )
 }

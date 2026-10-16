@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { vi } from 'vitest'
+import { PaneOps } from '../houston/paneOps'
 import { setRailViewForTests } from '../railView'
 import { resetRailWidthForTests } from '../railWidth'
 import { resetScmWidthForTests } from '../scmPanel'
@@ -45,7 +46,9 @@ let rosterCwds: Map<number, string> = new Map()
 
 export function makeFakeClient(): HoustonClientType {
   kindHandlers = new Map()
+  const paneOps = new PaneOps()
   const base = {
+    paneOps,
     subscribeAll: ((handler: (msg: ServerMsg) => void) => {
       wiredHandlers.add(handler)
       return () => { wiredHandlers.delete(handler) }
@@ -78,12 +81,13 @@ export function makeFakeClient(): HoustonClientType {
     historyCount: vi.fn(),
     createSession: vi.fn(),
     addWorkspace: vi.fn(),
-    respawnSession: vi.fn(),
+    respawnSession: vi.fn((session: number) => paneOps.beginRespawn(session)),
     agentSessionsResumable: vi.fn(),
     sessionRunningProcs: vi.fn(),
     sendStdin: vi.fn(() => true),
     takeRecentDestroyIntent: vi.fn(() => null),
-    confirmCloseSession: vi.fn(),
+    closeSession: vi.fn((session: number) => paneOps.beginClose(session)),
+    confirmCloseSession: vi.fn((session: number) => paneOps.beginClose(session)),
     confirmKillSession: vi.fn(),
     orchestrationSettingsGet: vi.fn(),
     orchestrationSet: vi.fn(),

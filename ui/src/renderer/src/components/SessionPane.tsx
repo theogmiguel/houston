@@ -26,14 +26,19 @@ import { useRosterMode } from '../pane/rosterMode'
 import { DictationIndicator } from '../voice/DictationIndicator'
 import { AnimOut, MenuLayer } from './ui/AnimOut'
 import {
+  RecoveryFooter,
   RestartConfirm,
-  ResumeNotice,
+  isRestoreHusk,
+  paneDimming,
   restartEntries,
   restartTooltip,
   type RestartMode
 } from './PaneRestart'
 import type { HandoffSource } from './PaneHandoff'
 import { clampConversation } from './handoffPacket'
+import { collapseHome } from './recoveryReason'
+import { errorSessionIds } from '../houston/paneOps'
+import { PaneOpsContext, usePaneOpState } from '../houston/paneOpsContext'
 import { RenameTitle } from './RenameTitle'
 import { Tooltip } from './ui/Tooltip'
 import {
@@ -155,10 +160,6 @@ function CtxRow({
       </PaneContextMenuRow>
     </Tooltip>
   )
-}
-
-function collapseHome(path: string): string {
-  return path.replace(/^\/(home|Users)\/[^/]+/, '~')
 }
 
 export function engineGlyphColor(agent: AgentKind): string {
@@ -393,8 +394,7 @@ interface SessionMemoryResult {
 }
 
 function isSessionLifecycleError(message: { context?: string | null; message: string }, sessionId: number): boolean {
-  const target = `session ${sessionId}`
-  return [String(message.context), message.message].some((text) => text.includes(target))
+  return errorSessionIds(message).includes(sessionId)
 }
 
 function useSessionLifecycle(client: HoustonClient, sessionId: number): {
@@ -405,6 +405,7 @@ function useSessionLifecycle(client: HoustonClient, sessionId: number): {
 } {
   const [memoryResult, setMemoryResult] = useState<SessionMemoryResult | null>(null)
   const [lifecycleError, setLifecycleError] = useState<string | null>(null)
+  const ops = useContext(PaneOpsContext)
 
   useEffect(() => {
     setMemoryResult(null)
@@ -418,10 +419,11 @@ function useSessionLifecycle(client: HoustonClient, sessionId: number): {
       }
     })
     const offError = client.subscribe('error', (message) => {
-      if (isSessionLifecycleError(message, sessionId)) setLifecycleError(message.message)
+      // A refused close or respawn belongs to PaneOps, which shows it once.
+      if (isSessionLifecycleError(message, sessionId) && ops.attribute(message) === null) setLifecycleError(message.message)
     })
     return () => { offMemory(); offError() }
-  }, [client, sessionId])
+  }, [client, ops, sessionId])
 
   const dismissLifecycleError = useCallback(() => setLifecycleError(null), [])
   return { memoryResult, setMemoryResult, lifecycleError, dismissLifecycleError }
@@ -433,10 +435,11 @@ function SessionLifecycleNotices({ info, lifecycleError, dismissLifecycleError, 
   dismissLifecycleError: () => void
   memoryResult: SessionMemoryResult | null
 }): React.JSX.Element {
+  const { error, clearError: dismissPaneError } = usePaneOpState(info.id)
+  const paneError = isRestoreHusk(info, isLive(info.state)) ? null : error
   return <>
-    {(info.sleep_notice || info.restore_deferred) && <PaneNotice data-testid="session-recovery-notice">
-      {info.sleep_notice ?? `Session restore deferred: ${restoreReasonLabel(info.restore_deferred)}`}
-    </PaneNotice>}
+    {info.sleep_notice && <PaneNotice data-testid="session-recovery-notice">{info.sleep_notice}</PaneNotice>}
+    {paneError && <Notice tone="danger" inset="compact-inline" className="flex-none" action={{ label: 'Dismiss', onClick: dismissPaneError }}>{paneError}</Notice>}
     {lifecycleError && <Notice tone="danger" inset="compact-inline" className="flex-none" action={{ label: 'Dismiss', onClick: dismissLifecycleError }}>{lifecycleError}</Notice>}
     {memoryResult && <div role="status"><Notice tone="info" inset="compact-inline" className="flex-none">
       {memoryResult.bytes == null ? memoryResult.reason ?? 'Memory measurement is unavailable.' : `Process memory (PSS): ${formatMemory(memoryResult.bytes)}`}
@@ -592,7 +595,7 @@ function SessionPaneImpl({
       kind="session"
       focusTier={focusTier}
       active={active}
-      dimmed={Boolean(ended)}
+      dimmed={paneDimming(info, live, ended)}
       data-panekey={info.id}
       onPointerDownCapture={() => onActivate(info.id)}
       onContextMenu={(e) => {
@@ -643,10 +646,10 @@ function SessionPaneImpl({
         <SessionInboxButton info={info} />
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </PaneHeader>
-      <ResumeNotice notice={info.resume_notice} />
       <ChildInputBanner info={info} />
       <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} dismissLifecycleError={dismissLifecycleError} memoryResult={memoryResult} />
       {sleeping ? <SleepingSessionPlaceholder info={lifecycleInfo} onWake={() => client.send({ type: 'session_wake', session: info.id })} onFresh={() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)} /> : <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />}
+      <RecoveryFooter info={info} live={live} client={client} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} />
       <GenerateTitleConfirm open={confirmGenerateTitle} info={info} onCancel={() => setConfirmGenerateTitle(false)} onConfirm={() => { setConfirmGenerateTitle(false); client.send({ type: 'session_title_generate', session: info.id }) }} />
       <AnimOut open={confirmRestart !== null} suppress="modal">
         {confirmRestart && (
@@ -826,18 +829,6 @@ function formatMemory(bytes: number): string {
   let unit = 0
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++ }
   return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unit]}`
-}
-
-function restoreReasonLabel(reason: SessionInfo['restore_deferred']): string {
-  switch (reason) {
-    case 'budget': return 'the restore budget was reached'
-    case 'invalid-cwd': return 'the working directory is unavailable'
-    case 'previous-crash': return 'the previous daemon ended unexpectedly'
-    case 'safe-mode': return 'safe mode deferred automatic restore'
-    case 'spawn-failed': return 'the agent could not be started'
-    case 'ssh': return 'SSH sessions are not restored automatically'
-    default: return 'the reason is unavailable'
-  }
 }
 
 function RosterTerminals({ client, info, children, recent, gridSessionIds, peek, active, connected, theme, fontSize, fontFamily, shiftEnterNewline, openLinksInPane, onOpenUrlInPane, copyOnSelect, stripBoxGlyphs, registerOutput, onActivate, onZoom, onShellZoom, onOpenFile, onOpenDir, termActions }: Pick<Props, 'client' | 'info' | 'gridSessionIds' | 'active' | 'connected' | 'theme' | 'fontSize' | 'fontFamily' | 'shiftEnterNewline' | 'openLinksInPane' | 'onOpenUrlInPane' | 'copyOnSelect' | 'stripBoxGlyphs' | 'registerOutput' | 'onActivate' | 'onZoom' | 'onShellZoom' | 'onOpenFile' | 'onOpenDir'> & {

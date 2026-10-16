@@ -263,6 +263,9 @@ launch. Use Kill or Close on an individual pane to discard its continuation.
 
 Closing a pane ends its session — the underlying PTY is torn down, not just hidden.
 There is no undo for a killed session; the pane is gone from the grid along with it.
+The pane leaves the grid as soon as you close it. If the daemon refuses the close, the
+pane returns with the refusal shown inside it; a close the daemon does not confirm within
+15 seconds is handed back the same way.
 
 ## Sleeping a pane
 
@@ -324,6 +327,14 @@ Resume conversation is refused naming the shell, Start fresh starts the shell wi
 conversation, and at startup the pane waits for a manual restart. Other agents, shells
 without a validated conversation and routine runs start fresh. Sessions beyond the restore
 budget remain available for manual restart.
+
+A pane that was not restored shows its saved output dimmed with one line at the bottom:
+**This conversation could not be resumed.**, with **Try again** (resume) and **New
+conversation** (start fresh). Hover or focus the sentence for the reason. Both buttons
+are disabled while Try again is running, and a refusal replaces the sentence in place. An
+SSH pane offers **Reconnect** instead. A pane that fell back to a fresh conversation shows
+**Started a new conversation; the previous one could not be resumed.** once, until
+dismissed.
 
 Panes that had already exited remain ended after reopening Houston, with their saved
 output available. They do not launch an agent automatically. Killed and closed panes do

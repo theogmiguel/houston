@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button, ConnectionCell, Count, STATUS_LABELS, StatusLabel, TextInput } from './index'
 import { ThemeRevealSpecimen } from './ThemeRevealSpecimen'
 import { OrchestrationNoticeSpecimen } from './OrchestrationNotice'
+import { PaneFooterNoticeSpecimen } from './PaneFooterNotice'
 import { variants } from './variants'
 
 afterEach(cleanup)
@@ -39,6 +40,15 @@ describe('components/ui primitives', () => {
     expect(screen.getAllByTestId('orchestration-notice')).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Open pane' })).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'Dismiss api-refactor needs your input' })).toBeTruthy()
+  })
+
+  it('specimens the pane footer notice as a sentence, an action pair, a dismissable note and a refusal', () => {
+    render(<PaneFooterNoticeSpecimen />)
+    expect(screen.getAllByText('This conversation could not be resumed.')).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'New conversation' })[0].closest('[data-pane-footer]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Dismiss notice' })).toBeTruthy()
+    expect(screen.getByRole('alert').getAttribute('data-tone')).toBe('danger')
   })
 
   it('TextInput keeps its role, width and face, and passes layout and aria through', () => {
