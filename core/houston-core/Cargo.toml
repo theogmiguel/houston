@@ -6,6 +6,12 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 authors.workspace = true
+autotests = false
+
+# Every file under tests/it/ is a module of this one binary, so the crate links once.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
 
 [features]
 # Crash barriers are opt-in test instrumentation and are absent from shipping builds.

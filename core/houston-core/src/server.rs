@@ -73,6 +73,7 @@ pub async fn start_with_listener(
         .route("/orchestrate/submit", post(orch_submit))
         .route("/orchestrate/report", post(orch_report))
         .route("/orchestrate/reply", post(orch_reply))
+        .route("/orchestrate/message", post(orch_message))
         .route("/orchestrate/deny", post(orchestration_doors::deny))
         .route("/orchestrate/escalate", post(orchestration_doors::escalate))
         .route(
@@ -506,6 +507,15 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
         wake: Arc::clone(&wake),
     };
     let handlers = Arc::new(tokio::sync::Semaphore::new(CONTROL_HANDLERS_PER_CONNECTION));
+    // This loop owns every write; while a send waits on a slow client it reads nothing,
+    // so the socket's read half lives on its own task and stdin never waits behind output.
+    let (inbound_tx, mut inbound_rx) = tokio::sync::mpsc::channel::<Inbound>(CONTROL_INBOUND_QUEUE);
+    let mut reader = AbortOnDrop(tokio::spawn(read_client(
+        Arc::clone(&daemon),
+        stream,
+        inbound_tx,
+        conn_id,
+    )));
     loop {
         tokio::select! {
             Some(reply) = reply_rx.recv() => {
@@ -559,29 +569,99 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 }
                 Err(RecvError::Closed) => break,
             },
-            incoming = stream.next() => match incoming {
-                Some(Ok(Message::Text(text))) => {
+            incoming = inbound_rx.recv() => match incoming {
+                Some(Inbound::Control(text, _bytes)) => {
                     handle_control(&daemon, &mut sink, &replies, &handlers, &text, &mut frames_wanted, conn_id)
                         .await;
                 }
-                Some(Ok(Message::Binary(buf))) => {
-                    if let Some((id, payload)) = proto::decode_stdin_frame(&buf) {
-                        daemon.note_operator_keystroke(id, payload);
-                        if let Err(e) = daemon.enqueue_stdin_from_renderer(id, payload, conn_id) {
-                            send_error(&mut sink, e.to_string(), Some("stdin".into())).await;
-                        }
-                    }
+                Some(Inbound::StdinError(message)) => {
+                    send_error(&mut sink, message, Some("stdin".into())).await;
                 }
-                Some(Ok(Message::Close(_))) | None => break,
-                Some(Ok(_)) => {}
-                Some(Err(e)) => {
-                    tracing::debug!("client socket error: {e}");
-                    break;
-                }
+                None => break,
             },
         }
     }
+    // Await the aborted reader so no stdin is delivered for a forgotten connection and the
+    // socket closes once both halves are dropped.
+    reader.0.abort();
+    if let Err(error) = (&mut reader.0).await {
+        if error.is_panic() {
+            tracing::warn!("client reader failed: {error}");
+        }
+    }
     daemon.conn_forget(conn_id);
+}
+
+// Control messages wait here, in socket order, while the connection loop is busy writing.
+// A reconnect burst (an attach per pane plus a few list requests) fits; past either bound
+// the reader stops reading until the loop catches up, which is the pre-split backpressure.
+const CONTROL_INBOUND_QUEUE: usize = 256;
+const CONTROL_INBOUND_BYTES: usize = 1024 * 1024;
+
+enum Inbound {
+    Control(
+        axum::extract::ws::Utf8Bytes,
+        tokio::sync::OwnedSemaphorePermit,
+    ),
+    StdinError(String),
+}
+
+struct AbortOnDrop(JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Delivers stdin frames to their PTYs as they arrive and forwards control text, in order,
+/// to the connection loop. Returning (close, error or a closed loop) ends the connection.
+async fn read_client(
+    daemon: Arc<Daemon>,
+    mut stream: futures_util::stream::SplitStream<WebSocket>,
+    inbound: tokio::sync::mpsc::Sender<Inbound>,
+    conn_id: u64,
+) {
+    let bytes = Arc::new(tokio::sync::Semaphore::new(CONTROL_INBOUND_BYTES));
+    loop {
+        match stream.next().await {
+            Some(Ok(Message::Text(text))) => {
+                // A message larger than the budget still passes, alone, as before the split.
+                let size = text.len().clamp(1, CONTROL_INBOUND_BYTES) as u32;
+                let Ok(permit) = Arc::clone(&bytes).acquire_many_owned(size).await else {
+                    return;
+                };
+                if inbound.send(Inbound::Control(text, permit)).await.is_err() {
+                    return;
+                }
+            }
+            Some(Ok(Message::Binary(buf))) => {
+                let Some((id, payload)) = proto::decode_stdin_frame(&buf) else {
+                    continue;
+                };
+                daemon.note_operator_keystroke(id, payload);
+                if let Err(e) = daemon.enqueue_stdin_from_renderer(id, payload, conn_id) {
+                    let message = e.to_string();
+                    // Refusals are advisory and the loop may be blocked on a slow client;
+                    // waiting here would stall input for every other pane on the socket.
+                    match inbound.try_send(Inbound::StdinError(message.clone())) {
+                        Ok(()) => {}
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => tracing::warn!(
+                            "session {id} stdin refusal not reported: connection queue holds \
+                             {CONTROL_INBOUND_QUEUE} of {CONTROL_INBOUND_QUEUE} messages; {message}"
+                        ),
+                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
+                    }
+                }
+            }
+            Some(Ok(Message::Close(_))) | None => return,
+            Some(Ok(_)) => {}
+            Some(Err(e)) => {
+                tracing::debug!("client socket error: {e}");
+                return;
+            }
+        }
+    }
 }
 
 async fn flush_frames(sink: &mut (impl SinkExt<Message> + Unpin), taps: &AttachSet) -> bool {
@@ -3355,17 +3435,22 @@ async fn dispatch(
             .await
             .unwrap_or_else(|e| Err(anyhow::anyhow!("git worktree create task panicked: {e}")));
             match result {
-                Ok(wt) => {
+                Ok((wt, include_warnings)) => {
+                    let mut message = format!(
+                        "Created worktree at {} (branch {}).",
+                        wt.path.display(),
+                        wt.branch.as_deref().unwrap_or("detached")
+                    );
+                    for warning in include_warnings {
+                        message.push(' ');
+                        message.push_str(&warning);
+                    }
                     let _ = send_msg(
                         sink,
                         &proto::ServerMsg::GitWorktrees {
                             dir,
                             worktrees: Vec::new(),
-                            message: Some(format!(
-                                "Created worktree at {} (branch {}).",
-                                wt.path.display(),
-                                wt.branch.as_deref().unwrap_or("detached")
-                            )),
+                            message: Some(message),
                         },
                     )
                     .await;
@@ -5821,6 +5906,24 @@ async fn orch_report(
     }
 }
 
+async fn orch_message(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(payload): axum::Json<crate::orchestrate::SiblingMessage>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(r) => return *r,
+    };
+    match tokio::task::spawn_blocking(move || daemon.orchestrate_message(scope.session_id, payload))
+        .await
+    {
+        Ok(Ok(value)) => (StatusCode::OK, axum::Json(value)).into_response(),
+        Ok(Err(e)) => orch_err_response(e),
+        Err(e) => orch_err_response(anyhow::anyhow!("message worker failed: {e}")),
+    }
+}
+
 async fn orch_reply(
     State(daemon): State<Arc<Daemon>>,
     headers: HeaderMap,
@@ -5979,10 +6082,11 @@ mod frame_flush_tests {
     impl LiveSession {
         fn new() -> Self {
             let state = tempfile::tempdir().unwrap();
-            let daemon = Daemon::new(crate::daemon::DaemonConfig {
-                token: "token".into(),
-                db_path: state.path().join("test.db"),
-            })
+            let daemon = Daemon::new(crate::daemon::DaemonConfig::new(
+                "token".into(),
+                state.path().join("test.db"),
+                crate::host_env::HostEnv::capture(),
+            ))
             .unwrap();
             let id = daemon
                 .create_session(crate::daemon::CreateParams {
