@@ -69,6 +69,9 @@ tab strip, one visible at a time. A stack has a capacity: reaching it blocks add
 another pane to that stack until you raise the limit in Settings ▸ Terminal ▸ Panes per
 stack, or open a new cell instead.
 
+The command palette also offers **Set grid layout: 1×** through **4×**, which rearranges the
+current grid's panes into an even grid with that many columns.
+
 ## Renaming a pane
 
 Houston names panes automatically from a codename, a cleaned first prompt, a delegated role,

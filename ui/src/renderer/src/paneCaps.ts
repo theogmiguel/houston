@@ -116,6 +116,11 @@ export function stackCapacity(): number {
   return stackCap
 }
 
+/** The refusal for a stack already holding `cap` panes; names where the cap is raised. */
+export function stackFullMessage(count: number, cap: number): string {
+  return `Stack is full (${count}/${cap}) — can't add a ${count + 1}th tab. Raise "Panes per stack" in Settings → Terminal, or open a new cell`
+}
+
 export function setStackCapacity(next: number): void {
   const v = Math.trunc(next)
   if (!Number.isFinite(v) || v < STACK_CAP_MIN || v > STACK_CAP_MAX || v === stackCap) return
