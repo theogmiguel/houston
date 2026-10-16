@@ -152,9 +152,16 @@ Before restore, undrained root lifecycle hooks may update conversation metadata 
 long downtime. Recovery does not replay status, permission, input or orchestration effects.
 Provider and cwd bindings prevent a retained handle from crossing agent or folder changes;
 subagent hooks cannot rewrite the root namespace. Shell cwd changes are coalesced and
-persisted outside the PTY reader. Incomplete metadata recovery defers affected panes and
-retains pending drops for retry, rather than treating unreadable evidence as an empty inbox.
+persisted outside the PTY reader. A drop that is unreadable, invalid, oversized or
+future-dated is quarantined beside the others, and its pane resumes the handle on its row; a
+partial directory listing applies no drop. Only a failed database write defers a pane, and
+only that pane, retaining its drops for retry. Atomic state files, and drops that can name
+the root conversation, are synced together with their directory on Unix, so power loss
+cannot leave them empty under a delivered name; tool and other lifecycle drops stay unsynced
+because they sit on the agent's tool-call path.
 Naturally exited root panes retain their identity and saved output without automatic launch.
+Each restore candidate fails independently: a failed respawn defers that pane and its
+children, and the remaining candidates still launch within the restore budget.
 Only the newest row of a session origin is eligible, so legacy replacement predecessors
 cannot reappear alongside their successors.
 
@@ -166,20 +173,26 @@ aborts execution before the CLI can fork. Hidden generators also commit receipts
 remain excluded from cold restoration. The gate proves process-crash ordering, not
 power-loss durability.
 
-Cold recovery checks the boot UUID, root creation identity and exact recorded scope's
-recursive cgroup population. A recycled or absent root cannot certify a stopped workload.
-A reachable manager must confirm collection when the kernel cgroup is absent; manager
-errors, permission failures and timeouts remain unknown. A verified different Linux boot
-permits recovery without signalling old processes. Live handoff preserves the stored
-receipt on both commit and rollback; adoption does not establish workload quiescence.
+Houston owns its panes' processes. Once the daemon that owned a pane is gone, nothing
+holds the pane's PTY master, so every process left in it is unreachable. Before the
+daemon holding `daemon.lock` replaces or closes a retained pane, it reclaims that
+workload by the receipt, never by process name or path. A different Linux boot needs
+nothing. A contained receipt is used only when its unit is named for this channel and
+session and the manager still reports the recorded cgroup; a populated scope receives
+`KillUnit(all, SIGKILL)` and must empty within a bounded deadline, or that pane alone
+is deferred. An unreachable or failing manager is logged by unit name and recovery
+continues with the root rule below, so the manager never blocks a pane.
 
-Windows ConPTY currently has no committed pre-exec Job receipt. Windows, Linux launches
-without verified scopes and historical rows therefore retain a named recovery refusal,
-the pane, conversation and pending instructions. Read-only recheck refreshes the reason.
-An explicit user acknowledgement that all previous workload processes have stopped can
-clear an uncontained or legacy refusal after any recorded root passes its liveness check.
-It cannot bypass a contained scope or an unreadable receipt. Acknowledgement does not
-resume held instructions or change continuation metadata.
+Uncontained receipts (every Windows ConPTY launch and Linux launches without a verified
+scope), legacy receipts and the manager fallback rely on the recorded root: a root that
+still runs with the recorded creation identity is asked to terminate, then force-killed
+after a bounded grace (on Linux, SIGKILL to its process group); an absent or recycled root
+needs nothing. Detached
+descendants outside the root's process group cannot be found without a scope and may
+survive. A pane that this daemon tears down after its root exited is reclaimed through
+the same receipt, so descendants left in its scope do not outlive Close, Kill or
+Restart. Reclaim runs only on cold restore, Restart and Close; live handoff and adoption
+never call it and preserve the stored receipt on both commit and rollback.
 
 Shell panes can retain a root Claude, Codex or ZCode conversation reported by lifecycle
 hooks. Restart validates that provider's exact handle and launches the CLI from the restored

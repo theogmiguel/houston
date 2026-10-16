@@ -168,12 +168,6 @@ fn exited_roots_keep_passive_panes_and_output_until_explicit_close() {
         drop(daemon);
         let reopened = boot();
         assert_eq!(reopened.list()[0].state, proto::SessionState::Exited);
-        assert!(reopened
-            .close(1)
-            .unwrap_err()
-            .to_string()
-            .contains("legacy"));
-        reopened.recheck_recovery(1, true).unwrap();
         reopened.close(1).unwrap();
         assert!(db.session_is_closed(1).unwrap());
         assert_eq!(db.session_resume_handle(1).unwrap(), None);

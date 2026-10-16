@@ -117,7 +117,7 @@ named.
 | **environment** | Where a daemon runs for the app: `local` (the daemon beside the app) or `wsl:<distro>` (a Linux daemon inside an enabled WSL distro, Windows only). An app-side concept; no daemon knows which environment it is. | `src-tauri/src/wsl/`, `houston/environments.ts` |
 | **relay** | The app's `127.0.0.1` listener for one WSL environment. Each accepted connection runs `houston-core wsl-proxy` through `wsl.exe`, which splices stdio to the distro daemon's loopback port. | `src-tauri/src/wsl/relay.rs`, `wsl_proxy.rs` |
 | **environment mux** | The renderer layer that keeps one socket per environment and routes each message by session id or workspace path. It presents a WSL session id `n` from slot `s` as `0x80000000 \| s<<24 \| n`. | `houston/environmentMux.ts` |
-| **ownership receipt** | A versioned record committed before Linux executable release, binding the PTY root identity and boot to its exact nonce-bearing scope, or explicitly recording uncontained ownership. Recovery acknowledgement never replaces a contained scope proof. | `recovery_process.rs` |
+| **ownership receipt** | A versioned record committed before Linux executable release, binding the PTY root identity and boot to its exact nonce-bearing scope, or explicitly recording uncontained ownership. Reclaim uses it to stop a pane's previous workload before the pane is replaced or closed. | `recovery_process.rs` |
 | **session scope** | A transient Linux user systemd scope containing one pane's workload separately from the daemon. Its channel, session ID and unique nonce identify the process ownership boundary. | `session_isolation.rs` |
 | **Codex lifetime guardian** | A pane-owned helper that confirms native startup readiness, then watches its helper and PTY owner for exit and terminates their exact session scope, including detached tool processes. | `codex_pane.rs::observe` |
 | **state dir** | The channel's directory. Everything the daemon persists lives under it. | `paths.rs` |
@@ -128,6 +128,7 @@ named.
 | **helper** | The `hook` / `hs-pane` argv aliases; `tr-helper` is the slim binary form. A `hs-mail` invocation answers with a refusal naming its replacement. | `bin/tr-helper.rs` |
 | **hooks** | The CLI's own lifecycle events Houston subscribes to. Claude: `SessionStart`, `UserPromptSubmit`, `Stop`, `Notification`. | `claude_hooks.rs`, `agent_hooks.rs` |
 | **drop file** | How a hook reaches the daemon: one JSON file under `hooks/drop/`, claimed by hard-link, applied by the poll loop. | `hook_drop.rs` |
+| **quarantined drop** | A drop file that boot recovery could not read or validate, renamed with the `.quarantined` suffix so no pass reads it again. At most 64 are kept; later invalid drops are deleted. | `hook_drop.rs` |
 | **managed marker** | The `--houston-managed[=<channel>]` sentinel that identifies Houston's entries in another tool's config, so uninstall removes exactly ours. | `claude_hooks.rs` |
 | **`AgentStatus`** | `Spawning`, `Working`, `Idle`, `NeedsInput`. Set only by `Daemon::set_status`, sourced from hooks or ACP. | `proto::AgentStatus` |
 | **`hooks_seen`** | Per-session flag: at least one hook event has arrived. Stands the spawn-grace watchdog down. | `daemon.rs::Session` |

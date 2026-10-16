@@ -231,7 +231,6 @@ async fn a_restored_prompt_named_pane_accepts_its_clis_title() {
         Some("prompt"),
     )
     .unwrap();
-    db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
 
     let daemon = Daemon::new(DaemonConfig::new(
@@ -585,7 +584,6 @@ async fn legacy_manual_title_without_provenance_stays_locked_until_reset() {
     let mut stored = stored_session(1, state.path(), "Manual project overview");
     stored.codename = "Max".into();
     db.insert_session(&stored).unwrap();
-    db.acknowledge_uncontained_recovery(1).unwrap();
     assert_eq!(db.session_title_source(1).unwrap(), None);
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
         DaemonConfig::new("legacy-title".into(), db_path, common::base_env()),
@@ -620,7 +618,6 @@ async fn refused_restored_title_reset_keeps_the_manual_name_locked() {
         .unwrap();
     db.save_title_candidate(1, proto::TitleSource::Prompt, "Original task")
         .unwrap();
-    db.acknowledge_uncontained_recovery(1).unwrap();
     let daemon = Daemon::new_with_safe_mode_flags_for_test(
         DaemonConfig::new(
             "refused-title-reset".into(),
@@ -668,7 +665,6 @@ async fn user_title_and_candidates_survive_boot_restore() {
         .unwrap();
     db.save_title_candidate(1, proto::TitleSource::Prompt, "Original task")
         .unwrap();
-    db.acknowledge_uncontained_recovery(1).unwrap();
     drop(db);
     let daemon = Daemon::new(DaemonConfig::new(
         "restore-title".into(),

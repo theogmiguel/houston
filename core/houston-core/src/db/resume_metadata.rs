@@ -6,6 +6,18 @@ use houston_protocol as proto;
 use rusqlite::OptionalExtension;
 use std::path::Path;
 
+/// Whether a drop can name its pane's root conversation: the only drops recovery records.
+pub(crate) fn names_root_conversation_event(provider: proto::AgentKind, drop: &HookDrop) -> bool {
+    crate::launch::resumes_conversations(provider)
+        && names_root_conversation(provider, &drop.event)
+        && drop.agent_id.is_none()
+        && drop.subagent_type.is_none()
+        && matches!(
+            AgentEvent::from_provider(provider, &drop.event),
+            Some(AgentEvent::SessionStarted | AgentEvent::PromptSubmitted | AgentEvent::TurnEnded)
+        )
+}
+
 pub struct RootHookMetadata {
     pub cwd: String,
     pub transcript_path: Option<String>,
@@ -87,22 +99,10 @@ impl Db {
         order: DropName,
         recovery: bool,
     ) -> Result<Option<RootHookMetadata>> {
-        let event = AgentEvent::from_provider(provider, &drop.event);
-        if !crate::launch::resumes_conversations(provider)
-            || !names_root_conversation(provider, &drop.event)
-            || drop.agent_id.is_some()
-            || drop.subagent_type.is_some()
-            || !matches!(
-                event,
-                Some(
-                    AgentEvent::SessionStarted
-                        | AgentEvent::PromptSubmitted
-                        | AgentEvent::TurnEnded
-                )
-            )
-        {
+        if !names_root_conversation_event(provider, drop) {
             return Ok(None);
         }
+        let event = AgentEvent::from_provider(provider, &drop.event);
         let Some(conversation) = drop.session_id.as_deref().filter(|id| {
             !id.is_empty()
                 && id.len() <= 128

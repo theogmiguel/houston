@@ -145,12 +145,7 @@ async fn serve(daemon: &Arc<Daemon>) -> std::net::SocketAddr {
 
 /// Orderly shutdown and explicit acknowledgement of these isolated hook-only workloads.
 fn reboot(env: &Env, before: &Arc<Daemon>) -> Arc<Daemon> {
-    let retained = before.list();
     before.manage_shutdown().unwrap();
-    let db = Db::open(&env.db_path()).unwrap();
-    for pane in retained {
-        db.acknowledge_uncontained_recovery(pane.id).unwrap();
-    }
     boot(env)
 }
 
@@ -1394,7 +1389,6 @@ fn seed_claude(env: &Env, id: u32, dir: &Path, cwd: &Path, handle: Option<(&str,
     })
     .unwrap();
     db.set_session_resume_handle(id, handle).unwrap();
-    db.acknowledge_uncontained_recovery(id).unwrap();
 }
 
 fn clean_shutdown(env: &Env) {
@@ -2030,10 +2024,6 @@ async fn a_fresh_codex_restore_does_not_pin_its_observer_to_the_retry_handle() {
             std::fs::remove_file(path).unwrap();
         }
         daemon.manage_shutdown().unwrap();
-        Db::open(&env.db_path())
-            .unwrap()
-            .acknowledge_uncontained_recovery(pane.id)
-            .unwrap();
         // The shim records the full native launch argv without running a CLI,
         // observer, systemd scope or network service; only the pre-exec gate is real.
         let restored_daemon = Daemon::new_bound_with_session_launcher(
@@ -3656,7 +3646,7 @@ async fn a_subagent_hook_cannot_move_the_root_cwd_or_resume_binding() {
     daemon.close(pane.id).unwrap();
 }
 
-fn overflow_recovery_fixture(env: &Env, id: u32, ws: &Path) -> (String, PathBuf, Vec<PathBuf>) {
+fn overflow_recovery_fixture(env: &Env, id: u32, ws: &Path) {
     let prior = uuid::Uuid::new_v4().to_string();
     let prior_path = transcript(env, &prior, b"{}\n");
     seed_claude(env, id, ws, ws, Some((&prior, Some(&prior_path))));
@@ -3674,76 +3664,61 @@ fn overflow_recovery_fixture(env: &Env, id: u32, ws: &Path) -> (String, PathBuf,
         session: id,
         event: "Stop".into(),
         cwd: Some(ws.display().to_string()),
-        session_id: Some(final_root.clone()),
+        session_id: Some(final_root),
         transcript_path: Some(path),
         ..HookDrop::default()
     };
-    let pending = houston_core::hook_drop::write_drop(&dir, &drop, sampled).unwrap();
-    let mut noise = Vec::new();
+    houston_core::hook_drop::write_drop(&dir, &drop, sampled).unwrap();
     for seq in 2..=4097 {
         let path = dir.join(format!("{sampled:013}-{seq:06}-s{id}.json"));
         std::fs::write(&path, b"{}").unwrap();
-        noise.push(path);
     }
-    (final_root, pending, noise)
 }
 
 #[tokio::test]
-async fn over_limit_recovery_keeps_daemon_available_and_resume_blocked_until_retry_succeeds() {
+async fn over_limit_recovery_applies_nothing_and_restores_from_the_stored_handle() {
     let env = setup().await;
     let ws = project(&env, "recovery-limit");
-    let (conversation, pending, noise) = overflow_recovery_fixture(&env, 41, &ws);
+    overflow_recovery_fixture(&env, 41, &ws);
+    let (prior, _) = handle_in(&env, 41).unwrap();
     clean_shutdown(&env);
     let daemon = boot(&env);
-    let husk = daemon
-        .list()
-        .into_iter()
-        .find(|info| info.id == 41)
-        .unwrap();
-    assert_eq!(husk.state, proto::SessionState::Interrupted);
+    let restored = restored_from(&daemon.list(), 41).clone();
+    assert_eq!(restored.resume_notice, None, "{restored:?}");
     assert_eq!(
-        husk.restore_deferred,
-        Some(proto::RestoreReason::SpawnFailed)
+        resume_of(&argv_of(&env, restored.id).await).as_deref(),
+        Some(prior.as_str())
     );
-    assert!(!husk.resumable);
-    assert!(husk.resume_notice.as_deref().unwrap().contains("4096"));
-    assert_eq!(daemon.recovery_summary().unwrap().respawned, 0);
-    assert_eq!(
-        std::fs::read_dir(env.argv.path()).unwrap().count(),
-        0,
-        "no fake CLI was launched"
-    );
-    let error = daemon.respawn(41, false, None, None, false).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("metadata recovery remains incomplete"),
-        "{error:#}"
-    );
-    assert!(
-        pending.exists(),
-        "ordinary seed drain must retain old metadata for retry"
-    );
-    for path in noise {
-        std::fs::remove_file(path).unwrap();
-    }
-    let resumed = daemon.respawn(41, false, None, None, false).unwrap();
-    assert_eq!(
-        resume_of(&argv_of(&env, resumed.id).await).as_deref(),
-        Some(conversation.as_str())
-    );
-    assert!(!pending.exists());
-    daemon.close(resumed.id).unwrap();
+    daemon.close(restored.id).unwrap();
 }
 
 #[tokio::test]
 async fn blocked_metadata_recovery_still_allows_explicit_fresh_and_close() {
     let env = setup().await;
     let ws = project(&env, "recovery-explicit");
-    overflow_recovery_fixture(&env, 41, &ws);
-    seed_claude(&env, 42, &ws, &ws, None);
+    let dir = houston_core::hook_drop::drop_dir(env.state.path());
+    let now = houston_core::hook_drop::now_ms();
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    for id in [41, 42] {
+        seed_claude(&env, id, &ws, &ws, None);
+        let conversation = format!("conv-{id}b");
+        houston_core::hook_drop::write_drop(
+            &dir,
+            &recovery_drop(&env, id, &conversation, &ws),
+            now,
+        )
+        .unwrap();
+        inject_metadata_failure(&conn, id, &conversation);
+    }
     clean_shutdown(&env);
     let daemon = boot(&env);
+    let refusal = daemon.respawn(41, false, None, None, false).unwrap_err();
+    assert!(
+        refusal
+            .to_string()
+            .contains("storing its conversation metadata failed"),
+        "{refusal:#}"
+    );
     daemon.close(42).unwrap();
     let fresh = daemon
         .respawn_with(
@@ -3911,7 +3886,7 @@ async fn an_incompatible_shell_handle_is_never_rebound_during_fresh_restore() {
 }
 
 #[tokio::test]
-async fn a_corrupt_newest_candidate_drop_blocks_stale_resume_across_two_boots() {
+async fn a_corrupt_newest_candidate_drop_is_quarantined_and_the_stored_handle_resumes() {
     let env = setup().await;
     let ws = project(&env, "corrupt-recovery");
     let old_conversation = uuid::Uuid::new_v4().to_string();
@@ -3948,41 +3923,145 @@ async fn a_corrupt_newest_candidate_drop_blocks_stale_resume_across_two_boots() 
     .unwrap();
     // A valid managed name with a damaged payload models unreadable durable evidence.
     std::fs::write(&pending, b"{ damaged newest root hook").unwrap();
+    let aside = format!(
+        "{}{}",
+        pending.display(),
+        houston_core::hook_drop::QUARANTINE_SUFFIX
+    );
+    let mut daemon: Option<Arc<Daemon>> = None;
     for round in 1..=2 {
-        clean_shutdown(&env);
-        let daemon = boot(&env);
-        let husk = daemon
-            .list()
-            .into_iter()
-            .find(|info| info.id == 41)
-            .unwrap();
-        assert_eq!(husk.state, proto::SessionState::Interrupted, "boot {round}");
+        let booted = match daemon.take() {
+            Some(before) => reboot(&env, &before),
+            None => {
+                clean_shutdown(&env);
+                boot(&env)
+            }
+        };
+        let restored = restored_from(&booted.list(), 41).clone();
+        assert_eq!(restored.resume_notice, None, "boot {round}: {restored:?}");
         assert_eq!(
-            husk.restore_deferred,
-            Some(proto::RestoreReason::SpawnFailed)
+            resume_of(&argv_of(&env, restored.id).await).as_deref(),
+            Some(old_conversation.as_str()),
+            "boot {round}"
         );
-        assert!(!husk.resumable);
-        assert!(husk
+        assert!(!pending.exists(), "boot {round}: damaged drop read again");
+        assert!(Path::new(&aside).exists(), "boot {round}: evidence kept");
+        daemon = Some(booted);
+    }
+}
+
+fn recovery_drop(env: &Env, id: u32, conversation: &str, cwd: &Path) -> HookDrop {
+    HookDrop {
+        session: id,
+        event: "Stop".into(),
+        session_id: Some(conversation.into()),
+        cwd: Some(cwd.display().to_string()),
+        transcript_path: Some(transcript(env, conversation, b"{}\n")),
+        ..HookDrop::default()
+    }
+}
+
+#[tokio::test]
+async fn empty_and_future_dated_drops_do_not_block_restore() {
+    let env = setup().await;
+    let ws = project(&env, "ws");
+    let five = transcript(&env, "conv-5", b"{}\n");
+    let six = transcript(&env, "conv-6", b"{}\n");
+    seed_claude(&env, 5, &ws, &ws, Some(("conv-5", Some(&five))));
+    seed_claude(&env, 6, &ws, &ws, Some(("conv-6", Some(&six))));
+    let dir = houston_core::hook_drop::drop_dir(env.state.path());
+    let now = houston_core::hook_drop::now_ms();
+    let empty =
+        houston_core::hook_drop::write_drop(&dir, &recovery_drop(&env, 5, "conv-5-lost", &ws), now)
+            .unwrap();
+    std::fs::write(&empty, b"").unwrap();
+    let future = houston_core::hook_drop::write_drop(
+        &dir,
+        &recovery_drop(&env, 5, "conv-5-future", &ws),
+        now + 3_600_000,
+    )
+    .unwrap();
+    clean_shutdown(&env);
+
+    let daemon = boot(&env);
+    let sessions = daemon.list();
+    for (old, conversation) in [(5, "conv-5"), (6, "conv-6")] {
+        let restored = restored_from(&sessions, old).clone();
+        assert_eq!(restored.resume_notice, None, "{restored:?}");
+        assert_eq!(
+            resume_of(&argv_of(&env, restored.id).await).as_deref(),
+            Some(conversation)
+        );
+    }
+    for path in [empty, future] {
+        assert!(
+            !path.exists(),
+            "{} was left to be read again",
+            path.display()
+        );
+        let aside = format!(
+            "{}{}",
+            path.display(),
+            houston_core::hook_drop::QUARANTINE_SUFFIX
+        );
+        assert!(Path::new(&aside).exists(), "{aside} was not kept");
+    }
+}
+
+#[tokio::test]
+async fn a_metadata_write_failure_defers_only_its_own_pane() {
+    let env = setup().await;
+    let ws = project(&env, "ws");
+    let five = transcript(&env, "conv-5", b"{}\n");
+    let six = transcript(&env, "conv-6", b"{}\n");
+    seed_claude(&env, 5, &ws, &ws, Some(("conv-5", Some(&five))));
+    seed_claude(&env, 6, &ws, &ws, Some(("conv-6", Some(&six))));
+    let dir = houston_core::hook_drop::drop_dir(env.state.path());
+    let now = houston_core::hook_drop::now_ms();
+    houston_core::hook_drop::write_drop(&dir, &recovery_drop(&env, 5, "conv-5b", &ws), now)
+        .unwrap();
+    let failing =
+        houston_core::hook_drop::write_drop(&dir, &recovery_drop(&env, 6, "conv-6b", &ws), now)
+            .unwrap();
+    let conn = rusqlite::Connection::open(env.db_path()).unwrap();
+    inject_metadata_failure(&conn, 6, "conv-6b");
+    clean_shutdown(&env);
+
+    let daemon = boot(&env);
+    let sessions = daemon.list();
+    let restored = restored_from(&sessions, 5).clone();
+    assert_eq!(
+        resume_of(&argv_of(&env, restored.id).await).as_deref(),
+        Some("conv-5b")
+    );
+    let deferred = sessions.iter().find(|session| session.id == 6).unwrap();
+    assert!(
+        sessions
+            .iter()
+            .all(|session| session.id == 6 || session.session_origin != Some(6)),
+        "{sessions:?}"
+    );
+    assert_eq!(
+        deferred.restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed)
+    );
+    assert!(
+        deferred
             .resume_notice
             .as_deref()
-            .unwrap()
-            .contains("read or validate"));
-        assert_eq!(
-            std::fs::read_dir(env.argv.path()).unwrap().count(),
-            0,
-            "boot {round}: stale handle must not launch"
-        );
-        assert_eq!(
-            handle_in(&env, 41),
-            Some((old_conversation.clone(), Some(old_path.clone())))
-        );
-        assert!(
-            pending.exists(),
-            "boot {round}: seed TTL must not erase damaged evidence"
-        );
-        let refusal = daemon.respawn(41, false, None, None, false).unwrap_err();
-        assert!(refusal
-            .to_string()
-            .contains("metadata recovery remains incomplete"));
-    }
+            .is_some_and(|notice| notice.contains("injected metadata failure")),
+        "{deferred:?}"
+    );
+    assert!(failing.exists(), "the unstored drop is kept for retry");
+
+    conn.execute_batch("DROP TRIGGER fail_metadata_6").unwrap();
+    let resumed = daemon.respawn(6, false, None, None, true).unwrap();
+    assert_eq!(
+        resume_of(&argv_of(&env, resumed.id).await).as_deref(),
+        Some("conv-6b")
+    );
+}
+
+fn inject_metadata_failure(conn: &rusqlite::Connection, id: u32, conversation: &str) {
+    conn.execute_batch(&format!("CREATE TRIGGER fail_metadata_{id} BEFORE UPDATE OF resume_session_id ON sessions WHEN NEW.id = {id} AND NEW.resume_session_id = '{conversation}' BEGIN SELECT RAISE(ABORT, 'injected metadata failure'); END")).unwrap();
 }

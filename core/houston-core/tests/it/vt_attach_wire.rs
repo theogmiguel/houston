@@ -270,24 +270,26 @@ async fn a_finished_pane_still_answers_with_the_screen_it_died_on() {
 }
 
 #[tokio::test]
-async fn a_snapshot_attach_for_an_unknown_session_is_refused_by_name() {
+async fn a_snapshot_attach_for_an_unknown_session_is_neither_answered_nor_an_error() {
     let (addr, _tmp) = start_daemon().await;
     let mut ws = connect_and_hello(addr, TOKEN).await;
     let _ = next_control(&mut ws).await;
 
     ws.send(attach_msg(4242, true)).await.unwrap();
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionList).unwrap(),
+    ))
+    .await
+    .unwrap();
     loop {
         match next_control(&mut ws).await {
             proto::ServerMsg::Error { message, .. } => {
-                assert!(
-                    message.contains("4242"),
-                    "the refusal must name the session asked for: {message:?}"
-                );
-                break;
+                panic!("an attach racing removal must not raise an error: {message}")
             }
             proto::ServerMsg::AttachSnapshot { .. } | proto::ServerMsg::Scrollback { .. } => {
-                panic!("an unknown session must be refused, not answered")
+                panic!("an unknown session must not be answered")
             }
+            proto::ServerMsg::SessionList { .. } => break,
             _ => {}
         }
     }

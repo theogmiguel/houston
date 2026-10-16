@@ -1,9 +1,10 @@
-//! Reject cold replacement while the recorded PTY root still owns work.
-//!
-//! A missing root does not establish that escaped descendants have terminated.
+//! Reclaims a pane's previous workload by its receipt: the nonce-bearing scope unit, else
+//! the root's PID, creation token and boot identity, never a name or path. See the cold
+//! recovery paragraphs under "Spawning a session" in docs/internals/daemon.md.
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessIdentity {
@@ -86,14 +87,6 @@ impl ProcessIdentity {
         }
     }
 
-    pub fn check_acknowledgeable(&self) -> Result<()> {
-        anyhow::ensure!(
-            !matches!(self.ownership, Some(Ownership::LinuxScope { .. })),
-            "a contained session requires verified scope quiescence; acknowledgement cannot bypass it"
-        );
-        self.check_root_stopped()
-    }
-
     pub fn uncontained_reason(&self) -> Option<&str> {
         match &self.ownership {
             Some(Ownership::LinuxScope { .. }) => None,
@@ -102,45 +95,39 @@ impl ProcessIdentity {
         }
     }
 
-    pub fn is_contained(&self) -> bool {
-        matches!(self.ownership, Some(Ownership::LinuxScope { .. }))
-    }
-
-    pub fn check_stopped(&self) -> Result<()> {
-        #[cfg(target_os = "linux")]
-        if let Some(Ownership::LinuxScope { unit, cgroup }) = &self.ownership {
-            crate::session_isolation::validate_scope_receipt(unit, cgroup)
-                .map_err(anyhow::Error::msg)?;
-        }
-        self.check_root_stopped()?;
-        let current = system_identity()?.context("boot identity unavailable")?;
-        if self.system.starts_with("linux:")
-            && current.starts_with("linux:")
-            && self.system != current
-        {
+    /// Stops whatever the recorded workload left running, before the pane is replaced.
+    /// The caller holds the channel lock, so no other daemon can own this pane.
+    pub fn reclaim(&self, channel: &str, id: u32) -> Result<()> {
+        let current = system_identity()?
+            .context("process recovery identity is unavailable on this platform")?;
+        if !self.same_system(&current)? {
             return Ok(());
         }
-        match &self.ownership {
-            #[cfg(target_os = "linux")]
-            Some(Ownership::LinuxScope { unit, cgroup }) => {
-                crate::session_isolation::check_scope_stopped(unit, cgroup).map_err(anyhow::Error::msg)
+        #[cfg(target_os = "linux")]
+        if let Some(Ownership::LinuxScope { unit, cgroup }) = &self.ownership {
+            use crate::session_isolation::ReclaimError;
+            match crate::session_isolation::reclaim_scope(unit, cgroup, channel, id) {
+                Ok(()) => {}
+                Err(ReclaimError::Unavailable(reason)) => tracing::warn!(
+                    "session {id}: cannot stop previous workload scope {unit} ({reason}); \
+                     stopping its recorded PTY root only"
+                ),
+                Err(ReclaimError::Refused(reason)) => bail!("{reason}"),
             }
-            Some(Ownership::Uncontained { reason }) => bail!("Process ownership unknown: {reason}. Stop all previous workload processes, then explicitly acknowledge uncontained recovery; session, conversation and pending missions are retained."),
-            _ => bail!("Process ownership unknown: legacy session has no complete ownership receipt. Recheck, or stop all previous workload processes and explicitly acknowledge uncontained recovery; session, conversation and pending missions are retained."),
         }
-    }
-
-    fn check_root_stopped(&self) -> Result<()> {
-        let system = system_identity()?
-            .context("process recovery identity is unavailable on this platform")?;
-        self.check_observation(
-            &system,
+        #[cfg(not(target_os = "linux"))]
+        let _ = (channel, id);
+        if self.root_state(
             crate::pid::process_creation_token(self.pid),
-            crate::pid::process_is_alive(self.pid),
-        )
+            root_running(self.pid),
+        )? == Root::Live
+        {
+            self.stop_root()?;
+        }
+        Ok(())
     }
 
-    fn check_observation(&self, system: &str, creation: Option<u64>, alive: bool) -> Result<()> {
+    fn same_system(&self, system: &str) -> Result<bool> {
         anyhow::ensure!((self.version == 1 || self.version == 2) && self.pid > 0 && self.pid <= i32::MAX as u32,
             "invalid recovery process identity version {} / pid {}; expected version 1 or 2 and a positive process ID", self.version, self.pid);
         anyhow::ensure!(
@@ -163,13 +150,102 @@ impl ProcessIdentity {
                 "recovery process {} belongs to a different platform",
                 self.pid
             );
-            return Ok(());
+            return Ok(false);
         }
-        if !alive || creation.is_some_and(|current| current != self.creation) {
-            return Ok(());
-        }
-        bail!("Previous PTY process {} is still present; replacement is refused to avoid running the conversation twice. Stop that previous process or reboot, then retry. Houston has not signalled it.", self.pid)
+        Ok(true)
     }
+
+    fn root_state(&self, creation: Option<u64>, running: bool) -> Result<Root> {
+        match creation {
+            _ if !running => Ok(Root::Gone),
+            Some(current) if current != self.creation => Ok(Root::Gone),
+            Some(_) => Ok(Root::Live),
+            None => bail!(
+                "previous PTY root {} is running but its creation identity is unreadable; \
+                 expected creation token {} to verify it before stopping it",
+                self.pid,
+                self.creation
+            ),
+        }
+    }
+
+    fn live(&self) -> bool {
+        root_running(self.pid)
+            && crate::pid::process_creation_token(self.pid) == Some(self.creation)
+    }
+
+    fn stop_root(&self) -> Result<()> {
+        use crate::pid::{signal_process_checked_identity, Signal};
+        let pid = self.pid;
+        anyhow::ensure!(
+            pid != std::process::id(),
+            "previous PTY root {pid} is this daemon; refusing to signal it"
+        );
+        tracing::info!("stopping previous PTY root {pid} left by an earlier daemon");
+        signal_process_checked_identity(pid, Signal::Term, Some(self.creation))
+            .with_context(|| format!("terminating previous PTY root {pid}"))?;
+        if self.wait_gone(ROOT_TERM_GRACE) {
+            return Ok(());
+        }
+        // The root leads its PTY session; its process group holds the CLI's foreground work.
+        #[cfg(unix)]
+        crate::pid::terminate_pty_session(pid, None, Some(self.creation))
+            .with_context(|| format!("killing previous PTY root {pid}"))?;
+        #[cfg(windows)]
+        signal_process_checked_identity(pid, Signal::Kill, Some(self.creation))
+            .with_context(|| format!("killing previous PTY root {pid}"))?;
+        anyhow::ensure!(
+            self.wait_gone(ROOT_KILL_WAIT),
+            "previous PTY root {pid} still runs {} ms after SIGKILL (limit {} ms); replacement deferred",
+            ROOT_KILL_WAIT.as_millis(),
+            ROOT_KILL_WAIT.as_millis()
+        );
+        Ok(())
+    }
+
+    fn wait_gone(&self, limit: Duration) -> bool {
+        let deadline = Instant::now() + limit;
+        loop {
+            if !self.live() {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Root {
+    Gone,
+    Live,
+}
+
+// CLIs persist their conversation on SIGTERM well within this; interactive shells ignore
+// SIGTERM, so it also bounds the wait before SIGKILL.
+const ROOT_TERM_GRACE: Duration = Duration::from_secs(2);
+// SIGKILL is immediate; the bound reports an unkillable (uninterruptible) root instead of
+// hanging restore.
+const ROOT_KILL_WAIT: Duration = Duration::from_secs(2);
+
+// A zombie has exited; only its reaper's wait remains.
+fn root_running(pid: u32) -> bool {
+    #[cfg(target_os = "linux")]
+    if std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+        stat.rfind(')')
+            .and_then(|end| {
+                stat[end + 1..]
+                    .split_whitespace()
+                    .next()
+                    .map(|state| state == "Z")
+            })
+            .unwrap_or(false)
+    }) {
+        return false;
+    }
+    crate::pid::process_is_alive(pid)
 }
 
 fn system_identity() -> Result<Option<String>> {
@@ -205,49 +281,42 @@ mod tests {
         }
     }
 
+    const BOOT: &str = "linux:00000000-0000-4000-8000-000000000001";
+
     #[test]
-    fn matching_or_unreadable_live_identity_refuses_replacement() {
-        assert!(recorded()
-            .check_observation("linux:00000000-0000-4000-8000-000000000001", Some(70), true)
-            .is_err());
-        assert!(recorded()
-            .check_observation("linux:00000000-0000-4000-8000-000000000001", None, true)
-            .is_err());
+    fn only_a_running_root_with_the_recorded_creation_is_live() {
+        assert_eq!(recorded().root_state(Some(70), true).unwrap(), Root::Live);
+        assert_eq!(recorded().root_state(Some(70), false).unwrap(), Root::Gone);
+        assert_eq!(recorded().root_state(Some(71), true).unwrap(), Root::Gone);
+        assert_eq!(recorded().root_state(None, false).unwrap(), Root::Gone);
+        let error = recorded().root_state(None, true).unwrap_err().to_string();
+        assert!(error.contains("42") && error.contains("70"), "{error}");
     }
 
     #[test]
-    fn dead_recycled_or_previous_boot_root_does_not_block() {
-        assert!(recorded()
-            .check_observation(
-                "linux:00000000-0000-4000-8000-000000000001",
-                Some(70),
-                false
-            )
-            .is_ok());
-        assert!(recorded()
-            .check_observation("linux:00000000-0000-4000-8000-000000000001", Some(71), true)
-            .is_ok());
-        assert!(recorded()
-            .check_observation("linux:00000000-0000-4000-8000-000000000002", Some(70), true)
-            .is_ok());
+    fn a_previous_boot_needs_no_reclaim() {
+        assert!(recorded().same_system(BOOT).unwrap());
+        assert!(!recorded()
+            .same_system("linux:00000000-0000-4000-8000-000000000002")
+            .unwrap());
     }
 
     #[test]
     fn invalid_identity_and_cross_platform_import_refuse() {
-        assert!(recorded()
-            .check_observation("windows", Some(70), true)
-            .is_err());
+        assert!(recorded().same_system("windows").is_err());
         let mut identity = recorded();
         identity.pid = u32::MAX;
-        assert!(identity
-            .check_observation("linux:00000000-0000-4000-8000-000000000001", None, false)
-            .is_err());
+        assert!(identity.same_system(BOOT).is_err());
+        let mut identity = recorded();
+        identity.version = 2;
+        assert!(identity.same_system(BOOT).is_err(), "v2 requires ownership");
     }
 
     #[test]
-    fn current_process_is_detected_without_signalling_it() {
+    fn the_daemon_never_reclaims_itself() {
         if let Some(identity) = ProcessIdentity::capture(Some(std::process::id())).unwrap() {
-            assert!(identity.check_stopped().is_err());
+            let error = identity.reclaim("dev", 7).unwrap_err().to_string();
+            assert!(error.contains("this daemon"), "{error}");
         }
     }
 }

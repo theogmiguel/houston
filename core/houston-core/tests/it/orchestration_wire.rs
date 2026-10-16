@@ -10019,11 +10019,6 @@ async fn settled_exited_children_without_retention_are_backfilled_before_restore
     apply_hook_event(r._state.path(), closed_child, "Stop").await;
     r.daemon.manage_shutdown().unwrap();
     let db_path = r._state.path().join("test.db");
-    let db = houston_core::db::Db::open(&db_path).unwrap();
-    for id in [parent.id, child, closed_parent.id, closed_child] {
-        db.acknowledge_uncontained_recovery(id).unwrap();
-    }
-    drop(db);
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     conn.execute(
         "UPDATE delegations SET retained_until = NULL WHERE child_session = ?1",
@@ -10412,11 +10407,6 @@ async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
         )),
     )
     .unwrap();
-    // Fixture daemons launch without a session scope; acknowledge their stopped
-    // workload so restoration exercises the retention paths rather than the hold.
-    for id in [parent.id, child, unsupported, nested, missing, invalid] {
-        db.acknowledge_uncontained_recovery(id).unwrap();
-    }
     if manual {
         db.set_setting("restore_budget", "0").unwrap();
     }
@@ -16483,4 +16473,80 @@ async fn keyed_pre_spawn_storage_refusal_releases_the_receipt_for_retry() {
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     #[cfg(feature = "test-barriers")]
     assert_eq!(physical.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn concurrent_closes_of_a_parent_and_its_child_converge_without_errors() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let _guard = serial().await;
+    let r = rig("close-race").await;
+    r.daemon.orchestration_set(true).unwrap();
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/ws", r.addr))
+        .await
+        .unwrap();
+    let hello = proto::ClientMsg::Hello {
+        token: TOKEN.into(),
+        protocol: proto::PROTOCOL_VERSION,
+    };
+    ws.send(Message::text(serde_json::to_string(&hello).unwrap()))
+        .await
+        .unwrap();
+    for round in 0..6 {
+        let parent = r.pane();
+        let (_, body) = r
+            .post_spawn(
+                &r.token_for(parent.id),
+                serde_json::json!({"kind": "codex", "prompt": "kid"}),
+            )
+            .await;
+        let child = body["session_id"].as_u64().unwrap() as u32;
+        let close = |session: u32, confirm: bool| {
+            Message::text(
+                serde_json::to_string(&proto::ClientMsg::SessionClose {
+                    session,
+                    confirm_children: confirm.then_some(true),
+                })
+                .unwrap(),
+            )
+        };
+        let (first, second) = if round % 2 == 0 {
+            (close(parent.id, true), close(child, false))
+        } else {
+            (close(child, false), close(parent.id, true))
+        };
+        let started = std::time::Instant::now();
+        ws.send(first).await.unwrap();
+        ws.send(second).await.unwrap();
+        let mut removed = std::collections::HashSet::new();
+        while removed.len() < 2 {
+            let frame = tokio::time::timeout(Duration::from_secs(5), ws.next())
+                .await
+                .unwrap_or_else(|_| panic!("round {round}: closes did not converge: {removed:?}"))
+                .unwrap()
+                .unwrap();
+            let Message::Text(text) = frame else { continue };
+            match serde_json::from_str(&text).unwrap() {
+                proto::ServerMsg::Error { message, context } => {
+                    panic!("round {round}: close raised {context:?}: {message}")
+                }
+                proto::ServerMsg::SessionRemoved { session }
+                    if session == parent.id || session == child =>
+                {
+                    removed.insert(session);
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "round {round}: {:?}",
+            started.elapsed()
+        );
+        assert!(!r
+            .daemon
+            .list()
+            .iter()
+            .any(|s| s.id == parent.id || s.id == child));
+    }
 }

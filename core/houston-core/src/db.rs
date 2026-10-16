@@ -24,7 +24,7 @@ pub use intake::{
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
 mod remote;
-mod resume_metadata;
+pub(crate) mod resume_metadata;
 pub use resume_metadata::RootHookMetadata;
 mod task_trackers;
 pub use remote::RemoteDeviceRow;
@@ -2744,87 +2744,21 @@ impl Db {
         .transpose()
     }
 
-    pub fn check_previous_process_stopped(&self, id: u32) -> Result<()> {
-        let (encoded, acknowledged, state): (Option<String>, bool, String) =
-            self.conn.lock().expect("db lock").query_row(
-                "SELECT process_identity, recovery_acknowledged, state FROM sessions WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )?;
-        // Sleep refuses while external descendants run and waits for the CLI to exit,
-        // so an uncontained sleeping session only needs its recorded root to be gone.
-        let slept = state == "sleeping";
-        if let Some(encoded) = encoded {
-            let identity: crate::recovery_process::ProcessIdentity = serde_json::from_str(&encoded)
-                .with_context(|| format!("invalid previous process identity for session {id}"))?;
-            if acknowledged || (slept && !identity.is_contained()) {
-                identity.check_acknowledgeable()?;
-            } else {
-                identity.check_stopped()?;
-            }
-        } else if !acknowledged && !slept {
-            anyhow::bail!("Process ownership unknown: legacy session {id} has no ownership receipt. Stop all previous workload processes, then explicitly acknowledge uncontained recovery; session, conversation and pending missions are retained.");
-        }
-        Ok(())
-    }
-
-    pub fn acknowledge_uncontained_recovery(&self, id: u32) -> Result<()> {
-        let mut conn = self.conn.lock().expect("db lock");
-        let tx = conn.transaction()?;
-        let encoded: Option<String> = tx.query_row(
-            "SELECT process_identity FROM sessions WHERE id = ?1",
-            [id],
-            |row| row.get(0),
-        )?;
-        if let Some(encoded) = encoded {
-            let identity: crate::recovery_process::ProcessIdentity =
-                serde_json::from_str(&encoded)?;
-            identity.check_acknowledgeable()?;
-        }
-        tx.execute(
-            "UPDATE sessions SET recovery_acknowledged = 1 WHERE id = ?1",
-            [id],
-        )?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    #[cfg(target_os = "linux")]
-    pub fn check_contained_workload_stopped(&self, id: u32) -> Result<()> {
+    pub fn previous_process_identity(
+        &self,
+        id: u32,
+    ) -> Result<Option<crate::recovery_process::ProcessIdentity>> {
         let encoded: Option<String> = self.conn.lock().expect("db lock").query_row(
             "SELECT process_identity FROM sessions WHERE id = ?1",
             [id],
             |row| row.get(0),
         )?;
-        if let Some(encoded) = encoded {
-            let identity: crate::recovery_process::ProcessIdentity =
-                serde_json::from_str(&encoded)?;
-            if identity.is_contained() {
-                identity.check_stopped()?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn uncontained_recovery_notice(&self, id: u32) -> Result<Option<String>> {
-        let (encoded, acknowledged): (Option<String>, bool) =
-            self.conn.lock().expect("db lock").query_row(
-                "SELECT process_identity, recovery_acknowledged FROM sessions WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )?;
-        if acknowledged {
-            return Ok(None);
-        }
-        let identity = encoded
-            .map(|body| serde_json::from_str::<crate::recovery_process::ProcessIdentity>(&body))
-            .transpose()?;
-        let reason = identity
-            .as_ref()
-            .map_or(Some("legacy session has no ownership receipt"), |receipt| {
-                receipt.uncontained_reason()
-            });
-        Ok(reason.map(|reason| format!("Process ownership unknown: {reason}. Recheck, or stop all previous workload processes and explicitly acknowledge uncontained recovery; session, conversation and pending missions are retained.")))
+        encoded
+            .map(|encoded| {
+                serde_json::from_str(&encoded)
+                    .with_context(|| format!("invalid previous process identity for session {id}"))
+            })
+            .transpose()
     }
 
     pub(crate) fn session_has_command_override(&self, id: u32) -> Result<bool> {

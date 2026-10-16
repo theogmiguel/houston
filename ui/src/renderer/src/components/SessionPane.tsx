@@ -34,7 +34,6 @@ import {
 } from './PaneRestart'
 import type { HandoffSource } from './PaneHandoff'
 import { clampConversation } from './handoffPacket'
-import { RecoveryCheckControls } from './RecoveryCheckControls'
 import { RenameTitle } from './RenameTitle'
 import { Tooltip } from './ui/Tooltip'
 import {
@@ -647,7 +646,6 @@ function SessionPaneImpl({
       <ResumeNotice notice={info.resume_notice} />
       <ChildInputBanner info={info} />
       <SessionLifecycleNotices info={lifecycleInfo} lifecycleError={lifecycleError} dismissLifecycleError={dismissLifecycleError} memoryResult={memoryResult} />
-      <RecoveryCheckControls info={lifecycleInfo} connected={connected} onRecheck={() => client.send({ type: 'session_recovery_check', session: info.id })} onAcknowledge={() => client.send({ type: 'session_recovery_check', session: info.id, acknowledge_uncontained: true })} />
       {sleeping ? <SleepingSessionPlaceholder info={lifecycleInfo} onWake={() => client.send({ type: 'session_wake', session: info.id })} onFresh={() => client.respawnSession(info.id, shellIntegration, undefined, undefined, undefined, true)} /> : <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} mode={rosterMode} onMode={setRosterMode} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />}
       <GenerateTitleConfirm open={confirmGenerateTitle} info={info} onCancel={() => setConfirmGenerateTitle(false)} onConfirm={() => { setConfirmGenerateTitle(false); client.send({ type: 'session_title_generate', session: info.id }) }} />
       <AnimOut open={confirmRestart !== null} suppress="modal">
@@ -836,7 +834,6 @@ function restoreReasonLabel(reason: SessionInfo['restore_deferred']): string {
     case 'invalid-cwd': return 'the working directory is unavailable'
     case 'previous-crash': return 'the previous daemon ended unexpectedly'
     case 'safe-mode': return 'safe mode deferred automatic restore'
-    case 'circuit-breaker': return 'automatic restore was paused after repeated failures'
     case 'spawn-failed': return 'the agent could not be started'
     case 'ssh': return 'SSH sessions are not restored automatically'
     default: return 'the reason is unavailable'

@@ -285,8 +285,10 @@ fn recovery_refuses_filename_payload_session_mismatch() {
         hook_drop::Pass::RecoveryMetadata,
         |_| panic!("mismatched payload applied"),
     );
-    assert_eq!(out.applied, 0);
-    assert!(path.exists());
+    assert_eq!((out.applied, out.quarantined), (0, 1));
+    assert!(out.failed_sessions.is_empty());
+    assert!(!path.exists());
+    assert!(quarantined(&path).exists());
 }
 
 #[test]
@@ -433,8 +435,9 @@ fn blocked_recovery_metadata_survives_the_ordinary_seed_age_limit() {
 }
 
 #[test]
-fn invalid_candidate_drops_make_metadata_recovery_incomplete() {
+fn invalid_candidate_drops_are_quarantined_without_blocking_recovery() {
     for case in [
+        "empty",
         "malformed",
         "future-schema",
         "session-mismatch",
@@ -452,6 +455,7 @@ fn invalid_candidate_drops_make_metadata_recovery_incomplete() {
         let path =
             hook_drop::write_drop(&dir, &fixture.drop("Stop", "newest-root"), sampled).unwrap();
         match case {
+            "empty" => std::fs::write(&path, b"").unwrap(),
             "malformed" => std::fs::write(&path, b"{ truncated hook payload").unwrap(),
             "future-schema" => {
                 let mut drop = fixture.drop("Stop", "newest-root");
@@ -485,12 +489,80 @@ fn invalid_candidate_drops_make_metadata_recovery_incomplete() {
             "{case}: directory listing itself was complete"
         );
         assert!(
-            out.metadata_failed,
-            "{case}: candidate evidence was not completely validated"
+            out.failed_sessions.is_empty(),
+            "{case}: invalid evidence must not defer the pane"
         );
-        assert_eq!(out.kept, 1, "{case}");
-        assert!(path.exists(), "{case}: retain evidence for recovery retry");
+        assert_eq!((out.quarantined, out.kept), (1, 0), "{case}");
+        assert!(!path.exists(), "{case}: no later pass may read it again");
+        assert!(
+            quarantined(&path).exists(),
+            "{case}: evidence kept beside the drops"
+        );
     }
+}
+
+fn quarantined(path: &std::path::Path) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!(
+        "{}{}",
+        path.display(),
+        hook_drop::QUARANTINE_SUFFIX
+    ))
+}
+
+#[test]
+fn quarantine_is_bounded_by_deleting_invalid_drops_past_the_limit() {
+    let fixture = Fixture::new("claude", None);
+    let dir = hook_drop::drop_dir(fixture.state.path());
+    let path = hook_drop::write_drop(&dir, &fixture.drop("Stop", "root"), fixture.now).unwrap();
+    std::fs::write(&path, b"").unwrap();
+    for n in 0..hook_drop::QUARANTINE_MAX {
+        std::fs::write(
+            dir.join(format!("old-{n}.json{}", hook_drop::QUARANTINE_SUFFIX)),
+            b"",
+        )
+        .unwrap();
+    }
+    let mut state = hook_drop::DropDirState::new();
+    state.recover_sessions([7]);
+    let out = hook_drop::run_pass(
+        &dir,
+        &mut state,
+        fixture.now + 1,
+        hook_drop::Pass::RecoveryMetadata,
+        |_| panic!("empty drop applied"),
+    );
+    assert_eq!(out.quarantined, 1);
+    assert!(!path.exists() && !quarantined(&path).exists());
+    assert_eq!(
+        std::fs::read_dir(&dir).unwrap().count(),
+        hook_drop::QUARANTINE_MAX
+    );
+}
+
+#[test]
+fn a_failed_store_marks_only_its_own_session() {
+    let fixture = Fixture::new("claude", None);
+    let dir = hook_drop::drop_dir(fixture.state.path());
+    let failing = hook_drop::write_drop(&dir, &fixture.drop("Stop", "root"), fixture.now).unwrap();
+    let mut other = fixture.drop("Stop", "root-eight");
+    other.session = 8;
+    let stored = hook_drop::write_drop(&dir, &other, fixture.now).unwrap();
+    let mut state = hook_drop::DropDirState::new();
+    state.recover_sessions([7, 8]);
+    let out = hook_drop::run_pass(
+        &dir,
+        &mut state,
+        fixture.now + 1,
+        hook_drop::Pass::RecoveryMetadata,
+        |drop| match drop.session {
+            7 => hook_drop::DropVerdict::Retry,
+            _ => hook_drop::DropVerdict::Applied,
+        },
+    );
+    assert_eq!(out.failed_sessions.into_iter().collect::<Vec<_>>(), [7]);
+    assert_eq!((out.applied, out.kept), (1, 1));
+    assert!(failing.exists(), "a failed store keeps its drop for retry");
+    assert!(!stored.exists());
 }
 
 #[test]
@@ -515,7 +587,7 @@ fn unrelated_corrupt_drops_and_no_session_verdicts_do_not_block_recovery() {
             hook_drop::DropVerdict::Applied
         },
     );
-    assert!(!out.metadata_failed);
+    assert!(out.failed_sessions.is_empty());
     assert_eq!((out.applied, out.kept), (1, 1));
     assert!(!candidate.exists());
     assert!(foreign.exists());
@@ -529,7 +601,7 @@ fn unrelated_corrupt_drops_and_no_session_verdicts_do_not_block_recovery() {
         |_| hook_drop::DropVerdict::NoSession,
     );
     assert!(
-        !out.metadata_failed,
+        out.failed_sessions.is_empty(),
         "NoSession is unrelated, not a failed metadata write"
     );
     assert_eq!(out.kept, 1);

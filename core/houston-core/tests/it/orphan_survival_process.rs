@@ -82,9 +82,8 @@ fn orphan_fixture_agent() {
     let records = PathBuf::from(std::env::var_os("ORPHAN_PROBE_RECORDS").unwrap());
     let fixture = std::env::var("ORPHAN_PROBE_NONCE").unwrap();
     let session: u32 = std::env::var("HOUSTON_SESSION").unwrap().parse().unwrap();
-    if std::env::var_os("ORPHAN_PROBE_DETACH").is_some()
-        && std::env::var_os("ORPHAN_PROBE_DESCENDANT").is_none()
-    {
+    let detach = std::env::var("ORPHAN_PROBE_DETACH").ok();
+    if detach.is_some() && std::env::var_os("ORPHAN_PROBE_DESCENDANT").is_none() {
         let mut command = std::process::Command::new(std::env::current_exe().unwrap());
         command
             .args([
@@ -113,6 +112,10 @@ fn orphan_fixture_agent() {
         while !records.join(format!("{session}.owned.json")).exists() {
             assert!(Instant::now() < deadline, "detached actor never registered");
             std::thread::sleep(Duration::from_millis(10));
+        }
+        // The root keeps the pane live until its PTY hangs up.
+        while detach.as_deref() == Some("stay") {
+            std::thread::sleep(Duration::from_millis(50));
         }
         return;
     }
@@ -192,6 +195,7 @@ struct Fixture {
     daemons: Vec<Identity>,
     detached: bool,
     user_bus: bool,
+    root_stays: bool,
 }
 
 impl Fixture {
@@ -221,6 +225,7 @@ impl Fixture {
             daemons: vec![],
             detached: false,
             user_bus: false,
+            root_stays: false,
         }
     }
 
@@ -243,7 +248,10 @@ impl Fixture {
         };
         let mut command = common::hermetic_command(executable, self.home.path());
         if self.detached {
-            command.env("ORPHAN_PROBE_DETACH", "1");
+            command.env(
+                "ORPHAN_PROBE_DETACH",
+                if self.root_stays { "stay" } else { "1" },
+            );
         }
         if supervised {
             // SAFETY: setsid is async-signal-safe and runs only in the private child.
@@ -509,40 +517,16 @@ async fn probe(supervised: bool) {
             .as_ref()
             .is_some_and(|identity| identity.running(&fixture.nonce));
     eprintln!("orphan probe supervised={supervised} survived={survived} resumed_exact={resumed_exact} overlap={overlap}; old={actor:?} new={replacement:?}");
-    if survived && replacement.is_none() {
-        assert!(restored
-            .resume_notice
-            .as_deref()
-            .is_some_and(|notice| notice.contains("Previous PTY process")));
-        for fresh in [false, true] {
-            resumed_ws
-                .send(Message::text(
-                    serde_json::to_string(&proto::ClientMsg::SessionRespawn {
-                        session: restored.id,
-                        shell_integration: Some(false),
-                        cwd: None,
-                        shell: None,
-                        force: Some(true),
-                        fresh: Some(fresh),
-                    })
-                    .unwrap(),
-                ))
-                .await
-                .unwrap();
-            loop {
-                match common::next_control(&mut resumed_ws).await {
-                    proto::ServerMsg::Error { message, .. } => {
-                        assert!(message.contains("Previous PTY process"), "{message}");
-                        break;
-                    }
-                    proto::ServerMsg::SessionCreated { .. } => {
-                        panic!("manual restart bypassed the previous-process gate")
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
+    // The previous root ignores SIGHUP and SIGTERM; reclaim must still stop it first.
+    assert!(
+        replacement.is_some(),
+        "restore was deferred: {:?}",
+        restored.resume_notice
+    );
+    assert!(
+        !actor.running(&fixture.nonce),
+        "restore left the previous daemon's PTY root running"
+    );
     fixture.cleanup();
     assert!(
         !actor.running(&fixture.nonce),
@@ -648,51 +632,144 @@ async fn detached_probe(user_bus: bool) {
         .unwrap();
     assert!(actor.running(&fixture.nonce));
     assert_eq!(restored.state, proto::SessionState::Exited);
-    for fresh in [false, true] {
-        ws.send(Message::text(
-            serde_json::to_string(&proto::ClientMsg::SessionRespawn {
-                session: pane.id,
-                shell_integration: Some(false),
-                cwd: None,
-                shell: None,
-                force: Some(true),
-                fresh: Some(fresh),
-            })
-            .unwrap(),
-        ))
-        .await
-        .unwrap();
-        loop {
-            match common::next_control(&mut ws).await {
-                proto::ServerMsg::Error { message, .. } => {
-                    assert!(
-                        message.contains(if user_bus {
-                            "remains populated"
-                        } else {
-                            "Process ownership unknown"
-                        }),
-                        "{message}"
-                    );
-                    break;
-                }
-                proto::ServerMsg::SessionCreated { .. } => {
-                    panic!("dead PTY root falsely certified surviving descendant stopped")
-                }
-                _ => {}
-            }
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionRespawn {
+            session: pane.id,
+            shell_integration: Some(false),
+            cwd: None,
+            shell: None,
+            force: Some(true),
+            fresh: Some(false),
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    loop {
+        match common::next_control(&mut ws).await {
+            proto::ServerMsg::Error { message, .. } => panic!("restart refused: {message}"),
+            proto::ServerMsg::SessionCreated { .. } => break,
+            _ => {}
         }
+    }
+    if user_bus {
+        assert!(
+            !actor.running(&fixture.nonce),
+            "restart left a descendant running in the previous scope"
+        );
+        assert!(scope_emptied(&receipt));
     }
     fixture.cleanup();
     assert!(!actor.running(&fixture.nonce));
 }
 
+// Without a scope only the root's process group is reachable; restart is never refused.
 #[tokio::test]
-async fn exited_root_with_detached_work_refuses_uncontained_recovery() {
+async fn exited_root_with_detached_work_restarts_without_a_scope() {
     detached_probe(false).await;
 }
 
+fn scope_emptied(receipt: &serde_json::Value) -> bool {
+    let cgroup = receipt["ownership"]["cgroup"].as_str().unwrap();
+    let events = Path::new("/sys/fs/cgroup")
+        .join(cgroup.trim_start_matches('/'))
+        .join("cgroup.events");
+    std::fs::read_to_string(events).map_or(true, |events| events.contains("populated 0"))
+}
+
 #[tokio::test]
-async fn scope_population_blocks_recovery_after_root_exit() {
+async fn contained_crash_restore_stops_escaped_descendants() {
+    if !houston_core::session_isolation::manager_available()
+        || !Path::new("/run/systemd/system").is_dir()
+    {
+        eprintln!("SKIPPED: Linux user systemd required for contained crash restore");
+        return;
+    }
+    let mut fixture = Fixture::new();
+    fixture.detached = true;
+    fixture.user_bus = true;
+    fixture.root_stays = true;
+    let (daemon, mut ws) = fixture.start(false).await;
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionCreate {
+            request: None,
+            agent: proto::AgentKind::Claude,
+            project_dir: fixture.project.display().to_string(),
+            cmd: None,
+            cols: Some(80),
+            rows: Some(24),
+            cwd_from: None,
+            shell_integration: Some(false),
+            auto_approve: Some(false),
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    let pane = common::expect_created(&mut ws).await;
+    let actor = poll("escaped actor", || fixture.actor(pane.id)).await;
+    let receipt: serde_json::Value =
+        rusqlite::Connection::open(fixture.channel().join("houston.db"))
+            .unwrap()
+            .query_row(
+                "SELECT process_identity FROM sessions WHERE id=?1",
+                [pane.id],
+                |row| row.get::<_, String>(0),
+            )
+            .map(|body| serde_json::from_str(&body).unwrap())
+            .unwrap();
+    assert_eq!(receipt["ownership"]["kind"], "linux_scope");
+    assert_ne!(receipt["pid"].as_u64().unwrap() as u32, actor.pid);
+    let progress = poll("escaped work", || {
+        std::fs::read(fixture.records.join(format!("{}.progress", pane.id))).ok()
+    })
+    .await;
+    poll("escaped work progresses", || {
+        (std::fs::read(fixture.records.join(format!("{}.progress", pane.id))).ok()? != progress)
+            .then_some(())
+    })
+    .await;
+    // No clean shutdown: the daemon dies with the pane live and its scope populated.
+    pid::signal_process_checked_identity(daemon.pid, pid::Signal::Kill, daemon.pid_creation)
+        .unwrap();
+    poll("daemon died", || {
+        (!fixture.daemons[0].running(&fixture.nonce)).then_some(())
+    })
+    .await;
+    let daemon_child = &mut fixture.children.last_mut().unwrap().0;
+    poll("daemon process fully reaped", || {
+        daemon_child.try_wait().unwrap()
+    })
+    .await;
+    drop(ws);
+    assert!(
+        actor.running(&fixture.nonce) && !scope_emptied(&receipt),
+        "the escaped descendant must outlive its daemon for this regression"
+    );
+    let (_, mut ws) = fixture.start(false).await;
+    let restored = sessions(&mut ws)
+        .await
+        .into_iter()
+        .find(|info| info.session_origin == Some(pane.id) && info.id != pane.id)
+        .expect("the pane restores automatically");
+    assert_eq!(
+        restored.state,
+        proto::SessionState::Running,
+        "{:?}",
+        restored.resume_notice
+    );
+    assert!(!actor.running(&fixture.nonce));
+    assert!(scope_emptied(&receipt), "the stale scope must be gone");
+    fixture.cleanup();
+}
+
+#[tokio::test]
+async fn scope_population_is_reclaimed_on_restart_after_root_exit() {
     if !houston_core::session_isolation::manager_available()
         || !Path::new("/run/systemd/system").is_dir()
     {
