@@ -154,6 +154,7 @@ mod vt_snapshot_parity;
 mod windows_claude_hooks_wire;
 mod windows_codex_hooks_wire;
 mod windows_codex_launch_wire;
+mod windows_ecoqos_sweep;
 mod windows_instruction_submit;
 mod windows_orchestration_wire;
 mod windows_pty_lifecycle;
