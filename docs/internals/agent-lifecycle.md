@@ -267,9 +267,13 @@ its commands require POSIX `sh`, and Houston has no equivalent Windows Claude ho
 The `;` character is a token separator in `claude_hooks::tokens`, or the trailing `; fi`
 would ride into the sentinel and no channel would recognise its own group.
 
-`tr_hook_group()` wraps the command as `{"type":"command","command":…,"async":…,"timeout":5}`
+`tr_hook_group()` wraps the command as `{"type":"command","command":…,"async":…,"timeout":30}`
 — `async` is false for `UserPromptSubmit`, `Stop` and `StopFailure`, true for everything
 else, so the CLI does not block on a drop-file write for events that return no control output.
+The helper's own work takes milliseconds; the timeout covers starting Git Bash and the helper.
+On a loaded Windows machine the first run of a newly written helper waits for the antivirus
+scan, which exceeded the earlier 5 s budget, and Claude discards a hook that outlives its
+timeout, losing the event. A fast hook still returns as soon as it exits.
 `Stop`/`StopFailure` run synchronously because the orchestration inbox's door 2 needs the
 CLI to wait for the helper's stdout and splice it into the same turn — an async hook prints
 into a pipe nobody reads. Codex's `hooks.json` and Antigravity's hooks file write no `async`

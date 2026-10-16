@@ -227,6 +227,10 @@ fn hook_command(exe: &str, event: &str, sentinel: &str) -> String {
     )
 }
 
+// Covers starting the shell and helper: on a loaded Windows machine a new helper's first
+// run waits for the antivirus scan (up to 10 s measured); Claude discards a late hook.
+const HOOK_TIMEOUT_SECS: u64 = 30;
+
 fn tr_hook_group(exe: &str, event: &str, sentinel: &str) -> serde_json::Value {
     let sync_stdout = matches!(event, "UserPromptSubmit" | "Stop" | "StopFailure");
     let mut group = serde_json::json!({
@@ -235,7 +239,7 @@ fn tr_hook_group(exe: &str, event: &str, sentinel: &str) -> serde_json::Value {
                 "type": "command",
                 "command": hook_command(exe, event, sentinel),
                 "async": !sync_stdout,
-                "timeout": 5
+                "timeout": HOOK_TIMEOUT_SECS
             }
         ]
     });
@@ -1210,6 +1214,14 @@ mod tests {
                 "PreCompact",
             ]
         );
+    }
+
+    #[test]
+    fn every_hook_outlasts_a_slow_helper_start() {
+        for event in hook_events() {
+            let group = tr_hook_group(EXE, event, &rel());
+            assert_eq!(group["hooks"][0]["timeout"], 30, "{event}");
+        }
     }
 
     #[test]

@@ -123,7 +123,8 @@ it off removes exactly what Houston added:
   from `.claude/settings.local.json` during migration to avoid duplicate events.
   Turn Claude off in Settings ▸ Agents ▸ CLIs ▸ Claude to remove its global entries;
   the setting stays off across restarts. On Windows, Claude runs these commands through
-  Git Bash, so install Git for Windows before turning Claude on.
+  Git Bash, so install Git for Windows before turning Claude on. Each entry allows
+  30 seconds, so a slow start on a heavily loaded machine still reports its status.
 - **Codex** — writes `~/.codex/hooks.json`, one entry per lifecycle event. An existing
   `notify` line in your `config.toml` is parked (commented out) rather than overwritten,
   and restored when you turn the hook off. If you add a replacement `notify` while
