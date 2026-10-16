@@ -24,4 +24,30 @@ describe('PrLink', () => {
     fireEvent.click(link)
     expect(onClick).toHaveBeenCalledOnce()
   })
+
+  describe('inline menu', () => {
+    const openMenu = (): void => {
+      render(<><PrLink href="https://github.com/example/repo/pull/42">#42</PrLink><p>elsewhere</p></>)
+      fireEvent.contextMenu(screen.getByRole('button', { name: /#42/ }))
+      expect(screen.queryByRole('menu')).not.toBeNull()
+    }
+
+    it('closes on a pointerdown outside it', () => {
+      openMenu()
+      fireEvent.pointerDown(screen.getByText('elsewhere'))
+      expect(screen.queryByRole('menu')).toBeNull()
+    })
+
+    it('stays open for a pointerdown inside it', () => {
+      openMenu()
+      fireEvent.pointerDown(screen.getByRole('menuitem', { name: /Copy link/ }))
+      expect(screen.queryByRole('menu')).not.toBeNull()
+    })
+
+    it('closes on Escape', () => {
+      openMenu()
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(screen.queryByRole('menu')).toBeNull()
+    })
+  })
 })

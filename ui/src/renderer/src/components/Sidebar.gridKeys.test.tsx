@@ -2,12 +2,13 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar, preloadRailOptionsMenu } from './Sidebar'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import type { SessionInfo, Workspace } from '../houston/client'
 import { GRID_PINNED_KEY, GRID_PINNED_MIGRATION_KEY } from '../railPrefs'
 import { preloadTagPopoverSurface } from './tags/TagPopover'
+import { preloadGridRailRow } from './ui/GridRailRowFallback'
 
-beforeAll(() => Promise.all([preloadTagPopoverSurface(), preloadRailOptionsMenu()]))
+beforeAll(() => Promise.all([preloadTagPopoverSurface(), preloadRailChunks(), preloadGridRailRow()]), 30_000)
 
 const noop = (): void => {}
 const ws = (path: string, name: string): Workspace => ({ path, name }) as Workspace
@@ -103,7 +104,7 @@ describe('Sidebar — grid identity across workspaces', () => {
     await vi.waitFor(() => expect(rows()).toHaveLength(2))
     const header = container.querySelector<HTMLElement>('[data-testid="ws-disclosure"][aria-label="/a"]')!
     expect(header.getAttribute('aria-expanded')).toBe('true')
-    act(() => header.click())
+    act(() => header.querySelector<HTMLElement>('[data-testid="ws-chevron"]')!.click())
     expect(rows()).toHaveLength(1)
     expect(rows()[0].textContent).toContain('Grid 1')
   })
@@ -122,8 +123,8 @@ describe('Sidebar — grid identity across workspaces', () => {
     act(() => rows()[0].querySelector<HTMLElement>('[aria-expanded="false"]')!.click())
     expect(rows()[1].querySelector('[aria-expanded="false"]')).not.toBeNull()
     const header = container.querySelector<HTMLElement>('[data-testid="ws-disclosure"][aria-label="/a"]')!
-    act(() => header.click())
-    act(() => header.click())
+    act(() => header.querySelector<HTMLElement>('[data-testid="ws-chevron"]')!.click())
+    act(() => header.querySelector<HTMLElement>('[data-testid="ws-chevron"]')!.click())
     await vi.waitFor(() => expect(rows()[0].querySelector('[aria-expanded="true"]')).not.toBeNull())
     expect(rows()[1].querySelector('[aria-expanded="false"]')).not.toBeNull()
   })

@@ -2,6 +2,8 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_GRID_ID, gridStorageKey, preorderSessions } from './layout/tree'
+import { gridRecency, gridRecencyKey, touchGrid } from './gridRecency'
+import type { SessionInfo } from './houston/client'
 import {
   type AppHarness,
   currentClient,
@@ -43,10 +45,10 @@ describe('grids (step 05, driven from the rail)', () => {
   const menuItems = (): HTMLElement[] =>
     [...document.querySelectorAll('.ctxmenu .ctx-item')] as HTMLElement[]
 
-  async function boot(sessions: number[]): Promise<void> {
+  async function boot(sessions: number[], extra: SessionInfo[] = []): Promise<void> {
     harness = await renderReadyApp()
     deliverHelloOk({
-      sessions: sessions.map((id) => makeSession({ id, project_dir: WS, cwd: WS })),
+      sessions: [...sessions.map((id) => makeSession({ id, project_dir: WS, cwd: WS })), ...extra],
       workspaces: [makeWorkspace({ path: WS })]
     })
     await act(async () => {
@@ -169,7 +171,7 @@ describe('grids (step 05, driven from the rail)', () => {
   it('closing the only grid asks first, then ends its panes and leaves the workspace empty', async () => {
     await boot([1, 2])
     const close = vi.fn()
-    currentClient().closeSession = close
+    currentClient().confirmCloseSession = close
     await rightClick(gridRows()[0])
     const remove = menuItems().find((b) => b.textContent?.includes('Close grid'))
     expect(remove).toBeDefined()
@@ -195,7 +197,7 @@ describe('grids (step 05, driven from the rail)', () => {
   it('closing a populated non-last grid ends its agents after confirmation', async () => {
     await boot([1, 2])
     const close = vi.fn()
-    currentClient().closeSession = close
+    currentClient().confirmCloseSession = close
     await openWorkspaceMenu()
     await act(async () => { addBtn()!.click(); await Promise.resolve() })
     await rightClick(gridRows()[0])
@@ -273,5 +275,103 @@ describe('grids (step 05, driven from the rail)', () => {
       await Promise.resolve()
     })
     expect(gridRows()[0].textContent).toContain('Terminal')
+  })
+
+  async function addGridViaMenu(): Promise<void> {
+    await openWorkspaceMenu()
+    await act(async () => { addBtn()!.click(); await Promise.resolve() })
+  }
+  async function closeGridRow(index: number): Promise<void> {
+    await rightClick(gridRows()[index])
+    const remove = menuItems().find((b) => b.textContent?.includes('Close grid'))!
+    await act(async () => { remove.click(); await Promise.resolve() })
+    const confirm = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Close grid')
+    if (confirm) await act(async () => { confirm.click(); await Promise.resolve() })
+  }
+  const selectedIndex = (): number => gridRows().findIndex((r) => r.getAttribute('data-selected') === 'true')
+  const pushedNotices = (): string => harness!.container.querySelector('[data-notice]')?.textContent ?? ''
+
+  it('closing a grid confirms the close for each pane and marks spawned children closing', async () => {
+    await boot([1, 2], [makeSession({ id: 3, project_dir: WS, cwd: WS, spawned_by: 1 }), makeSession({ id: 4, project_dir: WS, cwd: WS, spawned_by: 3 })])
+    const client = currentClient()
+    await addGridViaMenu()
+    await closeGridRow(0)
+    expect(vi.mocked(client.confirmCloseSession).mock.calls.map(([id]) => id).sort()).toEqual([1, 2])
+    expect(client.closeSession).not.toHaveBeenCalled()
+    expect(client.paneOps.closingIds()).toEqual(new Set([1, 2, 3, 4]))
+  })
+
+  it('refuses to close a grid while the daemon connection is not ready, and says why', async () => {
+    await boot([1])
+    const client = currentClient()
+    await addGridViaMenu()
+    await act(async () => { (client as unknown as { onClose: () => void }).onClose(); await Promise.resolve() })
+    await closeGridRow(0)
+    expect(JSON.parse(localStorage.getItem(`tr-grids:${WS}`) ?? '[]')).toHaveLength(2)
+    expect(client.confirmCloseSession).not.toHaveBeenCalled()
+    expect(pushedNotices()).toContain('reconnecting')
+  })
+
+  it('removing the selected middle grid selects the grid after it', async () => {
+    await boot([1])
+    await addGridViaMenu()
+    await addGridViaMenu()
+    await act(async () => { gridRows()[1].click(); await Promise.resolve() })
+    const ids = JSON.parse(localStorage.getItem(`tr-grids:${WS}`) ?? '[]').map((g: { id: string }) => g.id) as string[]
+    await closeGridRow(1)
+    expect(gridRows()).toHaveLength(2)
+    expect(selectedIndex()).toBe(1)
+    expect(JSON.parse(localStorage.getItem(`tr-grids:${WS}`) ?? '[]').map((g: { id: string }) => g.id)).toEqual([ids[0], ids[2]])
+  })
+
+  it('removing the selected last grid selects the one before it and records the visit', async () => {
+    await boot([1])
+    await addGridViaMenu()
+    await addGridViaMenu()
+    const ids = JSON.parse(localStorage.getItem(`tr-grids:${WS}`) ?? '[]').map((g: { id: string }) => g.id) as string[]
+    await closeGridRow(2)
+    expect(selectedIndex()).toBe(1)
+    expect(gridRecency().has(gridRecencyKey(WS, ids[1]))).toBe(true)
+  })
+
+  it('removing a grid drops its recency entry', async () => {
+    const first = { id: DEFAULT_GRID_ID, name: 'Terminal', nameSource: 'auto', tags: [] }
+    const second = { id: 'g-second', name: 'Web', nameSource: 'user', tags: [] }
+    localStorage.setItem(`tr-grids:${WS}`, JSON.stringify([first, second]))
+    touchGrid(WS, second.id)
+    await boot([1])
+    await closeGridRow(1)
+    expect(gridRecency().has(gridRecencyKey(WS, second.id))).toBe(false)
+  })
+
+  it('a workspace context-menu New grid on another workspace switches to the new grid', async () => {
+    harness = await renderReadyApp()
+    deliverHelloOk({
+      sessions: [makeSession({ id: 1, project_dir: '/a', cwd: '/a' }), makeSession({ id: 2, project_dir: '/b', cwd: '/b' })],
+      workspaces: [makeWorkspace({ path: '/a' }), makeWorkspace({ path: '/b', name: 'bee' })]
+    })
+    await act(async () => { await Promise.resolve() })
+    const rows = [...harness.container.querySelectorAll('[data-testid="ws-disclosure"]')] as HTMLElement[]
+    const other = rows[1]
+    await rightClick(other)
+    await act(async () => { document.querySelector<HTMLElement>('[data-testid="ws-new-grid"]')!.click(); await Promise.resolve() })
+    expect(localStorage.getItem('tr-selected-workspace')).toBe('/b')
+    expect(JSON.parse(localStorage.getItem('tr-grids:/b') ?? '[]')).toHaveLength(2)
+  })
+
+  it('removing a workspace prunes its pin, order and collapsed entries', async () => {
+    localStorage.setItem('tr-ws-pinned', JSON.stringify([WS, '/other']))
+    localStorage.setItem('tr-ws-order', JSON.stringify([WS, '/other']))
+    localStorage.setItem('tr-ws-collapsed', JSON.stringify([WS, '/other']))
+    await boot([1, 2])
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'W', ctrlKey: true, shiftKey: true, bubbles: true }))
+      await Promise.resolve()
+    })
+    const confirm = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Close workspace')!
+    await act(async () => { confirm.click(); await Promise.resolve() })
+    for (const key of ['tr-ws-pinned', 'tr-ws-order', 'tr-ws-collapsed']) {
+      expect(JSON.parse(localStorage.getItem(key) ?? '[]'), key).toEqual(['/other'])
+    }
   })
 })

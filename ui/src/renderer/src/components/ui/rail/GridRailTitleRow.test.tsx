@@ -42,3 +42,30 @@ describe('rail card unread marker', () => {
     expect(title.querySelector('[data-testid="grid-name"]')!.className).not.toContain('font-semibold')
   })
 })
+
+describe('rail card close button', () => {
+  function renderWithRemove(): HTMLDivElement {
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    act(() => root!.render(
+      <GridRailTitleRow name="Terminal" pinned={false} tags={[]} hasTags={false} tagDisplay="dots" pr={null} hasPr={false}
+        hasCheckout={false} cardMode="detailed" checkoutLabel={null} many={false} agentCount={1} hasRemove gridId="g1"
+        onRemove={() => {}} onOpenInspector={() => {}} openTagPopover={() => {}} />,
+    ))
+    return host
+  }
+
+  it('is reachable from the keyboard and reserves room so it never covers right-aligned chips', () => {
+    const el = renderWithRemove()
+    const close = el.querySelector<HTMLElement>('[data-testid="grid-close"]')!
+    expect(close.className).toContain('group-focus-within:flex')
+    expect(el.firstElementChild!.className).toContain('group-hover:pr-5')
+    expect(el.firstElementChild!.className).toContain('group-focus-within:pr-5')
+  })
+
+  it('is worded like the context menu: Close grid', () => {
+    const close = renderWithRemove().querySelector('[data-testid="grid-close"]')!
+    expect(close.getAttribute('aria-label')).toBe('Close grid Terminal')
+  })
+})

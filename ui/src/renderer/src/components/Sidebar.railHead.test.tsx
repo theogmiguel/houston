@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import type { SessionInfo, Workspace } from '../houston/client'
 
 function noop(): void {}
@@ -31,6 +31,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
     ...overrides
   }
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('Sidebar rail head — state matrix', () => {
   let container: HTMLDivElement

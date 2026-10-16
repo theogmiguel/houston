@@ -612,18 +612,13 @@ export class HoustonClient {
     this.terminals.destroy(session)
   }
 
-  takeRecentDestroyIntent(): { session: number; kind: 'kill' | 'close' } | null {
-    const now = Date.now()
-    let best: { session: number; ts: number; kind: 'kill' | 'close' } | null = null
-    for (const [session, rec] of this.destroyIntents) {
-      if (now - rec.ts > DESTROY_INTENT_TTL_MS) {
-        this.destroyIntents.delete(session)
-        continue
-      }
-      if (!best || rec.ts >= best.ts) best = { session, ts: rec.ts, kind: rec.kind }
-    }
-    if (best) this.destroyIntents.delete(best.session)
-    return best ? { session: best.session, kind: best.kind } : null
+  /** Claims the pending kill/close intent for the session a refusal names; null when none is fresh. */
+  takeDestroyIntent(session: number): { session: number; kind: 'kill' | 'close' } | null {
+    const rec = this.destroyIntents.get(session)
+    if (!rec) return null
+    this.destroyIntents.delete(session)
+    if (Date.now() - rec.ts > DESTROY_INTENT_TTL_MS) return null
+    return { session, kind: rec.kind }
   }
 
   confirmCloseSession(session: number): void {

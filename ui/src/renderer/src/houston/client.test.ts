@@ -1248,18 +1248,19 @@ describe('HoustonClient destroy intents + confirmed re-sends (v62 D3)', () => {
     vi.restoreAllMocks()
   })
 
-  it('records kill/close intents at the dispatch sites and takes them back once', async () => {
+  it('records kill/close intents at the dispatch sites and takes each back once, by session', async () => {
     const { client } = await connectFakeClient()
 
     client.killSession(1)
     client.closeSession(2)
 
-    expect(client.takeRecentDestroyIntent()).toEqual({ session: 2, kind: 'close' })
-    expect(client.takeRecentDestroyIntent()).toEqual({ session: 1, kind: 'kill' })
-    expect(client.takeRecentDestroyIntent()).toBeNull()
+    expect(client.takeDestroyIntent(2)).toEqual({ session: 2, kind: 'close' })
+    expect(client.takeDestroyIntent(2)).toBeNull()
+    expect(client.takeDestroyIntent(1)).toEqual({ session: 1, kind: 'kill' })
+    expect(client.takeDestroyIntent(1)).toBeNull()
   })
 
-  it('the freshest intent wins when several are pending', async () => {
+  it('a refusal binds to the session it names, never to a newer intent for another session', async () => {
     const nowSpy = vi.spyOn(Date, 'now')
     try {
       const { client } = await connectFakeClient()
@@ -1269,8 +1270,9 @@ describe('HoustonClient destroy intents + confirmed re-sends (v62 D3)', () => {
       nowSpy.mockReturnValue(1010)
       client.closeSession(4)
 
-      expect(client.takeRecentDestroyIntent()).toEqual({ session: 4, kind: 'close' })
-      expect(client.takeRecentDestroyIntent()).toEqual({ session: 3, kind: 'kill' })
+      expect(client.takeDestroyIntent(3)).toEqual({ session: 3, kind: 'kill' })
+      expect(client.takeDestroyIntent(4)).toEqual({ session: 4, kind: 'close' })
+      expect(client.takeDestroyIntent(5)).toBeNull()
     } finally {
       nowSpy.mockRestore()
     }
@@ -1284,12 +1286,20 @@ describe('HoustonClient destroy intents + confirmed re-sends (v62 D3)', () => {
       nowSpy.mockReturnValue(1000)
       client.closeSession(9)
       nowSpy.mockReturnValue(1000 + 10_000 + 1)
-      expect(client.takeRecentDestroyIntent()).toBeNull()
-      nowSpy.mockReturnValue(1000 + 10_000 + 2)
+      expect(client.takeDestroyIntent(9)).toBeNull()
       expect((client as unknown as { destroyIntents: Map<number, unknown> }).destroyIntents.size).toBe(0)
     } finally {
       nowSpy.mockRestore()
     }
+  })
+
+  it('session_removed clears the removed session intent', async () => {
+    const { client, ws } = await connectFakeClient()
+
+    client.closeSession(8)
+    ws.onmessage?.({ data: JSON.stringify({ type: 'session_removed', session: 8 }) })
+
+    expect(client.takeDestroyIntent(8)).toBeNull()
   })
 
   it('confirmed re-sends carry confirm_children on the SAME message type', async () => {

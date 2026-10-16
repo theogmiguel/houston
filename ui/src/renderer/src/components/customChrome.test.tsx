@@ -4,8 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import { MATERIAL_CLS } from './ui/material'
 import { PaneFrame, type PaneFrameKind } from './ui/PaneFrame'
 import { setSettingsNavForTests } from '../settingsNav'
@@ -39,6 +39,8 @@ function blockContaining(token: string): Map<string, string> {
   for (const m of THEME_CSS.slice(open + 1, close).matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) out.set(m[1], m[2].trim())
   return out
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('every chrome theme cuts its own custom ground', () => {
   const CUSTOM_TOKENS = [

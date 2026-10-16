@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import type { SessionInfo, Workspace } from '../houston/client'
 
 function ws(path: string, name = path): Workspace {
@@ -37,6 +37,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
     ...overrides
   }
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('Sidebar context menus — reference anatomy', () => {
   let container: HTMLDivElement
@@ -103,9 +105,6 @@ describe('Sidebar context menus — reference anatomy', () => {
     rightClick(container.querySelector('[data-testid="ws-disclosure"]')!)
     const menu = document.querySelector('.ctxmenu')!
     const items = [...menu.querySelectorAll('.ctx-item')] as HTMLElement[]
-    act(() => {
-      menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
-    })
     expect(document.activeElement).toBe(items[0])
     act(() => {
       menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
@@ -166,7 +165,7 @@ describe('Sidebar context menus — reference anatomy', () => {
     act(() => {
       close!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(onRemoveGrid).toHaveBeenCalledWith('/tmp/one', 'g1')
+    expect(onRemoveGrid).toHaveBeenCalledWith('/tmp/one', 'g1', 'g2')
   })
 
   it('closing a populated grid names its agents before removing it', () => {
@@ -185,7 +184,7 @@ describe('Sidebar context menus — reference anatomy', () => {
     expect(document.body.textContent).toContain('ends its 2 agents')
     const confirm = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Close grid')
     act(() => confirm!.click())
-    expect(onRemoveGrid).toHaveBeenCalledWith('/tmp/one', 'g1')
+    expect(onRemoveGrid).toHaveBeenCalledWith('/tmp/one', 'g1', undefined)
   })
 
   it('offers no disabled placeholders when branch, PR, and close actions are unavailable', () => {
@@ -205,7 +204,7 @@ describe('Sidebar context menus — reference anatomy', () => {
     const close = [...document.querySelectorAll<HTMLButtonElement>('.ctx-item')].find((item) => item.textContent === 'Close grid')!
     expect(close).toBeDefined()
     act(() => close.click())
-    expect(remove).toHaveBeenCalledExactlyOnceWith('/tmp/one', 'g1')
+    expect(remove).toHaveBeenCalledExactlyOnceWith('/tmp/one', 'g1', undefined)
     expect(document.body.textContent).not.toContain('Close Grid 1?')
   })
 

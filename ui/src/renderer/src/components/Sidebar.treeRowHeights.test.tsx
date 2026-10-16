@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import { setSettingsNavForTests } from '../settingsNav'
 import type { SessionInfo, Workspace } from '../houston/client'
 
@@ -36,6 +36,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
     ...overrides
   }
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('Sidebar — D9 workspace-tree row heights, copied from the carve', () => {
   let container: HTMLDivElement
@@ -80,15 +82,27 @@ describe('Sidebar — D9 workspace-tree row heights, copied from the carve', () 
     expect(row?.className).not.toContain('h-[38px]')
   })
 
-  it('a two-line grid row is at least one rail-row tall', () => {
+  it('the grid row fallback is as tall as the card it stands in for', () => {
     render({
       workspaces: [ws('/a', 'alpha')],
       selected: '/a',
       gridsByWorkspace: { '/a': [{ id: 'g1', name: 'Main' }] }
     })
     const grid = container.querySelector<HTMLButtonElement>('[data-testid="grid-row"]')
-    expect(grid?.className).toContain('min-h-[var(--h-row)]')
+    expect(grid?.className).toContain('min-h-9')
     expect(grid?.className).not.toContain('h-8')
+  })
+
+  it('the compact card fallback uses the compact card height', () => {
+    localStorage.setItem('tr-rail-prefs', JSON.stringify({ v: 1, cardMode: 'compact' }))
+    render({
+      workspaces: [ws('/a', 'alpha')],
+      selected: '/a',
+      gridsByWorkspace: { '/a': [{ id: 'g1', name: 'Main' }] }
+    })
+    const grid = container.querySelector<HTMLButtonElement>('[data-testid="grid-row"]')
+    expect(grid?.className).toContain('min-h-8')
+    localStorage.removeItem('tr-rail-prefs')
   })
 
   it('a settings section row sits on --h-row, not its own h-9 step', () => {

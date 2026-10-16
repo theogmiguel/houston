@@ -178,6 +178,14 @@ options are:
 - **Card display**: choose Detailed or Condensed cards, Expanded or Collapsed agent
   activity, and how tags appear.
 
+Selecting a workspace row also expands it; only its chevron (or the Left and Right arrow
+keys on the focused row) collapses it. `Alt+1` to `Alt+9` select the first nine cards in
+the order the rail shows them (Pinned first, cards of collapsed workspaces and groups
+skipped); the numbers appear on the cards while `Alt` is held. Closing the selected grid
+selects the card next to it in that order. A card's menu offers **Reset to automatic name**
+for a grid whose name you chose; a blank rename keeps the current name. The workspace list
+scrolls without a scrollbar, and the selected grid stays listed under every filter.
+
 Pin a grid from its card menu to place it in the Pinned section. Drag cards to reorder
 them, or use `Mod+Shift+↑` and `Mod+Shift+↓` for the selected card. Manual reordering is
 available only with Manual sort and within one workspace. Smart sorting waits for status

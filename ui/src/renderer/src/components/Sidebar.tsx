@@ -1,74 +1,47 @@
 import { SettingsFooterItem } from './ui/SettingsFooterItem'
 import type { AgentAttention } from '../useAgentAttention'
-import { HintKey } from './ui/ShortcutHint'
-import { SettingsNavigationGroup } from './ui/NavigationRailFooter'
-import { GLYPH_FOR_VERB } from './verbGlyphs'
 import { MascotMount } from '../mascot/MascotMount'
 import type { TagInfo } from "../houston/generated/TagInfo";
 import {
   Suspense,
   lazy,
+  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import type { HoustonClient, PrInfo, SessionInfo, Workspace } from "../houston/client";
+import type { HoustonClient, SessionInfo, Workspace } from "../houston/client";
 import type { ChromeTheme } from "../theme";
 import {
   setSettingsOpen,
-  setSettingsSection,
   useSettingsOpen,
   useSettingsSection,
 } from "../settingsNav";
 import { useCustomSurface } from "./customChrome";
 import {
   NAVIGABLE_SETTINGS_SECTIONS,
-  type SettingsSectionDef,
 } from "../settingsSections";
-import { searchSettingsRows } from "../settingsRowRegistry";
-import { requestSettingsRowJump } from "../settingsRowJump";
 import { translateFilteredDropIndex } from "../layout/wsOrder";
+import { KeymapOverridesContext } from "../layout/keymapOverridesContext";
 import {
   IconAlertTriangle,
   IconArrowDown,
-  IconChevronRight,
-  IconChevronLeft,
-  IconClose,
-  IconCompass,
-  IconPlug,
-  IconCodeXml,
-  IconDatabase,
-  IconEyeOff,
   IconFolder,
   IconFolderPlus,
-  IconGitFork,
   IconGitPullRequest,
   IconGrid,
-  IconInfo,
-  IconWrench,
-  IconKeyboard,
-  IconMic,
-  IconMessageSquare,
   IconMoon,
   IconPanelLeft,
-  IconPalette,
-  IconPencil,
   IconPin,
   IconPlus,
   IconSun,
   IconSliders,
-  IconTag,
   IconServer,
-  IconPhone,
   IconTux,
-  IconUser,
-  IconTarget,
   IconTasks,
   IconChartArea,
-  IconTerminal,
-  IconZap,
   IconClock,
   type IconProps,
 } from "./icons";
@@ -76,8 +49,6 @@ import { Tooltip } from "./ui/Tooltip";
 import { gridAgentCount, useGridCloseConfirm } from "./rail/LastGridConfirm";
 import { NavigationRailHeader } from "./ui/NavigationRail";
 import logoUrl from "../assets/brand-mark";
-import { showItemInFolder } from "../houston/bridge";
-import { OpenInMenu } from "./OpenInMenu";
 import { Icon } from "./ui/Icon";
 import { Count } from "./ui/Count";
 import { wslWorkspaces } from "../houston/environments";
@@ -91,7 +62,7 @@ import {
   type RailView,
 } from "../railView";
 import { Button } from "./ui/Button";
-import { NavigationRailFooter, NavigationRailScroll, SettingsNavigation } from "./ui/NavigationRailFooter";
+import { NavigationRailFooter, NavigationRailScroll } from "./ui/NavigationRailFooter";
 import {
   NavigationRail,
   NavigationRailSection,
@@ -105,23 +76,18 @@ import { useRailGitCache } from "./git/railGitCache";
 import { useRailPrCache } from "./git/railPrCache";
 import type { RailDiffTotals } from "./git/useRailGitFacts";
 import type { RailPrState } from "./git/railPrCache";
-import { GridRailRowFallback } from "./ui/GridRailRowFallback";
-import { SettingsRailRow } from "./ui/SettingsRailRow";
-import { SettingsSearch } from "./ui/SettingsSearch";
+import { GridRailRowFallback, preloadGridRailRow } from "./ui/GridRailRowFallback";
 import {
   ContextMenu,
   ContextMenuItem,
-  ContextMenuHeading,
   ContextMenuItems,
-  ContextMenuSeparator,
 } from "./ui/ContextMenu";
-import { usePointerMenuPosition } from "./ui/usePointerMenuPosition";
-import { GridRailContextActions } from "./ui/GridRailContextActions";
 import {
   WorkspaceTreeRow,
   WorkspaceTreeLabel,
   WorkspaceTreeActions,
   WorkspaceTreeAuxButton,
+  WorkspaceDropIndicator,
   EmptyListMessage,
 } from "./ui/WorkspaceTreeRow";
 import { TextInput } from "./ui/TextInput";
@@ -130,30 +96,49 @@ import {
   GRID_PINNED_KEY,
   GRID_PINNED_MIGRATION_KEY,
   isRailGridUnread,
+  isStaleGridKey,
   loadPinnedGridIds,
+  loadRailPrefs,
   migratePinnedWorkspaces,
   migrateRailGridKeys,
-  migrateRailPrefs,
   moveSelectedRailGrid,
+  pruneRailGridState,
   railUnreadSignature,
   reorderRailGrid,
   saveRailPrefs,
   toggleRailGridRead,
   type RailPrefs,
 } from "../railPrefs";
-import { gridStorageKey, isAutoNameable } from "../layout/tree";
+import { gridStorageKey } from "../layout/tree";
 import { TagPopoverHost, useTagPopover, type TagGrid } from "./tags/TagPopover";
 
 /** Window event that opens tag management anchored to the rail Options button. */
 export const MANAGE_TAGS_EVENT = "houston:open-manage-tags";
-import { buildRailCard } from "./rail/railCardModel";
-import { RailVirtualList, type RailVirtualItem } from "./rail/RailVirtualList";
+import { buildRailCard, RAIL_DRAG_REFUSAL, type RailCard } from "./rail/railCardModel";
+import { RailList, type RailListItem } from "./rail/RailList";
+import {
+  buildRailEntries,
+  countGridChildren,
+  entryKey,
+  hiddenByTagFilter,
+  layoutRailTree,
+  neighbourGridId,
+  railEmptyMessage,
+  selectedCardItemKey,
+  visibleDropSlot,
+  type GridItem,
+  type RailEntry,
+  type RailTreeModel,
+} from "./rail/railTreeModel";
+import { useSettledSmartCards } from "./rail/useSettledSmartCards";
+import { useAltDigitJump } from "./rail/useAltDigitJump";
+import { useMenuDismiss } from "./rail/useMenuDismiss";
+import { useEdgeAutoScroll, workspaceDropIndex } from "./rail/railAutoScroll";
 import {
   RailChevron,
-  RailContextMenu,
   RailFilterCountBadge,
+  RailGridRenameFrame,
   RailActiveTagFilter,
-  RailMenuValue,
   RailGroupCount,
   RailGroupHeader,
   RailGroupStatusDot,
@@ -168,39 +153,29 @@ import {
   RailWorkspaceGroupRow,
 } from "./ui/rail/RailChrome";
 import { preloadable } from "../preloadable";
-
-const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
-  palette: IconPalette,
-  terminal: IconTerminal,
-  keyboard: IconKeyboard,
-  user: IconUser,
-  bell: GLYPH_FOR_VERB.notifications,
-  folder: IconFolder,
-  fork: IconGitFork,
-  tasks: IconTasks,
-  message: IconMessageSquare,
-  mic: IconMic,
-  database: IconDatabase,
-  chart: IconChartArea,
-  target: IconTarget,
-  info: IconInfo,
-  wrench: IconWrench,
-  server: IconServer,
-  phone: IconPhone,
-  compass: IconCompass,
-  sparkles: IconZap,
-  plug: IconPlug,
-  history: IconClock,
-};
+import type { CtxMenu, GridCtxMenu } from "./rail/RailContextMenus";
 
 const GridRailGitSubscription = lazy(() =>
   import("./git/GridRailGitSubscription").then((module) => ({ default: module.GridRailGitSubscription })),
 );
-const GridRailExtraActions = lazy(() => import("./ui/GridRailExtraActions").then((module) => ({ default: module.GridRailExtraActions })));
 const LazyGridRailRow = lazy(() => import("./ui/GridRailRow").then((module) => ({ default: module.GridRailRow })));
 const railOptionsMenu = preloadable(() => import("./rail/RailOptionsMenu").then((module) => module.RailOptionsMenu));
-export const preloadRailOptionsMenu = railOptionsMenu.preload;
 const RailOptionsMenu = railOptionsMenu.Slot;
+
+const railSettingsTree = preloadable(() => import("./rail/RailSettingsTree").then((module) => module.SettingsTree));
+const SettingsTree = railSettingsTree.Slot;
+
+const railContextMenus = {
+  workspace: preloadable(() => import("./rail/RailContextMenus").then((module) => module.WorkspaceContextMenu)),
+  grid: preloadable(() => import("./rail/RailContextMenus").then((module) => module.GridContextMenu)),
+  nav: preloadable(() => import("./rail/RailContextMenus").then((module) => module.NavViewMenu)),
+};
+const WorkspaceContextMenu = railContextMenus.workspace.Slot;
+const GridContextMenu = railContextMenus.grid.Slot;
+const NavViewMenu = railContextMenus.nav.Slot;
+/** Loads the rail's code-split menus and settings tree; the rail calls it on idle after mount, tests in `beforeAll`. */
+export const preloadRailChunks = (): Promise<unknown> =>
+  Promise.all([railOptionsMenu.preload(), railSettingsTree.preload(), ...Object.values(railContextMenus).map((menu) => menu.preload())]);
 
 function RailOptionsMenuHost({ anchor, prefs, onChange, onClose, selectedTagIds, selectedTagColors, onClearTagFilter }: {
   anchor: HTMLElement | null;
@@ -215,6 +190,12 @@ function RailOptionsMenuHost({ anchor, prefs, onChange, onClose, selectedTagIds,
   return <RailOptionsMenu anchor={anchor} prefs={prefs} onChange={onChange} onClose={onClose} selectedTagIds={selectedTagIds} selectedTagColors={selectedTagColors} onClearTagFilter={onClearTagFilter} />;
 }
 
+// Lives under TagPopoverHost so Escape can close the popover through its host API.
+function RailMenuDismiss({ open, onCloseAll }: { open: boolean; onCloseAll: () => void }): null {
+  useMenuDismiss(open, onCloseAll, useTagPopover().close);
+  return null;
+}
+
 function WorkspaceRailGroupRow({
   workspace,
   count,
@@ -223,6 +204,7 @@ function WorkspaceRailGroupRow({
   color,
   collapsed,
   selected,
+  highlighted,
   pinned,
   dragging,
   dragged,
@@ -243,12 +225,15 @@ function WorkspaceRailGroupRow({
   color: string;
   collapsed: boolean;
   selected: boolean;
+  /** Fills the row: the selection has no card of its own to show here. */
+  highlighted: boolean;
   pinned: boolean;
   dragging: boolean;
   dragged: boolean;
   renaming: boolean;
   dragActiveRef: React.RefObject<boolean>;
   startWsDrag: (event: React.PointerEvent, path: string) => void;
+  /** Selects the workspace and expands it when collapsed. */
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
   onOpenMenu: (event: React.MouseEvent, workspace: Workspace, color: string) => void;
@@ -263,7 +248,7 @@ function WorkspaceRailGroupRow({
     <Tooltip label={workspace.path}>
       <RailWorkspaceGroupRow
         kind="tree"
-        selected={selected && !hasGrids}
+        selected={highlighted}
         dragging={dragging}
         dragged={dragged}
         role="button"
@@ -283,14 +268,17 @@ function WorkspaceRailGroupRow({
             dragActiveRef.current = false;
             return;
           }
-          if (selected) onToggle(workspace.path);
-          else onSelect(workspace.path);
+          onSelect(workspace.path);
         }}
         onKeyDown={(event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          event.preventDefault();
-          if (selected) onToggle(workspace.path);
-          else onSelect(workspace.path);
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelect(workspace.path);
+          } else if (hasGrids && ((event.key === 'ArrowRight' && collapsed) || (event.key === 'ArrowLeft' && !collapsed))) {
+            event.preventDefault();
+            onToggle(workspace.path);
+          }
         }}
         onContextMenu={(event) => onOpenMenu(event, workspace, color)}
       >
@@ -331,6 +319,18 @@ function WorkspaceRailGroupRow({
           )}
         </WorkspaceTreeActions>
       </RailWorkspaceGroupRow>
+    </Tooltip>
+  );
+}
+
+function ThemeToggle({ chromeTheme, onToggle }: { chromeTheme: ChromeTheme; onToggle: (origin: HTMLElement) => void }): React.JSX.Element {
+  const paper = chromeTheme === "paper";
+  const label = paper ? "Switch to dark theme" : "Switch to light theme";
+  return (
+    <Tooltip label={label}>
+      <Button variant="subtle-icon" aria-label={label} onClick={(event) => onToggle(event.currentTarget)}>
+        <Icon glyph={paper ? IconSun : IconMoon} role="ui" />
+      </Button>
     </Tooltip>
   );
 }
@@ -441,19 +441,7 @@ interface Props {
   checkoutBranches?: ReadonlyMap<number, string>;
   onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
 
-  gridsByWorkspace?: Record<
-    string,
-    {
-      id: string;
-      name: string;
-      count?: number;
-      state?: GridItem["state"];
-      statusLabel?: string;
-      sessionIds?: number[];
-      tagIds?: number[];
-      paneTagIds?: number[];
-    }[]
-  >;
+  gridsByWorkspace?: Record<string, GridItem[]>;
   tags?: TagInfo[];
   onSetGridTags?: (path: string, gridId: string, tagIds: number[]) => void;
   onTagCreate?: (name: string, color: string) => void;
@@ -466,7 +454,10 @@ interface Props {
   onAddGrid?: (path: string) => void;
   onNewWorkspaceSession?: (path: string) => void;
   onRenameGrid?: (path: string, gridId: string, name: string) => void;
-  onRemoveGrid?: (path: string, gridId: string) => void;
+  /** Hands a user-named grid back to automatic naming. */
+  onResetGridName?: (path: string, gridId: string) => void;
+  /** `nextGridId` is the neighbour to select when the closed grid was the selected one. */
+  onRemoveGrid?: (path: string, gridId: string, nextGridId?: string) => void;
 
   onOpenSettings?: () => void;
   onOpenPullRequests?: () => void;
@@ -526,347 +517,30 @@ function RenameInput({
   );
 }
 
-interface CtxMenu {
-  x: number;
-  y: number;
-  originX: number;
-  originY: number;
-  path: string;
-  name: string;
-  color: string;
-  pinned: boolean;
-}
-
-interface GridCtxMenu {
-  x: number;
-  y: number;
-  originX: number;
-  originY: number;
-  path: string;
-  gridId: string;
-  name: string;
-  canRemove: boolean;
-  pinned: boolean;
-  tagIds: number[];
-  tagNames: string[];
-  agentCount: number;
-  jumpNumber?: number;
-  paneId: number | null;
-  branch: string | null;
-  checkoutPath: string;
-  worktreePath: string | null;
-  pr: PrInfo | null;
-  gh: string | null;
-}
-
+// Reads the facts off the card the row shows, so the menu acts on the same pane and checkout.
 function railGridContextFacts(
-  grid: GridItem,
+  card: RailCard,
   workspacePath: string,
-  sessions: SessionInfo[],
-  branches: ReadonlyMap<number, string>,
-  prs: ReadonlyMap<string, RailPrState>,
 ): Pick<GridCtxMenu, "paneId" | "branch" | "checkoutPath" | "worktreePath" | "pr" | "gh"> {
-  const orValue = <T,>(value: T | null | undefined, fallback: T): T => value ?? fallback;
-  const nullable = <T,>(value: T | undefined): T | null => value ?? null;
-  const paneIds = orValue(grid.sessionIds, []);
-  let pane: SessionInfo | undefined;
-  for (const session of sessions) {
-    if (!paneIds.includes(session.id)) continue;
-    pane = session;
-    break;
-  }
-  const checkoutPath = orValue(pane?.worktree?.path, orValue(pane?.checkout_root, orValue(pane?.cwd, workspacePath)));
-  const prStatus = prs.get(checkoutPath);
+  const identity = card.checkouts[0];
+  const root = identity && "root" in identity ? identity.root : null;
   return {
-    paneId: nullable(pane?.id),
-    branch: pane ? orValue(pane.checkout?.branch, orValue(branches.get(pane.id), orValue(pane.worktree?.branch, null))) : null,
-    checkoutPath,
-    worktreePath: nullable(pane?.worktree?.path),
-    pr: nullable(prStatus?.pr),
-    gh: nullable(prStatus?.gh),
+    paneId: card.agents[0]?.session.id ?? null,
+    branch: identity && (identity.kind === "primary" || identity.kind === "worktree") ? identity.branch : null,
+    checkoutPath: root ?? workspacePath,
+    worktreePath: identity?.kind === "worktree" ? identity.root : null,
+    pr: card.pr?.pr ?? null,
+    gh: card.pr?.gh ?? null,
   };
 }
-
-function ctxHeader(title: string, subtitle: string): React.JSX.Element {
-  return <ContextMenuHeading title={title} subtitle={subtitle} />;
-}
-
-const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
-  if (
-    e.key !== "ArrowDown" &&
-    e.key !== "ArrowUp" &&
-    e.key !== "Home" &&
-    e.key !== "End"
-  )
-    return;
-  e.preventDefault();
-  const items = [
-    ...e.currentTarget.querySelectorAll<HTMLButtonElement>(
-      ".ctx-item:not(:disabled)",
-    ),
-  ];
-  if (items.length === 0) return;
-  const current = items.indexOf(document.activeElement as HTMLButtonElement);
-  let next: number;
-  if (e.key === "Home") next = 0;
-  else if (e.key === "End") next = items.length - 1;
-  else if (e.key === "ArrowDown")
-    next = current < 0 ? 0 : (current + 1) % items.length;
-  else
-    next =
-      current < 0
-        ? items.length - 1
-        : (current - 1 + items.length) % items.length;
-  items[next].focus();
-};
 
 function portalOrNull(el: React.ReactElement | null): React.ReactPortal | null {
   return el && createPortal(el, document.body);
 }
 
-function WorkspaceContextMenu({
-  menu,
-  onClose,
-  onAddGrid,
-  onRenameStart,
-  onRemoveWorkspace,
-  onOpenExternalError,
-  onTogglePin,
-}: {
-  menu: CtxMenu;
-  onClose: () => void;
-  onAddGrid?: (path: string) => void;
-  onRenameStart: (path: string) => void;
-  onRemoveWorkspace: (path: string) => void;
-  onOpenExternalError?: (message: string) => void;
-  onTogglePin: (path: string) => void;
-}): React.JSX.Element {
-  return (
-    <ContextMenu
-      className=""
-      style={{
-        top: menu.y,
-        left: menu.x,
-        ["--pop-origin-x" as string]: `${menu.originX}px`,
-        ["--pop-origin-y" as string]: `${menu.originY}px`,
-      }}
-      role="menu"
-      onKeyDown={handleMenuKeyDown}
-    >
-      {ctxHeader(menu.name, menu.path)}
-      <ContextMenuItems>
-        {onAddGrid && (
-          <ContextMenuItem
-
-            role="menuitem"
-            data-testid="ws-new-grid"
-            onClick={() => {
-              const { path } = menu;
-              onClose();
-              onAddGrid(path);
-            }}
-          >
-            <Icon glyph={IconPlus} role="ui" />
-            <span>New grid</span>
-          </ContextMenuItem>
-        )}
-        <ContextMenuItem
-
-          role="menuitem"
-          onClick={() => {
-            onClose();
-            onRenameStart(menu.path);
-          }}
-        >
-          <Icon glyph={IconPencil} role="ui" />
-          <span>Rename workspace</span>
-          <kbd>F2</kbd>
-        </ContextMenuItem>
-        <ContextMenuItem
-
-          role="menuitem"
-          data-testid="ws-toggle-pin"
-          onClick={() => {
-            const { path } = menu;
-            onClose();
-            onTogglePin(path);
-          }}
-        >
-          <Icon glyph={IconPin} role="ui" />
-          <span>{menu.pinned ? "Unpin workspace" : "Pin workspace"}</span>
-        </ContextMenuItem>
-        <ContextMenuItem
-
-          role="menuitem"
-          onClick={() => {
-            const { path } = menu;
-            onClose();
-            void showItemInFolder(path);
-          }}
-        >
-          <Icon glyph={IconFolder} role="ui" />
-          <span>Reveal in Files</span>
-        </ContextMenuItem>
-        <OpenInMenu
-          path={menu.path}
-          label="Open workspace in"
-          icon={<Icon glyph={IconCodeXml} role="ui" />}
-          itemClass="ctx-item"
-          onDone={onClose}
-          onError={onOpenExternalError ?? (() => {})}
-        />
-        <ContextMenuSeparator />
-        <ContextMenuItem danger
-
-          role="menuitem"
-          onClick={() => {
-            onClose();
-            onRemoveWorkspace(menu.path);
-          }}
-        >
-          <Icon glyph={IconClose} role="ui" />
-          <span>Remove workspace</span>
-          <kbd>Ctrl+Shift+W</kbd>
-        </ContextMenuItem>
-      </ContextMenuItems>
-    </ContextMenu>
-  );
-}
-
-function GridContextMenu({
-  gridMenu,
-  onClose,
-  onOpenGrid,
-  onStartRename,
-  onRemoveGrid,
-  onTogglePin,
-  onOpenInspector,
-  onError,
-}: {
-  gridMenu: GridCtxMenu;
-  onClose: () => void;
-  onOpenGrid?: (path: string, gridId: string) => void;
-  onStartRename: (path: string, gridId: string) => void;
-  onRemoveGrid?: (path: string, gridId: string) => void;
-  onTogglePin: (path: string, gridId: string) => void;
-  onOpenInspector?: (paneId: number, tab: "pull-request") => void;
-  onError?: (message: string) => void;
-}): React.JSX.Element {
-  const tagPopover = useTagPopover();
-  const menuRef = useRef<HTMLDivElement>(null);
-  const position = usePointerMenuPosition(menuRef, gridMenu.x, gridMenu.y);
-  const tagsHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const openTags = (anchor: HTMLElement): void => {
-    if (tagsHoverTimer.current) clearTimeout(tagsHoverTimer.current);
-    tagsHoverTimer.current = null;
-    tagPopover.open({ anchor, gridId: gridStorageKey(gridMenu.path, gridMenu.gridId), view: 'pick', placement: 'right', onDismiss: onClose });
-  };
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    menuRef.current?.querySelector<HTMLElement>(".ctx-item:not(:disabled)")?.focus();
-    return () => {
-      if (tagsHoverTimer.current) clearTimeout(tagsHoverTimer.current);
-      if (previous?.isConnected && document.activeElement === document.body) previous.focus();
-    };
-  }, []);
-  return (
-    <RailContextMenu
-      variant="grid-card"
-      ref={menuRef}
-      aria-label={`${gridMenu.name} actions`}
-      style={{
-        ...position,
-        ["--pop-origin-x" as string]: `${gridMenu.x - position.left}px`,
-        ["--pop-origin-y" as string]: `${gridMenu.y - position.top}px`,
-      }}
-      role="menu"
-      onKeyDown={handleMenuKeyDown}
-    >
-      <ContextMenuItems>
-        <ContextMenuItem role="menuitem" onClick={() => {
-          onOpenGrid?.(gridMenu.path, gridMenu.gridId);
-          onClose();
-        }}>
-          <Icon glyph={IconGrid} role="ui" />
-          <span>Open</span>
-          {gridMenu.jumpNumber != null && gridMenu.jumpNumber <= 9 && <RailMenuValue><kbd>Alt {gridMenu.jumpNumber}</kbd></RailMenuValue>}
-        </ContextMenuItem>
-        <ContextMenuItem role="menuitem" onClick={() => {
-          onStartRename(gridMenu.path, gridMenu.gridId);
-          onClose();
-        }}>
-          <Icon glyph={IconPencil} role="ui" />
-          <span>Rename</span>
-        </ContextMenuItem>
-        <ContextMenuItem role="menuitem" data-testid="menu-grid-pin" onClick={() => { onTogglePin(gridMenu.path, gridMenu.gridId); onClose() }}>
-          <Icon glyph={IconPin} role="ui" />
-          <span>{gridMenu.pinned ? "Unpin" : "Pin to top"}</span>
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem role="menuitem" aria-haspopup="dialog" data-testid="menu-tags-entry"
-          onClick={(event) => openTags(event.currentTarget)}
-          onPointerEnter={(event) => {
-            const anchor = event.currentTarget;
-            if (tagsHoverTimer.current) clearTimeout(tagsHoverTimer.current);
-            // A short delay keeps a pointer passing over the entry from opening the picker.
-            tagsHoverTimer.current = setTimeout(() => openTags(anchor), 200);
-          }}
-          onPointerLeave={() => {
-            if (tagsHoverTimer.current) clearTimeout(tagsHoverTimer.current);
-            tagsHoverTimer.current = null;
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowRight") return;
-            event.preventDefault();
-            event.stopPropagation();
-            openTags(event.currentTarget);
-          }}>
-          <Icon glyph={IconTag} role="ui" />
-          <span className="flex-1">Tags</span>
-          <RailMenuValue>{gridMenu.tagNames.join(", ")}<Icon glyph={IconChevronRight} role="small" /></RailMenuValue>
-        </ContextMenuItem>
-        <GridRailContextActions branch={gridMenu.branch} onClose={onClose} onError={onError} />
-        <ContextMenuSeparator />
-        <Suspense fallback={null}>
-          <GridRailExtraActions
-            paneId={gridMenu.paneId}
-            checkoutPath={gridMenu.checkoutPath}
-            worktreePath={gridMenu.worktreePath}
-            pr={gridMenu.pr}
-            gh={gridMenu.gh}
-            onClose={onClose}
-            onOpenInspector={onOpenInspector}
-            onError={onError}
-          />
-        </Suspense>
-        <ContextMenuSeparator />
-        {gridMenu.canRemove && <ContextMenuItem danger role="menuitem" onClick={() => {
-            const { path, gridId } = gridMenu;
-            onClose();
-            onRemoveGrid?.(path, gridId);
-        }}>
-          <Icon glyph={IconClose} role="ui" />
-          <span>{gridMenu.agentCount > 0 ? `Close grid and its ${gridMenu.agentCount} ${gridMenu.agentCount === 1 ? "agent" : "agents"}…` : "Close grid"}</span>
-        </ContextMenuItem>}
-      </ContextMenuItems>
-    </RailContextMenu>
-  );
-}
-
 function allGridKeys(gridsByWorkspace: Record<string, { id: string }[]>): string[] {
   return Object.entries(gridsByWorkspace).flatMap(([path, grids]) => grids.map((grid) => gridStorageKey(path, grid.id)));
 }
-
-type GridItem = {
-  id: string;
-  name: string;
-  count?: number;
-  state?: "starting" | "working" | "needs-input" | "idle" | "unavailable" | "stopped";
-  statusLabel?: string;
-  sessionIds?: number[];
-  tagIds?: number[];
-  paneTagIds?: number[];
-};
 
 const TAG_FILTER_KEY = "houston.tagFilter";
 
@@ -901,19 +575,6 @@ function EnvironmentBadge({ path }: { path: string }): React.JSX.Element | null 
 
 function PinIndicator(): React.JSX.Element {
   return <RailPinnedIndicator />;
-}
-
-// A tab whose own and panes' tags carry no active tag leaves the rail. Unknown
-// pane membership (paneTagIds undefined) stays: never hide what it cannot see.
-function hiddenByTagFilter(
-  g: Pick<GridItem, "tagIds" | "paneTagIds">,
-  activeTagIds: number[],
-): boolean {
-  if (activeTagIds.length === 0) return false;
-  const carries = (ids: number[] | undefined): boolean =>
-    ids?.some((id) => activeTagIds.includes(id)) ?? false;
-  if (carries(g.tagIds)) return false;
-  return g.paneTagIds !== undefined && !carries(g.paneTagIds);
 }
 
 function workspaceCarriesTag(
@@ -1046,140 +707,6 @@ v === "tasks" && taskTurnCount > 0 ? <Count value={taskTurnCount} from="warn" />
   );
 }
 
-function NavViewMenu({
-  navMenu,
-  onClose,
-  onHide,
-}: {
-  navMenu: {
-    x: number;
-    y: number;
-    originX: number;
-    originY: number;
-    view: RailView;
-  } | null;
-  onClose: () => void;
-  onHide: (v: RailView) => void;
-}): React.JSX.Element | null {
-  if (navMenu === null) return null;
-  return (
-    <ContextMenu
-      className=""
-      style={{
-        top: navMenu.y,
-        left: navMenu.x,
-        ["--pop-origin-x" as string]: `${navMenu.originX}px`,
-        ["--pop-origin-y" as string]: `${navMenu.originY}px`,
-      }}
-      role="menu"
-      onKeyDown={handleMenuKeyDown}
-    >
-      {ctxHeader(RAIL_VIEW_LABEL[navMenu.view], "Sidebar")}
-      <ContextMenuItems>
-        <ContextMenuItem
-
-          role="menuitem"
-          data-testid="nav-hide-row"
-          onClick={() => {
-            onHide(navMenu.view);
-            onClose();
-          }}
-        >
-          <Icon glyph={IconEyeOff} role="ui" />
-          <span>Hide from sidebar</span>
-        </ContextMenuItem>
-      </ContextMenuItems>
-    </ContextMenu>
-  );
-}
-
-function SettingsTree({
-  treeFilter,
-  setTreeFilter,
-  settingsSections,
-  activeSettingsSection,
-  attention,
-}: {
-  treeFilter: string | null;
-  setTreeFilter: (
-    v: string | null | ((cur: string | null) => string | null),
-  ) => void;
-  settingsSections: readonly SettingsSectionDef[];
-  activeSettingsSection: string;
-  attention?: AgentAttention;
-}): React.JSX.Element {
-  const filterRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        if (e.target instanceof HTMLElement && e.target.closest('[role="dialog"]')) return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (treeFilter) setTreeFilter(null);
-        else setSettingsOpen(false);
-        return;
-      }
-      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
-      const t = e.target;
-      if (
-        t instanceof HTMLElement &&
-        (t.isContentEditable || t.closest("input, textarea, select, [contenteditable]"))
-      )
-        return;
-      e.preventDefault();
-      filterRef.current?.focus();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [treeFilter, setTreeFilter]);
-  const query = (treeFilter ?? '').trim().toLowerCase();
-  const rowHits = query ? searchSettingsRows(query) : [];
-  const sections = settingsSections.filter((section) =>
-    !query ||
-    section.label.toLowerCase().includes(query) ||
-    section.keywords.some((keyword) => keyword.toLowerCase().includes(query)),
-  );
-  return (
-    <div className="grid gap-[var(--space-1)]">
-      <NavigationRailItem icon={IconChevronLeft} label="Back to workspaces" trailing={<HintKey size="compact">Esc</HintKey>} onClick={() => { setTreeFilter(null); setSettingsOpen(false); }} />
-      <SettingsSearch
-          inputRef={filterRef}
-          value={treeFilter ?? ""}
-          onChange={(e) => setTreeFilter(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              if (treeFilter) {
-                e.preventDefault();
-                e.stopPropagation();
-                setTreeFilter(null);
-                filterRef.current?.blur();
-              }
-            }
-          }}
-        />
-      <SettingsNavigation>
-        {query ? <SettingsTreeSearch rows={rowHits} sections={sections} onDone={() => setTreeFilter(null)} /> : <SettingsTreeGroups sections={sections} active={activeSettingsSection} attention={attention} />}
-
-      </SettingsNavigation>
-    </div>
-  );
-}
-
-function SettingsTreeSearch({ rows, sections, onDone }: { rows: ReturnType<typeof searchSettingsRows>; sections: readonly SettingsSectionDef[]; onDone: () => void }): React.JSX.Element {
-  if (rows.length) return <>{rows.map(({ section, title }) => <SettingsRailRow key={`${section.id}:${title}`} kind="search" icon={SETTINGS_ICON_MAP[section.icon] ?? IconInfo} label={title} subtitle={section.label} sectionId={section.id} rowTitle={title} onClick={() => { requestSettingsRowJump(section.id, title); setSettingsSection(section.id); onDone(); }} />)}</>;
-  if (sections.length) return <>{sections.map((section) => <SettingsRailRow key={section.id} kind="search" icon={SETTINGS_ICON_MAP[section.icon] ?? IconInfo} label={section.label} subtitle={section.group === 'agents' ? 'Agents' : 'Settings'} sectionId={section.id} onClick={() => { setSettingsSection(section.id); onDone(); }} />)}</>;
-  return <EmptyListMessage kind="settings">No settings match your search.</EmptyListMessage>;
-}
-
-function SettingsTreeGroups({ sections, active, attention }: { sections: readonly SettingsSectionDef[]; active: string; attention?: AgentAttention }): React.JSX.Element {
-  return <>{(['agents', 'app', 'work', 'devices', 'system'] as const).map((group) => <SettingsNavigationGroup key={group} label={group === 'agents' ? 'Agents' : group[0].toUpperCase() + group.slice(1)}>{sections.filter((section) => section.group === group).map((section) => <SettingsTreeSection key={section.id} section={section} active={active} attention={attention} />)}</SettingsNavigationGroup>)}</>;
-}
-
-function SettingsTreeSection({ section, active, attention }: { section: SettingsSectionDef; active: string; attention?: AgentAttention }): React.JSX.Element {
-  const count = section.id === 'agents-overview' ? attention?.total ?? 0 : attention?.counts[section.id as keyof AgentAttention['counts']] ?? 0;
-  return <SettingsRailRow kind="section" icon={SETTINGS_ICON_MAP[section.icon] ?? IconInfo} label={section.label} selected={active === section.id} sectionId={section.id} trailing={count > 0 ? <Count value={count} from={section.id === 'agents-mcp' ? 'stop' : 'warn'} /> : undefined} onClick={() => setSettingsSection(section.id)} />;
-}
-
 function AddWorkspaceMenu({ onAddWorkspace, onSshConnect }: {
   onAddWorkspace: () => void;
   onSshConnect: () => void;
@@ -1251,25 +778,122 @@ function AddWorkspaceMenu({ onAddWorkspace, onSshConnect }: {
   </>;
 }
 
+function RailTreeHeader({
+  treeLabel, activeFilterCount, railOptionsAnchor, setRailOptionsAnchor, triggerRef, onAddWorkspace, onSshConnect,
+  onAddGrid, railPrefs, onRailPrefsChange, activeTagIds, tagById, onClearTagFilter,
+}: {
+  treeLabel: string;
+  activeFilterCount: number;
+  railOptionsAnchor: HTMLElement | null;
+  setRailOptionsAnchor: (anchor: HTMLElement | null) => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  onAddWorkspace: () => void;
+  onSshConnect: () => void;
+  /** Absent when a grid cannot be added: no workspace is selected. */
+  onAddGrid?: () => void;
+  railPrefs: RailPrefs;
+  onRailPrefsChange: (prefs: RailPrefs) => void;
+  activeTagIds: number[];
+  tagById: ReadonlyMap<number, TagInfo>;
+  onClearTagFilter: () => void;
+}): React.JSX.Element {
+  return (
+    <RailTreeGroupHeader>
+      <RailTreeTitle>{treeLabel}</RailTreeTitle>
+      <Tooltip label="Sidebar options">
+        <Button
+          type="button"
+          variant="compact-icon"
+          aria-label="Sidebar options"
+          aria-expanded={railOptionsAnchor !== null}
+          data-testid="tree-filter-toggle"
+          data-options-testid="rail-options-trigger"
+          ref={triggerRef}
+          onClick={(event) => setRailOptionsAnchor(railOptionsAnchor ? null : event.currentTarget)}
+          className="relative"
+        >
+          <Icon glyph={IconSliders} role="ui" />
+          {activeFilterCount > 0 && (
+            <RailFilterCountBadge>
+              {activeFilterCount > 9 ? '9+' : activeFilterCount}
+            </RailFilterCountBadge>
+          )}
+        </Button>
+      </Tooltip>
+      <AddWorkspaceMenu onAddWorkspace={onAddWorkspace} onSshConnect={onSshConnect} />
+      <Tooltip label={onAddGrid ? "New grid" : "Select a workspace to add a grid"}>
+        <Button type="button" variant="compact-icon" aria-label="New grid" disabled={!onAddGrid} onClick={onAddGrid}>
+          <Icon glyph={IconPlus} role="ui" />
+        </Button>
+      </Tooltip>
+      <RailOptionsMenuHost
+        anchor={railOptionsAnchor}
+        prefs={railPrefs}
+        onChange={onRailPrefsChange}
+        onClose={() => setRailOptionsAnchor(null)}
+        selectedTagIds={activeTagIds}
+        selectedTagColors={activeTagIds.flatMap((id) => tagById.get(id)?.color ?? [])}
+        onClearTagFilter={onClearTagFilter}
+      />
+    </RailTreeGroupHeader>
+  );
+}
+
+function RailLabelGroupHeader({ label, kind, groupBy, count, collapsed, onToggle }: {
+  label: string;
+  kind: "pinned" | "label";
+  groupBy: RailPrefs["groupBy"];
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+}): React.JSX.Element {
+  return (
+    <RailGroupHeader>
+      <RailGroupToggle aria-expanded={!collapsed} onClick={onToggle}>
+        {kind === 'pinned' ? <Icon glyph={IconPin} role="small" tone="faint" className="flex-none" />
+          : groupBy === 'status' ? <RailGroupStatusDot label={label} />
+            : <Icon glyph={IconGitPullRequest} role="small" tone="faint" className="flex-none" />}
+        <span className="truncate">{label}</span>
+        {count > 0 && <RailGroupCount>{count}</RailGroupCount>}
+      </RailGroupToggle>
+    </RailGroupHeader>
+  );
+}
+
+function GridRenameRow({ cardMode, selected, initial, onSubmit, onCancel }: {
+  cardMode: "detailed" | "compact";
+  selected: boolean;
+  initial: string;
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
+}): React.JSX.Element {
+  return (
+    <RailGridRenameFrame cardMode={cardMode} selected={selected}>
+      <Icon glyph={IconGrid} role="ui" opacity="muted" />
+      <RenameInput initial={initial} onSubmit={onSubmit} onCancel={onCancel} />
+    </RailGridRenameFrame>
+  );
+}
+
 function RailTree({
   treeLabel,
   activeFilterCount,
   onSshConnect,
   onAddWorkspace,
   selected,
-  filteredWorkspaces,
+  canAddGrid,
+  model,
   workspaces,
   pinnedWorkspaces,
   sessions,
   colorOf,
-  gridsByWorkspace,
   activeTagIds,
   tagById,
   dragPath,
-  isWsOpen,
+  wsDropIndex,
   dragActiveRef,
   startWsDrag,
-  onSelect,
+  onSelectWorkspace,
   toggleWsOpen,
   openMenu,
   onNewWorkspaceSession,
@@ -1302,6 +926,8 @@ function RailTree({
   gridDragId,
   gridDrop,
   gridDragRefused,
+  hoverSuppressed,
+  scrollRef,
   onToggleGridUnread,
   isGridUnread,
 }: {
@@ -1310,19 +936,19 @@ function RailTree({
   onSshConnect: () => void;
   onAddWorkspace: () => void;
   selected: string;
-  filteredWorkspaces: Workspace[];
+  canAddGrid: boolean;
+  model: RailTreeModel;
   workspaces: Workspace[];
   pinnedWorkspaces: ReadonlySet<string>;
   sessions: SessionInfo[];
   colorOf: (path: string) => string;
-  gridsByWorkspace: Record<string, GridItem[]>;
   activeTagIds: number[];
   tagById: ReadonlyMap<number, TagInfo>;
   dragPath: string | null;
-  isWsOpen: (path: string) => boolean;
+  wsDropIndex: number | null;
   dragActiveRef: React.RefObject<boolean>;
   startWsDrag: (e: React.PointerEvent, path: string) => void;
-  onSelect: (path: string) => void;
+  onSelectWorkspace: (path: string) => void;
   toggleWsOpen: (path: string) => void;
   openMenu: (e: React.MouseEvent, w: Workspace, color: string) => void;
   onNewWorkspaceSession?: (path: string) => void;
@@ -1359,12 +985,20 @@ function RailTree({
   onGridPointerDown: (event: React.PointerEvent, workspace: string, gridId: string) => void;
   gridDragId: string | null;
   gridDrop: { gridId: string; position: 'before' | 'after' } | null;
-  gridDragRefused: string | null;
+  gridDragRefused: { key: string; reason: string } | null;
+  hoverSuppressed: boolean;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
   onToggleGridUnread: (gridId: string, signature: string, unread: boolean) => void;
   isGridUnread: (gridId: string, agents: ReturnType<typeof buildRailCard>['agents']) => { unread: boolean; signature: string };
   onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
 }): React.JSX.Element {
   const [expandedGrids, setExpandedGrids] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    const live = new Set(model.groups.flatMap((group) => group.cards.map(entryKey)));
+    setExpandedGrids((current) => [...current].every((key) => live.has(key))
+      ? current
+      : new Set([...current].filter((key) => live.has(key))));
+  }, [model]);
   const tagPopover = useTagPopover();
   const optionsTriggerRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -1375,125 +1009,27 @@ function RailTree({
     window.addEventListener(MANAGE_TAGS_EVENT, openManage);
     return () => window.removeEventListener(MANAGE_TAGS_EVENT, openManage);
   }, [tagPopover, activeTagIds]);
-  // A workspace that never ran a session owns one empty, auto-named grid; listing it reads as the app creating grids.
-  const isPlaceholderGrid = (path: string, grid: GridItem): boolean =>
-    (gridsByWorkspace[path]?.length ?? 0) === 1 &&
-    (grid.sessionIds?.length ?? 0) === 0 &&
-    isAutoNameable({ id: grid.id, name: grid.name }) &&
-    !(selected === path && selectedGridId === grid.id);
-  const flatCards = useMemo(
-    () => filteredWorkspaces.flatMap((workspace) => (gridsByWorkspace[workspace.path] ?? [])
-      .filter((grid) => !isPlaceholderGrid(workspace.path, grid))
-      .filter((grid) => !hiddenByTagFilter(grid, activeTagIds))
-      .map((grid) => {
-        const paneIds = grid.sessionIds ?? []
-        const card = buildRailCard({
-          gridId: grid.id,
-          workspace: workspace.path,
-          title: grid.name,
-          pinned: pinnedGridIds.has(gridStorageKey(workspace.path, grid.id)),
-          paneIds,
-          sessions,
-          branches: checkoutBranches,
-          diffByDir: railDiffByDir,
-          prByDir: railPrByDir,
-        })
-        return { workspace, grid, paneIds, card }
-      })
-      .filter(({ card }) => !railPrefs.filters.hideIdle || !['idle', 'done'].includes(card.status.kind))
-      .filter(({ paneIds }) => !railPrefs.filters.hideEmptyGrids || paneIds.length > 0)
-      .filter(({ card }) => !railPrefs.filters.hideDefaultBranch || !card.checkouts.some(
-        (checkout) => 'branch' in checkout && ['main', 'master'].includes(checkout.branch ?? ''),
-      ))),
-    [
-      filteredWorkspaces,
-      gridsByWorkspace,
-      activeTagIds,
-      sessions,
-      pinnedGridIds,
-      checkoutBranches,
-      railDiffByDir,
-      railPrByDir,
-      railPrefs.filters,
-      selected,
-      selectedGridId,
-    ],
-  )
-  const cardKey = (entry: { workspace: Workspace; grid: GridItem }): string => gridStorageKey(entry.workspace.path, entry.grid.id);
-  const [settledSmartCards, setSettledSmartCards] = useState(flatCards);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSettledSmartCards(flatCards), railPrefs.sort === 'smart' ? 3000 : 0);
-    return () => window.clearTimeout(timer);
-  }, [flatCards, railPrefs.sort]);
-  const smartRank = (card: ReturnType<typeof buildRailCard>): number =>
-    card.status.kind === 'needs-input' ? 0 :
-      card.status.kind === 'working' ? 1 :
-        card.agents.some((agent) => agent.unread) ? 2 : 3
-  const settledStatusById = new Map(settledSmartCards.map((entry) => [cardKey(entry), entry.card]));
-  const sortCards = (cards: typeof flatCards): typeof flatCards => {
-    if (railPrefs.sort === 'name') return [...cards].sort((a, b) => a.grid.name.localeCompare(b.grid.name));
-    if (railPrefs.sort === 'recent') return [...cards].sort((a, b) => b.card.lastActivityMs - a.card.lastActivityMs);
-    if (railPrefs.sort === 'smart') return [...cards].sort((a, b) => {
-      const left = settledStatusById.get(cardKey(a)) ?? a.card;
-      const right = settledStatusById.get(cardKey(b)) ?? b.card;
-      return smartRank(left) - smartRank(right) || right.lastActivityMs - left.lastActivityMs;
-    });
-    const order = new Map(railPrefs.gridOrder.map((id, index) => [id, index]));
-    return [...cards].sort((left, right) =>
-      (order.get(cardKey(left)) ?? Number.MAX_SAFE_INTEGER) - (order.get(cardKey(right)) ?? Number.MAX_SAFE_INTEGER),
-    )
-  };
-  const pinnedCards = sortCards(flatCards.filter(({ card }) => card.pinned));
-  const unpinnedCards = sortCards(flatCards.filter(({ card }) => !card.pinned));
-  const groupingKey = (entry: typeof flatCards[number]): string => {
-    const card = railPrefs.sort === 'smart'
-      ? settledStatusById.get(cardKey(entry)) ?? entry.card
-      : entry.card
-    if (railPrefs.groupBy === 'status') {
-      return card.status.kind === 'needs-input' ? 'Needs you' :
-        card.status.kind === 'working' || card.status.kind === 'starting' ? 'Working' :
-          card.status.kind === 'done' ? 'Done' : 'Idle'
-    }
-    if (railPrefs.groupBy === 'pr') return entry.card.pr?.pr ? 'Pull requests' : 'No pull request';
-    return entry.workspace.name;
-  };
-  const unpinnedGroups = new Map<string, typeof unpinnedCards>();
-  for (const entry of unpinnedCards) {
-    const key = railPrefs.groupBy === 'none' ? '' : groupingKey(entry);
-    unpinnedGroups.set(key, [...(unpinnedGroups.get(key) ?? []), entry]);
-  }
-  const groupEntries = [...unpinnedGroups.entries()].sort(([left], [right]) => {
-    if (railPrefs.groupBy === 'status') {
-      return ['Needs you', 'Working', 'Done', 'Idle'].indexOf(left) - ['Needs you', 'Working', 'Done', 'Idle'].indexOf(right)
-    }
-    if (railPrefs.groupBy === 'pr') {
-      return ['Pull requests', 'No pull request'].indexOf(left) - ['Pull requests', 'No pull request'].indexOf(right)
-    }
-    return filteredWorkspaces.findIndex((workspace) => workspace.name === left) -
-      filteredWorkspaces.findIndex((workspace) => workspace.name === right)
-  });
-  const renderFlatCard = ({ workspace, grid, paneIds, card }: typeof flatCards[number]): React.JSX.Element => {
+  const renderCard = ({ workspace, grid, paneIds, card }: RailEntry): React.JSX.Element => {
     const selectedCard = selected === workspace.path && selectedGridId === grid.id;
     const onRemove = onRemoveGrid
       ? () => onRemoveGrid(workspace.path, grid.id)
       : undefined
     const key = gridStorageKey(workspace.path, grid.id);
-    const jumpNumber = flatCards.findIndex((entry) => cardKey(entry) === key) + 1;
+    const jumpNumber = model.jumpByKey.get(key) ?? 0;
     const unreadState = isGridUnread(key, card.agents);
     if (gridRenaming?.path === workspace.path && gridRenaming.gridId === grid.id && onRenameGrid) {
       return (
-        <WorkspaceTreeRow key={key} kind="child" data-testid="grid-row-renaming">
-          <Icon glyph={IconGrid} role="ui" opacity="muted" />
-          <RenameInput
-            initial={grid.name}
-            onSubmit={(name) => {
-              setGridRenaming(null);
-              const next = name.trim();
-              onRenameGrid(workspace.path, grid.id, next);
-            }}
-            onCancel={() => setGridRenaming(null)}
-          />
-        </WorkspaceTreeRow>
+        <GridRenameRow
+          key={key}
+          cardMode={railPrefs.cardMode}
+          selected={selectedCard}
+          initial={grid.name}
+          onSubmit={(name) => {
+            setGridRenaming(null);
+            onRenameGrid(workspace.path, grid.id, name.trim());
+          }}
+          onCancel={() => setGridRenaming(null)}
+        />
       );
     }
     return (
@@ -1504,6 +1040,7 @@ function RailTree({
             name={grid.name}
             selected={selectedCard}
             jumpNumber={jumpNumber}
+            cardMode={railPrefs.cardMode}
             onSelect={() => onSelectGrid?.(workspace.path, grid.id)}
             onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove), jumpNumber)}
             onRemove={onRemove}
@@ -1536,7 +1073,8 @@ function RailTree({
           unread={unreadState.unread}
           dragging={gridDragId === key}
           dragPosition={gridDrop?.gridId === key ? gridDrop.position : null}
-          dragRefusal={gridDragRefused === key}
+          dragRefusal={gridDragRefused?.key === key ? gridDragRefused.reason : null}
+          hoverSuppressed={hoverSuppressed}
           onGridPointerDown={onGridPointerDown}
           jumpNumber={jumpNumber}
           onSelect={() => {
@@ -1553,156 +1091,117 @@ function RailTree({
       </Suspense>
     )
   };
-  const virtualItems: RailVirtualItem[] = [];
   const toggleGroup = (group: string): void => onRailPrefsChange({
     ...railPrefs,
     collapsedGroups: railPrefs.collapsedGroups.includes(group)
       ? railPrefs.collapsedGroups.filter((entry) => entry !== group)
       : [...railPrefs.collapsedGroups, group],
   })
-  const groupHeader = (label: string, count: number, workspace?: Workspace, index = 0): React.JSX.Element => {
-    if (workspace) {
-      const collapsed = !isWsOpen(workspace.path);
-      return (
-        <WorkspaceRailGroupRow
-          workspace={workspace}
-          index={index}
-          color={colorOf(workspace.path)}
-          count={count}
-          hasGrids={(gridsByWorkspace[workspace.path] ?? []).some((grid) => !isPlaceholderGrid(workspace.path, grid))}
-          collapsed={collapsed}
-          selected={selected === workspace.path}
-          pinned={pinnedWorkspaces.has(workspace.path)}
-          dragging={dragPath !== null}
-          dragged={dragPath === workspace.path}
-          renaming={renaming === workspace.path}
-          dragActiveRef={dragActiveRef}
-          startWsDrag={startWsDrag}
-          onSelect={onSelect}
-          onToggle={toggleWsOpen}
-          onOpenMenu={openMenu}
-          onNewSession={onNewWorkspaceSession}
-          onRenameSubmit={onRenameSubmit}
-          onRenameCancel={onRenameCancel}
-        />
-      );
+  const items: RailListItem[] = [];
+  const showDropAt = visibleDropSlot(model.displayedWorkspaces, dragPath, wsDropIndex);
+  for (const group of model.groups) {
+    if (showDropAt !== null && group.kind === 'workspace' && group.wsIndex === showDropAt) {
+      items.push({ key: 'ws-drop', kind: 'drop', content: <WorkspaceDropIndicator /> });
     }
-    return (
-      <RailGroupHeader>
-        <RailGroupToggle
-          aria-expanded={!railPrefs.collapsedGroups.includes(label)}
-          onClick={() => toggleGroup(label)}
-        >
-          {label === 'Pinned' ? <Icon glyph={IconPin} role="small" tone="faint" className="flex-none" />
-            : railPrefs.groupBy === 'status' ? <RailGroupStatusDot label={label} />
-              : <Icon glyph={IconGitPullRequest} role="small" tone="faint" className="flex-none" />}
-          <span className="truncate">{label}</span>
-          {count > 0 && <RailGroupCount>{count}</RailGroupCount>}
-        </RailGroupToggle>
-      </RailGroupHeader>
-    );
-  };
-  if (pinnedCards.length > 0) {
-    virtualItems.push({
-      key: 'group:pinned',
-      kind: 'group',
-      content: groupHeader('Pinned', pinnedCards.length),
-    })
-    if (!railPrefs.collapsedGroups.includes('Pinned')) {
-      pinnedCards.forEach((entry) => virtualItems.push({
-        key: `card:${cardKey(entry)}`,
-        kind: 'card',
-        content: renderFlatCard(entry),
-      }))
+    if (group.workspace) {
+      const workspace = group.workspace;
+      items.push({
+        key: group.key,
+        kind: 'group',
+        content: (
+          <WorkspaceRailGroupRow
+            workspace={workspace}
+            index={group.wsIndex}
+            color={colorOf(workspace.path)}
+            count={group.cards.length}
+            hasGrids={group.cards.length > 0}
+            collapsed={group.collapsed}
+            selected={selected === workspace.path}
+            highlighted={selected === workspace.path && !group.selectedCardListed}
+            pinned={pinnedWorkspaces.has(workspace.path)}
+            dragging={dragPath !== null}
+            dragged={dragPath === workspace.path}
+            renaming={renaming === workspace.path}
+            dragActiveRef={dragActiveRef}
+            startWsDrag={startWsDrag}
+            onSelect={onSelectWorkspace}
+            onToggle={toggleWsOpen}
+            onOpenMenu={openMenu}
+            onNewSession={onNewWorkspaceSession}
+            onRenameSubmit={onRenameSubmit}
+            onRenameCancel={onRenameCancel}
+          />
+        ),
+      });
+    } else if (group.label) {
+      items.push({
+        key: group.key,
+        kind: 'group',
+        content: (
+          <RailLabelGroupHeader
+            label={group.label}
+            kind={group.kind === 'pinned' ? 'pinned' : 'label'}
+            groupBy={railPrefs.groupBy}
+            count={group.cards.length}
+            collapsed={group.collapsed}
+            onToggle={() => toggleGroup(group.label)}
+          />
+        ),
+      });
     }
-  }
-  const workspaceGroups = railPrefs.groupBy === 'workspace'
-    ? filteredWorkspaces
-      // A workspace whose grids are all pinned is represented by the Pinned group alone.
-      .filter((workspace) => !(gridsByWorkspace[workspace.path] ?? []).length || (gridsByWorkspace[workspace.path] ?? []).some((grid) => !pinnedGridIds.has(gridStorageKey(workspace.path, grid.id))))
-      .map((workspace) => [workspace.name, unpinnedCards.filter((entry) => entry.workspace.path === workspace.path), workspace] as const)
-    : groupEntries.map(([label, cards]) => [label, cards, undefined] as const)
-  for (const [label, cards, workspace] of workspaceGroups) {
-    if (label) virtualItems.push({
-      key: `group:${workspace?.path ?? label}`,
-      kind: 'group',
-      content: groupHeader(label, cards.length, workspace, workspace ? filteredWorkspaces.findIndex((entry) => entry.path === workspace.path) : 0),
-    })
-    if (workspace ? isWsOpen(workspace.path) : !railPrefs.collapsedGroups.includes(label)) {
-      cards.forEach((entry) => virtualItems.push({
-        key: `card:${cardKey(entry)}`,
-        kind: 'card',
-        content: renderFlatCard(entry),
-      }))
+    if (!group.collapsed) {
+      for (const entry of group.cards) {
+        items.push({ key: `card:${entryKey(entry)}`, kind: 'card', content: renderCard(entry) });
+      }
     }
   }
-  if (virtualItems.length === 0) {
-    virtualItems.push({
+  if (showDropAt !== null && showDropAt >= model.displayedWorkspaces.length) {
+    items.push({ key: 'ws-drop', kind: 'drop', content: <WorkspaceDropIndicator /> });
+  }
+  if (items.length === 0) {
+    items.push({
       key: 'empty',
       kind: 'group',
       content: (
         <EmptyListMessage>
-          {activeTagIds.length > 0
-            ? `No tab carries ${activeTagIds.length === 1 ? 'that tag' : 'any of those tags'}. Clear the filter in Sidebar options.`
-            : workspaces.length === 0 ? 'No workspaces yet.' : 'No grids match these filters.'}
+          {railEmptyMessage({ workspaceCount: workspaces.length, filters: railPrefs.filters, activeTagIds })}
         </EmptyListMessage>
       ),
     })
   }
   return (
-    <NavigationRailSection data-testid="rail-tree">
-      <RailTreeGroupHeader>
-        <RailTreeTitle>{treeLabel}</RailTreeTitle>
-        <Tooltip label="Sidebar options">
-          <Button
-            type="button"
-            variant="compact-icon"
-            aria-label="Sidebar options"
-            aria-expanded={railOptionsAnchor !== null}
-            data-testid="tree-filter-toggle"
-            data-options-testid="rail-options-trigger"
-            ref={optionsTriggerRef}
-            onClick={(event) => setRailOptionsAnchor(railOptionsAnchor ? null : event.currentTarget)}
-            className="relative"
-          >
-            <Icon glyph={IconSliders} role="ui" />
-            {activeFilterCount > 0 && (
-              <RailFilterCountBadge>
-                {activeFilterCount > 9 ? '9+' : activeFilterCount}
-              </RailFilterCountBadge>
-            )}
-          </Button>
-        </Tooltip>
-        <Tooltip label="Add workspace">
-          <span><AddWorkspaceMenu onAddWorkspace={onAddWorkspace} onSshConnect={onSshConnect} /></span>
-        </Tooltip>
-        <Tooltip label="New grid">
-          <Button
-            type="button"
-            variant="compact-icon"
-            aria-label="New grid"
-            disabled={!onAddGrid}
-            onClick={() => onAddGrid?.(selected)}
-          >
-            <Icon glyph={IconPlus} role="ui" />
-          </Button>
-        </Tooltip>
-        <RailOptionsMenuHost
-          anchor={railOptionsAnchor}
-          prefs={railPrefs}
-          onChange={onRailPrefsChange}
-          onClose={() => setRailOptionsAnchor(null)}
-          selectedTagIds={activeTagIds}
-          selectedTagColors={activeTagIds.flatMap((id) => tagById.get(id)?.color ?? [])}
-          onClearTagFilter={onClearTagFilter}
-        />
-      </RailTreeGroupHeader>
+    <NavigationRailSection fill data-testid="rail-tree">
+      <RailTreeHeader
+        treeLabel={treeLabel}
+        activeFilterCount={activeFilterCount}
+        railOptionsAnchor={railOptionsAnchor}
+        setRailOptionsAnchor={setRailOptionsAnchor}
+        triggerRef={optionsTriggerRef}
+        onAddWorkspace={onAddWorkspace}
+        onSshConnect={onSshConnect}
+        onAddGrid={onAddGrid && canAddGrid ? () => onAddGrid(selected) : undefined}
+        railPrefs={railPrefs}
+        onRailPrefsChange={onRailPrefsChange}
+        activeTagIds={activeTagIds}
+        tagById={tagById}
+        onClearTagFilter={onClearTagFilter}
+      />
 
       <RailActiveTagFilter tags={activeTagIds.flatMap((id) => tagById.get(id) ?? [])} onClear={onClearTagFilter} />
-      <RailVirtualList items={virtualItems} compact={railPrefs.cardMode === 'compact'} dragging={dragPath !== null} />
+      <RailList
+        items={items}
+        selectedKey={selectedCardItemKey(selected, selectedGridId)}
+        dragging={dragPath !== null || gridDragId !== null}
+        refused={gridDragRefused !== null}
+        scrollRef={scrollRef}
+      />
     </NavigationRailSection>
   );
 }
+
+const NO_BRANCHES: ReadonlyMap<number, string> = new Map();
+const NO_GRIDS: Record<string, GridItem[]> = {};
+const NO_PATHS: ReadonlySet<string> = new Set();
 
 export function Sidebar({
   mascotFirstRun = false,
@@ -1725,15 +1224,16 @@ export function Sidebar({
   onTogglePinWorkspace,
   onSshConnect,
   railClient,
-  checkoutBranches = new Map(),
+  checkoutBranches = NO_BRANCHES,
   onOpenInspector,
-  gridsByWorkspace = {},
+  gridsByWorkspace = NO_GRIDS,
   onSelectGrid,
   onFocusPane,
   selectedGridId = null,
   onNewWorkspaceSession,
   onAddGrid,
   onRenameGrid,
+  onResetGridName,
   onRemoveGrid,
   onOpenSettings,
   currentRailView,
@@ -1755,8 +1255,12 @@ export function Sidebar({
   onTagUpdate,
   onTagDelete,
 }: Props): React.JSX.Element {
+  const keymapOverrides = useContext(KeymapOverridesContext);
   useEffect(() => {
-    const timer = window.setTimeout(() => void preloadRailOptionsMenu(), 0);
+    const timer = window.setTimeout(() => {
+      void preloadRailChunks();
+      void preloadGridRailRow();
+    }, 0);
     return () => window.clearTimeout(timer);
   }, []);
   const [menu, setMenu] = useState<CtxMenu | null>(null);
@@ -1778,13 +1282,13 @@ export function Sidebar({
   // The tag filter only applies while cards show tags; a filter saved before that
   // coupling existed turns the property on instead of being discarded.
   const [railPrefs, setRailPrefs] = useState<RailPrefs>(() => {
-    const prefs = migrateRailPrefs();
+    const prefs = loadRailPrefs();
     if (prefs.properties.includes('tags') || loadTagFilter().length === 0) return prefs;
     return { ...prefs, properties: [...prefs.properties, 'tags'], customisedProperties: true };
   });
   const [gridDragId, setGridDragId] = useState<string | null>(null);
   const [gridDrop, setGridDrop] = useState<{ gridId: string; position: 'before' | 'after' } | null>(null);
-  const [gridDragRefused, setGridDragRefused] = useState<string | null>(null);
+  const [gridDragRefused, setGridDragRefused] = useState<{ key: string; reason: string } | null>(null);
   const suppressGridClickRef = useRef(false);
   const [railOptionsAnchor, setRailOptionsAnchor] = useState<HTMLElement | null>(null);
   const [pinnedGridIds, setPinnedGridIds] = useState<Set<string>>(() => new Set(loadPinnedGridIds()));
@@ -1885,6 +1389,7 @@ export function Sidebar({
       activeTagIds.length === 0
         ? workspaces
         : workspaces.filter((w) =>
+            w.path === selected ||
             workspaceCarriesTag(
               w.path,
               gridsByWorkspace[w.path],
@@ -1892,16 +1397,12 @@ export function Sidebar({
               activeTagIds,
             ),
           ),
-    [workspaces, gridsByWorkspace, sessions, activeTagIds],
+    [workspaces, gridsByWorkspace, sessions, activeTagIds, selected],
   );
-  const pinnedCount = filteredWorkspaces.filter((w) =>
-    pinnedWorkspaces.has(w.path),
-  ).length;
 
   const [wsCollapsed, setWsCollapsed] = useState<Set<string>>(() =>
     loadCollapsedWorkspaces(),
   );
-  const isWsOpen = (path: string): boolean => !wsCollapsed.has(path);
   const toggleWsOpen = (path: string): void => {
     setWsCollapsed((prev) => {
       const next = new Set(prev);
@@ -1911,8 +1412,100 @@ export function Sidebar({
       return next;
     });
   };
+  // Selecting a workspace shows its grids; only the chevron collapses it.
+  const selectWorkspace = (path: string): void => {
+    setWsCollapsed((prev) => {
+      if (!prev.has(path)) return prev;
+      const next = new Set(prev);
+      next.delete(path);
+      saveCollapsedWorkspaces(next);
+      return next;
+    });
+    onSelect(path);
+  };
+
+  // Rail state keyed by a workspace or grid that is gone would come back with a re-added path.
+  // Only a workspace seen leaving the roster is dropped, and never a WSL one: its roster can be partial.
+  const knownWorkspacePaths = useRef<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    const current = new Set(workspaces.map((workspace) => workspace.path));
+    const previous = knownWorkspacePaths.current;
+    knownWorkspacePaths.current = current;
+    if (!previous) return;
+    const removed = new Set([...previous].filter((path) => !current.has(path) && !wslWorkspaces.has(path)));
+    if (removed.size === 0) return;
+    setWsCollapsed((prev) => {
+      if (![...prev].some((path) => removed.has(path))) return prev;
+      const next = new Set([...prev].filter((path) => !removed.has(path)));
+      saveCollapsedWorkspaces(next);
+      return next;
+    });
+    setPinnedGridIds((prev) => {
+      const kept = [...prev].filter((key) => !isStaleGridKey(key, NO_GRIDS, removed));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+    setRailPrefs((prev) => pruneRailGridState(prev, NO_GRIDS, removed));
+  }, [workspaces]);
+  useEffect(() => {
+    setPinnedGridIds((prev) => {
+      const kept = [...prev].filter((key) => !isStaleGridKey(key, gridsByWorkspace, NO_PATHS));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+    setRailPrefs((prev) => pruneRailGridState(prev, gridsByWorkspace, NO_PATHS));
+  }, [gridsByWorkspace]);
+
+  const entries = useMemo(
+    () => buildRailEntries({
+      workspaces: filteredWorkspaces,
+      gridsByWorkspace,
+      activeTagIds,
+      sessions,
+      pinnedGridIds,
+      branches: checkoutBranches,
+      diffByDir: railDiffByDir,
+      prByDir: railPrByDir,
+      filters: railPrefs.filters,
+      selected,
+      selectedGridId,
+    }),
+    [filteredWorkspaces, gridsByWorkspace, activeTagIds, sessions, pinnedGridIds, checkoutBranches, railDiffByDir, railPrByDir, railPrefs.filters, selected, selectedGridId],
+  );
+  const settledEntries = useSettledSmartCards(entries, railPrefs.sort === 'smart');
+  const settledCards = useMemo(
+    () => new Map(settledEntries.map((entry) => [entryKey(entry), entry.card] as const)),
+    [settledEntries],
+  );
+  const model = useMemo(
+    () => layoutRailTree({
+      entries,
+      workspaces: filteredWorkspaces,
+      gridsByWorkspace,
+      prefs: railPrefs,
+      activeTagIds,
+      selected,
+      selectedGridId,
+      isWsOpen: (path) => !wsCollapsed.has(path),
+      settled: settledCards,
+    }),
+    [entries, filteredWorkspaces, gridsByWorkspace, railPrefs, activeTagIds, selected, selectedGridId, wsCollapsed, settledCards],
+  );
+
+  // Alt+1..9 selects the Nth card in on-screen order, whichever card has focus.
+  useAltDigitJump(
+    model.jumpOrder,
+    onSelectGrid && ((entry) => onSelectGrid(entry.path, entry.gridId)),
+    !settingsOpen,
+    keymapOverrides,
+  );
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const dragRead = useRef({ model, workspaces, pinnedWorkspaces, onReorderWorkspace, railPrefs, pinnedGridIds, gridsByWorkspace });
+  dragRead.current = { model, workspaces, pinnedWorkspaces, onReorderWorkspace, railPrefs, pinnedGridIds, gridsByWorkspace };
+  const dragResolveRef = useRef<(() => void) | null>(null);
+  const autoScroll = useEdgeAutoScroll(scrollRef, () => dragResolveRef.current?.());
 
   const [dragPath, setDragPath] = useState<string | null>(null);
+  const [wsDropIndex, setWsDropIndex] = useState<number | null>(null);
   const dropIndexRef = useRef<number | null>(null);
   const dragActiveRef = useRef(false);
 
@@ -1920,61 +1513,48 @@ export function Sidebar({
     const startX = e.clientX;
     const startY = e.clientY;
     let active = false;
-    const isPinnedDrag = pinnedWorkspaces.has(path);
-    const clampToGroup = (idx: number): number =>
-      isPinnedDrag
-        ? Math.min(idx, pinnedCount)
-        : Math.max(idx, pinnedCount);
+    let pointer = { x: startX, y: startY };
     const setDrop = (idx: number | null): void => {
       dropIndexRef.current = idx;
+      setWsDropIndex(idx);
+    };
+    const resolve = (): void => {
+      const container = scrollRef.current;
+      if (!container) return;
+      const bounds = container.getBoundingClientRect();
+      if (pointer.x < bounds.left || pointer.x > bounds.right) {
+        setDrop(null);
+        return;
+      }
+      const { model: current, pinnedWorkspaces: pinned } = dragRead.current;
+      const rows = [...container.querySelectorAll<HTMLElement>("[data-ws-idx]")].map((row) => row.getBoundingClientRect());
+      const pinnedCount = current.displayedWorkspaces.filter((w) => pinned.has(w.path)).length;
+      const idx = workspaceDropIndex(rows, pointer.y);
+      setDrop(pinned.has(path) ? Math.min(idx, pinnedCount) : Math.max(idx, pinnedCount));
     };
     const move = (ev: PointerEvent): void => {
+      pointer = { x: ev.clientX, y: ev.clientY };
       if (!active) {
         if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
         active = true;
         dragActiveRef.current = true;
+        dragResolveRef.current = resolve;
         setDragPath(path);
       }
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
-      const rowEl = el?.closest("[data-ws-idx]") as HTMLElement | null;
-      if (!rowEl) {
-        const wlist = (el as HTMLElement | null)?.closest(".wlist");
-        const rows = wlist?.querySelectorAll("[data-ws-idx]");
-        const lastRow =
-          rows && rows.length > 0
-            ? (rows[rows.length - 1] as HTMLElement)
-            : null;
-        if (
-          wlist &&
-          lastRow &&
-          ev.clientY > lastRow.getBoundingClientRect().bottom
-        ) {
-          setDrop(clampToGroup(filteredWorkspaces.length));
-        } else {
-          setDrop(null);
-        }
-        return;
-      }
-      const idx = Number(rowEl.getAttribute("data-ws-idx"));
-      const rect = rowEl.getBoundingClientRect();
-      setDrop(
-        clampToGroup(ev.clientY < rect.top + rect.height / 2 ? idx : idx + 1),
-      );
+      resolve();
+      autoScroll.track(ev.clientY);
     };
     const cleanup = (commit: boolean): void => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", cancel);
+      autoScroll.stop();
+      dragResolveRef.current = null;
+      const { model: current, workspaces: all, pinnedWorkspaces: pinned, onReorderWorkspace: reorder } = dragRead.current;
       if (commit && active && dropIndexRef.current !== null) {
-        onReorderWorkspace(
+        reorder(
           path,
-          translateFilteredDropIndex(
-            workspaces,
-            filteredWorkspaces,
-            pinnedWorkspaces,
-            path,
-            dropIndexRef.current,
-          ),
+          translateFilteredDropIndex(all, current.displayedWorkspaces, pinned, path, dropIndexRef.current),
         );
       }
       setDragPath(null);
@@ -1988,45 +1568,70 @@ export function Sidebar({
   };
 
   const startGridDrag = (event: React.PointerEvent, workspace: string, gridId: string): void => {
-    if (railPrefs.sort !== 'manual' || event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+    if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
     const startX = event.clientX;
     const startY = event.clientY;
+    const sourceKey = gridStorageKey(workspace, gridId);
     let active = false;
+    let pointer = { x: startX, y: startY };
     let target: { gridId: string; position: 'before' | 'after'; workspace: string } | null = null;
-    const move = (pointer: PointerEvent): void => {
-      if (!active) {
-        if (Math.hypot(pointer.clientX - startX, pointer.clientY - startY) < 5) return;
-        active = true;
-        setGridDragId(gridStorageKey(workspace, gridId));
-      }
-      const row = document.elementFromPoint(pointer.clientX, pointer.clientY)?.closest('[data-rail-grid-id]') as HTMLElement | null;
-      if (!row) { target = null; setGridDrop(null); setGridDragRefused(null); return; }
-      const targetId = row.dataset.railGridId;
-      const targetWorkspace = row.dataset.railWorkspace;
-      const sourceKey = gridStorageKey(workspace, gridId);
+    const refuse = (key: string, reason: string): void => {
+      target = null;
+      setGridDrop(null);
+      setGridDragRefused({ key, reason });
+    };
+    const resolve = (): void => {
+      const { railPrefs: prefs, pinnedGridIds: pinned } = dragRead.current;
+      const row = document.elementFromPoint(pointer.x, pointer.y)?.closest('[data-rail-grid-id]') as HTMLElement | null;
+      const targetId = row?.dataset.railGridId;
+      const targetWorkspace = row?.dataset.railWorkspace;
       const targetKey = targetId && targetWorkspace ? gridStorageKey(targetWorkspace, targetId) : '';
-      if (!targetId || !targetWorkspace || targetKey === sourceKey) { target = null; setGridDrop(null); setGridDragRefused(null); return; }
-      if (!canReorderRailGrid(railPrefs.sort, workspace, targetWorkspace)) {
-        target = null
-        setGridDrop(null)
-        setGridDragRefused(targetKey)
-        return
+      if (!row || !targetId || !targetWorkspace || targetKey === sourceKey) {
+        target = null;
+        setGridDrop(null);
+        if (prefs.sort !== 'manual') setGridDragRefused({ key: sourceKey, reason: RAIL_DRAG_REFUSAL.notManual });
+        else setGridDragRefused(null);
+        return;
+      }
+      if (!canReorderRailGrid(prefs.sort, workspace, targetWorkspace)) {
+        refuse(targetKey, prefs.sort !== 'manual' ? RAIL_DRAG_REFUSAL.notManual : RAIL_DRAG_REFUSAL.crossWorkspace);
+        return;
+      }
+      if (pinned.has(sourceKey) !== pinned.has(targetKey)) {
+        refuse(targetKey, RAIL_DRAG_REFUSAL.pinState);
+        return;
       }
       const rect = row.getBoundingClientRect();
-      const position = pointer.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      const position = pointer.y < rect.top + rect.height / 2 ? 'before' : 'after';
       target = { gridId: targetKey, position, workspace: targetWorkspace };
       setGridDrop({ gridId: targetKey, position });
       setGridDragRefused(null);
+    };
+    const move = (ev: PointerEvent): void => {
+      pointer = { x: ev.clientX, y: ev.clientY };
+      if (!active) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
+        active = true;
+        dragResolveRef.current = resolve;
+        setGridDragId(sourceKey);
+      }
+      resolve();
+      autoScroll.track(ev.clientY);
     };
     const cleanup = (commit: boolean): void => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', cancel);
-      const sourceKey = gridStorageKey(workspace, gridId);
+      autoScroll.stop();
+      dragResolveRef.current = null;
       if (commit && active && target?.workspace === workspace && target.gridId !== sourceKey) {
-        const order = [...new Set([...railPrefs.gridOrder, ...allGridKeys(gridsByWorkspace)])];
+        const { railPrefs: prefs, gridsByWorkspace: grids } = dragRead.current;
+        const order = [...new Set([...prefs.gridOrder, ...allGridKeys(grids)])];
         const next = reorderRailGrid(order, sourceKey, target.gridId, target.position === 'before');
         setRailPrefs((current) => ({ ...current, gridOrder: next }));
+      }
+      // Any drag swallows the click that follows its release, whether or not it reordered.
+      if (active) {
         suppressGridClickRef.current = true;
         window.setTimeout(() => { suppressGridClickRef.current = false; }, 0);
       }
@@ -2044,50 +1649,24 @@ export function Sidebar({
   const colorOf = (path: string): string =>
     customColors[path] ?? workspaceColor(colorIndexByPath[path] ?? 0);
 
-  useEffect(() => {
-    if (!menu && !gridMenu && !navMenu) return;
-    const closeAll = (): void => {
-      setMenu(null);
-      setGridMenu(null);
-      setNavMenu(null);
-    };
-    const onDown = (e: MouseEvent): void => {
-      const target = e.target as HTMLElement;
-      if (
-        !target.closest(".ctxmenu") &&
-        !target.closest('[data-testid="tag-popover"]') &&
-        !target.closest('[data-testid="rail-options-trigger"]')
-      )
-        closeAll();
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        closeAll();
-      }
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [menu, gridMenu, navMenu]);
+  const closeMenus = (): void => {
+    setMenu(null);
+    setGridMenu(null);
+    setNavMenu(null);
+  };
 
   const openMenu = (e: React.MouseEvent, w: Workspace, color: string): void => {
     e.preventDefault();
     setGridMenu(null);
-    const x = Math.min(e.clientX, window.innerWidth - 244);
-    const y = Math.min(e.clientY, window.innerHeight - 170);
+    setNavMenu(null);
     setMenu({
-      x,
-      y,
-      originX: e.clientX - x,
-      originY: e.clientY - y,
+      x: e.clientX,
+      y: e.clientY,
       path: w.path,
       name: w.name,
       color,
       pinned: pinnedWorkspaces.has(w.path),
+      selected: w.path === selected,
     });
   };
 
@@ -2116,8 +1695,21 @@ export function Sidebar({
     e.preventDefault();
     e.stopPropagation();
     setMenu(null);
+    setNavMenu(null);
     const x = e.clientX;
     const y = e.clientY;
+    const key = gridStorageKey(path, grid.id);
+    const card = buildRailCard({
+      gridId: grid.id,
+      workspace: path,
+      title: grid.name,
+      pinned: pinnedGridIds.has(key),
+      paneIds: grid.sessionIds ?? [],
+      sessions,
+      branches: checkoutBranches,
+      diffByDir: railDiffByDir,
+      prByDir: railPrByDir,
+    });
     setGridMenu({
       x,
       y,
@@ -2128,11 +1720,12 @@ export function Sidebar({
       name: grid.name,
       canRemove,
       jumpNumber,
-      pinned: pinnedGridIds.has(gridStorageKey(path, grid.id)),
+      pinned: pinnedGridIds.has(key),
+      userNamed: grid.userNamed ?? false,
       tagIds: grid.tagIds ?? [],
       tagNames: tags.filter((tag) => grid.tagIds?.includes(tag.id)).map((tag) => tag.name),
       agentCount: gridAgentCount(grid),
-      ...railGridContextFacts(grid, path, sessions, checkoutBranches, railPrByDir),
+      ...railGridContextFacts(card, path),
     });
   };
 
@@ -2147,7 +1740,8 @@ export function Sidebar({
   useEffect(() => {
     localStorage.setItem(TAG_FILTER_KEY, JSON.stringify(activeTagIds));
   }, [activeTagIds]);
-  const activeFilterCount = activeTagIds.length +
+  // However many tags are selected, the tag filter counts once.
+  const activeFilterCount = Number(activeTagIds.length > 0) +
     Number(railPrefs.filters.hideIdle) +
     Number(railPrefs.filters.hideDefaultBranch) +
     Number(railPrefs.filters.hideEmptyGrids)
@@ -2195,7 +1789,19 @@ export function Sidebar({
     />
   );
 
-  const { removeGrid, closingLastEl } = useGridCloseConfirm(gridsByWorkspace, onRemoveGrid);
+  const closeGrids = useMemo(
+    () => Object.fromEntries(Object.entries(gridsByWorkspace).map(([path, grids]) => [
+      path,
+      grids.map((grid) => ({ ...grid, childCount: countGridChildren(sessions, grid.sessionIds ?? []) })),
+    ])),
+    [gridsByWorkspace, sessions],
+  );
+  const { removeGrid, closingLastEl } = useGridCloseConfirm(closeGrids, onRemoveGrid);
+  // Closing the selected grid selects its neighbour in the order the rail shows.
+  const removeGridFromRail = removeGrid && ((path: string, gridId: string): void => {
+    const next = selected === path && selectedGridId === gridId ? neighbourGridId(model, path, gridId) : null;
+    removeGrid(path, gridId, next ?? undefined);
+  });
 
   const gridMenuEl = gridMenu && (
     <GridContextMenu
@@ -2203,7 +1809,8 @@ export function Sidebar({
       onClose={() => setGridMenu(null)}
       onOpenGrid={onSelectGrid}
       onStartRename={(path, gridId) => setGridRenaming({ path, gridId })}
-      onRemoveGrid={removeGrid}
+      onResetName={onResetGridName}
+      onRemoveGrid={removeGridFromRail}
       onTogglePin={toggleGridPin}
       onOpenInspector={onOpenInspector}
       onError={onOpenExternalError}
@@ -2242,12 +1849,10 @@ export function Sidebar({
           const target = tagGridTargets.get(gridId);
           if (target) onSetGridTags?.(target.path, target.gridId, tagIds);
         },
-        onFilter: (tagIds) => {
-          setTagFilter(tagIds);
-          setRailPrefs((current) => ({ ...current, tags: tagIds }));
-        },
+        onFilter: (tagIds) => setTagFilter(tagIds),
       }}
     >
+    <RailMenuDismiss open={menu !== null || gridMenu !== null || navMenu !== null} onCloseAll={closeMenus} />
     <RailSurface
       data-grid-area={gridArea}
       data-custom={dataCustom}
@@ -2291,13 +1896,11 @@ export function Sidebar({
             railDiffByDir={railDiffByDir}
             railPrByDir={railPrByDir}
             onAddGrid={onAddGrid}
+            canAddGrid={workspaces.some((workspace) => workspace.path === selected)}
             railPrefs={railPrefs}
             pinnedGridIds={pinnedGridIds}
             onRailPrefsChange={(next) => setRailPrefs(next)}
-            onFilterTag={(tag) => {
-              setTagFilter([tag.id]);
-              setRailPrefs((current) => ({ ...current, tags: [tag.id] }));
-            }}
+            onFilterTag={(tag) => setTagFilter([tag.id])}
             onClearTagFilter={() => setTagFilter([])}
             railOptionsAnchor={railOptionsAnchor}
             setRailOptionsAnchor={setRailOptionsAnchor}
@@ -2305,31 +1908,32 @@ export function Sidebar({
             gridDragId={gridDragId}
             gridDrop={gridDrop}
             gridDragRefused={gridDragRefused}
+            hoverSuppressed={[menu, gridMenu, navMenu, gridDragId, dragPath].some((owner) => owner !== null)}
+            scrollRef={scrollRef}
             onGridPointerDown={startGridDrag}
             onToggleGridUnread={onToggleGridUnread}
             isGridUnread={isGridUnread}
             onAddWorkspace={onAddWorkspace}
             selected={selected}
-            filteredWorkspaces={filteredWorkspaces}
+            model={model}
             workspaces={workspaces}
             pinnedWorkspaces={pinnedWorkspaces}
             sessions={sessions}
             colorOf={colorOf}
-            gridsByWorkspace={gridsByWorkspace}
             activeTagIds={activeTagIds}
             tagById={tagById}
             dragPath={dragPath}
-            isWsOpen={isWsOpen}
+            wsDropIndex={wsDropIndex}
             dragActiveRef={dragActiveRef}
             startWsDrag={startWsDrag}
-            onSelect={onSelect}
+            onSelectWorkspace={selectWorkspace}
             toggleWsOpen={toggleWsOpen}
             openMenu={openMenu}
             onNewWorkspaceSession={onNewWorkspaceSession}
             selectedGridId={selectedGridId}
             gridRenaming={gridRenaming}
             onRenameGrid={onRenameGrid}
-            onRemoveGrid={removeGrid}
+            onRemoveGrid={removeGridFromRail}
             onSelectGrid={onSelectGrid}
             onFocusPane={onFocusPane}
             openGridMenu={openGridMenu}
@@ -2345,15 +1949,7 @@ export function Sidebar({
       <MascotMount existingUser={workspaces.length > 0} firstRun={mascotFirstRun} workspacesEmpty={mascotWorkspacesEmpty} />
       <NavigationRailFooter>
         <SettingsFooterItem attention={agentAttention?.total} onClick={onOpenSettings} />
-        <Tooltip label={chromeTheme === "paper" ? "Switch to dark theme" : "Switch to light theme"}>
-          <Button
-            variant="subtle-icon"
-            aria-label={chromeTheme === "paper" ? "Switch to dark theme" : "Switch to light theme"}
-            onClick={(event) => onToggleChromeTheme(event.currentTarget)}
-          >
-            <Icon glyph={chromeTheme === "paper" ? IconSun : IconMoon} role="ui" />
-          </Button>
-        </Tooltip>
+        <ThemeToggle chromeTheme={chromeTheme} onToggle={onToggleChromeTheme} />
         <RailUpdateButton version={updateVersion} />
       </NavigationRailFooter>
 

@@ -9,6 +9,13 @@ import type { TagInfo } from '../../../houston/generated/TagInfo'
 import { TagChip } from '../TagChip'
 import { WorkspaceTreeRow } from '../WorkspaceTreeRow'
 
+const GRID_FRAME_MIN_HEIGHT = { detailed: 'min-h-9', compact: 'min-h-8' } as const
+
+// Holds an inline grid rename in the card's own frame so the row keeps its footprint.
+export function RailGridRenameFrame({ cardMode, selected, children }: { cardMode: 'detailed' | 'compact'; selected: boolean; children: ReactNode }): React.JSX.Element {
+  return <div data-testid="grid-row-renaming" className={`flex ${GRID_FRAME_MIN_HEIGHT[cardMode]} min-w-0 items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] pl-[var(--space-6)] ${selected ? 'bg-selected-fill' : ''}`}>{children}</div>
+}
+
 export function RailOptionsSurface({ children, style }: { children: ReactNode; style: React.CSSProperties }): React.JSX.Element {
   return <div data-rail-options role="dialog" aria-label="Sidebar options" className="fixed z-[var(--z-popover)] w-[var(--w-rail-options)] rounded-[var(--tr-radius-md)] border border-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] bg-[var(--glass)] p-1 shadow-[var(--shadow-1)] backdrop-blur-[16px] [backdrop-filter:blur(16px)_saturate(1.08)] [font-size:var(--tr-text-base)]" style={style}>{children}</div>
 }
@@ -112,8 +119,10 @@ export function RailFilterButton({ children, active = true, ...props }: ButtonHT
   return <button {...props} type="button" className={`flex h-[var(--h-rail-filter-button)] items-center gap-[var(--space-2)] text-left [font-size:var(--tr-text-label-size)] ${active ? 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]' : 'text-[var(--text-faint)]'}`}>{children}</button>
 }
 
-export function RailVirtualViewport({ children, dragging, ...props }: ComponentProps<'div'> & { dragging: boolean; children: ReactNode }): React.JSX.Element {
-  return <div {...props} data-rail-grid-list className={`wlist flex min-h-0 flex-1 flex-col gap-[var(--space-1)] overflow-y-auto px-[var(--space-1-5)] pt-[var(--space-0-5)] pb-[var(--space-2)] ${dragging ? 'cursor-grabbing' : 'cursor-pointer'}`}>{children}</div>
+export function RailListViewport({ children, dragging, refused = false, ...props }: ComponentProps<'div'> & { dragging: boolean; refused?: boolean; children: ReactNode }): React.JSX.Element {
+  // The scroll padding keeps a scrolled-to row clear of the sticky group header. The scrollbar is hidden
+  // with `!` because base.css sets `scrollbar-width` on `*` outside any layer, which beats utilities.
+  return <div {...props} data-rail-grid-list className={`wlist ![scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex min-h-0 flex-1 flex-col gap-[var(--space-1)] overflow-y-auto px-[var(--space-1-5)] pt-[var(--space-0-5)] pb-[var(--space-2)] [scroll-padding-top:calc(var(--h-row)+var(--space-1))] ${refused ? 'cursor-not-allowed' : dragging ? 'cursor-grabbing' : 'cursor-pointer'}`}>{children}</div>
 }
 
 export function RailWorkspaceGroupRow(props: ComponentProps<typeof WorkspaceTreeRow>): React.JSX.Element {
@@ -183,5 +192,5 @@ export function RailActiveTagFilter({ tags, onClear }: { tags: readonly TagInfo[
 }
 
 export function RailChromeSpecimen(): React.JSX.Element {
-  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsView direction="none"><RailOptionsTitle>Sidebar options</RailOptionsTitle></RailOptionsView><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailGroupSegment value="workspace" onChange={() => {}} /><RailCardModeSegment value="detailed" onChange={() => {}} /><RailTagDisplaySegment value="dots" onChange={() => {}} /><RailMenuRow selected><RailMenuCheckSlot checked />Sort by<RailMenuValue>Manual</RailMenuValue></RailMenuRow><RailMenuRow>Tags<RailTagFilterValue active colors={['var(--ok)', 'var(--info)']} /></RailMenuRow><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded><RailGroupStatusDot label="Working" />Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle><RailFilterCountBadge>1</RailFilterCountBadge></RailTreeGroupHeader><RailActiveTagFilter tags={[{ id: 1, name: 'ui', color: 'var(--info)' }]} onClear={() => {}} /></div>
+  return <div className="grid w-[264px] gap-[var(--space-2)]"><RailOptionsView direction="none"><RailOptionsTitle>Sidebar options</RailOptionsTitle></RailOptionsView><RailOptionsSectionLabel>Group by</RailOptionsSectionLabel><RailGroupSegment value="workspace" onChange={() => {}} /><RailCardModeSegment value="detailed" onChange={() => {}} /><RailTagDisplaySegment value="dots" onChange={() => {}} /><RailMenuRow selected><RailMenuCheckSlot checked />Sort by<RailMenuValue>Manual</RailMenuValue></RailMenuRow><RailMenuRow>Tags<RailTagFilterValue active colors={['var(--ok)', 'var(--info)']} /></RailMenuRow><RailSortOption selected>Smart</RailSortOption><RailGroupHeader><RailGroupToggle aria-expanded><RailGroupStatusDot label="Working" />Workspace</RailGroupToggle></RailGroupHeader><RailTreeGroupHeader><RailTreeTitle>Grids</RailTreeTitle><RailFilterCountBadge>1</RailFilterCountBadge></RailTreeGroupHeader><RailActiveTagFilter tags={[{ id: 1, name: 'ui', color: 'var(--info)' }]} onClear={() => {}} /><RailGridRenameFrame cardMode="detailed" selected>Renaming grid</RailGridRenameFrame></div>
 }

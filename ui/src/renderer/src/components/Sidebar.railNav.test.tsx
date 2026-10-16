@@ -3,13 +3,13 @@ import { agentAttentionFor } from '../useAgentAttention'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar, preloadRailOptionsMenu } from './Sidebar'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import { setSettingsNavForTests, isSettingsOpen } from '../settingsNav'
 import { RAIL_VIEWS, setRailViewForTests } from '../railView'
 import type { TagInfo } from '../houston/generated/TagInfo'
 import type { SessionInfo, Workspace } from '../houston/client'
 
-beforeAll(() => preloadRailOptionsMenu())
+beforeAll(() => preloadRailChunks())
 
 function ws(path: string, name = path): Workspace {
   return { path, name } as Workspace

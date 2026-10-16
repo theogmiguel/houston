@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import { HIT_TARGET_28 } from './hitTarget'
 import type { SessionInfo, Workspace } from '../houston/client'
 
@@ -38,6 +38,8 @@ function baseProps(
     ...overrides
   }
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('Sidebar — density floor on small rail actions', () => {
   let container: HTMLDivElement
