@@ -17,7 +17,7 @@ An agent drives orchestration through either of two doors, which always agree wi
 other on names and arguments:
 
 - An MCP tool set: `pane_spawn`, `pane_list`, `pane_get`, `pane_send_keys`, `pane_read`,
-  `pane_prompt`, `pane_wait`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`,
+  `pane_prompt`, `pane_wait`, `pane_kill`, `pane_submit`, `pane_report`, `pane_reply`, `pane_message`,
   `pane_deny`, `pane_escalate`, and the `pane_instruction_*` controls.
 - A command-line tool, `hs-pane`, with one subcommand per verb above (plus a CLI-only
   `whoami`) — for an agent CLI that has no MCP tool support of its own.
@@ -174,6 +174,20 @@ for five minutes. This is a diagnostic heuristic, not a request for human input.
 when a matching tool completion, a new user prompt or authoritative turn end/interruption arrives. Houston
 does not send keys or a desktop notification in response to it.
 
+## Children talking to each other
+
+Children of the same orchestrator can message each other directly, so a back-and-forth such
+as an implementer and a reviewer does not pass through the orchestrator. A child calls
+`pane_message{to, body}` (`hs-pane message ROLE TEXT`) with the sibling's role or session id;
+`workspace_info` lists its live siblings. The message arrives in the sibling's `pane_wait`,
+and the orchestrator receives no copy; it still receives each child's result.
+
+A message reaches only a sibling that is still working on its current task. A sibling that
+has already handed back is refused, because only the orchestrator starts new work. One child
+can send at most 32 messages to one sibling during that sibling's task, and the refusal names
+the limit. To use this, the orchestrator spawns both children with roles and names the peer
+in each brief.
+
 ## Watch a pull request
 
 From an agent pane, ask the agent to watch an open GitHub pull request. The agent calls
@@ -181,6 +195,10 @@ From an agent pane, ask the agent to watch an open GitHub pull request. The agen
 request once a minute and wakes that pane when a check fails, all reported checks pass, a new
 review or comment arrives, or the branch becomes conflicted with its base. A watch stops when the
 pull request is merged or closed, after repeated read failures, or after ten comment-only wakes.
+Panes watching the same pull request share one read per check. When GitHub reports a rate
+limit, Houston pauses every pull request watch until GitHub's reset time instead of counting a
+failed read; starting a watch during the pause is refused with "paused until HH:MM", and an
+in-review task's run shows the same reason.
 Use `pane_pr_unwatch` when updates are no longer needed.
 
 ## Workspaces and child lifetime
@@ -199,6 +217,24 @@ in `pane_spawn` (`hs-pane spawn --worktree SLUG`). Houston creates and records i
 supplied. Existing branches and occupied paths are refused. If creation or provider
 preparation fails, Houston rolls back the fresh checkout and branch. If Git checkout fails
 after a hook has added commits, Houston preserves them and reports that rollback needs attention.
+
+While an orchestrator has worktrees from `pane_spawn`, Houston checks about once a minute
+whether their committed branches would conflict with their base or with each other. A
+new predicted conflict arrives once in the orchestrator's inbox, naming both branches and
+the files, so it can reassign or sequence the work before either branch becomes a pull
+request. It reads only the local repository and requires Git 2.38 or newer; with an older
+Git, the orchestrator receives one note naming the installed and required versions.
+
+A new worktree is a fresh checkout, so files Git ignores, such as `.env` or local settings,
+are missing from it. To carry them over, list them in a `.worktreeinclude` file at the
+repository root, using `.gitignore` syntax. When Houston creates a worktree (for
+`pane_spawn`, a task, or the Changes pane), it copies each file that matches the list and
+is ignored by Git in your checkout. Tracked files are never copied, and a file that already
+exists in the new worktree is kept. Symlinks and paths that resolve outside the checkout are
+refused. A copy stops at 256 files or 32 MiB. Anything not copied is named in a
+`worktree_include` warning in the `pane_spawn` result, in the task brief, or in the Changes
+pane's message; the worktree is created either way. Houston runs no command from the
+repository while doing this.
 
 Children are temporary by default. After a durable completed result, Houston ends the
 process, but keeps the session and transcript under Settled until the parent closes the
@@ -230,7 +266,7 @@ An open wait returns a retryable timeout marked `restarting`; call `pane_wait` a
 on the new generation. Pending results remain available for that wait.
 
 Claude and Grok children receive launch-only permission rules for exactly Houston's
-`pane_submit`, `pane_report`, `pane_reply`, `pane_deny`, `pane_escalate` and `pane_wait` tools, including when
+`pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_deny`, `pane_escalate` and `pane_wait` tools, including when
 automatic approval is disabled. Other tools keep the selected approval mode.
 Codex, Antigravity, OpenCode, Cursor and ZCode have no equivalent launch rule; their
 selected approval mode still applies to these tools. Outside yolo mode ZCode asks for
@@ -410,6 +446,10 @@ the child available for inspection with a failed delegation and send its parent
 the reported reason. Send a follow-up when the provider allows another turn;
 Houston cannot infer a limit reset time from these hooks. A provider may also
 continue on its own.
+
+When a child's process ends before it hands anything back, for example a CLI that
+fails at launch, its parent receives the exit status and the last lines the pane
+printed; `pane_get` shows the same text as the stop reason.
 
 Use `workspace_info.providers` before choosing a provider or model. It reports
 installed CLIs, locally known versions and model identifiers, per-run effort

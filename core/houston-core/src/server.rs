@@ -73,6 +73,7 @@ pub async fn start_with_listener(
         .route("/orchestrate/submit", post(orch_submit))
         .route("/orchestrate/report", post(orch_report))
         .route("/orchestrate/reply", post(orch_reply))
+        .route("/orchestrate/message", post(orch_message))
         .route("/orchestrate/deny", post(orchestration_doors::deny))
         .route("/orchestrate/escalate", post(orchestration_doors::escalate))
         .route(
@@ -3355,17 +3356,22 @@ async fn dispatch(
             .await
             .unwrap_or_else(|e| Err(anyhow::anyhow!("git worktree create task panicked: {e}")));
             match result {
-                Ok(wt) => {
+                Ok((wt, include_warnings)) => {
+                    let mut message = format!(
+                        "Created worktree at {} (branch {}).",
+                        wt.path.display(),
+                        wt.branch.as_deref().unwrap_or("detached")
+                    );
+                    for warning in include_warnings {
+                        message.push(' ');
+                        message.push_str(&warning);
+                    }
                     let _ = send_msg(
                         sink,
                         &proto::ServerMsg::GitWorktrees {
                             dir,
                             worktrees: Vec::new(),
-                            message: Some(format!(
-                                "Created worktree at {} (branch {}).",
-                                wt.path.display(),
-                                wt.branch.as_deref().unwrap_or("detached")
-                            )),
+                            message: Some(message),
                         },
                     )
                     .await;
@@ -5818,6 +5824,24 @@ async fn orch_report(
         Ok(Ok(value)) => (StatusCode::OK, axum::Json(value)).into_response(),
         Ok(Err(e)) => orch_err_response(e),
         Err(e) => orch_err_response(anyhow::anyhow!("report worker failed: {e}")),
+    }
+}
+
+async fn orch_message(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(payload): axum::Json<crate::orchestrate::SiblingMessage>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(r) => return *r,
+    };
+    match tokio::task::spawn_blocking(move || daemon.orchestrate_message(scope.session_id, payload))
+        .await
+    {
+        Ok(Ok(value)) => (StatusCode::OK, axum::Json(value)).into_response(),
+        Ok(Err(e)) => orch_err_response(e),
+        Err(e) => orch_err_response(anyhow::anyhow!("message worker failed: {e}")),
     }
 }
 

@@ -509,6 +509,8 @@ async fn run(supervisor: Option<SupervisorSocket>) -> Result<()> {
 
     let _log_guard = houston_core::logging::init();
 
+    houston_core::power_throttling::opt_out_execution_speed_throttling();
+
     houston_core::login_path::adopt();
 
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;

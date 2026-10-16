@@ -133,7 +133,7 @@ pub fn floor_hour_ms(ms: i64) -> i64 {
     ms.div_euclid(HOUR_MS) * HOUR_MS
 }
 
-pub fn local_date_from_ms(ms: i64) -> String {
+fn local_tm_from_ms(ms: i64) -> Option<libc::tm> {
     let seconds = ms.div_euclid(1_000) as libc::time_t;
     let mut local = std::mem::MaybeUninit::<libc::tm>::uninit();
     #[cfg(unix)]
@@ -144,16 +144,30 @@ pub fn local_date_from_ms(ms: i64) -> String {
     let valid = !result.is_null();
     #[cfg(windows)]
     let valid = result == 0;
-    if !valid {
+    valid.then(|| unsafe { local.assume_init() })
+}
+
+pub fn local_date_from_ms(ms: i64) -> String {
+    let Some(local) = local_tm_from_ms(ms) else {
         return ms.div_euclid(86_400_000).to_string();
-    }
-    let local = unsafe { local.assume_init() };
+    };
     format!(
         "{:04}-{:02}-{:02}",
         local.tm_year + 1900,
         local.tm_mon + 1,
         local.tm_mday
     )
+}
+
+/// `HH:MM` in local time; UTC when the platform cannot convert.
+pub fn local_clock_from_ms(ms: i64) -> String {
+    match local_tm_from_ms(ms) {
+        Some(local) => format!("{:02}:{:02}", local.tm_hour, local.tm_min),
+        None => {
+            let minutes = ms.div_euclid(60_000).rem_euclid(24 * 60);
+            format!("{:02}:{:02} UTC", minutes / 60, minutes % 60)
+        }
+    }
 }
 
 pub fn local_day_ordinal_from_ms(ms: i64) -> i64 {

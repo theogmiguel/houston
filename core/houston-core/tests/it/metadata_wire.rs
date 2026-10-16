@@ -43,7 +43,7 @@ async fn session_cwds_batches_and_never_fails_whole() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp_a = tempfile::tempdir().unwrap();
@@ -81,7 +81,7 @@ async fn running_procs_is_a_process_tree_fact() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -277,7 +277,7 @@ async fn wait_for_idle_answers_quiet_busy_dead_and_unknown() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();

@@ -613,6 +613,7 @@ mod codex {
             vec![
                 "call_tool",
                 "list_tools",
+                "pane_message",
                 "pane_reply",
                 "pane_report",
                 "pane_submit",
@@ -1088,6 +1089,7 @@ mod opencode {
         assert_eq!(
             names,
             vec![
+                "pane_message",
                 "pane_reply",
                 "pane_report",
                 "pane_submit",
@@ -1411,6 +1413,7 @@ mod grok {
         assert_eq!(
             names,
             vec![
+                "pane_message",
                 "pane_reply",
                 "pane_report",
                 "pane_submit",
@@ -1690,6 +1693,7 @@ mod cursor {
         assert_eq!(
             names,
             vec![
+                "pane_message",
                 "pane_reply",
                 "pane_report",
                 "pane_submit",
@@ -2065,6 +2069,7 @@ mod antigravity {
         assert_eq!(
             names,
             vec![
+                "pane_message",
                 "pane_reply",
                 "pane_report",
                 "pane_submit",

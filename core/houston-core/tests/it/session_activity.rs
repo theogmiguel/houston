@@ -42,7 +42,7 @@ async fn hook_activity_is_snapshotted_and_tool_bursts_are_coalesced() {
     let daemon = Daemon::new(DaemonConfig::new(
         "session-activity-test-token".into(),
         state.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let mut rx = daemon.subscribe();

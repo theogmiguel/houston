@@ -105,7 +105,7 @@ async fn keymap_overrides_survive_a_reconnect_and_a_full_daemon_restart() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr, _handle) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
@@ -162,7 +162,7 @@ async fn keymap_overrides_survive_a_reconnect_and_a_full_daemon_restart() {
     let daemon2 = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr2, _handle2) = server::start(daemon2.clone(), "127.0.0.1:0".parse().unwrap())
@@ -296,7 +296,7 @@ async fn shortcuts_enabled_false_survives_a_daemon_restart() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path.clone(),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr, _handle) = server::start(daemon.clone(), "127.0.0.1:0".parse().unwrap())
@@ -332,7 +332,7 @@ async fn shortcuts_enabled_false_survives_a_daemon_restart() {
     let daemon2 = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         db_path,
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let (addr2, _handle2) = server::start(daemon2.clone(), "127.0.0.1:0".parse().unwrap())

@@ -108,6 +108,7 @@ named.
 
 | Term | Meaning | Code |
 |---|---|---|
+| **EcoQoS** | Windows execution-speed throttling ("efficiency mode"): the OS may park a process it classifies as background on a fraction of a core. The daemon opts itself and every process it starts out; Linux has no equivalent. | `power_throttling.rs` |
 | **daemon** | `houston-core`, run detached — spawned by `houston-supervisor` on Linux or directly on Windows — and outliving the app, which connects to it as a `/ws` client rather than linking it in. Owns PTYs, DB, hooks, MCP for one channel in one environment. | `core/houston-core` |
 | **supervisor** | `houston-supervisor`, Linux-only: forks `houston-core` as its child, writes `supervisor.json` beside `daemon.json`, and is what makes the daemon survive an app crash or a `kill` of the app itself. Not present on Windows, where the app spawns `houston-core.exe` directly. | `core/houston-core/src/bin/houston-supervisor.rs` |
 | **handoff** | A live transfer of a running daemon's sessions to a new generation on the same channel (Linux only), over `/manage`'s `daemon_handoff` — refused by name, preserving the old daemon, for a live SSH session, a schema-changing candidate, an exceeded cap, or any unsupported platform. What `dev.sh --fresh` and a supported upgrade use before falling back to the orderly stop. | `daemon.rs::begin_handoff`, `adoption.rs` |
@@ -177,6 +178,7 @@ named.
 | **auto mode** | The default launch mode for a spawned pane, using its provider's automatic approval flags. Sandbox boundaries depend on the provider; a model that cannot run this mode is refused by name. Explicit Ask or Bypass overrides it. | `launch.rs`, `orchestrate.rs` |
 | **MCP credential** | A per-pane bearer token bound to `{ workspace, session }`; only its SHA-256 is stored. | `mcp_creds.rs` |
 | **mailboxes** | Legacy file-based storage. Current pane-to-pane mail uses `pane_inbox`; the scope directory at `<root>/.houston/swarm/<id>/` remains for compatibility and `plan/events/` garbage collection. | `scope.rs` |
+| **conflict prediction** | The daemon's `git merge-tree` check of each managed worktree branch against its base and its sibling branches; a newly conflicting pair is one inbox note to the creating session. | `daemon/conflict_pass.rs`, `conflict_prediction.rs` |
 | **swarm** | Legacy prefix for orchestration scope infrastructure, tables and events. | `swarm_*` |
 | **`hs-mail`** | Unsupported compatibility alias. Returns a refusal naming its replacement and exits non-zero. | `main.rs`, `bin/tr-helper.rs` |
 

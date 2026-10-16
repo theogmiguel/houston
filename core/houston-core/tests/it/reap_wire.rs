@@ -2,7 +2,6 @@ use crate::common;
 
 use common::TOKEN;
 use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
-use houston_core::host_env::HostEnv;
 use houston_protocol as proto;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,7 +13,7 @@ fn daemon(state_dir: &std::path::Path) -> Arc<Daemon> {
 fn daemon_with(state_dir: &std::path::Path, vars: &[(&str, &str)]) -> Arc<Daemon> {
     let env = vars
         .iter()
-        .fold(HostEnv::capture(), |env, (k, v)| env.with(k, Some(*v)));
+        .fold(common::capture_env(), |env, (k, v)| env.with(k, Some(*v)));
     Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.join("test.db"),

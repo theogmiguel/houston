@@ -20,7 +20,7 @@ async fn session_runs_and_exits() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -61,7 +61,7 @@ async fn stdin_reaches_the_pty_and_kill_works() {
     let daemon = Daemon::new(DaemonConfig::new(
         TOKEN.to_string(),
         state_dir.path().join("test.db"),
-        houston_core::host_env::HostEnv::capture(),
+        crate::common::capture_env(),
     ))
     .unwrap();
     let tmp = tempfile::tempdir().unwrap();
