@@ -213,11 +213,11 @@ pub async fn run(config_dir: &Path, claude_bin: &Path) -> Result<String, String>
 }
 
 /// Called only by boot's startup refresh, not by integration harness background loops.
-pub fn spawn_at_boot() {
-    tokio::spawn(async {
-        let config_dir = match std::env::var_os("CLAUDE_CONFIG_DIR") {
+pub fn spawn_at_boot(env: crate::host_env::HostEnv) {
+    tokio::spawn(async move {
+        let config_dir = match env.var_os("CLAUDE_CONFIG_DIR") {
             Some(dir) if !dir.is_empty() => PathBuf::from(dir),
-            _ => match crate::agent_hooks::ConfigHome::from_env() {
+            _ => match crate::agent_hooks::ConfigHome::from_env(&env) {
                 Ok(home) => home.home,
                 Err(e) => {
                     tracing::warn!("Claude MCP maintenance: no home dir ({e}); skipped");
@@ -226,7 +226,7 @@ pub fn spawn_at_boot() {
             },
         };
         let claude_bin =
-            crate::exe_path::resolve("claude").unwrap_or_else(|| PathBuf::from("claude"));
+            crate::exe_path::resolve_in(&env, "claude").unwrap_or_else(|| PathBuf::from("claude"));
         #[cfg(windows)]
         let result = run(&config_dir, &claude_bin).await;
         #[cfg(not(windows))]

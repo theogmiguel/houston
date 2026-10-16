@@ -336,7 +336,7 @@ import {
   FALLBACK_WINDOW_BUTTON_LAYOUT,
   type WindowButtonLayout,
 } from "./windowButtonLayout";
-import { stackCapacity } from "./paneCaps";
+import { stackCapacity, stackFullMessage } from "./paneCaps";
 import { changedEntries } from "./layout/changedEntries";
 import { Icon } from "./components/ui/Icon";
 import {
@@ -482,7 +482,7 @@ function patchRosterFields(
   if (!cur) return prev;
   const patch: Partial<SessionInfo> =
     msg.type === "session_activity" ? { activity: msg.activity ?? null } : isCheckout
-      ? { checkout: msg.checkout ?? null }
+      ? { checkout: msg.checkout ?? null, checkout_root: msg.checkout_root ?? null, worktree: msg.worktree ?? null }
       : msg.type === "session_renamed"
         ? { title: msg.title, title_source: msg.title_source }
         : msg.type === "session_reparented"
@@ -2242,11 +2242,7 @@ export function App(): React.JSX.Element {
         const container = findStackContaining(cur.tree, target);
         const cap = stackCapacity();
         if (container && container.children.length >= cap) {
-          pushError(
-            `Stack is full (${container.children.length}/${cap}) — can't add a ${
-              container.children.length + 1
-            }th tab. Raise "Panes per stack" in Settings → Orchestration, or open a new cell`,
-          );
+          pushError(stackFullMessage(container.children.length, cap));
           return;
         }
       }

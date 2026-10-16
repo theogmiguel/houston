@@ -13,6 +13,8 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     let updates = daemon.clone();
     tokio::spawn(async move { updates.update_check_loop().await });
     tokio::spawn(daemon.clone().worktree_cleanup_loop());
+    // Read-only and local: no switch, and idle without an orchestrator's worktree.
+    tokio::spawn(daemon.clone().conflict_prediction_loop());
     // Not gated by worktree_cleanup_enabled: closing a task on its merged PR
     // is task behaviour, and the sweep above has its own switch.
     tokio::spawn(daemon.clone().task_pr_watch_loop());
@@ -24,20 +26,23 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     tokio::spawn(daemon.clone().slack_loops());
     // Idle until a workspace opts into a task tracker.
     tokio::spawn(daemon.clone().task_tracker_loop());
+    // Windows only; parks until a session spawns or produces output.
+    tokio::spawn(crate::power_throttling::sweep_loop());
 }
 
 /// Runs off the async runtime via `spawn_blocking` so the window can paint
 /// before the agent hook configs are refreshed.
 pub fn spawn_startup_refresh(daemon: &Arc<Daemon>) {
     let bound_port = daemon.bound_port();
+    let env = daemon.env();
     let daemon = daemon.clone();
     tokio::task::spawn_blocking(move || {
         daemon.sweep_legacy_hooks();
         daemon.install_consented_agent_hooks();
     });
-    crate::mcp_register::spawn_at_boot();
-    crate::mcp_register_codex::spawn_at_boot(bound_port);
-    crate::mcp_register_grok::spawn_at_boot();
-    crate::mcp_register_cursor::spawn_at_boot();
-    crate::mcp_register_antigravity::spawn_at_boot();
+    crate::mcp_register::spawn_at_boot(env.clone());
+    crate::mcp_register_codex::spawn_at_boot(env.clone(), bound_port);
+    crate::mcp_register_grok::spawn_at_boot(env.clone());
+    crate::mcp_register_cursor::spawn_at_boot(env.clone());
+    crate::mcp_register_antigravity::spawn_at_boot(env.clone());
 }

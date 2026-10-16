@@ -1,6 +1,7 @@
 //! Login-shell PATH recovery. A daemon started from the desktop entry inherits
 //! the systemd user session PATH, which lacks the dirs agent CLIs live in, so a
 //! pane dies with ENOENT. Probes `-lic` on purpose: `.zshrc` adds those dirs.
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 #[cfg(unix)]
 use std::io::Read;
 #[cfg(unix)]

@@ -1,5 +1,6 @@
 //! `wsl-proxy` and `open`: commands that reach an already running daemon of a channel.
 //! The proxy carries one relay connection's bytes between stdio and the daemon's port.
+#![allow(clippy::disallowed_methods)] // env-ratchet: reads the process environment directly
 
 use crate::wsl_ensure::{channel_state_dir, read_daemon_file, split_channel};
 use std::io::{Read, Write};
