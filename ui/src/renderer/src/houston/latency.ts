@@ -60,17 +60,28 @@ interface PendingMark {
   startedAtMs: number
 }
 
+interface PendingMarks {
+  marks: PendingMark[]
+  // Keystrokes sent while `marks` was at its cap; the next frame closes them too.
+  notRecorded: number
+}
+
 export interface WriteLatencyTrackerOptions {
   now?: () => number
   sink?: (entry: LogPayload) => void
 }
 
+/** Times each keystroke until the next output frame of its session reaches the socket
+ * handler. The daemon merges a session's queued output into one frame, so a frame closes
+ * every keystroke sent before it; the record names the oldest. Parse and paint come later
+ * and are not included. */
 export class WriteLatencyTracker {
   private readonly now: () => number
   private readonly sink: (entry: LogPayload) => void
-  private readonly pending = new Map<number, PendingMark[]>()
+  private readonly pending = new Map<number, PendingMarks>()
   private readonly lastEmittedMs = new Map<string, number>()
-  private evictedByCap = 0
+  private readonly suppressed = new Map<string, number>()
+  private notRecordedAtCap = 0
 
   constructor(options: WriteLatencyTrackerOptions = {}) {
     this.now = options.now ?? (() => performance.now())
@@ -85,32 +96,37 @@ export class WriteLatencyTracker {
     if (cls === 'bulk') return
 
     this.pruneStale(session)
-    const queue = this.pending.get(session) ?? []
-    if (queue.length >= MAX_PENDING_MARKS_PER_SESSION) {
-      queue.shift()
-      this.evictedByCap++
-      this.emit(session, cls, 'round-trip mark dropped: pending queue exceeded its cap', {
-        cap: MAX_PENDING_MARKS_PER_SESSION,
-        totalDroppedByCap: this.evictedByCap
-      })
-    }
-    queue.push({ cls, startedAtMs: this.now() })
+    const queue = this.pending.get(session) ?? { marks: [], notRecorded: 0 }
     this.pending.set(session, queue)
+    // The oldest mark is the longest wait, so the cap keeps it and counts the rest.
+    if (queue.marks.length >= MAX_PENDING_MARKS_PER_SESSION) {
+      queue.notRecorded++
+      this.notRecordedAtCap++
+      this.emit(session, cls, 'round-trip mark not recorded: pending queue at its cap', {
+        cap: MAX_PENDING_MARKS_PER_SESSION,
+        totalNotRecorded: this.notRecordedAtCap
+      })
+      return
+    }
+    queue.marks.push({ cls, startedAtMs: this.now() })
   }
 
   closeOnFrame(session: number): void {
     const queue = this.pending.get(session)
-    if (!queue || queue.length === 0) return
-    const mark = queue.shift()!
-    if (queue.length === 0) this.pending.delete(session)
-    const roundTripMs = this.now() - mark.startedAtMs
+    if (!queue) return
+    this.pending.delete(session)
+    const oldest = queue.marks[0]
+    const roundTripMs = this.now() - oldest.startedAtMs
     if (roundTripMs > ROUND_TRIP_THRESHOLD_MS) {
-      this.emit(session, mark.cls, 'slow round trip', { roundTripMs })
+      this.emit(session, oldest.cls, 'slow round trip', {
+        roundTripMs,
+        keystrokes: queue.marks.length + queue.notRecorded
+      })
     }
   }
 
   pendingMarkCount(session: number): number {
-    return this.pending.get(session)?.length ?? 0
+    return this.pending.get(session)?.marks.length ?? 0
   }
 
   dropSession(session: number): void {
@@ -119,20 +135,23 @@ export class WriteLatencyTracker {
     for (const key of this.lastEmittedMs.keys()) {
       if (key.startsWith(prefix)) this.lastEmittedMs.delete(key)
     }
+    for (const key of this.suppressed.keys()) {
+      if (key.startsWith(prefix)) this.suppressed.delete(key)
+    }
   }
 
   private pruneStale(session: number): void {
     const queue = this.pending.get(session)
-    if (!queue || queue.length === 0) return
+    if (!queue) return
     const cutoff = this.now() - STALE_MARK_MS
     const stale: PendingMark[] = []
     const kept: PendingMark[] = []
-    for (const mark of queue) {
+    for (const mark of queue.marks) {
       ;(mark.startedAtMs < cutoff ? stale : kept).push(mark)
     }
     if (stale.length === 0) return
     if (kept.length === 0) this.pending.delete(session)
-    else this.pending.set(session, kept)
+    else queue.marks = kept
     const mostRecentStale = stale[stale.length - 1]
     this.emit(
       session,
@@ -151,12 +170,17 @@ export class WriteLatencyTracker {
     const key = `${session}:${message}`
     const nowMs = this.now()
     const last = this.lastEmittedMs.get(key)
-    if (last !== undefined && nowMs - last < THROTTLE_WINDOW_MS) return
+    if (last !== undefined && nowMs - last < THROTTLE_WINDOW_MS) {
+      this.suppressed.set(key, (this.suppressed.get(key) ?? 0) + 1)
+      return
+    }
     this.lastEmittedMs.set(key, nowMs)
+    const suppressedSinceLast = this.suppressed.get(key) ?? 0
+    this.suppressed.delete(key)
     this.sink({
       source: 'terminal-transport',
       message,
-      payload: { session, class: cls, ...extra }
+      payload: { session, class: cls, ...extra, suppressedSinceLast }
     })
   }
 }

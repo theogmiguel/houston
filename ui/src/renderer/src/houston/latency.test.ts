@@ -153,20 +153,81 @@ describe('WriteLatencyTracker', () => {
     expect(entries[0].payload.session).toBe(1)
   })
 
-  it('closes the oldest pending mark first when a session has several in flight', () => {
+  it('one frame closes every keystroke sent before it, because the daemon merges a session\'s queued output into one frame', () => {
     let t = 0
     const now = (): number => t
-    const tracker = new WriteLatencyTracker({ now, sink: () => {} })
+    const { entries, sink } = collectingSink()
+    const tracker = new WriteLatencyTracker({ now, sink })
 
     tracker.recordWrite(1, 'a', 1)
-    t = 1
+    t = 10
     tracker.recordWrite(1, 'b', 1)
-    expect(tracker.pendingMarkCount(1)).toBe(2)
+    t = 20
+    tracker.recordWrite(1, 'c', 1)
+    expect(tracker.pendingMarkCount(1)).toBe(3)
 
-    tracker.closeOnFrame(1)
-    expect(tracker.pendingMarkCount(1)).toBe(1)
+    t = 100
     tracker.closeOnFrame(1)
     expect(tracker.pendingMarkCount(1)).toBe(0)
+
+    t = 1500
+    tracker.closeOnFrame(1)
+    expect(entries).toEqual([])
+  })
+
+  it('reports the oldest keystroke a frame closes, and how many it closed', () => {
+    let t = 0
+    const now = (): number => t
+    const { entries, sink } = collectingSink()
+    const tracker = new WriteLatencyTracker({ now, sink })
+
+    tracker.recordWrite(1, 'a', 1)
+    t = 100
+    tracker.recordWrite(1, '\x7f', 1)
+    t = ROUND_TRIP_THRESHOLD_MS + 50
+    tracker.closeOnFrame(1)
+
+    expect(entries.length).toBe(1)
+    expect(entries[0].payload).toMatchObject({
+      class: 'interactive',
+      roundTripMs: ROUND_TRIP_THRESHOLD_MS + 50,
+      keystrokes: 2
+    })
+  })
+
+  it('keeps the oldest mark at the cap, so the longest wait is still measured', () => {
+    let t = 0
+    const now = (): number => t
+    const { entries, sink } = collectingSink()
+    const tracker = new WriteLatencyTracker({ now, sink })
+
+    for (let i = 0; i < 20; i++) {
+      t += 1
+      tracker.recordWrite(1, 'a', 1)
+    }
+    t = 400
+    tracker.closeOnFrame(1)
+
+    const slow = entries.filter((e) => e.message === 'slow round trip')
+    expect(slow.length).toBe(1)
+    expect(slow[0].payload.roundTripMs).toBe(399)
+    expect(slow[0].payload.keystrokes).toBe(20)
+  })
+
+  it('says how many records the throttle suppressed since the previous one', () => {
+    let t = 0
+    const now = (): number => t
+    const { entries, sink } = collectingSink()
+    const tracker = new WriteLatencyTracker({ now, sink })
+
+    for (let i = 0; i < 4; i++) {
+      tracker.recordWrite(1, 'a', 1)
+      t += ROUND_TRIP_THRESHOLD_MS + 10
+      tracker.closeOnFrame(1)
+      if (i === 2) t += THROTTLE_WINDOW_MS
+    }
+
+    expect(entries.map((e) => e.payload.suppressedSinceLast)).toEqual([0, 2])
   })
 
   it('throttles per (session, message) pair, not globally: a different session is unaffected', () => {
@@ -221,7 +282,7 @@ describe('WriteLatencyTracker', () => {
     expect(entries.length).toBe(2)
   })
 
-  it('evicts the oldest pending mark once the per-session cap is exceeded, and reports it', () => {
+  it('stops recording marks once the per-session cap is reached, and reports it', () => {
     let t = 0
     const now = (): number => t
     const { entries, sink } = collectingSink()
@@ -233,10 +294,10 @@ describe('WriteLatencyTracker', () => {
     }
     expect(tracker.pendingMarkCount(1)).toBeLessThanOrEqual(8)
     const capEvictions = entries.filter((e) =>
-      e.message.includes('exceeded its cap')
+      e.message.includes('at its cap')
     )
     expect(capEvictions.length).toBeGreaterThan(0)
-    expect(capEvictions[0].payload.cap).toBeDefined()
+    expect(capEvictions[0].payload).toMatchObject({ cap: 8, totalNotRecorded: 1 })
   })
 
   it('prunes a mark whose frame never arrives once it goes stale, and reports it', () => {
