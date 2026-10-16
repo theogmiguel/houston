@@ -116,6 +116,10 @@ fn build_ghostty_vt() {
             Command::new(&zig)
                 .current_dir(&src)
                 .env("GIT_CEILING_DIRECTORIES", &cache)
+                // Zig fetches package dependencies (translate-c, ...) into its
+                // global cache. Keeping it inside `cache` lets CI restore them
+                // with the source instead of re-downloading on every run.
+                .env("ZIG_GLOBAL_CACHE_DIR", cache.join("zig-global"))
                 .arg("build")
                 .arg("-Demit-lib-vt")
                 // Release artifacts must not inherit the build runner's CPU features.
