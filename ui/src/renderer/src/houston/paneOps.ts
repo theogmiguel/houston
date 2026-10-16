@@ -19,6 +19,10 @@ export function errorSessionIds(error: { message: string; context?: string | nul
   return [...error.message.matchAll(TEXT_REF)].map((m) => Number(m[1]))
 }
 
+// The daemon tags input it refuses with this context (server.rs).
+const STDIN_ERROR_CONTEXT = 'stdin'
+const CLOSING_TEXT = /^stdin refused: session \d+ is closing$/
+
 type Timer = ReturnType<typeof setTimeout>
 
 /** Close and respawn requests in flight, so a closing session is never placed or mounted and a refusal lands in its pane. */
@@ -99,14 +103,22 @@ export class PaneOps {
   attribute(error: { message: string; context?: string | null }): number | null {
     const known = this.attributed.get(error)
     if (known !== undefined) return known
-    const session = this.route(error)
+    const session = this.isStaleInput(error) ? null : this.route(error)
     this.attributed.set(error, session)
     return session
+  }
+
+  /** True for input the daemon refused because its session is already closing: the close is under way, so the error neither releases it nor reaches the user. */
+  isStaleInput(error: { message: string; context?: string | null }): boolean {
+    if (error.context !== STDIN_ERROR_CONTEXT || !CLOSING_TEXT.test(error.message)) return false
+    return errorSessionIds(error).some((session) => this.closing.has(session))
   }
 
   private route(error: { message: string; context?: string | null }): number | null {
     const message = error.message
     for (const session of errorSessionIds(error)) {
+      // A repeat of a refusal already shown in the pane is the same refusal, not a new notice.
+      if (this.errors.get(session) === message) return session
       const closing = this.closing.has(session)
       const respawning = this.respawning.has(session)
       if (!closing && !respawning) continue

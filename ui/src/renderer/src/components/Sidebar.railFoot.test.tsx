@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import { isSettingsOpen, setSettingsNavForTests } from '../settingsNav'
 import { closeUpdateModal, isUpdateModalOpen } from '../updateModal'
 import { resetUpdateInstall, setUpdateInstallForTests } from '../updateInstall'
@@ -35,6 +35,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
     ...overrides
   }
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('Sidebar railfoot — navigation actions', () => {
   let container: HTMLDivElement

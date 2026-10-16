@@ -48,7 +48,7 @@ describe('rail agent row status dot', () => {
   })
 })
 
-function mountAgents(statuses: (AgentStatus | null)[], { expanded = false, contexts = [] as (number | undefined)[] } = {}): HTMLDivElement {
+function mountAgents(statuses: (AgentStatus | null)[], { expanded = false, contexts = [] as (number | undefined)[], agentActivity = 'compact' as 'compact' | 'full' } = {}): HTMLDivElement {
   const agents = statuses.map((status, index) => {
     const context = contexts[index]
     const session = { id: index + 1, agent: 'codex', status, state: 'running', status_since_ms: null, context: context == null ? null : { used_percent: context } } as unknown as SessionInfo
@@ -57,7 +57,7 @@ function mountAgents(statuses: (AgentStatus | null)[], { expanded = false, conte
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  act(() => root!.render(<GridRailAgentRows agents={agents} cardMode="detailed" agentActivity="compact" properties={['inline-agents']} expanded={expanded} onToggleExpanded={() => {}} now={0} />))
+  act(() => root!.render(<GridRailAgentRows agents={agents} cardMode="detailed" agentActivity={agentActivity} properties={['inline-agents']} expanded={expanded} onToggleExpanded={() => {}} now={0} />))
   return host
 }
 
@@ -84,6 +84,11 @@ describe('rail agent card content', () => {
     const el = mountAgents(['idle', 'working', 'idle', 'idle'], { expanded: true })
     expect(rowLabels(el)).toHaveLength(4)
     expect(el.querySelector('button[aria-expanded="true"]')).not.toBeNull()
+  })
+  it('full activity mode lists every agent with no summary pill to toggle', () => {
+    const el = mountAgents(['idle', 'working', 'idle', 'idle'], { agentActivity: 'full' })
+    expect(rowLabels(el)).toHaveLength(4)
+    expect(el.querySelector('button[aria-expanded]')).toBeNull()
   })
   it('shows Waiting and replaces the model at the context warning threshold', () => {
     rowDot('needs-input', 1, 80)

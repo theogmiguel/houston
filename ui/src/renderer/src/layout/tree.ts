@@ -845,7 +845,16 @@ export function addGrid(path: string, name: string): GridMeta[] {
 }
 
 export function renameGrid(path: string, gridId: string, name: string): GridMeta[] {
-  const next = loadGrids(path).map((g) => (g.id === gridId ? { ...g, name: name.trim() || g.name, nameSource: name.trim() ? 'user' as const : 'auto' as const } : g))
+  const trimmed = name.trim()
+  // A blank name keeps the current label and who chose it; clearing a user's name would hand it back to auto-naming.
+  const next = loadGrids(path).map((g) => (g.id === gridId && trimmed ? { ...g, name: trimmed, nameSource: 'user' as const } : g))
+  saveGrids(path, next)
+  return next
+}
+
+/** Hands a user-named grid back to automatic naming; its label stays until the next derived name replaces it. */
+export function resetGridName(path: string, gridId: string): GridMeta[] {
+  const next = loadGrids(path).map((g) => (g.id === gridId ? { ...g, nameSource: 'auto' as const } : g))
   saveGrids(path, next)
   return next
 }

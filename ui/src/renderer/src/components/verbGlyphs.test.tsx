@@ -16,7 +16,7 @@ describe('verb glyphs', () => {
     }
   })
   it('routes settings and pane/file actions through the shared mapping', () => {
-    expect(source('./Sidebar.tsx')).toContain('bell: GLYPH_FOR_VERB.notifications')
+    expect(source('./rail/RailSettingsTree.tsx')).toContain('bell: GLYPH_FOR_VERB.notifications')
     for (const verb of ['measure-memory', 'overview', 'reveal-in-file-manager']) expect(source('./SessionPane.tsx')).toContain(`GLYPH_FOR_VERB['${verb}']`)
     for (const verb of ['wrap-lines', 'toggle-file-tree']) expect(source('./git/PrFiles.tsx')).toContain(`GLYPH_FOR_VERB['${verb}']`)
   })

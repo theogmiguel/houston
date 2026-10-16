@@ -20,7 +20,6 @@ export type RailPrefs = {
   properties: RailCardProperty[]
   filters: RailFilters
   collapsedGroups: string[]
-  tags: number[]
   customisedProperties: boolean
   gridOrder: string[]
   gridUnreadOverrides: Record<string, { signature: string; unread: boolean }>
@@ -54,7 +53,6 @@ export const DEFAULT_RAIL_PREFS: RailPrefs = {
   properties: [...DETAILED_DEFAULT],
   filters: { hideIdle: false, hideDefaultBranch: false, hideEmptyGrids: false },
   collapsedGroups: [],
-  tags: [],
   customisedProperties: false,
   gridOrder: [],
   gridUnreadOverrides: {},
@@ -115,7 +113,6 @@ export function normalizeRailPrefs(value: unknown): RailPrefs {
     collapsedGroups: Array.isArray(source.collapsedGroups)
       ? source.collapsedGroups.filter((entry): entry is string => typeof entry === 'string')
       : [],
-    tags: Array.isArray(source.tags) ? source.tags.filter((entry): entry is number => Number.isSafeInteger(entry)) : [],
     customisedProperties: customised,
     gridOrder: Array.isArray(source.gridOrder)
       ? [...new Set(source.gridOrder.filter((entry): entry is string => typeof entry === 'string'))]
@@ -191,21 +188,6 @@ export function loadRailPrefs(storage: Pick<Storage, 'getItem'> = localStorage):
   } catch {
     return normalizeRailPrefs(null)
   }
-}
-
-export function migrateRailPrefs(storage: Pick<Storage, 'getItem' | 'setItem'> = localStorage): RailPrefs {
-  const current = loadRailPrefs(storage)
-  if (storage.getItem(RAIL_PREFS_KEY) !== null) return current
-  let tags: number[] = []
-  try {
-    const raw = JSON.parse(storage.getItem('houston.tagFilter') ?? '[]') as unknown
-    if (Array.isArray(raw)) tags = raw.filter((entry): entry is number => Number.isSafeInteger(entry))
-  } catch {
-    /* Ignore stale preference data. */
-  }
-  const migrated = { ...current, tags }
-  saveRailPrefs(migrated, storage)
-  return migrated
 }
 
 export function saveRailPrefs(prefs: RailPrefs, storage: Pick<Storage, 'setItem'> = localStorage): void {
@@ -295,4 +277,30 @@ export function migratePinnedWorkspaces(
     /* Storage can be unavailable in private contexts. */
   }
   return migrated
+}
+
+type GridLists = Readonly<Record<string, readonly { id: string }[]>>
+
+// True when a `path::gridId` key names a gone grid: its workspace was removed, or its known grid list
+// lacks the id. A workspace whose list has not loaded is never judged, so a loading roster prunes nothing.
+export function isStaleGridKey(key: string, grids: GridLists, removedPaths: ReadonlySet<string>): boolean {
+  const split = key.lastIndexOf('::')
+  if (split < 0) return false
+  const path = key.slice(0, split)
+  if (removedPaths.has(path)) return true
+  const list = grids[path]
+  return list !== undefined && !list.some((grid) => grid.id === key.slice(split + 2))
+}
+
+/** Drops order and unread-override entries of grids that no longer exist; returns `prefs` itself when nothing changed. */
+export function pruneRailGridState(prefs: RailPrefs, grids: GridLists, removedPaths: ReadonlySet<string>): RailPrefs {
+  const gridOrder = prefs.gridOrder.filter((key) => !isStaleGridKey(key, grids, removedPaths))
+  const overrideKeys = Object.keys(prefs.gridUnreadOverrides)
+  const keptOverrides = overrideKeys.filter((key) => !isStaleGridKey(key, grids, removedPaths))
+  if (gridOrder.length === prefs.gridOrder.length && keptOverrides.length === overrideKeys.length) return prefs
+  return {
+    ...prefs,
+    gridOrder,
+    gridUnreadOverrides: Object.fromEntries(keptOverrides.map((key) => [key, prefs.gridUnreadOverrides[key]])),
+  }
 }

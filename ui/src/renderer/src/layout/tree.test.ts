@@ -32,6 +32,7 @@ import {
   regrid,
   removeGrid,
   renameGrid,
+  resetGridName,
   setGridTags,
   dropTagFromGrids,
   gridTagIds,
@@ -856,6 +857,15 @@ describe('grid auto-naming (the tab-naming rule)', () => {
     expect(again.find((x) => x.id === g.id)?.name).toBe('Claude Code')
   })
 
+  it('resetGridName hands a user-named grid back to automatic naming', () => {
+    const [g] = loadGrids('/ws/reset-name')
+    renameGrid('/ws/reset-name', g.id, 'my review')
+    expect(autoNameGrid('/ws/reset-name', g.id, 'Claude Code')[0].name).toBe('my review')
+    const reset = resetGridName('/ws/reset-name', g.id)
+    expect(reset[0]).toMatchObject({ name: 'my review', nameSource: 'auto' })
+    expect(autoNameGrid('/ws/reset-name', g.id, 'Claude Code')[0].name).toBe('Claude Code')
+  })
+
   it('renameGrid (a user rename) locks the grid against auto-naming too', () => {
     const grids = addGrid('/ws/auto-user-rename', 'Untitled')
     const g = grids[grids.length - 1]
@@ -1071,10 +1081,22 @@ describe('savedGrids', () => {
 })
 
 
-it('migrates locked engine labels, preserves custom legacy names and resets user names', () => {
+it('migrates locked engine labels, preserves custom legacy names across a blank rename', () => {
   localStorage.setItem('tr-grids:/ws/migrate-names', JSON.stringify([{ id: 'engine', name: 'Claude Code', named: true }, { id: 'custom', name: 'Parser review', named: true }]))
   expect(loadGrids('/ws/migrate-names').map((g) => g.nameSource)).toEqual(['auto', 'user'])
   renameGrid('/ws/migrate-names', 'custom', '')
   autoNameGrid('/ws/migrate-names', 'custom', 'Native parser title')
-  expect(loadGrids('/ws/migrate-names')[1]).toMatchObject({ name: 'Native parser title', nameSource: 'auto' })
+  expect(loadGrids('/ws/migrate-names')[1]).toMatchObject({ name: 'Parser review', nameSource: 'user' })
+})
+
+describe('renameGrid with a blank name', () => {
+  it('keeps a user-chosen name and its source', () => {
+    localStorage.clear()
+    const [grid] = addGrid('/ws', 'Untitled')
+    const grids = renameGrid('/ws', grid.id, 'review')
+    expect(grids.find((g) => g.id === grid.id)).toMatchObject({ name: 'review', nameSource: 'user' })
+
+    const after = renameGrid('/ws', grid.id, '   ')
+    expect(after.find((g) => g.id === grid.id)).toMatchObject({ name: 'review', nameSource: 'user' })
+  })
 })

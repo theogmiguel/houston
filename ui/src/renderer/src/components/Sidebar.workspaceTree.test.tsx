@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import type { SessionInfo, Workspace } from '../houston/client'
 
 function ws(path: string, name = path): Workspace {
@@ -59,6 +59,8 @@ const TWO_WORKSPACES = {
   }
 } satisfies Partial<React.ComponentProps<typeof Sidebar>>
 
+beforeAll(() => preloadRailChunks(), 30_000)
+
 describe('Sidebar workspace tree — every open workspace shows its tabs', () => {
   let container: HTMLDivElement
   let root: Root
@@ -87,6 +89,8 @@ describe('Sidebar workspace tree — every open workspace shows its tabs', () =>
     [...container.querySelectorAll('[data-testid="grid-row"]')].map(
       (r) => r.querySelector('[data-testid="grid-name"]')?.textContent ?? ''
     )
+
+  const chevron = (path: string): HTMLElement => wsRow(path).querySelector<HTMLElement>('[data-testid="ws-chevron"]')!
 
   const wsRow = (path: string): HTMLButtonElement =>
     [...container.querySelectorAll<HTMLButtonElement>('[data-testid="ws-disclosure"]')].find(
@@ -134,7 +138,7 @@ describe('Sidebar workspace tree — every open workspace shows its tabs', () =>
 
   it('the chevron collapse is explicit, persists per workspace path, and defaults to expanded', () => {
     render(TWO_WORKSPACES)
-    act(() => wsRow('/a').click())
+    act(() => chevron('/a').click())
     expect(rowNames()).toEqual(['bravo main'])
     expect(wsRow('/a').getAttribute('aria-expanded')).toBe('false')
     expect(JSON.parse(localStorage.getItem('tr-ws-collapsed') ?? '[]')).toEqual(['/a'])
@@ -145,14 +149,14 @@ describe('Sidebar workspace tree — every open workspace shows its tabs', () =>
     expect(rowNames()).toEqual(['bravo main'])
     expect(wsRow('/b').getAttribute('aria-expanded')).toBe('true')
 
-    act(() => wsRow('/a').click())
+    act(() => chevron('/a').click())
     expect(rowNames()).toEqual(['alpha main', 'alpha review', 'bravo main'])
     expect(JSON.parse(localStorage.getItem('tr-ws-collapsed') ?? '[]')).toEqual([])
   })
 
   it('a collapsed workspace keeps the row simple and the chevron static', () => {
     render({ ...TWO_WORKSPACES, sessions: sessionsIn('/a', 7) })
-    act(() => wsRow('/a').click())
+    act(() => chevron('/a').click())
     const row = wsRow('/a')
     expect(row.textContent).toContain('alpha')
     expect(row.querySelector('[data-testid="nav-count"]')).toBeNull()

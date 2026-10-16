@@ -134,6 +134,26 @@ describe('grid auto-naming (tab-naming rule)', () => {
     expect(gridRows()[1].textContent).toContain('my review')
   })
 
+  it('"Reset to automatic name" hands a user-named grid back to its session\'s name', async () => {
+    harness = await renderReadyApp()
+    deliverHelloOk({
+      sessions: [makeSession({ id: 1, project_dir: WS, cwd: WS, agent: 'shell' })],
+      workspaces: [makeWorkspace({ path: WS })]
+    })
+    await act(async () => { await Promise.resolve() })
+    await renameFirstGrid('my review')
+    expect(gridRows()[0].textContent).toContain('my review')
+
+    await act(async () => { gridRows()[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 90 })); await Promise.resolve() })
+    const reset = [...document.querySelectorAll<HTMLElement>('.ctxmenu .ctx-item')].find((item) => item.textContent === 'Reset to automatic name')!
+    await act(async () => { reset.click(); await Promise.resolve() })
+    expect(gridRows()[0].textContent).toContain('Terminal')
+    expect(gridRows()[0].textContent).not.toContain('my review')
+
+    await act(async () => { gridRows()[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 90 })); await Promise.resolve() })
+    expect([...document.querySelectorAll('.ctxmenu .ctx-item')].some((item) => item.textContent === 'Reset to automatic name')).toBe(false)
+  })
+
   it('persisted "Grid N" names still count as auto-generated (rule 4)', async () => {
     const legacyWs = '/tmp/legacy-project'
     localStorage.setItem(
@@ -152,7 +172,7 @@ describe('grid auto-naming (tab-naming rule)', () => {
     expect(legacyRow?.textContent).toContain('Antigravity')
   })
 
-  it('follows pane title changes, preserves a user grid name and resumes after clearing it', async () => {
+  it('follows pane title changes, preserves a user grid name, including through a blank rename', async () => {
     harness = await renderReadyApp({ sessions: [makeSession({ id: 1, title: 'Initial task', title_source: 'prompt' })] })
     await act(async () => { await Promise.resolve() })
     expect(gridRows()[0].textContent).toContain('Initial task')
@@ -164,8 +184,10 @@ describe('grid auto-naming (tab-naming rule)', () => {
     await act(async () => { await Promise.resolve() })
     expect(gridRows()[0].textContent).toContain('My grid')
     await renameFirstGrid('')
-    expect(gridRows()[0].textContent).toContain('Updated task')
-    expect(JSON.parse(localStorage.getItem(`tr-grids:${WS}`)!)[0].nameSource).toBe('auto')
+    deliverControl({ type: 'session_renamed', session: 1, title: 'Later task', title_source: 'cli' })
+    await act(async () => { await Promise.resolve() })
+    expect(gridRows()[0].textContent).toContain('My grid')
+    expect(JSON.parse(localStorage.getItem(`tr-grids:${WS}`)!)[0].nameSource).toBe('user')
   })
 
   it('claims an unchanged automatic grid name and keeps it through later pane title changes', async () => {

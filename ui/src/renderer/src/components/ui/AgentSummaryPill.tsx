@@ -35,7 +35,7 @@ export function AgentSummaryPill({
         text-[length:var(--tr-text-xs)] text-[var(--text-muted)] hover:bg-[var(--card-hover)]"
     >
       <span className="shrink-0">
-        {expanded ? `${agents.length} agents` : `${agents.length} agents`}
+        {agents.length} agents
       </span>
       {!expanded && (
         <span className="flex min-w-0 items-center gap-1 overflow-hidden">

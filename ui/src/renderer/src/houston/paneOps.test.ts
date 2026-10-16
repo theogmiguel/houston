@@ -108,3 +108,30 @@ describe('PaneOps', () => {
     expect(ops.error(3)).toBeNull()
   })
 })
+
+describe('PaneOps errors for sessions already closing', () => {
+  it('stdin refused because the session is closing keeps the close and stays out of the way', () => {
+    const ops = new PaneOps()
+    ops.beginClose(1)
+    const error = { message: 'stdin refused: session 1 is closing', context: 'stdin' }
+
+    expect(ops.attribute(error)).toBeNull()
+    expect(ops.isStaleInput(error)).toBe(true)
+    expect(ops.closingIds()).toEqual(new Set([1]))
+    expect(ops.error(1)).toBeNull()
+  })
+
+  it('stdin refused for a session that is not closing is not stale', () => {
+    const ops = new PaneOps()
+    expect(ops.isStaleInput({ message: 'stdin refused: session 1 is closing', context: 'stdin' })).toBe(false)
+  })
+
+  it('a repeat of a refusal already shown in the pane is attributed, not a new notice', () => {
+    const ops = new PaneOps()
+    ops.beginClose(2)
+    const text = 'session 2 is in a Sleep transition'
+    expect(ops.attribute({ message: text, context: 'session:2' })).toBe(2)
+    expect(ops.attribute({ message: text, context: 'session:2' })).toBe(2)
+    expect(ops.error(2)).toBe(text)
+  })
+})

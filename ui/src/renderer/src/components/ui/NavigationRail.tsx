@@ -28,8 +28,9 @@ export function NavigationRailHeader({ logo, children, action, ...props }: HTMLA
   return <div {...props} className="h-[var(--h-railhead)] flex-none flex items-center gap-[var(--space-3)] px-[var(--space-3)] [-webkit-app-region:drag] select-none">{logo ? <><img style={{ filter: MASCOT_FILTERS[prefs.colors] }} data-testid="brand-mark" className="w-[var(--sz-brand-mark)] h-[var(--sz-brand-mark)] flex-none [-webkit-app-region:no-drag]" src={logo.src} srcSet={logo.srcSet} alt="" /><span className="min-w-0 font-semibold [font-size:var(--tr-text-ui-size)] tracking-[var(--tr-text-brand-tracking)] whitespace-nowrap overflow-hidden text-ellipsis [-webkit-app-region:no-drag]">{children}</span></> : children}{action && <div className="ml-auto [-webkit-app-region:no-drag]">{action}</div>}</div>
 }
 
-export function NavigationRailSection({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
-  return <div {...props} className="flex flex-col">{children}</div>
+/** `fill` makes the section take the scroller's height, so a list inside it is the one that scrolls. */
+export function NavigationRailSection({ children, fill = false, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode; fill?: boolean }): React.JSX.Element {
+  return <div {...props} className={`flex flex-col ${fill ? 'min-h-0 flex-1' : ''}`}>{children}</div>
 }
 
 export function NavigationRailSearch({ paletteChord, onClick }: { paletteChord?: string | null; onClick?: () => void }): React.JSX.Element {

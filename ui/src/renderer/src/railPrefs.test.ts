@@ -7,7 +7,7 @@ import {
   loadRailPrefs,
   migratePinnedWorkspaces,
   migrateRailGridKeys,
-  migrateRailPrefs,
+  pruneRailGridState,
   moveSelectedRailGrid,
   normalizeRailPrefs,
   railUnreadSignature,
@@ -66,13 +66,21 @@ describe('rail preferences', () => {
     expect(normalizeRailPrefs({ ...savedDefault, cardMode: 'compact', properties: ['status', 'unread'] }).properties).toEqual(COMPACT_DEFAULT)
   })
 
-  it('migrates tag filters once and leaves workspace collapse under its own key', () => {
-    const store = storage({ 'tr-ws-collapsed': '["/repo"]', 'houston.tagFilter': '[2]' })
-    const prefs = migrateRailPrefs(store)
-    expect(prefs.collapsedGroups).toEqual([])
-    expect(store.getItem('tr-ws-collapsed')).toBe('["/repo"]')
-    expect(prefs.tags).toEqual([2])
-    expect(migrateRailPrefs(store).tags).toEqual([2])
+  it('drops the retired tag list from stored preferences', () => {
+    const prefs = normalizeRailPrefs({ v: 1, tags: [2] })
+    expect('tags' in prefs).toBe(false)
+  })
+
+  it('prunes order and unread overrides of removed grids and workspaces only', () => {
+    const prefs = {
+      ...normalizeRailPrefs(null),
+      gridOrder: ['/a::g1', '/a::gone', '/removed::g1', '/loading::g1'],
+      gridUnreadOverrides: { '/a::g1': { signature: 's', unread: true }, '/a::gone': { signature: 's', unread: true } },
+    }
+    const pruned = pruneRailGridState(prefs, { '/a': [{ id: 'g1' }] }, new Set(['/removed']))
+    expect(pruned.gridOrder).toEqual(['/a::g1', '/loading::g1'])
+    expect(Object.keys(pruned.gridUnreadOverrides)).toEqual(['/a::g1'])
+    expect(pruneRailGridState(pruned, { '/a': [{ id: 'g1' }] }, new Set())).toBe(pruned)
   })
 
   it('swaps card presets only before the properties are customized', () => {

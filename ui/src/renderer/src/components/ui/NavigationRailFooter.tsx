@@ -6,11 +6,11 @@ export function NavigationRailFooter({ children, className = '', ...props }: HTM
 }
 
 export function NavigationRailScroll({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="railscroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">{children}</div>
+  return <div className="railscroll ![scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">{children}</div>
 }
 
 export function WorkspaceList({ children, dragging = false }: { children: ReactNode; dragging?: boolean }): React.JSX.Element {
-  return <nav className={`wlist flex flex-col gap-[var(--space-1)] p-[var(--space-2)] overflow-y-auto ${dragging ? 'cursor-grabbing' : ''}`}>{children}</nav>
+  return <nav className={`wlist ![scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex flex-col gap-[var(--space-1)] p-[var(--space-2)] overflow-y-auto ${dragging ? 'cursor-grabbing' : ''}`}>{children}</nav>
 }
 
 export function SettingsNavigation({ children }: { children: ReactNode }): React.JSX.Element {

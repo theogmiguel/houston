@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Sidebar, preloadRailChunks } from './Sidebar'
 import { setSettingsNavForTests, useSettingsSection } from '../settingsNav'
 import { SETTINGS_SECTIONS } from '../settingsSections'
 import type { SessionInfo, Workspace } from '../houston/client'
@@ -45,6 +45,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
     ...overrides
   }
 }
+
+beforeAll(() => preloadRailChunks(), 30_000)
 
 describe('Sidebar rail — Settings mode state matrix', () => {
   let container: HTMLDivElement

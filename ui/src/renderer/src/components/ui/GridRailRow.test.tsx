@@ -7,6 +7,7 @@ import type { TagInfo } from '../../houston/generated/TagInfo'
 import { createSessionsStore, SessionsStoreContext } from '../../sessionsStore'
 import { GridRailRow } from './GridRailRow'
 import { GridRailRowFallback } from './GridRailRowFallback'
+import { RAIL_DRAG_REFUSAL } from '../rail/railCardModel'
 import { TagPopoverHost } from '../tags/TagPopover'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -42,7 +43,7 @@ function withTagPopover(children: React.ReactNode): React.JSX.Element {
   }}>{children}</TagPopoverHost>
 }
 
-function mount({ tags = [], cardMode = 'detailed' }: { tags?: TagInfo[]; cardMode?: 'detailed' | 'compact' } = {}): {
+function mount({ tags = [], cardMode = 'detailed', reuseRoot = false, ...extra }: { tags?: TagInfo[]; cardMode?: 'detailed' | 'compact'; reuseRoot?: boolean } & Partial<React.ComponentProps<typeof GridRailRow>> = {}): {
   focus: ReturnType<typeof vi.fn>
   select: ReturnType<typeof vi.fn>
   inspector: ReturnType<typeof vi.fn>
@@ -53,7 +54,7 @@ function mount({ tags = [], cardMode = 'detailed' }: { tags?: TagInfo[]; cardMod
   const inspector = vi.fn()
   const contextMenu = vi.fn()
   const store = createSessionsStore(new Map([[session.id, session]]))
-  root = createRoot(container)
+  if (!reuseRoot) root = createRoot(container)
   act(() => root.render(withTagPopover(<SessionsStoreContext.Provider value={store}>
     <GridRailRow
       name="Rail"
@@ -74,6 +75,7 @@ function mount({ tags = [], cardMode = 'detailed' }: { tags?: TagInfo[]; cardMod
       onFocusPane={focus}
       onContextMenu={contextMenu}
       onOpenInspector={inspector}
+      {...extra}
     />
   </SessionsStoreContext.Provider>)))
   return { inspector, contextMenu, focus, select }
@@ -185,7 +187,94 @@ describe('grid rail row interactions', () => {
   })
 })
 
+function hoverRow(): void {
+  const row = container.querySelector('[data-testid="grid-row"]')!
+  act(() => row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+  act(() => vi.advanceTimersByTime(260))
+}
+
+describe('grid rail row hover suppression', () => {
+  it('never opens the hover card while hover is suppressed', async () => {
+    vi.useFakeTimers()
+    mount({ cardMode: 'compact', hoverSuppressed: true })
+    hoverRow()
+    await act(async () => { await Promise.resolve() })
+    expect(document.querySelector('[data-testid="grid-hover-card"]')).toBeNull()
+  })
+
+  it('closes an open hover card when hover becomes suppressed', async () => {
+    vi.useFakeTimers()
+    mount({ cardMode: 'compact' })
+    hoverRow()
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="grid-hover-card"]')).not.toBeNull())
+    mount({ cardMode: 'compact', hoverSuppressed: true, reuseRoot: true })
+    act(() => vi.advanceTimersByTime(300))
+    expect(document.querySelector('[data-testid="grid-hover-card"]')).toBeNull()
+  })
+})
+
+describe('grid rail row age labels', () => {
+  it('keeps counting while the parent re-renders with a new onSelect every 10 s', () => {
+    vi.useFakeTimers()
+    const idle = { ...session, id: 8, status: 'idle', status_since_ms: Date.now() } as unknown as SessionInfo
+    const store = createSessionsStore(new Map([[idle.id, idle]]))
+    root = createRoot(container)
+    const render = (): void => act(() => root.render(withTagPopover(<SessionsStoreContext.Provider value={store}>
+      <GridRailRow name="Idle" workspace="/work" gridId="idle-grid" selected={false} paneIds={[idle.id]} fallbackSessions={[idle]} branches={new Map()} diffByDir={new Map()} prByDir={new Map()} onSelect={() => {}} onOpenInspector={() => {}} />
+    </SessionsStoreContext.Provider>)))
+    render()
+    for (let elapsed = 0; elapsed < 80_000; elapsed += 10_000) {
+      act(() => vi.advanceTimersByTime(10_000))
+      render()
+    }
+    expect(container.querySelector('time')?.textContent).toBe('1m')
+  })
+})
+
+describe('grid rail row card affordances', () => {
+  it('offers no unread toggle while the unread property is off', () => {
+    mount({ properties: ['status', 'checkout', 'pr', 'inline-agents'] })
+    expect(container.querySelector('[data-testid="grid-unread-toggle"]')).toBeNull()
+    expect(container.querySelector('[data-testid="grid-state-dot"]')).not.toBeNull()
+  })
+
+  it('offers the unread toggle while the unread property is on', () => {
+    mount()
+    expect(container.querySelector('[data-testid="grid-unread-toggle"]')).not.toBeNull()
+  })
+
+  it('says No agents for a grid with no panes, but not in compact mode', () => {
+    const store = createSessionsStore(new Map())
+    root = createRoot(container)
+    const render = (cardMode: 'detailed' | 'compact'): void => act(() => root.render(withTagPopover(<SessionsStoreContext.Provider value={store}>
+      <GridRailRow name="Empty" workspace="/work" gridId="empty-grid" selected={false} paneIds={[]} fallbackSessions={[]} branches={new Map()} diffByDir={new Map()} prByDir={new Map()} cardMode={cardMode} onSelect={() => {}} onOpenInspector={() => {}} />
+    </SessionsStoreContext.Provider>)))
+    render('detailed')
+    expect(container.querySelector('[data-testid="grid-no-agents"]')?.textContent).toBe('No agents')
+    render('compact')
+    expect(container.querySelector('[data-testid="grid-no-agents"]')).toBeNull()
+  })
+
+  it('shows the drag refusal reason as a tooltip', () => {
+    vi.useFakeTimers()
+    mount({ dragRefusal: RAIL_DRAG_REFUSAL.notManual })
+    const row = container.querySelector('[data-testid="grid-row"]')!
+    act(() => row.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })))
+    act(() => vi.advanceTimersByTime(500))
+    expect(document.body.textContent).toContain('Switch to Manual sort to reorder')
+  })
+})
+
 describe('GridRailRowFallback', () => {
+  it.each(['Enter', ' '])('selects on %j like the real row', (key) => {
+    const select = vi.fn()
+    root = createRoot(container)
+    act(() => root.render(<GridRailRowFallback name="Review" selected={false} jumpNumber={1} onSelect={select} onContextMenu={() => {}} />))
+    const row = container.querySelector('[data-testid="grid-row"]')!
+    act(() => row.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
+    expect(select).toHaveBeenCalledOnce()
+  })
+
   it('marks grid tags with one tag glyph in the first tag colour and counts the rest', async () => {
     mount({ tags: TAGS })
     await vi.waitFor(() => expect(container.querySelector('[data-testid="rail-tags"]')).not.toBeNull())
