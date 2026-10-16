@@ -65,7 +65,7 @@ it discards whatever is sitting there uncommitted, on the VM only.
 
 Runs, sequentially (core and src-tauri never concurrently — AGENTS.md's
 "never two cargo workloads at once" extends across the VM boundary too):
-`core` (`fmt --check`, `clippy -D warnings`, `cargo test` shielded under
+`core` (`fmt --check`, `clippy -D warnings`, `cargo nextest run` and `cargo test --doc` shielded under
 `oom-shield.sh` + `dbus-run-session` + unlocked `gnome-keyring`), `src-tauri`
 (`fmt --check`, `clippy` default + `--features bench`, `cargo test`
 shielded), `ui` (`bun install --frozen-lockfile`, `typecheck`, `test`,

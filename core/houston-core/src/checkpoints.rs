@@ -267,13 +267,40 @@ fn resolve_ref(dir: &Path, refname: &str) -> Result<String> {
     Ok(sha)
 }
 
+// git clean walks every untracked path; a stuck filesystem must fail the revert, not
+// hold its worker. -q keeps removed paths out of the collector's 8 MiB output limit.
+const CLEAN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 fn clean_workspace(dir: &Path) -> Result<()> {
-    let out = crate::spawn::command("git")
+    let mut command = crate::spawn::command("git");
+    command
         .arg("-C")
         .arg(dir)
-        .args(["clean", "-fd", "--", "."])
-        .output()
-        .with_context(|| format!("spawning git clean -fd in {}", dir.display()))?;
+        .args(["clean", "-fdq", "--", "."]);
+    clean_with(dir, command, CLEAN_TIMEOUT)
+}
+
+fn clean_with(
+    dir: &Path,
+    command: std::process::Command,
+    deadline: std::time::Duration,
+) -> Result<()> {
+    let out = crate::spawn::output_within(command, deadline)
+        .with_context(|| {
+            format!(
+                "capturing git clean -fdq in {} (deadline {} ms)",
+                dir.display(),
+                deadline.as_millis()
+            )
+        })?
+        .with_context(|| {
+            format!(
+                "git clean -fdq in {} did not finish within the {} ms deadline; some untracked \
+                 files may already be removed. Inspect the workspace before retrying",
+                dir.display(),
+                deadline.as_millis()
+            )
+        })?;
     if out.status.success() {
         return Ok(());
     }
@@ -285,7 +312,7 @@ fn clean_workspace(dir: &Path) -> Result<()> {
         return Ok(());
     }
     bail!(
-        "git clean -fd in {} failed (exit {:?}): {}",
+        "git clean -fdq in {} failed (exit {:?}): {}",
         dir.display(),
         out.status.code(),
         String::from_utf8_lossy(&out.stderr).trim()
@@ -306,15 +333,41 @@ fn ensure_git_repo(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+// A checkpoint diff walks workspace content, so capture goes through the same
+// bounded subprocess capture as git.rs instead of allocating an unbounded diff.
+const GIT_CAPTURE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+fn bounded_git(
+    mut command: std::process::Command,
+    args: &[&str],
+    dir: &Path,
+) -> Result<std::process::Output> {
+    command.env("GIT_TERMINAL_PROMPT", "0");
+    let incomplete = || {
+        format!(
+            "git {args:?} in {}: command completion was not confirmed; a mutation may already \
+             have taken effect. Inspect repository state before retrying",
+            dir.display()
+        )
+    };
+    crate::spawn::output_within(command, GIT_CAPTURE_TIMEOUT)
+        .with_context(incomplete)?
+        .with_context(|| {
+            format!(
+                "{} (deadline {} ms)",
+                incomplete(),
+                GIT_CAPTURE_TIMEOUT.as_millis()
+            )
+        })
+}
+
 fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &OsStr)]) -> Result<String> {
     let mut cmd = crate::spawn::command("git");
     cmd.arg("-C").arg(dir).args(args);
     for &(key, value) in envs {
         cmd.env(key, value);
     }
-    let out = cmd
-        .output()
-        .with_context(|| format!("spawning git {args:?} in {}", dir.display()))?;
+    let out = bounded_git(cmd, args, dir)?;
     if !out.status.success() {
         bail!(
             "git {:?} in {} failed (exit {:?}): {}",
@@ -328,12 +381,9 @@ fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &OsStr)]) -> Result<String>
 }
 
 fn run_git(dir: &Path, args: &[&str]) -> Result<String> {
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .with_context(|| format!("spawning git {args:?} in {}", dir.display()))?;
+    let mut command = crate::spawn::command("git");
+    command.arg("-C").arg(dir).args(args);
+    let out = bounded_git(command, args, dir)?;
     if !out.status.success() {
         bail!(
             "git {:?} in {} failed (exit {:?}): {}",
@@ -473,6 +523,30 @@ mod tests {
     }
 
     #[test]
+    fn an_oversized_workspace_diff_is_refused_not_collected() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        let shot = capture(tmp.path(), "manual", "shot").unwrap();
+        std::fs::write(
+            tmp.path().join("huge.txt"),
+            "content line\n".repeat(800_000),
+        )
+        .unwrap();
+        git(tmp.path(), &["add", "-A"]);
+
+        let error =
+            diff(tmp.path(), &shot.r#ref, CheckpointAgainst::Working).expect_err("capture limit");
+        assert!(
+            format!("{error:#}").contains("combined output limit"),
+            "{error:#}"
+        );
+        assert!(
+            exists(tmp.path(), &shot.r#ref),
+            "a refused diff must leave the checkpoint intact"
+        );
+    }
+
+    #[test]
     fn diff_refuses_an_unknown_ref_by_name() {
         let tmp = tempfile::tempdir().unwrap();
         init_repo(tmp.path());
@@ -484,5 +558,37 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(err.contains("no checkpoint at ref"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn a_clean_past_its_deadline_fails_naming_the_directory_and_deadline() {
+        let tmp = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let stuck = {
+            let mut cmd = crate::spawn::command("ping");
+            cmd.args(["-n", "30", "127.0.0.1"]);
+            cmd
+        };
+        #[cfg(not(windows))]
+        let stuck = {
+            let mut cmd = crate::spawn::command("sleep");
+            cmd.arg("30");
+            cmd
+        };
+        let start = std::time::Instant::now();
+        let error = clean_with(tmp.path(), stuck, std::time::Duration::from_millis(200))
+            .expect_err("a clean past its deadline must fail");
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "the capture outlived its deadline: {:?}",
+            start.elapsed()
+        );
+        let message = format!("{error:#}");
+        assert!(message.contains("git clean -fdq"), "{message}");
+        assert!(
+            message.contains(&tmp.path().display().to_string()),
+            "{message}"
+        );
+        assert!(message.contains("200 ms deadline"), "{message}");
     }
 }

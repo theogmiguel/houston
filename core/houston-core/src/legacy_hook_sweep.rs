@@ -4,8 +4,8 @@
 use houston_protocol as proto;
 use std::path::{Path, PathBuf};
 
-pub fn sweep(db: &crate::db::Db) {
-    let Ok(cfg) = crate::agent_hooks::ConfigHome::from_env() else {
+pub fn sweep(db: &crate::db::Db, env: &crate::host_env::HostEnv) {
+    let Ok(cfg) = crate::agent_hooks::ConfigHome::from_env(env) else {
         return;
     };
     sweep_with(db, &cfg);
