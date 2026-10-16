@@ -1344,6 +1344,8 @@ What changes per provider, beyond the shared inbox:
   subagent completions, forwards the middleware unchanged, and sends only conversation,
   turn and working-directory identifiers to the existing hook helper. One bounded helper
   call at turn start establishes correlation; an interrupted completion uses a second.
+  The bound is 5 s: the middleware awaits each call, so it must cover a slow helper start
+  on a loaded machine (1.3 s maximum measured) yet still end a hung helper promptly.
   The daemon rejects missing, replayed or superseded turn identities. No transcript or
   terminal content drives this signal. `next.signal` alone is insufficient because hook
   budget expiry and middleware abandonment also abort it. Unknown or older CLI versions,

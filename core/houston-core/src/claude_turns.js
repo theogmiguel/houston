@@ -11,7 +11,9 @@ async function report($, event, turnId) {
   await $.process.run([launcher, 'hook', event, sentinel], {
     env: { TR_SESSION: pane, HOUSTON_CHANNEL: channel || 'release' },
     stdin: JSON.stringify({ session_id: sessionId, cwd, turn_id: turnId }),
-    timeoutMs: 1000, // Bound the local helper; a failed report leaves classic hooks intact.
+    // The turn middleware awaits this call: 5 s covers a slow helper start on a loaded
+    // machine (1.3 s max measured) while still ending a hung helper promptly.
+    timeoutMs: 5000,
   });
 }
 

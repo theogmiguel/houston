@@ -60,6 +60,22 @@ fn write_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> std::io:
 #[cfg(test)]
 mod tests {
     #[test]
+    fn turn_reports_wait_out_a_slow_helper_start() {
+        let home = tempfile::tempdir().unwrap();
+        let root = super::prepare(
+            home.path(),
+            std::path::Path::new("launcher"),
+            Some("fixture"),
+        )
+        .unwrap();
+        let source = std::fs::read_to_string(root.join("hooks/register.js")).unwrap();
+        assert!(
+            source.contains("timeoutMs: 5000"),
+            "turn mod must bound its helper above a slow start: {source}"
+        );
+    }
+
+    #[test]
     fn versions_without_the_documented_contract_are_not_enabled() {
         for version in [
             None,
