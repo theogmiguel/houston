@@ -480,7 +480,7 @@ mod tests {
         std::fs::write(
             dir.path().join("hung-cli.ps1"),
             format!(
-                "$p = Start-Process -PassThru -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-Command','Start-Sleep 300'\n\
+                "$p = Start-Process -PassThru -WindowStyle Hidden ping.exe -ArgumentList '-n','300','127.0.0.1'\n\
                  Set-Content -LiteralPath '{}' $p.Id\nStart-Sleep 300\n",
                 pidfile.display()
             ),
@@ -495,7 +495,7 @@ mod tests {
 
         let env = crate::host_env::HostEnv::capture();
         assert_eq!(
-            read_version_within(&env, &cli, Duration::from_secs(8)),
+            read_version_within(&env, &cli, Duration::from_secs(20)),
             None
         );
         let pid: u32 = std::fs::read_to_string(&pidfile)
