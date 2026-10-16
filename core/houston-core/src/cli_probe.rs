@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
-use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use houston_protocol as proto;
 
@@ -9,8 +8,6 @@ use houston_protocol as proto;
 // 0.33s, opencode 0.68s, cursor-agent 0.85s. 4s covers a cold disk spin-up
 // while still bounding the provider sweep to a few seconds worst case.
 const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
-
-const POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CliPresence {
@@ -67,59 +64,36 @@ pub fn probe_in(env: &crate::host_env::HostEnv, binary: &str) -> CliPresence {
 fn read_version(env: &crate::host_env::HostEnv, path: &std::path::Path) -> Option<String> {
     let mut command = crate::spawn::command(path);
     env.apply_to(&mut command);
-    let mut child = command
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
-
-    // Drained on their own threads: a CLI that fills a pipe buffer while we
-    // sit in try_wait would deadlock against us otherwise.
-    let out = child.stdout.take().map(drain);
-    let err = child.stderr.take().map(drain);
-
-    let start = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if start.elapsed() >= VERSION_PROBE_TIMEOUT => {
-                let _ = child.kill();
-                let _ = child.wait();
-                tracing::warn!(
-                    "{} --version timed out after {:?} — reporting the CLI as present with an \
-                     unknown version",
-                    path.display(),
-                    VERSION_PROBE_TIMEOUT
-                );
-                return None;
-            }
-            Ok(None) => std::thread::sleep(POLL_INTERVAL),
-            Err(e) => {
-                tracing::debug!("waiting on {} --version: {e}", path.display());
-                return None;
-            }
+    command.arg("--version");
+    // The bounded capture owns the whole process tree: a CLI behind a `.cmd`
+    // shim or a launcher script runs as a grandchild that killing only the
+    // direct child would orphan.
+    let output = match crate::spawn::output_within(command, VERSION_PROBE_TIMEOUT) {
+        Ok(Some(output)) => output,
+        Ok(None) => {
+            tracing::warn!(
+                "{} --version timed out after {:?} — reporting the CLI as present with an \
+                 unknown version",
+                path.display(),
+                VERSION_PROBE_TIMEOUT
+            );
+            return None;
         }
-    }
+        Err(e) => {
+            tracing::debug!("running {} --version: {e}", path.display());
+            return None;
+        }
+    };
 
     // Exit status deliberately not consulted: a CLI that prints its version
     // then exits non-zero over something unrelated is still installed at a
     // version worth showing.
     let text = format!(
         "{}\n{}",
-        out.and_then(|h| h.join().ok()).unwrap_or_default(),
-        err.and_then(|h| h.join().ok()).unwrap_or_default()
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
     parse_version(&text)
-}
-
-fn drain<R: Read + Send + 'static>(mut r: R) -> std::thread::JoinHandle<String> {
-    std::thread::spawn(move || {
-        let mut s = String::new();
-        let _ = r.read_to_string(&mut s);
-        s
-    })
 }
 
 #[derive(Debug, Default)]
@@ -255,6 +229,7 @@ fn codex_local_models(path: &std::path::Path) -> (Option<Vec<String>>, &'static 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     #[cfg(unix)]
     fn fake_cli(dir: &std::path::Path, name: &str, line: &str) -> String {
@@ -416,6 +391,50 @@ mod tests {
             started.elapsed() < VERSION_PROBE_TIMEOUT + Duration::from_secs(2),
             "the probe must not outlive its own cap"
         );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_hanging_cli_behind_a_cmd_shim_leaves_no_process_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("grandchild.pid");
+        std::fs::write(
+            dir.path().join("hang.ps1"),
+            format!(
+                "$PID | Set-Content -LiteralPath '{}'\nStart-Sleep -Seconds 20\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        let shim = dir.path().join("houston-hang-cli.cmd");
+        std::fs::write(
+            &shim,
+            "@powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0hang.ps1\" %*\r\n",
+        )
+        .unwrap();
+
+        let started = Instant::now();
+        let got = probe(&shim.display().to_string());
+        assert!(got.present);
+        assert_eq!(got.version, None);
+        assert!(started.elapsed() < VERSION_PROBE_TIMEOUT + Duration::from_secs(2));
+
+        // A grandchild killed before writing its PID left nothing to observe.
+        std::thread::sleep(Duration::from_millis(500));
+        let Some(pid) = std::fs::read_to_string(&marker)
+            .ok()
+            .and_then(|text| text.trim().parse::<u32>().ok())
+        else {
+            return;
+        };
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while crate::pid::process_is_alive(pid) {
+            assert!(
+                Instant::now() < deadline,
+                "PowerShell {pid} started by the shim outlived the --version probe"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+        }
     }
 
     #[test]
