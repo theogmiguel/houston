@@ -166,13 +166,24 @@ The PTY is always drained daemon-side; a client that stops reading fills only it
 and a queue that drops sends a gap frame anchored where loss began, which the pane answers
 with one fresh attach. Control messages fan out over a `tokio::broadcast` of 4096 slots; a
 connection that lags it is closed with `error{context:"control_lag"}` and reconnects for a
-full state. A control request runs on its own task, not on the connection's loop: that loop
-flushes the connection's PTY frames, forwards stdin and acks resizes, and a handler awaited
-there — a `git` shell-out, a CLI probe, a directory scan — held all three for its whole
-duration, which is how a resize ack missed the renderer's deadline and a CLI drew into an
-80×24 box. Only the four attach-family messages (`session_create`, `session_respawn`,
-`session_attach`, `session_visibility`) stay on the loop, because they edit the connection's
-own frame set; every other reply comes back through a bounded per-connection queue.
+full state. Input never waits behind output: the connection's loop owns every write, and a
+send to a client that is not reading blocks it, so the socket's read half runs on a separate
+task that writes stdin frames to their PTYs as they arrive. That task hands control text to
+the loop in socket order through a queue bounded at 256 messages and 1 MiB; past either
+bound it stops reading until the loop catches up, so keystrokes wait only behind that many
+unprocessed control messages. A stdin refusal that finds the queue full is logged rather
+than reported, because waiting for room would stall input to every pane. Either half ending
+ends the connection. When the reader ends, the loop drains the messages already queued and
+stops after any send in flight completes or fails. When the loop ends, it aborts and joins
+the reader before the connection is forgotten, so no keystroke arrives for a forgotten
+connection and the socket closes. A control request runs on its own
+task, not on the connection's loop: that loop flushes the connection's PTY frames and acks
+resizes, and a handler awaited there — a `git` shell-out, a CLI probe, a directory scan —
+held both for its whole duration, which is how a resize ack missed the renderer's deadline
+and a CLI drew into an 80×24 box. Only the attach-family messages (`session_create`,
+`session_respawn`, `session_wake`, `session_attach`, `session_visibility`) stay on the loop,
+in request order, because they edit the connection's own frame set; every other reply comes
+back through a bounded per-connection queue.
 The scrollback replay is the one base64 payload, riding the JSON channel so it
 orders against the attach that asked for it. Details: [renderer.md](renderer.md).
 
