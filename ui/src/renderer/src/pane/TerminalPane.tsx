@@ -28,7 +28,6 @@ import { inputTraceEnabled, traceInputEvent } from './inputTrace'
 import { TERMINAL_FONT_DEFAULT } from './terminalFonts'
 import { shiftEnterSequence } from './shiftEnter'
 import { logTerminalTransport } from '../houston/latency'
-import { MAX_PASTE_CODE_UNITS } from '../ghostty/inputBudget'
 import { TERMINAL_PALETTES, type ThemeName } from '../theme'
 import { ExpandedContext } from '../layout/expandedContext'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
@@ -150,7 +149,8 @@ const PENDING_CAP_BYTES = 4 * 1024 * 1024
 // about 30 s of key repeat; two maximum pastes released in one burst stay far below the
 // socket's input admission limit.
 const HELD_INPUT_MAX_ENTRIES = 1024
-const HELD_INPUT_MAX_CODE_UNITS = 2 * MAX_PASTE_CODE_UNITS
+// Two of ghostty/inputBudget.ts's maximum pastes, not imported to keep it off the boot path.
+const HELD_INPUT_MAX_CODE_UNITS = 128 * 1024
 
 // A paste is held as text: its encoding depends on bracketed-paste mode, which the
 // pane learns only from the snapshot.

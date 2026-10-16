@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionInfo } from '../houston/client'
 import type { OutputSink, RegisterOutput } from './TerminalPane'
 import { BRACKETED_NEWLINE } from './shiftEnter'
+import { MAX_PASTE_CODE_UNITS } from '../ghostty/inputBudget'
 import {
   flushGhosttyAttach,
   ghosttyMock,
@@ -343,6 +344,10 @@ describe('TerminalPane snapshot attach', () => {
     const overflow = warn.mock.calls.filter(([m]) => String(m).includes('attach snapshot was pending'))
     expect(overflow).toHaveLength(1)
     expect(String(overflow[0]?.[0])).toContain('1024 entries and 1024 code units already held; limit 1024 entries')
+  })
+
+  it('holds two maximum pastes, the code-unit limit the overflow messages name', () => {
+    expect(2 * MAX_PASTE_CODE_UNITS).toBe(131072)
   })
 
   it('keeps the held input within the code-unit limit and logs the entry it refused', async () => {
