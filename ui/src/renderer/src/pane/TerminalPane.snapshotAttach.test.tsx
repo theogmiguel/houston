@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionInfo } from '../houston/client'
 import type { OutputSink, RegisterOutput } from './TerminalPane'
+import { BRACKETED_NEWLINE } from './shiftEnter'
+import { MAX_PASTE_CODE_UNITS } from '../ghostty/inputBudget'
 import {
   flushGhosttyAttach,
   ghosttyMock,
@@ -99,6 +101,13 @@ function replayReply(data: string, bytesSeen: number, attempt: number): Record<s
 interface Harness {
   ws: MockWebSocket
   sinks: Map<number, OutputSink>
+  render: (info: SessionInfo) => void
+}
+
+function stdin(ws: MockWebSocket): string[] {
+  return ws.sent
+    .filter((m): m is ArrayBuffer => typeof m !== 'string')
+    .map((m) => new TextDecoder().decode(new Uint8Array(m, 5)))
 }
 
 describe('TerminalPane snapshot attach', () => {
@@ -145,11 +154,11 @@ describe('TerminalPane snapshot attach', () => {
       sinks.get(session)?.snapshot(state, outputOffset)
     client.onGap = (session) => sinks.get(session)?.gap()
 
-    act(() => {
+    const render = (info: SessionInfo): void => {
       root.render(
         <TerminalPane
           client={client}
-          info={makeSession()}
+          info={info}
           theme="warm-espresso"
           active={options.active ?? false}
           connected={true}
@@ -164,11 +173,12 @@ describe('TerminalPane snapshot attach', () => {
           onOpenDir={() => {}}
         />
       )
-    })
+    }
+    act(() => render(makeSession()))
     await act(async () => {
       await flushGhosttyAttach()
     })
-    return { ws, sinks }
+    return { ws, sinks, render }
   }
 
   function attaches(ws: MockWebSocket): Record<string, unknown>[] {
@@ -230,29 +240,81 @@ describe('TerminalPane snapshot attach', () => {
     expect(after[0]?.snapshot).toBeUndefined()
   })
 
-  it('holds keystrokes until the import lands, then delivers them', async () => {
-    const { ws, sinks } = await mount({ snapshotAttach: true, active: true })
-    const stdinFrames = (): unknown[] => ws.sent.filter((m) => typeof m !== 'string')
+  it('holds keystrokes until the import lands, then delivers them in order', async () => {
+    const { ws } = await mount({ snapshotAttach: true, active: true })
 
-    ghosttyMock.emitData('x')
-    expect(stdinFrames()).toHaveLength(0)
+    ghosttyMock.emitData('a')
+    ghosttyMock.emitData('b')
+    ghosttyMock.emitKey(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, cancelable: true }))
+    ghosttyMock.emitData('c')
+    expect(stdin(ws)).toEqual([])
 
-    ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) })
-    void sinks
-    ghosttyMock.emitData('y')
-    expect(stdinFrames()).toHaveLength(1)
+    act(() => ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) }))
+    expect(stdin(ws)).toEqual(['a', 'b', BRACKETED_NEWLINE, 'c'])
+
+    ghosttyMock.emitData('d')
+    expect(stdin(ws)).toEqual(['a', 'b', BRACKETED_NEWLINE, 'c', 'd'])
   })
 
-  it.each(['history', ''])('releases input when the daemon falls back to replay %j', async (history) => {
+  it('encodes a paste made during the hold after the import, in order with keystrokes', async () => {
     const { ws } = await mount({ snapshotAttach: true, active: true })
-    const stdinFrames = (): unknown[] => ws.sent.filter((m) => typeof m !== 'string')
+    const send = vi.spyOn(ws, 'send')
+    const paste = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(paste, 'clipboardData', {
+      value: { items: [], getData: () => 'echo one\necho two' }
+    })
+
+    ghosttyMock.emitData('a')
+    ghosttyMock.input.dispatchEvent(paste)
+    ghosttyMock.emitData('b')
+    expect(paste.defaultPrevented).toBe(true)
+    expect(ghosttyMock.pasteSpy).not.toHaveBeenCalled()
+
+    act(() => ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) }))
+    expect(ghosttyMock.pasteSpy.mock.calls).toEqual([['echo one\necho two']])
+    expect(stdin(ws)).toEqual(['a', 'b'])
+    const pasteOrder = ghosttyMock.pasteSpy.mock.invocationCallOrder[0] ?? 0
+    const stdinOrder = send.mock.calls.flatMap((call, i) =>
+      typeof call[0] === 'string' ? [] : [send.mock.invocationCallOrder[i] ?? 0]
+    )
+    expect(ghosttyMock.importSnapshotSpy.mock.invocationCallOrder[0]).toBeLessThan(pasteOrder)
+    expect(stdinOrder[0]).toBeLessThan(pasteOrder)
+    expect(stdinOrder[1]).toBeGreaterThan(pasteOrder)
+  })
+
+  it('drops a terminal reply produced during the hold and sends the ones after it', async () => {
+    const { ws } = await mount({ snapshotAttach: true, active: true })
+    const { onData } = ghosttyMock.createOptions as { onData: (data: string, reply?: boolean) => void }
+
+    onData('\x1b[1;1R', true)
+    act(() => ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) }))
+    expect(stdin(ws)).toEqual([])
+
+    onData('\x1b[5;9R', true)
+    expect(stdin(ws)).toEqual(['\x1b[5;9R'])
+  })
+
+  it.each(['history', ''])('releases held input in order when the daemon falls back to replay %j', async (history) => {
+    const { ws } = await mount({ snapshotAttach: true, active: true })
     ghosttyMock.emitData('x')
-    expect(stdinFrames()).toHaveLength(0)
+    expect(stdin(ws)).toEqual([])
     act(() => ws.onmessage?.({ data: JSON.stringify(replayReply(history, history.length, 1)) }))
+    expect(stdin(ws)).toEqual(['x'])
     ghosttyMock.emitData('y')
-    expect(stdinFrames()).toHaveLength(1)
+    expect(stdin(ws)).toEqual(['x', 'y'])
     expect(resetSpy).not.toHaveBeenCalled()
     expect(ghosttyMock.writes.map((data) => new TextDecoder().decode(data as Uint8Array)).join('')).toBe(history)
+  })
+
+  it('releases held input when the engine refuses the snapshot and reattaches for a replay', async () => {
+    const { ws } = await mount({ snapshotAttach: true, active: true })
+    ghosttyMock.importSnapshotSucceeds = false
+    ghosttyMock.emitData('x')
+
+    act(() => ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) }))
+
+    expect(attaches(ws).at(-1)?.snapshot).toBeUndefined()
+    expect(stdin(ws)).toEqual(['x'])
   })
 
   it('an older replay cannot release input for a newer snapshot attach', async () => {
@@ -262,11 +324,73 @@ describe('TerminalPane snapshot attach', () => {
     expect(attaches(ws)).toHaveLength(2)
     act(() => ws.onmessage?.({ data: JSON.stringify(replayReply('obsolete', 8, 1)) }))
     ghosttyMock.emitData('x')
-    expect(ws.sent.filter((m) => typeof m !== 'string')).toHaveLength(0)
+    expect(stdin(ws)).toEqual([])
     expect(ghosttyMock.writes).toEqual([])
     act(() => ws.onmessage?.({ data: JSON.stringify(replayReply('current', 7, 2)) }))
+    expect(stdin(ws)).toEqual(['x'])
     ghosttyMock.emitData('y')
-    expect(ws.sent.filter((m) => typeof m !== 'string')).toHaveLength(1)
+    expect(stdin(ws)).toEqual(['x', 'y'])
+  })
+
+  it('keeps the oldest held entries past the entry limit and logs the overflow once', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { ws } = await mount({ snapshotAttach: true, active: true })
+    const typed = Array.from({ length: 1030 }, (_, i) => String.fromCharCode(0x4e00 + i))
+
+    for (const key of typed) ghosttyMock.emitData(key)
+    act(() => ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) }))
+
+    expect(stdin(ws)).toEqual(typed.slice(0, 1024))
+    const overflow = warn.mock.calls.filter(([m]) => String(m).includes('attach snapshot was pending'))
+    expect(overflow).toHaveLength(1)
+    expect(String(overflow[0]?.[0])).toContain('1024 entries and 1024 code units already held; limit 1024 entries')
+  })
+
+  it('holds two maximum pastes, the code-unit limit the overflow messages name', () => {
+    expect(2 * MAX_PASTE_CODE_UNITS).toBe(131072)
+  })
+
+  it('keeps the held input within the code-unit limit and logs the entry it refused', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { ws } = await mount({ snapshotAttach: true, active: true })
+    const big = 'a'.repeat(128 * 1024)
+
+    ghosttyMock.emitData(big)
+    ghosttyMock.emitData('b')
+    act(() => ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) }))
+
+    expect(stdin(ws)).toEqual([big])
+    expect(warn).toHaveBeenCalledWith(
+      'houston: session 1 dropped 1 code units of input typed while its attach snapshot was pending: 1 entries and 131072 code units already held; limit 1024 entries and 131072 code units'
+    )
+  })
+
+  it('drops held input when the pane closes before the snapshot lands', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { ws, sinks } = await mount({ snapshotAttach: true, active: true })
+    ghosttyMock.emitData('x')
+
+    act(() => root.unmount())
+    root = createRoot(container)
+    ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) })
+
+    expect(sinks.size).toBe(0)
+    expect(stdin(ws)).toEqual([])
+    expect(warn).toHaveBeenCalledWith(
+      'houston: session 1 dropped 1 held input entries: the pane closed before its attach snapshot landed'
+    )
+  })
+
+  it('sends nothing held for a session that ended before the snapshot landed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { ws, render } = await mount({ snapshotAttach: true, active: true })
+    ghosttyMock.emitData('x')
+
+    act(() => render({ ...makeSession(), state: 'exited' } as SessionInfo))
+    act(() => ws.onmessage?.({ data: JSON.stringify(snapshotReply(1, 0, 1)) }))
+
+    expect(stdin(ws)).toEqual([])
+    expect(warn).toHaveBeenCalledWith('houston: session 1 dropped 1 held input entries: the pane is no longer live')
   })
 
   it('rebuilds discarded overflow bytes from a capped fallback replay and flushes held frames once', async () => {

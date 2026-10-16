@@ -95,6 +95,17 @@ record names the oldest, how many keystrokes it closed and how many records the
 per-session five-second throttle suppressed. Both are logged only above 250 ms. A
 session keeps at most eight open marks; further keystrokes are counted, not timed.
 
+While a pane's snapshot attach is in flight, its input is held and released in order when
+the hold ends, whether the snapshot lands, the daemon falls back to a replay or the pane
+reattaches without one. Pastes are held as text and encoded after the import, because
+bracketed-paste mode comes from the snapshot; keys wait behind them to keep their order,
+encoded with the modes the pane had when they were typed. The hold is bounded
+(`HELD_INPUT_MAX_ENTRIES`, `HELD_INPUT_MAX_CODE_UNITS` in `TerminalPane.tsx`); past either
+limit it keeps the oldest input and logs the first refused entry with the limits and held
+size. A closed or ended pane discards held input with a log line. Parser replies produced
+during the hold are dropped: the pane parses no new output then, so they answer output the
+snapshot replaces.
+
 `PaneWriteQueue` (`pane/writeQueue.ts`) is the **inbound** pipeline, between arriving frames
 and the engine's synchronous `term.write`. It owns a hard byte chunk ceiling,
 a single-write-in-flight gate, a stalled-write watchdog, and
