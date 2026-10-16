@@ -175,6 +175,58 @@ impl FrameTap {
         out
     }
 
+    /// Takes items from the front up to `budget` payload bytes, splitting a frame that
+    /// straddles it at the same stream offsets. Returns them and whether more remain.
+    pub fn drain_up_to(&self, budget: usize) -> (VecDeque<Queued>, bool) {
+        let mut s = self.state.lock().expect("frame tap lock");
+        let mut out = VecDeque::new();
+        let mut taken = 0;
+        while taken < budget {
+            if s.queue.is_empty() {
+                finalize_pending(&mut s);
+            }
+            let Some(item) = s.queue.pop_front() else {
+                break;
+            };
+            let Queued::Frame(frame) = item else {
+                out.push_back(item);
+                continue;
+            };
+            let (session, offset, payload) = proto::decode_output_frame(&frame)
+                .expect("queued frames are encode_output_frame output");
+            let room = budget - taken;
+            if payload.len() > room {
+                let (head, rest) = payload.split_at(room);
+                out.push_back(Queued::Frame(Arc::new(proto::encode_output_frame(
+                    session, offset, head,
+                ))));
+                s.queue
+                    .push_front(Queued::Frame(Arc::new(proto::encode_output_frame(
+                        session,
+                        offset + room as u64,
+                        rest,
+                    ))));
+                s.bytes -= room;
+                taken = budget;
+            } else {
+                taken += payload.len();
+                s.bytes -= payload.len();
+                s.frames -= 1;
+                out.push_back(Queued::Frame(frame));
+            }
+        }
+        let more = !s.queue.is_empty() || s.pending.is_some();
+        if !more && s.dropping {
+            out.push_back(Queued::Gap {
+                anchor: s.drop_anchor,
+                dropped: s.dropped,
+            });
+            s.dropping = false;
+            s.dropped = 0;
+        }
+        (out, more)
+    }
+
     pub fn attach(&self, bytes_seen: Option<u64>) -> u32 {
         let mut s = self.state.lock().expect("frame tap lock");
         s.attempts += 1;
@@ -583,6 +635,80 @@ mod tests {
             offsets(&items),
             vec![(Some(0), None), (None, Some((big as u64, big as u64)))]
         );
+    }
+
+    #[test]
+    fn a_bounded_drain_splits_a_straddling_frame_at_its_stream_offsets() {
+        let tap = FrameTap::new(Some(1), Arc::new(Notify::new()));
+        tap.offer(0, 10, &frame(1, 0, 10));
+        tap.offer(100, 30, &frame(1, 100, 30));
+        let (first, more) = tap.drain_up_to(25);
+        assert!(more);
+        assert_eq!(offsets(&first), vec![(Some(0), None), (Some(100), None)]);
+        let Some(Queued::Frame(head)) = first.back() else {
+            panic!("expected the split head");
+        };
+        assert_eq!(
+            frame_end(head),
+            115,
+            "the head carries exactly the budget left"
+        );
+        assert_eq!(tap.queued_bytes_for_test(), 15);
+
+        let (rest, more) = tap.drain_up_to(25);
+        assert!(!more);
+        assert_eq!(offsets(&rest), vec![(Some(115), None)]);
+        let Some(Queued::Frame(tail)) = rest.front() else {
+            panic!("expected the remainder");
+        };
+        assert_eq!(frame_end(tail), 130);
+        assert_eq!(tap.queued_bytes_for_test(), 0);
+    }
+
+    #[test]
+    fn a_bounded_drain_reports_an_open_drop_only_after_the_frames_before_it() {
+        let tap = FrameTap::new(Some(1), Arc::new(Notify::new()));
+        let big = FRAME_QUEUE_BYTES / 2 + 1;
+        tap.offer(0, big, &frame(1, 0, big));
+        tap.offer(big as u64, big, &frame(1, big as u64, big));
+        let (first, more) = tap.drain_up_to(big - 1);
+        assert!(more, "one byte of the surviving frame is still queued");
+        assert!(first.iter().all(|q| matches!(q, Queued::Frame(_))));
+        let (last, more) = tap.drain_up_to(big);
+        assert!(!more);
+        assert_eq!(
+            offsets(&last),
+            vec![
+                (Some(big as u64 - 1), None),
+                (None, Some((big as u64, big as u64)))
+            ]
+        );
+    }
+
+    #[test]
+    fn a_bounded_drain_keeps_a_queued_gap_between_its_neighbours() {
+        let tap = FrameTap::new(Some(1), Arc::new(Notify::new()));
+        let big = FRAME_QUEUE_BYTES / 2 + 1;
+        tap.offer(0, big, &frame(1, 0, big));
+        tap.offer(big as u64, big, &frame(1, big as u64, big));
+        let resumed = 2 * big as u64;
+        tap.offer(resumed, 10, &frame(1, resumed, 10));
+        let mut items = Vec::new();
+        loop {
+            let (turn, more) = tap.drain_up_to(64 * 1024);
+            items.extend(offsets(&turn));
+            if !more {
+                break;
+            }
+        }
+        assert_eq!(items.last(), Some(&(Some(resumed), None)));
+        assert_eq!(
+            items[items.len() - 2],
+            (None, Some((big as u64, big as u64)))
+        );
+        assert!(items[..items.len() - 2]
+            .iter()
+            .all(|(frame, gap)| frame.is_some_and(|o| o < big as u64) && gap.is_none()));
     }
 
     #[test]

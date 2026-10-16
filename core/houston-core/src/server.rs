@@ -667,13 +667,22 @@ async fn read_client(
     }
 }
 
+// Payload one session sends per turn. Sessions take turns on the connection, so a quiet
+// pane's echo waits behind at most one turn of each busy pane, not their whole backlogs.
+const FLUSH_TURN_BYTES: usize = 64 * 1024;
+
 async fn flush_frames(sink: &mut (impl SinkExt<Message> + Unpin), taps: &AttachSet) -> bool {
     let mut fed = false;
     for tap in taps.taps() {
         let Some(session) = tap.session() else {
             continue;
         };
-        for item in tap.drain() {
+        let (items, more) = tap.drain_up_to(FLUSH_TURN_BYTES);
+        // Leftovers re-arm the wake, so the loop serves control traffic between turns.
+        if more {
+            taps.wake.notify_one();
+        }
+        for item in items {
             let bytes = match item {
                 Queued::Frame(frame) => Bytes::from_owner(SharedFrame(frame)),
                 Queued::Gap { anchor, dropped } => {
@@ -6056,7 +6065,7 @@ async fn inbox_delivered(
 mod frame_flush_tests {
     use super::*;
     use axum::serve::Listener;
-    use futures_util::Sink;
+    use futures_util::{FutureExt, Sink};
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
@@ -6251,6 +6260,44 @@ mod frame_flush_tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(payloads, [b"first".to_vec(), b"second".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn a_flush_sends_one_turn_per_session_and_rearms_for_the_rest() {
+        let fixture = LiveSession::new();
+        let id = fixture.id;
+        let wake = Arc::new(Notify::new());
+        let mut taps = AttachSet::new(Arc::clone(&fixture.daemon), Arc::clone(&wake));
+        taps.insert(id);
+        let tap = taps.taps.get(&id).unwrap();
+        fixture.daemon.frame_taps().unregister(tap);
+        tap.clear();
+        let backlog = 2 * FLUSH_TURN_BYTES + 100;
+        tap.offer(
+            0,
+            backlog,
+            &Arc::new(proto::encode_output_frame(id, 0, &vec![b'x'; backlog])),
+        );
+
+        let mut sink = RecordingSink::default();
+        let mut turns = Vec::new();
+        loop {
+            assert!(flush_frames(&mut sink, &taps).await);
+            let sent = std::mem::take(&mut sink.messages);
+            turns.push(sent.len());
+            for message in sent {
+                let Message::Binary(bytes) = message else {
+                    panic!("expected binary output frame, got {message:?}");
+                };
+                let (_, offset, payload) = proto::decode_output_frame(&bytes).unwrap();
+                assert!(payload.len() <= FLUSH_TURN_BYTES);
+                assert_eq!(offset as usize, (turns.len() - 1) * FLUSH_TURN_BYTES);
+            }
+            if wake.notified().now_or_never().is_none() {
+                break;
+            }
+        }
+        assert_eq!(turns, [1, 1, 1], "three turns cover the backlog, in order");
     }
 
     #[tokio::test]

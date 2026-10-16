@@ -62,8 +62,11 @@ payload (an item-count safety net exists too, but at 4096 items it is not
 what a real flood trips); the PTY is always drained daemon-side, so a client
 that stops reading fills only its own queues and slows nobody else. A frame
 contiguous with whatever the queue is currently holding merges into it
-instead of taking a new slot, up to a 256 KiB per-item ceiling, so a message
-on the wire can be larger than any single PTY read. When a queue drops, the
+instead of taking a new slot, up to a 256 KiB per-item ceiling. The socket
+writes its queues in turns of at most 64 KiB each, splitting a larger item at
+the same stream offsets, so a message carries up to 64 KiB (more than a single
+PTY read) and a quiet session's output waits behind one turn of each busy
+session, not their whole queues. When a queue drops, the
 loss is a `FRAME_GAP`: `bytes_seen` is the stream offset loss began at,
 `dropped` the payload bytes lost from there, and it is written after every frame
 that preceded the loss and before the first that survived it (or on its own,
