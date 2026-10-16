@@ -1568,7 +1568,7 @@ checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
 name = "houston-core"
-version = "0.19.4"
+version = "0.19.5"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -1618,7 +1618,7 @@ dependencies = [
 
 [[package]]
 name = "houston-protocol"
-version = "0.19.4"
+version = "0.19.5"
 dependencies = [
  "serde",
  "serde_json",
