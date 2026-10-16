@@ -18,6 +18,8 @@ import {
   togglePanel as togglePanelShortcut,
   splitRight as splitRightShortcut,
   tidyGrid as tidyGridShortcut,
+  tidyRow as tidyRowShortcut,
+  tidyColumn as tidyColumnShortcut,
   equalizePanes as equalizePanesShortcut,
   shortcutSheetShortcut,
   settingsShortcut,
@@ -80,6 +82,8 @@ export interface PaletteActions {
   openAddPanePopover: () => void
   setGridLayout: (cols: 1 | 2 | 3 | 4) => void
   tidyPanes?: () => void
+  tidyPanesRow?: () => void
+  tidyPanesColumn?: () => void
   equalizePanes?: () => void
   openShortcutSheet: () => void
 
@@ -376,6 +380,28 @@ function buildGridCommands(actions: PaletteActions): Command[] {
       disabledReason:
         actions.tidyPanes === undefined ? 'Open a second pane to tidy the grid' : undefined,
       run: () => actions.tidyPanes?.()
+    },
+    {
+      id: 'grid.tidy-row',
+      title: 'Tidy panes into one row',
+      group: 'Grid',
+      keywords: ['arrange', 'side by side', 'horizontal', 'row'],
+      chord: tidyRowShortcut,
+      enabled: actions.tidyPanesRow !== undefined,
+      disabledReason:
+        actions.tidyPanesRow === undefined ? 'Open a second pane to tidy the grid' : undefined,
+      run: () => actions.tidyPanesRow?.()
+    },
+    {
+      id: 'grid.tidy-column',
+      title: 'Tidy panes into one column',
+      group: 'Grid',
+      keywords: ['arrange', 'stack', 'vertical', 'column'],
+      chord: tidyColumnShortcut,
+      enabled: actions.tidyPanesColumn !== undefined,
+      disabledReason:
+        actions.tidyPanesColumn === undefined ? 'Open a second pane to tidy the grid' : undefined,
+      run: () => actions.tidyPanesColumn?.()
     },
     {
       id: 'grid.equalize',

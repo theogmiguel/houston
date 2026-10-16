@@ -68,6 +68,47 @@ describe('tidy', () => {
   })
 })
 
+describe.each([
+  ['row', 'row'],
+  ['column', 'col']
+] as const)('tidy as one %s', (shape, dir) => {
+  const panes = (n: number): LayoutNode[] => Array.from({ length: n }, (_, i) => leaf(i + 1))
+
+  it.each([2, 4, 7])('lays %i panes in a single even %s split', (n) => {
+    const t = tidy(row(...panes(n)), shape) as SplitNode
+    expect(t.dir).toBe(dir)
+    expect(t.children).toHaveLength(n)
+    expect(t.children.every((c) => c.kind === 'leaf')).toBe(true)
+    expect(t.weights).toEqual(Array.from({ length: n }, () => 100 / n))
+  })
+
+  it('collapses one pane to the bare pane', () => {
+    const only = leaf(7)
+    expect(tidy(row(only), shape)).toBe(only)
+  })
+
+  it('keeps visual order from a grid', () => {
+    const grid: SplitNode = {
+      kind: 'split',
+      dir: 'col',
+      children: [row(leaf(3), leaf(1)), row(leaf(4), leaf(2))],
+      weights: [50, 50]
+    }
+    expect(preorderLeaves(tidy(grid, shape))).toEqual([3, 1, 4, 2])
+  })
+
+  it('keeps a stack whole', () => {
+    const stack: StackNode = {
+      kind: 'stack',
+      id: 's1',
+      children: [browser('b1'), browser('b2')],
+      activeIndex: 0
+    }
+    const t = tidy(row(leaf(1), stack, leaf(2)), shape) as SplitNode
+    expect(t.children).toContain(stack)
+  })
+})
+
 describe('equalize', () => {
   it('resets every split at every depth without moving a pane', () => {
     const before: SplitNode = {

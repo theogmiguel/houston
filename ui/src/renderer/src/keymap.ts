@@ -234,6 +234,24 @@ export const tidyGrid: ShortcutEntry = {
   match: (e) => e.key === 'y'
 }
 
+export const tidyRow: ShortcutEntry = {
+  id: 'tidy-row',
+  keyLabel: 'h',
+  description: 'tidy panes into one row',
+  category: 'global',
+  layer: 'both',
+  match: (e) => e.key === 'h'
+}
+
+export const tidyColumn: ShortcutEntry = {
+  id: 'tidy-column',
+  keyLabel: 'v',
+  description: 'tidy panes into one column',
+  category: 'global',
+  layer: 'both',
+  match: (e) => e.key === 'v'
+}
+
 export const equalizePanes: ShortcutEntry = {
   id: 'equalize-panes',
   keyLabel: '=',
@@ -433,6 +451,8 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
   splitLeft,
   splitUp,
   tidyGrid,
+  tidyRow,
+  tidyColumn,
   equalizePanes,
   focusPrevPane,
   focusNextPane,
@@ -676,6 +696,22 @@ const SPLIT_SIDES: readonly (readonly [ShortcutEntry, SplitSide])[] = [
 export function splitSideFor(e: KeyboardEvent, overrides: KeymapOverrides): SplitSide | null {
   for (const [entry, side] of SPLIT_SIDES) {
     if (resolveGlobalMatch(entry, overrides)(e)) return side
+  }
+  return null
+}
+
+const TIDY_SHAPES: readonly (readonly [ShortcutEntry, 'grid' | 'row' | 'column'])[] = [
+  [tidyGrid, 'grid'],
+  [tidyRow, 'row'],
+  [tidyColumn, 'column']
+]
+
+export function tidyShapeFor(
+  e: KeyboardEvent,
+  overrides: KeymapOverrides
+): 'grid' | 'row' | 'column' | null {
+  for (const [entry, shape] of TIDY_SHAPES) {
+    if (resolveGlobalMatch(entry, overrides)(e)) return shape
   }
   return null
 }

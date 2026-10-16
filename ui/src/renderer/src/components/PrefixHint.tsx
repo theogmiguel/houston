@@ -24,7 +24,9 @@ import {
   splitLeft,
   splitRight,
   splitUp,
+  tidyColumn,
   tidyGrid,
+  tidyRow,
   toggleGit,
   wsLast,
   wsNext,
@@ -66,7 +68,7 @@ const GROUPS: { label: string; rows: { entries: ShortcutEntry[]; what: string }[
       { entries: [selectPane], what: 'by position' },
       { entries: [movePanePrev, movePaneNext], what: 'swap' },
       { entries: [splitRight, splitUp, splitLeft, splitDown], what: 'split' },
-      { entries: [expandPane, tidyGrid], what: 'expand / tidy' }
+      { entries: [expandPane, tidyGrid, tidyRow, tidyColumn], what: 'expand / tidy' }
     ]
   },
   {
