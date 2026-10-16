@@ -2515,7 +2515,7 @@ async fn an_adopted_session_in_a_git_checkout_leaves_the_head_watcher_idle() {
     git(project.path(), &["switch", "-c", "x"]);
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if let proto::ServerMsg::SessionCheckout { id, checkout } =
+            if let proto::ServerMsg::SessionCheckout { id, checkout, .. } =
                 common::next_control(&mut ws).await
             {
                 if id == session_id

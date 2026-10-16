@@ -969,6 +969,36 @@ async fn k4_session_worktree_metadata_groups_nested_shared_checkouts_and_survive
         },
     )
     .unwrap();
+    // A restored session's checkout is resolved by the HEAD watcher, not the listing, and
+    // its broadcast carries the whole identity a client attached before it holds.
+    let mut rx = reopened.subscribe();
+    tokio::spawn(houston_core::checkout_watch::checkout_watch_loop(
+        reopened.clone(),
+    ));
+    let mut pending: std::collections::HashSet<u32> = [child, sibling].into();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !pending.is_empty() {
+            let (houston_core::daemon::Outbound::Control(json)
+            | houston_core::daemon::Outbound::ControlFor(_, json)) = rx.recv().await.unwrap()
+            else {
+                continue;
+            };
+            if let Ok(proto::ServerMsg::SessionCheckout {
+                id,
+                checkout_root,
+                worktree,
+                ..
+            }) = serde_json::from_str(&json)
+            {
+                if pending.remove(&id) {
+                    assert_eq!(checkout_root.as_deref(), Some(root.as_str()));
+                    assert_eq!(worktree.unwrap().branch, "feat/metadata");
+                }
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("the watcher left {pending:?} unresolved after ten seconds"));
     let infos = reopened.list();
     for id in [child, sibling] {
         let info = infos.iter().find(|info| info.id == id).unwrap();

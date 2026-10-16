@@ -1,4 +1,4 @@
-# Wire protocol v141
+# Wire protocol v142
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -450,7 +450,7 @@ every refusal names the setting.
 | `agent_running` | `session`, `agent?: AgentKind` | v130: bcast, only on change. The agent CLI a shell pane is running now (`SessionInfo.running_agent`); set by that CLI's hook drop or banner while the shell has a command in flight, cleared when the shell reports the command finished (authenticated OSC 133 `D`) or the CLI's own session-end hook (Codex, Grok) arrives. Absent means the shell has its prompt. Without shell integration only the session-end hook clears it |
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Driven by hooks or ACP; process liveness only starts the bounded `spawning` grace and never guesses activity |
 | `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude or Codex transcript the hook names; unsupported providers stay absent and render no indicator |
-| `session_checkout` | `id`, `checkout?: SessionCheckout` | bcast when a session's checkout identity changes; primary, managed worktree and folder checkouts are explicit, with nullable branch/head for detached HEAD |
+| `session_checkout` | `id`, `checkout?: SessionCheckout`, `checkout_root?`, `worktree?: SessionWorktree` | bcast when a session's checkout identity changes or is first resolved; carries the same three fields as `SessionInfo`, which replace the client's copy. Primary, managed worktree and folder checkouts are explicit, with nullable branch/head for detached HEAD |
 | `generated_titles` | `enabled: bool` | current daemon setting for first-turn generated titles |
 | `session_activity` | `id`, `activity?: SessionActivity` | bcast when hook-reported prompt, last message, tool or model activity changes; unsupported values remain null |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
@@ -1334,6 +1334,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 142 | `session_checkout` gains `checkout_root?` and `worktree?`, so a session whose checkout the daemon resolves after a client attached (a restored session, a reparent) reaches the client complete. `hello_ok` and `session_list` read recorded checkout identity and run no git. |
 | 141 | `session_recovery_check` refreshes retained process-ownership refusals and supports explicit acknowledgement of stopped legacy or uncontained workloads without resuming held instructions. |
 | 140 | `pr_list` replies include the cached viewer login. `Routine.kind` identifies user and harness review routines, backfilled from existing harness mappings. `GitBranchInfo` gains upstream ahead/behind counts and committer time. `usage_summary` gains optional `session_counts` (`UsageSessionCounts`): exact distinct sessions by model and by day; older replies omit it. **Amend.** `git_commit` gains `amend` (default false): rewrites HEAD instead of adding a commit, and refuses with an error naming the branch and HEAD SHA when HEAD is already contained in its upstream. |
 | 139 | Pane names expose `title_source` (`codename < prompt < role < cli < task < user`) in `SessionInfo` and `session_renamed`. `session_title_reset` restores the strongest stored automatic candidate without a user override. |
