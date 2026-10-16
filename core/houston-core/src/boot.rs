@@ -26,6 +26,8 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     tokio::spawn(daemon.clone().slack_loops());
     // Idle until a workspace opts into a task tracker.
     tokio::spawn(daemon.clone().task_tracker_loop());
+    // Windows only; parks until a session spawns or produces output.
+    tokio::spawn(crate::power_throttling::sweep_loop());
 }
 
 /// Runs off the async runtime via `spawn_blocking` so the window can paint

@@ -148,7 +148,9 @@ pub fn near_limit(used: u64, window: Option<u64>) -> bool {
     window.is_some_and(|w| w > 0 && used.saturating_mul(100) >= w.saturating_mul(80))
 }
 
-fn read_tail(path: &Path, max: u64) -> Option<String> {
+/// The last `max` bytes of a file as text; when the read seeks, a leading
+/// partial line is dropped. Shared with the Antigravity transcript reader.
+pub(crate) fn read_tail(path: &Path, max: u64) -> Option<String> {
     use std::io::{Read, Seek, SeekFrom};
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();

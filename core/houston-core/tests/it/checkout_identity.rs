@@ -62,6 +62,7 @@ async fn wait_for_branch(ws: &mut WsStream, id: u32, expected: &str) {
                 proto::ServerMsg::SessionCheckout {
                     id: event_id,
                     checkout,
+                    ..
                 } if event_id == id
                     && checkout.as_ref().and_then(|value| value.branch.as_deref())
                         == Some(expected) =>
@@ -102,7 +103,7 @@ async fn identifies_a_managed_worktree_by_its_slug() {
     let (_addr, _state, daemon) = start_daemon_with_handle().await;
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
-    let worktree = daemon
+    let (worktree, _) = daemon
         .git_worktree_create(repo.path(), "checkout-slug", None)
         .unwrap();
     let session = shell_session(&daemon, &worktree.path);

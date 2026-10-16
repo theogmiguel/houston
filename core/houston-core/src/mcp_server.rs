@@ -378,7 +378,7 @@ impl ToolRegistry {
             return None;
         }
         Some(ToolError(format!(
-            "pane {} is a leaf child: it has `pane_submit`, `pane_report`, `pane_reply`, `pane_wait` and `workspace_info`; \
+            "pane {} is a leaf child: it has `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_wait` and `workspace_info`; \
              `{tool}` is not available without managed descendants or spawn authority; \
              parents retain deny, escalation and inbox management for inherited descendants",
             scope.session_id,

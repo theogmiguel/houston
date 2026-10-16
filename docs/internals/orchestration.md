@@ -32,6 +32,19 @@ repeated while the conflict persists. Uncommitted changes are invisible to it. A
 worktree no orchestrator created is compared only for the orchestrators of its siblings,
 and a closed orchestrator's pairs are not compared until it is live again.
 
+Every path that records a `managed_worktrees` row calls `worktree_include::carry_over` once
+the tree exists. Git decides what is copied: `ls-files --others --ignored` with
+`.worktreeinclude` as the exclude file, narrowed by `check-ignore`, so only untracked files
+the checkout ignores qualify and the patterns mean what they mean in `.gitignore`. No
+repository-defined command runs and no matcher is reimplemented. Copies never overwrite,
+never follow a symlink in either tree, and are bounded by `MAX_FILES` and `MAX_BYTES`;
+logs name counts and relative paths, never contents. A copy failure is a warning, never a
+failed creation. `pane_spawn` returns it as `worktree_include`; a task appends it to the
+brief when the brief stays within its limit; the Changes pane appends it to its reply
+message. Cleanup does not count an ignored file that is byte-identical to the same path in
+the workspace checkout, so unchanged copies do not keep a worktree; the comparison shares
+the same file and byte bounds, and a file past them counts as local work.
+
 Creating a worktree does not request a handoff. Normal delegation uses child panes
 with `worktree`; independent handoff is reserved for an explicit operator request to
 continue in a new pane, passing context via `state_doc`. A contributor must not edit
@@ -171,7 +184,7 @@ spelling, or a verb that is CLI-only).
 
 | Tool | Registered in | `hs-pane` twin | What it does |
 |---|---|---|---|
-| `workspace_info` | `mcp_server.rs` | `hs-pane whoami` | the caller's workspace and session id plus registered target workspaces, shared with `whoami` (`Daemon::orchestrate_whoami_json`) |
+| `workspace_info` | `mcp_server.rs` | `hs-pane whoami` | the caller's workspace and session id, registered target workspaces and live siblings, shared with `whoami` (`Daemon::orchestrate_whoami_json`) |
 | `pane_spawn` | `mcp_orchestration.rs` | `hs-pane spawn` | open a child agent pane; `kind: custom` is refused by name (no hooks, so its parent could never be told when it finished) |
 | `pane_list` | `mcp_orchestration.rs` | `hs-pane list` | list the caller's live children, each with its full delegation record (state, stall, `pending_handback`, `inbox_owed`, the capability note) |
 | `pane_get` | `mcp_orchestration.rs` | `hs-pane get` | one pane in the caller's own subtree, in one call: its state, its children and depth, what would end its turn, and its role/brief/stall/staged-result if it is a child of the caller |
@@ -182,6 +195,7 @@ spelling, or a verb that is CLI-only).
 | `pane_submit` | `mcp_orchestration.rs` | `hs-pane submit` | worker→parent result handoff, with an optional summary and artifact paths; wakes the parent |
 | `pane_report` | `mcp_orchestration.rs` | `hs-pane report` | worker progress, question or blocker during its current request; does not complete the request |
 | `pane_reply` | `mcp_orchestration.rs` | `hs-pane reply` | answer a question addressed to the caller and atomically store a correlated reply |
+| `pane_message` | `mcp_orchestration.rs` | `hs-pane message` | send text to a live sibling with an open request, addressed by role or session id; the parent gets no copy |
 | `pane_deny` | `mcp_orchestration.rs` | `hs-pane deny CHILD --episode-id ID` | deny an exact pending descendant permission with verified provider input |
 | `pane_escalate` | `mcp_orchestration.rs` | `hs-pane escalate` | transfer an unresolved descendant input request to the user with a reason |
 | `pane_instruction_list` / `pane_instruction_get` | `mcp_orchestration.rs` | `hs-pane instruction-list` / `instruction-get` | inspect durable instruction delivery states or explicitly read a retained body |
@@ -479,11 +493,9 @@ can keep naming a result after temporary settlement ends the process.
 with nothing submitted), `needs_input` (urgent), `exited` (urgent, the child's process is
 gone; the row body and the round's stop reason name the exit status, and quote the pane's
 final output lines when nothing was handed back), `stalled`, `operator_note` (the operator
-ended or interrupted the child), `mail` (a swarm-scope message addressed to a pane's
-label), and worker `progress`, `question`,
-`blocked` and `reply`. `needs_input`, `exited`, `question`, `blocked` and `reply` are urgent,
-and they bypass every batch window. Swarm mail between siblings remains agent-to-agent
-traffic. A top-level pane may address the operator; delegated children hand results to their
+ended or interrupted the child), `mail` (a sibling message from `pane_message`), and worker
+`progress`, `question`, `blocked` and `reply`. `needs_input`, `exited`, `question`, `blocked` and `reply` are urgent,
+and they bypass every batch window. A top-level pane may address the operator; delegated children hand results to their
 orchestrator and its live ancestors.
 
 Three timestamps, three words: `created_at` is **persisted**, `delivered_at` is **sent**,
@@ -516,6 +528,25 @@ enforces and runs `sanitize::redact_secrets` over every field an agent or a hook
 `artifacts` are validated as absolute paths inside the workspace the row claims to be
 from — a leaf child cannot point a parent at a file outside its own sandbox.
 `sanitize_handoff_text` handles ANSI and framing only; it is not redaction.
+
+### Sibling messages
+
+`pane_message` exists so a loop between two children (implementer and reviewer) does not
+pass every exchange through the parent's context. Authority stays with the parent:
+
+- Siblings are the live children of the same parent with a delegation record; spawn
+  reservations are excluded because they have no request to receive into.
+- Both the sender's and the recipient's requests must be open, checked inside the insert
+  transaction. A sibling that handed back is refused by name: a peer cannot start new work,
+  only its orchestrator can.
+- The row is addressed to the recipient's current request (`request_id`) and is resolved
+  with the recipient's replies when that request closes, so a late message never reaches a
+  later task.
+- `SIBLING_MESSAGE_ROUND_MAX` bounds messages from one sender to one sibling per request
+  of that sibling. The refusal names the cap, the count and the request.
+- The parent gets no copy and learns the outcome from each child's handback. Sibling
+  traffic is agent-to-agent coordination, so the overview deliberately does not list it; the
+  recipient's terminal shows the delivering tool call.
 
 ### The doors, ordered by the parent's state
 
@@ -1150,14 +1181,14 @@ without which the hold would be a one-way door the operator cannot see.
 
 A pane's tool list is its role. A leaf child —
 spawned by another pane, unable to spawn, with no managed children of its own —
-keeps `pane_submit`, `pane_report`, `pane_reply`, `pane_wait` and `workspace_info`:
+keeps `pane_submit`, `pane_report`, `pane_reply`, `pane_message`, `pane_wait` and `workspace_info`:
 its handback, intermediate dialogue and identity. The `task_*` tools are withheld from every child, not only a leaf:
 a child's scope is the brief, so its provider checks parentage before access
 and its direct calls are refused the same way. An orchestrator — one that may spawn,
 has managed children or owes an answer to an inherited question — sees
 the management verbs, with `pane_spawn` only while actually spawnable (out of
-slots keeps the rest; only the spawn verb drops) and `pane_submit` only with
-a parent to hand back to. `pane_reply` remains advertised to every role, including
+slots keeps the rest; only the spawn verb drops), and `pane_submit` and `pane_message` only with
+a parent. `pane_reply` remains advertised to every role, including
 after the last inherited question is resolved, so retries can reach receipt lookup.
 The daemon still enforces recipient, ancestry and request checks. An operator-opened
 pane with the switch off and no managed children sees only this reply verb from orchestration.
@@ -1584,8 +1615,7 @@ prompt template.
 tables, `SwarmMessage`/`SwarmAgent` wire events and the hook-delivery loop `swarm_mail_loop`.
 It does not identify a separate user-facing workflow.
 
-`Daemon::swarm_send` writes a `pane_inbox` row addressed to the recipient's live session;
-a recipient with no live session is re-addressed to its nearest live ancestor. If the recipient has no session identity, the sender's parent inherits the failed delivery. Only the absence of a live ancestor reaches the operator (`reason = "parent_dead"`).
+Live agent-to-agent mail goes through `pane_message` (see Sibling messages).
 `Db::open` imports legacy message files under `<root>/.houston/swarm/<id>` with
 `reason = "migrated"`. A known recipient keeps the row until restart recovery determines
 its live ancestor. Without a recipient, a known sender's parent inherits it; only mail

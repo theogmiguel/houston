@@ -3162,6 +3162,7 @@ impl Daemon {
                 repo: repo.to_path_buf(),
                 path,
                 branch: branch.to_string(),
+                include_warnings: Vec::new(),
             });
         }
         if let Some(parent) = dest.parent() {
@@ -3172,10 +3173,11 @@ impl Daemon {
         let _ = crate::worktrees::prune(repo);
         crate::worktrees::create_task(repo, branch, base, dest).context("task_start refused")?;
         let path = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
-        let created = CreatedWorktree {
+        let mut created = CreatedWorktree {
             repo: repo.to_path_buf(),
             path,
             branch: branch.to_string(),
+            include_warnings: Vec::new(),
         };
         let row = ManagedWorktreeRow {
             path: created.path.display().to_string(),
@@ -3198,7 +3200,24 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording task worktree {}: {e:#}", created.path.display());
         }
+        created.include_warnings =
+            crate::worktree_include::carry_over(repo, &created.path).warnings;
         Ok(created)
+    }
+
+    /// A task's start reply has no warnings field, so the agent that needs the files
+    /// hears what `.worktreeinclude` did not copy; a note past the brief limit stays in
+    /// the log.
+    fn with_include_note(brief: String, warnings: &[String]) -> String {
+        if warnings.is_empty() {
+            return brief;
+        }
+        let noted = format!("{brief}\n\nWorktree setup: {}", warnings.join("; "));
+        if noted.len() <= proto::TASK_BRIEF_MAX_BYTES {
+            noted
+        } else {
+            brief
+        }
     }
 
     /// Starts one attempt of a task: the run row, the pane in `created`, the
@@ -3236,6 +3255,7 @@ impl Daemon {
                 "bytes in the task brief",
             ));
         }
+        let brief = Self::with_include_note(brief, &created.include_warnings);
         let base_commit = crate::git::head_sha(&created.path).ok();
         let run = self.db.create_task_run(&TaskRunWrite {
             task_id: row.id,
@@ -4202,6 +4222,7 @@ impl Daemon {
                 "bytes in the task brief",
             ));
         }
+        let brief = Self::with_include_note(brief, &created.include_warnings);
         let base_commit = crate::git::head_sha(&created.path).ok();
         let run = self.db.create_task_run(&TaskRunWrite {
             task_id: row.id,
@@ -4592,6 +4613,7 @@ impl Daemon {
                         repo: project_dir.to_path_buf(),
                         path,
                         branch: branch.to_string(),
+                        include_warnings: Vec::new(),
                     });
                 }
             }
@@ -4636,10 +4658,13 @@ impl Daemon {
         if let Err(e) = self.db.managed_worktree_record(&row) {
             tracing::warn!("recording review worktree {}: {e:#}", path.display());
         }
+        // A reviewer reads the branch; `carry_over` logs what it could not copy.
+        crate::worktree_include::carry_over(project_dir, &path);
         Ok(CreatedWorktree {
             repo: project_dir.to_path_buf(),
             path,
             branch: branch.to_string(),
+            include_warnings: Vec::new(),
         })
     }
 
