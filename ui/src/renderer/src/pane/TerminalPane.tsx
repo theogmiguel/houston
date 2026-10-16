@@ -146,10 +146,9 @@ export type RegisterOutput = (id: number, sink: OutputSink) => () => void
 // attach reply that never arrives must not buffer forever.
 const PENDING_CAP_BYTES = 4 * 1024 * 1024
 
-// Input typed while a snapshot attach is in flight waits for one attach round trip,
-// which a loaded socket can stretch to seconds. 1024 entries is about 30 s of key
-// repeat; two maximum pastes stay far below the socket's input admission limit when
-// the hold releases them in one burst.
+// Held input waits one attach round trip (seconds on a loaded socket). 1024 entries is
+// about 30 s of key repeat; two maximum pastes released in one burst stay far below the
+// socket's input admission limit.
 const HELD_INPUT_MAX_ENTRIES = 1024
 const HELD_INPUT_MAX_CODE_UNITS = 2 * MAX_PASTE_CODE_UNITS
 
